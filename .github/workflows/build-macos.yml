@@ -320,6 +320,14 @@ jobs:
           PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
           ZIP_NAME="ClawbotCN-macOS-v$VERSION-${{ matrix.arch }}.zip"
           
+          # Debug: verify file exists before ZIP
+          echo "=== Verifying file before ZIP ==="
+          ls -la "$PKG_DIR/app/dist/commands/auth-choice.apply.github-copilot.js" || echo "FILE MISSING BEFORE ZIP!"
+          echo ""
+          echo "All auth-choice.apply files:"
+          ls -la "$PKG_DIR/app/dist/commands/auth-choice.apply"*.js | head -15
+          echo ""
+          
           # 显示最终大小
           echo "=== Final package contents ==="
           du -sh "$PKG_DIR"/*
