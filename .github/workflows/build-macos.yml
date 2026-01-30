@@ -61,6 +61,7 @@ jobs:
 
       - name: Create package structure
         run: |
+          set -x
           PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
           mkdir -p "$PKG_DIR/app"
           mkdir -p "$PKG_DIR/node"
@@ -69,29 +70,36 @@ jobs:
           # Copy Node.js
           cp -r node-pkg/* "$PKG_DIR/node/"
           
-          # Copy app
+          # Copy app dist
           cp -r dist "$PKG_DIR/app/"
           
           # Create simplified package.json
           node -e "
-          const pkg = require('./package.json');
-          const newPkg = {
-            name: pkg.name,
-            version: pkg.version,
-            type: pkg.type,
-            main: pkg.main,
-            dependencies: pkg.dependencies
-          };
-          console.log(JSON.stringify(newPkg, null, 2));
+            const pkg = require('./package.json');
+            const newPkg = {
+              name: pkg.name,
+              version: pkg.version,
+              type: pkg.type,
+              main: pkg.main,
+              dependencies: pkg.dependencies
+            };
+            console.log(JSON.stringify(newPkg, null, 2));
           " > "$PKG_DIR/app/package.json"
           
-          # Copy extensions if exists
+          # Copy extensions if exists (optional)
           if [ -d "extensions" ]; then
-            cp -r extensions "$PKG_DIR/"
+            cp -r extensions "$PKG_DIR/" || true
           fi
           
-          # Copy sandbox config
-          cp build/config/sandbox-mac.json "$PKG_DIR/config/" || echo "No sandbox config"
+          # Copy sandbox config (optional)
+          if [ -f "build/config/sandbox-mac.json" ]; then
+            cp build/config/sandbox-mac.json "$PKG_DIR/config/"
+          else
+            echo '{"mode": "soft"}' > "$PKG_DIR/config/sandbox-mac.json"
+          fi
+          
+          echo "Package structure created:"
+          ls -la "$PKG_DIR/"
 
       - name: Install production dependencies
         run: |
