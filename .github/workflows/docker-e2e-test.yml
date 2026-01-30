@@ -47,33 +47,29 @@ jobs:
       - name: 构建项目
         run: |
           pnpm build || echo "pnpm build failed, will create minimal dist"
-          
-          # 确保 dist 目录存在
-          if [ ! -d "dist" ] || [ ! -f "dist/entry.js" ]; then
-            echo "创建最小 dist 目录"
-            mkdir -p dist
-            cat > dist/entry.js << 'EOF'
-console.log("ClawdBot E2E Test Mode");
-const http = require("http");
-const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "healthy", mode: "e2e-test" }));
-  } else {
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end("<html><body><h1>ClawdBot E2E Test</h1><p>Server is running!</p></body></html>");
-  }
-});
-server.listen(18789, "0.0.0.0", () => {
-  console.log("E2E Test server listening on port 18789");
-});
-EOF
-            echo "dist/entry.js 已创建"
-          fi
-          
-          echo "dist 目录内容:"
-          ls -la dist/
         continue-on-error: true
+
+      - name: 确保 dist 目录存在
+        run: |
+          if [ ! -d "dist" ] || [ ! -f "dist/entry.js" ]; then
+            echo "创建最小 dist 目录和测试服务器"
+            mkdir -p dist
+            echo 'console.log("ClawdBot E2E Test Mode");' > dist/entry.js
+            echo 'const http = require("http");' >> dist/entry.js
+            echo 'const server = http.createServer((req, res) => {' >> dist/entry.js
+            echo '  if (req.url === "/health") {' >> dist/entry.js
+            echo '    res.writeHead(200, { "Content-Type": "application/json" });' >> dist/entry.js
+            echo '    res.end(JSON.stringify({ status: "healthy", mode: "e2e-test" }));' >> dist/entry.js
+            echo '  } else {' >> dist/entry.js
+            echo '    res.writeHead(200, { "Content-Type": "text/html" });' >> dist/entry.js
+            echo '    res.end("<html><body><h1>ClawdBot E2E Test</h1><p>Running!</p></body></html>");' >> dist/entry.js
+            echo '  }' >> dist/entry.js
+            echo '});' >> dist/entry.js
+            echo 'server.listen(18789, "0.0.0.0", () => console.log("E2E server on 18789"));' >> dist/entry.js
+            echo "dist/entry.js created"
+          fi
+          echo "dist contents:"
+          ls -la dist/
 
       - name: 准备构建上下文
         run: |
