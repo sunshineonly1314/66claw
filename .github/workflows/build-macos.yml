@@ -41,7 +41,7 @@ jobs:
           - arch: arm64
             runner: macos-14  # Apple Silicon runner
           - arch: x64
-            runner: macos-13  # Intel runner
+            runner: macos-15  # Intel runner (macOS-13 retired)
 
     runs-on: ${{ matrix.runner }}
     name: Build ${{ matrix.arch }}
@@ -50,20 +50,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: false
-
-      - name: Checkout submodules (retry)
-        run: |
-          set -euo pipefail
-          git submodule sync --recursive
-          for attempt in 1 2 3 4 5; do
-            if git -c protocol.version=2 submodule update --init --force --depth=1 --recursive; then
-              exit 0
-            fi
-            echo "Submodule update failed (attempt $attempt/5). Retrying…"
-            sleep $((attempt * 10))
-          done
-          exit 1
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -221,7 +209,7 @@ jobs:
           - arch: arm64
             runner: macos-14
           - arch: x64
-            runner: macos-13
+            runner: macos-15
 
     runs-on: ${{ matrix.runner }}
     name: Test on ${{ matrix.arch }}
