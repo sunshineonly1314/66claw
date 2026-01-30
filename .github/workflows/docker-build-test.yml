@@ -195,12 +195,14 @@ jobs:
 
   # ============================================
   # 推送镜像（可选）
+  # 仅在手动触发且选择推送时执行
   # ============================================
   push-image:
     name: 推送镜像
     needs: build-test
     runs-on: ubuntu-latest
-    if: github.event.inputs.push_image == 'true' || github.ref == 'refs/heads/main'
+    # 仅在手动触发且 push_image 为 true 时运行
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true'
     
     steps:
       - name: 检出代码
