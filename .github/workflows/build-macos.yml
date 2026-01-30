@@ -333,9 +333,14 @@ jobs:
           du -sh "$PKG_DIR"/*
           
           # 创建压缩包，排除不必要的文件
+          # Note: Using specific patterns to avoid excluding github-* files
           zip -r "$ZIP_NAME" "$PKG_DIR" \
             -x "*.DS_Store" \
-            -x "*.git*" \
+            -x "*/.git/*" \
+            -x "*/.git" \
+            -x "*/.gitignore" \
+            -x "*/.gitattributes" \
+            -x "*/.gitmodules" \
             -x "*.npm*" \
             -x "*/.cache/*" \
             -x "*/node_modules/.cache/*"
