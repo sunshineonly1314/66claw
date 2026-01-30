@@ -1,0 +1,20 @@
+import type { ClawdbotPluginApi } from "clawdbot/plugin-sdk";
+import { emptyPluginConfigSchema } from "clawdbot/plugin-sdk";
+
+import { wecomPlugin } from "./src/channel.js";
+import { setWecomRuntime } from "./src/runtime.js";
+
+const plugin = {
+  id: "wecom",
+  name: "企业微信 (WeCom)",
+  description: "企业微信渠道插件 - 支持自建应用消息",
+  configSchema: emptyPluginConfigSchema(),
+  register(api: ClawdbotPluginApi) {
+    // 保存完整的 PluginRuntime 供 channel 使用
+    setWecomRuntime(api.runtime);
+    api.registerChannel({ plugin: wecomPlugin });
+    api.logger.info("[wecom] 企业微信渠道插件已注册");
+  },
+};
+
+export default plugin;

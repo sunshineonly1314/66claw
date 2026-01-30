@@ -1,0 +1,17 @@
+{
+  "name": "@clawdbot/feishu",
+  "version": "2026.1.27",
+  "type": "module",
+  "description": "Clawdbot 飞书渠道插件 (Feishu/Lark channel plugin)",
+  "clawdbot": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "clawdbot": "workspace:*"
+  }
+}

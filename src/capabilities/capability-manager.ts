@@ -1,0 +1,528 @@
+/**
+ * Clawdbot 能力包管理器
+ * 
+ * 设计理念：让用户无感使用强大能力
+ * - 用户说一句话，系统自动判断需要什么能力
+ * - 缺少能力时，一键安装，无需配置
+ * - 安全问题后台处理，不打扰用户
+ */
+
+import { EventEmitter } from 'events';
+
+// ============================================
+// 能力包定义
+// ============================================
+
+export interface CapabilityPack {
+  id: string;
+  name: string;           // 用户看到的名字（中文）
+  icon: string;           // emoji 图标
+  description: string;    // 一句话描述
+  features: string[];     // 能做什么（列表）
+  size: string;           // 下载大小
+  installTime: string;    // 预计安装时间
+  downloadUrl: string;    // 下载地址
+  
+  // 技术细节（用户不可见）
+  _internal: {
+    type: 'builtin' | 'download' | 'wsl';
+    dependencies: string[];
+    securityLevel: 'safe' | 'moderate' | 'sensitive';
+    autoApprove: boolean;  // 是否自动批准（不需要用户确认）
+  };
+}
+
+// 预定义能力包
+export const CAPABILITY_PACKS: Record<string, CapabilityPack> = {
+  
+  // ========== 基础能力（内置，无需下载）==========
+  
+  'chat': {
+    id: 'chat',
+    name: '智能对话',
+    icon: '💬',
+    description: '聊天、问答、分析',
+    features: ['回答问题', '分析内容', '写作辅助', '翻译'],
+    size: '内置',
+    installTime: '无需安装',
+    downloadUrl: '',
+    _internal: {
+      type: 'builtin',
+      dependencies: [],
+      securityLevel: 'safe',
+      autoApprove: true,
+    },
+  },
+  
+  'web-search': {
+    id: 'web-search',
+    name: '网络搜索',
+    icon: '🔍',
+    description: '搜索网页、查资料',
+    features: ['搜索引擎查询', '获取网页内容', '资料汇总'],
+    size: '内置',
+    installTime: '无需安装',
+    downloadUrl: '',
+    _internal: {
+      type: 'builtin',
+      dependencies: [],
+      securityLevel: 'safe',
+      autoApprove: true,
+    },
+  },
+  
+  // ========== 下载能力包 ==========
+  
+  'browser': {
+    id: 'browser',
+    name: '浏览器操控',
+    icon: '🌐',
+    description: '自动操作浏览器',
+    features: [
+      '自动打开网页',
+      '填写表单、点击按钮',
+      '截图网页内容',
+      '自动登录网站',
+    ],
+    size: '约 50MB',
+    installTime: '约 1 分钟',
+    downloadUrl: 'https://oss.clawdbot.cn/caps/browser-pack.zip',
+    _internal: {
+      type: 'download',
+      dependencies: [],
+      securityLevel: 'moderate',
+      autoApprove: false,  // 首次需要确认
+    },
+  },
+  
+  'files': {
+    id: 'files',
+    name: '文件助手',
+    icon: '📁',
+    description: '管理本地文件',
+    features: [
+      '创建、移动、删除文件',
+      '整理文件夹',
+      '搜索文件内容',
+      '批量重命名',
+    ],
+    size: '约 2MB',
+    installTime: '约 10 秒',
+    downloadUrl: 'https://oss.clawdbot.cn/caps/files-pack.zip',
+    _internal: {
+      type: 'download',
+      dependencies: [],
+      securityLevel: 'moderate',
+      autoApprove: false,
+    },
+  },
+  
+  'notes': {
+    id: 'notes',
+    name: '笔记同步',
+    icon: '📝',
+    description: '连接你的笔记应用',
+    features: [
+      '读写 Obsidian 笔记',
+      '同步 Notion 页面',
+      '搜索笔记内容',
+      '创建日记、待办',
+    ],
+    size: '约 5MB',
+    installTime: '约 15 秒',
+    downloadUrl: 'https://oss.clawdbot.cn/caps/notes-pack.zip',
+    _internal: {
+      type: 'download',
+      dependencies: [],
+      securityLevel: 'safe',
+      autoApprove: true,
+    },
+  },
+  
+  'image': {
+    id: 'image',
+    name: '绘图创作',
+    icon: '🎨',
+    description: 'AI 生成图片',
+    features: [
+      '根据描述生成图片',
+      '编辑修改图片',
+      '图片风格转换',
+      '生成头像、壁纸',
+    ],
+    size: '约 3MB',
+    installTime: '约 10 秒',
+    downloadUrl: 'https://oss.clawdbot.cn/caps/image-pack.zip',
+    _internal: {
+      type: 'download',
+      dependencies: [],
+      securityLevel: 'safe',
+      autoApprove: true,
+    },
+  },
+  
+  'smart-home': {
+    id: 'smart-home',
+    name: '智能家居',
+    icon: '🏠',
+    description: '控制智能设备',
+    features: [
+      '开关灯光',
+      '调节空调温度',
+      '控制窗帘',
+      '查看摄像头',
+    ],
+    size: '约 3MB',
+    installTime: '约 10 秒',
+    downloadUrl: 'https://oss.clawdbot.cn/caps/smarthome-pack.zip',
+    _internal: {
+      type: 'download',
+      dependencies: [],
+      securityLevel: 'moderate',
+      autoApprove: false,
+    },
+  },
+  
+  // ========== WSL 能力包（高级）==========
+  
+  'developer': {
+    id: 'developer',
+    name: '编程助手',
+    icon: '💻',
+    description: '完整的开发环境',
+    features: [
+      '运行 Python/Node.js 代码',
+      'Git 版本控制',
+      '命令行操作',
+      'Docker 容器管理',
+    ],
+    size: '约 150MB',
+    installTime: '约 3 分钟',
+    downloadUrl: 'https://oss.clawdbot.cn/wsl/clawdbot-wsl-latest.tar.gz',
+    _internal: {
+      type: 'wsl',
+      dependencies: [],
+      securityLevel: 'sensitive',
+      autoApprove: false,
+    },
+  },
+};
+
+// ============================================
+// 意图 -> 能力 映射
+// ============================================
+
+/**
+ * 根据用户意图自动识别需要的能力
+ */
+export const INTENT_TO_CAPABILITY: Record<string, string[]> = {
+  // 浏览器相关
+  '打开网页': ['browser'],
+  '打开浏览器': ['browser'],
+  '搜索': ['web-search'],  // 基础搜索用内置，复杂操作用 browser
+  '填表': ['browser'],
+  '登录网站': ['browser'],
+  '截图网页': ['browser'],
+  '自动点击': ['browser'],
+  
+  // 文件相关
+  '保存文件': ['files'],
+  '保存到桌面': ['files'],
+  '整理文件': ['files'],
+  '删除文件': ['files'],
+  '移动文件': ['files'],
+  '重命名': ['files'],
+  '查找文件': ['files'],
+  
+  // 笔记相关
+  '记笔记': ['notes'],
+  '记到笔记': ['notes'],
+  'obsidian': ['notes'],
+  'notion': ['notes'],
+  '写日记': ['notes'],
+  '待办事项': ['notes'],
+  
+  // 图像相关
+  '画图': ['image'],
+  '生成图片': ['image'],
+  '画一张': ['image'],
+  '做个图': ['image'],
+  '设计': ['image'],
+  
+  // 智能家居
+  '开灯': ['smart-home'],
+  '关灯': ['smart-home'],
+  '调空调': ['smart-home'],
+  '开空调': ['smart-home'],
+  '关窗帘': ['smart-home'],
+  
+  // 开发相关
+  '运行代码': ['developer'],
+  '执行脚本': ['developer'],
+  'git': ['developer'],
+  'python': ['developer'],
+  'npm': ['developer'],
+  'docker': ['developer'],
+};
+
+// ============================================
+// 能力管理器
+// ============================================
+
+export class CapabilityManager extends EventEmitter {
+  private installedCapabilities: Set<string> = new Set(['chat', 'web-search']);
+  private approvedCapabilities: Set<string> = new Set(['chat', 'web-search']);
+  private configPath: string;
+  
+  constructor(configPath: string) {
+    super();
+    this.configPath = configPath;
+    this.loadState();
+  }
+  
+  /**
+   * 检查用户消息需要什么能力
+   */
+  detectRequiredCapabilities(userMessage: string): string[] {
+    const required: Set<string> = new Set();
+    const lowerMessage = userMessage.toLowerCase();
+    
+    for (const [keyword, caps] of Object.entries(INTENT_TO_CAPABILITY)) {
+      if (lowerMessage.includes(keyword.toLowerCase())) {
+        caps.forEach(cap => required.add(cap));
+      }
+    }
+    
+    return Array.from(required);
+  }
+  
+  /**
+   * 检查能力是否已安装
+   */
+  isInstalled(capabilityId: string): boolean {
+    return this.installedCapabilities.has(capabilityId);
+  }
+  
+  /**
+   * 检查能力是否已授权
+   */
+  isApproved(capabilityId: string): boolean {
+    return this.approvedCapabilities.has(capabilityId);
+  }
+  
+  /**
+   * 获取缺失的能力
+   */
+  getMissingCapabilities(required: string[]): CapabilityPack[] {
+    return required
+      .filter(id => !this.isInstalled(id))
+      .map(id => CAPABILITY_PACKS[id])
+      .filter(Boolean);
+  }
+  
+  /**
+   * 安装能力包
+   */
+  async installCapability(capabilityId: string, options?: {
+    onProgress?: (percent: number, message: string) => void;
+    silent?: boolean;
+  }): Promise<{ success: boolean; error?: string }> {
+    const pack = CAPABILITY_PACKS[capabilityId];
+    if (!pack) {
+      return { success: false, error: '未知的能力包' };
+    }
+    
+    const onProgress = options?.onProgress || (() => {});
+    
+    try {
+      onProgress(0, '准备安装...');
+      
+      switch (pack._internal.type) {
+        case 'builtin':
+          // 内置能力，直接标记为已安装
+          this.installedCapabilities.add(capabilityId);
+          onProgress(100, '完成');
+          break;
+          
+        case 'download':
+          // 下载能力包
+          onProgress(10, '正在下载...');
+          await this.downloadAndExtract(pack.downloadUrl, capabilityId, (p) => {
+            onProgress(10 + p * 0.8, '正在下载...');
+          });
+          onProgress(90, '正在配置...');
+          this.installedCapabilities.add(capabilityId);
+          onProgress(100, '安装完成');
+          break;
+          
+        case 'wsl':
+          // WSL 能力包
+          onProgress(5, '检查 WSL 环境...');
+          const wslReady = await this.ensureWSL((p, msg) => {
+            onProgress(5 + p * 0.9, msg);
+          });
+          if (!wslReady) {
+            return { success: false, error: 'WSL 安装失败' };
+          }
+          this.installedCapabilities.add(capabilityId);
+          onProgress(100, '安装完成');
+          break;
+      }
+      
+      // 自动批准的能力
+      if (pack._internal.autoApprove) {
+        this.approvedCapabilities.add(capabilityId);
+      }
+      
+      this.saveState();
+      this.emit('capability-installed', capabilityId);
+      
+      return { success: true };
+      
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : '安装失败' 
+      };
+    }
+  }
+  
+  /**
+   * 授权能力（用户确认后调用）
+   */
+  approveCapability(capabilityId: string): void {
+    this.approvedCapabilities.add(capabilityId);
+    this.saveState();
+  }
+  
+  /**
+   * 一键安装并执行
+   * 这是给 Agent 调用的主入口
+   */
+  async ensureCapability(
+    capabilityId: string,
+    callbacks: {
+      onNeedInstall: (pack: CapabilityPack) => Promise<boolean>;  // 询问用户是否安装
+      onNeedApproval: (pack: CapabilityPack) => Promise<boolean>; // 询问用户是否授权
+      onProgress: (percent: number, message: string) => void;
+    }
+  ): Promise<{ ready: boolean; reason?: string }> {
+    
+    const pack = CAPABILITY_PACKS[capabilityId];
+    if (!pack) {
+      return { ready: false, reason: '未知的能力' };
+    }
+    
+    // 1. 检查是否已安装
+    if (!this.isInstalled(capabilityId)) {
+      // 询问用户
+      const shouldInstall = await callbacks.onNeedInstall(pack);
+      if (!shouldInstall) {
+        return { ready: false, reason: '用户取消安装' };
+      }
+      
+      // 执行安装
+      const result = await this.installCapability(capabilityId, {
+        onProgress: callbacks.onProgress,
+      });
+      
+      if (!result.success) {
+        return { ready: false, reason: result.error };
+      }
+    }
+    
+    // 2. 检查是否已授权
+    if (!this.isApproved(capabilityId)) {
+      const shouldApprove = await callbacks.onNeedApproval(pack);
+      if (!shouldApprove) {
+        return { ready: false, reason: '用户拒绝授权' };
+      }
+      this.approveCapability(capabilityId);
+    }
+    
+    return { ready: true };
+  }
+  
+  // ============================================
+  // 私有方法
+  // ============================================
+  
+  private async downloadAndExtract(
+    url: string, 
+    capabilityId: string,
+    onProgress: (percent: number) => void
+  ): Promise<void> {
+    // TODO: 实现下载和解压逻辑
+    // 使用 BITS 或 fetch 下载
+    // 解压到 ~/.clawdbot/capabilities/{capabilityId}/
+    
+    // 模拟下载
+    for (let i = 0; i <= 100; i += 10) {
+      await new Promise(r => setTimeout(r, 100));
+      onProgress(i / 100);
+    }
+  }
+  
+  private async ensureWSL(
+    onProgress: (percent: number, message: string) => void
+  ): Promise<boolean> {
+    // TODO: 实现 WSL 检测和安装逻辑
+    // 复用之前的 WSL 安装脚本
+    
+    onProgress(0.5, '正在安装 WSL 环境...');
+    await new Promise(r => setTimeout(r, 1000));
+    onProgress(1, 'WSL 环境就绪');
+    return true;
+  }
+  
+  private loadState(): void {
+    // TODO: 从配置文件加载已安装/已授权的能力
+  }
+  
+  private saveState(): void {
+    // TODO: 保存状态到配置文件
+  }
+}
+
+// ============================================
+// Agent 集成示例
+// ============================================
+
+/**
+ * 在 Agent 处理用户消息前调用
+ */
+export async function preprocessUserMessage(
+  message: string,
+  capabilityManager: CapabilityManager,
+  ui: {
+    showInstallPrompt: (pack: CapabilityPack) => Promise<boolean>;
+    showApprovalPrompt: (pack: CapabilityPack) => Promise<boolean>;
+    showProgress: (percent: number, message: string) => void;
+  }
+): Promise<{ canProceed: boolean; missingCapabilities?: string[] }> {
+  
+  // 1. 检测需要的能力
+  const required = capabilityManager.detectRequiredCapabilities(message);
+  
+  if (required.length === 0) {
+    return { canProceed: true };
+  }
+  
+  // 2. 检查并安装缺失的能力
+  for (const capId of required) {
+    const result = await capabilityManager.ensureCapability(capId, {
+      onNeedInstall: ui.showInstallPrompt,
+      onNeedApproval: ui.showApprovalPrompt,
+      onProgress: ui.showProgress,
+    });
+    
+    if (!result.ready) {
+      return { 
+        canProceed: false, 
+        missingCapabilities: [capId] 
+      };
+    }
+  }
+  
+  return { canProceed: true };
+}
