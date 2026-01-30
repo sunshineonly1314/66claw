@@ -138,6 +138,15 @@ jobs:
           
           echo "Package structure created:"
           ls -la "$PKG_DIR/"
+          
+          # Debug: verify critical files after copy
+          echo "=== Verifying critical files after copy ==="
+          echo "auth-choice files in $PKG_DIR/app/dist/commands:"
+          ls -la "$PKG_DIR/app/dist/commands/auth-choice"* | wc -l
+          ls "$PKG_DIR/app/dist/commands/auth-choice"*.js
+          echo ""
+          echo "Checking github-copilot file specifically:"
+          ls -la "$PKG_DIR/app/dist/commands/auth-choice.apply.github-copilot.js" || echo "FILE NOT FOUND IN PACKAGE!"
 
       - name: Install production dependencies
         run: |
