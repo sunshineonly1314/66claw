@@ -32,8 +32,9 @@ tmp
 **/tmp
 
 # build artifacts
-dist
-**/dist
+# Note: dist is needed for Docker builds, don't exclude it
+# dist
+# **/dist
 apps/macos/.build
 apps/ios/build
 **/*.trace
