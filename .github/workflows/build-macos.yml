@@ -245,6 +245,13 @@ jobs:
           
           cd ../..
           
+          # Debug: verify files after npm install
+          echo "=== Verifying files after npm install ==="
+          echo "auth-choice files in $PKG_DIR/app/dist/commands:"
+          ls "$PKG_DIR/app/dist/commands/auth-choice"*.js | wc -l
+          echo "github-copilot file:"
+          ls -la "$PKG_DIR/app/dist/commands/auth-choice.apply.github-copilot.js" || echo "FILE DELETED BY NPM INSTALL!"
+          
           # 显示大小
           echo "=== Package size after cleanup ==="
           du -sh "$PKG_DIR"
