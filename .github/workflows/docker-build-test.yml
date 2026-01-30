@@ -228,8 +228,15 @@ jobs:
           # 将仓库所有者名称转换为小写（Docker 要求）
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           
-          docker tag ${{ env.IMAGE_NAME }}:latest ghcr.io/${OWNER}/${{ env.IMAGE_NAME }}:$VERSION
-          docker tag ${{ env.IMAGE_NAME }}:latest ghcr.io/${OWNER}/${{ env.IMAGE_NAME }}:latest
+          # 列出已加载的镜像
+          echo "已加载的镜像:"
+          docker images | grep clawdbot || true
+          
+          # 使用正确的源镜像标签（从 artifact 加载的镜像）
+          SOURCE_TAG="${{ env.IMAGE_NAME }}:$VERSION"
+          
+          docker tag ${SOURCE_TAG} ghcr.io/${OWNER}/${{ env.IMAGE_NAME }}:$VERSION
+          docker tag ${SOURCE_TAG} ghcr.io/${OWNER}/${{ env.IMAGE_NAME }}:latest
           
           docker push ghcr.io/${OWNER}/${{ env.IMAGE_NAME }}:$VERSION
           docker push ghcr.io/${OWNER}/${{ env.IMAGE_NAME }}:latest
