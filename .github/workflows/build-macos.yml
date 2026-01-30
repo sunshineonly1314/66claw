@@ -210,8 +210,9 @@ jobs:
           find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "__tests__" -exec rm -rf {} + 2>/dev/null || true
-          find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
-          find node_modules -type d -name "doc" -exec rm -rf {} + 2>/dev/null || true
+          # Note: keep yaml's doc directory as it contains required runtime files
+          find node_modules -type d -name "docs" ! -path "*/yaml/*" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "doc" ! -path "*/yaml/*" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "example" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "coverage" -exec rm -rf {} + 2>/dev/null || true
