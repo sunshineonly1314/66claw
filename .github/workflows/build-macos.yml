@@ -52,6 +52,25 @@ jobs:
       - name: Build project
         run: pnpm build
 
+      - name: Verify build output
+        run: |
+          echo "=== Checking critical files ==="
+          echo "Source file exists:"
+          ls -la src/commands/auth-choice.apply.github-copilot.ts || echo "SOURCE NOT FOUND!"
+          
+          echo ""
+          echo "Compiled file exists:"
+          ls -la dist/commands/auth-choice.apply.github-copilot.js || echo "COMPILED FILE NOT FOUND!"
+          
+          echo ""
+          echo "All auth-choice files in dist/commands:"
+          ls -la dist/commands/auth-choice* | wc -l
+          ls dist/commands/auth-choice*.js
+          
+          echo ""
+          echo "Total files in dist/commands:"
+          ls dist/commands/*.js | wc -l
+
       - name: Download Node.js for packaging
         run: |
           NODE_URL="https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-${{ matrix.node_arch }}.tar.gz"
