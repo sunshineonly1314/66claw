@@ -173,8 +173,9 @@ jobs:
           " > package.json.tmp && mv package.json.tmp package.json
           
           # 使用打包的 Node.js 安装生产依赖
+          # Note: do not omit optional - clipboard and other modules need platform-specific binaries
           echo "Installing production dependencies..."
-          ../../node-pkg/bin/npm install --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund 2>&1 || true
+          ../../node-pkg/bin/npm install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1 || true
           
           # 激进清理 node_modules
           echo "=== Aggressive cleanup of node_modules ==="
