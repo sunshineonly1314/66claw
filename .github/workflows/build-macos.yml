@@ -105,8 +105,31 @@ jobs:
         run: |
           PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
           cd "$PKG_DIR/app"
-          ../../node-pkg/bin/npm install --omit=dev --ignore-scripts || true
+          
+          # 使用打包的 Node.js 安装生产依赖
+          ../../node-pkg/bin/npm install --omit=dev --ignore-scripts --no-audit --no-fund || true
+          
+          # 清理不必要的文件
+          echo "Cleaning up..."
+          find node_modules -name "*.md" -delete 2>/dev/null || true
+          find node_modules -name "*.ts" -delete 2>/dev/null || true
+          find node_modules -name "*.map" -delete 2>/dev/null || true
+          find node_modules -name "LICENSE*" -delete 2>/dev/null || true
+          find node_modules -name "CHANGELOG*" -delete 2>/dev/null || true
+          find node_modules -name ".npmignore" -delete 2>/dev/null || true
+          find node_modules -name ".eslint*" -delete 2>/dev/null || true
+          find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "__tests__" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+          
           cd ../..
+          
+          # 显示大小
+          echo "Package size:"
+          du -sh "$PKG_DIR"
+          du -sh "$PKG_DIR/node_modules" 2>/dev/null || true
+          du -sh "$PKG_DIR/app/node_modules" 2>/dev/null || true
 
       - name: Create launcher scripts
         run: |
@@ -166,8 +189,23 @@ jobs:
         run: |
           PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
           ZIP_NAME="ClawbotCN-macOS-v$VERSION-${{ matrix.arch }}.zip"
-          zip -r "$ZIP_NAME" "$PKG_DIR" -x "*.DS_Store"
+          
+          # 显示最终大小
+          echo "=== Final package contents ==="
+          du -sh "$PKG_DIR"/*
+          
+          # 创建压缩包，排除不必要的文件
+          zip -r "$ZIP_NAME" "$PKG_DIR" \
+            -x "*.DS_Store" \
+            -x "*.git*" \
+            -x "*.npm*" \
+            -x "*/.cache/*" \
+            -x "*/node_modules/.cache/*"
+          
+          # 校验和
           shasum -a 256 "$ZIP_NAME" | awk '{print $1}' > "$ZIP_NAME.sha256"
+          
+          echo "=== ZIP created ==="
           ls -lh "$ZIP_NAME"
           cat "$ZIP_NAME.sha256"
 
