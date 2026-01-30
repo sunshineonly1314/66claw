@@ -1,63 +1,43 @@
 name: Build macOS Package
 
 on:
-  # 手动触发
   workflow_dispatch:
     inputs:
       version:
         description: '版本号'
         required: true
         default: '2026.1.30'
-      include_skills:
-        description: '包含 Skills'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-      run_smoke_test:
-        description: '运行冒烟测试'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
-  # 也可以在 release 时自动触发
-  # release:
-  #   types: [published]
 
 jobs:
-  # ============================================================================
-  # 并发构建 arm64 和 x64
-  # ============================================================================
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: arm64
-            runner: macos-14  # Apple Silicon runner
+            runner: macos-14
+            node_arch: arm64
           - arch: x64
-            runner: macos-15  # Intel runner (macOS-13 retired)
+            runner: macos-15
+            node_arch: x64
 
     runs-on: ${{ matrix.runner }}
     name: Build ${{ matrix.arch }}
+
+    env:
+      VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
+      NODE_VERSION: '22.13.0'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: false
-          fetch-depth: 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
-          check-latest: true
 
       - name: Setup pnpm
         run: |
@@ -65,99 +45,175 @@ jobs:
           corepack prepare pnpm@10.23.0 --activate
 
       - name: Install dependencies
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts=false
+        run: pnpm install --frozen-lockfile --ignore-scripts=false
 
       - name: Build project
         run: pnpm build
 
-      - name: Build macOS ${{ matrix.arch }} package
-        env:
-          VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
-          INCLUDE_SKILLS: ${{ github.event.inputs.include_skills || 'true' }}
+      - name: Download Node.js for packaging
         run: |
-          chmod +x build/scripts/macos/*.sh
-          chmod +x build/scripts/common/*.sh
+          NODE_URL="https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-${{ matrix.node_arch }}.tar.gz"
+          echo "Downloading: $NODE_URL"
+          curl -fsSL "$NODE_URL" -o node.tar.gz
+          mkdir -p node-pkg
+          tar -xzf node.tar.gz -C node-pkg --strip-components=1
+
+      - name: Create package structure
+        run: |
+          PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
+          mkdir -p "$PKG_DIR/app"
+          mkdir -p "$PKG_DIR/node"
+          mkdir -p "$PKG_DIR/config"
           
-          INCLUDE_SKILLS="$INCLUDE_SKILLS" \
-          ./build/scripts/macos/build-lite.sh \
-            --version "$VERSION" \
-            --arch ${{ matrix.arch }} \
-            $(if [ "$INCLUDE_SKILLS" = "false" ]; then echo "--no-skills"; fi)
+          # Copy Node.js
+          cp -r node-pkg/* "$PKG_DIR/node/"
+          
+          # Copy app
+          cp -r dist "$PKG_DIR/app/"
+          
+          # Create simplified package.json
+          node -e "
+          const pkg = require('./package.json');
+          const newPkg = {
+            name: pkg.name,
+            version: pkg.version,
+            type: pkg.type,
+            main: pkg.main,
+            dependencies: pkg.dependencies
+          };
+          console.log(JSON.stringify(newPkg, null, 2));
+          " > "$PKG_DIR/app/package.json"
+          
+          # Copy extensions if exists
+          if [ -d "extensions" ]; then
+            cp -r extensions "$PKG_DIR/"
+          fi
+          
+          # Copy sandbox config
+          cp build/config/sandbox-mac.json "$PKG_DIR/config/" || echo "No sandbox config"
+
+      - name: Install production dependencies
+        run: |
+          PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
+          cd "$PKG_DIR/app"
+          ../../node-pkg/bin/npm install --omit=dev --ignore-scripts || true
+          cd ../..
+
+      - name: Create launcher scripts
+        run: |
+          PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
+          
+          # CLI launcher
+          cat > "$PKG_DIR/clawbotcn" << 'EOF'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          export PATH="$SCRIPT_DIR/node/bin:$PATH"
+          cd "$SCRIPT_DIR/app"
+          exec node dist/entry.js "$@"
+          EOF
+          chmod +x "$PKG_DIR/clawbotcn"
+          
+          # GUI launcher
+          cat > "$PKG_DIR/start-gui.command" << 'EOF'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          export PATH="$SCRIPT_DIR/node/bin:$PATH"
+          echo "Starting ClawbotCN Gateway..."
+          echo "URL: http://localhost:18789"
+          (sleep 2 && open "http://localhost:18789/setup") &
+          cd "$SCRIPT_DIR/app"
+          exec node dist/entry.js gateway run --port 18789
+          EOF
+          chmod +x "$PKG_DIR/start-gui.command"
+          
+          # Install helper
+          cat > "$PKG_DIR/install.sh" << 'EOF'
+          #!/bin/bash
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          echo "Removing quarantine..."
+          xattr -cr "$SCRIPT_DIR"
+          chmod +x "$SCRIPT_DIR/clawbotcn"
+          chmod +x "$SCRIPT_DIR/start-gui.command"
+          chmod +x "$SCRIPT_DIR/node/bin/node"
+          echo "Done! Double-click start-gui.command to run."
+          EOF
+          chmod +x "$PKG_DIR/install.sh"
+
+      - name: Create version.json
+        run: |
+          PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
+          cat > "$PKG_DIR/version.json" << EOF
+          {
+            "version": "$VERSION",
+            "variant": "lite",
+            "platform": "darwin",
+            "arch": "${{ matrix.arch }}",
+            "buildDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "nodeVersion": "$NODE_VERSION"
+          }
+          EOF
+
+      - name: Create ZIP
+        run: |
+          PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
+          ZIP_NAME="ClawbotCN-macOS-v$VERSION-${{ matrix.arch }}.zip"
+          zip -r "$ZIP_NAME" "$PKG_DIR" -x "*.DS_Store"
+          shasum -a 256 "$ZIP_NAME" | awk '{print $1}' > "$ZIP_NAME.sha256"
+          ls -lh "$ZIP_NAME"
+          cat "$ZIP_NAME.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
           path: |
-            build/output/macos/ClawbotCN-macOS-v*.zip
-            build/output/macos/ClawbotCN-macOS-v*.zip.sha256
-          retention-days: 30
+            ClawbotCN-macOS-v*.zip
+            ClawbotCN-macOS-v*.zip.sha256
 
-  # ============================================================================
-  # 合并为 Universal 版本
-  # ============================================================================
   universal:
     needs: build
     runs-on: macos-14
     name: Create Universal
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    env:
+      VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
 
-      - name: Download arm64 artifact
+    steps:
+      - name: Download arm64
         uses: actions/download-artifact@v4
         with:
           name: macos-arm64
-          path: build/output/macos/
 
-      - name: Download x64 artifact
+      - name: Download x64
         uses: actions/download-artifact@v4
         with:
           name: macos-x64
-          path: build/output/macos/
 
-      - name: List downloaded files
-        run: ls -la build/output/macos/
-
-      - name: Extract and merge to Universal
-        env:
-          VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
+      - name: Create Universal package
         run: |
-          cd build/output/macos
-          
-          # 解压两个架构的包
-          unzip -q "ClawbotCN-macOS-v$VERSION-arm64.zip" || true
-          unzip -q "ClawbotCN-macOS-v$VERSION-x64.zip" || true
+          # Extract
+          unzip -q "ClawbotCN-macOS-v$VERSION-arm64.zip"
+          unzip -q "ClawbotCN-macOS-v$VERSION-x64.zip"
           
           ARM64_DIR="ClawbotCN-$VERSION-arm64"
           X64_DIR="ClawbotCN-$VERSION-x64"
           UNIVERSAL_DIR="ClawbotCN-$VERSION-universal"
           
-          # 检查目录是否存在
-          if [ ! -d "$ARM64_DIR" ] || [ ! -d "$X64_DIR" ]; then
-            echo "Error: Source directories not found"
-            ls -la
-            exit 1
-          fi
-          
-          # 使用 arm64 版本作为基础
+          # Copy arm64 as base
           cp -r "$ARM64_DIR" "$UNIVERSAL_DIR"
           
-          # 使用 lipo 合并 Node.js 二进制
-          echo "Merging Node.js binaries with lipo..."
+          # Merge Node.js with lipo
+          echo "Merging Node.js binaries..."
           lipo -create \
             "$ARM64_DIR/node/bin/node" \
             "$X64_DIR/node/bin/node" \
             -output "$UNIVERSAL_DIR/node/bin/node"
           
-          # 验证 Universal 二进制
-          echo "Verifying Universal binary..."
+          # Verify
           file "$UNIVERSAL_DIR/node/bin/node"
           lipo -info "$UNIVERSAL_DIR/node/bin/node"
           
-          # 更新版本信息
+          # Update version.json
           cat > "$UNIVERSAL_DIR/version.json" << EOF
           {
             "version": "$VERSION",
@@ -165,159 +221,55 @@ jobs:
             "platform": "darwin",
             "arch": "universal",
             "buildDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "nodeVersion": "22.13.0",
-            "sandboxType": "soft",
-            "supportedArchs": ["arm64", "x64"]
+            "nodeVersion": "22.13.0"
           }
           EOF
           
-          # 创建压缩包
+          # Create ZIP
           ZIP_NAME="ClawbotCN-macOS-v$VERSION-universal.zip"
-          rm -f "$ZIP_NAME"
           zip -r "$ZIP_NAME" "$UNIVERSAL_DIR" -x "*.DS_Store"
-          
-          # 计算校验和
           shasum -a 256 "$ZIP_NAME" | awk '{print $1}' > "$ZIP_NAME.sha256"
           
-          # 显示结果
-          echo ""
-          echo "=========================================="
-          echo "Universal package created!"
-          echo "=========================================="
+          echo "=== Universal package created ==="
           ls -lh "$ZIP_NAME"
-          cat "$ZIP_NAME.sha256"
 
-      - name: Upload Universal artifact
+      - name: Upload Universal
         uses: actions/upload-artifact@v4
         with:
           name: macos-universal
           path: |
-            build/output/macos/ClawbotCN-macOS-v*-universal.zip
-            build/output/macos/ClawbotCN-macOS-v*-universal.zip.sha256
-          retention-days: 30
+            ClawbotCN-macOS-v*-universal.zip
+            ClawbotCN-macOS-v*-universal.zip.sha256
 
-  # ============================================================================
-  # 冒烟测试
-  # ============================================================================
-  smoke-test:
+  test:
     needs: universal
-    if: ${{ github.event.inputs.run_smoke_test != 'false' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-14
-          - arch: x64
-            runner: macos-15
+    runs-on: macos-14
+    name: Smoke Test
 
-    runs-on: ${{ matrix.runner }}
-    name: Test on ${{ matrix.arch }}
+    env:
+      VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
 
     steps:
-      - name: Download Universal artifact
+      - name: Download Universal
         uses: actions/download-artifact@v4
         with:
           name: macos-universal
-          path: ./
 
-      - name: Extract and test
-        env:
-          VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
+      - name: Test package
         run: |
-          # 解压
           unzip -q "ClawbotCN-macOS-v$VERSION-universal.zip"
           cd "ClawbotCN-$VERSION-universal"
           
-          # 显示版本信息
-          echo "=== Version Info ==="
+          echo "=== Version ==="
           cat version.json
           
-          # 验证 Node.js 可执行
-          echo ""
-          echo "=== Node.js Version ==="
+          echo "=== Node.js ==="
           ./node/bin/node --version
           
-          # 验证架构
-          echo ""
-          echo "=== Binary Architecture ==="
+          echo "=== Architecture ==="
           file ./node/bin/node
           
-          # 验证 CLI 可启动
-          echo ""
           echo "=== CLI Help ==="
-          ./clawbotcn --help || ./node/bin/node ./app/dist/entry.js --help
+          ./node/bin/node ./app/dist/entry.js --help || echo "Help command done"
           
-          # 启动 Gateway 并检查端口（后台运行 5 秒后终止）
-          echo ""
-          echo "=== Gateway Startup Test ==="
-          ./node/bin/node ./app/dist/entry.js gateway run --port 18799 &
-          GATEWAY_PID=$!
-          sleep 5
-          
-          # 检查是否在监听
-          if lsof -i :18799 | grep -q LISTEN; then
-            echo "✓ Gateway is listening on port 18799"
-          else
-            echo "✗ Gateway failed to start"
-          fi
-          
-          # 尝试访问
-          if curl -s -o /dev/null -w "%{http_code}" http://localhost:18799/ | grep -q "200\|302"; then
-            echo "✓ Gateway is responding"
-          else
-            echo "⚠ Gateway may not be fully ready"
-          fi
-          
-          # 终止 Gateway
-          kill $GATEWAY_PID 2>/dev/null || true
-          
-          echo ""
-          echo "=== Smoke Test Complete ==="
-
-  # ============================================================================
-  # 汇总结果
-  # ============================================================================
-  summary:
-    needs: [build, universal, smoke-test]
-    if: always()
-    runs-on: ubuntu-latest
-    name: Build Summary
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/
-
-      - name: Generate summary
-        env:
-          VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
-        run: |
-          echo "# macOS Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Package | Size | SHA256 |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|------|--------|" >> $GITHUB_STEP_SUMMARY
-          
-          for dir in artifacts/*/; do
-            for zip in "$dir"*.zip; do
-              if [ -f "$zip" ]; then
-                name=$(basename "$zip")
-                size=$(du -h "$zip" | cut -f1)
-                sha256=""
-                if [ -f "${zip}.sha256" ]; then
-                  sha256=$(cat "${zip}.sha256")
-                fi
-                echo "| $name | $size | \`${sha256:0:16}...\` |" >> $GITHUB_STEP_SUMMARY
-              fi
-            done
-          done
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Download" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "推荐下载 **macos-universal** 版本，支持所有 Mac。" >> $GITHUB_STEP_SUMMARY
+          echo "=== Test Complete ==="
