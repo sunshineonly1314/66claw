@@ -119,8 +119,8 @@ export const AFFILIATE_LINKS: Record<string, AffiliateLink> = {
     id: "volcengine-ark",
     name: "火山引擎 (豆包)",
     logo: "/assets/logos/volcengine.svg",
-    // TODO: 替换为真实的推广链接
-    affiliateUrl: "https://www.volcengine.com/product/doubao?ref=AFFILIATE_ID",
+    affiliateUrl:
+      "https://partner.volcengine.com/partners/auth/confirm?inviteToken=HNOCB9ZQY0R8BA3BEK685Z4OKDIYSYZX2UNQZ7IMCYQL7DL0DMPJII6RN9PS063F&partnerType=101&partnerName=%E4%B8%8A%E6%B5%B7%E6%9D%AD%E8%8A%82%E4%BA%91%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&identityType=11&PartnerEmployeeId=72406401",
     consoleUrl: "https://console.volcengine.com/ark/",
     apiKeyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
     benefits: [

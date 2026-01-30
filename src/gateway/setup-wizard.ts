@@ -1114,8 +1114,8 @@ async function handleValidateLicense(
         ...config,
         license: {
           key,
-          status: result.data.status,
-          expiresAt: result.data.expiresAt,
+          status: result.data.status ?? undefined,
+          expiresAt: result.data.expiresAt ?? undefined,
           validatedAt: new Date().toISOString(),
         },
       };
@@ -1152,7 +1152,7 @@ async function handleValidateLicense(
         license: {
           key,
           status: "dev",
-          expiresAt: null,
+          expiresAt: undefined,
           validatedAt: new Date().toISOString(),
         },
       };

@@ -316,7 +316,7 @@ Content-Type: application/json
    - 输入框（只读）
    - 「浏览...」按钮 → 打开文件夹选择器
    - **默认值**（按平台）:
-     - Windows: `C:\Clawdbot\workspace`
+     - Windows: `D:\Clawdbot\workspace`
      - Linux: `/opt/clawdbot/workspace`
      - macOS: `~/.clawbotcn/workspace`
 
@@ -474,7 +474,7 @@ D:\apps → D:\apps:/trusted/apps:rw
 
 | 平台 | 默认工作目录 |
 |------|-------------|
-| **Windows** | `C:\Clawdbot\workspace` |
+| **Windows** | `D:\Clawdbot\workspace` |
 | **Linux** | `/opt/clawdbot/workspace` |
 | **macOS** | `~/.clawbotcn/workspace` |
 
@@ -686,8 +686,8 @@ Response (失败):
    **Windows Lite 额外提示**:
    ```
    🪟 Windows 用户提示：
-   • 工作目录位于: C:\Clawdbot\workspace
-   • 配置文件位于: C:\Clawdbot\config\
+   • 工作目录位于: D:\Clawdbot\workspace
+   • 配置文件位于: D:\Clawdbot\config\
    • 可通过开始菜单或桌面快捷方式启动
    ```
 
@@ -696,7 +696,7 @@ Response (失败):
    🪟 Windows Pro 用户提示：
    • 请确保 Docker Desktop 正在运行
    • 首次启动可能需要拉取沙盒镜像（约 80MB）
-   • 工作目录位于: C:\Clawdbot\workspace
+   • 工作目录位于: D:\Clawdbot\workspace
    • 如遇 Docker 问题，可在设置中临时切换到轻量沙盒模式
    ```
 
@@ -860,7 +860,7 @@ Response:
 
 | 平台 | 配置文件路径 |
 |------|-------------|
-| **Windows** | `C:\Clawdbot\config\settings.json` |
+| **Windows** | `D:\Clawdbot\config\settings.json` |
 | **Linux** | `/opt/clawdbot/config/settings.json` |
 | **macOS** | `~/.clawbotcn/config/settings.json` |
 
@@ -868,7 +868,7 @@ Response:
 
 | 平台 | 用户数据目录 |
 |------|-------------|
-| **Windows** | `C:\Clawdbot\` |
+| **Windows** | `D:\Clawdbot\` |
 | **Linux** | `/opt/clawdbot/` |
 | **macOS** | `~/.clawbotcn/` |
 

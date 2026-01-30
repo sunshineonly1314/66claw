@@ -23,6 +23,7 @@ import type { NodeHostConfig } from "./types.node-host.js";
 import type { PluginsConfig } from "./types.plugins.js";
 import type { SkillsConfig } from "./types.skills.js";
 import type { ToolsConfig } from "./types.tools.js";
+import type { LicenseConfig } from "./types.license.js";
 
 export type ClawdbotConfig = {
   meta?: {
@@ -95,6 +96,8 @@ export type ClawdbotConfig = {
   canvasHost?: CanvasHostConfig;
   talk?: TalkConfig;
   gateway?: GatewayConfig;
+  /** License 授权信息 (ClawdbotCN) */
+  license?: LicenseConfig;
 };
 
 export type ConfigValidationIssue = {

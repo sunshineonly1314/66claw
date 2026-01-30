@@ -95,6 +95,7 @@ export const zhCN: typeof en = {
   "nav.config": "配置",
   "nav.debug": "调试",
   "nav.logs": "日志",
+  "nav.docs": "文档中心",
 
   // ============================================================================
   // 概览页 (Overview)
@@ -154,6 +155,10 @@ export const zhCN: typeof en = {
   "chat.thinkingLow": "浅度",
   "chat.thinkingMedium": "中度",
   "chat.thinkingHigh": "深度",
+  "chat.waiting": "等待响应中",
+  "chat.waitingSeconds": "{{seconds}}秒",
+  "chat.timeoutHint": "暂未收到响应，请检查大模型是否有足够的 Token 额度。",
+  "chat.stillWaiting": "仍在等待中，请耐心稍候...",
 
   // ============================================================================
   // 指挥渠道页 (Channels)
@@ -492,6 +497,20 @@ export const zhCN: typeof en = {
   "subtitle.config": "安全编辑 ~/.clawdbot/clawdbot.json",
   "subtitle.debug": "网关快照、事件和手动 RPC 调用",
   "subtitle.logs": "实时查看网关日志文件",
+  "subtitle.docs": "搜索和浏览 Clawdbot 使用文档",
+
+  // ============================================================================
+  // 文档中心 (Docs Center)
+  // ============================================================================
+  "docs.searchPlaceholder": "搜索你想了解的内容...",
+  "docs.recentlyViewed": "最近浏览",
+  "docs.favorites": "收藏的文档",
+  "docs.relatedDocs": "相关文档",
+  "docs.back": "返回",
+  "docs.addFavorite": "收藏",
+  "docs.removeFavorite": "取消收藏",
+  "docs.noResults": "没有找到匹配的文档",
+  "docs.searchHint": "试试其他关键词，或浏览分类目录",
 
   // ============================================================================
   // 定时任务详细 (Cron Details)

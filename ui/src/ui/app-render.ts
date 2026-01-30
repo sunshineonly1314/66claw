@@ -52,11 +52,30 @@ import {
 import { renderSkills } from "./views/skills";
 import { renderPlayground } from "./views/playground";
 import {
+  renderDocs,
+  searchDocs,
+  handleDocSelect,
+  handleDocsBack,
+  handleDocsSearch,
+  handleToggleFavorite,
+  type DocsViewProps,
+} from "./views/docs";
+import {
   loadPlaygroundSkills,
   setPlaygroundCategory,
   handleTrySkill,
 } from "./controllers/playground";
 import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers";
+import {
+  renderActivationDialog,
+  renderExpiredDialog,
+  renderRenewalReminderDialog,
+  renderNotificationDialog,
+  renderForceUpdateDialog,
+  renderDeviceLimitDialog,
+  renderOfflineBanner,
+  type LicenseDialogType,
+} from "./license/index";
 import { loadChannels } from "./controllers/channels";
 import { loadPresence } from "./controllers/presence";
 import { deleteSession, loadSessions, patchSession } from "./controllers/sessions";
@@ -189,16 +208,7 @@ export function renderApp(state: AppViewState) {
             <span class="nav-label__text">Resources</span>
           </div>
           <div class="nav-group__items">
-            <a
-              class="nav-item nav-item--external"
-              href="https://gitee.com/tecbinai/cnDoc"
-              target="_blank"
-              rel="noreferrer"
-              title="文档 (新标签页打开)"
-            >
-              <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
-              <span class="nav-item__text">Docs</span>
-            </a>
+            ${renderTab(state, "docs")}
           </div>
         </div>
       </aside>
@@ -626,8 +636,191 @@ export function renderApp(state: AppViewState) {
               onScroll: (event) => state.handleLogsScroll(event),
             })
           : nothing}
+
+        ${state.tab === "docs"
+          ? renderDocs({
+              state: state.docsViewState,
+              onSearchQueryChange: (query) => {
+                state.docsViewState = handleDocsSearch(state.docsViewState, query);
+              },
+              onDocSelect: (docId) => {
+                state.docsViewState = handleDocSelect(state.docsViewState, docId);
+              },
+              onBack: () => {
+                state.docsViewState = handleDocsBack(state.docsViewState);
+              },
+              onToggleFavorite: (docId) => {
+                handleToggleFavorite(docId);
+                // Force re-render
+                state.docsViewState = { ...state.docsViewState };
+              },
+              onOpenSearchModal: () => {
+                state.docsViewState = { ...state.docsViewState, showSearchModal: true };
+              },
+              onCloseSearchModal: () => {
+                state.docsViewState = { ...state.docsViewState, showSearchModal: false };
+              },
+            })
+          : nothing}
       </main>
       ${renderExecApprovalPrompt(state)}
+      ${renderLicenseDialogs(state)}
     </div>
   `;
+}
+
+/**
+ * 渲染 License 相关弹窗
+ */
+function renderLicenseDialogs(state: AppViewState) {
+  // 离线模式横幅
+  if (state.licenseState?.offlineMode && state.showOfflineBanner) {
+    const remainingHours = state.licenseState.lastVerifiedAt
+      ? Math.max(0, 72 - (Date.now() - state.licenseState.lastVerifiedAt) / (1000 * 60 * 60))
+      : 0;
+    return renderOfflineBanner(remainingHours, () => {
+      state.showOfflineBanner = false;
+    });
+  }
+
+  // 根据弹窗类型渲染对应弹窗
+  const dialogType = state.showLicenseDialog;
+  if (!dialogType) return nothing;
+
+  switch (dialogType) {
+    case "activation":
+      return renderActivationDialog(
+        async (key) => {
+          state.licenseActivating = true;
+          state.licenseActivationError = null;
+          try {
+            const result = await state.client?.request("license.activate", { key });
+            if (result && typeof result === "object") {
+              const data = result as Record<string, unknown>;
+              if (data.valid) {
+                state.showLicenseDialog = null;
+                state.licenseState = {
+                  ...state.licenseState,
+                  valid: true,
+                  license: data.license as typeof state.licenseState.license,
+                  device: data.device as typeof state.licenseState.device,
+                };
+              } else {
+                state.licenseActivationError = (data.errorMessage as string) || "激活失败";
+              }
+            }
+          } catch (err) {
+            state.licenseActivationError = `激活失败: ${err}`;
+          } finally {
+            state.licenseActivating = false;
+          }
+        },
+        () => {
+          state.showLicenseDialog = null;
+        },
+        state.licenseActivationError,
+        state.licenseActivating,
+      );
+
+    case "expired":
+      return renderExpiredDialog(
+        state.licenseState?.renewalReminder?.renewUrl || null,
+        Math.abs(state.licenseState?.renewalReminder?.daysRemaining || 0),
+        () => {
+          state.showLicenseDialog = null;
+        },
+        () => {
+          state.showLicenseDialog = null;
+        },
+      );
+
+    case "renewal":
+      if (state.licenseState?.renewalReminder) {
+        return renderRenewalReminderDialog(
+          state.licenseState.renewalReminder,
+          () => {
+            state.showLicenseDialog = null;
+          },
+          () => {
+            state.showLicenseDialog = null;
+          },
+        );
+      }
+      return nothing;
+
+    case "notification":
+      const notification = state.licenseState?.pendingNotifications?.[0];
+      if (notification) {
+        return renderNotificationDialog(
+          notification,
+          async () => {
+            // 确认通知
+            await state.client?.request("license.notification.ack", {
+              notificationId: notification.id,
+              action: "clicked",
+            });
+            // 移除已处理的通知
+            state.licenseState = {
+              ...state.licenseState,
+              pendingNotifications: state.licenseState.pendingNotifications.slice(1),
+            };
+            // 如果还有通知，继续显示；否则关闭
+            if (state.licenseState.pendingNotifications.length === 0) {
+              state.showLicenseDialog = null;
+            }
+          },
+          async () => {
+            await state.client?.request("license.notification.ack", {
+              notificationId: notification.id,
+              action: "dismissed",
+            });
+            state.licenseState = {
+              ...state.licenseState,
+              pendingNotifications: state.licenseState.pendingNotifications.slice(1),
+            };
+            if (state.licenseState.pendingNotifications.length === 0) {
+              state.showLicenseDialog = null;
+            }
+          },
+        );
+      }
+      return nothing;
+
+    case "force-update":
+      if (state.licenseState?.forceUpdate) {
+        return renderForceUpdateDialog(
+          state.licenseState.forceUpdate,
+          "1.0.0", // TODO: 从配置获取当前版本
+          () => {
+            if (!state.licenseState.forceUpdate?.blocking) {
+              state.showLicenseDialog = null;
+            }
+          },
+        );
+      }
+      return nothing;
+
+    case "device-limit":
+      return renderDeviceLimitDialog(
+        state.licenseBoundDevices,
+        state.licenseState?.device?.deviceLimit || 2,
+        async (deviceId) => {
+          const result = await state.client?.request("license.unbind", { deviceId });
+          if (result && typeof result === "object" && (result as Record<string, unknown>).success) {
+            // 刷新设备列表
+            const devices = await state.client?.request("license.devices", {});
+            if (devices && typeof devices === "object") {
+              state.licenseBoundDevices = (devices as Record<string, unknown>).devices as typeof state.licenseBoundDevices || [];
+            }
+          }
+        },
+        () => {
+          state.showLicenseDialog = null;
+        },
+        false,
+      );
+
+    default:
+      return nothing;
+  }
 }

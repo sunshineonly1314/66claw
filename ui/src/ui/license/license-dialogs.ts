@@ -1,0 +1,365 @@
+/**
+ * Clawdbot License UI - Dialog Rendering
+ * 授权相关弹窗渲染
+ */
+
+import { html, nothing, type TemplateResult } from "lit";
+import type {
+  LicenseUiState,
+  LicenseNotification,
+  RenewalReminder,
+  ForceUpdateInfo,
+  BoundDevice,
+  LicenseErrorCode,
+} from "./types.js";
+
+/**
+ * 获取紧急程度对应的样式类
+ */
+function getUrgencyClass(urgency: "info" | "warning" | "critical" | null): string {
+  switch (urgency) {
+    case "critical":
+      return "license-urgency-critical";
+    case "warning":
+      return "license-urgency-warning";
+    case "info":
+    default:
+      return "license-urgency-info";
+  }
+}
+
+/**
+ * 获取紧急程度对应的图标
+ */
+function getUrgencyIcon(urgency: "info" | "warning" | "critical" | null): string {
+  switch (urgency) {
+    case "critical":
+      return "🚨";
+    case "warning":
+      return "⚠️";
+    case "info":
+    default:
+      return "ℹ️";
+  }
+}
+
+/**
+ * 渲染授权激活弹窗
+ */
+export function renderActivationDialog(
+  onActivate: (key: string) => void,
+  onCancel: () => void,
+  error: string | null = null,
+  loading: boolean = false,
+): TemplateResult {
+  let inputValue = "";
+
+  const handleSubmit = (e: Event) => {
+    e.preventDefault();
+    if (inputValue.trim()) {
+      onActivate(inputValue.trim());
+    }
+  };
+
+  const handleInput = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    inputValue = target.value;
+  };
+
+  return html`
+    <div class="license-dialog-overlay" @click=${onCancel}>
+      <div class="license-dialog license-activation-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header">
+          <h2>🔑 激活授权</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>请输入您的授权码以激活 Clawdbot</p>
+          <form @submit=${handleSubmit}>
+            <input
+              type="text"
+              class="license-input"
+              placeholder="请输入授权码 (如: clawd-xxx-xxx)"
+              @input=${handleInput}
+              ?disabled=${loading}
+              autofocus
+            />
+            ${error ? html`<p class="license-error">${error}</p>` : nothing}
+            <div class="license-dialog-actions">
+              <button type="button" class="license-btn license-btn-secondary" @click=${onCancel} ?disabled=${loading}>
+                稍后激活
+              </button>
+              <button type="submit" class="license-btn license-btn-primary" ?disabled=${loading}>
+                ${loading ? "验证中..." : "激活"}
+              </button>
+            </div>
+          </form>
+          <p class="license-help">
+            还没有授权码？<a href="https://www.tecbinai.com/purchase" target="_blank">立即购买</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染授权过期弹窗
+ */
+export function renderExpiredDialog(
+  renewUrl: string | null,
+  daysExpired: number,
+  onRenew: () => void,
+  onClose: () => void,
+): TemplateResult {
+  const handleRenew = () => {
+    if (renewUrl) {
+      window.open(renewUrl, "_blank");
+    }
+    onRenew();
+  };
+
+  return html`
+    <div class="license-dialog-overlay">
+      <div class="license-dialog license-expired-dialog">
+        <div class="license-dialog-header license-urgency-critical">
+          <h2>🚨 授权已过期</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>您的授权已过期 ${daysExpired > 0 ? `${daysExpired} 天` : ""}，请续费后继续使用。</p>
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-secondary" @click=${onClose}>
+              稍后处理
+            </button>
+            <button class="license-btn license-btn-primary" @click=${handleRenew}>
+              立即续费
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染续费提醒弹窗
+ */
+export function renderRenewalReminderDialog(
+  reminder: RenewalReminder,
+  onRenew: () => void,
+  onDismiss: () => void,
+): TemplateResult {
+  const urgencyClass = getUrgencyClass(reminder.urgency);
+  const urgencyIcon = getUrgencyIcon(reminder.urgency);
+
+  const handleRenew = () => {
+    if (reminder.renewUrl) {
+      window.open(reminder.renewUrl, "_blank");
+    }
+    onRenew();
+  };
+
+  return html`
+    <div class="license-dialog-overlay" @click=${onDismiss}>
+      <div class="license-dialog license-renewal-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header ${urgencyClass}">
+          <h2>${urgencyIcon} ${reminder.title || "授权即将到期"}</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>${reminder.message || `您的授权将在 ${reminder.daysRemaining} 天后到期，请及时续费。`}</p>
+          <p class="license-days-remaining">
+            剩余天数: <strong>${reminder.daysRemaining}</strong> 天
+          </p>
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-secondary" @click=${onDismiss}>
+              稍后提醒
+            </button>
+            <button class="license-btn license-btn-primary" @click=${handleRenew}>
+              立即续费
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染通知弹窗
+ */
+export function renderNotificationDialog(
+  notification: LicenseNotification,
+  onAction: () => void,
+  onDismiss: () => void,
+): TemplateResult {
+  const handleAction = () => {
+    if (notification.action?.type === "url" && notification.action.url) {
+      window.open(notification.action.url, "_blank");
+    }
+    onAction();
+  };
+
+  return html`
+    <div class="license-dialog-overlay" @click=${onDismiss}>
+      <div class="license-dialog license-notification-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header">
+          <h2>${notification.title}</h2>
+        </div>
+        <div class="license-dialog-content">
+          <div class="license-notification-content">
+            ${notification.content.split("\n").map((line) => html`<p>${line}</p>`)}
+          </div>
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-secondary" @click=${onDismiss}>
+              ${notification.action ? "稍后再说" : "关闭"}
+            </button>
+            ${notification.action
+              ? html`
+                  <button class="license-btn license-btn-primary" @click=${handleAction}>
+                    ${notification.action.text || "了解更多"}
+                  </button>
+                `
+              : nothing}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染强制更新弹窗
+ */
+export function renderForceUpdateDialog(
+  update: ForceUpdateInfo,
+  currentVersion: string,
+  onUpdate: () => void,
+): TemplateResult {
+  const handleUpdate = () => {
+    if (update.downloadUrl) {
+      window.open(update.downloadUrl, "_blank");
+    }
+    onUpdate();
+  };
+
+  return html`
+    <div class="license-dialog-overlay">
+      <div class="license-dialog license-force-update-dialog">
+        <div class="license-dialog-header license-urgency-critical">
+          <h2>🔄 需要更新</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>${update.updateMessage || "发现新版本，请更新后继续使用。"}</p>
+          <div class="license-version-info">
+            <p>当前版本: <code>${currentVersion}</code></p>
+            <p>最低要求: <code>${update.minVersion}</code></p>
+            <p>最新版本: <code>${update.latestVersion}</code></p>
+          </div>
+          <div class="license-dialog-actions">
+            ${!update.blocking
+              ? html`
+                  <button class="license-btn license-btn-secondary" @click=${() => {}}>
+                    稍后更新
+                  </button>
+                `
+              : nothing}
+            <button class="license-btn license-btn-primary" @click=${handleUpdate}>
+              立即下载
+            </button>
+          </div>
+          ${update.blocking
+            ? html`<p class="license-warning">此更新为强制更新，必须更新后才能继续使用。</p>`
+            : nothing}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染设备超限弹窗
+ */
+export function renderDeviceLimitDialog(
+  devices: BoundDevice[],
+  deviceLimit: number,
+  onUnbind: (deviceId: string) => void,
+  onClose: () => void,
+  loading: boolean = false,
+): TemplateResult {
+  return html`
+    <div class="license-dialog-overlay" @click=${onClose}>
+      <div class="license-dialog license-device-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header license-urgency-warning">
+          <h2>⚠️ 设备数超限</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>您的授权码最多可绑定 <strong>${deviceLimit}</strong> 台设备，请解绑其他设备后再试。</p>
+          <div class="license-device-list">
+            ${devices.map(
+              (device) => html`
+                <div class="license-device-item ${device.isCurrent ? "current" : ""}">
+                  <div class="license-device-info">
+                    <span class="license-device-name">${device.deviceName}</span>
+                    <span class="license-device-os">${device.osInfo}</span>
+                    <span class="license-device-time">最后活跃: ${formatTime(device.lastActiveAt)}</span>
+                  </div>
+                  ${device.isCurrent
+                    ? html`<span class="license-device-badge">当前设备</span>`
+                    : html`
+                        <button
+                          class="license-btn license-btn-danger license-btn-small"
+                          @click=${() => onUnbind(device.deviceId)}
+                          ?disabled=${loading}
+                        >
+                          解绑
+                        </button>
+                      `}
+                </div>
+              `,
+            )}
+          </div>
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-secondary" @click=${onClose}>
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染离线模式提示条
+ */
+export function renderOfflineBanner(
+  remainingHours: number,
+  onDismiss: () => void,
+): TemplateResult {
+  return html`
+    <div class="license-offline-banner">
+      <span class="license-offline-icon">📡</span>
+      <span class="license-offline-text">
+        离线模式运行中，剩余 ${remainingHours.toFixed(1)} 小时。请尽快连接网络以继续使用。
+      </span>
+      <button class="license-offline-dismiss" @click=${onDismiss}>×</button>
+    </div>
+  `;
+}
+
+/**
+ * 格式化时间
+ */
+function formatTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return isoString;
+  }
+}

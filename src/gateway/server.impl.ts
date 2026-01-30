@@ -70,8 +70,10 @@ import { startGatewayTailscaleExposure } from "./server-tailscale.js";
 import { loadGatewayTlsRuntime } from "./server/tls.js";
 import { createWizardSessionTracker } from "./server-wizard-sessions.js";
 import { attachGatewayWsHandlers } from "./server-ws-runtime.js";
+import { checkLicenseOnGatewayStart, getGatewayLicenseState } from "./license-check.js";
 
 export { __resetModelCatalogCacheForTest } from "./server-model-catalog.js";
+export { getGatewayLicenseState } from "./license-check.js";
 
 ensureClawdbotCliOnPath();
 
@@ -210,6 +212,17 @@ export async function startGatewayServer(
   }
 
   const cfgAtStart = loadConfig();
+
+  // ========== License Verification (ClawdbotCN) ==========
+  const licenseResult = await checkLicenseOnGatewayStart(cfgAtStart);
+  if (licenseResult && !licenseResult.canProceed) {
+    // 授权验证失败，但不阻止启动（允许用户通过 UI 激活）
+    // 仅记录警告，实际的限制由 UI 层处理
+    log.warn(`License verification failed: ${licenseResult.error}`);
+    log.warn("Gateway will start but some features may be restricted");
+  }
+  // ========================================================
+
   const diagnosticsEnabled = isDiagnosticsEnabled(cfgAtStart);
   if (diagnosticsEnabled) {
     startDiagnosticHeartbeat();

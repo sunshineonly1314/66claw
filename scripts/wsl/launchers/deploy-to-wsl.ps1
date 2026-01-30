@@ -1,6 +1,10 @@
 # Clawdbot 部署到 WSL 脚本
 # 将 Clawdbot 包部署到 WSL 中
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [string]$PackagePath = ".\wsl-package",
     [string]$WslDistro = "Ubuntu",

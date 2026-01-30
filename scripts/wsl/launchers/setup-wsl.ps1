@@ -1,6 +1,10 @@
 # Clawdbot WSL 环境配置脚本
 # 检查并安装 WSL2 环境
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $ErrorActionPreference = "Stop"
 
 Write-Host ""

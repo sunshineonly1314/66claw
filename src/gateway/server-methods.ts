@@ -24,6 +24,7 @@ import { usageHandlers } from "./server-methods/usage.js";
 import { voicewakeHandlers } from "./server-methods/voicewake.js";
 import { webHandlers } from "./server-methods/web.js";
 import { wizardHandlers } from "./server-methods/wizard.js";
+import { registerLicenseMethods } from "./server-methods/license.js";
 
 const ADMIN_SCOPE = "operator.admin";
 const READ_SCOPE = "operator.read";
@@ -71,6 +72,9 @@ const READ_METHODS = new Set([
   "node.list",
   "node.describe",
   "chat.history",
+  // License methods
+  "license.status",
+  "license.devices",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -78,6 +82,10 @@ const WRITE_METHODS = new Set([
   "agent.wait",
   "wake",
   "talk.mode",
+  // License methods
+  "license.activate",
+  "license.unbind",
+  "license.notification.ack",
   "tts.enable",
   "tts.disable",
   "tts.convert",
@@ -168,6 +176,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...usageHandlers,
   ...agentHandlers,
   ...agentsHandlers,
+  ...registerLicenseMethods(),
 };
 
 export async function handleGatewayRequest(

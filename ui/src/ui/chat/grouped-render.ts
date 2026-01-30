@@ -55,15 +55,37 @@ function extractImages(message: unknown): ImageBlock[] {
   return images;
 }
 
-export function renderReadingIndicatorGroup(assistant?: AssistantIdentity) {
+// Timeout thresholds in milliseconds
+const TIMEOUT_WARNING_MS = 30000; // 30 seconds - show warning hint
+const TIMEOUT_LONG_WAIT_MS = 15000; // 15 seconds - show "still waiting"
+
+export function renderReadingIndicatorGroup(
+  assistant?: AssistantIdentity,
+  startedAt?: number | null,
+) {
+  const elapsed = startedAt ? Date.now() - startedAt : 0;
+  const elapsedSeconds = Math.floor(elapsed / 1000);
+  const isTimeout = elapsed >= TIMEOUT_WARNING_MS;
+  const isLongWait = elapsed >= TIMEOUT_LONG_WAIT_MS && !isTimeout;
+
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
-        <div class="chat-bubble chat-reading-indicator" aria-hidden="true">
-          <span class="chat-reading-indicator__dots">
-            <span></span><span></span><span></span>
-          </span>
+        <div class="chat-bubble chat-reading-indicator ${isTimeout ? "chat-reading-indicator--timeout" : ""}" aria-hidden="true">
+          <div class="chat-reading-indicator__content">
+            <span class="chat-reading-indicator__dots">
+              <span></span><span></span><span></span>
+            </span>
+            <span class="chat-reading-indicator__text">
+              ${isTimeout
+                ? html`<span class="chat-reading-indicator__warning">暂未收到响应，请检查大模型是否有足够的 Token 额度</span>`
+                : isLongWait
+                  ? html`<span class="chat-reading-indicator__hint">仍在等待中，请耐心稍候...</span>`
+                  : html`<span class="chat-reading-indicator__waiting">等待响应中</span>`}
+              <span class="chat-reading-indicator__timer">${elapsedSeconds}s</span>
+            </span>
+          </div>
         </div>
       </div>
     </div>

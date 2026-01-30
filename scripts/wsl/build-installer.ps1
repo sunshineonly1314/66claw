@@ -8,6 +8,10 @@
 #   2. 已运行 build-standalone.sh 生成 WSL 包
 #   3. 或者在 WSL 中运行: ./build-standalone.sh
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [string]$Version = "2026.1.29",
     [switch]$SkipBuildPackage

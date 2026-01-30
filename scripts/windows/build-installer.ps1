@@ -8,6 +8,10 @@
 #   2. pnpm install && pnpm build
 #   3. 下载 Node.js 便携版到 scripts/windows/node-portable/
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [string]$Version = "2026.1.25",
     [string]$NodeVersion = "22.12.0",

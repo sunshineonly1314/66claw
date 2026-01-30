@@ -1,6 +1,10 @@
 # Clawdbot Windows Standalone Builder
 # 创建包含 Node.js 的完整独立安装包
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [string]$OutputDir = "..\..\build\windows-standalone",
     [string]$NodeVersion = "22.13.1"
@@ -141,7 +145,7 @@ echo    控制台: http://localhost:18789/
 echo    配置:   http://localhost:18789/setup
 echo.
 pause
-"@ | Out-File -FilePath "$StandaloneDir\说明.bat" -Encoding ASCII
+"@ | Out-File -FilePath "$StandaloneDir\说明.bat" -Encoding UTF8
 
 # Create start.bat
 @"
@@ -161,7 +165,7 @@ echo  按 Ctrl+C 停止服务
 echo.
 "%~dp0node\node.exe" "%~dp0dist\entry.js" gateway run --port 18789
 pause
-"@ | Out-File -FilePath "$StandaloneDir\start.bat" -Encoding ASCII
+"@ | Out-File -FilePath "$StandaloneDir\start.bat" -Encoding UTF8
 
 # Create setup.bat
 @"
@@ -176,14 +180,14 @@ echo  正在启动服务并打开配置页面...
 echo.
 start "" "http://localhost:18789/setup"
 "%~dp0node\node.exe" "%~dp0dist\entry.js" gateway run --port 18789
-"@ | Out-File -FilePath "$StandaloneDir\setup.bat" -Encoding ASCII
+"@ | Out-File -FilePath "$StandaloneDir\setup.bat" -Encoding UTF8
 
 # Create silent start (for autostart)
 @"
 @echo off
 cd /d "%~dp0"
 start /min "" "%~dp0node\node.exe" "%~dp0dist\entry.js" gateway run --port 18789
-"@ | Out-File -FilePath "$StandaloneDir\start-silent.bat" -Encoding ASCII
+"@ | Out-File -FilePath "$StandaloneDir\start-silent.bat" -Encoding UTF8
 
 # Create README
 @"

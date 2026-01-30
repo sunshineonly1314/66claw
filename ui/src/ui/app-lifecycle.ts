@@ -25,12 +25,15 @@ type LifecycleHost = {
   chatLoading: boolean;
   chatMessages: unknown[];
   chatToolMessages: unknown[];
-  chatStream: string;
+  chatStream: string | null;
+  chatStreamStartedAt: number | null;
   logsAutoFollow: boolean;
   logsAtBottom: boolean;
   logsEntries: unknown[];
   popStateHandler: () => void;
   topbarObserver: ResizeObserver | null;
+  readingIndicatorTimer: number | null;
+  requestUpdate: () => void;
 };
 
 export function handleConnected(host: LifecycleHost) {
@@ -73,6 +76,11 @@ export function handleDisconnected(host: LifecycleHost) {
   );
   host.topbarObserver?.disconnect();
   host.topbarObserver = null;
+  // Clean up reading indicator timer
+  if (host.readingIndicatorTimer !== null) {
+    window.clearInterval(host.readingIndicatorTimer);
+    host.readingIndicatorTimer = null;
+  }
 }
 
 export function handleUpdated(
@@ -106,6 +114,25 @@ export function handleUpdated(
         host as unknown as Parameters<typeof scheduleLogsScroll>[0],
         changed.has("tab") || changed.has("logsAutoFollow"),
       );
+    }
+  }
+
+  // Reading indicator timer - refresh every second when waiting for first response
+  if (changed.has("chatStream") || changed.has("chatStreamStartedAt")) {
+    const isWaitingForResponse =
+      host.chatStream !== null &&
+      host.chatStream.trim().length === 0 &&
+      host.chatStreamStartedAt !== null;
+
+    if (isWaitingForResponse && host.readingIndicatorTimer === null) {
+      // Start timer to refresh reading indicator every second
+      host.readingIndicatorTimer = window.setInterval(() => {
+        host.requestUpdate();
+      }, 1000);
+    } else if (!isWaitingForResponse && host.readingIndicatorTimer !== null) {
+      // Stop timer when no longer waiting
+      window.clearInterval(host.readingIndicatorTimer);
+      host.readingIndicatorTimer = null;
     }
   }
 }

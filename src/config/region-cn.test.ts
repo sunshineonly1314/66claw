@@ -343,6 +343,14 @@ describe("getAffiliateLink()", () => {
 
     expect(link).toBeNull();
   });
+
+  it("volcengine-ark 推广链接应使用 partner.volcengine.com", () => {
+    const link = getAffiliateLink("volcengine-ark");
+
+    expect(link).not.toBeNull();
+    expect(link?.affiliateUrl).toMatch(/^https:\/\/partner\.volcengine\.com\//);
+    expect(link?.affiliateUrl).toContain("inviteToken=");
+  });
 });
 
 describe("isChannelHiddenInCn()", () => {

@@ -2,6 +2,10 @@
 # 适用于: 从 Windows 通过 SSH 部署到 WSL Ubuntu
 # 目标: kslinux@kevinUp:/home/clawdbot
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [switch]$SkipBuild,
     [switch]$OnlyBuild,

@@ -181,7 +181,7 @@ AI服务    →   安全设置   →   工作目录   →   指挥渠道   →  
 
 | 平台 | 默认路径 |
 |------|---------|
-| Windows | `C:\Clawdbot\workspace` |
+| Windows | `D:\Clawdbot\workspace` |
 | macOS | `~/.clawbotcn/workspace` |
 | Linux | `/opt/clawdbot/workspace` |
 

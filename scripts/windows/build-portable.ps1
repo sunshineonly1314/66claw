@@ -1,6 +1,10 @@
 # Clawdbot Windows Portable Builder
 # 创建 Windows 便携版安装包
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [string]$OutputDir = "..\..\build\windows"
 )
@@ -121,7 +125,7 @@ echo    首次使用: 双击 setup.bat 打开配置向导
 echo    日常使用: 双击 start.bat 启动服务（推荐创建桌面快捷方式）
 echo.
 pause
-"@ | Out-File -FilePath "$PortableDir\install.bat" -Encoding ASCII
+"@ | Out-File -FilePath "$PortableDir\install.bat" -Encoding UTF8
 
 # Create start.bat
 Write-Host "Creating start.bat..."
@@ -147,7 +151,7 @@ echo  按 Ctrl+C 停止服务
 echo.
 node dist\entry.js gateway run --port 18789
 pause
-"@ | Out-File -FilePath "$PortableDir\start.bat" -Encoding ASCII
+"@ | Out-File -FilePath "$PortableDir\start.bat" -Encoding UTF8
 
 # Create setup.bat
 Write-Host "Creating setup.bat..."
@@ -167,7 +171,7 @@ echo.
 start "" "http://localhost:18789/setup"
 echo  正在启动服务...
 node dist\entry.js gateway run --port 18789
-"@ | Out-File -FilePath "$PortableDir\setup.bat" -Encoding ASCII
+"@ | Out-File -FilePath "$PortableDir\setup.bat" -Encoding UTF8
 
 # Create README
 Write-Host "Creating README..."

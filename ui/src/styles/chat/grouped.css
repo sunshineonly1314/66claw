@@ -237,18 +237,104 @@ img.chat-avatar {
   background: rgba(255, 77, 77, 0.15);
 }
 
-/* Streaming animation */
+/* Streaming animation - Enhanced with subtle glow effect */
 .chat-bubble.streaming {
-  animation: pulsing-border 1.5s ease-out infinite;
+  animation: pulsing-border 2s ease-in-out infinite;
+  position: relative;
+  overflow: visible;
+}
+
+/* Outer glow layer - subtle breathing light */
+.chat-bubble.streaming::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: calc(var(--radius-lg) + 2px);
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb, 234, 88, 12), 0.15) 0%,
+    rgba(var(--accent-rgb, 234, 88, 12), 0.05) 50%,
+    rgba(var(--accent-rgb, 234, 88, 12), 0.15) 100%
+  );
+  animation: streaming-glow 2s ease-in-out infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Inner shimmer effect - typing cursor feel */
+.chat-bubble.streaming::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--accent-rgb, 234, 88, 12), 0.06) 50%,
+    transparent 100%
+  );
+  animation: streaming-shimmer 1.8s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes pulsing-border {
   0%, 100% {
     border-color: var(--border);
+    box-shadow: 0 0 0 0 rgba(var(--accent-rgb, 234, 88, 12), 0);
   }
   50% {
-    border-color: var(--accent);
+    border-color: rgba(var(--accent-rgb, 234, 88, 12), 0.5);
+    box-shadow: 0 0 12px 0 rgba(var(--accent-rgb, 234, 88, 12), 0.15);
   }
+}
+
+@keyframes streaming-glow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.01);
+  }
+}
+
+@keyframes streaming-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  50%, 100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Light theme streaming adjustments */
+:root[data-theme="light"] .chat-bubble.streaming {
+  box-shadow: 0 2px 12px rgba(234, 88, 12, 0.08);
+}
+
+:root[data-theme="light"] .chat-bubble.streaming::before {
+  background: linear-gradient(
+    135deg,
+    rgba(234, 88, 12, 0.1) 0%,
+    rgba(234, 88, 12, 0.03) 50%,
+    rgba(234, 88, 12, 0.1) 100%
+  );
+}
+
+:root[data-theme="light"] .chat-bubble.streaming::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(234, 88, 12, 0.05) 50%,
+    transparent 100%
+  );
 }
 
 /* Fade-in animation for new messages */

@@ -120,6 +120,155 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MANAGED_SKILLS_DIR = path.join(CONFIG_DIR, "skills");
 
 // ============================================================================
+// Bundled Skills Support (本地预打包 Skills 支持)
+// ============================================================================
+
+/**
+ * 获取 bundled skills 目录中的技能路径
+ */
+function getBundledSkillPath(skillName: string): string | null {
+  const bundledDir = process.env.CLAWDBOT_BUNDLED_SKILLS_DIR?.trim();
+  if (!bundledDir) return null;
+
+  const skillPath = path.join(bundledDir, skillName);
+  const skillMdPath = path.join(skillPath, "SKILL.md");
+
+  if (fs.existsSync(skillMdPath)) {
+    return skillPath;
+  }
+
+  return null;
+}
+
+/**
+ * 递归复制目录
+ */
+async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  await ensureDir(dest);
+  const entries = await fs.promises.readdir(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyDirRecursive(srcPath, destPath);
+    } else {
+      await fs.promises.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * 递归列出目录中的所有文件
+ */
+async function listFilesRecursive(dir: string): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const subFiles = await listFilesRecursive(fullPath);
+      files.push(...subFiles);
+    } else {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}
+
+/**
+ * 从 bundled skills 目录安装（本地复制，秒级完成）
+ */
+async function installFromBundled(
+  skillName: string,
+  targetDir: string,
+): Promise<InstallSkillResult | null> {
+  const bundledPath = getBundledSkillPath(skillName);
+  if (!bundledPath) {
+    return null; // bundled 中没有这个 skill
+  }
+
+  const destPath = path.join(targetDir, skillName);
+
+  logger.info("Installing skill from bundled (local copy)", {
+    name: skillName,
+    source: bundledPath,
+    target: destPath,
+  });
+
+  try {
+    // 如果目标已存在，先删除
+    if (fs.existsSync(destPath)) {
+      await fs.promises.rm(destPath, { recursive: true, force: true });
+    }
+
+    // 复制整个目录
+    await copyDirRecursive(bundledPath, destPath);
+
+    // 验证 SKILL.md 存在
+    const skillMdPath = path.join(destPath, "SKILL.md");
+    if (!fs.existsSync(skillMdPath)) {
+      await fs.promises.rm(destPath, { recursive: true, force: true });
+      return { ok: false, error: "SKILL.md not found after copy" };
+    }
+
+    // 列出安装的文件
+    const files = await listFilesRecursive(destPath);
+
+    logger.info("Skill installed from bundled successfully", {
+      name: skillName,
+      fileCount: files.length,
+    });
+
+    return {
+      ok: true,
+      skillDir: destPath,
+      files,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn("Failed to install from bundled, will try remote", {
+      name: skillName,
+      error: message,
+    });
+    return null;
+  }
+}
+
+/**
+ * 检查技能是否在 bundled 目录中可用
+ */
+export function isSkillInBundled(skillName: string): boolean {
+  return getBundledSkillPath(skillName) !== null;
+}
+
+/**
+ * 获取 bundled 目录中的所有技能名
+ */
+export function getBundledSkillNames(): string[] {
+  const bundledDir = process.env.CLAWDBOT_BUNDLED_SKILLS_DIR?.trim();
+  if (!bundledDir || !fs.existsSync(bundledDir)) {
+    return [];
+  }
+
+  try {
+    const entries = fs.readdirSync(bundledDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .filter((entry) => {
+        const skillMd = path.join(bundledDir, entry.name, "SKILL.md");
+        return fs.existsSync(skillMd);
+      })
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
 // URL Builders
 // ============================================================================
 
@@ -395,25 +544,35 @@ async function downloadSkillDirectory(
 
 /**
  * Install a skill from remote repository to local managed skills directory
- * 根据 CLAWDBOT_SKILLS_PROVIDER 环境变量选择数据源：
- * - "clawdskillsproxy" (默认): 使用阿里云 ClawdSkillsProxy 服务
- * - "gitee": 使用原 Gitee 仓库
+ * 
+ * 安装优先级：
+ * 1. bundled skills (本地预打包，秒级完成)
+ * 2. ClawdSkillsProxy (阿里云代理服务)
+ * 3. Gitee 仓库 (直接下载)
  */
 export async function installRemoteSkill(
   skillMeta: RemoteSkillMeta,
   config: GiteeRegistryConfig = DEFAULT_GITEE_REGISTRY,
   targetDir?: string,
 ): Promise<InstallSkillResult> {
+  const skillsDir = targetDir ?? MANAGED_SKILLS_DIR;
+
+  // ★ 优先从 bundled 安装（本地复制，秒级完成）
+  const bundledResult = await installFromBundled(skillMeta.name, skillsDir);
+  if (bundledResult) {
+    return bundledResult;
+  }
+
   // 检查是否使用 ClawdSkillsProxy
   if (useProxy()) {
-    logger.debug("Using ClawdSkillsProxy for skill installation", { name: skillMeta.name });
+    logger.debug("Skill not in bundled, downloading from ClawdSkillsProxy", { name: skillMeta.name });
     return installProxySkill(skillMeta, DEFAULT_PROXY_CONFIG, targetDir);
   }
 
   // 原 Gitee 逻辑
-  const skillDir = path.join(targetDir ?? MANAGED_SKILLS_DIR, skillMeta.name);
+  const skillDir = path.join(skillsDir, skillMeta.name);
 
-  logger.info("Installing remote skill from Gitee", {
+  logger.info("Skill not in bundled, downloading from Gitee", {
     name: skillMeta.name,
     targetDir: skillDir,
   });
@@ -453,7 +612,7 @@ export async function installRemoteSkill(
       return { ok: false, error: "SKILL.md not found in remote skill" };
     }
 
-    logger.info("Skill installed successfully", {
+    logger.info("Skill installed successfully from Gitee", {
       name: skillMeta.name,
       fileCount: downloadedFiles.length,
     });

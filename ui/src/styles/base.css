@@ -39,6 +39,7 @@
 
   /* Accent - Punchy signature red */
   --accent: #ff5c5c;
+  --accent-rgb: 255, 92, 92;
   --accent-hover: #ff7070;
   --accent-muted: #ff5c5c;
   --accent-subtle: rgba(255, 92, 92, 0.15);
@@ -145,6 +146,7 @@
   --input: #e4e4e7;
 
   --accent: #dc2626;
+  --accent-rgb: 220, 38, 38;
   --accent-hover: #ef4444;
   --accent-muted: #dc2626;
   --accent-subtle: rgba(220, 38, 38, 0.12);

@@ -93,6 +93,7 @@ export const en = {
   "nav.config": "Config",
   "nav.debug": "Debug",
   "nav.logs": "Logs",
+  "nav.docs": "Docs",
 
   // ============================================================================
   // 概览页 (Overview)
@@ -152,6 +153,10 @@ export const en = {
   "chat.thinkingLow": "Low",
   "chat.thinkingMedium": "Medium",
   "chat.thinkingHigh": "High",
+  "chat.waiting": "Waiting for response",
+  "chat.waitingSeconds": "{{seconds}}s",
+  "chat.timeoutHint": "No response received. Please check if the AI model has sufficient token credits.",
+  "chat.stillWaiting": "Still waiting, please be patient...",
 
   // ============================================================================
   // 渠道页 (Channels)
@@ -490,6 +495,20 @@ export const en = {
   "subtitle.config": "Edit ~/.clawdbot/clawdbot.json safely.",
   "subtitle.debug": "Gateway snapshots, events, and manual RPC calls.",
   "subtitle.logs": "Live tail of the gateway file logs.",
+  "subtitle.docs": "Search and browse Clawdbot documentation.",
+
+  // ============================================================================
+  // 文档中心 (Docs Center)
+  // ============================================================================
+  "docs.searchPlaceholder": "Search for what you want to know...",
+  "docs.recentlyViewed": "Recently Viewed",
+  "docs.favorites": "Favorites",
+  "docs.relatedDocs": "Related Docs",
+  "docs.back": "Back",
+  "docs.addFavorite": "Add to favorites",
+  "docs.removeFavorite": "Remove from favorites",
+  "docs.noResults": "No matching documents found",
+  "docs.searchHint": "Try other keywords or browse categories",
 
   // ============================================================================
   // 定时任务详细 (Cron Details)

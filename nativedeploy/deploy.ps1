@@ -2,6 +2,10 @@
 # 部署目标: WSL Ubuntu (kslinux@kevinUp)
 # 目标路径: /home/clawdbot
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [switch]$SkipBuild,
     [switch]$OnlyBuild,

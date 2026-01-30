@@ -30,6 +30,8 @@ import type {
 import type { DevicePairingList } from "./controllers/devices";
 import type { ExecApprovalRequest } from "./controllers/exec-approval";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
+import type { DocsViewState } from "./views/docs";
+import type { LicenseUiState, LicenseDialogType, BoundDevice } from "./license/types";
 
 export type AppViewState = {
   settings: UiSettings;
@@ -74,6 +76,13 @@ export type AppViewState = {
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalBusy: boolean;
   execApprovalError: string | null;
+  // License 状态 (ClawdbotCN)
+  licenseState: LicenseUiState;
+  showLicenseDialog: LicenseDialogType | null;
+  licenseActivating: boolean;
+  licenseActivationError: string | null;
+  licenseBoundDevices: BoundDevice[];
+  showOfflineBanner: boolean;
   configLoading: boolean;
   configRaw: string;
   configRawOriginal: string;
@@ -144,6 +153,8 @@ export type AppViewState = {
   playgroundReport?: SkillStatusReport | null;
   playgroundError?: string | null;
   playgroundActiveCategory?: string | null;
+  // 文档中心状态
+  docsViewState: DocsViewState;
   debugLoading: boolean;
   debugStatus: StatusSummary | null;
   debugHealth: HealthSnapshot | null;

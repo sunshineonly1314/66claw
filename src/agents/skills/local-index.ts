@@ -67,47 +67,76 @@ const SCHEMA_VERSION = 1;
 const DEFAULT_STALE_MS = 5 * 60 * 1000;
 
 // ============================================================================
-// Core Functions
+// Bundled Index Support (预打包索引支持)
 // ============================================================================
 
 /**
- * 读取本地索引文件
- * @returns 本地索引，如果文件不存在或格式错误返回 null
+ * 获取 bundled skills-index.json 路径
+ * 优先查找 CLAWDBOT_BUNDLED_SKILLS_DIR 同级或父级目录
  */
-export async function readLocalIndex(): Promise<LocalSkillsIndex | null> {
-  try {
-    if (!fs.existsSync(LOCAL_INDEX_PATH)) {
-      return null;
+function getBundledIndexPath(): string | null {
+  const bundledDir = process.env.CLAWDBOT_BUNDLED_SKILLS_DIR?.trim();
+  if (!bundledDir) return null;
+
+  // 尝试多个可能的位置
+  const candidates = [
+    path.join(bundledDir, "skills-index.json"),           // bundled-skills/skills-index.json
+    path.join(path.dirname(bundledDir), "skills-index.json"), // bundled-skills/../skills-index.json
+    path.join(bundledDir, "..", "skills-index.json"),     // 同上，另一种写法
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
     }
-    const content = await fsp.readFile(LOCAL_INDEX_PATH, "utf-8");
+  }
+
+  return null;
+}
+
+/**
+ * 读取 bundled 预打包索引
+ */
+async function readBundledIndex(): Promise<LocalSkillsIndex | null> {
+  const bundledPath = getBundledIndexPath();
+  if (!bundledPath) return null;
+
+  try {
+    const content = await fsp.readFile(bundledPath, "utf-8");
     const data = JSON.parse(content) as LocalSkillsIndex;
 
     // 验证格式版本
     if (data.schemaVersion !== SCHEMA_VERSION) {
-      logger.debug("Local index schema version mismatch, treating as stale", {
+      logger.debug("Bundled index schema version mismatch", {
         expected: SCHEMA_VERSION,
         actual: data.schemaVersion,
+        path: bundledPath,
       });
       return null;
     }
 
+    logger.info("Using bundled skills index", {
+      path: bundledPath,
+      skillCount: data.remote?.length ?? 0,
+    });
+
     return data;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.debug("Failed to read local index", { error: message });
+    logger.debug("Failed to read bundled index", { error: message, path: bundledPath });
     return null;
   }
 }
 
 /**
- * 同步读取本地索引（用于启动时快速检查）
+ * 同步读取 bundled 预打包索引
  */
-export function readLocalIndexSync(): LocalSkillsIndex | null {
+function readBundledIndexSync(): LocalSkillsIndex | null {
+  const bundledPath = getBundledIndexPath();
+  if (!bundledPath) return null;
+
   try {
-    if (!fs.existsSync(LOCAL_INDEX_PATH)) {
-      return null;
-    }
-    const content = fs.readFileSync(LOCAL_INDEX_PATH, "utf-8");
+    const content = fs.readFileSync(bundledPath, "utf-8");
     const data = JSON.parse(content) as LocalSkillsIndex;
 
     if (data.schemaVersion !== SCHEMA_VERSION) {
@@ -118,6 +147,64 @@ export function readLocalIndexSync(): LocalSkillsIndex | null {
   } catch {
     return null;
   }
+}
+
+// ============================================================================
+// Core Functions
+// ============================================================================
+
+/**
+ * 读取本地索引文件
+ * 优先级：用户缓存 (~/.clawdbot/skills-index.json) > bundled 预打包索引
+ * @returns 本地索引，如果文件不存在或格式错误返回 null
+ */
+export async function readLocalIndex(): Promise<LocalSkillsIndex | null> {
+  // 1. 优先读取用户缓存
+  try {
+    if (fs.existsSync(LOCAL_INDEX_PATH)) {
+      const content = await fsp.readFile(LOCAL_INDEX_PATH, "utf-8");
+      const data = JSON.parse(content) as LocalSkillsIndex;
+
+      // 验证格式版本
+      if (data.schemaVersion === SCHEMA_VERSION) {
+        return data;
+      }
+
+      logger.debug("Local index schema version mismatch, trying bundled", {
+        expected: SCHEMA_VERSION,
+        actual: data.schemaVersion,
+      });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.debug("Failed to read local index, trying bundled", { error: message });
+  }
+
+  // 2. 回退到 bundled 预打包索引
+  return readBundledIndex();
+}
+
+/**
+ * 同步读取本地索引（用于启动时快速检查）
+ * 优先级：用户缓存 > bundled 预打包索引
+ */
+export function readLocalIndexSync(): LocalSkillsIndex | null {
+  // 1. 优先读取用户缓存
+  try {
+    if (fs.existsSync(LOCAL_INDEX_PATH)) {
+      const content = fs.readFileSync(LOCAL_INDEX_PATH, "utf-8");
+      const data = JSON.parse(content) as LocalSkillsIndex;
+
+      if (data.schemaVersion === SCHEMA_VERSION) {
+        return data;
+      }
+    }
+  } catch {
+    // 继续尝试 bundled
+  }
+
+  // 2. 回退到 bundled 预打包索引
+  return readBundledIndexSync();
 }
 
 /**
@@ -204,20 +291,35 @@ export function toMarketResponse(
       skills: [],
       lastSyncedAt: null,
       syncing,
-      message: syncing ? "正在获取技能市场数据..." : "技能市场索引尚未同步",
+      message: syncing ? "正在获取技能市场数据..." : "技能市场索引尚未加载，请点击刷新",
     };
   }
 
-  const installedSet = new Set(localIndex.installed);
+  // 验证索引数据完整性
+  if (!Array.isArray(localIndex.remote)) {
+    return {
+      skills: [],
+      lastSyncedAt: localIndex.lastSyncedAt,
+      syncing,
+      message: "技能索引数据异常，请点击刷新",
+    };
+  }
+
+  const installedSet = new Set(localIndex.installed ?? []);
   const skills: MarketSkillEntry[] = localIndex.remote.map((skill) => ({
     ...skill,
     installed: installedSet.has(skill.name),
   }));
 
+  // 来源标识
+  const isBundled = localIndex.sourceUrl === "bundled";
+  const message = isBundled && syncing ? "使用预置索引，正在后台更新..." : undefined;
+
   return {
     skills,
     lastSyncedAt: localIndex.lastSyncedAt,
     syncing,
+    message,
   };
 }
 
@@ -226,4 +328,18 @@ export function toMarketResponse(
  */
 export function getLocalIndexPath(): string {
   return LOCAL_INDEX_PATH;
+}
+
+/**
+ * 获取 bundled 索引路径（如果存在）
+ */
+export function getBundledSkillsIndexPath(): string | null {
+  return getBundledIndexPath();
+}
+
+/**
+ * 检查是否有可用的 bundled 索引
+ */
+export function hasBundledIndex(): boolean {
+  return getBundledIndexPath() !== null;
 }

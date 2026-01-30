@@ -1,5 +1,9 @@
 # Clawdbot WSL 环境检查脚本
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host " Clawdbot WSL 环境检查" -ForegroundColor Cyan

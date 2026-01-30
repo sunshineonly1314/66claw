@@ -512,40 +512,313 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       font-size: 0.85em;
     }
 
-    /* 提供商网格布局 */
-    .provider-grid {
+    /* ============================================
+       Step 1 AI服务选择 - 优化版样式
+       ============================================ */
+    
+    /* 小提示 */
+    .provider-tip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      background: linear-gradient(135deg, rgba(60, 131, 246, 0.12) 0%, rgba(60, 131, 246, 0.04) 100%);
+      border: 1px solid rgba(60, 131, 246, 0.25);
+      border-radius: var(--radius-lg);
+      margin-bottom: 24px;
+      color: var(--accent-blue-light);
+      font-size: 0.95em;
+    }
+    .provider-tip-icon {
+      font-size: 1.3em;
+    }
+
+    /* 推荐服务商区域 */
+    .provider-recommended-section {
+      margin-bottom: 20px;
+    }
+    .provider-section-title {
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      letter-spacing: 0.5px;
+    }
+    .provider-recommended-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 16px;
     }
     @media (max-width: 900px) {
-      .provider-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-    @media (max-width: 600px) {
-      .provider-grid {
+      .provider-recommended-grid {
         grid-template-columns: 1fr;
       }
     }
-    .provider-grid .option-card {
-      padding: 16px;
+
+    /* 推荐服务商卡片 */
+    .provider-card {
+      background: var(--bg-tertiary);
+      border: 2px solid var(--border-default);
+      border-radius: var(--radius-xl);
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+      text-align: center;
+    }
+    .provider-card:hover {
+      border-color: var(--border-accent);
+      background: var(--bg-hover);
+      transform: translateY(-2px);
+    }
+    .provider-card.selected {
+      border-color: var(--accent-blue);
+      background: linear-gradient(135deg, rgba(60, 131, 246, 0.12) 0%, rgba(60, 131, 246, 0.04) 100%);
+      box-shadow: 0 0 20px rgba(60, 131, 246, 0.15);
+    }
+    .provider-card.featured {
+      border-color: var(--accent-blue);
+    }
+    .provider-card-badge {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #3c83f6 0%, #60a5fa 100%);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.75em;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .provider-card-icon {
+      font-size: 2.5em;
+      margin-bottom: 12px;
+    }
+    .provider-card-name {
+      font-size: 1.15em;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .provider-card-desc {
+      font-size: 0.85em;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+    .provider-card-link {
+      display: inline-block;
+      font-size: 0.85em;
+      color: var(--accent-blue);
+      text-decoration: none;
+      padding: 6px 12px;
+      background: rgba(60, 131, 246, 0.1);
+      border-radius: var(--radius-sm);
+      transition: all 0.2s ease;
+    }
+    .provider-card-link:hover {
+      background: rgba(60, 131, 246, 0.2);
+    }
+    .provider-card-check {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      opacity: 0;
+      transition: all 0.2s ease;
+    }
+    .provider-card-check .material-icons {
+      font-size: 24px;
+      color: var(--accent-blue);
+    }
+    .provider-card.selected .provider-card-check {
+      opacity: 1;
+    }
+
+    /* 其他服务商折叠区域 */
+    .provider-other-section {
+      margin-bottom: 24px;
+    }
+    .provider-other-toggle {
       display: flex;
-      flex-direction: column;
-      min-height: 100px;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 0.95em;
+      transition: all 0.2s ease;
     }
-    .provider-grid .option-card-header {
-      margin-bottom: 6px;
+    .provider-other-toggle:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
     }
-    .provider-grid .option-icon {
-      width: 36px;
-      height: 36px;
-      font-size: 1.1em;
+    .provider-other-toggle .material-icons {
+      transition: transform 0.2s ease;
     }
-    .provider-grid .option-desc {
-      font-size: 0.8em;
-      line-height: 1.4;
+    .provider-other-toggle.open .material-icons {
+      transform: rotate(180deg);
+    }
+    .provider-other-content {
+      margin-top: 12px;
+    }
+    .provider-other-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 600px) {
+      .provider-other-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .provider-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--bg-tertiary);
+      border: 2px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .provider-option:hover {
+      border-color: var(--border-accent);
+      background: var(--bg-hover);
+    }
+    .provider-option.selected {
+      border-color: var(--accent-blue);
+      background: rgba(60, 131, 246, 0.08);
+    }
+    .provider-option-icon {
+      font-size: 1.5em;
+    }
+    .provider-option-info {
       flex: 1;
+    }
+    .provider-option-name {
+      font-weight: 600;
+      font-size: 0.95em;
+    }
+    .provider-option-desc {
+      font-size: 0.8em;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+    .provider-option-check {
+      opacity: 0;
+      transition: all 0.2s ease;
+    }
+    .provider-option-check .material-icons {
+      font-size: 20px;
+      color: var(--accent-blue);
+    }
+    .provider-option.selected .provider-option-check {
+      opacity: 1;
+    }
+
+    /* API Key 输入区域优化 */
+    .apikey-section {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .apikey-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .apikey-header-icon {
+      font-size: 1.2em;
+    }
+    .apikey-input-wrapper {
+      display: flex;
+      gap: 8px;
+    }
+    .apikey-input {
+      flex: 1;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.95em;
+    }
+    .apikey-input:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+    .apikey-paste-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 12px 16px;
+      background: var(--accent-blue);
+      border: none;
+      border-radius: var(--radius-md);
+      color: white;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .apikey-paste-btn:hover {
+      background: var(--accent-blue-dark);
+    }
+    .apikey-paste-btn .material-icons {
+      font-size: 18px;
+    }
+    .apikey-toggle-btn {
+      padding: 12px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .apikey-toggle-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    /* 模型选择简化 */
+    .model-section {
+      margin-top: 16px;
+    }
+    .model-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    .model-hint {
+      font-size: 0.85em;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .model-select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-size: 0.95em;
+      cursor: pointer;
+    }
+    .model-select:focus {
+      outline: none;
+      border-color: var(--accent-blue);
     }
     .provider-grid .option-check {
       top: 12px;
@@ -712,127 +985,30 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     }
 
     /* ============================================
-       Step 2 安全设置页面优化样式
+       Step 2 安全设置页面优化样式 - 简化版
        ============================================ */
     
-    /* 安全设置卡片优化 */
-    #page2 .card-header h2 {
-      font-size: 1.8em;
-      margin-bottom: 12px;
-    }
-    #page2 .card-header p {
-      font-size: 1.1em;
-      color: var(--text-secondary);
-    }
-
-    /* 沙盒说明简化 */
-    .sandbox-intro {
-      background: linear-gradient(135deg, rgba(60, 131, 246, 0.08) 0%, rgba(60, 131, 246, 0.02) 100%);
-      border: 1px solid rgba(60, 131, 246, 0.2);
-      border-radius: var(--radius-lg);
-      padding: 20px 24px;
-      margin-bottom: 24px;
-      display: flex;
-      align-items: flex-start;
-      gap: 16px;
-    }
-    .sandbox-intro-icon {
-      font-size: 2em;
-      line-height: 1;
-    }
-    .sandbox-intro-content {
-      flex: 1;
-    }
-    .sandbox-intro-title {
-      font-size: 1.1em;
-      font-weight: 600;
-      color: var(--accent-blue-light);
-      margin-bottom: 6px;
-    }
-    .sandbox-intro-text {
-      font-size: 1em;
-      color: var(--text-secondary);
-      line-height: 1.6;
-    }
-
-    /* 风险提示简化 */
-    .risk-banner {
-      background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(249, 115, 22, 0.03) 100%);
-      border: 1px solid rgba(249, 115, 22, 0.3);
-      border-radius: var(--radius-lg);
-      padding: 20px 24px;
-      margin-bottom: 32px;
-    }
-    .risk-banner-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-    .risk-banner-icon {
-      font-size: 1.5em;
-    }
-    .risk-banner-title {
-      font-size: 1.1em;
-      font-weight: 600;
-      color: var(--accent-orange);
-    }
-    .risk-banner-content {
-      font-size: 1em;
-      color: var(--text-secondary);
-      line-height: 1.8;
-    }
-    .risk-banner-highlight {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(249, 115, 22, 0.15);
-      padding: 4px 12px;
-      border-radius: 6px;
-      color: var(--accent-orange);
-      font-weight: 500;
-      margin-top: 12px;
-    }
-
-    /* 安全模式选择卡片优化 */
-    .security-options {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-bottom: 28px;
-    }
-    @media (max-width: 900px) {
-      .security-options {
-        grid-template-columns: 1fr;
-        gap: 16px;
-      }
-    }
-    .security-card {
+    /* 推荐选项卡片 - 突出显示 */
+    .security-recommended-card {
       background: var(--bg-tertiary);
       border: 2px solid var(--border-default);
       border-radius: var(--radius-xl);
       padding: 24px;
+      margin-bottom: 20px;
       cursor: pointer;
       transition: all 0.25s ease;
       position: relative;
-      display: flex;
-      flex-direction: column;
     }
-    .security-card:hover {
+    .security-recommended-card:hover {
       border-color: var(--border-accent);
       background: var(--bg-hover);
-      transform: translateY(-2px);
     }
-    .security-card.selected {
+    .security-recommended-card.selected {
       border-color: var(--accent-blue);
-      background: rgba(60, 131, 246, 0.08);
+      background: linear-gradient(135deg, rgba(60, 131, 246, 0.12) 0%, rgba(60, 131, 246, 0.04) 100%);
       box-shadow: 0 0 20px rgba(60, 131, 246, 0.2);
     }
-    .security-card.recommended {
-      border-color: var(--accent-blue);
-    }
-    .security-card.recommended::before {
-      content: '⭐ 推荐';
+    .security-recommended-badge {
       position: absolute;
       top: -12px;
       left: 20px;
@@ -840,62 +1016,240 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       color: white;
       padding: 4px 14px;
       border-radius: 12px;
-      font-size: 0.8em;
+      font-size: 0.85em;
       font-weight: 600;
     }
-    .security-card-icon {
-      font-size: 2.5em;
-      margin-bottom: 16px;
-      text-align: center;
-    }
-    .security-card-title {
-      font-size: 1.2em;
-      font-weight: 600;
-      text-align: center;
-      margin-bottom: 12px;
+    .security-recommended-header {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
+      gap: 16px;
+      margin-bottom: 16px;
     }
-    .security-card-desc {
-      font-size: 0.95em;
-      color: var(--text-secondary);
-      line-height: 1.6;
-      text-align: center;
+    .security-recommended-icon {
+      font-size: 2.5em;
+    }
+    .security-recommended-info {
       flex: 1;
     }
-    .security-card-tag {
-      display: inline-block;
-      background: var(--bg-elevated);
-      color: var(--text-muted);
-      padding: 2px 10px;
-      border-radius: 12px;
-      font-size: 0.75em;
-      font-weight: 500;
+    .security-recommended-title {
+      font-size: 1.3em;
+      font-weight: 600;
+      color: var(--text-primary);
     }
-    .security-card-footer {
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid var(--border-subtle);
-      text-align: center;
+    .security-recommended-subtitle {
+      font-size: 0.95em;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+    .security-recommended-check {
+      opacity: 0;
+      transition: all 0.2s ease;
+    }
+    .security-recommended-check .material-icons {
+      font-size: 32px;
+      color: var(--accent-blue);
+    }
+    .security-recommended-card.selected .security-recommended-check {
+      opacity: 1;
+    }
+    .security-recommended-features {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-left: 56px;
+    }
+    .feature-item {
+      font-size: 1em;
+      line-height: 1.5;
+    }
+    .feature-item.positive {
+      color: var(--accent-green);
+    }
+    .feature-item.warning {
+      color: var(--accent-yellow);
+    }
+
+    /* 其他选项折叠区域 */
+    .security-other-options {
+      margin-bottom: 24px;
+    }
+    .security-other-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 0.95em;
+      transition: all 0.2s ease;
+    }
+    .security-other-toggle:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+    .security-other-toggle .material-icons {
+      transition: transform 0.2s ease;
+    }
+    .security-other-toggle.open .material-icons {
+      transform: rotate(180deg);
+    }
+    .security-other-content {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .security-option-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 20px;
+      background: var(--bg-tertiary);
+      border: 2px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .security-option-card:hover {
+      border-color: var(--border-accent);
+      background: var(--bg-hover);
+    }
+    .security-option-card.selected {
+      border-color: var(--accent-blue);
+      background: rgba(60, 131, 246, 0.08);
+    }
+    .security-option-icon {
+      font-size: 1.8em;
+    }
+    .security-option-content {
+      flex: 1;
+    }
+    .security-option-title {
+      font-size: 1.1em;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .security-option-desc {
+      font-size: 0.9em;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+    .security-option-check {
+      opacity: 0;
+      transition: all 0.2s ease;
+    }
+    .security-option-check .material-icons {
+      font-size: 24px;
+      color: var(--accent-blue);
+    }
+    .security-option-card.selected .security-option-check {
+      opacity: 1;
+    }
+
+    /* 简化的确认区域 */
+    .simple-agreement {
+      padding: 20px 24px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      margin-bottom: 24px;
+    }
+    .simple-agreement-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .simple-agreement-checkbox input[type="checkbox"] {
+      width: 22px;
+      height: 22px;
+      accent-color: var(--accent-blue);
+      cursor: pointer;
+    }
+    .simple-agreement-checkbox label {
+      font-size: 1.05em;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+    .simple-agreement-checkbox.error {
+      animation: shake 0.5s ease-in-out;
+    }
+    .simple-agreement-checkbox.error label {
+      color: var(--accent-red);
+    }
+
+    /* 设置区域样式 */
+    .settings-section {
+      margin-bottom: 24px;
+    }
+    .settings-section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.05em;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+    }
+    .settings-section-icon {
+      font-size: 1.2em;
+    }
+
+    /* 工作目录紧凑样式 */
+    .workspace-compact {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+    }
+    .workspace-compact .workspace-input-area {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .workspace-compact .workspace-input-wrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+    }
+    .workspace-compact .workspace-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      outline: none;
+    }
+    .workspace-compact .workspace-browse-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+      background: var(--accent-blue);
+      border: none;
+      border-radius: var(--radius-md);
+      color: white;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .workspace-compact .workspace-browse-btn:hover {
+      background: var(--accent-blue-dark);
+    }
+    .workspace-hint {
       font-size: 0.85em;
       color: var(--text-muted);
-    }
-    /* 安全模式优缺点说明 */
-    .security-card-pros,
-    .security-card-cons {
-      font-size: 0.88em;
-      line-height: 1.5;
-      padding: 8px 12px;
-      border-radius: 8px;
-      margin-top: 10px;
-      text-align: left;
-    }
-    .security-card-pros {
-      background: rgba(76, 175, 80, 0.1);
-      color: #4caf50;
-      border: 1px solid rgba(76, 175, 80, 0.2);
     }
     .security-card-cons {
       background: rgba(255, 152, 0, 0.1);
@@ -1010,6 +1364,167 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     .selection-hint .material-icons {
       font-size: 1.4em;
       animation: bounce 1s ease-in-out infinite;
+    }
+
+    /* Step 4: 对话方式选择样式 */
+    .channel-mode-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .channel-mode-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px 24px;
+      background: var(--bg-tertiary);
+      border: 2px solid var(--border-default);
+      border-radius: var(--radius-xl);
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+    .channel-mode-card:hover {
+      border-color: var(--border-accent);
+      background: var(--bg-hover);
+    }
+    .channel-mode-card.selected {
+      border-color: var(--accent-blue);
+      background: linear-gradient(135deg, rgba(60, 131, 246, 0.12) 0%, rgba(60, 131, 246, 0.04) 100%);
+      box-shadow: 0 0 20px rgba(60, 131, 246, 0.15);
+    }
+    .channel-mode-icon {
+      font-size: 2.2em;
+      flex-shrink: 0;
+    }
+    .channel-mode-content {
+      flex: 1;
+    }
+    .channel-mode-title {
+      font-size: 1.15em;
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .channel-mode-badge {
+      font-size: 0.75em;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+    .channel-mode-badge.recommended {
+      background: linear-gradient(135deg, #3c83f6 0%, #60a5fa 100%);
+      color: white;
+    }
+    .channel-mode-desc {
+      font-size: 0.95em;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+    }
+    .channel-mode-features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .feature-tag {
+      font-size: 0.85em;
+      padding: 4px 10px;
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--accent-green);
+      border-radius: 6px;
+    }
+    .feature-tag.subtle {
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+    }
+    .channel-mode-check {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      opacity: 0;
+      transition: all 0.2s ease;
+    }
+    .channel-mode-check .material-icons {
+      font-size: 28px;
+      color: var(--accent-blue);
+    }
+    .channel-mode-card.selected .channel-mode-check {
+      opacity: 1;
+    }
+
+    /* 网页对话说明区域 */
+    .channel-mode-detail {
+      margin-bottom: 24px;
+    }
+    .web-mode-info {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px 24px;
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.03) 100%);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      border-radius: var(--radius-lg);
+    }
+    .web-mode-info-icon {
+      font-size: 1.8em;
+    }
+    .web-mode-info-title {
+      font-weight: 600;
+      color: var(--accent-green);
+      margin-bottom: 10px;
+    }
+    .web-mode-steps {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .web-mode-steps li {
+      position: relative;
+      padding-left: 20px;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+      font-size: 0.95em;
+    }
+    .web-mode-steps li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--accent-green);
+    }
+    .web-mode-steps code {
+      background: rgba(60, 131, 246, 0.15);
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: var(--accent-blue-light);
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+    }
+
+    /* IM配置折叠区域 */
+    .im-config-section {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 24px;
+      animation: fadeInUp 0.3s ease-out;
+    }
+    .im-config-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.1em;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-default);
+    }
+    .im-config-header .material-icons {
+      color: var(--accent-blue);
     }
 
     /* Step 4: 渠道配置样式 */
@@ -2078,7 +2593,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   </header>
 
   <main class="main-container">
-    <!-- 步骤进度条 -->
+    <!-- 步骤进度条 - 5步流程 -->
     <div class="stepper">
       <div class="step-item active" id="stepItem1">
         <div class="step-circle">1</div>
@@ -2087,25 +2602,20 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       <div class="step-connector" id="connector1"></div>
       <div class="step-item" id="stepItem2">
         <div class="step-circle">2</div>
-        <div class="step-label">安全设置</div>
+        <div class="step-label">基础设置</div>
       </div>
       <div class="step-connector" id="connector2"></div>
       <div class="step-item" id="stepItem3">
         <div class="step-circle">3</div>
-        <div class="step-label">工作目录</div>
+        <div class="step-label">对话方式</div>
       </div>
       <div class="step-connector" id="connector3"></div>
       <div class="step-item" id="stepItem4">
         <div class="step-circle">4</div>
-        <div class="step-label">指挥渠道</div>
+        <div class="step-label">激活</div>
       </div>
       <div class="step-connector" id="connector4"></div>
       <div class="step-item" id="stepItem5">
-        <div class="step-circle">5</div>
-        <div class="step-label">产品验证</div>
-      </div>
-      <div class="step-connector" id="connector5"></div>
-      <div class="step-item" id="stepItem6">
         <div class="step-circle"><span class="material-icons" style="font-size:18px;">check</span></div>
         <div class="step-label">完成</div>
       </div>
@@ -2118,242 +2628,239 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         <p>选择你要使用的 AI 平台，或者注册一个新账号</p>
       </div>
 
-      <div class="alert alert-info">
-        <span class="alert-icon">💡</span>
-        <div class="alert-content">
-          <div class="alert-title">新用户推荐</div>
-          硅基流动（首选推荐，免费送 Token，聚合多家顶尖大模型）
+      <!-- 小提示 -->
+      <div class="provider-tip">
+        <span class="provider-tip-icon">💡</span>
+        <span>不知道选哪个？选「硅基流动」就对了！免费送额度，包含最新 DeepSeek</span>
+      </div>
+
+      <!-- 推荐服务商 - 大卡片 -->
+      <div class="provider-recommended-section">
+        <div class="provider-section-title">🇨🇳 推荐服务</div>
+        <div class="provider-recommended-grid">
+          <div class="provider-card featured selected" data-provider="siliconflow" onclick="selectProvider('siliconflow')">
+            <div class="provider-card-badge">⭐ 首选推荐</div>
+            <div class="provider-card-icon">🔮</div>
+            <div class="provider-card-name">硅基流动</div>
+            <div class="provider-card-desc">免费送额度 · 包含最新 DeepSeek · 国内速度快</div>
+            <a href="https://cloud.siliconflow.cn/i/uXXX7IEi" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+              📖 去注册账号
+            </a>
+            <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
+          </div>
+          <div class="provider-card" data-provider="aliyun-bailian" onclick="selectProvider('aliyun-bailian')">
+            <div class="provider-card-icon">☁️</div>
+            <div class="provider-card-name">通义千问</div>
+            <div class="provider-card-desc">阿里出品 · 稳定可靠 · 送100万Token</div>
+            <a href="https://www.aliyun.com/daily-act/ecs/activity_selection?source=5176.29345612&userCode=xsngby7y" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+              📖 去注册账号
+            </a>
+            <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
+          </div>
+          <div class="provider-card" data-provider="volcengine-ark" onclick="selectProvider('volcengine-ark')">
+            <div class="provider-card-icon">🔥</div>
+            <div class="provider-card-name">豆包</div>
+            <div class="provider-card-desc">字节出品 · 响应极快 · 便宜好用</div>
+            <a href="https://partner.volcengine.com/partners/auth/confirm?inviteToken=HNOCB9ZQY0R8BA3BEK685Z4OKDIYSYZX2UNQZ7IMCYQL7DL0DMPJII6RN9PS063F&partnerType=101&partnerName=%E4%B8%8A%E6%B5%B7%E6%9D%AD%E8%8A%82%E4%BA%91%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&identityType=11&PartnerEmployeeId=72406401" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+              📖 去注册账号
+            </a>
+            <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
+          </div>
         </div>
       </div>
 
-      <div class="provider-grid" id="providerList">
-        ${providers.map((p) => `
-        <div class="option-card${p.id === 'siliconflow' ? ' featured' : ''}" data-provider="${p.id}" onclick="selectProvider('${p.id}')">
-          <div class="option-card-header">
-            <div class="option-icon">${getProviderIcon(p.id)}</div>
-            <div style="flex:1;">
-              <span class="option-title">${p.name}</span>
-              ${p.id === 'siliconflow' ? '<span class="option-badge hot">🔥 推荐</span>' : ''}
+      <!-- 其他服务商 - 折叠 -->
+      <div class="provider-other-section">
+        <div class="provider-other-toggle" onclick="toggleOtherProviders()">
+          <span class="material-icons" id="providerToggleIcon">expand_more</span>
+          <span>我已有其他 AI 服务账号</span>
+        </div>
+        <div class="provider-other-content hidden" id="providerOtherContent">
+          <div class="provider-other-grid">
+            <div class="provider-option" data-provider="deepseek" onclick="selectProvider('deepseek')">
+              <div class="provider-option-icon">🚀</div>
+              <div class="provider-option-info">
+                <div class="provider-option-name">DeepSeek</div>
+                <div class="provider-option-desc">DeepSeek 官方，性价比之王</div>
+              </div>
+              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
+            <div class="provider-option" data-provider="glm" onclick="selectProvider('glm')">
+              <div class="provider-option-icon">🧠</div>
+              <div class="provider-option-info">
+                <div class="provider-option-name">智谱 GLM</div>
+                <div class="provider-option-desc">GLM-4 系列，支持视觉理解</div>
+              </div>
+              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
+            <div class="provider-option" data-provider="tencent-hunyuan" onclick="selectProvider('tencent-hunyuan')">
+              <div class="provider-option-icon">💫</div>
+              <div class="provider-option-info">
+                <div class="provider-option-name">腾讯混元</div>
+                <div class="provider-option-desc">混元大模型系列</div>
+              </div>
+              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
+            <div class="provider-option" data-provider="minimax" onclick="selectProvider('minimax')">
+              <div class="provider-option-icon">⚡</div>
+              <div class="provider-option-info">
+                <div class="provider-option-name">MiniMax</div>
+                <div class="provider-option-desc">MiniMax M2.1，只需 API Key</div>
+              </div>
+              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
             </div>
           </div>
-          <div class="option-desc">${p.description}</div>
-          <div class="option-check"><span class="material-icons" style="font-size:16px;">check</span></div>
-        </div>
-        `).join('')}
-      </div>
-
-      <div id="affiliateSection" class="affiliate-section">
-        <div class="affiliate-header">
-          <span>🚀</span>
-          还没有接入过大模型？点击开通账号 →
-        </div>
-        <div class="affiliate-grid">
-          <a href="https://cloud.siliconflow.cn/i/uXXX7IEi" target="_blank" class="affiliate-card featured">
-            <div class="affiliate-icon">🔮</div>
-            <div class="affiliate-info">
-              <div class="affiliate-name">
-                硅基流动
-                <span class="badge hot">⭐ 首选</span>
-                <span class="badge free">免费送Token</span>
-              </div>
-              <div class="affiliate-benefit">聚合 DeepSeek、Qwen、GLM 等顶尖模型</div>
-            </div>
-            <span class="affiliate-arrow material-icons">arrow_forward</span>
-          </a>
-          <a href="https://www.aliyun.com/daily-act/ecs/activity_selection?source=5176.29345612&userCode=xsngby7y" target="_blank" class="affiliate-card">
-            <div class="affiliate-icon">☁️</div>
-            <div class="affiliate-info">
-              <div class="affiliate-name">
-                阿里云百炼
-                <span class="badge free">送100万Token</span>
-              </div>
-              <div class="affiliate-benefit">通义千问 Qwen 系列，国内访问最快</div>
-            </div>
-            <span class="affiliate-arrow material-icons">arrow_forward</span>
-          </a>
-          <a href="https://curl.qcloud.com/7r5iz507" target="_blank" class="affiliate-card">
-            <div class="affiliate-icon">💫</div>
-            <div class="affiliate-info">
-              <div class="affiliate-name">
-                腾讯混元
-              </div>
-              <div class="affiliate-benefit">混元大模型，腾讯云生态</div>
-            </div>
-            <span class="affiliate-arrow material-icons">arrow_forward</span>
-          </a>
-          <a href="https://www.tbox.cn/login?invitation=5gKu1AUyRDxR22NH" target="_blank" class="affiliate-card">
-            <div class="affiliate-icon">🐜</div>
-            <div class="affiliate-info">
-              <div class="affiliate-name">
-                蚂蚁百灵
-              </div>
-              <div class="affiliate-benefit">蚂蚁集团大模型平台</div>
-            </div>
-            <span class="affiliate-arrow material-icons">arrow_forward</span>
-          </a>
-          <a href="https://bigmodel.cn/special_area" target="_blank" class="affiliate-card">
-            <div class="affiliate-icon">🧠</div>
-            <div class="affiliate-info">
-              <div class="affiliate-name">
-                智谱 GLM
-              </div>
-              <div class="affiliate-benefit">GLM-4 系列，支持视觉理解</div>
-            </div>
-            <span class="affiliate-arrow material-icons">arrow_forward</span>
-          </a>
         </div>
       </div>
 
+      <!-- API Key 输入区域 -->
       <div id="apiKeyForm" class="hidden" style="margin-top: 24px;">
-        <div class="form-group">
-          <label class="form-label" id="apiKeyLabel">API Key</label>
-          <div class="password-input-wrapper">
-            <input type="password" class="form-input mono" id="apiKeyInput" placeholder="请输入 API Key">
-            <button type="button" class="password-toggle" onclick="togglePasswordVisibility()">
+        <div class="apikey-section">
+          <div class="apikey-header">
+            <span class="apikey-header-icon">🔑</span>
+            <span id="apiKeyLabel">API Key</span>
+          </div>
+          <div class="apikey-input-wrapper">
+            <input type="password" class="apikey-input" id="apiKeyInput" placeholder="粘贴你的 API Key">
+            <button type="button" class="apikey-paste-btn" onclick="pasteApiKey()">
+              <span class="material-icons">content_paste</span>
+              粘贴
+            </button>
+            <button type="button" class="apikey-toggle-btn" onclick="togglePasswordVisibility()">
               <span class="material-icons" id="passwordIcon">visibility</span>
             </button>
           </div>
           <div class="form-help" id="apiKeyHelp">在对应平台的控制台获取 API Key</div>
         </div>
 
-        <!-- 模型选择 -->
-        <div class="form-group" id="modelSelectGroup" style="margin-top: 20px;">
-          <label class="form-label">选择模型</label>
-          <div class="model-select-wrapper">
-            <select class="form-input model-select" id="modelSelect">
-              <option value="">-- 请先选择 AI 平台 --</option>
-            </select>
+        <!-- 模型选择 - 简化显示 -->
+        <div class="model-section">
+          <div class="model-header">
+            <span>模型</span>
+            <span class="model-hint">（推荐值已选好，直接下一步即可）</span>
           </div>
-          <div class="form-help" id="modelHelp">选择你要使用的 AI 模型，推荐使用默认模型</div>
+          <select class="model-select" id="modelSelect">
+            <option value="">-- 请先选择 AI 平台 --</option>
+          </select>
         </div>
 
         <div id="apiKeyStatus" class="status-message"></div>
       </div>
 
       <div class="btn-group">
-        <button class="btn btn-primary" onclick="nextStep(1)" id="step1Next" disabled>
+        <button class="btn btn-primary btn-lg" onclick="nextStep(1)" id="step1Next" disabled>
           下一步
           <span class="material-icons">arrow_forward</span>
         </button>
       </div>
     </div>
 
-    <!-- Step 2: 安全设置 -->
+    <!-- Step 2: 基础设置（合并AI能力+工作目录） -->
     <div id="page2" class="card hidden">
       <div class="card-header">
-        <h2>第二步：安全设置</h2>
-        <p>选择 AI 助手的权限级别，保护你的数据安全</p>
+        <h2>第二步：基础设置</h2>
+        <p>设置 AI 助手的能力范围和工作目录</p>
       </div>
 
-      <!-- 沙盒简介 -->
-      <div class="sandbox-intro">
-        <div class="sandbox-intro-icon">🛡️</div>
-        <div class="sandbox-intro-content">
-          <div class="sandbox-intro-title">什么是「沙盒」？</div>
-          <div class="sandbox-intro-text">
-            沙盒 = AI 的「活动范围」。超出范围的文件，AI 碰不到、改不了。
-          </div>
-        </div>
-      </div>
-
-      <!-- 风险提示 -->
-      <div class="risk-banner">
-        <div class="risk-banner-header">
-          <span class="risk-banner-icon">⚠️</span>
-          <span class="risk-banner-title">安全提示</span>
-        </div>
-        <div class="risk-banner-content">
-          AI 存在「提示词注入」风险 —— 恶意文档可能诱导 AI 执行危险操作。
-          <div class="risk-banner-highlight">
-            <span class="material-icons" style="font-size:18px;">tips_and_updates</span>
-            建议：使用独立设备部署，或选择「智能模式」
-          </div>
-        </div>
-      </div>
-
-      <!-- 选择提示 -->
-      <div class="selection-hint">
-        <span class="material-icons">touch_app</span>
-        请在下方选择一种安全保护模式
-      </div>
-
-      <!-- 安全模式选择 - 新布局 -->
-      <div class="security-options" id="securityList">
-        <div class="security-card" data-security="full" onclick="selectSecurity('full')">
-          <div class="security-card-icon">🛡️</div>
-          <div class="security-card-title">安全模式</div>
-          <div class="security-card-desc">
-            AI 无法执行系统操作，只能对话和浏览网页。所有操作都在沙盒内进行，最安全。
-          </div>
-          <div class="security-card-pros">✅ 适合：有重要文件、共用电脑、不信任AI</div>
-          <div class="security-card-cons">❌ 限制：无法执行命令、无法读写本地文件</div>
-          <div class="security-card-footer">
-            🔐 最高安全级别
-          </div>
-          <div class="security-card-check"><span class="material-icons" style="font-size:18px;">check</span></div>
+      <!-- Part 1: AI能力选择 -->
+      <div class="settings-section">
+        <div class="settings-section-title">
+          <span class="settings-section-icon">🎯</span>
+          <span>AI 能做什么？</span>
         </div>
 
-        <div class="security-card recommended selected" data-security="standard" onclick="selectSecurity('standard')">
-          <div class="security-card-icon">🔒</div>
-          <div class="security-card-title">智能模式</div>
-          <div class="security-card-desc">
-            常用操作直接执行，敏感操作会询问你。兼顾体验与安全的最佳平衡。
+        <!-- 推荐选项 - 突出显示 -->
+        <div class="security-recommended-card selected" data-security="standard" onclick="doSelectSecurity('standard')">
+          <div class="security-recommended-badge">⭐ 推荐</div>
+          <div class="security-recommended-header">
+            <div class="security-recommended-icon">🏠</div>
+            <div class="security-recommended-info">
+              <div class="security-recommended-title">正常使用</div>
+              <div class="security-recommended-subtitle">适合绝大多数用户</div>
+            </div>
+            <div class="security-recommended-check"><span class="material-icons">check_circle</span></div>
           </div>
-          <div class="security-card-pros">✅ 适合：日常工作电脑、大部分用户</div>
-          <div class="security-card-footer">
-            ⭐ 推荐大多数用户选择
+          <div class="security-recommended-features">
+            <div class="feature-item positive">✅ 帮你打开软件、浏览网页</div>
+            <div class="feature-item positive">✅ 帮你整理指定文件夹的文件</div>
+            <div class="feature-item warning">⚠️ 敏感操作会先问你</div>
           </div>
-          <div class="security-card-check"><span class="material-icons" style="font-size:18px;">check</span></div>
         </div>
 
-        <div class="security-card" data-security="trust" onclick="selectSecurity('trust')">
-          <div class="security-card-icon">⚡</div>
-          <div class="security-card-title">
-            专家模式
-            <span class="security-card-warning">⚠️ 需谨慎</span>
+        <!-- 其他选项 - 折叠 -->
+        <div class="security-other-options">
+          <div class="security-other-toggle" onclick="toggleOtherSecurityOptions()">
+            <span class="material-icons" id="securityToggleIcon">expand_more</span>
+            <span>查看其他选项</span>
           </div>
-          <div class="security-card-desc">
-            解锁全部能力，完整系统权限，风险自担。
-          </div>
-          <div class="security-card-pros">✅ 适合：独立设备、技术高手</div>
-          <div class="security-card-cons danger">⚠️ 风险：AI 可能误删文件、执行危险命令</div>
-          <div class="security-card-footer">
-            ⚡ 完全信任 AI
-          </div>
-          <div class="security-card-check"><span class="material-icons" style="font-size:18px;">check</span></div>
-        </div>
-      </div>
-
-      <!-- 快速决策 -->
-      <div class="quick-decision">
-        <div class="quick-decision-title">
-          <span class="material-icons" style="font-size:22px;">help_outline</span>
-          不知道选哪个？
-        </div>
-        <div class="quick-decision-items">
-          <div class="quick-decision-item" onclick="doSelectSecurity('standard')">
-            <div class="scenario">💻 主力电脑 & 兼顾体验与安全</div>
-            <div class="result">→ 智能模式（推荐）</div>
-          </div>
-          <div class="quick-decision-item" onclick="doSelectSecurity('full')">
-            <div class="scenario">🔒 有敏感数据 & 追求极致安全</div>
-            <div class="result">→ 安全模式</div>
-          </div>
-          <div class="quick-decision-item" onclick="selectSecurity('trust')">
-            <div class="scenario">🖥️ 独立设备 & 技术大佬探索可能性</div>
-            <div class="result">→ 专家模式</div>
+          <div class="security-other-content hidden" id="securityOtherContent">
+            <div class="security-option-card" data-security="full" onclick="doSelectSecurity('full')">
+              <div class="security-option-icon">🔒</div>
+              <div class="security-option-content">
+                <div class="security-option-title">只聊天</div>
+                <div class="security-option-desc">AI 完全不能动电脑上的东西，只能对话</div>
+              </div>
+              <div class="security-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
+            <div class="security-option-card" data-security="trust" onclick="selectSecurity('trust')">
+              <div class="security-option-icon">⚡</div>
+              <div class="security-option-content">
+                <div class="security-option-title">完全信任</div>
+                <div class="security-option-desc">AI 可以做任何事，仅限独立设备使用</div>
+              </div>
+              <div class="security-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- 免责声明和同意条款 -->
-      <div class="agreement-section">
-        <div class="agreement-text">
-          ⚠️ <strong>风险声明</strong>：使用本软件即表示您已了解并接受相关风险。AI 助手可能因误操作或恶意提示词注入而造成数据丢失、文件损坏等问题，开发者不承担因使用不当造成的任何责任。
+      <!-- Part 2: 工作目录设置 -->
+      <div class="settings-section" id="workspaceSettingsSection">
+        <div class="settings-section-title">
+          <span class="settings-section-icon">📁</span>
+          <span>AI 的工作目录</span>
         </div>
-        <div class="agreement-checkbox" id="agreementCheckbox">
+        
+        <div class="workspace-compact">
+          <div class="workspace-input-area">
+            <div class="workspace-input-wrapper">
+              <span class="workspace-input-icon material-icons">folder</span>
+              <input type="text" class="workspace-input" id="workspaceInput" placeholder="点击右侧按钮选择文件夹..." value="${defaultWorkspace}" readonly>
+            </div>
+            <button type="button" class="workspace-browse-btn" onclick="browseWorkspace()">
+              <span class="material-icons">folder_open</span>
+              浏览
+            </button>
+          </div>
+          <div class="workspace-hint">AI 只能在这个文件夹内读写文件</div>
+        </div>
+
+        <!-- 额外信任目录 - 折叠 -->
+        <div class="extra-dirs-section" id="trustedDirsSection">
+          <div class="extra-dirs-header" onclick="toggleExtraDirs()">
+            <div class="extra-dirs-title">
+              <span class="material-icons">add_circle_outline</span>
+              添加额外目录（可选）
+            </div>
+            <span class="extra-dirs-arrow material-icons" id="extraDirsArrow">expand_more</span>
+          </div>
+          <div class="extra-dirs-content hidden" id="extraDirsContent">
+            <div id="trustedDirsList" class="dir-list">
+              <div class="dir-empty">暂未添加</div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addTrustedDir()" style="width: 100%; margin-top: 8px;">
+              <span class="material-icons">add</span>
+              添加
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 简化的确认 -->
+      <div class="simple-agreement">
+        <div class="simple-agreement-checkbox" id="agreementCheckbox">
           <input type="checkbox" id="agreeTerms" onclick="updateAgreement()">
-          <label for="agreeTerms">我已阅读并同意上述风险声明</label>
+          <label for="agreeTerms">我知道了，AI 可能会出错</label>
         </div>
       </div>
 
@@ -2369,219 +2876,184 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       </div>
     </div>
 
-    <!-- Step 3: 设置隔离工作目录 -->
+    <!-- Step 3: 选择对话方式 -->
     <div id="page3" class="card hidden">
       <div class="card-header">
-        <h2>第三步：设置工作目录</h2>
-        <p>指定 AI 可以操作的文件夹范围</p>
+        <h2>第三步：选择对话方式</h2>
+        <p>选择你与 AI 助手交流的方式</p>
       </div>
 
-      <!-- 当前模式状态卡片 -->
-      <div class="mode-status-card" id="modeStatusCard">
-        <div class="mode-status-icon">🔒</div>
-        <div class="mode-status-content">
-          <div class="mode-status-label">当前安全模式</div>
-          <div class="mode-status-value" id="currentModeDisplay">智能模式</div>
-        </div>
-        <div class="mode-status-desc" id="modeStatusDesc">
-          AI 只能访问下方指定的工作目录
-        </div>
-      </div>
-
-      <!-- 核心操作区 - 选择工作目录 -->
-      <div class="workspace-section">
-        <div class="workspace-header">
-          <div class="workspace-header-icon">📁</div>
-          <div class="workspace-header-text">
-            <div class="workspace-header-title">选择 AI 的工作目录</div>
-            <div class="workspace-header-subtitle">AI 只能在这个文件夹内读写文件，无法访问其他位置</div>
+      <!-- 网页对话选项 - 默认推荐 -->
+      <div class="channel-mode-selector">
+        <div class="channel-mode-card selected" data-mode="web" onclick="selectChannelMode('web')">
+          <div class="channel-mode-icon">🌐</div>
+          <div class="channel-mode-content">
+            <div class="channel-mode-title">
+              网页对话
+              <span class="channel-mode-badge recommended">✨ 推荐</span>
+            </div>
+            <div class="channel-mode-desc">直接在浏览器中和 AI 对话，零配置立即可用</div>
+            <div class="channel-mode-features">
+              <span class="feature-tag">✅ 零配置</span>
+              <span class="feature-tag">✅ 立即可用</span>
+              <span class="feature-tag">✅ 手机电脑都能访问</span>
+            </div>
           </div>
+          <div class="channel-mode-check"><span class="material-icons">check_circle</span></div>
+        </div>
+
+        <div class="channel-mode-card" data-mode="im" onclick="selectChannelMode('im')">
+          <div class="channel-mode-icon">💬</div>
+          <div class="channel-mode-content">
+            <div class="channel-mode-title">钉钉 / 飞书机器人</div>
+            <div class="channel-mode-desc">通过企业IM发消息给AI（需要企业管理员权限）</div>
+            <div class="channel-mode-features">
+              <span class="feature-tag subtle">需要配置</span>
+              <span class="feature-tag subtle">需要企业账号</span>
+            </div>
+          </div>
+          <div class="channel-mode-check"><span class="material-icons">check_circle</span></div>
+        </div>
+      </div>
+
+      <!-- 网页对话说明 -->
+      <div id="webModeInfo" class="channel-mode-detail">
+        <div class="web-mode-info">
+          <div class="web-mode-info-icon">💡</div>
+          <div class="web-mode-info-content">
+            <div class="web-mode-info-title">配置完成后，你可以这样使用：</div>
+            <ul class="web-mode-steps">
+              <li>在浏览器访问 <code>http://localhost:18789</code> 开始对话</li>
+              <li>也可以通过手机访问（需在同一局域网内）</li>
+              <li>随时可以在设置中添加钉钉/飞书渠道</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- IM配置区域 - 折叠 -->
+      <div id="imConfigSection" class="im-config-section hidden">
+        <div class="im-config-header">
+          <span class="material-icons">settings</span>
+          <span>配置企业IM机器人</span>
         </div>
         
-        <div class="workspace-input-area">
-          <div class="workspace-input-wrapper">
-            <span class="workspace-input-icon material-icons">folder</span>
-            <input type="text" class="workspace-input" id="workspaceInput" placeholder="点击右侧按钮选择文件夹..." value="${defaultWorkspace}" readonly>
+        <!-- 渠道选择 -->
+        <div class="channel-selector" id="channelList">
+          <div class="channel-tab selected" data-channel="dingtalk" onclick="selectChannelTab('dingtalk')">
+            <span class="channel-tab-icon">📱</span>
+            <span class="channel-tab-name">钉钉</span>
           </div>
-          <button type="button" class="workspace-browse-btn" onclick="browseWorkspace()">
-            <span class="material-icons">folder_open</span>
-            浏览选择
-          </button>
+          <div class="channel-tab" data-channel="feishu" onclick="selectChannelTab('feishu')">
+            <span class="channel-tab-icon">🪶</span>
+            <span class="channel-tab-name">飞书</span>
+          </div>
+          <div class="channel-tab disabled" data-channel="wecom">
+            <span class="channel-tab-icon">💼</span>
+            <span class="channel-tab-name">企业微信</span>
+            <span class="channel-tab-badge">即将支持</span>
+          </div>
         </div>
 
-        <div class="workspace-tip">
-          <span class="workspace-tip-icon">💡</span>
-          <span class="workspace-tip-text">建议：创建一个专用文件夹（如 <code>D:\\AI工作区</code>），不要选择「文档」或「桌面」</span>
+        <!-- 钉钉配置表单 -->
+        <div id="dingtalkConfigForm" class="channel-config-form">
+          <div class="channel-config-header">
+            <span class="channel-config-icon">📱</span>
+            <div>
+              <div class="channel-config-title">钉钉机器人配置</div>
+              <div class="channel-config-subtitle">在钉钉开放平台创建企业内部应用获取以下信息</div>
+            </div>
+            <a href="https://open.dingtalk.com/document/orgapp/create-an-interface-based-chatbot" target="_blank" class="channel-config-help">
+              <span class="material-icons">help_outline</span>
+              配置教程
+            </a>
+          </div>
+
+          <div class="channel-config-fields">
+            <div class="form-group">
+              <label class="form-label">App Key <span class="required">*</span></label>
+              <input type="text" class="form-input mono" id="dingtalkAppKey" placeholder="例如：dingxxxxxxxx">
+              <div class="form-help">在钉钉开放平台 → 应用信息 → 凭证与基础信息中获取</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">App Secret <span class="required">*</span></label>
+              <div class="password-input-wrapper">
+                <input type="password" class="form-input mono" id="dingtalkAppSecret" placeholder="请输入 App Secret">
+                <button type="button" class="password-toggle" onclick="toggleDingtalkSecretVisibility()">
+                  <span class="material-icons" id="dingtalkSecretIcon">visibility</span>
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">机器人 Token（可选）</label>
+              <input type="text" class="form-input mono" id="dingtalkRobotToken" placeholder="如有单聊机器人，填写 Token">
+              <div class="form-help">用于接收来自钉钉的消息回调</div>
+            </div>
+          </div>
+
+          <div id="dingtalkConfigStatus" class="status-message"></div>
+        </div>
+
+        <!-- 飞书配置表单 -->
+        <div id="feishuConfigForm" class="channel-config-form hidden">
+          <div class="channel-config-header">
+            <span class="channel-config-icon">🪶</span>
+            <div>
+              <div class="channel-config-title">飞书机器人配置</div>
+              <div class="channel-config-subtitle">在飞书开放平台创建企业自建应用获取以下信息</div>
+            </div>
+            <a href="https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes/create-an-app" target="_blank" class="channel-config-help">
+              <span class="material-icons">help_outline</span>
+              配置教程
+            </a>
+          </div>
+
+          <div class="channel-config-fields">
+            <div class="form-group">
+              <label class="form-label">App ID <span class="required">*</span></label>
+              <input type="text" class="form-input mono" id="feishuAppId" placeholder="例如：cli_xxxxxxxx">
+              <div class="form-help">在飞书开放平台 → 凭证与基础信息中获取</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">App Secret <span class="required">*</span></label>
+              <div class="password-input-wrapper">
+                <input type="password" class="form-input mono" id="feishuAppSecret" placeholder="请输入 App Secret">
+                <button type="button" class="password-toggle" onclick="toggleFeishuSecretVisibility()">
+                  <span class="material-icons" id="feishuSecretIcon">visibility</span>
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Encrypt Key（可选）</label>
+              <input type="text" class="form-input mono" id="feishuEncryptKey" placeholder="事件订阅的加密密钥">
+              <div class="form-help">在「事件订阅」页面的 Encrypt Key</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Verification Token（可选）</label>
+              <input type="text" class="form-input mono" id="feishuVerificationToken" placeholder="事件订阅的验证 Token">
+            </div>
+          </div>
+
+          <div id="feishuConfigStatus" class="status-message"></div>
         </div>
       </div>
 
-      <!-- 额外信任目录 - 折叠 -->
-      <div class="extra-dirs-section" id="trustedDirsSection">
-        <div class="extra-dirs-header" onclick="toggleExtraDirs()">
-          <div class="extra-dirs-title">
-            <span class="material-icons">add_circle_outline</span>
-            添加额外信任目录（可选）
-          </div>
-          <span class="extra-dirs-arrow material-icons" id="extraDirsArrow">expand_more</span>
-        </div>
-        <div class="extra-dirs-content hidden" id="extraDirsContent">
-          <div class="extra-dirs-hint">
-            如果 AI 需要访问工作目录以外的其他文件夹，可以在这里添加
-          </div>
-          <div id="trustedDirsList" class="dir-list">
-            <div class="dir-empty">暂未添加额外目录</div>
-          </div>
-          <button type="button" class="btn btn-secondary" onclick="addTrustedDir()" style="width: 100%; margin-top: 12px;">
-            <span class="material-icons">add</span>
-            添加目录
-          </button>
-        </div>
-      </div>
-
-      <div class="btn-group">
+      <div class="btn-group" style="margin-top: 24px;">
         <button class="btn btn-secondary" onclick="prevStep(3)">
           <span class="material-icons">arrow_back</span>
           上一步
         </button>
-        <button class="btn btn-primary btn-lg" onclick="nextStep(3)" id="step3Next">
+        <button class="btn btn-primary btn-lg" onclick="handleStep3Next()" id="step3NextBtn">
           下一步
           <span class="material-icons">arrow_forward</span>
         </button>
       </div>
     </div>
 
-    <!-- Step 4: 配置指挥渠道 -->
+    <!-- Step 4: 服务激活 -->
     <div id="page4" class="card hidden">
       <div class="card-header">
-        <h2>第四步：配置指挥渠道</h2>
-        <p>选择并配置你的聊天应用，让 AI 助手可以接收指令</p>
-      </div>
-
-      <div class="alert alert-info" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%); border-color: var(--accent-green);">
-        <span class="alert-icon">✨</span>
-        <div class="alert-content">
-          <strong>建议直接配置！</strong>配置后即可通过钉钉/飞书向 AI 发送消息。如果暂时没有，可以点击「跳过」稍后配置。
-        </div>
-      </div>
-
-      <!-- 渠道选择 -->
-      <div class="channel-selector" id="channelList">
-        <div class="channel-tab selected" data-channel="dingtalk" onclick="selectChannelTab('dingtalk')">
-          <span class="channel-tab-icon">📱</span>
-          <span class="channel-tab-name">钉钉</span>
-        </div>
-        <div class="channel-tab" data-channel="feishu" onclick="selectChannelTab('feishu')">
-          <span class="channel-tab-icon">🪶</span>
-          <span class="channel-tab-name">飞书</span>
-        </div>
-        <div class="channel-tab disabled" data-channel="wecom">
-          <span class="channel-tab-icon">💼</span>
-          <span class="channel-tab-name">企业微信</span>
-          <span class="channel-tab-badge">即将支持</span>
-        </div>
-      </div>
-
-      <!-- 钉钉配置表单 -->
-      <div id="dingtalkConfigForm" class="channel-config-form">
-        <div class="channel-config-header">
-          <span class="channel-config-icon">📱</span>
-          <div>
-            <div class="channel-config-title">钉钉机器人配置</div>
-            <div class="channel-config-subtitle">在钉钉开放平台创建企业内部应用获取以下信息</div>
-          </div>
-          <a href="https://open.dingtalk.com/document/orgapp/create-an-interface-based-chatbot" target="_blank" class="channel-config-help">
-            <span class="material-icons">help_outline</span>
-            配置教程
-          </a>
-        </div>
-
-        <div class="channel-config-fields">
-          <div class="form-group">
-            <label class="form-label">App Key <span class="required">*</span></label>
-            <input type="text" class="form-input mono" id="dingtalkAppKey" placeholder="例如：dingxxxxxxxx">
-            <div class="form-help">在钉钉开放平台 → 应用信息 → 凭证与基础信息中获取</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">App Secret <span class="required">*</span></label>
-            <div class="password-input-wrapper">
-              <input type="password" class="form-input mono" id="dingtalkAppSecret" placeholder="请输入 App Secret">
-              <button type="button" class="password-toggle" onclick="toggleDingtalkSecretVisibility()">
-                <span class="material-icons" id="dingtalkSecretIcon">visibility</span>
-              </button>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">机器人 Token（可选）</label>
-            <input type="text" class="form-input mono" id="dingtalkRobotToken" placeholder="如有单聊机器人，填写 Token">
-            <div class="form-help">用于接收来自钉钉的消息回调</div>
-          </div>
-        </div>
-
-        <div id="dingtalkConfigStatus" class="status-message"></div>
-      </div>
-
-      <!-- 飞书配置表单 -->
-      <div id="feishuConfigForm" class="channel-config-form hidden">
-        <div class="channel-config-header">
-          <span class="channel-config-icon">🪶</span>
-          <div>
-            <div class="channel-config-title">飞书机器人配置</div>
-            <div class="channel-config-subtitle">在飞书开放平台创建企业自建应用获取以下信息</div>
-          </div>
-          <a href="https://open.feishu.cn/document/home/develop-a-bot-in-5-minutes/create-an-app" target="_blank" class="channel-config-help">
-            <span class="material-icons">help_outline</span>
-            配置教程
-          </a>
-        </div>
-
-        <div class="channel-config-fields">
-          <div class="form-group">
-            <label class="form-label">App ID <span class="required">*</span></label>
-            <input type="text" class="form-input mono" id="feishuAppId" placeholder="例如：cli_xxxxxxxx">
-            <div class="form-help">在飞书开放平台 → 凭证与基础信息中获取</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">App Secret <span class="required">*</span></label>
-            <div class="password-input-wrapper">
-              <input type="password" class="form-input mono" id="feishuAppSecret" placeholder="请输入 App Secret">
-              <button type="button" class="password-toggle" onclick="toggleFeishuSecretVisibility()">
-                <span class="material-icons" id="feishuSecretIcon">visibility</span>
-              </button>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Encrypt Key（可选）</label>
-            <input type="text" class="form-input mono" id="feishuEncryptKey" placeholder="事件订阅的加密密钥">
-            <div class="form-help">在「事件订阅」页面的 Encrypt Key</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Verification Token（可选）</label>
-            <input type="text" class="form-input mono" id="feishuVerificationToken" placeholder="事件订阅的验证 Token">
-          </div>
-        </div>
-
-        <div id="feishuConfigStatus" class="status-message"></div>
-      </div>
-
-      <div class="btn-group" style="margin-top: 24px;">
-        <button class="btn btn-secondary" onclick="prevStep(4)">
-          <span class="material-icons">arrow_back</span>
-          上一步
-        </button>
-        <button class="btn btn-ghost" onclick="skipChannels()">
-          跳过，稍后配置
-        </button>
-        <button class="btn btn-primary" onclick="saveChannelConfig()" id="saveChannelBtn">
-          <span class="material-icons">save</span>
-          保存并继续
-        </button>
-      </div>
-    </div>
-
-    <!-- Step 5: 服务验证 -->
-    <div id="page5" class="card hidden">
-      <div class="card-header">
-        <h2>第五步：服务激活</h2>
+        <h2>第四步：服务激活</h2>
         <p>输入服务凭证，获取技术支持与汉化服务</p>
       </div>
 
@@ -2630,7 +3102,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         <div id="licenseStatus" class="status-message"></div>
 
         <div class="btn-group">
-          <button class="btn btn-secondary" onclick="prevStep(5)">
+          <button class="btn btn-secondary" onclick="prevStep(4)">
             <span class="material-icons">arrow_back</span>
             上一步
           </button>
@@ -2654,8 +3126,8 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       </div>
     </div>
 
-    <!-- Step 6: 完成重启 -->
-    <div id="page6" class="card hidden">
+    <!-- Step 5: 完成 -->
+    <div id="page5" class="card hidden">
       <div class="card-header" style="text-align: center;">
         <h2 style="font-size: 1.8em;">🎉 欢迎来到 ClawbotCN 世界！</h2>
         <p>感谢支持！配置已完成</p>
@@ -2694,7 +3166,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         </li>
         <li class="summary-item">
           <div class="summary-item-icon"><span class="material-icons" style="font-size:18px;">check</span></div>
-          <span class="summary-item-label">指挥渠道</span>
+          <span class="summary-item-label">对话方式</span>
           <span class="summary-item-value" id="summaryChannels">-</span>
         </li>
         <li class="summary-item">
@@ -2710,7 +3182,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
           后续步骤
         </div>
         <ul class="platform-tips-list">
-          <li>前往「指挥渠道」页面完成钉钉/飞书的详细配置</li>
+          <li>如需使用钉钉/飞书，可在设置中添加渠道配置</li>
           <li>把需要处理的文件放到工作目录</li>
           <li>随时可以在设置中调整配置</li>
           <li>Skills 仓库: <a href="https://gitee.com/tecbinai/skills" target="_blank" style="color: var(--accent-blue);">gitee.com/tecbinai/skills</a></li>
@@ -2813,15 +3285,15 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     let licenseExpires = null;
 
     const providerNames = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.id, p.name])))};
-    const securityModeNames = { full: '安全模式', standard: '智能模式', trust: '专家模式' };
-    const channelNames = { dingtalk: '钉钉', feishu: '飞书', wecom: '企业微信' };
+    const securityModeNames = { full: '只聊天', standard: '正常使用', trust: '完全信任' };
+    const channelNames = { web: '网页对话', dingtalk: '钉钉', feishu: '飞书', wecom: '企业微信' };
 
-    // ==================== 步骤导航 ====================
+    // ==================== 步骤导航（5步流程） ====================
     function goToStep(step) {
       currentStep = step;
       
       // 更新页面显示
-      for (let i = 1; i <= 6; i++) {
+      for (let i = 1; i <= 5; i++) {
         const page = document.getElementById('page' + i);
         if (page) page.classList.toggle('hidden', i !== step);
         
@@ -2831,16 +3303,16 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
           stepItem.classList.toggle('completed', i < step);
         }
         
-        if (i < 6) {
+        if (i < 5) {
           const connector = document.getElementById('connector' + i);
           if (connector) connector.classList.toggle('completed', i < step);
         }
       }
       
-      // 更新 Step 6 的完成状态
-      const stepItem6 = document.getElementById('stepItem6');
-      if (stepItem6 && step === 6) {
-        stepItem6.classList.add('completed');
+      // 更新 Step 5（完成）的完成状态
+      const stepItem5 = document.getElementById('stepItem5');
+      if (stepItem5 && step === 5) {
+        stepItem5.classList.add('completed');
       }
     }
 
@@ -2913,9 +3385,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         if (!agreeCheckbox.checked) {
           const checkboxWrapper = document.getElementById('agreementCheckbox');
           checkboxWrapper.classList.add('error');
-          // 滚动到同意条款位置
           checkboxWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // 移除错误状态
           setTimeout(() => {
             checkboxWrapper.classList.remove('error');
           }, 600);
@@ -2927,25 +3397,11 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
           document.getElementById('trustModeModal').classList.remove('hidden');
           return;
         }
-        
-        try {
-          await fetch('/api/setup/configure-security', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: selectedSecurity, trustedDirs: [] })
-          });
-        } catch (e) {
-          console.warn('保存安全设置时出错:', e);
-        }
-        
-        // 更新 Step 3 显示
-        updateSecurityModeDisplay();
-      }
 
-      if (step === 3) {
+        // 保存工作目录配置（合并原步骤3）
         const workspace = document.getElementById('workspaceInput').value.trim();
         if (selectedSecurity !== 'trust' && !workspace) {
-          alert('请选择主工作目录');
+          alert('请选择工作目录');
           return;
         }
 
@@ -2969,12 +3425,12 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
             })
           });
         } catch (e) {
-          alert('保存失败: ' + e.message);
-          return;
+          console.warn('保存设置时出错:', e);
         }
       }
 
-      if (step === 4) {
+      if (step === 3) {
+        // 对话方式步骤（原步骤4）- 逻辑已移到 handleStep3Next
         try {
           await fetch('/api/setup/configure-channels', {
             method: 'POST',
@@ -3003,14 +3459,14 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         step1Btn.innerHTML = '下一步 <span class="material-icons">arrow_forward</span>';
       }
 
-      // 重置 Step 4 按钮
-      const saveChannelBtn = document.getElementById('saveChannelBtn');
-      if (saveChannelBtn) {
-        saveChannelBtn.disabled = false;
-        saveChannelBtn.innerHTML = '<span class="material-icons">save</span> 保存并继续';
+      // 重置 Step 3 按钮
+      const step3NextBtn = document.getElementById('step3NextBtn');
+      if (step3NextBtn) {
+        step3NextBtn.disabled = false;
+        step3NextBtn.innerHTML = '下一步 <span class="material-icons">arrow_forward</span>';
       }
 
-      // 重置 Step 5 按钮
+      // 重置 Step 4 按钮
       const validateLicenseBtn = document.getElementById('validateLicenseBtn');
       if (validateLicenseBtn) {
         validateLicenseBtn.disabled = false;
@@ -3044,13 +3500,26 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
 
     function selectProvider(id) {
       selectedProvider = id;
-      document.querySelectorAll('#providerList .option-card').forEach(el => {
+      
+      // 更新推荐卡片选中状态
+      document.querySelectorAll('.provider-card').forEach(el => {
         el.classList.toggle('selected', el.dataset.provider === id);
         // 保持 featured 类
         if (el.dataset.provider === 'siliconflow') {
           el.classList.add('featured');
         }
       });
+      
+      // 更新其他服务商选项选中状态
+      document.querySelectorAll('.provider-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.provider === id);
+      });
+      
+      // 旧版兼容
+      document.querySelectorAll('#providerList .option-card').forEach(el => {
+        el.classList.toggle('selected', el.dataset.provider === id);
+      });
+      
       document.getElementById('apiKeyForm').classList.remove('hidden');
       document.getElementById('apiKeyLabel').textContent = providerNames[id] + ' API Key';
       
@@ -3071,6 +3540,24 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       updateModelSelect(id);
       
       document.getElementById('step1Next').disabled = false;
+    }
+
+    function toggleOtherProviders() {
+      const content = document.getElementById('providerOtherContent');
+      const toggle = document.querySelector('.provider-other-toggle');
+      
+      content.classList.toggle('hidden');
+      toggle.classList.toggle('open');
+    }
+
+    async function pasteApiKey() {
+      try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById('apiKeyInput').value = text;
+      } catch (e) {
+        // 如果无法访问剪贴板，提示用户手动粘贴
+        alert('无法访问剪贴板，请手动粘贴 (Ctrl+V)');
+      }
     }
     
     function updateModelSelect(providerId) {
@@ -3133,10 +3620,28 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
 
     function doSelectSecurity(mode) {
       selectedSecurity = mode;
-      document.querySelectorAll('#securityList .security-card, #securityList .option-card').forEach(el => {
+      
+      // 更新推荐卡片状态
+      const recommendedCard = document.querySelector('.security-recommended-card');
+      if (recommendedCard) {
+        recommendedCard.classList.toggle('selected', mode === 'standard');
+      }
+      
+      // 更新其他选项卡片状态
+      document.querySelectorAll('.security-option-card').forEach(el => {
         el.classList.toggle('selected', el.dataset.security === mode);
       });
+      
       window.trustModeConfirmed = (mode === 'trust');
+    }
+
+    function toggleOtherSecurityOptions() {
+      const content = document.getElementById('securityOtherContent');
+      const toggle = document.querySelector('.security-other-toggle');
+      const icon = document.getElementById('securityToggleIcon');
+      
+      content.classList.toggle('hidden');
+      toggle.classList.toggle('open');
     }
 
     function closeTrustModeModal() {
@@ -3165,9 +3670,9 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       if (modeDisplay) modeDisplay.textContent = securityModeNames[selectedSecurity];
       
       if (selectedSecurity === 'trust') {
-        // 专家模式
+        // 完全信任模式
         if (modeStatusIcon) modeStatusIcon.textContent = '⚡';
-        if (modeStatusDesc) modeStatusDesc.textContent = '⚠️ AI 拥有完整系统权限，请谨慎操作';
+        if (modeStatusDesc) modeStatusDesc.textContent = '⚠️ AI 可以做任何事，请谨慎操作';
         if (modeStatusCard) {
           modeStatusCard.style.borderColor = 'var(--accent-orange)';
           modeStatusCard.style.background = 'linear-gradient(135deg, rgba(249, 115, 22, 0.12) 0%, rgba(249, 115, 22, 0.04) 100%)';
@@ -3176,9 +3681,9 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         if (trustedSection) trustedSection.style.display = 'none';
         if (workspaceSection) workspaceSection.style.display = 'none';
       } else if (selectedSecurity === 'full') {
-        // 安全模式
-        if (modeStatusIcon) modeStatusIcon.textContent = '🛡️';
-        if (modeStatusDesc) modeStatusDesc.textContent = '🔐 AI 所有操作都在沙盒内，无法访问外部文件';
+        // 只聊天模式
+        if (modeStatusIcon) modeStatusIcon.textContent = '🔒';
+        if (modeStatusDesc) modeStatusDesc.textContent = '🔐 AI 只能对话，无法操作你的文件';
         if (modeStatusCard) {
           modeStatusCard.style.borderColor = 'var(--accent-green)';
           modeStatusCard.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.12) 0%, rgba(34, 197, 94, 0.04) 100%)';
@@ -3187,9 +3692,9 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         if (trustedSection) trustedSection.style.display = 'block';
         if (workspaceSection) workspaceSection.style.display = 'block';
       } else {
-        // 智能模式（默认）
-        if (modeStatusIcon) modeStatusIcon.textContent = '🔒';
-        if (modeStatusDesc) modeStatusDesc.textContent = '常用操作直接执行，敏感操作会询问你';
+        // 正常使用（默认）
+        if (modeStatusIcon) modeStatusIcon.textContent = '🏠';
+        if (modeStatusDesc) modeStatusDesc.textContent = '帮你做事，敏感操作会先问你';
         if (modeStatusCard) {
           modeStatusCard.style.borderColor = 'var(--accent-blue)';
           modeStatusCard.style.background = 'linear-gradient(135deg, rgba(60, 131, 246, 0.12) 0%, rgba(60, 131, 246, 0.04) 100%)';
@@ -3347,8 +3852,30 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       renderTrustedDirs();
     }
 
-    // ==================== Step 4: 指挥渠道 ====================
+    // ==================== Step 4: 对话方式选择 ====================
+    let currentChannelMode = 'web'; // 'web' 或 'im'
     let currentChannelTab = 'dingtalk';
+
+    function selectChannelMode(mode) {
+      currentChannelMode = mode;
+      
+      // 更新卡片选中状态
+      document.querySelectorAll('.channel-mode-card').forEach(el => {
+        el.classList.toggle('selected', el.dataset.mode === mode);
+      });
+      
+      // 显示/隐藏相应内容
+      const webInfo = document.getElementById('webModeInfo');
+      const imConfig = document.getElementById('imConfigSection');
+      
+      if (mode === 'web') {
+        webInfo.classList.remove('hidden');
+        imConfig.classList.add('hidden');
+      } else {
+        webInfo.classList.add('hidden');
+        imConfig.classList.remove('hidden');
+      }
+    }
 
     function selectChannelTab(channelId) {
       if (channelId === 'wecom') return; // 企业微信暂不支持
@@ -3363,6 +3890,18 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       // 显示对应的配置表单
       document.getElementById('dingtalkConfigForm').classList.toggle('hidden', channelId !== 'dingtalk');
       document.getElementById('feishuConfigForm').classList.toggle('hidden', channelId !== 'feishu');
+    }
+
+    async function handleStep3Next() {
+      if (currentChannelMode === 'web') {
+        // 网页对话模式，直接进入下一步
+        selectedChannels = ['web'];
+        goToStep(4);
+        return;
+      }
+      
+      // IM模式，需要保存配置
+      await saveChannelConfig();
     }
 
     function toggleDingtalkSecretVisibility() {
@@ -3390,7 +3929,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     }
 
     async function saveChannelConfig() {
-      const btn = document.getElementById('saveChannelBtn');
+      const btn = document.getElementById('step3NextBtn');
       let hasConfig = false;
       let configData = {};
 
@@ -3422,10 +3961,11 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       }
 
       if (!hasConfig) {
-        // 没有配置任何渠道，提示用户
-        const confirmSkip = confirm('您还没有配置任何指挥渠道。\\n\\n建议配置钉钉或飞书以便与 AI 助手交互。\\n\\n确定要跳过吗？');
+        // 没有配置任何渠道，切换到网页对话模式
+        const confirmSkip = confirm('您还没有配置任何IM渠道。\\n\\n是否使用网页对话模式？（推荐）\\n\\n点击「确定」使用网页对话，点击「取消」继续配置。');
         if (confirmSkip) {
-          skipChannels();
+          selectedChannels = ['web'];
+          goToStep(4);
         }
         return;
       }
@@ -3464,7 +4004,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
             showStatus(statusEl, '❌ ' + errorMsg, 'error');
           }
           btn.disabled = false;
-          btn.innerHTML = '<span class="material-icons">save</span> 保存并继续';
+          btn.innerHTML = '下一步 <span class="material-icons">arrow_forward</span>';
           return;
         }
 
@@ -3477,31 +4017,31 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         }
         
         await delay(800);
-        goToStep(5);
+        goToStep(4);
       } catch (e) {
         showStatus(statusEl, '保存失败: ' + e.message, 'error');
         btn.disabled = false;
-        btn.innerHTML = '<span class="material-icons">save</span> 保存并继续';
+        btn.innerHTML = '下一步 <span class="material-icons">arrow_forward</span>';
       }
     }
 
     function skipChannels() {
       selectedChannels = [];
-      goToStep(5);
+      goToStep(4);
     }
 
-    // ==================== Step 5: 产品验证 ====================
+    // ==================== Step 4: 产品激活 ====================
     async function validateLicense() {
       const token = document.getElementById('licenseTokenInput').value.trim();
       if (!token) {
-        showStatus('licenseStatus', '请输入许可证 Token', 'error');
+        showStatus('licenseStatus', '请输入服务凭证', 'error');
         return;
       }
       
       const btn = document.getElementById('validateLicenseBtn');
       btn.disabled = true;
       btn.innerHTML = '<span class="status-spinner"></span> 验证中...';
-      showStatus('licenseStatus', '正在验证许可证，请稍候...', 'loading');
+      showStatus('licenseStatus', '正在验证凭证，请稍候...', 'loading');
       
       try {
         const res = await fetch('/api/setup/validate-license', {
@@ -3530,7 +4070,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
           
           // 延迟后自动进入下一步
           await delay(2500);
-          goToStep(6);
+          goToStep(5);
           showSummary();
         } else {
           throw new Error(data.data?.error || data.error || '许可证无效');
@@ -3538,7 +4078,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       } catch (e) {
         showStatus('licenseStatus', '验证失败: ' + e.message, 'error');
         btn.disabled = false;
-        btn.innerHTML = '<span class="material-icons">verified</span> 验证许可证';
+        btn.innerHTML = '<span class="material-icons">verified</span> 验证凭证';
       }
     }
 
@@ -3560,7 +4100,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       }
     }
 
-    // ==================== Step 6: 完成 ====================
+    // ==================== Step 5: 完成 ====================
     function showSummary() {
       document.getElementById('summaryProvider').textContent = providerNames[selectedProvider] || selectedProvider;
       document.getElementById('summarySecurity').textContent = securityModeNames[selectedSecurity];

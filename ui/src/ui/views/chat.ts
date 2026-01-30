@@ -207,7 +207,7 @@ export function renderChat(props: ChatProps) {
       ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
       ${repeat(buildChatItems(props), (item) => item.key, (item) => {
         if (item.kind === "reading-indicator") {
-          return renderReadingIndicatorGroup(assistantIdentity);
+          return renderReadingIndicatorGroup(assistantIdentity, item.startedAt);
         }
 
         if (item.kind === "stream") {
@@ -454,7 +454,11 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         startedAt: props.streamStartedAt ?? Date.now(),
       });
     } else {
-      items.push({ kind: "reading-indicator", key });
+      items.push({
+        kind: "reading-indicator",
+        key,
+        startedAt: props.streamStartedAt ?? Date.now(),
+      });
     }
   }
 

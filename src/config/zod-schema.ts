@@ -38,10 +38,25 @@ export const ClawdbotSchema = z
       .optional(),
     license: z
       .object({
+        // 基础字段
         key: z.string().optional(),
         status: z.string().optional(),
-        expiresAt: z.string().optional(),
+        expiresAt: z.string().nullable().optional(),
         validatedAt: z.string().optional(),
+        // 扩展字段 (v2.0 API)
+        tier: z.enum(["basic", "test"]).optional(),
+        tierName: z.string().optional(),
+        daysRemaining: z.number().optional(),
+        keyType: z.enum(["test", "trial", "standard"]).optional(),
+        features: z.array(z.string()).optional(),
+        // 设备信息
+        deviceId: z.string().optional(),
+        deviceLimit: z.number().optional(),
+        boundDevices: z.number().optional(),
+        // 离线缓存
+        offlineValidUntil: z.string().optional(),
+        // 已展示的通知 ID
+        shownNotificationIds: z.array(z.number()).optional(),
       })
       .strict()
       .optional(),

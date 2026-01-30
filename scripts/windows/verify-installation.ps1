@@ -5,6 +5,10 @@
 #   .\verify-installation.ps1
 #   .\verify-installation.ps1 -InstallDir "D:\Clawdbot"
 
+# 设置 UTF-8 编码，避免中文乱码
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 param(
     [string]$InstallDir = "C:\Program Files\Clawdbot"
 )

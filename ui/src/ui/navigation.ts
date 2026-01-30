@@ -42,7 +42,8 @@ export type Tab =
   | "chat"
   | "config"
   | "debug"
-  | "logs";
+  | "logs"
+  | "docs";
 
 const TAB_PATHS: Record<Tab, string> = {
   overview: "/overview",
@@ -57,6 +58,7 @@ const TAB_PATHS: Record<Tab, string> = {
   config: "/config",
   debug: "/debug",
   logs: "/logs",
+  docs: "/docs",
 };
 
 const PATH_TO_TAB = new Map(
@@ -148,6 +150,8 @@ export function iconForTab(tab: Tab): IconName {
       return "bug";
     case "logs":
       return "scrollText";
+    case "docs":
+      return "book";
     default:
       return "folder";
   }
@@ -179,6 +183,8 @@ export function titleForTab(tab: Tab) {
       return t("nav.debug");
     case "logs":
       return t("nav.logs");
+    case "docs":
+      return t("nav.docs");
     default:
       return t("nav.control");
   }
@@ -210,6 +216,8 @@ export function subtitleForTab(tab: Tab) {
       return t("subtitle.debug");
     case "logs":
       return t("subtitle.logs");
+    case "docs":
+      return t("subtitle.docs");
     default:
       return "";
   }

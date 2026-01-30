@@ -154,6 +154,26 @@ export class ClawdbotApp extends LitElement {
   @state() execApprovalBusy = false;
   @state() execApprovalError: string | null = null;
 
+  // License 状态 (ClawdbotCN)
+  @state() licenseState: import("./license/types").LicenseUiState = {
+    checking: false,
+    valid: true,
+    offlineMode: false,
+    error: null,
+    errorCode: null,
+    license: null,
+    device: null,
+    renewalReminder: null,
+    forceUpdate: null,
+    pendingNotifications: [],
+    lastVerifiedAt: null,
+  };
+  @state() showLicenseDialog: import("./license/types").LicenseDialogType | null = null;
+  @state() licenseActivating = false;
+  @state() licenseActivationError: string | null = null;
+  @state() licenseBoundDevices: import("./license/types").BoundDevice[] = [];
+  @state() showOfflineBanner = false;
+
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
   @state() configRawOriginal = "";
@@ -237,6 +257,15 @@ export class ClawdbotApp extends LitElement {
   @state() playgroundError: string | null = null;
   @state() playgroundActiveCategory: string | null = null;
 
+  // 文档中心状态
+  @state() docsViewState: import("./views/docs").DocsViewState = {
+    mode: "home",
+    searchQuery: "",
+    searchResults: [],
+    currentDocId: null,
+    showSearchModal: false,
+  };
+
   @state() debugLoading = false;
   @state() debugStatus: StatusSummary | null = null;
   @state() debugHealth: HealthSnapshot | null = null;
@@ -274,6 +303,7 @@ export class ClawdbotApp extends LitElement {
   private logsScrollFrame: number | null = null;
   private toolStreamById = new Map<string, ToolStreamEntry>();
   private toolStreamOrder: string[] = [];
+  private readingIndicatorTimer: number | null = null;
   basePath = "";
   private popStateHandler = () =>
     onPopStateInternal(
@@ -287,9 +317,29 @@ export class ClawdbotApp extends LitElement {
     return this;
   }
 
+  private handleDocsKeydown = (e: KeyboardEvent) => {
+    // ⌘K or Ctrl+K to open docs search
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      e.preventDefault();
+      if (this.tab === "docs") {
+        this.docsViewState = { ...this.docsViewState, showSearchModal: true };
+      } else {
+        // 切换到文档页面并打开搜索
+        this.tab = "docs";
+        this.docsViewState = { ...this.docsViewState, showSearchModal: true };
+      }
+    }
+    // Esc to close docs search modal
+    if (e.key === "Escape" && this.docsViewState.showSearchModal) {
+      e.preventDefault();
+      this.docsViewState = { ...this.docsViewState, showSearchModal: false };
+    }
+  };
+
   connectedCallback() {
     super.connectedCallback();
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
+    document.addEventListener("keydown", this.handleDocsKeydown);
   }
 
   protected firstUpdated() {
@@ -298,6 +348,7 @@ export class ClawdbotApp extends LitElement {
 
   disconnectedCallback() {
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
+    document.removeEventListener("keydown", this.handleDocsKeydown);
     super.disconnectedCallback();
   }
 
