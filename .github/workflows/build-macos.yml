@@ -23,6 +23,7 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
     name: Build ${{ matrix.arch }}
+    timeout-minutes: 45
 
     env:
       VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
@@ -67,8 +68,22 @@ jobs:
           mkdir -p "$PKG_DIR/node"
           mkdir -p "$PKG_DIR/config"
           
-          # Copy Node.js
-          cp -r node-pkg/* "$PKG_DIR/node/"
+          # Copy Node.js (only essential files)
+          mkdir -p "$PKG_DIR/node/bin"
+          mkdir -p "$PKG_DIR/node/lib"
+          cp node-pkg/bin/node "$PKG_DIR/node/bin/"
+          cp -r node-pkg/lib/node_modules "$PKG_DIR/node/lib/" 2>/dev/null || true
+          
+          # 清理 Node.js 中的不必要文件
+          rm -rf "$PKG_DIR/node/include" 2>/dev/null || true
+          rm -rf "$PKG_DIR/node/share" 2>/dev/null || true
+          find "$PKG_DIR/node" -name "*.md" -delete 2>/dev/null || true
+          find "$PKG_DIR/node" -name "*.html" -delete 2>/dev/null || true
+          find "$PKG_DIR/node" -name "CHANGELOG*" -delete 2>/dev/null || true
+          find "$PKG_DIR/node" -name "LICENSE*" -delete 2>/dev/null || true
+          
+          echo "Node.js size:"
+          du -sh "$PKG_DIR/node"
           
           # Copy app dist
           cp -r dist "$PKG_DIR/app/"
@@ -86,9 +101,13 @@ jobs:
             console.log(JSON.stringify(newPkg, null, 2));
           " > "$PKG_DIR/app/package.json"
           
-          # Copy extensions if exists (optional)
+          # Copy extensions if exists (optional, without node_modules)
           if [ -d "extensions" ]; then
-            cp -r extensions "$PKG_DIR/" || true
+            echo "Copying extensions (excluding node_modules)..."
+            mkdir -p "$PKG_DIR/extensions"
+            # 只复制源代码文件，不包含 node_modules
+            rsync -av --exclude='node_modules' --exclude='*.test.ts' --exclude='.git' extensions/ "$PKG_DIR/extensions/" 2>/dev/null || \
+            find extensions -maxdepth 2 -type f \( -name "*.ts" -o -name "*.js" -o -name "*.json" -o -name "*.md" \) -exec cp --parents {} "$PKG_DIR/" \; 2>/dev/null || true
           fi
           
           # Copy sandbox config (optional)
@@ -106,30 +125,106 @@ jobs:
           PKG_DIR="ClawbotCN-$VERSION-${{ matrix.arch }}"
           cd "$PKG_DIR/app"
           
-          # 使用打包的 Node.js 安装生产依赖
-          ../../node-pkg/bin/npm install --omit=dev --ignore-scripts --no-audit --no-fund || true
+          # 创建精简的 package.json，排除可选和大型依赖
+          node -e "
+            const pkg = require('./package.json');
+            // 排除可选依赖和大型依赖
+            const excludeDeps = [
+              'node-llama-cpp',       // 非常大的 LLM 库
+              '@napi-rs/canvas',      // 原生二进制
+              'playwright-core',      // 浏览器二进制
+              '@lydell/node-pty',     // 原生 pty
+              'sqlite-vec',           // 原生扩展
+              'sharp'                 // 图像处理原生模块
+            ];
+            const deps = {...pkg.dependencies};
+            excludeDeps.forEach(d => delete deps[d]);
+            pkg.dependencies = deps;
+            delete pkg.optionalDependencies;
+            console.log(JSON.stringify(pkg, null, 2));
+          " > package.json.tmp && mv package.json.tmp package.json
           
-          # 清理不必要的文件
-          echo "Cleaning up..."
+          # 使用打包的 Node.js 安装生产依赖
+          echo "Installing production dependencies..."
+          ../../node-pkg/bin/npm install --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund 2>&1 || true
+          
+          # 激进清理 node_modules
+          echo "=== Aggressive cleanup of node_modules ==="
+          
+          # 删除所有不必要的文件类型
           find node_modules -name "*.md" -delete 2>/dev/null || true
-          find node_modules -name "*.ts" -delete 2>/dev/null || true
+          find node_modules -name "*.ts" ! -name "*.d.ts" -delete 2>/dev/null || true
           find node_modules -name "*.map" -delete 2>/dev/null || true
+          find node_modules -name "*.min.js.map" -delete 2>/dev/null || true
           find node_modules -name "LICENSE*" -delete 2>/dev/null || true
           find node_modules -name "CHANGELOG*" -delete 2>/dev/null || true
+          find node_modules -name "HISTORY*" -delete 2>/dev/null || true
+          find node_modules -name "CONTRIBUTING*" -delete 2>/dev/null || true
+          find node_modules -name "AUTHORS*" -delete 2>/dev/null || true
           find node_modules -name ".npmignore" -delete 2>/dev/null || true
           find node_modules -name ".eslint*" -delete 2>/dev/null || true
+          find node_modules -name ".prettier*" -delete 2>/dev/null || true
+          find node_modules -name ".editorconfig" -delete 2>/dev/null || true
+          find node_modules -name "tsconfig*.json" -delete 2>/dev/null || true
+          find node_modules -name "*.gyp" -delete 2>/dev/null || true
+          find node_modules -name "*.gypi" -delete 2>/dev/null || true
+          find node_modules -name "Makefile*" -delete 2>/dev/null || true
+          find node_modules -name "*.yml" -delete 2>/dev/null || true
+          find node_modules -name "*.yaml" ! -path "*/yaml/*" -delete 2>/dev/null || true
+          find node_modules -name "binding.gyp" -delete 2>/dev/null || true
+          find node_modules -name "*.c" -delete 2>/dev/null || true
+          find node_modules -name "*.cpp" -delete 2>/dev/null || true
+          find node_modules -name "*.h" -delete 2>/dev/null || true
+          find node_modules -name "*.hpp" -delete 2>/dev/null || true
+          find node_modules -name "*.o" -delete 2>/dev/null || true
+          
+          # 删除不必要的目录
           find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "__tests__" -exec rm -rf {} + 2>/dev/null || true
           find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "doc" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "example" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "coverage" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name ".github" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name ".vscode" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "benchmark" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "benchmarks" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "fixtures" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "android" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "ios" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "windows" -exec rm -rf {} + 2>/dev/null || true
+          find node_modules -type d -name "prebuilds" -exec rm -rf {} + 2>/dev/null || true
+          
+          # 删除不需要的架构特定二进制
+          CURRENT_ARCH="${{ matrix.arch }}"
+          if [ "$CURRENT_ARCH" = "arm64" ]; then
+            find node_modules -type d -name "darwin-x64" -exec rm -rf {} + 2>/dev/null || true
+            find node_modules -type d -name "linux*" -exec rm -rf {} + 2>/dev/null || true
+            find node_modules -type d -name "win32*" -exec rm -rf {} + 2>/dev/null || true
+          else
+            find node_modules -type d -name "darwin-arm64" -exec rm -rf {} + 2>/dev/null || true
+            find node_modules -type d -name "linux*" -exec rm -rf {} + 2>/dev/null || true
+            find node_modules -type d -name "win32*" -exec rm -rf {} + 2>/dev/null || true
+          fi
+          
+          # 删除 .bin 目录中的符号链接（不需要）
+          rm -rf node_modules/.bin 2>/dev/null || true
+          
+          # 删除空目录
+          find node_modules -type d -empty -delete 2>/dev/null || true
           
           cd ../..
           
           # 显示大小
-          echo "Package size:"
+          echo "=== Package size after cleanup ==="
           du -sh "$PKG_DIR"
-          du -sh "$PKG_DIR/node_modules" 2>/dev/null || true
           du -sh "$PKG_DIR/app/node_modules" 2>/dev/null || true
+          
+          # 列出最大的包
+          echo "=== Top 20 largest packages ==="
+          du -sh "$PKG_DIR/app/node_modules"/* 2>/dev/null | sort -hr | head -20 || true
 
       - name: Create launcher scripts
         run: |
@@ -221,6 +316,7 @@ jobs:
     needs: build
     runs-on: macos-14
     name: Create Universal
+    timeout-minutes: 30
 
     env:
       VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
@@ -230,11 +326,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: macos-arm64
+        timeout-minutes: 10
 
       - name: Download x64
         uses: actions/download-artifact@v4
         with:
           name: macos-x64
+        timeout-minutes: 10
+
+      - name: List downloaded artifacts
+        run: |
+          echo "=== Downloaded artifacts ==="
+          ls -la
+          echo "=== File sizes ==="
+          du -sh * 2>/dev/null || true
 
       - name: Create Universal package
         run: |
