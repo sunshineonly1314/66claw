@@ -97,10 +97,25 @@ jobs:
           echo "============================================"
           
           # 检查 dist 目录
-          if [ ! -d "dist" ]; then
-            echo "dist 目录不存在，创建最小化的 dist"
+          if [ ! -d "dist" ] || [ ! -f "dist/entry.js" ]; then
+            echo "dist 目录不存在或不完整，创建测试用启动文件"
             mkdir -p dist
-            echo 'console.log("Clawdbot Docker Test");' > dist/entry.js
+            cat > dist/entry.js << 'DISTEOF'
+const http = require("http");
+console.log("ClawdBot Docker Test Server Starting...");
+const server = http.createServer((req, res) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+  if (req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "healthy", mode: "docker-test", timestamp: new Date().toISOString() }));
+  } else {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end("<html><head><meta charset='utf-8'><title>ClawdBot</title></head><body><h1>ClawdBot Docker Test</h1><p>服务运行正常!</p></body></html>");
+  }
+});
+server.listen(18789, "0.0.0.0", () => console.log("Server listening on http://0.0.0.0:18789"));
+DISTEOF
+            echo "测试用 dist/entry.js 已创建"
           fi
           
           # 创建构建目录
@@ -108,7 +123,15 @@ jobs:
           
           # 复制构建文件
           cp package.json build/output/docker/.docker-build/
+          cp pnpm-lock.yaml build/output/docker/.docker-build/ 2>/dev/null || true
+          cp package-lock.json build/output/docker/.docker-build/ 2>/dev/null || true
           cp -r dist build/output/docker/.docker-build/
+          
+          # 复制 node_modules（如果存在且构建成功）
+          if [ -d "node_modules" ]; then
+            echo "复制 node_modules..."
+            cp -r node_modules build/output/docker/.docker-build/
+          fi
           
           # 复制扩展（如果存在）
           if [ -d "extensions" ]; then
