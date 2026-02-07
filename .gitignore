@@ -76,6 +76,8 @@ config.test-keys.json
 .serena/
 
 # Build output and packaging artifacts
+build/pkg/
+build/output/
 scripts/windows/buildout/
 clawdbot-portable/
 *.pid
