@@ -3,11 +3,11 @@
  * 接收用户反馈并存储到本地文件，同步到远程服务器
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { appendFile, mkdir, writeFile, readFile } from "node:fs/promises";
-import { ErrorCodes, errorShape } from "../protocol/index.js";
+import { resolveStateDir } from "../../config/paths.js";
 import { getDeviceId } from "../../license/device-id.js";
+import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 /** 反馈 API 基础地址 */
@@ -68,10 +68,10 @@ interface RemoteFeedbackResponse {
 }
 
 /**
- * 获取反馈存储目录
+ * 获取反馈存储目录（与 CLAWDBOT_STATE_DIR 一致，便于数据统一放在安装目录）
  */
 function getFeedbackDir(): string {
-  return join(homedir(), ".clawdbot", "feedback");
+  return join(resolveStateDir(), "feedback");
 }
 
 /**

@@ -1,9 +1,9 @@
-﻿; ClawdbotCN Windows Installer
+; ClawdbotCN Windows Installer
 ; Built with Inno Setup 6+
 
 #define MyAppName "ClawdbotCN"
 #define MyAppNameCN "ClawdbotCN AI"
-#define MyAppVersion "2026.2.6"
+#define MyAppVersion "2026.2.7"
 #define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
 
@@ -15,7 +15,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppNameCN}
 OutputDir=E:\clawdbuild
-OutputBaseFilename=ClawdbotCN-Setup-2026.2.6-x64
+OutputBaseFilename=ClawdbotCN-Setup-2026.2.7-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

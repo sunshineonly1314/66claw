@@ -62,13 +62,27 @@ function resolveTranscriptPath(params: {
   return path.join(path.dirname(storePath), `${sessionId}.jsonl`);
 }
 
+/** True when dir is a filesystem root (e.g. C:\ on Windows or / on Unix). Must not mkdir root. */
+function isFsRoot(dir: string): boolean {
+  const parsed = path.parse(dir);
+  return dir === parsed.root;
+}
+
 function ensureTranscriptFile(params: { transcriptPath: string; sessionId: string }): {
   ok: boolean;
   error?: string;
 } {
   if (fs.existsSync(params.transcriptPath)) return { ok: true };
+  const parentDir = path.dirname(params.transcriptPath);
+  if (isFsRoot(parentDir)) {
+    return {
+      ok: false,
+      error:
+        "transcript path cannot be under drive root (e.g. C:\\). Check session.store in config.",
+    };
+  }
   try {
-    fs.mkdirSync(path.dirname(params.transcriptPath), { recursive: true });
+    fs.mkdirSync(parentDir, { recursive: true });
     const header = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
