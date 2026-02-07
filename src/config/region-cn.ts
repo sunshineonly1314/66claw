@@ -69,6 +69,8 @@ export interface CnRegionConfig {
   hiddenChannels: string[];
   /** 隐藏的 AI 提供商 (国内不可用) */
   hiddenProviders: string[];
+  /** 隐藏的技能 (国内不可用或已废弃) */
+  hiddenSkills: string[];
   /** Skills 镜像源 */
   skillsRegistry: string;
   /** 推广链接配置 */
@@ -165,42 +167,52 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
     authField: "apiKey", // 标准 API Key
     authHint: "格式: sk-xxx (在控制台 API密钥 页面获取)",
     models: [
+      // ⭐ 性价比推荐放最前
       {
-        id: "Qwen/Qwen2-7B-Instruct",
-        name: "🆓 Qwen2 7B (免费)",
-        description: "免费模型，入门首选",
+        id: "deepseek-ai/DeepSeek-V3",
+        name: "⭐ DeepSeek V3 (性价比之王)",
+        description: "日常首选！671B参数，效果好价格低",
         recommended: true,
+        pricing: "按量计费",
+      },
+      // 🧠 最强模型
+      {
+        id: "Pro/deepseek-ai/DeepSeek-R1",
+        name: "🧠 DeepSeek R1 Pro (最强推理)",
+        description: "复杂数学/代码/逻辑问题",
+        pricing: "¥4/百万tokens",
+      },
+      // 💰 免费模型
+      {
+        id: "Qwen/Qwen3-8B",
+        name: "💰 Qwen3 8B (免费)",
+        description: "最新Qwen3，中文能力强",
         pricing: "免费",
       },
       {
         id: "THUDM/glm-4-9b-chat",
-        name: "🆓 GLM-4 9B (免费)",
+        name: "💰 GLM-4 9B (免费)",
         description: "智谱免费模型",
         pricing: "免费",
       },
       {
         id: "internlm/internlm2_5-7b-chat",
-        name: "🆓 InternLM2.5 7B (免费)",
+        name: "💰 InternLM2.5 7B (免费)",
         description: "书生浦语免费模型",
         pricing: "免费",
       },
+      // 其他模型
       {
-        id: "deepseek-ai/DeepSeek-V3",
-        name: "💰 DeepSeek V3 (推荐)",
-        description: "性价比极高，强烈推荐",
-        pricing: "¥1.33/百万tokens",
-      },
-      {
-        id: "Pro/deepseek-ai/DeepSeek-R1",
-        name: "DeepSeek R1 (Pro)",
-        description: "推理增强，复杂问题首选",
-        pricing: "¥4/百万tokens(输入)",
-      },
-      {
-        id: "Qwen/Qwen2-72B-Instruct",
-        name: "Qwen2 72B",
+        id: "Qwen/Qwen2.5-72B-Instruct",
+        name: "Qwen2.5 72B",
         description: "通义千问最强开源模型",
-        pricing: "¥4.13/百万tokens",
+        pricing: "按量计费",
+      },
+      {
+        id: "Qwen/Qwen2.5-Coder-32B-Instruct",
+        name: "Qwen2.5 Coder 32B",
+        description: "代码生成专用",
+        pricing: "按量计费",
       },
     ],
     envVar: "SILICONFLOW_API_KEY",
@@ -218,30 +230,40 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
     authField: "apiKey", // 格式: xxx.xxx (两段式)
     authHint: "格式: xxxxxx.xxxxxx (在 open.bigmodel.cn 控制台获取)",
     models: [
-      {
-        id: "glm-4-flash-250414",
-        name: "🆓 GLM-4 Flash (免费)",
-        description: "永久免费！速度快，日常使用首选",
-        recommended: true,
-        pricing: "免费",
-      },
+      // ⭐ 性价比推荐
       {
         id: "glm-4-air-250414",
-        name: "💰 GLM-4 Air (超值)",
-        description: "性价比最高，效果接近 Plus",
+        name: "⭐ GLM-4.5 Air (性价比之王)",
+        description: "日常首选！效果好价格低",
+        recommended: true,
         pricing: "¥0.5/百万tokens",
+      },
+      // 🧠 最强模型
+      {
+        id: "glm-4.7",
+        name: "🧠 GLM-4.7 (最强)",
+        description: "最新旗舰，Agent/代码增强",
+        pricing: "¥15/百万tokens",
+      },
+      // 💰 免费模型
+      {
+        id: "glm-4-flash-250414",
+        name: "💰 GLM-4.5 Flash (永久免费)",
+        description: "免费！速度快",
+        pricing: "免费",
+      },
+      // 其他模型
+      {
+        id: "glm-4-flashx-250414",
+        name: "GLM-4.5 FlashX",
+        description: "极速推理，低延迟",
+        pricing: "¥0.1/百万tokens",
       },
       {
         id: "glm-4-plus",
-        name: "GLM-4 Plus",
+        name: "GLM-4.5 Plus",
         description: "最强性能，复杂任务",
         pricing: "¥5/百万tokens",
-      },
-      {
-        id: "glm-4-flashx-250414",
-        name: "GLM-4 FlashX",
-        description: "极速推理，低延迟",
-        pricing: "¥0.1/百万tokens",
       },
       {
         id: "glm-4v-plus",
@@ -272,20 +294,20 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
     authHint: "格式: sk-xxx (在 DashScope 控制台获取)",
     models: [
       {
-        id: "qwen-plus-latest",
+        id: "qwen-plus",
         name: "💰 Qwen-Plus (推荐)",
         description: "性价比最高！131K上下文，日常首选",
         recommended: true,
         pricing: "¥0.8/百万tokens(输入) ¥2/百万tokens(输出)",
       },
       {
-        id: "qwen-turbo-latest",
+        id: "qwen-turbo",
         name: "Qwen-Turbo (最便宜)",
         description: "极速推理，1M超长上下文，简单任务",
         pricing: "¥0.3/百万tokens(输入) ¥0.6/百万tokens(输出)",
       },
       {
-        id: "qwen-max-latest",
+        id: "qwen-max",
         name: "Qwen-Max (最强)",
         description: "超越 DeepSeek V3，复杂任务首选，但较贵",
         pricing: "¥11.2/百万tokens(输入) ¥44.8/百万tokens(输出)",
@@ -297,7 +319,7 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
         pricing: "¥0.5/百万tokens",
       },
       {
-        id: "qwen-vl-max-latest",
+        id: "qwen-vl-max",
         name: "Qwen-VL-Max (视觉)",
         description: "支持图像理解",
         pricing: "¥20/百万tokens",
@@ -337,39 +359,108 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
   },
 
   // ============================================================================
-  // 火山引擎 (豆包) - 注意：需要创建推理接入点
+  // 火山引擎 (豆包) - 需要先在控制台开通模型
   // ============================================================================
   "volcengine-ark": {
     id: "volcengine-ark",
     name: "豆包 (火山引擎)",
-    description: "字节跳动豆包，需在控制台创建「推理接入点」",
+    description: "字节跳动豆包，需先在控制台开通模型",
     apiEndpoint: "https://ark.cn-beijing.volces.com/api/v3",
     authField: "apiKey",
     authHint: "格式: 在火山引擎控制台创建 API Key",
-    authNote: "⚠️ 重要：模型 ID 是你创建的「推理接入点 ID」，不是固定值！请在控制台 console.volcengine.com/ark 创建接入点后填入。",
+    authNote: "⚠️ 重要：使用前必须在火山方舟控制台「开通管理」页面开通对应模型！开通地址: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement",
     models: [
       {
-        id: "ep-xxxxxxxxxx",
+        id: "doubao-seed-1-8-251228",
         name: "💰 豆包 1.8 (推荐)",
-        description: "最新版本，性价比高。⚠️ 请替换为你的接入点 ID",
+        description: "最新版本，性能强大，性价比高",
         recommended: true,
-        pricing: "¥0.8/百万tokens起",
+        pricing: "¥0.4/百万tokens(输入) ¥1.6/百万tokens(输出)",
       },
       {
-        id: "ep-yyyyyyyyyy",
-        name: "豆包 1.6 Flash (便宜)",
-        description: "极速响应。⚠️ 请替换为你的接入点 ID",
-        pricing: "¥0.075/百万tokens起",
-      },
-      {
-        id: "ep-zzzzzzzzzz",
-        name: "豆包 1.6 Lite",
-        description: "轻量版本。⚠️ 请替换为你的接入点 ID",
-        pricing: "¥0.15/百万tokens起",
+        id: "doubao-seed-1-6-251015",
+        name: "豆包 1.6",
+        description: "稳定版本",
+        pricing: "¥0.8/百万tokens(输入) ¥2/百万tokens(输出)",
       },
     ],
     envVar: "ARK_API_KEY",
-    docsUrl: "https://www.volcengine.com/docs/82379/1263482",
+    docsUrl: "https://www.volcengine.com/docs/82379/1330310",
+  },
+
+  // ============================================================================
+  // 月之暗面 Kimi (Moonshot)
+  // 官方文档: https://platform.moonshot.cn/docs/pricing/chat
+  // ============================================================================
+  moonshot: {
+    id: "moonshot",
+    name: "Kimi (月之暗面)",
+    description: "长上下文之王，K2代码/Agent能力超强",
+    apiEndpoint: "https://api.moonshot.cn/v1",
+    authField: "apiKey",
+    authHint: "格式: sk-xxx (在 platform.moonshot.cn 获取)",
+    models: [
+      // ⭐ 推荐 - kimi-latest 系列
+      {
+        id: "kimi-latest",
+        name: "⭐ Kimi Latest (推荐)",
+        description: "日常首选！自动选择最新版本，支持图片",
+        recommended: true,
+        pricing: "¥2/百万tokens(输入) ¥10/百万tokens(输出)",
+      },
+      // 🧠 K2 系列 - 超强代码和 Agent 能力
+      {
+        id: "kimi-k2-turbo-preview",
+        name: "🧠 Kimi K2 Turbo (官方推荐)",
+        description: "1T参数MoE，262K上下文，代码/Agent超强",
+        pricing: "¥8/百万tokens(输入) ¥58/百万tokens(输出)",
+      },
+      {
+        id: "kimi-k2-0905-preview",
+        name: "Kimi K2 0905",
+        description: "K2基础版，262K上下文",
+        pricing: "¥4/百万tokens(输入) ¥16/百万tokens(输出)",
+      },
+      {
+        id: "kimi-k2-0711-preview",
+        name: "Kimi K2 0711",
+        description: "K2早期版本，131K上下文",
+        pricing: "¥4/百万tokens(输入) ¥16/百万tokens(输出)",
+      },
+      {
+        id: "kimi-k2-thinking",
+        name: "🧠 Kimi K2 Thinking (深度推理)",
+        description: "K2推理版，复杂逻辑问题",
+        pricing: "¥4/百万tokens(输入) ¥16/百万tokens(输出)",
+      },
+      {
+        id: "kimi-k2-thinking-turbo",
+        name: "Kimi K2 Thinking Turbo",
+        description: "K2推理加速版",
+        pricing: "¥8/百万tokens(输入) ¥58/百万tokens(输出)",
+      },
+      // 💰 便宜 - moonshot-v1 系列
+      {
+        id: "moonshot-v1-8k",
+        name: "💰 Kimi 8K (便宜快速)",
+        description: "快速响应，简单对话",
+        pricing: "¥2/百万tokens(输入) ¥10/百万tokens(输出)",
+      },
+      {
+        id: "moonshot-v1-32k",
+        name: "Kimi 32K",
+        description: "中等长度文档",
+        pricing: "¥5/百万tokens(输入) ¥20/百万tokens(输出)",
+      },
+      {
+        id: "moonshot-v1-128k",
+        name: "Kimi 128K",
+        description: "长文档处理",
+        pricing: "¥10/百万tokens(输入) ¥30/百万tokens(输出)",
+      },
+    ],
+    envVar: "MOONSHOT_API_KEY",
+    docsUrl: "https://platform.moonshot.cn/docs/pricing/chat",
   },
 
   // ============================================================================
@@ -378,22 +469,24 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
   minimax: {
     id: "minimax",
     name: "MiniMax",
-    description: "MiniMax M2.1，只需 API Key（不需要 Group ID）",
+    description: "MiniMax M2.1，Agent/代码专家",
     apiEndpoint: "https://api.minimaxi.com/anthropic",
     authField: "apiKey",
     authHint: "在 platform.minimaxi.com 获取 API Key（很长的字符串，不需要 Group ID）",
     models: [
+      // ⭐ 性价比推荐
       {
         id: "MiniMax-M2.1",
-        name: "💰 MiniMax M2.1 (推荐)",
-        description: "多语言编程 / Agent 工作流",
+        name: "⭐ MiniMax M2.1 (Agent专家)",
+        description: "日常首选！多语言编程 / Agent 工作流",
         recommended: true,
         pricing: "¥2.1/百万tokens(输入) ¥8.4/百万tokens(输出)",
       },
+      // 💰 低延迟
       {
         id: "MiniMax-M2.1-lightning",
-        name: "MiniMax M2.1 Lightning",
-        description: "极速版，延迟更低",
+        name: "💰 M2.1 Lightning (低延迟)",
+        description: "极速版，响应更快",
         pricing: "¥2.1/百万tokens(输入) ¥16.8/百万tokens(输出)",
       },
     ],
@@ -432,6 +525,307 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
     envVar: "HUNYUAN_SECRET_ID",
     docsUrl: "https://cloud.tencent.com/document/product/1729/",
   },
+
+  // ============================================================================
+  // 国际服务 - Google Gemini
+  // ============================================================================
+  google: {
+    id: "google",
+    name: "Google Gemini",
+    description: "Gemini 3/2 系列（需要科学上网）",
+    apiEndpoint: "https://generativelanguage.googleapis.com/v1beta",
+    authField: "apiKey",
+    authHint: "格式: AIzaSy... (在 aistudio.google.com 获取)",
+    authNote: "⚠️ 需要科学上网",
+    models: [
+      {
+        id: "gemini-3-flash-preview",
+        name: "💰 Gemini 3 Flash (推荐)",
+        description: "最新版本，速度与智能平衡",
+        recommended: true,
+        pricing: "免费",
+      },
+      {
+        id: "gemini-3-pro-preview",
+        name: "🧠 Gemini 3 Pro",
+        description: "最强智能，多模态理解",
+        pricing: "免费",
+      },
+      {
+        id: "gemini-3-pro-image-preview",
+        name: "🎨 Gemini 3 Pro Image",
+        description: "图像生成与理解",
+        pricing: "免费",
+      },
+      {
+        id: "gemini-2.0-flash",
+        name: "Gemini 2.0 Flash",
+        description: "稳定版本，速度快",
+        pricing: "免费",
+      },
+    ],
+    envVar: "GOOGLE_API_KEY",
+    docsUrl: "https://ai.google.dev/gemini-api/docs",
+  },
+
+  // ============================================================================
+  // 国际服务 - OpenAI
+  // ============================================================================
+  openai: {
+    id: "openai",
+    name: "OpenAI GPT",
+    description: "GPT-5/4/o3/o4 系列（需要科学上网）",
+    apiEndpoint: "https://api.openai.com/v1",
+    authField: "apiKey",
+    authHint: "格式: sk-... (在 platform.openai.com 获取)",
+    authNote: "⚠️ 需要科学上网",
+    models: [
+      {
+        id: "gpt-5.2-pro",
+        name: "🧠 GPT-5.2 Pro (最强)",
+        description: "最新最强智能",
+        pricing: "付费",
+      },
+      {
+        id: "gpt-5.2",
+        name: "GPT-5.2",
+        description: "GPT-5 最新版本",
+        pricing: "付费",
+      },
+      {
+        id: "o4-mini",
+        name: "💰 o4-mini (推荐)",
+        description: "推理模型，性价比高",
+        recommended: true,
+        pricing: "付费",
+      },
+      {
+        id: "o3-mini",
+        name: "o3-mini",
+        description: "推理模型",
+        pricing: "付费",
+      },
+      {
+        id: "gpt-4o",
+        name: "GPT-4o",
+        description: "多模态，快速",
+        pricing: "付费",
+      },
+      {
+        id: "gpt-4o-mini",
+        name: "GPT-4o Mini",
+        description: "轻量快速",
+        pricing: "付费",
+      },
+    ],
+    envVar: "OPENAI_API_KEY",
+    docsUrl: "https://platform.openai.com/docs/api-reference",
+  },
+
+  // ============================================================================
+  // 国际服务 - Anthropic Claude
+  // ============================================================================
+  anthropic: {
+    id: "anthropic",
+    name: "Anthropic Claude",
+    description: "Claude 4/3.5 系列（需要科学上网）",
+    apiEndpoint: "https://api.anthropic.com/v1",
+    authField: "apiKey",
+    authHint: "格式: sk-ant-... (在 console.anthropic.com 获取)",
+    authNote: "⚠️ 需要科学上网",
+    models: [
+      {
+        id: "claude-sonnet-4-20250514",
+        name: "💰 Claude Sonnet 4 (推荐)",
+        description: "最新版本，智能与速度平衡",
+        recommended: true,
+        pricing: "付费",
+      },
+      {
+        id: "claude-opus-4-20250514",
+        name: "🧠 Claude Opus 4 (最强)",
+        description: "最强智能",
+        pricing: "付费",
+      },
+      {
+        id: "claude-3-5-sonnet-20241022",
+        name: "Claude 3.5 Sonnet",
+        description: "稳定版本",
+        pricing: "付费",
+      },
+      {
+        id: "claude-3-5-haiku-20241022",
+        name: "Claude 3.5 Haiku",
+        description: "轻量快速",
+        pricing: "付费",
+      },
+    ],
+    envVar: "ANTHROPIC_API_KEY",
+    docsUrl: "https://docs.anthropic.com/en/api",
+  },
+
+  // ============================================================================
+  // 魔搭社区 ModelScope - 免费推理API
+  // ============================================================================
+  modelscope: {
+    id: "modelscope",
+    name: "魔搭社区",
+    description: "阿里开源平台，免费推理API，每日2000次调用",
+    apiEndpoint: "https://api-inference.modelscope.cn/v1",
+    authField: "apiKey",
+    authHint: "在 modelscope.cn/my/myaccesstoken 获取 Token",
+    authNote: "💡 完全免费！每日2000次调用",
+    models: [
+      // ⭐ 性价比推荐
+      {
+        id: "Qwen/Qwen3-72B-Instruct",
+        name: "⭐ Qwen3 72B (免费推荐)",
+        description: "免费！最新最强Qwen3",
+        recommended: true,
+        pricing: "免费(2000次/天)",
+      },
+      // 🧠 代码专用
+      {
+        id: "Qwen/Qwen2.5-Coder-32B-Instruct",
+        name: "🧠 Qwen2.5 Coder 32B",
+        description: "代码生成专用",
+        pricing: "免费(2000次/天)",
+      },
+      // 💰 免费模型
+      {
+        id: "deepseek-ai/DeepSeek-V3",
+        name: "💰 DeepSeek V3 (免费)",
+        description: "性价比之王",
+        pricing: "免费(2000次/天)",
+      },
+      // 其他模型
+      {
+        id: "Qwen/Qwen3-32B-Instruct",
+        name: "Qwen3 32B",
+        description: "Qwen3中规格",
+        pricing: "免费(2000次/天)",
+      },
+      {
+        id: "THUDM/glm-4-9b-chat",
+        name: "GLM-4 9B",
+        description: "智谱开源",
+        pricing: "免费(2000次/天)",
+      },
+    ],
+    envVar: "MODELSCOPE_API_KEY",
+    docsUrl: "https://modelscope.cn/docs",
+  },
+
+  // ============================================================================
+  // 本地模型 - Ollama
+  // ============================================================================
+  ollama: {
+    id: "ollama",
+    name: "Ollama 本地模型",
+    description: "本地运行的开源模型（无需联网）",
+    apiEndpoint: "http://localhost:11434/v1",
+    authField: "apiKey",
+    authHint: "默认填 ollama 即可（本地无需验证）",
+    authNote: "💡 需要先安装并启动 Ollama",
+    models: [
+      // ⭐ 性价比推荐
+      {
+        id: "qwen3:8b",
+        name: "⭐ Qwen3 8B (推荐)",
+        description: "最新Qwen3，中文能力强",
+        recommended: true,
+        pricing: "免费",
+      },
+      // 💰 轻量模型
+      {
+        id: "llama3.2:3b",
+        name: "💰 Llama 3.2 3B (轻量)",
+        description: "内存小也能跑",
+        pricing: "免费",
+      },
+      {
+        id: "phi3:latest",
+        name: "💰 Phi-3 (轻量)",
+        description: "微软小模型，2G内存可用",
+        pricing: "免费",
+      },
+      // 其他模型
+      {
+        id: "qwen3:14b",
+        name: "Qwen3 14B",
+        description: "更强性能",
+        pricing: "免费",
+      },
+      {
+        id: "deepseek-r1:7b",
+        name: "DeepSeek R1 7B",
+        description: "深度思考推理模型",
+        pricing: "免费",
+      },
+      {
+        id: "gemma2:9b",
+        name: "Gemma 2 9B",
+        description: "Google 开源模型",
+        pricing: "免费",
+      },
+      {
+        id: "mistral:latest",
+        name: "Mistral",
+        description: "高效开源模型",
+        pricing: "免费",
+      },
+    ],
+    envVar: "OLLAMA_API_KEY",
+    docsUrl: "https://ollama.com/library",
+  },
+
+  // ============================================================================
+  // 国际服务 - NVIDIA NIM
+  // ============================================================================
+  nvidia: {
+    id: "nvidia",
+    name: "NVIDIA NIM",
+    description: "NVIDIA NIM API（需要科学上网）",
+    apiEndpoint: "https://integrate.api.nvidia.com/v1",
+    authField: "apiKey",
+    authHint: "格式: nvapi-... (在 build.nvidia.com 获取)",
+    authNote: "⚠️ 需要科学上网",
+    models: [
+      {
+        id: "nvidia/llama-3.3-nemotron-super-49b-v1",
+        name: "💰 Nemotron Super 49B (推荐)",
+        description: "高性能推理模型",
+        recommended: true,
+        pricing: "免费额度",
+      },
+      {
+        id: "deepseek-ai/deepseek-r1",
+        name: "🧠 DeepSeek R1",
+        description: "深度推理模型",
+        pricing: "免费额度",
+      },
+      {
+        id: "nvidia/nemotron-3-nano-30b",
+        name: "Nemotron 3 Nano 30B",
+        description: "100万上下文 MoE 模型",
+        pricing: "免费额度",
+      },
+      {
+        id: "meta/llama-3.1-405b-instruct",
+        name: "Llama 3.1 405B",
+        description: "Meta 最大模型",
+        pricing: "免费额度",
+      },
+      {
+        id: "google/gemma-2-27b-it",
+        name: "Gemma 2 27B",
+        description: "Google 开源模型",
+        pricing: "免费额度",
+      },
+    ],
+    envVar: "NVIDIA_API_KEY",
+    docsUrl: "https://build.nvidia.com/docs",
+  },
 };
 
 // ============================================================================
@@ -441,13 +835,24 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
 export const CN_REGION_CONFIG: CnRegionConfig = {
   // AI 提供商推荐顺序（必须与 CN_PROVIDERS 中的 key 一致）
   recommendedProviders: [
+    // 推荐国产服务（大卡片展示）
     "siliconflow",
-    "glm",
     "aliyun-bailian",
-    "deepseek",
     "volcengine-ark",
+    // 更多国产服务（折叠）
+    "deepseek",
+    "glm",
+    "moonshot",
     "minimax",
     "tencent-hunyuan",
+    // 国际服务（折叠，需要科学上网）
+    "google",
+    "openai",
+    "anthropic",
+    "nvidia",
+    // 本地模型 & 自定义（折叠）
+    "modelscope",
+    "ollama",
   ],
 
   // 指挥渠道推荐顺序（企业微信暂不支持）
@@ -465,11 +870,17 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
 
   // 隐藏不可用的 AI 提供商
   hiddenProviders: [
-    "openai",
-    "anthropic",
-    "google",
+    // "openai", // 已启用
+    // "anthropic", // 已启用
+    // "google", // 已启用
     "openrouter",
     "ai-gateway",
+  ],
+
+  // 隐藏的技能 (国内不可用或已废弃)
+  // clawdhub: 国际版技能市场CLI工具，ClawdbotCN 已内置国内技能市场，无需此工具
+  hiddenSkills: [
+    "clawdhub",
   ],
 
   // Skills 镜像源 (ClawdSkillsProxy 服务)
@@ -556,6 +967,14 @@ export function isChannelHiddenInCn(channelId: string): boolean {
  */
 export function isProviderHiddenInCn(providerId: string): boolean {
   return CN_REGION_CONFIG.hiddenProviders.includes(providerId);
+}
+
+/**
+ * 检查技能是否应该在中国区隐藏
+ * 用于过滤国内不可用或已废弃的技能（如 clawdhub）
+ */
+export function isSkillHiddenInCn(skillId: string): boolean {
+  return CN_REGION_CONFIG.hiddenSkills.includes(skillId.toLowerCase());
 }
 
 // ============================================================================

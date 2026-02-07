@@ -15,10 +15,10 @@ describe("usage-format", () => {
     expect(formatTokenCount(2_500_000)).toBe("2.5m");
   });
 
-  it("formats USD values", () => {
-    expect(formatUsd(1.234)).toBe("$1.23");
-    expect(formatUsd(0.5)).toBe("$0.50");
-    expect(formatUsd(0.0042)).toBe("$0.0042");
+  it("formats cost values in CNY", () => {
+    expect(formatUsd(1.234)).toBe("¥1.23");
+    expect(formatUsd(0.5)).toBe("¥0.50");
+    expect(formatUsd(0.0042)).toBe("¥0.0042");
   });
 
   it("resolves model cost config and estimates usage cost", () => {

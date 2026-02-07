@@ -71,11 +71,16 @@ export class GatewayBrowserClient {
   private connectSent = false;
   private connectTimer: number | null = null;
   private backoffMs = 800;
+  // Capture the actual connect RPC error (e.g. "unauthorized: gateway token missing ...")
+  // so onClose can detect specific auth failures regardless of WebSocket close timing.
+  // Without this, the onClose reason may only contain the generic "connect failed" string.
+  private lastConnectError: string | null = null;
 
   constructor(private opts: GatewayBrowserClientOptions) {}
 
   start() {
     this.closed = false;
+    this.lastConnectError = null;
     this.connect();
   }
 
@@ -96,7 +101,14 @@ export class GatewayBrowserClient {
     this.ws.onopen = () => this.queueConnect();
     this.ws.onmessage = (ev) => this.handleMessage(String(ev.data ?? ""));
     this.ws.onclose = (ev) => {
-      const reason = String(ev.reason ?? "");
+      // Prefer the captured connect RPC error over the generic WebSocket close reason.
+      // When the connect handshake fails, the .catch() handler closes with code 4008
+      // and reason "connect failed", losing the actual auth error message (e.g.
+      // "unauthorized: token missing"). By preserving it here, callers can reliably
+      // detect the specific auth failure type.
+      const wsReason = String(ev.reason ?? "");
+      const reason = this.lastConnectError || wsReason;
+      this.lastConnectError = null;
       this.ws = null;
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`));
       this.opts.onClose?.({ code: ev.code, reason });
@@ -144,7 +156,9 @@ export class GatewayBrowserClient {
         deviceId: deviceIdentity.deviceId,
         role,
       })?.token;
-      authToken = storedToken ?? this.opts.token;
+      // Use || (not ??) so empty-string device tokens fall through to the shared token.
+      // An empty device token is never valid; ?? would keep "" and skip the shared token.
+      authToken = storedToken || this.opts.token;
       canFallbackToShared = Boolean(storedToken && this.opts.token);
     }
     const auth =
@@ -219,7 +233,10 @@ export class GatewayBrowserClient {
         this.backoffMs = 800;
         this.opts.onHello?.(hello);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // Capture the actual error (e.g. "unauthorized: gateway token missing ...")
+        // so onClose can detect auth failures even when the client initiates the close.
+        this.lastConnectError = err instanceof Error ? err.message : null;
         if (canFallbackToShared && deviceIdentity) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
         }

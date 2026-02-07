@@ -1,4 +1,5 @@
 import { extractText } from "../chat/message-extract";
+import { formatErrorHint } from "../chat/error-hints";
 import type { GatewayBrowserClient } from "../gateway";
 import { generateUUID } from "../uuid";
 import type { ChatAttachment } from "../ui-types";
@@ -123,13 +124,33 @@ export async function sendChatMessage(
     state.chatRunId = null;
     state.chatStream = null;
     state.chatStreamStartedAt = null;
+    
+    // 检测是否为授权错误 - 如果是，返回特殊标记而不是设置 lastError
+    // 这样可以触发激活弹框而不是显示红色错误
+    const isLicenseError = error.includes("授权无效") || 
+                           error.includes("请先激活") || 
+                           error.includes("UNAUTHORIZED") ||
+                           error.includes("license");
+    
+    if (isLicenseError) {
+      // 返回特殊的授权错误结果，由调用方处理
+      return { ok: false, isLicenseError: true, error } as unknown as boolean;
+    }
+    
     state.lastError = error;
+    
+    // 添加格式化的错误消息
+    const errorHint = formatErrorHint(error);
+    const errorText = errorHint.rawError
+      ? `${errorHint.friendlyMessage}\n\n> ${errorHint.rawError}`
+      : errorHint.friendlyMessage;
     state.chatMessages = [
       ...state.chatMessages,
       {
         role: "assistant",
-        content: [{ type: "text", text: "Error: " + error }],
+        content: [{ type: "text", text: `⚠️ ${errorText}` }],
         timestamp: Date.now(),
+        isError: true,
       },
     ];
     return false;
@@ -193,7 +214,23 @@ export function handleChatEvent(
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
-    state.lastError = payload.errorMessage ?? "chat error";
+    const errorMsg = payload.errorMessage ?? "chat error";
+    state.lastError = errorMsg;
+    
+    // 添加格式化的错误消息到聊天历史
+    const errorHint = formatErrorHint(errorMsg);
+    const errorText = errorHint.rawError
+      ? `${errorHint.friendlyMessage}\n\n> ${errorHint.rawError}`
+      : errorHint.friendlyMessage;
+    state.chatMessages = [
+      ...state.chatMessages,
+      {
+        role: "assistant",
+        content: [{ type: "text", text: `⚠️ ${errorText}` }],
+        timestamp: Date.now(),
+        isError: true,
+      },
+    ];
   }
   return payload.state;
 }

@@ -177,6 +177,14 @@ export function extractAssistantText(msg: AssistantMessage): string {
     return rec.type === "text" && typeof rec.text === "string";
   };
 
+  // Handle string content (OpenAI-compatible API format like Moonshot, DeepSeek, etc.)
+  if (typeof msg.content === "string") {
+    const processed = stripThinkingTagsFromText(
+      stripDowngradedToolCallText(stripMinimaxToolCallXml(msg.content)),
+    ).trim();
+    return sanitizeUserFacingText(processed);
+  }
+
   const blocks = Array.isArray(msg.content)
     ? msg.content
         .filter(isTextBlock)

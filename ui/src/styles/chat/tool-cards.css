@@ -1,20 +1,41 @@
-/* Tool Card Styles */
+/* Tool Card Styles - 优化的工具卡片设计 */
 .chat-tool-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  margin-top: 8px;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 10px;
   background: var(--card);
-  box-shadow: inset 0 1px 0 var(--card-highlight);
-  transition: border-color 150ms ease-out, background 150ms ease-out;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 var(--card-highlight);
+  transition: all 200ms ease-out;
   /* Fixed max-height to ensure cards don't expand too much */
-  max-height: 120px;
+  max-height: 140px;
   overflow: hidden;
+  position: relative;
+}
+
+/* 左侧装饰条 */
+.chat-tool-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-hover) 100%);
+  opacity: 0.6;
+  transition: opacity 200ms ease;
 }
 
 .chat-tool-card:hover {
   border-color: var(--border-strong);
   background: var(--bg-hover);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.chat-tool-card:hover::before {
+  opacity: 1;
 }
 
 /* First tool card in a group - no top margin */
@@ -42,29 +63,42 @@
 .chat-tool-card__title {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-weight: 600;
   font-size: 13px;
   line-height: 1.2;
+  color: var(--text-strong);
 }
 
 .chat-tool-card__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent-subtle) 0%, rgba(139, 92, 246, 0.1) 100%);
+  border-radius: 6px;
+  padding: 4px;
 }
 
 .chat-tool-card__icon svg {
   width: 14px;
   height: 14px;
-  stroke: currentColor;
+  stroke: var(--accent);
   fill: none;
   stroke-width: 1.5px;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* 浅色主题图标样式 */
+:root[data-theme="light"] .chat-tool-card__icon {
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.1) 0%, rgba(234, 88, 12, 0.08) 100%);
+}
+
+:root[data-theme="light"] .chat-tool-card__icon svg {
+  stroke: #dc2626;
 }
 
 /* "View >" action link */
@@ -152,143 +186,28 @@
   word-break: break-word;
 }
 
-/* Reading Indicator - Enhanced with timer and timeout hints */
-.chat-reading-indicator {
-  background: linear-gradient(135deg, var(--card) 0%, rgba(var(--accent-rgb, 234, 88, 12), 0.03) 100%);
-  border: 1px solid var(--border);
-  padding: 14px 18px;
-  display: inline-flex;
-  border-radius: var(--radius-lg);
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s ease;
+/* Reading Indicator styles → moved to grouped.css */
+
+/* Light theme adjustments - 优化的浅色主题工具卡片 */
+:root[data-theme="light"] .chat-tool-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
-/* Subtle glow animation for waiting state */
-.chat-reading-indicator::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle, rgba(var(--accent-rgb, 234, 88, 12), 0.08) 0%, transparent 70%);
-  animation: reading-glow 3s ease-in-out infinite;
-  pointer-events: none;
+:root[data-theme="light"] .chat-tool-card:hover {
+  background: #fafafa;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
-@keyframes reading-glow {
-  0%, 100% {
-    opacity: 0.3;
-    transform: scale(0.8);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.1);
-  }
+:root[data-theme="light"] .chat-tool-card::before {
+  background: linear-gradient(180deg, #dc2626 0%, #ea580c 100%);
 }
 
-.chat-reading-indicator__content {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
+:root[data-theme="light"] .chat-tool-card__preview {
+  background: #f8f6f3;
+  border-color: rgba(0, 0, 0, 0.06);
 }
 
-.chat-reading-indicator__dots {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-
-.chat-reading-indicator__dots span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: reading-pulse 1.4s ease-in-out infinite;
-  box-shadow: 0 0 6px rgba(var(--accent-rgb, 234, 88, 12), 0.4);
-}
-
-.chat-reading-indicator__dots span:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.chat-reading-indicator__dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.chat-reading-indicator__dots span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes reading-pulse {
-  0%, 60%, 100% {
-    opacity: 0.4;
-    transform: scale(0.85);
-  }
-  30% {
-    opacity: 1;
-    transform: scale(1.1);
-  }
-}
-
-.chat-reading-indicator__text {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.chat-reading-indicator__waiting {
-  color: var(--text);
-  font-weight: 500;
-}
-
-.chat-reading-indicator__hint {
-  color: var(--muted);
-  font-style: italic;
-}
-
-.chat-reading-indicator__timer {
-  font-size: 12px;
-  color: var(--muted);
-  opacity: 0.7;
-  font-variant-numeric: tabular-nums;
-  min-width: 28px;
-}
-
-/* Timeout state - warning styling */
-.chat-reading-indicator--timeout {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.03) 100%);
-  border-color: rgba(239, 68, 68, 0.3);
-}
-
-.chat-reading-indicator--timeout::before {
-  background: radial-gradient(circle, rgba(239, 68, 68, 0.1) 0%, transparent 70%);
-}
-
-.chat-reading-indicator--timeout .chat-reading-indicator__dots span {
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
-}
-
-.chat-reading-indicator__warning {
-  color: #ef4444;
-  font-weight: 500;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* Light theme adjustments */
-:root[data-theme="light"] .chat-reading-indicator {
-  background: linear-gradient(135deg, #ffffff 0%, rgba(234, 88, 12, 0.04) 100%);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-:root[data-theme="light"] .chat-reading-indicator--timeout {
-  background: linear-gradient(135deg, #fef2f2 0%, #fff 100%);
-  border-color: rgba(239, 68, 68, 0.25);
-}
+/* Reading indicator light theme → grouped.css */

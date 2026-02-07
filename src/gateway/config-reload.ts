@@ -65,6 +65,9 @@ const BASE_RELOAD_RULES: ReloadRule[] = [
 ];
 
 const BASE_RELOAD_RULES_TAIL: ReloadRule[] = [
+  // ========================================
+  // 无需任何操作的配置（运行时动态读取）
+  // ========================================
   { prefix: "meta", kind: "none" },
   { prefix: "license", kind: "none" },
   { prefix: "auth", kind: "none" },
@@ -83,8 +86,22 @@ const BASE_RELOAD_RULES_TAIL: ReloadRule[] = [
   { prefix: "session", kind: "none" },
   { prefix: "talk", kind: "none" },
   { prefix: "skills", kind: "none" },
-  { prefix: "plugins", kind: "restart" },
+  { prefix: "freeModels", kind: "none" },
   { prefix: "ui", kind: "none" },
+  // 以下是之前缺失的配置路径，会导致不必要的 Gateway 重启
+  { prefix: "env", kind: "none" },          // 环境变量配置
+  { prefix: "diagnostics", kind: "none" },  // 诊断/调试配置
+  { prefix: "update", kind: "none" },       // 更新检查配置
+  { prefix: "nodeHost", kind: "none" },     // Node 主机代理配置
+  { prefix: "broadcast", kind: "none" },    // 消息广播配置
+  { prefix: "commands", kind: "none" },     // 命令权限配置
+  { prefix: "approvals", kind: "none" },    // 工具审批配置
+  { prefix: "web", kind: "none" },          // WhatsApp Web 配置
+  { prefix: "credentials", kind: "none" },  // 凭据存储
+  // ========================================
+  // 需要重启 Gateway 的配置
+  // ========================================
+  { prefix: "plugins", kind: "restart" },
   { prefix: "gateway", kind: "restart" },
   { prefix: "discovery", kind: "restart" },
   { prefix: "canvasHost", kind: "restart" },

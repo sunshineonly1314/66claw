@@ -29,6 +29,9 @@ function getCacheFilePath(): string {
 
 /**
  * 保存验证结果到本地缓存
+ *
+ * 写入策略：先备份当前缓存文件，再写入新内容。
+ * 这样即使写入过程中断电/崩溃导致文件损坏，备份仍然可用。
  */
 export function saveLicenseCache(
   key: string,
@@ -36,11 +39,21 @@ export function saveLicenseCache(
 ): void {
   const cache = createLicenseCache(key, response);
   const filePath = getCacheFilePath();
+  const backupPath = `${filePath}.bak`;
 
   try {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // 备份当前缓存（如果存在）
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.copyFileSync(filePath, backupPath);
+      } catch {
+        // 备份失败不阻塞写入
+      }
     }
 
     fs.writeFileSync(filePath, JSON.stringify(cache, null, 2), "utf8");
@@ -51,43 +64,78 @@ export function saveLicenseCache(
 }
 
 /**
- * 加载本地缓存的验证结果
+ * 从指定文件路径解析缓存内容（不含备份回退逻辑）
  */
-export function loadLicenseCache(): LicenseCache | null {
-  const filePath = getCacheFilePath();
-
-  try {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
-
-    const content = fs.readFileSync(filePath, "utf8");
-    const cache = JSON.parse(content) as LicenseCache;
-
-    // 基本验证
-    if (!cache.key || typeof cache.valid !== "boolean" || !cache.verifyTime) {
-      log.warn("Invalid license cache format");
-      return null;
-    }
-
-    return cache;
-  } catch (error) {
-    log.warn(`Failed to load license cache: ${error}`);
+function parseCacheFile(filePath: string): LicenseCache | null {
+  if (!fs.existsSync(filePath)) {
     return null;
   }
+
+  const content = fs.readFileSync(filePath, "utf8");
+  const cache = JSON.parse(content) as LicenseCache;
+
+  // 基本验证
+  if (!cache.key || typeof cache.valid !== "boolean" || !cache.verifyTime) {
+    return null;
+  }
+
+  return cache;
 }
 
 /**
- * 清除本地缓存
+ * 加载本地缓存的验证结果
+ *
+ * 读取策略：先尝试主文件，失败后尝试 .bak 备份文件。
+ * 如果从备份恢复成功，同时修复主文件。
+ */
+export function loadLicenseCache(): LicenseCache | null {
+  const filePath = getCacheFilePath();
+  const backupPath = `${filePath}.bak`;
+
+  // 1. 尝试主文件
+  try {
+    const cache = parseCacheFile(filePath);
+    if (cache) return cache;
+  } catch (error) {
+    log.warn(`License cache corrupted: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // 2. 主文件失败，尝试备份
+  try {
+    const backupCache = parseCacheFile(backupPath);
+    if (backupCache) {
+      log.info("Recovered license cache from backup");
+      // 修复主文件
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(backupCache, null, 2), "utf8");
+        log.debug("Restored main cache file from backup");
+      } catch {
+        // 修复失败不影响返回
+      }
+      return backupCache;
+    }
+  } catch (backupError) {
+    log.debug(`Backup cache also unavailable: ${backupError instanceof Error ? backupError.message : String(backupError)}`);
+  }
+
+  return null;
+}
+
+/**
+ * 清除本地缓存（包括备份文件）
  */
 export function clearLicenseCache(): void {
   const filePath = getCacheFilePath();
+  const backupPath = `${filePath}.bak`;
 
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      log.debug("License cache cleared");
     }
+    if (fs.existsSync(backupPath)) {
+      fs.unlinkSync(backupPath);
+    }
+    log.debug("License cache cleared");
   } catch (error) {
     log.warn(`Failed to clear license cache: ${error}`);
   }

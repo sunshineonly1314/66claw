@@ -107,8 +107,94 @@ clawdbot channels status --probe
 | `app.token` | string | 接收消息需要 | 回调 Token |
 | `app.encodingAESKey` | string | 接收消息需要 | 回调加密 Key (43位) |
 | `webhookPath` | string | 否 | Webhook 路径，默认 `/wecom/webhook` |
-| `allowFrom` | string[] | 否 | 允许的用户 ID 列表 |
+| `allowFrom` | string[] | 否 | 允许的用户 ID 列表 (私聊白名单) |
+| `groupAllowFrom` | string[] | 否 | 允许的群 ID 列表 (群聊白名单) |
 | `dmPolicy` | string | 否 | 私聊策略: `open`, `allowlist`, `pairing` |
+| `groupPolicy` | string | 否 | 群聊策略: `open`, `allowlist`, `disabled` |
+| `requireMention` | boolean | 否 | 群聊是否需要 @机器人 才响应，默认 `true` |
+| `accounts` | object | 否 | 多账户配置 (见下文) |
+| `defaultAccount` | string | 否 | 默认账户 ID |
+
+## 群聊支持
+
+企业微信渠道支持群聊消息接收和回复。
+
+### 群聊配置
+
+```json5
+{
+  channels: {
+    wecom: {
+      enabled: true,
+      app: { /* ... */ },
+      // 群聊配置
+      groupPolicy: "allowlist",           // open=所有群, allowlist=白名单群, disabled=禁用
+      groupAllowFrom: ["chatid1", "chatid2"], // 允许的群 ID 列表
+      requireMention: true,               // 群聊中是否需要 @机器人 才响应
+      // 按群单独配置
+      groups: {
+        "chatid1": {
+          requireMention: false,          // 此群不需要 @机器人
+          allowFrom: ["user1", "user2"]   // 此群只响应特定用户
+        }
+      }
+    }
+  }
+}
+```
+
+### 获取群聊 ID
+
+群聊 ID (ChatId) 可通过以下方式获取:
+1. 在机器人收到群消息时，日志中会显示 ChatId
+2. 通过企业微信 API 创建群聊时返回
+
+## 多账户配置
+
+如果需要同时接入多个企业微信应用（如客服机器人、内部助手），可以使用多账户配置:
+
+```json5
+{
+  channels: {
+    wecom: {
+      enabled: true,
+      defaultAccount: "customer-service",  // 默认使用的账户
+      accounts: {
+        "customer-service": {
+          name: "客服机器人",
+          webhookPath: "/wecom/cs",        // 独立的回调路径
+          app: {
+            corpId: "ww...",
+            agentId: 1000002,
+            agentSecret: "...",
+            token: "...",
+            encodingAESKey: "..."
+          },
+          dmPolicy: "open"
+        },
+        "internal": {
+          name: "内部助手",
+          webhookPath: "/wecom/internal",
+          app: {
+            corpId: "ww...",
+            agentId: 1000003,
+            agentSecret: "...",
+            token: "...",
+            encodingAESKey: "..."
+          },
+          allowFrom: ["admin1", "admin2"]
+        }
+      }
+    }
+  }
+}
+```
+
+### 多账户说明
+
+- 每个账户可以有独立的 `webhookPath`，需要在企业微信分别配置
+- 账户配置会与顶层配置合并，账户配置优先
+- `defaultAccount` 指定默认使用的账户 ID
 
 ## 消息类型
 

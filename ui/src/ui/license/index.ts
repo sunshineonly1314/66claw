@@ -14,6 +14,9 @@ export {
   renderNotificationDialog,
   renderForceUpdateDialog,
   renderDeviceLimitDialog,
+  renderDeviceSwitchDialog,
+  renderDeviceSwitchCooldownDialog,
+  renderDeviceKickedDialog,
   renderOfflineBanner,
 } from "./license-dialogs.js";
 

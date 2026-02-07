@@ -1,11 +1,20 @@
 import DOMPurify from "dompurify";
-import { marked } from "marked";
+import { marked, type Tokens } from "marked";
 import { truncateText } from "./format";
+import { renderCodeBlock } from "./code-highlight";
 
-marked.setOptions({
+// 自定义渲染器：代码块使用增强版渲染
+const renderer = {
+  code(token: Tokens.Code): string {
+    // 使用增强版代码块渲染（带语法高亮和复制按钮）
+    return renderCodeBlock(token.text, token.lang);
+  },
+};
+
+marked.use({
   gfm: true,
   breaks: true,
-  mangle: false,
+  renderer,
 });
 
 const allowedTags = [
@@ -13,8 +22,10 @@ const allowedTags = [
   "b",
   "blockquote",
   "br",
+  "button",
   "code",
   "del",
+  "div",
   "em",
   "h1",
   "h2",
@@ -25,8 +36,13 @@ const allowedTags = [
   "li",
   "ol",
   "p",
+  "path",
+  "polyline",
   "pre",
+  "rect",
+  "span",
   "strong",
+  "svg",
   "table",
   "tbody",
   "td",
@@ -36,7 +52,32 @@ const allowedTags = [
   "ul",
 ];
 
-const allowedAttrs = ["class", "href", "rel", "target", "title", "start"];
+const allowedAttrs = [
+  "class",
+  "d",
+  "data-code",
+  "data-lang",
+  "data-initialized",
+  "fill",
+  "height",
+  "href",
+  "points",
+  "rel",
+  "rx",
+  "ry",
+  "start",
+  "stroke",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-width",
+  "target",
+  "title",
+  "type",
+  "viewBox",
+  "width",
+  "x",
+  "y",
+];
 
 let hooksInstalled = false;
 const MARKDOWN_CHAR_LIMIT = 140_000;

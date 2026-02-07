@@ -9,6 +9,7 @@ import type { GatewayHelloOk } from "./gateway";
 import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
 import type { ClawdbotApp } from "./app";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types";
+import type { LicenseDialogType } from "./license/types";
 
 type ChatHost = {
   connected: boolean;
@@ -21,6 +22,8 @@ type ChatHost = {
   basePath: string;
   hello: GatewayHelloOk | null;
   chatAvatarUrl: string | null;
+  // License activation support
+  showLicenseDialog: LicenseDialogType | null;
 };
 
 export function isChatBusy(host: ChatHost) {
@@ -74,7 +77,25 @@ async function sendChatMessageNow(
   },
 ) {
   resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-  const ok = await sendChatMessage(host as unknown as ClawdbotApp, message, opts?.attachments);
+  const result = await sendChatMessage(host as unknown as ClawdbotApp, message, opts?.attachments);
+  
+  // 检查是否为授权错误 - 如果是，弹出激活对话框而不是显示错误
+  const isLicenseError = typeof result === "object" && result !== null && 
+                         "isLicenseError" in result && (result as { isLicenseError?: boolean }).isLicenseError;
+  if (isLicenseError) {
+    // 触发激活弹框
+    host.showLicenseDialog = "activation";
+    // 恢复用户输入
+    if (opts?.previousDraft != null) {
+      host.chatMessage = opts.previousDraft;
+    }
+    if (opts?.previousAttachments) {
+      host.chatAttachments = opts.previousAttachments;
+    }
+    return false;
+  }
+  
+  const ok = result === true;
   if (!ok && opts?.previousDraft != null) {
     host.chatMessage = opts.previousDraft;
   }
@@ -144,10 +165,11 @@ export async function handleSendChat(
   }
 
   await sendChatMessageNow(host, message, {
-    previousDraft: messageOverride == null ? previousDraft : undefined,
+    // 始终传递 previousDraft，以便 restoreDraft 时可以恢复用户输入
+    previousDraft: previousDraft,
     restoreDraft: Boolean(messageOverride && opts?.restoreDraft),
     attachments: hasAttachments ? attachmentsToSend : undefined,
-    previousAttachments: messageOverride == null ? attachments : undefined,
+    previousAttachments: attachments,
     restoreAttachments: Boolean(messageOverride && opts?.restoreDraft),
   });
 }

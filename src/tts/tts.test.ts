@@ -271,7 +271,12 @@ describe("tts", () => {
         timeoutMs: 30_000,
       });
 
-      expect(resolveModel).toHaveBeenCalledWith("openai", "gpt-4.1-mini", undefined, cfg);
+      expect(resolveModel).toHaveBeenCalledWith(
+        "openai",
+        "gpt-4.1-mini",
+        expect.any(String),
+        expect.objectContaining({ agents: cfg.agents, messages: cfg.messages }),
+      );
     });
 
     it("rejects targetLength below minimum (100)", async () => {

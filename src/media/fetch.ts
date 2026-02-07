@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { detectMime, extensionForMime } from "./mime.js";
+import { validateUrlForSsrf } from "../infra/net/ssrf.js";
 
 type FetchMediaResult = {
   buffer: Buffer;
@@ -22,11 +23,29 @@ export class MediaFetchError extends Error {
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+/**
+ * Default timeout for media fetch (in milliseconds).
+ * ClawdbotCN 专属：默认超时时间
+ */
+const DEFAULT_FETCH_TIMEOUT_MS = 60_000;
+
 type FetchMediaOptions = {
   url: string;
   fetchImpl?: FetchLike;
   filePathHint?: string;
   maxBytes?: number;
+  /**
+   * Skip SSRF validation for this request.
+   * Use with caution - only for trusted URLs or when SSRF protection is handled elsewhere.
+   * ClawdbotCN: 跳过 SSRF 验证，仅用于可信 URL
+   */
+  skipSsrfCheck?: boolean;
+  /**
+   * Timeout for the fetch operation in milliseconds.
+   * Default: 60000 (60 seconds).
+   * ClawdbotCN: 超时控制，防止进程挂起
+   */
+  timeoutMs?: number;
 };
 
 function stripQuotes(value: string): string {
@@ -64,17 +83,33 @@ async function readErrorBodySnippet(res: Response, maxChars = 200): Promise<stri
 }
 
 export async function fetchRemoteMedia(options: FetchMediaOptions): Promise<FetchMediaResult> {
-  const { url, fetchImpl, filePathHint, maxBytes } = options;
+  const { url, fetchImpl, filePathHint, maxBytes, skipSsrfCheck, timeoutMs } = options;
   const fetcher: FetchLike | undefined = fetchImpl ?? globalThis.fetch;
   if (!fetcher) {
     throw new Error("fetch is not available");
   }
 
+  // ClawdbotCN 专属：SSRF 防护 - 阻止访问内网地址
+  if (!skipSsrfCheck) {
+    validateUrlForSsrf(url);
+  }
+
+  // ClawdbotCN 专属：超时控制
+  const timeout = timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
   let res: Response;
   try {
-    res = await fetcher(url);
+    res = await fetcher(url, { signal: controller.signal });
   } catch (err) {
-    throw new MediaFetchError("fetch_failed", `Failed to fetch media from ${url}: ${String(err)}`);
+    clearTimeout(timer);
+    const errorMsg = err instanceof Error && err.name === "AbortError"
+      ? `Request timed out after ${timeout}ms`
+      : String(err);
+    throw new MediaFetchError("fetch_failed", `Failed to fetch media from ${url}: ${errorMsg}`);
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!res.ok) {

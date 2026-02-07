@@ -2,6 +2,8 @@
  * 企业微信渠道类型定义
  * WeCom (WeChat Work) Channel Type Definitions
  *
+ * 支持多账户配置，参考 moltbot-china 的设计模式
+ *
  * 文档参考:
  * - 企业微信开放平台: https://developer.work.weixin.qq.com/
  * - 应用消息: https://developer.work.weixin.qq.com/document/path/90236
@@ -29,25 +31,63 @@ export interface WecomAppConfig {
 }
 
 /**
+ * 企业微信账户配置 (用于多账户场景)
+ * 每个账户可以有独立的应用配置和策略
+ */
+export interface WecomAccountConfig {
+  /** 账户名称 (用于显示) */
+  name?: string;
+  /** 是否启用此账户 */
+  enabled?: boolean;
+  /** 应用配置 */
+  app?: WecomAppConfig;
+  /** Webhook 路径 (每个账户可以不同) */
+  webhookPath?: string;
+  /** 允许的用户 ID 列表 (私聊白名单) */
+  allowFrom?: string[];
+  /** 群聊允许的群 ID 列表 */
+  groupAllowFrom?: string[];
+  /** 私聊策略 */
+  dmPolicy?: "open" | "allowlist" | "pairing";
+  /** 群聊策略 */
+  groupPolicy?: "open" | "allowlist" | "disabled";
+  /** 群聊是否需要 @机器人 才响应 */
+  requireMention?: boolean;
+  /** 群聊配置 (按群 ID 单独配置) */
+  groups?: Record<string, WecomGroupConfig>;
+}
+
+/**
  * 企业微信渠道配置
+ * 支持单账户和多账户两种模式:
+ * - 单账户: 直接在顶层配置 app, webhookPath 等
+ * - 多账户: 使用 accounts 字段配置多个账户
  */
 export interface WecomChannelConfig {
   /** 是否启用 */
   enabled?: boolean;
-  /** 应用配置 */
+  /** 应用配置 (单账户模式) */
   app?: WecomAppConfig;
   /** Webhook 端口 (默认 3003) */
   webhookPort?: number;
   /** Webhook 路径 (默认 /wecom/webhook) */
   webhookPath?: string;
-  /** 允许的用户 ID 列表 */
+  /** 允许的用户 ID 列表 (私聊白名单) */
   allowFrom?: string[];
+  /** 群聊允许的群 ID 列表 */
+  groupAllowFrom?: string[];
   /** 私聊策略: "open" | "allowlist" | "pairing" */
   dmPolicy?: "open" | "allowlist" | "pairing";
-  /** 群聊策略: "open" | "allowlist" */
-  groupPolicy?: "open" | "allowlist";
-  /** 群聊配置 */
+  /** 群聊策略: "open" | "allowlist" | "disabled" */
+  groupPolicy?: "open" | "allowlist" | "disabled";
+  /** 群聊是否需要 @机器人 才响应 (默认 true) */
+  requireMention?: boolean;
+  /** 群聊配置 (按群 ID 单独配置) */
   groups?: Record<string, WecomGroupConfig>;
+  /** 多账户配置 */
+  accounts?: Record<string, WecomAccountConfig>;
+  /** 默认账户 ID (多账户模式下使用) */
+  defaultAccount?: string;
 }
 
 /**
@@ -124,6 +164,10 @@ export interface WecomTextMessageEvent {
   Content: string;
   /** 应用 ID */
   AgentID: number;
+  /** 群聊会话 ID (仅群聊消息存在) */
+  ChatId?: string;
+  /** 聊天类型: single=私聊, group=群聊 (智能机器人回调) */
+  ChatType?: "single" | "group";
 }
 
 /**

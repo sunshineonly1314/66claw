@@ -1,4 +1,5 @@
 import type { ClawdbotConfig } from "../config/config.js";
+import { isLicenseValid, getGatewayLicenseState } from "../gateway/license-check.js";
 import type { FinalizedMsgContext, MsgContext } from "./templating.js";
 import type { GetReplyOptions } from "./types.js";
 import { finalizeInboundContext } from "./reply/inbound-context.js";
@@ -14,6 +15,18 @@ import {
 
 export type DispatchInboundResult = DispatchFromConfigResult;
 
+/**
+ * 检查授权状态，返回错误消息（如果授权无效）
+ * 如果授权有效或非 CN 版本，返回 null
+ */
+function checkLicenseForInboundMessage(): string | null {
+  if (!isLicenseValid()) {
+    const licenseState = getGatewayLicenseState();
+    return licenseState?.error || "授权无效，请先激活或续费后继续使用";
+  }
+  return null;
+}
+
 export async function dispatchInboundMessage(params: {
   ctx: MsgContext | FinalizedMsgContext;
   cfg: ClawdbotConfig;
@@ -21,6 +34,15 @@ export async function dispatchInboundMessage(params: {
   replyOptions?: Omit<GetReplyOptions, "onToolResult" | "onBlockReply">;
   replyResolver?: typeof import("./reply.js").getReplyFromConfig;
 }): Promise<DispatchInboundResult> {
+  // 授权检查：过期或无效授权不处理消息
+  const licenseError = checkLicenseForInboundMessage();
+  if (licenseError) {
+    // 向用户发送授权错误提示
+    params.dispatcher.sendFinalReply({ text: `⚠️ ${licenseError}` });
+    await params.dispatcher.waitForIdle();
+    return { queuedFinal: true, counts: { tool: 0, block: 0, final: 1 } };
+  }
+
   const finalized = finalizeInboundContext(params.ctx);
   return await dispatchReplyFromConfig({
     ctx: finalized,

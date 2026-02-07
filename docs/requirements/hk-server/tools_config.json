@@ -1,0 +1,162 @@
+{
+  "syncConfig": {
+    "syncIntervalHours": 1,
+    "maxRetries": 3,
+    "dataDir": "/data/binaries"
+  },
+  "tools": [
+    {
+      "name": "ordercli",
+      "repo": "steipete/ordercli",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64",
+        "linux-amd64": "linux_amd64",
+        "windows-amd64": "windows_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64"],
+      "description": "订单管理 CLI"
+    },
+    {
+      "name": "peekaboo",
+      "repo": "steipete/peekaboo",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64"],
+      "description": "屏幕截图工具 (macOS)"
+    },
+    {
+      "name": "remindctl",
+      "repo": "steipete/remindctl",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64"],
+      "description": "Apple 提醒事项 CLI"
+    },
+    {
+      "name": "memo",
+      "repo": "antoniorodr/memo",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64"],
+      "description": "Apple 备忘录 CLI"
+    },
+    {
+      "name": "imsg",
+      "repo": "steipete/imsg",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64"],
+      "description": "iMessage CLI"
+    },
+    {
+      "name": "camsnap",
+      "repo": "steipete/camsnap",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64"],
+      "description": "摄像头截图工具"
+    },
+    {
+      "name": "gifgrep",
+      "repo": "steipete/gifgrep",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64",
+        "linux-amd64": "linux_amd64",
+        "windows-amd64": "windows_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64"],
+      "description": "GIF 搜索工具"
+    },
+    {
+      "name": "wacli",
+      "repo": "steipete/wacli",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64",
+        "linux-amd64": "linux_amd64",
+        "windows-amd64": "windows_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64"],
+      "description": "WhatsApp CLI"
+    },
+    {
+      "name": "sag",
+      "repo": "steipete/sag",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64"],
+      "description": "智能音频代理"
+    },
+    {
+      "name": "songsee",
+      "repo": "steipete/songsee",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64"],
+      "description": "Apple Music CLI"
+    },
+    {
+      "name": "gog",
+      "repo": "steipete/gogcli",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64",
+        "linux-amd64": "linux_amd64",
+        "windows-amd64": "windows_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64"],
+      "description": "GOG 游戏平台 CLI"
+    },
+    {
+      "name": "spogo",
+      "repo": "steipete/spogo",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64",
+        "linux-amd64": "linux_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64"],
+      "description": "Spotify CLI"
+    },
+    {
+      "name": "summarize",
+      "repo": "steipete/summarize",
+      "assetPattern": "{name}_{version}_{platform}.tar.gz",
+      "platformMapping": {
+        "darwin-arm64": "darwin_arm64",
+        "darwin-amd64": "darwin_amd64",
+        "linux-amd64": "linux_amd64"
+      },
+      "platforms": ["darwin-arm64", "darwin-amd64", "linux-amd64"],
+      "description": "文本摘要工具"
+    }
+  ]
+}

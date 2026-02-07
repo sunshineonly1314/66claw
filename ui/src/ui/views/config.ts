@@ -1,6 +1,6 @@
 import { html, nothing } from "lit";
 import type { ConfigUiHints } from "../types";
-import { t } from "../i18n/index.js";
+import { t, tMaybe } from "../i18n/index.js";
 import { analyzeConfigSchema, renderConfigForm, SECTION_META } from "./config-form";
 import {
   hintForPath,
@@ -117,6 +117,21 @@ function resolveSectionMeta(key: string, schema?: JsonSchema): {
   };
 }
 
+// 渠道名称的 i18n 翻译 key 映射
+const CHANNEL_I18N_KEYS: Record<string, string> = {
+  dingtalk: "channels.dingtalk",
+  feishu: "channels.feishu",
+  wecom: "channels.wecom",
+  whatsapp: "channels.whatsapp",
+  telegram: "channels.telegram",
+  discord: "channels.discord",
+  slack: "channels.slack",
+  signal: "channels.signal",
+  imessage: "channels.imessage",
+  matrix: "channels.matrix",
+  msteams: "channels.msteams",
+};
+
 function resolveSubsections(params: {
   key: string;
   schema: JsonSchema | undefined;
@@ -126,7 +141,19 @@ function resolveSubsections(params: {
   if (!schema || schemaType(schema) !== "object" || !schema.properties) return [];
   const entries = Object.entries(schema.properties).map(([subKey, node]) => {
     const hint = hintForPath([key, subKey], uiHints);
-    const label = hint?.label ?? node.title ?? humanize(subKey);
+    // 获取标签：hint.label > node.title > i18n翻译 > humanize
+    // 使用 || 而不是 ?? 来同时处理 null/undefined 和空字符串
+    const hintLabel = hint?.label || "";
+    const nodeTitle = node.title || "";
+    let label = hintLabel || nodeTitle;
+    // 对于 channels 分区，如果没有标签，优先使用 i18n 翻译
+    if (!label && key === "channels" && CHANNEL_I18N_KEYS[subKey]) {
+      label = tMaybe(CHANNEL_I18N_KEYS[subKey]);
+    }
+    // 最终后备：使用 humanize 转换键名
+    if (!label) {
+      label = humanize(subKey);
+    }
     const description = hint?.help ?? node.description ?? "";
     const order = hint?.order ?? 50;
     return { key: subKey, label, description, order };

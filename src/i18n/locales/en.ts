@@ -502,6 +502,8 @@ export const en = {
   "cli.uninstall.workspace": "Remove workspace dirs",
   "cli.uninstall.app": "Remove the macOS app",
   "cli.uninstall.all": "Remove service + state + workspace + app",
+  "cli.uninstall.backup": "Create backup before removing state (default: true)",
+  "cli.uninstall.noBackup": "Skip backup before removing state",
 
   // CLI - 子命令 (CLI - Subcommands)
   "cli.sub.acp": "Agent Control Protocol tools",

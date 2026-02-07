@@ -37,6 +37,7 @@ import type { FollowupRun } from "./queue.js";
 import { parseReplyDirectives } from "./reply-directives.js";
 import { applyReplyTagsToPayload, isRenderablePayload } from "./reply-payloads.js";
 import type { TypingSignaler } from "./typing-mode.js";
+import { detectQuotaExhaustedError } from "./free-model-priority.js";
 
 export type AgentRunLoopResult =
   | {
@@ -420,6 +421,45 @@ export async function runAgentTurnWithFallback(params: {
       // Some embedded runs surface context overflow as an error payload instead of throwing.
       // Treat those as a session-level failure and auto-recover by starting a fresh session.
       const embeddedError = runResult.meta?.error;
+
+      // ClawdbotCN专属功能：检测免费模型quota exhausted错误
+      // Bug #6修复：401等quota错误被包装在meta.error中，需要主动检测并抛出异常
+      // 让上层的免费模型切换逻辑（get-reply.ts）处理
+      if (embeddedError) {
+        const errorMessage = embeddedError.message || String(embeddedError);
+        // 尝试从error对象中提取HTTP状态码
+        const extractHttpStatus = (err: unknown): number | undefined => {
+          if (typeof err === "object" && err !== null) {
+            const obj = err as Record<string, unknown>;
+            if (typeof obj.httpStatus === "number") return obj.httpStatus;
+            if (typeof obj.status === "number") return obj.status;
+            if (typeof obj.statusCode === "number") return obj.statusCode;
+          }
+          return undefined;
+        };
+        const httpStatus = extractHttpStatus(embeddedError);
+
+        // 检测是否是quota exhausted错误（包括401/402/429以及相关关键字）
+        const isQuotaError = detectQuotaExhaustedError(embeddedError, httpStatus);
+        if (isQuotaError) {
+          defaultRuntime.log(
+            `[FreeModel] Detected quota error in meta.error: ${errorMessage} (httpStatus=${httpStatus}, provider=${fallbackProvider}, model=${fallbackModel})`
+          );
+          // 抛出错误，让上层的免费模型切换逻辑处理
+          // 保留原始错误对象的所有属性，确保上层能获取完整信息
+          const quotaError = embeddedError instanceof Error 
+            ? embeddedError 
+            : new Error(errorMessage);
+          
+          // 确保httpStatus被传递（如果原对象没有，手动添加）
+          if (httpStatus !== undefined && extractHttpStatus(quotaError) === undefined) {
+            (quotaError as unknown as Record<string, unknown>).httpStatus = httpStatus;
+          }
+          
+          throw quotaError;
+        }
+      }
+
       if (
         embeddedError &&
         isContextOverflowError(embeddedError.message) &&

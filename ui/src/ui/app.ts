@@ -2,6 +2,7 @@ import { LitElement, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
+import { t } from "./i18n/index.js";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity";
 import { loadSettings, type UiSettings } from "./storage";
 import { renderApp } from "./app-render";
@@ -34,6 +35,7 @@ import type {
 } from "./controllers/exec-approvals";
 import type { DevicePairingList } from "./controllers/devices";
 import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { SkillMessage } from "./controllers/skills";
 import {
   resetToolStream as resetToolStreamInternal,
   type ToolStreamEntry,
@@ -79,6 +81,11 @@ import {
 } from "./app-channels";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity";
+import {
+  createInitialDiscoveryState,
+  runCapabilityDetection,
+} from "./controllers/capability-detect";
+import { initCodeBlockCopyHandlers } from "./code-highlight";
 
 declare global {
   interface Window {
@@ -167,12 +174,17 @@ export class ClawdbotApp extends LitElement {
     forceUpdate: null,
     pendingNotifications: [],
     lastVerifiedAt: null,
+    deviceSwitchInfo: null,
+    deviceSwitchCooldown: null,
   };
   @state() showLicenseDialog: import("./license/types").LicenseDialogType | null = null;
   @state() licenseActivating = false;
   @state() licenseActivationError: string | null = null;
   @state() licenseBoundDevices: import("./license/types").BoundDevice[] = [];
   @state() showOfflineBanner = false;
+
+  // 能力发现状态 (Capability Discovery)
+  @state() discoveryState: import("./controllers/capability-detect").DiscoveryControllerState = createInitialDiscoveryState();
 
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
@@ -195,6 +207,54 @@ export class ClawdbotApp extends LitElement {
   @state() configSearchQuery = "";
   @state() configActiveSection: string | null = null;
   @state() configActiveSubsection: string | null = null;
+
+  // 模型选择状态 (Model Selection)
+  @state() modelsLoading = false;
+  @state() modelsProviders: import("./controllers/models").ProviderInfo[] = [];
+  @state() modelsDefaults: Record<string, string> = {};
+  @state() modelsCurrent: import("./controllers/models").CurrentModelInfo | null = null;
+  @state() modelsSaving = false;
+  @state() modelsError: string | null = null;
+  @state() modelsSuccessMessage: string | null = null; // 成功消息
+  // 待保存的模型选择（用户选择后需要点击保存才生效）
+  @state() modelsPendingProvider: string | null = null;
+  @state() modelsPendingModel: string | null = null;
+  @state() modelsConfiguringProvider: string | null = null; // 正在配置的提供商 ID
+  @state() modelsAuthSaving = false; // API Key 保存中
+  @state() modelsAuthVerifying = false; // API Key 验证中
+  @state() modelsAuthVerifyResult: import("./controllers/models").ApiKeyVerifyResult | null = null; // 验证结果
+
+  // 安全模式状态 (Security Mode)
+  @state() securityLoading = false;
+  @state() securityModes: import("./controllers/security").SecurityModeInfo[] = [];
+  @state() securityCurrent: import("./controllers/security").SecurityMode | null = null;
+  @state() securitySaving = false;
+  @state() securityError: string | null = null;
+  @state() securityShowWarning = false; // 显示危险警告弹框
+  @state() securitySuccessMessage: string | null = null; // 安全模式切换成功消息
+
+  // 免费模型管理状态 (Free Models)
+  @state() freeModelsLoading = false;
+  @state() freeModelsEnabled = false;
+  @state() freeModelsProviders: import("./views/free-models").FreeModelProvider[] = [];
+  @state() freeModelsAccounts: import("./views/free-models").FreeModelAccount[] = [];
+  @state() freeModelsStats: import("./views/free-models").FreeModelsStats = {
+    todaySavings: 0,
+    totalSavings: 0,
+    todayFreeRequests: 0,
+    lastResetDate: new Date().toISOString().split("T")[0],
+  };
+  @state() freeModelsSwitchHistory: import("./views/free-models").FreeModelSwitchRecord[] = [];
+  @state() freeModelsError: string | null = null;
+  @state() freeModelsConfigModalOpen = false;
+  @state() freeModelsConfigModalProvider: import("./views/free-models").FreeModelProvider | null = null;
+  @state() freeModelsConfigModalApiKey = "";
+  @state() freeModelsConfigModalTesting = false;
+  @state() freeModelsConfigModalTestResult: { success: boolean; message: string } | null = null;
+  @state() freeModelsConfigModalSaving = false;
+  @state() freeModelsDeleteModalOpen = false;
+  @state() freeModelsDeleteModalProvider: import("./views/free-models").FreeModelProvider | null = null;
+  @state() freeModelsDeleteModalDeleting = false;
 
   @state() channelsLoading = false;
   @state() channelsSnapshot: ChannelsStatusSnapshot | null = null;
@@ -240,6 +300,7 @@ export class ClawdbotApp extends LitElement {
   @state() skillEdits: Record<string, string> = {};
   @state() skillsBusyKey: string | null = null;
   @state() skillMessages: Record<string, SkillMessage> = {};
+  @state() skillsInstallProgress: Record<string, import("./controllers/skills").InstallProgress> = {};
   @state() skillsActiveTab: "local" | "remote" = "local";
   @state() skillsRemoteLoading = false;
   @state() skillsRemoteIndex: RemoteSkillsIndex | null = null;
@@ -250,12 +311,22 @@ export class ClawdbotApp extends LitElement {
   @state() skillsMarketSyncing = false;
   @state() skillsMarketLastSyncedAt: string | null = null;
   @state() skillsMarketError: string | null = null;
+  // 技能分类筛选
+  @state() skillsActiveCategory = "all";
 
   // Playground 状态（技能玩法推荐）
   @state() playgroundLoading = false;
   @state() playgroundReport: import("./types").SkillStatusReport | null = null;
   @state() playgroundError: string | null = null;
   @state() playgroundActiveCategory: string | null = null;
+  @state() playgroundInstallingSkill: string | null = null;
+  @state() playgroundInstallMessage: string | null = null;
+
+  // ClawdbotCN 专属：技能安装进度弹框状态
+  @state() skillInstallQueue: import("./views/skill-install-approval").SkillInstallRequest[] = [];
+  @state() skillInstallProgress: import("./views/skill-install-progress").SkillInstallProgress | null = null;
+  @state() skillInstallBusy = false;
+  @state() skillInstallError: string | null = null;
 
   // 文档中心状态
   @state() docsViewState: import("./views/docs").DocsViewState = {
@@ -265,6 +336,24 @@ export class ClawdbotApp extends LitElement {
     currentDocId: null,
     showSearchModal: false,
   };
+
+  // 意见反馈状态
+  @state() feedbackState: import("./views/feedback").FeedbackViewState = {
+    showModal: false,
+    type: "suggestion",
+    content: "",
+    contact: "",
+    attachments: [],
+    submitting: false,
+    submitted: false,
+    error: null,
+  };
+
+  // Token 使用量统计状态
+  @state() usageLoading = false;
+  @state() usageSummary: import("./types").CostUsageSummary | null = null;
+  @state() usageError: string | null = null;
+  @state() usageDays = 30;
 
   @state() debugLoading = false;
   @state() debugStatus: StatusSummary | null = null;
@@ -340,6 +429,8 @@ export class ClawdbotApp extends LitElement {
     super.connectedCallback();
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
     document.addEventListener("keydown", this.handleDocsKeydown);
+    // 初始化代码块复制功能（事件委托，只需初始化一次）
+    initCodeBlockCopyHandlers();
   }
 
   protected firstUpdated() {
@@ -422,6 +513,138 @@ export class ClawdbotApp extends LitElement {
     await loadOverviewInternal(
       this as unknown as Parameters<typeof loadOverviewInternal>[0],
     );
+  }
+
+  async setModelPrimary(provider: string, model: string) {
+    const { setModelPrimary } = await import("./controllers/models.js");
+    await setModelPrimary(this, provider, model);
+  }
+
+  // 设置待保存的模型选择（不立即保存）
+  setModelPending(provider: string, model: string) {
+    this.modelsPendingProvider = provider;
+    this.modelsPendingModel = model;
+  }
+
+  // 取消待保存的模型选择
+  cancelModelPending() {
+    this.modelsPendingProvider = null;
+    this.modelsPendingModel = null;
+  }
+
+  // 确认并保存待选择的模型
+  async confirmModelPending() {
+    if (!this.modelsPendingProvider || !this.modelsPendingModel) return;
+    const provider = this.modelsPendingProvider;
+    const model = this.modelsPendingModel;
+    // 清除待保存状态
+    this.modelsPendingProvider = null;
+    this.modelsPendingModel = null;
+    // 清除之前的消息
+    this.modelsError = null;
+    this.modelsSuccessMessage = null;
+    // 执行实际保存
+    const { setModelPrimary } = await import("./controllers/models.js");
+    const success = await setModelPrimary(this, provider, model);
+    if (success) {
+      // 显示切换成功消息
+      const { t } = await import("./i18n/index.js");
+      this.modelsSuccessMessage = t("models.switchSuccess");
+      // 3秒后自动清除成功消息
+      setTimeout(() => {
+        this.modelsSuccessMessage = null;
+      }, 3000);
+    }
+    // 失败时 modelsError 已由 setModelPrimary 设置
+  }
+
+  async loadModelsProviders() {
+    const { loadModelsProviders } = await import("./controllers/models.js");
+    await loadModelsProviders(this);
+  }
+
+  setConfiguringProvider(providerId: string | null) {
+    this.modelsConfiguringProvider = providerId;
+  }
+
+  async saveProviderAuth(provider: string, auth: { apiKey?: string; secretId?: string; secretKey?: string }) {
+    const { setProviderAuth } = await import("./controllers/models.js");
+    this.modelsAuthSaving = true;
+    this.modelsError = null;
+    this.modelsSuccessMessage = null;
+    
+    try {
+      const success = await setProviderAuth(this, provider, auth);
+      if (success) {
+        // 保存成功，关闭配置表单
+        this.modelsConfiguringProvider = null;
+        this.modelsAuthVerifyResult = null; // 清除验证结果
+        // 重新加载提供商列表以更新状态
+        await this.loadModelsProviders();
+        // 自动切换到该提供商的推荐模型
+        const providerData = this.modelsProviders.find((p) => p.id === provider);
+        const defaultModel = this.modelsDefaults[provider];
+        const recommendedModel = providerData?.models.find((m) => m.recommended);
+        const firstModel = providerData?.models[0];
+        const modelToUse = defaultModel ?? recommendedModel?.id ?? firstModel?.id;
+        if (modelToUse) {
+          await this.setModelPrimary(provider, modelToUse);
+          // 显示切换成功消息
+          const { t } = await import("./i18n/index.js");
+          this.modelsSuccessMessage = t("models.switchSuccess");
+          // 清除待保存状态
+          this.modelsPendingProvider = null;
+          this.modelsPendingModel = null;
+          // 3秒后自动清除成功消息
+          setTimeout(() => {
+            this.modelsSuccessMessage = null;
+          }, 3000);
+        }
+      }
+    } finally {
+      this.modelsAuthSaving = false;
+    }
+  }
+
+  async verifyProviderApiKey(provider: string, apiKey: string, model?: string) {
+    const { verifyProviderApiKey } = await import("./controllers/models.js");
+    return verifyProviderApiKey(this, provider, apiKey, model);
+  }
+
+  clearAuthVerifyResult() {
+    this.modelsAuthVerifyResult = null;
+  }
+
+  async setSecurityMode(mode: import("./controllers/security").SecurityMode, confirmed: boolean = false) {
+    const { setSecurityMode } = await import("./controllers/security.js");
+    const result = await setSecurityMode(this, mode, confirmed);
+    
+    // 如果需要确认，显示警告弹框
+    if (!result.ok && result.needsConfirmation) {
+      this.securityShowWarning = true;
+      return { needsConfirmation: true };
+    }
+    
+    // 切换成功，显示成功消息
+    if (result.ok) {
+      const { t } = await import("./i18n/index.js");
+      this.securitySuccessMessage = t("security.switchSuccess");
+      // 3秒后自动清除成功消息
+      setTimeout(() => {
+        this.securitySuccessMessage = null;
+      }, 3000);
+    }
+    
+    return result;
+  }
+
+  closeSecurityWarning() {
+    this.securityShowWarning = false;
+  }
+
+  async confirmSecurityTrustMode() {
+    this.securityShowWarning = false;
+    await this.setSecurityMode("trust", true);
   }
 
   async loadCron() {
@@ -510,9 +733,89 @@ export class ClawdbotApp extends LitElement {
       });
       this.execApprovalQueue = this.execApprovalQueue.filter((entry) => entry.id !== active.id);
     } catch (err) {
-      this.execApprovalError = `Exec approval failed: ${String(err)}`;
+      this.execApprovalError = t("execApprovals.error.saveFailed", { error: String(err) });
     } finally {
       this.execApprovalBusy = false;
+    }
+  }
+
+  // =========================================================================
+  // ClawdbotCN 专属：技能安装进度弹框方法
+  // =========================================================================
+
+  /**
+   * 关闭技能安装进度弹框
+   */
+  dismissSkillInstallProgress() {
+    this.skillInstallProgress = null;
+  }
+
+  /**
+   * 重试技能安装
+   */
+  async retrySkillInstall() {
+    const progress = this.skillInstallProgress;
+    if (!progress || !this.client) {
+      this.skillInstallProgress = null;
+      return;
+    }
+
+    // 重置进度状态
+    this.skillInstallProgress = {
+      ...progress,
+      stage: "downloading",
+      message: `正在重新安装 ${progress.skillName}...`,
+      percent: 0,
+      logs: [],
+    };
+
+    try {
+      // 重新触发安装
+      const result = (await this.client.request("skills.install", {
+        name: progress.skillName,
+        timeoutMs: 180000,
+      })) as { ok?: boolean; message?: string };
+
+      // 注意：进度更新会通过 WebSocket 事件推送
+      if (!result?.ok) {
+        this.skillInstallProgress = {
+          ...this.skillInstallProgress!,
+          stage: "failed",
+          message: result?.message ?? "安装失败",
+          percent: 0,
+        };
+      }
+    } catch (err) {
+      this.skillInstallProgress = {
+        ...this.skillInstallProgress!,
+        stage: "failed",
+        message: `安装失败: ${err instanceof Error ? err.message : String(err)}`,
+        percent: 0,
+      };
+    }
+  }
+
+  /**
+   * 处理技能安装决策（审批弹框）
+   */
+  async handleSkillInstallDecision(decision: "install" | "install-continue" | "deny") {
+    const active = this.skillInstallQueue[0];
+    if (!active || !this.client || this.skillInstallBusy) return;
+    
+    this.skillInstallBusy = true;
+    this.skillInstallError = null;
+    
+    try {
+      await this.client.request("skill.install.resolve", {
+        id: active.id,
+        decision,
+      });
+      // 从队列中移除
+      this.skillInstallQueue = this.skillInstallQueue.filter((entry) => entry.id !== active.id);
+    } catch (err) {
+      this.skillInstallError = `技能安装决策失败: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      this.skillInstallBusy = false;
     }
   }
 
@@ -545,6 +848,99 @@ export class ClawdbotApp extends LitElement {
     const newRatio = Math.max(0.4, Math.min(0.7, ratio));
     this.splitRatio = newRatio;
     this.applySettings({ ...this.settings, splitRatio: newRatio });
+  }
+
+  // 意见反馈处理函数
+  handleFeedbackOpen() {
+    this.feedbackState = { ...this.feedbackState, showModal: true };
+  }
+
+  handleFeedbackClose() {
+    this.feedbackState = {
+      ...this.feedbackState,
+      showModal: false,
+      // 如果已提交成功，重置表单
+      ...(this.feedbackState.submitted
+        ? {
+            type: "suggestion" as const,
+            content: "",
+            contact: "",
+            attachments: [],
+            submitting: false,
+            submitted: false,
+            error: null,
+          }
+        : {}),
+    };
+  }
+
+  async handleFeedbackSubmit() {
+    const { content, type, contact, attachments } = this.feedbackState;
+
+    // 验证内容
+    if (!content.trim()) {
+      this.feedbackState = {
+        ...this.feedbackState,
+        error: "请填写反馈内容哦",
+      };
+      return;
+    }
+
+    if (content.trim().length < 5) {
+      this.feedbackState = {
+        ...this.feedbackState,
+        error: "再多写几个字吧，让我们更好地理解你的想法",
+      };
+      return;
+    }
+
+    this.feedbackState = {
+      ...this.feedbackState,
+      submitting: true,
+      error: null,
+    };
+
+    try {
+      // 构建反馈数据
+      const payload = {
+        type,
+        content: content.trim(),
+        contact: contact.trim() || undefined,
+        attachments: attachments.length > 0
+          ? attachments.map((a) => a.dataUrl)
+          : undefined,
+        context: {
+          version: this.hello?.version ?? "unknown",
+          platform: navigator.platform,
+          page: this.tab,
+          userAgent: navigator.userAgent,
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      // 调用网关 API 提交反馈
+      if (this.client) {
+        await this.client.request("feedback.submit", payload);
+      } else {
+        // 如果没有连接，保存到本地存储
+        const feedbackList = JSON.parse(localStorage.getItem("clawdbot-feedback") || "[]");
+        feedbackList.push({ ...payload, id: Date.now().toString() });
+        localStorage.setItem("clawdbot-feedback", JSON.stringify(feedbackList));
+      }
+
+      this.feedbackState = {
+        ...this.feedbackState,
+        submitting: false,
+        submitted: true,
+      };
+    } catch (err) {
+      console.error("Feedback submit error:", err);
+      this.feedbackState = {
+        ...this.feedbackState,
+        submitting: false,
+        error: "提交失败，请稍后重试",
+      };
+    }
   }
 
   render() {

@@ -1,6 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { buildInlineProviderModels } from "./model.js";
+import { buildInlineProviderModels, resolveModel } from "./model.js";
 
 const makeModel = (id: string) => ({
   id,
@@ -85,5 +89,26 @@ describe("buildInlineProviderModels", () => {
     expect(result[0].baseUrl).toBe("https://open.bigmodel.cn/api/paas/v4");
     expect(result[0].api).toBe("openai-responses");
     expect(result[0].provider).toBe("zhipu");
+  });
+});
+
+describe("resolveModel", () => {
+  it("resolves volcengine-ark/doubao-seed-1-8-251228 via built-in when config has no volcengine-ark provider", () => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawdbot-resolve-model-"));
+    try {
+      const { model, error } = resolveModel(
+        "volcengine-ark",
+        "doubao-seed-1-8-251228",
+        agentDir,
+        {},
+      );
+      expect(error).toBeUndefined();
+      expect(model).toBeDefined();
+      expect(model?.provider).toBe("volcengine-ark");
+      expect(model?.id).toBe("doubao-seed-1-8-251228");
+      expect(model?.baseUrl).toBe("https://ark.cn-beijing.volces.com/api/v3");
+    } finally {
+      fs.rmSync(agentDir, { recursive: true, force: true });
+    }
   });
 });

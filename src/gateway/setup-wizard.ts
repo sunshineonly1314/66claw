@@ -17,6 +17,22 @@ const execAsync = promisify(exec);
 import { fileURLToPath } from "node:url";
 import type { ClawdbotConfig } from "../config/config.js";
 import { loadConfig, writeConfigFile } from "../config/config.js";
+import type { ChannelId } from "../channels/plugins/types.js";
+
+// ============================================================================
+// 渠道启动回调（用于配置保存后立即启动渠道）
+// ============================================================================
+
+type ChannelStartCallback = (channelId: ChannelId) => Promise<void>;
+let channelStartCallback: ChannelStartCallback | null = null;
+
+/**
+ * 设置渠道启动回调
+ * 由 Gateway 初始化时调用，传入 startChannel 函数
+ */
+export function setChannelStartCallback(callback: ChannelStartCallback): void {
+  channelStartCallback = callback;
+}
 import {
   CN_PROVIDERS,
   AFFILIATE_LINKS,
@@ -27,6 +43,16 @@ import {
   type CnProviderConfig,
 } from "../config/region-cn.js";
 import { scheduleGatewaySigusr1Restart } from "../infra/restart.js";
+import { updateGatewayLicenseState } from "./license-check.js";
+import {
+  startTokenAutoRefresh,
+  verifyLicenseWithRetry,
+  refreshToken,
+  switchDevice,
+  DeviceSwitchError,
+  type LicenseVerifyResponseData,
+  LicenseErrorCode,
+} from "../license/index.js";
 import {
   setSiliconFlowApiKey,
   setDeepSeekApiKey,
@@ -35,6 +61,12 @@ import {
   setVolcengineArkApiKey,
   setTencentHunyuanApiKey,
   setMinimaxApiKey,
+  setGeminiApiKey,
+  setOpenAiApiKey,
+  setAnthropicApiKey,
+  setNvidiaApiKey,
+  setMoonshotApiKey,
+  setModelscopeApiKey,
 } from "../commands/onboard-auth.js";
 import { serveSetupPage } from "./setup-page.js";
 import { discoverSiliconFlowModels } from "../agents/siliconflow-models.js";
@@ -75,6 +107,8 @@ interface ConfigureProviderRequest {
   provider: string;
   apiKey: string;
   model?: string;
+  /** 自定义 API 端点 (仅 provider=custom 时使用) */
+  endpoint?: string;
 }
 
 interface ConfigureWorkspaceRequest {
@@ -99,6 +133,19 @@ interface ConfigureChannelsRequest {
     appSecret: string;
     encryptKey?: string;
     verificationToken?: string;
+  };
+  wecom?: {
+    corpId: string;
+    agentId: number;
+    agentSecret: string;
+    token?: string;
+    encodingAESKey?: string;
+  };
+  qqbot?: {
+    appId: string;
+    appSecret: string;
+    token?: string;
+    sandbox?: boolean;
   };
 }
 
@@ -249,6 +296,8 @@ interface VerifyApiKeyRequest {
   provider: string;
   apiKey: string;
   model?: string;
+  /** 自定义 API 端点 (仅 provider=custom 时使用) */
+  endpoint?: string;
 }
 
 /**
@@ -264,7 +313,7 @@ async function handleVerifyApiKey(
     return;
   }
 
-  const { provider, apiKey, model } = body;
+  const { provider, apiKey, model, endpoint: customEndpoint } = body;
   const trimmedKey = apiKey.trim();
 
   // 基本格式验证
@@ -274,6 +323,64 @@ async function handleVerifyApiKey(
   }
 
   try {
+    // 自定义 API：使用用户提供的 endpoint，走 OpenAI 兼容验证
+    if (provider === "custom") {
+      if (!customEndpoint) {
+        sendJson(res, 200, { ok: true, data: { valid: false, error: "请提供自定义 API 端点地址" } });
+        return;
+      }
+      const testModel = model || "test";
+      // 标准化 endpoint：去掉尾部斜杠
+      const baseUrl = customEndpoint.replace(/\/+$/, "");
+      // 拼接 /chat/completions（如果用户已经包含了则不重复拼）
+      const testUrl = baseUrl.endsWith("/chat/completions")
+        ? baseUrl
+        : `${baseUrl}/chat/completions`;
+      const testHeaders: Record<string, string> = {
+        "Authorization": `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+      };
+      const testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+      });
+
+      const response = await fetch(testUrl, {
+        method: "POST",
+        headers: testHeaders,
+        body: testBody,
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (response.ok) {
+        sendJson(res, 200, { ok: true, data: { valid: true, message: "自定义 API 验证成功" } });
+      } else {
+        const errorText = await response.text();
+        let errorMessage = "API Key 无效";
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.error?.message) {
+            errorMessage = errorJson.error.message;
+          } else if (errorJson.message) {
+            errorMessage = errorJson.message;
+          }
+        } catch {
+          if (response.status === 401) {
+            errorMessage = "API Key 无效或已过期";
+          } else if (response.status === 403) {
+            errorMessage = "API Key 权限不足";
+          } else if (response.status === 404) {
+            errorMessage = "API 端点不存在，请检查地址是否正确";
+          } else if (response.status === 429) {
+            errorMessage = "请求频率超限，请稍后重试";
+          }
+        }
+        sendJson(res, 200, { ok: true, data: { valid: false, error: errorMessage } });
+      }
+      return;
+    }
+
     const providerConfig = CN_PROVIDERS[provider];
     if (!providerConfig) {
       sendJson(res, 200, { ok: true, data: { valid: false, error: `不支持的提供商: ${provider}` } });
@@ -349,11 +456,88 @@ async function handleVerifyApiKey(
       sendJson(res, 200, { ok: true, data: { valid: true, message: "格式验证通过" } });
       return;
     } else if (provider === "minimax") {
+      // MiniMax 使用 Anthropic Messages 兼容 API，路径为 /v1/messages
+      // 需要同时设置 x-api-key 和 Authorization 头
+      testUrl = `${endpoint}/v1/messages`;
+      testHeaders = {
+        "x-api-key": trimmedKey,
+        "Authorization": `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+      };
+      testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+      });
+    } else if (provider === "moonshot") {
+      // Kimi (月之暗面) 使用 OpenAI 兼容 API
+      testUrl = `${endpoint}/chat/completions`;
+      testHeaders = {
+        "Authorization": `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+      };
+      testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+      });
+    } else if (provider === "modelscope") {
+      // 魔搭社区使用 OpenAI 兼容 API
+      testUrl = `${endpoint}/chat/completions`;
+      testHeaders = {
+        "Authorization": `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+      };
+      testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+      });
+    } else if (provider === "google") {
+      // Google Gemini 使用 REST API，参数通过 URL 传递
+      // 参考: https://ai.google.dev/gemini-api/docs
+      testUrl = `${endpoint}/models/${testModel}:generateContent?key=${trimmedKey}`;
+      testHeaders = {
+        "Content-Type": "application/json",
+      };
+      testBody = JSON.stringify({
+        contents: [{ parts: [{ text: "Hi" }] }],
+      });
+    } else if (provider === "openai") {
+      // OpenAI 使用标准 Chat Completions API
+      // 参考: https://platform.openai.com/docs/api-reference/chat
+      testUrl = `${endpoint}/chat/completions`;
+      testHeaders = {
+        "Authorization": `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+      };
+      testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+      });
+    } else if (provider === "anthropic") {
+      // Anthropic Claude 使用 Messages API
+      // 参考: https://docs.anthropic.com/en/api/messages
       testUrl = `${endpoint}/messages`;
       testHeaders = {
         "x-api-key": trimmedKey,
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01",
+      };
+      testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+      });
+    } else if (provider === "nvidia") {
+      // NVIDIA NIM 使用 OpenAI 兼容 API
+      // 参考: https://docs.api.nvidia.com/nim/reference/llm-apis
+      testUrl = `${endpoint}/chat/completions`;
+      testHeaders = {
+        "Authorization": `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
       };
       testBody = JSON.stringify({
         model: testModel,
@@ -387,6 +571,15 @@ async function handleVerifyApiKey(
         } else if (errorJson.message) {
           errorMessage = errorJson.message;
         }
+        
+        // 火山引擎特殊错误处理：模型未开通
+        if (provider === "volcengine-ark" && 
+            (errorMessage.includes("does not exist") || 
+             errorMessage.includes("do not have access") ||
+             errorMessage.includes("not found") ||
+             errorMessage.includes("invalid model"))) {
+          errorMessage = "模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
+        }
       } catch {
         if (response.status === 401) {
           errorMessage = "API Key 无效或已过期";
@@ -394,6 +587,8 @@ async function handleVerifyApiKey(
           errorMessage = "API Key 权限不足";
         } else if (response.status === 429) {
           errorMessage = "请求频率超限，请稍后重试";
+        } else if (response.status === 404 && provider === "volcengine-ark") {
+          errorMessage = "模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
         }
       }
       
@@ -422,11 +617,90 @@ async function handleConfigureProvider(
     return;
   }
 
-  const { provider, apiKey, model } = body;
+  const { provider, apiKey, model, endpoint: customEndpoint } = body;
 
   try {
     // 保存 API Key
     const trimmedKey = apiKey.trim();
+
+    // 自定义 API：使用 OpenAI 兼容方式保存，endpoint 写入 models.providers
+    if (provider === "custom") {
+      if (!customEndpoint) {
+        sendJson(res, 400, { ok: false, error: "自定义 API 需要提供端点地址" });
+        return;
+      }
+      // 使用 openai 的 auth profile 存储 API Key（自定义 API 兼容 OpenAI 格式）
+      await setOpenAiApiKey(trimmedKey);
+
+      const baseUrl = customEndpoint.replace(/\/+$/, "");
+      const defaultModel = model || "custom-model";
+      // 自定义提供商的 model ref 使用 custom-openai 命名空间
+      const modelRef = `custom-openai/${defaultModel}`;
+
+      const config = loadConfig();
+      const nextConfig: ClawdbotConfig = {
+        ...config,
+        auth: {
+          ...config.auth,
+          profiles: {
+            ...config.auth?.profiles,
+            "openai:default": {
+              provider: "openai",
+              mode: "api_key",
+            },
+          },
+          order: {
+            ...config.auth?.order,
+            openai: ["openai:default"],
+          },
+        },
+        agents: {
+          ...config.agents,
+          defaults: {
+            ...config.agents?.defaults,
+            model: {
+              ...config.agents?.defaults?.model,
+              primary: modelRef,
+            },
+          },
+        },
+        // 将自定义 endpoint 写入 models.providers 配置
+        models: {
+          ...config.models,
+          providers: {
+            ...config.models?.providers,
+            "custom-openai": {
+              baseUrl,
+              api: "openai-completions",
+              apiKey: trimmedKey,
+              models: [
+                {
+                  id: defaultModel,
+                  name: defaultModel,
+                  reasoning: false,
+                  input: ["text"],
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                  contextWindow: 128000,
+                  maxTokens: 4096,
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      await writeConfigFile(nextConfig);
+
+      updateSetupState({
+        step: 2,
+        provider: "custom",
+        apiKeyConfigured: true,
+      });
+
+      sendJson(res, 200, { ok: true, data: { configured: true, model: modelRef } });
+      return;
+    }
+
     if (provider === "siliconflow") {
       await setSiliconFlowApiKey(trimmedKey);
     } else if (provider === "deepseek") {
@@ -441,6 +715,18 @@ async function handleConfigureProvider(
       await setTencentHunyuanApiKey(trimmedKey);
     } else if (provider === "minimax") {
       await setMinimaxApiKey(trimmedKey);
+    } else if (provider === "moonshot") {
+      await setMoonshotApiKey(trimmedKey);
+    } else if (provider === "modelscope") {
+      await setModelscopeApiKey(trimmedKey);
+    } else if (provider === "google") {
+      await setGeminiApiKey(trimmedKey);
+    } else if (provider === "openai") {
+      await setOpenAiApiKey(trimmedKey);
+    } else if (provider === "anthropic") {
+      await setAnthropicApiKey(trimmedKey);
+    } else if (provider === "nvidia") {
+      await setNvidiaApiKey(trimmedKey);
     } else {
       sendJson(res, 400, { ok: false, error: `不支持的提供商: ${provider}` });
       return;
@@ -821,6 +1107,9 @@ async function handleConfigureSecurity(
 
 /**
  * 验证钉钉 AppKey 和 AppSecret
+ * 
+ * 调用钉钉 API 获取 access_token 来验证凭证是否有效
+ * 参考: https://open.dingtalk.com/document/orgapp/obtain-the-access_token-of-an-internal-app
  */
 async function verifyDingtalkCredentials(appKey: string, appSecret: string): Promise<{ valid: boolean; error?: string }> {
   try {
@@ -835,21 +1124,23 @@ async function verifyDingtalkCredentials(appKey: string, appSecret: string): Pro
     if (data.errcode === 0 && data.access_token) {
       return { valid: true };
     } else {
-      // 钉钉错误码说明
+      // 钉钉错误码说明 - 提供更详细的排查建议
       let errorMsg = data.errmsg || "验证失败";
       if (data.errcode === 40089) {
-        errorMsg = "AppKey 不存在或无效";
+        errorMsg = "AppKey 不存在或无效。请检查：1) AppKey 是否复制完整（无多余空格）；2) 应用是否已在「版本管理与发布」中发布上线";
       } else if (data.errcode === 40091) {
-        errorMsg = "AppSecret 不正确";
+        errorMsg = "AppSecret 不正确。请到钉钉开放平台「凭证与基础信息」页面点击「重置」生成新的 Secret";
       } else if (data.errcode === 40014) {
-        errorMsg = "应用凭证无效";
+        errorMsg = "应用凭证无效。请检查 AppKey 和 AppSecret 是否匹配同一个应用";
+      } else if (data.errcode === 400013) {
+        errorMsg = "应用未启用。请在钉钉开放平台「版本管理与发布」中发布应用";
       }
       return { valid: false, error: errorMsg };
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes("timeout")) {
-      return { valid: false, error: "连接钉钉服务超时，请检查网络" };
+      return { valid: false, error: "连接钉钉服务超时，请检查网络连接" };
     }
     return { valid: false, error: `验证失败: ${msg}` };
   }
@@ -894,6 +1185,57 @@ async function verifyFeishuCredentials(appId: string, appSecret: string): Promis
 }
 
 /**
+ * 验证企业微信 CorpID 和 AgentSecret
+ */
+async function verifyWecomCredentials(
+  corpId: string, 
+  agentSecret: string
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    // 企业微信获取 access_token API
+    const url = `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(corpId)}&corpsecret=${encodeURIComponent(agentSecret)}`;
+    const response = await fetch(url, {
+      method: "GET",
+      signal: AbortSignal.timeout(10000),
+    });
+
+    const data = await response.json() as { 
+      errcode: number; 
+      errmsg: string; 
+      access_token?: string;
+      expires_in?: number;
+    };
+
+    if (data.errcode === 0 && data.access_token) {
+      return { valid: true };
+    } else {
+      // 企业微信错误码说明
+      let errorMsg = data.errmsg || "验证失败";
+      if (data.errcode === 40013) {
+        errorMsg = "企业 ID (CorpID) 无效";
+      } else if (data.errcode === 40001) {
+        errorMsg = "应用 Secret 不正确";
+      } else if (data.errcode === 40056) {
+        errorMsg = "应用 Secret 不正确或已过期";
+      } else if (data.errcode === 42001) {
+        errorMsg = "应用凭证已过期，请重新获取";
+      } else if (data.errcode === 40091) {
+        errorMsg = "Secret 不合法";
+      } else if (data.errcode === -1) {
+        errorMsg = "系统繁忙，请稍后再试";
+      }
+      return { valid: false, error: errorMsg };
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes("timeout")) {
+      return { valid: false, error: "连接企业微信服务超时，请检查网络" };
+    }
+    return { valid: false, error: `验证失败: ${msg}` };
+  }
+}
+
+/**
  * POST /api/setup/verify-channel - 验证渠道凭证
  */
 async function handleVerifyChannel(
@@ -923,6 +1265,19 @@ async function handleVerifyChannel(
         return;
       }
       result = await verifyFeishuCredentials(credentials.appId, credentials.appSecret);
+    } else if (channel === "wecom") {
+      if (!credentials.corpId || !credentials.agentSecret) {
+        sendJson(res, 200, { ok: true, data: { valid: false, error: "请填写企业 ID 和应用 Secret" } });
+        return;
+      }
+      result = await verifyWecomCredentials(credentials.corpId, credentials.agentSecret);
+    } else if (channel === "qqbot") {
+      if (!credentials.appId || !credentials.appSecret) {
+        sendJson(res, 200, { ok: true, data: { valid: false, error: "请填写 AppID 和 AppSecret" } });
+        return;
+      }
+      // TODO: 实现 verifyQqbotCredentials 函数
+      result = { valid: true };
     } else {
       sendJson(res, 200, { ok: true, data: { valid: true, message: "该渠道暂不支持在线验证" } });
       return;
@@ -996,16 +1351,62 @@ async function handleConfigureChannels(
         return;
       }
 
+      // 使用新版扁平配置格式 (推荐)
       channelsConfig.feishu = {
         enabled: true,
-        app: {
-          appId: body.feishu.appId,
-          appSecret: body.feishu.appSecret,
-          ...(body.feishu.encryptKey ? { encryptKey: body.feishu.encryptKey } : {}),
-          ...(body.feishu.verificationToken ? { verificationToken: body.feishu.verificationToken } : {}),
-        },
+        appId: body.feishu.appId,
+        appSecret: body.feishu.appSecret,
+        connectionMode: "websocket", // 默认使用 WebSocket 长连接
+        ...(body.feishu.encryptKey ? { encryptKey: body.feishu.encryptKey } : {}),
+        ...(body.feishu.verificationToken ? { verificationToken: body.feishu.verificationToken } : {}),
       };
       configuredChannels.push("feishu");
+    }
+
+    // 处理企业微信配置
+    if (body?.wecom?.corpId && body?.wecom?.agentId && body?.wecom?.agentSecret) {
+      // 验证企业微信凭证
+      const wecomResult = await verifyWecomCredentials(body.wecom.corpId, body.wecom.agentSecret);
+      verificationResults.wecom = wecomResult;
+
+      if (!wecomResult.valid) {
+        sendJson(res, 200, {
+          ok: false,
+          error: `企业微信凭证验证失败: ${wecomResult.error}`,
+          data: { verificationResults },
+        });
+        return;
+      }
+
+      channelsConfig.wecom = {
+        enabled: true,
+        app: {
+          corpId: body.wecom.corpId,
+          agentId: body.wecom.agentId,
+          agentSecret: body.wecom.agentSecret,
+          ...(body.wecom.token ? { token: body.wecom.token } : {}),
+          ...(body.wecom.encodingAESKey ? { encodingAESKey: body.wecom.encodingAESKey } : {}),
+        },
+      };
+      configuredChannels.push("wecom");
+    }
+
+    // 处理 QQ 机器人配置
+    if (body?.qqbot?.appId && body?.qqbot?.appSecret) {
+      // TODO: 实现 verifyQqbotCredentials 函数，暂时跳过验证
+      const qqbotResult = { valid: true };
+      verificationResults.qqbot = qqbotResult;
+
+      channelsConfig.qqbot = {
+        enabled: true,
+        sandbox: body.qqbot.sandbox ?? false,
+        app: {
+          appId: body.qqbot.appId,
+          appSecret: body.qqbot.appSecret,
+          ...(body.qqbot.token ? { token: body.qqbot.token } : {}),
+        },
+      };
+      configuredChannels.push("qqbot");
     }
 
     // 处理简单的渠道列表（兼容旧接口）
@@ -1021,6 +1422,8 @@ async function handleConfigureChannels(
     }
 
     // 合并到现有配置
+    // 注：渠道插件默认启用（BUNDLED_ENABLED_BY_DEFAULT），无需设置 plugins.entries
+    // channels.* 配置变更会触发热更新，自动重启对应渠道
     const nextConfig: ClawdbotConfig = {
       ...config,
       channels: channelsConfig as ClawdbotConfig["channels"],
@@ -1029,12 +1432,25 @@ async function handleConfigureChannels(
     // 持久化到磁盘
     await writeConfigFile(nextConfig);
 
+    // 立即启动配置的渠道（热更新，无需重启 Gateway）
+    const startedChannels: string[] = [];
+    if (channelStartCallback) {
+      for (const channelId of configuredChannels) {
+        try {
+          await channelStartCallback(channelId as ChannelId);
+          startedChannels.push(channelId);
+        } catch (err) {
+          console.error(`[setup-wizard] Failed to start channel ${channelId}:`, err);
+        }
+      }
+    }
+
     updateSetupState({
       step: 5,
       channelsConfigured: configuredChannels,
     });
 
-    sendJson(res, 200, { ok: true, data: { channels: configuredChannels, verificationResults } });
+    sendJson(res, 200, { ok: true, data: { channels: configuredChannels, verificationResults, startedChannels } });
   } catch (error) {
     sendJson(res, 500, {
       ok: false,
@@ -1058,22 +1474,13 @@ async function handleComplete(
 }
 
 /**
- * Tecbinai 验证 API 响应类型
- */
-interface TecbinaiVerifyResponse {
-  code: number;
-  message: string;
-  data: {
-    valid: boolean;
-    status: string | null;
-    expiresAt: string | null;
-    message: string;
-  };
-}
-
-/**
  * POST /api/setup/validate-license - 验证 ClawdbotCN 许可证
- * 对接 Tecbinai 产品 Key 校验 API
+ * 
+ * 【重要修复】使用统一的新版 License API（/api/api/v1/license/verify）
+ * 而不是老版 API（/api/api/verify-key），确保：
+ * 1. 设备正确注册到授权系统
+ * 2. Token 能够正常获取
+ * 3. 后续 Gateway 启动时验证通过
  */
 async function handleValidateLicense(
   req: IncomingMessage,
@@ -1088,55 +1495,126 @@ async function handleValidateLicense(
   const key = body.token.trim();
 
   try {
-    // Tecbinai 产品 Key 校验 API
-    const validateUrl = "https://www.tecbinai.com/api/api/verify-key";
+    // 【修复核心】使用新版 License API 进行验证（包含设备注册）
+    // 这样可以确保 Token 获取成功，因为设备已在验证过程中注册
+    console.log("[setup-wizard] Validating license with unified API...");
     
-    // 调用 Tecbinai 验证服务
-    const response = await fetch(validateUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ key }),
-      signal: AbortSignal.timeout(15000), // 15 秒超时
+    const result = await verifyLicenseWithRetry(key, {
+      maxRetries: 2,
     });
 
-    if (!response.ok) {
-      throw new Error(`验证服务返回错误: ${response.status}`);
-    }
-
-    const result = await response.json() as TecbinaiVerifyResponse;
-
-    if (result.code === 200 && result.data?.valid) {
+    if (result.valid) {
       // 验证成功，保存许可证状态到配置
       const config = loadConfig();
       const nextConfig = {
         ...config,
         license: {
           key,
-          status: result.data.status ?? undefined,
-          expiresAt: result.data.expiresAt ?? undefined,
+          status: result.license?.tier ?? "basic",
+          expiresAt: result.license?.expiresAt ?? undefined,
           validatedAt: new Date().toISOString(),
         },
       };
       await writeConfigFile(nextConfig);
 
+      // 同步更新 Gateway 全局 License 状态（使用真实的验证响应数据）
+      updateGatewayLicenseState({
+        checking: false,
+        valid: true,
+        offlineMode: false,
+        error: null,
+        errorCode: null,
+        license: result.license,
+        device: result.device,
+        renewalReminder: result.renewalReminder,
+        forceUpdate: result.forceUpdate,
+        pendingNotifications: [],
+        lastVerifiedAt: Date.now(),
+        deviceSwitchInfo: result.deviceSwitchInfo ?? null,
+        deviceSwitchCooldown: result.deviceSwitchCooldown ?? null,
+      });
+
+      // 【修复核心】先同步获取一次 Token，确保激活后立即可用
+      console.log("[setup-wizard] Fetching initial token...");
+      const tokenSuccess = await refreshToken(key);
+      if (tokenSuccess) {
+        console.log("[setup-wizard] Initial token fetch succeeded");
+      } else {
+        console.warn("[setup-wizard] Initial token fetch failed, will retry in background");
+      }
+
+      // 启动短期令牌自动刷新
+      startTokenAutoRefresh(key, {
+        intervalMs: 30 * 60 * 1000, // 30 分钟检查一次
+        onInvalid: () => {
+          console.warn("[setup-wizard] Token became invalid after activation");
+        },
+      });
+
       sendJson(res, 200, {
         ok: true,
         data: {
           valid: true,
-          status: result.data.status,
-          expiresAt: result.data.expiresAt,
-          message: result.data.message || "许可证验证成功",
+          status: result.license?.tier,
+          expiresAt: result.license?.expiresAt,
+          message: "许可证验证成功",
         },
       });
     } else {
-      // 验证失败，返回 Tecbinai 的错误消息
+      // 验证失败，返回详细错误信息
+      const errorMessage = result.errorMessage || getErrorMessageForCode(result.errorCode);
+      
+      // 处理设备切换场景（errorCode=1010）
+      // 注意：服务器返回的设备切换信息在 device 字段中，需要映射到 deviceSwitchInfo
+      if (result.errorCode === LicenseErrorCode.ERROR_DEVICE_SWITCH_REQUIRED) {
+        // 从 device 字段提取设备切换信息（服务器返回的结构）
+        const deviceSwitchInfo = result.deviceSwitchInfo ?? (result.device ? {
+          existingDeviceId: (result.device as unknown as Record<string, unknown>).existingDeviceId as string,
+          existingDeviceName: (result.device as unknown as Record<string, unknown>).existingDeviceName as string,
+          existingOsInfo: (result.device as unknown as Record<string, unknown>).existingOsInfo as string,
+          deviceLimit: result.device.deviceLimit,
+          boundDevices: result.device.boundDevices,
+        } : undefined);
+        
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            valid: false,
+            errorCode: result.errorCode,
+            error: errorMessage,
+            deviceSwitchInfo,
+          },
+        });
+        return;
+      }
+      
+      // 处理设备切换冷却（errorCode=1011）
+      // 注意：服务器返回的冷却信息可能在 device 字段中
+      if (result.errorCode === LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN) {
+        // 从 device 字段提取冷却信息
+        const deviceSwitchCooldown = result.deviceSwitchCooldown ?? (result.device ? {
+          cooldownRemainingHours: (result.device as unknown as Record<string, unknown>).cooldownRemainingHours as number | null,
+          cooldownEndsAt: (result.device as unknown as Record<string, unknown>).cooldownEndsAt as string | null,
+        } : undefined);
+        
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            valid: false,
+            errorCode: result.errorCode,
+            error: errorMessage,
+            deviceSwitchCooldown,
+          },
+        });
+        return;
+      }
+      
       sendJson(res, 200, {
         ok: true,
         data: {
           valid: false,
-          error: result.data?.message || "许可证无效",
+          errorCode: result.errorCode,
+          error: errorMessage,
         },
       });
     }
@@ -1158,6 +1636,38 @@ async function handleValidateLicense(
       };
       await writeConfigFile(nextConfig);
 
+      // 同步更新 Gateway 全局 License 状态
+      updateGatewayLicenseState({
+        checking: false,
+        valid: true,
+        offlineMode: false,
+        error: null,
+        errorCode: null,
+        license: {
+          tier: "test",
+          tierName: "开发版",
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          daysRemaining: 365,
+          keyType: "test",
+          features: [],
+        },
+        device: null,
+        renewalReminder: null,
+        forceUpdate: null,
+        pendingNotifications: [],
+        lastVerifiedAt: Date.now(),
+        deviceSwitchInfo: null,
+        deviceSwitchCooldown: null,
+      });
+
+      // 启动短期令牌自动刷新（开发模式也需要）
+      startTokenAutoRefresh(key, {
+        intervalMs: 30 * 60 * 1000,
+        onInvalid: () => {
+          console.warn("[setup-wizard] Token became invalid (dev mode)");
+        },
+      });
+
       sendJson(res, 200, {
         ok: true,
         data: { valid: true, message: "开发模式：跳过在线验证" },
@@ -1171,6 +1681,175 @@ async function handleValidateLicense(
         },
       });
     }
+  }
+}
+
+/**
+ * 根据错误码获取用户友好的错误消息
+ */
+function getErrorMessageForCode(errorCode: LicenseErrorCode | null): string {
+  if (!errorCode) {
+    return "授权验证失败，请稍后重试";
+  }
+  
+  const messages: Record<LicenseErrorCode, string> = {
+    [LicenseErrorCode.ERROR_KEY_NOT_FOUND]: "授权码不存在，请检查输入",
+    [LicenseErrorCode.ERROR_KEY_EXPIRED]: "授权已过期，请续费后继续使用",
+    [LicenseErrorCode.ERROR_KEY_REVOKED]: "授权码已被撤销，请联系客服",
+    [LicenseErrorCode.ERROR_DEVICE_LIMIT]: "设备数已达上限，请先解绑其他设备",
+    [LicenseErrorCode.ERROR_KEY_BINDBY_OTHER]: "授权码已被他人使用，请联系客服",
+    [LicenseErrorCode.ERROR_INVALID_SIGN]: "请求签名验证失败，请检查客户端版本",
+    [LicenseErrorCode.ERROR_TIMESTAMP_EXPIRED]: "请求时间戳过期，请检查系统时间",
+    [LicenseErrorCode.ERROR_KEY_EXHAUSTED]: "授权码使用次数已用尽，请购买新授权",
+    [LicenseErrorCode.ERROR_UNBIND_COOLDOWN]: "解绑冷却中，请稍后再试",
+    [LicenseErrorCode.ERROR_DEVICE_SWITCH_REQUIRED]: "检测到已在其他设备使用此密钥，需要确认切换",
+    [LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN]: "设备切换冷却中，请稍后再试",
+  };
+  
+  return messages[errorCode] || "授权验证失败，请稍后重试";
+}
+
+/**
+ * POST /api/setup/switch-device - 确认设备切换（单设备模式）
+ * 
+ * 当用户收到 errorCode=1010 (ERROR_DEVICE_SWITCH_REQUIRED) 后，
+ * 通过此接口确认切换到当前设备。
+ */
+async function handleSwitchDevice(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const body = await readJsonBody<{ token: string }>(req);
+  if (!body || !body.token) {
+    sendJson(res, 400, { ok: false, error: "缺少 token 参数" });
+    return;
+  }
+
+  const key = body.token.trim();
+
+  try {
+    // 调用 license 模块的设备切换函数
+    const result = await switchDevice(key);
+
+    if (result.valid) {
+      // 切换成功，更新配置
+      const config = loadConfig();
+      const nextConfig = {
+        ...config,
+        license: {
+          key,
+          status: result.license?.tier ?? "basic",
+          expiresAt: result.license?.expiresAt,
+          validatedAt: new Date().toISOString(),
+        },
+      };
+      await writeConfigFile(nextConfig);
+
+      // 更新 Gateway 全局 License 状态
+      updateGatewayLicenseState({
+        checking: false,
+        valid: true,
+        offlineMode: false,
+        error: null,
+        errorCode: null,
+        license: result.license ?? null,
+        device: null,
+        renewalReminder: null,
+        forceUpdate: null,
+        pendingNotifications: [],
+        lastVerifiedAt: Date.now(),
+        deviceSwitchInfo: null,
+        deviceSwitchCooldown: null,
+      });
+
+      // 启动短期令牌自动刷新
+      startTokenAutoRefresh(key, {
+        intervalMs: 30 * 60 * 1000,
+        onInvalid: () => {
+          console.warn("[setup-wizard] Token became invalid after device switch");
+        },
+      });
+
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          valid: true,
+          status: result.license?.tier,
+          expiresAt: result.license?.expiresAt,
+          message: "设备切换成功",
+        },
+      });
+    } else {
+      // 切换失败（可能进入冷却期）
+      const errorMessage = result.errorMessage || getErrorMessageForCode(result.errorCode ?? null);
+      
+      // 处理冷却期场景
+      if (result.errorCode === LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN) {
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            valid: false,
+            errorCode: result.errorCode,
+            error: errorMessage,
+            deviceSwitchCooldown: {
+              cooldownRemainingHours: result.cooldownRemainingHours,
+              cooldownEndsAt: result.cooldownEndsAt,
+            },
+          },
+        });
+        return;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          valid: false,
+          errorCode: result.errorCode,
+          error: errorMessage,
+        },
+      });
+    }
+  } catch (error) {
+    // 处理 DeviceSwitchError
+    if (error instanceof DeviceSwitchError) {
+      const errorCode = error.errorCode ?? null;
+      
+      // 冷却期错误
+      if (errorCode === LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN) {
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            valid: false,
+            errorCode,
+            error: error.message,
+            deviceSwitchCooldown: {
+              cooldownRemainingHours: error.cooldownRemainingHours,
+              cooldownEndsAt: error.cooldownEndsAt,
+            },
+          },
+        });
+        return;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          valid: false,
+          errorCode,
+          error: error.message,
+        },
+      });
+      return;
+    }
+
+    // 其他错误
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        valid: false,
+        error: `设备切换失败: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    });
   }
 }
 
@@ -1266,6 +1945,207 @@ async function handleFetchModels(
 }
 
 // ============================================================================
+// ClawdbotCN 独家福利：每日免费大模型
+// ============================================================================
+
+import {
+  getAllFreeModelProviders,
+  getFreeModelProvider,
+} from "../config/free-model-providers.js";
+import type { FreeModelsConfig, FreeModelAccount } from "../config/types.free-models.js";
+import { DEFAULT_FREE_MODELS_CONFIG } from "../config/types.free-models.js";
+import { FreeModelScheduler } from "../agents/free-model-scheduler.js";
+
+/**
+ * GET /api/setup/free-models/providers - 获取可用的免费模型提供商列表
+ */
+async function handleGetFreeModelProviders(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const providers = getAllFreeModelProviders().map((p) => ({
+    id: p.id,
+    name: p.name,
+    displayName: p.displayName,
+    freeQuota: p.freeQuota,
+    registerUrl: p.registerUrl,
+    docsUrl: p.docsUrl,
+    features: p.features,
+    recommended: p.recommended,
+  }));
+
+  sendJson(res, 200, {
+    ok: true,
+    data: { providers },
+  });
+}
+
+interface ConfigureFreeModelRequest {
+  providerId: string;
+  apiKey: string;
+}
+
+/**
+ * POST /api/setup/free-models/test - 测试免费模型 API 密钥
+ */
+async function handleTestFreeModelApiKey(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const body = await readJsonBody<ConfigureFreeModelRequest>(req);
+  if (!body || !body.providerId || !body.apiKey) {
+    sendJson(res, 400, { ok: false, error: "缺少必要参数" });
+    return;
+  }
+
+  const { providerId, apiKey } = body;
+
+  // 检查 Provider 是否存在
+  const provider = getFreeModelProvider(providerId);
+  if (!provider) {
+    sendJson(res, 400, { ok: false, error: "未知的模型提供商" });
+    return;
+  }
+
+  try {
+    // 发送测试请求
+    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: provider.defaultModel,
+        messages: [{ role: "user", content: "hi" }],
+        max_tokens: 5,
+      }),
+    });
+
+    if (response.ok) {
+      sendJson(res, 200, { ok: true, data: { valid: true } });
+      return;
+    }
+
+    // 401/403 是认证错误
+    if (response.status === 401 || response.status === 403) {
+      sendJson(res, 200, {
+        ok: true,
+        data: { valid: false, error: "API 密钥无效或已过期" },
+      });
+      return;
+    }
+
+    // 429/402 可能是额度问题，但密钥本身是有效的
+    if (response.status === 429 || response.status === 402) {
+      sendJson(res, 200, { ok: true, data: { valid: true } });
+      return;
+    }
+
+    const errorBody = await response.text();
+    sendJson(res, 200, {
+      ok: true,
+      data: { valid: false, error: `HTTP ${response.status}: ${errorBody.slice(0, 200)}` },
+    });
+  } catch (error) {
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        valid: false,
+        error: error instanceof Error ? error.message : "网络错误",
+      },
+    });
+  }
+}
+
+/**
+ * POST /api/setup/free-models/configure - 配置免费模型
+ */
+async function handleConfigureFreeModels(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const body = await readJsonBody<{ accounts: Array<{ providerId: string; apiKey: string }> }>(req);
+  if (!body || !body.accounts || !Array.isArray(body.accounts)) {
+    sendJson(res, 400, { ok: false, error: "缺少必要参数" });
+    return;
+  }
+
+  try {
+    const config = await loadConfig();
+
+    // 构建免费模型配置
+    const freeModelsConfig: FreeModelsConfig = {
+      ...DEFAULT_FREE_MODELS_CONFIG,
+      enabled: body.accounts.length > 0,
+      accounts: body.accounts.map((a, i) => ({
+        providerId: a.providerId,
+        apiKey: a.apiKey,
+        enabled: true,
+        priority: i + 1,
+        todayUsage: {
+          tokens: 0,
+          requests: 0,
+          lastUpdated: new Date().toISOString(),
+        },
+        status: "active" as const,
+      })),
+    };
+
+    // 保存到配置
+    (config as { freeModels?: FreeModelsConfig }).freeModels = freeModelsConfig;
+    await writeConfigFile(config);
+
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    sendJson(res, 500, {
+      ok: false,
+      error: `配置失败: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+/**
+ * GET /api/setup/free-models/config - 获取当前免费模型配置
+ */
+async function handleGetFreeModelsConfig(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const config = await loadConfig();
+    const freeModelsConfig = (config as { freeModels?: FreeModelsConfig }).freeModels;
+
+    if (!freeModelsConfig) {
+      sendJson(res, 200, {
+        ok: true,
+        data: { configured: false, config: DEFAULT_FREE_MODELS_CONFIG },
+      });
+      return;
+    }
+
+    // 掩码 API 密钥
+    const safeConfig = {
+      ...freeModelsConfig,
+      accounts: freeModelsConfig.accounts.map((a) => ({
+        ...a,
+        apiKey: a.apiKey ? `${a.apiKey.slice(0, 4)}****${a.apiKey.slice(-4)}` : "",
+      })),
+    };
+
+    sendJson(res, 200, {
+      ok: true,
+      data: { configured: true, config: safeConfig },
+    });
+  } catch (error) {
+    sendJson(res, 500, {
+      ok: false,
+      error: `获取配置失败: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+// ============================================================================
 // Main HTTP Handler
 // ============================================================================
 
@@ -1312,6 +2192,12 @@ export async function handleSetupWizardHttpRequest(
         case "/browse-directory":
           await handleBrowseDirectory(req, res);
           return true;
+        case "/free-models/providers":
+          await handleGetFreeModelProviders(req, res);
+          return true;
+        case "/free-models/config":
+          await handleGetFreeModelsConfig(req, res);
+          return true;
       }
     }
 
@@ -1350,8 +2236,17 @@ export async function handleSetupWizardHttpRequest(
         case "/validate-license":
           await handleValidateLicense(req, res);
           return true;
+        case "/switch-device":
+          await handleSwitchDevice(req, res);
+          return true;
         case "/fetch-models":
           await handleFetchModels(req, res);
+          return true;
+        case "/free-models/test":
+          await handleTestFreeModelApiKey(req, res);
+          return true;
+        case "/free-models/configure":
+          await handleConfigureFreeModels(req, res);
           return true;
       }
     }
@@ -1378,6 +2273,11 @@ export async function handleSetupWizardHttpRequest(
  */
 export function shouldShowSetupWizard(): boolean {
   const config = loadConfig();
+
+  // 老用户保护：如果已激活过授权码，说明已完成初始配置，不再弹出 Setup Wizard。
+  // 这避免了老用户因缺少 workspace 或使用环境变量配置 API Key 而被误重定向的问题。
+  const hasLicense = Boolean(config.license?.key);
+  if (hasLicense) return false;
 
   // 检查是否已配置 API Key
   const hasApiKey = Boolean(

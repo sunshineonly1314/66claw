@@ -1,17 +1,12 @@
 {
   "name": "@clawdbot/wecom",
-  "version": "2026.1.28",
+  "version": "2026.1.27",
   "type": "module",
-  "description": "Clawdbot 企业微信渠道插件 (WeCom/WeChat Work channel plugin)",
+  "description": "Clawdbot WeCom/WeChat Work channel plugin",
   "clawdbot": {
-    "extensions": [
-      "./index.ts"
-    ]
+    "extensions": ["./index.ts"]
   },
   "dependencies": {
     "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "clawdbot": "workspace:*"
   }
 }

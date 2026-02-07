@@ -147,7 +147,7 @@ Moonshot uses OpenAI-compatible endpoints, so configure it as a custom provider:
     mode: "merge",
     providers: {
       moonshot: {
-        baseUrl: "https://api.moonshot.ai/v1",
+        baseUrl: "https://api.moonshot.cn/v1",
         apiKey: "${MOONSHOT_API_KEY}",
         api: "openai-completions",
         models: [{ id: "kimi-k2-0905-preview", name: "Kimi K2 0905 Preview" }]

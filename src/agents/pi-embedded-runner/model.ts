@@ -15,6 +15,32 @@ type InlineProviderConfig = {
   models?: ModelDefinitionConfig[];
 };
 
+/** 火山引擎豆包内置 provider，用于配置中未显式写 models.providers["volcengine-ark"] 时仍能解析 volcengine-ark/doubao-seed-* */
+const VOLCENGINE_ARK_BUILTIN: InlineProviderConfig = {
+  baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+  api: "openai-completions",
+  models: [
+    {
+      id: "doubao-seed-1-8-251228",
+      name: "豆包 1.8",
+      contextWindow: 256000,
+      maxTokens: 32768,
+      cost: { input: 0.004, output: 0.016, cacheRead: 0, cacheWrite: 0 },
+      input: ["text", "image", "video"],
+      reasoning: true,
+    },
+    {
+      id: "doubao-seed-1-6-251015",
+      name: "豆包 1.6",
+      contextWindow: 256000,
+      maxTokens: 32768,
+      cost: { input: 0.008, output: 0.02, cacheRead: 0, cacheWrite: 0 },
+      input: ["text", "image", "video"],
+      reasoning: true,
+    },
+  ],
+};
+
 export function buildInlineProviderModels(
   providers: Record<string, InlineProviderConfig>,
 ): InlineModelEntry[] {
@@ -75,19 +101,47 @@ export function resolveModel(
         modelRegistry,
       };
     }
-    const providerCfg = providers[provider] as InlineProviderConfig | undefined;
+    
+    // 优先使用配置中的 provider，如果没有则使用内置的后备配置
+    let providerCfg = providers[provider] as InlineProviderConfig | undefined;
+    
+    // 对 volcengine-ark，即使没有在 config 中配置也提供内置支持
+    // 这样可以避免 "Unknown model: volcengine-ark/..." 错误
+    // API key 会在实际调用时通过认证系统处理
+    if (!providerCfg) {
+      // 检查所有可能的 provider 别名
+      const normalizedProviderKey = Object.keys(providers).find(
+        (key) => normalizeProviderId(key) === normalizedProvider
+      );
+      if (normalizedProviderKey) {
+        providerCfg = providers[normalizedProviderKey] as InlineProviderConfig | undefined;
+      }
+    }
+    
+    // volcengine-ark 的内置后备配置
+    if (!providerCfg && (provider === "volcengine-ark" || normalizedProvider === "volcengine-ark")) {
+      providerCfg = VOLCENGINE_ARK_BUILTIN;
+    }
+    
     if (providerCfg || modelId.startsWith("mock-")) {
+      const modelEntry = providerCfg?.models?.find((m) => m.id === modelId);
       const fallbackModel: Model<Api> = normalizeModelCompat({
         id: modelId,
-        name: modelId,
+        name: modelEntry?.name ?? modelId,
         api: providerCfg?.api ?? "openai-responses",
         provider,
-        baseUrl: providerCfg?.baseUrl,  // 继承 provider 级别的 baseUrl
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: providerCfg?.models?.[0]?.contextWindow ?? DEFAULT_CONTEXT_TOKENS,
-        maxTokens: providerCfg?.models?.[0]?.maxTokens ?? DEFAULT_CONTEXT_TOKENS,
+        baseUrl: providerCfg?.baseUrl,
+        reasoning: (modelEntry as { reasoning?: boolean } | undefined)?.reasoning ?? false,
+        input: (modelEntry as { input?: string[] } | undefined)?.input ?? ["text"],
+        cost:
+          (modelEntry as ModelDefinitionConfig | undefined)?.cost ?? {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+          },
+        contextWindow: modelEntry?.contextWindow ?? providerCfg?.models?.[0]?.contextWindow ?? DEFAULT_CONTEXT_TOKENS,
+        maxTokens: modelEntry?.maxTokens ?? providerCfg?.models?.[0]?.maxTokens ?? DEFAULT_CONTEXT_TOKENS,
       } as Model<Api>);
       return { model: fallbackModel, authStorage, modelRegistry };
     }

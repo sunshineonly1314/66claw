@@ -1,5 +1,6 @@
 # Repository Guidelines
 - Repo: https://github.com/clawdbot/clawdbot
+- **功能迭代日志**: `ITERATION.md` - 每日功能开发和 Bug 修复记录，用于上线说明
 - GitHub issues/comments/PR comments: use literal multiline strings or `-F - <<'EOF'` (or $'...') for real newlines; never embed "\\n".
 
 ## Project Structure & Module Organization

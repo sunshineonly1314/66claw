@@ -15,6 +15,7 @@ import { nodeHandlers } from "./server-methods/nodes.js";
 import { sendHandlers } from "./server-methods/send.js";
 import { sessionsHandlers } from "./server-methods/sessions.js";
 import { skillsHandlers } from "./server-methods/skills.js";
+import { skillInstallApprovalHandlers } from "./server-methods/skill-install-approval.js";
 import { systemHandlers } from "./server-methods/system.js";
 import { talkHandlers } from "./server-methods/talk.js";
 import { ttsHandlers } from "./server-methods/tts.js";
@@ -25,6 +26,10 @@ import { voicewakeHandlers } from "./server-methods/voicewake.js";
 import { webHandlers } from "./server-methods/web.js";
 import { wizardHandlers } from "./server-methods/wizard.js";
 import { registerLicenseMethods } from "./server-methods/license.js";
+import { capabilityDetectHandlers } from "./server-methods/capability-detect.js";
+import { securityHandlers } from "./server-methods/security.js";
+import { feedbackHandlers } from "./server-methods/feedback.js";
+import { freeModelsHandlers } from "./server-methods/free-models.js";
 
 const ADMIN_SCOPE = "operator.admin";
 const READ_SCOPE = "operator.read";
@@ -32,7 +37,14 @@ const WRITE_SCOPE = "operator.write";
 const APPROVALS_SCOPE = "operator.approvals";
 const PAIRING_SCOPE = "operator.pairing";
 
-const APPROVAL_METHODS = new Set(["exec.approval.request", "exec.approval.resolve"]);
+const APPROVAL_METHODS = new Set([
+  "exec.approval.request",
+  "exec.approval.resolve",
+  "skill.install.request",
+  "skill.install.resolve",
+  "skill.install.pending",
+  "skill.install.cancel",
+]);
 const NODE_ROLE_METHODS = new Set(["node.invoke.result", "node.event", "skills.bins"]);
 const PAIRING_METHODS = new Set([
   "node.pair.request",
@@ -58,6 +70,7 @@ const READ_METHODS = new Set([
   "tts.status",
   "tts.providers",
   "models.list",
+  "models.providers",
   "agents.list",
   "agent.identity.get",
   "skills.status",
@@ -75,6 +88,16 @@ const READ_METHODS = new Set([
   // License methods
   "license.status",
   "license.devices",
+  // Capability detection
+  "capability.detect",
+  "capability.detect.quick",
+  // Security modes
+  "security.modes",
+  // Free models (read)
+  "freeModels.providers",
+  "freeModels.config.get",
+  "freeModels.stats",
+  "freeModels.current",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -94,6 +117,21 @@ const WRITE_METHODS = new Set([
   "node.invoke",
   "chat.send",
   "chat.abort",
+  // Model methods
+  "models.setPrimary",
+  "models.setAuth",
+  "models.getAuthStatus",
+  // Capability detection
+  "capability.firstVisit.complete",
+  // Security modes
+  "security.setMode",
+  // Free models (write)
+  "freeModels.config.update",
+  "freeModels.account.add",
+  "freeModels.account.remove",
+  "freeModels.account.test",
+  "freeModels.account.reorder",
+  "freeModels.dailyReset",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {
@@ -168,6 +206,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...talkHandlers,
   ...ttsHandlers,
   ...skillsHandlers,
+  ...skillInstallApprovalHandlers,
   ...sessionsHandlers,
   ...systemHandlers,
   ...updateHandlers,
@@ -177,6 +216,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...agentHandlers,
   ...agentsHandlers,
   ...registerLicenseMethods(),
+  ...capabilityDetectHandlers,
+  ...securityHandlers,
+  ...feedbackHandlers,
+  ...freeModelsHandlers,
 };
 
 export async function handleGatewayRequest(

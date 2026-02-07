@@ -2,10 +2,16 @@
  * 钉钉渠道插件核心实现
  * DingTalk Channel Plugin Core Implementation
  *
+ * 支持两种接入模式:
+ * - webhook: HTTP Webhook 模式 (需要公网 IP)
+ * - stream: Stream WebSocket 模式 (无需公网 IP，支持 AI Card 流式响应)
+ *
  * 文档参考:
  * - 钉钉开放平台: https://open.dingtalk.com/
  * - 机器人开发: https://open.dingtalk.com/document/orgapp/robot-overview
  * - 消息API: https://open.dingtalk.com/document/orgapp/robot-message-types-and-data-format
+ * - Stream 模式: https://open.dingtalk.com/document/orgapp/stream
+ * - AI Card: https://open.dingtalk.com/document/orgapp/ai-card
  */
 
 import {
@@ -20,9 +26,11 @@ import {
 import { getDingtalkRuntime } from "./runtime.js";
 import { sendDingtalkMessage, sendDingtalkMessageViaWebhook, probeDingtalkConnection } from "./api.js";
 import { createDingtalkWebhookHandler } from "./webhook.js";
+import { createStreamClient } from "./stream-client.js";
 import { DingtalkConfigSchema } from "./config-schema.js";
 import type {
   DingtalkChannelConfig,
+  DingtalkMode,
   DingtalkProbeResult,
   ResolvedDingtalkAccount,
 } from "./types.js";
@@ -47,10 +55,17 @@ const meta = {
   selectionLabel: "钉钉 (DingTalk)",
   docsPath: "/channels/dingtalk",
   docsLabel: "dingtalk",
-  blurb: "钉钉企业内部应用机器人",
+  blurb: "钉钉企业内部应用机器人 - 支持 Webhook 和 Stream 双模式",
   aliases: ["ding", "dingtalk"],
-  order: -2, // 国内渠道优先：飞书 > 钉钉 > 企业微信 > WhatsApp...
+  order: -3, // 国内渠道优先：飞书 > 钉钉 > 企业微信 > QQ > 其他...
 } as const;
+
+/**
+ * 获取当前配置的接入模式
+ */
+function getConnectionMode(config?: DingtalkChannelConfig): DingtalkMode {
+  return config?.mode || "webhook";
+}
 
 // ============================================================================
 // 辅助函数 (Helper Functions)
@@ -308,10 +323,44 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
     startAccount: async (ctx) => {
       const runtime = getDingtalkRuntime();
       const channelConfig = ctx.cfg.channels?.dingtalk as DingtalkChannelConfig | undefined;
-      const webhookPath = channelConfig?.webhookPath ?? DEFAULT_WEBHOOK_PATH;
+      const mode = getConnectionMode(channelConfig);
 
-      ctx.log?.info(`[dingtalk] 启动钉钉渠道 (账户: ${ctx.accountId})`);
-      ctx.log?.info(`[dingtalk] Webhook 路径: ${webhookPath}`);
+      ctx.log?.info(`[dingtalk] 启动钉钉渠道 (账户: ${ctx.accountId}, 模式: ${mode})`);
+
+      // ===== Stream 模式 =====
+      if (mode === "stream") {
+        ctx.log?.info(`[dingtalk] 使用 Stream 模式 (无需公网 IP)`);
+
+        const streamClient = await createStreamClient({
+          config: channelConfig ?? {},
+          accountId: ctx.accountId,
+          gatewayPort: runtime.gateway?.port || 18789,
+          cfg: ctx.cfg,
+          log: ctx.log,
+          onStart: () => {
+            ctx.setStatus({ accountId: ctx.accountId, running: true, lastStartAt: Date.now() });
+          },
+          onStop: () => {
+            ctx.setStatus({ accountId: ctx.accountId, running: false, lastStopAt: Date.now() });
+          },
+        });
+
+        ctx.setStatus({ accountId: ctx.accountId, running: true, lastStartAt: Date.now() });
+
+        // 等待 abort 信号
+        return new Promise<void>((resolve) => {
+          ctx.abortSignal.addEventListener("abort", () => {
+            streamClient.stop();
+            ctx.log?.info(`[dingtalk] 钉钉渠道已停止 (账户: ${ctx.accountId}, 模式: stream)`);
+            ctx.setStatus({ accountId: ctx.accountId, running: false, lastStopAt: Date.now() });
+            resolve();
+          });
+        });
+      }
+
+      // ===== Webhook 模式 (默认) =====
+      const webhookPath = channelConfig?.webhookPath ?? DEFAULT_WEBHOOK_PATH;
+      ctx.log?.info(`[dingtalk] 使用 Webhook 模式，路径: ${webhookPath}`);
 
       // 创建 Webhook 处理器
       const handler = createDingtalkWebhookHandler({
@@ -393,7 +442,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       return new Promise<void>((resolve) => {
         ctx.abortSignal.addEventListener("abort", () => {
           unregister();
-          ctx.log?.info(`[dingtalk] 钉钉渠道已停止 (账户: ${ctx.accountId})`);
+          ctx.log?.info(`[dingtalk] 钉钉渠道已停止 (账户: ${ctx.accountId}, 模式: webhook)`);
           ctx.setStatus({ accountId: ctx.accountId, running: false, lastStopAt: Date.now() });
           resolve();
         });

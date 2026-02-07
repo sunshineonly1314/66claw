@@ -55,8 +55,24 @@ export interface StartupVerifyResult {
 
 /**
  * 判断是否开发模式
+ *
+ * 安全说明：
+ * - __DEV_BUILD__ 是编译时常量
+ * - 生产构建时会被替换为 false，彻底禁用 DEV 模式绕过
+ * - 开发构建时为 true，允许通过环境变量启用 DEV 模式
+ * - 如果 __DEV_BUILD__ 未定义（构建异常），默认视为生产模式
  */
 function isDevMode(): boolean {
+  // 安全检查：如果 __DEV_BUILD__ 未定义，视为生产模式（不允许绕过）
+  // 使用 typeof 检查避免 ReferenceError
+  const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+
+  // 生产构建：__DEV_BUILD__ = false 或未定义，直接返回 false
+  if (!isDevBuild) {
+    return false;
+  }
+
+  // 开发构建：检查环境变量
   return (
     process.env.NODE_ENV === "development" ||
     process.env.CLAWDBOT_DEV === "1" ||
@@ -122,6 +138,8 @@ export async function verifyLicenseOnStartup(
       forceUpdate: null,
       pendingNotifications: [],
       lastVerifiedAt: null,
+      deviceSwitchInfo: null,
+      deviceSwitchCooldown: null,
     },
     ...partial,
   });
@@ -151,6 +169,8 @@ export async function verifyLicenseOnStartup(
         forceUpdate: null,
         pendingNotifications: [],
         lastVerifiedAt: Date.now(),
+        deviceSwitchInfo: null,
+        deviceSwitchCooldown: null,
       },
     });
   }
@@ -174,6 +194,8 @@ export async function verifyLicenseOnStartup(
         forceUpdate: null,
         pendingNotifications: [],
         lastVerifiedAt: null,
+        deviceSwitchInfo: null,
+        deviceSwitchCooldown: null,
       },
     });
   }
@@ -188,10 +210,9 @@ export async function verifyLicenseOnStartup(
       maxRetries: 3,
     });
 
-    // 保存缓存（用于离线模式）
-    saveLicenseCache(key, response);
-
     if (response.valid) {
+      // 只在验证成功时保存缓存（用于离线模式）
+      saveLicenseCache(key, response);
       log.info(
         `License verified successfully (tier: ${response.license?.tier}, days remaining: ${response.license?.daysRemaining})`,
       );
@@ -222,6 +243,8 @@ export async function verifyLicenseOnStartup(
           forceUpdate: response.forceUpdate,
           pendingNotifications,
           lastVerifiedAt: Date.now(),
+          deviceSwitchInfo: response.deviceSwitchInfo ?? null,
+          deviceSwitchCooldown: response.deviceSwitchCooldown ?? null,
         },
       });
     }
@@ -247,6 +270,8 @@ export async function verifyLicenseOnStartup(
         forceUpdate: response.forceUpdate,
         pendingNotifications: [],
         lastVerifiedAt: Date.now(),
+        deviceSwitchInfo: response.deviceSwitchInfo ?? null,
+        deviceSwitchCooldown: response.deviceSwitchCooldown ?? null,
       },
     });
   } catch (error) {
@@ -278,6 +303,8 @@ export async function verifyLicenseOnStartup(
             forceUpdate: null,
             pendingNotifications: [],
             lastVerifiedAt: cache.verifyTime,
+            deviceSwitchInfo: null,
+            deviceSwitchCooldown: null,
           },
         });
       }
@@ -300,6 +327,8 @@ export async function verifyLicenseOnStartup(
         forceUpdate: null,
         pendingNotifications: [],
         lastVerifiedAt: null,
+        deviceSwitchInfo: null,
+        deviceSwitchCooldown: null,
       },
     });
   }

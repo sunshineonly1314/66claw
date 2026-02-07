@@ -53,13 +53,29 @@ export function resolveRuntimePlatform(): string {
 export function hasBinary(bin: string): boolean {
   const pathEnv = process.env.PATH ?? "";
   const parts = pathEnv.split(path.delimiter).filter(Boolean);
+  
+  // ClawdbotCN 专属：Windows 兼容性修复
+  // Windows 上需要检查 .exe 扩展名，且不使用 X_OK 权限检查
+  const isWindows = process.platform === "win32";
+  const candidates = isWindows && !bin.toLowerCase().endsWith(".exe")
+    ? [bin, `${bin}.exe`, `${bin}.cmd`, `${bin}.bat`]
+    : [bin];
+  
   for (const part of parts) {
-    const candidate = path.join(part, bin);
-    try {
-      fs.accessSync(candidate, fs.constants.X_OK);
-      return true;
-    } catch {
-      // keep scanning
+    for (const candidate of candidates) {
+      const fullPath = path.join(part, candidate);
+      try {
+        // Windows: 只检查文件是否存在且可读
+        // Unix: 检查执行权限
+        if (isWindows) {
+          fs.accessSync(fullPath, fs.constants.R_OK);
+        } else {
+          fs.accessSync(fullPath, fs.constants.X_OK);
+        }
+        return true;
+      } catch {
+        // keep scanning
+      }
     }
   }
   return false;

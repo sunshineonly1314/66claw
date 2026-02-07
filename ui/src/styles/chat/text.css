@@ -2,6 +2,7 @@
    CHAT TEXT STYLING
    ============================================= */
 
+/* 基础思考过程样式 */
 .chat-thinking {
   margin-bottom: 10px;
   padding: 10px 12px;
@@ -16,6 +17,109 @@
 :root[data-theme="light"] .chat-thinking {
   border-color: rgba(16, 24, 40, 0.25);
   background: rgba(16, 24, 40, 0.04);
+}
+
+/* =============================================
+   可折叠的思考过程区域
+   ============================================= */
+
+.chat-thinking-collapsible {
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  transition: all 200ms ease;
+}
+
+:root[data-theme="light"] .chat-thinking-collapsible {
+  border-color: rgba(16, 24, 40, 0.2);
+  background: rgba(16, 24, 40, 0.03);
+}
+
+/* 头部 */
+.chat-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 150ms ease;
+}
+
+.chat-thinking-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="light"] .chat-thinking-header:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.chat-thinking-header__icon {
+  font-size: 14px;
+}
+
+.chat-thinking-header__title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.chat-thinking-header__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.chat-thinking-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  transition: transform 200ms ease;
+}
+
+/* 内容区域 */
+.chat-thinking-content {
+  padding: 0 12px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-thinking-preview {
+  display: block;
+}
+
+.chat-thinking-full {
+  display: none;
+}
+
+/* 展开状态 */
+.chat-thinking-collapsible--expanded .chat-thinking-chevron {
+  transform: rotate(180deg);
+}
+
+.chat-thinking-collapsible--expanded .chat-thinking-preview {
+  display: none;
+}
+
+.chat-thinking-collapsible--expanded .chat-thinking-full {
+  display: block;
+}
+
+/* 展开时的边框变化 */
+.chat-thinking-collapsible--expanded {
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme="light"] .chat-thinking-collapsible--expanded {
+  border-color: rgba(16, 24, 40, 0.15);
+  background: rgba(16, 24, 40, 0.02);
 }
 
 .chat-text {

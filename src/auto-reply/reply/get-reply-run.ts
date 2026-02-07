@@ -47,8 +47,12 @@ import { resolveTypingMode } from "./typing-mode.js";
 type AgentDefaults = NonNullable<ClawdbotConfig["agents"]>["defaults"];
 type ExecOverrides = Pick<ExecToolDefaults, "host" | "security" | "ask" | "node">;
 
+/**
+ * 会话重置提示词（中文）
+ * 用户发送 /new 或 /reset 时发送给 AI 的内部指令
+ */
 const BARE_SESSION_RESET_PROMPT =
-  "A new session was started via /new or /reset. Say hi briefly (1-2 sentences) and ask what the user wants to do next. If the runtime model differs from default_model in the system prompt, mention the default model in the greeting. Do not mention internal steps, files, tools, or reasoning.";
+  "已通过 /new 或 /reset 开始新会话。请简短地打招呼（1-2句话）并询问用户接下来想做什么。如果运行时模型与系统提示中的 default_model 不同，请在问候语中提及默认模型。不要提及内部步骤、文件、工具或推理过程。";
 
 type RunPreparedReplyParams = {
   ctx: MsgContext;

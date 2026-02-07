@@ -60,18 +60,35 @@ export function renderDingtalkCard(params: {
     `;
   };
 
-  // 状态徽章
+  // 状态徽章 - 使用视觉指示器
   const statusBadge = dingtalk?.running 
-    ? html`<span class="channel-card__badge channel-card__badge--ok">${t("common.running")}</span>`
+    ? html`<span class="channel-card__badge channel-card__badge--ok">
+        <span class="status-dot status-dot--running"></span>
+        ${t("common.running")}
+      </span>`
     : dingtalk?.configured
-      ? html`<span class="channel-card__badge channel-card__badge--warn">${t("common.stopped")}</span>`
-      : html`<span class="channel-card__badge">${t("channels.notConfigured")}</span>`;
+      ? html`<span class="channel-card__badge channel-card__badge--warn">
+          <span class="status-dot status-dot--configured"></span>
+          ${t("common.stopped")}
+        </span>`
+      : html`<span class="channel-card__badge">
+          <span class="status-dot status-dot--unconfigured"></span>
+          ${t("channels.notConfigured")}
+        </span>`;
 
   // 箭头图标
   const chevronIcon = html`<svg class="channel-card__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
+  // 根据状态决定卡片样式类
+  const cardClasses = [
+    "channel-card",
+    dingtalk?.running ? "channel-card--running" : "",
+    dingtalk?.configured && !dingtalk?.running ? "channel-card--configured" : "",
+    dingtalk?.lastError ? "channel-card--error" : "",
+  ].filter(Boolean).join(" ");
+
   return html`
-    <details class="channel-card" open>
+    <details class="${cardClasses}" open>
       <summary class="channel-card__header">
         <div class="channel-card__left">
           <span class="channel-card__icon">📱</span>
@@ -95,11 +112,15 @@ export function renderDingtalkCard(params: {
               <div class="status-list">
                 <div>
                   <span class="label">${t("channels.configured")}</span>
-                  <span>${dingtalk?.configured ? t("common.yes") : t("common.no")}</span>
+                  <span class="status-value ${dingtalk?.configured ? 'status-value--yes' : 'status-value--no'}">
+                    ${dingtalk?.configured ? t("common.yes") : t("common.no")}
+                  </span>
                 </div>
                 <div>
                   <span class="label">${t("common.running")}</span>
-                  <span>${dingtalk?.running ? t("common.yes") : t("common.no")}</span>
+                  <span class="status-value ${dingtalk?.running ? 'status-value--yes' : 'status-value--no'}">
+                    ${dingtalk?.running ? t("common.yes") : t("common.no")}
+                  </span>
                 </div>
                 <div>
                   <span class="label">${t("channels.lastStart")}</span>
@@ -126,21 +147,81 @@ export function renderDingtalkCard(params: {
             </div>`
           : nothing}
 
-        <!-- 配置帮助 -->
+        <!-- 配置帮助 - 详细指南 -->
         <details class="channel-card__help" style="margin-top: 16px;">
           <summary class="channel-card__help-title">
             📖 ${t("channels.dingtalk.configTitle")}
+            <span class="help-badge">详细教程</span>
           </summary>
           <div class="channel-card__help-content">
+            <!-- 优势提示 -->
+            <div class="callout success" style="margin-bottom: 16px;">
+              <strong>✨ 推荐使用 Stream 模式：</strong>无需公网 IP，无需配置回调地址，本地即可接收消息！
+            </div>
+
             <p>${t("channels.dingtalk.configDesc")}</p>
-            <ol>
-              <li>登录 <a href="https://open.dingtalk.com/" target="_blank" rel="noreferrer">钉钉开放平台</a></li>
-              <li>创建企业内部应用，开启机器人能力</li>
-              <li>在「凭证与基础信息」页面获取 AppKey 和 AppSecret</li>
-              <li>配置消息接收地址（HTTP 模式）</li>
-              <li>在下方填写凭证并保存</li>
-            </ol>
-            <a href="${t("channels.dingtalk.docsUrl")}" target="_blank" rel="noreferrer" class="btn btn--link">
+            
+            <div class="config-steps">
+              <div class="config-step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                  <strong>登录钉钉开放平台</strong>
+                  <p>访问 <a href="https://open-dev.dingtalk.com" target="_blank">open-dev.dingtalk.com</a>，点击<strong>右上角</strong>「<strong>登录</strong>」按钮，用钉钉 App 扫码</p>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                  <strong>创建企业内部应用</strong>
+                  <p>左侧菜单点击「<strong>应用开发</strong>」→「<strong>企业内部开发</strong>」→ 点击「<strong>创建应用</strong>」</p>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                  <strong>获取 AppKey 和 AppSecret</strong>
+                  <p>创建成功后，左侧菜单点击「<strong>凭证与基础信息</strong>」：</p>
+                  <ul>
+                    <li><strong>Client ID (AppKey)</strong>：直接复制</li>
+                    <li><strong>Client Secret (AppSecret)</strong>：点击「查看」→ 扫码验证 → <strong>立即复制！</strong></li>
+                  </ul>
+                  <div class="callout danger" style="margin-top: 8px; padding: 8px 12px;">
+                    🔐 Secret 只显示一次！请立即复制保存
+                  </div>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                  <strong>添加机器人能力</strong>
+                  <p>左侧菜单点击「<strong>添加应用能力</strong>」→ 找到「<strong>机器人</strong>」卡片 → 点击「<strong>添加</strong>」</p>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">5</div>
+                <div class="step-content">
+                  <strong>配置 Stream 模式（最关键！）</strong>
+                  <p>左侧菜单点击「<strong>机器人</strong>」→ 找到「<strong>消息接收模式</strong>」→ <strong>选择「Stream 模式」</strong></p>
+                  <div class="callout warning" style="margin-top: 8px; padding: 8px 12px;">
+                    ⭐ 必须选择 Stream 模式！不要选 HTTP 模式！选了 Stream 模式就不需要公网 IP
+                  </div>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">6</div>
+                <div class="step-content">
+                  <strong>发布应用</strong>
+                  <p>左侧菜单点击「<strong>版本管理与发布</strong>」→「<strong>创建新版本</strong>」→ 填写版本号 <code>1.0.0</code> → 点击「<strong>发布</strong>」</p>
+                </div>
+              </div>
+            </div>
+
+            <a href="${t("channels.dingtalk.docsUrl")}" target="_blank" rel="noreferrer" class="btn btn--link" style="margin-top: 12px;">
               ${t("channels.dingtalk.docsLabel")} →
             </a>
           </div>

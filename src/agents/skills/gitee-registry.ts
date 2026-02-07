@@ -18,6 +18,7 @@ import { pipeline } from "node:stream/promises";
 
 import { CONFIG_DIR, ensureDir } from "../../utils.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { validateUrlForSsrf } from "../../infra/net/ssrf.js";
 import {
   fetchProxySkillsIndex,
   installProxySkill,
@@ -32,19 +33,13 @@ const logger = createSubsystemLogger("gitee-registry");
 
 /**
  * 获取当前使用的 skills provider
- * @returns "clawdskillsproxy" | "gitee"
+ * 
+ * 注意：Gitee 已被封禁，现在总是返回 "clawdskillsproxy"
+ * @returns "clawdskillsproxy"
  */
 export function getSkillsProvider(): "clawdskillsproxy" | "gitee" {
-  const provider = process.env.CLAWDBOT_SKILLS_PROVIDER?.trim().toLowerCase();
-  if (provider === "gitee") return "gitee";
-  return "clawdskillsproxy"; // 默认使用新服务
-}
-
-/**
- * 检查是否使用 ClawdSkillsProxy
- */
-function useProxy(): boolean {
-  return getSkillsProvider() === "clawdskillsproxy";
+  // Gitee 已被封禁，忽略环境变量设置，总是使用 ClawdSkillsProxy
+  return "clawdskillsproxy";
 }
 
 // ============================================================================
@@ -55,8 +50,12 @@ function useProxy(): boolean {
 export interface RemoteSkillMeta {
   /** Skill name (folder name) */
   name: string;
+  /** Chinese name (中文名称) */
+  nameZh?: string;
   /** Human-readable description */
   description: string;
+  /** Chinese description (中文描述) */
+  descriptionZh?: string;
   /** Emoji icon */
   emoji?: string;
   /** Path in repository (usually same as name) */
@@ -292,7 +291,13 @@ function isNodeReadableStream(value: unknown): value is NodeJS.ReadableStream {
 async function fetchWithTimeout(
   url: string,
   timeoutMs: number,
+  skipSsrfCheck?: boolean,
 ): Promise<Response> {
+  // ClawdbotCN 专属：SSRF 防护 - 阻止访问内网地址
+  if (!skipSsrfCheck) {
+    validateUrlForSsrf(url);
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -313,8 +318,9 @@ async function downloadFileToPath(
   url: string,
   destPath: string,
   timeoutMs: number,
+  skipSsrfCheck?: boolean,
 ): Promise<void> {
-  const response = await fetchWithTimeout(url, timeoutMs);
+  const response = await fetchWithTimeout(url, timeoutMs, skipSsrfCheck);
   if (!response.ok || !response.body) {
     throw new Error(`Download failed: ${response.status} ${response.statusText}`);
   }
@@ -374,77 +380,15 @@ function tryLoadLocalIndex(): FetchIndexResult {
 
 /**
  * Fetch the remote skills index
- * 根据 CLAWDBOT_SKILLS_PROVIDER 环境变量选择数据源：
- * - "clawdskillsproxy" (默认): 使用阿里云 ClawdSkillsProxy 服务
- * - "gitee": 使用原 Gitee 仓库
+ * 
+ * 注意：Gitee 已被封禁，现在只使用 ClawdSkillsProxy 服务
  */
 export async function fetchRemoteSkillsIndex(
-  config: GiteeRegistryConfig = DEFAULT_GITEE_REGISTRY,
+  _config?: GiteeRegistryConfig,
 ): Promise<FetchIndexResult> {
-  // 检查是否使用 ClawdSkillsProxy
-  if (useProxy()) {
-    logger.debug("Using ClawdSkillsProxy for skills index");
-    return fetchProxySkillsIndex(DEFAULT_PROXY_CONFIG);
-  }
-
-  // 原 Gitee 逻辑
-  const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const indexUrl = buildRawUrl(config, "index.json");
-
-  logger.debug("Fetching remote skills index from Gitee", { url: indexUrl });
-
-  try {
-    const response = await fetchWithTimeout(indexUrl, timeoutMs);
-
-    if (!response.ok) {
-      const errorText = `HTTP ${response.status}: ${response.statusText}`;
-      logger.warn("Remote index unavailable, trying local fallback", { error: errorText });
-      
-      // Try local fallback
-      const localResult = tryLoadLocalIndex();
-      if (localResult.ok) return localResult;
-      
-      logger.error("Failed to fetch index (no local fallback)", { error: errorText });
-      return { ok: false, error: errorText };
-    }
-
-    const text = await response.text();
-    let index: RemoteSkillsIndex;
-
-    try {
-      index = JSON.parse(text) as RemoteSkillsIndex;
-    } catch {
-      // Try local fallback
-      const localResult = tryLoadLocalIndex();
-      if (localResult.ok) return localResult;
-      return { ok: false, error: "Invalid JSON in index.json" };
-    }
-
-    // Validate index structure
-    if (!index.skills || !Array.isArray(index.skills)) {
-      // Try local fallback
-      const localResult = tryLoadLocalIndex();
-      if (localResult.ok) return localResult;
-      return { ok: false, error: "Invalid index format: missing skills array" };
-    }
-
-    logger.info("Fetched remote skills index", {
-      skillCount: index.skills.length,
-      updated: index.updated,
-    });
-
-    return { ok: true, index };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.warn("Remote fetch failed, trying local fallback", { error: message });
-    
-    // Try local fallback
-    const localResult = tryLoadLocalIndex();
-    if (localResult.ok) return localResult;
-    
-    logger.error("Failed to fetch remote skills index", { error: message });
-    return { ok: false, error: message };
-  }
+  // 直接使用 ClawdSkillsProxy（Gitee 已被封禁）
+  logger.debug("Using ClawdSkillsProxy for skills index");
+  return fetchProxySkillsIndex(DEFAULT_PROXY_CONFIG);
 }
 
 /**
@@ -548,11 +492,12 @@ async function downloadSkillDirectory(
  * 安装优先级：
  * 1. bundled skills (本地预打包，秒级完成)
  * 2. ClawdSkillsProxy (阿里云代理服务)
- * 3. Gitee 仓库 (直接下载)
+ * 
+ * 注意：Gitee 已被封禁，不再作为备选
  */
 export async function installRemoteSkill(
   skillMeta: RemoteSkillMeta,
-  config: GiteeRegistryConfig = DEFAULT_GITEE_REGISTRY,
+  _config?: GiteeRegistryConfig,
   targetDir?: string,
 ): Promise<InstallSkillResult> {
   const skillsDir = targetDir ?? MANAGED_SKILLS_DIR;
@@ -563,70 +508,9 @@ export async function installRemoteSkill(
     return bundledResult;
   }
 
-  // 检查是否使用 ClawdSkillsProxy
-  if (useProxy()) {
-    logger.debug("Skill not in bundled, downloading from ClawdSkillsProxy", { name: skillMeta.name });
-    return installProxySkill(skillMeta, DEFAULT_PROXY_CONFIG, targetDir);
-  }
-
-  // 原 Gitee 逻辑
-  const skillDir = path.join(skillsDir, skillMeta.name);
-
-  logger.info("Skill not in bundled, downloading from Gitee", {
-    name: skillMeta.name,
-    targetDir: skillDir,
-  });
-
-  try {
-    // Remove existing skill directory if exists
-    if (fs.existsSync(skillDir)) {
-      await fs.promises.rm(skillDir, { recursive: true, force: true });
-    }
-
-    // Create skill directory
-    await ensureDir(skillDir);
-
-    // Download all files
-    const downloadedFiles: string[] = [];
-    const result = await downloadSkillDirectory(
-      config,
-      skillMeta.path,
-      skillDir,
-      downloadedFiles,
-    );
-
-    if (!result.ok) {
-      // Cleanup on failure
-      try {
-        await fs.promises.rm(skillDir, { recursive: true, force: true });
-      } catch {
-        // ignore cleanup errors
-      }
-      return result;
-    }
-
-    // Verify SKILL.md exists
-    const skillMdPath = path.join(skillDir, "SKILL.md");
-    if (!fs.existsSync(skillMdPath)) {
-      await fs.promises.rm(skillDir, { recursive: true, force: true });
-      return { ok: false, error: "SKILL.md not found in remote skill" };
-    }
-
-    logger.info("Skill installed successfully from Gitee", {
-      name: skillMeta.name,
-      fileCount: downloadedFiles.length,
-    });
-
-    return {
-      ok: true,
-      skillDir,
-      files: downloadedFiles,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error("Failed to install skill", { name: skillMeta.name, error: message });
-    return { ok: false, error: message };
-  }
+  // 从 ClawdSkillsProxy 下载（Gitee 已被封禁，不再使用）
+  logger.debug("Skill not in bundled, downloading from ClawdSkillsProxy", { name: skillMeta.name });
+  return installProxySkill(skillMeta, DEFAULT_PROXY_CONFIG, targetDir);
 }
 
 /**

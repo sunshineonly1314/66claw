@@ -119,7 +119,7 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
     "Mirror: https://docs.clawd.bot",
     "Source: https://github.com/clawdbot/clawdbot",
     "Community: https://discord.com/invite/clawd",
-    "Find new skills: https://clawdhub.com",
+    "探索技能：在 Web UI 的「技能市场」页面浏览和安装技能",
     "For Clawdbot behavior, commands, config, or architecture: consult local docs first.",
     "When diagnosing issues, run `clawdbot status` yourself when possible; only ask the user if you lack access (e.g., sandboxed).",
     "",
@@ -330,9 +330,31 @@ export function buildAgentSystemPrompt(params: {
     return "You are a personal assistant running inside Clawdbot.";
   }
 
+  // Detect Windows from runtime OS string (e.g. "Windows_NT 10.0.26200") or os type field.
+  const isWindows =
+    runtimeInfo?.os?.toLowerCase().includes("windows") ||
+    runtimeInfo?.os?.toLowerCase().startsWith("win");
+  const windowsShellSection = isWindows
+    ? [
+        "## Shell Environment (CRITICAL)",
+        "This machine runs **Windows** with **PowerShell** as the default shell.",
+        "You MUST use PowerShell syntax for all exec commands. NEVER use bash/sh/Linux syntax.",
+        "Key differences:",
+        "- Chain commands with `;` — `&&` and `||` are NOT valid in PowerShell 5.x",
+        "- `Select-String` replaces `grep`; `Get-Content` replaces `cat`/`head`/`tail`",
+        "- `Get-ChildItem` (alias `dir`/`ls`) replaces `ls -la`",
+        "- Environment variables: `$env:VAR_NAME` (not `$VAR_NAME`)",
+        "- File paths: backslash `\\` is native; forward slash `/` works in most contexts",
+        "- Absent commands: `head`, `tail`, `wc`, `file`, `strings`, `chmod`, `chown` — use PowerShell cmdlets",
+        "- Error handling: `try { ... } catch { ... }` instead of `cmd || fallback`",
+        "",
+      ]
+    : [];
+
   const lines = [
     "You are a personal assistant running inside Clawdbot.",
     "",
+    ...windowsShellSection,
     "## Tooling",
     "Tool availability (filtered by policy):",
     "Tool names are case-sensitive. Call tools exactly as listed.",
@@ -531,16 +553,22 @@ export function buildAgentSystemPrompt(params: {
   if (!isMinimal) {
     lines.push(
       "## Silent Replies",
-      `When you have nothing to say, respond with ONLY: ${SILENT_REPLY_TOKEN}`,
+      `${SILENT_REPLY_TOKEN} is ONLY for internal system events (heartbeats, duplicate suppression). NEVER use it as a response to user messages.`,
       "",
-      "⚠️ Rules:",
-      "- It must be your ENTIRE message — nothing else",
-      `- Never append it to an actual response (never include "${SILENT_REPLY_TOKEN}" in real replies)`,
-      "- Never wrap it in markdown or code blocks",
+      "⚠️ CRITICAL Rules:",
+      "- ALWAYS reply to user messages with a meaningful response",
+      "- If you're unsure what to say, ask clarifying questions or acknowledge the message",
+      `- ${SILENT_REPLY_TOKEN} is ONLY valid when:`,
+      "  1. You already sent a reply via the `message` tool (to avoid duplicates)",
+      "  2. Responding to internal heartbeat polls with nothing to report",
+      "  3. System explicitly instructs you to be silent",
       "",
-      `❌ Wrong: "Here's help... ${SILENT_REPLY_TOKEN}"`,
-      `❌ Wrong: "${SILENT_REPLY_TOKEN}"`,
-      `✅ Right: ${SILENT_REPLY_TOKEN}`,
+      `- NEVER respond with ${SILENT_REPLY_TOKEN} to normal user messages like greetings, questions, or any text input`,
+      `- If a user sends you ANY message (even short ones like "hi", "123", etc.), you MUST reply meaningfully`,
+      "",
+      "Format when valid:",
+      `- It must be your ENTIRE message — nothing else`,
+      `- Never append it to an actual response`,
       "",
     );
   }

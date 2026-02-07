@@ -34,6 +34,7 @@ import type { PluginServicesHandle } from "../plugins/services.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { runOnboardingWizard } from "../wizard/onboarding.js";
 import { startGatewayConfigReloader } from "./config-reload.js";
+import { setChannelStartCallback } from "./setup-wizard.js";
 import {
   getHealthCache,
   getHealthVersion,
@@ -71,6 +72,7 @@ import { loadGatewayTlsRuntime } from "./server/tls.js";
 import { createWizardSessionTracker } from "./server-wizard-sessions.js";
 import { attachGatewayWsHandlers } from "./server-ws-runtime.js";
 import { checkLicenseOnGatewayStart, getGatewayLicenseState } from "./license-check.js";
+import { LicenseErrorCode } from "../license/types.js";
 
 export { __resetModelCatalogCacheForTest } from "./server-model-catalog.js";
 export { getGatewayLicenseState } from "./license-check.js";
@@ -197,6 +199,15 @@ export async function startGatewayServer(
     );
   }
 
+  // Surface config warnings (e.g. missing plugin references) so the user
+  // knows certain entries were skipped, without blocking startup.
+  if (configSnapshot.warnings && configSnapshot.warnings.length > 0) {
+    const warnText = configSnapshot.warnings
+      .map((w) => `- ${w.path || "<root>"}: ${w.message}`)
+      .join("\n");
+    log.warn(`Config warnings:\n${warnText}`);
+  }
+
   const autoEnable = applyPluginAutoEnable({ config: configSnapshot.config, env: process.env });
   if (autoEnable.changes.length > 0) {
     try {
@@ -216,10 +227,25 @@ export async function startGatewayServer(
   // ========== License Verification (ClawdbotCN) ==========
   const licenseResult = await checkLicenseOnGatewayStart(cfgAtStart);
   if (licenseResult && !licenseResult.canProceed) {
-    // 授权验证失败，但不阻止启动（允许用户通过 UI 激活）
-    // 仅记录警告，实际的限制由 UI 层处理
-    log.warn(`License verification failed: ${licenseResult.error}`);
-    log.warn("Gateway will start but some features may be restricted");
+    // 检查是否是明确的授权错误
+    const criticalErrorCodes: (LicenseErrorCode | null)[] = [
+      LicenseErrorCode.ERROR_KEY_EXPIRED,      // 1002: 已过期
+      LicenseErrorCode.ERROR_KEY_REVOKED,      // 1003: 已撤销
+      LicenseErrorCode.ERROR_KEY_NOT_FOUND,    // 1001: 不存在
+      LicenseErrorCode.ERROR_KEY_BINDBY_OTHER, // 1005: 已被他人使用
+      LicenseErrorCode.ERROR_KEY_EXHAUSTED,    // 1008: 使用次数已用尽
+    ];
+
+    if (licenseResult.errorCode && criticalErrorCodes.includes(licenseResult.errorCode)) {
+      // 明确的授权错误，Gateway 仍启动但进入受限模式
+      // 用户可通过 UI 弹窗续费/激活
+      log.error(`License verification failed: ${licenseResult.error} (code: ${licenseResult.errorCode})`);
+      log.error("Gateway will start in restricted mode - user must resolve license issue via UI");
+    } else {
+      // 其他错误（如网络错误），允许启动但功能受限
+      log.warn(`License verification failed: ${licenseResult.error}`);
+      log.warn("Gateway will start but some features may be restricted");
+    }
   }
   // ========================================================
 
@@ -355,6 +381,9 @@ export async function startGatewayServer(
   });
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
+
+  // 设置 setup-wizard 的渠道启动回调，使配置保存后能立即启动渠道
+  setChannelStartCallback(startChannel);
 
   const machineDisplayName = await getMachineDisplayName();
   const discovery = await startGatewayDiscovery({

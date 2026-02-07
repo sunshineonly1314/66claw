@@ -2,7 +2,7 @@
  * Gateway License Verification Integration
  * Gateway 授权验证集成
  *
- * 在 Gateway 启动时进行授权验证
+ * 在 Gateway 启动时进行授权验证，并启动安全保护机制
  */
 
 import type { ClawdbotConfig } from "../config/config.js";
@@ -11,12 +11,63 @@ import {
   verifyLicenseOnStartup,
   type StartupVerifyResult,
   type LicenseClientState,
+  LicenseErrorCode,
+  startTokenAutoRefresh,
+  stopTokenAutoRefresh,
+  hasValidToken,
+  getTokenStatusSummary,
+  refreshToken,
+  loadLicenseCache,
 } from "../license/index.js";
+import { loadConfig } from "../config/config.js";
+import {
+  startAntiDebug,
+  stopAntiDebug,
+  checkIntegrityOnStartup,
+  initAiTamperProtection,
+  verifyCheckpoint,
+  registerProtectedFunction,
+  reportSecurityViolation,
+} from "../security/index.js";
 
 const log = createSubsystemLogger("gateway:license");
 
 // 全局 license 状态（用于 Gateway 方法访问）
 let globalLicenseState: LicenseClientState | null = null;
+
+/**
+ * 从本地缓存加载 license 信息（用于后备验证）
+ */
+function loadLicenseCacheForFallback(): { valid: boolean; expiresAt: string | null } | null {
+  try {
+    const cache = loadLicenseCache();
+    if (cache && cache.valid && cache.expiresAt) {
+      return {
+        valid: cache.valid,
+        expiresAt: cache.expiresAt,
+      };
+    }
+    return null;
+  } catch (e) {
+    log.debug(`Failed to load license cache for fallback: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * 检查 license 是否已过期
+ */
+function checkLicenseExpiry(expiresAtMs: number): boolean {
+  if (Date.now() > expiresAtMs) {
+    log.warn("License expired at runtime (detected by expiry check)");
+    return false;
+  }
+  return true;
+}
+
+// 授权验证的独立副本（用于分散验证）
+let _licenseValidSnapshot = false;
+let _licenseExpiresAt: number | null = null;
 
 /**
  * 检查是否启用 CN 版本的授权验证
@@ -35,6 +86,11 @@ function isLicenseCheckEnabled(config: ClawdbotConfig): boolean {
 /**
  * Gateway 启动时的授权验证
  *
+ * 验证流程：
+ * 1. 检查文件完整性（可选，防止代码被篡改）
+ * 2. 验证授权许可证
+ * 3. 启动反调试检测（生产环境）
+ *
  * @param config - 配置对象
  * @returns 验证结果
  */
@@ -49,6 +105,32 @@ export async function checkLicenseOnGatewayStart(
 
   log.info("Checking license on gateway start...");
 
+  // 步骤 1：文件完整性校验（强制，防止代码被篡改）
+  // 安全策略：任何完整性校验失败/异常都必须阻止启动
+  try {
+    const integrityPassed = await checkIntegrityOnStartup({
+      exitOnFailure: true, // 检测到篡改时强制退出程序
+    });
+    if (!integrityPassed) {
+      // 此处理论上不会执行，因为 exitOnFailure=true 时会直接 exit
+      log.error("SECURITY VIOLATION: File tampering detected, refusing to start");
+      console.error("[安全警告] 检测到文件被篡改，程序退出");
+      process.exit(1);
+    }
+    log.debug("Integrity check passed");
+  } catch (error) {
+    // 安全策略：完整性校验出错时必须阻止启动
+    // 可能的攻击场景：
+    // 1. 攻击者删除了哈希文件
+    // 2. 攻击者修改了完整性校验模块本身
+    // 3. 构建异常导致模块加载失败
+    // 无论哪种情况，都不允许继续启动
+    log.error(`SECURITY VIOLATION: Integrity check error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error("[安全警告] 完整性校验失败，程序退出");
+    process.exit(1);
+  }
+
+  // 步骤 2：授权验证
   try {
     const result = await verifyLicenseOnStartup({
       onInvalid: () => {
@@ -60,6 +142,12 @@ export async function checkLicenseOnGatewayStart(
     // 保存全局状态
     globalLicenseState = result.clientState;
 
+    // 同步更新独立副本（用于分散验证）
+    _licenseValidSnapshot = result.clientState.valid;
+    if (result.clientState.license?.expiresAt) {
+      _licenseExpiresAt = new Date(result.clientState.license.expiresAt).getTime();
+    }
+
     if (result.canProceed) {
       if (result.offlineMode) {
         log.info("License check passed (offline mode)");
@@ -68,6 +156,43 @@ export async function checkLicenseOnGatewayStart(
           tier: result.clientState.license?.tier,
           daysRemaining: result.clientState.license?.daysRemaining,
         });
+      }
+
+      // 步骤 3：启动反调试检测（仅在授权验证成功后）
+      startAntiDebug({
+        enabled: true,
+        checkIntervalMs: 30000, // 30 秒检测一次
+      });
+      log.debug("Anti-debug protection started");
+
+      // 步骤 4：初始化 AI 篡改防护
+      initAiTamperProtection();
+
+      // 注册受保护的函数
+      registerProtectedFunction("isLicenseValid", isLicenseValid);
+      registerProtectedFunction("getGatewayLicenseState", getGatewayLicenseState);
+      log.debug("AI tamper protection initialized");
+
+      // 步骤 5：启动短期令牌自动刷新
+      const cfg = loadConfig();
+      const licenseKey = cfg.license?.key;
+      if (licenseKey) {
+        startTokenAutoRefresh(licenseKey, {
+          intervalMs: 30 * 60 * 1000, // 30 分钟检查一次
+          onInvalid: () => {
+            log.warn("Token became invalid, license features may be restricted");
+            // 更新全局状态
+            if (globalLicenseState) {
+              globalLicenseState = {
+                ...globalLicenseState,
+                valid: false,
+                error: "令牌已失效，请检查网络连接",
+              };
+              _licenseValidSnapshot = false;
+            }
+          },
+        });
+        log.debug("Token auto-refresh started");
       }
     } else {
       log.error(`License check failed: ${result.error}`);
@@ -99,9 +224,20 @@ export async function checkLicenseOnGatewayStart(
         forceUpdate: null,
         pendingNotifications: [],
         lastVerifiedAt: null,
+        deviceSwitchInfo: null,
+        deviceSwitchCooldown: null,
       },
     };
   }
+}
+
+/**
+ * 停止安全保护服务
+ */
+export function stopSecurityServices(): void {
+  stopAntiDebug();
+  stopTokenAutoRefresh();
+  log.debug("Security services stopped");
 }
 
 /**
@@ -116,16 +252,146 @@ export function getGatewayLicenseState(): LicenseClientState | null {
  */
 export function updateGatewayLicenseState(state: LicenseClientState): void {
   globalLicenseState = state;
+
+  // 同步更新独立副本（用于分散验证）
+  _licenseValidSnapshot = state.valid;
+  if (state.license?.expiresAt) {
+    _licenseExpiresAt = new Date(state.license.expiresAt).getTime();
+  }
 }
 
 /**
  * 检查 License 是否有效（用于运行时检查）
+ *
+ * 此函数会同时检查：
+ * 1. 全局状态中的 valid 标志
+ * 2. 本地缓存中的过期时间（expiresAt）
+ * 3. 分散验证检查点（防止函数被篡改）
+ * 4. 短期令牌有效性（核心防护，但有容错机制）
  */
 export function isLicenseValid(): boolean {
   if (!globalLicenseState) {
     return true; // 未初始化时默认有效（非 CN 版本）
   }
-  return globalLicenseState.valid;
+
+  // 核心防护：检查短期令牌
+  // 【修复 v2】Token 检查失败时，回退到 license 缓存验证
+  // 这样即使 Token 服务暂时不可用，用户仍可使用已验证的授权
+  if (!hasValidToken()) {
+    const tokenStatus = getTokenStatusSummary();
+    log.debug(`Token check: hasToken=${tokenStatus.hasToken}, isValid=${tokenStatus.isValid}, failureCount=${tokenStatus.failureCount}`);
+
+    // 如果令牌无效且全局状态显示有效，可能是篡改
+    if (globalLicenseState.valid && tokenStatus.hasToken) {
+      reportSecurityViolation("token_invalid_but_state_valid", {
+        tokenStatus,
+        globalValid: globalLicenseState.valid,
+      });
+      return false; // 有 token 但无效，说明可能被篡改
+    }
+
+    // 【修复 v3】如果没有 token，使用本地缓存作为后备验证
+    // 这解决了以下场景：
+    // 1. Token 服务暂时不可用
+    // 2. 网络问题导致 token 刷新失败
+    // 3. 首次启动/激活后 token 还在获取中
+    // 4. 设备切换冷却中（本地有有效缓存但在线验证失败）
+    
+    // 尝试后台获取 token（如果有 key）
+    triggerBackgroundTokenRefresh();
+    
+    // 【修复 v3】检查本地缓存作为后备验证
+    // 即使在线验证失败（如设备冷却），只要本地缓存有效且未过期就允许使用
+    const localCache = loadLicenseCacheForFallback();
+    
+    if (localCache && localCache.valid && localCache.expiresAt) {
+      const expiresAt = new Date(localCache.expiresAt).getTime();
+      if (Date.now() < expiresAt) {
+        log.debug(`Token unavailable, using local cache as fallback (cache valid until ${localCache.expiresAt})`);
+        // 继续执行后续验证，但跳过 globalLicenseState.valid 检查
+        return checkLicenseExpiry(expiresAt);
+      } else {
+        log.warn("Token unavailable and local cache expired");
+        return false;
+      }
+    }
+    
+    // 如果没有本地缓存，检查全局状态
+    if (globalLicenseState.valid && globalLicenseState.license?.expiresAt) {
+      const expiresAt = new Date(globalLicenseState.license.expiresAt).getTime();
+      if (Date.now() < expiresAt) {
+        log.debug("Token unavailable, using global state as fallback (license valid and not expired)");
+        // 继续执行后续验证
+      } else {
+        log.warn("Token unavailable and license expired");
+        return false;
+      }
+    } else if (!globalLicenseState.valid) {
+      log.warn("Token unavailable and license invalid (no local cache)");
+      return false;
+    } else {
+      // license valid 但没有 expiresAt（不应该发生，但为安全起见处理）
+      log.debug("Token unavailable, license valid but no expiry info - allowing access");
+    }
+  }
+
+  // 分散验证检查点 1：检查独立副本是否与全局状态一致
+  // 如果不一致，说明有人试图绕过验证
+  const checkpoint1 = verifyCheckpoint("license_state_consistency", () => {
+    if (_licenseValidSnapshot !== globalLicenseState?.valid) {
+      reportSecurityViolation("license_state_mismatch", {
+        snapshot: _licenseValidSnapshot,
+        current: globalLicenseState?.valid,
+      });
+      return false;
+    }
+    return true;
+  });
+
+  if (!checkpoint1) {
+    return false;
+  }
+
+  // 首先检查全局状态
+  if (!globalLicenseState.valid) {
+    return false;
+  }
+
+  // 然后检查本地缓存的过期时间
+  if (globalLicenseState.license?.expiresAt) {
+    const expiresAt = new Date(globalLicenseState.license.expiresAt).getTime();
+
+    // 分散验证检查点 2：检查过期时间是否与独立副本一致
+    const checkpoint2 = verifyCheckpoint("license_expiry_consistency", () => {
+      if (_licenseExpiresAt !== null && Math.abs(_licenseExpiresAt - expiresAt) > 1000) {
+        reportSecurityViolation("license_expiry_mismatch", {
+          snapshot: _licenseExpiresAt,
+          current: expiresAt,
+        });
+        return false;
+      }
+      return true;
+    });
+
+    if (!checkpoint2) {
+      return false;
+    }
+
+    if (Date.now() > expiresAt) {
+      log.warn("License expired at runtime (detected by local expiry check)");
+      // 更新全局状态
+      globalLicenseState = {
+        ...globalLicenseState,
+        valid: false,
+        error: "授权已过期，请续费后继续使用",
+        errorCode: LicenseErrorCode.ERROR_KEY_EXPIRED,
+      };
+      _licenseValidSnapshot = false;
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -141,4 +407,58 @@ export function getLicenseFeatures(): string[] {
 export function hasLicenseFeature(feature: string): boolean {
   const features = getLicenseFeatures();
   return features.length === 0 || features.includes(feature);
+}
+
+// 后台 Token 刷新状态
+let _backgroundRefreshPending = false;
+let _lastBackgroundRefreshAttempt = 0;
+const BACKGROUND_REFRESH_COOLDOWN_MS = 30 * 1000; // 30 秒冷却
+
+/**
+ * 触发后台 Token 刷新
+ * 用于在宽限期内或宽限期过期时尝试恢复 token
+ */
+function triggerBackgroundTokenRefresh(): void {
+  // 防止频繁刷新
+  if (_backgroundRefreshPending) {
+    return;
+  }
+  
+  const now = Date.now();
+  if (now - _lastBackgroundRefreshAttempt < BACKGROUND_REFRESH_COOLDOWN_MS) {
+    return;
+  }
+  
+  const cfg = loadConfig();
+  const licenseKey = cfg.license?.key;
+  if (!licenseKey) {
+    return;
+  }
+  
+  _backgroundRefreshPending = true;
+  _lastBackgroundRefreshAttempt = now;
+  
+  log.debug("Triggering background token refresh...");
+  
+  refreshToken(licenseKey)
+    .then((success) => {
+      if (success) {
+        log.info("Background token refresh succeeded");
+        // 更新 lastVerifiedAt 以重置宽限期计时
+        if (globalLicenseState) {
+          globalLicenseState = {
+            ...globalLicenseState,
+            lastVerifiedAt: Date.now(),
+          };
+        }
+      } else {
+        log.debug("Background token refresh failed, will retry later");
+      }
+    })
+    .catch((err) => {
+      log.debug(`Background token refresh error: ${err}`);
+    })
+    .finally(() => {
+      _backgroundRefreshPending = false;
+    });
 }

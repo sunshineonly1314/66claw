@@ -70,7 +70,7 @@ function parseDaysOption(raw: unknown, fallback = 30): number {
 }
 
 function renderCostUsageSummary(summary: CostUsageSummary, days: number, rich: boolean): string[] {
-  const totalCost = formatUsd(summary.totals.totalCost) ?? "$0.00";
+  const totalCost = formatUsd(summary.totals.totalCost) ?? "¥0.00";
   const totalTokens = formatTokenCount(summary.totals.totalTokens) ?? "0";
   const lines = [
     colorize(rich, theme.heading, `Usage cost (${days} days)`),
@@ -85,7 +85,7 @@ function renderCostUsageSummary(summary: CostUsageSummary, days: number, rich: b
 
   const latest = summary.daily.at(-1);
   if (latest) {
-    const latestCost = formatUsd(latest.totalCost) ?? "$0.00";
+    const latestCost = formatUsd(latest.totalCost) ?? "¥0.00";
     const latestTokens = formatTokenCount(latest.totalTokens) ?? "0";
     lines.push(
       `${colorize(rich, theme.muted, "Latest day:")} ${latest.date} · ${latestCost} · ${latestTokens} tokens`,
@@ -182,7 +182,13 @@ export function registerGatewayCli(program: Command) {
       .option("--params <json>", "JSON object string for params", "{}")
       .action(async (method, opts) => {
         await runGatewayCommand(async () => {
-          const params = JSON.parse(String(opts.params ?? "{}"));
+          const rawParams = String(opts.params ?? "{}");
+          let params: unknown;
+          try {
+            params = JSON.parse(rawParams);
+          } catch {
+            throw new Error(`Invalid JSON in --params: ${rawParams.length > 100 ? `${rawParams.substring(0, 100)}...` : rawParams}`);
+          }
           const result = await callGatewayCli(method, opts, params);
           if (opts.json) {
             defaultRuntime.log(JSON.stringify(result, null, 2));

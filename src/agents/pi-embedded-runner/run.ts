@@ -25,7 +25,7 @@ import {
   type ResolvedProviderAuth,
 } from "../model-auth.js";
 import { normalizeProviderId } from "../model-selection.js";
-import { ensureClawdbotModelsJson } from "../models-config.js";
+import { ensureClawdbotModelsJson, getMergedProvidersForAgent } from "../models-config.js";
 import {
   classifyFailoverReason,
   formatAssistantErrorText,
@@ -97,19 +97,45 @@ export async function runEmbeddedPiAgent(
       const fallbackConfigured =
         (params.config?.agents?.defaults?.model?.fallbacks?.length ?? 0) > 0;
       await ensureClawdbotModelsJson(params.config, agentDir);
+      const mergedProviders = await getMergedProvidersForAgent(params.config, agentDir);
+      const cfgForModel = Object.keys(mergedProviders).length > 0
+        ? { ...params.config, models: { ...params.config?.models, providers: mergedProviders } }
+        : params.config;
 
       const { model, error, authStorage, modelRegistry } = resolveModel(
         provider,
         modelId,
         agentDir,
-        params.config,
+        cfgForModel,
       );
       if (!model) {
-        throw new Error(error ?? `Unknown model: ${provider}/${modelId}`);
+        // 为常见的国产模型提供更友好的错误提示
+        const friendlyErrorHints: Record<string, string> = {
+          "volcengine-ark": "豆包（火山引擎）模型需要配置 API key。\n" +
+            "请访问 https://console.volcengine.com/ark 获取 API key，\n" +
+            "然后运行：$env:ARK_API_KEY='your_key' 或 clawdbot config set models.providers.volcengine-ark.apiKey 'your_key'",
+          "doubao": "豆包（火山引擎）模型需要配置 API key。\n" +
+            "请访问 https://console.volcengine.com/ark 获取 API key，\n" +
+            "然后运行：$env:ARK_API_KEY='your_key' 或 clawdbot config set models.providers.volcengine-ark.apiKey 'your_key'",
+          "aliyun-bailian": "通义千问模型需要配置 API key。\n" +
+            "请访问 https://dashscope.console.aliyun.com 获取 API key，\n" +
+            "然后运行：$env:DASHSCOPE_API_KEY='your_key' 或 clawdbot config set models.providers.aliyun-bailian.apiKey 'your_key'",
+          "qwen-dashscope": "通义千问模型需要配置 API key。\n" +
+            "请访问 https://dashscope.console.aliyun.com 获取 API key，\n" +
+            "然后运行：$env:DASHSCOPE_API_KEY='your_key' 或 clawdbot config set models.providers.qwen-dashscope.apiKey 'your_key'",
+        };
+        
+        const normalizedProvider = provider.toLowerCase();
+        const hint = friendlyErrorHints[normalizedProvider];
+        const errorMsg = hint 
+          ? `无法使用模型 ${provider}/${modelId}：\n\n${hint}`
+          : error ?? `Unknown model: ${provider}/${modelId}`;
+        
+        throw new Error(errorMsg);
       }
 
       const ctxInfo = resolveContextWindowInfo({
-        cfg: params.config,
+        cfg: cfgForModel ?? params.config,
         provider,
         modelId,
         modelContextWindow: model.contextWindow,
@@ -148,7 +174,7 @@ export async function runEmbeddedPiAgent(
         }
       }
       const profileOrder = resolveAuthProfileOrder({
-        cfg: params.config,
+        cfg: cfgForModel ?? params.config,
         store: authStore,
         provider,
         preferredProfile: preferredProfileId,
@@ -208,7 +234,7 @@ export async function runEmbeddedPiAgent(
       const resolveApiKeyForCandidate = async (candidate?: string) => {
         return getApiKeyForModel({
           model,
-          cfg: params.config,
+          cfg: cfgForModel,
           profileId: candidate,
           store: authStore,
           agentDir,
@@ -319,7 +345,7 @@ export async function runEmbeddedPiAgent(
             sessionFile: params.sessionFile,
             workspaceDir: params.workspaceDir,
             agentDir,
-            config: params.config,
+            config: cfgForModel,
             skillsSnapshot: params.skillsSnapshot,
             prompt,
             images: params.images,
@@ -357,6 +383,26 @@ export async function runEmbeddedPiAgent(
 
           const { aborted, promptError, timedOut, sessionIdUsed, lastAssistant } = attempt;
 
+          // 🔍 ClawdbotCN 诊断日志 - 记录 API 响应状态
+          if (lastAssistant) {
+            const hasError = lastAssistant.stopReason === "error";
+            const responseLength = lastAssistant.content
+              ?.filter((c): c is { type: "text"; text: string } => c?.type === "text")
+              .map((c) => c.text?.length ?? 0)
+              .reduce((a, b) => a + b, 0) ?? 0;
+            log.info(
+              `[API Response] provider=${provider} model=${modelId} ` +
+              `stopReason=${lastAssistant.stopReason} hasError=${hasError} ` +
+              `responseLength=${responseLength} ` +
+              `errorMessage=${lastAssistant.errorMessage ?? "none"}`,
+            );
+          } else if (promptError) {
+            log.warn(
+              `[API Response] provider=${provider} model=${modelId} ` +
+              `noAssistantMessage=true promptError=${describeUnknownError(promptError)}`,
+            );
+          }
+
           if (promptError && !aborted) {
             const errorText = describeUnknownError(promptError);
             if (isContextOverflowError(errorText)) {
@@ -377,7 +423,7 @@ export async function runEmbeddedPiAgent(
                   sessionFile: params.sessionFile,
                   workspaceDir: params.workspaceDir,
                   agentDir,
-                  config: params.config,
+                  config: cfgForModel,
                   skillsSnapshot: params.skillsSnapshot,
                   provider,
                   model: modelId,
@@ -602,9 +648,25 @@ export async function runEmbeddedPiAgent(
             inlineToolResultsAllowed: false,
           });
 
-          log.debug(
-            `embedded run done: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - started} aborted=${aborted}`,
+          // 🔍 ClawdbotCN 诊断日志 - 记录最终 payloads
+          log.info(
+            `[Run Complete] runId=${params.runId} sessionId=${params.sessionId} ` +
+              `payloads.length=${payloads.length} aborted=${aborted} ` +
+              `durationMs=${Date.now() - started}`,
           );
+          if (payloads.length === 0) {
+            log.warn(
+              `[Run Complete] No payloads! assistantTexts.length=${attempt.assistantTexts.length} ` +
+                `hasLastAssistant=${!!attempt.lastAssistant}`,
+            );
+            // 🐛 修复：当模型返回空响应时，返回友好的错误提示而不是静默失败
+            if (attempt.lastAssistant && !aborted) {
+              payloads.push({
+                text: "⚠️ 模型返回了空响应，请重试或切换其他模型。",
+                isError: true,
+              });
+            }
+          }
           if (lastProfileId) {
             await markAuthProfileGood({
               store: authStore,

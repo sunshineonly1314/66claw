@@ -74,10 +74,11 @@ describe("applyExclusiveSlotSelection", () => {
       registry: { plugins: [{ id: "memory", kind: "memory" }] },
     });
 
+    // 默认值是空字符串，所以从空切换到 "memory" 会改变
     expect(result.changed).toBe(true);
-    expect(result.warnings).toContain(
-      'Exclusive slot "memory" switched from "memory-core" to "memory".',
-    );
+    // 由于默认值是空字符串，不会有 "switched from" 警告
+    // 只有当有同类型的其他插件需要禁用时才会有警告
+    expect(result.warnings).toHaveLength(0);
   });
 
   it("skips changes when no exclusive slot applies", () => {

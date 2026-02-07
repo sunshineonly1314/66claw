@@ -9,6 +9,8 @@ import type {
   LicenseNotification,
   BoundDevice,
   LicenseDialogType,
+  UnbindResult,
+  DeviceSwitchResult,
 } from "./types.js";
 import { DEFAULT_LICENSE_STATE } from "./types.js";
 
@@ -25,7 +27,9 @@ export interface LicenseController {
   /** 获取设备列表 */
   getDevices(): Promise<BoundDevice[]>;
   /** 解绑设备 */
-  unbindDevice(deviceId: string): Promise<boolean>;
+  unbindDevice(deviceId: string): Promise<UnbindResult>;
+  /** 确认设备切换（单设备模式） */
+  confirmDeviceSwitch(): Promise<DeviceSwitchResult>;
   /** 确认通知 */
   acknowledgeNotification(notificationId: number, action: "clicked" | "dismissed" | "closed"): Promise<void>;
   /** 获取下一个待展示的通知 */
@@ -100,17 +104,46 @@ export function createLicenseController(
             checking: false,
             valid: true,
             error: null,
+            errorCode: null,
             license: data.license as LicenseUiState["license"] ?? null,
             device: data.device as LicenseUiState["device"] ?? null,
+            deviceSwitchInfo: null,
+            deviceSwitchCooldown: null,
             lastVerifiedAt: Date.now(),
           });
           return true;
         } else {
+          // 从 device 中提取设备切换信息（1010/1011 错误码）
+          const device = data.device as Record<string, unknown> | null;
+          const errorCode = (data.errorCode as number | null) ?? null;
+          
+          let deviceSwitchInfo: LicenseUiState["deviceSwitchInfo"] = null;
+          let deviceSwitchCooldown: LicenseUiState["deviceSwitchCooldown"] = null;
+          
+          if (device && errorCode === 1010 && device.existingDeviceName) {
+            deviceSwitchInfo = {
+              existingDeviceId: (device.existingDeviceId as string) ?? "",
+              existingDeviceName: (device.existingDeviceName as string) ?? "未知设备",
+              existingOsInfo: device.existingOsInfo as string | undefined,
+              deviceLimit: device.deviceLimit as number | undefined,
+              boundDevices: device.boundDevices as number | undefined,
+            };
+          }
+          
+          if (device && errorCode === 1011 && device.cooldownRemainingHours !== undefined) {
+            deviceSwitchCooldown = {
+              cooldownRemainingHours: (device.cooldownRemainingHours as number) ?? 24,
+              cooldownEndsAt: (device.cooldownEndsAt as string) ?? "",
+            };
+          }
+          
           updateState({
             checking: false,
             valid: false,
             error: data.errorMessage as string ?? "激活失败",
-            errorCode: data.errorCode as number | null ?? null,
+            errorCode,
+            deviceSwitchInfo,
+            deviceSwitchCooldown,
           });
           return false;
         }
@@ -145,17 +178,58 @@ export function createLicenseController(
     }
   };
 
-  const unbindDevice = async (deviceId: string): Promise<boolean> => {
-    if (!client) return false;
+  const unbindDevice = async (deviceId: string): Promise<UnbindResult> => {
+    if (!client) {
+      return { success: false, error: "客户端未连接" };
+    }
 
     try {
-      await client.request("license.unbind", { deviceId });
-      // 刷新状态
-      await refresh();
-      return true;
+      const result = await client.request("license.unbind", { deviceId }) as UnbindResult;
+
+      if (result.success) {
+        // 刷新状态
+        await refresh();
+      }
+
+      return result;
     } catch (error) {
       console.error("Failed to unbind device:", error);
-      return false;
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "解绑失败",
+      };
+    }
+  };
+
+  const confirmDeviceSwitch = async (): Promise<DeviceSwitchResult> => {
+    if (!client) {
+      return { valid: false, error: "客户端未连接" };
+    }
+
+    try {
+      const result = await client.request("license.switch", {}) as DeviceSwitchResult;
+
+      if (result.valid) {
+        // 切换成功，更新状态
+        updateState({
+          valid: true,
+          error: null,
+          errorCode: null,
+          license: result.license ?? null,
+          device: result.device ?? null,
+          deviceSwitchInfo: null,
+          deviceSwitchCooldown: null,
+          lastVerifiedAt: Date.now(),
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error("Failed to switch device:", error);
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : "设备切换失败",
+      };
     }
   };
 
@@ -189,6 +263,7 @@ export function createLicenseController(
     activate,
     getDevices,
     unbindDevice,
+    confirmDeviceSwitch,
     acknowledgeNotification,
     getNextNotification,
     markNotificationShown,
@@ -206,12 +281,23 @@ export function shouldShowLicenseDialog(state: LicenseUiState): LicenseDialogTyp
 
   // 授权无效
   if (!state.valid && state.error) {
+    // 设备切换确认（单设备模式：1010）
+    if (state.errorCode === 1010) {
+      return "device-switch";
+    }
+    // 设备切换冷却中（单设备模式：1011）
+    if (state.errorCode === 1011) {
+      return "device-switch-cooldown";
+    }
+    // 设备数超限
     if (state.errorCode === 1004) {
       return "device-limit";
     }
+    // 授权过期
     if (state.errorCode === 1002) {
       return "expired";
     }
+    // 未激活
     if (!state.license) {
       return "activation";
     }

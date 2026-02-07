@@ -240,3 +240,30 @@ export async function assertPublicHostname(
 ): Promise<void> {
   await resolvePinnedHostname(hostname, lookupFn);
 }
+
+/**
+ * Synchronously validate URL against SSRF attacks.
+ * Checks hostname against blocked list and private IP ranges.
+ * ClawdbotCN 专属：同步 SSRF 验证（不进行 DNS 解析）
+ * 
+ * @param url - The URL to validate
+ * @throws SsrFBlockedError if URL is blocked
+ * @throws Error if URL is invalid
+ */
+export function validateUrlForSsrf(url: string): void {
+  let hostname: string;
+  try {
+    const parsed = new URL(url);
+    hostname = parsed.hostname;
+  } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+
+  if (isBlockedHostname(hostname)) {
+    throw new SsrFBlockedError(`Blocked hostname: ${hostname}`);
+  }
+
+  if (isPrivateIpAddress(hostname)) {
+    throw new SsrFBlockedError(`Blocked: private/internal IP address: ${hostname}`);
+  }
+}

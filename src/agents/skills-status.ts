@@ -103,8 +103,16 @@ function normalizeInstallOptions(
 
   const platform = process.platform;
   const filtered = install.filter((spec) => {
+    // 检查 OS 限制
     const osList = spec.os ?? [];
-    return osList.length === 0 || osList.includes(platform);
+    if (osList.length > 0 && !osList.includes(platform)) {
+      return false;
+    }
+    // brew 只在 macOS 上可用
+    if (spec.kind === "brew" && platform !== "darwin") {
+      return false;
+    }
+    return true;
   });
   if (filtered.length === 0) return [];
 

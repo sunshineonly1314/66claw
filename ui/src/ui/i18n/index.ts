@@ -19,18 +19,18 @@ import { zhCN } from "./locales/zh-CN.js";
 /** 支持的语言 */
 export type Locale = "en" | "zh-CN";
 
-/** 翻译字典类型 */
-export type TranslationDict = typeof en;
+/** 翻译键类型 - 从 en 对象提取键 */
+export type TranslationKey = keyof typeof en;
 
-/** 翻译键类型 */
-export type TranslationKey = keyof TranslationDict;
+/** 翻译字典类型 - 使用 Record 避免字符串字面量类型限制 */
+export type TranslationDict = Record<TranslationKey, string>;
 
 // ============================================================================
 // 配置 (Configuration)
 // ============================================================================
 
 /** 默认语言 */
-const DEFAULT_LOCALE: Locale = "en";
+const DEFAULT_LOCALE: Locale = "zh-CN";
 
 /** 语言存储键名 */
 const STORAGE_KEY = "clawdbot-ui-locale";
@@ -63,18 +63,10 @@ const listeners: Set<(locale: Locale) => void> = new Set();
 
 /**
  * 检测浏览器语言
+ * 写死中文 - 全部用户都是中文用户
  */
 function detectBrowserLocale(): Locale {
-  if (typeof navigator === "undefined") return DEFAULT_LOCALE;
-
-  const browserLang = navigator.language || (navigator as { userLanguage?: string }).userLanguage || "";
-  const lang = browserLang.toLowerCase();
-
-  if (lang.startsWith("zh")) {
-    return "zh-CN";
-  }
-
-  return DEFAULT_LOCALE;
+  return "zh-CN";
 }
 
 /**
@@ -158,10 +150,39 @@ export function t(key: TranslationKey, params?: Record<string, string | number>)
   const dict = LOCALES[currentLocale] ?? LOCALES[DEFAULT_LOCALE];
   let text = dict[key] ?? en[key] ?? key;
 
-  // 模板变量替换: {{variable}}
+  // 模板变量替换: 支持 {{variable}} 和 {variable} 两种格式
   if (params) {
     for (const [paramKey, paramValue] of Object.entries(params)) {
+      // 先替换双花括号 {{variable}}
       text = text.replace(new RegExp(`\\{\\{${paramKey}\\}\\}`, "g"), String(paramValue));
+      // 再替换单花括号 {variable}
+      text = text.replace(new RegExp(`\\{${paramKey}\\}`, "g"), String(paramValue));
+    }
+  }
+
+  return text;
+}
+
+/**
+ * 尝试获取翻译文本（用于动态键，不强制类型检查）
+ * 如果键不存在，返回键本身
+ * @param key 动态翻译键
+ * @param params 模板参数 (可选)
+ */
+export function tMaybe(key: string, params?: Record<string, string | number>): string {
+  const dict = LOCALES[currentLocale] ?? LOCALES[DEFAULT_LOCALE];
+  const dictAny = dict as Record<string, string>;
+  const enAny = en as Record<string, string>;
+  
+  let text = dictAny[key] ?? enAny[key] ?? key;
+
+  // 模板变量替换: 支持 {{variable}} 和 {variable} 两种格式
+  if (params) {
+    for (const [paramKey, paramValue] of Object.entries(params)) {
+      // 先替换双花括号 {{variable}}
+      text = text.replace(new RegExp(`\\{\\{${paramKey}\\}\\}`, "g"), String(paramValue));
+      // 再替换单花括号 {variable}
+      text = text.replace(new RegExp(`\\{${paramKey}\\}`, "g"), String(paramValue));
     }
   }
 

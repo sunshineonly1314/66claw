@@ -11,6 +11,8 @@ import type {
   ForceUpdateInfo,
   BoundDevice,
   LicenseErrorCode,
+  DeviceSwitchInfo,
+  DeviceSwitchCooldownInfo,
 } from "./types.js";
 
 /**
@@ -52,18 +54,14 @@ export function renderActivationDialog(
   error: string | null = null,
   loading: boolean = false,
 ): TemplateResult {
-  let inputValue = "";
-
   const handleSubmit = (e: Event) => {
     e.preventDefault();
-    if (inputValue.trim()) {
-      onActivate(inputValue.trim());
+    const form = e.target as HTMLFormElement;
+    const input = form.querySelector("input") as HTMLInputElement;
+    const value = input?.value?.trim();
+    if (value) {
+      onActivate(value);
     }
-  };
-
-  const handleInput = (e: Event) => {
-    const target = e.target as HTMLInputElement;
-    inputValue = target.value;
   };
 
   return html`
@@ -79,7 +77,6 @@ export function renderActivationDialog(
               type="text"
               class="license-input"
               placeholder="请输入授权码 (如: clawd-xxx-xxx)"
-              @input=${handleInput}
               ?disabled=${loading}
               autofocus
             />
@@ -112,9 +109,8 @@ export function renderExpiredDialog(
   onClose: () => void,
 ): TemplateResult {
   const handleRenew = () => {
-    if (renewUrl) {
-      window.open(renewUrl, "_blank");
-    }
+    const url = renewUrl || "https://www.tecbinai.com";
+    window.open(url, "_blank");
     onRenew();
   };
 
@@ -152,9 +148,8 @@ export function renderRenewalReminderDialog(
   const urgencyIcon = getUrgencyIcon(reminder.urgency);
 
   const handleRenew = () => {
-    if (reminder.renewUrl) {
-      window.open(reminder.renewUrl, "_blank");
-    }
+    const renewUrl = reminder.renewUrl || "https://www.tecbinai.com";
+    window.open(renewUrl, "_blank");
     onRenew();
   };
 
@@ -320,6 +315,126 @@ export function renderDeviceLimitDialog(
           <div class="license-dialog-actions">
             <button class="license-btn license-btn-secondary" @click=${onClose}>
               关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染设备切换确认弹窗（单设备模式：errorCode=1010）
+ */
+export function renderDeviceSwitchDialog(
+  switchInfo: DeviceSwitchInfo,
+  onConfirm: () => void,
+  onCancel: () => void,
+  loading: boolean = false,
+): TemplateResult {
+  return html`
+    <div class="license-dialog-overlay" @click=${onCancel}>
+      <div class="license-dialog license-device-switch-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header license-urgency-warning">
+          <h2>⚠️ 确认切换设备？</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>检测到您已在「<strong>${switchInfo.existingDeviceName}</strong>」上使用此密钥。</p>
+          
+          <div class="license-switch-info">
+            <p>继续操作将：</p>
+            <ul>
+              <li>在当前设备激活此密钥</li>
+              <li>「${switchInfo.existingDeviceName}」将自动退出登录</li>
+            </ul>
+          </div>
+
+          <p class="license-warning">
+            ⚠️ 切换后 24 小时内无法再次切换设备
+          </p>
+
+          <div class="license-dialog-actions">
+            <button 
+              class="license-btn license-btn-secondary" 
+              @click=${onCancel}
+              ?disabled=${loading}
+            >
+              取消
+            </button>
+            <button 
+              class="license-btn license-btn-primary" 
+              @click=${onConfirm}
+              ?disabled=${loading}
+            >
+              ${loading ? "切换中..." : "确认切换"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染设备切换冷却期弹窗（单设备模式：errorCode=1011）
+ */
+export function renderDeviceSwitchCooldownDialog(
+  cooldownInfo: DeviceSwitchCooldownInfo,
+  onClose: () => void,
+): TemplateResult {
+  // 格式化冷却剩余时间
+  const hours = cooldownInfo.cooldownRemainingHours;
+  const remainingText = hours >= 1
+    ? `${Math.ceil(hours)} 小时`
+    : `${Math.ceil(hours * 60)} 分钟`;
+
+  // 格式化可切换时间
+  const cooldownEndsAt = formatTime(cooldownInfo.cooldownEndsAt);
+
+  return html`
+    <div class="license-dialog-overlay" @click=${onClose}>
+      <div class="license-dialog license-cooldown-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header license-urgency-info">
+          <h2>⏳ 无法切换设备</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>设备切换需间隔 24 小时</p>
+          
+          <div class="license-cooldown-info">
+            <p>距离下次可切换还有：<strong>${remainingText}</strong></p>
+            <p>预计可切换时间：<strong>${cooldownEndsAt}</strong></p>
+          </div>
+
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-primary" @click=${onClose}>
+              知道了
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染被踢出提示弹窗（旧设备打开时显示）
+ */
+export function renderDeviceKickedDialog(
+  onReactivate: () => void,
+): TemplateResult {
+  return html`
+    <div class="license-dialog-overlay">
+      <div class="license-dialog license-kicked-dialog">
+        <div class="license-dialog-header license-urgency-info">
+          <h2>📱 已在其他设备登录</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>您的授权码已在其他设备上登录使用</p>
+          <p>如需在此设备使用，请重新输入授权码</p>
+
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-primary" @click=${onReactivate}>
+              重新激活
             </button>
           </div>
         </div>

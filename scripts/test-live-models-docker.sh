@@ -20,7 +20,7 @@ docker run --rm -t \
   --entrypoint bash \
   -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
   -e HOME=/home/node \
-  -e NODE_OPTIONS=--disable-warning=ExperimentalWarning \
+  -e "NODE_OPTIONS=--disable-warning=ExperimentalWarning --disable-warning=DEP0040 --disable-warning=DEP0060" \
   -e CLAWDBOT_LIVE_TEST=1 \
   -e CLAWDBOT_LIVE_MODELS="${CLAWDBOT_LIVE_MODELS:-all}" \
   -e CLAWDBOT_LIVE_PROVIDERS="${CLAWDBOT_LIVE_PROVIDERS:-}" \

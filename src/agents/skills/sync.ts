@@ -11,7 +11,6 @@ import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
   fetchRemoteSkillsIndex,
   getInstalledSkills,
-  getSkillsProvider,
   DEFAULT_GITEE_REGISTRY,
   type GiteeRegistryConfig,
 } from "./gitee-registry.js";
@@ -126,11 +125,8 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     // 获取本地已安装的技能列表
     const installed = getInstalledSkills();
 
-    // 保存到本地 - 根据 provider 设置 sourceUrl
-    const provider = getSkillsProvider();
-    const sourceUrl = provider === "clawdskillsproxy"
-      ? DEFAULT_PROXY_CONFIG.baseUrl
-      : `https://gitee.com/${config.owner}/${config.repo}`;
+    // 保存到本地 - 使用 ClawdSkillsProxy 作为数据源（Gitee 已被封禁）
+    const sourceUrl = DEFAULT_PROXY_CONFIG.baseUrl;
     await writeLocalIndex(result.index, installed, sourceUrl);
 
     logger.info("Skills index sync completed", {

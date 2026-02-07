@@ -36,6 +36,7 @@ vi.mock("../model-auth.js", () => ({
 
 vi.mock("../models-config.js", () => ({
   ensureClawdbotModelsJson: vi.fn(async () => {}),
+  getMergedProvidersForAgent: vi.fn(async () => ({})),
 }));
 
 vi.mock("../context-window-guard.js", () => ({

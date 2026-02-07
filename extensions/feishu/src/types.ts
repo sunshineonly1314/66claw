@@ -1,14 +1,34 @@
 /**
  * 飞书渠道类型定义
  * Feishu Channel Type Definitions
+ *
+ * 融合自 m1heng/clawdbot-feishu 的增强功能
  */
+
+import type { FeishuConfigSchemaType, FeishuGroupSchemaType } from "./config-schema.js";
+
+// ============================================================================
+// 基础类型
+// ============================================================================
+
+/** 飞书域名类型 */
+export type FeishuDomain = "feishu" | "lark";
+
+/** 连接模式 */
+export type FeishuConnectionMode = "websocket" | "webhook";
+
+/** 渲染模式 */
+export type FeishuRenderMode = "auto" | "raw" | "card";
+
+/** ID 类型 */
+export type FeishuIdType = "open_id" | "user_id" | "union_id" | "chat_id";
 
 // ============================================================================
 // 配置类型 (Configuration Types)
 // ============================================================================
 
 /**
- * 飞书应用配置
+ * 飞书应用配置 (旧版嵌套结构，保持兼容)
  */
 export interface FeishuAppConfig {
   /** 应用 App ID */
@@ -23,24 +43,53 @@ export interface FeishuAppConfig {
 
 /**
  * 飞书渠道配置
+ * 支持两种风格：旧版嵌套 (app.appId) 和新版扁平 (appId)
  */
 export interface FeishuChannelConfig {
   /** 是否启用 */
   enabled?: boolean;
-  /** 应用配置 */
+
+  // 新版扁平配置 (推荐)
+  appId?: string;
+  appSecret?: string;
+  encryptKey?: string;
+  verificationToken?: string;
+
+  // 旧版嵌套配置 (兼容)
   app?: FeishuAppConfig;
-  /** Webhook 端口 (默认 3001) */
+
+  // 连接配置
+  domain?: FeishuDomain;
+  connectionMode?: FeishuConnectionMode;
   webhookPort?: number;
-  /** Webhook 路径 (默认 /feishu/webhook) */
   webhookPath?: string;
-  /** 允许的用户 ID 列表 */
-  allowFrom?: string[];
-  /** 私聊策略: "open" | "allowlist" | "pairing" */
+
+  // 私聊配置
   dmPolicy?: "open" | "allowlist" | "pairing";
-  /** 群聊策略: "open" | "allowlist" */
-  groupPolicy?: "open" | "allowlist";
-  /** 群聊配置 */
+  allowFrom?: (string | number)[];
+  dmHistoryLimit?: number;
+
+  // 群聊配置
+  groupPolicy?: "open" | "allowlist" | "disabled";
+  groupAllowFrom?: (string | number)[];
+  requireMention?: boolean;
   groups?: Record<string, FeishuGroupConfig>;
+  historyLimit?: number;
+
+  // 消息配置
+  renderMode?: FeishuRenderMode;
+  textChunkLimit?: number;
+  chunkMode?: "length" | "newline";
+  markdown?: {
+    mode?: "native" | "escape" | "strip";
+    tableMode?: "native" | "ascii" | "simple";
+  };
+
+  // 媒体配置
+  mediaMaxMb?: number;
+
+  // 工具配置
+  tools?: FeishuToolsConfig;
 }
 
 /**
@@ -50,7 +99,22 @@ export interface FeishuGroupConfig {
   /** 是否需要 @机器人 才响应 */
   requireMention?: boolean;
   /** 允许的发送者 */
-  allowFrom?: string[];
+  allowFrom?: (string | number)[];
+  /** 是否启用 */
+  enabled?: boolean;
+  /** 系统提示词 */
+  systemPrompt?: string;
+}
+
+/**
+ * 飞书工具配置
+ */
+export interface FeishuToolsConfig {
+  doc?: boolean;
+  wiki?: boolean;
+  drive?: boolean;
+  perm?: boolean;
+  scopes?: boolean;
 }
 
 // ============================================================================
@@ -93,6 +157,57 @@ export interface FeishuSendMessageResponse {
       content: string;
     };
   };
+}
+
+/**
+ * 发送结果
+ */
+export interface FeishuSendResult {
+  messageId: string;
+  chatId: string;
+}
+
+// ============================================================================
+// 消息上下文类型
+// ============================================================================
+
+/**
+ * @ 提及目标
+ */
+export interface MentionTarget {
+  openId: string;
+  name: string;
+  key: string; // 消息中的占位符，如 @_user_1
+}
+
+/**
+ * 飞书消息上下文
+ */
+export interface FeishuMessageContext {
+  chatId: string;
+  messageId: string;
+  senderId: string;
+  senderOpenId: string;
+  senderName?: string;
+  chatType: "p2p" | "group";
+  mentionedBot: boolean;
+  rootId?: string;
+  parentId?: string;
+  content: string;
+  contentType: string;
+  /** @ 转发目标 (不包括机器人本身) */
+  mentionTargets?: MentionTarget[];
+  /** 提取的消息正文 (移除 @ 占位符后) */
+  mentionMessageBody?: string;
+}
+
+/**
+ * 媒体信息
+ */
+export interface FeishuMediaInfo {
+  path: string;
+  contentType?: string;
+  placeholder: string;
 }
 
 // ============================================================================
@@ -260,6 +375,18 @@ export interface ResolvedFeishuAccount {
   appId: string | null;
   appSecret: string | null;
   config: FeishuChannelConfig;
+  domain: FeishuDomain;
+}
+
+/**
+ * 解析后的凭证
+ */
+export interface FeishuCredentials {
+  appId: string;
+  appSecret: string;
+  encryptKey?: string;
+  verificationToken?: string;
+  domain: FeishuDomain;
 }
 
 // ============================================================================
@@ -274,5 +401,58 @@ export interface FeishuProbeResult {
   error?: string;
   appId?: string;
   botName?: string;
+  botOpenId?: string;
   elapsedMs?: number;
+}
+
+// ============================================================================
+// 消息事件类型 (Message Event Types)
+// ============================================================================
+
+/**
+ * 飞书消息事件 (WebSocket/Webhook 接收)
+ */
+export interface FeishuMessageEvent {
+  sender: {
+    sender_id: {
+      open_id?: string;
+      user_id?: string;
+      union_id?: string;
+    };
+    sender_type?: string;
+    tenant_key?: string;
+  };
+  message: {
+    message_id: string;
+    root_id?: string;
+    parent_id?: string;
+    chat_id: string;
+    chat_type: "p2p" | "group";
+    message_type: string;
+    content: string;
+    mentions?: Array<{
+      key: string;
+      id: {
+        open_id?: string;
+        user_id?: string;
+        union_id?: string;
+      };
+      name: string;
+      tenant_key?: string;
+    }>;
+  };
+}
+
+/**
+ * 机器人入群事件
+ */
+export interface FeishuBotAddedEvent {
+  chat_id: string;
+  operator_id: {
+    open_id?: string;
+    user_id?: string;
+    union_id?: string;
+  };
+  external: boolean;
+  operator_tenant_key?: string;
 }

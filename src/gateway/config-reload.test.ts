@@ -127,3 +127,89 @@ describe("resolveGatewayReloadSettings", () => {
     expect(settings.debounceMs).toBe(300);
   });
 });
+
+describe("config reload coverage", () => {
+  // 所有 ClawdbotConfig 顶级配置键（来自 src/config/types.clawdbot.ts）
+  // 当添加新的顶级配置时，需要同步更新此列表和 config-reload.ts 中的规则
+  const CLAWDBOT_CONFIG_TOP_LEVEL_KEYS = [
+    "meta",
+    "auth",
+    "env",
+    "wizard",
+    "diagnostics",
+    "logging",
+    "update",
+    "browser",
+    "ui",
+    "skills",
+    "plugins",
+    "models",
+    "nodeHost",
+    "agents",
+    "tools",
+    "bindings",
+    "broadcast",
+    "audio",
+    "messages",
+    "commands",
+    "approvals",
+    "session",
+    "web",
+    "channels",
+    "cron",
+    "hooks",
+    "discovery",
+    "canvasHost",
+    "talk",
+    "gateway",
+    "license",
+    "credentials",
+    "freeModels",
+  ] as const;
+
+  // 预期需要重启 Gateway 的配置
+  const EXPECTED_RESTART_KEYS = new Set(["plugins", "gateway", "discovery", "canvasHost"]);
+
+  // 预期支持热更新的配置
+  const EXPECTED_HOT_KEYS = new Set(["browser", "cron", "hooks"]);
+
+  it("所有 ClawdbotConfig 顶级键都有对应的 reload 规则（不会导致意外重启）", () => {
+    const uncoveredKeys: string[] = [];
+
+    for (const key of CLAWDBOT_CONFIG_TOP_LEVEL_KEYS) {
+      const plan = buildGatewayReloadPlan([key]);
+
+      // 如果触发了重启但不在预期重启列表中，说明规则缺失
+      if (plan.restartGateway && !EXPECTED_RESTART_KEYS.has(key)) {
+        uncoveredKeys.push(key);
+      }
+    }
+
+    expect(uncoveredKeys).toEqual([]);
+  });
+
+  it("预期需要重启的配置确实会触发重启", () => {
+    for (const key of EXPECTED_RESTART_KEYS) {
+      const plan = buildGatewayReloadPlan([key]);
+      expect(plan.restartGateway).toBe(true);
+    }
+  });
+
+  it("预期热更新的配置不会触发完全重启", () => {
+    for (const key of EXPECTED_HOT_KEYS) {
+      const plan = buildGatewayReloadPlan([key]);
+      expect(plan.restartGateway).toBe(false);
+    }
+  });
+
+  it("无需操作的配置会被正确标记为 noop", () => {
+    const noopKeys = CLAWDBOT_CONFIG_TOP_LEVEL_KEYS.filter(
+      (key) => !EXPECTED_RESTART_KEYS.has(key) && !EXPECTED_HOT_KEYS.has(key),
+    );
+
+    for (const key of noopKeys) {
+      const plan = buildGatewayReloadPlan([key]);
+      expect(plan.noopPaths).toContain(key);
+    }
+  });
+});

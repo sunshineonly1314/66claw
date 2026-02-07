@@ -20,6 +20,10 @@ export interface WecomWebhookContext {
     msgType: string;
     text: string;
     createTime: number;
+    /** 聊天类型: direct=私聊, group=群聊 */
+    chatType: "direct" | "group";
+    /** 群聊 ID (仅群聊消息存在) */
+    chatId?: string;
     rawEvent: WecomMessageEvent;
   }) => Promise<void>;
   log?: {
@@ -43,7 +47,7 @@ function computeWecomSignature(token: string, timestamp: string, nonce: string, 
 }
 
 /**
- * 验证企业微信签名
+ * 验证企业微信签名（使用常量时间比较防止时序攻击）
  */
 function verifyWecomSignature(
   msgSignature: string,
@@ -53,7 +57,18 @@ function verifyWecomSignature(
   echostr: string,
 ): boolean {
   const signature = computeWecomSignature(token, timestamp, nonce, echostr);
-  return msgSignature === signature;
+  // 使用 crypto.timingSafeEqual 防止时序攻击
+  try {
+    const sigBuf = Buffer.from(msgSignature, "utf-8");
+    const expectedBuf = Buffer.from(signature, "utf-8");
+    // 长度不同时，timingSafeEqual 会抛出异常，所以先检查长度
+    if (sigBuf.length !== expectedBuf.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(sigBuf, expectedBuf);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -66,10 +81,22 @@ function decodeAESKey(encodingAESKey: string): Buffer {
 
 /**
  * AES-256-CBC 解密 (企业微信使用的加密方式)
+ * 包含严格的 PKCS#7 填充验证
  */
 function aesDecrypt(encryptedMsg: string, aesKey: Buffer): string {
   // Base64 解码密文
   const encryptedBuffer = Buffer.from(encryptedMsg, "base64");
+
+  // 验证密文长度
+  // 最小长度：16 字节随机数 + 4 字节长度 + 至少 1 字节内容 + padding
+  if (encryptedBuffer.length < 32) {
+    throw new Error("Encrypted message too short");
+  }
+
+  // 验证密文长度是否为 AES 块大小 (32 字节 for 企业微信) 的倍数
+  if (encryptedBuffer.length % 32 !== 0) {
+    throw new Error("Encrypted message length must be multiple of block size");
+  }
 
   // AES Key 的前 16 字节作为 IV
   const iv = aesKey.subarray(0, 16);
@@ -81,15 +108,42 @@ function aesDecrypt(encryptedMsg: string, aesKey: Buffer): string {
   // 解密
   let decrypted = Buffer.concat([decipher.update(encryptedBuffer), decipher.final()]);
 
-  // PKCS#7 去填充
+  // 验证解密后数据非空
+  if (decrypted.length === 0) {
+    throw new Error("Decrypted data is empty");
+  }
+
+  // PKCS#7 严格填充验证
   const pad = decrypted[decrypted.length - 1];
-  if (pad && pad > 0 && pad <= 32) {
-    decrypted = decrypted.subarray(0, decrypted.length - pad);
+  if (!pad || pad === 0 || pad > 32) {
+    throw new Error("Invalid PKCS#7 padding value");
+  }
+  // 验证所有填充字节都是相同的值
+  for (let i = 1; i <= pad; i++) {
+    if (decrypted[decrypted.length - i] !== pad) {
+      throw new Error("Invalid PKCS#7 padding bytes");
+    }
+  }
+  decrypted = decrypted.subarray(0, decrypted.length - pad);
+
+  // 验证解密后数据长度足够
+  if (decrypted.length < 20) {
+    throw new Error("Decrypted data too short");
   }
 
   // 解密后的格式: random(16字节) + msg_len(4字节) + msg + CorpID
   // 跳过前 16 字节随机数
   const msgLen = decrypted.readUInt32BE(16);
+
+  // 验证消息长度合理性（上限 1MB，与 MAX_XML_BODY_SIZE 一致）
+  const maxMsgLen = MAX_XML_BODY_SIZE;
+  if (msgLen > maxMsgLen) {
+    throw new Error(`Message length ${msgLen} exceeds maximum ${maxMsgLen}`);
+  }
+  if (20 + msgLen > decrypted.length) {
+    throw new Error("Invalid message length in decrypted data");
+  }
+
   const msg = decrypted.subarray(20, 20 + msgLen).toString("utf-8");
 
   return msg;
@@ -157,16 +211,36 @@ function buildXmlResponse(encrypt: string, signature: string, timestamp: string,
 }
 
 // ============================================================================
+// 安全常量
+// ============================================================================
+
+/**
+ * XML 请求体最大大小限制 (1MB)
+ * 防止 XXE 和内存耗尽攻击
+ */
+const MAX_XML_BODY_SIZE = 1 * 1024 * 1024;
+
+// ============================================================================
 // Webhook 处理器
 // ============================================================================
 
 /**
- * 读取请求体
+ * 读取请求体（带大小限制防止 XXE/DoS 攻击）
  */
-async function readBody(req: IncomingMessage): Promise<string> {
+async function readBody(req: IncomingMessage, maxSize: number = MAX_XML_BODY_SIZE): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk) => chunks.push(chunk));
+    let totalSize = 0;
+
+    req.on("data", (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > maxSize) {
+        req.destroy();
+        reject(new Error(`Request body exceeds maximum size limit (${maxSize} bytes)`));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });
@@ -317,7 +391,16 @@ async function handleWecomMessage(
   const msgId = msgData["MsgId"] ?? `${createTime}-${fromUser}`;
   const agentId = parseInt(msgData["AgentID"] ?? "0", 10);
 
-  log?.info(`[wecom] 收到消息: type=${msgType}, from=${fromUser}, agentId=${agentId}`);
+  // 提取群聊相关字段
+  // 企业微信群聊消息会包含 ChatId 字段，或者通过 ChatType 标识
+  const chatId = msgData["ChatId"] ?? undefined;
+  // ChatType: single=私聊, group=群聊 (智能机器人回调模式使用)
+  const rawChatType = msgData["ChatType"]?.toLowerCase();
+  // 判断是否为群聊: 有 ChatId 或 ChatType=group
+  const isGroup = Boolean(chatId) || rawChatType === "group";
+  const chatType: "direct" | "group" = isGroup ? "group" : "direct";
+
+  log?.info(`[wecom] 收到消息: type=${msgType}, from=${fromUser}, chatType=${chatType}, chatId=${chatId ?? "N/A"}, agentId=${agentId}`);
 
   // 处理文本消息
   if (msgType === "text") {
@@ -336,6 +419,8 @@ async function handleWecomMessage(
       CreateTime: createTime,
       Content: content,
       AgentID: agentId,
+      ChatId: chatId,
+      ChatType: isGroup ? "group" : "single",
     };
 
     await onMessage({
@@ -345,6 +430,8 @@ async function handleWecomMessage(
       msgType: "text",
       text: content,
       createTime,
+      chatType,
+      chatId,
       rawEvent: event,
     });
     return;

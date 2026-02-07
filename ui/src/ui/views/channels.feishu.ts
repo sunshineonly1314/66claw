@@ -60,18 +60,35 @@ export function renderFeishuCard(params: {
     `;
   };
 
-  // 状态徽章
+  // 状态徽章 - 使用视觉指示器
   const statusBadge = feishu?.running 
-    ? html`<span class="channel-card__badge channel-card__badge--ok">${t("common.running")}</span>`
+    ? html`<span class="channel-card__badge channel-card__badge--ok">
+        <span class="status-dot status-dot--running"></span>
+        ${t("common.running")}
+      </span>`
     : feishu?.configured
-      ? html`<span class="channel-card__badge channel-card__badge--warn">${t("common.stopped")}</span>`
-      : html`<span class="channel-card__badge">${t("channels.notConfigured")}</span>`;
+      ? html`<span class="channel-card__badge channel-card__badge--warn">
+          <span class="status-dot status-dot--configured"></span>
+          ${t("common.stopped")}
+        </span>`
+      : html`<span class="channel-card__badge">
+          <span class="status-dot status-dot--unconfigured"></span>
+          ${t("channels.notConfigured")}
+        </span>`;
 
   // 箭头图标
   const chevronIcon = html`<svg class="channel-card__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
+  // 根据状态决定卡片样式类
+  const cardClasses = [
+    "channel-card",
+    feishu?.running ? "channel-card--running" : "",
+    feishu?.configured && !feishu?.running ? "channel-card--configured" : "",
+    feishu?.lastError ? "channel-card--error" : "",
+  ].filter(Boolean).join(" ");
+
   return html`
-    <details class="channel-card" open>
+    <details class="${cardClasses}" open>
       <summary class="channel-card__header">
         <div class="channel-card__left">
           <span class="channel-card__icon">🪶</span>
@@ -85,6 +102,21 @@ export function renderFeishuCard(params: {
       <div class="channel-card__body">
         <div class="channel-card__desc">${t("channels.feishu.description")}</div>
 
+        <!-- 支持能力 -->
+        <div class="channel-card__features" style="margin-top: 12px; padding: 12px; background: var(--bg-secondary, #f5f5f5); border-radius: 8px;">
+          <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">✨ 支持能力</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; font-size: 13px;">
+            <span>✅ 私聊消息</span>
+            <span>✅ 群聊 @机器人</span>
+            <span>✅ 图片/文件收发</span>
+            <span>✅ Markdown 卡片</span>
+            <span>✅ 无需公网 IP</span>
+            <span>✅ 文档读写</span>
+            <span>✅ 知识库访问</span>
+            <span>✅ 多维表格操作</span>
+          </div>
+        </div>
+
         ${hasMultipleAccounts
           ? html`
               <div class="account-card-list">
@@ -95,11 +127,15 @@ export function renderFeishuCard(params: {
               <div class="status-list">
                 <div>
                   <span class="label">${t("channels.configured")}</span>
-                  <span>${feishu?.configured ? t("common.yes") : t("common.no")}</span>
+                  <span class="status-value ${feishu?.configured ? 'status-value--yes' : 'status-value--no'}">
+                    ${feishu?.configured ? t("common.yes") : t("common.no")}
+                  </span>
                 </div>
                 <div>
                   <span class="label">${t("common.running")}</span>
-                  <span>${feishu?.running ? t("common.yes") : t("common.no")}</span>
+                  <span class="status-value ${feishu?.running ? 'status-value--yes' : 'status-value--no'}">
+                    ${feishu?.running ? t("common.yes") : t("common.no")}
+                  </span>
                 </div>
                 <div>
                   <span class="label">${t("channels.lastStart")}</span>
@@ -126,21 +162,114 @@ export function renderFeishuCard(params: {
             </div>`
           : nothing}
 
-        <!-- 配置帮助 -->
+        <!-- 配置帮助 - 详细指南 -->
         <details class="channel-card__help" style="margin-top: 16px;">
           <summary class="channel-card__help-title">
             📖 ${t("channels.feishu.configTitle")}
+            <span class="help-badge">详细教程</span>
           </summary>
           <div class="channel-card__help-content">
+            <!-- 优势提示 -->
+            <div class="callout success" style="margin-bottom: 16px;">
+              <strong>✨ 推荐使用长连接模式：</strong>无需公网 IP，无需配置回调地址，本地即可接收消息！
+            </div>
+
             <p>${t("channels.feishu.configDesc")}</p>
-            <ol>
-              <li>登录 <a href="https://open.feishu.cn/" target="_blank" rel="noreferrer">飞书开放平台</a></li>
-              <li>创建企业自建应用，开启机器人能力</li>
-              <li>在「凭证与基础信息」页面获取 App ID 和 App Secret</li>
-              <li>配置事件订阅，设置回调地址</li>
-              <li>在下方填写凭证并保存</li>
-            </ol>
-            <a href="${t("channels.feishu.docsUrl")}" target="_blank" rel="noreferrer" class="btn btn--link">
+            
+            <div class="config-steps">
+              <div class="config-step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                  <strong>登录飞书开放平台</strong>
+                  <p>访问 <a href="https://open.feishu.cn/app" target="_blank">open.feishu.cn/app</a>，点击<strong>右上角</strong>「<strong>登录</strong>」按钮，用飞书 App 扫码</p>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                  <strong>创建企业自建应用</strong>
+                  <p>点击「<strong>创建企业自建应用</strong>」按钮 → 填写应用名称和描述 → 点击「<strong>创建</strong>」</p>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                  <strong>添加机器人能力</strong>
+                  <p>左侧菜单点击「<strong>添加应用能力</strong>」→ 找到「<strong>机器人</strong>」卡片 → 点击「<strong>+ 添加</strong>」</p>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                  <strong>获取 App ID 和 App Secret</strong>
+                  <p>左侧菜单点击「<strong>凭证与基础信息</strong>」：</p>
+                  <ul>
+                    <li><strong>App ID</strong>：以 <code>cli_</code> 开头，直接复制</li>
+                    <li><strong>App Secret</strong>：点击「显示」→ <strong>立即复制！</strong></li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">5</div>
+                <div class="step-content">
+                  <strong>获取 Encrypt Key 和 Verification Token</strong>
+                  <p>左侧菜单「<strong>开发配置</strong>」→「<strong>事件与回调</strong>」→ 点击「<strong>加密策略</strong>」→ 点击小眼睛显示密钥</p>
+                  <div class="callout" style="margin-top: 8px; padding: 8px 12px;">
+                    💡 第一次创建的应用需点击「刷新」生成 Encrypt Key。WebSocket 模式下可选填
+                  </div>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">6</div>
+                <div class="step-content">
+                  <strong>配置长连接模式（最关键！）</strong>
+                  <p>还是在「<strong>事件与回调</strong>」→ 找到「<strong>事件配置方式</strong>」→ <strong>选择「使用长连接接收事件」</strong></p>
+                  <div class="callout warning" style="margin-top: 8px; padding: 8px 12px;">
+                    ⭐ 必须选择长连接模式！不要选"发送至开发者服务器"！选了长连接就不需要公网 IP
+                  </div>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">7</div>
+                <div class="step-content">
+                  <strong>添加接收消息事件（必须！）</strong>
+                  <p>在「事件与回调」页面点击「<strong>添加事件</strong>」→ 搜索「<strong>接收消息</strong>」→ 勾选 <code>im.message.receive_v1</code> → 点击「<strong>确认添加</strong>」</p>
+                  <div class="callout danger" style="margin-top: 8px; padding: 8px 12px;">
+                    ⚠️ 不添加这个事件，机器人就收不到消息！
+                  </div>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">8</div>
+                <div class="step-content">
+                  <strong>添加权限（必须！）</strong>
+                  <p>左侧菜单点击「<strong>权限管理</strong>」→ 搜索以下标识符并开通权限：</p>
+                  <ul>
+                    <li>搜索 <code>im:message</code> → 「<strong>获取与发送单聊、群组消息</strong>」（必须）</li>
+                    <li>搜索 <code>im:message:send_as_bot</code> → 「<strong>以应用的身份发消息</strong>」（必须）</li>
+                    <li>搜索 <code>im:message.group_at_msg</code> → 「<strong>接收群聊中@机器人消息事件</strong>」（群聊）</li>
+                    <li>搜索 <code>im:resource</code> → 「<strong>获取与上传图片或文件资源</strong>」（推荐）</li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div class="config-step">
+                <div class="step-number">9</div>
+                <div class="step-content">
+                  <strong>发布应用</strong>
+                  <p>左侧菜单点击「<strong>版本管理与发布</strong>」→「<strong>创建版本</strong>」→ 填写版本号 → 点击「<strong>申请发布</strong>」</p>
+                </div>
+              </div>
+            </div>
+
+            <a href="${t("channels.feishu.docsUrl")}" target="_blank" rel="noreferrer" class="btn btn--link" style="margin-top: 12px;">
               ${t("channels.feishu.docsLabel")} →
             </a>
           </div>

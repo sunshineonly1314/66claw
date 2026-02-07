@@ -51,7 +51,9 @@ function resolveRunner() {
 }
 
 function run(cmd, args) {
-  const child = spawn(cmd, args, {
+  // On Windows with shell: true, paths with spaces must be quoted
+  const actualCmd = process.platform === "win32" ? `"${cmd}"` : cmd;
+  const child = spawn(actualCmd, args, {
     cwd: uiDir,
     stdio: "inherit",
     env: process.env,
@@ -64,7 +66,9 @@ function run(cmd, args) {
 }
 
 function runSync(cmd, args, envOverride) {
-  const result = spawnSync(cmd, args, {
+  // On Windows with shell: true, paths with spaces must be quoted
+  const actualCmd = process.platform === "win32" ? `"${cmd}"` : cmd;
+  const result = spawnSync(actualCmd, args, {
     cwd: uiDir,
     stdio: "inherit",
     env: envOverride ?? process.env,

@@ -8,16 +8,16 @@
 # 用法：
 #   .\scripts\windows\package-bundled-skills.ps1 [-OutputDir <path>] [-SourceDir <path>]
 
-# 设置 UTF-8 编码，避免中文乱码
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
-
 param(
     [string]$OutputDir = "build\bundled-skills",
     [string]$SourceDir = "clawdhub-skills-mirror\cn\skills",
     [switch]$SkipCopy,
     [switch]$Verbose
 )
+
+# 设置 UTF-8 编码，避免中文乱码 (must be after param block)
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ErrorActionPreference = "Stop"
 

@@ -1,0 +1,112 @@
+import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { installSkill } from "../agents/skills-install.js";
+import { buildWorkspaceSkillStatus } from "../agents/skills-status.js";
+import { loadConfig } from "../config/config.js";
+import { refreshInstalledList } from "../agents/skills/sync.js";
+import { setSkillInstallCallbacks } from "./server-methods/skill-install-approval.js";
+
+/**
+ * 继续执行回调函数类型
+ */
+export type ContinueExecutionCallback = (options: {
+  sessionKey: string;
+  originalMessage: string;
+  skillName: string;
+}) => Promise<void>;
+
+// 存储继续执行回调
+let continueExecutionCallback: ContinueExecutionCallback | null = null;
+
+/**
+ * 设置继续执行回调
+ * 应在 gateway 启动时调用，传入 chat.send 的封装
+ */
+export function setContinueExecutionCallback(callback: ContinueExecutionCallback): void {
+  continueExecutionCallback = callback;
+}
+
+/**
+ * 查找技能的首选安装 ID
+ */
+function findPreferredInstallId(skillName: string, workspaceDir: string): string {
+  try {
+    const report = buildWorkspaceSkillStatus(workspaceDir);
+    const skill = report.skills.find(
+      (s) => s.name === skillName || s.skillKey === skillName,
+    );
+    if (skill && skill.install.length > 0) {
+      // 返回首选安装选项的 ID
+      return skill.install[0].id;
+    }
+  } catch {
+    // 忽略错误，使用默认值
+  }
+  return "default";
+}
+
+/**
+ * 初始化技能安装回调
+ * 在 gateway 启动时调用
+ */
+export function initializeSkillInstallCallbacks(): void {
+  setSkillInstallCallbacks({
+    onInstall: async (skillName, options) => {
+      // ClawdbotCN 专属：进度更新通过 onProgress 回调实时广播
+      // 这里负责执行安装逻辑并传递进度
+
+      try {
+        const cfg = loadConfig();
+        const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+
+        // 动态查找首选安装 ID
+        const installId = findPreferredInstallId(skillName, workspaceDir);
+
+        // ClawdbotCN 专属：调用安装函数，传递进度回调
+        const result = await installSkill({
+          workspaceDir,
+          skillName,
+          installId,
+          timeoutMs: 300_000, // 5分钟超时
+          config: cfg,
+          // 传递进度回调，实现实时进度显示
+          onProgress: options.onProgress,
+        });
+
+        if (result.ok) {
+          // 刷新已安装列表
+          await refreshInstalledList().catch(() => {});
+          return { success: true };
+        } else {
+          return { success: false, error: result.message };
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return { success: false, error: errorMsg };
+      }
+    },
+
+    onContinueExecution: async (options) => {
+      if (!continueExecutionCallback) {
+        console.warn(
+          "[skill-install] Continue execution callback not set, cannot continue original message",
+        );
+        return;
+      }
+
+      try {
+        await continueExecutionCallback(options);
+      } catch (err) {
+        console.error("[skill-install] Failed to continue execution:", err);
+      }
+    },
+  });
+}
+
+/**
+ * 创建用于继续执行的系统消息
+ */
+export function createContinueMessage(originalMessage: string, skillName: string): string {
+  return `[系统提示] 技能 "${skillName}" 已成功安装。请继续执行用户之前的请求：
+
+${originalMessage}`;
+}

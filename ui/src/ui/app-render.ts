@@ -4,13 +4,14 @@ import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { AppViewState } from "./app-view-state";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 import {
-  TAB_GROUPS,
+  getTabGroups,
   iconForTab,
   pathForTab,
   subtitleForTab,
   titleForTab,
   type Tab,
 } from "./navigation";
+import { t } from "./i18n/index.js";
 import { icons } from "./icons";
 import type { UiSettings } from "./storage";
 import type { ThemeMode } from "./theme";
@@ -40,8 +41,11 @@ import { renderInstances } from "./views/instances";
 import { renderLogs } from "./views/logs";
 import { renderNodes } from "./views/nodes";
 import { renderOverview } from "./views/overview";
+import { renderUsage } from "./views/usage";
 import { renderSessions } from "./views/sessions";
 import { renderExecApprovalPrompt } from "./views/exec-approval";
+import { renderSkillInstallApproval } from "./views/skill-install-approval";
+import { renderSkillInstallProgress } from "./views/skill-install-progress";
 import {
   approveDevicePairing,
   loadDevices,
@@ -51,6 +55,7 @@ import {
 } from "./controllers/devices";
 import { renderSkills } from "./views/skills";
 import { renderPlayground } from "./views/playground";
+import { renderFreeModels } from "./views/free-models";
 import {
   renderDocs,
   searchDocs,
@@ -61,10 +66,30 @@ import {
   type DocsViewProps,
 } from "./views/docs";
 import {
+  renderFeedbackTrigger,
+  renderFeedbackModal,
+  type FeedbackViewProps,
+} from "./views/feedback";
+import {
   loadPlaygroundSkills,
   setPlaygroundCategory,
   handleTrySkill,
+  installSkillDeps,
 } from "./controllers/playground";
+import {
+  loadFreeModels,
+  toggleFreeModelsEnabled,
+  openConfigModal,
+  closeConfigModal,
+  updateApiKey,
+  testConnection,
+  saveConfig as saveFreeModelsConfig,
+  openDeleteModal,
+  closeDeleteModal,
+  confirmDelete,
+  setPreferred,
+  refreshFreeModels,
+} from "./controllers/free-models";
 import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers";
 import {
   renderActivationDialog,
@@ -73,9 +98,12 @@ import {
   renderNotificationDialog,
   renderForceUpdateDialog,
   renderDeviceLimitDialog,
+  renderDeviceSwitchDialog,
+  renderDeviceSwitchCooldownDialog,
   renderOfflineBanner,
   type LicenseDialogType,
 } from "./license/index";
+import { handleRenewalReminderDismiss } from "./app-gateway";
 import { loadChannels } from "./controllers/channels";
 import { loadPresence } from "./controllers/presence";
 import { deleteSession, loadSessions, patchSession } from "./controllers/sessions";
@@ -111,6 +139,16 @@ import {
 import { loadCronRuns, toggleCronJob, runCronJob, removeCronJob, addCronJob } from "./controllers/cron";
 import { loadDebug, callDebugMethod } from "./controllers/debug";
 import { loadLogs } from "./controllers/logs";
+import { loadUsageSummary } from "./controllers/usage";
+import {
+  buildDiscoveryProps,
+  shouldShowDiscovery,
+  handleSkip as handleDiscoverySkip,
+  handleSuggestionClick as handleDiscoverySuggestionClick,
+  runCapabilityDetection,
+  markFirstVisitCompleted,
+  createInitialDiscoveryState,
+} from "./controllers/capability-detect";
 
 const AVATAR_DATA_RE = /^data:/i;
 const AVATAR_HTTP_RE = /^https?:\/\//i;
@@ -130,11 +168,69 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
   return identity?.avatarUrl;
 }
 
+/**
+ * 顶栏技术支持按钮（根据用户类型显示不同内容）
+ * - 正式用户：⭐ 专属技术支持 (hover 弹出二维码)
+ * - 试用用户：💬 技术支持 + 🛒 升级正式版
+ */
+function renderTopbarSupportButtons(state: AppViewState) {
+  const license = state.licenseState?.license;
+  if (!license) return nothing;
+
+  const isTestUser = license.keyType === "test" || license.keyType === "trial";
+  const qrcode = license.supportQrcode;
+
+  if (isTestUser) {
+    // 试用用户：技术支持 + 升级按钮
+    return html`
+      <div class="topbar-support topbar-support--test">
+        <div class="topbar-support__btn topbar-support__btn--support">
+          <span class="topbar-support__icon">💬</span>
+          <span class="topbar-support__text">${t("support.techSupport")}</span>
+          ${qrcode ? html`
+            <div class="topbar-support__popover">
+              <div class="topbar-support__popover-arrow"></div>
+              <div class="topbar-support__popover-title">${t("support.scanForSupport")}</div>
+              <img class="topbar-support__qrcode" src="${qrcode.base64}" alt="Support QR" />
+              <div class="topbar-support__popover-desc">${qrcode.groupName}</div>
+            </div>
+          ` : nothing}
+        </div>
+        ${license.purchaseUrl ? html`
+          <a href="${license.purchaseUrl}" target="_blank" rel="noreferrer" class="topbar-support__btn topbar-support__btn--upgrade">
+            <span class="topbar-support__icon">🛒</span>
+            <span class="topbar-support__text">${t("support.upgradePro")}</span>
+          </a>
+        ` : nothing}
+      </div>
+    `;
+  }
+
+  // 正式用户：专属技术支持
+  return html`
+    <div class="topbar-support topbar-support--pro">
+      <div class="topbar-support__btn topbar-support__btn--pro-support">
+        <span class="topbar-support__icon">⭐</span>
+        <span class="topbar-support__text">${t("support.exclusiveSupport")}</span>
+        ${qrcode ? html`
+          <div class="topbar-support__popover">
+            <div class="topbar-support__popover-arrow"></div>
+            <div class="topbar-support__popover-title">${t("support.scanForPremiumSupport")}</div>
+            <img class="topbar-support__qrcode" src="${qrcode.base64}" alt="Support QR" />
+            <div class="topbar-support__popover-desc">${qrcode.groupName}</div>
+            <div class="topbar-support__popover-sub">${t("support.premiumGroupDesc")}</div>
+          </div>
+        ` : nothing}
+      </div>
+    </div>
+  `;
+}
+
 export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
-  const chatDisabledReason = state.connected ? null : "Disconnected from gateway.";
+  const chatDisabledReason = state.connected ? null : t("connection.disconnectedFromGateway");
   const isChat = state.tab === "chat";
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
@@ -159,15 +255,22 @@ export function renderApp(state: AppViewState) {
           </button>
           <div class="brand">
             <div class="brand-logo">
-              <img src="https://mintcdn.com/clawdhub/4rYvG-uuZrMK_URE/assets/pixel-lobster.svg?fit=max&auto=format&n=4rYvG-uuZrMK_URE&q=85&s=da2032e9eac3b5d9bfe7eb96ca6a8a26" alt="Clawdbot" />
+              <img src="/logo.png" alt="ClawbotCN" />
             </div>
             <div class="brand-text">
-              <div class="brand-title">CLAWDBOT</div>
-              <div class="brand-sub">Gateway Dashboard</div>
+              <div class="brand-title">ClawbotCN</div>
+              <div class="brand-sub">- <strong>全栈国内运行</strong></div>
             </div>
           </div>
         </div>
         <div class="topbar-status">
+          ${renderTopbarSupportButtons(state)}
+          <a href="https://www.tecbinai.com" target="_blank" rel="noreferrer" class="topbar-promo">
+            <span class="topbar-promo__dot"></span>
+            <span class="topbar-promo__brand">TecbinAI</span>
+            <span class="topbar-promo__sep"></span>
+            <span class="topbar-promo__desc">及时追踪AI · 解锁更多玩法</span>
+          </a>
           <div class="pill">
             <span class="statusDot ${state.connected ? "ok" : ""}"></span>
             <span>Health</span>
@@ -177,7 +280,7 @@ export function renderApp(state: AppViewState) {
         </div>
       </header>
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
-        ${TAB_GROUPS.map((group) => {
+        ${getTabGroups().map((group) => {
           const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
           const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
           return html`
@@ -205,11 +308,22 @@ export function renderApp(state: AppViewState) {
         })}
         <div class="nav-group nav-group--links">
           <div class="nav-label nav-label--static">
-            <span class="nav-label__text">Resources</span>
+            <span class="nav-label__text">${t("nav.docs")}</span>
           </div>
           <div class="nav-group__items">
+            ${renderFeedbackTrigger(state.handleFeedbackOpen)}
             ${renderTab(state, "docs")}
           </div>
+        </div>
+        <!-- tecbinai Footer Link -->
+        <div class="nav-footer">
+          <a href="https://www.tecbinai.com" target="_blank" rel="noreferrer" class="nav-footer-link">
+            <span class="nav-footer-icon">🚀</span>
+            <span class="nav-footer-text">
+              <span class="nav-footer-title">tecbinai</span>
+              <span class="nav-footer-desc">及时追踪 AI 内容</span>
+            </span>
+          </a>
         </div>
       </aside>
       <main class="content ${isChat ? "content--chat" : ""}">
@@ -238,6 +352,29 @@ export function renderApp(state: AppViewState) {
               cronEnabled: state.cronStatus?.enabled ?? null,
               cronNext,
               lastChannelsRefresh: state.channelsLastSuccess,
+              usageLoading: state.usageLoading,
+              usageSummary: state.usageSummary,
+              usageError: state.usageError,
+              // 模型选择相关
+              modelsLoading: state.modelsLoading,
+              modelsProviders: state.modelsProviders,
+              modelsDefaults: state.modelsDefaults,
+              modelsCurrent: state.modelsCurrent,
+              modelsSaving: state.modelsSaving,
+              modelsError: state.modelsError,
+              modelsSuccessMessage: state.modelsSuccessMessage,
+              modelsAuthSaving: state.modelsAuthSaving,
+              modelsConfiguringProvider: state.modelsConfiguringProvider,
+              modelsAuthVerifying: state.modelsAuthVerifying,
+              modelsAuthVerifyResult: state.modelsAuthVerifyResult,
+              // 安全模式相关
+              securityLoading: state.securityLoading,
+              securityModes: state.securityModes,
+              securityCurrent: state.securityCurrent,
+              securitySaving: state.securitySaving,
+              securityError: state.securityError,
+              securityShowWarning: state.securityShowWarning,
+              securitySuccessMessage: state.securitySuccessMessage,
               onSettingsChange: (next) => state.applySettings(next),
               onPasswordChange: (next) => (state.password = next),
               onSessionKeyChange: (next) => {
@@ -253,6 +390,34 @@ export function renderApp(state: AppViewState) {
               },
               onConnect: () => state.connect(),
               onRefresh: () => state.loadOverview(),
+              onNavigateToUsage: () => state.setTab("usage" as Tab),
+              onModelChange: (provider, model) => state.setModelPrimary(provider, model),
+              modelsPendingProvider: state.modelsPendingProvider,
+              modelsPendingModel: state.modelsPendingModel,
+              onModelPendingChange: (provider, model) => state.setModelPending(provider, model),
+              onModelPendingCancel: () => state.cancelModelPending(),
+              onModelPendingConfirm: () => state.confirmModelPending(),
+              onNavigateToConfig: () => state.setTab("config" as Tab),
+              onSetConfiguringProvider: (providerId) => state.setConfiguringProvider(providerId),
+              onSaveProviderAuth: (provider, auth) => state.saveProviderAuth(provider, auth),
+              onVerifyApiKey: (provider, apiKey, model) => state.verifyProviderApiKey(provider, apiKey, model),
+              onClearVerifyResult: () => state.clearAuthVerifyResult(),
+              // 安全模式回调
+              onSecurityModeChange: (mode) => state.setSecurityMode(mode),
+              onCloseSecurityWarning: () => state.closeSecurityWarning(),
+              onConfirmSecurityTrust: () => state.confirmSecurityTrustMode(),
+            })
+          : nothing}
+
+        ${state.tab === "usage"
+          ? renderUsage({
+              connected: state.connected,
+              loading: state.usageLoading,
+              summary: state.usageSummary,
+              error: state.usageError,
+              days: state.usageDays,
+              onDaysChange: (days) => loadUsageSummary(state, days),
+              onRefresh: () => loadUsageSummary(state),
             })
           : nothing}
 
@@ -356,6 +521,8 @@ export function renderApp(state: AppViewState) {
               report: state.playgroundReport ?? null,
               error: state.playgroundError ?? null,
               activeCategory: state.playgroundActiveCategory ?? null,
+              installingSkill: state.playgroundInstallingSkill ?? null,
+              installMessage: state.playgroundInstallMessage ?? null,
               onCategoryChange: (category) =>
                 setPlaygroundCategory(state, category),
               onTrySkill: (skillName, example) => {
@@ -365,6 +532,10 @@ export function renderApp(state: AppViewState) {
                   skillName,
                   example,
                 );
+              },
+              onInstallSkill: (skill) => {
+                // 安装技能依赖，成功后刷新列表即可，用户可以点击"立即试用"
+                installSkillDeps(state, skill);
               },
               onRefresh: () => loadPlaygroundSkills(state),
             })
@@ -379,6 +550,10 @@ export function renderApp(state: AppViewState) {
               edits: state.skillEdits,
               messages: state.skillMessages,
               busyKey: state.skillsBusyKey,
+              // 连接状态
+              connected: state.connected ?? false,
+              // 安装进度
+              installProgress: state.skillsInstallProgress ?? {},
               activeTab: state.skillsActiveTab ?? "local",
               remoteLoading: state.skillsRemoteLoading ?? false,
               remoteIndex: state.skillsRemoteIndex ?? null,
@@ -389,6 +564,8 @@ export function renderApp(state: AppViewState) {
               marketSyncing: state.skillsMarketSyncing ?? false,
               marketLastSyncedAt: state.skillsMarketLastSyncedAt ?? null,
               marketError: state.skillsMarketError ?? null,
+              // 分类筛选
+              activeCategory: state.skillsActiveCategory ?? "all",
               onFilterChange: (next) => (state.skillsFilter = next),
               onRefresh: () => loadSkills(state, { clearMessages: true }),
               onToggle: (key, enabled) => updateSkillEnabled(state, key, enabled),
@@ -399,12 +576,19 @@ export function renderApp(state: AppViewState) {
               onTabChange: (tab) => {
                 setActiveTab(state, tab);
                 if (tab === "remote") {
-                  // 优先使用新的市场加载（读本地索引）
-                  loadMarketSkills(state);
+                  // 加载市场数据
+                  loadMarketSkills(state).then(() => {
+                    // 如果市场数据为空，自动触发刷新
+                    const skills = state.skillsMarketResponse?.skills ?? [];
+                    if (skills.length === 0 && !state.skillsMarketSyncing) {
+                      refreshMarketSkills(state);
+                    }
+                  });
                 }
               },
               onRefreshRemote: () => refreshMarketSkills(state),
               onInstallRemote: (skillName) => installRemoteSkill(state, skillName),
+              onCategoryChange: (category) => (state.skillsActiveCategory = category),
             })
           : nothing}
 
@@ -556,6 +740,79 @@ export function renderApp(state: AppViewState) {
               onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
               assistantName: state.assistantName,
               assistantAvatar: state.assistantAvatar,
+              // Discovery props (首次使用发现)
+              showDiscovery: shouldShowDiscovery(
+                state.discoveryState,
+                state.chatMessages.length > 0 || state.chatStream !== null || state.chatLoading,
+                state.connected,
+              ),
+              discoveryProps: buildDiscoveryProps({
+                state: state.discoveryState,
+                onSuggestionClick: (prompt) => {
+                  handleDiscoverySuggestionClick(
+                    prompt,
+                    {
+                      onStateChange: (patch) => {
+                        state.discoveryState = { ...state.discoveryState, ...patch };
+                      },
+                    },
+                    (draft) => (state.chatMessage = draft),
+                  );
+                },
+                onSkip: () => {
+                  handleDiscoverySkip({
+                    onStateChange: (patch) => {
+                      state.discoveryState = { ...state.discoveryState, ...patch };
+                    },
+                  });
+                },
+                onRetry: () => {
+                  void runCapabilityDetection(state.client, {
+                    onStateChange: (patch) => {
+                      state.discoveryState = { ...state.discoveryState, ...patch };
+                    },
+                  });
+                },
+              }),
+              // License activation banner
+              needsActivation: !state.licenseState?.valid && !state.licenseState?.license,
+              onActivate: () => {
+                state.showLicenseDialog = "activation";
+              },
+              // License state for support/purchase UI
+              licenseState: state.licenseState,
+              onInlineActivate: async (key: string) => {
+                if (!state.client) return false;
+                state.licenseActivating = true;
+                state.licenseActivationError = null;
+                try {
+                  const result = await state.client.request("license.activate", { key });
+                  if (result && typeof result === "object") {
+                    const data = result as Record<string, unknown>;
+                    if (data.valid) {
+                      state.licenseState = {
+                        ...state.licenseState,
+                        valid: true,
+                        error: null,
+                        errorCode: null,
+                        license: data.license as typeof state.licenseState.license,
+                        device: data.device as typeof state.licenseState.device,
+                      };
+                      state.licenseActivating = false;
+                      // 激活成功后显示升级成功提示
+                      state.showLicenseDialog = "notification";
+                      return true;
+                    }
+                  }
+                  state.licenseActivating = false;
+                  state.licenseActivationError = "激活码无效，请检查后重试";
+                  return false;
+                } catch {
+                  state.licenseActivating = false;
+                  state.licenseActivationError = "激活失败，请稍后重试";
+                  return false;
+                }
+              },
             })
           : nothing}
 
@@ -662,11 +919,92 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
+
+        ${state.tab === "free-models"
+          ? renderFreeModels({
+              connected: state.connected,
+              loading: state.freeModelsLoading,
+              enabled: state.freeModelsEnabled,
+              providers: state.freeModelsProviders,
+              accounts: state.freeModelsAccounts,
+              stats: state.freeModelsStats,
+              switchHistory: state.freeModelsSwitchHistory,
+              error: state.freeModelsError,
+              configModalOpen: state.freeModelsConfigModalOpen,
+              configModalProvider: state.freeModelsConfigModalProvider,
+              configModalApiKey: state.freeModelsConfigModalApiKey,
+              configModalTesting: state.freeModelsConfigModalTesting,
+              configModalTestResult: state.freeModelsConfigModalTestResult,
+              configModalSaving: state.freeModelsConfigModalSaving,
+              deleteModalOpen: state.freeModelsDeleteModalOpen,
+              deleteModalProvider: state.freeModelsDeleteModalProvider,
+              deleteModalDeleting: state.freeModelsDeleteModalDeleting,
+              onToggleEnabled: (enabled) => toggleFreeModelsEnabled(state, enabled),
+              onOpenConfigModal: (provider) => openConfigModal(state, provider),
+              onCloseConfigModal: () => closeConfigModal(state),
+              onApiKeyChange: (apiKey) => updateApiKey(state, apiKey),
+              onTestConnection: () => testConnection(state),
+              onSaveConfig: () => saveFreeModelsConfig(state),
+              onOpenDeleteModal: (provider) => openDeleteModal(state, provider),
+              onCloseDeleteModal: () => closeDeleteModal(state),
+              onConfirmDelete: () => confirmDelete(state),
+              onSetPreferred: (providerId) => setPreferred(state, providerId),
+              onRefresh: () => refreshFreeModels(state),
+            })
+          : nothing}
       </main>
       ${renderExecApprovalPrompt(state)}
+      ${renderSkillInstallApproval(state)}
+      ${renderSkillInstallProgress(state)}
       ${renderLicenseDialogs(state)}
+      ${renderFeedbackModal(buildFeedbackProps(state))}
     </div>
   `;
+}
+
+/**
+ * 构建反馈组件 props
+ */
+function buildFeedbackProps(state: AppViewState): FeedbackViewProps {
+  return {
+    state: state.feedbackState,
+    onOpenModal: state.handleFeedbackOpen,
+    onCloseModal: state.handleFeedbackClose,
+    onTypeChange: (type) => {
+      state.feedbackState = { ...state.feedbackState, type };
+    },
+    onContentChange: (content) => {
+      state.feedbackState = { ...state.feedbackState, content };
+    },
+    onContactChange: (contact) => {
+      state.feedbackState = { ...state.feedbackState, contact };
+    },
+    onAddAttachment: (attachment) => {
+      state.feedbackState = {
+        ...state.feedbackState,
+        attachments: [...state.feedbackState.attachments, attachment],
+      };
+    },
+    onRemoveAttachment: (id) => {
+      state.feedbackState = {
+        ...state.feedbackState,
+        attachments: state.feedbackState.attachments.filter((a) => a.id !== id),
+      };
+    },
+    onSubmit: state.handleFeedbackSubmit,
+    onReset: () => {
+      state.feedbackState = {
+        ...state.feedbackState,
+        type: "suggestion",
+        content: "",
+        contact: "",
+        attachments: [],
+        submitting: false,
+        submitted: false,
+        error: null,
+      };
+    },
+  };
 }
 
 /**
@@ -702,10 +1040,53 @@ function renderLicenseDialogs(state: AppViewState) {
                 state.licenseState = {
                   ...state.licenseState,
                   valid: true,
+                  errorCode: null,
+                  deviceSwitchInfo: null,
+                  deviceSwitchCooldown: null,
                   license: data.license as typeof state.licenseState.license,
                   device: data.device as typeof state.licenseState.device,
                 };
               } else {
+                const errorCode = (data.errorCode as number | null) ?? null;
+                const device = data.device as Record<string, unknown> | null;
+                
+                // 处理单设备模式错误码
+                if (errorCode === 1010 && device?.existingDeviceName) {
+                  // 切换到设备切换确认弹窗
+                  state.licenseState = {
+                    ...state.licenseState,
+                    valid: false,
+                    errorCode,
+                    deviceSwitchInfo: {
+                      existingDeviceId: (device.existingDeviceId as string) ?? "",
+                      existingDeviceName: (device.existingDeviceName as string) ?? "未知设备",
+                      existingOsInfo: device.existingOsInfo as string | undefined,
+                      deviceLimit: device.deviceLimit as number | undefined,
+                      boundDevices: device.boundDevices as number | undefined,
+                    },
+                    deviceSwitchCooldown: null,
+                  };
+                  state.showLicenseDialog = "device-switch";
+                  return;
+                }
+                
+                if (errorCode === 1011 && device?.cooldownRemainingHours !== undefined) {
+                  // 切换到冷却期弹窗
+                  state.licenseState = {
+                    ...state.licenseState,
+                    valid: false,
+                    errorCode,
+                    deviceSwitchInfo: null,
+                    deviceSwitchCooldown: {
+                      cooldownRemainingHours: (device.cooldownRemainingHours as number) ?? 24,
+                      cooldownEndsAt: (device.cooldownEndsAt as string) ?? "",
+                    },
+                  };
+                  state.showLicenseDialog = "device-switch-cooldown";
+                  return;
+                }
+                
+                // 其他错误：显示错误消息
                 state.licenseActivationError = (data.errorMessage as string) || "激活失败";
               }
             }
@@ -739,10 +1120,12 @@ function renderLicenseDialogs(state: AppViewState) {
         return renderRenewalReminderDialog(
           state.licenseState.renewalReminder,
           () => {
+            // 点击"立即续费"
             state.showLicenseDialog = null;
           },
           () => {
-            state.showLicenseDialog = null;
+            // 点击"稍后提醒"- 根据紧急程度设置不同的延迟时间
+            handleRenewalReminderDismiss(state);
           },
         );
       }
@@ -806,11 +1189,18 @@ function renderLicenseDialogs(state: AppViewState) {
         state.licenseState?.device?.deviceLimit || 2,
         async (deviceId) => {
           const result = await state.client?.request("license.unbind", { deviceId });
-          if (result && typeof result === "object" && (result as Record<string, unknown>).success) {
-            // 刷新设备列表
-            const devices = await state.client?.request("license.devices", {});
-            if (devices && typeof devices === "object") {
-              state.licenseBoundDevices = (devices as Record<string, unknown>).devices as typeof state.licenseBoundDevices || [];
+          if (result && typeof result === "object") {
+            const unbindResult = result as Record<string, unknown>;
+            if (unbindResult.success) {
+              // 刷新设备列表
+              const devices = await state.client?.request("license.devices", {});
+              if (devices && typeof devices === "object") {
+                state.licenseBoundDevices = (devices as Record<string, unknown>).devices as typeof state.licenseBoundDevices || [];
+              }
+            } else {
+              // 显示解绑错误（如冷却中）
+              const errorMsg = unbindResult.error as string || "解绑失败，请稍后重试";
+              window.alert(errorMsg);
             }
           }
         },
@@ -819,6 +1209,76 @@ function renderLicenseDialogs(state: AppViewState) {
         },
         false,
       );
+
+    case "device-switch":
+      // 单设备模式：确认设备切换（errorCode=1010）
+      if (state.licenseState?.deviceSwitchInfo) {
+        return renderDeviceSwitchDialog(
+          state.licenseState.deviceSwitchInfo,
+          async () => {
+            // 确认切换
+            state.licenseActivating = true;
+            try {
+              const result = await state.client?.request("license.switch", {});
+              if (result && typeof result === "object") {
+                const switchResult = result as Record<string, unknown>;
+                if (switchResult.valid) {
+                  // 切换成功
+                  state.showLicenseDialog = null;
+                  state.licenseState = {
+                    ...state.licenseState,
+                    valid: true,
+                    error: null,
+                    errorCode: null,
+                    license: switchResult.license as typeof state.licenseState.license,
+                    device: switchResult.device as typeof state.licenseState.device,
+                    deviceSwitchInfo: null,
+                    deviceSwitchCooldown: null,
+                  };
+                } else {
+                  // 切换失败（可能进入冷却期）
+                  if (switchResult.errorCode === 1011) {
+                    state.licenseState = {
+                      ...state.licenseState,
+                      errorCode: 1011,
+                      deviceSwitchCooldown: {
+                        cooldownRemainingHours: switchResult.cooldownRemainingHours as number,
+                        cooldownEndsAt: switchResult.cooldownEndsAt as string,
+                      },
+                    };
+                    state.showLicenseDialog = "device-switch-cooldown";
+                  } else {
+                    const errorMsg = (switchResult.error as string) || "设备切换失败";
+                    window.alert(errorMsg);
+                  }
+                }
+              }
+            } catch (err) {
+              window.alert(`设备切换失败: ${err}`);
+            } finally {
+              state.licenseActivating = false;
+            }
+          },
+          () => {
+            // 取消切换
+            state.showLicenseDialog = null;
+          },
+          state.licenseActivating,
+        );
+      }
+      return nothing;
+
+    case "device-switch-cooldown":
+      // 单设备模式：冷却期提示（errorCode=1011）
+      if (state.licenseState?.deviceSwitchCooldown) {
+        return renderDeviceSwitchCooldownDialog(
+          state.licenseState.deviceSwitchCooldown,
+          () => {
+            state.showLicenseDialog = null;
+          },
+        );
+      }
+      return nothing;
 
     default:
       return nothing;

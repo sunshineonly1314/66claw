@@ -13,7 +13,34 @@ export type NormalizedPluginsConfig = {
   entries: Record<string, { enabled?: boolean; config?: unknown }>;
 };
 
-export const BUNDLED_ENABLED_BY_DEFAULT = new Set<string>();
+// 所有渠道插件默认启用，这样 channels.* 配置变更可以热更新生效
+// 无需在 plugins.entries 中显式启用
+// 支持国内用户和海外华人使用各种渠道
+export const BUNDLED_ENABLED_BY_DEFAULT = new Set<string>([
+  // 国内渠道
+  "feishu",
+  "dingtalk",
+  "wecom",
+  "qqbot",
+  // 国际渠道
+  "telegram",
+  "discord",
+  "slack",
+  "signal",
+  "whatsapp",
+  "imessage",
+  "matrix",
+  "msteams",
+  "line",
+  "googlechat",
+  "nostr",
+  "nextcloud-talk",
+  "mattermost",
+  "tlon",
+  "zalo",
+  "zalouser",
+  "bluebubbles",
+]);
 
 const normalizeList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];

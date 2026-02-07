@@ -1,8 +1,58 @@
 import { Type } from "@sinclair/typebox";
+import fs from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
 import type { ClawdbotPluginApi } from "../../../src/plugins/types.js";
+
+/**
+ * Sensitive directories that should not be used as cwd.
+ * ClawdbotCN 专属：阻止访问敏感系统目录
+ */
+const BLOCKED_CWD_PATTERNS = [
+  // Windows system directories (match directory and all subdirectories)
+  /^[a-z]:\\windows(\\|$)/i,
+  /^[a-z]:\\windows\\system32(\\|$)/i,
+  /^[a-z]:\\windows\\syswow64(\\|$)/i,
+  // Unix system directories (match directory and all subdirectories)
+  /^\/etc(\/|$)/,
+  /^\/root(\/|$)/,
+  /^\/var\/log(\/|$)/,
+  /^\/proc(\/|$)/,
+  /^\/sys(\/|$)/,
+  /^\/dev(\/|$)/,
+];
+
+/**
+ * Validate cwd path to prevent path traversal and access to sensitive directories.
+ * ClawdbotCN 专属：路径注入防护
+ */
+function validateCwdPath(cwd: string): void {
+  // Normalize the path to resolve any . or .. components
+  const normalizedCwd = path.resolve(cwd);
+
+  // Check against blocked patterns
+  for (const pattern of BLOCKED_CWD_PATTERNS) {
+    if (pattern.test(normalizedCwd)) {
+      throw new Error(`Blocked cwd: access to system directory not allowed: ${cwd}`);
+    }
+  }
+
+  // Verify the directory exists
+  if (path.isAbsolute(normalizedCwd)) {
+    try {
+      const stat = fs.statSync(normalizedCwd);
+      if (!stat.isDirectory()) {
+        throw new Error(`Invalid cwd: ${cwd} is not a directory`);
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error(`Invalid cwd: directory does not exist: ${cwd}`);
+      }
+      throw err;
+    }
+  }
+}
 
 type LobsterEnvelope =
   | {
@@ -174,7 +224,12 @@ export function createLobsterTool(api: ClawdbotPluginApi) {
       const execPath = resolveExecutablePath(
         typeof params.lobsterPath === "string" ? params.lobsterPath : undefined,
       );
-      const cwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : process.cwd();
+      const rawCwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : process.cwd();
+      
+      // ClawdbotCN 专属：cwd 路径验证 - 防止路径遍历攻击
+      validateCwdPath(rawCwd);
+      const cwd = rawCwd;
+      
       const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 20_000;
       const maxStdoutBytes = typeof params.maxStdoutBytes === "number" ? params.maxStdoutBytes : 512_000;
 

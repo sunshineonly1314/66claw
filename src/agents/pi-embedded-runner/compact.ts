@@ -29,7 +29,7 @@ import { resolveClawdbotDocsPath } from "../docs-path.js";
 import type { ExecElevatedDefaults } from "../bash-tools.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import { getApiKeyForModel, resolveModelAuthMode } from "../model-auth.js";
-import { ensureClawdbotModelsJson } from "../models-config.js";
+import { ensureClawdbotModelsJson, getMergedProvidersForAgent } from "../models-config.js";
 import {
   ensureSessionHeader,
   validateAnthropicTurns,
@@ -116,11 +116,16 @@ export async function compactEmbeddedPiSessionDirect(
   const modelId = (params.model ?? DEFAULT_MODEL).trim() || DEFAULT_MODEL;
   const agentDir = params.agentDir ?? resolveClawdbotAgentDir();
   await ensureClawdbotModelsJson(params.config, agentDir);
+  const mergedProviders = await getMergedProvidersForAgent(params.config, agentDir);
+  const cfgForModel =
+    Object.keys(mergedProviders).length > 0
+      ? { ...params.config, models: { ...params.config?.models, providers: mergedProviders } }
+      : params.config;
   const { model, error, authStorage, modelRegistry } = resolveModel(
     provider,
     modelId,
     agentDir,
-    params.config,
+    cfgForModel,
   );
   if (!model) {
     return {
@@ -132,7 +137,7 @@ export async function compactEmbeddedPiSessionDirect(
   try {
     const apiKeyInfo = await getApiKeyForModel({
       model,
-      cfg: params.config,
+      cfg: cfgForModel,
       profileId: params.authProfileId,
       agentDir,
     });

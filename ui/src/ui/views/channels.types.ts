@@ -54,6 +54,45 @@ export type DingtalkStatus = {
   } | null;
 };
 
+// 企业微信渠道状态类型
+export type WecomStatus = {
+  configured?: boolean;
+  running?: boolean;
+  connected?: boolean;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  lastProbeAt?: number | null;
+  probe?: {
+    ok?: boolean;
+    status?: string;
+    error?: string;
+    corp?: {
+      name?: string;
+    };
+  } | null;
+};
+
+// QQ 机器人渠道状态类型
+export type QqbotStatus = {
+  configured?: boolean;
+  running?: boolean;
+  connected?: boolean;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+  lastProbeAt?: number | null;
+  probe?: {
+    ok?: boolean;
+    status?: string;
+    error?: string;
+    botInfo?: {
+      id?: string;
+      username?: string;
+    };
+  } | null;
+};
+
 export type ChannelsProps = {
   connected: boolean;
   loading: boolean;
@@ -90,6 +129,8 @@ export type ChannelsProps = {
 export type ChannelsChannelData = {
   feishu?: FeishuStatus;
   dingtalk?: DingtalkStatus;
+  wecom?: WecomStatus;
+  qqbot?: QqbotStatus;
   whatsapp?: WhatsAppStatus;
   telegram?: TelegramStatus;
   discord?: DiscordStatus | null;

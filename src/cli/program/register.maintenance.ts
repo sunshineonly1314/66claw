@@ -96,6 +96,8 @@ export function registerMaintenanceCommands(program: Command) {
     .option("--yes", t("cli.reset.skipConfirm"), false)
     .option("--non-interactive", t("cli.reset.disablePrompts"), false)
     .option("--dry-run", t("cli.reset.dryRun"), false)
+    .option("--backup", t("cli.uninstall.backup"), true)
+    .option("--no-backup", t("cli.uninstall.noBackup"))
     .action(async (opts) => {
       await runCommandWithRuntime(defaultRuntime, async () => {
         await uninstallCommand(defaultRuntime, {
@@ -107,6 +109,7 @@ export function registerMaintenanceCommands(program: Command) {
           yes: Boolean(opts.yes),
           nonInteractive: Boolean(opts.nonInteractive),
           dryRun: Boolean(opts.dryRun),
+          backup: opts.backup,
         });
       });
     });

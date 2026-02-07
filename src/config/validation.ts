@@ -164,13 +164,15 @@ export function validateConfigObjectWithPlugins(raw: unknown):
     }
   }
 
+  // Missing plugin references are warnings, not errors — they should not
+  // prevent the gateway from starting.  The plugin config is simply inactive.
   const entries = pluginsConfig?.entries;
   if (entries && isRecord(entries)) {
     for (const pluginId of Object.keys(entries)) {
       if (!knownIds.has(pluginId)) {
-        issues.push({
+        warnings.push({
           path: `plugins.entries.${pluginId}`,
-          message: `plugin not found: ${pluginId}`,
+          message: `plugin not found: ${pluginId} (config ignored)`,
         });
       }
     }
@@ -180,9 +182,9 @@ export function validateConfigObjectWithPlugins(raw: unknown):
   for (const pluginId of allow) {
     if (typeof pluginId !== "string" || !pluginId.trim()) continue;
     if (!knownIds.has(pluginId)) {
-      issues.push({
+      warnings.push({
         path: "plugins.allow",
-        message: `plugin not found: ${pluginId}`,
+        message: `plugin not found: ${pluginId} (entry ignored)`,
       });
     }
   }
@@ -191,18 +193,18 @@ export function validateConfigObjectWithPlugins(raw: unknown):
   for (const pluginId of deny) {
     if (typeof pluginId !== "string" || !pluginId.trim()) continue;
     if (!knownIds.has(pluginId)) {
-      issues.push({
+      warnings.push({
         path: "plugins.deny",
-        message: `plugin not found: ${pluginId}`,
+        message: `plugin not found: ${pluginId} (entry ignored)`,
       });
     }
   }
 
   const memorySlot = normalizedPlugins.slots.memory;
   if (typeof memorySlot === "string" && memorySlot.trim() && !knownIds.has(memorySlot)) {
-    issues.push({
+    warnings.push({
       path: "plugins.slots.memory",
-      message: `plugin not found: ${memorySlot}`,
+      message: `plugin not found: ${memorySlot} (slot ignored)`,
     });
   }
 

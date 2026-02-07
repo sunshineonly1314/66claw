@@ -7,11 +7,16 @@ export const MINIMAX_HOSTED_MODEL_REF = `minimax/${MINIMAX_HOSTED_MODEL_ID}`;
 export const DEFAULT_MINIMAX_CONTEXT_WINDOW = 200000;
 export const DEFAULT_MINIMAX_MAX_TOKENS = 8192;
 
-export const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1";
-export const MOONSHOT_DEFAULT_MODEL_ID = "kimi-k2-0905-preview";
+export const MOONSHOT_BASE_URL = "https://api.moonshot.cn/v1";
+export const MOONSHOT_DEFAULT_MODEL_ID = "kimi-latest";
 export const MOONSHOT_DEFAULT_MODEL_REF = `moonshot/${MOONSHOT_DEFAULT_MODEL_ID}`;
-export const MOONSHOT_DEFAULT_CONTEXT_WINDOW = 256000;
+export const MOONSHOT_DEFAULT_CONTEXT_WINDOW = 128000;
 export const MOONSHOT_DEFAULT_MAX_TOKENS = 8192;
+// Moonshot 模型配置
+export const KIMI_LATEST_MODEL_ID = "kimi-latest";
+export const MOONSHOT_V1_8K_MODEL_ID = "moonshot-v1-8k";
+export const MOONSHOT_V1_32K_MODEL_ID = "moonshot-v1-32k";
+export const MOONSHOT_V1_128K_MODEL_ID = "moonshot-v1-128k";
 export const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1";
 export const KIMI_CODE_MODEL_ID = "kimi-for-coding";
 export const KIMI_CODE_MODEL_REF = `kimi-code/${KIMI_CODE_MODEL_ID}`;
@@ -94,9 +99,9 @@ export function buildMinimaxApiModelDefinition(modelId: string): ModelDefinition
 export function buildMoonshotModelDefinition(): ModelDefinitionConfig {
   return {
     id: MOONSHOT_DEFAULT_MODEL_ID,
-    name: "Kimi K2 0905 Preview",
+    name: "Kimi Latest (推荐)",
     reasoning: false,
-    input: ["text"],
+    input: ["text", "image"],
     cost: MOONSHOT_DEFAULT_COST,
     contextWindow: MOONSHOT_DEFAULT_CONTEXT_WINDOW,
     maxTokens: MOONSHOT_DEFAULT_MAX_TOKENS,

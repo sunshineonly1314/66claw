@@ -8,6 +8,17 @@
  */
 
 import { EventEmitter } from 'events';
+import { shouldUseCNMirror, CLAWDSKILLSPROXY_CONFIG } from '../config/cn-mirrors.js';
+
+// 能力包下载基础 URL
+const CAPABILITY_BASE_URL = shouldUseCNMirror()
+  ? `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${CLAWDSKILLSPROXY_CONFIG.endpoints.capabilities}`  // 国内：ClawdSkillsProxy
+  : 'https://oss.clawdbot.cn/caps';                         // 国外：原始 OSS
+
+// WSL 能力包下载基础 URL
+const CAPABILITY_WSL_URL = shouldUseCNMirror()
+  ? `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${CLAWDSKILLSPROXY_CONFIG.endpoints.capabilitiesWsl}`  // 国内
+  : 'https://oss.clawdbot.cn/wsl';                          // 国外
 
 // ============================================
 // 能力包定义
@@ -29,6 +40,7 @@ export interface CapabilityPack {
     dependencies: string[];
     securityLevel: 'safe' | 'moderate' | 'sensitive';
     autoApprove: boolean;  // 是否自动批准（不需要用户确认）
+    _fileName?: string;    // 下载文件名（用于动态 URL 生成）
   };
 }
 
@@ -86,12 +98,13 @@ export const CAPABILITY_PACKS: Record<string, CapabilityPack> = {
     ],
     size: '约 50MB',
     installTime: '约 1 分钟',
-    downloadUrl: 'https://oss.clawdbot.cn/caps/browser-pack.zip',
+    downloadUrl: '', // 动态生成
     _internal: {
       type: 'download',
       dependencies: [],
       securityLevel: 'moderate',
       autoApprove: false,  // 首次需要确认
+      _fileName: 'browser-pack.zip',
     },
   },
   
@@ -108,12 +121,13 @@ export const CAPABILITY_PACKS: Record<string, CapabilityPack> = {
     ],
     size: '约 2MB',
     installTime: '约 10 秒',
-    downloadUrl: 'https://oss.clawdbot.cn/caps/files-pack.zip',
+    downloadUrl: '', // 动态生成
     _internal: {
       type: 'download',
       dependencies: [],
       securityLevel: 'moderate',
       autoApprove: false,
+      _fileName: 'files-pack.zip',
     },
   },
   
@@ -130,12 +144,13 @@ export const CAPABILITY_PACKS: Record<string, CapabilityPack> = {
     ],
     size: '约 5MB',
     installTime: '约 15 秒',
-    downloadUrl: 'https://oss.clawdbot.cn/caps/notes-pack.zip',
+    downloadUrl: '', // 动态生成
     _internal: {
       type: 'download',
       dependencies: [],
       securityLevel: 'safe',
       autoApprove: true,
+      _fileName: 'notes-pack.zip',
     },
   },
   
@@ -152,12 +167,13 @@ export const CAPABILITY_PACKS: Record<string, CapabilityPack> = {
     ],
     size: '约 3MB',
     installTime: '约 10 秒',
-    downloadUrl: 'https://oss.clawdbot.cn/caps/image-pack.zip',
+    downloadUrl: '', // 动态生成
     _internal: {
       type: 'download',
       dependencies: [],
       securityLevel: 'safe',
       autoApprove: true,
+      _fileName: 'image-pack.zip',
     },
   },
   
@@ -174,12 +190,13 @@ export const CAPABILITY_PACKS: Record<string, CapabilityPack> = {
     ],
     size: '约 3MB',
     installTime: '约 10 秒',
-    downloadUrl: 'https://oss.clawdbot.cn/caps/smarthome-pack.zip',
+    downloadUrl: '', // 动态生成
     _internal: {
       type: 'download',
       dependencies: [],
       securityLevel: 'moderate',
       autoApprove: false,
+      _fileName: 'smarthome-pack.zip',
     },
   },
   
@@ -198,15 +215,36 @@ export const CAPABILITY_PACKS: Record<string, CapabilityPack> = {
     ],
     size: '约 150MB',
     installTime: '约 3 分钟',
-    downloadUrl: 'https://oss.clawdbot.cn/wsl/clawdbot-wsl-latest.tar.gz',
+    downloadUrl: '', // 动态生成
     _internal: {
       type: 'wsl',
       dependencies: [],
       securityLevel: 'sensitive',
       autoApprove: false,
+      _fileName: 'clawdbot-wsl-latest.tar.gz',
     },
   },
 };
+
+/**
+ * 获取能力包下载 URL（自动选择国内/国外源）
+ */
+export function getCapabilityDownloadUrl(capabilityId: string): string {
+  const pack = CAPABILITY_PACKS[capabilityId];
+  if (!pack) return '';
+  
+  const fileName = (pack._internal as { _fileName?: string })._fileName;
+  if (!fileName) return '';
+  
+  const isWsl = pack._internal.type === 'wsl';
+  
+  // WSL 使用单独的端点
+  if (isWsl) {
+    return `${CAPABILITY_WSL_URL}/${fileName}`;
+  }
+  
+  return `${CAPABILITY_BASE_URL}/${fileName}`;
+}
 
 // ============================================
 // 意图 -> 能力 映射
@@ -448,13 +486,22 @@ export class CapabilityManager extends EventEmitter {
   // ============================================
   
   private async downloadAndExtract(
-    url: string, 
+    _url: string, 
     capabilityId: string,
     onProgress: (percent: number) => void
   ): Promise<void> {
+    // 获取动态 URL（自动选择国内/国外源）
+    const downloadUrl = getCapabilityDownloadUrl(capabilityId);
+    if (!downloadUrl) {
+      throw new Error(`未找到能力包 ${capabilityId} 的下载地址`);
+    }
+    
     // TODO: 实现下载和解压逻辑
     // 使用 BITS 或 fetch 下载
     // 解压到 ~/.clawdbot/capabilities/{capabilityId}/
+    // 国内源需要添加认证头：getClawdSkillsProxyHeaders()
+    
+    console.log(`下载能力包: ${downloadUrl}`);
     
     // 模拟下载
     for (let i = 0; i <= 100; i += 10) {

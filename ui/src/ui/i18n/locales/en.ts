@@ -74,6 +74,7 @@ export const en = {
   "common.help": "Help",
   "common.version": "Version",
   "common.language": "Language",
+  "common.saving": "Saving...",
 
   // ============================================================================
   // 导航 (Navigation)
@@ -83,6 +84,7 @@ export const en = {
   "nav.agent": "Agent",
   "nav.settings": "Settings",
   "nav.overview": "Overview",
+  "nav.usage": "Usage",
   "nav.channels": "Channels",
   "nav.instances": "Instances",
   "nav.sessions": "Sessions",
@@ -94,6 +96,7 @@ export const en = {
   "nav.debug": "Debug",
   "nav.logs": "Logs",
   "nav.docs": "Docs",
+  "nav.freeModels": "Free Models",
 
   // ============================================================================
   // 概览页 (Overview)
@@ -155,8 +158,11 @@ export const en = {
   "chat.thinkingHigh": "High",
   "chat.waiting": "Waiting for response",
   "chat.waitingSeconds": "{{seconds}}s",
-  "chat.timeoutHint": "No response received. Please check if the AI model has sufficient token credits.",
+  "chat.timeoutHint": "Model response error. Please check your model API configuration.",
   "chat.stillWaiting": "Still waiting, please be patient...",
+  "chat.placeholder.default": "Message (↩ to send, Shift+↩ for line breaks, paste images)",
+  "chat.placeholder.withImages": "Add a message or paste more images...",
+  "chat.placeholder.disconnected": "Connect to the gateway to start chatting...",
 
   // ============================================================================
   // 渠道页 (Channels)
@@ -187,7 +193,6 @@ export const en = {
   "channels.imessage": "iMessage",
   "channels.feishu": "Feishu",
   "channels.dingtalk": "DingTalk",
-  // "channels.wecom": "WeCom",  // Not supported yet
   // Feishu specific
   "channels.feishu.description": "Feishu enterprise app bot for internal communication and collaboration.",
   "channels.feishu.appId": "App ID",
@@ -205,19 +210,60 @@ export const en = {
   "channels.feishu.verificationTokenHint": "Verification Token from Event Subscription (optional)",
   "channels.feishu.tenant": "Tenant",
   // DingTalk specific
-  "channels.dingtalk.description": "DingTalk enterprise app bot for business communication and collaboration.",
-  "channels.dingtalk.appKey": "App Key",
-  "channels.dingtalk.appSecret": "App Secret",
+  "channels.dingtalk.description": "DingTalk enterprise app bot. Recommended: Stream mode (no public IP needed), supports AI Card streaming.",
+  "channels.dingtalk.appKey": "App Key (Client ID)",
+  "channels.dingtalk.appSecret": "App Secret (Client Secret)",
   "channels.dingtalk.robotCode": "Robot Token",
   "channels.dingtalk.webhookPath": "Webhook Path",
-  "channels.dingtalk.configTitle": "DingTalk App Configuration",
-  "channels.dingtalk.configDesc": "Get the following information from DingTalk Open Platform",
-  "channels.dingtalk.docsUrl": "https://open.dingtalk.com/document/orgapp/create-an-interface-based-chatbot",
-  "channels.dingtalk.docsLabel": "Setup Guide",
-  "channels.dingtalk.appKeyHint": "Found in DingTalk Open Platform → App Info → Credentials",
-  "channels.dingtalk.appSecretHint": "App Secret from the platform",
-  "channels.dingtalk.robotCodeHint": "Robot Token for direct messages (optional)",
+  "channels.dingtalk.configTitle": "DingTalk Setup Guide",
+  "channels.dingtalk.configDesc": "Create an enterprise app on DingTalk Open Platform, select Stream mode",
+  "channels.dingtalk.docsUrl": "https://docs.clawd.bot/channels/dingtalk",
+  "channels.dingtalk.docsLabel": "Full Setup Guide",
+  "channels.dingtalk.appKeyHint": "In 'Credentials & Info' page, copy Client ID",
+  "channels.dingtalk.appSecretHint": "In 'Credentials & Info' page, click view and copy (only shown once!)",
+  "channels.dingtalk.robotCodeHint": "Robot code for direct messages (optional)",
   "channels.dingtalk.corp": "Corporation",
+  // WeCom specific
+  "channels.wecom": "WeCom",
+  "channels.wecom.description": "WeChat Work enterprise app bot. Receives messages via callback, requires publicly accessible server or intranet penetration.",
+  "channels.wecom.corpId": "Corporation ID (CorpID)",
+  "channels.wecom.agentId": "Application ID (AgentId)",
+  "channels.wecom.agentSecret": "Application Secret",
+  "channels.wecom.token": "Callback Token",
+  "channels.wecom.encodingAESKey": "Callback EncodingAESKey",
+  "channels.wecom.configTitle": "WeCom App Configuration",
+  "channels.wecom.configDesc": "Get the following information from WeChat Work Admin Console",
+  "channels.wecom.docsUrl": "https://developer.work.weixin.qq.com/document/path/90930",
+  "channels.wecom.docsLabel": "Setup Guide",
+  "channels.wecom.corpIdHint": "Found in My Enterprise → Enterprise Info (at bottom)",
+  "channels.wecom.agentIdHint": "Found at top of app details page",
+  "channels.wecom.agentSecretHint": "Click View in app details → scan QR → copy immediately",
+  "channels.wecom.tokenHint": "Token from Receive Messages → Set API Receive",
+  "channels.wecom.encodingAESKeyHint": "EncodingAESKey from Receive Messages → Set API Receive",
+  "channels.wecom.corp": "Corporation",
+  "channels.wecom.multiAccount": "Multi-Account Configuration",
+  "channels.wecom.multiAccountDesc": "Configure multiple WeCom apps, each with independent webhook path and policies",
+  "channels.wecom.addAccount": "Add Account",
+  "channels.wecom.accountName": "Account Name",
+  "channels.wecom.accountNameHint": "Used to distinguish different WeCom apps, e.g. 'Customer Service Bot', 'Internal Assistant'",
+  "channels.wecom.defaultAccount": "Default Account",
+  "channels.wecom.webhookPathHint": "Each account can have its own callback path, e.g. /wecom/sales",
+  // QQ Bot specific
+  "channels.qqbot": "QQ",
+  "channels.qqbot.description": "QQ Bot status and configuration. Supports official QQ Open Platform bots.",
+  "channels.qqbot.appId": "AppID",
+  "channels.qqbot.appSecret": "AppSecret",
+  "channels.qqbot.token": "Token",
+  "channels.qqbot.webhookPath": "Webhook Path",
+  "channels.qqbot.sandbox": "Sandbox Mode",
+  "channels.qqbot.configTitle": "QQ Bot Configuration",
+  "channels.qqbot.configDesc": "Create a bot on QQ Open Platform and get the following credentials",
+  "channels.qqbot.docsUrl": "https://q.qq.com/wiki/develop/api-v2/",
+  "channels.qqbot.docsLabel": "Configuration Guide",
+  "channels.qqbot.appIdHint": "Found in QQ Open Platform → App Management → App Details",
+  "channels.qqbot.appSecretHint": "App Secret (ClientSecret)",
+  "channels.qqbot.tokenHint": "Callback verification token (optional)",
+  "channels.qqbot.sandboxHint": "Enable sandbox environment for testing",
   "channels.matrix": "Matrix",
   "channels.msteams": "Microsoft Teams",
   // WhatsApp specific
@@ -309,6 +355,7 @@ export const en = {
   "skills.blocked": "blocked",
   "skills.disabled": "disabled",
   "skills.missing": "Missing",
+  "skills.noDescription": "Install to learn more",
   "skills.reason": "Reason",
   "skills.blockedByAllowlist": "blocked by allowlist",
   // Skills help text
@@ -331,8 +378,54 @@ export const en = {
   "skills.remote.notInstalled": "Not Installed",
   "skills.remote.install": "Install",
   "skills.remote.alreadyInstalled": "Already Installed",
+  "skills.incompatible": "Not supported on this system",
+  "skills.incompatible.macos": "macOS only",
+  "skills.incompatible.windows": "Windows only",
+  "skills.incompatible.linux": "Linux only",
   "skills.market.syncing": "Syncing...",
   "skills.market.lastSynced": "Updated",
+  "skills.market.emptyHint": "No skills available in the market yet.",
+
+  // Skills Search & Categories
+  "skills.search.title": "Discover Skills",
+  "skills.search.subtitle": "Tell me what you want to do, I'll help you find the right skill",
+  "skills.search.placeholder": "e.g. check stocks, control smart home, send messages...",
+  "skills.search.detected": "I found related skills",
+  "skills.category.label": "Browse by Category",
+  "skills.category.all": "All",
+  "skills.category.allDesc": "Show all available skills",
+  "skills.category.lifestyle": "Lifestyle",
+  "skills.category.lifestyleDesc": "Weather, food delivery, maps, music, smart home",
+  "skills.category.finance": "Finance",
+  "skills.category.financeDesc": "Stocks, funds, budgeting, investments",
+  "skills.category.computer": "Computer",
+  "skills.category.computerDesc": "Screenshots, files, system control, terminal",
+  "skills.category.productivity": "Productivity",
+  "skills.category.productivityDesc": "Notes, reminders, calendar, tasks, email",
+  "skills.category.creative": "Creative",
+  "skills.category.creativeDesc": "Images, video, drawing, content generation",
+  "skills.category.communication": "Communication",
+  "skills.category.communicationDesc": "Messaging, social media, chat, calls",
+  "skills.category.development": "Development",
+  "skills.category.developmentDesc": "GitHub, code, debugging, APIs",
+  "skills.clearFilters": "Clear filters",
+  "skills.noResults.title": "No matching skills found",
+  "skills.noResults.desc": "No skills match \"{query}\", but that's okay!",
+  "skills.noResults.suggestion.title": "Don't have what you need?",
+  "skills.noResults.suggestion.desc": "You can request new skills or use Skill Creator to build your own. Tell the AI assistant what you want to accomplish!",
+  // Skills diagnostic card
+  "skills.diagnostic.allGood": "✅ All skills are working",
+  "skills.diagnostic.issuesFound": "⚠️ Some issues found",
+  "skills.diagnostic.refresh": "Check again",
+  "skills.diagnostic.eligible": "Ready",
+  "skills.diagnostic.blocked": "Missing deps",
+  "skills.diagnostic.disabled": "Disabled",
+  "skills.diagnostic.missingTools": "Missing CLI tools",
+  "skills.diagnostic.missingKeys": "Missing API keys",
+  "skills.diagnostic.missingConfig": "Missing configuration",
+  "skills.diagnostic.installHint": "Click the Install button on skill cards to auto-install",
+  "skills.diagnostic.keyHint": "Enter API keys in skill cards and click Save",
+  "skills.diagnostic.configHint": "Configure options in the Settings page",
 
   // ============================================================================
   // 节点页 (Nodes)
@@ -484,6 +577,8 @@ export const en = {
   // 页面副标题 (Page Subtitles)
   // ============================================================================
   "subtitle.overview": "Gateway status, entry points, and a fast health read.",
+  "subtitle.freeModels": "ClawdbotCN exclusive, daily free model seamless switching.",
+  "subtitle.usage": "Usage statistics, session logs, and data insights.",
   "subtitle.channels": "Manage channels and settings.",
   "subtitle.instances": "Presence beacons from connected clients and nodes.",
   "subtitle.sessions": "Inspect active sessions and adjust per-session defaults.",
@@ -801,6 +896,15 @@ export const en = {
   "playground.missing.bin": "CLI tool",
   "playground.missing.env": "Environment variable",
   "playground.missing.config": "Config setting",
+  "playground.installDeps": "Install Dependencies",
+  "playground.installing": "Installing...",
+  "playground.installSuccess": "Installed! Redirecting...",
+  "playground.installFailed": "Installation failed",
+  "playground.oneClickInstall": "Install",
+  "playground.goNotInstalled": "Go is not installed, please install Go first",
+  "playground.nodeNotInstalled": "Node.js is not installed, please install Node.js first",
+  "playground.brewNotInstalled": "Homebrew is not installed (macOS only)",
+  "playground.uvNotInstalled": "uv is not installed, please install uv first",
   "playground.category.productivity": "Productivity",
   "playground.category.productivityDesc": "Note-taking, task management, password managers, and more to boost your efficiency.",
   "playground.category.development": "Development",
@@ -819,4 +923,599 @@ export const en = {
   "playground.category.systemDesc": "Packaging, deployment, and system utilities.",
   "playground.category.other": "Other",
   "playground.category.otherDesc": "Miscellaneous skills and utilities.",
+
+  // ============================================================================
+  // Branding & Footer
+  // ============================================================================
+  "brand.name": "ClawbotCN",
+  "brand.tagline": "AI Assistant, Making Work Easier",
+  "brand.poweredBy": "Powered by tecbinai",
+  "brand.tecbinai": "tecbinai",
+  "brand.tecbinaiUrl": "https://www.tecbinai.com",
+  "brand.tecbinaiDesc": "Track AI Latest Content",
+  "brand.copyright": "ClawbotCN © 2024-2026",
+  "footer.visitTecbinai": "Visit tecbinai",
+  "footer.trackAI": "Track AI Latest Content",
+  "footer.contactUs": "Contact Us",
+  "footer.docs": "Documentation",
+  "footer.faq": "FAQ",
+
+  // ============================================================================
+  // Onboarding
+  // ============================================================================
+  "onboarding.welcome": "Welcome to ClawbotCN",
+  "onboarding.subtitle": "Your AI assistant is ready",
+  "onboarding.step1.title": "Connect Gateway",
+  "onboarding.step1.desc": "Ensure the gateway service is running",
+  "onboarding.step2.title": "Configure Model",
+  "onboarding.step2.desc": "Select and configure your preferred AI model",
+  "onboarding.step3.title": "Start Chatting",
+  "onboarding.step3.desc": "Begin your conversation with AI assistant",
+  "onboarding.skip": "Skip",
+  "onboarding.next": "Next",
+  "onboarding.prev": "Previous",
+  "onboarding.finish": "Get Started",
+  "onboarding.restart": "View Guide Again",
+
+  // ============================================================================
+  // Chat Welcome
+  // ============================================================================
+  "chat.welcome.title": "Start a Conversation",
+  "chat.welcome.subtitle": "I can help you with various tasks",
+  "chat.welcome.tryAsk": "Try asking:",
+  "chat.welcome.example1": "What's the weather in Beijing today?",
+  "chat.welcome.example2": "Generate an image of sunset mountains",
+  "chat.welcome.example3": "Help me write a work email",
+  "chat.welcome.example4": "Analyze this CSV file data",
+  "chat.welcome.example5": "Execute a Git command",
+  "chat.welcome.capabilities": "My Capabilities",
+  "chat.welcome.capability.chat": "Smart Chat - Q&A, brainstorming, writing assistance",
+  "chat.welcome.capability.tool": "Tool Calls - Search, code execution, file operations",
+  "chat.welcome.capability.automation": "Automation - Scheduled tasks, notifications, workflows",
+  "chat.welcome.titleTrial": "Start a Conversation (Trial)",
+  "chat.welcome.subtitleTrial": "You are using a trial version with limited features",
+
+  // ============================================================================
+  // Support & Purchase (技术支持与购买)
+  // ============================================================================
+  "support.techSupport": "Tech Support",
+  "support.exclusiveSupport": "Premium Support",
+  "support.upgradePro": "Upgrade to Pro",
+  "support.scanForSupport": "Scan for Tech Support",
+  "support.scanForPremiumSupport": "Scan for Premium Support",
+  "support.premiumGroupDesc": "AI tips, advanced guides & exclusive support",
+  "support.basicGroupDesc": "Get basic technical support",
+  "support.purchaseTitle": "Purchase Pro Version",
+  "support.purchaseDesc": "Auto-delivery via Xianyu, unlock full features",
+  "support.clickToPurchase": "Click to Purchase",
+  "support.hasActivationCode": "Have an activation code?",
+  "support.activationPlaceholder": "Enter claw-xxxx activation code",
+  "support.activateNow": "Activate Now",
+  "support.inputActivationCode": "Enter Code",
+
+  // ============================================================================
+  // Capability Discovery
+  // ============================================================================
+  "discovery.welcome.title": "Welcome to Clawdbot",
+  "discovery.welcome.subtitle": "I've analyzed your device. Here's what I can help you with",
+  "discovery.workspace.title": "Current Workspace",
+  "discovery.ready.title": "Ready to Use",
+  "discovery.needsConfig.title": "Needs Configuration",
+  "discovery.suggestions.title": "Try These",
+  "discovery.skip": "Skip, let's start",
+  "discovery.scanning.title": "Analyzing your device capabilities",
+  "discovery.scanning.cliTools": "Detecting CLI tools...",
+  "discovery.scanning.channels": "Detecting configured channels...",
+  "discovery.scanning.browsers": "Detecting browsers...",
+  "discovery.scanning.workspace": "Scanning workspace...",
+  "discovery.scanning.suggestions": "Generating personalized suggestions...",
+  "discovery.scanning.hint": "This usually takes a few seconds",
+  "discovery.error.title": "Detection failed",
+  "discovery.retry": "Retry",
+  "discovery.category.tool": "Tools",
+  "discovery.category.channel": "Channels",
+  "discovery.category.browser": "Browsers",
+  "discovery.category.workspace": "Development",
+
+  // ============================================================================
+  // Connection Status
+  // ============================================================================
+  "connection.status.connected": "Connected",
+  "connection.status.connecting": "Connecting...",
+  "connection.status.disconnected": "Disconnected",
+  "connection.status.reconnecting": "Reconnecting...",
+  "connection.disconnectedFromGateway": "Disconnected from gateway.",
+  "connection.ws.disconnected": "disconnected ({{code}}): {{reason}}",
+  "connection.ws.noReason": "no reason",
+  "connection.ws.eventGap": "event gap detected (expected seq {{expected}}, got {{received}}); refresh recommended",
+
+  // Config errors
+  "config.error.hashMissing": "Config hash missing; reload and retry.",
+
+  // Exec approvals errors
+  "execApprovals.error.selectNode": "Select a node before loading exec approvals.",
+  "execApprovals.error.hashMissing": "Exec approvals hash missing; reload and retry.",
+  "execApprovals.error.selectNodeSave": "Select a node before saving exec approvals.",
+  "execApprovals.error.saveFailed": "Exec approval failed: {{error}}",
+
+  // Usage errors
+  "usage.error.loadFailed": "Failed to load usage: {{error}}",
+  "connection.error.unauthorized": "Authentication failed, please check your token",
+  "connection.error.network": "Network connection failed, please check if gateway is running",
+  "connection.error.timeout": "Connection timeout, please check network",
+  "connection.error.unknown": "Connection failed, please try again",
+  "connection.hint.getToken": "Get token command:",
+  "connection.hint.copyCommand": "Click to copy command",
+  "connection.hint.lastConnected": "Last connected:",
+  "connection.action.retry": "Retry",
+  "connection.action.copyToken": "Copy Token Command",
+
+  // ============================================================================
+  // Skills Supplement
+  // ============================================================================
+  "skills.local.emptyHint": "No local skills. Skills extend AI assistant capabilities like web search, code execution, etc.",
+  "skills.time.justNow": "just now",
+  "skills.time.minutesAgo": "{{count}} minutes ago",
+  "skills.time.hoursAgo": "{{count}} hours ago",
+  "skills.time.daysAgo": "{{count}} days ago",
+  // Connection status hints
+  "skills.notConnected.hint": "Not connected",
+  "skills.notConnected.tooltip": "Service not connected. Please refresh the page or check if Gateway is running.",
+
+  // ============================================================================
+  // Button Disabled Hints
+  // ============================================================================
+  "button.disabled.notConnected": "Not connected to gateway",
+  "button.disabled.loading": "Loading, please wait",
+  "button.disabled.noPermission": "No permission for this action",
+  "button.disabled.configRequired": "Configuration required first",
+
+  // ============================================================================
+  // Skill Installation
+  // ============================================================================
+  "skillInstall.title": "Skill Installation Required",
+  "skillInstall.expiresIn": "Expires in",
+  "skillInstall.expired": "Expired",
+  "skillInstall.pending": "pending",
+  "skillInstall.missingDeps": "Missing Dependencies",
+  "skillInstall.deps.bins": "CLI Tools",
+  "skillInstall.deps.env": "Environment Variables",
+  "skillInstall.deps.config": "Configuration",
+  "skillInstall.installSteps": "Installation Steps",
+  "skillInstall.estimatedTime": "Estimated Time",
+  "skillInstall.mirrorHint": "🚀 ClawdbotCN: Using fast mirrors, auto-install all dependencies",
+  "skillInstall.installAndContinue": "One-Click Install & Continue",
+  "skillInstall.installOnly": "Install Only",
+  "skillInstall.installing": "Installing...",
+  "skillInstall.cancel": "Cancel",
+
+  // ClawdbotCN Exclusive Features
+  "skillInstall.cnExclusive": "🇨🇳 ClawdbotCN Exclusive",
+  "skillInstall.cnExclusive.autoInstall": "Auto-install all dependencies, no manual setup needed",
+  "skillInstall.cnExclusive.fastMirror": "Using fast mirrors for faster downloads",
+  "skillInstall.cnExclusive.oneClick": "One-click setup, easy for beginners",
+
+  // Installation Progress
+  "skillInstall.progress.downloading": "Downloading",
+  "skillInstall.progress.installing": "Installing",
+  "skillInstall.progress.verifying": "Verifying",
+  "skillInstall.progress.complete": "Complete",
+  "skillInstall.progress.failed": "Failed",
+  "skillInstall.progress.pending": "Preparing",
+  "skillInstall.progress.logs": "Installation Logs",
+  "skillInstall.progress.done": "Done",
+  "skillInstall.progress.retry": "Retry",
+  "skillInstall.progress.close": "Close",
+  "skillInstall.progress.speed": "Speed",
+  "skillInstall.progress.eta": "ETA",
+  "skillInstall.progress.downloaded": "Downloaded",
+  "skillInstall.progress.total": "Total",
+
+  // Dependency Installation
+  "skillInstall.dependency.installing": "🚀 Installing {{name}}...",
+  "skillInstall.dependency.uv": "Python Package Manager (uv)",
+  "skillInstall.dependency.go": "Go Runtime",
+  "skillInstall.dependency.node": "Node.js Runtime",
+  "skillInstall.dependency.success": "✅ {{name}} installed successfully",
+  "skillInstall.dependency.failed": "❌ {{name}} installation failed",
+
+  // Success/Failure Messages
+  "skillInstall.success.title": "🎉 Skill Installed Successfully",
+  "skillInstall.success.message": "{{skillName}} has been installed successfully. Continuing your task...",
+  "skillInstall.failed.title": "😔 Skill Installation Failed",
+  "skillInstall.failed.message": "{{skillName}} installation failed: {{error}}",
+  "skillInstall.continue.message": "Skill installed. Continuing your request...",
+
+  // ============================================================================
+  // Token Usage Statistics
+  // ============================================================================
+  "usage.title": "Token Usage",
+  "usage.subtitle": "AI model token consumption statistics",
+  "usage.noData": "No usage data yet. Start chatting to see statistics!",
+  "usage.todayTokens": "Today",
+  "usage.todayCost": "Today Cost",
+  "usage.totalTokens": "Total Tokens",
+  "usage.totalCost": "Total Cost",
+  "usage.tokens": "tokens",
+  "usage.estimatedCost": "estimated",
+  "usage.last30Days": "last 30 days",
+  "usage.recentUsage": "Recent 7 Days",
+  "usage.viewDetails": "View Details",
+  "usage.trendUp": "Increased from yesterday",
+  "usage.trendDown": "Decreased from yesterday",
+  "usage.trendStable": "Stable",
+  "usage.inputTokens": "Input Tokens",
+  "usage.outputTokens": "Output Tokens",
+  "usage.cacheRead": "Cache Read",
+  "usage.cacheWrite": "Cache Write",
+  "usage.dailyUsage": "Daily Usage",
+  "usage.costBreakdown": "Cost Breakdown",
+  "usage.tokenBreakdown": "Token Breakdown",
+  "usage.days7": "7 Days",
+  "usage.days14": "14 Days",
+  "usage.days30": "30 Days",
+  "usage.refreshData": "Refresh",
+  "usage.lastUpdated": "Last updated",
+
+  // ============================================================================
+  // Model Selection
+  // ============================================================================
+  "models.title": "AI Model",
+  "models.subtitle": "Select AI service provider and model",
+  "models.provider": "Provider",
+  "models.model": "Model",
+  "models.selectProvider": "Select provider...",
+  "models.selectProviderFirst": "Select provider first",
+  "models.notConfigured": "Not configured",
+  "models.saving": "Saving...",
+  "models.pendingChange": "Click to apply",
+  "models.confirmChange": "Apply",
+  "models.advancedConfig": "Advanced Config",
+  "models.currentModel": "Current Model",
+  "models.switchModel": "Switch Model",
+  "models.recommended": "Recommended",
+  // API Key configuration
+  "models.authConfigured": "Configured",
+  "models.authNotConfigured": "API Key not configured",
+  "models.authRequired": "API Key required for {provider}",
+  "models.configureApiKey": "Configure API Key",
+  "models.getApiKey": "Get API Key",
+  "models.configuring": "Configuring {provider}",
+  "models.verify": "Verify",
+  "models.verifying": "Verifying...",
+  "models.verifySuccess": "API Key verified successfully",
+  "models.verifyFailed": "API Key verification failed",
+  "models.verifyFirst": "Please verify API Key first",
+  "models.switchSuccess": "Model switched successfully",
+
+  // ============================================================================
+  // Security Mode
+  // ============================================================================
+  "security.title": "Security Mode",
+  "security.subtitle": "Configure AI capabilities scope",
+  "security.currentMode": "Current Mode",
+  "security.selectMode": "Select mode...",
+  "security.saving": "Saving...",
+  "security.switchSuccess": "Security mode switched",
+  "security.advancedConfig": "Advanced Settings",
+  "security.recommended": "Recommended",
+  "security.dangerous": "Dangerous",
+  // Security mode names
+  "security.mode.trust": "Full Trust",
+  "security.mode.standard": "Standard",
+  "security.mode.full": "Chat Only",
+  // Security mode descriptions
+  "security.mode.trust.desc": "Unlock all capabilities, AI can do anything",
+  "security.mode.standard.desc": "Recommended mode, balanced safety and capability",
+  "security.mode.full.desc": "Absolute safe mode, AI cannot operate the computer",
+  // Danger warning modal
+  "security.warning.title": "⚠️ Enable Full Trust Mode?",
+  "security.warning.subtitle": "In this mode, AI Agent will have full system access:",
+  "security.warning.risk1": "Can read, modify, and delete any file",
+  "security.warning.risk2": "Can execute any system command",
+  "security.warning.risk3": "Can access network and all application data",
+  "security.warning.risk4": "AI may accidentally delete files or perform destructive operations",
+  "security.warning.tip": "Only enable Full Trust mode on dedicated/test devices where you understand the AI behavior risks.",
+  "security.warning.cancel": "Cancel",
+  "security.warning.confirm": "I understand the risks, enable Full Trust",
+
+  // ============================================================================
+  // Skill Names Translation (English keeps original)
+  // ============================================================================
+  // Lifestyle
+  "skillName.weather": "Weather",
+  "skillName.local-places": "Local Places",
+  "skillName.goplaces": "Go Places",
+  "skillName.food-order": "Food Order",
+  "skillName.ordercli": "Order CLI",
+  "skillName.openhue": "Smart Lighting",
+  "skillName.sonoscli": "Sonos Control",
+  "skillName.spotify": "Spotify",
+  "skillName.songsee": "Song Recognition",
+  "skillName.music": "Music",
+
+  // Productivity
+  "skillName.1password": "1Password",
+  "skillName.notion": "Notion",
+  "skillName.obsidian": "Obsidian",
+  "skillName.apple-notes": "Apple Notes",
+  "skillName.apple-reminders": "Apple Reminders",
+  "skillName.things-mac": "Things",
+  "skillName.bear-notes": "Bear Notes",
+  "skillName.trello": "Trello",
+  "skillName.himalaya": "Email",
+  "skillName.calendar": "Calendar",
+
+  // Finance
+  "skillName.stock": "Stock",
+  "skillName.finance": "Finance",
+  "skillName.budget": "Budget",
+  "skillName.crypto": "Crypto",
+
+  // Computer Control
+  "skillName.peekaboo": "Screen Monitor",
+  "skillName.camsnap": "Camera",
+  "skillName.screenshot": "Screenshot",
+  "skillName.file": "File Manager",
+  "skillName.folder": "Folder",
+  "skillName.system": "System",
+  "skillName.terminal": "Terminal",
+  "skillName.shell": "Shell",
+  "skillName.tmux": "Tmux",
+
+  // Creative
+  "skillName.canvas": "Canvas",
+  "skillName.openai-image": "AI Image",
+  "skillName.nano-banana": "Pixel Art",
+  "skillName.gifgrep": "GIF Search",
+  "skillName.summarize": "Summarize",
+  "skillName.gemini": "Gemini AI",
+  "skillName.oracle": "Oracle",
+  "skillName.image": "Image",
+
+  // Communication
+  "skillName.discord": "Discord",
+  "skillName.slack": "Slack",
+  "skillName.imsg": "iMessage",
+  "skillName.wacli": "WhatsApp",
+  "skillName.bluebubbles": "BlueBubbles",
+  "skillName.voice-call": "Voice Call",
+  "skillName.telegram": "Telegram",
+  "skillName.wechat": "WeChat",
+
+  // Development
+  "skillName.github": "GitHub",
+  "skillName.coding": "Coding",
+  "skillName.skill-creator": "Skill Creator",
+  "skillName.skills-troubleshoot": "Troubleshoot",
+  "skillName.mcporter": "MCP Porter",
+  "skillName.git": "Git",
+
+  // Common
+  "skillName.search": "Web Search",
+  "skillName.web-search": "Web Search",
+  "skillName.browser": "Browser",
+  "skillName.execute": "Execute",
+  "skillName.python": "Python",
+  "skillName.javascript": "JavaScript",
+  "skillName.api": "API",
+  "skillName.http": "HTTP",
+  "skillName.database": "Database",
+  "skillName.translate": "Translate",
+  "skillName.ocr": "OCR",
+  "skillName.pdf": "PDF",
+  "skillName.email": "Email",
+  "skillName.calculator": "Calculator",
+  "skillName.timer": "Timer",
+  "skillName.reminder": "Reminder",
+  "skillName.notes": "Notes",
+  "skillName.clipboard": "Clipboard",
+  "skillName.download": "Download",
+  "skillName.upload": "Upload",
+  "skillName.compress": "Compress",
+  "skillName.encrypt": "Encrypt",
+  "skillName.qrcode": "QR Code",
+  "skillName.barcode": "Barcode",
+  // Analytics Skills
+  "skillName.blogwatcher": "Blog Watcher",
+  "skillName.model-usage": "Model Usage",
+  "skillName.session-logs": "Session Logs",
+  // System Tools
+  "skillName.packaging": "Packaging",
+  "skillName.eightctl": "8x Control",
+  "skillName.sag": "System Analysis",
+  "skillName.gog": "Go Tools",
+  // clawdhub removed - skills market uses domestic service
+  // Media Skills
+  "skillName.video-frames": "Video Frames",
+  "skillName.openai-whisper": "Whisper STT",
+  "skillName.sherpa-onnx": "Sherpa ONNX",
+  "skillName.nano-pdf": "Nano PDF",
+  "skillName.bird": "Bird ID",
+  "skillName.blucli": "Bluetooth CLI",
+  // Other Skills
+  "skillName.spotify-player": "Spotify Player",
+  "skillName.openai-image-gen": "AI Image Gen",
+  "skillName.codexbar": "CodexBar",
+  "skillName.coding-agent": "Coding Agent",
+  "skillName.remindctl": "Reminder Control",
+  "skillName.memo": "Memo",
+  "skillName.grizzly": "Grizzly",
+
+  // Skill Descriptions
+  "skillDesc.weather": "Check real-time weather and forecasts worldwide",
+  "skillDesc.local-places": "Search nearby restaurants, shops, and attractions",
+  "skillDesc.stock": "Query stock prices, changes, and charts",
+  "skillDesc.screenshot": "Capture current screen content",
+  "skillDesc.camsnap": "Take photos with camera",
+  "skillDesc.peekaboo": "Monitor and analyze screen content",
+  "skillDesc.1password": "Securely manage and autofill passwords",
+  "skillDesc.notion": "Manage Notion notes and databases",
+  "skillDesc.obsidian": "Manage Obsidian knowledge base",
+  "skillDesc.apple-notes": "Read and write Apple Notes",
+  "skillDesc.apple-reminders": "Manage Apple Reminders",
+  "skillDesc.canvas": "Display charts, code, and content on canvas",
+  "skillDesc.openai-image": "Generate art images with AI",
+  "skillDesc.github": "Manage GitHub repos, issues, and PRs",
+  "skillDesc.search": "Search the internet for latest information",
+  "skillDesc.browser": "Control browser for automation",
+  "skillDesc.execute": "Execute command line operations",
+  "skillDesc.python": "Run Python code and scripts",
+  "skillDesc.translate": "Multi-language translation",
+  "skillDesc.summarize": "Summarize long articles and documents",
+  "skillDesc.email": "Send and manage emails",
+  "skillDesc.calendar": "Manage schedules and meetings",
+  "skillDesc.reminder": "Set reminders and todos",
+  "skillDesc.download": "Download files from the web",
+  "skillDesc.upload": "Upload files to server",
+  "skillDesc.qrcode": "Generate and scan QR codes",
+  "skillDesc.discord": "Manage Discord servers and messages",
+  "skillDesc.slack": "Send and manage Slack messages",
+  "skillDesc.telegram": "Manage Telegram messages and bots",
+  "skillDesc.spotify": "Control Spotify playback",
+  // Analytics Skill Descriptions
+  "skillDesc.blogwatcher": "Monitor blogs and RSS/Atom feeds for updates",
+  "skillDesc.model-usage": "Analyze AI model token usage statistics",
+  "skillDesc.session-logs": "Search and analyze conversation history",
+  // Media Skill Descriptions
+  "skillDesc.video-frames": "Extract key frames from video",
+  "skillDesc.openai-whisper": "Convert audio to text with Whisper",
+  "skillDesc.sherpa-onnx": "Local speech recognition engine",
+  "skillDesc.nano-pdf": "Read and process PDF documents",
+  "skillDesc.spotify-player": "Play music with spotify_player",
+  "skillDesc.openai-image-gen": "Generate images with OpenAI",
+  "skillDesc.codexbar": "Analyze code and API usage with CodexBar",
+  "skillDesc.openhue": "Control Philips Hue lights",
+  "skillDesc.terminal": "Execute terminal commands",
+  "skillDesc.file": "Read, write and manage files",
+  "skillDesc.bird": "Twitter/X reading, searching, posting and interactions via cookies",
+  "skillDesc.blucli": "BluOS CLI for discovery, playback, grouping and volume control",
+  "skillDesc.bluebubbles": "Build or update Clawdbot BlueBubbles external channel plugin",
+  "skillDesc.coding-agent": "Run coding agent as background process for programming",
+  "skillDesc.eightctl": "Control Eight Sleep smart mattress",
+  "skillDesc.remindctl": "Manage Apple Reminders",
+  "skillDesc.memo": "Manage Apple Notes",
+  "skillDesc.grizzly": "Manage Bear notes app",
+
+  // ============================================================================
+  // Free Models
+  // ============================================================================
+  "freeModels.eyebrow": "ClawdbotCN Exclusive",
+  "freeModels.title": "Daily Free Models",
+  "freeModels.subtitle": "Auto-switch when quota runs out, save money seamlessly",
+
+  // Empty state
+  "freeModels.empty.title": "Start Saving Today",
+  "freeModels.empty.desc": "Configure free models and the system will automatically use free quota, switching when depleted to save every penny.",
+
+  // Feature tags
+  "freeModels.feature.dailyTokens": "1M Free Tokens Daily",
+  "freeModels.feature.autoSwitch": "Auto-switch on Depletion",
+  "freeModels.feature.saveMoney": "Save ¥5-10 Daily",
+
+  // Stats
+  "freeModels.stats.todaySavings": "Today Saved",
+  "freeModels.stats.totalSavings": "Total Saved",
+  "freeModels.stats.freeRequests": "Free Calls",
+  "freeModels.stats.accounts": "Configured",
+
+  // Toggle
+  "freeModels.toggle.title": "Enable Daily Free Model Auto-Switch",
+  "freeModels.toggle.desc": "When enabled, the system prioritizes free quota and auto-switches to the next available model when depleted",
+
+  // Provider cards
+  "freeModels.selectProvider": "Select Free Model Provider",
+  "freeModels.recommended": "Recommended",
+  "freeModels.configured": "Configured",
+  "freeModels.dailyQuota": "Daily Quota",
+  "freeModels.resetTime": "Resets At",
+  "freeModels.configureNow": "Configure Now",
+  "freeModels.requests": "requests",
+
+  // Account management
+  "freeModels.configuredAccounts": "Configured Free Models",
+  "freeModels.addMore": "Add More Free Models",
+  "freeModels.preferred": "Preferred",
+  "freeModels.setPreferred": "Set Preferred",
+
+  // Status
+  "freeModels.status.active": "Active",
+  "freeModels.status.exhausted": "Depleted Today",
+  "freeModels.status.error": "Connection Error",
+  "freeModels.status.disabled": "Disabled",
+
+  // Switch history
+  "freeModels.switchHistory": "Switch History",
+
+  // Config modal
+  "freeModels.modal.configTitle": "Configure {name}",
+  "freeModels.modal.configDesc": "Enter the API key to automatically use this model's free quota.",
+  "freeModels.modal.apiKey": "API Key",
+  "freeModels.modal.apiKeyPlaceholder": "Enter API key",
+  "freeModels.modal.getApiKey": "Get key →",
+  "freeModels.modal.testConnection": "Test Connection",
+  "freeModels.modal.testing": "Testing...",
+  "freeModels.modal.save": "Save Config",
+  "freeModels.modal.testSuccess": "Connected successfully, free quota available",
+  "freeModels.modal.testFailed": "Connection failed: {error}",
+
+  // Delete modal
+  "freeModels.modal.deleteTitle": "Confirm Delete",
+  "freeModels.modal.deleteConfirm": "Delete {name} configuration?",
+  "freeModels.modal.deleteDesc": "You won't be able to use this model's free quota, but can reconfigure anytime.",
+
+  // Error
+  "freeModels.error.title": "Failed to Load",
+
+  // Step guide (配置步骤引导)
+  "freeModels.step1.title": "Register Account",
+  "freeModels.step1.desc": "Click the button below to register on the provider's website and get free quota",
+  "freeModels.step2.title": "Get API Key",
+  "freeModels.step2.desc": "Find and copy your API key from the platform dashboard after logging in",
+  "freeModels.step3.title": "Paste API Key",
+  "freeModels.openRegisterPage": "Open {name} Registration →",
+
+  // ============================================================================
+  // Feedback
+  // ============================================================================
+  "feedback.trigger": "Feedback",
+  "feedback.title": "Feedback",
+  "feedback.optional": "Optional",
+
+  // Reward hint (simplified)
+  "feedback.reward.hint": "Quality feedback can win 1 year Premium",
+
+  // Type selection
+  "feedback.type.label": "Category",
+  "feedback.type.suggestion": "Suggestion",
+  "feedback.type.suggestion.desc": "Features, improvements",
+  "feedback.type.bug": "Issue",
+  "feedback.type.bug.desc": "Bugs, errors, crashes",
+
+  // Content
+  "feedback.content.label": "Description",
+  "feedback.content.placeholder": "Describe your idea or issue...",
+
+  // Images
+  "feedback.images.label": "Screenshots",
+  "feedback.images.hint": "Paste or click to upload, max 3",
+
+  // Contact
+  "feedback.contact.label": "Contact",
+  "feedback.contact.placeholder": "Email / Phone",
+  "feedback.contact.hint": "For follow-up or rewards",
+
+  // Submit
+  "feedback.submit": "Submit",
+  "feedback.submitting": "Submitting...",
+
+  // Success
+  "feedback.success.title": "Thank you",
+  "feedback.success.message": "We read every piece of feedback",
+  "feedback.success.ok": "Done",
+
+  // Errors
+  "feedback.error.empty": "Please enter feedback",
+  "feedback.error.tooShort": "At least 5 characters required",
+  "feedback.error.submitFailed": "Submit failed, please retry",
 } as const;

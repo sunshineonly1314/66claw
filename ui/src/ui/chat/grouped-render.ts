@@ -3,20 +3,158 @@ import { unsafeHTML } from "lit/directives/unsafe-html.js";
 
 import type { AssistantIdentity } from "../assistant-identity";
 import { toSanitizedMarkdownHtml } from "../markdown";
+import { typewriterStream } from "./typewriter-stream";
+import { typewriterIndicator } from "./typewriter-indicator";
 import type { MessageGroup } from "../types/chat-types";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown";
 import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer";
 import {
   extractTextCached,
   extractThinkingCached,
+  extractFreeModelNotification,
   formatReasoningMarkdown,
+  type FreeModelNotification,
 } from "./message-extract";
 import { extractToolCards, renderToolCardSidebar } from "./tool-cards";
+import { formatErrorHintFull, type FormattedError } from "./error-hints";
+
+// 思考过程折叠阈值（字符数）
+const THINKING_COLLAPSE_THRESHOLD = 200;
+
+// ============ 静默回复过滤 ============
+// NO_REPLY 是系统内部标记，不应该显示给用户
+const SILENT_REPLY_TOKEN = "NO_REPLY";
+
+/**
+ * 检查文本是否为静默回复（NO_REPLY）
+ * 这些是系统内部操作的响应，不应该显示给用户
+ */
+function isSilentReplyText(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  // 完全匹配 NO_REPLY
+  if (trimmed === SILENT_REPLY_TOKEN) return true;
+  // 以 NO_REPLY 开头（可能后面跟着空格或标点）
+  if (trimmed.startsWith(SILENT_REPLY_TOKEN) && 
+      (trimmed.length === SILENT_REPLY_TOKEN.length || 
+       /^\s|[.,!?;:]/.test(trimmed.charAt(SILENT_REPLY_TOKEN.length)))) {
+    return true;
+  }
+  // 以 NO_REPLY 结尾
+  if (trimmed.endsWith(SILENT_REPLY_TOKEN)) return true;
+  return false;
+}
+
+// ============ ClawdbotCN 免费模型通知渲染 ============
+
+/**
+ * 渲染免费模型通知卡片
+ * ClawdbotCN 专属权益展示
+ */
+function renderFreeModelNotificationCard(notification: FreeModelNotification) {
+  const iconMap = {
+    started: "🎉",
+    switched: "🔄",
+    exhausted: "⚠️",
+    fallback: "💳",
+  };
+  const icon = iconMap[notification.type] || "ℹ️";
+  const colorClass = notification.type === "exhausted" ? "warning" : "success";
+  
+  return html`
+    <div class="free-model-notification free-model-notification--${colorClass}">
+      <div class="free-model-notification__icon">${icon}</div>
+      <div class="free-model-notification__content">
+        <div class="free-model-notification__badge">ClawdbotCN 专属权益</div>
+        <div class="free-model-notification__message">${notification.message}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ============ 性能优化：Markdown 渲染缓存 ============
+// 使用 WeakMap 缓存已渲染的 Markdown HTML，避免重复转换
+const markdownHtmlCache = new WeakMap<object, string>();
+// 字符串内容到 HTML 的缓存（用于非对象消息）
+const markdownStringCache = new Map<string, string>();
+// 字符串缓存大小限制，防止内存泄漏
+const MAX_STRING_CACHE_SIZE = 200;
+
+/**
+ * 获取缓存的 Markdown HTML，避免重复渲染
+ * @param message 原始消息对象
+ * @param markdown 提取的 markdown 文本
+ */
+function getCachedMarkdownHtml(message: unknown, markdown: string): string {
+  // 尝试从对象缓存获取
+  if (message && typeof message === "object") {
+    const cached = markdownHtmlCache.get(message as object);
+    if (cached !== undefined) {
+      return cached;
+    }
+  }
+
+  // 尝试从字符串缓存获取
+  const stringCached = markdownStringCache.get(markdown);
+  if (stringCached !== undefined) {
+    return stringCached;
+  }
+
+  // 渲染并缓存
+  const html = toSanitizedMarkdownHtml(markdown);
+  
+  // 存入对象缓存
+  if (message && typeof message === "object") {
+    markdownHtmlCache.set(message as object, html);
+  }
+  
+  // 存入字符串缓存（控制大小）
+  if (markdownStringCache.size >= MAX_STRING_CACHE_SIZE) {
+    // 删除最早的条目
+    const firstKey = markdownStringCache.keys().next().value;
+    if (firstKey) markdownStringCache.delete(firstKey);
+  }
+  markdownStringCache.set(markdown, html);
+  
+  return html;
+}
 
 type ImageBlock = {
   url: string;
   alt?: string;
 };
+
+/**
+ * Validate that a string looks like valid base64 image data.
+ * Returns false for empty strings or obviously invalid data.
+ */
+function isValidBase64ImageData(data: string): boolean {
+  // Must have some content (at least a few characters for a minimal image)
+  if (!data || data.length < 20) return false;
+  // If it's already a data URL, check if it has actual content after the header
+  if (data.startsWith("data:")) {
+    const commaIndex = data.indexOf(",");
+    if (commaIndex === -1 || data.length - commaIndex < 20) return false;
+    return true;
+  }
+  // For raw base64, check it contains valid base64 characters
+  // and has reasonable length
+  return /^[A-Za-z0-9+/]+=*$/.test(data.slice(0, 100));
+}
+
+/**
+ * Validate that a URL is likely to be a valid image URL.
+ */
+function isValidImageUrl(url: string): boolean {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  // Accept http(s) URLs, data URLs with content, and relative paths
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return true;
+  if (trimmed.startsWith("data:image/")) return trimmed.length > 30;
+  if (trimmed.startsWith("/")) return true;
+  return false;
+}
 
 function extractImages(message: unknown): ImageBlock[] {
   const m = message as Record<string, unknown>;
@@ -33,19 +171,21 @@ function extractImages(message: unknown): ImageBlock[] {
         const source = b.source as Record<string, unknown> | undefined;
         if (source?.type === "base64" && typeof source.data === "string") {
           const data = source.data as string;
+          // Validate base64 data before creating URL
+          if (!isValidBase64ImageData(data)) continue;
           const mediaType = (source.media_type as string) || "image/png";
           // If data is already a data URL, use it directly
           const url = data.startsWith("data:")
             ? data
             : `data:${mediaType};base64,${data}`;
           images.push({ url });
-        } else if (typeof b.url === "string") {
+        } else if (typeof b.url === "string" && isValidImageUrl(b.url)) {
           images.push({ url: b.url });
         }
       } else if (b.type === "image_url") {
         // OpenAI format
         const imageUrl = b.image_url as Record<string, unknown> | undefined;
-        if (typeof imageUrl?.url === "string") {
+        if (typeof imageUrl?.url === "string" && isValidImageUrl(imageUrl.url)) {
           images.push({ url: imageUrl.url });
         }
       }
@@ -55,37 +195,138 @@ function extractImages(message: unknown): ImageBlock[] {
   return images;
 }
 
-// Timeout thresholds in milliseconds
-const TIMEOUT_WARNING_MS = 30000; // 30 seconds - show warning hint
-const TIMEOUT_LONG_WAIT_MS = 15000; // 15 seconds - show "still waiting"
+// ============ 等待指示器：分阶段渐进展示 + 打字机效果 ============
+
+// 超时阈值（毫秒）- 超过此时间显示错误排查卡片
+// ClawdbotCN: 设为 90s，部分模型（如 doubao）首次响应可达 60-70s
+const TIMEOUT_WARNING_MS = 90000;
+
+/**
+ * 等待阶段配置
+ * 每个阶段在对应时间点开始，文案通过打字机效果逐字显示
+ * style 控制文字颜色：normal=灰色, info=主题色, warning=橙色
+ */
+const WAITING_PHASES: ReadonlyArray<{
+  startMs: number;
+  text: string;
+  style: "normal" | "info" | "warning";
+}> = [
+  { startMs: 0, text: "", style: "normal" },
+  { startMs: 3000, text: "思考中", style: "normal" },
+  { startMs: 8000, text: "正在组织回复...", style: "normal" },
+  { startMs: 15000, text: "仍在等待 AI 响应...", style: "info" },
+  { startMs: 30000, text: "部分模型首次响应较慢，请耐心等待", style: "warning" },
+  { startMs: 45000, text: "还在处理中，请继续等待...", style: "warning" },
+  { startMs: 60000, text: "模型响应时间过长，仍在等待中...", style: "warning" },
+  { startMs: 75000, text: "如长时间无响应，建议检查模型配置", style: "warning" },
+];
+
+/** 根据已等待时间找到当前阶段 */
+function getCurrentPhase(elapsedMs: number) {
+  let phase = WAITING_PHASES[0];
+  for (const p of WAITING_PHASES) {
+    if (elapsedMs >= p.startMs) phase = p;
+  }
+  return phase;
+}
+
+/**
+ * 渲染超时/错误提示卡片
+ * 简洁提示：模型响应异常，请检查模型接口
+ */
+function renderTimeoutHintCard(errorInfo: FormattedError | null) {
+  const friendlyMessage = errorInfo?.friendlyMessage ?? "模型响应异常，请检查模型接口配置";
+  const rawError = errorInfo?.rawError;
+
+  return html`
+    <div class="chat-error-hint-card hint-card-enter">
+      <div class="chat-error-hint-card__header">
+        <span class="chat-error-hint-card__icon">⚠️</span>
+        <span class="chat-error-hint-card__title">
+          ${typewriterIndicator(friendlyMessage, `err-${friendlyMessage.length}`, "tw--warning")}
+        </span>
+      </div>
+      ${rawError
+        ? html`
+            <div class="chat-error-hint-card__raw hint-raw-enter">
+              <span class="chat-error-hint-card__raw-label">原始错误：</span>
+              <span class="chat-error-hint-card__raw-text">${rawError}</span>
+            </div>
+          `
+        : nothing}
+    </div>
+  `;
+}
 
 export function renderReadingIndicatorGroup(
   assistant?: AssistantIdentity,
   startedAt?: number | null,
+  errorMessage?: string | null,
 ) {
   const elapsed = startedAt ? Date.now() - startedAt : 0;
   const elapsedSeconds = Math.floor(elapsed / 1000);
   const isTimeout = elapsed >= TIMEOUT_WARNING_MS;
-  const isLongWait = elapsed >= TIMEOUT_LONG_WAIT_MS && !isTimeout;
+  const errorInfo = errorMessage ? formatErrorHintFull(errorMessage) : null;
+
+  // 当前等待阶段
+  const phase = getCurrentPhase(elapsed);
+  const twStyleCls =
+    phase.style === "warning" ? "tw--warning"
+    : phase.style === "info" ? "tw--info"
+    : "tw--normal";
+
+  // 圆点动画修饰
+  const dotsModifier =
+    elapsed >= 30000 ? "chat-reading-indicator__dots--pulse"
+    : elapsed >= 15000 ? "chat-reading-indicator__dots--accent"
+    : "";
+
+  const renderWaitingContent = () => {
+    // 超时或有具体错误 → 展示排查卡片
+    if (isTimeout || errorMessage) {
+      return html`
+        <div class="chat-reading-indicator__content">
+          <span class="chat-reading-indicator__dots chat-reading-indicator__dots--warning">
+            <span></span><span></span><span></span>
+          </span>
+          <span class="chat-reading-indicator__timer">${elapsedSeconds}s</span>
+        </div>
+        ${renderTimeoutHintCard(errorInfo)}
+      `;
+    }
+
+    // 正常等待：打字机逐字显示当前阶段文案
+    return html`
+      <div class="chat-reading-indicator__content">
+        <span class="chat-reading-indicator__dots ${dotsModifier}">
+          <span></span><span></span><span></span>
+        </span>
+        <span class="chat-reading-indicator__text">
+          ${phase.text
+            ? typewriterIndicator(phase.text, String(phase.startMs), twStyleCls)
+            : nothing}
+          <span class="chat-reading-indicator__timer">${elapsedSeconds}s</span>
+        </span>
+      </div>
+    `;
+  };
+
+  // 汇总 CSS 类
+  const isProcessing = elapsed >= 30000 && !isTimeout && !errorMessage;
+  const cls = [
+    "chat-bubble",
+    "chat-reading-indicator",
+    isTimeout ? "chat-reading-indicator--timeout" : "",
+    errorMessage ? "chat-reading-indicator--has-error" : "",
+    isProcessing ? "chat-reading-indicator--processing" : "",
+  ].filter(Boolean).join(" ");
 
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
-        <div class="chat-bubble chat-reading-indicator ${isTimeout ? "chat-reading-indicator--timeout" : ""}" aria-hidden="true">
-          <div class="chat-reading-indicator__content">
-            <span class="chat-reading-indicator__dots">
-              <span></span><span></span><span></span>
-            </span>
-            <span class="chat-reading-indicator__text">
-              ${isTimeout
-                ? html`<span class="chat-reading-indicator__warning">暂未收到响应，请检查大模型是否有足够的 Token 额度</span>`
-                : isLongWait
-                  ? html`<span class="chat-reading-indicator__hint">仍在等待中，请耐心稍候...</span>`
-                  : html`<span class="chat-reading-indicator__waiting">等待响应中</span>`}
-              <span class="chat-reading-indicator__timer">${elapsedSeconds}s</span>
-            </span>
-          </div>
+        <div class="${cls}" aria-hidden="true">
+          ${renderWaitingContent()}
         </div>
       </div>
     </div>
@@ -97,26 +338,30 @@ export function renderStreamingGroup(
   startedAt: number,
   onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
+  streamKey?: string,
 ) {
+  // 如果流式文本是静默回复（NO_REPLY），显示等待指示器而不是文本
+  // 这是系统内部操作的响应，不应该显示给用户
+  if (isSilentReplyText(text)) {
+    return renderReadingIndicatorGroup(assistant, startedAt);
+  }
+
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
   const name = assistant?.name ?? "Assistant";
+  const key = streamKey ?? `stream:${startedAt}`;
 
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
-        ${renderGroupedMessage(
-          {
-            role: "assistant",
-            content: [{ type: "text", text }],
-            timestamp: startedAt,
-          },
-          { isStreaming: true, showReasoning: false },
-          onOpenSidebar,
-        )}
+        <div class="chat-bubble streaming fade-in">
+          <div class="chat-text chat-text--streaming">
+            ${typewriterStream(text, key)}
+          </div>
+        </div>
         <div class="chat-group-footer">
           <span class="chat-sender-name">${name}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -124,6 +369,26 @@ export function renderStreamingGroup(
       </div>
     </div>
   `;
+}
+
+/**
+ * 检查消息是否有可渲染的内容
+ * 用于在渲染消息组之前判断是否应该渲染
+ * 注意：NO_REPLY 等静默回复不算有效内容
+ */
+function hasRenderableContent(message: unknown): boolean {
+  const text = extractTextCached(message);
+  // 静默回复（NO_REPLY）不算有效内容
+  if (text?.trim() && !isSilentReplyText(text)) return true;
+  
+  const toolCards = extractToolCards(message);
+  if (toolCards.length > 0) return true;
+  
+  // 使用已有的 extractImages 函数检查图片
+  const images = extractImages(message);
+  if (images.length > 0) return true;
+  
+  return false;
 }
 
 export function renderMessageGroup(
@@ -153,6 +418,13 @@ export function renderMessageGroup(
     hour: "numeric",
     minute: "2-digit",
   });
+
+  // 检查是否有任何可渲染的消息内容
+  // 如果组内所有消息都没有有效内容，则不渲染整个组
+  const hasAnyContent = group.messages.some((item) => hasRenderableContent(item.message));
+  if (!hasAnyContent) {
+    return nothing;
+  }
 
   return html`
     <div class="chat-group ${roleClass}">
@@ -207,10 +479,22 @@ function renderAvatar(
 
   if (assistantAvatar && normalized === "assistant") {
     if (isAvatarUrl(assistantAvatar)) {
+      // Handle avatar load error by falling back to initial letter
+      const handleAvatarError = (event: Event) => {
+        const img = event.target as HTMLImageElement;
+        if (img && img.parentElement) {
+          // Replace broken image with fallback div
+          const fallback = document.createElement("div");
+          fallback.className = `chat-avatar ${className}`;
+          fallback.textContent = initial;
+          img.parentElement.replaceChild(fallback, img);
+        }
+      };
       return html`<img
         class="chat-avatar ${className}"
         src="${assistantAvatar}"
         alt="${assistantName}"
+        @error=${handleAvatarError}
       />`;
     }
     return html`<div class="chat-avatar ${className}">${assistantAvatar}</div>`;
@@ -227,6 +511,26 @@ function isAvatarUrl(value: string): boolean {
   );
 }
 
+/**
+ * Handle image load error by hiding the broken image.
+ * This prevents the browser's default "broken image" icon from showing.
+ */
+function handleImageError(event: Event) {
+  const img = event.target as HTMLImageElement;
+  if (img) {
+    // Hide the broken image completely
+    img.style.display = "none";
+    // Also try to remove empty container if all images failed
+    const container = img.parentElement;
+    if (container?.classList.contains("chat-message-images")) {
+      const visibleImages = container.querySelectorAll("img:not([style*='display: none'])");
+      if (visibleImages.length === 0) {
+        container.style.display = "none";
+      }
+    }
+  }
+}
+
 function renderMessageImages(images: ImageBlock[]) {
   if (images.length === 0) return nothing;
 
@@ -238,10 +542,106 @@ function renderMessageImages(images: ImageBlock[]) {
             src=${img.url}
             alt=${img.alt ?? "Attached image"}
             class="chat-message-image"
+            loading="lazy"
+            decoding="async"
             @click=${() => window.open(img.url, "_blank")}
+            @error=${handleImageError}
           />
         `,
       )}
+    </div>
+  `;
+}
+
+/**
+ * 渲染可折叠的思考过程区域
+ */
+function renderThinkingSection(reasoningMarkdown: string) {
+  const shouldCollapse = reasoningMarkdown.length > THINKING_COLLAPSE_THRESHOLD;
+  const previewText = shouldCollapse 
+    ? reasoningMarkdown.slice(0, THINKING_COLLAPSE_THRESHOLD) + "..."
+    : reasoningMarkdown;
+
+  // 切换折叠状态
+  const handleToggle = (e: Event) => {
+    const container = (e.currentTarget as HTMLElement).closest(".chat-thinking-collapsible");
+    if (container) {
+      container.classList.toggle("chat-thinking-collapsible--expanded");
+    }
+  };
+
+  if (!shouldCollapse) {
+    return html`<div class="chat-thinking">${unsafeHTML(
+      toSanitizedMarkdownHtml(reasoningMarkdown),
+    )}</div>`;
+  }
+
+  return html`
+    <div class="chat-thinking-collapsible">
+      <div class="chat-thinking-header" @click=${handleToggle}>
+        <span class="chat-thinking-header__icon">🤔</span>
+        <span class="chat-thinking-header__title">思考过程</span>
+        <span class="chat-thinking-header__toggle">
+          <svg class="chat-thinking-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </span>
+      </div>
+      <div class="chat-thinking-content">
+        <div class="chat-thinking-preview">${unsafeHTML(
+          toSanitizedMarkdownHtml(previewText),
+        )}</div>
+        <div class="chat-thinking-full">${unsafeHTML(
+          toSanitizedMarkdownHtml(reasoningMarkdown),
+        )}</div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 复制消息文本到剪贴板
+ */
+async function handleCopyMessage(text: string, btn: HTMLElement): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.classList.add("chat-action--copied");
+    const textSpan = btn.querySelector(".chat-action__text");
+    if (textSpan) textSpan.textContent = "已复制";
+    
+    setTimeout(() => {
+      btn.classList.remove("chat-action--copied");
+      if (textSpan) textSpan.textContent = "复制";
+    }, 2000);
+  } catch (err) {
+    console.error("Failed to copy message:", err);
+  }
+}
+
+/**
+ * 渲染消息底部操作栏（仅 AI 消息）
+ */
+function renderMessageActions(markdown: string | null, isStreaming: boolean) {
+  // 流式输出时不显示操作栏
+  if (isStreaming || !markdown) return nothing;
+  
+  return html`
+    <div class="chat-bubble__actions">
+      <button 
+        type="button" 
+        class="chat-action"
+        title="复制消息"
+        @click=${(e: Event) => {
+          const btn = e.currentTarget as HTMLElement;
+          void handleCopyMessage(markdown, btn);
+        }}
+      >
+        <svg class="chat-action__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span class="chat-action__text">复制</span>
+      </button>
     </div>
   `;
 }
@@ -253,6 +653,7 @@ function renderGroupedMessage(
 ) {
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
+  const isAssistant = role === "assistant";
   const isToolResult =
     isToolResultMessage(message) ||
     role.toLowerCase() === "toolresult" ||
@@ -265,22 +666,31 @@ function renderGroupedMessage(
   const images = extractImages(message);
   const hasImages = images.length > 0;
 
+  // ClawdbotCN 专属功能：提取免费模型通知
+  const freeModelNotification = isAssistant ? extractFreeModelNotification(message) : null;
+
   const extractedText = extractTextCached(message);
   const extractedThinking =
     opts.showReasoning && role === "assistant"
       ? extractThinkingCached(message)
       : null;
-  const markdownBase = extractedText?.trim() ? extractedText : null;
+  // 过滤静默回复（NO_REPLY）- 这是系统内部标记，不应显示给用户
+  const markdownBase = extractedText?.trim() && !isSilentReplyText(extractedText) 
+    ? extractedText 
+    : null;
   const reasoningMarkdown = extractedThinking
     ? formatReasoningMarkdown(extractedThinking)
     : null;
   const markdown = markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
+  // 是否显示消息操作栏（仅 AI 消息且有内容）
+  const showActions = isAssistant && markdown && !opts.isStreaming;
 
   const bubbleClasses = [
     "chat-bubble",
     canCopyMarkdown ? "has-copy" : "",
     opts.isStreaming ? "streaming" : "",
+    showActions ? "has-actions" : "",
     "fade-in",
   ]
     .filter(Boolean)
@@ -292,21 +702,21 @@ function renderGroupedMessage(
     )}`;
   }
 
-  if (!markdown && !hasToolCards && !hasImages) return nothing;
+  if (!markdown && !hasToolCards && !hasImages && !freeModelNotification) return nothing;
 
   return html`
+    ${freeModelNotification ? renderFreeModelNotificationCard(freeModelNotification) : nothing}
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}
       ${reasoningMarkdown
-        ? html`<div class="chat-thinking">${unsafeHTML(
-            toSanitizedMarkdownHtml(reasoningMarkdown),
-          )}</div>`
+        ? renderThinkingSection(reasoningMarkdown)
         : nothing}
       ${markdown
-        ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
+        ? html`<div class="chat-text">${unsafeHTML(getCachedMarkdownHtml(message, markdown))}</div>`
         : nothing}
       ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
+      ${showActions ? renderMessageActions(markdown, opts.isStreaming) : nothing}
     </div>
   `;
 }

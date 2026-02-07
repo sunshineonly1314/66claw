@@ -29,7 +29,65 @@ export function parseLsofOutput(output: string): PortProcess[] {
   return results;
 }
 
+/**
+ * Parse Windows netstat -ano output to find listeners on a port.
+ * netstat output format:
+ *   TCP    0.0.0.0:18789    0.0.0.0:0    LISTENING    12345
+ *   TCP    [::]:18789       [::]:0       LISTENING    12345
+ */
+function parseNetstatOutput(output: string, port: number): PortProcess[] {
+  const results = new Map<number, PortProcess>();
+  const portStr = `:${port}`;
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.includes("LISTENING")) continue;
+    if (!trimmed.includes(portStr)) continue;
+    // Verify the port is an exact match (not a substring like :1878 in :18789)
+    const parts = trimmed.split(/\s+/);
+    // parts: [protocol, local_addr, foreign_addr, state, pid]
+    if (parts.length < 5) continue;
+    const localAddr = parts[1] ?? "";
+    // Extract the port from the local address (handles both IPv4 and IPv6)
+    const lastColon = localAddr.lastIndexOf(":");
+    if (lastColon === -1) continue;
+    const parsedPort = Number.parseInt(localAddr.slice(lastColon + 1), 10);
+    if (parsedPort !== port) continue;
+    const pid = Number.parseInt(parts[parts.length - 1] ?? "", 10);
+    if (!Number.isFinite(pid) || pid <= 0) continue;
+    if (!results.has(pid)) {
+      // Try to get process name
+      let command: string | undefined;
+      try {
+        const out = execFileSync("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+          encoding: "utf-8",
+          timeout: 3000,
+        });
+        const match = out.match(/"([^"]+)"/);
+        if (match) command = match[1];
+      } catch {
+        // ignore
+      }
+      results.set(pid, { pid, command });
+    }
+  }
+  return Array.from(results.values());
+}
+
+/**
+ * List processes listening on a TCP port. Works on both Unix (lsof) and Windows (netstat).
+ */
 export function listPortListeners(port: number): PortProcess[] {
+  if (process.platform === "win32") {
+    try {
+      const out = execFileSync("netstat", ["-ano", "-p", "TCP"], {
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+      return parseNetstatOutput(out, port);
+    } catch {
+      return [];
+    }
+  }
   try {
     const lsof = resolveLsofCommandSync();
     const out = execFileSync(lsof, ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-FpFc"], {
@@ -51,8 +109,21 @@ export function forceFreePort(port: number): PortProcess[] {
   const listeners = listPortListeners(port);
   for (const proc of listeners) {
     try {
-      process.kill(proc.pid, "SIGTERM");
+      if (process.platform === "win32") {
+        // On Windows, process.kill(pid, "SIGTERM") doesn't gracefully stop Node processes.
+        // Use taskkill which sends WM_CLOSE for graceful shutdown.
+        execFileSync("taskkill", ["/PID", String(proc.pid)], {
+          timeout: 5000,
+          encoding: "utf-8",
+        });
+      } else {
+        process.kill(proc.pid, "SIGTERM");
+      }
     } catch (err) {
+      // Process may have already exited between listing and killing (race condition).
+      const code = (err as { code?: string; status?: number }).code;
+      const status = (err as { status?: number }).status;
+      if (code === "ESRCH" || status === 128) continue;
       throw new Error(
         `failed to kill pid ${proc.pid}${proc.command ? ` (${proc.command})` : ""}: ${String(err)}`,
       );
@@ -64,8 +135,21 @@ export function forceFreePort(port: number): PortProcess[] {
 function killPids(listeners: PortProcess[], signal: NodeJS.Signals) {
   for (const proc of listeners) {
     try {
-      process.kill(proc.pid, signal);
+      if (process.platform === "win32") {
+        // On Windows, SIGKILL equivalent is taskkill /F (force kill).
+        // Without /F, taskkill sends WM_CLOSE for graceful shutdown.
+        const args = ["/PID", String(proc.pid)];
+        if (signal === "SIGKILL") args.push("/F");
+        execFileSync("taskkill", args, { timeout: 5000, encoding: "utf-8" });
+      } else {
+        process.kill(proc.pid, signal);
+      }
     } catch (err) {
+      // On Windows, taskkill exits with code 128 if process already exited (race).
+      // On Unix, ESRCH means process not found. Both are safe to ignore.
+      const code = (err as { code?: string; status?: number }).code;
+      const status = (err as { status?: number }).status;
+      if (code === "ESRCH" || status === 128) continue;
       throw new Error(
         `failed to kill pid ${proc.pid}${proc.command ? ` (${proc.command})` : ""}: ${String(err)}`,
       );

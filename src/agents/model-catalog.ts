@@ -8,7 +8,7 @@ export type ModelCatalogEntry = {
   provider: string;
   contextWindow?: number;
   reasoning?: boolean;
-  input?: Array<"text" | "image">;
+  input?: Array<"text" | "image" | "video">;
 };
 
 type DiscoveredModel = {
@@ -17,7 +17,7 @@ type DiscoveredModel = {
   provider: string;
   contextWindow?: number;
   reasoning?: boolean;
-  input?: Array<"text" | "image">;
+  input?: Array<"text" | "image" | "video">;
 };
 
 type PiSdkModule = typeof import("@mariozechner/pi-coding-agent");
@@ -83,7 +83,7 @@ export async function loadModelCatalog(params?: {
             : undefined;
         const reasoning = typeof entry?.reasoning === "boolean" ? entry.reasoning : undefined;
         const input = Array.isArray(entry?.input)
-          ? (entry.input as Array<"text" | "image">)
+          ? (entry.input as Array<"text" | "image" | "video">)
           : undefined;
         models.push({ id, name, provider, contextWindow, reasoning, input });
       }

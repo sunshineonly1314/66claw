@@ -35,7 +35,9 @@ import {
   resolveModelRefFromString,
   type ModelRef,
 } from "../agents/model-selection.js";
+import { resolveClawdbotAgentDir } from "../agents/agent-paths.js";
 import { resolveModel } from "../agents/pi-embedded-runner/model.js";
+import { getMergedProvidersForAgent } from "../agents/models-config.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_TTS_MAX_LENGTH = 1500;
@@ -836,12 +838,18 @@ async function summarizeText(params: {
 
   const startTime = Date.now();
   const { ref } = resolveSummaryModelRef(cfg, config);
-  const resolved = resolveModel(ref.provider, ref.model, undefined, cfg);
+  const agentDir = resolveClawdbotAgentDir();
+  const mergedProviders = await getMergedProvidersForAgent(cfg, agentDir);
+  const cfgForModel =
+    Object.keys(mergedProviders).length > 0
+      ? { ...cfg, models: { ...cfg?.models, providers: mergedProviders } }
+      : cfg;
+  const resolved = resolveModel(ref.provider, ref.model, agentDir, cfgForModel);
   if (!resolved.model) {
     throw new Error(resolved.error ?? `Unknown summary model: ${ref.provider}/${ref.model}`);
   }
   const apiKey = requireApiKey(
-    await getApiKeyForModel({ model: resolved.model, cfg }),
+    await getApiKeyForModel({ model: resolved.model, cfg: cfgForModel }),
     ref.provider,
   );
 

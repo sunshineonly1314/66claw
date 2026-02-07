@@ -2,16 +2,12 @@
   "name": "@clawdbot/dingtalk",
   "version": "2026.1.27",
   "type": "module",
-  "description": "Clawdbot 钉钉渠道插件 (DingTalk channel plugin)",
+  "description": "Clawdbot DingTalk channel plugin",
   "clawdbot": {
-    "extensions": [
-      "./index.ts"
-    ]
+    "extensions": ["./index.ts"]
   },
   "dependencies": {
+    "dingtalk-stream": "^2.1.4",
     "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "clawdbot": "workspace:*"
   }
 }

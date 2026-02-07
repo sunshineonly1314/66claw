@@ -552,6 +552,51 @@ export const ClawdbotSchema = z
       })
       .strict()
       .optional(),
+    // ClawdbotCN 独家福利：每日免费大模型平滑切换
+    freeModels: z
+      .object({
+        enabled: z.boolean().optional(),
+        accounts: z
+          .array(
+            z.object({
+              providerId: z.string(),
+              apiKey: z.string(),
+              priority: z.number().int().min(1).optional(),
+              addedAt: z.string().optional(),
+            })
+          )
+          .optional(),
+        scheduling: z
+          .object({
+            strategy: z.enum(["priority", "round_robin"]).optional(),
+            showNotification: z.boolean().optional(),
+            preCheck: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+        stats: z
+          .object({
+            todaySavings: z.number().optional(),
+            totalSavings: z.number().optional(),
+            todayFreeRequests: z.number().optional(),
+            lastResetDate: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+        switchHistory: z
+          .array(
+            z.object({
+              timestamp: z.string(),
+              fromProvider: z.string().optional(),
+              toProvider: z.string(),
+              reason: z.string().optional(),
+              savings: z.number().optional(),
+            })
+          )
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((cfg, ctx) => {

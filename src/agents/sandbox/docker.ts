@@ -10,20 +10,60 @@ import type { SandboxConfig, SandboxDockerConfig, SandboxWorkspaceAccess } from 
 
 const HOT_CONTAINER_WINDOW_MS = 5 * 60 * 1000;
 
+/**
+ * Check if Docker is available on this system.
+ * Returns true if docker command exists and can run, false otherwise.
+ */
+export async function isDockerAvailable(): Promise<boolean> {
+  const result = await execDocker(["version", "--format", "{{.Server.Version}}"], {
+    allowFailure: true,
+  });
+  return result.code === 0;
+}
+
 export function execDocker(args: string[], opts?: { allowFailure?: boolean }) {
   return new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
-    const child = spawn("docker", args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn("docker", args, {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      // Handle synchronous spawn errors (rare but possible)
+      if (opts?.allowFailure) {
+        resolve({ stdout: "", stderr: String(err), code: 1 });
+        return;
+      }
+      reject(err);
+      return;
+    }
     let stdout = "";
     let stderr = "";
+    let settled = false;
     child.stdout?.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr?.on("data", (chunk) => {
       stderr += chunk.toString();
     });
+    // Handle spawn errors (e.g., ENOENT when docker is not installed)
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      if (settled) return;
+      settled = true;
+      if (opts?.allowFailure) {
+        const message = err.code === "ENOENT" ? "docker not found" : err.message;
+        resolve({ stdout: "", stderr: message, code: 1 });
+        return;
+      }
+      if (err.code === "ENOENT") {
+        reject(new Error("Docker is not installed or not in PATH"));
+        return;
+      }
+      reject(err);
+    });
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
       const exitCode = code ?? 0;
       if (exitCode !== 0 && !opts?.allowFailure) {
         reject(new Error(stderr.trim() || `docker ${args.join(" ")} failed`));
@@ -52,7 +92,12 @@ async function dockerImageExists(image: string) {
   });
   if (result.code === 0) return true;
   const stderr = result.stderr.trim();
-  if (stderr.includes("No such image")) {
+  // Docker not installed or image doesn't exist - return false
+  if (
+    stderr.includes("No such image") ||
+    stderr.includes("docker not found") ||
+    stderr.includes("not installed")
+  ) {
     return false;
   }
   throw new Error(`Failed to inspect sandbox image: ${stderr}`);

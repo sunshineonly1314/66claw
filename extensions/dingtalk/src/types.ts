@@ -1,7 +1,18 @@
 /**
  * 钉钉渠道类型定义
  * DingTalk Channel Type Definitions
+ *
+ * 支持两种接入模式:
+ * - webhook: HTTP Webhook 模式 (需要公网 IP)
+ * - stream: Stream WebSocket 模式 (无需公网 IP，支持 AI Card 流式响应)
  */
+
+// ============================================================================
+// 接入模式 (Connection Mode)
+// ============================================================================
+
+/** 钉钉接入模式 */
+export type DingtalkMode = "webhook" | "stream";
 
 // ============================================================================
 // 配置类型 (Configuration Types)
@@ -19,6 +30,26 @@ export interface DingtalkAppConfig {
   robotCode?: string;
   /** 消息加签密钥 (可选，用于安全验证) */
   signSecret?: string;
+  /** 调试模式 */
+  debug?: boolean;
+}
+
+/**
+ * Stream 模式配置
+ */
+export interface DingtalkStreamConfig {
+  /** 启用 AI Card 流式响应 (打字机效果) */
+  enableAICard?: boolean;
+  /** 会话超时时间 (ms)，默认 30 分钟 */
+  sessionTimeout?: number;
+  /** 启用图片自动上传 */
+  enableMediaUpload?: boolean;
+  /** 自定义 system prompt */
+  systemPrompt?: string;
+  /** Gateway 认证 token */
+  gatewayToken?: string;
+  /** Gateway 认证 password (与 token 二选一) */
+  gatewayPassword?: string;
 }
 
 /**
@@ -27,12 +58,16 @@ export interface DingtalkAppConfig {
 export interface DingtalkChannelConfig {
   /** 是否启用 */
   enabled?: boolean;
+  /** 接入模式: webhook (默认) 或 stream */
+  mode?: DingtalkMode;
   /** 应用配置 */
   app?: DingtalkAppConfig;
-  /** Webhook 端口 (默认 3002) */
+  /** Webhook 端口 (默认 3002) - Webhook 模式专用 */
   webhookPort?: number;
-  /** Webhook 路径 (默认 /dingtalk/webhook) */
+  /** Webhook 路径 (默认 /dingtalk/webhook) - Webhook 模式专用 */
   webhookPath?: string;
+  /** Stream 模式配置 */
+  stream?: DingtalkStreamConfig;
   /** 允许的用户 ID 列表 */
   allowFrom?: string[];
   /** 私聊策略: "open" | "allowlist" | "pairing" */
@@ -283,4 +318,89 @@ export interface DingtalkProbeResult {
   appKey?: string;
   robotCode?: string;
   elapsedMs?: number;
+}
+
+// ============================================================================
+// AI Card 类型 (AI Card Types) - Stream 模式专用
+// ============================================================================
+
+/** AI Card 流程状态 */
+export const AICardStatus = {
+  PROCESSING: "1",
+  INPUTING: "2",
+  FINISHED: "3",
+  EXECUTING: "4",
+  FAILED: "5",
+} as const;
+
+export type AICardStatusType = (typeof AICardStatus)[keyof typeof AICardStatus];
+
+/** AI Card 实例 */
+export interface AICardInstance {
+  /** 卡片实例 ID */
+  cardInstanceId: string;
+  /** Access Token */
+  accessToken: string;
+  /** 是否已开始输入状态 */
+  inputingStarted: boolean;
+}
+
+/** AI Card 创建上下文 */
+export interface AICardContext {
+  /** 会话类型: 1=单聊, 2=群聊 */
+  conversationType: "1" | "2";
+  /** 会话 ID */
+  conversationId: string;
+  /** 发送者 Staff ID */
+  senderStaffId?: string;
+  /** 发送者 ID */
+  senderId: string;
+}
+
+// ============================================================================
+// 会话管理类型 (Session Management Types) - Stream 模式专用
+// ============================================================================
+
+/** 用户会话状态 */
+export interface UserSession {
+  /** 最后活跃时间 */
+  lastActivity: number;
+  /** 会话标识: dingtalk:<senderId> 或 dingtalk:<senderId>:<timestamp> */
+  sessionId: string;
+}
+
+/** 新会话触发命令 */
+export const NEW_SESSION_COMMANDS = [
+  "/new",
+  "/reset",
+  "/clear",
+  "新会话",
+  "重新开始",
+  "清空对话",
+] as const;
+
+// ============================================================================
+// Stream 消息处理上下文 (Stream Message Context)
+// ============================================================================
+
+/** Stream 消息处理参数 */
+export interface StreamMessageParams {
+  /** 全局配置 */
+  cfg: unknown;
+  /** 账户 ID */
+  accountId: string;
+  /** 原始消息数据 */
+  data: DingtalkRobotMessageEvent;
+  /** Session Webhook */
+  sessionWebhook: string;
+  /** 日志接口 */
+  log?: {
+    info: (msg: string) => void;
+    warn: (msg: string) => void;
+    error: (msg: string) => void;
+  };
+  /** 钉钉渠道配置 */
+  dingtalkConfig: DingtalkChannelConfig;
+  /** Gateway 端口 */
+  gatewayPort?: number;
 }

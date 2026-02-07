@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { CURRENT_SESSION_VERSION } from "@mariozechner/pi-coding-agent";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { isLicenseValid, getGatewayLicenseState } from "../license-check.js";
 import { resolveEffectiveMessagesConfig, resolveIdentityName } from "../../agents/identity.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
@@ -294,6 +295,18 @@ export const chatHandlers: GatewayRequestHandlers = {
     });
   },
   "chat.send": async ({ params, respond, context, client }) => {
+    // 授权检查：过期或无效授权不允许发送消息
+    if (!isLicenseValid()) {
+      const licenseState = getGatewayLicenseState();
+      const errorMsg = licenseState?.error || "授权无效，请先激活或续费";
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAUTHORIZED, errorMsg),
+      );
+      return;
+    }
+
     if (!validateChatSendParams(params)) {
       respond(
         false,

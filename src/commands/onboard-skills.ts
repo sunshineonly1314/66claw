@@ -2,6 +2,7 @@ import { installSkill } from "../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../agents/skills-status.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import type { ClawdbotConfig } from "../config/config.js";
+import { shouldUseCNMirror } from "../config/cn-mirrors.js";
 import { t } from "../i18n/index.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
@@ -84,11 +85,18 @@ export async function setupSkills(
       initialValue: true,
     });
     if (showBrewInstall) {
+      // 中国区使用清华镜像安装 Homebrew
+      const useCN = shouldUseCNMirror();
+      const brewInstallCmd = useCN
+        ? '/bin/bash -c "$(curl -fsSL https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/install/HEAD/install.sh)"'
+        : '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"';
       await prompter.note(
         [
           t("skills.runCommand"),
-          '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
-        ].join("\n"),
+          brewInstallCmd,
+          useCN ? "\n# 或使用中科大镜像：" : "",
+          useCN ? '/bin/bash -c "$(curl -fsSL https://mirrors.ustc.edu.cn/misc/brew-install.sh)"' : "",
+        ].filter(Boolean).join("\n"),
         t("skills.homebrewInstall"),
       );
     }

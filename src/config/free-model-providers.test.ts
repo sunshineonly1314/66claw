@@ -1,0 +1,306 @@
+/**
+ * ClawdbotCN 免费模型 Provider 配置测试
+ * Free Model Providers Configuration Tests
+ *
+ * 测试覆盖：
+ * 1. Provider 配置完整性
+ * 2. 数据格式正确性
+ * 3. URL 有效性验证
+ * 4. 错误码配置验证
+ * 5. 工具函数测试
+ */
+
+import { describe, it, expect } from "vitest";
+import {
+  FREE_MODEL_PROVIDERS,
+  getFreeModelProvider,
+  getAllFreeModelProviders,
+  getRecommendedFreeModelProviders,
+  getTotalDailyFreeQuota,
+  QUOTA_ERROR_KEYWORDS_CHINESE,
+  QUOTA_ERROR_KEYWORDS_ENGLISH,
+} from "./free-model-providers.js";
+
+// ============================================================================
+// 1. Provider 配置完整性测试
+// ============================================================================
+
+describe("Provider 配置完整性", () => {
+  it("应该定义蚂蚁百灵和美团LongCat两个免费模型", () => {
+    const providers = getAllFreeModelProviders();
+    expect(providers.length).toBe(2);
+
+    const providerIds = providers.map((p) => p.id);
+    expect(providerIds).toContain("ant-ling");
+    expect(providerIds).toContain("meituan-longcat");
+  });
+
+  it("每个 Provider 都应该有完整的必要字段", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      // 基本字段
+      expect(provider.id).toBeDefined();
+      expect(provider.name).toBeDefined();
+      expect(provider.displayName).toBeDefined();
+
+      // 免费额度字段
+      expect(provider.freeQuota).toBeDefined();
+      expect(provider.freeQuota.type).toBe("daily");
+      expect(provider.freeQuota.limit).toBeGreaterThan(0);
+      expect(provider.freeQuota.unit).toBe("tokens");
+      expect(provider.freeQuota.resetsAt).toBeDefined();
+
+      // URL 字段
+      expect(provider.baseUrl).toBeDefined();
+      expect(provider.registerUrl).toBeDefined();
+      expect(provider.docsUrl).toBeDefined();
+
+      // 功能字段
+      expect(provider.features).toBeInstanceOf(Array);
+      expect(provider.recommended).toBeDefined();
+
+      // 错误码配置
+      expect(provider.errorCodes).toBeDefined();
+    }
+  });
+
+  it("id 与 FREE_MODEL_PROVIDERS 的 key 应该一致", () => {
+    const mismatches: string[] = [];
+
+    for (const [key, provider] of Object.entries(FREE_MODEL_PROVIDERS)) {
+      if (provider.id !== key) {
+        mismatches.push(`key="${key}" but id="${provider.id}"`);
+      }
+    }
+
+    expect(mismatches).toEqual([]);
+  });
+});
+
+// ============================================================================
+// 2. 免费额度配置验证
+// ============================================================================
+
+describe("免费额度配置", () => {
+  it("每日免费额度应该合理（50万 tokens）", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      // 每日免费应该至少 100,000 tokens
+      expect(provider.freeQuota.limit).toBeGreaterThanOrEqual(100000);
+      // 但不应该超过 2,000,000 tokens（可疑的过大值）
+      expect(provider.freeQuota.limit).toBeLessThanOrEqual(2000000);
+    }
+  });
+
+  it("重置时间格式应该正确", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      // 应该包含时间信息
+      expect(provider.freeQuota.resetsAt).toMatch(/00:00|每日/);
+    }
+  });
+
+  it("getTotalDailyFreeQuota 应该返回所有日免费额度之和", () => {
+    const total = getTotalDailyFreeQuota();
+    // 2 个 provider，每个 50万 = 100万
+    expect(total).toBe(1000000);
+  });
+});
+
+// ============================================================================
+// 3. URL 有效性验证
+// ============================================================================
+
+describe("URL 有效性", () => {
+  it("baseUrl 应该是有效的 HTTPS URL", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      expect(provider.baseUrl).toMatch(/^https:\/\//);
+    }
+  });
+
+  it("registerUrl 应该是有效的 URL", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      expect(provider.registerUrl).toMatch(/^https?:\/\//);
+    }
+  });
+
+  it("docsUrl 应该是有效的 URL", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      expect(provider.docsUrl).toMatch(/^https?:\/\//);
+    }
+  });
+});
+
+// ============================================================================
+// 4. 错误码配置验证
+// ============================================================================
+
+describe("错误码配置", () => {
+  it("每个 Provider 应该有 httpStatus 配置", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      expect(provider.errorCodes.httpStatus).toBeDefined();
+      expect(provider.errorCodes.httpStatus?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("httpStatus 应该包含常见的额度错误码", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      const statuses = provider.errorCodes.httpStatus ?? [];
+      // 至少应该包含 402 或 429
+      expect(statuses.some((s) => s === 402 || s === 429)).toBe(true);
+    }
+  });
+
+  it("stringCodes 应该是字符串数组", () => {
+    const providers = getAllFreeModelProviders();
+
+    for (const provider of providers) {
+      if (provider.errorCodes.stringCodes) {
+        expect(provider.errorCodes.stringCodes).toBeInstanceOf(Array);
+        for (const code of provider.errorCodes.stringCodes) {
+          expect(typeof code).toBe("string");
+        }
+      }
+    }
+  });
+});
+
+// ============================================================================
+// 5. 工具函数测试
+// ============================================================================
+
+describe("工具函数", () => {
+  describe("getFreeModelProvider", () => {
+    it("应该返回正确的 Provider", () => {
+      const antLing = getFreeModelProvider("ant-ling");
+      expect(antLing).toBeDefined();
+      expect(antLing?.name).toBe("蚂蚁百灵");
+    });
+
+    it("不存在的 id 应该返回 undefined", () => {
+      const unknown = getFreeModelProvider("unknown-provider");
+      expect(unknown).toBeUndefined();
+    });
+  });
+
+  describe("getAllFreeModelProviders", () => {
+    it("应该返回所有 Provider", () => {
+      const providers = getAllFreeModelProviders();
+      expect(providers.length).toBe(2);
+    });
+
+    it("返回的应该是数组", () => {
+      const providers = getAllFreeModelProviders();
+      expect(Array.isArray(providers)).toBe(true);
+    });
+  });
+
+  describe("getRecommendedFreeModelProviders", () => {
+    it("应该返回推荐的 Provider", () => {
+      const recommended = getRecommendedFreeModelProviders();
+      expect(recommended.length).toBeGreaterThan(0);
+
+      for (const provider of recommended) {
+        expect(provider.recommended).toBe(true);
+      }
+    });
+  });
+});
+
+// ============================================================================
+// 6. 错误关键词配置验证
+// ============================================================================
+
+describe("错误关键词配置", () => {
+  it("中文关键词应该包含常见的额度错误词", () => {
+    expect(QUOTA_ERROR_KEYWORDS_CHINESE).toContain("额度不足");
+    expect(QUOTA_ERROR_KEYWORDS_CHINESE).toContain("余额不足");
+    expect(QUOTA_ERROR_KEYWORDS_CHINESE).toContain("额度已用完");
+  });
+
+  it("英文关键词应该包含常见的额度错误词", () => {
+    expect(QUOTA_ERROR_KEYWORDS_ENGLISH).toContain("quota exceeded");
+    expect(QUOTA_ERROR_KEYWORDS_ENGLISH).toContain("daily limit");
+    expect(QUOTA_ERROR_KEYWORDS_ENGLISH).toContain("rate limit exceeded");
+  });
+
+  it("关键词数组不应该为空", () => {
+    expect(QUOTA_ERROR_KEYWORDS_CHINESE.length).toBeGreaterThan(0);
+    expect(QUOTA_ERROR_KEYWORDS_ENGLISH.length).toBeGreaterThan(0);
+  });
+});
+
+// ============================================================================
+// 7. 蚂蚁百灵配置验证
+// ============================================================================
+
+describe("蚂蚁百灵配置验证", () => {
+  const antLing = getFreeModelProvider("ant-ling");
+
+  it("应该存在", () => {
+    expect(antLing).toBeDefined();
+  });
+
+  it("名称应该正确", () => {
+    expect(antLing?.name).toBe("蚂蚁百灵");
+  });
+
+  it("每日额度应该是 50 万 tokens", () => {
+    expect(antLing?.freeQuota.limit).toBe(500000);
+  });
+
+  it("应该有数字错误码配置", () => {
+    expect(antLing?.errorCodes.numericCodes).toBeDefined();
+    expect(antLing?.errorCodes.numericCodes?.length).toBeGreaterThan(0);
+  });
+
+  it("应该配置为推荐", () => {
+    expect(antLing?.recommended).toBe(true);
+  });
+});
+
+// ============================================================================
+// 8. 美团 LongCat 配置验证
+// ============================================================================
+
+describe("美团 LongCat 配置验证", () => {
+  const longcat = getFreeModelProvider("meituan-longcat");
+
+  it("应该存在", () => {
+    expect(longcat).toBeDefined();
+  });
+
+  it("名称应该正确", () => {
+    expect(longcat?.name).toBe("美团LongCat");
+  });
+
+  it("每日额度应该是 50 万 tokens", () => {
+    expect(longcat?.freeQuota.limit).toBe(500000);
+  });
+
+  it("应该有字符串错误码配置", () => {
+    expect(longcat?.errorCodes.stringCodes).toBeDefined();
+    expect(longcat?.errorCodes.stringCodes?.length).toBeGreaterThan(0);
+  });
+
+  it("应该配置为推荐", () => {
+    expect(longcat?.recommended).toBe(true);
+  });
+
+  it("baseUrl 应该是 OpenAI 兼容格式", () => {
+    expect(longcat?.baseUrl).toContain("/openai/v1");
+  });
+});

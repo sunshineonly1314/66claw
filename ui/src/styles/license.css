@@ -367,3 +367,62 @@
     width: 100%;
   }
 }
+
+/* ============================================================================
+   License Activation Banner (温和的激活提示条)
+   ============================================================================ */
+
+.license-activation-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #fef3cd 0%, #fff8e1 100%);
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.license-activation-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.license-activation-text {
+  flex: 1;
+  font-size: 14px;
+  color: #856404;
+}
+
+.license-activation-btn {
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.license-activation-btn:hover {
+  background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+}
+
+.license-activation-btn:active {
+  transform: translateY(0);
+}
+
+/* Dark mode support */
+:root[data-theme="dark"] .license-activation-banner {
+  background: linear-gradient(135deg, #3d3216 0%, #4a3d1a 100%);
+  border-color: #8a6d1b;
+}
+
+:root[data-theme="dark"] .license-activation-text {
+  color: #ffc107;
+}

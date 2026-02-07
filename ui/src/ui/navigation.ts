@@ -9,7 +9,7 @@ export const TAB_GROUPS = [
   { label: "Chat", tabs: ["chat"] },
   {
     label: "Control",
-    tabs: ["overview", "channels", "instances", "sessions", "cron"],
+    tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"],
   },
   { label: "Agent", tabs: ["playground", "skills", "nodes"] },
   { label: "Settings", tabs: ["config", "debug", "logs"] },
@@ -23,7 +23,7 @@ export function getTabGroups() {
     { label: t("nav.chat"), tabs: ["chat"] as const },
     {
       label: t("nav.control"),
-      tabs: ["overview", "channels", "instances", "sessions", "cron"] as const,
+      tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"] as const,
     },
     { label: t("nav.agent"), tabs: ["playground", "skills", "nodes"] as const },
     { label: t("nav.settings"), tabs: ["config", "debug", "logs"] as const },
@@ -32,6 +32,8 @@ export function getTabGroups() {
 
 export type Tab =
   | "overview"
+  | "free-models"
+  | "usage"
   | "channels"
   | "instances"
   | "sessions"
@@ -47,6 +49,8 @@ export type Tab =
 
 const TAB_PATHS: Record<Tab, string> = {
   overview: "/overview",
+  "free-models": "/free-models",
+  usage: "/usage",
   channels: "/channels",
   instances: "/instances",
   sessions: "/sessions",
@@ -130,6 +134,10 @@ export function iconForTab(tab: Tab): IconName {
       return "messageSquare";
     case "overview":
       return "barChart";
+    case "free-models":
+      return "gift";
+    case "usage":
+      return "activity";
     case "channels":
       return "link";
     case "instances":
@@ -161,6 +169,10 @@ export function titleForTab(tab: Tab) {
   switch (tab) {
     case "overview":
       return t("nav.overview");
+    case "free-models":
+      return t("nav.freeModels");
+    case "usage":
+      return t("nav.usage");
     case "channels":
       return t("nav.channels");
     case "instances":
@@ -194,6 +206,10 @@ export function subtitleForTab(tab: Tab) {
   switch (tab) {
     case "overview":
       return t("subtitle.overview");
+    case "free-models":
+      return t("subtitle.freeModels");
+    case "usage":
+      return t("subtitle.usage");
     case "channels":
       return t("subtitle.channels");
     case "instances":

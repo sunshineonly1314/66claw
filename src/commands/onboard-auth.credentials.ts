@@ -34,6 +34,32 @@ export async function setAnthropicApiKey(key: string, agentDir?: string) {
   });
 }
 
+export async function setOpenAiApiKey(key: string, agentDir?: string) {
+  // Write to resolved agent dir so gateway finds credentials on startup.
+  upsertAuthProfile({
+    profileId: "openai:default",
+    credential: {
+      type: "api_key",
+      provider: "openai",
+      key,
+    },
+    agentDir: resolveAuthAgentDir(agentDir),
+  });
+}
+
+export async function setNvidiaApiKey(key: string, agentDir?: string) {
+  // Write to resolved agent dir so gateway finds credentials on startup.
+  upsertAuthProfile({
+    profileId: "nvidia:default",
+    credential: {
+      type: "api_key",
+      provider: "nvidia",
+      key,
+    },
+    agentDir: resolveAuthAgentDir(agentDir),
+  });
+}
+
 export async function setGeminiApiKey(key: string, agentDir?: string) {
   // Write to resolved agent dir so gateway finds credentials on startup.
   upsertAuthProfile({
@@ -239,6 +265,18 @@ export async function setTencentHunyuanApiKey(key: string, agentDir?: string) {
     credential: {
       type: "api_key",
       provider: "tencent-hunyuan",
+      key,
+    },
+    agentDir: resolveAuthAgentDir(agentDir),
+  });
+}
+
+export async function setModelscopeApiKey(key: string, agentDir?: string) {
+  upsertAuthProfile({
+    profileId: "modelscope:default",
+    credential: {
+      type: "api_key",
+      provider: "modelscope",
       key,
     },
     agentDir: resolveAuthAgentDir(agentDir),

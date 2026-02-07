@@ -12,8 +12,11 @@ export * from "./types.js";
 export {
   getDeviceId,
   getDeviceName,
+  getDeviceFingerprint,
   getOsInfo,
   resetDeviceId,
+  getDeviceDiagnostics,
+  type DeviceDiagnostics,
 } from "./device-id.js";
 
 // 请求签名
@@ -35,6 +38,9 @@ export {
   sendHeartbeat,
   getDeviceList,
   unbindDevice,
+  UnbindError,
+  switchDevice,
+  DeviceSwitchError,
   acknowledgeNotification,
   checkHealth,
   createLicenseCache,
@@ -79,3 +85,31 @@ export {
   verifyLicenseOnStartup,
   type StartupVerifyResult,
 } from "./startup.js";
+
+// 技术支持二维码
+export {
+  getSupportQrcode,
+  getPurchaseUrl,
+  enrichLicenseWithSupport,
+  clearSupportQrcodeCache,
+} from "./support-qrcode.js";
+
+// 短期令牌
+export {
+  fetchToken,
+  refreshToken,
+  hasValidToken,
+  getCurrentToken,
+  getTokenRemainingMs,
+  isTokenValid,
+  isTokenInGracePeriod,
+  verifyTokenSignature,
+  startTokenAutoRefresh,
+  stopTokenAutoRefresh,
+  clearToken,
+  isFeatureAllowed,
+  getTokenStatusSummary,
+  type LicenseToken,
+  type TokenResponse,
+  type TokenState,
+} from "./token.js";

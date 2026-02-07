@@ -3,6 +3,16 @@ import type { RemoteSkillsIndex, SkillStatusReport, SkillsMarketResponse } from 
 
 export type SkillsTab = "local" | "remote";
 
+/** 安装进度阶段 */
+export type InstallProgressStage = "downloading" | "installing" | "verifying" | "done";
+
+/** 安装进度信息 */
+export type InstallProgress = {
+  stage: InstallProgressStage;
+  message: string;
+  percent?: number;
+};
+
 export type SkillsState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -12,17 +22,23 @@ export type SkillsState = {
   skillsBusyKey: string | null;
   skillEdits: Record<string, string>;
   skillMessages: SkillMessageMap;
-  // Remote skills (legacy, kept for compatibility)
-  activeTab: SkillsTab;
-  remoteLoading: boolean;
-  remoteIndex: RemoteSkillsIndex | null;
-  remoteError: string | null;
+  // 安装进度追踪
+  skillsInstallProgress: Record<string, InstallProgress>;
+  // Remote skills - UI 状态统一使用 skillsXxx 前缀
+  skillsActiveTab: SkillsTab;
+  skillsRemoteLoading: boolean;
+  skillsRemoteIndex: RemoteSkillsIndex | null;
+  skillsRemoteError: string | null;
   // Skills Market (new local-index based)
-  marketLoading: boolean;
-  marketResponse: SkillsMarketResponse | null;
-  marketSyncing: boolean;
-  marketLastSyncedAt: string | null;
-  marketError: string | null;
+  skillsMarketLoading: boolean;
+  skillsMarketResponse: SkillsMarketResponse | null;
+  skillsMarketSyncing: boolean;
+  skillsMarketLastSyncedAt: string | null;
+  skillsMarketError: string | null;
+  // Category filter
+  skillsActiveCategory: string;
+  // Filter
+  skillsFilter: string;
 };
 
 export type SkillMessage = {
@@ -161,50 +177,123 @@ export async function installSkill(
 }
 
 export function setActiveTab(state: SkillsState, tab: SkillsTab) {
-  state.activeTab = tab;
+  state.skillsActiveTab = tab;
+}
+
+export function setActiveCategory(state: SkillsState, category: string) {
+  state.skillsActiveCategory = category;
 }
 
 export async function loadRemoteSkills(state: SkillsState) {
   if (!state.client || !state.connected) return;
-  if (state.remoteLoading) return;
-  state.remoteLoading = true;
-  state.remoteError = null;
+  if (state.skillsRemoteLoading) return;
+  state.skillsRemoteLoading = true;
+  state.skillsRemoteError = null;
   try {
     const res = (await state.client.request("skills.remote.list", {})) as
       | RemoteSkillsIndex
       | undefined;
-    if (res) state.remoteIndex = res;
+    if (res) {
+      state.skillsRemoteIndex = res;
+    }
   } catch (err) {
-    state.remoteError = getErrorMessage(err);
+    const errorMsg = getErrorMessage(err);
+    state.skillsRemoteError = errorMsg;
   } finally {
-    state.remoteLoading = false;
+    state.skillsRemoteLoading = false;
   }
+}
+
+/** 更新安装进度 */
+function setInstallProgress(state: SkillsState, skillName: string, progress: InstallProgress | null) {
+  const next = { ...state.skillsInstallProgress };
+  if (progress) {
+    next[skillName] = progress;
+  } else {
+    delete next[skillName];
+  }
+  state.skillsInstallProgress = next;
 }
 
 export async function installRemoteSkill(
   state: SkillsState,
   skillName: string,
 ) {
-  if (!state.client || !state.connected) return;
+  // 检查连接状态，给出友好提示而不是静默失败
+  if (!state.client || !state.connected) {
+    const message = "服务未连接，请刷新页面或检查 Gateway 是否正常运行";
+    state.skillsRemoteError = message;
+    state.skillsMarketError = message;
+    setSkillMessage(state, skillName, {
+      kind: "error",
+      message,
+    });
+    return;
+  }
   state.skillsBusyKey = skillName;
-  state.remoteError = null;
-  state.marketError = null;
+  state.skillsRemoteError = null;
+  state.skillsMarketError = null;
+  
+  // 阶段1: 开始下载
+  setInstallProgress(state, skillName, {
+    stage: "downloading",
+    message: "正在从云端下载技能包...",
+    percent: 20,
+  });
+  
   try {
+    // 模拟下载进度（因为后端是一次性返回结果）
+    const progressTimer = setInterval(() => {
+      const current = state.skillsInstallProgress[skillName];
+      if (current && current.stage === "downloading" && (current.percent ?? 0) < 80) {
+        setInstallProgress(state, skillName, {
+          stage: "downloading",
+          message: "正在从云端下载技能包...",
+          percent: Math.min((current.percent ?? 20) + 10, 80),
+        });
+      }
+    }, 500);
+    
     const result = (await state.client.request("skills.install", {
       name: skillName,
       installId: "gitee",
       timeoutMs: 120000,
     })) as { ok?: boolean; message?: string };
+    
+    clearInterval(progressTimer);
+    
+    // 阶段2: 安装验证
+    setInstallProgress(state, skillName, {
+      stage: "verifying",
+      message: "正在验证安装...",
+      percent: 90,
+    });
+    
     // Refresh both lists (local skills + market)
     await Promise.all([loadSkills(state), loadMarketSkills(state)]);
+    
+    // 阶段3: 完成
+    setInstallProgress(state, skillName, {
+      stage: "done",
+      message: "安装成功！",
+      percent: 100,
+    });
+    
     setSkillMessage(state, skillName, {
       kind: "success",
       message: result?.message ?? "已安装",
     });
+    
+    // 延迟清除进度状态
+    setTimeout(() => {
+      setInstallProgress(state, skillName, null);
+    }, 1500);
+    
   } catch (err) {
     const message = getErrorMessage(err);
-    state.remoteError = message;
-    state.marketError = message;
+    state.skillsRemoteError = message;
+    state.skillsMarketError = message;
+    setInstallProgress(state, skillName, null);
     setSkillMessage(state, skillName, {
       kind: "error",
       message,
@@ -223,30 +312,32 @@ export async function installRemoteSkill(
  */
 export async function loadMarketSkills(state: SkillsState) {
   if (!state.client || !state.connected) return;
-  if (state.marketLoading) return;
-  state.marketLoading = true;
-  state.marketError = null;
+  if (state.skillsMarketLoading) return;
+  state.skillsMarketLoading = true;
+  state.skillsMarketError = null;
   try {
     const res = (await state.client.request("skills.market.list", {})) as
       | SkillsMarketResponse
       | undefined;
     if (res) {
-      state.marketResponse = res;
-      state.marketSyncing = res.syncing;
-      state.marketLastSyncedAt = res.lastSyncedAt;
-      // 同时更新旧的 remoteIndex 以保持兼容
+      state.skillsMarketResponse = res;
+      state.skillsMarketSyncing = res.syncing;
+      state.skillsMarketLastSyncedAt = res.lastSyncedAt;
+      // 同时更新 remoteIndex 以保持兼容
       if (res.skills.length > 0) {
-        state.remoteIndex = {
+        const remoteIndex = {
           version: 1,
           updated: res.lastSyncedAt ?? new Date().toISOString(),
           skills: res.skills,
         };
+        state.skillsRemoteIndex = remoteIndex;
       }
     }
   } catch (err) {
-    state.marketError = getErrorMessage(err);
+    const errorMsg = getErrorMessage(err);
+    state.skillsMarketError = errorMsg;
   } finally {
-    state.marketLoading = false;
+    state.skillsMarketLoading = false;
   }
 }
 
@@ -255,34 +346,36 @@ export async function loadMarketSkills(state: SkillsState) {
  */
 export async function refreshMarketSkills(state: SkillsState) {
   if (!state.client || !state.connected) return;
-  state.marketLoading = true;
-  state.marketSyncing = true;
-  state.marketError = null;
+  state.skillsMarketLoading = true;
+  state.skillsMarketSyncing = true;
+  state.skillsMarketError = null;
   try {
     const res = (await state.client.request("skills.market.refresh", {})) as
       | SkillsMarketResponse
       | undefined;
     if (res) {
-      state.marketResponse = res;
-      state.marketSyncing = res.syncing;
-      state.marketLastSyncedAt = res.lastSyncedAt;
-      // 同时更新旧的 remoteIndex 以保持兼容
+      state.skillsMarketResponse = res;
+      state.skillsMarketSyncing = res.syncing;
+      state.skillsMarketLastSyncedAt = res.lastSyncedAt;
+      // 同时更新 remoteIndex 以保持兼容
       if (res.skills.length > 0) {
-        state.remoteIndex = {
+        const remoteIndex = {
           version: 1,
           updated: res.lastSyncedAt ?? new Date().toISOString(),
           skills: res.skills,
         };
+        state.skillsRemoteIndex = remoteIndex;
       }
       if (res.message) {
         // 如果有消息（可能是错误），显示出来
-        state.marketError = res.message;
+        state.skillsMarketError = res.message;
       }
     }
   } catch (err) {
-    state.marketError = getErrorMessage(err);
+    const errorMsg = getErrorMessage(err);
+    state.skillsMarketError = errorMsg;
   } finally {
-    state.marketLoading = false;
-    state.marketSyncing = false;
+    state.skillsMarketLoading = false;
+    state.skillsMarketSyncing = false;
   }
 }

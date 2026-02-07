@@ -141,7 +141,7 @@ export function applyMoonshotProviderConfig(cfg: ClawdbotConfig): ClawdbotConfig
   const models = { ...cfg.agents?.defaults?.models };
   models[MOONSHOT_DEFAULT_MODEL_REF] = {
     ...models[MOONSHOT_DEFAULT_MODEL_REF],
-    alias: models[MOONSHOT_DEFAULT_MODEL_REF]?.alias ?? "Kimi K2",
+    alias: models[MOONSHOT_DEFAULT_MODEL_REF]?.alias ?? "Kimi K2.5",
   };
 
   const providers = { ...cfg.models?.providers };

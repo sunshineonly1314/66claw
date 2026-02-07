@@ -37,6 +37,7 @@ import { createFollowupRunner } from "./followup-runner.js";
 import { enqueueFollowupRun, type FollowupRun, type QueueSettings } from "./queue.js";
 import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-threading.js";
 import { persistSessionUsageUpdate } from "./session-usage.js";
+import { recordFreeModelUsage } from "./free-model-usage.js";
 import { incrementCompactionCount } from "./session-updates.js";
 import type { TypingController } from "./typing.js";
 import { createTypingSignaler } from "./typing-mode.js";
@@ -388,11 +389,24 @@ export async function runReplyAgent(params: {
       cliSessionId,
     });
 
+    // ClawdbotCN: record daily free-model token usage (local limit enforcement).
+    if (hasNonzeroUsage(usage)) {
+      try {
+        await recordFreeModelUsage({ providerUsed, usage });
+      } catch (err) {
+        defaultRuntime.error(`[FreeModel] Failed to record usage for ${providerUsed}: ${String(err)}`);
+      }
+    }
+
     // Drain any late tool/block deliveries before deciding there's "nothing to send".
     // Otherwise, a late typing trigger (e.g. from a tool callback) can outlive the run and
     // keep the typing indicator stuck.
-    if (payloadArray.length === 0)
+    if (payloadArray.length === 0) {
+      defaultRuntime.log(
+        `[AgentRunner] Empty payloads after agent run: provider=${providerUsed} model=${followupRun.run.model} session=${sessionKey ?? "?"}`,
+      );
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
+    }
 
     const payloadResult = buildReplyPayloads({
       payloads: payloadArray,
@@ -413,8 +427,12 @@ export async function runReplyAgent(params: {
     const { replyPayloads } = payloadResult;
     didLogHeartbeatStrip = payloadResult.didLogHeartbeatStrip;
 
-    if (replyPayloads.length === 0)
+    if (replyPayloads.length === 0) {
+      defaultRuntime.log(
+        `[AgentRunner] All payloads filtered (raw=${payloadArray.length}): provider=${providerUsed} model=${followupRun.run.model} session=${sessionKey ?? "?"}`,
+      );
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
+    }
 
     await signalTypingIfNeeded(replyPayloads, typingSignals);
 

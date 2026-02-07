@@ -5,12 +5,15 @@ import { loadWorkspaceSkillEntries, type SkillEntry } from "../../agents/skills.
 import {
   fetchRemoteSkillsIndex,
   getInstalledSkills,
+  installRemoteSkill,
+  getManagedSkillsDir,
 } from "../../agents/skills/gitee-registry.js";
 import {
   getSkillsMarket,
   forceRefreshMarket,
   refreshInstalledList,
 } from "../../agents/skills/sync.js";
+import { bumpSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
 import type { ClawdbotConfig } from "../../config/config.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
@@ -127,6 +130,98 @@ export const skillsHandlers: GatewayRequestHandlers = {
       timeoutMs?: number;
     };
     const cfg = loadConfig();
+
+    // 如果 installId 是 "gitee"，说明是从技能市场安装远程技能
+    // 需要先从远程下载技能到本地托管目录
+    if (p.installId === "gitee") {
+      const managedSkillsDir = getManagedSkillsDir();
+      const remoteResult = await installRemoteSkill(
+        { name: p.name, description: "", path: p.name },
+        undefined,
+        managedSkillsDir,
+      );
+
+      if (!remoteResult.ok) {
+        respond(
+          false,
+          { ok: false, message: remoteResult.error, stdout: "", stderr: "", code: null },
+          errorShape(ErrorCodes.UNAVAILABLE, remoteResult.error),
+        );
+        return;
+      }
+
+      // 远程技能下载成功后，检查是否需要安装依赖
+      // ClawdbotCN 专属：自动安装远程技能的 CLI 依赖（如 grizzly、himalaya 等）
+      const skillEntries = loadWorkspaceSkillEntries(managedSkillsDir, { config: cfg });
+      const targetEntry = skillEntries.find((e) => e.skill.name === p.name);
+      
+      if (targetEntry && targetEntry.clawdbot?.install && targetEntry.clawdbot.install.length > 0) {
+        // ClawdbotCN 专属：根据当前操作系统过滤 install spec
+        // 修复 Windows 用户点击一键安装时，错误选择 macOS-only 的 brew 方式的问题
+        const platform = process.platform;
+        const filteredInstall = targetEntry.clawdbot.install.filter((spec) => {
+          // 检查 OS 限制
+          const osList = spec.os ?? [];
+          if (osList.length > 0 && !osList.includes(platform)) {
+            return false;
+          }
+          // brew 只在 macOS 上可用
+          if (spec.kind === "brew" && platform !== "darwin") {
+            return false;
+          }
+          return true;
+        });
+        
+        if (filteredInstall.length === 0) {
+          // 没有适用于当前平台的安装方式
+          respond(
+            false,
+            { ok: false, message: `此技能没有适用于 ${platform} 平台的安装方式`, stdout: "", stderr: "", code: null },
+            errorShape(ErrorCodes.UNAVAILABLE, `No install method available for platform: ${platform}`),
+          );
+          return;
+        }
+        
+        // 技能有依赖需要安装 - 选择第一个适用于当前平台的 install spec
+        const firstInstallSpec = filteredInstall[0];
+        const installId = firstInstallSpec.id ?? `${firstInstallSpec.kind}-0`;
+        
+        const depResult = await installSkill({
+          workspaceDir: managedSkillsDir,
+          skillName: p.name,
+          installId,
+          timeoutMs: p.timeoutMs ?? 180_000,
+          config: cfg,
+        });
+        
+        if (!depResult.ok) {
+          // 依赖安装失败，返回错误但保留已下载的 SKILL.md
+          respond(
+            false,
+            depResult,
+            errorShape(ErrorCodes.UNAVAILABLE, depResult.message),
+          );
+          return;
+        }
+      }
+
+      // 远程技能安装成功（包括依赖）：
+      // 1. 刷新已安装列表
+      refreshInstalledList().catch(() => {
+        // 静默失败，不影响响应
+      });
+      // 2. 更新技能快照版本，让当前对话的下一条消息能立即使用新技能
+      bumpSkillsSnapshotVersion({ reason: "manual" });
+
+      respond(
+        true,
+        { ok: true, message: "已安装", stdout: "", stderr: "", code: 0 },
+        undefined,
+      );
+      return;
+    }
+
+    // 本地技能安装（有 install spec 的技能）
     const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
     const result = await installSkill({
       workspaceDir: workspaceDirRaw,
@@ -136,11 +231,14 @@ export const skillsHandlers: GatewayRequestHandlers = {
       config: cfg,
     });
 
-    // 安装后刷新本地索引中的已安装列表
+    // 安装后：
     if (result.ok) {
+      // 1. 刷新本地索引中的已安装列表
       refreshInstalledList().catch(() => {
         // 静默失败，不影响响应
       });
+      // 2. 更新技能快照版本，让当前对话的下一条消息能立即使用新技能
+      bumpSkillsSnapshotVersion({ reason: "manual" });
     }
 
     respond(

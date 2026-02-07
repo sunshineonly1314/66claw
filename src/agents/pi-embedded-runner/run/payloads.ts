@@ -17,6 +17,7 @@ import {
   formatReasoningMessage,
 } from "../../pi-embedded-utils.js";
 import type { ToolResultFormat } from "../../pi-embedded-subscribe.js";
+import { log } from "../logger.js";
 
 type ToolMetaEntry = { toolName: string; meta?: string };
 
@@ -41,6 +42,18 @@ export function buildEmbeddedRunPayloads(params: {
   replyToTag?: boolean;
   replyToCurrent?: boolean;
 }> {
+  // 🔍 ClawdbotCN 诊断日志 - 记录 payload 构建输入
+  log.info(
+    `[Payloads Input] assistantTexts.length=${params.assistantTexts.length} ` +
+      `toolMetas.length=${params.toolMetas.length} ` +
+      `hasLastAssistant=${!!params.lastAssistant} ` +
+      `stopReason=${params.lastAssistant?.stopReason ?? "none"}`,
+  );
+  if (params.assistantTexts.length > 0) {
+    const firstText = params.assistantTexts[0]?.substring(0, 100) ?? "";
+    log.debug(`[Payloads Input] firstAssistantText="${firstText}..."`);
+  }
+
   const replyItems: Array<{
     text: string;
     media?: string[];
@@ -113,6 +126,11 @@ export function buildEmbeddedRunPayloads(params: {
   if (reasoningText) replyItems.push({ text: reasoningText });
 
   const fallbackAnswerText = params.lastAssistant ? extractAssistantText(params.lastAssistant) : "";
+  // 🔍 ClawdbotCN 诊断日志 - 记录 fallback 文本
+  log.debug(
+    `[Payloads] fallbackAnswerText.length=${fallbackAnswerText.length} ` +
+      `preview="${fallbackAnswerText.substring(0, 100)}..."`,
+  );
   const shouldSuppressRawErrorText = (text: string) => {
     if (!lastAssistantErrored) return false;
     const trimmed = text.trim();
@@ -145,6 +163,14 @@ export function buildEmbeddedRunPayloads(params: {
         ? [fallbackAnswerText]
         : []
   ).filter((text) => !shouldSuppressRawErrorText(text));
+
+  // 🔍 ClawdbotCN 诊断日志 - 记录 answerTexts
+  log.debug(`[Payloads] answerTexts.length=${answerTexts.length}`);
+  if (answerTexts.length === 0 && (params.assistantTexts.length > 0 || fallbackAnswerText)) {
+    log.warn(
+      `[Payloads] All texts filtered! assistantTexts=${params.assistantTexts.length} fallback.length=${fallbackAnswerText.length}`,
+    );
+  }
 
   for (const text of answerTexts) {
     const {
@@ -210,7 +236,7 @@ export function buildEmbeddedRunPayloads(params: {
   }
 
   const hasAudioAsVoiceTag = replyItems.some((item) => item.audioAsVoice);
-  return replyItems
+  const result = replyItems
     .map((item) => ({
       text: item.text?.trim() ? item.text.trim() : undefined,
       mediaUrls: item.media?.length ? item.media : undefined,
@@ -226,4 +252,22 @@ export function buildEmbeddedRunPayloads(params: {
       if (p.text && isSilentReplyText(p.text, SILENT_REPLY_TOKEN)) return false;
       return true;
     });
+
+  // 🔍 ClawdbotCN 诊断日志 - 记录 payload 构建输出
+  log.info(
+    `[Payloads Output] replyItems.length=${replyItems.length} ` +
+      `finalPayloads.length=${result.length}`,
+  );
+  if (result.length > 0) {
+    const firstPayload = result[0];
+    const textPreview = firstPayload?.text?.substring(0, 100) ?? "(no text)";
+    log.debug(
+      `[Payloads Output] firstPayload.text="${textPreview}..." ` +
+        `isError=${firstPayload?.isError ?? false}`,
+    );
+  } else {
+    log.warn(`[Payloads Output] No payloads generated! Check assistantTexts and lastAssistant.`);
+  }
+
+  return result;
 }

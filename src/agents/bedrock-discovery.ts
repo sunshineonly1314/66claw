@@ -54,9 +54,9 @@ function isActive(summary: BedrockModelSummary): boolean {
   return typeof status === "string" ? status.toUpperCase() === "ACTIVE" : false;
 }
 
-function mapInputModalities(summary: BedrockModelSummary): Array<"text" | "image"> {
+function mapInputModalities(summary: BedrockModelSummary): Array<"text" | "image" | "video"> {
   const inputs = summary.inputModalities ?? [];
-  const mapped = new Set<"text" | "image">();
+  const mapped = new Set<"text" | "image" | "video">();
   for (const modality of inputs) {
     const lower = modality.toLowerCase();
     if (lower === "text") mapped.add("text");

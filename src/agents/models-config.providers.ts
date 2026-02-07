@@ -35,9 +35,9 @@ const MINIMAX_API_COST = {
   cacheWrite: 10,
 };
 
-const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1";
-const MOONSHOT_DEFAULT_MODEL_ID = "kimi-k2-0905-preview";
-const MOONSHOT_DEFAULT_CONTEXT_WINDOW = 256000;
+const MOONSHOT_BASE_URL = "https://api.moonshot.cn/v1";
+const MOONSHOT_DEFAULT_MODEL_ID = "kimi-latest";
+const MOONSHOT_DEFAULT_CONTEXT_WINDOW = 128000;
 const MOONSHOT_DEFAULT_MAX_TOKENS = 8192;
 const MOONSHOT_DEFAULT_COST = {
   input: 0,
@@ -330,14 +330,89 @@ function buildMoonshotProvider(): ProviderConfig {
     baseUrl: MOONSHOT_BASE_URL,
     api: "openai-completions",
     models: [
+      // kimi-latest - 最新推荐，自动选择上下文长度
       {
-        id: MOONSHOT_DEFAULT_MODEL_ID,
-        name: "Kimi K2 0905 Preview",
+        id: "kimi-latest",
+        name: "Kimi Latest (推荐)",
+        reasoning: false,
+        input: ["text", "image"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 128000,
+        maxTokens: 8192,
+      },
+      // kimi-k2 系列 - 超强代码和 Agent 能力
+      {
+        id: "kimi-k2-turbo-preview",
+        name: "Kimi K2 Turbo (推荐)",
         reasoning: false,
         input: ["text"],
         cost: MOONSHOT_DEFAULT_COST,
-        contextWindow: MOONSHOT_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: MOONSHOT_DEFAULT_MAX_TOKENS,
+        contextWindow: 262144,
+        maxTokens: 8192,
+      },
+      {
+        id: "kimi-k2-0905-preview",
+        name: "Kimi K2 0905",
+        reasoning: false,
+        input: ["text"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 262144,
+        maxTokens: 8192,
+      },
+      {
+        id: "kimi-k2-0711-preview",
+        name: "Kimi K2 0711",
+        reasoning: false,
+        input: ["text"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 131072,
+        maxTokens: 8192,
+      },
+      {
+        id: "kimi-k2-thinking",
+        name: "Kimi K2 Thinking (深度推理)",
+        reasoning: true,
+        input: ["text"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 262144,
+        maxTokens: 8192,
+      },
+      {
+        id: "kimi-k2-thinking-turbo",
+        name: "Kimi K2 Thinking Turbo",
+        reasoning: true,
+        input: ["text"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 262144,
+        maxTokens: 8192,
+      },
+      // moonshot-v1 系列 - 经典稳定版本
+      {
+        id: "moonshot-v1-8k",
+        name: "Moonshot V1 8K",
+        reasoning: false,
+        input: ["text"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 8000,
+        maxTokens: 4096,
+      },
+      {
+        id: "moonshot-v1-32k",
+        name: "Moonshot V1 32K",
+        reasoning: false,
+        input: ["text"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 32000,
+        maxTokens: 8192,
+      },
+      {
+        id: "moonshot-v1-128k",
+        name: "Moonshot V1 128K",
+        reasoning: false,
+        input: ["text"],
+        cost: MOONSHOT_DEFAULT_COST,
+        contextWindow: 128000,
+        maxTokens: 8192,
       },
     ],
   };
@@ -440,15 +515,6 @@ function buildQwenDashscopeProvider(): ProviderConfig {
         maxTokens: QWEN_DEFAULT_MAX_TOKENS,
       },
       {
-        id: "qwen-max-latest",
-        name: "通义千问 Max Latest",
-        reasoning: false,
-        input: ["text"],
-        cost: QWEN_DEFAULT_COST,
-        contextWindow: 32000,
-        maxTokens: QWEN_DEFAULT_MAX_TOKENS,
-      },
-      {
         id: "qwen-plus",
         name: "通义千问 Plus",
         reasoning: false,
@@ -458,26 +524,8 @@ function buildQwenDashscopeProvider(): ProviderConfig {
         maxTokens: QWEN_DEFAULT_MAX_TOKENS,
       },
       {
-        id: "qwen-plus-latest",
-        name: "通义千问 Plus Latest",
-        reasoning: false,
-        input: ["text"],
-        cost: QWEN_DEFAULT_COST,
-        contextWindow: QWEN_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: QWEN_DEFAULT_MAX_TOKENS,
-      },
-      {
         id: "qwen-turbo",
         name: "通义千问 Turbo",
-        reasoning: false,
-        input: ["text"],
-        cost: QWEN_DEFAULT_COST,
-        contextWindow: QWEN_DEFAULT_CONTEXT_WINDOW,
-        maxTokens: QWEN_DEFAULT_MAX_TOKENS,
-      },
-      {
-        id: "qwen-turbo-latest",
-        name: "通义千问 Turbo Latest",
         reasoning: false,
         input: ["text"],
         cost: QWEN_DEFAULT_COST,
@@ -535,68 +583,36 @@ function buildQwenDashscopeProvider(): ProviderConfig {
 
 /**
  * 豆包 Doubao (字节跳动火山引擎)
- * 支持模型: doubao-pro-32k, doubao-pro-128k, doubao-lite-32k, doubao-lite-128k
  * 环境变量: DOUBAO_API_KEY 或 ARK_API_KEY
- * 注意: 豆包需要在火山引擎控制台创建推理接入点(endpoint)，模型ID为接入点ID
+ * 注意：使用前需在火山方舟控制台「开通管理」页面开通模型
+ * https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement
+ * 模型 ID 参考: https://www.volcengine.com/docs/82379/1330310
+ * 重要：模型 ID 必须使用完整格式，如 doubao-seed-1-8-251228（不能用 doubao-seed-1-8）
  */
 function buildDoubaoProvider(): ProviderConfig {
   return {
     baseUrl: DOUBAO_BASE_URL,
     api: "openai-completions",
     models: [
+      // 豆包 1.8 (最新推荐)
       {
-        id: "doubao-pro-32k",
-        name: "豆包 Pro 32K",
-        reasoning: false,
-        input: ["text"],
-        cost: DOUBAO_DEFAULT_COST,
-        contextWindow: 32000,
-        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
-      },
-      {
-        id: "doubao-pro-128k",
-        name: "豆包 Pro 128K",
-        reasoning: false,
-        input: ["text"],
-        cost: DOUBAO_DEFAULT_COST,
-        contextWindow: 128000,
-        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
-      },
-      {
-        id: "doubao-pro-256k",
-        name: "豆包 Pro 256K",
-        reasoning: false,
-        input: ["text"],
-        cost: DOUBAO_DEFAULT_COST,
+        id: "doubao-seed-1-8-251228",
+        name: "豆包 1.8",
+        reasoning: true,
+        input: ["text", "image", "video"],
+        cost: { input: 0.004, output: 0.016, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 256000,
-        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
+        maxTokens: 32768,
       },
+      // 豆包 1.6 系列
       {
-        id: "doubao-lite-32k",
-        name: "豆包 Lite 32K",
-        reasoning: false,
-        input: ["text"],
-        cost: DOUBAO_DEFAULT_COST,
-        contextWindow: 32000,
-        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
-      },
-      {
-        id: "doubao-lite-128k",
-        name: "豆包 Lite 128K",
-        reasoning: false,
-        input: ["text"],
-        cost: DOUBAO_DEFAULT_COST,
-        contextWindow: 128000,
-        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
-      },
-      {
-        id: "doubao-vision-pro-32k",
-        name: "豆包 Vision Pro 32K",
-        reasoning: false,
-        input: ["text", "image"],
-        cost: DOUBAO_DEFAULT_COST,
-        contextWindow: 32000,
-        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
+        id: "doubao-seed-1-6-251015",
+        name: "豆包 1.6",
+        reasoning: true,
+        input: ["text", "image", "video"],
+        cost: { input: 0.008, output: 0.02, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 256000,
+        maxTokens: 32768,
       },
     ],
   };
@@ -854,14 +870,18 @@ export async function resolveImplicitProviders(params: {
   }
 
   // 豆包 Doubao (字节跳动火山引擎)
-  // 环境变量: DOUBAO_API_KEY 或 ARK_API_KEY
+  // 环境变量: DOUBAO_API_KEY 或 ARK_API_KEY；向导 profile: volcengine-ark:default 或 doubao/ark
   const doubaoKey =
     resolveEnvApiKeyVarName("doubao") ??
     resolveEnvApiKeyVarName("ark") ??
+    resolveApiKeyFromProfiles({ provider: "volcengine-ark", store: authStore }) ??
     resolveApiKeyFromProfiles({ provider: "doubao", store: authStore }) ??
     resolveApiKeyFromProfiles({ provider: "ark", store: authStore });
   if (doubaoKey) {
-    providers.doubao = { ...buildDoubaoProvider(), apiKey: doubaoKey };
+    const doubaoProvider = { ...buildDoubaoProvider(), apiKey: doubaoKey };
+    providers.doubao = doubaoProvider;
+    // 同时注册为 volcengine-ark，与向导/中国区 UI 的 provider 名称一致
+    providers["volcengine-ark"] = doubaoProvider;
   }
 
   // DeepSeek

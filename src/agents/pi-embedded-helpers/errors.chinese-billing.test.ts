@@ -1,0 +1,277 @@
+/**
+ * ClawdbotCN 中文计费错误识别测试
+ * Chinese Billing Error Recognition Tests
+ *
+ * 测试覆盖：
+ * 1. 中文额度不足错误识别
+ * 2. 英文计费错误识别
+ * 3. HTTP 状态码识别
+ * 4. 误判防范
+ */
+
+import { describe, it, expect } from "vitest";
+import { classifyFailoverReason, isBillingErrorMessage } from "./errors.js";
+
+// ============================================================================
+// 1. 中文额度不足错误识别测试
+// ============================================================================
+
+describe("中文额度不足错误识别", () => {
+  it('应该识别 "额度不足" 错误', () => {
+    const result = classifyFailoverReason("额度不足，请充值后再试");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "额度已用完" 错误', () => {
+    const result = classifyFailoverReason("今日免费额度已用完");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "余额不足" 错误', () => {
+    const result = classifyFailoverReason("账户余额不足，请充值");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "账户欠费" 错误', () => {
+    const result = classifyFailoverReason("账户欠费，服务已暂停");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "免费额度已用完" 错误', () => {
+    const result = classifyFailoverReason("免费额度已用完，请明天再试");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "今日额度已耗尽" 错误', () => {
+    const result = classifyFailoverReason("今日额度已耗尽");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "配额已用尽" 错误', () => {
+    const result = classifyFailoverReason("配额已用尽，请升级套餐");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "调用次数已达上限" 错误', () => {
+    const result = classifyFailoverReason("调用次数已达上限");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "授权限额已满" 错误', () => {
+    const result = classifyFailoverReason("授权限额已满");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "请求次数超限" 错误', () => {
+    const result = classifyFailoverReason("请求次数超限，请稍后再试");
+    expect(result).toBe("billing");
+  });
+});
+
+// ============================================================================
+// 2. 英文计费错误识别测试
+// ============================================================================
+
+describe("英文计费错误识别", () => {
+  // 注意: "quota exceeded" 在源码中被归类为 rate_limit（因为它可能是临时限流）
+  // 而 "insufficient credits" 等明确的计费错误才被归类为 billing
+  it('应该识别 "quota exceeded" 为 rate_limit（可能是临时限流）', () => {
+    const result = classifyFailoverReason("quota exceeded");
+    expect(result).toBe("rate_limit");
+  });
+
+  it('应该识别 "daily limit" 错误为 billing', () => {
+    const result = classifyFailoverReason("daily limit reached");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "daily_limit" 错误为 billing', () => {
+    const result = classifyFailoverReason("error: daily_limit exceeded");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "insufficient credits" 错误', () => {
+    const result = classifyFailoverReason("insufficient credits");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "payment required" 错误', () => {
+    const result = classifyFailoverReason("payment required");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "credit balance" 错误', () => {
+    const result = classifyFailoverReason("credit balance is zero");
+    expect(result).toBe("billing");
+  });
+
+  it('应该识别 "plans & billing" 错误', () => {
+    const result = classifyFailoverReason("please check your plans & billing");
+    expect(result).toBe("billing");
+  });
+});
+
+// ============================================================================
+// 3. HTTP 状态码识别测试
+// ============================================================================
+
+describe("HTTP 状态码识别", () => {
+  it("应该识别 402 状态码", () => {
+    const result = classifyFailoverReason("HTTP 402 Payment Required");
+    expect(result).toBe("billing");
+  });
+
+  it("应该识别纯 402 数字", () => {
+    const result = classifyFailoverReason("Error 402: Payment required");
+    expect(result).toBe("billing");
+  });
+});
+
+// ============================================================================
+// 4. isBillingErrorMessage 函数测试
+// ============================================================================
+
+describe("isBillingErrorMessage 函数", () => {
+  it("应该识别中文错误", () => {
+    expect(isBillingErrorMessage("额度不足")).toBe(true);
+    expect(isBillingErrorMessage("余额不足")).toBe(true);
+    expect(isBillingErrorMessage("配额已用尽")).toBe(true);
+  });
+
+  it("应该识别英文错误", () => {
+    expect(isBillingErrorMessage("quota exceeded")).toBe(true);
+    expect(isBillingErrorMessage("daily limit")).toBe(true);
+    expect(isBillingErrorMessage("payment required")).toBe(true);
+  });
+
+  it("应该识别 billing 相关错误", () => {
+    expect(isBillingErrorMessage("billing upgrade required")).toBe(true);
+    expect(isBillingErrorMessage("billing credits exhausted")).toBe(true);
+  });
+});
+
+// ============================================================================
+// 5. 误判防范测试
+// ============================================================================
+
+describe("误判防范", () => {
+  it("不应该将认证错误识别为计费错误", () => {
+    const result = classifyFailoverReason("invalid api key");
+    expect(result).toBe("auth");
+  });
+
+  it("不应该将网络错误识别为计费错误", () => {
+    const result = classifyFailoverReason("network error: connection refused");
+    expect(result).toBeNull();
+  });
+
+  it("不应该将参数错误识别为计费错误", () => {
+    const result = classifyFailoverReason("invalid parameter: model not found");
+    expect(result).toBeNull();
+  });
+
+  it("不应该将超时错误识别为计费错误", () => {
+    const result = classifyFailoverReason("request timeout");
+    expect(result).toBe("timeout");
+  });
+
+  it("不应该将服务器错误识别为计费错误", () => {
+    const result = classifyFailoverReason("internal server error 500");
+    expect(result).toBeNull();
+  });
+
+  it("空字符串不应该识别为计费错误", () => {
+    const result = classifyFailoverReason("");
+    expect(result).toBeNull();
+  });
+
+  it("普通文本不应该识别为计费错误", () => {
+    const result = classifyFailoverReason("Hello, how are you?");
+    expect(result).toBeNull();
+  });
+});
+
+// ============================================================================
+// 6. 边界情况测试
+// ============================================================================
+
+describe("边界情况", () => {
+  it("应该处理大小写变体", () => {
+    // quota exceeded 被归类为 rate_limit
+    expect(classifyFailoverReason("QUOTA EXCEEDED")).toBe("rate_limit");
+    expect(classifyFailoverReason("Quota Exceeded")).toBe("rate_limit");
+    // 中文错误正确归类为 billing
+    expect(classifyFailoverReason("额度不足")).toBe("billing");
+  });
+
+  it("应该处理带空格的变体", () => {
+    expect(classifyFailoverReason("  额度不足  ")).toBe("billing");
+    // quota exceeded 被归类为 rate_limit
+    expect(classifyFailoverReason("  quota exceeded  ")).toBe("rate_limit");
+  });
+
+  it("应该处理带换行的消息", () => {
+    expect(classifyFailoverReason("Error:\n额度不足")).toBe("billing");
+  });
+
+  it("应该处理很长的错误消息中的 daily_limit", () => {
+    const longMessage =
+      "This is a very long error message that contains the phrase daily_limit somewhere in the middle and continues with more text.";
+    expect(classifyFailoverReason(longMessage)).toBe("billing");
+  });
+});
+
+// ============================================================================
+// 7. 真实 API 错误格式测试
+// ============================================================================
+
+describe("真实 API 错误格式", () => {
+  it("应该识别蚂蚁百灵格式的错误", () => {
+    const error = JSON.stringify({
+      code: 41,
+      message: "今日额度已耗尽，请明天再试",
+    });
+    expect(classifyFailoverReason(error)).toBe("billing");
+  });
+
+  it("应该识别 OpenAI 兼容格式含 daily_limit 的错误", () => {
+    const error = JSON.stringify({
+      error: {
+        message: "You exceeded your daily_limit",
+        type: "daily_limit_exceeded",
+      },
+    });
+    expect(classifyFailoverReason(error)).toBe("billing");
+  });
+
+  it("应该识别简单文本错误", () => {
+    expect(classifyFailoverReason("额度不足")).toBe("billing");
+  });
+});
+
+// ============================================================================
+// 8. 性能测试
+// ============================================================================
+
+describe("性能测试", () => {
+  it("classifyFailoverReason 应该在合理时间内完成", () => {
+    const start = performance.now();
+    for (let i = 0; i < 1000; i++) {
+      classifyFailoverReason("额度不足，请充值后再试");
+    }
+    const duration = performance.now() - start;
+    // 1000 次调用应该在 500ms 内完成（考虑到 CI 环境性能波动）
+    expect(duration).toBeLessThan(500);
+  });
+
+  it("处理长消息也应该在合理时间内完成", () => {
+    const longMessage = "x".repeat(10000) + "额度不足" + "y".repeat(10000);
+    const start = performance.now();
+    for (let i = 0; i < 100; i++) {
+      classifyFailoverReason(longMessage);
+    }
+    const duration = performance.now() - start;
+    // 100 次调用应该在 500ms 内完成（考虑到 CI 环境性能波动）
+    expect(duration).toBeLessThan(500);
+  });
+});

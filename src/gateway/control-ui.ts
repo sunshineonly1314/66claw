@@ -18,6 +18,8 @@ export type ControlUiRequestOptions = {
   basePath?: string;
   config?: ClawdbotConfig;
   agentId?: string;
+  /** Gateway auth token to inject into the UI for automatic authentication */
+  gatewayToken?: string;
 };
 
 function resolveControlUiRoot(): string | null {
@@ -170,10 +172,12 @@ interface ControlUiInjectionOpts {
   basePath: string;
   assistantName?: string;
   assistantAvatar?: string;
+  /** Gateway auth token for automatic authentication (injected as window.__CLAWDBOT_GATEWAY_TOKEN__) */
+  gatewayToken?: string;
 }
 
 function injectControlUiConfig(html: string, opts: ControlUiInjectionOpts): string {
-  const { basePath, assistantName, assistantAvatar } = opts;
+  const { basePath, assistantName, assistantAvatar, gatewayToken } = opts;
   const script =
     `<script>` +
     `window.__CLAWDBOT_CONTROL_UI_BASE_PATH__=${JSON.stringify(basePath)};` +
@@ -183,6 +187,8 @@ function injectControlUiConfig(html: string, opts: ControlUiInjectionOpts): stri
     `window.__CLAWDBOT_ASSISTANT_AVATAR__=${JSON.stringify(
       assistantAvatar ?? DEFAULT_ASSISTANT_IDENTITY.avatar,
     )};` +
+    // Inject gateway token for automatic authentication (allows users to access UI without token in URL)
+    (gatewayToken ? `window.__CLAWDBOT_GATEWAY_TOKEN__=${JSON.stringify(gatewayToken)};` : "") +
     `</script>`;
   // Check if already injected
   if (html.includes("__CLAWDBOT_ASSISTANT_NAME__")) return html;
@@ -197,10 +203,12 @@ interface ServeIndexHtmlOpts {
   basePath: string;
   config?: ClawdbotConfig;
   agentId?: string;
+  /** Gateway auth token for automatic authentication */
+  gatewayToken?: string;
 }
 
 function serveIndexHtml(res: ServerResponse, indexPath: string, opts: ServeIndexHtmlOpts) {
-  const { basePath, config, agentId } = opts;
+  const { basePath, config, agentId, gatewayToken } = opts;
   const identity = config
     ? resolveAssistantIdentity({ cfg: config, agentId })
     : DEFAULT_ASSISTANT_IDENTITY;
@@ -222,6 +230,7 @@ function serveIndexHtml(res: ServerResponse, indexPath: string, opts: ServeIndex
       basePath,
       assistantName: identity.name,
       assistantAvatar: avatarValue,
+      gatewayToken,
     }),
   );
 }
@@ -306,6 +315,7 @@ export function handleControlUiHttpRequest(
         basePath,
         config: opts?.config,
         agentId: opts?.agentId,
+        gatewayToken: opts?.gatewayToken,
       });
       return true;
     }
@@ -320,6 +330,7 @@ export function handleControlUiHttpRequest(
       basePath,
       config: opts?.config,
       agentId: opts?.agentId,
+      gatewayToken: opts?.gatewayToken,
     });
     return true;
   }

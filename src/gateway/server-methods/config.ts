@@ -19,6 +19,7 @@ import {
 } from "../../infra/restart-sentinel.js";
 import { listChannelPlugins } from "../../channels/plugins/index.js";
 import { loadClawdbotPlugins } from "../../plugins/loader.js";
+import { buildGatewayReloadPlan, diffConfigPaths } from "../config-reload.js";
 import {
   ErrorCodes,
   errorShape,
@@ -312,7 +313,7 @@ export const configHandlers: GatewayRequestHandlers = {
       undefined,
     );
   },
-  "config.apply": async ({ params, respond }) => {
+  "config.apply": async ({ params, respond, context }) => {
     if (!validateConfigApplyParams(params)) {
       respond(
         false,
@@ -356,6 +357,12 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+
+    // 计算配置变更，决定是热更新还是完整重启
+    const prevConfig = loadConfig();
+    const changedPaths = diffConfigPaths(prevConfig, validated.config);
+    const reloadPlan = buildGatewayReloadPlan(changedPaths);
+
     await writeConfigFile(validated.config);
 
     const sessionKey =
@@ -372,28 +379,52 @@ export const configHandlers: GatewayRequestHandlers = {
         ? Math.max(0, Math.floor(restartDelayMsRaw))
         : undefined;
 
-    const payload: RestartSentinelPayload = {
-      kind: "config-apply",
-      status: "ok",
-      ts: Date.now(),
-      sessionKey,
-      message: note ?? null,
-      doctorHint: formatDoctorNonInteractiveHint(),
-      stats: {
-        mode: "config.apply",
-        root: CONFIG_PATH_CLAWDBOT,
-      },
-    };
-    let sentinelPath: string | null = null;
-    try {
-      sentinelPath = await writeRestartSentinel(payload);
-    } catch {
-      sentinelPath = null;
+    // 如果只需要热更新渠道（不需要完整重启），直接重启渠道
+    // 这样配置保存后渠道立即生效，无需等待 Gateway 重启
+    let restart: { delayMs: number; scheduled: boolean } | null = null;
+    const hotReloadedChannels: string[] = [];
+
+    if (!reloadPlan.restartGateway && reloadPlan.restartChannels.size > 0) {
+      // 只有渠道配置变更，执行热更新
+      for (const channelId of reloadPlan.restartChannels) {
+        try {
+          await context.stopChannel(channelId);
+          await context.startChannel(channelId);
+          hotReloadedChannels.push(channelId);
+        } catch (err) {
+          console.error(`[config.apply] Failed to hot reload channel ${channelId}:`, err);
+        }
+      }
+    } else if (reloadPlan.restartGateway) {
+      // 需要完整重启
+      const payload: RestartSentinelPayload = {
+        kind: "config-apply",
+        status: "ok",
+        ts: Date.now(),
+        sessionKey,
+        message: note ?? null,
+        doctorHint: formatDoctorNonInteractiveHint(),
+        stats: {
+          mode: "config.apply",
+          root: CONFIG_PATH_CLAWDBOT,
+        },
+      };
+      try {
+        await writeRestartSentinel(payload);
+      } catch {
+        // ignore
+      }
+      const scheduledRestart = scheduleGatewaySigusr1Restart({
+        delayMs: restartDelayMs,
+        reason: "config.apply",
+      });
+      restart = {
+        delayMs: scheduledRestart.delayMs,
+        scheduled: scheduledRestart.ok,
+      };
     }
-    const restart = scheduleGatewaySigusr1Restart({
-      delayMs: restartDelayMs,
-      reason: "config.apply",
-    });
+    // 如果没有任何变更需要处理，直接返回成功
+
     respond(
       true,
       {
@@ -401,10 +432,7 @@ export const configHandlers: GatewayRequestHandlers = {
         path: CONFIG_PATH_CLAWDBOT,
         config: validated.config,
         restart,
-        sentinel: {
-          path: sentinelPath,
-          payload,
-        },
+        hotReloadedChannels: hotReloadedChannels.length > 0 ? hotReloadedChannels : undefined,
       },
       undefined,
     );

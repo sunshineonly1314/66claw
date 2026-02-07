@@ -5,7 +5,8 @@ import { normalizePluginsConfig } from "./config-state.js";
 describe("normalizePluginsConfig", () => {
   it("uses default memory slot when not specified", () => {
     const result = normalizePluginsConfig({});
-    expect(result.slots.memory).toBe("memory-core");
+    // 默认禁用内存插槽（空字符串），因为没有内置的内存插件
+    expect(result.slots.memory).toBe("");
   });
 
   it("respects explicit memory slot value", () => {
@@ -40,13 +41,15 @@ describe("normalizePluginsConfig", () => {
     const result = normalizePluginsConfig({
       slots: { memory: "" },
     });
-    expect(result.slots.memory).toBe("memory-core");
+    // 空字符串会 fallback 到默认值（空字符串）
+    expect(result.slots.memory).toBe("");
   });
 
   it("uses default when memory slot is whitespace only", () => {
     const result = normalizePluginsConfig({
       slots: { memory: "   " },
     });
-    expect(result.slots.memory).toBe("memory-core");
+    // 纯空白字符串会 fallback 到默认值（空字符串）
+    expect(result.slots.memory).toBe("");
   });
 });

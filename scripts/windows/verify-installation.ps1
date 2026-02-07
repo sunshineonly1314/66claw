@@ -63,10 +63,11 @@ Write-Host ""
 Write-Host "2. 中国区渠道插件" -ForegroundColor White
 Write-Host "   ─────────────────────────────────" -ForegroundColor DarkGray
 
+# 中国区核心插件
 $chinaPlugins = @(
     @{ Name = "飞书 (Feishu)"; Dir = "feishu"; Required = $true },
     @{ Name = "钉钉 (DingTalk)"; Dir = "dingtalk"; Required = $true },
-    @{ Name = "企业微信 (WeCom)"; Dir = "wecom"; Required = $true },
+    @{ Name = "企业微信 (WeCom)"; Dir = "wecom"; Required = $false },
     @{ Name = "通义千问认证"; Dir = "qwen-portal-auth"; Required = $false }
 )
 
@@ -99,7 +100,19 @@ Write-Host ""
 Write-Host "3. 国际渠道插件 (可选)" -ForegroundColor White
 Write-Host "   ─────────────────────────────────" -ForegroundColor DarkGray
 
-$internationalPlugins = @("telegram", "discord", "slack", "whatsapp", "signal", "googlechat")
+# 所有支持 Windows 的插件
+$internationalPlugins = @(
+    # 认证
+    "copilot-proxy", "google-antigravity-auth", "google-gemini-cli-auth",
+    # 国际通讯
+    "telegram", "discord", "slack", "whatsapp", "signal", "msteams", "googlechat", "matrix", "mattermost", "line", "twitch",
+    # 亚洲区
+    "zalo", "zalouser",
+    # 功能增强
+    "memory-core", "voice-call", "lobster", "llm-task", "open-prose", "diagnostics-otel",
+    # 其他
+    "nextcloud-talk", "nostr", "tlon"
+)
 
 foreach ($plugin in $internationalPlugins) {
     $pluginDir = Join-Path $InstallDir "extensions\$plugin"

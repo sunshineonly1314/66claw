@@ -3,6 +3,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { SessionsListResult } from "../types";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
+import type { LicenseUiState } from "../license/types";
 import { icons } from "../icons";
 import {
   normalizeMessage,
@@ -14,7 +15,12 @@ import {
   renderStreamingGroup,
 } from "../chat/grouped-render";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
+import { t } from "../i18n/index.js";
 import "../components/resizable-divider";
+import {
+  renderWelcomeDiscovery,
+  type WelcomeDiscoveryProps,
+} from "./welcome-discovery";
 
 export type CompactionIndicatorStatus = {
   active: boolean;
@@ -52,9 +58,19 @@ export type ChatProps = {
   splitRatio?: number;
   assistantName: string;
   assistantAvatar: string | null;
+  // License activation banner
+  needsActivation?: boolean;
+  onActivate?: () => void;
+  // License state for support/purchase UI
+  licenseState?: LicenseUiState | null;
+  /** 内联激活回调（试用用户在 chat 中输入激活码） */
+  onInlineActivate?: (key: string) => Promise<boolean>;
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
+  // Discovery props (首次使用发现)
+  discoveryProps?: WelcomeDiscoveryProps | null;
+  showDiscovery?: boolean;
   // Event handlers
   onRefresh: () => void;
   onToggleFocusMode: () => void;
@@ -98,8 +114,15 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   return nothing;
 }
 
+/**
+ * 生成安全的附件 ID
+ * 使用 Web Crypto API (crypto.getRandomValues) 替代 Math.random
+ */
 function generateAttachmentId(): string {
-  return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const array = new Uint8Array(6);
+  crypto.getRandomValues(array);
+  const hex = Array.from(array, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `att-${Date.now()}-${hex}`;
 }
 
 function handlePaste(
@@ -191,12 +214,160 @@ export function renderChat(props: ChatProps) {
   const hasAttachments = (props.attachments?.length ?? 0) > 0;
   const composePlaceholder = props.connected
     ? hasAttachments
-      ? "Add a message or paste more images..."
-      : "Message (↩ to send, Shift+↩ for line breaks, paste images)"
-    : "Connect to the gateway to start chatting…";
+      ? t("chat.placeholder.withImages")
+      : t("chat.placeholder.default")
+    : t("chat.placeholder.disconnected");
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+  
+  // Check if we have messages to show
+  const hasMessages = props.messages.length > 0 || props.stream !== null || props.loading;
+  
+  // Example prompts for welcome card
+  const examplePrompts = [
+    { icon: "☀️", text: t("chat.welcome.example1") },
+    { icon: "🎨", text: t("chat.welcome.example2") },
+    { icon: "✉️", text: t("chat.welcome.example3") },
+    { icon: "📊", text: t("chat.welcome.example4") },
+    { icon: "💻", text: t("chat.welcome.example5") },
+  ];
+
+  // License info for conditional rendering
+  const license = props.licenseState?.license ?? null;
+  const isTestUser = license?.keyType === "test" || license?.keyType === "trial";
+  const supportQrcode = license?.supportQrcode ?? null;
+  const purchaseUrl = license?.purchaseUrl ?? null;
+
+  const welcomeCard = html`
+    <div class="chat-welcome">
+      <div class="chat-welcome__header">
+        <div class="chat-welcome__icon">🤖</div>
+        <h2 class="chat-welcome__title">
+          ${isTestUser ? t("chat.welcome.titleTrial") : t("chat.welcome.title")}
+        </h2>
+        <p class="chat-welcome__subtitle">
+          ${isTestUser ? t("chat.welcome.subtitleTrial") : t("chat.welcome.subtitle")}
+        </p>
+      </div>
+
+      ${isTestUser ? html`
+        <!-- 试用用户：购买 + 激活区域 -->
+        <div class="chat-welcome__trial-actions">
+          <div class="chat-welcome__purchase-card">
+            <div class="chat-welcome__purchase-header">
+              <span class="chat-welcome__purchase-icon">🛒</span>
+              <span class="chat-welcome__purchase-title">${t("support.purchaseTitle")}</span>
+            </div>
+            <p class="chat-welcome__purchase-desc">${t("support.purchaseDesc")}</p>
+            ${purchaseUrl ? html`
+              <a href="${purchaseUrl}" target="_blank" rel="noreferrer" class="chat-welcome__purchase-btn">
+                📱 ${t("support.clickToPurchase")}
+              </a>
+            ` : nothing}
+          </div>
+          <div class="chat-welcome__activate-card">
+            <div class="chat-welcome__activate-header">
+              <span class="chat-welcome__activate-icon">🔑</span>
+              <span class="chat-welcome__activate-title">${t("support.hasActivationCode")}</span>
+            </div>
+            <div class="chat-welcome__activate-form">
+              <input
+                type="text"
+                class="chat-welcome__activate-input"
+                placeholder="${t("support.activationPlaceholder")}"
+                id="welcome-activation-input"
+                @keydown=${(e: KeyboardEvent) => {
+                  if (e.key === "Enter") {
+                    const input = e.target as HTMLInputElement;
+                    if (input.value.trim() && props.onInlineActivate) {
+                      void props.onInlineActivate(input.value.trim());
+                    }
+                  }
+                }}
+              />
+              <button
+                class="chat-welcome__activate-btn"
+                type="button"
+                @click=${() => {
+                  const input = document.getElementById("welcome-activation-input") as HTMLInputElement | null;
+                  if (input?.value.trim() && props.onInlineActivate) {
+                    void props.onInlineActivate(input.value.trim());
+                  }
+                }}
+              >
+                ${t("support.activateNow")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ` : nothing}
+      
+      <div class="chat-welcome__section">
+        <h3 class="chat-welcome__section-title">${t("chat.welcome.tryAsk")}</h3>
+        <div class="chat-welcome__examples">
+          ${examplePrompts.map(
+            (example) => html`
+              <button
+                class="chat-welcome__example"
+                type="button"
+                @click=${() => props.onDraftChange(example.text)}
+              >
+                <span class="chat-welcome__example-icon">${example.icon}</span>
+                <span class="chat-welcome__example-text">${example.text}</span>
+              </button>
+            `,
+          )}
+        </div>
+      </div>
+      
+      <div class="chat-welcome__section">
+        <h3 class="chat-welcome__section-title">${t("chat.welcome.capabilities")}</h3>
+        <div class="chat-welcome__capabilities">
+          <div class="chat-welcome__capability">
+            <span class="chat-welcome__capability-icon">💬</span>
+            <span class="chat-welcome__capability-text">${t("chat.welcome.capability.chat")}</span>
+          </div>
+          <div class="chat-welcome__capability">
+            <span class="chat-welcome__capability-icon">🔧</span>
+            <span class="chat-welcome__capability-text">${t("chat.welcome.capability.tool")}</span>
+          </div>
+          <div class="chat-welcome__capability">
+            <span class="chat-welcome__capability-icon">⚡</span>
+            <span class="chat-welcome__capability-text">${t("chat.welcome.capability.automation")}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 技术支持二维码（欢迎卡片内，所有用户可见） -->
+      ${supportQrcode ? html`
+        <div class="chat-welcome__support-card ${isTestUser ? "chat-welcome__support-card--test" : "chat-welcome__support-card--pro"}">
+          <div class="chat-welcome__support-header">
+            <span class="chat-welcome__support-badge">${isTestUser ? "💬" : "⭐"}</span>
+            <span class="chat-welcome__support-title">
+              ${isTestUser ? t("support.scanForSupport") : t("support.scanForPremiumSupport")}
+            </span>
+          </div>
+          <div class="chat-welcome__support-body">
+            <img class="chat-welcome__support-qr" src="${supportQrcode.base64}" alt="Support QR" />
+            <div class="chat-welcome__support-info">
+              <div class="chat-welcome__support-name">${supportQrcode.groupName}</div>
+              <div class="chat-welcome__support-desc">
+                ${isTestUser ? t("support.basicGroupDesc") : t("support.premiumGroupDesc")}
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : nothing}
+      
+      <div class="chat-welcome__footer">
+        <a href="https://www.tecbinai.com" target="_blank" rel="noreferrer" class="chat-welcome__tecbinai">
+          🚀 由 <strong>tecbinai</strong> 提供技术支持 · 及时追踪 AI 最新内容
+        </a>
+      </div>
+    </div>
+  `;
+  
   const thread = html`
     <div
       class="chat-thread"
@@ -204,10 +375,15 @@ export function renderChat(props: ChatProps) {
       aria-live="polite"
       @scroll=${props.onChatScroll}
     >
+      ${!hasMessages && props.connected
+        ? props.showDiscovery && props.discoveryProps
+          ? renderWelcomeDiscovery(props.discoveryProps)
+          : welcomeCard
+        : nothing}
       ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
       ${repeat(buildChatItems(props), (item) => item.key, (item) => {
         if (item.kind === "reading-indicator") {
-          return renderReadingIndicatorGroup(assistantIdentity, item.startedAt);
+          return renderReadingIndicatorGroup(assistantIdentity, item.startedAt, props.error);
         }
 
         if (item.kind === "stream") {
@@ -216,6 +392,7 @@ export function renderChat(props: ChatProps) {
             item.startedAt,
             props.onOpenSidebar,
             assistantIdentity,
+            item.key,
           );
         }
 
@@ -239,9 +416,24 @@ export function renderChat(props: ChatProps) {
         ? html`<div class="callout">${props.disabledReason}</div>`
         : nothing}
 
-      ${props.error
-        ? html`<div class="callout danger">${props.error}</div>`
-        : nothing}
+      ${props.needsActivation
+        ? html`
+            <div class="callout warning license-activation-banner">
+              <span class="license-activation-icon">🔑</span>
+              <span class="license-activation-text">
+                请先激活授权码以使用完整功能
+              </span>
+              <button 
+                class="license-activation-btn"
+                @click=${props.onActivate}
+              >
+                立即激活
+              </button>
+            </div>
+          `
+        : props.error
+          ? html`<div class="callout danger">${props.error}</div>`
+          : nothing}
 
       ${renderCompactionIndicator(props.compactionStatus)}
 
@@ -290,6 +482,42 @@ export function renderChat(props: ChatProps) {
             `
           : nothing}
       </div>
+
+      ${isTestUser ? html`
+        <!-- 试用用户常驻浮条：输入框与聊天之间 -->
+        <div class="chat-trial-bar">
+          <div class="chat-trial-bar__left">
+            <div class="chat-trial-bar__support-trigger">
+              <span class="chat-trial-bar__icon">💬</span>
+              <span class="chat-trial-bar__label">${t("support.techSupport")}</span>
+              ${supportQrcode ? html`
+                <div class="chat-trial-bar__popover">
+                  <div class="chat-trial-bar__popover-arrow"></div>
+                  <div class="chat-trial-bar__popover-title">${t("support.scanForSupport")}</div>
+                  <img class="chat-trial-bar__qrcode" src="${supportQrcode.base64}" alt="QR" />
+                  <div class="chat-trial-bar__popover-name">${supportQrcode.groupName}</div>
+                </div>
+              ` : nothing}
+            </div>
+          </div>
+          <div class="chat-trial-bar__right">
+            ${purchaseUrl ? html`
+              <a href="${purchaseUrl}" target="_blank" rel="noreferrer" class="chat-trial-bar__purchase">
+                <span class="chat-trial-bar__purchase-icon">🛒</span>
+                <span>${t("support.upgradePro")}</span>
+              </a>
+            ` : nothing}
+            <button
+              class="chat-trial-bar__activate-trigger"
+              type="button"
+              @click=${props.onActivate}
+            >
+              <span class="chat-trial-bar__activate-icon">🔑</span>
+              <span>${t("support.inputActivationCode")}</span>
+            </button>
+          </div>
+        </div>
+      ` : nothing}
 
       ${props.queue.length
         ? html`
@@ -349,14 +577,14 @@ export function renderChat(props: ChatProps) {
               ?disabled=${!props.connected || (!canAbort && props.sending)}
               @click=${canAbort ? props.onAbort : props.onNewSession}
             >
-              ${canAbort ? "Stop" : "New session"}
+              ${canAbort ? t("chat.stop") : t("chat.newSession")}
             </button>
             <button
               class="btn primary"
               ?disabled=${!props.connected}
               @click=${props.onSend}
             >
-              ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
+              ${isBusy ? t("chat.queue") : t("chat.send")}<kbd class="btn-kbd">↵</kbd>
             </button>
           </div>
         </div>
@@ -365,7 +593,8 @@ export function renderChat(props: ChatProps) {
   `;
 }
 
-const CHAT_HISTORY_RENDER_LIMIT = 200;
+// 渲染限制：降低到 80 条以提升性能，避免 DOM 节点过多导致卡顿
+const CHAT_HISTORY_RENDER_LIMIT = 80;
 
 function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   const result: Array<ChatItem | MessageGroup> = [];

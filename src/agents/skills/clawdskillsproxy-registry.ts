@@ -35,6 +35,20 @@ export interface ProxySkillMeta {
   path: string;
   /** 状态 */
   status: "active" | string;
+  /** 技能名称 (从 SKILL.md frontmatter 解析) */
+  name?: string;
+  /** 技能中文名称 */
+  nameZh?: string;
+  /** 技能描述 (从 SKILL.md frontmatter 解析) */
+  description?: string;
+  /** 技能中文描述 */
+  descriptionZh?: string;
+  /** Emoji 图标 */
+  emoji?: string;
+  /** 标签列表 */
+  tags?: string[];
+  /** 作者 */
+  author?: string;
 }
 
 /** ClawdSkillsProxy 索引响应结构 */
@@ -112,16 +126,25 @@ async function fetchWithAuth(
  * 将 ProxySkillMeta 转换为 RemoteSkillMeta (兼容现有结构)
  */
 function convertToRemoteSkillMeta(proxyMeta: ProxySkillMeta): RemoteSkillMeta {
+  // 优先使用 name 字段，其次使用 skillId
+  const name = proxyMeta.name?.trim() || proxyMeta.skillId;
+  
+  // 优先使用中文描述，其次使用英文描述
+  const description = proxyMeta.descriptionZh?.trim() || proxyMeta.description?.trim() || "";
+  
+  // 优先使用中文名称
+  const nameZh = proxyMeta.nameZh?.trim() || undefined;
+  
   return {
-    name: proxyMeta.skillId,
-    // 当前服务端不返回 description/emoji，暂时设为空
-    // 后端下一版会支持从 SKILL.md frontmatter 解析
-    description: "",
-    emoji: undefined,
+    name,
+    nameZh,
+    description,
+    descriptionZh: proxyMeta.descriptionZh?.trim() || undefined,
+    emoji: proxyMeta.emoji?.trim() || undefined,
     path: proxyMeta.skillId, // 使用 skillId 作为 path
     version: String(proxyMeta.version),
-    tags: undefined,
-    author: undefined,
+    tags: proxyMeta.tags && proxyMeta.tags.length > 0 ? proxyMeta.tags : undefined,
+    author: proxyMeta.author?.trim() || undefined,
   };
 }
 

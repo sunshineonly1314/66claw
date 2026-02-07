@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { shouldUseCNMirror, getNpmMirrorUrl } from "../config/cn-mirrors.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { parseSemver } from "./runtime-guard.js";
 import { channelToNpmTag, type UpdateChannel } from "./update-channels.js";
@@ -302,8 +303,10 @@ export async function fetchNpmTagVersion(params: {
   const timeoutMs = params?.timeoutMs ?? 3500;
   const tag = params.tag;
   try {
+    // 中国区使用国内 npm 镜像
+    const registry = shouldUseCNMirror() ? getNpmMirrorUrl() : "https://registry.npmjs.org";
     const res = await fetchWithTimeout(
-      `https://registry.npmjs.org/clawdbot/${encodeURIComponent(tag)}`,
+      `${registry}/clawdbot/${encodeURIComponent(tag)}`,
       timeoutMs,
     );
     if (!res.ok) {

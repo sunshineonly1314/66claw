@@ -5,7 +5,8 @@
 
 import type { en } from "./en.js";
 
-export const zhCN: typeof en = {
+/** 中文翻译 - 使用 Record 类型避免字符串字面量限制 */
+export const zhCN: Record<keyof typeof en, string> = {
   // ============================================================================
   // 通用 (Common)
   // ============================================================================
@@ -76,6 +77,7 @@ export const zhCN: typeof en = {
   "common.help": "帮助",
   "common.version": "版本",
   "common.language": "语言",
+  "common.saving": "保存中...",
 
   // ============================================================================
   // 导航 (Navigation)
@@ -85,6 +87,8 @@ export const zhCN: typeof en = {
   "nav.agent": "助手",
   "nav.settings": "设置",
   "nav.overview": "概览",
+  "nav.freeModels": "免费模型",
+  "nav.usage": "用量统计",
   "nav.channels": "指挥渠道",
   "nav.instances": "实例",
   "nav.sessions": "会话",
@@ -157,8 +161,11 @@ export const zhCN: typeof en = {
   "chat.thinkingHigh": "深度",
   "chat.waiting": "等待响应中",
   "chat.waitingSeconds": "{{seconds}}秒",
-  "chat.timeoutHint": "暂未收到响应，请检查大模型是否有足够的 Token 额度。",
+  "chat.timeoutHint": "模型响应异常，请检查模型接口配置。",
   "chat.stillWaiting": "仍在等待中，请耐心稍候...",
+  "chat.placeholder.default": "输入消息（↩ 发送，Shift+↩ 换行，可粘贴图片）",
+  "chat.placeholder.withImages": "添加消息或继续粘贴图片...",
+  "chat.placeholder.disconnected": "连接网关后开始对话...",
 
   // ============================================================================
   // 指挥渠道页 (Channels)
@@ -189,9 +196,10 @@ export const zhCN: typeof en = {
   "channels.imessage": "iMessage",
   "channels.feishu": "飞书",
   "channels.dingtalk": "钉钉",
-  // "channels.wecom": "企业微信",  // 暂不支持
+  "channels.wecom": "企业微信",
+  "channels.qqbot": "QQ",
   // 飞书相关
-  "channels.feishu.description": "飞书企业内部应用机器人，适用于企业沟通和协作。",
+  "channels.feishu.description": "飞书企业内部应用机器人，支持私聊、群聊@、文档/知识库访问。",
   "channels.feishu.appId": "App ID",
   "channels.feishu.appSecret": "App Secret",
   "channels.feishu.encryptKey": "Encrypt Key",
@@ -207,24 +215,63 @@ export const zhCN: typeof en = {
   "channels.feishu.verificationTokenHint": "事件订阅的验证 Token（可选）",
   "channels.feishu.tenant": "租户",
   // 钉钉相关
-  "channels.dingtalk.description": "钉钉企业内部应用机器人，适用于企业办公和团队协作。",
-  "channels.dingtalk.appKey": "App Key",
-  "channels.dingtalk.appSecret": "App Secret",
+  "channels.dingtalk.description": "钉钉企业内部应用机器人，推荐使用 Stream 模式，无需公网 IP，支持 AI Card 流式响应。",
+  "channels.dingtalk.appKey": "App Key (Client ID)",
+  "channels.dingtalk.appSecret": "App Secret (Client Secret)",
   "channels.dingtalk.robotCode": "机器人 Token",
   "channels.dingtalk.webhookPath": "Webhook 路径",
-  "channels.dingtalk.configTitle": "钉钉应用配置",
-  "channels.dingtalk.configDesc": "在钉钉开放平台创建企业内部应用获取以下信息",
-  "channels.dingtalk.docsUrl": "https://open.dingtalk.com/document/orgapp/create-an-interface-based-chatbot",
-  "channels.dingtalk.docsLabel": "配置教程",
-  "channels.dingtalk.appKeyHint": "在钉钉开放平台 → 应用信息 → 凭证与基础信息中获取",
-  "channels.dingtalk.appSecretHint": "应用的 App Secret",
-  "channels.dingtalk.robotCodeHint": "如有单聊机器人，填写 Token（可选）",
+  "channels.dingtalk.configTitle": "钉钉配置教程",
+  "channels.dingtalk.configDesc": "在钉钉开放平台创建企业内部应用，并选择 Stream 模式",
+  "channels.dingtalk.docsUrl": "https://docs.clawd.bot/channels/dingtalk",
+  "channels.dingtalk.docsLabel": "详细配置指南",
+  "channels.dingtalk.appKeyHint": "在「凭证与基础信息」页面，复制 Client ID",
+  "channels.dingtalk.appSecretHint": "在「凭证与基础信息」页面，点击查看并复制（只显示一次！）",
+  "channels.dingtalk.robotCodeHint": "机器人 RobotCode（可选）",
   "channels.dingtalk.corp": "企业",
+  // 企业微信相关
+  "channels.wecom.description": "企业微信自建应用机器人，通过回调接收消息，需要公网可访问的服务器或内网穿透。",
+  "channels.wecom.corpId": "企业 ID (CorpID)",
+  "channels.wecom.agentId": "应用 ID (AgentId)",
+  "channels.wecom.agentSecret": "应用 Secret",
+  "channels.wecom.token": "回调 Token",
+  "channels.wecom.encodingAESKey": "回调 EncodingAESKey",
+  "channels.wecom.configTitle": "企业微信应用配置",
+  "channels.wecom.configDesc": "在企业微信管理后台创建自建应用获取以下信息",
+  "channels.wecom.docsUrl": "https://developer.work.weixin.qq.com/document/path/90930",
+  "channels.wecom.docsLabel": "配置教程",
+  "channels.wecom.corpIdHint": "在「我的企业」→「企业信息」最底部获取",
+  "channels.wecom.agentIdHint": "在应用详情页顶部获取",
+  "channels.wecom.agentSecretHint": "在应用详情页点击查看 Secret 获取",
+  "channels.wecom.tokenHint": "在「接收消息」→「设置API接收」中配置的 Token",
+  "channels.wecom.encodingAESKeyHint": "在「接收消息」→「设置API接收」中配置的 EncodingAESKey",
+  "channels.wecom.corp": "企业",
+  "channels.wecom.multiAccount": "多账户配置",
+  "channels.wecom.multiAccountDesc": "支持配置多个企业微信应用，每个应用独立的 Webhook 路径和策略",
+  "channels.wecom.addAccount": "添加账户",
+  "channels.wecom.accountName": "账户名称",
+  "channels.wecom.accountNameHint": "用于区分不同的企业微信应用，如「客服机器人」、「内部助手」",
+  "channels.wecom.defaultAccount": "默认账户",
+  "channels.wecom.webhookPathHint": "每个账户可配置独立的回调路径，如 /wecom/sales",
+  // QQ 机器人相关 (channels.qqbot 已在上方定义)
+  "channels.qqbot.description": "QQ 机器人状态和配置。支持 QQ 开放平台官方机器人。",
+  "channels.qqbot.appId": "AppID",
+  "channels.qqbot.appSecret": "AppSecret",
+  "channels.qqbot.token": "Token",
+  "channels.qqbot.webhookPath": "Webhook 路径",
+  "channels.qqbot.sandbox": "沙箱模式",
+  "channels.qqbot.configTitle": "QQ 机器人配置",
+  "channels.qqbot.configDesc": "在 QQ 开放平台创建机器人应用获取以下信息",
+  "channels.qqbot.docsUrl": "https://q.qq.com/wiki/develop/api-v2/",
+  "channels.qqbot.docsLabel": "配置教程",
+  "channels.qqbot.appIdHint": "在 QQ 开放平台 → 应用管理 → 应用详情中获取",
+  "channels.qqbot.appSecretHint": "应用的 AppSecret (ClientSecret)",
+  "channels.qqbot.tokenHint": "回调验证 Token（可选）",
+  "channels.qqbot.sandboxHint": "启用沙箱环境进行测试",
   // 渠道帮助说明
   "channels.help.title": "什么是指挥渠道？",
   "channels.help.description": "指挥渠道是你与 AI 助手沟通的消息平台。你可以通过这些平台发送消息给 AI 助手，助手会在同一平台回复你。",
   "channels.help.domestic": "国内常用渠道",
-  "channels.help.domesticList": "飞书、钉钉 - 适合国内企业用户，无需翻墙即可使用",
+  "channels.help.domesticList": "飞书、钉钉、企业微信 - 适合国内企业用户，无需翻墙即可使用",
   "channels.help.international": "国际渠道",
   "channels.help.internationalList": "WhatsApp、Telegram、Discord、Slack 等 - 国际主流平台",
   "channels.help.howToSetup": "如何配置渠道",
@@ -247,17 +294,17 @@ export const zhCN: typeof en = {
   // Discord 相关
   "channels.discord.description": "机器人状态和频道配置。目前支持非常充分。",
   // Google Chat 相关
-  "channels.googlechat.title": "谷歌聊天",
-  "channels.googlechat.description": "带有HTTP webhook的Google Workspace Chat应用。",
-  "channels.googlechat.credential": "凭历",
+  "channels.googlechat.title": "Google Chat",
+  "channels.googlechat.description": "Google Workspace Chat 应用，通过 HTTP webhook 接收消息。",
+  "channels.googlechat.credential": "凭证",
   "channels.googlechat.audience": "受众",
   // Slack 相关
-  "channels.slack.title": "松弛",
-  "channels.slack.description": "支持（套接字模式）。",
+  "channels.slack.title": "Slack",
+  "channels.slack.description": "Slack 应用机器人，支持 Socket Mode。",
   // Signal 相关
-  "channels.signal.title": "信号",
-  "channels.signal.description": "信号-CLI状态和信道配置。",
-  "channels.signal.baseUrl": "基础网址",
+  "channels.signal.title": "Signal",
+  "channels.signal.description": "Signal 消息状态和渠道配置。",
+  "channels.signal.baseUrl": "服务地址",
   // 通用工作状态
   "common.working": "处理中...",
 
@@ -311,6 +358,7 @@ export const zhCN: typeof en = {
   "skills.blocked": "已阻止",
   "skills.disabled": "已禁用",
   "skills.missing": "缺失",
+  "skills.noDescription": "点击安装了解更多",
   "skills.reason": "原因",
   "skills.blockedByAllowlist": "被白名单阻止",
   // 技能帮助文字
@@ -333,8 +381,54 @@ export const zhCN: typeof en = {
   "skills.remote.notInstalled": "未安装",
   "skills.remote.install": "安装",
   "skills.remote.alreadyInstalled": "已安装",
+  "skills.incompatible": "不支持本系统",
+  "skills.incompatible.macos": "仅支持 macOS",
+  "skills.incompatible.windows": "仅支持 Windows",
+  "skills.incompatible.linux": "仅支持 Linux",
   "skills.market.syncing": "同步中...",
   "skills.market.lastSynced": "更新于",
+  "skills.market.emptyHint": "技能市场暂无可用技能。",
+
+  // Skills 搜索与分类
+  "skills.search.title": "发现技能",
+  "skills.search.subtitle": "告诉我你想做什么，我来帮你找到合适的技能",
+  "skills.search.placeholder": "例如：查股票、控制智能家居、发消息...",
+  "skills.search.detected": "为你找到相关技能",
+  "skills.category.label": "按分类浏览",
+  "skills.category.all": "全部",
+  "skills.category.allDesc": "显示所有可用技能",
+  "skills.category.lifestyle": "生活助手",
+  "skills.category.lifestyleDesc": "天气、外卖、地图、音乐、智能家居",
+  "skills.category.finance": "财经理财",
+  "skills.category.financeDesc": "股票、基金、记账、投资",
+  "skills.category.computer": "电脑控制",
+  "skills.category.computerDesc": "截图、文件、系统控制、终端",
+  "skills.category.productivity": "效率工具",
+  "skills.category.productivityDesc": "笔记、提醒、日历、待办、邮件",
+  "skills.category.creative": "创意内容",
+  "skills.category.creativeDesc": "图片、视频、绘画、内容生成",
+  "skills.category.communication": "通讯社交",
+  "skills.category.communicationDesc": "消息、社交、聊天、语音",
+  "skills.category.development": "开发工具",
+  "skills.category.developmentDesc": "GitHub、代码、调试、API",
+  "skills.clearFilters": "清除筛选",
+  "skills.noResults.title": "没有找到匹配的技能",
+  "skills.noResults.desc": "没有找到与「{query}」匹配的技能，但没关系！",
+  "skills.noResults.suggestion.title": "没有你需要的技能？",
+  "skills.noResults.suggestion.desc": "你可以向我们反馈需求，或者使用「技能创建器」自己创建一个。告诉 AI 助手你想实现什么功能吧！",
+  // Skills 诊断卡片（ClawdbotCN 专属）
+  "skills.diagnostic.allGood": "✅ 技能状态良好",
+  "skills.diagnostic.issuesFound": "⚠️ 发现一些问题",
+  "skills.diagnostic.refresh": "重新检查",
+  "skills.diagnostic.eligible": "可用",
+  "skills.diagnostic.blocked": "缺依赖",
+  "skills.diagnostic.disabled": "已禁用",
+  "skills.diagnostic.missingTools": "缺少命令行工具",
+  "skills.diagnostic.missingKeys": "缺少 API 密钥",
+  "skills.diagnostic.missingConfig": "缺少配置项",
+  "skills.diagnostic.installHint": "点击技能卡片上的「安装」按钮可自动安装",
+  "skills.diagnostic.keyHint": "在技能卡片中填写 API 密钥并点击保存",
+  "skills.diagnostic.configHint": "请在「设置」页面配置相关选项",
 
   // ============================================================================
   // 节点页 (Nodes)
@@ -355,13 +449,13 @@ export const zhCN: typeof en = {
   "nodes.exposeCommand": "暴露命令",
   // 节点帮助文字
   "nodes.help.title": "什么是节点？",
-  "nodes.help.description": "节点是连接到 Clawdbot 网关的远程设备或计算机。通过节点，AI 助手可以在不同的机器上执行命令和任务。",
+  "nodes.help.description": "节点是连接到 ClawbotCN 网关的远程设备或计算机。通过节点，AI 助手可以在不同的机器上执行命令和任务。",
   "nodes.help.useCases": "使用场景",
   "nodes.help.useCase1": "远程服务器管理 - 在远程服务器上执行命令",
   "nodes.help.useCase2": "分布式任务 - 将任务分发到不同设备执行",
   "nodes.help.useCase3": "跨平台操作 - 在 Windows、Mac、Linux 之间协同工作",
   "nodes.help.howToPair": "如何配对节点",
-  "nodes.help.pairSteps": "1. 在目标设备上安装 Clawdbot CLI\n2. 运行 clawdbot node pair 命令\n3. 在此页面批准配对请求\n4. 配对成功后即可远程执行命令",
+  "nodes.help.pairSteps": "1. 在目标设备上安装 ClawbotCN CLI\n2. 运行 clawdbot node pair 命令\n3. 在此页面批准配对请求\n4. 配对成功后即可远程执行命令",
 
   // ============================================================================
   // 定时任务页 (Cron)
@@ -486,18 +580,20 @@ export const zhCN: typeof en = {
   // 页面副标题 (Page Subtitles)
   // ============================================================================
   "subtitle.overview": "网关状态、入口点和健康检查",
+  "subtitle.freeModels": "ClawdbotCN 独家福利，每日免费大模型平滑切换",
+  "subtitle.usage": "使用量统计、会话日志和数据洞察",
   "subtitle.channels": "管理指挥渠道，配置钉钉、飞书等聊天应用",
   "subtitle.instances": "已连接客户端和节点的在线信标",
   "subtitle.sessions": "检查活跃会话和调整每个会话的默认值",
   "subtitle.cron": "安排唤醒和定期助手运行",
-  "subtitle.playground": "发现技能玩法，探索 Clawdbot 的无限可能",
+  "subtitle.playground": "发现技能玩法，探索 ClawbotCN 的无限可能",
   "subtitle.skills": "管理技能可用性和 API 密钥",
   "subtitle.nodes": "已配对设备、能力和命令暴露",
   "subtitle.chat": "直接网关聊天会话，用于快速操作",
-  "subtitle.config": "安全编辑 ~/.clawdbot/clawdbot.json",
+  "subtitle.config": "安全编辑 ~/.clawdbot/config.json 配置文件",
   "subtitle.debug": "网关快照、事件和手动 RPC 调用",
   "subtitle.logs": "实时查看网关日志文件",
-  "subtitle.docs": "搜索和浏览 Clawdbot 使用文档",
+  "subtitle.docs": "搜索和浏览 ClawbotCN 使用文档",
 
   // ============================================================================
   // 文档中心 (Docs Center)
@@ -681,15 +777,15 @@ export const zhCN: typeof en = {
   "config.loadingSchema": "加载架构中…",
   "config.formUnsafe": "表单视图无法安全编辑某些字段。使用原始模式以避免丢失配置项。",
   "config.rawJson5": "原始 JSON5",
-  "config.schemaUnavailable": "架构不可用。",
-  "config.unsupportedSchema": "不支持的架构。使用原始模式。",
+  "config.schemaUnavailable": "配置表单加载中...",
+  "config.unsupportedSchema": "暂无可视化配置，请在「配置」页面手动编辑。",
   "config.noSettingsMatch": "没有匹配 \"{{query}}\" 的设置",
   "config.noSettingsInSection": "此部分没有设置",
   "config.envDesc": "传递给网关进程的环境变量",
   "config.updateDesc": "自动更新设置和发布渠道",
   "config.agentsDesc": "助手配置、模型和身份",
   "config.authDesc": "API 密钥和认证配置文件",
-  "config.channelsDesc": "指挥渠道（钉钉、飞书、企业微信等）",
+  "config.channelsDesc": "指挥渠道（钉钉、飞书、企业微信、Telegram、WhatsApp 等）",
   "config.messagesDesc": "消息处理和路由设置",
   "config.commandsDesc": "自定义斜杠命令",
   "config.hooksDesc": "Webhooks 和事件钩子",
@@ -780,7 +876,7 @@ export const zhCN: typeof en = {
   // 玩法推荐 (Playground)
   // ============================================================================
   "playground.title": "技能玩法推荐",
-  "playground.description": "探索 Clawdbot 的无限可能！按场景浏览技能，一键试用示例对话。",
+  "playground.description": "探索 ClawbotCN 的无限可能！按场景浏览技能，一键试用示例对话。",
   "playground.totalSkills": "技能总数",
   "playground.availableSkills": "可用",
   "playground.needsSetupSkills": "待配置",
@@ -795,7 +891,7 @@ export const zhCN: typeof en = {
   "playground.noSkillsInCategory": "该分类暂无技能",
   "playground.helpTitle": "如何使用技能",
   "playground.help.whatIsSkill": "什么是技能？",
-  "playground.help.skillDesc": "技能是扩展 Clawdbot 能力的功能模块。它们让你可以通过自然对话与应用、服务和设备进行交互。",
+  "playground.help.skillDesc": "技能是扩展 ClawbotCN 能力的功能模块。它们让你可以通过自然对话与应用、服务和设备进行交互。",
   "playground.help.howToUse": "如何使用？",
   "playground.help.useDesc": "点击任意可用技能的「立即试用」按钮，跳转到聊天页面并自动填入示例对话。直接发送即可体验！",
   "playground.help.needsSetup": "需要配置怎么办？",
@@ -803,6 +899,15 @@ export const zhCN: typeof en = {
   "playground.missing.bin": "命令行工具",
   "playground.missing.env": "环境变量",
   "playground.missing.config": "配置项",
+  "playground.installDeps": "一键安装依赖",
+  "playground.installing": "安装中...",
+  "playground.installSuccess": "安装成功！正在跳转...",
+  "playground.installFailed": "安装失败",
+  "playground.oneClickInstall": "一键安装",
+  "playground.goNotInstalled": "Go 语言未安装，请先安装 Go",
+  "playground.nodeNotInstalled": "Node.js 未安装，请先安装 Node.js",
+  "playground.brewNotInstalled": "Homebrew 未安装（仅 macOS）",
+  "playground.uvNotInstalled": "uv 未安装，请先安装 uv",
   "playground.category.productivity": "效率工具",
   "playground.category.productivityDesc": "笔记、任务管理、密码管理等提升效率的工具。",
   "playground.category.development": "开发助手",
@@ -821,4 +926,601 @@ export const zhCN: typeof en = {
   "playground.category.systemDesc": "打包、部署和系统实用工具。",
   "playground.category.other": "其他",
   "playground.category.otherDesc": "各类实用技能和工具。",
+
+  // ============================================================================
+  // 品牌与页脚 (Branding & Footer)
+  // ============================================================================
+  "brand.name": "ClawbotCN",
+  "brand.tagline": "智能 AI 助手，让工作更轻松",
+  "brand.poweredBy": "由 tecbinai 提供技术支持",
+  "brand.tecbinai": "tecbinai",
+  "brand.tecbinaiUrl": "https://www.tecbinai.com",
+  "brand.tecbinaiDesc": "及时追踪 AI 最新内容",
+  "brand.copyright": "ClawbotCN © 2024-2026",
+  "footer.visitTecbinai": "访问 tecbinai",
+  "footer.trackAI": "及时追踪 AI 最新内容",
+  "footer.contactUs": "联系我们",
+  "footer.docs": "使用文档",
+  "footer.faq": "常见问题",
+
+  // ============================================================================
+  // 新手引导 (Onboarding)
+  // ============================================================================
+  "onboarding.welcome": "欢迎使用 ClawbotCN",
+  "onboarding.subtitle": "您的智能 AI 助手已准备就绪",
+  "onboarding.step1.title": "连接网关",
+  "onboarding.step1.desc": "确保网关服务已启动并正常运行",
+  "onboarding.step2.title": "配置模型",
+  "onboarding.step2.desc": "选择并配置您喜欢的 AI 模型",
+  "onboarding.step3.title": "开始对话",
+  "onboarding.step3.desc": "与 AI 助手开始智能对话",
+  "onboarding.skip": "跳过引导",
+  "onboarding.next": "下一步",
+  "onboarding.prev": "上一步",
+  "onboarding.finish": "开始使用",
+  "onboarding.restart": "重新查看引导",
+
+  // ============================================================================
+  // 对话欢迎消息 (Chat Welcome)
+  // ============================================================================
+  "chat.welcome.title": "开始与 AI 助手对话",
+  "chat.welcome.subtitle": "我可以帮助你完成各种任务",
+  "chat.welcome.tryAsk": "试着问我：",
+  "chat.welcome.example1": "帮我查询今天北京的天气",
+  "chat.welcome.example2": "生成一张夕阳下的山水画",
+  "chat.welcome.example3": "帮我写一封工作邮件",
+  "chat.welcome.example4": "分析这个 CSV 文件的数据",
+  "chat.welcome.example5": "帮我执行一个 Git 命令",
+  "chat.welcome.capabilities": "我的能力",
+  "chat.welcome.capability.chat": "智能对话 - 回答问题、头脑风暴、写作辅助",
+  "chat.welcome.capability.tool": "工具调用 - 搜索、代码执行、文件操作",
+
+  // ============================================================================
+  // 能力发现 (Capability Discovery)
+  // ============================================================================
+  "discovery.welcome.title": "欢迎使用 ClawbotCN",
+  "discovery.welcome.subtitle": "我已了解您的设备，以下是我能帮您做的事",
+  "discovery.workspace.title": "当前工作空间",
+  "discovery.ready.title": "现在就能用",
+  "discovery.needsConfig.title": "配置后可用",
+  "discovery.suggestions.title": "试试这些",
+  "discovery.skip": "跳过，直接开始",
+  "discovery.scanning.title": "正在了解您的设备能力",
+  "discovery.scanning.cliTools": "检测 CLI 工具...",
+  "discovery.scanning.channels": "检测已配置渠道...",
+  "discovery.scanning.browsers": "检测浏览器...",
+  "discovery.scanning.workspace": "扫描工作空间...",
+  "discovery.scanning.suggestions": "生成个性化建议...",
+  "discovery.scanning.hint": "这通常只需要几秒钟",
+  "discovery.error.title": "检测遇到问题",
+  "discovery.retry": "重新检测",
+  "discovery.category.tool": "工具",
+  "discovery.category.channel": "消息渠道",
+  "discovery.category.browser": "浏览器",
+  "discovery.category.workspace": "开发能力",
+  "chat.welcome.capability.automation": "自动化 - 定时任务、消息推送、工作流",
+  "chat.welcome.titleTrial": "开始与 AI 助手对话（试用版）",
+  "chat.welcome.subtitleTrial": "您正在使用试用版，部分功能受限",
+
+  // ============================================================================
+  // 技术支持与购买 (Support & Purchase)
+  // ============================================================================
+  "support.techSupport": "技术支持",
+  "support.exclusiveSupport": "专属技术支持",
+  "support.upgradePro": "升级正式版",
+  "support.scanForSupport": "扫码获取技术支持",
+  "support.scanForPremiumSupport": "扫码获取专属技术支持",
+  "support.premiumGroupDesc": "AI 知识学习 · 高级使用指南 · 专属技术支持",
+  "support.basicGroupDesc": "获取基础技术支持与使用帮助",
+  "support.purchaseTitle": "购买正式版",
+  "support.purchaseDesc": "闲鱼自动发货，即买即用，解锁完整功能",
+  "support.clickToPurchase": "点击购买",
+  "support.hasActivationCode": "已有激活码？",
+  "support.activationPlaceholder": "输入 claw 开头的激活码",
+  "support.activateNow": "立即激活",
+  "support.inputActivationCode": "输入激活码",
+
+  // ============================================================================
+  // 连接状态增强 (Connection Status)
+  // ============================================================================
+  "connection.status.connected": "已连接",
+  "connection.status.connecting": "连接中...",
+  "connection.status.disconnected": "未连接",
+  "connection.status.reconnecting": "重新连接中...",
+  "connection.disconnectedFromGateway": "与网关的连接已断开",
+  "connection.ws.disconnected": "连接断开 ({{code}}): {{reason}}",
+  "connection.ws.noReason": "无原因",
+  "connection.ws.eventGap": "检测到事件间隙（期望序号 {{expected}}，实际 {{received}}），建议刷新页面",
+
+  // 配置错误
+  "config.error.hashMissing": "配置哈希缺失，请重新加载后重试",
+
+  // 执行审批错误
+  "execApprovals.error.selectNode": "请先选择一个节点再加载执行审批",
+  "execApprovals.error.hashMissing": "执行审批哈希缺失，请重新加载后重试",
+  "execApprovals.error.selectNodeSave": "请先选择一个节点再保存执行审批",
+  "execApprovals.error.saveFailed": "执行审批保存失败：{{error}}",
+
+  // 用量统计错误
+  "usage.error.loadFailed": "加载用量统计失败：{{error}}",
+  "connection.error.unauthorized": "认证失败，请检查令牌是否正确",
+  "connection.error.network": "网络连接失败，请检查网关是否正常运行",
+  "connection.error.timeout": "连接超时，请检查网络状况",
+  "connection.error.unknown": "连接失败，请稍后重试",
+  "connection.hint.getToken": "获取令牌命令：",
+  "connection.hint.copyCommand": "点击复制命令",
+  "connection.hint.lastConnected": "上次连接：",
+  "connection.action.retry": "重试连接",
+  "connection.action.copyToken": "一键复制令牌命令",
+
+  // ============================================================================
+  // 技能相关补充 (Skills Supplement)
+  // ============================================================================
+  "skills.local.emptyHint": "暂无本地技能。技能可以扩展 AI 助手的能力，如网页搜索、代码执行等。",
+  "skills.time.justNow": "刚刚",
+  "skills.time.minutesAgo": "{{count}} 分钟前",
+  "skills.time.hoursAgo": "{{count}} 小时前",
+  "skills.time.daysAgo": "{{count}} 天前",
+  // 连接状态提示
+  "skills.notConnected.hint": "服务未连接",
+  "skills.notConnected.tooltip": "服务未连接，请刷新页面或检查 Gateway 是否正常运行",
+
+  // ============================================================================
+  // 按钮禁用提示 (Button Disabled Hints)
+  // ============================================================================
+  "button.disabled.notConnected": "未连接到网关",
+  "button.disabled.loading": "加载中，请稍候",
+  "button.disabled.noPermission": "没有权限执行此操作",
+  "button.disabled.configRequired": "需要先完成配置",
+
+  // ============================================================================
+  // 技能安装 (Skill Installation)
+  // ============================================================================
+  "skillInstall.title": "需要安装技能",
+  "skillInstall.expiresIn": "将在",
+  "skillInstall.expired": "已过期",
+  "skillInstall.pending": "个待处理",
+  "skillInstall.missingDeps": "缺失的依赖",
+  "skillInstall.deps.bins": "命令行工具",
+  "skillInstall.deps.env": "环境变量",
+  "skillInstall.deps.config": "配置项",
+  "skillInstall.installSteps": "安装步骤",
+  "skillInstall.estimatedTime": "预计耗时",
+  "skillInstall.mirrorHint": "🇨🇳 ClawdbotCN 专属：使用国内高速镜像，一键安装所有依赖",
+  "skillInstall.installAndContinue": "一键安装并继续",
+  "skillInstall.installOnly": "仅安装",
+  "skillInstall.installing": "安装中...",
+  "skillInstall.cancel": "取消",
+
+  // ClawdbotCN 专属功能
+  "skillInstall.cnExclusive": "🇨🇳 ClawdbotCN 专属功能",
+  "skillInstall.cnExclusive.autoInstall": "自动安装所有依赖，无需手动配置",
+  "skillInstall.cnExclusive.fastMirror": "使用国内高速镜像，下载速度更快",
+  "skillInstall.cnExclusive.oneClick": "一键完成，小白也能轻松上手",
+
+  // 安装进度
+  "skillInstall.progress.downloading": "正在下载",
+  "skillInstall.progress.installing": "正在安装",
+  "skillInstall.progress.verifying": "正在验证",
+  "skillInstall.progress.complete": "安装完成",
+  "skillInstall.progress.failed": "安装失败",
+  "skillInstall.progress.pending": "准备中",
+  "skillInstall.progress.logs": "安装日志",
+  "skillInstall.progress.done": "完成",
+  "skillInstall.progress.retry": "重试",
+  "skillInstall.progress.close": "关闭",
+  "skillInstall.progress.speed": "下载速度",
+  "skillInstall.progress.eta": "剩余时间",
+  "skillInstall.progress.downloaded": "已下载",
+  "skillInstall.progress.total": "总大小",
+
+  // 依赖安装
+  "skillInstall.dependency.installing": "🚀 正在为您安装 {{name}}...",
+  "skillInstall.dependency.uv": "Python 包管理器 (uv)",
+  "skillInstall.dependency.go": "Go 语言运行时",
+  "skillInstall.dependency.node": "Node.js 运行时",
+  "skillInstall.dependency.success": "✅ {{name}} 安装成功",
+  "skillInstall.dependency.failed": "❌ {{name}} 安装失败",
+
+  // 安装成功/失败消息
+  "skillInstall.success.title": "🎉 技能安装成功",
+  "skillInstall.success.message": "{{skillName}} 已成功安装，正在继续执行任务...",
+  "skillInstall.failed.title": "😔 技能安装失败",
+  "skillInstall.failed.message": "{{skillName}} 安装失败：{{error}}",
+  "skillInstall.continue.message": "技能已安装，正在继续执行您的请求...",
+
+  // ============================================================================
+  // Token 使用量统计
+  // ============================================================================
+  "usage.title": "Token 使用量",
+  "usage.subtitle": "AI 模型 Token 消耗统计",
+  "usage.noData": "暂无使用数据，开始对话后将显示统计信息！",
+  "usage.todayTokens": "今日用量",
+  "usage.todayCost": "今日费用",
+  "usage.totalTokens": "总 Token",
+  "usage.totalCost": "总费用",
+  "usage.tokens": "tokens",
+  "usage.estimatedCost": "预估",
+  "usage.last30Days": "近 30 天",
+  "usage.recentUsage": "近 7 天用量",
+  "usage.viewDetails": "查看详情",
+  "usage.trendUp": "较昨日上升",
+  "usage.trendDown": "较昨日下降",
+  "usage.trendStable": "与昨日持平",
+  "usage.inputTokens": "输入 Token",
+  "usage.outputTokens": "输出 Token",
+  "usage.cacheRead": "缓存读取",
+  "usage.cacheWrite": "缓存写入",
+  "usage.dailyUsage": "每日用量",
+  "usage.costBreakdown": "费用明细",
+  "usage.tokenBreakdown": "Token 明细",
+  "usage.days7": "7 天",
+  "usage.days14": "14 天",
+  "usage.days30": "30 天",
+  "usage.refreshData": "刷新",
+  "usage.lastUpdated": "更新于",
+
+  // ============================================================================
+  // 模型选择 (Model Selection)
+  // ============================================================================
+  "models.title": "AI 模型",
+  "models.subtitle": "选择要使用的 AI 服务提供商和模型",
+  "models.provider": "服务提供商",
+  "models.model": "模型",
+  "models.selectProvider": "选择提供商...",
+  "models.selectProviderFirst": "请先选择提供商",
+  "models.notConfigured": "未配置",
+  "models.saving": "保存中...",
+  "models.pendingChange": "点击确认以应用",
+  "models.confirmChange": "确认更改",
+  "models.advancedConfig": "高级配置",
+  "models.currentModel": "当前模型",
+  "models.switchModel": "切换模型",
+  "models.recommended": "推荐",
+  // API Key 配置相关
+  "models.authConfigured": "已配置",
+  "models.authNotConfigured": "未配置 API Key",
+  "models.authRequired": "需要配置 {provider} 的 API Key 才能使用",
+  "models.configureApiKey": "配置 API Key",
+  "models.getApiKey": "获取 API Key",
+  "models.configuring": "配置 {provider}",
+  "models.verify": "验证",
+  "models.verifying": "验证中...",
+  "models.verifySuccess": "API Key 验证成功",
+  "models.verifyFailed": "API Key 验证失败",
+  "models.verifyFirst": "请先验证 API Key",
+  "models.switchSuccess": "模型切换成功",
+
+  // ============================================================================
+  // 安全模式 (Security Mode)
+  // ============================================================================
+  "security.title": "安全模式",
+  "security.subtitle": "设置 AI 的能力范围",
+  "security.currentMode": "当前模式",
+  "security.selectMode": "选择模式...",
+  "security.saving": "保存中...",
+  "security.switchSuccess": "安全模式已切换",
+  "security.advancedConfig": "高级设置",
+  "security.recommended": "推荐",
+  "security.dangerous": "危险",
+  // 安全模式名称
+  "security.mode.trust": "完全信任",
+  "security.mode.standard": "正常使用",
+  "security.mode.full": "只聊天",
+  // 安全模式描述
+  "security.mode.trust.desc": "解锁全部能力，AI 可以帮你做任何事",
+  "security.mode.standard.desc": "推荐模式，平衡安全与能力",
+  "security.mode.full.desc": "绝对安全模式，AI 完全无法操作电脑",
+  // 危险警告弹框
+  "security.warning.title": "⚠️ 确认启用完全信任模式？",
+  "security.warning.subtitle": "此模式下，AI Agent 将拥有完整系统权限：",
+  "security.warning.risk1": "可以读取、修改、删除任何文件",
+  "security.warning.risk2": "可以执行任何系统命令",
+  "security.warning.risk3": "可以访问网络和所有应用数据",
+  "security.warning.risk4": "AI 可能误删文件或执行破坏性操作",
+  "security.warning.tip": "建议仅在专用/测试设备上启用完全信任模式，且您了解 AI 的行为风险。",
+  "security.warning.cancel": "取消",
+  "security.warning.confirm": "我理解风险，启用完全信任",
+
+  // ============================================================================
+  // 技能名称中文翻译 (Skill Names Translation)
+  // ============================================================================
+  // 生活助手类
+  "skillName.weather": "天气查询",
+  "skillName.local-places": "附近地点",
+  "skillName.goplaces": "地图导航",
+  "skillName.food-order": "外卖点餐",
+  "skillName.ordercli": "订单查询",
+  "skillName.openhue": "智能灯光",
+  "skillName.sonoscli": "音箱控制",
+  "skillName.spotify": "Spotify音乐",
+  "skillName.songsee": "音乐识别",
+  "skillName.music": "音乐播放",
+
+  // 效率工具类
+  "skillName.1password": "密码管理",
+  "skillName.notion": "Notion笔记",
+  "skillName.obsidian": "Obsidian笔记",
+  "skillName.apple-notes": "苹果备忘录",
+  "skillName.apple-reminders": "苹果提醒",
+  "skillName.things-mac": "Things待办",
+  "skillName.bear-notes": "Bear笔记",
+  "skillName.trello": "Trello看板",
+  "skillName.himalaya": "邮件管理",
+  "skillName.calendar": "日历管理",
+
+  // 财经理财类
+  "skillName.stock": "股票查询",
+  "skillName.finance": "财务管理",
+  "skillName.budget": "预算记账",
+  "skillName.crypto": "加密货币",
+
+  // 电脑控制类
+  "skillName.peekaboo": "屏幕监控",
+  "skillName.camsnap": "摄像头拍照",
+  "skillName.screenshot": "屏幕截图",
+  "skillName.file": "文件管理",
+  "skillName.folder": "文件夹操作",
+  "skillName.system": "系统控制",
+  "skillName.terminal": "终端命令",
+  "skillName.shell": "Shell脚本",
+  "skillName.tmux": "终端会话",
+
+  // 创意内容类
+  "skillName.canvas": "画布展示",
+  "skillName.openai-image": "AI绘画",
+  "skillName.nano-banana": "像素图生成",
+  "skillName.gifgrep": "GIF搜索",
+  "skillName.summarize": "内容总结",
+  "skillName.gemini": "Gemini AI",
+  "skillName.oracle": "AI问答",
+  "skillName.image": "图片处理",
+
+  // 通讯社交类
+  "skillName.discord": "Discord",
+  "skillName.slack": "Slack",
+  "skillName.imsg": "iMessage",
+  "skillName.wacli": "WhatsApp",
+  "skillName.bluebubbles": "蓝泡泡消息",
+  "skillName.voice-call": "语音通话",
+  "skillName.telegram": "Telegram",
+  "skillName.wechat": "微信",
+
+  // 开发工具类
+  "skillName.github": "GitHub",
+  "skillName.coding": "代码助手",
+  "skillName.skill-creator": "技能创建器",
+  "skillName.skills-troubleshoot": "技能排错",
+  "skillName.mcporter": "MCP工具",
+  "skillName.git": "Git版本控制",
+
+  // 其他常见技能
+  "skillName.search": "网页搜索",
+  "skillName.web-search": "网页搜索",
+  "skillName.browser": "浏览器控制",
+  "skillName.execute": "命令执行",
+  "skillName.python": "Python脚本",
+  "skillName.javascript": "JS脚本",
+  "skillName.api": "API调用",
+  "skillName.http": "HTTP请求",
+  "skillName.database": "数据库查询",
+  "skillName.translate": "翻译助手",
+  "skillName.ocr": "文字识别",
+  "skillName.pdf": "PDF处理",
+  "skillName.email": "邮件发送",
+  "skillName.calculator": "计算器",
+  "skillName.timer": "计时器",
+  "skillName.reminder": "提醒事项",
+  "skillName.notes": "笔记",
+  "skillName.clipboard": "剪贴板",
+  "skillName.download": "下载工具",
+  "skillName.upload": "上传工具",
+  "skillName.compress": "压缩解压",
+  "skillName.encrypt": "加密解密",
+  "skillName.qrcode": "二维码",
+  "skillName.barcode": "条形码",
+  // 数据分析技能
+  "skillName.blogwatcher": "博客监控",
+  "skillName.model-usage": "模型用量",
+  "skillName.session-logs": "会话日志",
+  // 系统工具技能
+  "skillName.packaging": "打包工具",
+  "skillName.eightctl": "8x控制",
+  "skillName.sag": "系统分析",
+  "skillName.gog": "Go工具",
+  // clawdhub 已移除 - 技能市场统一使用国内服务
+  // 媒体技能
+  "skillName.video-frames": "视频帧提取",
+  "skillName.openai-whisper": "语音转文字",
+  "skillName.sherpa-onnx": "语音识别",
+  "skillName.nano-pdf": "PDF工具",
+  "skillName.bird": "Twitter/X",
+  "skillName.blucli": "蓝牙控制",
+  // 其他技能
+  "skillName.spotify-player": "Spotify播放器",
+  "skillName.openai-image-gen": "AI图片生成",
+  "skillName.codexbar": "代码分析",
+  "skillName.coding-agent": "代码助手",
+  "skillName.remindctl": "提醒管理",
+  "skillName.memo": "备忘录",
+  "skillName.grizzly": "Bear笔记CLI",
+
+  // 技能描述翻译
+  "skillDesc.weather": "查询全球各地实时天气和未来预报",
+  "skillDesc.local-places": "搜索附近的餐厅、商店、景点等",
+  "skillDesc.stock": "查询股票实时行情、涨跌幅、K线图",
+  "skillDesc.screenshot": "截取当前屏幕内容",
+  "skillDesc.camsnap": "使用摄像头拍摄照片",
+  "skillDesc.peekaboo": "监控和分析屏幕内容",
+  "skillDesc.1password": "安全管理和自动填充密码",
+  "skillDesc.notion": "管理Notion笔记和数据库",
+  "skillDesc.obsidian": "管理Obsidian知识库",
+  "skillDesc.apple-notes": "读写苹果备忘录",
+  "skillDesc.apple-reminders": "管理苹果提醒事项",
+  "skillDesc.canvas": "在画布上展示图表、代码等内容",
+  "skillDesc.openai-image": "使用AI生成艺术图片",
+  "skillDesc.github": "管理GitHub仓库、Issue和PR",
+  "skillDesc.search": "搜索互联网获取最新信息",
+  "skillDesc.browser": "控制浏览器执行自动化任务",
+  "skillDesc.execute": "在系统上执行命令行操作",
+  "skillDesc.python": "运行Python代码和脚本",
+  "skillDesc.translate": "多语言互译",
+  "skillDesc.summarize": "总结长文章和文档要点",
+  "skillDesc.email": "发送和管理电子邮件",
+  "skillDesc.calendar": "管理日程和会议安排",
+  "skillDesc.reminder": "设置提醒和待办事项",
+  "skillDesc.download": "从网络下载文件",
+  "skillDesc.upload": "上传文件到服务器",
+  "skillDesc.qrcode": "生成和识别二维码",
+  "skillDesc.discord": "管理Discord服务器和消息",
+  "skillDesc.slack": "发送和管理Slack消息",
+  "skillDesc.telegram": "管理Telegram消息和机器人",
+  "skillDesc.spotify": "控制Spotify音乐播放",
+  // 数据分析技能描述
+  "skillDesc.blogwatcher": "监控博客和RSS/Atom订阅源的更新",
+  "skillDesc.model-usage": "统计和分析AI模型的Token使用量",
+  "skillDesc.session-logs": "搜索和分析历史对话记录",
+  // 媒体技能描述
+  "skillDesc.video-frames": "从视频中提取关键帧图片",
+  "skillDesc.openai-whisper": "使用Whisper将音频转换为文字",
+  "skillDesc.sherpa-onnx": "本地语音识别引擎",
+  "skillDesc.nano-pdf": "读取和处理PDF文档",
+  "skillDesc.spotify-player": "使用spotify_player播放音乐",
+  "skillDesc.openai-image-gen": "使用OpenAI生成图片",
+  "skillDesc.codexbar": "使用CodexBar分析代码和API使用量",
+  "skillDesc.openhue": "控制飞利浦Hue智能灯光",
+  "skillDesc.terminal": "执行终端命令和脚本",
+  "skillDesc.file": "读写和管理文件系统",
+  // 新增技能描述
+  "skillDesc.bird": "通过cookies进行Twitter/X的阅读、搜索、发帖和互动",
+  "skillDesc.blucli": "BluOS CLI用于发现、播放、分组和音量控制",
+  "skillDesc.bluebubbles": "构建或更新Clawdbot的BlueBubbles外部通道插件",
+  // clawdhub 已移除 - 技能市场统一使用国内服务
+  "skillDesc.coding-agent": "通过后台进程运行代码助手进行编程",
+  "skillDesc.eightctl": "控制Eight Sleep智能床垫",
+  "skillDesc.remindctl": "管理苹果提醒事项",
+  "skillDesc.memo": "管理苹果备忘录",
+  "skillDesc.grizzly": "管理Bear笔记应用",
+
+  // ============================================================================
+  // 免费模型 (Free Models)
+  // ============================================================================
+  "freeModels.eyebrow": "ClawdbotCN 独家福利",
+  "freeModels.title": "每日免费大模型",
+  "freeModels.subtitle": "额度用完自动切换，省钱无感知",
+
+  // 空状态
+  "freeModels.empty.title": "开始省钱之旅",
+  "freeModels.empty.desc": "配置免费模型后，系统会自动使用免费额度，用完再切换，帮你省下每一分钱。",
+
+  // 特性标签
+  "freeModels.feature.dailyTokens": "每日 100 万免费 Token",
+  "freeModels.feature.autoSwitch": "额度用完自动切换",
+  "freeModels.feature.saveMoney": "每天可省 ¥5-10",
+
+  // 统计
+  "freeModels.stats.todaySavings": "今日已省",
+  "freeModels.stats.totalSavings": "累计节省",
+  "freeModels.stats.freeRequests": "免费调用",
+  "freeModels.stats.accounts": "已配置",
+
+  // 开关
+  "freeModels.toggle.title": "启用每日免费模型平滑切换",
+  "freeModels.toggle.desc": "开启后，系统会优先使用免费额度，用完自动切换到下一个可用模型",
+
+  // Provider 卡片
+  "freeModels.selectProvider": "选择免费模型提供商",
+  "freeModels.recommended": "推荐",
+  "freeModels.configured": "已配置",
+  "freeModels.dailyQuota": "每日额度",
+  "freeModels.resetTime": "重置时间",
+  "freeModels.configureNow": "立即配置",
+  "freeModels.requests": "次请求",
+
+  // 账号管理
+  "freeModels.configuredAccounts": "已配置的免费模型",
+  "freeModels.addMore": "添加更多免费模型",
+  "freeModels.preferred": "首选",
+  "freeModels.setPreferred": "设为首选",
+
+  // 状态
+  "freeModels.status.active": "可用",
+  "freeModels.status.exhausted": "今日已用完",
+  "freeModels.status.error": "连接错误",
+  "freeModels.status.disabled": "已禁用",
+
+  // 切换历史
+  "freeModels.switchHistory": "切换历史",
+
+  // 配置弹窗
+  "freeModels.modal.configTitle": "配置 {name}",
+  "freeModels.modal.configDesc": "填写 API 密钥后，系统会自动使用该模型的免费额度。",
+  "freeModels.modal.apiKey": "API 密钥",
+  "freeModels.modal.apiKeyPlaceholder": "请输入 API 密钥",
+  "freeModels.modal.getApiKey": "前往获取 →",
+  "freeModels.modal.testConnection": "测试连接",
+  "freeModels.modal.testing": "验证中...",
+  "freeModels.modal.save": "保存配置",
+  "freeModels.modal.testSuccess": "连接成功，可以使用免费额度",
+  "freeModels.modal.testFailed": "连接失败：{error}",
+
+  // 删除弹窗
+  "freeModels.modal.deleteTitle": "确认删除",
+  "freeModels.modal.deleteConfirm": "删除 {name} 的配置？",
+  "freeModels.modal.deleteDesc": "删除后将无法使用该模型的免费额度，但可以随时重新配置。",
+
+  // 错误
+  "freeModels.error.title": "加载失败",
+
+  // 配置步骤引导
+  "freeModels.step1.title": "注册账号",
+  "freeModels.step1.desc": "点击下方按钮前往官网注册账号，获取免费额度",
+  "freeModels.step2.title": "获取 API Key",
+  "freeModels.step2.desc": "登录后在平台控制台找到并复制你的 API 密钥",
+  "freeModels.step3.title": "粘贴 API Key",
+  "freeModels.openRegisterPage": "前往 {name} 注册 →",
+
+  // ============================================================================
+  // 意见反馈 (Feedback)
+  // ============================================================================
+  "feedback.trigger": "意见反馈",
+  "feedback.title": "反馈",
+  "feedback.optional": "选填",
+
+  // 奖励提示（简化版）
+  "feedback.reward.hint": "优质反馈可获 ClawdbotCN 顶级会员 1 年",
+
+  // 反馈类型
+  "feedback.type.label": "选择类型",
+  "feedback.type.suggestion": "功能建议",
+  "feedback.type.suggestion.desc": "产品改进、新功能",
+  "feedback.type.bug": "问题反馈",
+  "feedback.type.bug.desc": "Bug、异常、故障",
+
+  // 内容输入
+  "feedback.content.label": "详细描述",
+  "feedback.content.placeholder": "描述你的想法或遇到的问题...",
+
+  // 图片上传
+  "feedback.images.label": "截图",
+  "feedback.images.hint": "粘贴或点击上传，最多 3 张",
+
+  // 联系方式
+  "feedback.contact.label": "联系方式",
+  "feedback.contact.placeholder": "手机号 / 微信 / 邮箱",
+  "feedback.contact.hint": "用于回复或发放奖励",
+
+  // 提交
+  "feedback.submit": "提交",
+  "feedback.submitting": "提交中...",
+
+  // 提交成功
+  "feedback.success.title": "感谢反馈",
+  "feedback.success.message": "我们会认真阅读每一条反馈",
+  "feedback.success.ok": "完成",
+
+  // 错误提示
+  "feedback.error.empty": "请填写反馈内容",
+  "feedback.error.tooShort": "请至少输入 5 个字符",
+  "feedback.error.submitFailed": "提交失败，请重试",
 } as const;

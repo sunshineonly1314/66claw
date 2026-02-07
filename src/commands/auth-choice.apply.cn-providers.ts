@@ -59,7 +59,7 @@ export const ALIYUN_BAILIAN_ENV_VAR = "DASHSCOPE_API_KEY";
 export const ALIYUN_BAILIAN_API_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 // 火山引擎 (Doubao)
-export const VOLCENGINE_ARK_DEFAULT_MODEL_REF = "volcengine-ark/doubao-pro-32k";
+export const VOLCENGINE_ARK_DEFAULT_MODEL_REF = "volcengine-ark/doubao-seed-1-8-251228";
 export const VOLCENGINE_ARK_ENV_VAR = "ARK_API_KEY";
 export const VOLCENGINE_ARK_API_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
 
@@ -408,6 +408,9 @@ export function applyVolcengineArkConfig(config: ClawdbotConfig): ClawdbotConfig
 
 /**
  * 应用火山引擎提供商配置
+ * 模型 ID 参考: https://www.volcengine.com/docs/82379/1330310
+ * 重要：模型 ID 必须使用完整格式（如 doubao-seed-1-8-251228），不能简写
+ * 重要：用户需要先在火山方舟控制台「开通管理」页面开通模型才能使用
  */
 export function applyVolcengineArkProviderConfig(config: ClawdbotConfig): ClawdbotConfig {
   return {
@@ -420,32 +423,25 @@ export function applyVolcengineArkProviderConfig(config: ClawdbotConfig): Clawdb
           ...config.models?.providers?.["volcengine-ark"],
           baseUrl: VOLCENGINE_ARK_API_ENDPOINT,
           models: [
+            // 豆包 1.8 (最新推荐) - 显示名称"豆包 1.8"，实际 API 调用使用完整 ID
             {
-              id: "doubao-pro-32k",
-              name: "豆包 Pro 32K",
-              contextWindow: 32768,
-              maxTokens: 4096,
+              id: "doubao-seed-1-8-251228",
+              name: "豆包 1.8",
+              contextWindow: 256000,
+              maxTokens: 32768,
+              cost: { input: 0.004, output: 0.016, cacheRead: 0, cacheWrite: 0 },
+              input: ["text", "image", "video"],
+              reasoning: true,
+            },
+            // 豆包 1.6
+            {
+              id: "doubao-seed-1-6-251015",
+              name: "豆包 1.6",
+              contextWindow: 256000,
+              maxTokens: 32768,
               cost: { input: 0.008, output: 0.02, cacheRead: 0, cacheWrite: 0 },
-              input: ["text"],
-              reasoning: false,
-            },
-            {
-              id: "doubao-lite-32k",
-              name: "豆包 Lite 32K",
-              contextWindow: 32768,
-              maxTokens: 4096,
-              cost: { input: 0.003, output: 0.006, cacheRead: 0, cacheWrite: 0 },
-              input: ["text"],
-              reasoning: false,
-            },
-            {
-              id: "doubao-pro-128k",
-              name: "豆包 Pro 128K",
-              contextWindow: 131072,
-              maxTokens: 4096,
-              cost: { input: 0.05, output: 0.09, cacheRead: 0, cacheWrite: 0 },
-              input: ["text"],
-              reasoning: false,
+              input: ["text", "image", "video"],
+              reasoning: true,
             },
           ],
         },
@@ -904,10 +900,15 @@ export async function applyAuthChoiceCnProviders(
         [
           "火山引擎提供豆包 Doubao 系列模型。",
           "",
+          "⚠️ 重要：使用前必须先开通模型！",
+          "开通地址: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement",
+          "",
           "获取 API Key:",
           "1. 登录火山引擎控制台: https://console.volcengine.com/ark/",
           "2. 点击「API Key 管理」",
           "3. 创建并复制 API Key",
+          "",
+          "推荐开通模型: doubao-seed-1-8-251228 (豆包 1.8 最新版)",
         ].join("\n"),
         "火山引擎",
       );

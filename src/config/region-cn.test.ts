@@ -139,19 +139,17 @@ describe("模型配置验证", () => {
     expect(inconsistent).toEqual([]);
   });
 
-  it("火山引擎的占位符模型 ID 应该有警告说明", () => {
+  it("火山引擎应该有开通模型的警告说明", () => {
     const volcengine = CN_PROVIDERS["volcengine-ark"];
     expect(volcengine).toBeDefined();
 
-    // 检查是否有 authNote 提示用户需要替换
+    // 检查是否有 authNote 提示用户需要开通模型
     expect(volcengine.authNote).toBeDefined();
-    expect(volcengine.authNote).toContain("接入点");
+    expect(volcengine.authNote).toContain("开通");
 
-    // 检查模型描述是否有警告
+    // 检查模型 ID 使用正确的格式 (doubao-seed-x-x 小写格式)
     for (const model of volcengine.models) {
-      if (model.id.startsWith("ep-")) {
-        expect(model.description).toContain("替换");
-      }
+      expect(model.id).toMatch(/^doubao-seed-/);
     }
   });
 });
@@ -161,14 +159,17 @@ describe("模型配置验证", () => {
 // ============================================================================
 
 describe("API 端点验证", () => {
-  it("所有 apiEndpoint 应该是有效的 HTTPS URL", () => {
+  it("所有 apiEndpoint 应该是有效的 HTTPS URL（本地服务除外）", () => {
     const invalidEndpoints: string[] = [];
 
     for (const [providerId, provider] of Object.entries(CN_PROVIDERS)) {
       const url = provider.apiEndpoint;
 
-      // 检查是否以 https:// 开头（生产环境应该都是 HTTPS）
-      if (!url.startsWith("https://")) {
+      // 本地服务（如 Ollama）允许使用 HTTP
+      const isLocalService = url.includes("localhost") || url.includes("127.0.0.1");
+      
+      // 检查是否以 https:// 开头（生产环境应该都是 HTTPS，本地服务除外）
+      if (!url.startsWith("https://") && !isLocalService) {
         invalidEndpoints.push(`${providerId}: ${url}`);
       }
 
@@ -372,12 +373,14 @@ describe("isChannelHiddenInCn()", () => {
 });
 
 describe("isProviderHiddenInCn()", () => {
-  it("openai 应该在中国区隐藏", () => {
-    expect(isProviderHiddenInCn("openai")).toBe(true);
+  // 注意：openai 和 anthropic 现在已启用（需要科学上网）
+  // 它们不再被隐藏，用户可以选择使用
+  it("openai 不应该在中国区隐藏（已支持，需科学上网）", () => {
+    expect(isProviderHiddenInCn("openai")).toBe(false);
   });
 
-  it("anthropic 应该在中国区隐藏", () => {
-    expect(isProviderHiddenInCn("anthropic")).toBe(true);
+  it("anthropic 不应该在中国区隐藏（已支持，需科学上网）", () => {
+    expect(isProviderHiddenInCn("anthropic")).toBe(false);
   });
 
   it("siliconflow 不应该在中国区隐藏", () => {
@@ -465,14 +468,17 @@ describe("边界情况和潜在风险", () => {
     expect(emptyModels).toEqual([]);
   });
 
-  it("pricing 字段格式应该一致（包含 ¥ 符号或 '免费'）", () => {
+  it("pricing 字段格式应该一致（包含 ¥/元/免费/付费 等）", () => {
     const inconsistent: string[] = [];
 
     for (const [providerId, provider] of Object.entries(CN_PROVIDERS)) {
       for (const model of provider.models) {
         if (model.pricing) {
+          // 支持的格式：免费、付费、免费额度、¥xx、xx元
           const isValid =
             model.pricing === "免费" ||
+            model.pricing === "付费" ||
+            model.pricing.includes("免费额度") ||
             model.pricing.includes("¥") ||
             model.pricing.includes("元");
 
@@ -609,9 +615,13 @@ describe("特定厂商配置正确性", () => {
       expect(recommendedModel?.id).toContain("qwen-plus");
     });
 
-    it("模型 ID 应该使用 -latest 后缀", () => {
-      const latestModels = qwen.models.filter((m) => m.id.includes("-latest"));
-      expect(latestModels.length).toBeGreaterThan(0);
+    it("模型 ID 不需要 -latest 后缀（官方免费包兼容）", () => {
+      // 官方免费包使用不带 -latest 的模型名，验证我们也使用这种格式
+      const coreModels = ["qwen-plus", "qwen-turbo", "qwen-max", "qwen-vl-max"];
+      coreModels.forEach((modelId) => {
+        const model = qwen.models.find((m) => m.id === modelId);
+        expect(model).toBeDefined();
+      });
     });
   });
 });

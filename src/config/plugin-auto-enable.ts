@@ -21,8 +21,8 @@ export type PluginAutoEnableResult = {
   changes: string[];
 };
 
-// China region channels that are built into ChannelsSchema and don't need plugins
-const CN_BUILTIN_CHANNELS = new Set(["feishu", "dingtalk", "wecom"]);
+// Note: China region channels (feishu, dingtalk, wecom) are extension plugins
+// and need to be auto-enabled like all other channel plugins.
 
 const CHANNEL_PLUGIN_IDS = Array.from(
   new Set([
@@ -249,15 +249,13 @@ function resolveConfiguredPlugins(
   if (configuredChannels && typeof configuredChannels === "object") {
     for (const key of Object.keys(configuredChannels)) {
       if (key === "defaults") continue;
-      // Skip China region channels that are built-in (don't need plugins)
-      if (CN_BUILTIN_CHANNELS.has(key)) continue;
+      // China region channels (feishu, dingtalk, wecom) ARE plugins and need to be added
       channelIds.add(key);
     }
   }
   for (const channelId of channelIds) {
     if (!channelId) continue;
-    // Skip China region channels that are built-in (don't need plugins)
-    if (CN_BUILTIN_CHANNELS.has(channelId)) continue;
+    // All channels (including CN channels) need plugins enabled
     if (isChannelConfigured(cfg, channelId, env)) {
       changes.push({
         pluginId: channelId,

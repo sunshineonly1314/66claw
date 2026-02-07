@@ -1,5 +1,6 @@
 import type { GatewayBrowserClient } from "../gateway";
 import { cloneConfigObject, removePathValue, setPathValue } from "./config/form-utils";
+import { t } from "../i18n/index.js";
 
 export type ExecApprovalsDefaults = {
   security?: string;
@@ -85,7 +86,7 @@ export async function loadExecApprovals(
   try {
     const rpc = resolveExecApprovalsRpc(target);
     if (!rpc) {
-      state.lastError = "Select a node before loading exec approvals.";
+      state.lastError = t("execApprovals.error.selectNode");
       return;
     }
     const res = (await state.client.request(rpc.method, rpc.params)) as ExecApprovalsSnapshot;
@@ -117,7 +118,7 @@ export async function saveExecApprovals(
   try {
     const baseHash = state.execApprovalsSnapshot?.hash;
     if (!baseHash) {
-      state.lastError = "Exec approvals hash missing; reload and retry.";
+      state.lastError = t("execApprovals.error.hashMissing");
       return;
     }
     const file =
@@ -126,7 +127,7 @@ export async function saveExecApprovals(
       {};
     const rpc = resolveExecApprovalsSaveRpc(target, { file, baseHash });
     if (!rpc) {
-      state.lastError = "Select a node before saving exec approvals.";
+      state.lastError = t("execApprovals.error.selectNodeSave");
       return;
     }
     await state.client.request(rpc.method, rpc.params);

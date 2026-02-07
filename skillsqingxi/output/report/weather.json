@@ -1,0 +1,65 @@
+{
+  "skillId": "weather",
+  "filePath": "skills/weather/SKILL.md",
+  "layer1": {
+    "skillId": "weather",
+    "passed": true,
+    "decision": "pass",
+    "structural": [],
+    "patternMatches": [],
+    "blacklistHits": [],
+    "processingTimeMs": 1
+  },
+  "layer2": {
+    "skillId": "weather",
+    "passed": true,
+    "decision": "pass",
+    "riskLevel": "safe",
+    "issues": [],
+    "hiddenRisks": "内容中未发现隐藏指令、零宽字符、异常注释或利用Markdown渲染差异的攻击痕迹。所有代码块均为公开、只读的天气数据获取命令，无写入、执行或信息收集行为。",
+    "summary": "该技能文件仅提供公开天气服务的只读API调用示例，无任何安全风险。",
+    "confidence": 0.95,
+    "modelUsed": "qwen3-max-2026-01-23",
+    "inputTokens": 1437,
+    "outputTokens": 114,
+    "processingTimeMs": 4929,
+    "rawResponse": "{\n  \"risk_level\": \"safe\",\n  \"issues\": [],\n  \"hidden_risks\": \"内容中未发现隐藏指令、零宽字符、异常注释或利用Markdown渲染差异的攻击痕迹。所有代码块均为公开、只读的天气数据获取命令，无写入、执行或信息收集行为。\",\n  \"summary\": \"该技能文件仅提供公开天气服务的只读API调用示例，无任何安全风险。\",\n  \"recommendation\": \"pass\",\n  \"confidence\": 0.95\n}"
+  },
+  "layer3": {
+    "skillId": "weather",
+    "quality": {
+      "scores": {
+        "utility": 9,
+        "completeness": 9,
+        "technicalQuality": 10,
+        "maintenance": 8,
+        "cnCompatibility": 6
+      },
+      "overallScore": 8.4,
+      "tier": "A",
+      "category": "工具与实用程序",
+      "tags": [
+        "天气",
+        "命令行",
+        "API",
+        "免费服务"
+      ],
+      "cnBlocked": false,
+      "cnAlternative": "",
+      "highlights": "无需 API 密钥即可获取天气信息，提供多种格式和两个可靠服务，命令行示例丰富且即拷即用。",
+      "weaknesses": "wttr.in 在中国大陆访问不稳定（部分 CDN 被干扰），Open-Meteo 虽可访问但需手动查坐标，对普通用户不够友好。",
+      "summary": "一个轻量、高效、无依赖的命令行天气查询技能，适合开发者和终端用户日常使用。",
+      "recommendation": "收录"
+    },
+    "translation": {
+      "translatedContent": "---\nname: weather\ndescription: 获取当前天气和预报（无需 API Key）。\nhomepage: https://wttr.in/:help\nmetadata: {\"clawdbot\":{\"emoji\":\"🌤️\",\"requires\":{\"bins\":[\"curl\"]}}}\n---\n\n# 天气\n\n两个免费服务，无需 API Key。\n\n## wttr.in（主用）\n\n快速单行命令：\n```bash\ncurl -s \"wttr.in/London?format=3\"\n# 输出：London: ⛅️ +8°C\n```\n\n紧凑格式：\n```bash\ncurl -s \"wttr.in/London?format=%l:+%c+%t+%h+%w\"\n# 输出：London: ⛅️ +8°C 71% ↙5km/h\n```\n\n完整预报：\n```bash\ncurl -s \"wttr.in/London?T\"\n```\n\n格式代码：`%c` 天气状况 · `%t` 温度 · `%h` 湿度 · `%w` 风速 · `%l` 位置 · `%m` 月相\n\n提示：\n- 空格需 URL 编码：`wttr.in/New+York`\n- 支持机场代码：`wttr.in/JFK`\n- 单位：`?m`（公制）`?u`（英制）\n- 仅今天：`?1` · 仅当前：`?0`\n- 生成 PNG 图片：`curl -s \"wttr.in/Berlin.png\" -o /tmp/weather.png`\n\n## Open-Meteo（备用，JSON 格式）\n\n免费、无需密钥，适合程序化调用：\n```bash\ncurl -s \"https://api.open-meteo.com/v1/forecast?latitude=51.5&longitude=-0.12&current_weather=true\"\n```\n\n先获取城市坐标，再发起查询。返回包含温度、风速和天气代码的 JSON 数据。\n\n文档：https://open-meteo.com/en/docs",
+      "validationPassed": true
+    },
+    "modelUsed": "qwen3-max-2026-01-23",
+    "totalTokens": 2137,
+    "processingTimeMs": 21415
+  },
+  "finalDecision": "accepted",
+  "finalTier": "A",
+  "totalTimeMs": 26348
+}

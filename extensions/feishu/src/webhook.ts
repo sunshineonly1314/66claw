@@ -103,7 +103,8 @@ export function createFeishuWebhookHandler(ctx: FeishuWebhookContext) {
 
       // 检查是否需要解密 (如果配置了 Encrypt Key)
       if (typeof body === "object" && body !== null && "encrypt" in body) {
-        const encryptKey = config.app?.encryptKey;
+        // 支持新版扁平配置和旧版嵌套配置
+        const encryptKey = config.encryptKey ?? config.app?.encryptKey;
         if (!encryptKey) {
           log?.error("[feishu] 收到加密消息但未配置 encryptKey");
           sendJsonResponse(res, 400, { error: "Encryption key not configured" });
@@ -127,8 +128,10 @@ export function createFeishuWebhookHandler(ctx: FeishuWebhookContext) {
           log?.info(`[feishu] URL 验证请求: challenge=${verifyEvent.challenge}`);
 
           // 验证 token (如果配置了 verificationToken)
-          if (config.app?.verificationToken && verifyEvent.token !== config.app.verificationToken) {
-            log?.warn(`[feishu] 验证 Token 不匹配: 期望=${config.app.verificationToken}, 收到=${verifyEvent.token}`);
+          // 支持新版扁平配置和旧版嵌套配置
+          const verificationToken = config.verificationToken ?? config.app?.verificationToken;
+          if (verificationToken && verifyEvent.token !== verificationToken) {
+            log?.warn(`[feishu] 验证 Token 不匹配: 期望=${verificationToken}, 收到=${verifyEvent.token}`);
             sendJsonResponse(res, 401, { error: "Invalid verification token" });
             return;
           }
@@ -144,8 +147,9 @@ export function createFeishuWebhookHandler(ctx: FeishuWebhookContext) {
       if (typeof body === "object" && body !== null && "header" in body) {
         const event = body as FeishuMessageReceiveEvent;
 
-        // 验证 Token
-        if (config.app?.verificationToken && event.header?.token !== config.app.verificationToken) {
+        // 验证 Token (支持新版扁平配置和旧版嵌套配置)
+        const eventVerificationToken = config.verificationToken ?? config.app?.verificationToken;
+        if (eventVerificationToken && event.header?.token !== eventVerificationToken) {
           log?.warn("[feishu] 事件 Token 不匹配");
           sendJsonResponse(res, 401, { error: "Invalid event token" });
           return;

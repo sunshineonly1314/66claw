@@ -98,6 +98,8 @@ export type ClawdbotConfig = {
   gateway?: GatewayConfig;
   /** License 授权信息 (ClawdbotCN) */
   license?: LicenseConfig;
+  /** 通用凭据存储（兼容字段，用于存储环境变量） */
+  credentials?: Record<string, string>;
 };
 
 export type ConfigValidationIssue = {

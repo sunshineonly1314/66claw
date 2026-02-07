@@ -1,7 +1,7 @@
 import { html, nothing } from "lit";
 
 import { clampText } from "../format";
-import { t } from "../i18n/index.js";
+import { t, tMaybe } from "../i18n/index.js";
 import type { SkillStatusEntry, SkillStatusReport } from "../types";
 
 export type PlaygroundCategory = {
@@ -30,7 +30,7 @@ const SKILL_CATEGORY_RULES: Array<{ keywords: string[]; category: string }> = [
   // 数据分析
   { keywords: ["model-usage", "session-logs", "blogwatcher"], category: "analytics" },
   // 系统工具
-  { keywords: ["packaging", "eightctl", "sag", "gog", "clawdhub"], category: "system" },
+  { keywords: ["packaging", "eightctl", "sag", "gog"], category: "system" },
 ];
 
 // 分类定义
@@ -226,8 +226,13 @@ export type PlaygroundProps = {
   report: SkillStatusReport | null;
   error: string | null;
   activeCategory: string | null;
+  // 安装状态
+  installingSkill: string | null;
+  installMessage: string | null;
+  // 回调
   onCategoryChange: (category: string | null) => void;
   onTrySkill: (skillName: string, example: string) => void;
+  onInstallSkill: (skill: SkillStatusEntry) => void;
   onRefresh: () => void;
 };
 
@@ -242,6 +247,44 @@ function categorizeSkill(skillName: string): string {
     }
   }
   return "other";
+}
+
+// ClawdbotCN 专属：技能排序函数
+// 优先级：可用 > OS兼容可安装 > OS兼容需手动配置 > OS不兼容
+function sortSkillsByPriority(skills: SkillStatusEntry[]): SkillStatusEntry[] {
+  // 计算技能的优先级分数（分数越低排越前）
+  function getSkillPriority(skill: SkillStatusEntry): number {
+    const isAvailable = skill.eligible && !skill.disabled;
+    const isOsCompatible = !skill.missing.os || skill.missing.os.length === 0;
+    const canAutoInstall = isOsCompatible && 
+      skill.install && 
+      skill.install.length > 0 && 
+      skill.missing.bins.length > 0;
+    const needsManualSetup = isOsCompatible && !isAvailable && !canAutoInstall;
+    
+    // 1. 可用的技能 - 最高优先级
+    if (isAvailable) return 0;
+    
+    // 2. OS 兼容 + 缺依赖但可一键安装
+    if (canAutoInstall) return 1;
+    
+    // 3. OS 兼容 + 需要手动配置（如需要 API key）
+    if (needsManualSetup) return 2;
+    
+    // 4. OS 不兼容 - 最低优先级
+    return 3;
+  }
+  
+  return [...skills].sort((a, b) => {
+    const aPriority = getSkillPriority(a);
+    const bPriority = getSkillPriority(b);
+    
+    // 先按优先级排序
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    
+    // 同优先级按名称字母排序
+    return a.name.localeCompare(b.name);
+  });
 }
 
 // 将 skills 按分类整理
@@ -261,6 +304,11 @@ function organizeSkillsByCategory(skills: SkillStatusEntry[]): Map<string, Skill
     result.set(categoryId, categorySkills);
   }
   
+  // ClawdbotCN 专属：对每个分类内的技能进行排序
+  for (const [categoryId, categorySkills] of result.entries()) {
+    result.set(categoryId, sortSkillsByPriority(categorySkills));
+  }
+  
   return result;
 }
 
@@ -271,6 +319,126 @@ function getSkillExample(skillName: string): { example: string; tips?: string } 
   };
 }
 
+// 获取技能的中文名称
+function getSkillDisplayName(skillName: string): string {
+  // 尝试获取翻译后的名称
+  const translationKey = `skillName.${skillName}`;
+  const translated = tMaybe(translationKey);
+  // 如果翻译存在且不是原始的 key，则使用翻译
+  if (translated && translated !== translationKey) {
+    return translated;
+  }
+  // 否则返回原始名称（美化显示）
+  return beautifySkillName(skillName);
+}
+
+// 获取技能的中文描述
+function getSkillDisplayDesc(skill: SkillStatusEntry): string {
+  // 尝试获取翻译后的描述
+  const translationKey = `skillDesc.${skill.name}`;
+  const translated = tMaybe(translationKey);
+  // 如果翻译存在且不是原始的 key，则使用翻译
+  if (translated && translated !== translationKey) {
+    return translated;
+  }
+  // 否则返回原始描述
+  return skill.description;
+}
+
+// 美化技能名称（kebab-case 转 Title Case）
+function beautifySkillName(name: string): string {
+  return name
+    .split('-')
+    .map(word => {
+      // 特殊缩写保持大写
+      const upperWords = ['api', 'cli', 'ui', 'ai', 'id', 'url', 'http', 'https', 'ssh', 'pdf', 'json', 'rss'];
+      if (upperWords.includes(word.toLowerCase())) {
+        return word.toUpperCase();
+      }
+      // 普通单词首字母大写
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+// 翻译安装按钮标签
+// 将 "Install xxx (go)" 翻译成 "一键安装 xxx"
+function translateInstallLabel(label: string): string {
+  // 匹配 "Install xxx (go/brew/node/uv)" 格式
+  const match = label.match(/^Install\s+(.+?)\s*\((\w+)\)$/i);
+  if (match) {
+    const [, toolName] = match;
+    return `${t("playground.oneClickInstall")} ${toolName}`;
+  }
+  // 其他格式直接返回
+  return label;
+}
+
+// 翻译安装消息
+// 将英文错误消息翻译成中文
+function translateInstallMessage(message: string): string {
+  // ClawdbotCN 专属消息（已经是中文）
+  if (message.includes("ClawdbotCN") || message.includes("🇨🇳")) {
+    return message;
+  }
+  
+  // 正在安装依赖的提示
+  if (/正在.*安装|Installing/i.test(message)) {
+    if (/go/i.test(message)) return `🚀 正在为您安装 Go 语言运行时...`;
+    if (/node/i.test(message)) return `🚀 正在为您安装 Node.js 运行时...`;
+    if (/uv/i.test(message)) return `🚀 正在为您安装 Python 包管理器 (uv)...`;
+    return message;
+  }
+  
+  // 安装成功消息
+  if (/go installed|Go 安装成功/i.test(message)) {
+    return `✅ Go 语言运行时安装成功！`;
+  }
+  if (/node installed|Node.*安装成功/i.test(message)) {
+    return `✅ Node.js 运行时安装成功！`;
+  }
+  if (/uv installed|uv 安装成功/i.test(message)) {
+    return `✅ Python 包管理器 (uv) 安装成功！`;
+  }
+  if (/^Installed$/i.test(message.trim())) {
+    return `✅ ${t("playground.installSuccess")}`;
+  }
+  
+  // 匹配 "xxx not installed" 格式（安装依赖失败时才会显示）
+  if (/go not installed/i.test(message)) {
+    return `❌ ${t("playground.goNotInstalled")}（请访问 https://go.dev/dl/ 下载安装）`;
+  }
+  if (/node not installed|nodejs not installed|npm not installed/i.test(message)) {
+    return `❌ ${t("playground.nodeNotInstalled")}（请访问 https://nodejs.org/ 下载安装）`;
+  }
+  if (/brew not installed|homebrew not installed/i.test(message)) {
+    return `❌ ${t("playground.brewNotInstalled")}（请访问 https://brew.sh/ 安装）`;
+  }
+  if (/uv not installed/i.test(message)) {
+    return `❌ ${t("playground.uvNotInstalled")}（请访问 https://docs.astral.sh/uv/ 了解安装方法）`;
+  }
+  
+  // 安装失败消息
+  if (/install.*fail/i.test(message) || /failed to install/i.test(message)) {
+    // 提取有用的错误信息
+    const cleanMessage = message.replace(/Install failed \(exit \d+\):\s*/i, "").trim();
+    return `❌ ${t("playground.installFailed")}: ${cleanMessage || message}`;
+  }
+  
+  // 一般安装成功消息
+  if (/success|installed/i.test(message) && !/not installed/i.test(message) && !/fail/i.test(message)) {
+    return `✅ ${t("playground.installSuccess")}`;
+  }
+  
+  // 已经是中文的消息直接返回
+  if (/安装成功|安装失败|正在安装/.test(message)) {
+    return message;
+  }
+  
+  // 其他消息返回原文
+  return message;
+}
+
 // 渲染单个 skill 卡片
 function renderSkillCard(
   skill: SkillStatusEntry,
@@ -278,23 +446,51 @@ function renderSkillCard(
 ) {
   const example = getSkillExample(skill.name);
   const isAvailable = skill.eligible && !skill.disabled;
+  const isInstalling = props.installingSkill === skill.name;
+  
+  // 检查 OS 是否兼容（ClawdbotCN 专属：增加 OS 兼容性检查）
+  const hasOsRestriction = skill.missing.os && skill.missing.os.length > 0;
+  
+  // 检查是否可以自动安装（必须 OS 兼容才能安装）
+  const canAutoInstall = !isAvailable && 
+    !hasOsRestriction && 
+    skill.install && 
+    skill.install.length > 0 && 
+    skill.missing.bins.length > 0;
+  const installOption = skill.install?.[0];
+  
+  // ClawdbotCN 专属：OS 不兼容时显示提示
+  const osIncompatibleHint = hasOsRestriction 
+    ? skill.missing.os?.includes("darwin") 
+      ? t("skills.incompatible.macos") 
+      : skill.missing.os?.includes("win32")
+        ? t("skills.incompatible.windows")
+        : t("skills.incompatible")
+    : null;
+  
   const missingItems = [
+    // OS 不兼容放在最前面
+    ...(osIncompatibleHint ? [`⚠️ ${osIncompatibleHint}`] : []),
     ...skill.missing.bins.map((b) => `${t("playground.missing.bin")}: ${b}`),
     ...skill.missing.env.map((e) => `${t("playground.missing.env")}: ${e}`),
     ...skill.missing.config.map((c) => `${t("playground.missing.config")}: ${c}`),
   ];
 
+  // 获取中文显示名称和描述
+  const displayName = getSkillDisplayName(skill.name);
+  const displayDesc = getSkillDisplayDesc(skill);
+
   return html`
     <div class="playground-skill-card ${isAvailable ? "" : "playground-skill-unavailable"}">
       <div class="playground-skill-header">
         <span class="playground-skill-emoji">${skill.emoji || "📦"}</span>
-        <span class="playground-skill-name">${skill.name}</span>
+        <span class="playground-skill-name">${displayName}</span>
         ${isAvailable
           ? html`<span class="playground-skill-status playground-skill-available">${t("playground.available")}</span>`
           : html`<span class="playground-skill-status playground-skill-needs-setup">${t("playground.needsSetup")}</span>`}
       </div>
       
-      <p class="playground-skill-desc">${clampText(skill.description, 100)}</p>
+      <p class="playground-skill-desc">${clampText(displayDesc, 100)}</p>
       
       <div class="playground-skill-example">
         <div class="playground-example-label">${t("playground.tryThis")}:</div>
@@ -318,13 +514,38 @@ function renderSkillCard(
           `
         : nothing}
       
-      <button
-        class="btn playground-try-btn ${isAvailable ? "primary" : ""}"
-        ?disabled=${!isAvailable}
-        @click=${() => props.onTrySkill(skill.name, example.example)}
-      >
-        ${isAvailable ? t("playground.tryNow") : t("playground.configureFirst")}
-      </button>
+      <div class="playground-skill-actions">
+        ${isAvailable
+          ? html`
+              <button
+                class="btn playground-try-btn primary"
+                @click=${() => props.onTrySkill(skill.name, example.example)}
+              >
+                ${t("playground.tryNow")}
+              </button>
+            `
+          : canAutoInstall
+            ? html`
+                <button
+                  class="btn playground-install-btn primary"
+                  ?disabled=${isInstalling}
+                  @click=${() => props.onInstallSkill(skill)}
+                >
+                  ${isInstalling
+                    ? html`<span class="playground-spinner"></span> ${t("skills.installing")}`
+                    : html`🔧 ${installOption?.label ? translateInstallLabel(installOption.label) : t("playground.configureFirst")}`}
+                </button>
+              `
+            : html`
+                <button
+                  class="btn playground-try-btn playground-btn-incompatible"
+                  disabled
+                  title="${hasOsRestriction ? osIncompatibleHint : t("playground.configureFirst")}"
+                >
+                  ${hasOsRestriction ? `🚫 ${osIncompatibleHint}` : t("playground.configureFirst")}
+                </button>
+              `}
+      </div>
     </div>
   `;
 }
@@ -352,7 +573,10 @@ function renderCategoryTab(
 
 export function renderPlayground(props: PlaygroundProps) {
   const skills = props.report?.skills ?? [];
-  const skillsByCategory = organizeSkillsByCategory(skills);
+  
+  // ClawdbotCN 专属：先排序再分类，确保所有视图都使用排序后的列表
+  const sortedSkills = sortSkillsByPriority(skills);
+  const skillsByCategory = organizeSkillsByCategory(sortedSkills);
   
   // 计算各分类的技能数量
   const categoryCounts = new Map<string, number>();
@@ -362,9 +586,21 @@ export function renderPlayground(props: PlaygroundProps) {
   
   // 获取当前激活分类的技能
   const activeCategory = props.activeCategory;
+  // ClawdbotCN 专属：全局视图也使用排序后的技能列表
   const activeSkills = activeCategory
     ? skillsByCategory.get(activeCategory) ?? []
-    : skills;
+    : sortedSkills;
+  
+  // 调试日志：确认排序生效
+  if (sortedSkills.length > 0) {
+    console.log("[ClawdbotCN] 技能排序结果（前5个）:", sortedSkills.slice(0, 5).map(s => ({
+      name: s.name,
+      eligible: s.eligible,
+      disabled: s.disabled,
+      osCompatible: !s.missing.os || s.missing.os.length === 0,
+      canInstall: s.install && s.install.length > 0 && s.missing.bins.length > 0
+    })));
+  }
   
   // 统计可用技能数量
   const availableCount = skills.filter((s) => s.eligible && !s.disabled).length;
@@ -402,6 +638,12 @@ export function renderPlayground(props: PlaygroundProps) {
 
     ${props.error
       ? html`<div class="callout danger" style="margin-bottom: 16px;">${props.error}</div>`
+      : nothing}
+
+    ${props.installMessage
+      ? html`<div class="callout ${props.installMessage.includes("失败") || props.installMessage.includes("fail") || props.installMessage.includes("not installed") ? "danger" : "success"}" style="margin-bottom: 16px;">
+          ${translateInstallMessage(props.installMessage)}
+        </div>`
       : nothing}
 
     <!-- 分类标签栏 -->

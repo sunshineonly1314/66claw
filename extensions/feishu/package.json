@@ -1,17 +1,13 @@
 {
   "name": "@clawdbot/feishu",
-  "version": "2026.1.27",
+  "version": "2026.2.2",
   "type": "module",
-  "description": "Clawdbot 飞书渠道插件 (Feishu/Lark channel plugin)",
+  "description": "Clawdbot Feishu/Lark channel plugin - 支持 WebSocket/Webhook 连接、媒体处理、卡片渲染",
   "clawdbot": {
-    "extensions": [
-      "./index.ts"
-    ]
+    "extensions": ["./index.ts"]
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.30.0",
     "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "clawdbot": "workspace:*"
   }
 }

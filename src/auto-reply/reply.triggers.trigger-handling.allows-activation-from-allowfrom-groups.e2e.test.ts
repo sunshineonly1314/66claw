@@ -204,7 +204,9 @@ describe("trigger handling", () => {
       expect(text).toBe("hello");
       expect(runEmbeddedPiAgent).toHaveBeenCalledOnce();
       const prompt = vi.mocked(runEmbeddedPiAgent).mock.calls[0]?.[0]?.prompt ?? "";
-      expect(prompt).toContain("A new session was started via /new or /reset");
+      // 检查 prompt 包含会话重置相关关键词（支持中英文）
+      // Check that prompt contains session reset keywords (supports both Chinese and English)
+      expect(prompt).toMatch(/\/new|\/reset/);
     });
   });
 });

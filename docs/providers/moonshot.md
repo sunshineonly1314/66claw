@@ -54,7 +54,7 @@ Note: Moonshot and Kimi Code are separate providers. Keys are not interchangeabl
     mode: "merge",
     providers: {
       moonshot: {
-        baseUrl: "https://api.moonshot.ai/v1",
+        baseUrl: "https://api.moonshot.cn/v1",
         apiKey: "${MOONSHOT_API_KEY}",
         api: "openai-completions",
         models: [

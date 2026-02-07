@@ -7,7 +7,7 @@ import { syncSkillsToWorkspace } from "../skills.js";
 import { DEFAULT_AGENT_WORKSPACE_DIR } from "../workspace.js";
 import { ensureSandboxBrowser } from "./browser.js";
 import { resolveSandboxConfigForAgent } from "./config.js";
-import { ensureSandboxContainer } from "./docker.js";
+import { ensureSandboxContainer, isDockerAvailable } from "./docker.js";
 import { maybePruneSandboxes } from "./prune.js";
 import { resolveSandboxRuntimeStatus } from "./runtime-status.js";
 import { resolveSandboxScopeKey, resolveSandboxWorkspaceDir } from "./shared.js";
@@ -27,6 +27,13 @@ export async function resolveSandboxContext(params: {
     sessionKey: rawSessionKey,
   });
   if (!runtime.sandboxed) return null;
+
+  // Check if Docker is available - if not, skip sandboxing
+  const dockerAvailable = await isDockerAvailable();
+  if (!dockerAvailable) {
+    defaultRuntime.log?.("[sandbox] Docker not available, skipping sandbox mode");
+    return null;
+  }
 
   const cfg = resolveSandboxConfigForAgent(params.config, runtime.agentId);
 

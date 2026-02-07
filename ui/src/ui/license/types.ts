@@ -4,15 +4,29 @@
  */
 
 /**
+ * 技术支持群二维码配置（服务端返回）
+ */
+export interface SupportQrcodeConfig {
+  /** 二维码图片 base64 data URL */
+  base64: string;
+  /** 群名称 */
+  groupName: string;
+}
+
+/**
  * License 信息
  */
 export interface LicenseInfo {
-  tier: "basic" | "test";
+  tier: "basic" | "test" | "professional" | "enterprise";
   tierName: string;
   expiresAt: string;
   daysRemaining: number;
   keyType: "test" | "trial" | "standard";
   features: string[];
+  /** 技术支持群二维码（服务端根据用户类型 + 设备 hash 返回） */
+  supportQrcode?: SupportQrcodeConfig;
+  /** 闲鱼购买链接（仅 test 用户返回） */
+  purchaseUrl?: string;
 }
 
 /**
@@ -92,6 +106,68 @@ export enum LicenseErrorCode {
   ERROR_INVALID_SIGN = 1006,
   ERROR_TIMESTAMP_EXPIRED = 1007,
   ERROR_KEY_EXHAUSTED = 1008,
+  ERROR_UNBIND_COOLDOWN = 1009,
+  /** 需要确认设备切换（单设备模式：已有其他设备绑定） */
+  ERROR_DEVICE_SWITCH_REQUIRED = 1010,
+  /** 设备切换冷却中（单设备模式：24小时内已切换过） */
+  ERROR_DEVICE_SWITCH_COOLDOWN = 1011,
+}
+
+/**
+ * 设备切换信息（errorCode=1010 时返回）
+ */
+export interface DeviceSwitchInfo {
+  /** 已绑定设备的 ID */
+  existingDeviceId: string;
+  /** 已绑定设备的名称 */
+  existingDeviceName: string;
+  /** 已绑定设备的操作系统信息 */
+  existingOsInfo?: string;
+  /** 设备数量限制 */
+  deviceLimit?: number;
+  /** 已绑定设备数 */
+  boundDevices?: number;
+}
+
+/**
+ * 设备切换冷却信息（errorCode=1011 时返回）
+ */
+export interface DeviceSwitchCooldownInfo {
+  /** 冷却剩余小时数 */
+  cooldownRemainingHours: number;
+  /** 冷却结束时间 ISO 字符串 */
+  cooldownEndsAt: string;
+}
+
+/**
+ * 设备解绑结果
+ */
+export interface UnbindResult {
+  success: boolean;
+  error?: string;
+  errorCode?: LicenseErrorCode;
+  /** 冷却剩余小时数（1009 错误时） */
+  cooldownRemainingHours?: number;
+  /** 冷却结束时间 ISO 字符串（1009 错误时） */
+  cooldownEndsAt?: string;
+}
+
+/**
+ * 设备切换结果
+ * 注意：与 /verify 接口一致，使用 valid 字段判断成功
+ */
+export interface DeviceSwitchResult {
+  valid: boolean;
+  error?: string;
+  errorCode?: LicenseErrorCode;
+  /** 冷却剩余小时数（1011 错误时） */
+  cooldownRemainingHours?: number;
+  /** 冷却结束时间 ISO 字符串（1011 错误时） */
+  cooldownEndsAt?: string;
+  /** License 信息（成功时） */
+  license?: LicenseInfo;
+  /** 设备信息（成功时） */
+  device?: DeviceInfo;
 }
 
 /**
@@ -120,6 +196,10 @@ export interface LicenseUiState {
   pendingNotifications: LicenseNotification[];
   /** 最后验证时间 */
   lastVerifiedAt: number | null;
+  /** 设备切换信息（errorCode=1010 时） */
+  deviceSwitchInfo: DeviceSwitchInfo | null;
+  /** 设备切换冷却信息（errorCode=1011 时） */
+  deviceSwitchCooldown: DeviceSwitchCooldownInfo | null;
 }
 
 /**
@@ -137,16 +217,20 @@ export const DEFAULT_LICENSE_STATE: LicenseUiState = {
   forceUpdate: null,
   pendingNotifications: [],
   lastVerifiedAt: null,
+  deviceSwitchInfo: null,
+  deviceSwitchCooldown: null,
 };
 
 /**
  * 弹窗类型
  */
 export type LicenseDialogType =
-  | "activation"      // 激活授权
-  | "expired"         // 授权过期
-  | "device-limit"    // 设备超限
-  | "renewal"         // 续费提醒
-  | "notification"    // 通知
-  | "force-update"    // 强制更新
-  | "device-manage";  // 设备管理
+  | "activation"           // 激活授权
+  | "expired"              // 授权过期
+  | "device-limit"         // 设备超限
+  | "renewal"              // 续费提醒
+  | "notification"         // 通知
+  | "force-update"         // 强制更新
+  | "device-manage"        // 设备管理
+  | "device-switch"        // 设备切换确认（1010）
+  | "device-switch-cooldown"; // 设备切换冷却（1011）

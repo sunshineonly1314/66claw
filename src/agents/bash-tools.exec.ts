@@ -748,7 +748,9 @@ export function createExecTool(
     name: "exec",
     label: "exec",
     description:
-      "Execute shell commands with background continuation. Use yieldMs/background to continue later via process tool. Use pty=true for TTY-required commands (terminal UIs, coding agents).",
+      process.platform === "win32"
+        ? "Execute PowerShell commands (Windows). Use PowerShell syntax only (no bash). Use yieldMs/background to continue later via process tool. Use pty=true for TTY-required commands."
+        : "Execute shell commands with background continuation. Use yieldMs/background to continue later via process tool. Use pty=true for TTY-required commands (terminal UIs, coding agents).",
     parameters: execSchema,
     execute: async (_toolCallId, args, signal, onUpdate) => {
       const params = args as {

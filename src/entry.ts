@@ -16,21 +16,28 @@ if (process.argv.includes("--no-color")) {
   process.env.FORCE_COLOR = "0";
 }
 
-const EXPERIMENTAL_WARNING_FLAG = "--disable-warning=ExperimentalWarning";
+/** Node-level flags that suppress noisy warnings before any JS code runs. */
+const SUPPRESSED_WARNING_FLAGS = [
+  "--disable-warning=ExperimentalWarning",
+  "--disable-warning=DEP0040", // punycode (transitive dep)
+  "--disable-warning=DEP0060", // util._extend (transitive dep)
+];
 
-function hasExperimentalWarningSuppressed(nodeOptions: string): boolean {
+function hasWarningsSuppressed(nodeOptions: string): boolean {
   if (!nodeOptions) return false;
-  return nodeOptions.includes(EXPERIMENTAL_WARNING_FLAG) || nodeOptions.includes("--no-warnings");
+  if (nodeOptions.includes("--no-warnings")) return true;
+  return SUPPRESSED_WARNING_FLAGS.every((flag) => nodeOptions.includes(flag));
 }
 
-function ensureExperimentalWarningSuppressed(): boolean {
+function ensureWarningsSuppressed(): boolean {
   if (isTruthyEnvValue(process.env.CLAWDBOT_NO_RESPAWN)) return false;
   if (isTruthyEnvValue(process.env.CLAWDBOT_NODE_OPTIONS_READY)) return false;
   const nodeOptions = process.env.NODE_OPTIONS ?? "";
-  if (hasExperimentalWarningSuppressed(nodeOptions)) return false;
+  if (hasWarningsSuppressed(nodeOptions)) return false;
 
   process.env.CLAWDBOT_NODE_OPTIONS_READY = "1";
-  process.env.NODE_OPTIONS = `${nodeOptions} ${EXPERIMENTAL_WARNING_FLAG}`.trim();
+  const missing = SUPPRESSED_WARNING_FLAGS.filter((f) => !nodeOptions.includes(f));
+  process.env.NODE_OPTIONS = `${nodeOptions} ${missing.join(" ")}`.trim();
 
   const child = spawn(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
     stdio: "inherit",
@@ -120,7 +127,7 @@ function normalizeWindowsArgv(argv: string[]): string[] {
 
 process.argv = normalizeWindowsArgv(process.argv);
 
-if (!ensureExperimentalWarningSuppressed()) {
+if (!ensureWarningsSuppressed()) {
   const parsed = parseCliProfileArgs(process.argv);
   if (!parsed.ok) {
     // Keep it simple; Commander will handle rich help/errors after we strip flags.

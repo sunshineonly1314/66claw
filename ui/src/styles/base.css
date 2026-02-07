@@ -1,81 +1,87 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root {
-  /* Background - Warmer dark with depth */
-  --bg: #12141a;
-  --bg-accent: #14161d;
-  --bg-elevated: #1a1d25;
-  --bg-hover: #262a35;
-  --bg-muted: #262a35;
+  /* Background - 更温暖舒适的深色背景 */
+  --bg: #0f1419;
+  --bg-accent: #151b23;
+  --bg-elevated: #1c242e;
+  --bg-hover: #2a3544;
+  --bg-muted: #2a3544;
 
-  /* Card / Surface - More contrast between levels */
-  --card: #181b22;
-  --card-foreground: #f4f4f5;
-  --card-highlight: rgba(255, 255, 255, 0.05);
-  --popover: #181b22;
-  --popover-foreground: #f4f4f5;
+  /* Card / Surface - 更好的层次区分 */
+  --card: #1a2332;
+  --card-foreground: #f8f9fa;
+  --card-highlight: rgba(255, 255, 255, 0.08);
+  --popover: #1a2332;
+  --popover-foreground: #f8f9fa;
+
+  /* Surface - 弹框/面板背景 */
+  --surface: #1a2332;
+  --surface-elevated: #212d3d;
+  --surface-hover: #2a3544;
+  --foreground: #e8ecf1;
 
   /* Panel */
-  --panel: #12141a;
-  --panel-strong: #1a1d25;
-  --panel-hover: #262a35;
-  --chrome: rgba(18, 20, 26, 0.95);
-  --chrome-strong: rgba(18, 20, 26, 0.98);
+  --panel: #0f1419;
+  --panel-strong: #1c242e;
+  --panel-hover: #2a3544;
+  --chrome: rgba(15, 20, 25, 0.96);
+  --chrome-strong: rgba(15, 20, 25, 0.98);
 
-  /* Text - Slightly warmer */
-  --text: #e4e4e7;
-  --text-strong: #fafafa;
-  --chat-text: #e4e4e7;
-  --muted: #71717a;
-  --muted-strong: #52525b;
-  --muted-foreground: #71717a;
+  /* Text - 更高对比度，更易读 */
+  --text: #e8ecf1;
+  --text-strong: #ffffff;
+  --chat-text: #e8ecf1;
+  --muted: #8b9caf;
+  --muted-strong: #6b7d91;
+  --muted-foreground: #8b9caf;
 
-  /* Border - Subtle but defined */
-  --border: #27272a;
-  --border-strong: #3f3f46;
-  --border-hover: #52525b;
-  --input: #27272a;
-  --ring: #ff5c5c;
+  /* Border - 更清晰的边界 */
+  --border: #2d3a4d;
+  --border-strong: #4a5a70;
+  --border-hover: #5d6f87;
+  --input: #2d3a4d;
+  --ring: #6c8cff;
 
-  /* Accent - Punchy signature red */
-  --accent: #ff5c5c;
-  --accent-rgb: 255, 92, 92;
-  --accent-hover: #ff7070;
-  --accent-muted: #ff5c5c;
-  --accent-subtle: rgba(255, 92, 92, 0.15);
-  --accent-foreground: #fafafa;
-  --accent-glow: rgba(255, 92, 92, 0.25);
-  --primary: #ff5c5c;
+  /* Accent - 清新的蓝紫色调，更专业更易读 */
+  --accent: #6c8cff;
+  --accent-rgb: 108, 140, 255;
+  --accent-hover: #89a5ff;
+  --accent-muted: #6c8cff;
+  --accent-subtle: rgba(108, 140, 255, 0.18);
+  --accent-foreground: #ffffff;
+  --accent-glow: rgba(108, 140, 255, 0.3);
+  --primary: #6c8cff;
   --primary-foreground: #ffffff;
 
-  /* Secondary - Teal accent for variety */
-  --secondary: #1e2028;
-  --secondary-foreground: #f4f4f5;
-  --accent-2: #14b8a6;
-  --accent-2-muted: rgba(20, 184, 166, 0.7);
-  --accent-2-subtle: rgba(20, 184, 166, 0.15);
+  /* Secondary - 更亮的辅助色 */
+  --secondary: #212d3d;
+  --secondary-foreground: #f8f9fa;
+  --accent-2: #20d5bc;
+  --accent-2-muted: rgba(32, 213, 188, 0.75);
+  --accent-2-subtle: rgba(32, 213, 188, 0.18);
 
-  /* Semantic - More saturated */
-  --ok: #22c55e;
-  --ok-muted: rgba(34, 197, 94, 0.75);
-  --ok-subtle: rgba(34, 197, 94, 0.12);
-  --destructive: #ef4444;
-  --destructive-foreground: #fafafa;
-  --warn: #f59e0b;
-  --warn-muted: rgba(245, 158, 11, 0.75);
-  --warn-subtle: rgba(245, 158, 11, 0.12);
-  --danger: #ef4444;
-  --danger-muted: rgba(239, 68, 68, 0.75);
-  --danger-subtle: rgba(239, 68, 68, 0.12);
-  --info: #3b82f6;
+  /* Semantic - 更鲜明的语义色彩 */
+  --ok: #34d399;
+  --ok-muted: rgba(52, 211, 153, 0.8);
+  --ok-subtle: rgba(52, 211, 153, 0.15);
+  --destructive: #f87171;
+  --destructive-foreground: #ffffff;
+  --warn: #fbbf24;
+  --warn-muted: rgba(251, 191, 36, 0.8);
+  --warn-subtle: rgba(251, 191, 36, 0.15);
+  --danger: #f87171;
+  --danger-muted: rgba(248, 113, 113, 0.8);
+  --danger-subtle: rgba(248, 113, 113, 0.15);
+  --info: #60a5fa;
 
   /* Focus - With glow */
-  --focus: rgba(255, 92, 92, 0.25);
+  --focus: rgba(108, 140, 255, 0.3);
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
   --focus-glow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring), 0 0 20px var(--accent-glow);
 
   /* Grid */
-  --grid-line: rgba(255, 255, 255, 0.04);
+  --grid-line: rgba(255, 255, 255, 0.06);
 
   /* Theme transition */
   --theme-switch-x: 50%;
@@ -112,20 +118,28 @@
   color-scheme: dark;
 }
 
-/* Light theme - Clean with subtle warmth */
+/* Light theme - 柔和护眼的浅色主题 */
 :root[data-theme="light"] {
-  --bg: #fafafa;
-  --bg-accent: #f5f5f5;
+  /* 使用奶白色背景，减少刺眼感 */
+  --bg: #f8f6f3;
+  --bg-accent: #f3f1ee;
   --bg-elevated: #ffffff;
-  --bg-hover: #f0f0f0;
-  --bg-muted: #f0f0f0;
-  --bg-content: #f5f5f5;
+  --bg-hover: #efecea;
+  --bg-muted: #efecea;
+  --bg-content: #f5f3f0;
 
+  /* 卡片使用纯白，与背景形成层次 */
   --card: #ffffff;
-  --card-foreground: #18181b;
-  --card-highlight: rgba(0, 0, 0, 0.03);
+  --card-foreground: #1a1a1a;
+  --card-highlight: rgba(0, 0, 0, 0.02);
   --popover: #ffffff;
   --popover-foreground: #18181b;
+
+  /* Surface - 弹框/面板背景 */
+  --surface: #ffffff;
+  --surface-elevated: #f4f4f5;
+  --surface-hover: #efecea;
+  --foreground: #3f3f46;
 
   --panel: #fafafa;
   --panel-strong: #f5f5f5;
@@ -352,7 +366,7 @@ select {
 
 @keyframes glow-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 rgba(255, 92, 92, 0);
+    box-shadow: 0 0 0 rgba(108, 140, 255, 0);
   }
   50% {
     box-shadow: 0 0 20px var(--accent-glow);

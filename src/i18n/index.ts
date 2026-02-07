@@ -28,8 +28,8 @@ export type { TranslationDict, TranslationKeys };
 // 配置 (Configuration)
 // ============================================================================
 
-/** 默认语言 */
-const DEFAULT_LOCALE: Locale = "en";
+/** 默认语言 - 写死中文 */
+const DEFAULT_LOCALE: Locale = "zh-CN";
 
 /** 所有语言包 */
 const LOCALES: Record<Locale, TranslationDict> = {
@@ -59,27 +59,10 @@ let initialized = false;
 
 /**
  * 检测系统语言
- * 优先级：CLAWDBOT_LANG > LANG > LC_ALL > LC_MESSAGES > 默认
+ * 写死中文 - 全部用户都是中文用户
  */
 function detectSystemLocale(): Locale {
-  const envVars = [
-    process.env.CLAWDBOT_LANG,
-    process.env.LANG,
-    process.env.LC_ALL,
-    process.env.LC_MESSAGES,
-  ];
-
-  for (const env of envVars) {
-    if (!env) continue;
-    const lang = env.toLowerCase();
-
-    // 检测中文环境
-    if (lang.startsWith("zh") || lang.includes("chinese")) {
-      return "zh-CN";
-    }
-  }
-
-  return DEFAULT_LOCALE;
+  return "zh-CN";
 }
 
 /**

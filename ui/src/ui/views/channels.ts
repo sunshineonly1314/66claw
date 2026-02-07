@@ -33,13 +33,105 @@ import { renderTelegramCard } from "./channels.telegram";
 import { renderWhatsAppCard } from "./channels.whatsapp";
 import { renderFeishuCard } from "./channels.feishu";
 import { renderDingtalkCard } from "./channels.dingtalk";
-import type { FeishuStatus, DingtalkStatus } from "./channels.types";
+import { renderWecomCard } from "./channels.wecom";
+import { renderQqbotCard } from "./channels.qq";
+import type { FeishuStatus, DingtalkStatus, WecomStatus, QqbotStatus } from "./channels.types";
+
+// 所有支持的渠道列表（始终显示，不管后端是否返回）
+const ALL_SUPPORTED_CHANNELS: ChannelKey[] = [
+  "feishu",      // 飞书
+  "dingtalk",    // 钉钉
+  "wecom",       // 企业微信
+  "qqbot",       // QQ 机器人
+  "whatsapp",
+  "telegram",
+  "discord",
+  "googlechat",
+  "slack",
+  "signal",
+  "imessage",
+  "nostr",
+];
+
+// 渠道状态概览
+function renderChannelOverview(props: ChannelsProps, data: ChannelsChannelData) {
+  const channels = props.snapshot?.channels as Record<string, unknown> | null;
+  
+  // 统计各状态渠道数量
+  let configuredCount = 0;
+  let runningCount = 0;
+  let errorCount = 0;
+  
+  for (const key of ALL_SUPPORTED_CHANNELS) {
+    const status = channels?.[key] as { configured?: boolean; running?: boolean; lastError?: string } | undefined;
+    if (status?.configured) configuredCount++;
+    if (status?.running) runningCount++;
+    if (status?.lastError) errorCount++;
+  }
+  
+  const totalChannels = ALL_SUPPORTED_CHANNELS.length;
+  
+  return html`
+    <div class="channel-overview">
+      <div class="channel-overview__cards">
+        <div class="overview-card overview-card--primary">
+          <div class="overview-card__icon">📡</div>
+          <div class="overview-card__content">
+            <div class="overview-card__value">${runningCount}</div>
+            <div class="overview-card__label">运行中</div>
+          </div>
+          <div class="overview-card__indicator ${runningCount > 0 ? 'indicator--ok' : 'indicator--muted'}"></div>
+        </div>
+        
+        <div class="overview-card">
+          <div class="overview-card__icon">⚙️</div>
+          <div class="overview-card__content">
+            <div class="overview-card__value">${configuredCount}</div>
+            <div class="overview-card__label">已配置</div>
+          </div>
+        </div>
+        
+        <div class="overview-card">
+          <div class="overview-card__icon">📊</div>
+          <div class="overview-card__content">
+            <div class="overview-card__value">${totalChannels}</div>
+            <div class="overview-card__label">支持渠道</div>
+          </div>
+        </div>
+        
+        ${errorCount > 0 ? html`
+          <div class="overview-card overview-card--danger">
+            <div class="overview-card__icon">⚠️</div>
+            <div class="overview-card__content">
+              <div class="overview-card__value">${errorCount}</div>
+              <div class="overview-card__label">有错误</div>
+            </div>
+          </div>
+        ` : nothing}
+      </div>
+      
+      ${configuredCount === 0 ? html`
+        <div class="channel-overview__guide">
+          <div class="guide-content">
+            <span class="guide-icon">🚀</span>
+            <div class="guide-text">
+              <strong>开始配置你的第一个渠道</strong>
+              <p>选择下方的飞书、钉钉或企业微信，按照配置指南完成设置，即可开始与 AI 助手对话。</p>
+            </div>
+          </div>
+        </div>
+      ` : nothing}
+    </div>
+  `;
+}
 
 export function renderChannels(props: ChannelsProps) {
   const channels = props.snapshot?.channels as Record<string, unknown> | null;
   // 国内渠道
   const feishu = (channels?.feishu ?? undefined) as FeishuStatus | undefined;
   const dingtalk = (channels?.dingtalk ?? undefined) as DingtalkStatus | undefined;
+  const wecom = (channels?.wecom ?? undefined) as WecomStatus | undefined;
+  const qqbot = (channels?.qqbot ?? undefined) as QqbotStatus | undefined;
   // 国际渠道
   const whatsapp = (channels?.whatsapp ?? undefined) as
     | WhatsAppStatus
@@ -65,48 +157,95 @@ export function renderChannels(props: ChannelsProps) {
       return a.order - b.order;
     });
 
+  // 国内渠道
+  const domesticChannels = orderedChannels.filter(c => DOMESTIC_CHANNELS.has(c.key));
+  // 国际渠道
+  const internationalChannels = orderedChannels.filter(c => !DOMESTIC_CHANNELS.has(c.key));
+
+  const channelData = {
+    feishu,
+    dingtalk,
+    wecom,
+    qqbot,
+    whatsapp,
+    telegram,
+    discord,
+    googlechat,
+    slack,
+    signal,
+    imessage,
+    nostr,
+    channelAccounts: props.snapshot?.channelAccounts ?? null,
+  };
+
   return html`
-    <section class="channels-grid">
-      ${orderedChannels.map((channel) =>
-        renderChannel(channel.key, props, {
-          feishu,
-          dingtalk,
-          whatsapp,
-          telegram,
-          discord,
-          googlechat,
-          slack,
-          signal,
-          imessage,
-          nostr,
-          channelAccounts: props.snapshot?.channelAccounts ?? null,
-        }),
-      )}
-    </section>
+    <!-- 渠道状态概览 -->
+    ${renderChannelOverview(props, channelData)}
+
+    <!-- 国内渠道 -->
+    ${domesticChannels.length > 0 ? html`
+      <div class="channel-group">
+        <div class="channel-group__header">
+          <span class="channel-group__icon">🇨🇳</span>
+          <span class="channel-group__title">国内渠道</span>
+          <span class="channel-group__badge">${t("channels.help.domestic")}</span>
+        </div>
+        <div class="channel-group__tip">
+          <span class="tip-icon">💡</span>
+          <span>飞书、钉钉、企业微信 - 无需翻墙，Stream/长连接模式无需公网 IP</span>
+        </div>
+        <section class="channels-grid">
+          ${domesticChannels.map((channel) =>
+            renderChannel(channel.key, props, channelData),
+          )}
+        </section>
+      </div>
+    ` : nothing}
+
+    <!-- 国际渠道 -->
+    ${internationalChannels.length > 0 ? html`
+      <div class="channel-group">
+        <div class="channel-group__header">
+          <span class="channel-group__icon">🌐</span>
+          <span class="channel-group__title">国际渠道</span>
+          <span class="channel-group__badge">${t("channels.help.international")}</span>
+        </div>
+        <div class="channel-group__tip">
+          <span class="tip-icon">💡</span>
+          <span>WhatsApp、Telegram、Discord 等 - 国际主流平台，部分需要网络代理</span>
+        </div>
+        <section class="channels-grid">
+          ${internationalChannels.map((channel) =>
+            renderChannel(channel.key, props, channelData),
+          )}
+        </section>
+      </div>
+    ` : nothing}
   `;
 }
 
 function resolveChannelOrder(snapshot: ChannelsStatusSnapshot | null): ChannelKey[] {
+  // 获取后端返回的渠道顺序
+  let backendOrder: string[] = [];
   if (snapshot?.channelMeta?.length) {
-    return snapshot.channelMeta.map((entry) => entry.id) as ChannelKey[];
+    backendOrder = snapshot.channelMeta.map((entry) => entry.id);
+  } else if (snapshot?.channelOrder?.length) {
+    backendOrder = snapshot.channelOrder;
   }
-  if (snapshot?.channelOrder?.length) {
-    return snapshot.channelOrder;
+  
+  // 合并后端返回的渠道和所有支持的渠道，确保所有渠道都显示
+  // 后端返回的渠道优先（保持其顺序），然后是默认列表中的其他渠道
+  const seen = new Set<string>(backendOrder);
+  const result: ChannelKey[] = [...backendOrder] as ChannelKey[];
+  
+  for (const key of ALL_SUPPORTED_CHANNELS) {
+    if (!seen.has(key)) {
+      result.push(key);
+      seen.add(key);
+    }
   }
-  // 默认顺序：国内常用渠道优先（飞书、钉钉），然后是国际渠道
-  // 注意：企业微信暂不支持
-  return [
-    "feishu",      // 飞书
-    "dingtalk",    // 钉钉
-    "whatsapp",
-    "telegram",
-    "discord",
-    "googlechat",
-    "slack",
-    "signal",
-    "imessage",
-    "nostr",
-  ];
+  
+  return result;
 }
 
 function renderChannel(
@@ -132,6 +271,20 @@ function renderChannel(
         props,
         dingtalk: data.dingtalk,
         dingtalkAccounts: data.channelAccounts?.dingtalk ?? [],
+        accountCountLabel,
+      });
+    case "wecom":
+      return renderWecomCard({
+        props,
+        wecom: data.wecom,
+        wecomAccounts: data.channelAccounts?.wecom ?? [],
+        accountCountLabel,
+      });
+    case "qqbot":
+      return renderQqbotCard({
+        props,
+        qqbot: data.qqbot,
+        qqbotAccounts: data.channelAccounts?.qqbot ?? [],
         accountCountLabel,
       });
     // 国际渠道
@@ -214,7 +367,8 @@ function renderChannel(
 const CHANNEL_LABELS: Record<string, string> = {
   feishu: "飞书",
   dingtalk: "钉钉",
-  // wecom: "企业微信",  // 暂不支持
+  wecom: "企业微信",
+  qqbot: "QQ",
   whatsapp: "WhatsApp",
   telegram: "Telegram",
   discord: "Discord",
@@ -229,7 +383,8 @@ const CHANNEL_LABELS: Record<string, string> = {
 const CHANNEL_DESCRIPTIONS: Record<string, string> = {
   feishu: "飞书机器人状态和配置。适用于企业内部沟通和协作。",
   dingtalk: "钉钉机器人状态和配置。适用于企业办公和团队协作。",
-  // wecom: "企业微信机器人状态和配置。适用于企业内部通讯。",  // 暂不支持
+  wecom: "企业微信机器人状态和配置。适用于企业内部通讯。",
+  qqbot: "QQ 机器人状态和配置。支持 QQ 开放平台官方机器人。",
   whatsapp: "WhatsApp Web 连接状态和配置。",
   telegram: "Telegram 机器人状态和配置。",
   discord: "Discord 机器人状态和配置。",
@@ -240,8 +395,11 @@ const CHANNEL_DESCRIPTIONS: Record<string, string> = {
   nostr: "Nostr 协议状态和配置。",
 };
 
+// 国内渠道列表
+const DOMESTIC_CHANNELS = new Set(["feishu", "dingtalk", "wecom", "qqbot"]);
+
 // 默认展开的渠道列表（国内常用渠道）
-const DEFAULT_OPEN_CHANNELS = new Set(["feishu", "dingtalk"]);
+const DEFAULT_OPEN_CHANNELS = new Set(["feishu", "dingtalk", "wecom"]);
 
 function renderGenericChannelCard(
   key: ChannelKey,

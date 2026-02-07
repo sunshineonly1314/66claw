@@ -2,6 +2,12 @@
  * 飞书渠道插件核心实现
  * Feishu Channel Plugin Core Implementation
  *
+ * 融合自 m1heng/clawdbot-feishu 的增强功能:
+ * - WebSocket 长连接支持
+ * - 媒体上传下载
+ * - 卡片渲染模式
+ * - @ 提及转发
+ *
  * 文档参考:
  * - 飞书开放平台: https://open.feishu.cn/
  * - 事件订阅: https://open.feishu.cn/document/ukTMukTMukTM/uUTNz4SN1MjL1UzM
@@ -18,13 +24,18 @@ import {
 } from "clawdbot/plugin-sdk";
 
 import { getFeishuRuntime } from "./runtime.js";
-import { sendFeishuMessage, probeFeishuConnection } from "./api.js";
+import { sendFeishuMessage, probeFeishuConnection, sendMarkdownCardFeishu } from "./api.js";
 import { createFeishuWebhookHandler } from "./webhook.js";
+import { monitorFeishuProvider, getCurrentBotOpenId } from "./monitor.js";
+import { sendMediaFeishu } from "./media.js";
+import { resolveFeishuCredentials } from "./client.js";
+import { normalizeFeishuTarget, looksLikeFeishuId } from "./targets.js";
 import { FeishuConfigSchema } from "./config-schema.js";
 import type {
   FeishuChannelConfig,
   FeishuProbeResult,
   ResolvedFeishuAccount,
+  FeishuDomain,
 } from "./types.js";
 
 // ============================================================================
@@ -46,7 +57,7 @@ const meta = {
   docsLabel: "feishu",
   blurb: "飞书企业内部应用机器人",
   aliases: ["lark", "feishu"],
-  order: -3, // 国内渠道优先：飞书 > 钉钉 > 企业微信 > WhatsApp...
+  order: -4, // 国内渠道优先：飞书 > 钉钉 > 企业微信 > QQ > 其他...
 } as const;
 
 // ============================================================================
@@ -55,8 +66,9 @@ const meta = {
 
 /**
  * 解析飞书账户配置
+ * 支持新版扁平配置和旧版嵌套配置
  */
-function resolveFeishuAccount(params: {
+function resolveFeishuAccountInternal(params: {
   cfg: ClawdbotConfig;
   accountId?: string | null;
 }): ResolvedFeishuAccount {
@@ -64,30 +76,30 @@ function resolveFeishuAccount(params: {
   const resolvedAccountId = accountId ?? DEFAULT_ACCOUNT_ID;
   const channelConfig = cfg.channels?.feishu as FeishuChannelConfig | undefined;
 
-  const appId = channelConfig?.app?.appId ?? null;
-  const appSecret = channelConfig?.app?.appSecret ?? null;
+  // 使用统一的凭证解析函数
+  const creds = resolveFeishuCredentials(channelConfig);
 
   return {
     accountId: resolvedAccountId,
     enabled: channelConfig?.enabled !== false,
-    configured: Boolean(appId && appSecret),
-    appId,
-    appSecret,
+    configured: Boolean(creds),
+    appId: creds?.appId ?? null,
+    appSecret: creds?.appSecret ?? null,
     config: channelConfig ?? {},
+    domain: creds?.domain ?? "feishu",
   };
 }
 
 /**
- * 解析飞书应用凭证
+ * 检测是否应该使用卡片渲染
  */
-function resolveFeishuCredentials(config?: FeishuChannelConfig): {
-  appId: string | null;
-  appSecret: string | null;
-} {
-  return {
-    appId: config?.app?.appId ?? null,
-    appSecret: config?.app?.appSecret ?? null,
-  };
+function shouldUseCard(text: string, renderMode?: "auto" | "raw" | "card"): boolean {
+  if (renderMode === "card") return true;
+  if (renderMode === "raw") return false;
+  // auto 模式：检测代码块或表格
+  if (/```[\s\S]*?```/.test(text)) return true;
+  if (/\|.+\|[\r\n]+\|[-:| ]+\|/.test(text)) return true;
+  return false;
 }
 
 // ============================================================================
@@ -101,7 +113,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
   },
   pairing: {
     idLabel: "feishuUserId",
-    normalizeAllowEntry: (entry) => entry.replace(/^(feishu|lark):/i, ""),
+    normalizeAllowEntry: (entry) => entry.replace(/^(feishu|lark|user|open_id):/i, ""),
     notifyApproval: async ({ cfg, id }) => {
       const channelConfig = cfg.channels?.feishu as FeishuChannelConfig;
       await sendFeishuMessage(channelConfig, id, PAIRING_APPROVED_MESSAGE);
@@ -111,12 +123,21 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     chatTypes: ["direct", "group"],
     media: true,
     threads: true,
+    reactions: true,
+    edit: true,
+    reply: true,
+  },
+  agentPrompt: {
+    messageToolHints: () => [
+      "- 飞书目标: 省略 `target` 自动回复当前会话。显式目标: `user:open_id` 或 `chat:chat_id`。",
+      "- 飞书支持卡片消息用于富文本渲染。",
+    ],
   },
   reload: { configPrefixes: ["channels.feishu"] },
   configSchema: buildChannelConfigSchema(FeishuConfigSchema),
   config: {
     listAccountIds: () => [DEFAULT_ACCOUNT_ID],
-    resolveAccount: (cfg, accountId) => resolveFeishuAccount({ cfg, accountId }),
+    resolveAccount: (cfg, accountId) => resolveFeishuAccountInternal({ cfg, accountId }),
     defaultAccountId: () => DEFAULT_ACCOUNT_ID,
     setAccountEnabled: ({ cfg, enabled }) => ({
       ...cfg,
@@ -131,7 +152,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     deleteAccount: ({ cfg }) => {
       const next = { ...cfg } as ClawdbotConfig;
       const nextChannels = { ...cfg.channels };
-      delete nextChannels.feishu;
+      delete (nextChannels as Record<string, unknown>).feishu;
       if (Object.keys(nextChannels).length > 0) {
         next.channels = nextChannels;
       } else {
@@ -140,13 +161,14 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       return next;
     },
     isConfigured: (_account, cfg) => {
-      const { appId, appSecret } = resolveFeishuCredentials(cfg.channels?.feishu as FeishuChannelConfig);
-      return Boolean(appId && appSecret);
+      const creds = resolveFeishuCredentials(cfg.channels?.feishu as FeishuChannelConfig);
+      return Boolean(creds);
     },
     describeAccount: (account) => ({
       accountId: account.accountId,
       enabled: account.enabled,
       configured: account.configured,
+      domain: account.domain,
     }),
     resolveAllowFrom: ({ cfg }) => (cfg.channels?.feishu as FeishuChannelConfig)?.allowFrom ?? [],
     formatAllowFrom: ({ allowFrom }) =>
@@ -167,19 +189,9 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     },
   },
   messaging: {
-    normalizeTarget: (raw) => {
-      const trimmed = raw.trim();
-      if (!trimmed) return null;
-      if (trimmed.startsWith("ou_") || trimmed.startsWith("on_") || trimmed.startsWith("oc_")) {
-        return trimmed;
-      }
-      return trimmed;
-    },
+    normalizeTarget: normalizeFeishuTarget,
     targetResolver: {
-      looksLikeId: (raw) => {
-        const trimmed = raw.trim();
-        return /^(ou_|on_|oc_)[a-zA-Z0-9_-]+$/.test(trimmed);
-      },
+      looksLikeId: looksLikeFeishuId,
       hint: "<chatId|openId|unionId>",
     },
   },
@@ -219,17 +231,56 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     textChunkLimit: 4000,
     sendText: async ({ to, text, cfg, replyToId }) => {
       const channelConfig = cfg.channels?.feishu as FeishuChannelConfig;
+      const renderMode = channelConfig?.renderMode ?? "auto";
+
+      // 根据渲染模式选择发送方式
+      if (shouldUseCard(text, renderMode)) {
+        const result = await sendMarkdownCardFeishu({
+          config: channelConfig,
+          to,
+          text,
+          replyToMessageId: replyToId ?? undefined,
+        });
+        return { channel: FEISHU_CHANNEL_ID, ...result };
+      }
+
       const result = await sendFeishuMessage(channelConfig, to, text, {
         msgType: "text",
         replyToId: replyToId ?? undefined,
       });
       return { channel: FEISHU_CHANNEL_ID, ...result };
     },
-    sendMedia: async ({ to, text, cfg, replyToId }) => {
+    sendMedia: async ({ to, text, cfg, replyToId, mediaUrl }) => {
       const channelConfig = cfg.channels?.feishu as FeishuChannelConfig;
-      const result = await sendFeishuMessage(channelConfig, to, text, {
-        replyToId: replyToId ?? undefined,
-      });
+
+      // 先发送文本
+      if (text?.trim()) {
+        await sendFeishuMessage(channelConfig, to, text, {
+          replyToId: replyToId ?? undefined,
+        });
+      }
+
+      // 发送媒体
+      if (mediaUrl) {
+        try {
+          const result = await sendMediaFeishu({
+            cfg: channelConfig,
+            to,
+            mediaUrl,
+            replyToMessageId: replyToId ?? undefined,
+          });
+          return { channel: FEISHU_CHANNEL_ID, ...result };
+        } catch (err) {
+          // 上传失败时回退到链接
+          console.error(`[feishu] 媒体上传失败:`, err);
+          const fallbackText = `📎 ${mediaUrl}`;
+          const result = await sendFeishuMessage(channelConfig, to, fallbackText);
+          return { channel: FEISHU_CHANNEL_ID, ...result };
+        }
+      }
+
+      // 没有媒体 URL，只返回文本结果
+      const result = await sendFeishuMessage(channelConfig, to, text ?? "");
       return { channel: FEISHU_CHANNEL_ID, ...result };
     },
   },
@@ -269,63 +320,131 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     startAccount: async (ctx) => {
       const runtime = getFeishuRuntime();
       const channelConfig = ctx.cfg.channels?.feishu as FeishuChannelConfig | undefined;
+      const connectionMode = channelConfig?.connectionMode ?? "websocket";
       const webhookPath = channelConfig?.webhookPath ?? DEFAULT_WEBHOOK_PATH;
+      const port = channelConfig?.webhookPort ?? null;
 
-      ctx.log?.info(`[feishu] 启动飞书渠道 (账户: ${ctx.accountId})`);
-      ctx.log?.info(`[feishu] Webhook 路径: ${webhookPath}`);
+      ctx.log?.info(`[feishu] 启动飞书渠道 (账户: ${ctx.accountId}, 模式: ${connectionMode})`);
+      ctx.setStatus({ accountId: ctx.accountId, running: true, lastStartAt: Date.now(), port });
 
-      // 创建 Webhook 处理器
+      // 消息处理函数 (WebSocket 和 Webhook 共用)
+      const handleMessage = async (msg: {
+        messageId: string;
+        chatId: string;
+        chatType: "p2p" | "group";
+        senderId: string;
+        senderOpenId?: string;
+        senderName?: string;
+        text: string;
+      }) => {
+        ctx.log?.info(`[feishu] 收到消息: chatType=${msg.chatType}, from=${msg.senderId}`);
+
+        const inboundCtx = {
+          Channel: FEISHU_CHANNEL_ID,
+          AccountId: ctx.accountId,
+          MessageId: msg.messageId,
+          From: msg.chatId,
+          SenderId: msg.senderId,
+          SenderName: msg.senderName ?? msg.senderId,
+          Body: msg.text,
+          RawBody: msg.text,
+          ChatType: msg.chatType === "p2p" ? ("direct" as const) : ("group" as const),
+          Timestamp: Date.now(),
+        };
+
+        try {
+          await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+            ctx: inboundCtx,
+            cfg: ctx.cfg,
+            dispatcherOptions: {
+              deliver: async (payload) => {
+                const text = payload.text ?? "";
+                if (text) {
+                  const to = msg.chatType === "p2p"
+                    ? (msg.senderOpenId ?? msg.senderId)
+                    : msg.chatId;
+                  const renderMode = channelConfig?.renderMode ?? "auto";
+
+                  // 根据渲染模式选择发送方式
+                  if (shouldUseCard(text, renderMode)) {
+                    await sendMarkdownCardFeishu({
+                      config: channelConfig ?? {},
+                      to,
+                      text,
+                    });
+                  } else {
+                    await sendFeishuMessage(channelConfig ?? {}, to, text);
+                  }
+                  ctx.log?.info(`[feishu] 已回复消息到 ${msg.chatType === "p2p" ? "用户 " + to : "会话 " + msg.chatId}`);
+                }
+              },
+              onError: (err) => {
+                ctx.log?.error(`[feishu] 回复错误: ${err}`);
+              },
+            },
+            replyOptions: {},
+          });
+        } catch (err) {
+          ctx.log?.error(`[feishu] 处理消息失败: ${err}`);
+        }
+      };
+
+      // 根据连接模式启动
+      if (connectionMode === "websocket") {
+        // WebSocket 长连接模式 (推荐)
+        ctx.log?.info(`[feishu] 使用 WebSocket 长连接模式`);
+
+        return monitorFeishuProvider({
+          config: ctx.cfg,
+          log: (msg) => ctx.log?.info(msg),
+          error: (msg) => ctx.log?.error(msg),
+          abortSignal: ctx.abortSignal,
+          accountId: ctx.accountId,
+          onMessage: async (event) => {
+            // 解析消息内容
+            let text = "";
+            try {
+              const content = JSON.parse(event.message.content);
+              if (event.message.message_type === "text") {
+                text = content.text ?? "";
+              }
+            } catch {
+              text = event.message.content;
+            }
+
+            // 移除 @ 机器人的占位符
+            const botOpenId = getCurrentBotOpenId();
+            if (event.message.mentions) {
+              for (const m of event.message.mentions) {
+                if (botOpenId && m.id.open_id === botOpenId) {
+                  text = text.replace(m.key, "").trim();
+                }
+              }
+            }
+
+            await handleMessage({
+              messageId: event.message.message_id,
+              chatId: event.message.chat_id,
+              chatType: event.message.chat_type,
+              senderId: event.sender.sender_id.user_id ?? event.sender.sender_id.open_id ?? "unknown",
+              senderOpenId: event.sender.sender_id.open_id,
+              text,
+            });
+          },
+        });
+      }
+
+      // Webhook 模式
+      ctx.log?.info(`[feishu] 使用 Webhook 模式, 路径: ${webhookPath}`);
+
       const handler = createFeishuWebhookHandler({
         config: channelConfig ?? {},
         log: ctx.log,
         onMessage: async (msg) => {
-          ctx.log?.info(`[feishu] 收到消息: chatType=${msg.chatType}, from=${msg.senderId}`);
-
-          // 构建入站消息上下文 (使用 Body 字段，MsgContext 期望的格式)
-          const inboundCtx = {
-            Channel: FEISHU_CHANNEL_ID,
-            AccountId: ctx.accountId,
-            MessageId: msg.messageId,
-            From: msg.chatId, // 用于路由和回复
-            SenderId: msg.senderId,
-            SenderName: msg.senderId,
-            Body: msg.text, // MsgContext 使用 Body，不是 Text
-            RawBody: msg.text,
-            ChatType: msg.chatType === "p2p" ? ("direct" as const) : ("group" as const),
-            Timestamp: Date.now(),
-          };
-
-          // 使用 dispatchReplyWithBufferedBlockDispatcher 处理消息
-          try {
-            await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
-              ctx: inboundCtx,
-              cfg: ctx.cfg,
-              dispatcherOptions: {
-                deliver: async (payload) => {
-                  // 发送回复：单聊用对方 open_id，群聊用 chat_id（符合飞书发送消息 API）
-                  const text = payload.text ?? "";
-                  if (text) {
-                    const to =
-                      msg.chatType === "p2p"
-                        ? (msg.senderOpenId ?? msg.senderId)
-                        : msg.chatId;
-                    await sendFeishuMessage(channelConfig ?? {}, to, text);
-                    ctx.log?.info(`[feishu] 已回复消息到 ${msg.chatType === "p2p" ? "用户 " + to : "会话 " + msg.chatId}`);
-                  }
-                },
-                onError: (err) => {
-                  ctx.log?.error(`[feishu] 回复错误: ${err}`);
-                },
-              },
-              replyOptions: {},
-            });
-          } catch (err) {
-            ctx.log?.error(`[feishu] 处理消息失败: ${err}`);
-          }
+          await handleMessage(msg);
         },
       });
 
-      // 注册 HTTP 路由到网关
       const unregister = registerPluginHttpRoute({
         path: webhookPath,
         handler,
@@ -335,9 +454,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       });
 
       ctx.log?.info(`[feishu] HTTP 路由已注册: ${webhookPath}`);
-      ctx.setStatus({ accountId: ctx.accountId, running: true, lastStartAt: Date.now() });
 
-      // 等待 abort 信号
       return new Promise<void>((resolve) => {
         ctx.abortSignal.addEventListener("abort", () => {
           unregister();

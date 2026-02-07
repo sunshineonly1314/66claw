@@ -1,8 +1,0 @@
-# Ignore all build outputs
-*
-
-# But keep directory structure
-!.gitignore
-!windows/.gitkeep
-!macos/.gitkeep
-!linux/.gitkeep

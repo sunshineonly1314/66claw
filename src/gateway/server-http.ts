@@ -14,7 +14,7 @@ import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
 import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import { handleControlUiAvatarRequest, handleControlUiHttpRequest } from "./control-ui.js";
-import { handleSetupWizardHttpRequest } from "./setup-wizard.js";
+import { handleSetupWizardHttpRequest, shouldShowSetupWizard } from "./setup-wizard.js";
 import {
   extractHookToken,
   getHookChannelError,
@@ -237,6 +237,47 @@ export function createGatewayHttpServer(opts: {
     if (String(req.headers.upgrade ?? "").toLowerCase() === "websocket") return;
 
     try {
+      // Lightweight health check endpoint – no auth, no UI assets required.
+      // Used by the Windows service watchdog to verify the gateway is alive.
+      const healthPath = req.url?.split("?")[0];
+      if (healthPath === "/api/health") {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.end(JSON.stringify({ ok: true, pid: process.pid, uptime: process.uptime() }));
+        return;
+      }
+
+      // Token discovery endpoint for Control UI auth recovery after gateway restart.
+      // Allows the browser client to fetch the current token via HTTP instead of
+      // requiring a full page reload. Same security posture as the HTML-injected token
+      // (both are accessible to any localhost HTTP client).
+      if (healthPath === "/api/auth/discover") {
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.statusCode = 405;
+          res.setHeader("Allow", "GET, HEAD");
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: false }));
+          return;
+        }
+        const remoteIp = req.socket.remoteAddress;
+        const isLocal =
+          remoteIp === "127.0.0.1" ||
+          remoteIp === "::1" ||
+          remoteIp === "::ffff:127.0.0.1";
+        if (!isLocal) {
+          res.statusCode = 403;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: false }));
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(JSON.stringify({ ok: true, token: resolvedAuth.token ?? null }));
+        return;
+      }
+
       const configSnapshot = loadConfig();
       const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];
       if (await handleHooksRequest(req, res)) return;
@@ -275,6 +316,24 @@ export function createGatewayHttpServer(opts: {
         if (await canvasHost.handleHttpRequest(req, res)) return;
       }
       if (controlUiEnabled) {
+        // Redirect first-time users to the setup wizard when required config is missing.
+        // Only redirect HTML page requests (not static assets like .js/.css/.svg) so
+        // the setup page's own assets still load normally.
+        const reqPath = req.url?.split("?")[0] ?? "/";
+        if (
+          shouldShowSetupWizard() &&
+          reqPath !== "/setup" &&
+          reqPath !== "/setup/" &&
+          !reqPath.startsWith("/api/") &&
+          !reqPath.startsWith("/assets/") &&
+          !/\.\w{1,5}$/.test(reqPath) // skip static asset paths (e.g. .js, .css, .svg)
+        ) {
+          res.statusCode = 302;
+          res.setHeader("Location", "/setup");
+          res.end();
+          return;
+        }
+
         if (
           handleControlUiAvatarRequest(req, res, {
             basePath: controlUiBasePath,
@@ -286,6 +345,8 @@ export function createGatewayHttpServer(opts: {
           handleControlUiHttpRequest(req, res, {
             basePath: controlUiBasePath,
             config: configSnapshot,
+            // Inject gateway token for automatic UI authentication (allows users to access without token in URL)
+            gatewayToken: resolvedAuth.token,
           })
         )
           return;

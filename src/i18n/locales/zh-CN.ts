@@ -506,6 +506,8 @@ export const zhCN: TranslationDict = {
   "cli.uninstall.workspace": "移除工作区目录",
   "cli.uninstall.app": "移除 macOS 应用",
   "cli.uninstall.all": "移除服务 + 状态 + 工作区 + 应用",
+  "cli.uninstall.backup": "移除状态前创建备份（默认：启用）",
+  "cli.uninstall.noBackup": "跳过状态备份",
 
   // CLI - 子命令 (CLI - Subcommands)
   "cli.sub.acp": "Agent 控制协议工具",

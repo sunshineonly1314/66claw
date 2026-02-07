@@ -24,6 +24,15 @@ export interface LicenseVerifyRequest {
   appVersion?: string;
   /** 操作系统信息 (可选) */
   osInfo?: string;
+  /**
+   * 设备指纹（32位hex字符串）
+   *
+   * 基于稳定硬件标识生成的哈希值，用于服务端判断"同机重装"场景
+   * 与 deviceId 使用相同算法，保证同一硬件生成相同指纹
+   *
+   * 注意：这是字符串类型，不是对象，服务端直接做字符串相等比较
+   */
+  deviceFingerprint?: string;
   /** 已展示的通知ID列表 (可选) */
   shownNotificationIds?: number[];
   /** 请求时间戳(毫秒) - 签名参数 */
@@ -40,6 +49,26 @@ export interface LicenseVerifyRequest {
 export interface LicenseHeartbeatRequest {
   key: string;
   deviceId: string;
+  /** 请求时间戳(毫秒) - 签名参数 */
+  timestamp?: number;
+  /** 随机字符串(16位) - 签名参数 */
+  nonce?: string;
+  /** 请求签名 - 签名参数 */
+  sign?: string;
+}
+
+/**
+ * 设备列表请求参数（POST）
+ */
+export interface DeviceListRequest {
+  key: string;
+  deviceId: string;
+  /** 请求时间戳(毫秒) - 签名参数 */
+  timestamp?: number;
+  /** 随机字符串(16位) - 签名参数 */
+  nonce?: string;
+  /** 请求签名 - 签名参数 */
+  sign?: string;
 }
 
 /**
@@ -48,6 +77,12 @@ export interface LicenseHeartbeatRequest {
 export interface DeviceUnbindRequest {
   key: string;
   deviceId: string;
+  /** 请求时间戳(毫秒) - 签名参数 */
+  timestamp?: number;
+  /** 随机字符串(16位) - 签名参数 */
+  nonce?: string;
+  /** 请求签名 - 签名参数 */
+  sign?: string;
 }
 
 /**
@@ -58,6 +93,27 @@ export interface NotificationAckRequest {
   deviceId: string;
   notificationId: number;
   action: "clicked" | "dismissed" | "closed";
+}
+
+/**
+ * 设备切换请求参数（单设备模式）
+ */
+export interface DeviceSwitchRequest {
+  /** 授权码 */
+  key: string;
+  /** 新设备ID */
+  deviceId: string;
+  /** 新设备名称（可选） */
+  deviceName?: string;
+  /** 操作系统信息（可选） */
+  osInfo?: string;
+  /** 客户端版本号 */
+  appVersion?: string;
+  /**
+   * 设备指纹（32位hex字符串）
+   * 服务端通过字符串相等比较判断是否为同一台机器
+   */
+  deviceFingerprint?: string;
 }
 
 // ============================================================================
@@ -74,11 +130,21 @@ export interface ApiResponse<T> {
 }
 
 /**
+ * 技术支持群二维码配置
+ */
+export interface SupportQrcodeConfig {
+  /** 二维码图片 base64 data URL */
+  base64: string;
+  /** 群名称 */
+  groupName: string;
+}
+
+/**
  * License 信息
  */
 export interface LicenseInfo {
-  /** 产品等级: basic | test */
-  tier: "basic" | "test";
+  /** 产品等级 */
+  tier: "basic" | "test" | "professional" | "enterprise";
   /** 等级名称 */
   tierName: string;
   /** 过期时间 (ISO 8601) */
@@ -89,6 +155,10 @@ export interface LicenseInfo {
   keyType: "test" | "trial" | "standard";
   /** 功能特性列表 */
   features: string[];
+  /** 技术支持群二维码（服务端根据用户类型 + 设备 hash 返回） */
+  supportQrcode?: SupportQrcodeConfig;
+  /** 闲鱼购买链接（仅 test 用户返回） */
+  purchaseUrl?: string;
 }
 
 /**
@@ -205,6 +275,12 @@ export interface LicenseVerifyResponseData {
   renewalReminder: RenewalReminder | null;
   /** 强制更新信息 */
   forceUpdate: ForceUpdateInfo | null;
+  /** RSA 签名 (服务端用私钥签名，客户端用公钥验证) */
+  signature?: string;
+  /** 设备切换信息（errorCode=1010 时返回） */
+  deviceSwitchInfo?: DeviceSwitchInfo;
+  /** 设备切换冷却信息（errorCode=1011 时返回） */
+  deviceSwitchCooldown?: DeviceSwitchCooldownInfo;
 }
 
 /**
@@ -214,6 +290,8 @@ export interface LicenseHeartbeatResponseData {
   valid: boolean;
   daysRemaining: number;
   serverTime: number;
+  /** RSA 签名 (服务端用私钥签名) */
+  signature?: string;
 }
 
 /**
@@ -223,6 +301,68 @@ export interface DeviceListResponseData {
   deviceLimit: number;
   boundCount: number;
   devices: BoundDevice[];
+}
+
+/**
+ * 设备解绑响应数据
+ */
+export interface DeviceUnbindResponseData {
+  success: boolean;
+  /** 错误码（失败时） */
+  errorCode?: LicenseErrorCode;
+  /** 错误消息（失败时） */
+  errorMessage?: string;
+  /** 冷却剩余小时数（1009 错误时） */
+  cooldownRemainingHours?: number;
+  /** 冷却结束时间 ISO 字符串（1009 错误时） */
+  cooldownEndsAt?: string;
+}
+
+/**
+ * 设备切换响应数据（单设备模式）
+ * 注意：与 /verify 接口一致，使用 valid 字段判断成功
+ */
+export interface DeviceSwitchResponseData {
+  /** 是否有效（成功时为 true） */
+  valid: boolean;
+  /** 错误码（失败时） */
+  errorCode?: LicenseErrorCode | null;
+  /** 错误消息（失败时） */
+  errorMessage?: string | null;
+  /** License 信息（成功时） */
+  license?: LicenseInfo | null;
+  /** 设备信息（成功时） */
+  device?: DeviceInfo | null;
+  /** 冷却剩余小时数（1011 错误时） */
+  cooldownRemainingHours?: number;
+  /** 冷却结束时间 ISO 字符串（1011 错误时） */
+  cooldownEndsAt?: string;
+}
+
+/**
+ * 设备切换信息（errorCode=1010 时返回）
+ */
+export interface DeviceSwitchInfo {
+  /** 已绑定设备的 ID */
+  existingDeviceId: string;
+  /** 已绑定设备的名称 */
+  existingDeviceName: string;
+  /** 已绑定设备的操作系统信息 */
+  existingOsInfo: string;
+  /** 设备数量限制 */
+  deviceLimit: number;
+  /** 已绑定设备数 */
+  boundDevices: number;
+}
+
+/**
+ * 设备切换冷却信息（errorCode=1011 时返回）
+ */
+export interface DeviceSwitchCooldownInfo {
+  /** 冷却剩余小时数 */
+  cooldownRemainingHours: number;
+  /** 冷却结束时间 ISO 字符串 */
+  cooldownEndsAt: string;
 }
 
 /**
@@ -258,6 +398,12 @@ export enum LicenseErrorCode {
   ERROR_TIMESTAMP_EXPIRED = 1007,
   /** 使用次数用尽 */
   ERROR_KEY_EXHAUSTED = 1008,
+  /** 解绑冷却中 */
+  ERROR_UNBIND_COOLDOWN = 1009,
+  /** 需要确认设备切换（单设备模式：已有其他设备绑定） */
+  ERROR_DEVICE_SWITCH_REQUIRED = 1010,
+  /** 设备切换冷却中（单设备模式：24小时内已切换过） */
+  ERROR_DEVICE_SWITCH_COOLDOWN = 1011,
 }
 
 /**
@@ -272,6 +418,9 @@ export const LICENSE_ERROR_MESSAGES: Record<LicenseErrorCode, string> = {
   [LicenseErrorCode.ERROR_INVALID_SIGN]: "请求签名验证失败，请检查客户端版本",
   [LicenseErrorCode.ERROR_TIMESTAMP_EXPIRED]: "请求时间戳过期，请检查系统时间",
   [LicenseErrorCode.ERROR_KEY_EXHAUSTED]: "授权码使用次数已用尽，请购买新授权",
+  [LicenseErrorCode.ERROR_UNBIND_COOLDOWN]: "解绑冷却中，请稍后再试",
+  [LicenseErrorCode.ERROR_DEVICE_SWITCH_REQUIRED]: "检测到已在其他设备使用此密钥，需要确认切换",
+  [LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN]: "设备切换冷却中，请稍后再试",
 };
 
 // ============================================================================
@@ -334,6 +483,10 @@ export interface LicenseClientState {
   pendingNotifications: LicenseNotification[];
   /** 最后验证时间 */
   lastVerifiedAt: number | null;
+  /** 设备切换信息（errorCode=1010 时） */
+  deviceSwitchInfo: DeviceSwitchInfo | null;
+  /** 设备切换冷却信息（errorCode=1011 时） */
+  deviceSwitchCooldown: DeviceSwitchCooldownInfo | null;
 }
 
 // ============================================================================
@@ -346,16 +499,18 @@ export interface LicenseClientState {
 export interface LicenseModuleConfig {
   /** API Base URL */
   apiBaseUrl: string;
-  /** 签名密钥 */
+  /** 签名密钥 (HMAC，旧方式) */
   signSecretKey: string;
   /** 离线宽限期(小时) */
   offlineGracePeriodHours: number;
   /** 心跳间隔(小时) */
   heartbeatIntervalHours: number;
-  /** 是否启用签名 */
+  /** 是否启用请求签名 (HMAC) */
   enableSign: boolean;
   /** 是否开发模式(跳过验证) */
   devMode: boolean;
+  /** 是否启用 RSA 响应签名验证 (服务端需要支持) */
+  enableRsaVerify: boolean;
 }
 
 /**
@@ -364,8 +519,9 @@ export interface LicenseModuleConfig {
 export const DEFAULT_LICENSE_CONFIG: LicenseModuleConfig = {
   apiBaseUrl: "https://www.tecbinai.com/api/api/v1/license",
   signSecretKey: "Cb#2026$Tecbinai@Lic3nse!Hmac^Key&Secure",
-  offlineGracePeriodHours: 72,
+  offlineGracePeriodHours: 24, // 从 72h 缩短到 24h，减少离线滥用风险
   heartbeatIntervalHours: 24,
   enableSign: true,
   devMode: false,
+  enableRsaVerify: true, // 2026-02-03: 服务端 RSA 签名已上线，启用验证
 };

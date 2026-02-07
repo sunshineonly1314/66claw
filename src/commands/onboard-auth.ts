@@ -35,6 +35,8 @@ export {
 export {
   OPENROUTER_DEFAULT_MODEL_REF,
   setAnthropicApiKey,
+  setOpenAiApiKey,
+  setNvidiaApiKey,
   setGeminiApiKey,
   setKimiCodeApiKey,
   setMinimaxApiKey,
@@ -58,6 +60,7 @@ export {
   setAliyunBailianApiKey,
   setVolcengineArkApiKey,
   setTencentHunyuanApiKey,
+  setModelscopeApiKey,
 } from "./onboard-auth.credentials.js";
 export {
   buildKimiCodeModelDefinition,

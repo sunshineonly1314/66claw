@@ -1,165 +1,249 @@
-; Clawdbot Windows Installer
-; 使用 Inno Setup 6+ 构建
-; 文档: https://jrsoftware.org/ishelp/
+﻿; ClawdbotCN Windows Installer
+; Built with Inno Setup 6+
 
-#define MyAppName "Clawdbot"
-#define MyAppVersion "2026.1.25"
-#define MyAppPublisher "Clawdbot"
+#define MyAppName "ClawdbotCN"
+#define MyAppNameCN "ClawdbotCN AI"
+#define MyAppVersion "2026.2.6"
+#define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
-#define MyAppExeName "start.bat"
 
 [Setup]
-; 基本信息
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-AppName={#MyAppName}
+AppName={#MyAppNameCN}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL={#MyAppURL}
-AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}
-
-; 输出设置
 DefaultDirName={autopf}\{#MyAppName}
-DefaultGroupName={#MyAppName}
-OutputDir=..\..\installer
-OutputBaseFilename=ClawdbotSetup-{#MyAppVersion}-x64
-
-; 压缩设置
-Compression=lzma2/ultra64
+DefaultGroupName={#MyAppNameCN}
+OutputDir=E:\clawdbuild
+OutputBaseFilename=ClawdbotCN-Setup-2026.2.6-x64
+Compression=lzma2/max
 SolidCompression=yes
-LZMAUseSeparateProcess=yes
-LZMANumBlockThreads=4
-
-; 外观设置
 WizardStyle=modern
 DisableProgramGroupPage=yes
-DisableWelcomePage=no
-ShowLanguageDialog=auto
-
-; 权限设置
+SetupIconFile=assets\clawdbot.ico
+WizardSmallImageFile=assets\setup-logo.bmp
+WizardImageFile=assets\setup-banner.bmp
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
-
-; 架构
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-
-; 卸载设置
-UninstallDisplayIcon={app}\node\node.exe
-UninstallDisplayName={#MyAppName}
+UninstallDisplayIcon={app}\clawdbot.ico
+UninstallDisplayName={#MyAppNameCN}
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-Name: "english"; MessagesFile: "compiler:Default.isl"
-
-[Messages]
-chinesesimplified.WelcomeLabel1=欢迎安装 {#MyAppName}
-chinesesimplified.WelcomeLabel2=本向导将引导您完成 {#MyAppName} 的安装。%n%n{#MyAppName} 是一个强大的 AI 助手，支持飞书、钉钉等多种通讯渠道。%n%n建议关闭其他应用程序后继续。
-chinesesimplified.FinishedLabel=安装完成！%n%n双击桌面上的「{#MyAppName}」图标启动程序，然后在浏览器中完成配置。
 
 [Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"; Flags: checked
-Name: "startupicon"; Description: "开机自动启动"; GroupDescription: "附加选项:"; Flags: unchecked
-
-[Files]
-; Node.js 运行时
-Source: "node-portable\*"; DestDir: "{app}\node"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; 应用程序文件
-Source: "..\..\dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; node_modules (生产依赖)
-Source: "..\..\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; 配置文件
-Source: "..\..\package.json"; DestDir: "{app}"; Flags: ignoreversion
-
-; ========== 常用插件 (Extensions) ==========
-; 中国区渠道插件
-Source: "..\..\extensions\feishu\*"; DestDir: "{app}\extensions\feishu"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\extensions\dingtalk\*"; DestDir: "{app}\extensions\dingtalk"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\extensions\wecom\*"; DestDir: "{app}\extensions\wecom"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; 认证插件
-Source: "..\..\extensions\qwen-portal-auth\*"; DestDir: "{app}\extensions\qwen-portal-auth"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; 国际渠道插件
-Source: "..\..\extensions\telegram\*"; DestDir: "{app}\extensions\telegram"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\extensions\discord\*"; DestDir: "{app}\extensions\discord"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\extensions\slack\*"; DestDir: "{app}\extensions\slack"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\extensions\whatsapp\*"; DestDir: "{app}\extensions\whatsapp"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\extensions\signal\*"; DestDir: "{app}\extensions\signal"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\extensions\googlechat\*"; DestDir: "{app}\extensions\googlechat"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; 启动脚本
-Source: "start-gateway.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "clawdbot.bat"; DestDir: "{app}"; Flags: ignoreversion
+Name: "desktopicon"; Description: "{code:GetDesktopIconDesc}"; GroupDescription: "{code:GetShortcutsGroup}"
+Name: "startmenuicon"; Description: "{code:GetStartMenuDesc}"; GroupDescription: "{code:GetShortcutsGroup}"
+Name: "startupicon"; Description: "{code:GetStartupDesc}"; GroupDescription: "{code:GetStartupGroup}"
 
 [Dirs]
 Name: "{app}\config"; Permissions: users-modify
 Name: "{app}\data"; Permissions: users-modify
 Name: "{app}\logs"; Permissions: users-modify
 
+[Files]
+Source: "node-portable\*"; DestDir: "{app}\node"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\package.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "E:\clawdbuild\test-prod-deps\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "..\..\skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; Feishu extension
+Source: "..\..\extensions\feishu\*"; DestDir: "{app}\extensions\feishu"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; DingTalk 闁圭粯甯婂▎?- 闂傚洠鍋撻悷?dingtalk-stream
+Source: "..\..\extensions\dingtalk\*"; DestDir: "{app}\extensions\dingtalk"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; WeCom extension
+Source: "..\..\extensions\wecom\*"; DestDir: "{app}\extensions\wecom"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "..\..\extensions\telegram\*"; DestDir: "{app}\extensions\telegram"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "..\..\extensions\discord\*"; DestDir: "{app}\extensions\discord"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "..\..\extensions\slack\*"; DestDir: "{app}\extensions\slack"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; Templates - bot default role config
+Source: "..\..\docs\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "start-gateway.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "clawdbot.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "diagnose.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "view-logs.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "native\ClawdbotService.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "assets\clawdbot.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "assets\loading.html"; DestDir: "{app}\assets"; Flags: ignoreversion
+
 [Icons]
-; 开始菜单
-Name: "{group}\{#MyAppName}"; Filename: "{app}\start-gateway.bat"; WorkingDir: "{app}"; Comment: "启动 Clawdbot Gateway"
-Name: "{group}\{#MyAppName} 控制台"; Filename: "http://localhost:18789/"; Comment: "打开 Clawdbot Web 控制台"
-Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
-
-; 桌面图标
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\start-gateway.bat"; WorkingDir: "{app}"; Tasks: desktopicon; Comment: "启动 Clawdbot Gateway"
-
-; 开机启动
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\start-gateway.bat"; WorkingDir: "{app}"; Tasks: startupicon; Parameters: "--silent"
+Name: "{autodesktop}\{#MyAppNameCN}"; Filename: "{app}\ClawdbotService.exe"; Parameters: "open"; WorkingDir: "{app}"; IconFilename: "{app}\clawdbot.ico"; Tasks: desktopicon
+Name: "{group}\{#MyAppNameCN}"; Filename: "{app}\ClawdbotService.exe"; Parameters: "open"; WorkingDir: "{app}"; IconFilename: "{app}\clawdbot.ico"; Tasks: startmenuicon
+Name: "{group}\{code:GetViewLogsText}"; Filename: "{app}\view-logs.bat"; WorkingDir: "{app}"; Tasks: startmenuicon
+Name: "{group}\{code:GetUninstallText}"; Filename: "{uninstallexe}"; Tasks: startmenuicon
+Name: "{userstartup}\{#MyAppNameCN}"; Filename: "{app}\ClawdbotService.exe"; WorkingDir: "{app}"; IconFilename: "{app}\clawdbot.ico"; Tasks: startupicon
 
 [Run]
-; 安装完成后打开配置页面
-Filename: "http://localhost:18789/setup"; Description: "打开配置向导"; Flags: postinstall shellexec skipifsilent checked
-Filename: "{app}\start-gateway.bat"; Description: "启动 Clawdbot Gateway"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\ClawdbotService.exe"; Parameters: "open"; WorkingDir: "{app}"; Description: "{code:GetLaunchDesc}"; Flags: postinstall nowait skipifsilent
+
+[UninstallRun]
+; Step 1: Kill ClawdbotService.exe
+Filename: "cmd.exe"; Parameters: "/c taskkill /f /im ClawdbotService.exe 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist
+; Step 2: Kill node.exe processes started by ClawdbotCN (not all node.exe to avoid affecting Cursor IDE etc)
+Filename: "cmd.exe"; Parameters: "/c wmic process where ""name='node.exe' and commandline like '%ClawdbotCN%'"" call terminate 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "cmd.exe"; Parameters: "/c wmic process where ""name='node.exe' and commandline like '%clawdbot%'"" call terminate 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist
 
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\node_modules"
 Type: filesandordirs; Name: "{app}\config"
 Type: filesandordirs; Name: "{app}\data"
 Type: filesandordirs; Name: "{app}\logs"
 
+[Registry]
+Root: HKCU; Subkey: "SOFTWARE\ClawdbotCN"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
+
 [Code]
-// 检查端口是否被占用
-function IsPortInUse(Port: Integer): Boolean;
-var
-  ResultCode: Integer;
+function GetDesktopIconDesc(Param: String): String;
 begin
-  Result := False;
-  if Exec('cmd.exe', '/c netstat -an | findstr :' + IntToStr(Port) + ' | findstr LISTENING', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-  begin
-    Result := (ResultCode = 0);
-  end;
+  Result := #$521B#$5EFA#$684C#$9762#$5FEB#$6377#$65B9#$5F0F;
 end;
 
-// 安装前检查
+function GetStartMenuDesc(Param: String): String;
+begin
+  Result := #$521B#$5EFA#$5F00#$59CB#$83DC#$5355#$5FEB#$6377#$65B9#$5F0F;
+end;
+
+function GetStartupDesc(Param: String): String;
+begin
+  Result := #$5F00#$673A#$81EA#$52A8#$542F#$52A8#$FF08#$63A8#$8350#$FF09;
+end;
+
+function GetShortcutsGroup(Param: String): String;
+begin
+  Result := #$5FEB#$6377#$65B9#$5F0F#$003A;
+end;
+
+function GetStartupGroup(Param: String): String;
+begin
+  Result := #$542F#$52A8#$9009#$9879#$003A;
+end;
+
+function GetLaunchDesc(Param: String): String;
+begin
+  Result := #$7ACB#$5373#$542F#$52A8' ClawdbotCN AI';
+end;
+
+function GetViewLogsText(Param: String): String;
+begin
+  Result := #$67E5#$770B#$65E5#$5FD7;
+end;
+
+function GetUninstallText(Param: String): String;
+begin
+  Result := #$5378#$8F7D' {#MyAppNameCN}';
+end;
+
 function InitializeSetup(): Boolean;
+var
+  OldConfigDir: String;
 begin
   Result := True;
   
-  // 检查默认端口
-  if IsPortInUse(18789) then
+  // Check for 64-bit Windows
+  if not IsWin64 then
   begin
-    if MsgBox('检测到端口 18789 已被占用。' + #13#10 + #13#10 + 
-              '这可能是因为 Clawdbot 已在运行，或有其他程序占用该端口。' + #13#10 + #13#10 +
-              '是否仍要继续安装？', mbConfirmation, MB_YESNO) = IDNO then
+    MsgBox('ClawdbotCN AI '#$9700#$8981' 64 '#$4F4D' Windows '#$7CFB#$7EDF#$FF01, mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
+  
+  // Check if old clawdbot config exists (from open-source version)
+  OldConfigDir := GetEnv('USERPROFILE') + '\.clawdbot';
+  if DirExists(OldConfigDir) then
+  begin
+    // Show info message - user can choose to continue or cancel
+    if MsgBox(
+      'Detected previous Clawdbot installation.' + #13#10 + #13#10 +
+      'ClawdbotCN will use an isolated config directory.' + #13#10 +
+      'Your original data will not be affected.' + #13#10 + #13#10 +
+      'Old config: ' + OldConfigDir + #13#10 +
+      'New config: %APPDATA%\ClawdbotCN' + #13#10 + #13#10 +
+      'Click OK to continue, Cancel to exit.',
+      mbInformation, MB_OKCANCEL) = IDCANCEL then
     begin
       Result := False;
     end;
   end;
 end;
 
-// 卸载前停止服务
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
+  InstallMarker: String;
+  MarkerContent: String;
+  InstallDir: String;
 begin
-  if CurUninstallStep = usUninstall then
+  if CurStep = ssInstall then
   begin
-    // 尝试停止运行中的 Clawdbot 进程
-    Exec('cmd.exe', '/c taskkill /f /im node.exe /fi "WINDOWTITLE eq Clawdbot*"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    // Get installation directory
+    InstallDir := ExpandConstant('{app}');
+    
+    // Step 1: Kill ClawdbotService.exe first
+    Exec('cmd.exe', '/c taskkill /f /im ClawdbotService.exe 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    
+    // Step 2: Kill node.exe processes started from installation directory
+    // Uses WMIC to find and kill node.exe with matching path
+    Exec('cmd.exe', '/c wmic process where "name=''node.exe'' and commandline like ''%ClawdbotCN%''" call terminate 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('cmd.exe', '/c wmic process where "name=''node.exe'' and commandline like ''%clawdbot%''" call terminate 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    
+    // Step 3: Small delay to ensure processes are fully terminated
+    Sleep(500);
+  end;
+  
+  if CurStep = ssPostInstall then
+  begin
+    // Create install marker
+    InstallMarker := ExpandConstant('{app}\install.json');
+    MarkerContent := '{' + #13#10 +
+      '  "version": "{#MyAppVersion}",' + #13#10 +
+      '  "installTime": "' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '",' + #13#10 +
+      '  "firstLaunch": true' + #13#10 +
+      '}';
+    SaveStringToFile(InstallMarker, MarkerContent, False);
   end;
 end;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

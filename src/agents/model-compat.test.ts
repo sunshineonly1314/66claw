@@ -41,4 +41,26 @@ describe("normalizeModelCompat", () => {
     const normalized = normalizeModelCompat(model);
     expect(normalized.compat?.supportsDeveloperRole).toBe(false);
   });
+
+  it("forces supportsDeveloperRole off for volcengine-ark/doubao (API only supports system/assistant/user/tool)", () => {
+    const model = {
+      ...baseModel(),
+      provider: "volcengine-ark",
+      baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    };
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(normalized.compat?.supportsDeveloperRole).toBe(false);
+  });
+
+  it("forces supportsDeveloperRole off for doubao provider", () => {
+    const model = {
+      ...baseModel(),
+      provider: "doubao",
+      baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    };
+    delete (model as { compat?: unknown }).compat;
+    const normalized = normalizeModelCompat(model);
+    expect(normalized.compat?.supportsDeveloperRole).toBe(false);
+  });
 });

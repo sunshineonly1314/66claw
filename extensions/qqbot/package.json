@@ -1,0 +1,13 @@
+{
+  "name": "@clawdbot/qqbot",
+  "version": "2026.2.4",
+  "type": "module",
+  "description": "Clawdbot QQ Bot channel plugin - QQ 机器人渠道插件",
+  "clawdbot": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "qq-bot-sdk": "^1.0.0",
+    "zod": "^4.3.6"
+  }
+}

@@ -53,7 +53,7 @@ describe("config plugin validation", () => {
     });
   });
 
-  it("rejects missing plugin ids in entries", async () => {
+  it("warns on missing plugin ids in entries (does not reject)", async () => {
     await withTempHome(async (home) => {
       process.env.CLAWDBOT_STATE_DIR = path.join(home, ".clawdbot");
       vi.resetModules();
@@ -62,17 +62,18 @@ describe("config plugin validation", () => {
         agents: { list: [{ id: "pi" }] },
         plugins: { enabled: false, entries: { "missing-plugin": { enabled: true } } },
       });
-      expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.issues).toContainEqual({
+      // Missing plugin entries are now warnings, not errors — config is still valid.
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.warnings).toContainEqual({
           path: "plugins.entries.missing-plugin",
-          message: "plugin not found: missing-plugin",
+          message: "plugin not found: missing-plugin (config ignored)",
         });
       }
     });
   });
 
-  it("rejects missing plugin ids in allow/deny/slots", async () => {
+  it("warns on missing plugin ids in allow/deny/slots (does not reject)", async () => {
     await withTempHome(async (home) => {
       process.env.CLAWDBOT_STATE_DIR = path.join(home, ".clawdbot");
       vi.resetModules();
@@ -86,13 +87,17 @@ describe("config plugin validation", () => {
           slots: { memory: "missing-slot" },
         },
       });
-      expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.issues).toEqual(
+      // Missing plugin references are now warnings, not errors.
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.warnings).toEqual(
           expect.arrayContaining([
-            { path: "plugins.allow", message: "plugin not found: missing-allow" },
-            { path: "plugins.deny", message: "plugin not found: missing-deny" },
-            { path: "plugins.slots.memory", message: "plugin not found: missing-slot" },
+            { path: "plugins.allow", message: "plugin not found: missing-allow (entry ignored)" },
+            { path: "plugins.deny", message: "plugin not found: missing-deny (entry ignored)" },
+            {
+              path: "plugins.slots.memory",
+              message: "plugin not found: missing-slot (slot ignored)",
+            },
           ]),
         );
       }

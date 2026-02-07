@@ -707,6 +707,12 @@ export async function runEmbeddedAttempt(
         }
 
         log.debug(`embedded run prompt start: runId=${params.runId} sessionId=${params.sessionId}`);
+        // 🔍 ClawdbotCN 诊断日志 - 记录 API 请求参数
+        log.info(
+          `[API Request] provider=${params.provider} model=${params.modelId} ` +
+          `baseUrl=${params.model.baseUrl ?? "default"} api=${params.model.api} ` +
+          `sessionId=${params.sessionId} promptLength=${effectivePrompt.length}`,
+        );
         cacheTrace?.recordStage("prompt:before", {
           prompt: effectivePrompt,
           messages: activeSession.messages,
@@ -781,6 +787,16 @@ export async function runEmbeddedAttempt(
           }
         } catch (err) {
           promptError = err;
+          // 🔍 ClawdbotCN 诊断日志 - 记录 API 错误详情
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          const errorStack = err instanceof Error ? err.stack : undefined;
+          log.error(
+            `[API Error] provider=${params.provider} model=${params.modelId} ` +
+            `sessionId=${params.sessionId} error=${errorMessage}`,
+          );
+          if (errorStack) {
+            log.debug(`[API Error Stack] ${errorStack}`);
+          }
         } finally {
           log.debug(
             `embedded run prompt end: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - promptStartedAt}`,

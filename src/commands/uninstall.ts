@@ -11,7 +11,8 @@ import {
 import { resolveGatewayService } from "../daemon/service.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { stylePromptHint, stylePromptMessage, stylePromptTitle } from "../terminal/prompt-style.js";
-import { resolveHomeDir } from "../utils.js";
+import { resolveHomeDir, shortenHomePath } from "../utils.js";
+import { createBackupBeforeUninstall, shouldOfferBackup } from "./backup-utils.js";
 import { collectWorkspaceDirs, isPathWithin, removePath } from "./cleanup-utils.js";
 
 type UninstallScope = "service" | "state" | "workspace" | "app";
@@ -25,6 +26,8 @@ export type UninstallOptions = {
   yes?: boolean;
   nonInteractive?: boolean;
   dryRun?: boolean;
+  /** Create backup before removing state (default: true when removing state) */
+  backup?: boolean;
 };
 
 const multiselectStyled = <T>(params: Parameters<typeof multiselect<T>>[0]) =>
@@ -153,6 +156,61 @@ export async function uninstallCommand(runtime: RuntimeEnv, opts: UninstallOptio
   const configInsideState = isPathWithin(configPath, stateDir);
   const oauthInsideState = isPathWithin(oauthDir, stateDir);
   const workspaceDirs = collectWorkspaceDirs(cfg);
+
+  // Backup before removing state (unless explicitly disabled)
+  if (scopes.has("state")) {
+    const shouldBackup = opts.backup !== false;
+    const hasContent = await shouldOfferBackup(stateDir);
+
+    if (shouldBackup && hasContent) {
+      let doBackup = true;
+
+      // In interactive mode, ask user if they want backup
+      if (interactive && !opts.yes) {
+        const backupConfirm = await confirm({
+          message: stylePromptMessage(
+            `Create backup before removing state? (${shortenHomePath(stateDir)})`,
+          ),
+          initialValue: true,
+        });
+        if (isCancel(backupConfirm)) {
+          cancel(stylePromptTitle("Uninstall cancelled.") ?? "Uninstall cancelled.");
+          runtime.exit(0);
+          return;
+        }
+        doBackup = backupConfirm;
+      }
+
+      if (doBackup) {
+        const backupResult = await createBackupBeforeUninstall(runtime, {
+          stateDir,
+          dryRun,
+        });
+
+        if (!backupResult.ok && backupResult.errors.length > 0) {
+          runtime.error("Backup failed:");
+          for (const err of backupResult.errors) {
+            runtime.error(`  - ${err}`);
+          }
+
+          // In interactive mode, ask if user wants to continue without backup
+          if (interactive && !opts.yes) {
+            const continueAnyway = await confirm({
+              message: stylePromptMessage("Continue uninstall without backup?"),
+              initialValue: false,
+            });
+            if (isCancel(continueAnyway) || !continueAnyway) {
+              cancel(stylePromptTitle("Uninstall cancelled.") ?? "Uninstall cancelled.");
+              runtime.exit(0);
+              return;
+            }
+          }
+        } else if (backupResult.backupDir) {
+          runtime.log(`Backup saved to: ${shortenHomePath(backupResult.backupDir)}`);
+        }
+      }
+    }
+  }
 
   if (scopes.has("service")) {
     if (dryRun) {

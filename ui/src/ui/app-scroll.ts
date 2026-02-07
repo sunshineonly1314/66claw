@@ -75,7 +75,18 @@ export function scheduleLogsScroll(host: ScrollHost, force = false) {
   });
 }
 
+// ============ 性能优化：滚动处理节流 ============
+let chatScrollThrottleTimer: number | null = null;
+const CHAT_SCROLL_THROTTLE_MS = 50; // 约 20fps
+
 export function handleChatScroll(host: ScrollHost, event: Event) {
+  // 节流：避免滚动事件过于频繁
+  if (chatScrollThrottleTimer !== null) return;
+  
+  chatScrollThrottleTimer = window.setTimeout(() => {
+    chatScrollThrottleTimer = null;
+  }, CHAT_SCROLL_THROTTLE_MS);
+
   const container = event.currentTarget as HTMLElement | null;
   if (!container) return;
   const distanceFromBottom =
@@ -83,7 +94,17 @@ export function handleChatScroll(host: ScrollHost, event: Event) {
   host.chatUserNearBottom = distanceFromBottom < 200;
 }
 
+// 日志滚动节流
+let logsScrollThrottleTimer: number | null = null;
+
 export function handleLogsScroll(host: ScrollHost, event: Event) {
+  // 节流：避免滚动事件过于频繁
+  if (logsScrollThrottleTimer !== null) return;
+  
+  logsScrollThrottleTimer = window.setTimeout(() => {
+    logsScrollThrottleTimer = null;
+  }, CHAT_SCROLL_THROTTLE_MS);
+
   const container = event.currentTarget as HTMLElement | null;
   if (!container) return;
   const distanceFromBottom =

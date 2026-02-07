@@ -8,8 +8,12 @@ import { loadNodes } from "./controllers/nodes";
 import { loadExecApprovals } from "./controllers/exec-approvals";
 import { loadPresence } from "./controllers/presence";
 import { loadSessions } from "./controllers/sessions";
-import { loadSkills } from "./controllers/skills";
+import { loadSkills, loadMarketSkills } from "./controllers/skills";
 import { loadPlaygroundSkills } from "./controllers/playground";
+import { loadUsageSummary } from "./controllers/usage";
+import { loadFreeModels } from "./controllers/free-models";
+import { loadModelsProviders } from "./controllers/models";
+import { loadSecurityModes } from "./controllers/security";
 import { inferBasePathFromPathname, normalizeBasePath, normalizePath, pathForTab, tabFromPath, type Tab } from "./navigation";
 import { saveSettings, type UiSettings } from "./storage";
 import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme";
@@ -144,12 +148,18 @@ export function setTheme(
 
 export async function refreshActiveTab(host: SettingsHost) {
   if (host.tab === "overview") await loadOverview(host);
+  if (host.tab === "usage") await loadUsageSummary(host as unknown as ClawdbotApp);
+  if (host.tab === "free-models") await loadFreeModels(host as unknown as ClawdbotApp);
   if (host.tab === "channels") await loadChannelsTab(host);
   if (host.tab === "instances") await loadPresence(host as unknown as ClawdbotApp);
   if (host.tab === "sessions") await loadSessions(host as unknown as ClawdbotApp);
   if (host.tab === "cron") await loadCron(host);
   if (host.tab === "playground") await loadPlaygroundSkills(host as unknown as ClawdbotApp);
-  if (host.tab === "skills") await loadSkills(host as unknown as ClawdbotApp);
+  if (host.tab === "skills") {
+    await loadSkills(host as unknown as ClawdbotApp);
+    // 同时加载市场数据，使技能市场 Tab 有数据
+    loadMarketSkills(host as unknown as ClawdbotApp);
+  }
   if (host.tab === "nodes") {
     await loadNodes(host as unknown as ClawdbotApp);
     await loadDevices(host as unknown as ClawdbotApp);
@@ -314,6 +324,9 @@ export async function loadOverview(host: SettingsHost) {
     loadSessions(host as unknown as ClawdbotApp),
     loadCronStatus(host as unknown as ClawdbotApp),
     loadDebug(host as unknown as ClawdbotApp),
+    loadUsageSummary(host as unknown as ClawdbotApp),
+    loadModelsProviders(host as unknown as ClawdbotApp),
+    loadSecurityModes(host as unknown as ClawdbotApp),
   ]);
 }
 

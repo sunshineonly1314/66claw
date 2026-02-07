@@ -45,7 +45,7 @@ export type SkillsCheckOptions = {
 
 function appendClawdHubHint(output: string, json?: boolean): string {
   if (json) return output;
-  return `${output}\n\nTip: use \`npx clawdhub\` to search, install, and sync skills.`;
+  return `${output}\n\n提示：在 Web UI 的「技能市场」页面可以浏览和安装更多技能`;
 }
 
 function formatSkillStatus(skill: SkillStatusEntry): string {

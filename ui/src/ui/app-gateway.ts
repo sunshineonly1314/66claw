@@ -7,9 +7,20 @@ import { GatewayBrowserClient } from "./gateway";
 import type { EventLogEntry } from "./app-events";
 import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types";
 import type { Tab } from "./navigation";
-import type { UiSettings } from "./storage";
+import {
+  type UiSettings,
+  isTokenAuthError,
+  refreshGatewayTokenFromServer,
+  loadSettings,
+  saveSettings,
+  shouldShowRenewalReminder,
+  markRenewalReminderShown,
+  dismissRenewalReminderTemporarily,
+} from "./storage";
+import { t } from "./i18n/index.js";
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream";
 import { flushChatQueueForEvent } from "./app-chat";
+import type { LicenseUiState, LicenseDialogType } from "./license/types";
 import {
   applySettings,
   loadCron,
@@ -26,6 +37,16 @@ import {
 import type { ClawdbotApp } from "./app";
 import type { ExecApprovalRequest } from "./controllers/exec-approval";
 import { loadAssistantIdentity } from "./controllers/assistant-identity";
+import { runCapabilityDetection, type DiscoveryControllerState } from "./controllers/capability-detect";
+import {
+  addSkillInstallRequest,
+  parseSkillInstallRequested,
+  parseSkillInstallResolved,
+  parseSkillInstallProgress,
+  removeSkillInstallRequest,
+} from "./controllers/skill-install";
+import type { SkillInstallRequest } from "./views/skill-install-approval";
+import type { SkillInstallProgress } from "./views/skill-install-progress";
 
 type GatewayHost = {
   settings: UiSettings;
@@ -52,6 +73,11 @@ type GatewayHost = {
   chatRunId: string | null;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
+  // Discovery state
+  discoveryState: DiscoveryControllerState;
+  // ClawdbotCN 专属：技能安装进度状态
+  skillInstallQueue?: SkillInstallRequest[];
+  skillInstallProgress?: SkillInstallProgress | null;
 };
 
 type SessionDefaultsSnapshot = {
@@ -108,12 +134,117 @@ function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnaps
   }
 }
 
+// ---------------------------------------------------------------------------
+// Token auth failure recovery (three-layer strategy)
+//
+// When the gateway restarts, it may generate a new token. Any open browser tab
+// still holds the old token (both in window.__CLAWDBOT_GATEWAY_TOKEN__ and
+// localStorage). The WebSocket reconnects fail with "token_missing/mismatch"
+// and, without intervention, loop forever.
+//
+// Recovery layers (tried in order):
+//   L1 — Sync fix: use server-injected token from current page (instant, rare win)
+//   L2 — HTTP refresh: fetch /api/auth/discover for the current token (~100ms, no UX disruption)
+//   L3 — Page reload: full reload to get fresh HTML with new token (fallback)
+//   Circuit breaker: stop after MAX_AUTH_FAILURES to avoid flooding the gateway
+// ---------------------------------------------------------------------------
+const AUTH_RELOAD_KEY = "clawdbot.auth.recovery.v1";
+const MAX_PAGE_RELOADS = 2; // max reloads within the sliding window
+const RELOAD_WINDOW_MS = 5 * 60 * 1000; // 5-minute sliding window
+const MAX_AUTH_FAILURES = 6; // circuit breaker threshold
+
+let consecutiveAuthFailures = 0;
+
+function getPageReloadCount(): number {
+  try {
+    const raw = sessionStorage.getItem(AUTH_RELOAD_KEY);
+    if (!raw) return 0;
+    const data = JSON.parse(raw) as { count: number; since: number };
+    if (Date.now() - data.since > RELOAD_WINDOW_MS) return 0;
+    return data.count;
+  } catch {
+    return 0;
+  }
+}
+
+function recordPageReload(): void {
+  try {
+    const count = getPageReloadCount();
+    const raw = sessionStorage.getItem(AUTH_RELOAD_KEY);
+    const prev = raw ? (JSON.parse(raw) as { count: number; since: number }) : null;
+    const now = Date.now();
+    const since = prev && now - prev.since < RELOAD_WINDOW_MS ? prev.since : now;
+    sessionStorage.setItem(AUTH_RELOAD_KEY, JSON.stringify({ count: count + 1, since }));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Async token recovery after a WebSocket auth failure.
+ *
+ * Strategy (two layers + delayed retry + circuit breaker):
+ *   L1 — HTTP refresh: fetch /api/auth/discover for the current token (~100ms)
+ *   L2 — Page reload: full reload to get fresh HTML with new token (fallback)
+ *   Delayed retry: if L1 fails and L2 isn't due yet, retry after a pause
+ *   Circuit breaker: stop after MAX_AUTH_FAILURES to avoid flooding
+ */
+async function recoverFromAuthFailure(host: GatewayHost, errorMsg: string): Promise<void> {
+  // L1: HTTP refresh — fetch the current token from the gateway via HTTP
+  const freshToken = await refreshGatewayTokenFromServer();
+  if (freshToken && freshToken !== host.settings.token) {
+    console.log("[clawdbot] L1 recovery: fetched fresh token via HTTP, reconnecting");
+    consecutiveAuthFailures = 0;
+    const updated = { ...host.settings, token: freshToken };
+    saveSettings(updated);
+    host.settings = updated;
+    host.lastError = null;
+    connectGateway(host);
+    return;
+  }
+
+  // L2: Page reload — fetch fresh HTML with server-injected token.
+  // Only after 2+ failures (avoids reloading to a dead gateway on first transient error)
+  // and within the reload budget (prevents infinite reload loops).
+  if (consecutiveAuthFailures >= 2 && getPageReloadCount() < MAX_PAGE_RELOADS) {
+    console.warn(
+      `[clawdbot] L2 recovery: ${consecutiveAuthFailures} auth failures, reloading page (${getPageReloadCount() + 1}/${MAX_PAGE_RELOADS})`,
+    );
+    recordPageReload();
+    window.location.reload();
+    return;
+  }
+
+  // Delayed retry: L1 failed and L2 isn't due yet (or budget exhausted).
+  // Schedule another attempt so the next failure can try L1 again or escalate to L2.
+  // Without this, the client would be permanently disconnected after a single failure.
+  if (consecutiveAuthFailures < MAX_AUTH_FAILURES) {
+    const retryDelay = Math.min(2000 * consecutiveAuthFailures, 10_000);
+    console.warn(
+      `[clawdbot] Auth recovery: L1 failed, retrying in ${retryDelay}ms (attempt ${consecutiveAuthFailures}/${MAX_AUTH_FAILURES})`,
+    );
+    host.lastError = errorMsg;
+    window.setTimeout(() => connectGateway(host), retryDelay);
+    return;
+  }
+
+  // Circuit breaker: all strategies exhausted
+  console.error(
+    `[clawdbot] Auth recovery exhausted after ${consecutiveAuthFailures} failures. ` +
+      "User must reload the page or re-open the tokenized URL.",
+  );
+  host.lastError = errorMsg;
+}
+
 export function connectGateway(host: GatewayHost) {
   host.lastError = null;
   host.hello = null;
   host.connected = false;
   host.execApprovalQueue = [];
   host.execApprovalError = null;
+  // Reset auth failure counter so manual reconnects (e.g. user changed token in settings)
+  // aren't blocked by a stale circuit-breaker count from a previous recovery attempt.
+  consecutiveAuthFailures = 0;
 
   host.client?.stop();
   host.client = new GatewayBrowserClient({
@@ -126,23 +257,55 @@ export function connectGateway(host: GatewayHost) {
       host.connected = true;
       host.lastError = null;
       host.hello = hello;
+      consecutiveAuthFailures = 0;
       applySnapshot(host, hello);
       void loadAssistantIdentity(host as unknown as ClawdbotApp);
       void loadAgents(host as unknown as ClawdbotApp);
       void loadNodes(host as unknown as ClawdbotApp, { quiet: true });
       void loadDevices(host as unknown as ClawdbotApp, { quiet: true });
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
+      
+      // 加载 License 状态并检查是否需要弹框 (ClawdbotCN)
+      void loadLicenseStatus(host as unknown as ClawdbotApp);
+      
+      // 首次使用时触发能力检测
+      if (host.discoveryState.isFirstVisit && !host.discoveryState.hasCompletedFirstVisit) {
+        void runCapabilityDetection(host.client, {
+          onStateChange: (patch) => {
+            host.discoveryState = { ...host.discoveryState, ...patch };
+          },
+        });
+      }
     },
     onClose: ({ code, reason }) => {
       host.connected = false;
+      const reasonText = reason || t("connection.ws.noReason");
+      const errorMsg = t("connection.ws.disconnected", { code: String(code), reason: reasonText });
+      
       // Code 1012 = Service Restart (expected during config saves, don't show as error)
-      if (code !== 1012) {
-        host.lastError = `disconnected (${code}): ${reason || "no reason"}`;
+      if (code === 1012) {
+        consecutiveAuthFailures = 0;
+        return;
       }
+      
+      // Detect token auth errors (check both formatted message and raw reason,
+      // since the raw reason now carries the preserved connect RPC error).
+      if (isTokenAuthError(errorMsg) || isTokenAuthError(reason)) {
+        consecutiveAuthFailures++;
+
+        // Stop the current client's auto-reconnect while async recovery runs.
+        // The recovery function will call connectGateway() again on success,
+        // or schedule a delayed retry, or give up (circuit breaker).
+        host.client?.stop();
+        void recoverFromAuthFailure(host, errorMsg);
+        return;
+      }
+      
+      host.lastError = errorMsg;
     },
     onEvent: (evt) => handleGatewayEvent(host, evt),
     onGap: ({ expected, received }) => {
-      host.lastError = `event gap detected (expected seq ${expected}, got ${received}); refresh recommended`;
+      host.lastError = t("connection.ws.eventGap", { expected: String(expected), received: String(received) });
     },
   });
   host.client.start();
@@ -229,6 +392,66 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (resolved) {
       host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
     }
+    return;
+  }
+
+  // =========================================================================
+  // ClawdbotCN 专属：技能安装进度事件处理
+  // =========================================================================
+  if (evt.event === "skill.install.requested") {
+    const entry = parseSkillInstallRequested(evt.payload);
+    if (entry) {
+      host.skillInstallQueue = addSkillInstallRequest(host.skillInstallQueue ?? [], entry);
+      // 设置请求过期自动清理
+      const delay = Math.max(0, entry.expiresAtMs - Date.now() + 500);
+      window.setTimeout(() => {
+        host.skillInstallQueue = removeSkillInstallRequest(host.skillInstallQueue ?? [], entry.id);
+      }, delay);
+    }
+    return;
+  }
+
+  if (evt.event === "skill.install.resolved") {
+    const resolved = parseSkillInstallResolved(evt.payload);
+    if (resolved) {
+      host.skillInstallQueue = removeSkillInstallRequest(host.skillInstallQueue ?? [], resolved.id);
+    }
+    return;
+  }
+
+  if (evt.event === "skill.install.progress") {
+    const progress = parseSkillInstallProgress(
+      evt.payload,
+      host.skillInstallProgress,
+    );
+    if (progress) {
+      host.skillInstallProgress = progress;
+      // 完成或失败时，5秒后自动清除进度（让用户有时间看到结果）
+      if (progress.stage === "complete" || progress.stage === "failed") {
+        window.setTimeout(() => {
+          // 只有当进度 ID 匹配时才清除（避免清除新的进度）
+          if (host.skillInstallProgress?.id === progress.id) {
+            // 完成时自动关闭，失败时保留让用户手动关闭
+            if (progress.stage === "complete") {
+              host.skillInstallProgress = null;
+            }
+          }
+        }, 3000);
+      }
+    }
+    return;
+  }
+
+  if (evt.event === "skill.install.cancelled") {
+    const payload = evt.payload as { id?: string } | undefined;
+    if (payload?.id) {
+      host.skillInstallQueue = removeSkillInstallRequest(host.skillInstallQueue ?? [], payload.id);
+      // 如果取消的是正在显示进度的安装，清除进度
+      if (host.skillInstallProgress?.id === payload.id) {
+        host.skillInstallProgress = null;
+      }
+    }
+    return;
   }
 }
 
@@ -249,4 +472,235 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
   if (snapshot?.sessionDefaults) {
     applySessionDefaults(host, snapshot.sessionDefaults);
   }
+}
+
+// ============================================================================
+// License 状态加载与续费提醒弹框
+// ============================================================================
+
+type LicenseHost = {
+  client: GatewayBrowserClient | null;
+  licenseState: LicenseUiState;
+  showLicenseDialog: LicenseDialogType | null;
+};
+
+/**
+ * 从 URL 参数获取激活码
+ * 支持 ?key=xxx 或 ?activate=xxx 格式
+ */
+function getActivationKeyFromUrl(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const key = params.get("key") || params.get("activate") || params.get("license");
+    if (key && key.trim().length > 8) {
+      return key.trim();
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * 清除 URL 中的激活码参数（激活后清理）
+ */
+function clearActivationKeyFromUrl(): void {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("key");
+    url.searchParams.delete("activate");
+    url.searchParams.delete("license");
+    window.history.replaceState({}, "", url.toString());
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 加载 License 状态并检查是否需要弹框
+ */
+export async function loadLicenseStatus(host: LicenseHost): Promise<void> {
+  if (!host.client) return;
+
+  try {
+    const result = await host.client.request("license.status", {});
+    if (result && typeof result === "object") {
+      const data = result as Record<string, unknown>;
+      const device = data.device as Record<string, unknown> | null;
+      const errorCode = (data.errorCode as number | null) ?? null;
+
+      // 从 device 对象提取设备切换信息（服务端把这些信息放在 device 内）
+      let deviceSwitchInfo: LicenseUiState["deviceSwitchInfo"] = null;
+      let deviceSwitchCooldown: LicenseUiState["deviceSwitchCooldown"] = null;
+
+      if (device) {
+        // errorCode=1010 时，提取设备切换信息
+        if (errorCode === 1010 && device.existingDeviceName) {
+          deviceSwitchInfo = {
+            existingDeviceId: device.existingDeviceId as string,
+            existingDeviceName: device.existingDeviceName as string,
+            existingOsInfo: (device.existingOsInfo as string) ?? undefined,
+          };
+        }
+        // errorCode=1011 时，提取冷却期信息
+        if (errorCode === 1011 && device.cooldownRemainingHours !== undefined) {
+          deviceSwitchCooldown = {
+            cooldownRemainingHours: device.cooldownRemainingHours as number,
+            cooldownEndsAt: device.cooldownEndsAt as string,
+          };
+        }
+      }
+
+      // 也检查顶层字段（兼容可能的后端改动）
+      if (!deviceSwitchInfo && data.deviceSwitchInfo) {
+        deviceSwitchInfo = data.deviceSwitchInfo as LicenseUiState["deviceSwitchInfo"];
+      }
+      if (!deviceSwitchCooldown && data.deviceSwitchCooldown) {
+        deviceSwitchCooldown = data.deviceSwitchCooldown as LicenseUiState["deviceSwitchCooldown"];
+      }
+
+      host.licenseState = {
+        checking: false,
+        valid: (data.valid as boolean) ?? true,
+        offlineMode: (data.offlineMode as boolean) ?? false,
+        error: (data.error as string | null) ?? null,
+        errorCode,
+        license: (data.license as LicenseUiState["license"]) ?? null,
+        device: (data.device as LicenseUiState["device"]) ?? null,
+        renewalReminder: (data.renewalReminder as LicenseUiState["renewalReminder"]) ?? null,
+        forceUpdate: (data.forceUpdate as LicenseUiState["forceUpdate"]) ?? null,
+        pendingNotifications: (data.pendingNotifications as LicenseUiState["pendingNotifications"]) ?? [],
+        lastVerifiedAt: Date.now(),
+        deviceSwitchInfo,
+        deviceSwitchCooldown,
+      };
+
+      // 平滑激活：检查 URL 参数中是否有激活码
+      if (!host.licenseState.valid && !host.licenseState.license) {
+        const urlKey = getActivationKeyFromUrl();
+        if (urlKey) {
+          console.log("[license] Found activation key in URL, auto-activating...");
+          await autoActivateLicense(host, urlKey);
+          return;
+        }
+      }
+
+      // 检查是否需要显示弹框
+      checkAndShowLicenseDialog(host);
+    }
+  } catch (error) {
+    console.error("[license] Failed to load license status:", error);
+  }
+}
+
+/**
+ * 自动激活授权码（从 URL 参数）
+ */
+async function autoActivateLicense(host: LicenseHost, key: string): Promise<void> {
+  if (!host.client) return;
+
+  try {
+    const result = await host.client.request("license.activate", { key });
+    if (result && typeof result === "object") {
+      const data = result as Record<string, unknown>;
+      if (data.valid) {
+        // 激活成功
+        host.licenseState = {
+          ...host.licenseState,
+          valid: true,
+          error: null,
+          errorCode: null,
+          license: data.license as LicenseUiState["license"],
+          device: data.device as LicenseUiState["device"],
+          lastVerifiedAt: Date.now(),
+        };
+        // 清除 URL 中的激活码参数
+        clearActivationKeyFromUrl();
+        console.log("[license] Auto-activation successful");
+        return;
+      } else {
+        // 激活失败，显示错误
+        console.error("[license] Auto-activation failed:", data.errorMessage);
+        host.licenseState = {
+          ...host.licenseState,
+          error: (data.errorMessage as string) || "激活失败",
+        };
+      }
+    }
+  } catch (error) {
+    console.error("[license] Auto-activation error:", error);
+  }
+
+  // 激活失败，清除 URL 参数并显示激活弹框
+  clearActivationKeyFromUrl();
+  checkAndShowLicenseDialog(host);
+}
+
+/**
+ * 检查并显示 License 相关弹框
+ */
+function checkAndShowLicenseDialog(host: LicenseHost): void {
+  const state = host.licenseState;
+
+  // 1. 强制更新优先级最高
+  if (state.forceUpdate?.required && state.forceUpdate.blocking) {
+    host.showLicenseDialog = "force-update";
+    return;
+  }
+
+  // 2. 授权无效
+  if (!state.valid && state.error) {
+    // 2.1 设备切换确认（单设备模式：1010）
+    if (state.errorCode === 1010) {
+      host.showLicenseDialog = "device-switch";
+      return;
+    }
+    // 2.2 设备切换冷却中（单设备模式：1011）
+    if (state.errorCode === 1011) {
+      host.showLicenseDialog = "device-switch-cooldown";
+      return;
+    }
+    // 2.3 设备数超限
+    if (state.errorCode === 1004) {
+      host.showLicenseDialog = "device-limit";
+      return;
+    }
+    // 2.4 授权过期
+    if (state.errorCode === 1002) {
+      host.showLicenseDialog = "expired";
+      return;
+    }
+    // 2.5 未激活
+    if (!state.license) {
+      host.showLicenseDialog = "activation";
+      return;
+    }
+  }
+
+  // 3. 续费提醒（根据频率策略）
+  const reminder = state.renewalReminder;
+  if (reminder?.show && reminder.urgency) {
+    if (shouldShowRenewalReminder(reminder.urgency)) {
+      host.showLicenseDialog = "renewal";
+      markRenewalReminderShown(reminder.urgency);
+      return;
+    }
+  }
+
+  // 4. 待展示的通知
+  if (state.pendingNotifications && state.pendingNotifications.length > 0) {
+    host.showLicenseDialog = "notification";
+    return;
+  }
+}
+
+/**
+ * 处理续费提醒弹框的"稍后提醒"操作
+ */
+export function handleRenewalReminderDismiss(host: LicenseHost): void {
+  const urgency = host.licenseState.renewalReminder?.urgency;
+  if (urgency) {
+    dismissRenewalReminderTemporarily(urgency);
+  }
+  host.showLicenseDialog = null;
 }

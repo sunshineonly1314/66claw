@@ -8,7 +8,7 @@ import {
   complete,
   type Model,
 } from "@mariozechner/pi-ai";
-import { discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+import { discoverAuthStorage } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 import type { ClawdbotConfig } from "../../config/config.js";
@@ -20,7 +20,8 @@ import { minimaxUnderstandImage } from "../minimax-vlm.js";
 import { getApiKeyForModel, requireApiKey, resolveEnvApiKey } from "../model-auth.js";
 import { runWithImageModelFallback } from "../model-fallback.js";
 import { resolveConfiguredModelRef } from "../model-selection.js";
-import { ensureClawdbotModelsJson } from "../models-config.js";
+import { ensureClawdbotModelsJson, getMergedProvidersForAgent } from "../models-config.js";
+import { resolveModel } from "../pi-embedded-runner/model.js";
 import { assertSandboxPath } from "../sandbox-paths.js";
 import type { AnyAgentTool } from "./common.js";
 import {
@@ -234,22 +235,33 @@ async function runImagePrompt(params: {
 
   await ensureClawdbotModelsJson(effectiveCfg, params.agentDir);
   const authStorage = discoverAuthStorage(params.agentDir);
-  const modelRegistry = discoverModels(authStorage, params.agentDir);
+  const mergedProviders = await getMergedProvidersForAgent(effectiveCfg, params.agentDir);
+  const cfgForModel =
+    Object.keys(mergedProviders).length > 0
+      ? effectiveCfg
+        ? { ...effectiveCfg, models: { ...effectiveCfg?.models, providers: mergedProviders } }
+        : { models: { providers: mergedProviders } }
+      : effectiveCfg;
 
   const result = await runWithImageModelFallback({
     cfg: effectiveCfg,
     modelOverride: params.modelOverride,
     run: async (provider, modelId) => {
-      const model = modelRegistry.find(provider, modelId) as Model<Api> | null;
+      const { model, error } = resolveModel(
+        provider,
+        modelId,
+        params.agentDir,
+        cfgForModel,
+      );
       if (!model) {
-        throw new Error(`Unknown model: ${provider}/${modelId}`);
+        throw new Error(error ?? `Unknown model: ${provider}/${modelId}`);
       }
       if (!model.input?.includes("image")) {
         throw new Error(`Model does not support images: ${provider}/${modelId}`);
       }
       const apiKeyInfo = await getApiKeyForModel({
         model,
-        cfg: effectiveCfg,
+        cfg: cfgForModel,
         agentDir: params.agentDir,
       });
       const apiKey = requireApiKey(apiKeyInfo, model.provider);

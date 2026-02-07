@@ -3,13 +3,18 @@
  * 授权验证核心逻辑
  */
 
+import dns from "node:dns";
 import {
   type ApiResponse,
   type LicenseVerifyRequest,
   type LicenseVerifyResponseData,
   type LicenseHeartbeatRequest,
   type LicenseHeartbeatResponseData,
+  type DeviceListRequest,
   type DeviceListResponseData,
+  type DeviceUnbindResponseData,
+  type DeviceSwitchRequest,
+  type DeviceSwitchResponseData,
   type HealthCheckResponseData,
   type LicenseModuleConfig,
   type LicenseCache,
@@ -17,9 +22,17 @@ import {
   LicenseErrorCode,
   LICENSE_ERROR_MESSAGES,
 } from "./types.js";
-import { getDeviceId, getDeviceName, getOsInfo } from "./device-id.js";
+import { getDeviceId, getDeviceName, getOsInfo, getDeviceFingerprint } from "./device-id.js";
 import { generateSignParams } from "./sign.js";
+import {
+  verifyLicenseResponseSignature,
+  verifyHeartbeatResponseSignature,
+} from "./rsa-verify.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { VERSION } from "../version.js";
+
+// 强制 DNS 解析优先使用 IPv4，避免 WSL 环境下 IPv6 不通导致的超时问题
+dns.setDefaultResultOrder("ipv4first");
 
 const log = createSubsystemLogger("license:verify");
 
@@ -70,7 +83,7 @@ async function sendRequest<T>(
     headers: {
       "Content-Type": "application/json",
     },
-    signal: AbortSignal.timeout(15000), // 15秒超时
+    signal: AbortSignal.timeout(30000), // 30秒超时（网络不稳定时需要更长时间）
   };
 
   if (body && method === "POST") {
@@ -91,10 +104,10 @@ async function sendRequest<T>(
 
 /**
  * 获取当前应用版本
+ * 使用 VERSION 常量（从 package.json 或构建时注入）确保版本号正确
  */
 function getAppVersion(): string {
-  // 尝试从环境变量或 package.json 获取版本
-  return process.env.CLAWDBOT_VERSION || process.env.npm_package_version || "1.0.0";
+  return VERSION;
 }
 
 /**
@@ -111,6 +124,7 @@ export function buildVerifyRequest(
   const deviceName = getDeviceName();
   const appVersion = getAppVersion();
   const osInfo = getOsInfo();
+  const deviceFingerprint = getDeviceFingerprint();
 
   const request: LicenseVerifyRequest = {
     key,
@@ -118,6 +132,9 @@ export function buildVerifyRequest(
     deviceName,
     appVersion,
     osInfo,
+    // 设备指纹：32位hex字符串，与 deviceId 相同算法
+    // 服务端直接做字符串相等比较，判断"同机重装"
+    deviceFingerprint,
     shownNotificationIds: options.shownNotificationIds || [],
   };
 
@@ -159,13 +176,39 @@ export async function verifyLicense(
     const response = await sendRequest<LicenseVerifyResponseData>("POST", "/verify", request);
 
     if (response.code === 200) {
+      const data = response.data;
+
+      // RSA 签名验证（如果启用）
+      if (moduleConfig.enableRsaVerify) {
+        if (!data.signature) {
+          log.error("RSA verification enabled but no signature in response");
+          throw new Error("服务端响应缺少签名");
+        }
+
+        // 使用固定字段顺序验证签名：valid|tier|expiresAt|serverTime
+        const verifyResult = verifyLicenseResponseSignature(
+          data.valid,
+          data.license?.tier ?? null,
+          data.license?.expiresAt ?? null,
+          data.serverTime,
+          data.signature,
+        );
+
+        if (!verifyResult.valid) {
+          log.error(`RSA signature verification failed: ${verifyResult.error}`);
+          throw new Error(verifyResult.error || "许可证签名验证失败");
+        }
+
+        log.debug("RSA signature verification passed");
+      }
+
       log.info(
-        `License verification ${response.data.valid ? "succeeded" : "failed"}`,
-        response.data.valid
-          ? { tier: response.data.license?.tier, daysRemaining: response.data.license?.daysRemaining }
-          : { errorCode: response.data.errorCode },
+        `License verification ${data.valid ? "succeeded" : "failed"}`,
+        data.valid
+          ? { tier: data.license?.tier, daysRemaining: data.license?.daysRemaining }
+          : { errorCode: data.errorCode },
       );
-      return response.data;
+      return data;
     }
 
     throw new Error(`Unexpected response code: ${response.code}`);
@@ -187,7 +230,15 @@ export async function sendHeartbeat(
   }
 
   const deviceId = getDeviceId();
+
+  // 构建带签名的请求
   const request: LicenseHeartbeatRequest = { key, deviceId };
+  if (moduleConfig.enableSign) {
+    const signParams = generateSignParams(key, deviceId, moduleConfig.signSecretKey);
+    request.timestamp = signParams.timestamp;
+    request.nonce = signParams.nonce;
+    request.sign = signParams.sign;
+  }
 
   try {
     const response = await sendRequest<LicenseHeartbeatResponseData>(
@@ -197,8 +248,31 @@ export async function sendHeartbeat(
     );
 
     if (response.code === 200) {
-      log.debug("Heartbeat sent", { valid: response.data.valid });
-      return response.data;
+      const data = response.data;
+
+      // RSA 签名验证（如果启用）
+      if (moduleConfig.enableRsaVerify) {
+        if (!data.signature) {
+          log.error("RSA verification enabled but no signature in heartbeat response");
+          throw new Error("心跳响应缺少签名");
+        }
+
+        // 验证签名：valid|daysRemaining|serverTime
+        const verifyResult = verifyHeartbeatResponseSignature(
+          data.valid,
+          data.daysRemaining,
+          data.serverTime,
+          data.signature,
+        );
+
+        if (!verifyResult.valid) {
+          log.error(`Heartbeat RSA signature verification failed: ${verifyResult.error}`);
+          throw new Error(verifyResult.error || "心跳签名验证失败");
+        }
+      }
+
+      log.debug("Heartbeat sent", { valid: data.valid });
+      return data;
     }
 
     throw new Error(`Unexpected response code: ${response.code}`);
@@ -215,10 +289,16 @@ export async function sendHeartbeat(
 export async function getDeviceList(key: string): Promise<DeviceListResponseData> {
   const deviceId = getDeviceId();
 
-  const response = await sendRequest<DeviceListResponseData>("GET", "/devices", undefined, {
-    key,
-    deviceId,
-  });
+  // 构建带签名的 POST 请求
+  const request: DeviceListRequest = { key, deviceId };
+  if (moduleConfig.enableSign) {
+    const signParams = generateSignParams(key, deviceId, moduleConfig.signSecretKey);
+    request.timestamp = signParams.timestamp;
+    request.nonce = signParams.nonce;
+    request.sign = signParams.sign;
+  }
+
+  const response = await sendRequest<DeviceListResponseData>("POST", "/devices", request);
 
   if (response.code === 200) {
     return response.data;
@@ -228,22 +308,163 @@ export async function getDeviceList(key: string): Promise<DeviceListResponseData
 }
 
 /**
+ * 解绑错误（携带冷却时间等详细信息）
+ */
+export class UnbindError extends Error {
+  constructor(
+    message: string,
+    public readonly errorCode?: LicenseErrorCode,
+    public readonly cooldownRemainingHours?: number,
+    public readonly cooldownEndsAt?: string,
+  ) {
+    super(message);
+    this.name = "UnbindError";
+  }
+}
+
+/**
  * 解绑设备
+ *
+ * @throws {UnbindError} 解绑失败时抛出，包含详细的错误信息
  */
 export async function unbindDevice(
   key: string,
   targetDeviceId: string,
-): Promise<void> {
-  const response = await sendRequest<null>("POST", "/devices/unbind", {
+): Promise<DeviceUnbindResponseData> {
+  // 构建带签名的请求（使用当前设备 ID 签名，解绑目标设备）
+  const currentDeviceId = getDeviceId();
+  const request: { key: string; deviceId: string; timestamp?: number; nonce?: string; sign?: string } = {
     key,
     deviceId: targetDeviceId,
-  });
+  };
 
-  if (response.code !== 200) {
-    throw new Error(`Failed to unbind device: ${response.message}`);
+  if (moduleConfig.enableSign) {
+    const signParams = generateSignParams(key, currentDeviceId, moduleConfig.signSecretKey);
+    request.timestamp = signParams.timestamp;
+    request.nonce = signParams.nonce;
+    request.sign = signParams.sign;
   }
 
-  log.info(`Device unbound: ${targetDeviceId.substring(0, 8)}...`);
+  const response = await sendRequest<DeviceUnbindResponseData>("POST", "/devices/unbind", request);
+
+  if (response.code === 200) {
+    const data = response.data;
+
+    // 检查业务层面是否成功
+    if (data.success) {
+      log.info(`Device unbound: ${targetDeviceId.substring(0, 8)}...`);
+      return data;
+    }
+
+    // 业务失败（如冷却中）
+    const errorMsg = data.errorMessage || LICENSE_ERROR_MESSAGES[data.errorCode as LicenseErrorCode] || "解绑失败";
+
+    // 如果是冷却错误，构造友好的错误消息
+    if (data.errorCode === LicenseErrorCode.ERROR_UNBIND_COOLDOWN && data.cooldownRemainingHours) {
+      const hours = data.cooldownRemainingHours;
+      const friendlyMsg = hours >= 1
+        ? `解绑冷却中，请 ${Math.ceil(hours)} 小时后再试`
+        : `解绑冷却中，请 ${Math.ceil(hours * 60)} 分钟后再试`;
+
+      throw new UnbindError(
+        friendlyMsg,
+        data.errorCode,
+        data.cooldownRemainingHours,
+        data.cooldownEndsAt,
+      );
+    }
+
+    throw new UnbindError(errorMsg, data.errorCode);
+  }
+
+  throw new Error(`Failed to unbind device: ${response.message}`);
+}
+
+/**
+ * 设备切换错误（携带冷却时间等详细信息）
+ */
+export class DeviceSwitchError extends Error {
+  constructor(
+    message: string,
+    public readonly errorCode?: LicenseErrorCode,
+    public readonly cooldownRemainingHours?: number,
+    public readonly cooldownEndsAt?: string,
+  ) {
+    super(message);
+    this.name = "DeviceSwitchError";
+  }
+}
+
+/**
+ * 确认设备切换（单设备模式）
+ *
+ * 用户确认后调用，自动解绑旧设备并绑定新设备。
+ *
+ * @param key - 授权码
+ * @returns 切换响应数据
+ * @throws {DeviceSwitchError} 切换失败时抛出，包含详细的错误信息
+ */
+export async function switchDevice(key: string): Promise<DeviceSwitchResponseData> {
+  const deviceId = getDeviceId();
+  const deviceName = getDeviceName();
+  const osInfo = getOsInfo();
+  const appVersion = getAppVersion();
+  const deviceFingerprint = getDeviceFingerprint();
+
+  const request: DeviceSwitchRequest = {
+    key,
+    deviceId,
+    deviceName,
+    osInfo,
+    appVersion,
+    // 设备指纹：32位hex字符串，服务端做字符串相等比较
+    deviceFingerprint,
+  };
+
+  log.info(`Switching device: ${deviceId.substring(0, 8)}...`);
+
+  try {
+    const response = await sendRequest<DeviceSwitchResponseData>("POST", "/devices/switch", request);
+
+    if (response.code === 200) {
+      const data = response.data;
+
+      // 检查业务层面是否成功（与 /verify 接口一致，使用 valid 字段）
+      if (data.valid) {
+        log.info("Device switch successful");
+        return data;
+      }
+
+      // 业务失败（如冷却中）
+      const errorMsg = data.errorMessage || LICENSE_ERROR_MESSAGES[data.errorCode as LicenseErrorCode] || "设备切换失败";
+
+      // 如果是冷却错误，构造友好的错误消息
+      if (data.errorCode === LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN && data.cooldownRemainingHours) {
+        const hours = data.cooldownRemainingHours;
+        const friendlyMsg = hours >= 1
+          ? `设备切换冷却中，请 ${Math.ceil(hours)} 小时后再试`
+          : `设备切换冷却中，请 ${Math.ceil(hours * 60)} 分钟后再试`;
+
+        throw new DeviceSwitchError(
+          friendlyMsg,
+          data.errorCode,
+          data.cooldownRemainingHours,
+          data.cooldownEndsAt,
+        );
+      }
+
+      throw new DeviceSwitchError(errorMsg, data.errorCode ?? undefined);
+    }
+
+    throw new Error(`Failed to switch device: ${response.message}`);
+  } catch (error) {
+    if (error instanceof DeviceSwitchError) {
+      throw error;
+    }
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log.error(`Device switch failed: ${errorMsg}`);
+    throw new DeviceSwitchError(errorMsg);
+  }
 }
 
 /**
@@ -296,6 +517,8 @@ function createDevModeResponse(): LicenseVerifyResponseData {
       daysRemaining: 365,
       keyType: "test",
       features: ["basic_chat", "basic_skills", "history_7days", "dev_mode"],
+      // Dev mode: supportQrcode 和 purchaseUrl 由 enrichLicenseWithSupport 注入
+      // 如果本地 ~/.clawdbot/qrcodes/ 目录有图片，会自动显示
     },
     device: {
       deviceId: getDeviceId(),
