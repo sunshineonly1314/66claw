@@ -1,14 +1,14 @@
 /**
  * ClawdbotCN 国内镜像配置
- * 
+ *
  * 🇨🇳 仅使用中国国内镜像源，不依赖任何国外服务
  * 为中国用户提供高速下载，支持 900+ 技能的依赖安装
- * 
+ *
  * 每个镜像源都配置了主备多个地址，自动故障转移
- * 
- * @version 2026-02-02
- * @verified 2026-02-02 10:23 - 网络测试结果
- * 
+ *
+ * @version 2026-02-08
+ * @verified 2026-02-08 - GitHub 代理实测更新
+ *
  * 国内镜像提供商（按响应速度排序）：
  *   - 中科大 (mirrors.ustc.edu.cn) - ~66ms 🚀
  *   - 阿里云 (mirrors.aliyun.com) - ~80ms 🚀
@@ -18,10 +18,12 @@
  *   - 七牛云 (goproxy.cn) - ~195ms
  *   - 腾讯云 (mirrors.cloud.tencent.com) - ~307ms
  *   - 华为云 (repo.huaweicloud.com) - ⚠️ 部分服务 500 错误
- * 
- * GitHub 代理（国内）:
- *   - ghproxy.cn ✅ (最稳定，唯一可靠) - ~640ms
- *   - gh.ddlc.top ⚠️ (部分站点 404)
+ *
+ * GitHub 代理（国内 2026-02-08 实测）:
+ *   - gh-proxy.com ✅ (最快) - ~690ms
+ *   - ghfast.top ✅ (稳定) - ~1050ms
+ *   - ghproxy.cn ⚠️ (不稳定，首页 302，文件可能 404)
+ *   - gh.ddlc.top ❌ (404)
  *   - gh.con.sh ❌ (暂停服务)
  */
 
@@ -36,7 +38,7 @@
 export const PACKAGE_MANAGER_MIRRORS = {
   // Node.js / npm 生态
   npm: {
-    primary: "https://registry.npmmirror.com",       // 淘宝
+    primary: "https://registry.npmmirror.com", // 淘宝
     fallback: "https://mirrors.cloud.tencent.com/npm", // 腾讯云
     tertiary: "https://repo.huaweicloud.com/repository/npm", // 华为云
     description: "npm 包镜像（淘宝 → 腾讯云 → 华为云）",
@@ -56,9 +58,9 @@ export const PACKAGE_MANAGER_MIRRORS = {
 
   // Python 生态
   pip: {
-    primary: "https://pypi.tuna.tsinghua.edu.cn/simple",    // 清华
-    fallback: "https://mirrors.aliyun.com/pypi/simple",     // 阿里云
-    tertiary: "https://pypi.mirrors.ustc.edu.cn/simple",    // 中科大
+    primary: "https://pypi.tuna.tsinghua.edu.cn/simple", // 清华
+    fallback: "https://mirrors.aliyun.com/pypi/simple", // 阿里云
+    tertiary: "https://pypi.mirrors.ustc.edu.cn/simple", // 中科大
     description: "PyPI 镜像（清华 → 阿里云 → 中科大）",
   },
   conda: {
@@ -70,15 +72,15 @@ export const PACKAGE_MANAGER_MIRRORS = {
 
   // Go 生态
   go: {
-    primary: "https://goproxy.cn",                // 七牛云
+    primary: "https://goproxy.cn", // 七牛云
     fallback: "https://mirrors.aliyun.com/goproxy", // 阿里云
-    tertiary: "https://goproxy.io",               // goproxy.io
+    tertiary: "https://goproxy.io", // goproxy.io
     description: "Go 模块代理（七牛云 → 阿里云 → goproxy.io）",
   },
 
   // Rust 生态
   cargo: {
-    primary: "https://rsproxy.cn/crates.io-index",         // 字节跳动
+    primary: "https://rsproxy.cn/crates.io-index", // 字节跳动
     fallback: "https://mirrors.ustc.edu.cn/crates.io-index", // 中科大
     tertiary: "https://mirrors.tuna.tsinghua.edu.cn/crates.io-index", // 清华
     description: "Cargo 镜像（字节跳动 → 中科大 → 清华）",
@@ -86,9 +88,9 @@ export const PACKAGE_MANAGER_MIRRORS = {
 
   // Ruby 生态
   gem: {
-    primary: "https://gems.ruby-china.com",              // Ruby China
+    primary: "https://gems.ruby-china.com", // Ruby China
     fallback: "https://mirrors.tuna.tsinghua.edu.cn/rubygems", // 清华
-    tertiary: "https://mirrors.ustc.edu.cn/rubygems",    // 中科大
+    tertiary: "https://mirrors.ustc.edu.cn/rubygems", // 中科大
     description: "RubyGems 镜像（Ruby China → 清华 → 中科大）",
   },
 
@@ -112,13 +114,13 @@ export const PACKAGE_MANAGER_MIRRORS = {
  */
 export const BINARY_DOWNLOAD_MIRRORS = {
   // GitHub Release 代理 - 国内加速下载 GitHub 文件
-  // 2026-02-02 测试: ghproxy.cn ✅ gh.con.sh ⚠️(暂停) gh.ddlc.top ❌(404)
-  // 目前仅 ghproxy.cn 稳定可用
+  // 2026-02-08 实测: gh-proxy.com ✅(0.69s) ghfast.top ✅(1.05s) ghproxy.cn ⚠️(不稳定)
+  // gh.ddlc.top ❌(404) gh.con.sh ❌(暂停) ghproxy.net ❌(403 IP封禁)
   github: {
-    primary: "https://ghproxy.cn",       // ghproxy.cn 最稳定 ✅
-    fallback: "https://gh.ddlc.top",     // gh.ddlc.top 部分可用
-    tertiary: "https://gh.con.sh",       // gh.con.sh 可能暂停服务
-    description: "GitHub 代理（ghproxy.cn 为主）",
+    primary: "https://gh-proxy.com", // gh-proxy.com 最快 ✅ 0.69s
+    fallback: "https://ghfast.top", // ghfast.top 稳定 ✅ 1.05s
+    tertiary: "https://ghproxy.cn", // ghproxy.cn 兜底 ⚠️ 不稳定
+    description: "GitHub 代理（gh-proxy.com → ghfast.top → ghproxy.cn）",
   },
 
   // Node.js 二进制 - 淘宝镜像
@@ -126,15 +128,15 @@ export const BINARY_DOWNLOAD_MIRRORS = {
   node: {
     primary: "https://npmmirror.com/mirrors/node",
     fallback: "https://cdn.npmmirror.com/binaries/node",
-    tertiary: "https://registry.npmmirror.com/-/binary/node",  // 淘宝备用
+    tertiary: "https://registry.npmmirror.com/-/binary/node", // 淘宝备用
     description: "Node.js 二进制（淘宝镜像）",
   },
 
   // Go 二进制 - 国内下载
   goBinary: {
-    primary: "https://studygolang.com/dl/golang",     // Go语言中文网
-    fallback: "https://golang.google.cn/dl",          // Google 中国
-    tertiary: "https://mirrors.aliyun.com/golang",    // 阿里云
+    primary: "https://studygolang.com/dl/golang", // Go语言中文网
+    fallback: "https://golang.google.cn/dl", // Google 中国
+    tertiary: "https://mirrors.aliyun.com/golang", // 阿里云
     description: "Go 语言二进制（Go中文网 → Google中国 → 阿里云）",
   },
 
@@ -143,14 +145,14 @@ export const BINARY_DOWNLOAD_MIRRORS = {
   python: {
     primary: "https://npmmirror.com/mirrors/python",
     fallback: "https://cdn.npmmirror.com/binaries/python",
-    tertiary: "https://registry.npmmirror.com/-/binary/python",  // 淘宝备用
+    tertiary: "https://registry.npmmirror.com/-/binary/python", // 淘宝备用
     description: "Python 二进制（淘宝镜像）",
   },
 
   // Rust 二进制 - 字节/中科大/清华
   rust: {
-    primary: "https://rsproxy.cn",                         // 字节跳动
-    fallback: "https://mirrors.ustc.edu.cn/rust-static",   // 中科大
+    primary: "https://rsproxy.cn", // 字节跳动
+    fallback: "https://mirrors.ustc.edu.cn/rust-static", // 中科大
     tertiary: "https://mirrors.tuna.tsinghua.edu.cn/rustup", // 清华
     description: "Rust 工具链（字节跳动 → 中科大 → 清华）",
   },
@@ -158,30 +160,33 @@ export const BINARY_DOWNLOAD_MIRRORS = {
   // Java/JDK - 清华/中科大
   // 2026-02-02 测试: 清华 ✅ 中科大 ✅
   jdk: {
-    primary: "https://mirrors.tuna.tsinghua.edu.cn/Adoptium",  // 清华
-    fallback: "https://mirrors.ustc.edu.cn/adoptium",          // 中科大
-    tertiary: "https://mirrors.aliyun.com/adoptium",           // 阿里云
+    primary: "https://mirrors.tuna.tsinghua.edu.cn/Adoptium", // 清华
+    fallback: "https://mirrors.ustc.edu.cn/adoptium", // 中科大
+    tertiary: "https://mirrors.aliyun.com/adoptium", // 阿里云
     description: "JDK 下载（清华 → 中科大 → 阿里云）",
   },
 
   // uv (Python 包管理器) - 通过国内 GitHub 代理
-  // 2026-02-02 测试: 仅 ghproxy.cn 稳定可用
+  // 2026-02-08 更新: gh-proxy.com 替代 ghproxy.cn，ghfast.top 替代 gh.ddlc.top
   uv: {
-    installScript: "https://ghproxy.cn/https://astral.sh/uv/install.sh",
-    installScriptFallback: "https://ghproxy.cn/https://raw.githubusercontent.com/astral-sh/uv/main/scripts/install.sh",
-    installScriptTertiary: "https://gh.ddlc.top/https://astral.sh/uv/install.sh",
-    installPs1: "https://ghproxy.cn/https://astral.sh/uv/install.ps1",
-    installPs1Fallback: "https://ghproxy.cn/https://raw.githubusercontent.com/astral-sh/uv/main/scripts/install.ps1",
-    installPs1Tertiary: "https://gh.ddlc.top/https://astral.sh/uv/install.ps1",
-    description: "uv 安装脚本（通过 ghproxy.cn 代理）",
+    installScript: "https://gh-proxy.com/https://astral.sh/uv/install.sh",
+    installScriptFallback:
+      "https://gh-proxy.com/https://raw.githubusercontent.com/astral-sh/uv/main/scripts/install.sh",
+    installScriptTertiary: "https://ghfast.top/https://astral.sh/uv/install.sh",
+    installPs1: "https://gh-proxy.com/https://astral.sh/uv/install.ps1",
+    installPs1Fallback:
+      "https://gh-proxy.com/https://raw.githubusercontent.com/astral-sh/uv/main/scripts/install.ps1",
+    installPs1Tertiary: "https://ghfast.top/https://astral.sh/uv/install.ps1",
+    description: "uv 安装脚本（通过 gh-proxy.com 代理）",
   },
 
   // fnm (Node.js 版本管理器) - 通过国内 GitHub 代理
   fnm: {
-    installScript: "https://ghproxy.cn/https://fnm.vercel.app/install",
-    installScriptFallback: "https://ghproxy.cn/https://raw.githubusercontent.com/Schniz/fnm/master/.ci/install.sh",
-    installScriptTertiary: "https://gh.ddlc.top/https://fnm.vercel.app/install",
-    description: "fnm 安装脚本（通过 ghproxy.cn 代理）",
+    installScript: "https://gh-proxy.com/https://fnm.vercel.app/install",
+    installScriptFallback:
+      "https://gh-proxy.com/https://raw.githubusercontent.com/Schniz/fnm/master/.ci/install.sh",
+    installScriptTertiary: "https://ghfast.top/https://fnm.vercel.app/install",
+    description: "fnm 安装脚本（通过 gh-proxy.com 代理）",
   },
 
   // Signal CLI - ClawdSkillsProxy 托管
@@ -198,11 +203,22 @@ export const BINARY_DOWNLOAD_MIRRORS = {
   hkBinaries: {
     baseUrl: "http://43.129.194.117:8888",
     description: "香港二进制托管服务器（直连 GitHub 同步）",
-    // 支持的工具列表（10 个已验证可用）
-    // 暂不支持：gifgrep（无 Release）、memo（需调整配置）、songsee（无 Release）
+    // 支持的工具列表（12 个已验证/待验证）
+    // 暂不支持：gifgrep（无 Release）、memo（需调整配置）
+    // 新增 songsee/goplaces（2026-02-08，待 HK 服务器确认同步状态）
     tools: [
-      "ordercli", "peekaboo", "remindctl", "imsg",
-      "camsnap", "wacli", "sag", "gog", "spogo", "summarize",
+      "ordercli",
+      "peekaboo",
+      "remindctl",
+      "imsg",
+      "camsnap",
+      "wacli",
+      "sag",
+      "gog",
+      "spogo",
+      "summarize",
+      "songsee",
+      "goplaces",
     ],
   },
 } as const;
@@ -213,16 +229,58 @@ export const BINARY_DOWNLOAD_MIRRORS = {
  */
 export const CLAWDSKILLSPROXY_CONFIG = {
   baseUrl: "http://121.43.61.90",
-  token: "clawdbotCN778",  // 2026-02-02 更新：新 Token
+  token: "clawdbotCN778", // 2026-02-02 更新：新 Token
   endpoints: {
     skills: "/api/skills/index",
     signalCliLatest: "/api/binaries/signal-cli/latest",
-    signalCliDownload: "/api/binaries/signal-cli",  // + /{version}/{filename}
+    signalCliDownload: "/api/binaries/signal-cli", // + /{version}/{filename}
     signalCliVersions: "/api/binaries/signal-cli/versions",
-    capabilities: "/api/capabilities",              // + /{filename}
-    capabilitiesWsl: "/api/capabilities/wsl",       // + /{filename}
+    capabilities: "/api/capabilities", // + /{filename}
+    capabilitiesWsl: "/api/capabilities/wsl", // + /{filename}
+    sherpaOnnxBinaries: "/api/binaries/sherpa-onnx", // + /{platform}/{filename}
+    ffmpegBinaries: "/api/binaries/ffmpeg", // + /{platform}/{filename}
+    ghBinaries: "/api/binaries/gh", // + /{platform}/{filename}
+    himalayaBinaries: "/api/binaries/himalaya", // + /{platform}/{filename}
+    ytDlpBinaries: "/api/binaries/yt-dlp", // + /{platform}/{filename}
+    uvBinaries: "/api/binaries/uv", // + /{platform}/{filename}
+    rcloneBinaries: "/api/binaries/rclone", // + /{platform}/{filename}
   },
 } as const;
+
+/**
+ * 大体积包 GitHub URL → ClawdSkillsProxy 映射
+ * installDownloadSpec() 检测到匹配的 GitHub URL 时自动重定向
+ */
+export const LARGE_PACKAGE_PROXY_MAP: Record<string, { endpoint: string; description: string }> = {
+  "k2-fsa/sherpa-onnx": {
+    endpoint: CLAWDSKILLSPROXY_CONFIG.endpoints.sherpaOnnxBinaries,
+    description: "sherpa-onnx TTS 运行时和模型",
+  },
+  "BtbN/FFmpeg-Builds": {
+    endpoint: CLAWDSKILLSPROXY_CONFIG.endpoints.ffmpegBinaries,
+    description: "ffmpeg 预编译二进制",
+  },
+  "cli/cli": {
+    endpoint: CLAWDSKILLSPROXY_CONFIG.endpoints.ghBinaries,
+    description: "GitHub CLI",
+  },
+  "pimalaya/himalaya": {
+    endpoint: CLAWDSKILLSPROXY_CONFIG.endpoints.himalayaBinaries,
+    description: "himalaya 邮件客户端",
+  },
+  "yt-dlp/yt-dlp": {
+    endpoint: CLAWDSKILLSPROXY_CONFIG.endpoints.ytDlpBinaries,
+    description: "yt-dlp 视频下载",
+  },
+  "astral-sh/uv": {
+    endpoint: CLAWDSKILLSPROXY_CONFIG.endpoints.uvBinaries,
+    description: "uv Python 包管理器",
+  },
+  "rclone/rclone": {
+    endpoint: CLAWDSKILLSPROXY_CONFIG.endpoints.rcloneBinaries,
+    description: "rclone 云存储同步",
+  },
+};
 
 // ============================================================================
 // 常见 CLI 工具镜像配置
@@ -232,29 +290,32 @@ export const CLAWDSKILLSPROXY_CONFIG = {
  * 常见命令行工具的安装配置
  * 包含所有 900+ 技能可能需要的依赖
  */
-export const CLI_TOOL_MIRRORS: Record<string, {
-  name: string;
-  description: string;
-  installMethods: {
-    method: "npm" | "go" | "pip" | "uv" | "brew" | "cargo" | "download" | "winget" | "scoop";
-    package?: string;
-    module?: string;
-    formula?: string;
-    url?: string;
-    wingetId?: string;
-    scoopName?: string;
-  }[];
-  useCNMirror?: boolean;
-  // 香港服务器二进制托管支持
-  hkBinary?: {
-    repo: string;  // GitHub 仓库 (如 "steipete/peekaboo")
-    platforms: string[];  // 支持的平台
-  };
-}> = {
+export const CLI_TOOL_MIRRORS: Record<
+  string,
+  {
+    name: string;
+    description: string;
+    installMethods: {
+      method: "npm" | "go" | "pip" | "uv" | "brew" | "cargo" | "download" | "winget" | "scoop";
+      package?: string;
+      module?: string;
+      formula?: string;
+      url?: string;
+      wingetId?: string;
+      scoopName?: string;
+    }[];
+    useCNMirror?: boolean;
+    // 香港服务器二进制托管支持
+    hkBinary?: {
+      repo: string; // GitHub 仓库 (如 "steipete/peekaboo")
+      platforms: string[]; // 支持的平台
+    };
+  }
+> = {
   // ============================================
   // 效率工具类
   // ============================================
-  "op": {
+  op: {
     name: "1Password CLI",
     description: "密码管理器命令行",
     installMethods: [
@@ -263,55 +324,43 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "1password-cli" },
     ],
   },
-  "memo": {
+  memo: {
     name: "memo",
     description: "Apple Notes CLI",
-    installMethods: [
-      { method: "brew", formula: "peterrk/tap/memo" },
-    ],
+    installMethods: [{ method: "brew", formula: "peterrk/tap/memo" }],
     // hkBinary 暂不可用：需调整配置
   },
-  "remindctl": {
+  remindctl: {
     name: "remindctl",
     description: "Apple Reminders CLI",
-    installMethods: [
-      { method: "brew", formula: "keith/formulae/remindctl" },
-    ],
+    installMethods: [{ method: "brew", formula: "keith/formulae/remindctl" }],
     hkBinary: { repo: "steipete/remindctl", platforms: ["darwin-arm64", "darwin-amd64"] },
   },
-  "grizzly": {
+  grizzly: {
     name: "grizzly",
     description: "Bear Notes CLI",
-    installMethods: [
-      { method: "go", module: "github.com/alantech/grizzly@latest" },
-    ],
+    installMethods: [{ method: "go", module: "github.com/alantech/grizzly@latest" }],
     useCNMirror: true,
   },
-  "notion": {
+  notion: {
     name: "notion-cli",
     description: "Notion CLI",
-    installMethods: [
-      { method: "npm", package: "notion-cli" },
-    ],
+    installMethods: [{ method: "npm", package: "notion-cli" }],
     useCNMirror: true,
   },
   "obsidian-cli": {
     name: "obsidian-cli",
     description: "Obsidian CLI",
-    installMethods: [
-      { method: "npm", package: "@obsidianmd/obsidian-cli" },
-    ],
+    installMethods: [{ method: "npm", package: "@obsidianmd/obsidian-cli" }],
     useCNMirror: true,
   },
-  "trello": {
+  trello: {
     name: "trello-cli",
     description: "Trello CLI",
-    installMethods: [
-      { method: "npm", package: "trello-cli" },
-    ],
+    installMethods: [{ method: "npm", package: "trello-cli" }],
     useCNMirror: true,
   },
-  "himalaya": {
+  himalaya: {
     name: "himalaya",
     description: "邮件客户端 CLI",
     installMethods: [
@@ -320,19 +369,17 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "things": {
+  things: {
     name: "things-cli",
     description: "Things 3 CLI",
-    installMethods: [
-      { method: "npm", package: "things-cli" },
-    ],
+    installMethods: [{ method: "npm", package: "things-cli" }],
     useCNMirror: true,
   },
 
   // ============================================
   // 开发工具类
   // ============================================
-  "gh": {
+  gh: {
     name: "GitHub CLI",
     description: "GitHub 命令行工具",
     installMethods: [
@@ -341,7 +388,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "gh" },
     ],
   },
-  "git": {
+  git: {
     name: "Git",
     description: "版本控制系统",
     installMethods: [
@@ -350,14 +397,12 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "git" },
     ],
   },
-  "tmux": {
+  tmux: {
     name: "tmux",
     description: "终端复用器",
-    installMethods: [
-      { method: "brew", formula: "tmux" },
-    ],
+    installMethods: [{ method: "brew", formula: "tmux" }],
   },
-  "jq": {
+  jq: {
     name: "jq",
     description: "JSON 处理工具",
     installMethods: [
@@ -366,7 +411,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "jq" },
     ],
   },
-  "yq": {
+  yq: {
     name: "yq",
     description: "YAML 处理工具",
     installMethods: [
@@ -375,7 +420,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "fzf": {
+  fzf: {
     name: "fzf",
     description: "模糊搜索工具",
     installMethods: [
@@ -384,7 +429,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "fzf" },
     ],
   },
-  "ripgrep": {
+  ripgrep: {
     name: "ripgrep",
     description: "快速搜索工具",
     installMethods: [
@@ -395,7 +440,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "fd": {
+  fd: {
     name: "fd",
     description: "快速文件查找",
     installMethods: [
@@ -406,7 +451,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "bat": {
+  bat: {
     name: "bat",
     description: "cat 替代工具",
     installMethods: [
@@ -417,7 +462,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "exa": {
+  exa: {
     name: "exa",
     description: "ls 替代工具",
     installMethods: [
@@ -426,7 +471,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "eza": {
+  eza: {
     name: "eza",
     description: "现代 ls 替代",
     installMethods: [
@@ -439,7 +484,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 媒体工具类
   // ============================================
-  "ffmpeg": {
+  ffmpeg: {
     name: "FFmpeg",
     description: "音视频处理工具",
     installMethods: [
@@ -448,7 +493,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "ffmpeg" },
     ],
   },
-  "imagemagick": {
+  imagemagick: {
     name: "ImageMagick",
     description: "图片处理工具",
     installMethods: [
@@ -468,7 +513,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "whisper": {
+  whisper: {
     name: "whisper",
     description: "OpenAI 语音转文字",
     installMethods: [
@@ -481,95 +526,84 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 社交通讯类
   // ============================================
-  "bird": {
+  bird: {
     name: "bird",
     description: "Twitter/X CLI",
-    installMethods: [
-      { method: "npm", package: "@stei/bird" },
-    ],
+    installMethods: [{ method: "npm", package: "@stei/bird" }],
     useCNMirror: true,
   },
   "slack-cli": {
     name: "slack-cli",
     description: "Slack CLI",
-    installMethods: [
-      { method: "brew", formula: "slack-cli" },
-    ],
+    installMethods: [{ method: "brew", formula: "slack-cli" }],
   },
   "telegram-cli": {
     name: "telegram-cli",
     description: "Telegram CLI",
-    installMethods: [
-      { method: "brew", formula: "telegram-cli" },
-    ],
+    installMethods: [{ method: "brew", formula: "telegram-cli" }],
   },
 
   // ============================================
   // 智能家居类
   // ============================================
-  "openhue": {
+  openhue: {
     name: "openhue",
     description: "Philips Hue CLI",
-    installMethods: [
-      { method: "go", module: "github.com/openhue/openhue-cli@latest" },
-    ],
+    installMethods: [{ method: "go", module: "github.com/openhue/openhue-cli@latest" }],
     useCNMirror: true,
   },
-  "sonos": {
+  sonos: {
     name: "sonos",
     description: "Sonos CLI",
-    installMethods: [
-      { method: "npm", package: "sonos-cli" },
-    ],
+    installMethods: [{ method: "npm", package: "sonos-cli" }],
     useCNMirror: true,
   },
 
   // ============================================
   // 生活助手类
   // ============================================
-  "wttr": {
+  wttr: {
     name: "wttr.in",
     description: "天气查询 (curl)",
     installMethods: [],
   },
-  "goplaces": {
+  goplaces: {
     name: "goplaces",
     description: "地点搜索 CLI",
     installMethods: [
+      { method: "brew", formula: "steipete/tap/goplaces" },
       { method: "go", module: "github.com/go-places/goplaces@latest" },
     ],
     useCNMirror: true,
+    hkBinary: {
+      repo: "steipete/goplaces",
+      platforms: ["darwin-arm64", "darwin-amd64", "windows-amd64", "linux-amd64"],
+    },
   },
 
   // ============================================
   // 数据分析类
   // ============================================
-  "blogwatcher": {
+  blogwatcher: {
     name: "blogwatcher",
     description: "博客/RSS 监控",
-    installMethods: [
-      { method: "go", module: "github.com/blogwatcher/blogwatcher@latest" },
-    ],
+    installMethods: [{ method: "go", module: "github.com/blogwatcher/blogwatcher@latest" }],
     useCNMirror: true,
   },
 
   // ============================================
   // 系统工具类
   // ============================================
-  "eightctl": {
+  eightctl: {
     name: "eightctl",
     description: "Eight Sleep 控制",
-    installMethods: [
-      { method: "go", module: "github.com/eightctl/eightctl@latest" },
-    ],
+    installMethods: [{ method: "go", module: "github.com/eightctl/eightctl@latest" }],
     useCNMirror: true,
   },
-  "blu": {
+  blu: {
     name: "blu",
     description: "BluOS CLI",
-    installMethods: [
-      { method: "npm", package: "@blucli/blu" },
-    ],
+    installMethods: [{ method: "npm", package: "@blucli/blu" }],
     useCNMirror: true,
   },
   // clawdhub 已移除 - 技能市场统一使用 ClawdSkillsProxy 国内服务
@@ -578,7 +612,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 音乐类
   // ============================================
-  "spotify_player": {
+  spotify_player: {
     name: "spotify_player",
     description: "Spotify 终端播放器",
     installMethods: [
@@ -591,36 +625,110 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // AI/代码助手类
   // ============================================
-  "codex": {
+  codex: {
     name: "codex",
     description: "Codex CLI",
-    installMethods: [
-      { method: "npm", package: "@openai/codex" },
-    ],
+    installMethods: [{ method: "npm", package: "@openai/codex" }],
     useCNMirror: true,
   },
-  "claude": {
+  claude: {
     name: "claude",
     description: "Claude CLI",
+    installMethods: [{ method: "npm", package: "@anthropic-ai/claude-cli" }],
+    useCNMirror: true,
+  },
+
+  // ============================================
+  // HK 二进制服务器托管工具
+  // 以下工具的二进制文件由香港服务器 (43.129.194.117) 同步托管
+  // 国内用户直连香港，速度优于 GitHub proxy
+  // ============================================
+  camsnap: {
+    name: "camsnap",
+    description: "摄像头截图 CLI",
+    installMethods: [{ method: "brew", formula: "steipete/tap/camsnap" }],
+    hkBinary: {
+      repo: "steipete/camsnap",
+      platforms: ["darwin-arm64", "darwin-amd64", "windows-amd64", "linux-amd64"],
+    },
+  },
+  sag: {
+    name: "sag",
+    description: "Swift AI 生成器",
+    installMethods: [{ method: "brew", formula: "steipete/tap/sag" }],
+    hkBinary: {
+      repo: "steipete/sag",
+      platforms: ["darwin-arm64", "darwin-amd64", "windows-amd64", "linux-amd64"],
+    },
+  },
+  gog: {
+    name: "gog",
+    description: "Google 搜索 CLI",
+    installMethods: [{ method: "brew", formula: "steipete/tap/gogcli" }],
+    hkBinary: {
+      repo: "steipete/gogcli",
+      platforms: ["darwin-arm64", "darwin-amd64", "windows-amd64", "linux-amd64"],
+    },
+  },
+  summarize: {
+    name: "summarize",
+    description: "文本/URL 摘要 CLI",
+    installMethods: [{ method: "brew", formula: "steipete/tap/summarize" }],
+    hkBinary: { repo: "steipete/summarize", platforms: ["darwin-arm64", "darwin-amd64"] },
+  },
+  songsee: {
+    name: "songsee",
+    description: "音乐识别 CLI (Shazam)",
+    installMethods: [{ method: "brew", formula: "steipete/tap/songsee" }],
+    hkBinary: { repo: "steipete/songsee", platforms: ["darwin-arm64", "darwin-amd64"] },
+  },
+  spogo: {
+    name: "spogo",
+    description: "Spotify 播放控制 CLI",
+    installMethods: [{ method: "brew", formula: "steipete/tap/spogo" }],
+    hkBinary: {
+      repo: "steipete/spogo",
+      platforms: ["darwin-arm64", "darwin-amd64", "windows-amd64"],
+    },
+  },
+  ordercli: {
+    name: "ordercli",
+    description: "订单管理 CLI",
     installMethods: [
-      { method: "npm", package: "@anthropic-ai/claude-cli" },
+      { method: "brew", formula: "steipete/tap/ordercli" },
+      { method: "go", module: "github.com/steipete/ordercli/cmd/ordercli@latest" },
     ],
     useCNMirror: true,
+    hkBinary: { repo: "steipete/ordercli", platforms: ["darwin-arm64", "darwin-amd64"] },
+  },
+  wacli: {
+    name: "wacli",
+    description: "WhatsApp CLI",
+    installMethods: [
+      { method: "brew", formula: "steipete/tap/wacli" },
+      { method: "go", module: "github.com/steipete/wacli/cmd/wacli@latest" },
+    ],
+    useCNMirror: true,
+    hkBinary: { repo: "steipete/wacli", platforms: ["darwin-arm64", "darwin-amd64"] },
+  },
+  imsg: {
+    name: "imsg",
+    description: "iMessage CLI (macOS)",
+    installMethods: [{ method: "brew", formula: "steipete/tap/imsg" }],
+    hkBinary: { repo: "steipete/imsg", platforms: ["darwin-arm64", "darwin-amd64"] },
   },
 
   // ============================================
   // 截图/屏幕类
   // ============================================
-  "peekaboo": {
+  peekaboo: {
     name: "peekaboo",
     description: "macOS 屏幕截图 CLI",
-    installMethods: [
-      { method: "brew", formula: "peekaboo" },
-    ],
+    installMethods: [{ method: "brew", formula: "peekaboo" }],
     // 香港服务器托管支持
     hkBinary: { repo: "steipete/peekaboo", platforms: ["darwin-arm64", "darwin-amd64"] },
   },
-  "screencapture": {
+  screencapture: {
     name: "screencapture",
     description: "macOS 内置截图 (无需安装)",
     installMethods: [],
@@ -629,7 +737,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // Python 开发工具
   // ============================================
-  "python": {
+  python: {
     name: "Python",
     description: "Python 解释器",
     installMethods: [
@@ -638,12 +746,12 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "python" },
     ],
   },
-  "pip": {
+  pip: {
     name: "pip",
     description: "Python 包管理器",
     installMethods: [],
   },
-  "uv": {
+  uv: {
     name: "uv",
     description: "快速 Python 包管理器",
     installMethods: [
@@ -653,7 +761,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "pipx": {
+  pipx: {
     name: "pipx",
     description: "Python 应用隔离安装",
     installMethods: [
@@ -666,7 +774,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // Node.js 开发工具
   // ============================================
-  "node": {
+  node: {
     name: "Node.js",
     description: "JavaScript 运行时",
     installMethods: [
@@ -675,12 +783,12 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "nodejs-lts" },
     ],
   },
-  "npm": {
+  npm: {
     name: "npm",
     description: "Node.js 包管理器",
     installMethods: [],
   },
-  "pnpm": {
+  pnpm: {
     name: "pnpm",
     description: "高效 Node.js 包管理器",
     installMethods: [
@@ -690,7 +798,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "yarn": {
+  yarn: {
     name: "yarn",
     description: "Yarn 包管理器",
     installMethods: [
@@ -699,7 +807,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "bun": {
+  bun: {
     name: "bun",
     description: "快速 JavaScript 运行时",
     installMethods: [
@@ -712,7 +820,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // Go 开发工具
   // ============================================
-  "go": {
+  go: {
     name: "Go",
     description: "Go 语言编译器",
     installMethods: [
@@ -725,15 +833,13 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // Rust 开发工具
   // ============================================
-  "rustup": {
+  rustup: {
     name: "rustup",
     description: "Rust 工具链管理器",
-    installMethods: [
-      { method: "brew", formula: "rustup-init" },
-    ],
+    installMethods: [{ method: "brew", formula: "rustup-init" }],
     useCNMirror: true,
   },
-  "cargo": {
+  cargo: {
     name: "cargo",
     description: "Rust 包管理器",
     installMethods: [],
@@ -742,7 +848,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 网络工具类
   // ============================================
-  "curl": {
+  curl: {
     name: "curl",
     description: "HTTP 客户端 (通常已预装)",
     installMethods: [
@@ -750,7 +856,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "winget", wingetId: "cURL.cURL" },
     ],
   },
-  "wget": {
+  wget: {
     name: "wget",
     description: "文件下载工具",
     installMethods: [
@@ -759,7 +865,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "wget" },
     ],
   },
-  "httpie": {
+  httpie: {
     name: "httpie",
     description: "友好的 HTTP 客户端",
     installMethods: [
@@ -772,14 +878,12 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 压缩工具类
   // ============================================
-  "unzip": {
+  unzip: {
     name: "unzip",
     description: "ZIP 解压工具",
-    installMethods: [
-      { method: "brew", formula: "unzip" },
-    ],
+    installMethods: [{ method: "brew", formula: "unzip" }],
   },
-  "tar": {
+  tar: {
     name: "tar",
     description: "归档工具 (通常已预装)",
     installMethods: [],
@@ -797,7 +901,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 数据库工具类
   // ============================================
-  "sqlite3": {
+  sqlite3: {
     name: "SQLite",
     description: "SQLite 数据库",
     installMethods: [
@@ -805,32 +909,26 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "winget", wingetId: "SQLite.SQLite" },
     ],
   },
-  "mysql": {
+  mysql: {
     name: "MySQL",
     description: "MySQL 客户端",
-    installMethods: [
-      { method: "brew", formula: "mysql-client" },
-    ],
+    installMethods: [{ method: "brew", formula: "mysql-client" }],
   },
-  "psql": {
+  psql: {
     name: "PostgreSQL",
     description: "PostgreSQL 客户端",
-    installMethods: [
-      { method: "brew", formula: "libpq" },
-    ],
+    installMethods: [{ method: "brew", formula: "libpq" }],
   },
   "redis-cli": {
     name: "Redis CLI",
     description: "Redis 客户端",
-    installMethods: [
-      { method: "brew", formula: "redis" },
-    ],
+    installMethods: [{ method: "brew", formula: "redis" }],
   },
 
   // ============================================
   // 容器工具类
   // ============================================
-  "docker": {
+  docker: {
     name: "Docker",
     description: "容器运行时",
     installMethods: [
@@ -838,7 +936,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "winget", wingetId: "Docker.DockerDesktop" },
     ],
   },
-  "kubectl": {
+  kubectl: {
     name: "kubectl",
     description: "Kubernetes CLI",
     installMethods: [
@@ -847,7 +945,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "kubectl" },
     ],
   },
-  "helm": {
+  helm: {
     name: "Helm",
     description: "Kubernetes 包管理器",
     installMethods: [
@@ -860,7 +958,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 云服务 CLI
   // ============================================
-  "aws": {
+  aws: {
     name: "AWS CLI",
     description: "Amazon Web Services CLI",
     installMethods: [
@@ -870,14 +968,12 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "gcloud": {
+  gcloud: {
     name: "Google Cloud SDK",
     description: "Google Cloud CLI",
-    installMethods: [
-      { method: "brew", formula: "google-cloud-sdk" },
-    ],
+    installMethods: [{ method: "brew", formula: "google-cloud-sdk" }],
   },
-  "az": {
+  az: {
     name: "Azure CLI",
     description: "Microsoft Azure CLI",
     installMethods: [
@@ -891,7 +987,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // PDF/文档处理类
   // ============================================
-  "pandoc": {
+  pandoc: {
     name: "Pandoc",
     description: "文档格式转换",
     installMethods: [
@@ -900,25 +996,21 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "pandoc" },
     ],
   },
-  "pdftotext": {
+  pdftotext: {
     name: "poppler",
     description: "PDF 文本提取",
-    installMethods: [
-      { method: "brew", formula: "poppler" },
-    ],
+    installMethods: [{ method: "brew", formula: "poppler" }],
   },
-  "wkhtmltopdf": {
+  wkhtmltopdf: {
     name: "wkhtmltopdf",
     description: "HTML 转 PDF",
-    installMethods: [
-      { method: "brew", formula: "wkhtmltopdf" },
-    ],
+    installMethods: [{ method: "brew", formula: "wkhtmltopdf" }],
   },
 
   // ============================================
   // 编辑器/IDE
   // ============================================
-  "code": {
+  code: {
     name: "VS Code",
     description: "Visual Studio Code CLI",
     installMethods: [
@@ -927,14 +1019,12 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "scoop", scoopName: "vscode" },
     ],
   },
-  "vim": {
+  vim: {
     name: "Vim",
     description: "文本编辑器",
-    installMethods: [
-      { method: "brew", formula: "vim" },
-    ],
+    installMethods: [{ method: "brew", formula: "vim" }],
   },
-  "nvim": {
+  nvim: {
     name: "Neovim",
     description: "现代 Vim",
     installMethods: [
@@ -947,7 +1037,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 浏览器自动化
   // ============================================
-  "playwright": {
+  playwright: {
     name: "Playwright",
     description: "浏览器自动化",
     installMethods: [
@@ -956,35 +1046,29 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "puppeteer": {
+  puppeteer: {
     name: "Puppeteer",
     description: "Chrome 自动化",
-    installMethods: [
-      { method: "npm", package: "puppeteer" },
-    ],
+    installMethods: [{ method: "npm", package: "puppeteer" }],
     useCNMirror: true,
   },
-  "selenium": {
+  selenium: {
     name: "Selenium",
     description: "浏览器自动化",
-    installMethods: [
-      { method: "pip", package: "selenium" },
-    ],
+    installMethods: [{ method: "pip", package: "selenium" }],
     useCNMirror: true,
   },
 
   // ============================================
   // 测试工具
   // ============================================
-  "jest": {
+  jest: {
     name: "Jest",
     description: "JavaScript 测试框架",
-    installMethods: [
-      { method: "npm", package: "jest" },
-    ],
+    installMethods: [{ method: "npm", package: "jest" }],
     useCNMirror: true,
   },
-  "pytest": {
+  pytest: {
     name: "pytest",
     description: "Python 测试框架",
     installMethods: [
@@ -997,23 +1081,19 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 代码质量工具
   // ============================================
-  "eslint": {
+  eslint: {
     name: "ESLint",
     description: "JavaScript Linter",
-    installMethods: [
-      { method: "npm", package: "eslint" },
-    ],
+    installMethods: [{ method: "npm", package: "eslint" }],
     useCNMirror: true,
   },
-  "prettier": {
+  prettier: {
     name: "Prettier",
     description: "代码格式化",
-    installMethods: [
-      { method: "npm", package: "prettier" },
-    ],
+    installMethods: [{ method: "npm", package: "prettier" }],
     useCNMirror: true,
   },
-  "black": {
+  black: {
     name: "Black",
     description: "Python 代码格式化",
     installMethods: [
@@ -1022,7 +1102,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "ruff": {
+  ruff: {
     name: "Ruff",
     description: "快速 Python Linter",
     installMethods: [
@@ -1036,7 +1116,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
   // ============================================
   // 其他实用工具
   // ============================================
-  "tree": {
+  tree: {
     name: "tree",
     description: "目录树显示",
     installMethods: [
@@ -1044,21 +1124,17 @@ export const CLI_TOOL_MIRRORS: Record<string, {
       { method: "winget", wingetId: "GNU.Tree" },
     ],
   },
-  "htop": {
+  htop: {
     name: "htop",
     description: "进程监控",
-    installMethods: [
-      { method: "brew", formula: "htop" },
-    ],
+    installMethods: [{ method: "brew", formula: "htop" }],
   },
-  "ncdu": {
+  ncdu: {
     name: "ncdu",
     description: "磁盘使用分析",
-    installMethods: [
-      { method: "brew", formula: "ncdu" },
-    ],
+    installMethods: [{ method: "brew", formula: "ncdu" }],
   },
-  "tldr": {
+  tldr: {
     name: "tldr",
     description: "简化的 man 手册",
     installMethods: [
@@ -1068,7 +1144,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "tokei": {
+  tokei: {
     name: "tokei",
     description: "代码统计工具",
     installMethods: [
@@ -1077,7 +1153,7 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "hyperfine": {
+  hyperfine: {
     name: "hyperfine",
     description: "命令行基准测试",
     installMethods: [
@@ -1086,13 +1162,172 @@ export const CLI_TOOL_MIRRORS: Record<string, {
     ],
     useCNMirror: true,
   },
-  "asciinema": {
+  asciinema: {
     name: "asciinema",
     description: "终端录制",
     installMethods: [
       { method: "brew", formula: "asciinema" },
       { method: "pip", package: "asciinema" },
     ],
+    useCNMirror: true,
+  },
+
+  // ============================================
+  // 补缺工具 — Tier A (3000+ Skills 依赖覆盖)
+  // 这些工具在 SKILL.md 中有 install 指令但未注册镜像
+  // ============================================
+
+  // --- 云服务 CLI ---
+  hcloud: {
+    name: "Hetzner Cloud CLI",
+    description: "Hetzner 云管理 CLI",
+    installMethods: [
+      { method: "brew", formula: "hcloud" },
+      { method: "go", module: "github.com/hetznercloud/cli/cmd/hcloud@latest" },
+    ],
+    useCNMirror: true,
+  },
+  sf: {
+    name: "Salesforce CLI",
+    description: "Salesforce 开发平台 CLI",
+    installMethods: [{ method: "npm", package: "@salesforce/cli" }],
+    useCNMirror: true,
+  },
+
+  // --- 容器/部署 ---
+  nomad: {
+    name: "HashiCorp Nomad",
+    description: "HashiCorp 任务调度器",
+    installMethods: [{ method: "brew", formula: "nomad" }],
+  },
+  dokku: {
+    name: "Dokku",
+    description: "PaaS 自托管部署平台",
+    installMethods: [{ method: "brew", formula: "dokku/repo/dokku" }],
+  },
+
+  // --- 安全/密码管理 ---
+  trufflehog: {
+    name: "TruffleHog",
+    description: "敏感信息泄露扫描",
+    installMethods: [
+      { method: "brew", formula: "trufflehog" },
+      { method: "go", module: "github.com/trufflesecurity/trufflehog/v3@latest" },
+    ],
+    useCNMirror: true,
+  },
+  rbw: {
+    name: "rbw",
+    description: "Bitwarden CLI (Rust 实现)",
+    installMethods: [
+      { method: "cargo", package: "rbw" },
+      { method: "brew", formula: "rbw" },
+    ],
+    useCNMirror: true,
+  },
+  dcli: {
+    name: "Dashlane CLI",
+    description: "Dashlane 密码管理器 CLI",
+    installMethods: [{ method: "brew", formula: "dashlane/tap/dcli" }],
+  },
+
+  // --- 效率工具 ---
+  calcurse: {
+    name: "calcurse",
+    description: "终端日历与待办",
+    installMethods: [{ method: "brew", formula: "calcurse" }],
+  },
+  pet: {
+    name: "pet",
+    description: "CLI 代码片段管理器",
+    installMethods: [
+      { method: "brew", formula: "knqyf263/pet/pet" },
+      { method: "go", module: "github.com/knqyf263/pet@latest" },
+    ],
+    useCNMirror: true,
+  },
+  confluence: {
+    name: "Confluence CLI",
+    description: "Atlassian Confluence CLI",
+    installMethods: [{ method: "npm", package: "confluence-cli" }],
+    useCNMirror: true,
+  },
+
+  // --- 网络/浏览器 ---
+  browsh: {
+    name: "browsh",
+    description: "终端文本浏览器",
+    installMethods: [
+      { method: "brew", formula: "browsh-org/homebrew-browsh/browsh" },
+      { method: "go", module: "github.com/browsh-org/browsh/cmd/browsh@latest" },
+    ],
+    useCNMirror: true,
+  },
+
+  // --- 社交/API ---
+  twurl: {
+    name: "twurl",
+    description: "Twitter API curl 工具",
+    installMethods: [{ method: "brew", formula: "twurl" }],
+  },
+
+  // --- 智能家居 ---
+  "hass-cli": {
+    name: "Home Assistant CLI",
+    description: "Home Assistant 命令行工具",
+    installMethods: [
+      { method: "pip", package: "homeassistant-cli" },
+      { method: "uv", package: "homeassistant-cli" },
+    ],
+    useCNMirror: true,
+  },
+
+  // --- AI/语音 ---
+  elevenlabs: {
+    name: "ElevenLabs",
+    description: "ElevenLabs 语音合成 CLI",
+    installMethods: [
+      { method: "pip", package: "elevenlabs" },
+      { method: "uv", package: "elevenlabs" },
+    ],
+    useCNMirror: true,
+  },
+
+  // --- 区块链 ---
+  solana: {
+    name: "Solana CLI",
+    description: "Solana 区块链开发 CLI",
+    installMethods: [{ method: "brew", formula: "solana" }],
+  },
+
+  // --- CMS/博客 ---
+  wp: {
+    name: "WP-CLI",
+    description: "WordPress 命令行工具",
+    installMethods: [{ method: "brew", formula: "wp-cli" }],
+  },
+
+  // --- 财务 ---
+  ynab: {
+    name: "YNAB CLI",
+    description: "YNAB 预算管理 CLI",
+    installMethods: [{ method: "npm", package: "ynab" }],
+    useCNMirror: true,
+  },
+
+  // --- 交通出行 ---
+  trein: {
+    name: "trein",
+    description: "荷兰铁路 (NS) 时刻表 CLI",
+    installMethods: [{ method: "npm", package: "trein" }],
+    useCNMirror: true,
+  },
+
+  // --- 通知推送 ---
+  "arbiter-push": {
+    name: "Arbiter",
+    description: "多平台推送通知 CLI",
+    installMethods: [{ method: "npm", package: "arbiter-skill" }],
     useCNMirror: true,
   },
 };
@@ -1108,29 +1343,29 @@ export function shouldUseCNMirror(): boolean {
   // 优先检查环境变量
   if (process.env.CLAWDBOT_USE_CN_MIRROR === "1") return true;
   if (process.env.CLAWDBOT_USE_CN_MIRROR === "0") return false;
-  
+
   // 检查区域配置
   if (process.env.CLAWDBOT_REGION === "cn") return true;
-  
+
   // 检查时区（粗略判断）
   const tz = process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-  
+
   // IANA 时区格式（Linux/macOS）
   if (tz.includes("Shanghai") || tz.includes("Beijing") || tz.includes("Asia/Chongqing")) {
     return true;
   }
-  
+
   // Windows Node.js 可能返回 Etc/GMT-8 或 GMT+8
   // 注意：Etc/GMT-8 实际表示 UTC+8（POSIX 标准的符号相反）
   if (tz === "Etc/GMT-8" || tz === "GMT+8" || tz === "UTC+8") {
     return true;
   }
-  
+
   // Windows 系统时区格式
   if (tz.includes("China Standard Time") || tz.includes("China Time")) {
     return true;
   }
-  
+
   return false;
 }
 
@@ -1138,35 +1373,35 @@ export function shouldUseCNMirror(): boolean {
  * 获取 npm 镜像 URL（仅国内源）
  */
 export function getNpmMirrorUrl(): string {
-  return PACKAGE_MANAGER_MIRRORS.npm.primary;  // 淘宝镜像
+  return PACKAGE_MANAGER_MIRRORS.npm.primary; // 淘宝镜像
 }
 
 /**
  * 获取 pip 镜像 URL（仅国内源）
  */
 export function getPipMirrorUrl(): string {
-  return PACKAGE_MANAGER_MIRRORS.pip.primary;  // 清华镜像
+  return PACKAGE_MANAGER_MIRRORS.pip.primary; // 清华镜像
 }
 
 /**
  * 获取 Go 代理配置（仅国内源）
  */
 export function getGoProxy(): string {
-  return PACKAGE_MANAGER_MIRRORS.go.primary;  // 七牛云
+  return PACKAGE_MANAGER_MIRRORS.go.primary; // 七牛云
 }
 
 /**
  * 获取 Node.js 二进制下载 URL（仅国内源）
  */
 export function getNodeBinaryMirror(): string {
-  return BINARY_DOWNLOAD_MIRRORS.node.primary;  // 淘宝镜像
+  return BINARY_DOWNLOAD_MIRRORS.node.primary; // 淘宝镜像
 }
 
 /**
  * 获取 Go 二进制下载 URL（仅国内源）
  */
 export function getGoBinaryMirror(): string {
-  return BINARY_DOWNLOAD_MIRRORS.goBinary.primary;  // Go语言中文网
+  return BINARY_DOWNLOAD_MIRRORS.goBinary.primary; // Go语言中文网
 }
 
 /**
@@ -1195,7 +1430,7 @@ export function getNodeBinaryMirrors(): string[] {
 
 /**
  * 获取 GitHub 代理 URL 列表（仅国内源）
- * ghproxy.cn → gh.con.sh → gh.ddlc.top
+ * gh-proxy.com → ghfast.top → ghproxy.cn
  */
 export function getGitHubProxies(): string[] {
   return [
@@ -1231,9 +1466,9 @@ export function getUvInstallScripts(platform: "sh" | "ps1"): string[] {
  */
 export function getPipMirrors(): string[] {
   return [
-    PACKAGE_MANAGER_MIRRORS.pip.primary,   // 清华
-    PACKAGE_MANAGER_MIRRORS.pip.fallback,  // 阿里云
-    PACKAGE_MANAGER_MIRRORS.pip.tertiary,  // 中科大
+    PACKAGE_MANAGER_MIRRORS.pip.primary, // 清华
+    PACKAGE_MANAGER_MIRRORS.pip.fallback, // 阿里云
+    PACKAGE_MANAGER_MIRRORS.pip.tertiary, // 中科大
   ].filter(Boolean);
 }
 
@@ -1243,9 +1478,9 @@ export function getPipMirrors(): string[] {
  */
 export function getNpmMirrors(): string[] {
   return [
-    PACKAGE_MANAGER_MIRRORS.npm.primary,   // 淘宝
-    PACKAGE_MANAGER_MIRRORS.npm.fallback,  // 腾讯云
-    PACKAGE_MANAGER_MIRRORS.npm.tertiary,  // 华为云
+    PACKAGE_MANAGER_MIRRORS.npm.primary, // 淘宝
+    PACKAGE_MANAGER_MIRRORS.npm.fallback, // 腾讯云
+    PACKAGE_MANAGER_MIRRORS.npm.tertiary, // 华为云
   ].filter(Boolean);
 }
 
@@ -1257,7 +1492,7 @@ export function getGitHubProxy(originalUrl: string): string {
   if (originalUrl.includes("github.com") || originalUrl.includes("raw.githubusercontent.com")) {
     return `${BINARY_DOWNLOAD_MIRRORS.github.primary}/${originalUrl}`;
   }
-  
+
   return originalUrl;
 }
 
@@ -1268,7 +1503,7 @@ export function getGitHubProxyUrls(originalUrl: string): string[] {
   if (!originalUrl.includes("github.com") && !originalUrl.includes("raw.githubusercontent.com")) {
     return [originalUrl];
   }
-  
+
   return [
     `${BINARY_DOWNLOAD_MIRRORS.github.primary}/${originalUrl}`,
     `${BINARY_DOWNLOAD_MIRRORS.github.fallback}/${originalUrl}`,
@@ -1296,7 +1531,15 @@ export function getToolInstallCommand(
     if (platform === "win32") {
       if (method.method === "winget" && method.wingetId) {
         return {
-          command: ["winget", "install", "--id", method.wingetId, "-e", "--silent", "--accept-package-agreements"],
+          command: [
+            "winget",
+            "install",
+            "--id",
+            method.wingetId,
+            "-e",
+            "--silent",
+            "--accept-package-agreements",
+          ],
         };
       }
       if (method.method === "scoop" && method.scoopName) {
@@ -1307,7 +1550,14 @@ export function getToolInstallCommand(
       if (method.method === "npm" && method.package) {
         return {
           command: useCN
-            ? ["npm", "install", "-g", method.package, "--registry", PACKAGE_MANAGER_MIRRORS.npm.primary]
+            ? [
+                "npm",
+                "install",
+                "-g",
+                method.package,
+                "--registry",
+                PACKAGE_MANAGER_MIRRORS.npm.primary,
+              ]
             : ["npm", "install", "-g", method.package],
         };
       }
@@ -1333,7 +1583,14 @@ export function getToolInstallCommand(
     if (method.method === "npm" && method.package) {
       return {
         command: useCN
-          ? ["npm", "install", "-g", method.package, "--registry", PACKAGE_MANAGER_MIRRORS.npm.primary]
+          ? [
+              "npm",
+              "install",
+              "-g",
+              method.package,
+              "--registry",
+              PACKAGE_MANAGER_MIRRORS.npm.primary,
+            ]
           : ["npm", "install", "-g", method.package],
       };
     }
@@ -1353,7 +1610,14 @@ export function getToolInstallCommand(
     if (method.method === "uv" && method.package) {
       return {
         command: useCN
-          ? ["uv", "tool", "install", method.package, "--index-url", PACKAGE_MANAGER_MIRRORS.pip.primary]
+          ? [
+              "uv",
+              "tool",
+              "install",
+              method.package,
+              "--index-url",
+              PACKAGE_MANAGER_MIRRORS.pip.primary,
+            ]
           : ["uv", "tool", "install", method.package],
       };
     }
@@ -1377,7 +1641,7 @@ export function listSupportedTools(): string[] {
 /**
  * 获取工具信息
  */
-export function getToolInfo(toolName: string): typeof CLI_TOOL_MIRRORS[string] | undefined {
+export function getToolInfo(toolName: string): (typeof CLI_TOOL_MIRRORS)[string] | undefined {
   return CLI_TOOL_MIRRORS[toolName];
 }
 
@@ -1394,8 +1658,8 @@ export function getMirrorStats(): {
   cliTools: number;
   toolsWithCNMirror: number;
 } {
-  const toolsWithCNMirror = Object.values(CLI_TOOL_MIRRORS).filter(t => t.useCNMirror).length;
-  
+  const toolsWithCNMirror = Object.values(CLI_TOOL_MIRRORS).filter((t) => t.useCNMirror).length;
+
   return {
     packageManagers: Object.keys(PACKAGE_MANAGER_MIRRORS).length,
     binaryMirrors: Object.keys(BINARY_DOWNLOAD_MIRRORS).length,
@@ -1419,22 +1683,24 @@ export function getSignalCliDownloadUrls(version: string, _platform: "linux" | "
   // Signal CLI 是 Java 程序，使用通用版本（跨平台）
   // ClawdSkillsProxy 只托管通用版本 signal-cli-{version}.tar.gz
   const fileName = `signal-cli-${version}.tar.gz`;
-  
+
   const urls: string[] = [];
-  
+
   if (useCN) {
     // 1. ClawdSkillsProxy 托管 (最可靠)
     // 格式: /api/binaries/signal-cli/{version}/{filename}
-    urls.push(`${CLAWDSKILLSPROXY_CONFIG.baseUrl}${CLAWDSKILLSPROXY_CONFIG.endpoints.signalCliDownload}/${version}/${fileName}`);
-    
+    urls.push(
+      `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${CLAWDSKILLSPROXY_CONFIG.endpoints.signalCliDownload}/${version}/${fileName}`,
+    );
+
     // 2. GitHub 代理 (备用，可能 404)
     const githubUrl = `https://github.com/AsamK/signal-cli/releases/download/v${version}/${fileName}`;
     urls.push(...getGitHubProxyUrls(githubUrl));
   }
-  
+
   // 3. GitHub 原始地址 (国外)
   urls.push(`https://github.com/AsamK/signal-cli/releases/download/v${version}/${fileName}`);
-  
+
   return urls;
 }
 
@@ -1445,16 +1711,18 @@ export function getSignalCliDownloadUrls(version: string, _platform: "linux" | "
 export function getSignalCliApiUrls(): string[] {
   const useCN = shouldUseCNMirror();
   const urls: string[] = [];
-  
+
   if (useCN) {
     // 1. ClawdSkillsProxy API (最可靠)
     // 格式: /api/binaries/signal-cli/latest
-    urls.push(`${CLAWDSKILLSPROXY_CONFIG.baseUrl}${CLAWDSKILLSPROXY_CONFIG.endpoints.signalCliLatest}`);
+    urls.push(
+      `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${CLAWDSKILLSPROXY_CONFIG.endpoints.signalCliLatest}`,
+    );
   }
-  
+
   // 2. GitHub API (可能被墙)
   urls.push("https://api.github.com/repos/AsamK/signal-cli/releases/latest");
-  
+
   return urls;
 }
 
@@ -1463,7 +1731,7 @@ export function getSignalCliApiUrls(): string[] {
  */
 export function getClawdSkillsProxyHeaders(): Record<string, string> {
   return {
-    "Authorization": `Bearer ${CLAWDSKILLSPROXY_CONFIG.token}`,
+    Authorization: `Bearer ${CLAWDSKILLSPROXY_CONFIG.token}`,
     "User-Agent": "clawdbot",
   };
 }
@@ -1506,7 +1774,11 @@ export function getHKBinaryMetadataUrl(toolName: string): string {
  * @param platform 平台标识 (如 "darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64")
  * @returns 下载 URL
  */
-export function getHKBinaryDownloadUrl(toolName: string, version: string, platform: string): string {
+export function getHKBinaryDownloadUrl(
+  toolName: string,
+  version: string,
+  platform: string,
+): string {
   return `${BINARY_DOWNLOAD_MIRRORS.hkBinaries.baseUrl}/${toolName}/${version}/${platform}`;
 }
 
@@ -1517,7 +1789,7 @@ export function getHKBinaryDownloadUrl(toolName: string, version: string, platfo
 export function getCurrentPlatformForHKBinary(): string {
   const platform = process.platform;
   const arch = process.arch;
-  
+
   if (platform === "darwin") {
     return arch === "arm64" ? "darwin-arm64" : "darwin-amd64";
   } else if (platform === "linux") {
@@ -1525,7 +1797,7 @@ export function getCurrentPlatformForHKBinary(): string {
   } else if (platform === "win32") {
     return arch === "arm64" ? "windows-arm64" : "windows-amd64";
   }
-  
+
   return `${platform}-${arch}`;
 }
 
@@ -1543,12 +1815,12 @@ export function getHKBinaryDownloadUrls(
   const platform = getCurrentPlatformForHKBinary();
   const urls: string[] = [];
   const useCN = shouldUseCNMirror();
-  
+
   if (useCN && isToolHostedOnHK(toolName)) {
     // 1. 香港服务器 (国内最快)
     urls.push(getHKBinaryDownloadUrl(toolName, version, platform));
   }
-  
+
   // 2. GitHub 代理 (备用)
   if (githubRepo && useCN) {
     // 尝试常见的 Release 文件名格式
@@ -1557,25 +1829,25 @@ export function getHKBinaryDownloadUrls(
       `${toolName}-${version}-${platform}.tar.gz`,
       `${toolName}_${platform}.tar.gz`,
     ];
-    
+
     for (const pattern of patterns) {
       const githubUrl = `https://github.com/${githubRepo}/releases/download/v${version}/${pattern}`;
       urls.push(...getGitHubProxyUrls(githubUrl));
     }
   }
-  
+
   // 3. GitHub 原始地址 (国外)
   if (githubRepo) {
     const patterns = [
       `${toolName}_${version}_${platform.replace("-", "_")}.tar.gz`,
       `${toolName}-${version}-${platform}.tar.gz`,
     ];
-    
+
     for (const pattern of patterns) {
       urls.push(`https://github.com/${githubRepo}/releases/download/v${version}/${pattern}`);
     }
   }
-  
+
   return urls;
 }
 
