@@ -304,35 +304,37 @@
   white-space: nowrap;
 }
 
-/* 正式用户：金色高亮 */
+/* 正式用户：深金色醒目高亮 */
 .topbar-support__btn--pro-support {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.15));
-  border: 1.5px solid rgba(251, 191, 36, 0.4);
-  color: #f59e0b;
+  background: linear-gradient(135deg, #f5a623, #d4881e);
+  border: 1.5px solid #c77d15;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(212, 136, 30, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .topbar-support__btn--pro-support:hover {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.25), rgba(245, 158, 11, 0.25));
-  border-color: rgba(251, 191, 36, 0.6);
+  background: linear-gradient(135deg, #ffb933, #e69a2a);
+  border-color: #d4881e;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.2);
+  box-shadow: 0 4px 16px rgba(212, 136, 30, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 /* 呼吸灯动画 */
 .topbar-support__btn--pro-support::after {
   content: "";
   position: absolute;
-  inset: -1px;
+  inset: -2px;
   border-radius: 20px;
-  border: 1.5px solid rgba(251, 191, 36, 0.6);
+  border: 2px solid rgba(245, 166, 35, 0.7);
   opacity: 0;
-  animation: support-pulse 2.5s ease-in-out infinite;
+  animation: support-pulse 2s ease-in-out infinite;
   pointer-events: none;
 }
 
 @keyframes support-pulse {
   0%, 100% { opacity: 0; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(1.03); }
+  50% { opacity: 1; transform: scale(1.04); }
 }
 
 .topbar-support__btn--pro-support:hover::after {
@@ -399,7 +401,13 @@
   font-weight: 600;
 }
 
-/* Popover: 悬停弹出二维码 */
+.topbar-support__btn--pro-support .topbar-support__text {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Popover: 悬停弹出二维码 — 金光透明高级风格 */
 .topbar-support__popover {
   display: none;
   position: absolute;
@@ -409,12 +417,39 @@
   z-index: 200;
   width: 220px;
   padding: 16px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.92),
+    rgba(255, 248, 230, 0.88),
+    rgba(255, 255, 255, 0.92)
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border: 1.5px solid rgba(251, 191, 36, 0.35);
+  border-radius: 14px;
+  box-shadow:
+    0 0 20px rgba(251, 191, 36, 0.12),
+    0 0 40px rgba(245, 158, 11, 0.06),
+    0 8px 32px rgba(0, 0, 0, 0.08);
   text-align: center;
   pointer-events: auto;
+  animation: qr-golden-pulse 3s ease-in-out infinite;
+}
+
+/* 二维码金光呼吸动画 */
+@keyframes qr-golden-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 20px rgba(251, 191, 36, 0.12),
+      0 0 40px rgba(245, 158, 11, 0.06),
+      0 8px 32px rgba(0, 0, 0, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 28px rgba(251, 191, 36, 0.22),
+      0 0 56px rgba(245, 158, 11, 0.1),
+      0 8px 32px rgba(0, 0, 0, 0.08);
+  }
 }
 
 .topbar-support__btn:hover .topbar-support__popover {
@@ -434,9 +469,9 @@
   transform: translateX(-50%) rotate(45deg);
   width: 12px;
   height: 12px;
-  background: var(--bg);
-  border-left: 1px solid var(--border);
-  border-top: 1px solid var(--border);
+  background: rgba(255, 252, 242, 0.94);
+  border-left: 1.5px solid rgba(251, 191, 36, 0.35);
+  border-top: 1.5px solid rgba(251, 191, 36, 0.35);
 }
 
 .topbar-support__popover-title {
@@ -449,10 +484,12 @@
 .topbar-support__qrcode {
   width: 160px;
   height: 160px;
-  border-radius: 8px;
-  border: 2px solid var(--border);
+  border-radius: 10px;
+  border: 1.5px solid rgba(251, 191, 36, 0.3);
   object-fit: contain;
   margin-bottom: 10px;
+  filter: sepia(1) hue-rotate(-5deg) saturate(2.8) brightness(0.68);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.1);
 }
 
 .topbar-support__popover-desc {
@@ -498,9 +535,11 @@
 
 /* Dark mode */
 :root[data-theme="dark"] .topbar-support__btn--pro-support {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.1));
-  border-color: rgba(251, 191, 36, 0.3);
-  color: #fbbf24;
+  background: linear-gradient(135deg, #c77d15, #a86200);
+  border-color: #d4881e;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 10px rgba(199, 125, 21, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 :root[data-theme="dark"] .topbar-support__btn--support {
@@ -522,12 +561,22 @@
 }
 
 :root[data-theme="dark"] .topbar-support__popover {
-  background: var(--panel);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(
+    160deg,
+    rgba(30, 28, 22, 0.94),
+    rgba(40, 35, 20, 0.9),
+    rgba(30, 28, 22, 0.94)
+  );
+  border-color: rgba(251, 191, 36, 0.3);
+  box-shadow:
+    0 0 24px rgba(251, 191, 36, 0.1),
+    0 0 48px rgba(245, 158, 11, 0.05),
+    0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 :root[data-theme="dark"] .topbar-support__popover-arrow {
-  background: var(--panel);
+  background: rgba(35, 32, 22, 0.94);
+  border-color: rgba(251, 191, 36, 0.3);
 }
 
 /* Responsive */

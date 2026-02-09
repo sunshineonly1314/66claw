@@ -136,11 +136,14 @@ import {
   installRemoteSkill,
   installSkill,
   loadMarketSkills,
+  loadMoreSkills,
   loadRemoteSkills,
   loadSkills,
   refreshMarketSkills,
   saveSkillApiKey,
   setActiveTab,
+  SKILLS_PAGE_SIZE,
+  toggleSkillPinned,
   updateSkillEdit,
   updateSkillEnabled,
   type SkillMessage,
@@ -303,11 +306,11 @@ function renderTopbarSupportButtons(state: AppViewState) {
     `;
   }
 
-  // 正式用户：专属技术支持
+  // 正式用户：专属VIP支持
   return html`
     <div class="topbar-support topbar-support--pro">
       <div class="topbar-support__btn topbar-support__btn--pro-support">
-        <span class="topbar-support__icon">⭐</span>
+        <span class="topbar-support__icon">👑</span>
         <span class="topbar-support__text">${t("support.exclusiveSupport")}</span>
         ${renderQrcodePopover(
           qrcode,
@@ -680,6 +683,8 @@ export function renderApp(state: AppViewState) {
               report: state.playgroundReport ?? null,
               error: state.playgroundError ?? null,
               activeCategory: state.playgroundActiveCategory ?? null,
+              filter: state.playgroundFilter ?? "",
+              onFilterChange: (next) => (state.playgroundFilter = next),
               installingSkill: state.playgroundInstallingSkill ?? null,
               installMessage: state.playgroundInstallMessage ?? null,
               onCategoryChange: (category) =>
@@ -693,10 +698,10 @@ export function renderApp(state: AppViewState) {
                 );
               },
               onInstallSkill: (skill) => {
-                // 安装技能依赖，成功后刷新列表即可，用户可以点击"立即试用"
                 installSkillDeps(state, skill);
               },
               onRefresh: () => loadPlaygroundSkills(state),
+              onGoToSkills: () => state.setTab("skills" as any),
             })
           : nothing}
 
@@ -713,7 +718,7 @@ export function renderApp(state: AppViewState) {
               connected: state.connected ?? false,
               // 安装进度
               installProgress: state.skillsInstallProgress ?? {},
-              activeTab: state.skillsActiveTab ?? "local",
+              activeTab: state.skillsActiveTab ?? "active",
               remoteLoading: state.skillsRemoteLoading ?? false,
               remoteIndex: state.skillsRemoteIndex ?? null,
               remoteError: state.skillsRemoteError ?? null,
@@ -725,7 +730,10 @@ export function renderApp(state: AppViewState) {
               marketError: state.skillsMarketError ?? null,
               // 分类筛选
               activeCategory: state.skillsActiveCategory ?? "all",
-              onFilterChange: (next) => (state.skillsFilter = next),
+              // 分页
+              visibleCount: state.skillsVisibleCount ?? SKILLS_PAGE_SIZE,
+              onFilterChange: (next) => { state.skillsFilter = next; state.skillsVisibleCount = SKILLS_PAGE_SIZE; },
+              onLoadMore: () => loadMoreSkills(state),
               onRefresh: () => loadSkills(state, { clearMessages: true }),
               onToggle: (key, enabled) => updateSkillEnabled(state, key, enabled),
               onEdit: (key, value) => updateSkillEdit(state, key, value),
@@ -734,7 +742,7 @@ export function renderApp(state: AppViewState) {
                 installSkill(state, skillKey, name, installId),
               onTabChange: (tab) => {
                 setActiveTab(state, tab);
-                if (tab === "remote") {
+                if (tab === "library") {
                   // 加载市场数据
                   loadMarketSkills(state).then(() => {
                     // 如果市场数据为空，自动触发刷新
@@ -747,7 +755,8 @@ export function renderApp(state: AppViewState) {
               },
               onRefreshRemote: () => refreshMarketSkills(state),
               onInstallRemote: (skillName) => installRemoteSkill(state, skillName),
-              onCategoryChange: (category) => (state.skillsActiveCategory = category),
+              onCategoryChange: (category) => { state.skillsActiveCategory = category; state.skillsVisibleCount = SKILLS_PAGE_SIZE; },
+              onPinToggle: (skillKey, pinned) => toggleSkillPinned(state, skillKey, pinned),
             })
           : nothing}
 

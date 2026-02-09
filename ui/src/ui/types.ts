@@ -485,9 +485,13 @@ export type SkillStatusEntry = {
   emoji?: string;
   homepage?: string;
   always: boolean;
+  /** 用户置顶（config.skills.pinnedSkills） */
+  pinned: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
   eligible: boolean;
+  /** 是否实际被加载进 AI prompt（受 maxPromptSkills 限制） */
+  activeInPrompt: boolean;
   requirements: {
     bins: string[];
     env: string[];
@@ -508,6 +512,10 @@ export type SkillStatusReport = {
   workspaceDir: string;
   managedSkillsDir: string;
   skills: SkillStatusEntry[];
+  /** 实际被加载进 prompt 的技能数量 */
+  activeCount: number;
+  /** prompt 技能数量上限 */
+  maxPromptSkills: number;
 };
 
 // Remote skills (from Gitee registry)

@@ -484,6 +484,7 @@ export const ClawdbotSchema = z
     skills: z
       .object({
         allowBundled: z.array(z.string()).optional(),
+        pinnedSkills: z.array(z.string()).optional(),
         load: z
           .object({
             extraDirs: z.array(z.string()).optional(),

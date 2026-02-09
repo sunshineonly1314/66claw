@@ -10,6 +10,7 @@ export type PlaygroundState = {
   playgroundReport: SkillStatusReport | null;
   playgroundError: string | null;
   playgroundActiveCategory: string | null;
+  playgroundFilter: string;
   // 安装状态
   playgroundInstallingSkill: string | null;
   playgroundInstallMessage: string | null;

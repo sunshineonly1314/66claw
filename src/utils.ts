@@ -202,7 +202,7 @@ export function truncateUtf16Safe(input: string, maxLen: number): string {
 }
 
 /** Resolve a safe home directory, falling back to LOCALAPPDATA/APPDATA on Windows when homedir is a drive root. */
-function safeHomedir(): string {
+export function safeHomedir(): string {
   let home = os.homedir();
   const parsed = path.parse(home);
   if (home === parsed.root) {

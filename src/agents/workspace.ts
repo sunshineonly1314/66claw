@@ -1,35 +1,25 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolvePortableDataDir } from "../config/paths.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { runCommandWithTimeout } from "../process/exec.js";
-import { resolveUserPath } from "../utils.js";
-
-/** Resolve a safe home directory, falling back to LOCALAPPDATA/APPDATA on Windows when homedir is a drive root. */
-function safeHomedir(): string {
-  let home = os.homedir();
-  const parsed = path.parse(home);
-  if (home === parsed.root) {
-    const fallback =
-      process.env.LOCALAPPDATA?.trim() ||
-      process.env.APPDATA?.trim() ||
-      process.env.USERPROFILE?.trim();
-    if (fallback) home = fallback;
-  }
-  return home;
-}
+import { resolveUserPath, safeHomedir } from "../utils.js";
 
 export function resolveDefaultAgentWorkspaceDir(
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = safeHomedir,
 ): string {
   const profile = env.CLAWDBOT_PROFILE?.trim();
-  if (profile && profile.toLowerCase() !== "default") {
-    return path.join(homedir(), `clawd-${profile}`);
-  }
-  return path.join(homedir(), "clawd");
+  const suffix = profile && profile.toLowerCase() !== "default" ? `clawd-${profile}` : "clawd";
+
+  // On Windows, use portable data dir (<appRoot>/data/clawd/) to keep data
+  // next to the application instead of on C: drive.
+  const portable = resolvePortableDataDir();
+  if (portable) return path.join(portable, suffix);
+
+  return path.join(homedir(), suffix);
 }
 
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();

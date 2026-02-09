@@ -180,7 +180,7 @@ export type AppViewState = {
   skillEdits: Record<string, string>;
   skillMessages: Record<string, SkillMessage>;
   skillsBusyKey: string | null;
-  skillsActiveTab: "local" | "remote";
+  skillsActiveTab: "active" | "library";
   skillsRemoteLoading: boolean;
   skillsRemoteIndex: RemoteSkillsIndex | null;
   skillsRemoteError: string | null;
@@ -192,11 +192,14 @@ export type AppViewState = {
   skillsMarketError: string | null;
   // 技能分类筛选
   skillsActiveCategory: string;
+  // 技能列表分页
+  skillsVisibleCount: number;
   // Playground 状态（技能玩法推荐）
   playgroundLoading: boolean;
   playgroundReport: SkillStatusReport | null;
   playgroundError: string | null;
   playgroundActiveCategory: string | null;
+  playgroundFilter: string;
   playgroundInstallingSkill: string | null;
   playgroundInstallMessage: string | null;
   // 技能安装进度

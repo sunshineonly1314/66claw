@@ -519,7 +519,7 @@ export interface LicenseModuleConfig {
  * 默认配置
  */
 export const DEFAULT_LICENSE_CONFIG: LicenseModuleConfig = {
-  apiBaseUrl: "https://www.tecbinai.com/api/api/v1/license",
+  apiBaseUrl: "https://www.obplugins.cn/api/api/v1/license",
   signSecretKey: "Cb#2026$Tecbinai@Lic3nse!Hmac^Key&Secure",
   offlineGracePeriodHours: 24, // 从 72h 缩短到 24h，减少离线滥用风险
   heartbeatIntervalHours: 24,

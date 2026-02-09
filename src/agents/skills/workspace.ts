@@ -75,11 +75,13 @@ const DEFAULT_MAX_PROMPT_SKILLS = 30;
 /**
  * Compute a priority score for prompt inclusion.
  * Higher = more important = included first.
+ *   4 — user-pinned skills (config.skills.pinnedSkills)
  *   3 — always:true skills (must always be present)
  *   2 — skills with explicit `requires` whose deps are all satisfied
  *   1 — skills with no `requires` at all (generic / community skills)
  */
-function skillPromptPriority(entry: SkillEntry): number {
+function skillPromptPriority(entry: SkillEntry, pinnedSet?: Set<string>): number {
+  if (pinnedSet?.has(entry.skill.name) || pinnedSet?.has(entry.clawdbot?.skillKey ?? "")) return 4;
   if (entry.clawdbot?.always === true) return 3;
   const req = entry.clawdbot?.requires;
   const hasDeps =
@@ -110,14 +112,18 @@ function filterSkillEntries(
     console.log(`[skills] After filter: ${filtered.map((entry) => entry.skill.name).join(", ")}`);
   }
 
+  // Build pinned set from config for priority sorting.
+  const pinnedRaw = config?.skills?.pinnedSkills;
+  const pinnedSet = pinnedRaw && pinnedRaw.length > 0 ? new Set(pinnedRaw) : undefined;
+
   // Apply maxPromptSkills limit to prevent context-window explosion.
   const maxRaw = config?.skills?.load?.maxPromptSkills;
   const maxPromptSkills = typeof maxRaw === "number" ? maxRaw : DEFAULT_MAX_PROMPT_SKILLS;
   if (maxPromptSkills > 0 && filtered.length > maxPromptSkills) {
     // Sort by priority (higher first), then alphabetically for stability.
     filtered.sort((a, b) => {
-      const pa = skillPromptPriority(a);
-      const pb = skillPromptPriority(b);
+      const pa = skillPromptPriority(a, pinnedSet);
+      const pb = skillPromptPriority(b, pinnedSet);
       if (pa !== pb) return pb - pa;
       return a.skill.name.localeCompare(b.skill.name);
     });

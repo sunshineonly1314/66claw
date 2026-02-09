@@ -7,10 +7,10 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import type { ClawdbotConfig } from "../../../config/config.js";
 import { resolveAgentWorkspaceDir } from "../../../agents/agent-scope.js";
 import { resolveAgentIdFromSessionKey } from "../../../routing/session-key.js";
+import { safeHomedir } from "../../../utils.js";
 import type { HookHandler } from "../../hooks.js";
 
 /**
@@ -71,7 +71,7 @@ const saveSessionToMemory: HookHandler = async (event) => {
     const agentId = resolveAgentIdFromSessionKey(event.sessionKey);
     const workspaceDir = cfg
       ? resolveAgentWorkspaceDir(cfg, agentId)
-      : path.join(os.homedir(), "clawd");
+      : path.join(safeHomedir(), "clawd");
     const memoryDir = path.join(workspaceDir, "memory");
     await fs.mkdir(memoryDir, { recursive: true });
 
@@ -161,7 +161,7 @@ const saveSessionToMemory: HookHandler = async (event) => {
     console.log("[session-memory] Memory file written successfully");
 
     // Log completion (but don't send user-visible confirmation - it's internal housekeeping)
-    const relPath = memoryFilePath.replace(os.homedir(), "~");
+    const relPath = memoryFilePath.replace(safeHomedir(), "~");
     console.log(`[session-memory] Session context saved to ${relPath}`);
   } catch (err) {
     console.error(

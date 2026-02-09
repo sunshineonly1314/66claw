@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveStateDir } from "../config/paths.js";
-import { detectChinaRegion } from "../config/region-cn.js";
+
 import { DEFAULT_LICENSE_CONFIG } from "./types.js";
 import type { SupportQrcodeConfig } from "./types.js";
 
@@ -236,10 +236,7 @@ export async function fetchRemoteQrcode(
   currentVersion?: string,
 ): Promise<RemoteQrcodeResponse | null> {
   const directUrl = DEFAULT_LICENSE_CONFIG.apiBaseUrl.replace(/\/license\/?$/, "/support/qrcode");
-  // 中国区：先尝试国内反代 obplugins.cn，失败再回源 tecbinai.com
-  const urls = detectChinaRegion()
-    ? [directUrl.replace("www.tecbinai.com", "www.obplugins.cn"), directUrl]
-    : [directUrl];
+  const urls = [directUrl];
 
   const body = {
     key,

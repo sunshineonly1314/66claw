@@ -55,56 +55,6 @@
   stroke: var(--ok);
 }
 
-/* Incompatible skill styles */
-.skill-card--incompatible {
-  opacity: 0.6;
-  background: var(--secondary);
-}
-
-.skill-card--incompatible:hover {
-  border-color: var(--border);
-  box-shadow: none;
-}
-
-.skill-icon--incompatible {
-  background: var(--secondary);
-  border-color: var(--border);
-}
-
-.skill-icon--incompatible svg {
-  stroke: var(--muted);
-}
-
-.skill-platform-badge {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--secondary);
-  color: var(--muted);
-  border: 1px solid var(--border);
-  margin-left: 8px;
-}
-
-.skill-status--incompatible {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  padding: 8px 12px;
-  background: var(--secondary);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-}
-
-.skill-status--incompatible svg {
-  width: 14px;
-  height: 14px;
-  stroke: var(--muted);
-  fill: none;
-}
-
 /* Skill Content */
 .skill-content {
   min-width: 0;
@@ -124,6 +74,40 @@
   font-weight: 600;
   color: var(--text-strong);
   letter-spacing: -0.01em;
+}
+.skill-pin-badge {
+  font-size: 12px;
+  margin-left: 4px;
+  cursor: default;
+}
+
+/* Pin/Unpin Toggle Button */
+.skill-pin-toggle {
+  min-width: 32px;
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 1;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0.5;
+  transition:
+    opacity var(--duration-fast) ease,
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.skill-pin-toggle:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.skill-pin-toggle--active {
+  opacity: 1;
+  background: var(--accent-subtle, rgba(99, 102, 241, 0.08));
+  border-color: rgba(99, 102, 241, 0.25);
 }
 
 .skill-version {
@@ -243,6 +227,12 @@
   color: var(--muted);
 }
 
+.skill-status--active {
+  color: var(--accent);
+  background: var(--accent-subtle, rgba(99, 102, 241, 0.08));
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
 .skill-status--eligible {
   color: var(--ok);
   background: var(--ok-subtle);
@@ -258,6 +248,53 @@
 .skill-status--disabled {
   color: var(--muted);
   background: var(--secondary);
+}
+
+/* Skills Overview Bar - 概览条 */
+.skills-overview-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.skills-overview-bar__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.skills-overview-bar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skills-overview-bar__dot--active { background: var(--accent); }
+.skills-overview-bar__dot--eligible { background: var(--ok); }
+.skills-overview-bar__dot--blocked { background: var(--warn); }
+.skills-overview-bar__dot--disabled { background: var(--muted); }
+
+.skills-overview-bar__value {
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
+.skills-overview-bar__label {
+  color: var(--muted);
+}
+
+.skills-overview-bar__sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
 }
 
 /* Tabs - Modern style */
@@ -378,6 +415,31 @@
   color: var(--info);
 }
 
+/* Needs Attention Section (Library tab) */
+.skills-attention {
+  padding: 12px 14px;
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-md);
+}
+.skills-attention__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--warn);
+}
+.skills-attention__header svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Empty State */
 .skills-empty {
   display: flex;
@@ -423,6 +485,33 @@
 .skills-list {
   display: grid;
   gap: 12px;
+}
+
+/* Load More Button */
+.skills-load-more {
+  padding: 16px 0;
+  text-align: center;
+}
+
+.skills-load-more .btn {
+  min-width: 200px;
+  padding: 10px 24px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px dashed var(--border-strong);
+  background: var(--secondary);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.skills-load-more .btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* Source Badge */
@@ -1216,157 +1305,3 @@
   stroke: var(--warning);
 }
 
-/* ============================================================================
- * ClawdbotCN 专属：诊断卡片样式
- * 让小白用户一眼看懂技能状态
- * ============================================================================ */
-
-.diagnostic-card {
-  padding: 16px 20px;
-  border-radius: var(--radius-lg);
-  margin-bottom: 16px;
-}
-
-.diagnostic-card--ok {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.02) 100%);
-  border: 1px solid rgba(34, 197, 94, 0.2);
-}
-
-.diagnostic-card--warning {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(251, 191, 36, 0.02) 100%);
-  border: 1px solid rgba(251, 191, 36, 0.2);
-}
-
-.diagnostic-card__header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.diagnostic-card__icon {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.diagnostic-card__icon svg {
-  width: 24px;
-  height: 24px;
-}
-
-.diagnostic-card__icon--ok svg {
-  stroke: rgb(34, 197, 94);
-}
-
-.diagnostic-card__icon--warning svg {
-  stroke: rgb(251, 191, 36);
-}
-
-.diagnostic-card__title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--fg);
-  flex: 1;
-}
-
-.diagnostic-card__stats {
-  display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
-}
-
-.diagnostic-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 20px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-md);
-  min-width: 80px;
-}
-
-.diagnostic-stat__value {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.diagnostic-stat__label {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.diagnostic-stat--eligible .diagnostic-stat__value {
-  color: rgb(34, 197, 94);
-}
-
-.diagnostic-stat--blocked .diagnostic-stat__value {
-  color: rgb(251, 191, 36);
-}
-
-.diagnostic-stat--disabled .diagnostic-stat__value {
-  color: var(--muted);
-}
-
-.diagnostic-card__issue {
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-md);
-  border-left: 3px solid rgba(251, 191, 36, 0.5);
-}
-
-.diagnostic-issue__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg);
-  margin-bottom: 8px;
-}
-
-.diagnostic-issue__title svg {
-  width: 16px;
-  height: 16px;
-  stroke: var(--muted);
-}
-
-.diagnostic-issue__items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.diagnostic-issue__item {
-  display: inline-block;
-  padding: 2px 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: var(--fg);
-}
-
-.diagnostic-issue__hint {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .diagnostic-card--ok {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.12) 0%, rgba(34, 197, 94, 0.04) 100%);
-    border-color: rgba(34, 197, 94, 0.3);
-  }
-  
-  .diagnostic-card--warning {
-    background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(251, 191, 36, 0.04) 100%);
-    border-color: rgba(251, 191, 36, 0.3);
-  }
-}

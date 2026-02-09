@@ -3,6 +3,7 @@ import path from "node:path";
 import type { ClawdbotConfig } from "../config/config.js";
 import { CONFIG_DIR } from "../utils.js";
 import {
+  filterWorkspaceSkillEntries,
   hasBinary,
   isBundledSkillAllowed,
   isConfigPathTruthy,
@@ -41,9 +42,13 @@ export type SkillStatusEntry = {
   emoji?: string;
   homepage?: string;
   always: boolean;
+  /** 用户置顶（config.skills.pinnedSkills） */
+  pinned: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
   eligible: boolean;
+  /** 是否实际被加载进 AI prompt（受 maxPromptSkills 限制） */
+  activeInPrompt: boolean;
   requirements: {
     bins: string[];
     anyBins: string[];
@@ -66,6 +71,10 @@ export type SkillStatusReport = {
   workspaceDir: string;
   managedSkillsDir: string;
   skills: SkillStatusEntry[];
+  /** 实际被加载进 prompt 的技能数量 */
+  activeCount: number;
+  /** prompt 技能数量上限 */
+  maxPromptSkills: number;
 };
 
 function resolveSkillKey(entry: SkillEntry): string {
@@ -159,6 +168,8 @@ function buildSkillStatus(
   config?: ClawdbotConfig,
   prefs?: SkillsInstallPreferences,
   eligibility?: SkillEligibilityContext,
+  activeNames?: Set<string>,
+  pinnedSet?: Set<string>,
 ): SkillStatusEntry {
   const skillKey = resolveSkillKey(entry);
   const skillConfig = resolveSkillConfig(config, skillKey);
@@ -166,6 +177,7 @@ function buildSkillStatus(
   const allowBundled = resolveBundledAllowlist(config);
   const blockedByAllowlist = !isBundledSkillAllowed(entry, allowBundled);
   const always = entry.clawdbot?.always === true;
+  const pinned = pinnedSet ? (pinnedSet.has(entry.skill.name) || pinnedSet.has(skillKey)) : false;
   const emoji = entry.clawdbot?.emoji ?? entry.frontmatter.emoji;
   const homepageRaw =
     entry.clawdbot?.homepage ??
@@ -247,9 +259,11 @@ function buildSkillStatus(
     emoji,
     homepage,
     always,
+    pinned,
     disabled,
     blockedByAllowlist,
     eligible,
+    activeInPrompt: activeNames ? activeNames.has(entry.skill.name) : eligible,
     requirements: {
       bins: requiredBins,
       anyBins: requiredAnyBins,
@@ -275,11 +289,26 @@ export function buildWorkspaceSkillStatus(
   const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
   const skillEntries = opts?.entries ?? loadWorkspaceSkillEntries(workspaceDir, opts);
   const prefs = resolveSkillsInstallPreferences(opts?.config);
+
+  // 计算实际进入 prompt 的技能（经过 shouldIncludeSkill + priority 排序 + maxPromptSkills 截断）
+  const activeEntries = filterWorkspaceSkillEntries(skillEntries, opts?.config);
+  const activeNames = new Set(activeEntries.map((e) => e.skill.name));
+
+  // 读取 maxPromptSkills 配置
+  const maxRaw = opts?.config?.skills?.load?.maxPromptSkills;
+  const maxPromptSkills = typeof maxRaw === "number" ? maxRaw : 30;
+
+  // 构建 pinnedSkills 集合
+  const pinnedRaw = opts?.config?.skills?.pinnedSkills;
+  const pinnedSet = pinnedRaw && pinnedRaw.length > 0 ? new Set(pinnedRaw) : undefined;
+
   return {
     workspaceDir,
     managedSkillsDir,
+    activeCount: activeNames.size,
+    maxPromptSkills,
     skills: skillEntries.map((entry) =>
-      buildSkillStatus(entry, opts?.config, prefs, opts?.eligibility),
+      buildSkillStatus(entry, opts?.config, prefs, opts?.eligibility, activeNames, pinnedSet),
     ),
   };
 }

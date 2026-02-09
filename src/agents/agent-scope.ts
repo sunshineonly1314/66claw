@@ -8,7 +8,7 @@ import {
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
-import { resolveUserPath } from "../utils.js";
+import { resolveUserPath, safeHomedir } from "../utils.js";
 import { DEFAULT_AGENT_WORKSPACE_DIR } from "./workspace.js";
 
 export { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
@@ -155,7 +155,7 @@ export function resolveAgentWorkspaceDir(cfg: ClawdbotConfig, agentId: string) {
     if (fallback) return rejectFsRoot(resolveUserPath(fallback), "agents.defaults.workspace");
     return DEFAULT_AGENT_WORKSPACE_DIR;
   }
-  return path.join(os.homedir(), `clawd-${id}`);
+  return rejectFsRoot(path.join(safeHomedir(), `clawd-${id}`), `agent "${id}" workspace`);
 }
 
 export function resolveAgentDir(cfg: ClawdbotConfig, agentId: string) {

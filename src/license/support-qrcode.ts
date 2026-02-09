@@ -18,7 +18,7 @@ import crypto from "node:crypto";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { SupportQrcodeConfig } from "./types.js";
-import { detectChinaRegion } from "../config/region-cn.js";
+
 
 const log = createSubsystemLogger("license:support-qrcode");
 
@@ -385,11 +385,13 @@ export function enrichLicenseWithSupport(
 
   const keyType = license.keyType as "test" | "trial" | "standard";
 
-  // 每次都从本地文件读取最新的二维码（通过内存缓存 + TTL 避免频繁 IO）
-  // 这样运维替换图片后最多 5 分钟自动生效
-  const qrcode = getSupportQrcode(keyType, deviceId);
-  if (qrcode) {
-    license.supportQrcode = qrcode;
+  // 服务端返回的二维码优先（远程 preload 拉取的）
+  // 仅在服务端未提供时，才回退到本地文件夹（运维热替换场景）
+  if (!license.supportQrcode?.base64) {
+    const qrcode = getSupportQrcode(keyType, deviceId);
+    if (qrcode) {
+      license.supportQrcode = qrcode;
+    }
   }
 
   // 购买链接（仅试用用户）
@@ -410,7 +412,7 @@ export function enrichLicenseWithSupport(
 /**
  * 从远程 API 获取购买链接（作为本地配置的备选方案）
  *
- * API: GET https://www.tecbinai.com/api/config/purchase-url
+ * API: GET https://www.obplugins.cn/api/config/purchase-url
  * 响应: { code: 200, data: { xianyu: "..." } }
  *
  * 服务端调用，不受 CORS 限制。
@@ -426,10 +428,7 @@ export async function fetchRemotePurchaseUrl(): Promise<string | null> {
     return remotePurchaseUrlCache.url;
   }
 
-  // 中国区：先尝试国内反代，失败再回源
-  const urls = detectChinaRegion()
-    ? ["https://www.obplugins.cn/api/config/purchase-url", "https://www.tecbinai.com/api/config/purchase-url"]
-    : ["https://www.tecbinai.com/api/config/purchase-url"];
+  const urls = ["https://www.obplugins.cn/api/config/purchase-url"];
 
   for (const apiUrl of urls) {
     try {

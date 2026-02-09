@@ -41,15 +41,17 @@ if not exist "%~dp0dist\entry.js" (
 )
 echo [%date% %time%] entry.js found >> "%LOG_FILE%"
 
-:: Check if port 18789 is already in use
+:: Kill ALL processes occupying port 18789
+set "KILLED_ANY="
 for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":18789 " ^| findstr "LISTENING"') do (
-    set "OLD_PID=%%a"
+    echo [%date% %time%] Port 18789 in use by PID %%a, killing... >> "%LOG_FILE%"
+    taskkill /PID %%a /F >nul 2>&1
+    set "KILLED_ANY=1"
 )
 
-if defined OLD_PID (
-    echo [%date% %time%] Port 18789 in use by PID !OLD_PID!, killing... >> "%LOG_FILE%"
-    taskkill /PID !OLD_PID! /F >nul 2>&1
+if defined KILLED_ANY (
     timeout /t 2 /nobreak >nul
+    echo [%date% %time%] Old processes killed, port released >> "%LOG_FILE%"
 )
 
 :: Start Gateway (minimized window) with --allow-unconfigured to skip config check

@@ -273,6 +273,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       enabled?: boolean;
       apiKey?: string;
       env?: Record<string, string>;
+      pinned?: boolean;
     };
     const cfg = loadConfig();
     const skills = cfg.skills ? { ...cfg.skills } : {};
@@ -299,6 +300,17 @@ export const skillsHandlers: GatewayRequestHandlers = {
     }
     entries[p.skillKey] = current;
     skills.entries = entries;
+    // Handle pinned: add/remove from config.skills.pinnedSkills
+    if (typeof p.pinned === "boolean") {
+      const pinnedList = skills.pinnedSkills ? [...skills.pinnedSkills] : [];
+      const idx = pinnedList.indexOf(p.skillKey);
+      if (p.pinned && idx === -1) {
+        pinnedList.push(p.skillKey);
+      } else if (!p.pinned && idx !== -1) {
+        pinnedList.splice(idx, 1);
+      }
+      skills.pinnedSkills = pinnedList.length > 0 ? pinnedList : undefined;
+    }
     const nextConfig: ClawdbotConfig = {
       ...cfg,
       skills,

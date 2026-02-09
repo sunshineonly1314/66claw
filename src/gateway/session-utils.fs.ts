@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { resolveSessionTranscriptPath } from "../config/sessions.js";
+import { safeHomedir } from "../utils.js";
 import { stripEnvelope } from "./chat-sanitize.js";
 import type { SessionPreviewItem } from "./session-utils.types.js";
 
@@ -47,7 +47,7 @@ export function resolveSessionTranscriptCandidates(
   if (agentId) {
     candidates.push(resolveSessionTranscriptPath(sessionId, agentId));
   }
-  candidates.push(path.join(os.homedir(), ".clawdbot", "sessions", `${sessionId}.jsonl`));
+  candidates.push(path.join(safeHomedir(), ".clawdbot", "sessions", `${sessionId}.jsonl`));
   return candidates;
 }
 

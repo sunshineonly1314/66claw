@@ -87,3 +87,45 @@ node-v*.zip
 # Skills mirror (local only, regenerate via script)
 clawdhub-skills-mirror/
 nul
+
+# === CN deployment: sensitive / local-only ===
+
+# SSL certificates and keys (NEVER commit!)
+*.key
+*.pem
+yunwei/
+23452575_www.obplugins.cn_nginx/
+
+# Runtime data and logs
+data/
+logs/
+
+# Local dev utilities
+dev/
+
+# Bundled binaries (too large for git)
+scripts/windows/bundled-bins/
+
+# Build download cache
+build/download-output/
+
+# Skills bulk data (regenerate via scripts)
+skills-awesome/
+skills-merged/
+skillsqingxi/output/
+skillsqingxi/output-all/
+skillsupdate/
+
+# UI test artifacts and screenshots
+ui/*.html
+ui/*.png
+ui/*.py
+ui/src/ui/views/__screenshots__/
+
+# Temp translation/checkpoint files
+scripts/translate-checkpoint.json
+scripts/skill-translations.json
+scripts/skills-untranslated.json
+
+# Misc temp files
+d*skills_list.txt

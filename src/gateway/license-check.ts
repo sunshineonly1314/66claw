@@ -140,10 +140,8 @@ export async function checkLicenseOnGatewayStart(
     detectChinaRegion()
       ? {
           apiFallbackUrls: [
-            // 国内备案域名反代（阿里云服务器，最优先）
+            // 国内备案域名反代（阿里云服务器）
             "https://www.obplugins.cn/api/api/v1/license",
-            // IP 直连绕过 DNS 污染/解析失败（同一台腾讯云 HK 服务器）
-            "https://license.tecbinai.com/api/api/v1/license",
           ],
           offlineGracePeriodHours: 48, // CN 用户跨境网络不稳定，宽限期 48h
         }

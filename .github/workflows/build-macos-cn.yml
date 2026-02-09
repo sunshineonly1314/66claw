@@ -1,0 +1,371 @@
+name: Build macOS CN Package (DMG)
+
+# 构建 ClawdbotCN macOS .app DMG 包
+# 使用 build/scripts/build-macos-cn.sh 28线程并行构建
+# 输出: ClawdbotCN-macOS-v{VERSION}-universal.dmg
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 (留空则读取 package.json)"
+        required: false
+        default: ""
+      arch:
+        description: "目标架构"
+        required: true
+        default: "universal"
+        type: choice
+        options:
+          - universal
+          - arm64
+          - x64
+      sign:
+        description: "代码签名方式"
+        required: true
+        default: "adhoc"
+        type: choice
+        options:
+          - adhoc
+          - developer-id
+      notarize:
+        description: "Apple 公证 (需 developer-id 签名)"
+        required: false
+        default: false
+        type: boolean
+      fast_mode:
+        description: "快速模式 (跳过清理, 调试用)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: build-macos-cn-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # macos-14 = Apple Silicon (M1) — 可构建 universal 二进制
+    runs-on: macos-14
+    name: Build DMG (${{ github.event.inputs.arch || 'universal' }})
+    timeout-minutes: 60
+
+    env:
+      ARCH: ${{ github.event.inputs.arch || 'universal' }}
+      FAST_MODE: ${{ github.event.inputs.fast_mode == 'true' && 'true' || 'false' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Checkout submodules (retry)
+        run: |
+          set -euo pipefail
+          git submodule sync --recursive
+          for attempt in 1 2 3 4 5; do
+            if git -c protocol.version=2 submodule update --init --force --depth=1 --recursive; then
+              exit 0
+            fi
+            echo "Submodule update failed (attempt $attempt/5). Retrying..."
+            sleep $((attempt * 10))
+          done
+          exit 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.23.0 --activate
+          echo "pnpm $(pnpm --version)"
+
+      - name: Runtime info
+        run: |
+          echo "=== Build environment ==="
+          sw_vers
+          echo "Arch: $(uname -m)"
+          echo "Node: $(node --version)"
+          echo "pnpm: $(pnpm --version)"
+          echo "Disk: $(df -h . | tail -1 | awk '{print $4}') free"
+          echo "CPUs: $(sysctl -n hw.ncpu)"
+
+      - name: Resolve version
+        id: version
+        run: |
+          INPUT_VER="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VER" ]; then
+            echo "version=$INPUT_VER" >> "$GITHUB_OUTPUT"
+          else
+            VER=$(node -p "require('./package.json').version")
+            echo "version=$VER" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Resolved version: $(cat "$GITHUB_OUTPUT" | grep version | cut -d= -f2)"
+
+      # ── Developer ID 签名 (可选) ──
+      - name: Import signing certificate
+        if: github.event.inputs.sign == 'developer-id'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PWD: ${{ secrets.KEYCHAIN_PWD }}
+        run: |
+          # 创建临时钥匙串
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+
+          # 导入证书
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PWD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
+
+          # 验证
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application certificate found"
+            exit 1
+          fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Found signing identity: $IDENTITY"
+
+      # ── 构建 DMG ──
+      - name: Build macOS CN package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          JOBS: "8"  # GitHub runner 有 3-4 核, 用 8 线程平衡 I/O 等待
+          USE_CN: "false"  # GitHub Actions 在海外, 使用国际镜像
+          SIGN_IDENTITY: ${{ env.SIGN_IDENTITY || '' }}
+          SKIP_NOTARIZE: ${{ github.event.inputs.notarize == 'true' && '0' || '1' }}
+          NOTARYTOOL_PROFILE: ${{ secrets.NOTARYTOOL_PROFILE }}
+          NOTARYTOOL_KEY: ${{ secrets.NOTARYTOOL_KEY }}
+          NOTARYTOOL_KEY_ID: ${{ secrets.NOTARYTOOL_KEY_ID }}
+          NOTARYTOOL_ISSUER: ${{ secrets.NOTARYTOOL_ISSUER }}
+        run: |
+          chmod +x build/scripts/build-macos-cn.sh
+          chmod +x scripts/create-dmg.sh 2>/dev/null || true
+          chmod +x scripts/codesign-mac-app.sh 2>/dev/null || true
+          chmod +x scripts/notarize-mac-artifact.sh 2>/dev/null || true
+
+          # 运行构建
+          bash build/scripts/build-macos-cn.sh \
+            --arch "$ARCH" \
+            --jobs "$JOBS" \
+            ${{ github.event.inputs.fast_mode == 'true' && '--fast' || '' }}
+
+      - name: Verify build output
+        id: output
+        run: |
+          echo "=== Build output ==="
+          ls -lh build/output/*.dmg 2>/dev/null || echo "No DMG found!"
+          ls -lh build/output/*.sha256 2>/dev/null || echo "No SHA256 found!"
+
+          # 查找 DMG 文件
+          DMG=$(ls build/output/ClawdbotCN-macOS-*.dmg 2>/dev/null | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::DMG file not found in build/output/"
+            ls -laR build/output/ 2>/dev/null || true
+            exit 1
+          fi
+
+          DMG_NAME=$(basename "$DMG")
+          DMG_SIZE=$(du -h "$DMG" | cut -f1)
+          SHA256=$(shasum -a 256 "$DMG" | cut -d' ' -f1)
+
+          echo "dmg_path=$DMG" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$DMG_NAME" >> "$GITHUB_OUTPUT"
+          echo "dmg_size=$DMG_SIZE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+          echo "DMG: $DMG_NAME ($DMG_SIZE)"
+          echo "SHA256: $SHA256"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClawdbotCN-macOS-dmg
+          path: |
+            build/output/ClawdbotCN-macOS-*.dmg
+            build/output/ClawdbotCN-macOS-*.dmg.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build/output/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Cleanup signing keychain
+        if: always() && github.event.inputs.sign == 'developer-id'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+
+  # ── 烟雾测试 ──
+  smoke-test:
+    needs: build
+    runs-on: macos-14
+    name: Smoke Test
+    timeout-minutes: 15
+
+    steps:
+      - name: Download DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: ClawdbotCN-macOS-dmg
+
+      - name: Mount and test DMG
+        run: |
+          set -euo pipefail
+
+          DMG=$(ls ClawdbotCN-macOS-*.dmg 2>/dev/null | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::DMG not found"
+            exit 1
+          fi
+          echo "Testing: $DMG"
+
+          # 挂载 DMG
+          MOUNT_POINT=$(hdiutil attach "$DMG" -nobrowse -noverify | grep "/Volumes/" | awk '{print $NF}')
+          echo "Mounted at: $MOUNT_POINT"
+
+          # 检查 .app 存在
+          APP_PATH="$MOUNT_POINT/ClawdbotCN.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::ClawdbotCN.app not found in DMG"
+            ls -la "$MOUNT_POINT/"
+            hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
+            exit 1
+          fi
+          echo "  OK: ClawdbotCN.app found"
+
+          # 检查 Info.plist
+          PLIST="$APP_PATH/Contents/Info.plist"
+          if [ ! -f "$PLIST" ]; then
+            echo "::error::Info.plist missing"
+            hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
+            exit 1
+          fi
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" 2>/dev/null || echo "MISSING")
+          BUNDLE_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST" 2>/dev/null || echo "MISSING")
+          echo "  OK: Bundle ID = $BUNDLE_ID"
+          echo "  OK: Version = $BUNDLE_VER"
+
+          # 检查 launcher 可执行
+          LAUNCHER="$APP_PATH/Contents/MacOS/ClawdbotCN"
+          if [ ! -x "$LAUNCHER" ]; then
+            echo "::error::Launcher not executable"
+            hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
+            exit 1
+          fi
+          echo "  OK: Launcher executable"
+
+          # 检查 Node.js binary
+          NODE_BIN="$APP_PATH/Contents/Resources/node/bin/node"
+          if [ ! -f "$NODE_BIN" ]; then
+            echo "::error::Node.js binary missing"
+            hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
+            exit 1
+          fi
+          NODE_VER=$("$NODE_BIN" --version 2>/dev/null || echo "FAILED")
+          NODE_ARCH=$(file "$NODE_BIN")
+          echo "  OK: Node.js $NODE_VER"
+          echo "  OK: $NODE_ARCH"
+
+          # 检查 entry.js 入口
+          ENTRY="$APP_PATH/Contents/Resources/app/dist/entry.js"
+          if [ ! -f "$ENTRY" ]; then
+            echo "::error::entry.js missing"
+            hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
+            exit 1
+          fi
+          echo "  OK: entry.js present"
+
+          # 检查 node_modules
+          NMODS="$APP_PATH/Contents/Resources/app/node_modules"
+          if [ ! -d "$NMODS" ]; then
+            echo "::error::node_modules missing"
+            hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
+            exit 1
+          fi
+          MOD_COUNT=$(ls -d "$NMODS"/*/ 2>/dev/null | wc -l | tr -d ' ')
+          echo "  OK: node_modules ($MOD_COUNT packages)"
+
+          # 检查 Skills
+          SKILLS_DIR="$APP_PATH/Contents/Resources/app/skills"
+          SKILL_COUNT=0
+          if [ -d "$SKILLS_DIR" ]; then
+            SKILL_COUNT=$(ls -d "$SKILLS_DIR"/*/ 2>/dev/null | wc -l | tr -d ' ')
+          fi
+          echo "  OK: Skills ($SKILL_COUNT)"
+
+          # 检查 uninstall.sh
+          UNINSTALL="$APP_PATH/Contents/Resources/uninstall.sh"
+          if [ -f "$UNINSTALL" ]; then
+            echo "  OK: uninstall.sh bundled"
+          else
+            echo "  WARN: uninstall.sh not bundled"
+          fi
+
+          # 检查签名
+          CODESIGN_STATUS=$(codesign -dv "$APP_PATH" 2>&1 || echo "unsigned")
+          echo "  Signature: $CODESIGN_STATUS"
+
+          # 快速启动测试 (只检查 --help, 不启动完整 gateway)
+          echo ""
+          echo "=== Quick launch test ==="
+          HELP_OUTPUT=$("$NODE_BIN" "$ENTRY" --help 2>&1 || echo "HELP_FAILED")
+          if echo "$HELP_OUTPUT" | grep -qi "gateway\|usage\|clawdbot"; then
+            echo "  OK: --help works"
+          else
+            echo "  WARN: --help output unexpected"
+            echo "$HELP_OUTPUT" | head -5
+          fi
+
+          # 检查包体积
+          echo ""
+          echo "=== Size breakdown ==="
+          du -sh "$APP_PATH/Contents/Resources/node" 2>/dev/null || true
+          du -sh "$APP_PATH/Contents/Resources/app/dist" 2>/dev/null || true
+          du -sh "$APP_PATH/Contents/Resources/app/node_modules" 2>/dev/null || true
+          du -sh "$APP_PATH" 2>/dev/null || true
+
+          # 卸载
+          hdiutil detach "$MOUNT_POINT" 2>/dev/null || true
+          echo ""
+          echo "=== Smoke test PASSED ==="
+
+  # ── 构建摘要 ──
+  summary:
+    needs: [build, smoke-test]
+    runs-on: ubuntu-latest
+    if: always()
+    name: Summary
+
+    steps:
+      - name: Build summary
+        run: |
+          echo "## macOS CN Build Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Arch | ${{ github.event.inputs.arch || 'universal' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Sign | ${{ github.event.inputs.sign || 'adhoc' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Notarize | ${{ github.event.inputs.notarize || 'false' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build | ${{ needs.build.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Smoke Test | ${{ needs.smoke-test.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifacts available for 30 days." >> "$GITHUB_STEP_SUMMARY"

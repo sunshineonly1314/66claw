@@ -32,6 +32,12 @@ export type SkillsInstallConfig = {
 export type SkillsConfig = {
   /** Optional bundled-skill allowlist (only affects bundled skills). */
   allowBundled?: string[];
+  /**
+   * Pinned skills — always prioritised for prompt inclusion.
+   * These skill names/keys get the highest priority (above `always: true`).
+   * Useful when the user has >30 eligible skills and wants to guarantee specific ones.
+   */
+  pinnedSkills?: string[];
   load?: SkillsLoadConfig;
   install?: SkillsInstallConfig;
   entries?: Record<string, SkillConfig>;

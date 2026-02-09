@@ -39,9 +39,13 @@ echo [2/4] 验证配置...
 echo.
 
 echo [3/4] 清理端口占用...
+set "KILLED_ANY="
 for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":18789 " ^| findstr "LISTENING"') do (
     echo       正在停止进程 (PID: %%a)...
     taskkill /PID %%a /F >nul 2>&1
+    set "KILLED_ANY=1"
+)
+if defined KILLED_ANY (
     timeout /t 2 /nobreak >nul
 )
 echo       [OK] 端口已清理

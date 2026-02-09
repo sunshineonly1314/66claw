@@ -323,7 +323,7 @@ export class ClawdbotApp extends LitElement {
   @state() skillsBusyKey: string | null = null;
   @state() skillMessages: Record<string, SkillMessage> = {};
   @state() skillsInstallProgress: Record<string, import("./controllers/skills").InstallProgress> = {};
-  @state() skillsActiveTab: "local" | "remote" = "local";
+  @state() skillsActiveTab: "active" | "library" = "active";
   @state() skillsRemoteLoading = false;
   @state() skillsRemoteIndex: RemoteSkillsIndex | null = null;
   @state() skillsRemoteError: string | null = null;
@@ -335,12 +335,15 @@ export class ClawdbotApp extends LitElement {
   @state() skillsMarketError: string | null = null;
   // 技能分类筛选
   @state() skillsActiveCategory = "all";
+  // 技能列表分页
+  @state() skillsVisibleCount = 50;
 
   // Playground 状态（技能玩法推荐）
   @state() playgroundLoading = false;
   @state() playgroundReport: import("./types").SkillStatusReport | null = null;
   @state() playgroundError: string | null = null;
   @state() playgroundActiveCategory: string | null = null;
+  @state() playgroundFilter: string = "";
   @state() playgroundInstallingSkill: string | null = null;
   @state() playgroundInstallMessage: string | null = null;
 

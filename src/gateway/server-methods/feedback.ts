@@ -9,13 +9,10 @@ import { resolveStateDir } from "../../config/paths.js";
 import { getDeviceId } from "../../license/device-id.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
-import { detectChinaRegion } from "../../config/region-cn.js";
+
 
 /** 反馈 API 基础地址 */
-const FEEDBACK_API_BASE_URL = "https://www.tecbinai.com/api/api/v1/feedback";
-
-/** 中国区反馈 API 备用地址（国内备案域名反代） */
-const FEEDBACK_API_CN_FALLBACK_URL = "https://www.obplugins.cn/api/api/v1/feedback";
+const FEEDBACK_API_BASE_URL = "https://www.obplugins.cn/api/api/v1/feedback";
 
 /** 请求超时时间 */
 const REQUEST_TIMEOUT_MS = 30000;
@@ -166,9 +163,7 @@ async function syncFeedbackToRemote(feedback: StoredFeedback): Promise<boolean> 
   };
 
   // 中国区：先尝试国内反代，失败再回源
-  const urls = detectChinaRegion()
-    ? [`${FEEDBACK_API_CN_FALLBACK_URL}/submit`, `${FEEDBACK_API_BASE_URL}/submit`]
-    : [`${FEEDBACK_API_BASE_URL}/submit`];
+  const urls = [`${FEEDBACK_API_BASE_URL}/submit`];
 
   for (const url of urls) {
     try {
@@ -211,9 +206,7 @@ export const feedbackHandlers: GatewayRequestHandlers = {
    * 健康检查接口
    */
   "feedback.health": async ({ respond }) => {
-    const urls = detectChinaRegion()
-      ? [`${FEEDBACK_API_CN_FALLBACK_URL}/health`, `${FEEDBACK_API_BASE_URL}/health`]
-      : [`${FEEDBACK_API_BASE_URL}/health`];
+    const urls = [`${FEEDBACK_API_BASE_URL}/health`];
 
     for (const url of urls) {
       try {

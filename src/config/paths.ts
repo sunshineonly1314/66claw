@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ClawdbotConfig } from "./types.js";
 
 /**
@@ -16,9 +17,40 @@ export function resolveIsNixMode(env: NodeJS.ProcessEnv = process.env): boolean 
 export const isNixMode = resolveIsNixMode();
 
 /**
+ * Resolve the application's root directory from the current module location.
+ * Compiled layout: dist/config/paths.js → ../.. = app root.
+ */
+function resolveAppRootDir(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  return path.resolve(path.dirname(thisFile), "..", "..");
+}
+
+/**
+ * On Windows, resolve a portable data directory relative to the app's install location.
+ * Returns `<appRoot>/data/` so all mutable state lives next to the executable
+ * instead of on C: drive.  Returns null on non-Windows or if detection fails.
+ */
+export function resolvePortableDataDir(): string | null {
+  if (process.platform !== "win32") return null;
+  try {
+    const appRoot = resolveAppRootDir();
+    const parsed = path.parse(appRoot);
+    // Don't use if the app root IS a drive root (e.g. "C:\").
+    if (appRoot === parsed.root) return null;
+    return path.join(appRoot, "data");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * State directory for mutable data (sessions, logs, caches).
  * Can be overridden via CLAWDBOT_STATE_DIR environment variable.
- * Default: ~/.clawdbot
+ *
+ * Precedence:
+ * 1. CLAWDBOT_STATE_DIR (explicit override)
+ * 2. On Windows: <appRoot>/data/  (portable, avoids C: drive)
+ * 3. ~/.clawdbot (traditional)
  */
 export function resolveStateDir(
   env: NodeJS.ProcessEnv = process.env,
@@ -27,9 +59,13 @@ export function resolveStateDir(
   const override = env.CLAWDBOT_STATE_DIR?.trim();
   if (override) return resolveUserPath(override);
 
-  // On Windows running as admin/SYSTEM, HOME/USERPROFILE may be unset,
-  // causing os.homedir() to return a drive root like "C:\".
-  // Fallback to LOCALAPPDATA or APPDATA to avoid EPERM on mkdir at root.
+  // On Windows, default to portable data dir (<appRoot>/data/) so all mutable
+  // state lives next to the executable instead of on C: drive.
+  const portable = resolvePortableDataDir();
+  if (portable) return portable;
+
+  // Non-Windows fallback: ~/.clawdbot
+  // Also serves as a safety net on Windows when app-root detection fails.
   let home = homedir();
   const parsed = path.parse(home);
   if (home === parsed.root) {

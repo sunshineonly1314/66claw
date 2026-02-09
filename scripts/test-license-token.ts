@@ -27,7 +27,7 @@ if ((globalThis as Record<string, unknown>)[EXECUTION_FLAG]) {
 // 配置
 // ============================================================================
 
-const API_BASE_URL = "https://www.tecbinai.com/api/api/v1/license";
+const API_BASE_URL = "https://www.obplugins.cn/api/api/v1/license";
 
 // 服务端 RSA 公钥（用于验证令牌签名）
 const SERVER_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----

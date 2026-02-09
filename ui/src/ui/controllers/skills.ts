@@ -1,7 +1,7 @@
 import type { GatewayBrowserClient } from "../gateway";
 import type { RemoteSkillsIndex, SkillStatusReport, SkillsMarketResponse } from "../types";
 
-export type SkillsTab = "local" | "remote";
+export type SkillsTab = "active" | "library";
 
 /** 安装进度阶段 */
 export type InstallProgressStage = "downloading" | "installing" | "verifying" | "done";
@@ -39,6 +39,8 @@ export type SkillsState = {
   skillsActiveCategory: string;
   // Filter
   skillsFilter: string;
+  // Pagination — 每次显示多少条，点「加载更多」递增
+  skillsVisibleCount: number;
 };
 
 export type SkillMessage = {
@@ -176,12 +178,48 @@ export async function installSkill(
   }
 }
 
+export async function toggleSkillPinned(
+  state: SkillsState,
+  skillKey: string,
+  pinned: boolean,
+) {
+  if (!state.client || !state.connected) return;
+  state.skillsBusyKey = skillKey;
+  state.skillsError = null;
+  try {
+    await state.client.request("skills.update", { skillKey, pinned });
+    await loadSkills(state);
+    setSkillMessage(state, skillKey, {
+      kind: "success",
+      message: pinned ? "Skill pinned" : "Skill unpinned",
+    });
+  } catch (err) {
+    const message = getErrorMessage(err);
+    state.skillsError = message;
+    setSkillMessage(state, skillKey, {
+      kind: "error",
+      message,
+    });
+  } finally {
+    state.skillsBusyKey = null;
+  }
+}
+
+/** 每页显示数量 */
+export const SKILLS_PAGE_SIZE = 50;
+
 export function setActiveTab(state: SkillsState, tab: SkillsTab) {
   state.skillsActiveTab = tab;
+  state.skillsVisibleCount = SKILLS_PAGE_SIZE; // 切 Tab 重置分页
 }
 
 export function setActiveCategory(state: SkillsState, category: string) {
   state.skillsActiveCategory = category;
+  state.skillsVisibleCount = SKILLS_PAGE_SIZE; // 切分类重置分页
+}
+
+export function loadMoreSkills(state: SkillsState) {
+  state.skillsVisibleCount = (state.skillsVisibleCount || SKILLS_PAGE_SIZE) + SKILLS_PAGE_SIZE;
 }
 
 export async function loadRemoteSkills(state: SkillsState) {

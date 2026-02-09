@@ -100,10 +100,12 @@ Filename: "{app}\ClawdbotService.exe"; Parameters: "open"; WorkingDir: "{app}"; 
 
 [UninstallRun]
 ; Step 1: Kill ClawdbotService.exe
-Filename: "cmd.exe"; Parameters: "/c taskkill /f /im ClawdbotService.exe 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist
+Filename: "cmd.exe"; Parameters: "/c taskkill /f /im ClawdbotService.exe 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "KillService"
 ; Step 2: Kill node.exe processes started by ClawdbotCN (not all node.exe to avoid affecting Cursor IDE etc)
 ; Uses PowerShell Get-Process (wmic removed in Win11 24H2+)
-Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-Process node -EA SilentlyContinue | Where-Object {{ $_.Path -like '*ClawdbotCN*' -or $_.Path -like '*clawdbot*' }} | Stop-Process -Force -EA SilentlyContinue"""; Flags: runhidden waituntilterminated
+Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-Process node -EA SilentlyContinue | Where-Object {{ $_.Path -like '*ClawdbotCN*' -or $_.Path -like '*clawdbot*' }} | Stop-Process -Force -EA SilentlyContinue"""; Flags: runhidden waituntilterminated; RunOnceId: "KillNodeProcesses"
+; Step 3: Kill any process occupying port 18789
+Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""netstat -ano | Select-String ':18789\s' | Select-String 'LISTENING' | ForEach-Object {{ $p = ($_ -split '\s+')[-1]; if ($p -match '^\d+$' -and [int]$p -gt 0) {{ Stop-Process -Id ([int]$p) -Force -EA SilentlyContinue }} }}"""; Flags: runhidden waituntilterminated; RunOnceId: "KillPort18789"
 
 [InstallDelete]
 ; Clean stale node_modules from previous version on upgrade (prevents version conflicts)
@@ -112,7 +114,8 @@ Type: filesandordirs; Name: "{app}\node_modules"
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\node_modules"
 Type: filesandordirs; Name: "{app}\config"
-Type: filesandordirs; Name: "{app}\data"
+; {app}\data is intentionally NOT deleted on uninstall — it contains user sessions,
+; agent workspace, and config that the user may want to keep for reinstall/recovery.
 Type: filesandordirs; Name: "{app}\logs"
 Type: filesandordirs; Name: "{app}\tools"
 ; install.json is created programmatically by [Code], not via [Files], so must be explicitly listed
@@ -249,8 +252,11 @@ begin
     // Uses PowerShell Get-Process (wmic removed in Win11 24H2+)
     Exec('powershell.exe', '-NoProfile -Command "Get-Process node -EA SilentlyContinue | Where-Object { $_.Path -like ''*ClawdbotCN*'' -or $_.Path -like ''*clawdbot*'' } | Stop-Process -Force -EA SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
-    // Step 3: Small delay to ensure processes are fully terminated
-    Sleep(500);
+    // Step 3: Kill ANY process occupying port 18789 (catches processes missed by name/path matching)
+    Exec('powershell.exe', '-NoProfile -Command "netstat -ano | Select-String '':18789\s'' | Select-String ''LISTENING'' | ForEach-Object { $p = ($_ -split ''\s+'')[-1]; if ($p -match ''^\d+$'' -and [int]$p -gt 0) { Stop-Process -Id ([int]$p) -Force -EA SilentlyContinue } }"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    // Step 4: Delay to ensure processes are fully terminated and port is released
+    Sleep(2000);
   end;
 
   if CurStep = ssPostInstall then
