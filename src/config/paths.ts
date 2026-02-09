@@ -26,14 +26,40 @@ export function resolveStateDir(
 ): string {
   const override = env.CLAWDBOT_STATE_DIR?.trim();
   if (override) return resolveUserPath(override);
-  return path.join(homedir(), ".clawdbot");
+
+  // On Windows running as admin/SYSTEM, HOME/USERPROFILE may be unset,
+  // causing os.homedir() to return a drive root like "C:\".
+  // Fallback to LOCALAPPDATA or APPDATA to avoid EPERM on mkdir at root.
+  let home = homedir();
+  const parsed = path.parse(home);
+  if (home === parsed.root) {
+    const fallback = env.LOCALAPPDATA?.trim() || env.APPDATA?.trim() || env.USERPROFILE?.trim();
+    if (fallback) {
+      home = fallback;
+    } else {
+      throw new Error(
+        "Cannot resolve home directory: HOME / USERPROFILE are not set and os.homedir() " +
+          `returned drive root "${home}". Set CLAWDBOT_STATE_DIR or run as a normal user.`,
+      );
+    }
+  }
+  return path.join(home, ".clawdbot");
 }
 
 function resolveUserPath(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return trimmed;
   if (trimmed.startsWith("~")) {
-    const expanded = trimmed.replace(/^~(?=$|[\\/])/, os.homedir());
+    let home = os.homedir();
+    const parsed = path.parse(home);
+    if (home === parsed.root) {
+      const fallback =
+        process.env.LOCALAPPDATA?.trim() ||
+        process.env.APPDATA?.trim() ||
+        process.env.USERPROFILE?.trim();
+      if (fallback) home = fallback;
+    }
+    const expanded = trimmed.replace(/^~(?=$|[\\/])/, home);
     return path.resolve(expanded);
   }
   return path.resolve(trimmed);

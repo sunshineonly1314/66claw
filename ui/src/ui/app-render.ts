@@ -320,6 +320,70 @@ function renderTopbarSupportButtons(state: AppViewState) {
   `;
 }
 
+function renderApiMonitor(state: AppViewState) {
+  const isWaiting =
+    state.chatRunId !== null &&
+    state.chatStream !== null &&
+    state.chatStream.trim().length === 0 &&
+    state.chatStreamStartedAt !== null;
+
+  const elapsed = state.apiMonitorElapsedMs;
+
+  // Don't show if nothing to display or dismissed
+  if (!isWaiting && elapsed === 0) return nothing;
+  if (state.apiMonitorDismissed) return nothing;
+
+  const seconds = Math.floor(elapsed / 1000);
+  // Hide for very short waits to avoid visual noise
+  if (isWaiting && seconds < 3) return nothing;
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  const timeStr =
+    minutes > 0
+      ? `${minutes}:${String(remainingSeconds).padStart(2, "0")}`
+      : `${seconds}s`;
+
+  // Determine severity
+  const level: "normal" | "warning" | "danger" =
+    seconds < 10 ? "normal" : seconds < 30 ? "warning" : "danger";
+
+  // Just completed — brief green flash
+  if (!isWaiting && elapsed > 0) {
+    return html`
+      <div class="api-monitor api-monitor--ok" title="API responded in ${timeStr}">
+        <span class="api-monitor__dot api-monitor__dot--ok"></span>
+        <span class="api-monitor__time">API ${timeStr} ✓</span>
+      </div>
+    `;
+  }
+
+  const title =
+    level === "danger"
+      ? t("apiMonitor.slowWarning" as TranslationKey)
+      : t("apiMonitor.waiting" as TranslationKey);
+
+  return html`
+    <div class="api-monitor api-monitor--${level}" title="${title}">
+      <span class="api-monitor__dot api-monitor__dot--${level}"></span>
+      <span class="api-monitor__time">${timeStr}</span>
+      ${level === "danger"
+        ? html`<span class="api-monitor__label">${t("apiMonitor.slow" as TranslationKey)}</span>`
+        : nothing}
+      ${seconds > 15
+        ? html`<button
+            class="api-monitor__dismiss"
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              state.apiMonitorDismissed = true;
+            }}
+            title="${t("apiMonitor.dismiss" as TranslationKey)}"
+          >&times;</button>`
+        : nothing}
+    </div>
+  `;
+}
+
 export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
@@ -365,6 +429,7 @@ export function renderApp(state: AppViewState) {
             <span class="topbar-promo__sep"></span>
             <span class="topbar-promo__desc">及时追踪AI · 解锁更多玩法</span>
           </a>
+          ${renderApiMonitor(state)}
           <div class="pill">
             <span class="statusDot ${state.connected ? "ok" : ""}"></span>
             <span>Health</span>

@@ -82,6 +82,9 @@ async function sendChatMessageNow(
   const app = host as unknown as ClawdbotApp;
   clearTimeout(app._justCompletedTimer);
   app.chatStreamJustCompleted = false;
+  // Reset API monitor state for new request
+  app.apiMonitorDismissed = false;
+  app.apiMonitorElapsedMs = 0;
   const result: ChatSendResult = await sendChatMessage(app, message, opts?.attachments);
 
   // 检查是否为授权错误 - 如果是，弹出激活对话框而不是显示错误

@@ -143,6 +143,10 @@ export class ClawdbotApp extends LitElement {
   /** 计时器 ID，用于 justCompleted 自动清除（app-gateway / app-chat 需要访问） */
   _justCompletedTimer = 0;
   @state() compactionStatus: import("./app-tool-stream").CompactionStatus | null = null;
+  // API Response Monitor state
+  @state() apiMonitorElapsedMs = 0;
+  @state() apiMonitorDismissed = false;
+  apiMonitorTimer: number | null = null;
   @state() chatAvatarUrl: string | null = null;
   @state() chatThinkingLevel: string | null = null;
   @state() chatQueue: ChatQueueItem[] = [];

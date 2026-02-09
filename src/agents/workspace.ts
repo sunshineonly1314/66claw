@@ -7,9 +7,23 @@ import { isSubagentSessionKey } from "../routing/session-key.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { resolveUserPath } from "../utils.js";
 
+/** Resolve a safe home directory, falling back to LOCALAPPDATA/APPDATA on Windows when homedir is a drive root. */
+function safeHomedir(): string {
+  let home = os.homedir();
+  const parsed = path.parse(home);
+  if (home === parsed.root) {
+    const fallback =
+      process.env.LOCALAPPDATA?.trim() ||
+      process.env.APPDATA?.trim() ||
+      process.env.USERPROFILE?.trim();
+    if (fallback) home = fallback;
+  }
+  return home;
+}
+
 export function resolveDefaultAgentWorkspaceDir(
   env: NodeJS.ProcessEnv = process.env,
-  homedir: () => string = os.homedir,
+  homedir: () => string = safeHomedir,
 ): string {
   const profile = env.CLAWDBOT_PROFILE?.trim();
   if (profile && profile.toLowerCase() !== "default") {
@@ -130,6 +144,17 @@ export async function ensureAgentWorkspace(params?: {
 }> {
   const rawDir = params?.dir?.trim() ? params.dir.trim() : DEFAULT_AGENT_WORKSPACE_DIR;
   const dir = resolveUserPath(rawDir);
+
+  // Guard: never mkdir a filesystem root (e.g. "C:\" on Windows, "/" on Unix).
+  // This can happen when config has workspace: "/" or os.homedir() returns a drive root.
+  const parsed = path.parse(dir);
+  if (dir === parsed.root) {
+    throw new Error(
+      `Agent workspace resolved to filesystem root "${dir}". ` +
+        "Check agents.defaults.workspace or agent workspace in clawdbot.json config.",
+    );
+  }
+
   await fs.mkdir(dir, { recursive: true });
 
   if (!params?.ensureBootstrapFiles) return { dir };

@@ -1,9 +1,7 @@
 import crypto from "node:crypto";
 import { lookupContextTokens } from "../../agents/context.js";
 import { isCliProvider } from "../../agents/model-selection.js";
-import {
-  compactEmbeddedPiSession,
-} from "../../agents/pi-embedded.js";
+import { compactEmbeddedPiSession } from "../../agents/pi-embedded.js";
 import type { ClawdbotConfig } from "../../config/config.js";
 import {
   resolveSessionFilePath,
@@ -41,10 +39,7 @@ export function resolveProactiveCompactionSettings(
 }
 
 export function shouldRunProactiveCompaction(params: {
-  entry?: Pick<
-    SessionEntry,
-    "totalTokens" | "compactionCount" | "proactiveCompactionCount"
-  >;
+  entry?: Pick<SessionEntry, "totalTokens" | "compactionCount" | "proactiveCompactionCount">;
   contextWindowTokens: number;
   thresholdRatio: number;
 }): boolean {
@@ -59,10 +54,7 @@ export function shouldRunProactiveCompaction(params: {
   // Guard: don't re-compact if we already did proactive compaction at this compactionCount
   const compactionCount = params.entry?.compactionCount ?? 0;
   const lastProactiveAt = params.entry?.proactiveCompactionCount;
-  if (
-    typeof lastProactiveAt === "number" &&
-    lastProactiveAt === compactionCount
-  ) {
+  if (typeof lastProactiveAt === "number" && lastProactiveAt === compactionCount) {
     return false;
   }
 
@@ -98,9 +90,7 @@ export async function runProactiveCompactionIfNeeded(params: {
 
   const entry =
     params.sessionEntry ??
-    (params.sessionKey
-      ? params.sessionStore?.[params.sessionKey]
-      : undefined);
+    (params.sessionKey ? params.sessionStore?.[params.sessionKey] : undefined);
 
   const shouldCompact = shouldRunProactiveCompaction({
     entry,
@@ -167,8 +157,7 @@ export async function runProactiveCompactionIfNeeded(params: {
       });
 
       // Record that proactive compaction ran at this compactionCount
-      const currentCount =
-        (activeSessionEntry?.compactionCount ?? 0) + 1; // after increment
+      const currentCount = (activeSessionEntry?.compactionCount ?? 0) + 1; // after increment
       if (params.storePath && params.sessionKey) {
         try {
           const updatedEntry = await updateSessionStoreEntry({
@@ -182,9 +171,7 @@ export async function runProactiveCompactionIfNeeded(params: {
             activeSessionEntry = updatedEntry;
           }
         } catch (err) {
-          logVerbose(
-            `failed to persist proactive compaction metadata: ${String(err)}`,
-          );
+          logVerbose(`failed to persist proactive compaction metadata: ${String(err)}`);
         }
       }
 
@@ -203,7 +190,9 @@ export async function runProactiveCompactionIfNeeded(params: {
         contextWindowTokens,
       );
       const line = `${compactLabel} • ${contextSummary}`;
-      enqueueSystemEvent(line, { sessionKey: params.sessionKey });
+      if (params.sessionKey) {
+        enqueueSystemEvent(line, { sessionKey: params.sessionKey });
+      }
 
       defaultRuntime.log(`[ProactiveCompaction] ${line}`);
 
@@ -233,9 +222,7 @@ export async function runProactiveCompactionIfNeeded(params: {
     }
   } catch (err) {
     // Proactive compaction failure should NOT block the agent turn
-    defaultRuntime.error(
-      `[ProactiveCompaction] Failed (non-blocking): ${String(err)}`,
-    );
+    defaultRuntime.error(`[ProactiveCompaction] Failed (non-blocking): ${String(err)}`);
     // Emit compaction end event (error)
     emitAgentEvent({
       runId: proactiveRunId,

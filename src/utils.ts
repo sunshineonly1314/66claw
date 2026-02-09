@@ -201,11 +201,25 @@ export function truncateUtf16Safe(input: string, maxLen: number): string {
   return sliceUtf16Safe(input, 0, limit);
 }
 
+/** Resolve a safe home directory, falling back to LOCALAPPDATA/APPDATA on Windows when homedir is a drive root. */
+function safeHomedir(): string {
+  let home = os.homedir();
+  const parsed = path.parse(home);
+  if (home === parsed.root) {
+    const fallback =
+      process.env.LOCALAPPDATA?.trim() ||
+      process.env.APPDATA?.trim() ||
+      process.env.USERPROFILE?.trim();
+    if (fallback) home = fallback;
+  }
+  return home;
+}
+
 export function resolveUserPath(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return trimmed;
   if (trimmed.startsWith("~")) {
-    const expanded = trimmed.replace(/^~(?=$|[\\/])/, os.homedir());
+    const expanded = trimmed.replace(/^~(?=$|[\\/])/, safeHomedir());
     return path.resolve(expanded);
   }
   return path.resolve(trimmed);
@@ -213,7 +227,7 @@ export function resolveUserPath(input: string): string {
 
 export function resolveConfigDir(
   env: NodeJS.ProcessEnv = process.env,
-  homedir: () => string = os.homedir,
+  homedir: () => string = safeHomedir,
 ): string {
   const override = env.CLAWDBOT_STATE_DIR?.trim();
   if (override) return resolveUserPath(override);

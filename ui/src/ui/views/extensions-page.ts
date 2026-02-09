@@ -107,21 +107,26 @@ export function renderExtensions(props: ExtensionsPageProps): TemplateResult {
   const { activeTab, onTabChange, marketplace, toast } = props;
 
   return html`
-    <div style="max-width:1280px; margin:0 auto; padding:0 clamp(12px, 2vw, 32px);">
+    <div style="padding:0 clamp(16px, 2vw, 40px);">
 
       <!-- First visit guide overlay -->
       ${marketplace.showFirstVisit ? renderFirstVisitGuide(props) : nothing}
 
-      <!-- Tab bar — wider with accent underline -->
+      <!-- Desktop header: tabs left + stats right in one bar -->
       <div style="
         display:flex;
-        gap:0;
-        margin-bottom:28px;
+        align-items:center;
+        justify-content:space-between;
+        margin-bottom:24px;
         border-bottom:1px solid var(--border);
-        padding-bottom:0;
+        gap:16px;
+        flex-wrap:wrap;
       ">
-        ${renderTab("my", activeTab, t("extensions.tab.my"), onTabChange)}
-        ${renderTab("store", activeTab, t("extensions.tab.store"), onTabChange, true)}
+        <div style="display:flex; gap:0;">
+          ${renderTab("my", activeTab, t("extensions.tab.my"), onTabChange)}
+          ${renderTab("store", activeTab, t("extensions.tab.store"), onTabChange, true)}
+        </div>
+        ${activeTab === "my" ? renderInlineStats(props) : nothing}
       </div>
 
       <!-- Tab content -->
@@ -182,14 +187,15 @@ function renderTab(
       style="
         all:unset;
         cursor:pointer;
-        padding:12px 28px;
+        padding:10px 24px;
         font-size:14px;
-        font-weight:${isActive ? "600" : "400"};
+        font-weight:${isActive ? "700" : "400"};
         color:${isActive ? "var(--fg)" : "var(--muted-strong, #6b7d91)"};
         border-bottom:2px solid ${isActive ? "var(--accent, #6c8cff)" : "transparent"};
         transition:color 150ms, border-color 150ms;
         user-select:none;
         position:relative;
+        letter-spacing:-0.01em;
       "
     >${label}${trialBadge ? html`<span style="
         display:inline-block;
@@ -209,6 +215,55 @@ function renderTab(
 }
 
 // ============================================================================
+// Inline stats ribbon (shown in header bar, right side)
+// ============================================================================
+
+function renderInlineStats(props: ExtensionsPageProps): TemplateResult {
+  const { capabilities, processes } = props;
+  const readyCount = capabilities.filter((c) => c.status === "ready").length;
+  const stoppedCount = capabilities.filter((c) => c.status === "paused" || c.status === "unavailable").length;
+  const totalTools = processes.reduce((sum, p) => sum + p.toolCount, 0);
+
+  return html`
+    <div style="
+      display:flex;
+      align-items:center;
+      gap:0;
+      font-size:12px;
+      color:var(--muted, #8b9caf);
+      margin-bottom:-1px;
+      padding-bottom:12px;
+    ">
+      <!-- Running -->
+      <div style="display:flex; align-items:center; gap:6px; padding:0 16px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#34d399;display:inline-block;box-shadow:0 0 6px rgba(52,211,153,0.4);"></span>
+        <span>${t("extensions.stats.running")}</span>
+        <span style="font-size:16px; font-weight:700; color:#34d399; letter-spacing:-0.02em;">${readyCount}</span>
+      </div>
+      <div style="width:1px;height:16px;background:var(--border);"></div>
+      <!-- Stopped -->
+      <div style="display:flex; align-items:center; gap:6px; padding:0 16px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#94a3b8;display:inline-block;"></span>
+        <span>${t("extensions.stats.stopped")}</span>
+        <span style="font-size:16px; font-weight:700; color:${stoppedCount > 0 ? "#94a3b8" : "var(--fg)"}; letter-spacing:-0.02em;">${stoppedCount}</span>
+      </div>
+      <div style="width:1px;height:16px;background:var(--border);"></div>
+      <!-- Tools -->
+      <div style="display:flex; align-items:center; gap:6px; padding:0 16px;">
+        <span>${t("extensions.stats.tools")}</span>
+        <span style="font-size:16px; font-weight:700; color:var(--accent, #6c8cff); letter-spacing:-0.02em;">${totalTools}</span>
+        <span style="font-size:11px;">${t("extensions.stats.toolsUnit")}</span>
+      </div>
+      <div style="width:1px;height:16px;background:var(--border);"></div>
+      <!-- Sync -->
+      <div style="display:flex; align-items:center; gap:6px; padding:0 16px; font-size:11px; color:var(--muted-strong, #6b7d91);">
+        \u{1F504} ${t("extensions.stats.lastSync")}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================================
 // Tab 1: My Capabilities
 // ============================================================================
 
@@ -218,90 +273,7 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
     onRestart, onDisable, onCheckUpdate, onViewUpdate, processes, updateNotice,
   } = props;
 
-  const readyCount = capabilities.filter((c) => c.status === "ready").length;
-  const stoppedCount = capabilities.filter((c) => c.status === "paused" || c.status === "unavailable").length;
-  const totalTools = processes.reduce((sum, p) => sum + p.toolCount, 0);
-
   return html`
-    <!-- Stats cards — PC: horizontal stat blocks, responsive fallback -->
-    <div style="
-      display:grid;
-      grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
-      gap:16px;
-      margin-bottom:24px;
-    ">
-      <!-- Running -->
-      <div style="
-        background:var(--card);
-        border:1px solid var(--border);
-        border-radius:var(--radius-lg, 12px);
-        padding:18px 20px;
-        box-shadow:var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.2)), inset 0 1px 0 var(--card-highlight, rgba(255,255,255,0.08));
-        transition:border-color 200ms, box-shadow 200ms;
-      ">
-        <div style="font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted, #8b9caf); margin-bottom:8px;">
-          ${t("extensions.stats.running")}
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:28px; font-weight:700; letter-spacing:-0.03em; color:#34d399; line-height:1;">${readyCount}</span>
-          <span style="width:8px;height:8px;border-radius:50%;background:#34d399;display:inline-block;box-shadow:0 0 8px rgba(52,211,153,0.4);"></span>
-        </div>
-      </div>
-
-      <!-- Stopped -->
-      <div style="
-        background:var(--card);
-        border:1px solid var(--border);
-        border-radius:var(--radius-lg, 12px);
-        padding:18px 20px;
-        box-shadow:var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.2)), inset 0 1px 0 var(--card-highlight, rgba(255,255,255,0.08));
-      ">
-        <div style="font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted, #8b9caf); margin-bottom:8px;">
-          ${t("extensions.stats.stopped")}
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:28px; font-weight:700; letter-spacing:-0.03em; color:${stoppedCount > 0 ? "#94a3b8" : "var(--fg)"}; line-height:1;">${stoppedCount}</span>
-          <span style="width:8px;height:8px;border-radius:50%;background:#94a3b8;display:inline-block;"></span>
-        </div>
-      </div>
-
-      <!-- Tools count -->
-      <div style="
-        background:var(--card);
-        border:1px solid var(--border);
-        border-radius:var(--radius-lg, 12px);
-        padding:18px 20px;
-        box-shadow:var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.2)), inset 0 1px 0 var(--card-highlight, rgba(255,255,255,0.08));
-      ">
-        <div style="font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted, #8b9caf); margin-bottom:8px;">
-          ${t("extensions.stats.tools")}
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:28px; font-weight:700; letter-spacing:-0.03em; color:var(--accent, #6c8cff); line-height:1;">${totalTools}</span>
-          <span style="font-size:14px; color:var(--muted, #8b9caf);">${t("extensions.stats.toolsUnit")}</span>
-        </div>
-      </div>
-
-      <!-- Last sync -->
-      <div style="
-        background:var(--card);
-        border:1px solid var(--border);
-        border-radius:var(--radius-lg, 12px);
-        padding:18px 20px;
-        box-shadow:var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.2)), inset 0 1px 0 var(--card-highlight, rgba(255,255,255,0.08));
-        display:flex;
-        flex-direction:column;
-        justify-content:center;
-      ">
-        <div style="font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted, #8b9caf); margin-bottom:8px;">
-          \u{1F504}
-        </div>
-        <div style="font-size:13px; color:var(--fg-secondary, #a0aec0);">
-          ${t("extensions.stats.lastSync")}
-        </div>
-      </div>
-    </div>
-
     <!-- Update notice bar -->
     ${updateNotice
       ? html`
@@ -310,9 +282,9 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
               display:flex;
               align-items:center;
               justify-content:space-between;
-              padding:12px 20px;
-              margin-bottom:24px;
-              border-radius:var(--radius-lg, 12px);
+              padding:10px 20px;
+              margin-bottom:20px;
+              border-radius:var(--radius-md, 8px);
               background:rgba(52,211,153,0.08);
               border:1px solid rgba(52,211,153,0.15);
               color:#34d399;
@@ -332,7 +304,7 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
         `
       : nothing}
 
-    <!-- Capability cards — PC: 3-column responsive grid -->
+    <!-- Capability cards — Desktop: 3-column grid, fills full width -->
     ${capabilities.length === 0
       ? html`
           <div style="text-align:center; padding:80px 20px; color:var(--muted-strong, #6b7d91); font-size:14px;">
@@ -340,7 +312,7 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
           </div>
         `
       : html`
-          <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:20px; margin-bottom:36px;">
+          <div class="ext-cards-grid" style="display:grid; gap:16px; margin-bottom:28px;">
             ${capabilities.map(
               (cap) => renderExtensionsCard({ capability: cap, onConfigClick, onTrySay }),
             )}
@@ -348,7 +320,7 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
         `}
 
     <!-- Advanced Settings (collapsed) -->
-    <div style="border-top:1px solid var(--border); padding-top:20px;">
+    <div style="border-top:1px solid var(--border); padding-top:16px;">
       <button
         @click=${onToggleAdvanced}
         style="
@@ -369,6 +341,20 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
       @keyframes extUpdateIn {
         from { opacity:0; transform:translateY(-8px); }
         to   { opacity:1; transform:translateY(0); }
+      }
+      /* Desktop: 3 columns. Tablet: 2 columns. Mobile: 1 column */
+      .ext-cards-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      @media (max-width: 1200px) {
+        .ext-cards-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 700px) {
+        .ext-cards-grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   `;
@@ -415,26 +401,25 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
         `
       : nothing}
 
-    <!-- PC layout: search bar + sort + category chips in a toolbar row -->
+    <!-- Desktop toolbar: search + categories + sort — all in one compact area -->
     <div style="
       display:flex;
       gap:12px;
-      margin-bottom:20px;
+      margin-bottom:16px;
       align-items:center;
-      flex-wrap:wrap;
     ">
-      <!-- Search box — wider on PC -->
+      <!-- Search box -->
       <div style="
-        flex:1; min-width:280px; max-width:480px;
+        width:280px; flex-shrink:0;
         display:flex; align-items:center;
-        padding:0 16px;
+        padding:0 14px;
         border:1px solid var(--border);
         border-radius:var(--radius-md, 8px);
         background:var(--card);
         transition:border-color 150ms, box-shadow 150ms;
-        height:40px;
+        height:36px;
       " class="mcp-search-box">
-        <span style="font-size:14px; color:var(--muted-strong, #6b7d91); margin-right:10px;">\u{1F50D}</span>
+        <span style="font-size:13px; color:var(--muted-strong, #6b7d91); margin-right:8px;">\u{1F50D}</span>
         <input
           type="text"
           .value=${marketplace.search}
@@ -443,7 +428,7 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
           style="
             all:unset;
             flex:1;
-            padding:10px 0;
+            padding:8px 0;
             font-size:13px;
             color:var(--fg);
           "
@@ -456,20 +441,55 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
           : nothing}
       </div>
 
-      <!-- Sort dropdown -->
+      <!-- Category chips — inline with search -->
+      <div style="
+        display:flex;
+        gap:6px;
+        flex-wrap:wrap;
+        flex:1;
+        align-items:center;
+      ">
+        ${CATEGORIES.map((cat) => {
+          const isActive = marketplace.activeCategory === cat.id;
+          const count = cat.id === "all"
+            ? marketplace.items.length
+            : marketplace.items.filter((i) => i.category === cat.id).length;
+
+          return html`
+            <button
+              @click=${() => onCategoryChange(isActive && cat.id !== "all" ? "all" : cat.id)}
+              style="
+                all:unset; cursor:pointer;
+                padding:4px 12px;
+                border-radius:var(--radius-full, 9999px);
+                font-size:11px;
+                white-space:nowrap;
+                border:1px solid ${isActive ? "var(--accent, #6c8cff)" : "var(--border)"};
+                background:${isActive ? "rgba(108,140,255,0.1)" : "transparent"};
+                color:${isActive ? "var(--accent, #6c8cff)" : "var(--muted-strong, #6b7d91)"};
+                transition:all 150ms;
+                user-select:none;
+              "
+            >${cat.emoji} ${t(`extensions.category.${cat.id}` as never)}${count > 0 ? ` (${count})` : ""}</button>
+          `;
+        })}
+      </div>
+
+      <!-- Sort dropdown — right side -->
       <select
         @change=${(e: Event) => onSortChange((e.target as HTMLSelectElement).value as McpMarketplaceState["sort"])}
         .value=${marketplace.sort}
         style="
-          padding:0 14px;
-          height:40px;
+          padding:0 12px;
+          height:36px;
           border:1px solid var(--border);
           border-radius:var(--radius-md, 8px);
           background:var(--card);
           color:var(--fg);
-          font-size:13px;
+          font-size:12px;
           outline:none;
           cursor:pointer;
+          flex-shrink:0;
         "
       >
         <option value="recommended">${t("extensions.store.sort.recommended")}</option>
@@ -479,41 +499,7 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
       </select>
     </div>
 
-    <!-- Category chips — PC: more breathing room -->
-    <div style="
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-      margin-bottom:24px;
-      padding-bottom:4px;
-    ">
-      ${CATEGORIES.map((cat) => {
-        const isActive = marketplace.activeCategory === cat.id;
-        const count = cat.id === "all"
-          ? marketplace.items.length
-          : marketplace.items.filter((i) => i.category === cat.id).length;
-
-        return html`
-          <button
-            @click=${() => onCategoryChange(isActive && cat.id !== "all" ? "all" : cat.id)}
-            style="
-              all:unset; cursor:pointer;
-              padding:6px 16px;
-              border-radius:var(--radius-full, 9999px);
-              font-size:12px;
-              white-space:nowrap;
-              border:1px solid ${isActive ? "var(--accent, #6c8cff)" : "var(--border)"};
-              background:${isActive ? "rgba(108,140,255,0.1)" : "transparent"};
-              color:${isActive ? "var(--accent, #6c8cff)" : "var(--muted-strong, #6b7d91)"};
-              transition:all 150ms;
-              user-select:none;
-            "
-          >${cat.emoji} ${t(`extensions.category.${cat.id}` as never)}${count > 0 ? ` (${count})` : ""}</button>
-        `;
-      })}
-    </div>
-
-    <!-- Content: loading / empty / no results / cards — PC: wider grid -->
+    <!-- Content: loading / empty / no results / cards — Desktop: 3-4 column grid -->
     ${marketplace.loading
       ? renderStoreLoading()
       : marketplace.error
@@ -523,11 +509,10 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
           : filtered.length === 0
             ? renderNoResults(marketplace.search, () => onSearchChange(""))
             : html`
-                <div style="
+                <div class="ext-store-grid" style="
                   display:grid;
-                  grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));
-                  gap:20px;
-                  margin-bottom:36px;
+                  gap:16px;
+                  margin-bottom:28px;
                 ">
                   ${filtered.map(
                     (item) => renderMarketplaceCard({
@@ -544,6 +529,25 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
       .mcp-search-box:focus-within {
         border-color:var(--accent, #6c8cff) !important;
         box-shadow:0 0 0 3px rgba(108,140,255,0.1);
+      }
+      /* Store grid: 4 cols on wide, 3 on medium, 2 on narrow, 1 on mobile */
+      .ext-store-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+      @media (max-width: 1400px) {
+        .ext-store-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      @media (max-width: 1000px) {
+        .ext-store-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 600px) {
+        .ext-store-grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   `;
@@ -673,45 +677,44 @@ function renderRecommendationBanner(
 ): TemplateResult {
   return html`
     <div style="
-      padding:20px 28px;
-      margin-bottom:24px;
-      border-radius:var(--radius-lg, 12px);
-      background:linear-gradient(135deg, rgba(108,140,255,0.08), rgba(32,213,188,0.06));
+      padding:14px 24px;
+      margin-bottom:16px;
+      border-radius:var(--radius-md, 8px);
+      background:linear-gradient(135deg, rgba(108,140,255,0.06), rgba(32,213,188,0.04));
       border:1px solid rgba(108,140,255,0.12);
       display:flex;
       align-items:center;
-      justify-content:space-between;
-      gap:24px;
-      flex-wrap:wrap;
+      gap:20px;
     ">
-      <div style="flex:1; min-width:240px;">
-        <div style="font-size:15px; font-weight:600; color:var(--fg); margin-bottom:6px;">
+      <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
+        <span style="font-size:15px; font-weight:600; color:var(--fg); white-space:nowrap;">
           \u2728 ${t("extensions.recommend.title")}
-        </div>
-        <div style="font-size:13px; color:var(--muted-strong, #6b7d91); margin-bottom:12px;">
+        </span>
+        <span style="font-size:12px; color:var(--muted-strong, #6b7d91); white-space:nowrap;">
           ${t("extensions.recommend.subtitle")}
-        </div>
-        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        </span>
+        <div style="display:flex; gap:6px; flex-wrap:nowrap; overflow:hidden;">
           ${recommendations.slice(0, 3).map(
             (r) => html`
               <span style="
-                font-size:12px; padding:5px 14px;
+                font-size:11px; padding:3px 10px;
                 border-radius:var(--radius-sm, 6px);
                 background:var(--card);
                 border:1px solid var(--border);
                 color:var(--fg);
+                white-space:nowrap;
               ">${r.friendlyName}</span>
             `,
           )}
         </div>
       </div>
-      <div style="display:flex; gap:12px; align-items:center; flex-shrink:0;">
+      <div style="display:flex; gap:10px; align-items:center; flex-shrink:0;">
         <button
           @click=${() => recommendations.forEach((r) => onInstall(r))}
           style="
             all:unset; cursor:pointer;
-            font-size:13px; font-weight:600;
-            padding:8px 24px; border-radius:var(--radius-md, 8px);
+            font-size:12px; font-weight:600;
+            padding:6px 18px; border-radius:var(--radius-md, 8px);
             background:var(--accent, #6c8cff);
             color:#fff;
             transition:opacity 150ms;
@@ -721,9 +724,9 @@ function renderRecommendationBanner(
           @click=${onDismiss}
           style="
             all:unset; cursor:pointer;
-            font-size:13px;
+            font-size:12px;
             color:var(--muted-strong, #6b7d91);
-            padding:8px 12px;
+            padding:6px 8px;
           "
         >${t("extensions.recommend.later")}</button>
       </div>
@@ -738,71 +741,58 @@ function renderRecommendationBanner(
 function renderFirstVisitGuide(props: ExtensionsPageProps): TemplateResult {
   return html`
     <div style="
-      padding:36px 40px;
-      margin-bottom:28px;
-      border-radius:var(--radius-xl, 16px);
+      padding:24px 32px;
+      margin-bottom:24px;
+      border-radius:var(--radius-lg, 12px);
       background:linear-gradient(135deg, rgba(108,140,255,0.06), rgba(32,213,188,0.04));
       border:1px solid rgba(108,140,255,0.12);
-      text-align:center;
       animation:extFadeIn 400ms ease both;
+      display:flex;
+      align-items:center;
+      gap:32px;
     ">
-      <div style="font-size:20px; font-weight:700; color:var(--fg); margin-bottom:12px;">
-        \u{1F389} ${t("extensions.firstVisit.title")}
+      <!-- Left: text content -->
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:18px; font-weight:700; color:var(--fg); margin-bottom:8px;">
+          \u{1F389} ${t("extensions.firstVisit.title")}
+        </div>
+        <div style="font-size:13px; color:var(--fg-secondary, #a0aec0); margin-bottom:14px; line-height:1.6;">
+          ${t("extensions.firstVisit.desc")}
+        </div>
+        <div style="
+          display:flex; gap:10px; flex-wrap:wrap;
+          font-size:12px; margin-bottom:12px;
+        ">
+          <span style="padding:5px 14px; border-radius:var(--radius-sm, 6px); background:var(--card); border:1px solid var(--border);">
+            \u{1F4C1} \u64CD\u4F5C\u7535\u8111\u6587\u4EF6</span>
+          <span style="padding:5px 14px; border-radius:var(--radius-sm, 6px); background:var(--card); border:1px solid var(--border);">
+            \u{1F50D} \u641C\u7D22\u7F51\u9875</span>
+          <span style="padding:5px 14px; border-radius:var(--radius-sm, 6px); background:var(--card); border:1px solid var(--border);">
+            \u{1F5C3}\uFE0F \u67E5\u8BE2\u6570\u636E\u5E93</span>
+          <span style="padding:5px 14px; border-radius:var(--radius-sm, 6px); background:var(--card); border:1px solid var(--border);">
+            \u23F0 \u4E86\u89E3\u65F6\u95F4\u65E5\u671F</span>
+          <span style="padding:5px 14px; border-radius:var(--radius-sm, 6px); background:var(--card); border:1px solid var(--border);">
+            \u{1F9E0} \u6DF1\u5EA6\u601D\u8003</span>
+        </div>
+        <div style="font-size:12px; color:var(--muted-strong, #6b7d91); line-height:1.6;">
+          ${t("extensions.firstVisit.preinstalled")}
+          &nbsp;\u00B7&nbsp;
+          ${t("extensions.firstVisit.storeHint")}
+        </div>
       </div>
-      <div style="font-size:14px; color:var(--fg-secondary, #a0aec0); margin-bottom:24px; line-height:1.6; max-width:600px; margin-left:auto; margin-right:auto;">
-        ${t("extensions.firstVisit.desc")}
-      </div>
-      <div style="
-        display:flex; justify-content:center; gap:20px; flex-wrap:wrap;
-        font-size:14px; margin-bottom:20px;
-      ">
-        <span style="
-          padding:8px 18px;
-          border-radius:var(--radius-md, 8px);
-          background:var(--card);
-          border:1px solid var(--border);
-        ">\u{1F4C1} \u64CD\u4F5C\u7535\u8111\u6587\u4EF6</span>
-        <span style="
-          padding:8px 18px;
-          border-radius:var(--radius-md, 8px);
-          background:var(--card);
-          border:1px solid var(--border);
-        ">\u{1F50D} \u641C\u7D22\u7F51\u9875</span>
-        <span style="
-          padding:8px 18px;
-          border-radius:var(--radius-md, 8px);
-          background:var(--card);
-          border:1px solid var(--border);
-        ">\u{1F5C3}\uFE0F \u67E5\u8BE2\u6570\u636E\u5E93</span>
-        <span style="
-          padding:8px 18px;
-          border-radius:var(--radius-md, 8px);
-          background:var(--card);
-          border:1px solid var(--border);
-        ">\u23F0 \u4E86\u89E3\u65F6\u95F4\u65E5\u671F</span>
-        <span style="
-          padding:8px 18px;
-          border-radius:var(--radius-md, 8px);
-          background:var(--card);
-          border:1px solid var(--border);
-        ">\u{1F9E0} \u6DF1\u5EA6\u601D\u8003</span>
-      </div>
-      <div style="font-size:13px; color:var(--muted-strong, #6b7d91); margin-bottom:6px;">
-        ${t("extensions.firstVisit.preinstalled")}
-      </div>
-      <div style="font-size:13px; color:var(--muted-strong, #6b7d91); margin-bottom:24px;">
-        ${t("extensions.firstVisit.storeHint")}
-      </div>
+      <!-- Right: action -->
       <button
         @click=${props.onDismissFirstVisit}
         style="
           all:unset; cursor:pointer;
-          font-size:14px; font-weight:600;
-          padding:10px 36px;
+          font-size:13px; font-weight:600;
+          padding:10px 32px;
           border-radius:var(--radius-md, 8px);
           background:var(--accent, #6c8cff);
           color:#fff;
           transition:opacity 150ms;
+          white-space:nowrap;
+          flex-shrink:0;
         "
       >${t("extensions.firstVisit.explore")}</button>
     </div>

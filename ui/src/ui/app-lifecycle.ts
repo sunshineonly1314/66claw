@@ -35,6 +35,9 @@ type LifecycleHost = {
   popStateHandler: () => void;
   topbarObserver: ResizeObserver | null;
   readingIndicatorTimer: number | null;
+  apiMonitorTimer: number | null;
+  apiMonitorElapsedMs: number;
+  apiMonitorDismissed: boolean;
   requestUpdate: () => void;
 };
 
@@ -84,6 +87,11 @@ export function handleDisconnected(host: LifecycleHost) {
   if (host.readingIndicatorTimer !== null) {
     window.clearInterval(host.readingIndicatorTimer);
     host.readingIndicatorTimer = null;
+  }
+  // Clean up API monitor timer
+  if (host.apiMonitorTimer !== null) {
+    window.clearInterval(host.apiMonitorTimer);
+    host.apiMonitorTimer = null;
   }
 }
 
@@ -137,6 +145,28 @@ export function handleUpdated(
       // Stop timer when no longer waiting
       window.clearInterval(host.readingIndicatorTimer);
       host.readingIndicatorTimer = null;
+    }
+
+    // API Response Monitor timer
+    if (isWaitingForResponse && host.apiMonitorTimer === null) {
+      host.apiMonitorDismissed = false;
+      host.apiMonitorTimer = window.setInterval(() => {
+        if (host.chatStreamStartedAt !== null) {
+          host.apiMonitorElapsedMs = Date.now() - host.chatStreamStartedAt;
+        }
+      }, 1000);
+    } else if (!isWaitingForResponse && host.apiMonitorTimer !== null) {
+      window.clearInterval(host.apiMonitorTimer);
+      host.apiMonitorTimer = null;
+      // Keep elapsed visible briefly for "completed" transition, then clear
+      if (host.apiMonitorElapsedMs > 0) {
+        const elapsed = host.apiMonitorElapsedMs;
+        setTimeout(() => {
+          if (host.apiMonitorElapsedMs === elapsed) {
+            host.apiMonitorElapsedMs = 0;
+          }
+        }, 3000);
+      }
     }
   }
 }

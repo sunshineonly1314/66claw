@@ -1385,6 +1385,14 @@ export const en = {
   "support.loading": "Loading QR code...",
 
   // ============================================================================
+  // API Response Monitor
+  // ============================================================================
+  "apiMonitor.waiting": "Waiting for API response...",
+  "apiMonitor.slow": "SLOW",
+  "apiMonitor.slowWarning": "API response is taking unusually long. Gateway timeout is 10 minutes.",
+  "apiMonitor.dismiss": "Dismiss",
+
+  // ============================================================================
   // Capability Discovery
   // ============================================================================
   "discovery.welcome.title": "Welcome to Clawdbot",

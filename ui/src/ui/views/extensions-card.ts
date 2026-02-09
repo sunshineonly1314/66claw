@@ -67,7 +67,7 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg, 12px);
-        padding: 24px;
+        padding: 16px 18px;
         position: relative;
         transition: border-color var(--duration-normal, 200ms) var(--ease-out, ease),
                     box-shadow var(--duration-normal, 200ms) var(--ease-out, ease),
@@ -75,19 +75,20 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
         box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.2)), inset 0 1px 0 var(--card-highlight, rgba(255,255,255,0.08));
         display:flex;
         flex-direction:column;
+        min-height: 0;
       "
     >
       ${cap.isNew
         ? html`<span
             style="
               position: absolute;
-              top: 14px;
-              right: 14px;
+              top: 12px;
+              right: 12px;
               font-size: 10px;
               font-weight: 600;
               text-transform: uppercase;
               letter-spacing: 0.5px;
-              padding: 3px 10px;
+              padding: 2px 8px;
               border-radius: var(--radius-sm, 6px);
               background: rgba(96,165,250,0.15);
               color: #60a5fa;
@@ -95,45 +96,46 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
           >${t("extensions.newBadge")}</span>`
         : nothing}
 
-      <!-- Header: name + status -->
-      <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
-        <span style="font-size:16px; font-weight:600; color:var(--fg); letter-spacing:-0.01em;">${cap.friendlyName}</span>
+      <!-- Header: name + status — compact -->
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span style="font-size:15px; font-weight:600; color:var(--fg); letter-spacing:-0.01em;">${cap.friendlyName}</span>
         <span
           style="
             display:inline-flex;
             align-items:center;
-            gap:5px;
-            font-size:11px;
-            padding:3px 12px;
+            gap:4px;
+            font-size:10px;
+            padding:2px 10px;
             border-radius:var(--radius-full, 9999px);
             background:${bgColor};
             color:${dotColor};
+            flex-shrink:0;
           "
         >
-          <span style="width:6px;height:6px;border-radius:50%;background:${dotColor};display:inline-block;${cap.status === "ready" ? "box-shadow:0 0 6px " + dotColor + ";" : ""}"></span>
+          <span style="width:5px;height:5px;border-radius:50%;background:${dotColor};display:inline-block;${cap.status === "ready" ? "box-shadow:0 0 5px " + dotColor + ";" : ""}"></span>
           ${statusLabel(cap.status)}
         </span>
       </div>
 
-      <!-- Description list -->
-      <div style="margin-bottom:16px; flex:1;">
-        <div style="font-size:12px; color:var(--muted-strong, #6b7d91); margin-bottom:8px; font-weight:500;">
+      <!-- Description list — compact -->
+      <div style="margin-bottom:10px; flex:1;">
+        <div style="font-size:11px; color:var(--muted-strong, #6b7d91); margin-bottom:4px; font-weight:500;">
           ${t("extensions.canHelp")}
         </div>
-        <ul style="margin:0; padding-left:18px; font-size:13px; color:var(--fg-secondary, #a0aec0); line-height:1.8;">
+        <ul style="margin:0; padding-left:16px; font-size:12px; color:var(--fg-secondary, #a0aec0); line-height:1.7;">
           ${cap.description.map((d) => html`<li>${d}</li>`)}
         </ul>
       </div>
 
-      <!-- Config needed hint -->
+      <!-- Config needed hint — compact -->
       ${cap.status === "needs_config" && cap.configNeeded
         ? html`
             <div
               style="
-                font-size:12px;
+                font-size:11px;
                 color:var(--muted-strong, #6b7d91);
-                margin-bottom:14px;
-                padding:10px 14px;
+                margin-bottom:10px;
+                padding:8px 12px;
                 background:rgba(251,191,36,0.06);
                 border:1px solid rgba(251,191,36,0.12);
                 border-radius:var(--radius-md, 8px);
@@ -145,8 +147,8 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
           `
         : nothing}
 
-      <!-- Footer: "try saying" or config button -->
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:auto; padding-top:4px;">
+      <!-- Footer: config button + "try saying" — compact -->
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:auto; padding-top:2px;">
         ${cap.status === "needs_config"
           ? html`
               <button
@@ -154,9 +156,9 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
                 style="
                   all:unset;
                   cursor:pointer;
-                  font-size:12px;
+                  font-size:11px;
                   font-weight:600;
-                  padding:7px 18px;
+                  padding:5px 14px;
                   border-radius:var(--radius-sm, 6px);
                   background:linear-gradient(135deg, #fbbf24, #f59e0b);
                   color:#000;
@@ -173,18 +175,22 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
           style="
             all:unset;
             cursor:pointer;
-            font-size:12px;
+            font-size:11px;
             color:var(--accent-2, #20d5bc);
             display:flex;
             align-items:center;
             gap:4px;
             transition: opacity 150ms, color 150ms;
-            padding:4px 0;
+            padding:2px 0;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+            max-width:100%;
           "
           title="${cap.examplePrompt}"
         >
-          <span style="font-size:11px; color:var(--muted-strong, #6b7d91);">${t("extensions.trySay")}</span>
-          <span>"${cap.examplePrompt}"</span>
+          <span style="font-size:10px; color:var(--muted-strong, #6b7d91); flex-shrink:0;">${t("extensions.trySay")}</span>
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${cap.examplePrompt}"</span>
         </button>
       </div>
     </div>

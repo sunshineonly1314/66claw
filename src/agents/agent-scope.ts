@@ -133,14 +133,26 @@ export function resolveAgentModelFallbacksOverride(
   return Array.isArray(raw.fallbacks) ? raw.fallbacks : undefined;
 }
 
+/** Guard: reject paths that resolve to a filesystem root (e.g. "/" → "C:\" on Windows). */
+function rejectFsRoot(resolved: string, label: string): string {
+  const parsed = path.parse(resolved);
+  if (resolved === parsed.root) {
+    throw new Error(
+      `${label} resolved to filesystem root "${resolved}". ` +
+        "Fix the workspace path in clawdbot.json (e.g. use ~/clawd instead of /).",
+    );
+  }
+  return resolved;
+}
+
 export function resolveAgentWorkspaceDir(cfg: ClawdbotConfig, agentId: string) {
   const id = normalizeAgentId(agentId);
   const configured = resolveAgentConfig(cfg, id)?.workspace?.trim();
-  if (configured) return resolveUserPath(configured);
+  if (configured) return rejectFsRoot(resolveUserPath(configured), `agent "${id}" workspace`);
   const defaultAgentId = resolveDefaultAgentId(cfg);
   if (id === defaultAgentId) {
     const fallback = cfg.agents?.defaults?.workspace?.trim();
-    if (fallback) return resolveUserPath(fallback);
+    if (fallback) return rejectFsRoot(resolveUserPath(fallback), "agents.defaults.workspace");
     return DEFAULT_AGENT_WORKSPACE_DIR;
   }
   return path.join(os.homedir(), `clawd-${id}`);

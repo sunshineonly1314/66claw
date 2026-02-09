@@ -69,6 +69,9 @@ export type AppViewState = {
   chatThinkingLevel: string | null;
   chatQueue: ChatQueueItem[];
   compactionStatus: import("./app-tool-stream").CompactionStatus | null;
+  // API Response Monitor state
+  apiMonitorElapsedMs: number;
+  apiMonitorDismissed: boolean;
   // Sidebar state
   sidebarOpen: boolean;
   sidebarContent: string | null;
