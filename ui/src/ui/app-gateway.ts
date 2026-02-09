@@ -19,7 +19,7 @@ import {
 } from "./storage";
 import { t } from "./i18n/index.js";
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream";
-import { flushChatQueueForEvent } from "./app-chat";
+import { flushChatQueueForEvent, handleSendChat } from "./app-chat";
 import type { LicenseUiState, LicenseDialogType } from "./license/types";
 import {
   applySettings,
@@ -38,6 +38,7 @@ import type { ClawdbotApp } from "./app";
 import type { ExecApprovalRequest } from "./controllers/exec-approval";
 import { loadAssistantIdentity } from "./controllers/assistant-identity";
 import { runCapabilityDetection, type DiscoveryControllerState } from "./controllers/capability-detect";
+import { initMcpCapabilities, type McpLifecycleState } from "./controllers/mcp-lifecycle";
 import {
   addSkillInstallRequest,
   parseSkillInstallRequested,
@@ -78,6 +79,13 @@ type GatewayHost = {
   // ClawdbotCN 专属：技能安装进度状态
   skillInstallQueue?: SkillInstallRequest[];
   skillInstallProgress?: SkillInstallProgress | null;
+  // Skills batch install event handler (wired up by ClawdbotApp)
+  handleBatchEvent?: (event: Record<string, unknown>) => void;
+  checkBatchSkills?: () => Promise<void>;
+  // MCP lifecycle state
+  mcpCapabilities: import("./app-view-state").McpCapability[];
+  mcpProcesses: import("./app-view-state").McpProcessInfo[];
+  mcpUpdateNotice: { count: number; names: string[] } | null;
 };
 
 type SessionDefaultsSnapshot = {
@@ -268,6 +276,18 @@ export function connectGateway(host: GatewayHost) {
       // 加载 License 状态并检查是否需要弹框 (ClawdbotCN)
       void loadLicenseStatus(host as unknown as ClawdbotApp);
       
+      // ClawdbotCN: 检查是否有未安装的批量技能
+      void host.checkBatchSkills?.();
+
+      // 初始化 MCP 能力列表
+      void initMcpCapabilities(host.client, {
+        onStateChange: (patch: Partial<McpLifecycleState>) => {
+          if (patch.capabilities !== undefined) host.mcpCapabilities = patch.capabilities;
+          if (patch.processes !== undefined) host.mcpProcesses = patch.processes;
+          if (patch.updateNotice !== undefined) host.mcpUpdateNotice = patch.updateNotice;
+        },
+      });
+
       // 首次使用时触发能力检测
       if (host.discoveryState.isFirstVisit && !host.discoveryState.hasCompletedFirstVisit) {
         void runCapabilityDetection(host.client, {
@@ -346,13 +366,40 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       );
     }
     const state = handleChatEvent(host as unknown as ClawdbotApp, payload);
-    if (state === "final" || state === "error" || state === "aborted") {
+    const isFinal = state === "final" || state === "final_model_switch";
+    if (isFinal || state === "error" || state === "aborted") {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void flushChatQueueForEvent(
         host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
       );
     }
-    if (state === "final") void loadChatHistory(host as unknown as ClawdbotApp);
+    if (isFinal) {
+      // Load history first, then clear stream for seamless transition.
+      // This keeps the typewriter animation alive while history loads,
+      // preventing the "sudden text flash" when stream is cleared too early.
+      const app = host as unknown as ClawdbotApp;
+      loadChatHistory(app).then(() => {
+        app.chatStream = null;
+        clearTimeout(app._justCompletedTimer);
+        app.chatStreamJustCompleted = true;
+        app._justCompletedTimer = window.setTimeout(() => { app.chatStreamJustCompleted = false; }, 5000);
+      });
+    } else if (state === "error" || state === "aborted") {
+      const app = host as unknown as ClawdbotApp;
+      clearTimeout(app._justCompletedTimer);
+      app.chatStreamJustCompleted = false;
+    }
+    // ClawdbotCN: auto-create new session when free model switch is detected.
+    // Delay slightly so the user can see the switch notification card before the session resets.
+    if (state === "final_model_switch") {
+      setTimeout(() => {
+        void handleSendChat(
+          host as unknown as Parameters<typeof handleSendChat>[0],
+          "/new",
+          { restoreDraft: true },
+        );
+      }, 1500);
+    }
     return;
   }
 
@@ -392,6 +439,21 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (resolved) {
       host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
     }
+    return;
+  }
+
+  // =========================================================================
+  // ClawdbotCN 专属：技能批量安装事件处理 (Skills Batch Install)
+  // =========================================================================
+  if (
+    evt.event === "skills.batch.progress" ||
+    evt.event === "skills.batch.complete" ||
+    evt.event === "skills.batch.error"
+  ) {
+    const payload = (evt.payload ?? {}) as Record<string, unknown>;
+    // Strip "skills.batch." prefix → "progress" | "complete" | "error"
+    const wsEvent = evt.event.replace("skills.batch.", "");
+    host.handleBatchEvent?.({ _wsEvent: wsEvent, ...payload });
     return;
   }
 
@@ -482,6 +544,10 @@ type LicenseHost = {
   client: GatewayBrowserClient | null;
   licenseState: LicenseUiState;
   showLicenseDialog: LicenseDialogType | null;
+  // QR 码预加载状态
+  qrcodePreloading?: boolean;
+  qrcodePreloaded?: boolean;
+  qrcodeExpiresAt?: number | null;
 };
 
 /**
@@ -587,9 +653,70 @@ export async function loadLicenseStatus(host: LicenseHost): Promise<void> {
 
       // 检查是否需要显示弹框
       checkAndShowLicenseDialog(host);
+
+      // 预加载技术支持二维码（在 license 状态加载完成后立即触发）
+      void preloadQrcodeForChat(host);
     }
   } catch (error) {
     console.error("[license] Failed to load license status:", error);
+  }
+}
+
+/**
+ * 预加载技术支持二维码
+ *
+ * 在 license 状态加载完成后调用，确保用户进入 chat 页面
+ * hover 到二维码按钮时能立即看到二维码图片。
+ *
+ * 策略：
+ *   1. 如果 license 已有二维码数据（从 license.status 返回的）→ 标记已预加载
+ *   2. 否则调用 support.qrcode.preload 触发远程拉取
+ *   3. 拉取成功后更新 license 中的二维码数据
+ */
+async function preloadQrcodeForChat(host: LicenseHost): Promise<void> {
+  if (!host.client) return;
+
+  // 如果 license 已经带有二维码数据，只需标记为已预加载
+  if (host.licenseState?.license?.supportQrcode?.base64) {
+    host.qrcodePreloaded = true;
+    host.qrcodePreloading = false;
+    return;
+  }
+
+  // 触发远程预加载
+  host.qrcodePreloading = true;
+  host.qrcodePreloaded = false;
+
+  try {
+    const result = await host.client.request("support.qrcode.preload", {});
+    if (result && typeof result === "object") {
+      const data = result as Record<string, unknown>;
+      const qrcode = data.qrcode as { base64: string; groupName: string } | null;
+      const purchaseUrl = data.purchaseUrl as string | null;
+
+      if (qrcode?.base64) {
+        // 更新 license 状态中的二维码
+        host.licenseState = {
+          ...host.licenseState,
+          license: {
+            ...host.licenseState.license!,
+            supportQrcode: qrcode,
+            purchaseUrl: purchaseUrl ?? host.licenseState.license?.purchaseUrl,
+          },
+        };
+        host.qrcodeExpiresAt = (data.expiresAt as number) ?? null;
+        host.qrcodePreloaded = true;
+        console.log("[qrcode] Support QR code preloaded successfully");
+      } else {
+        console.warn("[qrcode] Preload returned no QR code data");
+        host.qrcodePreloaded = false;
+      }
+    }
+  } catch (error) {
+    console.error("[qrcode] Failed to preload support QR code:", error);
+    host.qrcodePreloaded = false;
+  } finally {
+    host.qrcodePreloading = false;
   }
 }
 

@@ -47,6 +47,7 @@ import {
   resetChatScroll as resetChatScrollInternal,
 } from "./app-scroll";
 import { connectGateway as connectGatewayInternal } from "./app-gateway";
+import { initQrGuard } from "./qr-guard";
 import {
   handleConnected,
   handleDisconnected,
@@ -86,6 +87,11 @@ import {
   runCapabilityDetection,
 } from "./controllers/capability-detect";
 import { initCodeBlockCopyHandlers } from "./code-highlight";
+import {
+  createDefaultBatchState,
+  checkBatchSkills as checkBatchSkillsController,
+  handleBatchEvent as handleBatchEventController,
+} from "./controllers/skills-batch";
 
 declare global {
   interface Window {
@@ -133,6 +139,9 @@ export class ClawdbotApp extends LitElement {
   @state() chatStream: string | null = null;
   @state() chatStreamStartedAt: number | null = null;
   @state() chatRunId: string | null = null;
+  @state() chatStreamJustCompleted = false;
+  /** 计时器 ID，用于 justCompleted 自动清除（app-gateway / app-chat 需要访问） */
+  _justCompletedTimer = 0;
   @state() compactionStatus: import("./app-tool-stream").CompactionStatus | null = null;
   @state() chatAvatarUrl: string | null = null;
   @state() chatThinkingLevel: string | null = null;
@@ -183,8 +192,17 @@ export class ClawdbotApp extends LitElement {
   @state() licenseBoundDevices: import("./license/types").BoundDevice[] = [];
   @state() showOfflineBanner = false;
 
+  // QR 码预加载状态 (ClawdbotCN)
+  @state() qrcodePreloading = false;
+  @state() qrcodePreloaded = false;
+  @state() qrcodeExpiresAt: number | null = null;
+
   // 能力发现状态 (Capability Discovery)
   @state() discoveryState: import("./controllers/capability-detect").DiscoveryControllerState = createInitialDiscoveryState();
+
+  // 性能档位 (Performance Profile)
+  @state() performanceProfile: "economy" | "balanced" | "power" = "balanced";
+  @state() performanceProfileSaving = false;
 
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
@@ -328,6 +346,43 @@ export class ClawdbotApp extends LitElement {
   @state() skillInstallBusy = false;
   @state() skillInstallError: string | null = null;
 
+  // ClawdbotCN 专属：技能批量安装状态 (Skills Batch Install)
+  @state() skillsBatch = createDefaultBatchState();
+  private batchPillAutoDismissTimer: number | null = null;
+  handleBatchEvent = (event: Record<string, unknown>) => {
+    handleBatchEventController(this.skillsBatch, event);
+    // Trigger Lit re-render by reassigning the state object
+    this.skillsBatch = { ...this.skillsBatch };
+  };
+  checkBatchSkills = async () => {
+    // Augment state with client reference — controller mutates in-place
+    const proxy = Object.assign(this.skillsBatch, { client: this.client, connected: this.connected });
+    await checkBatchSkillsController(proxy);
+    this.skillsBatch = { ...this.skillsBatch };
+  };
+
+  // MCP 扩展工具状态 (Extensions)
+  @state() mcpCapabilities: import("./app-view-state").McpCapability[] = [];
+  @state() mcpAdvancedOpen = false;
+  @state() mcpUpdateNotice: { count: number; names: string[] } | null = null;
+  @state() mcpProcesses: import("./app-view-state").McpProcessInfo[] = [];
+  @state() mcpExtTab: import("./app-view-state").McpExtensionsTab = "my";
+  @state() mcpMarketplace: import("./app-view-state").McpMarketplaceState = {
+    items: [],
+    loading: false,
+    error: null,
+    search: "",
+    activeCategory: "all",
+    sort: "recommended",
+    recommendations: [],
+    showFirstVisit: !localStorage.getItem("clawdbot.mcp.firstVisitSeen"),
+    detailItem: null,
+    configTarget: null,
+    toast: null,
+  };
+  /** Timer for auto-clearing MCP toast notifications */
+  _mcpToastTimer: number | null = null;
+
   // 文档中心状态
   @state() docsViewState: import("./views/docs").DocsViewState = {
     mode: "home",
@@ -389,6 +444,7 @@ export class ClawdbotApp extends LitElement {
   private nodesPollInterval: number | null = null;
   private logsPollInterval: number | null = null;
   private debugPollInterval: number | null = null;
+  private mcpPollInterval: number | null = null;
   private logsScrollFrame: number | null = null;
   private toolStreamById = new Map<string, ToolStreamEntry>();
   private toolStreamOrder: string[] = [];
@@ -431,6 +487,8 @@ export class ClawdbotApp extends LitElement {
     document.addEventListener("keydown", this.handleDocsKeydown);
     // 初始化代码块复制功能（事件委托，只需初始化一次）
     initCodeBlockCopyHandlers();
+    // 初始化 QR 码截屏保护
+    initQrGuard();
   }
 
   protected firstUpdated() {
@@ -440,6 +498,10 @@ export class ClawdbotApp extends LitElement {
   disconnectedCallback() {
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     document.removeEventListener("keydown", this.handleDocsKeydown);
+    if (this.batchPillAutoDismissTimer != null) {
+      window.clearTimeout(this.batchPillAutoDismissTimer);
+      this.batchPillAutoDismissTimer = null;
+    }
     super.disconnectedCallback();
   }
 
@@ -448,6 +510,24 @@ export class ClawdbotApp extends LitElement {
       this as unknown as Parameters<typeof handleUpdated>[0],
       changed,
     );
+
+    // Auto-dismiss the minimized "complete" pill after 5 seconds
+    if (changed.has("skillsBatch")) {
+      const { batchPhase, batchMinimized } = this.skillsBatch;
+      if (batchMinimized && batchPhase === "complete") {
+        if (this.batchPillAutoDismissTimer == null) {
+          this.batchPillAutoDismissTimer = window.setTimeout(() => {
+            this.batchPillAutoDismissTimer = null;
+            if (this.skillsBatch.batchMinimized && this.skillsBatch.batchPhase === "complete") {
+              this.skillsBatch = { ...this.skillsBatch, batchPhase: "idle", batchMinimized: false };
+            }
+          }, 5000);
+        }
+      } else if (this.batchPillAutoDismissTimer != null) {
+        window.clearTimeout(this.batchPillAutoDismissTimer);
+        this.batchPillAutoDismissTimer = null;
+      }
+    }
   }
 
   connect() {

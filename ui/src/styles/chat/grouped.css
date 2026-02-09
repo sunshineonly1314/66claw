@@ -983,3 +983,133 @@ img.chat-avatar {
     font-size: 12px;
   }
 }
+
+/* =============================================
+   STREAM COMPLETION TRANSITIONS
+   ============================================= */
+
+/* --- 1. Just-completed bubble: 余晖淡出效果 --- */
+.chat-bubble.just-completed {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  animation: streaming-fade-out 0.5s var(--ease-out) forwards;
+}
+
+/* 外圈光晕：单次淡出 */
+.chat-bubble.just-completed::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: calc(16px + 2px);
+  border: 2px solid var(--accent);
+  background: transparent;
+  opacity: 0.4;
+  animation: glow-fade-out 0.5s var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+/* 内层扫光：最后一次扫过后消失 */
+.chat-bubble.just-completed::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 40%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.06) 60%,
+    transparent 100%
+  );
+  animation: shimmer-last-sweep 0.6s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes streaming-fade-out {
+  from {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 0 14px 0 rgba(var(--accent-rgb, 234, 88, 12), 0.12);
+    border-color: rgba(var(--accent-rgb, 234, 88, 12), 0.4);
+  }
+  to {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    border-color: var(--border);
+  }
+}
+
+@keyframes glow-fade-out {
+  from { opacity: 0.4; border-color: var(--accent); }
+  to { opacity: 0; border-color: transparent; }
+}
+
+@keyframes shimmer-last-sweep {
+  from { left: -50%; opacity: 1; }
+  to { left: 150%; opacity: 0; }
+}
+
+:root[data-theme="light"] .chat-bubble.just-completed::after {
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.03) 50%, transparent 100%);
+}
+
+/* --- 2. Reply complete 指示器 --- */
+.chat-reply-complete {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 2px;
+  font-size: 11px;
+  color: var(--ok);
+  animation:
+    reply-complete-enter 0.4s var(--ease-out) 0.2s both,
+    reply-complete-fade 0.5s ease-in 3.5s both;
+}
+
+.chat-reply-complete svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes reply-complete-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 0.7; transform: translateY(0); }
+}
+
+@keyframes reply-complete-fade {
+  from { opacity: 0.7; }
+  to { opacity: 0; }
+}
+
+/* --- 3. Action bar 入场动画 --- */
+.chat-bubble__actions.actions-enter {
+  animation: actions-slide-in 0.35s var(--ease-out) 0.25s both;
+}
+
+@keyframes actions-slide-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Reduced motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble.just-completed,
+  .chat-bubble.just-completed::before,
+  .chat-bubble.just-completed::after,
+  .chat-reply-complete,
+  .chat-bubble__actions.actions-enter {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+  .chat-reply-complete {
+    opacity: 0.7 !important;
+  }
+}

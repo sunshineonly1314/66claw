@@ -15,7 +15,7 @@ import {
   formatReasoningMarkdown,
   type FreeModelNotification,
 } from "./message-extract";
-import { extractToolCards, renderToolCardSidebar } from "./tool-cards";
+import { extractToolCards, renderToolCardGroup } from "./tool-cards";
 import { formatErrorHintFull, type FormattedError } from "./error-hints";
 
 // 思考过程折叠阈值（字符数）
@@ -398,6 +398,7 @@ export function renderMessageGroup(
     showReasoning: boolean;
     assistantName?: string;
     assistantAvatar?: string | null;
+    justCompleted?: boolean;
   },
 ) {
   const normalizedRole = normalizeRoleForGrouping(group.role);
@@ -440,10 +441,17 @@ export function renderMessageGroup(
               isStreaming:
                 group.isStreaming && index === group.messages.length - 1,
               showReasoning: opts.showReasoning,
+              justCompleted: opts.justCompleted && index === group.messages.length - 1,
             },
             opts.onOpenSidebar,
           ),
         )}
+        ${opts.justCompleted ? html`
+          <div class="chat-reply-complete">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>回复完成</span>
+          </div>
+        ` : nothing}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -621,13 +629,13 @@ async function handleCopyMessage(text: string, btn: HTMLElement): Promise<void> 
 /**
  * 渲染消息底部操作栏（仅 AI 消息）
  */
-function renderMessageActions(markdown: string | null, isStreaming: boolean) {
+function renderMessageActions(markdown: string | null, isStreaming: boolean, justCompleted?: boolean) {
   // 流式输出时不显示操作栏
   if (isStreaming || !markdown) return nothing;
-  
+
   return html`
-    <div class="chat-bubble__actions">
-      <button 
+    <div class="chat-bubble__actions ${justCompleted ? "actions-enter" : ""}">
+      <button
         type="button" 
         class="chat-action"
         title="复制消息"
@@ -648,7 +656,7 @@ function renderMessageActions(markdown: string | null, isStreaming: boolean) {
 
 function renderGroupedMessage(
   message: unknown,
-  opts: { isStreaming: boolean; showReasoning: boolean },
+  opts: { isStreaming: boolean; showReasoning: boolean; justCompleted?: boolean },
   onOpenSidebar?: (content: string) => void,
 ) {
   const m = message as Record<string, unknown>;
@@ -690,6 +698,7 @@ function renderGroupedMessage(
     "chat-bubble",
     canCopyMarkdown ? "has-copy" : "",
     opts.isStreaming ? "streaming" : "",
+    isAssistant && !opts.isStreaming && opts.justCompleted ? "just-completed" : "",
     showActions ? "has-actions" : "",
     "fade-in",
   ]
@@ -697,9 +706,7 @@ function renderGroupedMessage(
     .join(" ");
 
   if (!markdown && hasToolCards && isToolResult) {
-    return html`${toolCards.map((card) =>
-      renderToolCardSidebar(card, onOpenSidebar),
-    )}`;
+    return renderToolCardGroup(toolCards, onOpenSidebar);
   }
 
   if (!markdown && !hasToolCards && !hasImages && !freeModelNotification) return nothing;
@@ -715,8 +722,8 @@ function renderGroupedMessage(
       ${markdown
         ? html`<div class="chat-text">${unsafeHTML(getCachedMarkdownHtml(message, markdown))}</div>`
         : nothing}
-      ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
-      ${showActions ? renderMessageActions(markdown, opts.isStreaming) : nothing}
+      ${renderToolCardGroup(toolCards, onOpenSidebar)}
+      ${showActions ? renderMessageActions(markdown, opts.isStreaming, opts.justCompleted) : nothing}
     </div>
   `;
 }

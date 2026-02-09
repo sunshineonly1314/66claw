@@ -1,5 +1,6 @@
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat";
 import { loadSessions } from "./controllers/sessions";
+import { syncPerformanceProfile } from "./controllers/perf-profile";
 import { generateUUID } from "./uuid";
 import { resetToolStream } from "./app-tool-stream";
 import { scheduleChatScroll } from "./app-scroll";
@@ -77,7 +78,11 @@ async function sendChatMessageNow(
   },
 ) {
   resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-  const result = await sendChatMessage(host as unknown as ClawdbotApp, message, opts?.attachments);
+  // Clear completion indicator from previous response
+  const app = host as unknown as ClawdbotApp;
+  clearTimeout(app._justCompletedTimer);
+  app.chatStreamJustCompleted = false;
+  const result = await sendChatMessage(app, message, opts?.attachments);
   
   // 检查是否为授权错误 - 如果是，弹出激活对话框而不是显示错误
   const isLicenseError = typeof result === "object" && result !== null && 
@@ -179,6 +184,7 @@ export async function refreshChat(host: ChatHost) {
     loadChatHistory(host as unknown as ClawdbotApp),
     loadSessions(host as unknown as ClawdbotApp),
     refreshChatAvatar(host),
+    syncPerformanceProfile(host as unknown as ClawdbotApp),
   ]);
   scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], true);
 }

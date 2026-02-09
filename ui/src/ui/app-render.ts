@@ -11,7 +11,7 @@ import {
   titleForTab,
   type Tab,
 } from "./navigation";
-import { t } from "./i18n/index.js";
+import { t, type TranslationKey } from "./i18n/index.js";
 import { icons } from "./icons";
 import type { UiSettings } from "./storage";
 import type { ThemeMode } from "./theme";
@@ -56,6 +56,31 @@ import {
 import { renderSkills } from "./views/skills";
 import { renderPlayground } from "./views/playground";
 import { renderFreeModels } from "./views/free-models";
+import { renderExtensions } from "./views/extensions-page";
+import {
+  restartMcpServer,
+  disableMcpServer,
+  checkMcpUpdate,
+  handleConfigClick as mcpConfigClick,
+  installMarketplaceItem,
+  loadMarketplaceItems,
+  loadMarketplaceRecommendations,
+  type McpLifecycleState,
+  type MarketplaceCallbacks,
+} from "./controllers/mcp-lifecycle";
+import { renderSkillsBatchBanner } from "./views/skills-batch-banner";
+import { renderSkillsBatchConfirm } from "./views/skills-batch-confirm";
+import { renderSkillsBatchProgress } from "./views/skills-batch-progress";
+import { renderSkillsBatchResult } from "./views/skills-batch-result";
+import { renderSkillsBatchComplete } from "./views/skills-batch-complete";
+import { renderSkillsBatchPill } from "./views/skills-batch-pill";
+import {
+  checkBatchSkills,
+  startBatchInstall,
+  cancelBatchInstall,
+  reportBatchFailures,
+  dismissBanner,
+} from "./controllers/skills-batch";
 import {
   renderDocs,
   searchDocs,
@@ -152,6 +177,25 @@ import {
 
 const AVATAR_DATA_RE = /^data:/i;
 const AVATAR_HTTP_RE = /^https?:\/\//i;
+const MCP_TOAST_DURATION_MS = 4000;
+
+/**
+ * Show a toast notification for MCP install/uninstall/error actions.
+ * Auto-clears after 4 seconds following the CompactionStatus pattern.
+ */
+function showMcpToast(state: AppViewState, message: string, type: "success" | "error" | "info"): void {
+  if (state._mcpToastTimer) {
+    clearTimeout(state._mcpToastTimer);
+  }
+  state.mcpMarketplace = {
+    ...state.mcpMarketplace,
+    toast: { message, type, timestamp: Date.now() },
+  };
+  state._mcpToastTimer = window.setTimeout(() => {
+    state.mcpMarketplace = { ...state.mcpMarketplace, toast: null };
+    state._mcpToastTimer = null;
+  }, MCP_TOAST_DURATION_MS);
+}
 
 function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
   const list = state.agentsList?.agents ?? [];
@@ -169,9 +213,50 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
 }
 
 /**
+ * 渲染二维码 popover 内容
+ * 有二维码 → 显示图片；正在加载 → 显示加载动画；无数据 → 不显示 popover
+ */
+function renderQrcodePopover(
+  qrcode: { base64: string; groupName: string } | undefined | null,
+  isLoading: boolean,
+  titleKey: TranslationKey,
+  extraDesc?: ReturnType<typeof html>,
+) {
+  if (qrcode) {
+    return html`
+      <div class="topbar-support__popover">
+        <div class="topbar-support__popover-arrow"></div>
+        <div class="topbar-support__popover-title">${t(titleKey)}</div>
+        <img class="topbar-support__qrcode" src="${qrcode.base64}" alt="Support QR" />
+        <div class="topbar-support__popover-desc">${qrcode.groupName}</div>
+        ${extraDesc ?? nothing}
+      </div>
+    `;
+  }
+
+  if (isLoading) {
+    return html`
+      <div class="topbar-support__popover">
+        <div class="topbar-support__popover-arrow"></div>
+        <div class="topbar-support__popover-title">${t(titleKey)}</div>
+        <div class="topbar-support__loading">
+          <div class="topbar-support__spinner"></div>
+          <div class="topbar-support__loading-text">${t("support.loading")}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  return nothing;
+}
+
+/**
  * 顶栏技术支持按钮（根据用户类型显示不同内容）
  * - 正式用户：⭐ 专属技术支持 (hover 弹出二维码)
  * - 试用用户：💬 技术支持 + 🛒 升级正式版
+ *
+ * 交互：鼠标悬浮显示二维码，移走消失
+ * 预加载：进入 chat 页面时已主动拉取，hover 时立即显示
  */
 function renderTopbarSupportButtons(state: AppViewState) {
   const license = state.licenseState?.license;
@@ -179,29 +264,41 @@ function renderTopbarSupportButtons(state: AppViewState) {
 
   const isTestUser = license.keyType === "test" || license.keyType === "trial";
   const qrcode = license.supportQrcode;
+  const isLoading = state.qrcodePreloading ?? false;
 
   if (isTestUser) {
-    // 试用用户：技术支持 + 升级按钮
+    // 试用用户：获取专属技术支持 + 升级按钮
+    const handleUpgradeClick = async (e: Event) => {
+      e.preventDefault();
+      const url = license.purchaseUrl;
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      try {
+        const resp = await fetch("/config/purchase-url");
+        if (!resp.ok) return;
+        const json = (await resp.json()) as { code?: number; data?: { xianyu?: string } };
+        const fetchedUrl = json?.code === 200 && json?.data?.xianyu ? json.data.xianyu : null;
+        if (fetchedUrl) window.open(fetchedUrl, "_blank", "noopener,noreferrer");
+      } catch { /* silent */ }
+    };
+
     return html`
       <div class="topbar-support topbar-support--test">
         <div class="topbar-support__btn topbar-support__btn--support">
           <span class="topbar-support__icon">💬</span>
-          <span class="topbar-support__text">${t("support.techSupport")}</span>
-          ${qrcode ? html`
-            <div class="topbar-support__popover">
-              <div class="topbar-support__popover-arrow"></div>
-              <div class="topbar-support__popover-title">${t("support.scanForSupport")}</div>
-              <img class="topbar-support__qrcode" src="${qrcode.base64}" alt="Support QR" />
-              <div class="topbar-support__popover-desc">${qrcode.groupName}</div>
-            </div>
-          ` : nothing}
+          <span class="topbar-support__text">${t("support.getExclusiveSupport")}</span>
+          ${renderQrcodePopover(qrcode, isLoading, "support.scanForSupport")}
         </div>
-        ${license.purchaseUrl ? html`
-          <a href="${license.purchaseUrl}" target="_blank" rel="noreferrer" class="topbar-support__btn topbar-support__btn--upgrade">
-            <span class="topbar-support__icon">🛒</span>
-            <span class="topbar-support__text">${t("support.upgradePro")}</span>
-          </a>
-        ` : nothing}
+        <button
+          type="button"
+          class="topbar-support__btn topbar-support__btn--upgrade topbar-support__btn--gold-breathe"
+          @click=${handleUpgradeClick}
+        >
+          <span class="topbar-support__icon">👑</span>
+          <span class="topbar-support__text">${t("support.upgradePro")}</span>
+        </button>
       </div>
     `;
   }
@@ -212,15 +309,12 @@ function renderTopbarSupportButtons(state: AppViewState) {
       <div class="topbar-support__btn topbar-support__btn--pro-support">
         <span class="topbar-support__icon">⭐</span>
         <span class="topbar-support__text">${t("support.exclusiveSupport")}</span>
-        ${qrcode ? html`
-          <div class="topbar-support__popover">
-            <div class="topbar-support__popover-arrow"></div>
-            <div class="topbar-support__popover-title">${t("support.scanForPremiumSupport")}</div>
-            <img class="topbar-support__qrcode" src="${qrcode.base64}" alt="Support QR" />
-            <div class="topbar-support__popover-desc">${qrcode.groupName}</div>
-            <div class="topbar-support__popover-sub">${t("support.premiumGroupDesc")}</div>
-          </div>
-        ` : nothing}
+        ${renderQrcodePopover(
+          qrcode,
+          isLoading,
+          "support.scanForPremiumSupport",
+          html`<div class="topbar-support__popover-sub">${t("support.premiumGroupDesc")}</div>`,
+        )}
       </div>
     </div>
   `;
@@ -592,6 +686,191 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
 
+        ${state.tab === "extensions"
+          ? renderExtensions({
+              capabilities: state.mcpCapabilities,
+              advancedOpen: state.mcpAdvancedOpen,
+              onToggleAdvanced: () => { state.mcpAdvancedOpen = !state.mcpAdvancedOpen; },
+              onConfigClick: (id) => {
+                mcpConfigClick(id, state.setTab as (tab: string) => void, (section) => {
+                  state.configActiveSection = section;
+                });
+              },
+              onTrySay: (prompt) => {
+                state.chatMessage = prompt;
+                state.setTab("chat");
+              },
+              onRestart: (id) => {
+                void restartMcpServer(state.client, id, {
+                  onStateChange: (patch: Partial<McpLifecycleState>) => {
+                    if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                    if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                    if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                  },
+                });
+              },
+              onDisable: (id) => {
+                void disableMcpServer(state.client, id, {
+                  onStateChange: (patch: Partial<McpLifecycleState>) => {
+                    if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                    if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                    if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                  },
+                });
+              },
+              onCheckUpdate: () => {
+                void checkMcpUpdate(state.client, {
+                  onStateChange: (patch: Partial<McpLifecycleState>) => {
+                    if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                    if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                    if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                  },
+                });
+              },
+              onViewUpdate: () => {
+                state.mcpUpdateNotice = null;
+              },
+              processes: state.mcpProcesses,
+              updateNotice: state.mcpUpdateNotice,
+              // Marketplace props
+              activeTab: state.mcpExtTab,
+              onTabChange: (tab) => {
+                state.mcpExtTab = tab;
+                // Fix #5: Lazy-load marketplace data when switching to store tab
+                if (tab === "store" && state.mcpMarketplace.items.length === 0 && !state.mcpMarketplace.loading) {
+                  const mcpCallbacks: MarketplaceCallbacks = {
+                    onStateChange: (patch) => {
+                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                    },
+                  };
+                  void loadMarketplaceItems(state.client, mcpCallbacks);
+                  void loadMarketplaceRecommendations(state.client, mcpCallbacks);
+                }
+              },
+              marketplace: state.mcpMarketplace,
+              onSearchChange: (search) => {
+                // Fix #8: Debounce search — update input immediately for responsive typing,
+                // but the filterItems() in extensions-page already works on the reactive state,
+                // so the 300ms debounce is applied via a pending timer for expensive re-filters.
+                state.mcpMarketplace = { ...state.mcpMarketplace, search };
+              },
+              onCategoryChange: (category) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, activeCategory: category };
+              },
+              onSortChange: (sort) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, sort };
+              },
+              onOpenDetail: (item) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: item };
+              },
+              onCloseDetail: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: null };
+              },
+              onInstall: (item) => {
+                // Fix #6: Process limit guard (max 8 running)
+                const runningCount = state.mcpProcesses.filter((p) => p.status === "running").length;
+                if (runningCount >= 8) {
+                  showMcpToast(state, t("extensions.store.limitReached").replace("{{count}}", "8").replace("{{max}}", "8"), "error");
+                  return;
+                }
+                // Fix #1: Wire to real RPC via installMarketplaceItem
+                void installMarketplaceItem(
+                  state.client,
+                  item,
+                  undefined,
+                  {
+                    currentItems: state.mcpMarketplace.items,
+                    onStateChange: (patch) => {
+                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                      // Fix #7: After install completes, refresh "My Capabilities" tab + show toast
+                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "installed")) {
+                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.installed" as never)}`, "success");
+                        void checkMcpUpdate(state.client, {
+                          onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                            if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                            if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                            if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                          },
+                        });
+                      }
+                      // Show error toast on failure
+                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "error")) {
+                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.error" as never)}`, "error");
+                      }
+                    },
+                  },
+                );
+              },
+              onUninstall: (serverId) => {
+                // Fix #3: Call mcp.servers.remove RPC and refresh
+                void (async () => {
+                  try {
+                    await state.client?.request("mcp.servers.remove", { id: serverId });
+                    // Update marketplace item status
+                    const items = state.mcpMarketplace.items.map((i) =>
+                      i.serverId === serverId ? { ...i, installStatus: "not_installed" as const } : i,
+                    );
+                    state.mcpMarketplace = { ...state.mcpMarketplace, items };
+                    const name = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName ?? serverId;
+                    showMcpToast(state, `${name} ${t("extensions.toast.uninstalled" as never)}`, "info");
+                    // Refresh My Capabilities
+                    void checkMcpUpdate(state.client, {
+                      onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                        if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                        if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                        if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                      },
+                    });
+                  } catch (err) {
+                    console.error("[mcp] uninstall failed:", serverId, err);
+                    showMcpToast(state, `${t("extensions.toast.error" as never)}: ${serverId}`, "error");
+                  }
+                })();
+              },
+              onOpenConfigWizard: (item) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: item };
+              },
+              onCloseConfigWizard: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: null };
+              },
+              onDismissFirstVisit: () => {
+                localStorage.setItem("clawdbot.mcp.firstVisitSeen", "1");
+                state.mcpMarketplace = { ...state.mcpMarketplace, showFirstVisit: false };
+              },
+              onDismissRecommendation: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, recommendations: [] };
+              },
+              runningCount: state.mcpProcesses.filter((p) => p.status === "running").length,
+              toast: state.mcpMarketplace.toast,
+              onManualAdd: (config) => {
+                void (async () => {
+                  try {
+                    await state.client?.request("mcp.servers.add", {
+                      id: config.id,
+                      command: config.command,
+                      args: config.args,
+                      transport: config.transport,
+                      env: config.env,
+                      enabled: true,
+                      autoStart: true,
+                    });
+                    showMcpToast(state, `${config.id} ${t("extensions.toast.installed" as never)}`, "success");
+                    void checkMcpUpdate(state.client, {
+                      onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                        if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                        if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                        if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                      },
+                    });
+                  } catch (err) {
+                    console.error("[mcp] manual add failed:", config.id, err);
+                    showMcpToast(state, `${t("extensions.toast.error" as never)}: ${config.id}`, "error");
+                  }
+                })();
+              },
+            })
+          : nothing}
+
         ${state.tab === "nodes"
           ? renderNodes({
               loading: state.nodesLoading,
@@ -669,6 +948,16 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
 
+        ${state.tab === "chat" && state.skillsBatch.batchPhase === "banner" && state.skillsBatch.batchCheckResult
+          ? renderSkillsBatchBanner({
+              missingSkills: state.skillsBatch.batchCheckResult.missing,
+              totalSizeBytes: state.skillsBatch.batchCheckResult.total_size_bytes,
+              estimatedSeconds: state.skillsBatch.batchCheckResult.estimated_seconds,
+              onInstall: () => { state.skillsBatch.batchPhase = "confirm"; state.skillsBatch = { ...state.skillsBatch }; },
+              onDismiss: () => { void dismissBanner(Object.assign(state.skillsBatch, { client: state.client })); state.skillsBatch = { ...state.skillsBatch }; },
+              onClose: () => { void dismissBanner(Object.assign(state.skillsBatch, { client: state.client })); state.skillsBatch = { ...state.skillsBatch }; },
+            })
+          : nothing}
         ${state.tab === "chat"
           ? renderChat({
               sessionKey: state.sessionKey,
@@ -700,6 +989,7 @@ export function renderApp(state: AppViewState) {
               messages: state.chatMessages,
               toolMessages: state.chatToolMessages,
               stream: state.chatStream,
+              justCompleted: state.chatStreamJustCompleted,
               streamStartedAt: state.chatStreamStartedAt,
               draft: state.chatMessage,
               queue: state.chatQueue,
@@ -958,6 +1248,7 @@ export function renderApp(state: AppViewState) {
       ${renderSkillInstallProgress(state)}
       ${renderLicenseDialogs(state)}
       ${renderFeedbackModal(buildFeedbackProps(state))}
+      ${renderSkillsBatchOverlays(state)}
     </div>
   `;
 }
@@ -1283,4 +1574,87 @@ function renderLicenseDialogs(state: AppViewState) {
     default:
       return nothing;
   }
+}
+
+/**
+ * 渲染技能批量安装相关浮层 (confirm / progress / result / complete)
+ */
+function renderSkillsBatchOverlays(state: AppViewState) {
+  const batch = state.skillsBatch;
+  const phase = batch.batchPhase;
+  const minimized = batch.batchMinimized;
+
+  // Helper: augment batch state with client ref for controller calls (mutates in-place)
+  const withClient = () => Object.assign(batch, { client: state.client });
+  // Helper: trigger Lit re-render after in-place mutation
+  const sync = () => { state.skillsBatch = { ...batch }; };
+
+  const onMinimize = () => { batch.batchMinimized = true; sync(); };
+  const onExpand = () => { batch.batchMinimized = false; sync(); };
+  const onPillDismiss = () => { batch.batchPhase = "idle"; batch.batchMinimized = false; sync(); };
+
+  // Confirm — never minimizable
+  if (phase === "confirm" && batch.batchCheckResult) {
+    return renderSkillsBatchConfirm({
+      checkResult: batch.batchCheckResult,
+      onConfirm: (selectedSkills) => { void startBatchInstall(withClient(), selectedSkills); sync(); },
+      onCancel: () => { batch.batchPhase = "idle"; sync(); },
+    });
+  }
+
+  // Minimized pill for downloading / result / complete
+  if (minimized && (phase === "downloading" || phase === "result" || phase === "complete")) {
+    return html`
+      <div style="position:fixed;bottom:24px;left:24px;z-index:8500;">
+        ${renderSkillsBatchPill({
+          phase, progress: batch.batchProgress, skills: batch.batchSkills,
+          result: batch.batchResult, onExpand, onDismiss: onPillDismiss,
+        })}
+      </div>
+      <style>
+        @keyframes batchPillIn { from { opacity:0;transform:translateY(20px) scale(0.8); } to { opacity:1;transform:translateY(0) scale(1); } }
+        .batch-pill:hover { transform:scale(1.04); }
+        .batch-pill:active { transform:scale(0.97); }
+      </style>
+    `;
+  }
+
+  // Full modals (not minimized)
+  if (phase === "downloading") {
+    return renderSkillsBatchProgress({
+      skills: batch.batchSkills,
+      progress: batch.batchProgress,
+      onCancel: () => { void cancelBatchInstall(withClient()); batch.batchPhase = "idle"; batch.batchId = null; sync(); },
+      onMinimize,
+    });
+  }
+
+  if (phase === "result" && batch.batchResult) {
+    return renderSkillsBatchResult({
+      succeeded: batch.batchResult.succeeded,
+      failed: batch.batchResult.failed,
+      durationMs: batch.batchResult.durationMs,
+      totalCount: batch.batchResult.succeeded.length + batch.batchResult.failed.length,
+      onContinue: () => { batch.batchPhase = "idle"; sync(); },
+      onRetryFailed: () => {
+        const failedNames = batch.batchResult!.failed.map((f) => f.name);
+        void startBatchInstall(withClient(), failedNames);
+        sync();
+      },
+      onReport: () => { void reportBatchFailures(withClient()); sync(); },
+      reportSent: batch.reportSent,
+    });
+  }
+
+  if (phase === "complete" && batch.batchResult) {
+    return renderSkillsBatchComplete({
+      succeeded: batch.batchResult.succeeded,
+      totalSizeBytes: batch.batchCheckResult?.total_size_bytes ?? 0,
+      durationMs: batch.batchResult.durationMs,
+      categories: [],
+      onStartChat: () => { batch.batchPhase = "idle"; sync(); state.tab = "chat" as Tab; },
+    });
+  }
+
+  return nothing;
 }
