@@ -1,6 +1,7 @@
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { installSkill } from "../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../agents/skills-status.js";
+import { invalidateSkillEntriesCache } from "../agents/skills.js";
 import { loadConfig } from "../config/config.js";
 import { refreshInstalledList } from "../agents/skills/sync.js";
 import { setSkillInstallCallbacks } from "./server-methods/skill-install-approval.js";
@@ -74,6 +75,7 @@ export function initializeSkillInstallCallbacks(): void {
 
         if (result.ok) {
           // 刷新已安装列表
+          invalidateSkillEntriesCache();
           await refreshInstalledList().catch(() => {});
           return { success: true };
         } else {

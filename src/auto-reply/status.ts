@@ -342,8 +342,20 @@ export function buildStatusMessage(args: StatusArgs): string {
     ? (args.groupActivation ?? entry?.groupActivation ?? "mention")
     : undefined;
 
+  const contextPct =
+    totalTokens && contextTokens && contextTokens > 0
+      ? totalTokens / contextTokens
+      : 0;
+  const contextWarning =
+    contextPct >= 0.95
+      ? "🔴 即将溢出，建议 /compact 或 /new"
+      : contextPct >= 0.85
+        ? "⚠️ 接近上限"
+        : null;
+
   const contextLine = [
     `Context: ${formatTokens(totalTokens, contextTokens ?? null)}`,
+    contextWarning,
     `🧹 Compactions: ${entry?.compactionCount ?? 0}`,
   ]
     .filter(Boolean)

@@ -1,0 +1,249 @@
+import crypto from "node:crypto";
+import { lookupContextTokens } from "../../agents/context.js";
+import { isCliProvider } from "../../agents/model-selection.js";
+import {
+  compactEmbeddedPiSession,
+} from "../../agents/pi-embedded.js";
+import type { ClawdbotConfig } from "../../config/config.js";
+import {
+  resolveSessionFilePath,
+  type SessionEntry,
+  updateSessionStoreEntry,
+} from "../../config/sessions.js";
+import { logVerbose } from "../../globals.js";
+import { emitAgentEvent, registerAgentRunContext } from "../../infra/agent-events.js";
+import { defaultRuntime } from "../../runtime.js";
+import { enqueueSystemEvent } from "../../infra/system-events.js";
+import { formatContextUsageShort, formatTokenCount } from "../status.js";
+import type { FollowupRun } from "./queue.js";
+import { incrementCompactionCount } from "./session-updates.js";
+import { resolveMemoryFlushContextWindowTokens } from "./memory-flush.js";
+
+export const DEFAULT_PROACTIVE_COMPACTION_THRESHOLD_RATIO = 0.88;
+
+export type ProactiveCompactionConfig = {
+  enabled: boolean;
+  thresholdRatio: number;
+};
+
+export function resolveProactiveCompactionSettings(
+  cfg?: ClawdbotConfig,
+): ProactiveCompactionConfig | null {
+  const defaults = cfg?.agents?.defaults?.compaction?.proactiveCompaction;
+  const enabled = defaults?.enabled ?? true;
+  if (!enabled) return null;
+  const raw = defaults?.thresholdRatio;
+  const thresholdRatio =
+    typeof raw === "number" && Number.isFinite(raw) && raw > 0 && raw < 1
+      ? raw
+      : DEFAULT_PROACTIVE_COMPACTION_THRESHOLD_RATIO;
+  return { enabled, thresholdRatio };
+}
+
+export function shouldRunProactiveCompaction(params: {
+  entry?: Pick<
+    SessionEntry,
+    "totalTokens" | "compactionCount" | "proactiveCompactionCount"
+  >;
+  contextWindowTokens: number;
+  thresholdRatio: number;
+}): boolean {
+  const totalTokens = params.entry?.totalTokens;
+  if (!totalTokens || totalTokens <= 0) return false;
+
+  const contextWindow = Math.max(1, Math.floor(params.contextWindowTokens));
+  const threshold = Math.floor(contextWindow * params.thresholdRatio);
+  if (threshold <= 0) return false;
+  if (totalTokens < threshold) return false;
+
+  // Guard: don't re-compact if we already did proactive compaction at this compactionCount
+  const compactionCount = params.entry?.compactionCount ?? 0;
+  const lastProactiveAt = params.entry?.proactiveCompactionCount;
+  if (
+    typeof lastProactiveAt === "number" &&
+    lastProactiveAt === compactionCount
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export async function runProactiveCompactionIfNeeded(params: {
+  cfg: ClawdbotConfig;
+  followupRun: FollowupRun;
+  defaultModel: string;
+  agentCfgContextTokens?: number;
+  sessionEntry?: SessionEntry;
+  sessionStore?: Record<string, SessionEntry>;
+  sessionKey?: string;
+  storePath?: string;
+  isHeartbeat: boolean;
+}): Promise<SessionEntry | undefined> {
+  const settings = resolveProactiveCompactionSettings(params.cfg);
+  if (!settings) return params.sessionEntry;
+
+  // Skip for heartbeat runs
+  if (params.isHeartbeat) return params.sessionEntry;
+
+  // Skip for CLI providers (same exclusion as memory flush)
+  if (isCliProvider(params.followupRun.run.provider, params.cfg)) {
+    return params.sessionEntry;
+  }
+
+  const contextWindowTokens = resolveMemoryFlushContextWindowTokens({
+    modelId: params.followupRun.run.model ?? params.defaultModel,
+    agentCfgContextTokens: params.agentCfgContextTokens,
+  });
+
+  const entry =
+    params.sessionEntry ??
+    (params.sessionKey
+      ? params.sessionStore?.[params.sessionKey]
+      : undefined);
+
+  const shouldCompact = shouldRunProactiveCompaction({
+    entry,
+    contextWindowTokens,
+    thresholdRatio: settings.thresholdRatio,
+  });
+
+  if (!shouldCompact) return params.sessionEntry;
+
+  const sessionId = params.sessionEntry?.sessionId;
+  if (!sessionId) return params.sessionEntry;
+
+  const pctBefore = entry?.totalTokens
+    ? Math.round((entry.totalTokens / contextWindowTokens) * 100)
+    : "?";
+  defaultRuntime.log(
+    `[ProactiveCompaction] Context at ${pctBefore}% (threshold ${Math.round(settings.thresholdRatio * 100)}%), compacting before agent turn...`,
+  );
+
+  // Emit compaction start event so UI can show indicator
+  const proactiveRunId = crypto.randomUUID();
+  if (params.sessionKey) {
+    registerAgentRunContext(proactiveRunId, { sessionKey: params.sessionKey });
+  }
+  emitAgentEvent({
+    runId: proactiveRunId,
+    stream: "compaction",
+    sessionKey: params.sessionKey,
+    data: {
+      phase: "start",
+      source: "proactive",
+      contextPercent: pctBefore,
+    },
+  });
+
+  let activeSessionEntry = params.sessionEntry;
+  try {
+    const result = await compactEmbeddedPiSession({
+      sessionId,
+      sessionKey: params.sessionKey,
+      sessionFile: resolveSessionFilePath(sessionId, params.sessionEntry),
+      workspaceDir: params.followupRun.run.workspaceDir,
+      config: params.followupRun.run.config,
+      skillsSnapshot: params.followupRun.run.skillsSnapshot,
+      provider: params.followupRun.run.provider,
+      model: params.followupRun.run.model,
+      thinkLevel: params.followupRun.run.thinkLevel,
+      bashElevated: {
+        enabled: false,
+        allowed: false,
+        defaultLevel: "off",
+      },
+      ownerNumbers: params.followupRun.run.ownerNumbers,
+    });
+
+    if (result.ok && result.compacted) {
+      // Update compaction count and token counts
+      await incrementCompactionCount({
+        sessionEntry: activeSessionEntry,
+        sessionStore: params.sessionStore,
+        sessionKey: params.sessionKey,
+        storePath: params.storePath,
+        tokensAfter: result.result?.tokensAfter,
+      });
+
+      // Record that proactive compaction ran at this compactionCount
+      const currentCount =
+        (activeSessionEntry?.compactionCount ?? 0) + 1; // after increment
+      if (params.storePath && params.sessionKey) {
+        try {
+          const updatedEntry = await updateSessionStoreEntry({
+            storePath: params.storePath,
+            sessionKey: params.sessionKey,
+            update: async () => ({
+              proactiveCompactionCount: currentCount,
+            }),
+          });
+          if (updatedEntry) {
+            activeSessionEntry = updatedEntry;
+          }
+        } catch (err) {
+          logVerbose(
+            `failed to persist proactive compaction metadata: ${String(err)}`,
+          );
+        }
+      }
+
+      const tokensBefore = result.result?.tokensBefore;
+      const tokensAfter = result.result?.tokensAfter;
+      const compactLabel =
+        tokensBefore != null && tokensAfter != null
+          ? `Proactive compaction (${formatTokenCount(tokensBefore)} → ${formatTokenCount(tokensAfter)})`
+          : tokensBefore
+            ? `Proactive compaction (${formatTokenCount(tokensBefore)} before)`
+            : "Proactive compaction";
+
+      const totalTokensAfter = tokensAfter ?? activeSessionEntry?.totalTokens ?? 0;
+      const contextSummary = formatContextUsageShort(
+        totalTokensAfter > 0 ? totalTokensAfter : null,
+        contextWindowTokens,
+      );
+      const line = `${compactLabel} • ${contextSummary}`;
+      enqueueSystemEvent(line, { sessionKey: params.sessionKey });
+
+      defaultRuntime.log(`[ProactiveCompaction] ${line}`);
+
+      // Emit compaction end event (success)
+      emitAgentEvent({
+        runId: proactiveRunId,
+        stream: "compaction",
+        sessionKey: params.sessionKey,
+        data: {
+          phase: "end",
+          source: "proactive",
+          tokensBefore: tokensBefore,
+          tokensAfter: tokensAfter,
+        },
+      });
+    } else {
+      logVerbose(
+        `[ProactiveCompaction] Compaction skipped or failed: ${result.reason ?? "unknown"}`,
+      );
+      // Emit compaction end event (skipped/failed)
+      emitAgentEvent({
+        runId: proactiveRunId,
+        stream: "compaction",
+        sessionKey: params.sessionKey,
+        data: { phase: "end", source: "proactive" },
+      });
+    }
+  } catch (err) {
+    // Proactive compaction failure should NOT block the agent turn
+    defaultRuntime.error(
+      `[ProactiveCompaction] Failed (non-blocking): ${String(err)}`,
+    );
+    // Emit compaction end event (error)
+    emitAgentEvent({
+      runId: proactiveRunId,
+      stream: "compaction",
+      sessionKey: params.sessionKey,
+      data: { phase: "end", source: "proactive" },
+    });
+  }
+
+  return activeSessionEntry;
+}

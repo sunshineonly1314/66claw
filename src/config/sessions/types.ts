@@ -77,6 +77,8 @@ export type SessionEntry = {
   compactionCount?: number;
   memoryFlushAt?: number;
   memoryFlushCompactionCount?: number;
+  /** compactionCount value when proactive compaction last ran (prevents re-compaction at same count). */
+  proactiveCompactionCount?: number;
   cliSessionIds?: Record<string, string>;
   claudeCliSessionId?: string;
   label?: string;

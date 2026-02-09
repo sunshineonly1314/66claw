@@ -1,6 +1,7 @@
 import type { ClawdbotConfig } from "../config/config.js";
 
 export {
+  clearBinaryCache,
   hasBinary,
   isBundledSkillAllowed,
   isConfigPathTruthy,
@@ -27,6 +28,7 @@ export {
   buildWorkspaceSkillsPrompt,
   buildWorkspaceSkillCommandSpecs,
   filterWorkspaceSkillEntries,
+  invalidateSkillEntriesCache,
   loadWorkspaceSkillEntries,
   resolveSkillsPromptForRun,
   syncSkillsToWorkspace,

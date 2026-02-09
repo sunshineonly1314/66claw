@@ -1,7 +1,8 @@
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { installSkill } from "../../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
-import { loadWorkspaceSkillEntries, type SkillEntry } from "../../agents/skills.js";
+import { loadWorkspaceSkillEntries, invalidateSkillEntriesCache, type SkillEntry } from "../../agents/skills.js";
+import { clearBinaryCache } from "../../agents/skills/config.js";
 import {
   fetchRemoteSkillsIndex,
   getInstalledSkills,
@@ -71,7 +72,7 @@ function collectSkillBins(entries: SkillEntry[]): string[] {
 }
 
 export const skillsHandlers: GatewayRequestHandlers = {
-  "skills.status": ({ params, respond }) => {
+  "skills.status": async ({ params, respond }) => {
     if (!validateSkillsStatusParams(params)) {
       respond(
         false,
@@ -83,6 +84,8 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    // 用 await + setImmediate 让出事件循环，避免长时间阻塞其他请求
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const cfg = loadConfig();
     const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
     const report = buildWorkspaceSkillStatus(workspaceDir, {
@@ -206,6 +209,9 @@ export const skillsHandlers: GatewayRequestHandlers = {
       }
 
       // 远程技能安装成功（包括依赖）：
+      // 0. 清除二进制缓存，确保下次 skills.status 能检测到新安装的工具
+      clearBinaryCache();
+      invalidateSkillEntriesCache();
       // 1. 刷新已安装列表
       refreshInstalledList().catch(() => {
         // 静默失败，不影响响应
@@ -233,6 +239,9 @@ export const skillsHandlers: GatewayRequestHandlers = {
 
     // 安装后：
     if (result.ok) {
+      // 0. 清除二进制缓存，确保下次 skills.status 能检测到新安装的工具
+      clearBinaryCache();
+      invalidateSkillEntriesCache();
       // 1. 刷新本地索引中的已安装列表
       refreshInstalledList().catch(() => {
         // 静默失败，不影响响应

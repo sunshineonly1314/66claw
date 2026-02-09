@@ -246,6 +246,15 @@ export type AgentCompactionConfig = {
   reserveTokensFloor?: number;
   /** Pre-compaction memory flush (agentic turn). Default: enabled. */
   memoryFlush?: AgentCompactionMemoryFlushConfig;
+  /** Proactive compaction: auto-compact before agent turn when context exceeds threshold. */
+  proactiveCompaction?: AgentProactiveCompactionConfig;
+};
+
+export type AgentProactiveCompactionConfig = {
+  /** Enable proactive compaction before agent turns (default: true). */
+  enabled?: boolean;
+  /** Compact when context usage exceeds this ratio of the context window (0-1, default: 0.88). */
+  thresholdRatio?: number;
 };
 
 export type AgentCompactionMemoryFlushConfig = {

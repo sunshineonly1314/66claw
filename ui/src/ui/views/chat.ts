@@ -50,6 +50,10 @@ export type CompactionIndicatorStatus = {
   active: boolean;
   startedAt: number | null;
   completedAt: number | null;
+  /** "proactive" when triggered automatically before agent turn. */
+  source?: "proactive";
+  /** Context usage percentage when compaction started. */
+  contextPercent?: number;
 };
 
 export type ChatProps = {
@@ -117,9 +121,17 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
 
   // Show "compacting..." while active
   if (status.active) {
+    const isProactive = status.source === "proactive";
+    const pctLabel =
+      typeof status.contextPercent === "number"
+        ? ` (${status.contextPercent}%)`
+        : "";
+    const message = isProactive
+      ? html`<strong>正在优化对话记忆${pctLabel}</strong><br /><span style="opacity:0.85;font-size:12px">对话内容较多，正在自动整理压缩，请稍候...</span>`
+      : html`Compacting context...`;
     return html`
       <div class="callout info compaction-indicator compaction-indicator--active">
-        ${icons.loader} Compacting context...
+        ${icons.loader} ${message}
       </div>
     `;
   }
@@ -128,9 +140,13 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   if (status.completedAt) {
     const elapsed = Date.now() - status.completedAt;
     if (elapsed < COMPACTION_TOAST_DURATION_MS) {
+      const isProactive = status.source === "proactive";
+      const message = isProactive
+        ? html`对话记忆优化完成，继续为你服务`
+        : html`Context compacted`;
       return html`
         <div class="callout success compaction-indicator compaction-indicator--complete">
-          ${icons.check} Context compacted
+          ${icons.check} ${message}
         </div>
       `;
     }
@@ -360,7 +376,7 @@ export function renderChat(props: ChatProps) {
       ` : nothing}
 
       <div class="chat-welcome__footer">
-        <a href="https://www.tecbinai.com" target="_blank" rel="noreferrer" class="chat-welcome__tecbinai">
+        <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="chat-welcome__tecbinai">
           🚀 由 <strong>tecbinai</strong> 提供技术支持 · 及时追踪 AI 最新内容
         </a>
       </div>

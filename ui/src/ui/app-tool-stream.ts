@@ -23,6 +23,8 @@ export type ToolStreamEntry = {
   startedAt: number;
   updatedAt: number;
   message: Record<string, unknown>;
+  /** Source of the tool: "mcp" for MCP server tools, "builtin" for native tools. */
+  source?: "builtin" | "mcp";
 };
 
 type ToolStreamHost = {
@@ -142,6 +144,10 @@ export type CompactionStatus = {
   active: boolean;
   startedAt: number | null;
   completedAt: number | null;
+  /** "proactive" when triggered automatically before agent turn, undefined for reactive/manual. */
+  source?: "proactive";
+  /** Context usage percentage when compaction started. */
+  contextPercent?: number;
 };
 
 type CompactionHost = ToolStreamHost & {
@@ -161,17 +167,25 @@ export function handleCompactionEvent(host: CompactionHost, payload: AgentEventP
     host.compactionClearTimer = null;
   }
 
+  const source = data.source === "proactive" ? ("proactive" as const) : undefined;
+  const contextPercent =
+    typeof data.contextPercent === "number" ? data.contextPercent : undefined;
+
   if (phase === "start") {
     host.compactionStatus = {
       active: true,
       startedAt: Date.now(),
       completedAt: null,
+      source,
+      contextPercent,
     };
   } else if (phase === "end") {
     host.compactionStatus = {
       active: false,
       startedAt: host.compactionStatus?.startedAt ?? null,
       completedAt: Date.now(),
+      source: host.compactionStatus?.source ?? source,
+      contextPercent: host.compactionStatus?.contextPercent ?? contextPercent,
     };
     // Auto-clear the toast after duration
     host.compactionClearTimer = window.setTimeout(() => {
@@ -204,13 +218,17 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   if (!toolCallId) return;
   const name = typeof data.name === "string" ? data.name : "tool";
   const phase = typeof data.phase === "string" ? data.phase : "";
+  const source = typeof data.source === "string" ? data.source as "builtin" | "mcp" : undefined;
   const args = phase === "start" ? data.args : undefined;
-  const output =
+  const rawOutput =
     phase === "update"
       ? formatToolOutput(data.partialResult)
       : phase === "result"
         ? formatToolOutput(data.result)
         : undefined;
+  // When tool completes (phase="result") but has no output, use a placeholder
+  // so that buildToolStreamMessage adds a toolresult block and clears pending state.
+  const output = phase === "result" && rawOutput == null ? "(no output)" : rawOutput;
 
   const now = Date.now();
   let entry = host.toolStreamById.get(toolCallId);
@@ -225,6 +243,7 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
       startedAt: typeof payload.ts === "number" ? payload.ts : now,
       updatedAt: now,
       message: {},
+      source,
     };
     host.toolStreamById.set(toolCallId, entry);
     host.toolStreamOrder.push(toolCallId);
@@ -237,5 +256,6 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
 
   entry.message = buildToolStreamMessage(entry);
   trimToolStream(host);
-  scheduleToolStreamSync(host, phase === "result");
+  // Force immediate sync on both "start" (show pending card) and "result" (show final state)
+  scheduleToolStreamSync(host, phase === "start" || phase === "result");
 }

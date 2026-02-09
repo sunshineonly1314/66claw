@@ -30,6 +30,7 @@ import {
 } from "./agent-runner-helpers.js";
 import { runMemoryFlushIfNeeded } from "./agent-runner-memory.js";
 import { buildReplyPayloads } from "./agent-runner-payloads.js";
+import { runProactiveCompactionIfNeeded } from "./proactive-compaction.js";
 import { appendUsageLine, formatResponseUsageLine } from "./agent-runner-utils.js";
 import { createAudioAsVoiceBuffer, createBlockReplyPipeline } from "./block-reply-pipeline.js";
 import { resolveBlockStreamingCoalescing } from "./block-streaming.js";
@@ -207,6 +208,20 @@ export async function runReplyAgent(params: {
     defaultModel,
     agentCfgContextTokens,
     resolvedVerboseLevel,
+    sessionEntry: activeSessionEntry,
+    sessionStore: activeSessionStore,
+    sessionKey,
+    storePath,
+    isHeartbeat,
+  });
+
+  // Proactive compaction: auto-compact before agent turn when context exceeds threshold.
+  // Runs AFTER memory flush (which saves durable memories) and BEFORE the agent turn.
+  activeSessionEntry = await runProactiveCompactionIfNeeded({
+    cfg,
+    followupRun,
+    defaultModel,
+    agentCfgContextTokens,
     sessionEntry: activeSessionEntry,
     sessionStore: activeSessionStore,
     sessionKey,

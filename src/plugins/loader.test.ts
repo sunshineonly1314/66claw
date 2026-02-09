@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadClawdbotPlugins } from "./loader.js";
 
@@ -43,6 +43,13 @@ function writePlugin(params: {
   );
   return { dir, file, id: params.id };
 }
+
+// Prevent tests from accidentally loading the 33+ real bundled extensions
+// located at the project-level extensions/ directory.  Each test that needs
+// a bundled dir will set the env var explicitly.
+beforeEach(() => {
+  process.env.CLAWDBOT_BUNDLED_PLUGINS_DIR = path.join(os.tmpdir(), "clawdbot-no-bundled-" + randomUUID());
+});
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -480,5 +487,89 @@ describe("loadClawdbotPlugins", () => {
     const overridden = entries.find((entry) => entry.status === "disabled");
     expect(loaded?.origin).toBe("config");
     expect(overridden?.origin).toBe("bundled");
+  });
+
+  it("marks plugin as disabled when native module is missing (MODULE_NOT_FOUND with platform pattern)", () => {
+    // Simulate a plugin whose top-level code throws MODULE_NOT_FOUND for a
+    // platform-specific native binding (e.g. @matrix-org/…-win32-x64-msvc).
+    const plugin = writePlugin({
+      id: "native-missing",
+      body: `
+        const err = new Error("Cannot find module '@matrix-org/matrix-sdk-crypto-nodejs-win32-x64-msvc'");
+        err.code = "MODULE_NOT_FOUND";
+        throw err;
+      `,
+    });
+
+    const registry = loadClawdbotPlugins({
+      cache: false,
+      config: {
+        plugins: {
+          load: { paths: [plugin.file] },
+          entries: { "native-missing": { enabled: true } },
+        },
+      },
+    });
+
+    const entry = registry.plugins.find((e) => e.id === "native-missing");
+    expect(entry?.status).toBe("disabled");
+    // String(err) contains the Error message, not the code property
+    expect(entry?.error).toContain("Cannot find module");
+    expect(entry?.error).toContain("win32-x64-msvc");
+
+    const diag = registry.diagnostics.find((d) => d.pluginId === "native-missing");
+    expect(diag?.level).toBe("warn");
+    expect(diag?.message).toContain("plugin disabled");
+  });
+
+  it("marks plugin as disabled when dlopen fails (ERR_DLOPEN_FAILED)", () => {
+    const plugin = writePlugin({
+      id: "dlopen-fail",
+      body: `
+        const err = new Error("dlopen failed: libcrypto.so not found");
+        err.code = "ERR_DLOPEN_FAILED";
+        throw err;
+      `,
+    });
+
+    const registry = loadClawdbotPlugins({
+      cache: false,
+      config: {
+        plugins: {
+          load: { paths: [plugin.file] },
+          entries: { "dlopen-fail": { enabled: true } },
+        },
+      },
+    });
+
+    const entry = registry.plugins.find((e) => e.id === "dlopen-fail");
+    expect(entry?.status).toBe("disabled");
+
+    const diag = registry.diagnostics.find((d) => d.pluginId === "dlopen-fail");
+    expect(diag?.level).toBe("warn");
+  });
+
+  it("marks plugin as error for non-native load failures", () => {
+    const plugin = writePlugin({
+      id: "syntax-err",
+      body: `This is not valid JavaScript at all }{}{`,
+    });
+
+    const registry = loadClawdbotPlugins({
+      cache: false,
+      config: {
+        plugins: {
+          load: { paths: [plugin.file] },
+          entries: { "syntax-err": { enabled: true } },
+        },
+      },
+    });
+
+    const entry = registry.plugins.find((e) => e.id === "syntax-err");
+    expect(entry?.status).toBe("error");
+
+    const diag = registry.diagnostics.find((d) => d.pluginId === "syntax-err");
+    expect(diag?.level).toBe("error");
+    expect(diag?.message).toContain("failed to load plugin");
   });
 });

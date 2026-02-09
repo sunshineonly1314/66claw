@@ -3,24 +3,20 @@ import path from "node:path";
 
 import {
   formatSkillsForPrompt,
-  loadSkillsFromDir,
   type Skill,
 } from "@mariozechner/pi-coding-agent";
 
 import type { ClawdbotConfig } from "../../config/config.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { CONFIG_DIR, resolveUserPath } from "../../utils.js";
-import { resolveBundledSkillsDir } from "./bundled-dir.js";
+import { resolveUserPath } from "../../utils.js";
 import { shouldIncludeSkill } from "./config.js";
 import {
-  parseFrontmatter,
-  resolveClawdbotMetadata,
-  resolveSkillInvocationPolicy,
-} from "./frontmatter.js";
-import { resolvePluginSkillDirs } from "./plugin-skills.js";
+  invalidateAllFileIndices,
+  invalidateFileIndex,
+  loadSkillEntriesFromFileIndex,
+} from "./file-index.js";
 import { serializeByKey } from "./serialize.js";
 import type {
-  ParsedSkillFrontmatter,
   SkillEligibilityContext,
   SkillCommandSpec,
   SkillEntry,
@@ -31,6 +27,38 @@ const fsp = fs.promises;
 const skillsLogger = createSubsystemLogger("skills");
 const skillCommandDebugOnce = new Set<string>();
 
+// ---------------------------------------------------------------------------
+// TTL cache for loadSkillEntries — avoids re-reading & re-parsing every
+// SKILL.md on each API call (skills.status, skills.batch.check, etc.).
+// Cache is keyed by the resolved workspaceDir so multiple workspace dirs
+// are cached independently.  invalidateSkillEntriesCache() must be called
+// after any operation that adds / removes / modifies skill files on disk.
+// ---------------------------------------------------------------------------
+const SKILL_ENTRIES_CACHE_TTL_MS = 30_000; // 30 seconds
+
+interface SkillEntriesCacheSlot {
+  entries: SkillEntry[];
+  createdAt: number;
+}
+
+const _skillEntriesCache = new Map<string, SkillEntriesCacheSlot>();
+
+/**
+ * Invalidate the in-memory skill-entries cache.
+ * Call this after installing, removing or modifying skill files on disk.
+ * If `workspaceDir` is omitted the *entire* cache is flushed.
+ */
+export function invalidateSkillEntriesCache(workspaceDir?: string): void {
+  if (workspaceDir) {
+    const key = path.resolve(workspaceDir);
+    _skillEntriesCache.delete(key);
+    invalidateFileIndex(workspaceDir);
+  } else {
+    _skillEntriesCache.clear();
+    invalidateAllFileIndices();
+  }
+}
+
 function debugSkillCommandOnce(
   messageKey: string,
   message: string,
@@ -39,6 +67,28 @@ function debugSkillCommandOnce(
   if (skillCommandDebugOnce.has(messageKey)) return;
   skillCommandDebugOnce.add(messageKey);
   skillsLogger.debug(message, meta);
+}
+
+/** Default max number of skills injected into the system prompt. */
+const DEFAULT_MAX_PROMPT_SKILLS = 30;
+
+/**
+ * Compute a priority score for prompt inclusion.
+ * Higher = more important = included first.
+ *   3 — always:true skills (must always be present)
+ *   2 — skills with explicit `requires` whose deps are all satisfied
+ *   1 — skills with no `requires` at all (generic / community skills)
+ */
+function skillPromptPriority(entry: SkillEntry): number {
+  if (entry.clawdbot?.always === true) return 3;
+  const req = entry.clawdbot?.requires;
+  const hasDeps =
+    req &&
+    ((req.bins && req.bins.length > 0) ||
+      (req.anyBins && req.anyBins.length > 0) ||
+      (req.env && req.env.length > 0) ||
+      (req.config && req.config.length > 0));
+  return hasDeps ? 2 : 1;
 }
 
 function filterSkillEntries(
@@ -59,6 +109,25 @@ function filterSkillEntries(
         : [];
     console.log(`[skills] After filter: ${filtered.map((entry) => entry.skill.name).join(", ")}`);
   }
+
+  // Apply maxPromptSkills limit to prevent context-window explosion.
+  const maxRaw = config?.skills?.load?.maxPromptSkills;
+  const maxPromptSkills = typeof maxRaw === "number" ? maxRaw : DEFAULT_MAX_PROMPT_SKILLS;
+  if (maxPromptSkills > 0 && filtered.length > maxPromptSkills) {
+    // Sort by priority (higher first), then alphabetically for stability.
+    filtered.sort((a, b) => {
+      const pa = skillPromptPriority(a);
+      const pb = skillPromptPriority(b);
+      if (pa !== pb) return pb - pa;
+      return a.skill.name.localeCompare(b.skill.name);
+    });
+    const dropped = filtered.length - maxPromptSkills;
+    filtered = filtered.slice(0, maxPromptSkills);
+    console.log(
+      `[skills] maxPromptSkills=${maxPromptSkills}: kept ${filtered.length}, dropped ${dropped} lower-priority skills`,
+    );
+  }
+
   return filtered;
 }
 
@@ -92,6 +161,19 @@ function resolveUniqueSkillCommandName(base: string, used: Set<string>): string 
   return fallback;
 }
 
+function loadSkillEntriesUncached(
+  workspaceDir: string,
+  opts?: {
+    config?: ClawdbotConfig;
+    managedSkillsDir?: string;
+    bundledSkillsDir?: string;
+  },
+): SkillEntry[] {
+  // Delegate to the persistent file index which uses mtime+size fingerprints
+  // to avoid re-reading and re-parsing unchanged SKILL.md files.
+  return loadSkillEntriesFromFileIndex(workspaceDir, opts);
+}
+
 function loadSkillEntries(
   workspaceDir: string,
   opts?: {
@@ -100,78 +182,16 @@ function loadSkillEntries(
     bundledSkillsDir?: string;
   },
 ): SkillEntry[] {
-  const loadSkills = (params: { dir: string; source: string }): Skill[] => {
-    const loaded = loadSkillsFromDir(params);
-    if (Array.isArray(loaded)) return loaded;
-    if (
-      loaded &&
-      typeof loaded === "object" &&
-      "skills" in loaded &&
-      Array.isArray((loaded as { skills?: unknown }).skills)
-    ) {
-      return (loaded as { skills: Skill[] }).skills;
-    }
-    return [];
-  };
+  const cacheKey = path.resolve(workspaceDir);
+  const now = Date.now();
+  const cached = _skillEntriesCache.get(cacheKey);
+  if (cached && now - cached.createdAt < SKILL_ENTRIES_CACHE_TTL_MS) {
+    return cached.entries;
+  }
 
-  const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
-  const workspaceSkillsDir = path.join(workspaceDir, "skills");
-  const bundledSkillsDir = opts?.bundledSkillsDir ?? resolveBundledSkillsDir();
-  const extraDirsRaw = opts?.config?.skills?.load?.extraDirs ?? [];
-  const extraDirs = extraDirsRaw
-    .map((d) => (typeof d === "string" ? d.trim() : ""))
-    .filter(Boolean);
-  const pluginSkillDirs = resolvePluginSkillDirs({
-    workspaceDir,
-    config: opts?.config,
-  });
-  const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
-
-  const bundledSkills = bundledSkillsDir
-    ? loadSkills({
-        dir: bundledSkillsDir,
-        source: "clawdbot-bundled",
-      })
-    : [];
-  const extraSkills = mergedExtraDirs.flatMap((dir) => {
-    const resolved = resolveUserPath(dir);
-    return loadSkills({
-      dir: resolved,
-      source: "clawdbot-extra",
-    });
-  });
-  const managedSkills = loadSkills({
-    dir: managedSkillsDir,
-    source: "clawdbot-managed",
-  });
-  const workspaceSkills = loadSkills({
-    dir: workspaceSkillsDir,
-    source: "clawdbot-workspace",
-  });
-
-  const merged = new Map<string, Skill>();
-  // Precedence: extra < bundled < managed < workspace
-  for (const skill of extraSkills) merged.set(skill.name, skill);
-  for (const skill of bundledSkills) merged.set(skill.name, skill);
-  for (const skill of managedSkills) merged.set(skill.name, skill);
-  for (const skill of workspaceSkills) merged.set(skill.name, skill);
-
-  const skillEntries: SkillEntry[] = Array.from(merged.values()).map((skill) => {
-    let frontmatter: ParsedSkillFrontmatter = {};
-    try {
-      const raw = fs.readFileSync(skill.filePath, "utf-8");
-      frontmatter = parseFrontmatter(raw);
-    } catch {
-      // ignore malformed skills
-    }
-    return {
-      skill,
-      frontmatter,
-      clawdbot: resolveClawdbotMetadata(frontmatter),
-      invocation: resolveSkillInvocationPolicy(frontmatter),
-    };
-  });
-  return skillEntries;
+  const entries = loadSkillEntriesUncached(workspaceDir, opts);
+  _skillEntriesCache.set(cacheKey, { entries, createdAt: now });
+  return entries;
 }
 
 export function buildWorkspaceSkillSnapshot(

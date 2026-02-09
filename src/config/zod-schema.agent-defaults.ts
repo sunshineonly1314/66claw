@@ -99,6 +99,13 @@ export const AgentDefaultsSchema = z
           })
           .strict()
           .optional(),
+        proactiveCompaction: z
+          .object({
+            enabled: z.boolean().optional(),
+            thresholdRatio: z.number().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
