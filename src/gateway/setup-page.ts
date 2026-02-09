@@ -7,10 +7,7 @@ import type { ServerResponse } from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import {
-  CN_PROVIDERS,
-  AFFILIATE_LINKS,
-} from "../config/region-cn.js";
+import { CN_PROVIDERS, AFFILIATE_LINKS } from "../config/region-cn.js";
 
 /**
  * 获取 logo 图片的 base64 数据 URL
@@ -96,9 +93,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   const logoBase64 = getLogoBase64();
   // 将 token 注入到页面中，供 JavaScript 使用
   // 防止 </script> 注入：将 </ 转义为 <\/ 避免提前关闭 script 标签
-  const safeToken = gatewayToken
-    ? JSON.stringify(gatewayToken).replace(/<\//g, "<\\/")
-    : "null";
+  const safeToken = gatewayToken ? JSON.stringify(gatewayToken).replace(/<\//g, "<\\/") : "null";
   const tokenScript = `<script>window.__GATEWAY_TOKEN__ = ${safeToken};</script>`;
 
   return `<!DOCTYPE html>
@@ -3320,7 +3315,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       border: 2px solid rgba(255, 215, 0, 0.4);
       border-radius: var(--radius-xl);
       padding: 0;
-      margin-bottom: 20px;
+      margin-bottom: 0;
       position: relative;
       overflow: hidden;
     }
@@ -3416,66 +3411,124 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       color: var(--text-muted);
     }
 
-    /* 二维码获取秘钥区域 */
-    .qrcode-section {
-      margin-top: 20px;
-    }
-    .qrcode-card {
-      background: linear-gradient(135deg, rgba(60, 131, 246, 0.08) 0%, rgba(60, 131, 246, 0.02) 100%);
-      border: 1px solid var(--border-accent);
-      border-radius: var(--radius-lg);
-      padding: 20px;
-    }
-    .qrcode-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 16px;
-      font-weight: 600;
-      font-size: 1em;
-    }
-    .qrcode-title {
-      color: var(--text-primary);
-    }
-    .qrcode-body {
-      display: flex;
-      align-items: center;
+    /* Step4 两栏布局：左侧会员服务 + 右侧微信二维码 */
+    .step4-main-grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
       gap: 20px;
+      margin-bottom: 20px;
+      align-items: stretch;
     }
-    .qrcode-image-wrapper {
-      flex-shrink: 0;
-      width: 140px;
-      height: 140px;
-      background: #fff;
-      border-radius: var(--radius-md);
+    @media (max-width: 800px) {
+      .step4-main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 微信技术支持二维码卡片 */
+    .wechat-support-card {
+      background: linear-gradient(160deg, rgba(7, 193, 96, 0.06) 0%, rgba(7, 193, 96, 0.02) 100%);
+      border: 1.5px solid rgba(7, 193, 96, 0.25);
+      border-radius: var(--radius-xl);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .wechat-support-card:hover {
+      border-color: rgba(7, 193, 96, 0.45);
+      box-shadow: 0 4px 20px rgba(7, 193, 96, 0.1);
+    }
+    .wechat-support-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 16px 10px;
+      font-weight: 700;
+      font-size: 0.95em;
+      color: #07C160;
+      letter-spacing: 0.3px;
+    }
+    .wechat-support-header .material-icons {
+      font-size: 1.2em;
+    }
+    .wechat-support-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 24px 24px;
+      text-align: center;
+    }
+    .wechat-qr-wrapper {
+      width: 180px;
+      height: 180px;
+      background: #ffffff;
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+      margin-bottom: 16px;
+      position: relative;
     }
-    .qrcode-image-wrapper img {
+    .wechat-qr-wrapper img {
       width: 100%;
       height: 100%;
       object-fit: contain;
     }
-    .qrcode-loading {
+    .wechat-qr-wrapper .qrcode-loading {
       font-size: 0.85em;
       color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .qrcode-desc {
-      flex: 1;
-    }
-    .qrcode-group-name {
-      font-weight: 600;
+    .wechat-support-title {
       font-size: 1em;
-      margin-bottom: 6px;
-      color: var(--accent-blue);
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      line-height: 1.4;
     }
-    .qrcode-hint {
+    .wechat-support-group {
       font-size: 0.9em;
-      color: var(--text-muted);
-      line-height: 1.5;
+      font-weight: 600;
+      color: #07C160;
+      margin-bottom: 6px;
     }
+    .wechat-support-hint {
+      font-size: 0.82em;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .wechat-support-hint::before {
+      content: '';
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='%2307C160' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 01.213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 00.167-.054l1.903-1.114a.864.864 0 01.717-.098 10.16 10.16 0 002.837.403c.276 0 .543-.027.811-.05a6.127 6.127 0 01-.253-1.736c0-3.56 3.143-6.443 7.02-6.443.35 0 .69.027 1.027.07-.91-3.223-4.59-5.523-8.905-5.523zm-2.7 3.805a1.065 1.065 0 110 2.13 1.065 1.065 0 010-2.13zm5.41 0a1.065 1.065 0 110 2.13 1.065 1.065 0 010-2.13z'/%3E%3Cpath d='M23.697 14.531c0-3.244-3.09-5.875-6.902-5.875-3.81 0-6.9 2.631-6.9 5.875 0 3.246 3.09 5.876 6.9 5.876.756 0 1.49-.098 2.18-.31a.67.67 0 01.553.074l1.468.86a.26.26 0 00.129.042.226.226 0 00.224-.228c0-.056-.022-.11-.037-.164l-.301-1.142a.456.456 0 01.164-.514c1.416-1.044 2.322-2.597 2.322-4.493zm-9.126-1.012a.822.822 0 110-1.645.822.822 0 010 1.645zm4.449 0a.822.822 0 110-1.645.822.822 0 010 1.645z'/%3E%3C/svg%3E") no-repeat center/contain;
+    }
+    .wechat-qr-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 0.85em;
+    }
+    .wechat-qr-placeholder .material-icons {
+      font-size: 2.5em;
+      opacity: 0.3;
+    }
+
+    /* 旧版 qrcode-section 隐藏（已整合到新布局） */
+    .qrcode-section { display: none !important; }
 
     /* 凭证输入区域 */
     .license-input-section {
@@ -4277,7 +4330,10 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   <!-- 顶部导航栏 -->
   <header class="header">
     <div class="header-logo">
-      ${logoBase64 ? `<img src="${logoBase64}" alt="ClawbotCN Logo" />` : `<svg viewBox="0 0 32 32" fill="none">
+      ${
+        logoBase64
+          ? `<img src="${logoBase64}" alt="ClawbotCN Logo" />`
+          : `<svg viewBox="0 0 32 32" fill="none">
         <rect width="32" height="32" rx="8" fill="url(#logo-gradient)"/>
         <path d="M8 12h16M8 16h12M8 20h8" stroke="white" stroke-width="2" stroke-linecap="round"/>
         <defs>
@@ -4286,7 +4342,8 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
             <stop offset="1" stop-color="#60a5fa"/>
           </linearGradient>
         </defs>
-      </svg>`}
+      </svg>`
+      }
       <span>ClawbotCN</span>
     </div>
     <div class="header-env">
@@ -5802,44 +5859,44 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
           </div>
         </div>
 
-        <!-- 增值服务卡片 -->
-        <div class="premium-service-card">
-          <div class="premium-badge">🎁 增值服务</div>
-          <div class="premium-content">
-            <div class="premium-title">ClawdBotCN 会员服务</div>
-            <div class="premium-subtitle">软件免费使用，增值服务助你更高效</div>
-            <div class="premium-features">
-              <div class="premium-feature">📚 <strong>中文教程文档</strong> · 从入门到精通</div>
-              <div class="premium-feature">🔌 <strong>国内AI平台适配</strong> · UI/Skills 深度汉化</div>
-              <div class="premium-feature">🔄 <strong>持续更新维护</strong> · 新功能新玩法第一时间体验</div>
-              <div class="premium-feature">💬 <strong>技术答疑支持</strong> · 遇到问题随时咨询</div>
-            </div>
-            
-            <!-- 金色购买按钮 -->
-            <a href="https://m.tb.cn/h.7Jaij2B?tk=FT4gU7cFsKQ" target="_blank" class="premium-buy-btn">
-              <span class="material-icons">shopping_cart</span>
-              <span class="premium-buy-text">立即获取服务凭证</span>
-              <span class="premium-buy-arrow">→</span>
-            </a>
-            <div class="premium-buy-hint">在闲鱼搜索「ClawdBotCN」或点击上方按钮</div>
-          </div>
-        </div>
+        <!-- 两栏布局：左侧会员服务 + 右侧微信二维码 -->
+        <div class="step4-main-grid">
+          <!-- 左侧：增值服务卡片 -->
+          <div class="premium-service-card">
+            <div class="premium-badge">🎁 增值服务</div>
+            <div class="premium-content">
+              <div class="premium-title">ClawdBotCN 会员服务</div>
+              <div class="premium-subtitle">软件免费使用，增值服务助你更高效</div>
+              <div class="premium-features">
+                <div class="premium-feature">📚 <strong>中文教程文档</strong> · 从入门到精通</div>
+                <div class="premium-feature">🔌 <strong>国内AI平台适配</strong> · UI/Skills 深度汉化</div>
+                <div class="premium-feature">🔄 <strong>持续更新维护</strong> · 新功能新玩法第一时间体验</div>
+                <div class="premium-feature">💬 <strong>技术答疑支持</strong> · 遇到问题随时咨询</div>
+              </div>
 
-        <!-- 获取体验秘钥 - 二维码区域 -->
-        <div class="qrcode-section" id="setupQrcodeSection" style="display:none;">
-          <div class="qrcode-card">
-            <div class="qrcode-header">
-              <span class="material-icons" style="color: var(--accent-blue);">qr_code_2</span>
-              <span class="qrcode-title">获取专属体验秘钥</span>
+              <!-- 金色购买按钮 -->
+              <a href="https://m.tb.cn/h.7Jaij2B?tk=FT4gU7cFsKQ" target="_blank" class="premium-buy-btn">
+                <span class="material-icons">shopping_cart</span>
+                <span class="premium-buy-text">立即获取服务凭证</span>
+                <span class="premium-buy-arrow">→</span>
+              </a>
+              <div class="premium-buy-hint">在闲鱼搜索「ClawdBotCN」或点击上方按钮</div>
             </div>
-            <div class="qrcode-body">
-              <div class="qrcode-image-wrapper" id="setupQrcodeImage">
+          </div>
+
+          <!-- 右侧：微信二维码 - 免费技术支持 -->
+          <div class="wechat-support-card" id="wechatSupportCard">
+            <div class="wechat-support-header">
+              <span class="material-icons">support_agent</span>
+              <span>免费技术支持</span>
+            </div>
+            <div class="wechat-support-body">
+              <div class="wechat-qr-wrapper" id="wechatQrcodeImage">
                 <div class="qrcode-loading"><span class="status-spinner"></span> 加载中...</div>
               </div>
-              <div class="qrcode-desc">
-                <div class="qrcode-group-name" id="setupQrcodeGroupName"></div>
-                <div class="qrcode-hint">扫码加入体验群，群内获取免费体验秘钥</div>
-              </div>
+              <div class="wechat-support-title">获取免费专属技术支持及咨询</div>
+              <div class="wechat-support-group" id="wechatQrcodeGroupName"></div>
+              <div class="wechat-support-hint">微信扫码加入专属技术群</div>
             </div>
           </div>
         </div>
@@ -6274,7 +6331,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     let licenseExpires = null;
     let pendingLicenseKey = null; // 用于设备切换时临时保存 key
 
-    const providerNames = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.id, p.name])))};
+    const providerNames = ${JSON.stringify(Object.fromEntries(providers.map((p) => [p.id, p.name])))};
     const securityModeNames = { full: '只聊天', standard: '正常使用', trust: '完全信任' };
     const channelNames = { web: '网页对话', dingtalk: '钉钉', feishu: '飞书', wecom: '企业微信' };
 
@@ -6503,9 +6560,19 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     }
 
     // ==================== Step 1: AI 服务 ====================
-    const providerModels = ${JSON.stringify(Object.fromEntries(
-      providers.map(p => [p.id, p.models.map(m => ({ id: m.id, name: m.name, description: m.description, recommended: m.recommended }))])
-    ))};
+    const providerModels = ${JSON.stringify(
+      Object.fromEntries(
+        providers.map((p) => [
+          p.id,
+          p.models.map((m) => ({
+            id: m.id,
+            name: m.name,
+            description: m.description,
+            recommended: m.recommended,
+          })),
+        ]),
+      ),
+    )};
     
     const defaultModels = {
       'siliconflow': 'deepseek-ai/DeepSeek-V3',
@@ -7490,25 +7557,31 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     }
 
     // ==================== Step 4: 产品激活 ====================
-    // 加载二维码（进入 Step 4 时自动触发）
+    // 加载微信技术支持二维码（进入 Step 4 时自动触发）
     async function loadSetupQrcode() {
+      const imageWrapper = document.getElementById('wechatQrcodeImage');
+      const groupNameEl = document.getElementById('wechatQrcodeGroupName');
       try {
         const res = await fetch('/api/setup/qrcode');
         const data = await res.json();
         if (data.ok && data.data?.qrcode?.base64) {
-          const section = document.getElementById('setupQrcodeSection');
-          const imageWrapper = document.getElementById('setupQrcodeImage');
-          const groupNameEl = document.getElementById('setupQrcodeGroupName');
-          if (section && imageWrapper) {
-            imageWrapper.innerHTML = '<img src="' + data.data.qrcode.base64 + '" alt="体验群二维码">';
-            if (groupNameEl && data.data.qrcode.groupName) {
-              groupNameEl.textContent = data.data.qrcode.groupName;
-            }
-            section.style.display = 'block';
+          if (imageWrapper) {
+            imageWrapper.innerHTML = '<img src="' + data.data.qrcode.base64 + '" alt="微信技术支持群二维码">';
+          }
+          if (groupNameEl && data.data.qrcode.groupName) {
+            groupNameEl.textContent = data.data.qrcode.groupName;
+          }
+        } else {
+          // 无二维码时显示占位提示
+          if (imageWrapper) {
+            imageWrapper.innerHTML = '<div class="wechat-qr-placeholder"><span class="material-icons">qr_code_2</span><span>暂未配置</span></div>';
           }
         }
       } catch (e) {
         console.warn('[Setup] Failed to load QR code:', e);
+        if (imageWrapper) {
+          imageWrapper.innerHTML = '<div class="wechat-qr-placeholder"><span class="material-icons">qr_code_2</span><span>加载失败</span></div>';
+        }
       }
     }
 
@@ -8131,28 +8204,28 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
  */
 function getProviderIcon(providerId: string): string {
   const icons: Record<string, string> = {
-    'aliyun-bailian': '☁️',
-    'siliconflow': '🔮',
-    'deepseek': '🔍',
-    'glm': '🧠',
-    'volcengine-ark': '🌋',
-    'tencent-hunyuan': '💫',
-    'minimax': '⚡',
+    "aliyun-bailian": "☁️",
+    siliconflow: "🔮",
+    deepseek: "🔍",
+    glm: "🧠",
+    "volcengine-ark": "🌋",
+    "tencent-hunyuan": "💫",
+    minimax: "⚡",
   };
-  return icons[providerId] || '🤖';
+  return icons[providerId] || "🤖";
 }
 
 /**
  * 获取平台特定提示
  */
 function getPlatformTips(platformInfo: ReturnType<typeof detectPlatformInfo>): string {
-  if (platformInfo.os === 'macOS') {
+  if (platformInfo.os === "macOS") {
     return `
       <li>如遇到「无法验证开发者」提示，请在终端执行：<code>xattr -cr /Applications/ClawbotCN</code></li>
       <li>工作目录位于: <code>~/.clawbotcn/workspace</code></li>
     `;
-  } else if (platformInfo.os === 'Windows') {
-    if (platformInfo.variant === 'pro') {
+  } else if (platformInfo.os === "Windows") {
+    if (platformInfo.variant === "pro") {
       return `
         <li>请确保 Docker Desktop 正在运行</li>
         <li>首次启动可能需要拉取沙盒镜像（约 80MB）</li>
