@@ -564,6 +564,18 @@ export async function runAgentTurnWithFallback(params: {
         };
       }
 
+      // ClawdbotCN: Re-throw quota/auth errors so upstream free-model switching
+      // logic in get-reply.ts can catch them and switch providers or fall back to paid model.
+      // This handles the case where meta.error was set for unhandled failover errors
+      // (e.g., 401 from free model with no rotation/fallback available).
+      {
+        const httpStatusMatch = message.match(/\b(40[1-3]|429)\b/);
+        const httpStatus = httpStatusMatch ? Number.parseInt(httpStatusMatch[1], 10) : undefined;
+        if (detectQuotaExhaustedError(err, httpStatus)) {
+          throw err;
+        }
+      }
+
       defaultRuntime.error(`Embedded agent failed before reply: ${message}`);
       const trimmedMessage = message.replace(/\.\s*$/, "");
       const fallbackText = isContextOverflow

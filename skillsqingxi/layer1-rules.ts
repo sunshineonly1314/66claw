@@ -35,6 +35,7 @@ const PATTERNS: PatternDef[] = [
   { id: "PI-009", category: "prompt_injection", severity: "danger", description: "DAN 越狱模式", regex: /\bDAN\s*(mode|prompt|jailbreak)\b/i },
   { id: "PI-010", category: "prompt_injection", severity: "danger", description: "伪造系统标记", regex: /<\/?system\s*>|<\/?instruction\s*>|\[SYSTEM\]|\[INST\]/i, downgradeInCodeBlock: true },
   { id: "PI-011", category: "prompt_injection", severity: "danger", description: "重新定义角色", regex: /from\s+(this\s+point|now\s+on),?\s+(you|i|we)\s+(are|will|must|should)/i },
+  { id: "PI-012", category: "prompt_injection", severity: "danger", description: "假装/扮演指令", regex: /\b(pretend|act\s+as\s+if|role\s*-?\s*play\s+as|simulate\s+being)\b/i, downgradeInCodeBlock: true },
 
   // ===== 数据窃取 (Data Exfiltration) =====
   { id: "DE-001", category: "data_exfil", severity: "danger", description: "读取环境变量", regex: /process\.env\b/i, downgradeInCodeBlock: true, excludeIfNearby: /set\s+(your|the)\s+.*(?:key|token)|export\s+\w+=/i },
@@ -43,6 +44,7 @@ const PATTERNS: PatternDef[] = [
   { id: "DE-004", category: "data_exfil", severity: "critical", description: "读取 .env 文件", regex: /cat\s+[^\s]*\.env\b/i },
   { id: "DE-005", category: "data_exfil", severity: "danger", description: "外传敏感数据", regex: /curl\s+.*-d\s+.*(?:api[_-]?key|token|secret|password|credential)/i },
   { id: "DE-006", category: "data_exfil", severity: "critical", description: "访问密码存储", regex: /\/etc\/shadow|\/etc\/passwd|\.netrc|\.pgpass/i },
+  { id: "DE-007", category: "data_exfil", severity: "danger", description: "系统信息收集并管道传输", regex: /\b(?:whoami|hostname|ifconfig|ip\s+addr|uname\s+-a)\s*(?:\|\s*\w|[&;])/i, downgradeInCodeBlock: true },
 
   // ===== 命令注入 (Command Injection) =====
   { id: "CI-001", category: "command_injection", severity: "critical", description: "Curl 管道执行", regex: /curl\s+[^\n]*\|\s*(?:ba)?sh\b/i },
@@ -56,25 +58,46 @@ const PATTERNS: PatternDef[] = [
   { id: "OB-001", category: "obfuscation", severity: "critical", description: "Base64 解码执行", regex: /base64\s+(?:-d|--decode)\s*[|>]/i },
   { id: "OB-002", category: "obfuscation", severity: "danger", description: "十六进制编码串", regex: /\\x[0-9a-fA-F]{2}(?:\\x[0-9a-fA-F]{2}){5,}/ },
   { id: "OB-003", category: "obfuscation", severity: "danger", description: "零宽字符", regex: /[\u200B\u200C\u200D\u2060\uFEFF]/ },
+  { id: "OB-004", category: "obfuscation", severity: "danger", description: "大量不可见控制字符", regex: /[\u0000-\u0008\u000E-\u001F]{3,}/ },
 
   // ===== 挖矿 =====
   { id: "CM-001", category: "crypto_mining", severity: "critical", description: "挖矿软件", regex: /\b(?:xmrig|monero|coinhive|cryptonight|minergate)\b/i },
+  { id: "CM-002", category: "crypto_mining", severity: "danger", description: "钱包地址模式", regex: /wallet[_\s-]*address|crypto[_\s-]*wallet|(?:0x[a-fA-F0-9]{40})\b/i },
 
   // ===== 权限提升 =====
   { id: "PE-001", category: "privilege_escalation", severity: "danger", description: "危险文件权限", regex: /chmod\s+(?:777|666|a\+[rwx])/i },
   { id: "PE-002", category: "privilege_escalation", severity: "danger", description: "跳过安全验证", regex: /--no-verify\b|--insecure\b/i, downgradeInCodeBlock: true, excludeIfNearby: /git\s+commit|git\s+push|self-signed|localhost/i },
+  { id: "PE-003", category: "privilege_escalation", severity: "danger", description: "sudo 命令(非包管理器)", regex: /\bsudo\s+(?!apt\b|apt-get\b|brew\b|npm\b|pip\b|yum\b|dnf\b|pacman\b|port\b)\S/i, downgradeInCodeBlock: true },
 ];
 
 // ============================================================================
 // 黑名单
 // ============================================================================
 
+/** Skill 名称关键词黑名单 */
 const SKILL_NAME_BLACKLIST = [
   "jailbreak", "bypass", "hack", "exploit", "crack",
   "phishing", "malware", "trojan", "backdoor", "rootkit",
   "fake", "scam", "spam", "casino", "gambling",
   "nsfw", "porn", "xxx", "adult-content",
-  "pump-dump", "rug-pull", "token-launch",
+  "pump-dump", "rug-pull", "token-launch", "defi-yield",
+];
+
+/** 已知恶意/匿名托管域名 */
+const DOMAIN_BLACKLIST: RegExp[] = [
+  /pastebin\.com/i,
+  /paste\.ee/i,
+  /transfer\.sh/i,
+  /ngrok\.io/i,
+  /serveo\.net/i,
+  /raw\.githubusercontent\.com.*gist/i,
+];
+
+/** 已知高风险包名模式 */
+const PACKAGE_BLACKLIST: RegExp[] = [
+  /^@[a-z]+-official\//i,     // 假冒官方包
+  /^[a-z]+-latest$/i,         // 仿冒包命名
+  /typosquat/i,               // 拼写仿冒
 ];
 
 // ============================================================================
@@ -192,10 +215,35 @@ export function runLayer1(input: SkillInput): Layer1Result {
 
   // 3. 黑名单
   const blacklistHits: string[] = [];
+
+  // 3a. Skill 名称黑名单
   const nameLower = input.frontmatter.name?.toLowerCase() ?? "";
   for (const keyword of SKILL_NAME_BLACKLIST) {
     if (nameLower.includes(keyword)) {
-      blacklistHits.push(keyword);
+      blacklistHits.push(`name:${keyword}`);
+    }
+  }
+
+  // 3b. 域名黑名单 — 扫描 body 中的 URL
+  const urlMatches = fullContent.match(/https?:\/\/[^\s"')\]>]+/gi) ?? [];
+  for (const url of urlMatches) {
+    for (const domainRe of DOMAIN_BLACKLIST) {
+      if (domainRe.test(url)) {
+        blacklistHits.push(`domain:${url.substring(0, 80)}`);
+        break;
+      }
+    }
+  }
+
+  // 3c. 包名黑名单 — 扫描 install 命令中的包名
+  const packageRefs = fullContent.match(/(?:npm\s+install|pip\s+install|go\s+get)\s+(\S+)/gi) ?? [];
+  for (const ref of packageRefs) {
+    const pkgName = ref.replace(/^(?:npm|pip|go)\s+(?:install|get)\s+/i, "").trim();
+    for (const pkgRe of PACKAGE_BLACKLIST) {
+      if (pkgRe.test(pkgName)) {
+        blacklistHits.push(`package:${pkgName}`);
+        break;
+      }
     }
   }
 

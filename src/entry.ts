@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
@@ -10,6 +10,38 @@ import { attachChildProcessBridge } from "./process/child-process-bridge.js";
 
 process.title = "clawdbot";
 installProcessWarningFilter();
+
+// Catch unhandled promise rejections to prevent silent crashes from background
+// tasks (heartbeat, cron, skills sync, MCP marketplace sync, etc.).
+process.on("unhandledRejection", (reason) => {
+  console.error(
+    "[clawdbot] Unhandled promise rejection:",
+    reason instanceof Error ? (reason.stack ?? reason.message) : reason,
+  );
+  // Do NOT exit — background task failures should not kill the gateway.
+});
+
+// Catch uncaught synchronous exceptions to prevent the gateway from crashing.
+// Combined with the unhandledRejection handler above, this ensures the gateway
+// stays alive even when unexpected errors occur in API call chains.
+process.on("uncaughtException", (error) => {
+  console.error(
+    "[clawdbot] Uncaught exception:",
+    error instanceof Error ? (error.stack ?? error.message) : error,
+  );
+  // Do NOT exit — the gateway should attempt to continue serving other requests.
+  // Critical errors (OOM, etc.) will still cause the OS to kill the process.
+});
+
+// Ensure Windows console uses UTF-8 (code page 65001) so Chinese/CJK text
+// from plugins and log messages does not appear as garbled GBK mojibake.
+if (process.platform === "win32") {
+  try {
+    execSync("chcp 65001", { stdio: "ignore" });
+  } catch {
+    // ignore — best-effort
+  }
+}
 
 if (process.argv.includes("--no-color")) {
   process.env.NO_COLOR = "1";

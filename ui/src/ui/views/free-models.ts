@@ -1,6 +1,8 @@
 /**
  * 免费模型管理页 - ClawdbotCN 独家福利
  * 每日免费大模型平滑切换
+ *
+ * v2 重新设计：紧凑一屏布局 + 省钱统计常驻 + 切换模型 UX 优化
  */
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.js";
@@ -40,6 +42,7 @@ export interface FreeModelAccount {
   };
   status: "active" | "exhausted" | "error" | "disabled";
   lastError?: string;
+  rateLimitedUntil?: string;
 }
 
 export interface FreeModelsStats {
@@ -96,46 +99,22 @@ export interface FreeModelsProps {
    =========================================== */
 
 export function renderFreeModels(props: FreeModelsProps) {
-  // 确定显示内容的逻辑：
-  // 1. 如果正在加载且已连接，显示加载状态
-  // 2. 如果有错误，显示错误
-  // 3. 如果未连接且无数据，显示空状态（引导配置）
-  // 4. 如果有账户数据，显示数据（即使断开连接也能查看已配置的内容）
-  // 5. 否则显示空状态
-
   const renderContent = () => {
-    // 正在加载（仅在已连接时显示）
     if (props.loading && props.connected) {
       return renderLoading();
     }
-
-    // 有错误
     if (props.error) {
       return renderError(props.error, props.onRefresh);
     }
-
-    // 有账户数据，显示数据视图（即使断开连接也可以查看）
-    if (props.accounts.length > 0) {
-      return renderWithData(props);
-    }
-
-    // 有 providers 数据，显示空状态（引导配置）
-    if (props.providers.length > 0) {
-      return renderEmpty(props);
-    }
-
-    // 未连接且无数据，显示连接提示
-    if (!props.connected) {
+    if (!props.connected && props.accounts.length === 0 && props.providers.length === 0) {
       return renderConnectionRequired(props.onRefresh);
     }
-
-    // 默认显示空状态
-    return renderEmpty(props);
+    // 统一渲染：不再区分空状态和有数据态，一屏展示所有内容
+    return renderMainContent(props);
   };
 
   return html`
     <section class="free-models">
-      ${renderHeader()}
       ${renderContent()}
       ${props.configModalOpen ? renderConfigModal(props) : nothing}
       ${props.deleteModalOpen ? renderDeleteModal(props) : nothing}
@@ -144,157 +123,132 @@ export function renderFreeModels(props: FreeModelsProps) {
 }
 
 /* ===========================================
-   页面头部
-   =========================================== */
-
-function renderHeader() {
-  return html`
-    <header class="fm-header">
-      <div class="fm-header__eyebrow">
-        <span>✨</span>
-        <span>${t("freeModels.eyebrow")}</span>
-      </div>
-      <h1 class="fm-header__title">${t("freeModels.title")}</h1>
-      <p class="fm-header__subtitle">${t("freeModels.subtitle")}</p>
-    </header>
-  `;
-}
-
-/* ===========================================
-   加载状态
+   加载/错误/未连接 状态
    =========================================== */
 
 function renderLoading() {
   return html`
-    <div class="fm-empty fm-loading">
-      <div class="fm-empty__icon">⏳</div>
-      <div class="fm-empty__title">${t("common.loading")}</div>
+    <div class="fm-status-card">
+      <span class="fm-status-card__icon">⏳</span>
+      <span>${t("common.loading")}</span>
     </div>
   `;
 }
-
-/* ===========================================
-   未连接状态
-   =========================================== */
 
 function renderConnectionRequired(onRefresh: () => void) {
   return html`
-    <div class="fm-empty">
-      <div class="fm-empty__icon">🔌</div>
-      <div class="fm-empty__title">等待连接 Gateway</div>
-      <div class="fm-empty__desc">正在建立连接，请稍候...</div>
-      <button class="btn primary" @click=${onRefresh}>
-        ${t("common.retry")}
-      </button>
+    <div class="fm-status-card">
+      <span class="fm-status-card__icon">🔌</span>
+      <div>
+        <div class="fm-status-card__title">等待连接 Gateway</div>
+        <div class="fm-status-card__desc">正在建立连接，请稍候...</div>
+      </div>
+      <button class="btn primary btn--sm" @click=${onRefresh}>${t("common.retry")}</button>
     </div>
   `;
 }
-
-/* ===========================================
-   错误状态
-   =========================================== */
 
 function renderError(error: string, onRefresh: () => void) {
   return html`
-    <div class="fm-empty">
-      <div class="fm-empty__icon">😅</div>
-      <div class="fm-empty__title">${t("freeModels.error.title")}</div>
-      <div class="fm-empty__desc">${error}</div>
-      <button class="btn primary" @click=${onRefresh}>
-        ${t("common.retry")}
-      </button>
+    <div class="fm-status-card fm-status-card--error">
+      <span class="fm-status-card__icon">😅</span>
+      <div>
+        <div class="fm-status-card__title">${t("freeModels.error.title")}</div>
+        <div class="fm-status-card__desc">${error}</div>
+      </div>
+      <button class="btn primary btn--sm" @click=${onRefresh}>${t("common.retry")}</button>
     </div>
   `;
 }
 
 /* ===========================================
-   空状态 - 引导用户配置
+   主内容区 - 一屏展示
    =========================================== */
 
-function renderEmpty(props: FreeModelsProps) {
+function renderMainContent(props: FreeModelsProps) {
+  const hasAccounts = props.accounts.length > 0;
   const unconfiguredProviders = props.providers.filter(
     (p) => !props.accounts.some((a) => a.providerId === p.id)
   );
 
   return html`
-    <div class="fm-empty">
-      <div class="fm-empty__icon">💰</div>
-      <div class="fm-empty__title">${t("freeModels.empty.title")}</div>
-      <div class="fm-empty__desc">${t("freeModels.empty.desc")}</div>
+    <!-- 省钱英雄区：永远展示 -->
+    ${renderSavingsHero(props.stats, props.enabled, props.onToggleEnabled, hasAccounts)}
 
-      <div class="fm-features">
-        <div class="fm-feature">
-          <span class="fm-feature__icon">🎁</span>
-          <span>${t("freeModels.feature.dailyTokens")}</span>
-        </div>
-        <div class="fm-feature">
-          <span class="fm-feature__icon">🔄</span>
-          <span>${t("freeModels.feature.autoSwitch")}</span>
-        </div>
-        <div class="fm-feature">
-          <span class="fm-feature__icon">💵</span>
-          <span>${t("freeModels.feature.saveMoney")}</span>
-        </div>
-      </div>
-    </div>
+    <!-- 模型切换 UX 提示 -->
+    ${hasAccounts && props.enabled ? renderSwitchNotice() : nothing}
 
-    <div class="fm-section" style="margin-top: 32px;">
-      <div class="fm-section__header">
-        <div class="fm-section__title">
-          <span>🚀</span>
-          <span>${t("freeModels.selectProvider")}</span>
-        </div>
-      </div>
-      <div class="fm-providers">
-        ${unconfiguredProviders.map((provider) =>
-          renderProviderCard(provider, props.onOpenConfigModal)
-        )}
-      </div>
-    </div>
+    <!-- 已配置的模型 -->
+    ${hasAccounts
+      ? renderConfiguredAccounts(props)
+      : nothing}
+
+    <!-- 可配置的提供商 -->
+    ${unconfiguredProviders.length > 0
+      ? renderProviderSection(unconfiguredProviders, props.onOpenConfigModal, !hasAccounts)
+      : nothing}
+
+    <!-- 切换历史（折叠） -->
+    ${props.switchHistory.length > 0
+      ? renderHistory(props.switchHistory, props.providers)
+      : nothing}
   `;
 }
 
 /* ===========================================
-   Provider 选择卡片
+   省钱英雄区 - 紧凑常驻
    =========================================== */
 
-function renderProviderCard(
-  provider: FreeModelProvider,
-  onSelect: (p: FreeModelProvider) => void,
-  configured = false
+function renderSavingsHero(
+  stats: FreeModelsStats,
+  enabled: boolean,
+  onToggle: (v: boolean) => void,
+  hasAccounts: boolean
 ) {
-  const quotaText = `${formatNumber(provider.freeQuota.limit)} ${provider.freeQuota.unit === "tokens" ? "tokens" : t("freeModels.requests")}`;
-
   return html`
-    <div
-      class="fm-provider ${provider.recommended ? "fm-provider--recommended" : ""} ${configured ? "fm-provider--configured" : ""}"
-      @click=${() => !configured && onSelect(provider)}
-    >
-      <div class="fm-provider__header">
-        <div class="fm-provider__name">
-          ${provider.name}
+    <div class="fm-hero">
+      <div class="fm-hero__top">
+        <div class="fm-hero__badge">
+          <span>✨</span>
+          <span>${t("freeModels.eyebrow")}</span>
         </div>
-        ${provider.recommended
-          ? html`<span class="fm-provider__badge fm-provider__badge--recommended">${t("freeModels.recommended")}</span>`
-          : nothing}
-        ${configured
-          ? html`<span class="fm-provider__badge fm-provider__badge--configured">${t("freeModels.configured")}</span>`
-          : nothing}
+        <label class="fm-switch fm-switch--sm" title="${t("freeModels.toggle.title")}">
+          <input
+            type="checkbox"
+            .checked=${enabled}
+            @change=${(e: Event) => onToggle((e.target as HTMLInputElement).checked)}
+          />
+          <span class="fm-switch__track"></span>
+          <span class="fm-switch__thumb"></span>
+        </label>
       </div>
-      <div class="fm-provider__quota">
-        <span>${t("freeModels.dailyQuota")}:</span>
-        <span class="fm-provider__quota-value">${quotaText}</span>
+
+      <div class="fm-hero__savings">
+        <div class="fm-hero__savings-main">
+          <div class="fm-hero__savings-amount">¥${stats.totalSavings.toFixed(2)}</div>
+          <div class="fm-hero__savings-label">${t("freeModels.stats.totalSavings")}</div>
+        </div>
+        <div class="fm-hero__savings-divider"></div>
+        <div class="fm-hero__savings-today">
+          <div class="fm-hero__savings-amount fm-hero__savings-amount--today">¥${stats.todaySavings.toFixed(2)}</div>
+          <div class="fm-hero__savings-label">${t("freeModels.stats.todaySavings")}</div>
+        </div>
+        <div class="fm-hero__savings-divider"></div>
+        <div class="fm-hero__savings-calls">
+          <div class="fm-hero__savings-amount fm-hero__savings-amount--calls">${stats.todayFreeRequests}</div>
+          <div class="fm-hero__savings-label">${t("freeModels.stats.freeRequests")}</div>
+        </div>
       </div>
-      <div class="fm-provider__features">
-        ${provider.features.slice(0, 3).map(
-          (f) => html`<span class="fm-provider__feature">${f}</span>`
-        )}
-      </div>
-      ${!configured
+
+      ${!hasAccounts
         ? html`
-            <button class="btn primary fm-provider__action">
-              ${t("freeModels.configureNow")}
-            </button>
+            <div class="fm-hero__cta">
+              <div class="fm-hero__cta-features">
+                <span class="fm-hero__cta-chip">🎁 ${t("freeModels.feature.dailyTokens")}</span>
+                <span class="fm-hero__cta-chip">🔄 ${t("freeModels.feature.autoSwitch")}</span>
+                <span class="fm-hero__cta-chip">💵 ${t("freeModels.feature.saveMoney")}</span>
+              </div>
+            </div>
           `
         : nothing}
     </div>
@@ -302,23 +256,26 @@ function renderProviderCard(
 }
 
 /* ===========================================
-   有数据态
+   模型切换 UX 提示
    =========================================== */
 
-function renderWithData(props: FreeModelsProps) {
-  const preferredAccount = props.accounts.find((a) => a.priority === 1);
-  const unconfiguredProviders = props.providers.filter(
-    (p) => !props.accounts.some((a) => a.providerId === p.id)
-  );
-
+function renderSwitchNotice() {
   return html`
-    <!-- 统计区 -->
-    ${renderStats(props.stats, props.accounts.length)}
+    <div class="fm-notice">
+      <span class="fm-notice__icon">💡</span>
+      <div class="fm-notice__text">
+        ${t("freeModels.switchNotice")}
+      </div>
+    </div>
+  `;
+}
 
-    <!-- 主开关 -->
-    ${renderToggle(props.enabled, props.onToggleEnabled)}
+/* ===========================================
+   已配置账号区
+   =========================================== */
 
-    <!-- 已配置列表 -->
+function renderConfiguredAccounts(props: FreeModelsProps) {
+  return html`
     <div class="fm-section">
       <div class="fm-section__header">
         <div class="fm-section__title">
@@ -343,95 +300,77 @@ function renderWithData(props: FreeModelsProps) {
         })}
       </div>
     </div>
-
-    <!-- 可添加列表 -->
-    ${unconfiguredProviders.length > 0
-      ? html`
-          <div class="fm-section">
-            <div class="fm-section__header">
-              <div class="fm-section__title">
-                <span>➕</span>
-                <span>${t("freeModels.addMore")}</span>
-              </div>
-            </div>
-            <div class="fm-providers">
-              ${unconfiguredProviders.map((provider) =>
-                renderProviderCard(provider, props.onOpenConfigModal)
-              )}
-            </div>
-          </div>
-        `
-      : nothing}
-
-    <!-- 切换历史 -->
-    ${props.switchHistory.length > 0
-      ? renderHistory(props.switchHistory, props.providers)
-      : nothing}
   `;
 }
 
 /* ===========================================
-   统计区
+   Provider 选择区
    =========================================== */
 
-function renderStats(stats: FreeModelsStats, accountCount: number) {
+function renderProviderSection(
+  providers: FreeModelProvider[],
+  onSelect: (p: FreeModelProvider) => void,
+  isFirstTime: boolean
+) {
   return html`
-    <div class="fm-stats">
-      <div class="fm-stat fm-stat--primary">
-        <div class="fm-stat__icon">💰</div>
-        <div class="fm-stat__value">¥${stats.todaySavings.toFixed(2)}</div>
-        <div class="fm-stat__label">${t("freeModels.stats.todaySavings")}</div>
+    <div class="fm-section">
+      <div class="fm-section__header">
+        <div class="fm-section__title">
+          <span>${isFirstTime ? "🚀" : "➕"}</span>
+          <span>${isFirstTime ? t("freeModels.selectProvider") : t("freeModels.addMore")}</span>
+        </div>
       </div>
-      <div class="fm-stat">
-        <div class="fm-stat__icon">📊</div>
-        <div class="fm-stat__value">¥${stats.totalSavings.toFixed(2)}</div>
-        <div class="fm-stat__label">${t("freeModels.stats.totalSavings")}</div>
-      </div>
-      <div class="fm-stat">
-        <div class="fm-stat__icon">🎯</div>
-        <div class="fm-stat__value">${stats.todayFreeRequests}</div>
-        <div class="fm-stat__label">${t("freeModels.stats.freeRequests")}</div>
-      </div>
-      <div class="fm-stat">
-        <div class="fm-stat__icon">🔌</div>
-        <div class="fm-stat__value">${accountCount}</div>
-        <div class="fm-stat__label">${t("freeModels.stats.accounts")}</div>
+      <div class="fm-providers">
+        ${providers.map((provider) =>
+          renderProviderCard(provider, onSelect)
+        )}
       </div>
     </div>
   `;
 }
 
 /* ===========================================
-   主开关
+   Provider 卡片 - 紧凑横排
    =========================================== */
 
-function renderToggle(enabled: boolean, onToggle: (v: boolean) => void) {
+function renderProviderCard(
+  provider: FreeModelProvider,
+  onSelect: (p: FreeModelProvider) => void
+) {
+  const quotaText = `${formatNumber(provider.freeQuota.limit)} ${provider.freeQuota.unit === "tokens" ? "tokens" : t("freeModels.requests")}`;
+
   return html`
-    <div class="fm-toggle-card">
-      <div class="fm-toggle__info">
-        <div class="fm-toggle__title">${t("freeModels.toggle.title")}</div>
-        <div class="fm-toggle__desc">${t("freeModels.toggle.desc")}</div>
+    <div
+      class="fm-provider ${provider.recommended ? "fm-provider--recommended" : ""}"
+      @click=${() => onSelect(provider)}
+    >
+      <div class="fm-provider__left">
+        <div class="fm-provider__name-row">
+          <span class="fm-provider__name">${provider.name}</span>
+          ${provider.recommended
+            ? html`<span class="fm-provider__badge">${t("freeModels.recommended")}</span>`
+            : nothing}
+        </div>
+        <div class="fm-provider__meta">
+          <span class="fm-provider__quota">${t("freeModels.dailyQuota")}: <strong>${quotaText}</strong></span>
+          <span class="fm-provider__features-inline">
+            ${provider.features.slice(0, 3).map(
+              (f) => html`<span class="fm-provider__tag">${f}</span>`
+            )}
+          </span>
+        </div>
       </div>
-      <label class="fm-switch">
-        <input
-          type="checkbox"
-          .checked=${enabled}
-          @change=${(e: Event) => onToggle((e.target as HTMLInputElement).checked)}
-        />
-        <span class="fm-switch__track"></span>
-        <span class="fm-switch__thumb"></span>
-      </label>
+      <button class="btn primary btn--sm fm-provider__action">
+        ${t("freeModels.configureNow")}
+      </button>
     </div>
   `;
 }
 
 /* ===========================================
-   账号卡片
+   账号卡片 - 紧凑行
    =========================================== */
 
-/**
- * 解析账号状态，返回统一的状态信息
- */
 function resolveAccountStatus(account: FreeModelAccount): {
   icon: string;
   text: string;
@@ -440,7 +379,6 @@ function resolveAccountStatus(account: FreeModelAccount): {
   cardClass: string;
   needsReconfigure: boolean;
 } {
-  // 检查 enabled 字段
   if (account.enabled === false) {
     return {
       icon: "🚫",
@@ -452,7 +390,6 @@ function resolveAccountStatus(account: FreeModelAccount): {
     };
   }
 
-  // 检查 status 字段
   switch (account.status) {
     case "active":
       return {
@@ -491,7 +428,6 @@ function resolveAccountStatus(account: FreeModelAccount): {
         needsReconfigure: true,
       };
     default:
-      // status 为 undefined 或其他未知值
       return {
         icon: "⚠️",
         text: "状态异常",
@@ -519,10 +455,7 @@ function renderAccountCard(
     usagePercent >= 90 ? "fm-account__usage-fill--danger" :
     usagePercent >= 70 ? "fm-account__usage-fill--warning" : "";
 
-  // 使用统一的状态解析函数
   const statusInfo = resolveAccountStatus(account);
-  
-  // 如果是首选账号且状态正常，添加首选样式
   const cardClass = statusInfo.cardClass || (isPreferred ? "fm-account--preferred" : "");
 
   return html`
@@ -587,7 +520,7 @@ function renderAccountCard(
 }
 
 /* ===========================================
-   切换历史
+   切换历史 - 折叠
    =========================================== */
 
 function renderHistory(
@@ -634,7 +567,6 @@ function renderConfigModal(props: FreeModelsProps) {
   const provider = props.configModalProvider;
   if (!provider) return nothing;
 
-  // 只要输入了 API Key 就可以保存（保存时自动验证）
   const canSave =
     props.configModalApiKey.trim().length > 0 &&
     !props.configModalSaving;
@@ -660,7 +592,6 @@ function renderConfigModal(props: FreeModelsProps) {
         </div>
 
         <div class="fm-modal__body">
-          <!-- 额度信息卡片 -->
           <div class="fm-modal__info">
             <div class="fm-modal__info-item">
               <span class="fm-modal__info-label">${t("freeModels.dailyQuota")}</span>
@@ -676,7 +607,6 @@ function renderConfigModal(props: FreeModelsProps) {
             </div>
           </div>
 
-          <!-- 步骤引导 -->
           <div class="fm-steps">
             <div class="fm-step">
               <div class="fm-step__number">1</div>
@@ -687,9 +617,9 @@ function renderConfigModal(props: FreeModelsProps) {
                   href="${provider.registerUrl}"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="fm-step__link btn primary"
+                  class="fm-step__link btn primary btn--sm"
                 >
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                     <polyline points="15 3 21 3 21 9"/>
                     <line x1="10" y1="14" x2="21" y2="3"/>
@@ -711,7 +641,7 @@ function renderConfigModal(props: FreeModelsProps) {
               <div class="fm-step__number">3</div>
               <div class="fm-step__content">
                 <div class="fm-step__title">${t("freeModels.step3.title")}</div>
-                <div class="fm-form__field" style="margin-top: 12px;">
+                <div class="fm-form__field" style="margin-top: 8px;">
                   <input
                     type="password"
                     class="fm-form__input"

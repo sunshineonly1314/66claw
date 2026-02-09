@@ -116,6 +116,14 @@ export function applySettingsFromUrl(host: SettingsHost) {
 }
 
 export function setTab(host: SettingsHost, next: Tab) {
+  // Auto-dismiss skills batch banner when leaving chat — prevents re-showing on tab switch.
+  // _bannerCheckedThisSession (in skills-batch controller) prevents re-check, so banner stays gone.
+  if (host.tab === "chat" && next !== "chat") {
+    const app = host as unknown as ClawdbotApp;
+    if (app.skillsBatch?.batchPhase === "banner") {
+      app.skillsBatch = { ...app.skillsBatch, batchPhase: "idle" };
+    }
+  }
   if (host.tab !== next) host.tab = next;
   if (next === "chat") host.chatHasAutoScrolled = false;
   if (next === "logs")
@@ -271,6 +279,13 @@ export function onPopState(host: SettingsHost) {
 }
 
 export function setTabFromRoute(host: SettingsHost, next: Tab) {
+  // Auto-dismiss skills batch banner when leaving chat (browser navigation)
+  if (host.tab === "chat" && next !== "chat") {
+    const app = host as unknown as ClawdbotApp;
+    if (app.skillsBatch?.batchPhase === "banner") {
+      app.skillsBatch = { ...app.skillsBatch, batchPhase: "idle" };
+    }
+  }
   if (host.tab !== next) host.tab = next;
   if (next === "chat") host.chatHasAutoScrolled = false;
   if (next === "logs")

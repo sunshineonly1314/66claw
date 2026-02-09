@@ -22,6 +22,7 @@
 | T-01 | TODO-01-缓存治理.md | 去重缓存、Webhook缓存、模型目录缓存等无 TTL |
 | T-02 | TODO-02-国际化统一.md | 错误消息中英混用、i18n默认语言硬编码 |
 | T-03 | TODO-03-大文件拆分.md | setup-wizard 2155行等多个文件超标 |
+| T-10 | TODO-10-MCP-hotload-context-optimization.md | MCP 热加载：按任务动态启停 MCP server，节省上下文 ~17k tokens |
 
 ### P2 — 后续迭代逐步改善
 

@@ -26,5 +26,10 @@ export const getHandshakeTimeoutMs = () => {
 };
 export const TICK_INTERVAL_MS = 30_000;
 export const HEALTH_REFRESH_INTERVAL_MS = 60_000;
+
+/** WebSocket ping/pong keepalive interval (45 s, offset from 30 s tick to avoid burst). */
+export const WS_PING_INTERVAL_MS = 45_000;
+/** Number of consecutive missed pongs before terminating a connection. */
+export const WS_PING_MAX_MISSED = 3;
 export const DEDUPE_TTL_MS = 5 * 60_000;
 export const DEDUPE_MAX = 1000;

@@ -1,6 +1,8 @@
 ---
 name: tmux
 description: Remote-control tmux sessions for interactive CLIs by sending keystrokes and scraping pane output.
+nameZh: "终端会话"
+descriptionZh: "远程控制tmux终端会话（发送按键、读取输出）"
 metadata: {"clawdbot":{"emoji":"🧵","os":["darwin","linux"],"requires":{"bins":["tmux"]}}}
 ---
 

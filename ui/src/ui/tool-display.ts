@@ -1,5 +1,6 @@
 import rawConfig from "./tool-display.json";
 import type { IconName } from "./icons";
+import { summarizeCommand } from "./chat/tool-helpers";
 
 type ToolDisplayActionSpec = {
   label?: string;
@@ -27,6 +28,8 @@ export type ToolDisplay = {
   label: string;
   verb?: string;
   detail?: string;
+  /** Original raw detail (e.g., full command string) before summarization */
+  rawDetail?: string;
 };
 
 const TOOL_DISPLAY_CONFIG = rawConfig as ToolDisplayConfig;
@@ -128,12 +131,36 @@ function resolveActionSpec(
   return spec.actions?.[action] ?? undefined;
 }
 
+/** Check if a tool name is an MCP bridged tool (mcp_{serverId}_{toolName}). */
+function parseMCPName(name: string): { serverId: string; toolName: string } | null {
+  if (!name.startsWith("mcp_")) return null;
+  const rest = name.slice(4);
+  const idx = rest.indexOf("_");
+  if (idx < 0) return null;
+  return { serverId: rest.slice(0, idx), toolName: rest.slice(idx + 1) };
+}
+
 export function resolveToolDisplay(params: {
   name?: string;
   args?: unknown;
   meta?: string;
 }): ToolDisplay {
   const name = normalizeToolName(params.name);
+
+  // MCP tools: use plug icon and show serverId / toolName
+  const mcpParsed = parseMCPName(name);
+  if (mcpParsed) {
+    const detail = params.meta ?? mcpParsed.toolName.replace(/_/g, " ");
+    return {
+      name,
+      icon: "plug" as IconName,
+      title: defaultTitle(mcpParsed.serverId),
+      label: `MCP: ${mcpParsed.serverId}`,
+      verb: mcpParsed.toolName.replace(/_/g, " "),
+      detail: detail ? shortenHomeInString(detail) : undefined,
+    };
+  }
+
   const key = name.toLowerCase();
   const spec = TOOL_MAP[key];
   const icon = (spec?.icon ?? FALLBACK.icon ?? "puzzle") as IconName;
@@ -165,6 +192,20 @@ export function resolveToolDisplay(params: {
 
   if (detail) {
     detail = shortenHomeInString(detail);
+  }
+
+  // For exec/bash tools: summarize raw command into user-friendly label
+  if ((key === "exec" || key === "bash") && detail) {
+    const rawDetail = detail;
+    return {
+      name,
+      icon,
+      title,
+      label,
+      verb,
+      detail: summarizeCommand(rawDetail),
+      rawDetail,
+    };
   }
 
   return {

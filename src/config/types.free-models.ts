@@ -82,6 +82,8 @@ export interface FreeModelAccount {
   lastError?: string;
   /** 最后错误时间 */
   lastErrorTime?: string;
+  /** 速率限制冷却截止时间（ISO 字符串），在此之前不应使用该账号 */
+  rateLimitedUntil?: string;
 }
 
 /**

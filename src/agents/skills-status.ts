@@ -86,7 +86,8 @@ function selectPreferredInstallSpec(
   const goSpec = findKind("go");
   const uvSpec = findKind("uv");
 
-  if (prefs.preferBrew && hasBinary("brew") && brewSpec) return brewSpec;
+  // brew 只在 macOS 上存在，Windows/Linux 跳过这次 hasBinary 调用
+  if (prefs.preferBrew && process.platform === "darwin" && hasBinary("brew") && brewSpec) return brewSpec;
   if (uvSpec) return uvSpec;
   if (nodeSpec) return nodeSpec;
   if (brewSpec) return brewSpec;

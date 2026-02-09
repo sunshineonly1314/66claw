@@ -1,6 +1,8 @@
 ---
 name: skills-troubleshoot
 description: 诊断并修复 Skills 页面问题（卡顿、显示0个技能、无法点击、技能市场为空）。当用户反馈技能页面异常时使用此技能。
+nameZh: "技能排错"
+descriptionZh: "诊断并修复技能页面显示异常问题"
 metadata: {"clawdbot":{"emoji":"🔧"}}
 ---
 

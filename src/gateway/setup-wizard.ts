@@ -52,6 +52,8 @@ import {
   DeviceSwitchError,
   type LicenseVerifyResponseData,
   LicenseErrorCode,
+  getDeviceId,
+  getSupportQrcode,
 } from "../license/index.js";
 import {
   setSiliconFlowApiKey,
@@ -67,6 +69,7 @@ import {
   setNvidiaApiKey,
   setMoonshotApiKey,
   setModelscopeApiKey,
+  setKimiCodeApiKey,
 } from "../commands/onboard-auth.js";
 import { serveSetupPage } from "./setup-page.js";
 import { discoverSiliconFlowModels } from "../agents/siliconflow-models.js";
@@ -214,9 +217,26 @@ function getSetupState(): SetupWizardState {
     Object.keys(config.auth.profiles).length > 0
   );
   const hasWorkspace = Boolean(config.agents?.defaults?.workspace);
+  const hasLicense = Boolean(config.license?.key);
+  const setupCompleted = Boolean(config.setup?.completedAt);
 
-  if (hasApiKey && hasWorkspace) {
+  // 只有在满足以下条件之一时才标记为已完成：
+  // 1. 有 license（激活成功）
+  // 2. 配置文件中有 setup.completedAt 标记（handleComplete 写入）
+  if (hasApiKey && hasWorkspace && (hasLicense || setupCompleted)) {
     setupWizardState.completed = true;
+  }
+
+  // Resume from the last completed step so the user does not have to
+  // start over after closing the browser mid-wizard.
+  const savedStep = config.setup?.lastCompletedStep;
+  if (
+    typeof savedStep === "number" &&
+    savedStep >= 0 &&
+    !setupWizardState.completed &&
+    setupWizardState.step <= 1
+  ) {
+    setupWizardState.step = savedStep + 1;
   }
 
   return setupWizardState;
@@ -224,6 +244,27 @@ function getSetupState(): SetupWizardState {
 
 function updateSetupState(updates: Partial<SetupWizardState>): SetupWizardState {
   setupWizardState = { ...setupWizardState, ...updates };
+
+  // Persist the last completed step so the wizard can resume from this point
+  // even if the user closes the browser.  Best-effort – failure here must not
+  // break the wizard flow.
+  if (typeof updates.step === "number" && updates.step > 1) {
+    try {
+      const current = loadConfig();
+      const lastCompletedStep = updates.step - 1;
+      if ((current.setup?.lastCompletedStep ?? -1) < lastCompletedStep) {
+        void writeConfigFile({
+          ...current,
+          setup: { ...current.setup, lastCompletedStep },
+        }).catch(() => {
+          /* best-effort: wizard continues even if checkpoint fails */
+        });
+      }
+    } catch {
+      /* best-effort: config read failure is non-fatal here */
+    }
+  }
+
   return setupWizardState;
 }
 
@@ -482,6 +523,19 @@ async function handleVerifyApiKey(
         messages: [{ role: "user", content: "Hi" }],
         max_tokens: 1,
       });
+    } else if (provider === "kimi-code") {
+      // Kimi Code 代码专用模型，使用 OpenAI 兼容 API + 特殊 User-Agent
+      testUrl = `${endpoint}/chat/completions`;
+      testHeaders = {
+        "Authorization": `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+        "User-Agent": "KimiCLI/0.77",
+      };
+      testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 1,
+      });
     } else if (provider === "modelscope") {
       // 魔搭社区使用 OpenAI 兼容 API
       testUrl = `${endpoint}/chat/completions`;
@@ -717,6 +771,8 @@ async function handleConfigureProvider(
       await setMinimaxApiKey(trimmedKey);
     } else if (provider === "moonshot") {
       await setMoonshotApiKey(trimmedKey);
+    } else if (provider === "kimi-code") {
+      await setKimiCodeApiKey(trimmedKey);
     } else if (provider === "modelscope") {
       await setModelscopeApiKey(trimmedKey);
     } else if (provider === "google") {
@@ -1038,6 +1094,35 @@ async function handleConfigureSecurity(
           ? trustedDirs.map((dir) => formatDockerBind(dir))
           : undefined;
 
+      // 根据部署环境选择 exec 权限策略：
+      // - CN 区 / Windows 打包模式：full + off（最大能力释放，小白无需确认）
+      // - 其他环境（macOS 在线等）：allowlist + on-miss（未知命令询问用户）
+      const isCn = detectChinaRegion();
+      const execSecurity = isCn ? "full" as const : "allowlist" as const;
+      const execAsk = isCn ? "off" as const : "on-miss" as const;
+
+      // 预置常用命令白名单（Windows + Linux + 开发工具）
+      const safeBins = [
+        // Windows 常用
+        "notepad", "explorer", "calc", "mspaint", "code", "cmd", "powershell",
+        "start", "where", "dir", "type", "echo", "set", "cd", "mkdir", "copy",
+        // 开发工具 - 通用
+        "python", "python3", "pip", "pip3",
+        "node", "npm", "pnpm", "yarn", "bun",
+        "git", "curl", "wget",
+        // 开发工具 - Java
+        "java", "javac", "mvn", "gradle",
+        // 开发工具 - 其他语言
+        "go", "cargo", "dotnet",
+        // 压缩工具
+        "tar", "zip", "unzip",
+        // Linux 基础
+        "ls", "cat", "grep", "find", "head", "tail", "wc", "sort", "uniq", "jq",
+        "cp", "mv", "mkdir", "touch", "chmod", "pwd", "which", "env",
+        // 浏览器
+        "chrome", "msedge", "firefox",
+      ];
+
       // 应用推荐的安全配置
       nextConfig = {
         ...nextConfig,
@@ -1060,29 +1145,9 @@ async function handleConfigureSecurity(
           ...nextConfig.tools,
           exec: {
             ...nextConfig.tools?.exec,
-            security: "allowlist",
-            ask: "on-miss",  // 未知命令询问用户，而不是直接拒绝
-            // 预置常用命令白名单（Windows + Linux + 开发工具）
-            safeBins: [
-              // Windows 常用
-              "notepad", "explorer", "calc", "mspaint", "code", "cmd", "powershell",
-              "start", "where", "dir", "type", "echo", "set", "cd", "mkdir", "copy",
-              // 开发工具 - 通用
-              "python", "python3", "pip", "pip3",
-              "node", "npm", "pnpm", "yarn", "bun",
-              "git", "curl", "wget",
-              // 开发工具 - Java
-              "java", "javac", "mvn", "gradle",
-              // 开发工具 - 其他语言
-              "go", "cargo", "dotnet",
-              // 压缩工具
-              "tar", "zip", "unzip",
-              // Linux 基础
-              "ls", "cat", "grep", "find", "head", "tail", "wc", "sort", "uniq", "jq",
-              "cp", "mv", "mkdir", "touch", "chmod", "pwd", "which", "env",
-              // 浏览器
-              "chrome", "msedge", "firefox",
-            ],
+            security: execSecurity,
+            ask: execAsk,
+            safeBins,
           },
         },
       };
@@ -1460,17 +1525,70 @@ async function handleConfigureChannels(
 }
 
 /**
+ * GET /api/setup/qrcode - 获取体验群二维码
+ *
+ * 在 setup wizard 的 Step 4 中展示，帮助用户扫码加群获取体验秘钥。
+ * 复用 support-qrcode 模块的本地二维码读取能力。
+ */
+async function handleGetQrcode(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const deviceId = getDeviceId();
+    const qrcode = getSupportQrcode("test", deviceId);
+
+    if (!qrcode) {
+      sendJson(res, 200, { ok: true, data: { qrcode: null } });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        qrcode: {
+          base64: qrcode.base64,
+          groupName: qrcode.groupName,
+        },
+      },
+    });
+  } catch (error) {
+    sendJson(res, 200, { ok: true, data: { qrcode: null } });
+  }
+}
+
+/**
  * POST /api/setup/complete - 完成配置
+ *
+ * 【重要】将 setup.completedAt 持久化到配置文件，防止 setup 未完成时
+ * 因 API Key + workspace 已保存而跳过 setup wizard。
  */
 async function handleComplete(
   _req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  updateSetupState({
-    completed: true,
-  });
+  try {
+    const config = loadConfig();
+    const nextConfig = {
+      ...config,
+      setup: {
+        ...config.setup,
+        completedAt: new Date().toISOString(),
+      },
+    };
+    await writeConfigFile(nextConfig);
 
-  sendJson(res, 200, { ok: true, data: { completed: true } });
+    updateSetupState({
+      completed: true,
+    });
+
+    sendJson(res, 200, { ok: true, data: { completed: true } });
+  } catch (error) {
+    sendJson(res, 500, {
+      ok: false,
+      error: `保存失败: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
 }
 
 /**
@@ -1500,7 +1618,7 @@ async function handleValidateLicense(
     console.log("[setup-wizard] Validating license with unified API...");
     
     const result = await verifyLicenseWithRetry(key, {
-      maxRetries: 2,
+      maxRetries: 3,
     });
 
     if (result.valid) {
@@ -2198,6 +2316,9 @@ export async function handleSetupWizardHttpRequest(
         case "/free-models/config":
           await handleGetFreeModelsConfig(req, res);
           return true;
+        case "/qrcode":
+          await handleGetQrcode(req, res);
+          return true;
       }
     }
 
@@ -2279,6 +2400,11 @@ export function shouldShowSetupWizard(): boolean {
   const hasLicense = Boolean(config.license?.key);
   if (hasLicense) return false;
 
+  // 如果 setup wizard 已显式完成（handleComplete 写入的标记），不再弹出。
+  // 这是防止老用户误弹的第二道保护（向后兼容：老配置无此字段不受影响）。
+  const setupCompleted = Boolean(config.setup?.completedAt);
+  if (setupCompleted) return false;
+
   // 检查是否已配置 API Key
   const hasApiKey = Boolean(
     config.auth?.profiles &&
@@ -2289,7 +2415,12 @@ export function shouldShowSetupWizard(): boolean {
   const hasWorkspace = Boolean(config.agents?.defaults?.workspace);
 
   // 如果缺少必要配置，显示 Setup Wizard
-  return !hasApiKey || !hasWorkspace;
+  if (!hasApiKey || !hasWorkspace) return true;
+
+  // 【关键修复】API Key + workspace 都已配置，但没有 license 且没有 setup.completedAt
+  // 说明 setup wizard 进行到了中途（Steps 1-2 已保存配置）但未完成 license 验证。
+  // 必须继续显示 setup wizard，让用户完成激活流程。
+  return true;
 }
 
 /**

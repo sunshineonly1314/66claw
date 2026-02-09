@@ -6,7 +6,7 @@
   <title>ClawdbotCN AI - 启动中</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -16,23 +16,23 @@
       justify-content: center;
       color: #fff;
     }
-    
+
     .container {
       text-align: center;
       padding: 40px;
     }
-    
+
     .logo {
       font-size: 64px;
       margin-bottom: 24px;
       animation: pulse 2s ease-in-out infinite;
     }
-    
+
     @keyframes pulse {
       0%, 100% { transform: scale(1); opacity: 1; }
       50% { transform: scale(1.05); opacity: 0.8; }
     }
-    
+
     h1 {
       font-size: 28px;
       font-weight: 600;
@@ -41,13 +41,14 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-    
+
     .status {
       font-size: 16px;
       color: rgba(255, 255, 255, 0.7);
       margin-bottom: 32px;
+      transition: opacity 0.3s ease;
     }
-    
+
     .spinner {
       width: 48px;
       height: 48px;
@@ -57,16 +58,16 @@
       animation: spin 1s linear infinite;
       margin: 0 auto 24px;
     }
-    
+
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    
+
     .progress-text {
       font-size: 14px;
       color: rgba(255, 255, 255, 0.5);
     }
-    
+
     .progress-bar {
       width: 200px;
       height: 4px;
@@ -75,7 +76,7 @@
       margin: 16px auto;
       overflow: hidden;
     }
-    
+
     .progress-fill {
       height: 100%;
       background: linear-gradient(90deg, #60a5fa, #a78bfa);
@@ -83,13 +84,13 @@
       transition: width 0.3s ease;
       animation: progress 3s ease-in-out infinite;
     }
-    
+
     @keyframes progress {
       0% { width: 0%; }
       50% { width: 70%; }
       100% { width: 100%; }
     }
-    
+
     .tips {
       margin-top: 40px;
       padding: 20px;
@@ -97,31 +98,42 @@
       border-radius: 12px;
       max-width: 400px;
     }
-    
+
     .tips h3 {
       font-size: 14px;
       color: rgba(255, 255, 255, 0.6);
       margin-bottom: 12px;
     }
-    
+
     .tips p {
       font-size: 13px;
       color: rgba(255, 255, 255, 0.4);
       line-height: 1.6;
     }
-    
-    .error {
+
+    /* Friendly action area (no red, no scary warnings) */
+    .action-area {
       display: none;
       margin-top: 20px;
       padding: 16px 24px;
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: rgba(96, 165, 250, 0.08);
+      border: 1px solid rgba(96, 165, 250, 0.2);
       border-radius: 8px;
-      color: #fca5a5;
+      color: rgba(255, 255, 255, 0.7);
     }
-    
+
+    .action-area p {
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .action-area .sub {
+      font-size: 12px;
+      opacity: 0.6;
+    }
+
     .retry-btn {
-      margin-top: 16px;
+      margin-top: 12px;
       padding: 10px 24px;
       background: #60a5fa;
       border: none;
@@ -131,7 +143,7 @@
       cursor: pointer;
       transition: background 0.2s;
     }
-    
+
     .retry-btn:hover {
       background: #3b82f6;
     }
@@ -142,128 +154,127 @@
     <div class="logo">🤖</div>
     <h1>ClawdbotCN AI</h1>
     <p class="status" id="status">正在启动服务...</p>
-    
+
     <div class="spinner" id="spinner"></div>
     <div class="progress-bar">
       <div class="progress-fill" id="progress"></div>
     </div>
     <p class="progress-text" id="progressText">首次启动可能需要 10-30 秒</p>
-    
-    <div class="error" id="error">
-      <p>服务启动超时，请检查是否正确安装</p>
-      <button class="retry-btn" onclick="location.reload()">重试</button>
+
+    <div class="action-area" id="actionArea">
+      <p id="actionMsg">正在初始化，请稍候...</p>
+      <p class="sub" id="actionSub"></p>
+      <button class="retry-btn" onclick="location.reload()">刷新页面</button>
     </div>
-    
+
     <div class="tips">
       <h3>💡 小提示</h3>
       <p>ClawdbotCN 是您的私人 AI 助手，支持多种大模型。首次使用需要配置 API Key。</p>
     </div>
   </div>
-  
+
   <script>
-    const WARN_AFTER = 60; // 60 秒后显示警告
-    const CHECK_INTERVAL = 2000; // 每 2 秒检查一次（减少请求频率）
-    
+    const CHECK_INTERVAL = 2000;
+
     let attempts = 0;
     let startTime = Date.now();
-    let warningShown = false;
-    
-    // 从 URL 获取参数
+
+    // Progressive status messages (friendly, no scary warnings)
+    const STATUS_STAGES = [
+      { after:  0, status: '正在启动服务...',                     progress: '请稍候' },
+      { after: 10, status: '正在加载核心组件...',                   progress: '正在初始化' },
+      { after: 20, status: '正在连接服务...',                       progress: '即将就绪' },
+      { after: 40, status: '正在完成初始化...',                     progress: '首次启动稍慢，请耐心等待' },
+      { after: 60, status: '还在努力启动中...',                     progress: '初始化环境可能需要一点时间' },
+      { after: 90, status: '快好了，再等一下...',                   progress: '后台服务正在准备就绪' },
+      { after:120, status: '启动时间较长，仍在连接...',              progress: '如长时间无变化，可尝试刷新页面' },
+    ];
+
+    // From URL params
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token') || '';
-    const hasHistory = urlParams.get('hasHistory') === '1';  // 新装 + 有历史配置
-    const isFirstLaunch = urlParams.get('firstLaunch') === '1';  // 是否首次启动
+    const hasHistory = urlParams.get('hasHistory') === '1';
     const port = urlParams.get('port') || '18789';
-    
+
     const baseUrl = 'http://localhost:' + port;
-    
+
     function updateStatus(text) {
       document.getElementById('status').textContent = text;
     }
-    
+
     function updateProgress(text) {
       document.getElementById('progressText').textContent = text;
     }
-    
-    function showWarning() {
-      // 显示警告但不停止轮询
-      if (!warningShown) {
-        warningShown = true;
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('error').innerHTML = `
-          <p>服务启动较慢，仍在尝试连接...</p>
-          <p style="font-size: 12px; margin-top: 8px; opacity: 0.7;">首次启动或系统较慢时可能需要更长时间</p>
-          <button class="retry-btn" onclick="location.reload()">重新加载页面</button>
-        `;
+
+    function showActionArea(msg, sub) {
+      var area = document.getElementById('actionArea');
+      if (area.style.display !== 'block') {
+        area.style.display = 'block';
+        document.getElementById('actionMsg').textContent = msg;
+        document.getElementById('actionSub').textContent = sub || '';
       }
     }
-    
+
+    function applyStage(elapsed) {
+      // Find the latest matching stage
+      var stage = STATUS_STAGES[0];
+      for (var i = STATUS_STAGES.length - 1; i >= 0; i--) {
+        if (elapsed >= STATUS_STAGES[i].after) {
+          stage = STATUS_STAGES[i];
+          break;
+        }
+      }
+      updateStatus(stage.status);
+      updateProgress(stage.progress + ' (' + elapsed + '秒)');
+
+      // After 90 seconds, show a friendly action area (NOT red, NOT scary)
+      if (elapsed >= 90) {
+        showActionArea(
+          '启动时间较长，服务仍在后台加载中',
+          '您也可以稍后再试，或查看系统托盘图标状态'
+        );
+      }
+    }
+
     async function checkGateway() {
       attempts++;
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      
-      updateProgress(`正在等待... ${elapsed}秒`);
-      
-      // 超过 60 秒显示警告，但继续轮询
-      if (elapsed > WARN_AFTER) {
-        showWarning();
-      }
-      
+      var elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+      applyStage(elapsed);
+
       try {
-        // 直接使用 /api/setup/state 检测 Gateway 是否就绪并获取配置状态
-        const response = await fetch(baseUrl + '/api/setup/state', {
+        var response = await fetch(baseUrl + '/api/setup/state', {
           method: 'GET',
           signal: AbortSignal.timeout(5000)
         });
-        
+
         if (response.ok) {
-          const stateData = await response.json();
-          
-          // Gateway 已就绪
+          var stateData = await response.json();
+
           updateStatus('服务已就绪，正在跳转...');
-          document.getElementById('error').style.display = 'none';
-          
-          // 根据配置状态决定跳转
-          let targetUrl;
-          
+          document.getElementById('actionArea').style.display = 'none';
+
+          var targetUrl;
           if (hasHistory) {
-            // 新装 + 有历史配置 → 跳 setup 显示"欢迎回来"
             targetUrl = baseUrl + '/setup?hasHistory=1&token=' + token;
           } else if (stateData.data && stateData.data.completed) {
-            // 已完成配置 → 跳 chat
             targetUrl = baseUrl + '/?token=' + token;
           } else {
-            // 未完成配置 → 跳 setup
             targetUrl = baseUrl + '/setup?token=' + token;
           }
-          
-          console.log('Redirecting to:', targetUrl, 'completed:', stateData.data?.completed, 'hasHistory:', hasHistory);
-          
-          setTimeout(() => {
+
+          setTimeout(function() {
             window.location.href = targetUrl;
           }, 300);
           return;
         }
       } catch (e) {
-        // 连接失败，继续等待
-        if (elapsed < 10) {
-          updateStatus('正在启动服务...');
-        } else if (elapsed < 30) {
-          updateStatus('服务正在初始化...');
-        } else if (elapsed < 60) {
-          updateStatus('首次启动需要较长时间，请耐心等待...');
-        } else if (elapsed < 120) {
-          updateStatus('仍在尝试连接... 请稍候');
-        } else {
-          updateStatus('持续等待中... 如长时间无响应请检查日志');
-        }
+        // Connection failed, continue waiting - stage messages handle the UX
       }
-      
-      // 始终继续检查，不要停止
+
       setTimeout(checkGateway, CHECK_INTERVAL);
     }
-    
-    // 开始检查
+
     checkGateway();
   </script>
 </body>

@@ -86,13 +86,27 @@ export {
   type StartupVerifyResult,
 } from "./startup.js";
 
-// 技术支持二维码
+// 技术支持二维码（本地文件）
 export {
   getSupportQrcode,
   getPurchaseUrl,
+  fetchRemotePurchaseUrl,
   enrichLicenseWithSupport,
   clearSupportQrcodeCache,
 } from "./support-qrcode.js";
+
+// 技术支持二维码（远程拉取 + 7天缓存）
+export {
+  getRemoteSupportQrcode,
+  preloadSupportQrcode,
+  fetchRemoteQrcode,
+  clearRemoteQrcodeCache,
+  getQrcodeCacheStatus,
+  isCacheExpired,
+  getCacheRemainingMs,
+  type RemoteQrcodeMetadata,
+  type RemoteQrcodeResponse,
+} from "./support-qrcode-remote.js";
 
 // 短期令牌
 export {

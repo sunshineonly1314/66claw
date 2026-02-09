@@ -25,12 +25,16 @@ import type { SkillsConfig } from "./types.skills.js";
 import type { ToolsConfig } from "./types.tools.js";
 import type { LicenseConfig } from "./types.license.js";
 
+export type PerformanceProfile = "economy" | "balanced" | "power";
+
 export type ClawdbotConfig = {
   meta?: {
     /** Last clawdbot version that wrote this config. */
     lastTouchedVersion?: string;
     /** ISO timestamp when this config was last written. */
     lastTouchedAt?: string;
+    /** AI assistant performance profile (economy/balanced/power). */
+    performanceProfile?: PerformanceProfile;
   };
   auth?: AuthConfig;
   env?: {
@@ -96,10 +100,19 @@ export type ClawdbotConfig = {
   canvasHost?: CanvasHostConfig;
   talk?: TalkConfig;
   gateway?: GatewayConfig;
+  /** Setup wizard 状态持久化 */
+  setup?: {
+    /** ISO timestamp when setup wizard was completed */
+    completedAt?: string;
+    /** Last wizard step that was fully completed (0-indexed). */
+    lastCompletedStep?: number;
+  };
   /** License 授权信息 (ClawdbotCN) */
   license?: LicenseConfig;
   /** 通用凭据存储（兼容字段，用于存储环境变量） */
   credentials?: Record<string, string>;
+  /** MCP (Model Context Protocol) server configuration. */
+  mcp?: import("../mcp/types.js").MCPConfig;
 };
 
 export type ConfigValidationIssue = {

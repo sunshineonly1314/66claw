@@ -33,6 +33,7 @@ export const ClawdbotSchema = z
       .object({
         lastTouchedVersion: z.string().optional(),
         lastTouchedAt: z.string().optional(),
+        performanceProfile: z.enum(["economy", "balanced", "power"]).optional(),
       })
       .strict()
       .optional(),
@@ -72,6 +73,16 @@ export const ClawdbotSchema = z
         vars: z.record(z.string(), z.string()).optional(),
       })
       .catchall(z.string())
+      .optional(),
+    setup: z
+      .object({
+        completedAt: z.string().optional(),
+        /** Last wizard step that was fully completed (0-indexed).  Allows the
+         *  setup wizard to resume from where the user left off after a browser
+         *  refresh or accidental close instead of starting over. */
+        lastCompletedStep: z.number().int().min(0).max(10).optional(),
+      })
+      .strict()
       .optional(),
     wizard: z
       .object({
@@ -478,6 +489,7 @@ export const ClawdbotSchema = z
             extraDirs: z.array(z.string()).optional(),
             watch: z.boolean().optional(),
             watchDebounceMs: z.number().int().min(0).optional(),
+            maxPromptSkills: z.number().int().min(0).optional(),
           })
           .strict()
           .optional(),
@@ -592,6 +604,28 @@ export const ClawdbotSchema = z
               reason: z.string().optional(),
               savings: z.number().optional(),
             })
+          )
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    mcp: z
+      .object({
+        servers: z
+          .array(
+            z
+              .object({
+                id: z.string(),
+                command: z.string(),
+                args: z.array(z.string()).optional(),
+                env: z.record(z.string(), z.string()).optional(),
+                cwd: z.string().optional(),
+                transport: z.enum(["stdio", "sse"]).default("stdio"),
+                enabled: z.boolean().default(true),
+                autoStart: z.boolean().default(true),
+                timeout: z.number().int().positive().optional(),
+              })
+              .strict(),
           )
           .optional(),
       })

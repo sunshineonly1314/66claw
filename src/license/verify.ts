@@ -57,12 +57,36 @@ export function getLicenseConfig(): LicenseModuleConfig {
 /**
  * 构建 API URL
  */
-function buildUrl(endpoint: string): string {
-  return `${moduleConfig.apiBaseUrl}${endpoint}`;
+function buildUrl(endpoint: string, baseUrl?: string): string {
+  return `${baseUrl ?? moduleConfig.apiBaseUrl}${endpoint}`;
 }
 
 /**
- * 发送 HTTP 请求
+ * 提取网络错误详细信息，避免只记录 "fetch failed"
+ */
+function extractNetworkErrorDetail(error: unknown): string {
+  const cause = error instanceof Error ? (error.cause as Error) : undefined;
+  const code = (cause as NodeJS.ErrnoException | undefined)?.code;
+  const baseMsg = error instanceof Error ? error.message : String(error);
+  return code
+    ? `${code} (${cause?.message ?? baseMsg})`
+    : cause?.message ?? baseMsg;
+}
+
+/**
+ * 获取所有可用的 API base URLs（主 URL + 备用 URL）
+ */
+function getAllBaseUrls(): string[] {
+  const urls = [moduleConfig.apiBaseUrl];
+  if (moduleConfig.apiFallbackUrls?.length) {
+    urls.push(...moduleConfig.apiFallbackUrls);
+  }
+  return urls;
+}
+
+/**
+ * 发送 HTTP 请求（支持多 URL 自动降级）
+ * 主 URL 网络失败时依次尝试备用 URL，HTTP 业务错误不触发降级
  */
 async function sendRequest<T>(
   method: "GET" | "POST",
@@ -70,36 +94,68 @@ async function sendRequest<T>(
   body?: unknown,
   queryParams?: Record<string, string>,
 ): Promise<ApiResponse<T>> {
-  let url = buildUrl(endpoint);
+  const baseUrls = getAllBaseUrls();
+  let lastError: Error | undefined;
 
-  // 添加查询参数
-  if (queryParams) {
-    const params = new URLSearchParams(queryParams);
-    url += `?${params.toString()}`;
+  for (let i = 0; i < baseUrls.length; i++) {
+    const baseUrl = baseUrls[i];
+    let url = buildUrl(endpoint, baseUrl);
+
+    if (queryParams) {
+      const params = new URLSearchParams(queryParams);
+      url += `?${params.toString()}`;
+    }
+
+    const options: RequestInit = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(30000),
+    };
+
+    if (body && method === "POST") {
+      options.body = JSON.stringify(body);
+    }
+
+    const isRetry = i > 0;
+    log.debug(`${isRetry ? `[fallback ${i}/${baseUrls.length - 1}] ` : ""}Sending ${method} request to ${url}`);
+
+    try {
+      const response = await fetch(url, options);
+
+      if (!response.ok) {
+        // HTTP 业务错误不降级（服务端能响应说明网络通了）
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      if (isRetry) {
+        log.info(`Fallback URL succeeded: ${baseUrl}`);
+      }
+
+      const data = (await response.json()) as ApiResponse<T>;
+      return data;
+    } catch (error) {
+      const detail = extractNetworkErrorDetail(error);
+      const isNetworkError = !(error instanceof Error && error.message.startsWith("HTTP "));
+
+      if (isNetworkError && i < baseUrls.length - 1) {
+        // 网络层失败 + 还有备用 URL → 记录并继续
+        log.warn(`Network failed on ${url} → ${detail}, trying fallback...`);
+        lastError = error instanceof Error ? error : new Error(String(error));
+        continue;
+      }
+
+      // 最后一个 URL 也失败，或者是 HTTP 业务错误
+      const enriched = new Error(`Network error fetching ${endpoint}: ${detail}`);
+      enriched.cause = error;
+      log.error(`Request failed: ${method} ${url} → ${detail}${lastError ? ` (all ${baseUrls.length} URLs exhausted)` : ""}`);
+      throw enriched;
+    }
   }
 
-  const options: RequestInit = {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-    },
-    signal: AbortSignal.timeout(30000), // 30秒超时（网络不稳定时需要更长时间）
-  };
-
-  if (body && method === "POST") {
-    options.body = JSON.stringify(body);
-  }
-
-  log.debug(`Sending ${method} request to ${endpoint}`);
-
-  const response = await fetch(url, options);
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  const data = (await response.json()) as ApiResponse<T>;
-  return data;
+  // 不应到达
+  throw lastError ?? new Error("No API base URLs configured");
 }
 
 /**
@@ -580,15 +636,19 @@ export async function verifyLicenseWithRetry(
     } catch (error) {
       const isLastAttempt = attempt === maxRetries;
       const errorMsg = error instanceof Error ? error.message : String(error);
+      const causeMsg = error instanceof Error && error.cause instanceof Error
+        ? error.cause.message
+        : undefined;
+      const fullMsg = causeMsg ? `${errorMsg} (cause: ${causeMsg})` : errorMsg;
 
       if (isLastAttempt) {
-        log.error(`License verification failed after ${maxRetries} attempts: ${errorMsg}`);
+        log.error(`License verification failed after ${maxRetries} attempts: ${fullMsg}`);
         throw error;
       }
 
       // 指数退避
       const delay = Math.pow(2, attempt - 1) * 1000;
-      log.warn(`License verification attempt ${attempt} failed, retrying in ${delay}ms: ${errorMsg}`);
+      log.warn(`License verification attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms: ${fullMsg}`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

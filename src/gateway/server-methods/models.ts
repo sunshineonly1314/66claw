@@ -22,6 +22,7 @@ import {
   setNvidiaApiKey,
   setMoonshotApiKey,
   setModelscopeApiKey,
+  setKimiCodeApiKey,
 } from "../../commands/onboard-auth.js";
 
 /**
@@ -362,6 +363,8 @@ export const modelsHandlers: GatewayRequestHandlers = {
         await setMinimaxApiKey(authValue);
       } else if (providerId === "moonshot") {
         await setMoonshotApiKey(authValue);
+      } else if (providerId === "kimi-code") {
+        await setKimiCodeApiKey(authValue);
       } else if (providerId === "modelscope") {
         await setModelscopeApiKey(authValue);
       } else if (providerId === "google") {

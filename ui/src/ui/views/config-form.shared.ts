@@ -1,4 +1,5 @@
 import type { ConfigUiHints } from "../types";
+import { tMaybe } from "../i18n/index.js";
 
 export type JsonSchema = {
   type?: string | string[];
@@ -77,6 +78,42 @@ export function humanize(raw: string) {
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/\s+/g, " ")
     .replace(/^./, (m) => m.toUpperCase());
+}
+
+export function resolveLabel(
+  path: Array<string | number>,
+  hint: { label?: string } | undefined,
+  schema: { title?: string },
+  fallbackKey?: string,
+): string {
+  const key = pathKey(path);
+  const i18nKey = `config.field.${key}`;
+  const translated = tMaybe(i18nKey);
+  if (translated !== i18nKey) return translated;
+
+  // For array paths (containing numeric indices), try wildcard variants:
+  //   path ["agents","list",0,"tools","profile"]
+  //   → "config.field.agents.list.*.tools.profile"   (star variant)
+  //   → "config.field.agents.list[].tools.profile"    (bracket variant)
+  if (path.some((s) => typeof s === "number")) {
+    const starKey = `config.field.${path.map((s) => (typeof s === "number" ? "*" : s)).join(".")}`;
+    const starResult = tMaybe(starKey);
+    if (starResult !== starKey) return starResult;
+
+    const bracketParts: string[] = [];
+    for (const seg of path) {
+      if (typeof seg === "number") {
+        if (bracketParts.length > 0) bracketParts[bracketParts.length - 1] += "[]";
+      } else {
+        bracketParts.push(seg);
+      }
+    }
+    const bracketKey = `config.field.${bracketParts.join(".")}`;
+    const bracketResult = tMaybe(bracketKey);
+    if (bracketResult !== bracketKey) return bracketResult;
+  }
+
+  return hint?.label ?? schema.title ?? humanize(fallbackKey ?? String(path.at(-1)));
 }
 
 export function isSensitivePath(path: Array<string | number>): boolean {

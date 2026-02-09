@@ -106,13 +106,18 @@ export async function verifyLicenseOnStartup(
 ): Promise<StartupVerifyResult> {
   const deviceId = getDeviceId();
 
-  // 配置模块
+  // 配置模块（支持环境变量覆盖 API URL）
+  const envApiUrl = process.env.CLAWDBOT_LICENSE_API_URL;
   const moduleConfig = {
     ...DEFAULT_LICENSE_CONFIG,
     ...options.config,
+    ...(envApiUrl ? { apiBaseUrl: envApiUrl } : {}),
     devMode: isDevMode(),
   };
   configureLicense(moduleConfig);
+  if (envApiUrl) {
+    log.info(`License API URL overridden by env: ${envApiUrl}`);
+  }
 
   // 初始化结果
   const createResult = (
@@ -178,7 +183,54 @@ export async function verifyLicenseOnStartup(
   // 读取授权码
   const key = loadLicenseKey();
   if (!key) {
+    // 授权码可能在 config 重写（如 security.setMode）或 gateway 重启时丢失。
+    // 回退到本地离线缓存，避免因配置竞态导致功能中断。
     log.warn("No license key found in config");
+
+    // getOfflineCache() 内部已包含 canUseOffline() 检查
+    const offlineCache = getOfflineCache();
+    if (offlineCache) {
+      log.info("License key missing in config but valid offline cache found – using cached license");
+      const offlineResponse = createOfflineResponse(offlineCache);
+      return createResult({
+        canProceed: true,
+        valid: offlineCache.valid,
+        offlineMode: true,
+        response: offlineResponse,
+        clientState: {
+          checking: false,
+          valid: offlineCache.valid,
+          offlineMode: true,
+          error: null,
+          errorCode: null,
+          license: offlineResponse.license
+            ? {
+                tier: offlineResponse.license.tier,
+                tierName: offlineResponse.license.tierName,
+                expiresAt: offlineResponse.license.expiresAt,
+                daysRemaining: offlineResponse.license.daysRemaining,
+                keyType: offlineResponse.license.keyType,
+                features: offlineResponse.license.features ?? [],
+              }
+            : null,
+          device: offlineResponse.device
+            ? {
+                deviceId: offlineResponse.device.deviceId,
+                deviceLimit: offlineResponse.device.deviceLimit,
+                boundDevices: offlineResponse.device.boundDevices,
+                isCurrentBound: offlineResponse.device.isCurrentBound,
+              }
+            : null,
+          renewalReminder: null,
+          forceUpdate: null,
+          pendingNotifications: [],
+          lastVerifiedAt: offlineCache.verifyTime,
+          deviceSwitchInfo: null,
+          deviceSwitchCooldown: null,
+        },
+      });
+    }
+
     return createResult({
       canProceed: false,
       error: "未找到授权码，请先激活授权",

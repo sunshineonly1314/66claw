@@ -286,16 +286,37 @@ export function loadClawdbotPlugins(options: PluginLoadOptions = {}): PluginRegi
     try {
       mod = jiti(candidate.source) as ClawdbotPluginModule;
     } catch (err) {
-      logger.error(`[plugins] ${record.id} failed to load from ${record.source}: ${String(err)}`);
-      record.status = "error";
-      record.error = String(err);
+      const errStr = String(err);
+      const errCode = (err as { code?: string }).code;
+      // Detect native / optional dependency failures:
+      //  1. ERR_DLOPEN_FAILED — always a native .node binary issue
+      //  2. MODULE_NOT_FOUND + platform-specific package name pattern
+      //     (e.g. @matrix-org/…-win32-x64-msvc) — guards against
+      //     over-matching on normal missing-JS-module errors
+      //  3. .node binary parse failure
+      const nativePattern = /-(win32|linux|darwin|freebsd|arm64|x64|aarch64|msvc|gnu|musl)/i;
+      const isNativeModuleMissing =
+        errCode === "ERR_DLOPEN_FAILED" ||
+        (errCode === "MODULE_NOT_FOUND" && nativePattern.test(errStr)) ||
+        /Cannot find module ['"]@[^'"]*-(win32|linux|darwin|freebsd|arm|x64|aarch64|msvc|gnu|musl)/i.test(errStr) ||
+        /\.node['"]?\s*is not a valid/.test(errStr);
+      const diagLevel = isNativeModuleMissing ? "warn" : "error";
+      const logFn = isNativeModuleMissing ? logger.warn : logger.error;
+      const hint = isNativeModuleMissing
+        ? ` (native dependency not available for this platform – plugin disabled)`
+        : "";
+      logFn(`[plugins] ${record.id} failed to load from ${record.source}: ${errStr}${hint}`);
+      record.status = isNativeModuleMissing ? "disabled" : "error";
+      record.error = errStr;
       registry.plugins.push(record);
       seenIds.set(pluginId, candidate.origin);
       registry.diagnostics.push({
-        level: "error",
+        level: diagLevel,
         pluginId: record.id,
         source: record.source,
-        message: `failed to load plugin: ${String(err)}`,
+        message: isNativeModuleMissing
+          ? `plugin disabled: native dependency not available for this platform`
+          : `failed to load plugin: ${errStr}`,
       });
       continue;
     }

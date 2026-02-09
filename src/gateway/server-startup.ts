@@ -6,6 +6,8 @@ import {
   resolveHooksGmailModel,
 } from "../agents/model-selection.js";
 import { syncSkillsIndexBackground } from "../agents/skills/sync.js";
+import { syncMcpIndexBackground } from "../mcp/marketplace-sync.js";
+import { initMCPManagerIfNeeded } from "../mcp/index.js";
 import type { CliDeps } from "../cli/deps.js";
 import type { loadConfig } from "../config/config.js";
 import { isTruthyEnvValue } from "../infra/env.js";
@@ -157,9 +159,21 @@ export async function startGatewaySidecars(params: {
     }, 750);
   }
 
+  // Pre-initialize MCP servers early (non-blocking).
+  // This starts spawn+initialize for all auto-start MCP servers immediately,
+  // so they're ready by the time the user sends the first message.
+  // Without this, MCP init only fires at first agent tool build and tools miss that request.
+  void initMCPManagerIfNeeded(params.cfg).catch((err) => {
+    params.log.warn(`MCP pre-initialization failed: ${String(err)}`);
+  });
+
   // 后台预同步技能市场索引（不阻塞启动）
   // Background sync skills market index (non-blocking)
   syncSkillsIndexBackground();
+
+  // 后台预同步 MCP 市场索引（不阻塞启动）
+  // Background sync MCP marketplace index (non-blocking)
+  syncMcpIndexBackground();
 
   return { browserControl, pluginServices };
 }

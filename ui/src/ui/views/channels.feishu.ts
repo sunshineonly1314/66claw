@@ -10,6 +10,7 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, FeishuStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
+import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { FeishuStatus } from "./channels.types";
@@ -50,7 +51,7 @@ export function renderFeishuCard(params: {
           </div>
           ${account.lastError
             ? html`
-                <div class="account-card-error">
+                <div class="${isUnconfiguredError(account.lastError) ? "account-card-muted" : "account-card-error"}">
                   ${account.lastError}
                 </div>
               `
@@ -84,11 +85,14 @@ export function renderFeishuCard(params: {
     "channel-card",
     feishu?.running ? "channel-card--running" : "",
     feishu?.configured && !feishu?.running ? "channel-card--configured" : "",
-    feishu?.lastError ? "channel-card--error" : "",
+    feishu?.lastError ? (isUnconfiguredError(feishu.lastError) ? "channel-card--unconfigured" : "channel-card--error") : "",
   ].filter(Boolean).join(" ");
 
+  // 自动展开：运行中 或 有真实错误
+  const shouldOpen = feishu?.running || (feishu?.lastError != null && !isUnconfiguredError(feishu.lastError));
+
   return html`
-    <details class="${cardClasses}" open>
+    <details class="${cardClasses}" ?open=${shouldOpen}>
       <summary class="channel-card__header">
         <div class="channel-card__left">
           <span class="channel-card__icon">🪶</span>
@@ -103,9 +107,9 @@ export function renderFeishuCard(params: {
         <div class="channel-card__desc">${t("channels.feishu.description")}</div>
 
         <!-- 支持能力 -->
-        <div class="channel-card__features" style="margin-top: 12px; padding: 12px; background: var(--bg-secondary, #f5f5f5); border-radius: 8px;">
-          <div style="font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">✨ 支持能力</div>
-          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; font-size: 13px;">
+        <div class="channel-card__features">
+          <div class="channel-card__features-title">✨ 支持能力</div>
+          <div class="channel-card__features-grid">
             <span>✅ 私聊消息</span>
             <span>✅ 群聊 @机器人</span>
             <span>✅ 图片/文件收发</span>
@@ -123,7 +127,8 @@ export function renderFeishuCard(params: {
                 ${feishuAccounts.map((account) => renderAccountCard(account))}
               </div>
             `
-          : html`
+          : (feishu?.configured || feishu?.running)
+            ? html`
               <div class="status-list">
                 <div>
                   <span class="label">${t("channels.configured")}</span>
@@ -146,10 +151,11 @@ export function renderFeishuCard(params: {
                   <span>${feishu?.lastProbeAt ? formatAgo(feishu.lastProbeAt) : t("common.na")}</span>
                 </div>
               </div>
-            `}
+            `
+            : nothing}
 
         ${feishu?.lastError
-          ? html`<div class="callout danger" style="margin-top: 12px;">
+          ? html`<div class="${errorCalloutClass(feishu.lastError)}" style="margin-top: 12px;">
               ${feishu.lastError}
             </div>`
           : nothing}

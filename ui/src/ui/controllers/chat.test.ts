@@ -16,6 +16,7 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
     chatThinkingLevel: null,
     chatSending: false,
     chatMessage: "",
+    chatAttachments: [],
     chatRunId: null,
     chatStream: null,
     chatStreamStartedAt: null,
@@ -79,7 +80,7 @@ describe("handleChatEvent", () => {
     expect(state.chatStreamStartedAt).toBe(123);
   });
 
-  it("processes final from own run and clears state", () => {
+  it("processes final from own run — clears runId/startedAt, keeps chatStream for gateway", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-1",
@@ -93,7 +94,135 @@ describe("handleChatEvent", () => {
     };
     expect(handleChatEvent(state, payload)).toBe("final");
     expect(state.chatRunId).toBe(null);
-    expect(state.chatStream).toBe(null);
+    // chatStream is intentionally NOT cleared here — app-gateway clears it
+    // after loadChatHistory completes for a seamless typewriter transition.
+    expect(state.chatStream).toBe("Reply");
     expect(state.chatStreamStartedAt).toBe(null);
+  });
+
+  // ============================================================
+  // ClawdbotCN: free model switch auto-new-session detection
+  // ============================================================
+
+  it("returns 'final_model_switch' when stream contains free model notification", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-fm",
+      chatStream: "",
+      chatStreamStartedAt: 100,
+    });
+
+    // Step 1: simulate delta with notification marker in raw text
+    const notificationJson = JSON.stringify({
+      type: "switched",
+      providerName: "SiliconFlow",
+      message: "已切换至 SiliconFlow",
+      showInChat: true,
+    });
+    const deltaPayload: ChatEventPayload = {
+      runId: "run-fm",
+      sessionKey: "main",
+      state: "delta",
+      message: {
+        role: "assistant",
+        content: [{
+          type: "text",
+          text: `<!--CLAWDBOT_FREE_MODEL_NOTIFICATION:${notificationJson}-->\n你好！`,
+        }],
+      },
+    };
+    expect(handleChatEvent(state, deltaPayload)).toBe("delta");
+
+    // Step 2: simulate final — should detect the tracked notification
+    const finalPayload: ChatEventPayload = {
+      runId: "run-fm",
+      sessionKey: "main",
+      state: "final",
+    };
+    expect(handleChatEvent(state, finalPayload)).toBe("final_model_switch");
+    expect(state.chatRunId).toBe(null);
+  });
+
+  it("returns 'final' (not 'final_model_switch') when stream has no notification", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-normal",
+      chatStream: "",
+      chatStreamStartedAt: 100,
+    });
+
+    // delta without notification
+    const deltaPayload: ChatEventPayload = {
+      runId: "run-normal",
+      sessionKey: "main",
+      state: "delta",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "普通回复，没有模型切换" }],
+      },
+    };
+    handleChatEvent(state, deltaPayload);
+
+    // final — should be normal "final"
+    const finalPayload: ChatEventPayload = {
+      runId: "run-normal",
+      sessionKey: "main",
+      state: "final",
+    };
+    expect(handleChatEvent(state, finalPayload)).toBe("final");
+  });
+
+  it("does not leak switch detection between different runs", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-A",
+      chatStream: "",
+      chatStreamStartedAt: 100,
+    });
+
+    // run-A delta with notification
+    const notificationJson = JSON.stringify({
+      type: "exhausted",
+      providerName: "X",
+      message: "额度已用完",
+      showInChat: true,
+    });
+    handleChatEvent(state, {
+      runId: "run-A",
+      sessionKey: "main",
+      state: "delta",
+      message: {
+        role: "assistant",
+        content: [{
+          type: "text",
+          text: `<!--CLAWDBOT_FREE_MODEL_NOTIFICATION:${notificationJson}-->bye`,
+        }],
+      },
+    });
+
+    // run-A final → should detect switch
+    expect(handleChatEvent(state, {
+      runId: "run-A",
+      sessionKey: "main",
+      state: "final",
+    })).toBe("final_model_switch");
+
+    // run-B: no notification → should NOT return final_model_switch
+    state.chatRunId = "run-B";
+    state.chatStreamStartedAt = 200;
+    handleChatEvent(state, {
+      runId: "run-B",
+      sessionKey: "main",
+      state: "delta",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "clean reply" }],
+      },
+    });
+    expect(handleChatEvent(state, {
+      runId: "run-B",
+      sessionKey: "main",
+      state: "final",
+    })).toBe("final");
   });
 });

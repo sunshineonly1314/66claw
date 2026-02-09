@@ -389,14 +389,18 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     } = splitResult;
     // Skip empty payloads, but always emit if audioAsVoice is set (to propagate the flag)
     if (!cleanedText && (!mediaUrls || mediaUrls.length === 0) && !audioAsVoice) return;
-    void params.onBlockReply({
-      text: cleanedText,
-      mediaUrls: mediaUrls?.length ? mediaUrls : undefined,
-      audioAsVoice,
-      replyToId,
-      replyToTag,
-      replyToCurrent,
-    });
+    try {
+      void params.onBlockReply({
+        text: cleanedText,
+        mediaUrls: mediaUrls?.length ? mediaUrls : undefined,
+        audioAsVoice,
+        replyToId,
+        replyToTag,
+        replyToCurrent,
+      });
+    } catch (err) {
+      log.warn(`onBlockReply callback failed: ${String(err)}`);
+    }
   };
 
   const consumeReplyDirectives = (text: string, options?: { final?: boolean }) =>
@@ -421,9 +425,13 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
     if (!formatted) return;
     if (formatted === state.lastStreamedReasoning) return;
     state.lastStreamedReasoning = formatted;
-    void params.onReasoningStream({
-      text: formatted,
-    });
+    try {
+      void params.onReasoningStream({
+        text: formatted,
+      });
+    } catch (err) {
+      log.warn(`onReasoningStream callback failed: ${String(err)}`);
+    }
   };
 
   const resetForCompactionRetry = () => {

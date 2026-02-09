@@ -32,11 +32,18 @@ function computeTotalTokens(usage?: NormalizedUsage | null): number {
   return sum > 0 ? Math.floor(sum) : 0;
 }
 
+function ensureTodayUsage(account: FreeModelsConfig["accounts"][number]): void {
+  if (!account.todayUsage) {
+    account.todayUsage = { tokens: 0, requests: 0, lastUpdated: new Date().toISOString() };
+  }
+}
+
 function resetIfNewBeijingDay(freeModels: FreeModelsConfig): boolean {
   const today = getBeijingDateString();
   if (freeModels.stats.lastResetDate === today) return false;
 
   for (const account of freeModels.accounts) {
+    ensureTodayUsage(account);
     account.todayUsage.tokens = 0;
     account.todayUsage.requests = 0;
     account.todayUsage.lastUpdated = new Date().toISOString();
@@ -44,6 +51,10 @@ function resetIfNewBeijingDay(freeModels: FreeModelsConfig): boolean {
       account.status = "active";
       account.lastError = undefined;
       account.lastErrorTime = undefined;
+    }
+    // 清除速率限制冷却标记
+    if (account.rateLimitedUntil) {
+      account.rateLimitedUntil = undefined;
     }
   }
   freeModels.stats.todaySavings = 0;
@@ -66,12 +77,13 @@ export async function recordFreeModelUsage(params: {
   if (!providerId) return { updated: false, reason: "not a free model provider" };
 
   const addedTokens = computeTotalTokens(params.usage);
-  if (addedTokens <= 0) return { updated: false, reason: "no usage tokens to record" };
 
+  // Even when addedTokens is 0 (e.g. 429 error with no tokens consumed),
+  // still record the request so the UI reflects that attempts were made.
   await enqueueWrite(async () => {
     const cfg = loadConfig();
     const freeModels = (cfg as { freeModels?: FreeModelsConfig }).freeModels;
-    if (!freeModels) return;
+    if (!freeModels?.accounts || !freeModels.stats) return;
 
     // Ensure day-boundary reset is applied even if the chat flow didn't run pre-check (best-effort).
     resetIfNewBeijingDay(freeModels);
@@ -79,11 +91,16 @@ export async function recordFreeModelUsage(params: {
     const account = freeModels.accounts.find((a) => a.providerId === providerId);
     if (!account) return;
 
+    ensureTodayUsage(account);
     account.todayUsage.tokens += addedTokens;
     account.todayUsage.requests += 1;
     account.todayUsage.lastUpdated = new Date().toISOString();
 
-    freeModels.stats.todayFreeRequests += 1;
+    if (typeof freeModels.stats.todayFreeRequests === "number") {
+      freeModels.stats.todayFreeRequests += 1;
+    } else {
+      freeModels.stats.todayFreeRequests = 1;
+    }
 
     const provider = getFreeModelProvider(providerId);
     const limit =
@@ -111,7 +128,7 @@ export async function recordFreeModelUsage(params: {
   const usedTokens =
     (cfgAfter as { freeModels?: FreeModelsConfig }).freeModels?.accounts.find(
       (a) => a.providerId === providerId,
-    )?.todayUsage.tokens ?? 0;
+    )?.todayUsage?.tokens ?? 0;
 
   return { updated: true, providerId, usedTokens, addedTokens, limit };
 }

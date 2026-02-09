@@ -209,6 +209,9 @@ export function buildAgentSystemPrompt(params: {
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
     image: "Analyze an image with the configured image model",
+    open_app: "Find and launch a desktop application by name (Windows only); pass url to open a browser directly to a URL",
+    desktop_control:
+      "Control desktop GUI: screenshot, click, type, key, list/focus windows (Windows; use for apps that cannot be controlled via CLI)",
   };
 
   const toolOrder = [
@@ -235,6 +238,8 @@ export function buildAgentSystemPrompt(params: {
     "sessions_send",
     "session_status",
     "image",
+    "open_app",
+    "desktop_control",
   ];
 
   const rawToolNames = (params.toolNames ?? []).map((tool) => tool.trim());
@@ -347,6 +352,73 @@ export function buildAgentSystemPrompt(params: {
         "- File paths: backslash `\\` is native; forward slash `/` works in most contexts",
         "- Absent commands: `head`, `tail`, `wc`, `file`, `strings`, `chmod`, `chown` — use PowerShell cmdlets",
         "- Error handling: `try { ... } catch { ... }` instead of `cmd || fallback`",
+        "- **CRITICAL**: `start` in PowerShell is an alias for `Start-Process`, NOT the same as cmd.exe `start`. NEVER use `start \"\" \"path\"` (cmd syntax) — it will fail. Use `Start-Process 'path'` instead.",
+        "",
+        "### Opening / Finding Applications",
+        "To open or find desktop applications, use the `open_app` tool with the app name. Example: open_app({name:'Chrome'}) or open_app({name:'网易云音乐'}). Use action:'find' to locate without launching.",
+        "To open a browser directly to a URL: open_app({name:'Chrome', url:'https://example.com'}). For richer browser control (screenshots, clicking, typing on pages), use the `browser` tool with profile='clawd' instead.",
+        "",
+      ]
+    : [];
+
+  // Built-in desktop control guidance — only on Windows (tool returns null on other platforms)
+  const hasDesktopControl = availableTools.has("desktop_control");
+  const desktopControlSection = hasDesktopControl
+    ? [
+        "## Desktop Control (Windows built-in)",
+        "The `desktop_control` and `open_app` tools let you operate GUI applications on this Windows machine.",
+        "Use them when the user asks you to **interact with a desktop app** (e.g., 'open Chrome and search for X', 'use Photoshop to…', 'help me with Trae IDE').",
+        "",
+        "### Actions",
+        "- `open_app({name})` — find and launch an app (supports Chinese names: 微信, 网易云, 钉钉 etc.)",
+        "- `desktop_control({action:'screenshot'})` — capture screen as PNG image for visual analysis",
+        "- `desktop_control({action:'click', x, y})` — click at screen coordinates (button: left/right/middle, clicks: 1/2)",
+        "- `desktop_control({action:'type', text})` — type text at current cursor position via clipboard paste (NO coordinates needed)",
+        "- `desktop_control({action:'key', keys})` — send keyboard shortcut (e.g., 'ctrl+c', 'alt+tab', 'enter')",
+        "- `desktop_control({action:'list_windows'})` — list all visible windows with positions",
+        "- `desktop_control({action:'focus', title})` — bring a window to foreground by title match",
+        "",
+        "### Workflow",
+        "1. `open_app` to launch the target application.",
+        "2. `desktop_control({action:'screenshot'})` — take a screenshot and analyze the image to understand UI state.",
+        "3. Interact: `click` on visible UI elements, `type` text, or `key` for shortcuts.",
+        "4. `screenshot` again to verify the result.",
+        "",
+        "### Electron / IDE Apps (VS Code, Trae, Cursor, etc.)",
+        "For IDE-type apps, prefer **keyboard-driven control** using the `key` action:",
+        "- `Ctrl+Shift+P` → open Command Palette, then `type` the command name",
+        "- `Ctrl+N` → new file, `Ctrl+S` → save, `Ctrl+O` → open file",
+        "- `Ctrl+\\`` → toggle terminal (then `type` shell commands)",
+        "- `Ctrl+Shift+E` → focus Explorer sidebar",
+        "- `Ctrl+P` → quick-open file by name",
+        "The `type` action pastes text at the current cursor position — no need to find coordinates.",
+        "",
+        "### Key Rules",
+        "- When the user says 'use X app to do Y', operate the app's GUI — don't write code to replicate it.",
+        "- Always `screenshot` after actions to verify the outcome.",
+        "- For text input: prefer `type` (clipboard paste) — it works everywhere without coordinates.",
+        "- For navigation: prefer `key` (keyboard shortcuts) over `click` when possible.",
+        "- `win+e` opens File Explorer, `win+d` shows desktop, `win+r` opens Run dialog — use `key` for these.",
+        "",
+        "### When to Use These Tools (重要)",
+        "Proactively use desktop tools when the user mentions ANY of these:",
+        "- '打开/启动/运行 + app名' → open_app",
+        "- '截图/截屏/看看屏幕' → screenshot",
+        "- '帮我操作/点击/输入' → screenshot → click/type workflow",
+        "- '帮我用XX软件做YY' → open_app → screenshot → interact",
+        "- Any reference to desktop apps, windows, GUI elements → use desktop_control",
+        "- If a task could be done via GUI more naturally than CLI → prefer desktop tools",
+        "",
+        "### Web Browsing (重要 - 网站访问)",
+        "When the user wants to **visit/browse a website** (e.g., '打开小红书', '访问百度', 'go to google.com', '帮我打开浏览器看XX'):",
+        "1. **Preferred**: Use `browser({action:'open', targetUrl:'<url>', profile:'clawd'})` directly. This auto-launches a managed Chrome and navigates in one step — no need to open Chrome separately.",
+        "2. **Alternative**: Use `open_app({name:'Chrome', url:'<url>'})` to launch the user's Chrome directly to the URL.",
+        "3. **NEVER** use `open_app({name:'Chrome'})` without a URL then separately call `browser` — this causes Chrome to open blank and the browser tool to fail.",
+        "",
+        "### Browser Profile Selection (重要 - profile 选择)",
+        "- When using the `browser` tool, **always use `profile='clawd'`** unless the user explicitly mentions Chrome extension / Browser Relay / controlling existing Chrome tabs.",
+        "- `profile='clawd'`: Managed browser, auto-launches, reliable. **Use by default.**",
+        "- `profile='chrome'`: Chrome extension relay. Requires manual extension setup. Only use when explicitly requested.",
         "",
       ]
     : [];
@@ -355,6 +427,7 @@ export function buildAgentSystemPrompt(params: {
     "You are a personal assistant running inside Clawdbot.",
     "",
     ...windowsShellSection,
+    ...desktopControlSection,
     "## Tooling",
     "Tool availability (filtered by policy):",
     "Tool names are case-sensitive. Call tools exactly as listed.",

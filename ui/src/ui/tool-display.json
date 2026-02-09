@@ -25,8 +25,14 @@
     ]
   },
   "tools": {
+    "exec": {
+      "icon": "terminal",
+      "title": "Command",
+      "label": "exec",
+      "detailKeys": ["command"]
+    },
     "bash": {
-      "icon": "wrench",
+      "icon": "terminal",
       "title": "Bash",
       "detailKeys": ["command"]
     },
@@ -201,6 +207,24 @@
         "timeout": { "label": "timeout", "detailKeys": ["guildId", "userId"] },
         "kick": { "label": "kick", "detailKeys": ["guildId", "userId"] },
         "ban": { "label": "ban", "detailKeys": ["guildId", "userId"] }
+      }
+    },
+    "open_app": {
+      "icon": "rocket",
+      "title": "打开应用",
+      "label": "打开应用",
+      "detailKeys": ["name"]
+    },
+    "desktop_control": {
+      "icon": "monitor",
+      "title": "桌面控制",
+      "actions": {
+        "screenshot": { "label": "截图", "detailKeys": ["window"] },
+        "click": { "label": "点击", "detailKeys": ["x", "y"] },
+        "type": { "label": "输入", "detailKeys": ["text"] },
+        "key": { "label": "快捷键", "detailKeys": ["keys"] },
+        "list_windows": { "label": "窗口列表" },
+        "focus": { "label": "聚焦窗口", "detailKeys": ["window"] }
       }
     },
     "slack": {

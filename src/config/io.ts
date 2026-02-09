@@ -13,6 +13,7 @@ import {
 } from "../infra/shell-env.js";
 import { DuplicateAgentDirError, findDuplicateAgentDirs } from "./agent-dirs.js";
 import {
+  applyCnDefaults,
   applyCompactionDefaults,
   applyContextPruningDefaults,
   applyAgentDefaults,
@@ -254,7 +255,9 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         applyCompactionDefaults(
           applyContextPruningDefaults(
             applyAgentDefaults(
-              applySessionDefaults(applyLoggingDefaults(applyMessageDefaults(validated.config))),
+              applyCnDefaults(
+                applySessionDefaults(applyLoggingDefaults(applyMessageDefaults(validated.config))),
+              ),
             ),
           ),
         ),
@@ -305,7 +308,9 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         applyModelDefaults(
           applyCompactionDefaults(
             applyContextPruningDefaults(
-              applyAgentDefaults(applySessionDefaults(applyMessageDefaults({}))),
+              applyAgentDefaults(
+                applyCnDefaults(applySessionDefaults(applyMessageDefaults({}))),
+              ),
             ),
           ),
         ),
@@ -428,7 +433,9 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
           applyTalkApiKey(
             applyModelDefaults(
               applyAgentDefaults(
-                applySessionDefaults(applyLoggingDefaults(applyMessageDefaults(validated.config))),
+                applyCnDefaults(
+                  applySessionDefaults(applyLoggingDefaults(applyMessageDefaults(validated.config))),
+                ),
               ),
             ),
           ),

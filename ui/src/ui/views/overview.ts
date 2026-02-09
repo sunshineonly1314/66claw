@@ -356,20 +356,18 @@ function renderAuthForm(
   }
 
   // 标准 API Key 表单（支持在线验证）
-  // 只有验证成功后才能保存
   const canSave = verifyResult?.valid === true;
-  
-  // 检查是否已配置（用于显示提示）
+
   const isAlreadyConfigured = provider.authConfigured;
   const placeholder = isAlreadyConfigured
     ? "已配置 - 如需更新请输入新的 API Key"
     : (auth?.authHint ?? "输入 API Key");
-  
+
   return html`
     <div class="model-auth-form">
       ${isAlreadyConfigured ? html`
         <div class="model-auth-form__configured-hint">
-          <span class="material-icons" style="color: var(--clr-success); font-size: 16px; vertical-align: middle;">check_circle</span>
+          <span>&#10003;</span>
           <span>该提供商已配置 API Key，如需更新请在下方输入新密钥</span>
         </div>
       ` : nothing}
@@ -389,7 +387,7 @@ function renderAuthForm(
       ${renderVerifyResult(verifyResult)}
       <div class="model-auth-form__actions">
         <button
-          class="btn btn--sm btn--outline"
+          class="btn btn--sm${!canSave ? ' primary' : ''}"
           ?disabled=${isDisabled}
           @click=${async () => {
             const apiKeyInput = document.getElementById("auth-api-key") as HTMLInputElement;
@@ -401,7 +399,7 @@ function renderAuthForm(
           ${isVerifying ? t("models.verifying") : t("models.verify")}
         </button>
         <button
-          class="btn btn--sm"
+          class="btn btn--sm${canSave ? ' primary' : ''}"
           ?disabled=${isDisabled || !canSave}
           title=${canSave ? "" : t("models.verifyFirst")}
           @click=${() => {
@@ -467,14 +465,31 @@ function renderModelCard(props: OverviewProps) {
   // 待保存的模型选择（用户选中但未保存）
   const pendingProvider = props.modelsPendingProvider;
   const pendingModel = props.modelsPendingModel;
-  const hasPendingChange = pendingProvider !== null && pendingModel !== null;
+  // 只有当待保存的值与已保存的值不同时，才视为有待保存的变更
+  const hasPendingChange = pendingProvider !== null && pendingModel !== null
+    && (pendingProvider !== savedProvider || pendingModel !== savedModel);
 
   // 下拉框显示的值：
   // 1. 如果正在配置某个提供商的 API Key，使用该提供商
   // 2. 如果有待保存的选择，使用待保存的提供商
   // 3. 否则使用已保存的值
   const displayProvider = configuringProvider ?? pendingProvider ?? savedProvider;
-  const displayModel = hasPendingChange ? pendingModel : savedModel;
+
+  // 模型下拉框显示值：
+  // 1. 有待保存更改时，使用待保存的模型
+  // 2. 正在配置新提供商且无待保存模型时，显示该提供商的推荐/默认模型
+  // 3. 否则使用已保存的模型
+  let displayModel: string | null;
+  if (hasPendingChange && pendingModel) {
+    displayModel = pendingModel;
+  } else if (configuringProvider && configuringProvider !== savedProvider) {
+    const confProviderData = modelsProviders.find((p) => p.id === configuringProvider);
+    const confDefault = props.modelsDefaults[configuringProvider];
+    const confRecommended = confProviderData?.models.find((m) => m.recommended);
+    displayModel = confDefault ?? confRecommended?.id ?? confProviderData?.models[0]?.id ?? savedModel;
+  } else {
+    displayModel = savedModel;
+  }
 
   // 根据显示的提供商获取数据
   const displayProviderData = modelsProviders.find((p) => p.id === displayProvider);
@@ -526,9 +541,11 @@ function renderModelCard(props: OverviewProps) {
           : nothing}
       </div>
 
-      <!-- 当前模型状态显示（已保存的值） -->
+      <!-- 当前模型状态显示 -->
       <div class="model-card__current" style="margin-top: 16px;">
-        <div class="model-card__current-icon">🤖</div>
+        <div class="model-card__current-icon">
+          ${savedProvider && isSavedAuthConfigured ? "🤖" : savedProvider ? "⚙️" : "🔌"}
+        </div>
         <div class="model-card__current-info">
           <div class="model-card__current-model">${currentModelName}</div>
           <div class="model-card__current-provider">
@@ -543,7 +560,7 @@ function renderModelCard(props: OverviewProps) {
       </div>
 
       <!-- 提供商选择 -->
-      <div class="model-card__selectors" style="margin-top: 16px;">
+      <div class="model-card__selectors" style="margin-top: 18px;">
         <div class="model-card__selector">
           <label class="field">
             <span>${t("models.provider")}</span>
@@ -554,27 +571,27 @@ function renderModelCard(props: OverviewProps) {
                 const select = e.target as HTMLSelectElement;
                 const newProvider = select.value;
                 if (!newProvider) return;
-                
-                // 检查是否需要配置认证
+
                 const providerData = modelsProviders.find((p) => p.id === newProvider);
                 if (providerData && !providerData.authConfigured) {
-                  // 显示认证配置表单
                   props.onSetConfiguringProvider?.(newProvider);
                   return;
                 }
-                
-                // 已配置的 provider：清除正在配置状态（如果之前在配置其他 provider）
+
                 if (configuringProvider && configuringProvider !== newProvider) {
                   props.onSetConfiguringProvider?.(null);
                   props.onClearVerifyResult?.();
                 }
-                
-                // 选择该提供商的默认模型，更新待保存状态
+
                 const defaultModel = props.modelsDefaults[newProvider];
                 const recommendedModel = providerData?.models.find((m) => m.recommended);
                 const firstModel = providerData?.models[0];
                 const modelToUse = defaultModel ?? recommendedModel?.id ?? firstModel?.id;
-                if (modelToUse && props.onModelPendingChange) {
+
+                // 如果选中的提供商+模型与已保存的一致，直接取消 pending 状态
+                if (newProvider === savedProvider && modelToUse === savedModel) {
+                  props.onModelPendingCancel?.();
+                } else if (modelToUse && props.onModelPendingChange) {
                   props.onModelPendingChange(newProvider, modelToUse);
                 }
               }}
@@ -595,7 +612,10 @@ function renderModelCard(props: OverviewProps) {
                 const select = e.target as HTMLSelectElement;
                 const newModel = select.value;
                 if (!newModel) return;
-                if (displayProvider && props.onModelPendingChange) {
+                // 如果选中的提供商+模型与已保存的一致，直接取消 pending 状态
+                if (displayProvider === savedProvider && newModel === savedModel) {
+                  props.onModelPendingCancel?.();
+                } else if (displayProvider && props.onModelPendingChange) {
                   props.onModelPendingChange(displayProvider, newModel);
                 }
               }}
@@ -608,10 +628,10 @@ function renderModelCard(props: OverviewProps) {
         </div>
       </div>
 
-      <!-- 保存按钮（有待保存更改时显示） -->
-      ${hasPendingChange
+      <!-- 保存按钮（有待保存更改时显示，但配置表单打开时隐藏以避免两套操作流程冲突） -->
+      ${hasPendingChange && !configuringProviderData
         ? html`
-          <div class="model-card__actions" style="margin-top: 16px; display: flex; gap: 12px; align-items: center;">
+          <div class="model-card__actions" style="margin-top: 16px;">
             <button
               class="btn btn--sm"
               ?disabled=${modelsSaving}
@@ -619,7 +639,14 @@ function renderModelCard(props: OverviewProps) {
             >
               ${modelsSaving ? t("models.saving") : t("models.confirmChange")}
             </button>
-            <span class="model-card__pending-hint" style="color: var(--clr-warning); font-size: 13px;">
+            <button
+              class="btn btn--sm btn--outline"
+              ?disabled=${modelsSaving}
+              @click=${() => props.onModelPendingCancel?.()}
+            >
+              ${t("common.cancel")}
+            </button>
+            <span class="model-card__pending-hint">
               ${t("models.pendingChange")}
             </span>
           </div>
@@ -653,12 +680,12 @@ function renderModelCard(props: OverviewProps) {
         `
         : nothing}
 
-      <!-- 认证配置表单（展开时显示） -->
+      <!-- 认证配置表单 -->
       ${configuringProviderData
         ? html`
           <div class="model-card__auth-config" style="margin-top: 16px;">
             <div class="model-card__auth-config-header">
-              <span>${t("models.configuring", { provider: configuringProviderData.name })}</span>
+              ${t("models.configuring", { provider: configuringProviderData.name })}
             </div>
             ${renderAuthForm(configuringProviderData, props)}
           </div>
@@ -666,13 +693,13 @@ function renderModelCard(props: OverviewProps) {
         : nothing}
 
       ${modelsSaving
-        ? html`<div class="model-card__status saving">⏳ ${t("models.saving")}</div>`
+        ? html`<div class="model-card__status saving">${t("models.saving")}</div>`
         : nothing}
       ${props.modelsSuccessMessage
-        ? html`<div class="model-card__status success">✓ ${props.modelsSuccessMessage}</div>`
+        ? html`<div class="model-card__status success">${props.modelsSuccessMessage}</div>`
         : nothing}
       ${props.modelsError
-        ? html`<div class="model-card__status error">✗ ${props.modelsError}</div>`
+        ? html`<div class="model-card__status error">${props.modelsError}</div>`
         : nothing}
     </section>
   `;
@@ -875,7 +902,7 @@ export function renderOverview(props: OverviewProps) {
             >📖 ${t("common.docs")}</a>
             <span class="connection-hint__divider">·</span>
             <a
-              href="https://www.tecbinai.com"
+              href="https://www.obplugins.cn"
               target="_blank"
               rel="noreferrer"
             >🚀 tecbinai</a>
@@ -895,7 +922,7 @@ export function renderOverview(props: OverviewProps) {
           >📖 ${t("common.docs")}</a>
           <span class="connection-hint__divider">·</span>
           <a
-            href="https://www.tecbinai.com"
+            href="https://www.obplugins.cn"
             target="_blank"
             rel="noreferrer"
           >🚀 tecbinai</a>
@@ -1060,18 +1087,18 @@ export function renderOverview(props: OverviewProps) {
       <div class="card-sub">${t("overview.quickActions")}</div>
       <div class="note-grid" style="margin-top: 14px;">
         <div>
-          <div class="note-title">Tailscale serve</div>
+          <div class="note-title">${t("overview.noteTailscaleTitle")}</div>
           <div class="muted">
-            Prefer serve mode to keep the gateway on loopback with tailnet auth.
+            ${t("overview.noteTailscaleDesc")}
           </div>
         </div>
         <div>
-          <div class="note-title">Session hygiene</div>
-          <div class="muted">Use /new or sessions.patch to reset context.</div>
+          <div class="note-title">${t("overview.noteSessionTitle")}</div>
+          <div class="muted">${t("overview.noteSessionDesc")}</div>
         </div>
         <div>
-          <div class="note-title">Cron reminders</div>
-          <div class="muted">Use isolated sessions for recurring runs.</div>
+          <div class="note-title">${t("overview.noteCronTitle")}</div>
+          <div class="muted">${t("overview.noteCronDesc")}</div>
         </div>
       </div>
     </section>

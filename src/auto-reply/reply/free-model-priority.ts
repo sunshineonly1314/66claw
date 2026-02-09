@@ -118,8 +118,19 @@ async function loadFreeModelsConfig(): Promise<FreeModelsConfig> {
  * 获取可用的免费模型账户
  */
 function getAvailableAccounts(config: FreeModelsConfig): FreeModelAccount[] {
+  const now = Date.now();
   return config.accounts
-    .filter((a) => a.enabled && a.status === "active")
+    .filter((a) => {
+      if (!a.enabled || a.status !== "active" || !a.apiKey?.trim()) return false;
+      // 过滤掉仍在冷却期内的账号（429 速率限制）
+      if (a.rateLimitedUntil) {
+        const cooldownEnd = new Date(a.rateLimitedUntil).getTime();
+        if (now < cooldownEnd) return false;
+        // 冷却期已过，清除标记
+        a.rateLimitedUntil = undefined;
+      }
+      return true;
+    })
     .sort((a, b) => a.priority - b.priority);
 }
 
@@ -167,7 +178,9 @@ export function diagnoseFreeModelConfig(config: FreeModelsConfig): {
   } else {
     for (const account of config.accounts) {
       const providerName = getFreeModelProvider(account.providerId)?.name ?? account.providerId;
-      if (!account.enabled) {
+      if (!account.apiKey?.trim()) {
+        issues.push(`${providerName}: 未配置 API Key`);
+      } else if (!account.enabled) {
         issues.push(`${providerName}: 账号已手动禁用 (enabled=false)`);
       } else if (account.status === "exhausted") {
         issues.push(`${providerName}: 今日额度已用尽 (status=exhausted)`);
@@ -182,7 +195,7 @@ export function diagnoseFreeModelConfig(config: FreeModelsConfig): {
   }
   
   const activeAccounts = config.accounts.filter(
-    (a) => a.enabled && a.status === "active"
+    (a) => a.enabled && a.status === "active" && a.apiKey?.trim()
   ).length;
   
   return {
@@ -331,6 +344,11 @@ async function checkAndPerformDailyReset(config: FreeModelsConfig): Promise<void
       account.status = "active";
       account.lastError = undefined;
       account.lastErrorTime = undefined;
+      needsSave = true;
+    }
+    // 清除速率限制冷却标记
+    if (account.rateLimitedUntil) {
+      account.rateLimitedUntil = undefined;
       needsSave = true;
     }
   }
@@ -615,27 +633,40 @@ export function detectQuotaExhaustedError(
   return false;
 }
 
+/** 429 速率限制的默认冷却时间（毫秒）：10 分钟 */
+const RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000;
+
 /**
  * 标记当前免费模型账户为已用尽，并返回下一个可用的免费模型
  * 这是免费模型之间切换的核心函数
  * @param currentProviderId 当前使用的 provider ID（可能带有 free-model- 前缀）
  * @param sessionKey 可选的 session key
+ * @param httpStatus 可选的 HTTP 状态码，429 时使用冷却机制而非永久标记
  */
 export async function handleFreeModelQuotaExhausted(
   currentProviderId: string,
-  sessionKey?: string
+  sessionKey?: string,
+  httpStatus?: number
 ): Promise<FreeModelCheckResult> {
   const config = await loadFreeModelsConfig();
 
   // 提取真实的 providerId（去掉 "free-model-" 前缀）
   const realProviderId = currentProviderId.replace(/^free-model-/, "");
 
-  // 标记当前账户为已用尽
+  // 标记当前账户：429 使用冷却机制，其他错误标记为永久 exhausted
   const account = config.accounts.find((a) => a.providerId === realProviderId);
   if (account) {
-    account.status = "exhausted";
-    account.lastError = "今日额度已用完";
-    account.lastErrorTime = new Date().toISOString();
+    if (httpStatus === 429) {
+      // 429 是临时速率限制，设置冷却期而非永久标记
+      account.rateLimitedUntil = new Date(Date.now() + RATE_LIMIT_COOLDOWN_MS).toISOString();
+      account.lastError = `速率限制 (429)，冷却至 ${account.rateLimitedUntil}`;
+      account.lastErrorTime = new Date().toISOString();
+      // 不改变 status，冷却到期后自动恢复
+    } else {
+      account.status = "exhausted";
+      account.lastError = "今日额度已用完";
+      account.lastErrorTime = new Date().toISOString();
+    }
 
     // 保存配置
     try {

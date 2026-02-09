@@ -392,6 +392,9 @@ export class ClawdbotApp extends LitElement {
     showSearchModal: false,
   };
 
+  // 适配公告弹框（仅显示一次）
+  @state() showAdaptationNotice = !localStorage.getItem("clawdbot.chat.adaptationNoticeSeen");
+
   // 意见反馈状态
   @state() feedbackState: import("./views/feedback").FeedbackViewState = {
     showModal: false,
@@ -617,9 +620,6 @@ export class ClawdbotApp extends LitElement {
     if (!this.modelsPendingProvider || !this.modelsPendingModel) return;
     const provider = this.modelsPendingProvider;
     const model = this.modelsPendingModel;
-    // 清除待保存状态
-    this.modelsPendingProvider = null;
-    this.modelsPendingModel = null;
     // 清除之前的消息
     this.modelsError = null;
     this.modelsSuccessMessage = null;
@@ -627,6 +627,9 @@ export class ClawdbotApp extends LitElement {
     const { setModelPrimary } = await import("./controllers/models.js");
     const success = await setModelPrimary(this, provider, model);
     if (success) {
+      // 保存成功后才清除待保存状态（失败时保留，方便用户重试）
+      this.modelsPendingProvider = null;
+      this.modelsPendingModel = null;
       // 显示切换成功消息
       const { t } = await import("./i18n/index.js");
       this.modelsSuccessMessage = t("models.switchSuccess");
@@ -635,7 +638,7 @@ export class ClawdbotApp extends LitElement {
         this.modelsSuccessMessage = null;
       }, 3000);
     }
-    // 失败时 modelsError 已由 setModelPrimary 设置
+    // 失败时 modelsError 已由 setModelPrimary 设置，pending 状态保留方便重试
   }
 
   async loadModelsProviders() {
@@ -661,12 +664,13 @@ export class ClawdbotApp extends LitElement {
         this.modelsAuthVerifyResult = null; // 清除验证结果
         // 重新加载提供商列表以更新状态
         await this.loadModelsProviders();
-        // 自动切换到该提供商的推荐模型
+        // 自动切换到该提供商的模型：优先使用用户已手动选择的模型
         const providerData = this.modelsProviders.find((p) => p.id === provider);
+        const pendingModelForProvider = (this.modelsPendingProvider === provider) ? this.modelsPendingModel : null;
         const defaultModel = this.modelsDefaults[provider];
         const recommendedModel = providerData?.models.find((m) => m.recommended);
         const firstModel = providerData?.models[0];
-        const modelToUse = defaultModel ?? recommendedModel?.id ?? firstModel?.id;
+        const modelToUse = pendingModelForProvider ?? defaultModel ?? recommendedModel?.id ?? firstModel?.id;
         if (modelToUse) {
           await this.setModelPrimary(provider, modelToUse);
           // 显示切换成功消息
@@ -928,6 +932,12 @@ export class ClawdbotApp extends LitElement {
     const newRatio = Math.max(0.4, Math.min(0.7, ratio));
     this.splitRatio = newRatio;
     this.applySettings({ ...this.settings, splitRatio: newRatio });
+  }
+
+  // 关闭适配公告弹框（永久记住）
+  dismissAdaptationNotice() {
+    localStorage.setItem("clawdbot.chat.adaptationNoticeSeen", "1");
+    this.showAdaptationNotice = false;
   }
 
   // 意见反馈处理函数

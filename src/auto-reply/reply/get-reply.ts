@@ -38,6 +38,7 @@ export async function getReplyFromConfig(
   opts?: GetReplyOptions,
   configOverride?: ClawdbotConfig,
 ): Promise<ReplyPayload | ReplyPayload[] | undefined> {
+  try {
   const isFastTestEnv = process.env.CLAWDBOT_TEST_FAST === "1";
   let cfg = configOverride ?? loadConfig();
   const targetSessionKey =
@@ -442,8 +443,8 @@ export async function getReplyFromConfig(
         throw err;
       }
 
-      // 尝试切换到下一个免费模型（传递 sessionKey 以避免并发问题）
-      const switchResult = await handleFreeModelQuotaExhausted(currentProvider, agentSessionKey);
+      // 尝试切换到下一个免费模型（传递 sessionKey 和 httpStatus 以支持 429 冷却机制）
+      const switchResult = await handleFreeModelQuotaExhausted(currentProvider, agentSessionKey, httpStatus);
 
       if (!switchResult.useFreeModel) {
         // 所有免费模型都用完了，记录通知并回退到付费模型
@@ -564,4 +565,16 @@ export async function getReplyFromConfig(
   }
 
   return reply;
+  } catch (err) {
+    // Top-level safety net: catch any unhandled error in the entire reply pipeline
+    // to prevent process crash and return a user-friendly error message instead.
+    const message = err instanceof Error ? err.message : String(err);
+    defaultRuntime.error(`[getReplyFromConfig] Unhandled error in reply pipeline: ${message}`);
+    if (err instanceof Error && err.stack) {
+      defaultRuntime.error(`[getReplyFromConfig] Stack: ${err.stack}`);
+    }
+    return {
+      text: `⚠️ 处理消息时发生错误，请重试。错误详情: ${message}`,
+    };
+  }
 }

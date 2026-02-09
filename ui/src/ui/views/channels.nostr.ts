@@ -4,6 +4,7 @@ import { formatAgo } from "../format";
 import type { ChannelAccountSnapshot, NostrStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
+import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
 import {
   renderNostrProfileForm,
   type NostrProfileFormState,
@@ -81,7 +82,7 @@ export function renderNostrCard(params: {
           </div>
           ${account.lastError
             ? html`
-                <div class="account-card-error">${account.lastError}</div>
+                <div class="${isUnconfiguredError(account.lastError) ? "account-card-muted" : "account-card-error"}">${account.lastError}</div>
               `
             : nothing}
         </div>
@@ -166,52 +167,95 @@ export function renderNostrCard(params: {
     `;
   };
 
+  // 状态徽章
+  const statusBadge = summaryRunning
+    ? html`<span class="channel-card__badge channel-card__badge--ok">
+        <span class="status-dot status-dot--running"></span>
+        Running
+      </span>`
+    : summaryConfigured
+      ? html`<span class="channel-card__badge channel-card__badge--warn">
+          <span class="status-dot status-dot--configured"></span>
+          Stopped
+        </span>`
+      : html`<span class="channel-card__badge">
+          <span class="status-dot status-dot--unconfigured"></span>
+          Not configured
+        </span>`;
+
+  // 箭头图标
+  const chevronIcon = html`<svg class="channel-card__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+  // 根据状态决定卡片样式类
+  const cardClasses = [
+    "channel-card",
+    summaryRunning ? "channel-card--running" : "",
+    summaryConfigured && !summaryRunning ? "channel-card--configured" : "",
+    summaryLastError ? (isUnconfiguredError(summaryLastError) ? "channel-card--unconfigured" : "channel-card--error") : "",
+  ].filter(Boolean).join(" ");
+
+  // 自动展开：运行中 或 有真实错误
+  const shouldOpen = summaryRunning || (summaryLastError != null && !isUnconfiguredError(summaryLastError));
+
   return html`
-    <div class="card">
-      <div class="card-title">Nostr</div>
-      <div class="card-sub">Decentralized DMs via Nostr relays (NIP-04).</div>
-      ${accountCountLabel}
+    <details class="${cardClasses}" ?open=${shouldOpen}>
+      <summary class="channel-card__header">
+        <div class="channel-card__left">
+          <span class="channel-card__icon">🌿</span>
+          <span class="channel-card__title">Nostr</span>
+          <div class="channel-card__status">
+            ${statusBadge}
+          </div>
+        </div>
+        ${chevronIcon}
+      </summary>
+      <div class="channel-card__body">
+        <div class="channel-card__desc">Decentralized DMs via Nostr relays (NIP-04).</div>
+        ${accountCountLabel}
 
-      ${hasMultipleAccounts
-        ? html`
-            <div class="account-card-list">
-              ${nostrAccounts.map((account) => renderAccountCard(account))}
-            </div>
-          `
-        : html`
-            <div class="status-list" style="margin-top: 16px;">
-              <div>
-                <span class="label">Configured</span>
-                <span>${summaryConfigured ? "Yes" : "No"}</span>
+        ${hasMultipleAccounts
+          ? html`
+              <div class="account-card-list">
+                ${nostrAccounts.map((account) => renderAccountCard(account))}
               </div>
-              <div>
-                <span class="label">Running</span>
-                <span>${summaryRunning ? "Yes" : "No"}</span>
+            `
+          : (summaryConfigured || summaryRunning)
+            ? html`
+              <div class="status-list">
+                <div>
+                  <span class="label">Configured</span>
+                  <span>${summaryConfigured ? "Yes" : "No"}</span>
+                </div>
+                <div>
+                  <span class="label">Running</span>
+                  <span>${summaryRunning ? "Yes" : "No"}</span>
+                </div>
+                <div>
+                  <span class="label">Public Key</span>
+                  <span class="monospace" title="${summaryPublicKey ?? ""}"
+                    >${truncatePubkey(summaryPublicKey)}</span
+                  >
+                </div>
+                <div>
+                  <span class="label">Last start</span>
+                  <span>${summaryLastStartAt ? formatAgo(summaryLastStartAt) : "n/a"}</span>
+                </div>
               </div>
-              <div>
-                <span class="label">Public Key</span>
-                <span class="monospace" title="${summaryPublicKey ?? ""}"
-                  >${truncatePubkey(summaryPublicKey)}</span
-                >
-              </div>
-              <div>
-                <span class="label">Last start</span>
-                <span>${summaryLastStartAt ? formatAgo(summaryLastStartAt) : "n/a"}</span>
-              </div>
-            </div>
-          `}
+            `
+            : nothing}
 
-      ${summaryLastError
-        ? html`<div class="callout danger" style="margin-top: 12px;">${summaryLastError}</div>`
-        : nothing}
+        ${summaryLastError
+          ? html`<div class="${errorCalloutClass(summaryLastError)}" style="margin-top: 12px;">${summaryLastError}</div>`
+          : nothing}
 
-      ${renderProfileSection()}
+        ${renderProfileSection()}
 
-      ${renderChannelConfigSection({ channelId: "nostr", props })}
+        ${renderChannelConfigSection({ channelId: "nostr", props })}
 
-      <div class="row" style="margin-top: 12px;">
-        <button class="btn" @click=${() => props.onRefresh(false)}>Refresh</button>
+        <div class="row" style="margin-top: 12px;">
+          <button class="btn" @click=${() => props.onRefresh(false)}>Refresh</button>
+        </div>
       </div>
-    </div>
+    </details>
   `;
 }

@@ -10,6 +10,7 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, DingtalkStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
+import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { DingtalkStatus } from "./channels.types";
@@ -50,7 +51,7 @@ export function renderDingtalkCard(params: {
           </div>
           ${account.lastError
             ? html`
-                <div class="account-card-error">
+                <div class="${isUnconfiguredError(account.lastError) ? "account-card-muted" : "account-card-error"}">
                   ${account.lastError}
                 </div>
               `
@@ -84,11 +85,14 @@ export function renderDingtalkCard(params: {
     "channel-card",
     dingtalk?.running ? "channel-card--running" : "",
     dingtalk?.configured && !dingtalk?.running ? "channel-card--configured" : "",
-    dingtalk?.lastError ? "channel-card--error" : "",
+    dingtalk?.lastError ? (isUnconfiguredError(dingtalk.lastError) ? "channel-card--unconfigured" : "channel-card--error") : "",
   ].filter(Boolean).join(" ");
 
+  // 自动展开：运行中 或 有真实错误
+  const shouldOpen = dingtalk?.running || (dingtalk?.lastError != null && !isUnconfiguredError(dingtalk.lastError));
+
   return html`
-    <details class="${cardClasses}" open>
+    <details class="${cardClasses}" ?open=${shouldOpen}>
       <summary class="channel-card__header">
         <div class="channel-card__left">
           <span class="channel-card__icon">📱</span>
@@ -108,7 +112,8 @@ export function renderDingtalkCard(params: {
                 ${dingtalkAccounts.map((account) => renderAccountCard(account))}
               </div>
             `
-          : html`
+          : (dingtalk?.configured || dingtalk?.running)
+            ? html`
               <div class="status-list">
                 <div>
                   <span class="label">${t("channels.configured")}</span>
@@ -131,10 +136,11 @@ export function renderDingtalkCard(params: {
                   <span>${dingtalk?.lastProbeAt ? formatAgo(dingtalk.lastProbeAt) : t("common.na")}</span>
                 </div>
               </div>
-            `}
+            `
+            : nothing}
 
         ${dingtalk?.lastError
-          ? html`<div class="callout danger" style="margin-top: 12px;">
+          ? html`<div class="${errorCalloutClass(dingtalk.lastError)}" style="margin-top: 12px;">
               ${dingtalk.lastError}
             </div>`
           : nothing}

@@ -7,6 +7,10 @@ import type { HeartbeatRunner } from "../infra/heartbeat-runner.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
 import { stopLicenseServices } from "../license/startup.js";
 import { stopSecurityServices } from "./license-check.js";
+import { destroyMCPManager } from "../mcp/index.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+
+const closeLog = createSubsystemLogger("gateway:close");
 
 export function createGatewayCloseHandler(params: {
   bonjourStop: (() => Promise<void>) | null;
@@ -42,8 +46,8 @@ export function createGatewayCloseHandler(params: {
     if (params.bonjourStop) {
       try {
         await params.bonjourStop();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        closeLog.debug(`bonjour stop failed: ${String(err)}`);
       }
     }
     if (params.tailscaleCleanup) {
@@ -52,15 +56,15 @@ export function createGatewayCloseHandler(params: {
     if (params.canvasHost) {
       try {
         await params.canvasHost.close();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        closeLog.debug(`canvas host close failed: ${String(err)}`);
       }
     }
     if (params.canvasHostServer) {
       try {
         await params.canvasHostServer.close();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        closeLog.debug(`canvas host server close failed: ${String(err)}`);
       }
     }
     for (const plugin of listChannelPlugins()) {
@@ -70,6 +74,8 @@ export function createGatewayCloseHandler(params: {
       await params.pluginServices.stop().catch(() => {});
     }
     await stopGmailWatcher();
+    // Shut down MCP servers (kill child processes before closing WebSocket)
+    await destroyMCPManager().catch(() => {});
     // 停止授权和安全服务
     stopLicenseServices();
     stopSecurityServices();
@@ -89,23 +95,23 @@ export function createGatewayCloseHandler(params: {
     if (params.agentUnsub) {
       try {
         params.agentUnsub();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        closeLog.debug(`agent unsub failed: ${String(err)}`);
       }
     }
     if (params.heartbeatUnsub) {
       try {
         params.heartbeatUnsub();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        closeLog.debug(`heartbeat unsub failed: ${String(err)}`);
       }
     }
     params.chatRunState.clear();
     for (const c of params.clients) {
       try {
         c.socket.close(1012, "service restart");
-      } catch {
-        /* ignore */
+      } catch (err) {
+        closeLog.debug(`client socket close failed: ${String(err)}`);
       }
     }
     params.clients.clear();
@@ -113,7 +119,18 @@ export function createGatewayCloseHandler(params: {
     if (params.browserControl) {
       await params.browserControl.stop().catch(() => {});
     }
-    await new Promise<void>((resolve) => params.wss.close(() => resolve()));
+    // Give WebSocket server up to 2 s to drain; beyond that force-close so we
+    // don't block the shutdown / restart path indefinitely.
+    await Promise.race([
+      new Promise<void>((resolve) => params.wss.close(() => resolve())),
+      new Promise<void>((resolve) => {
+        const t = setTimeout(() => {
+          closeLog.debug("wss.close timed out after 2 s, proceeding with shutdown");
+          resolve();
+        }, 2_000);
+        t.unref?.();
+      }),
+    ]);
     const servers =
       params.httpServers && params.httpServers.length > 0
         ? params.httpServers

@@ -168,7 +168,7 @@ export const ToolPolicySchema = ToolPolicyBaseSchema.superRefine((value, ctx) =>
 export const ToolsWebSearchSchema = z
   .object({
     enabled: z.boolean().optional(),
-    provider: z.union([z.literal("brave"), z.literal("perplexity")]).optional(),
+    provider: z.union([z.literal("brave"), z.literal("perplexity"), z.literal("baidu"), z.literal("bing")]).optional(),
     apiKey: z.string().optional(),
     maxResults: z.number().int().positive().optional(),
     timeoutSeconds: z.number().int().positive().optional(),
@@ -193,6 +193,18 @@ export const ToolsWebFetchSchema = z
     cacheTtlMinutes: z.number().nonnegative().optional(),
     maxRedirects: z.number().int().nonnegative().optional(),
     userAgent: z.string().optional(),
+    readability: z.boolean().optional(),
+    firecrawl: z
+      .object({
+        enabled: z.boolean().optional(),
+        apiKey: z.string().optional(),
+        baseUrl: z.string().optional(),
+        onlyMainContent: z.boolean().optional(),
+        maxAgeMs: z.number().int().nonnegative().optional(),
+        timeoutSeconds: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .optional();
@@ -502,6 +514,18 @@ export const ToolsSchema = z
       })
       .strict()
       .optional(),
+    write: z
+      .object({
+        allowDelete: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    browser: z
+      .object({
+        profile: z.string().optional(),
+      })
+      .strict()
+      .optional(),
     exec: z
       .object({
         host: z.enum(["sandbox", "gateway", "node"]).optional(),
@@ -526,6 +550,7 @@ export const ToolsSchema = z
       .optional(),
     subagents: z
       .object({
+        model: z.union([z.string(), z.object({ primary: z.string().optional(), fallbacks: z.array(z.string()).optional() }).strict()]).optional(),
         tools: ToolPolicySchema,
       })
       .strict()

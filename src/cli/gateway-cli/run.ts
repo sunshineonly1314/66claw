@@ -159,18 +159,21 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
 
   const configExists = fs.existsSync(CONFIG_PATH_CLAWDBOT);
   const mode = cfg.gateway?.mode;
-  if (!opts.allowUnconfigured && mode !== "local") {
-    if (!configExists) {
-      defaultRuntime.error(
-        `Missing config. Run \`${formatCliCommand("clawdbot setup")}\` or set gateway.mode=local (or pass --allow-unconfigured).`,
-      );
-    } else {
-      defaultRuntime.error(
-        `Gateway start blocked: set gateway.mode=local (current: ${mode ?? "unset"}) or pass --allow-unconfigured.`,
-      );
-    }
+  if (!opts.allowUnconfigured && mode === "remote") {
+    defaultRuntime.error(
+      `Gateway start blocked: gateway.mode is "remote". Set gateway.mode=local to start locally (or pass --allow-unconfigured).`,
+    );
     defaultRuntime.exit(1);
     return;
+  }
+  if (!opts.allowUnconfigured && mode !== "local") {
+    // gateway.mode is unset — default to local and continue.
+    // The setup wizard (served by the gateway itself) will guide the user
+    // through full configuration once the gateway is running.
+    gatewayLog.info(
+      `gateway.mode is not set${configExists ? "" : " (no config file)"}; defaulting to local. ` +
+        `Run \`${formatCliCommand("clawdbot setup")}\` to persist this setting.`,
+    );
   }
   const bindRaw = toOptionString(opts.bind) ?? cfg.gateway?.bind ?? "loopback";
   const bind =

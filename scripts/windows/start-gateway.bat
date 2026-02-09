@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 :: ClawdbotCN Gateway Startup Script
 :: Starts Gateway in minimized window
@@ -10,16 +11,22 @@ if not exist "%~dp0logs" mkdir "%~dp0logs"
 set "LOG_FILE=%~dp0logs\gateway-start.log"
 echo [%date% %time%] start-gateway.bat called > "%LOG_FILE%"
 
-:: Set Node.js path
+:: Set Node.js and tools paths
 set "NODE_PATH=%~dp0node"
-set "PATH=%NODE_PATH%;%PATH%"
+set "TOOLS_PATH=%~dp0tools"
 
 :: Set required environment variables
 set "CLAWDBOT_BUNDLED_PLUGINS_DIR=%~dp0extensions"
 set "CLAWDBOT_BUNDLED_SKILLS_DIR=%~dp0skills"
+set "CLAWDBOT_BUNDLED_TOOLS_DIR=%~dp0tools"
 set "CLAWDBOT_GATEWAY_TOKEN=clawdbot2026"
 :: Use China region for mirrors (Skills: ClawdSkillsProxy, npm: npmmirror.com)
 set "CLAWDBOT_REGION=cn"
+:: Use isolated config directory consistent with ClawdbotService.exe
+set "CLAWDBOT_STATE_DIR=%APPDATA%\ClawdbotCN"
+
+:: Add node/ and tools/ to PATH so skills can find bundled binaries (camsnap, gog, gh, etc.)
+set "PATH=%NODE_PATH%;%TOOLS_PATH%;%PATH%"
 
 :: Check files exist
 if not exist "%NODE_PATH%\node.exe" (

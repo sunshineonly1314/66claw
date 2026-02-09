@@ -568,6 +568,9 @@ export async function runEmbeddedPiAgent(
 
           // Treat timeout as potential rate limit (Antigravity hangs on rate limit)
           const shouldRotate = (!aborted && failoverFailure) || timedOut;
+          // Track unhandled failover errors so they can be exposed via meta.error
+          // for upstream free-model switching logic (ClawdbotCN).
+          let unhandledFailoverError: { kind: "auth" | "failover"; message: string } | undefined;
 
           if (shouldRotate) {
             if (lastProfileId) {
@@ -625,6 +628,13 @@ export async function runEmbeddedPiAgent(
                 status,
               });
             }
+
+            // No rotation or fallback available — expose the error in meta
+            // so upstream free-model quota/switching logic can detect and handle it.
+            unhandledFailoverError = {
+              kind: authFailure ? "auth" : "failover",
+              message: lastAssistant?.errorMessage?.trim() || "LLM request failed.",
+            };
           }
 
           const usage = normalizeUsage(lastAssistant?.usage as UsageLike);
@@ -687,6 +697,9 @@ export async function runEmbeddedPiAgent(
               agentMeta,
               aborted,
               systemPromptReport: attempt.systemPromptReport,
+              // Expose unhandled auth/failover errors so upstream free-model
+              // switching logic (agent-runner-execution → get-reply) can detect them.
+              error: unhandledFailoverError,
               // Handle client tool calls (OpenResponses hosted tools)
               stopReason: attempt.clientToolCall ? "tool_calls" : undefined,
               pendingToolCalls: attempt.clientToolCall
@@ -704,6 +717,16 @@ export async function runEmbeddedPiAgent(
             messagingToolSentTargets: attempt.messagingToolSentTargets,
           };
         }
+      } catch (err) {
+        // Re-throw FailoverError — required for model fallback handling
+        if (err instanceof FailoverError) throw err;
+        // Log unexpected errors with full context for diagnostics
+        const errorText = describeUnknownError(err);
+        log.error(
+          `[runEmbeddedPiAgent] Unhandled error in API call chain: provider=${provider} model=${modelId} error=${errorText}`,
+        );
+        // Re-throw to let callers handle (runAgentTurnWithFallback has catch-all)
+        throw err;
       } finally {
         process.chdir(prevCwd);
       }

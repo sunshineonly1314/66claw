@@ -39,6 +39,7 @@ const DEFAULT_FETCH_MAX_CHARS = 50_000;
 const DEFAULT_FETCH_MAX_REDIRECTS = 3;
 const DEFAULT_ERROR_MAX_CHARS = 4_000;
 const DEFAULT_FIRECRAWL_BASE_URL = "https://api.firecrawl.dev";
+const DEFAULT_JINA_READER_BASE_URL = "https://r.jina.ai";
 const DEFAULT_FIRECRAWL_MAX_AGE_MS = 172_800_000;
 const DEFAULT_FETCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
@@ -329,6 +330,51 @@ export async function fetchFirecrawlContent(params: {
   };
 }
 
+/**
+ * Jina Reader: 国内可用的 URL → Markdown 服务（r.jina.ai，免费，无需 API key）
+ * 作为 Firecrawl 的国内替代方案
+ */
+async function fetchJinaReaderContent(params: {
+  url: string;
+  extractMode: ExtractMode;
+  baseUrl: string;
+  timeoutSeconds: number;
+}): Promise<{
+  text: string;
+  title?: string;
+  finalUrl?: string;
+  status?: number;
+}> {
+  const jinaUrl = `${params.baseUrl.replace(/\/$/, "")}/${params.url}`;
+
+  const res = await fetch(jinaUrl, {
+    method: "GET",
+    headers: {
+      Accept: "text/markdown",
+      "X-Return-Format": "markdown",
+    },
+    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+  });
+
+  if (!res.ok) {
+    const detail = await readResponseText(res);
+    throw new Error(`Jina Reader fetch failed (${res.status}): ${detail || res.statusText}`.trim());
+  }
+
+  const rawText = await res.text();
+  const text = params.extractMode === "text" ? markdownToText(rawText) : rawText;
+
+  // Jina Reader 返回的 markdown 第一行通常是标题（# Title）
+  const titleMatch = rawText.match(/^#\s+(.+)$/m);
+  const title = titleMatch?.[1]?.trim();
+
+  return { text, title, finalUrl: params.url, status: res.status };
+}
+
+function isJinaReaderUrl(baseUrl: string): boolean {
+  return baseUrl.includes("jina.ai") || baseUrl.includes("r.jina.ai");
+}
+
 async function runWebFetch(params: {
   url: string;
   extractMode: ExtractMode;
@@ -381,6 +427,32 @@ async function runWebFetch(params: {
     if (error instanceof SsrFBlockedError) {
       throw error;
     }
+    // Jina Reader fallback（国内替代，无需 API key）
+    if (params.firecrawlEnabled && isJinaReaderUrl(params.firecrawlBaseUrl)) {
+      const jina = await fetchJinaReaderContent({
+        url: finalUrl,
+        extractMode: params.extractMode,
+        baseUrl: params.firecrawlBaseUrl,
+        timeoutSeconds: params.firecrawlTimeoutSeconds,
+      });
+      const truncated = truncateText(jina.text, params.maxChars);
+      const payload = {
+        url: params.url,
+        finalUrl: jina.finalUrl || finalUrl,
+        status: jina.status ?? 200,
+        contentType: "text/markdown",
+        title: jina.title,
+        extractMode: params.extractMode,
+        extractor: "jina-reader",
+        truncated: truncated.truncated,
+        length: truncated.text.length,
+        fetchedAt: new Date().toISOString(),
+        tookMs: Date.now() - start,
+        text: truncated.text,
+      };
+      writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+      return payload;
+    }
     if (params.firecrawlEnabled && params.firecrawlApiKey) {
       const firecrawl = await fetchFirecrawlContent({
         url: finalUrl,
@@ -417,6 +489,32 @@ async function runWebFetch(params: {
 
   try {
     if (!res.ok) {
+      // Jina Reader fallback for non-OK responses（国内替代）
+      if (params.firecrawlEnabled && isJinaReaderUrl(params.firecrawlBaseUrl)) {
+        const jina = await fetchJinaReaderContent({
+          url: params.url,
+          extractMode: params.extractMode,
+          baseUrl: params.firecrawlBaseUrl,
+          timeoutSeconds: params.firecrawlTimeoutSeconds,
+        });
+        const truncated = truncateText(jina.text, params.maxChars);
+        const payload = {
+          url: params.url,
+          finalUrl: jina.finalUrl || finalUrl,
+          status: jina.status ?? res.status,
+          contentType: "text/markdown",
+          title: jina.title,
+          extractMode: params.extractMode,
+          extractor: "jina-reader",
+          truncated: truncated.truncated,
+          length: truncated.text.length,
+          fetchedAt: new Date().toISOString(),
+          tookMs: Date.now() - start,
+          text: truncated.text,
+        };
+        writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+        return payload;
+      }
       if (params.firecrawlEnabled && params.firecrawlApiKey) {
         const firecrawl = await fetchFirecrawlContent({
           url: params.url,
@@ -535,6 +633,20 @@ async function tryFirecrawlFallback(params: {
   firecrawlStoreInCache: boolean;
   firecrawlTimeoutSeconds: number;
 }): Promise<{ text: string; title?: string } | null> {
+  // Jina Reader: 国内替代，无需 API key
+  if (params.firecrawlEnabled && isJinaReaderUrl(params.firecrawlBaseUrl)) {
+    try {
+      const jina = await fetchJinaReaderContent({
+        url: params.url,
+        extractMode: params.extractMode,
+        baseUrl: params.firecrawlBaseUrl,
+        timeoutSeconds: params.firecrawlTimeoutSeconds,
+      });
+      return { text: jina.text, title: jina.title };
+    } catch {
+      return null;
+    }
+  }
   if (!params.firecrawlEnabled || !params.firecrawlApiKey) return null;
   try {
     const firecrawl = await fetchFirecrawlContent({

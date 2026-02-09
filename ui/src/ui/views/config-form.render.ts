@@ -4,7 +4,7 @@ import { t } from "../i18n/index.js";
 import { icons } from "../icons";
 import {
   hintForPath,
-  humanize,
+  resolveLabel,
   schemaType,
   type JsonSchema,
 } from "./config-form.shared";
@@ -52,6 +52,14 @@ const sectionIcons = {
   canvasHost: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`,
   talk: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`,
   plugins: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v6"></path><path d="m4.93 10.93 4.24 4.24"></path><path d="M2 12h6"></path><path d="m4.93 13.07 4.24-4.24"></path><path d="M12 22v-6"></path><path d="m19.07 13.07-4.24-4.24"></path><path d="M22 12h-6"></path><path d="m19.07 10.93-4.24 4.24"></path></svg>`,
+  diagnostics: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>`,
+  nodeHost: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>`,
+  license: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`,
+  setup: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
+  media: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line><line x1="17" y1="17" x2="22" y2="17"></line></svg>`,
+  approvals: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`,
+  presence: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>`,
+  voicewake: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>`,
   default: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`,
 };
 
@@ -86,10 +94,22 @@ function getSectionMeta(): Record<string, { label: string; description: string }
     canvasHost: { label: t("config.canvasHostLabel"), description: t("config.canvasHostDesc") },
     talk: { label: t("config.talkLabel"), description: t("config.talkDesc") },
     plugins: { label: t("config.pluginsLabel"), description: t("config.pluginsDesc") },
+    // Sections that may appear dynamically from schema
+    diagnostics: { label: t("config.diagnosticsLabel"), description: t("config.diagnosticsDesc") },
+    nodeHost: { label: t("config.nodeHostLabel"), description: t("config.nodeHostDesc") },
+    license: { label: t("config.licenseLabel"), description: t("config.licenseDesc") },
+    setup: { label: t("config.setupLabel"), description: t("config.setupDesc") },
+    media: { label: t("config.mediaLabel"), description: t("config.mediaDesc") },
+    approvals: { label: t("config.approvalsLabel"), description: t("config.approvalsDesc") },
+    presence: { label: t("config.presenceLabel"), description: t("config.presenceDesc") },
+    voicewake: { label: t("config.voicewakeLabel"), description: t("config.voicewakeDesc") },
   };
 }
 
-// Export for compatibility
+// Re-export getSectionMeta for external use
+export { getSectionMeta };
+
+// Export for compatibility (dynamically populated)
 export const SECTION_META: Record<string, { label: string; description: string }> = {};
 
 function getSectionIcon(key: string) {
@@ -214,7 +234,7 @@ export function renderConfigForm(props: ConfigFormProps) {
         ? (() => {
             const { sectionKey, subsectionKey, schema: node } = subsectionContext;
             const hint = hintForPath([sectionKey, subsectionKey], props.uiHints);
-            const label = hint?.label ?? node.title ?? humanize(subsectionKey);
+            const label = resolveLabel([sectionKey, subsectionKey], hint, node, subsectionKey);
             const description = hint?.help ?? node.description ?? "";
             const sectionValue = (value as Record<string, unknown>)[sectionKey];
             const scopedValue =

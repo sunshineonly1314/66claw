@@ -35,6 +35,25 @@ export function getChannelAccountCount(
   return channelAccounts?.[key]?.length ?? 0;
 }
 
+/**
+ * 判断 lastError 是否属于「未配置/已禁用」等非真正错误的状态。
+ * 这些状态应用灰色提示而非红色警告。
+ */
+const BENIGN_ERRORS = ["not configured", "disabled", "not linked", "logged out"];
+export function isUnconfiguredError(lastError?: string | null): boolean {
+  if (!lastError) return false;
+  return BENIGN_ERRORS.includes(lastError.toLowerCase().trim());
+}
+
+/**
+ * 根据 lastError 内容返回 callout CSS 类：
+ * - 未配置/禁用 → "callout muted"
+ * - 真正的错误 → "callout danger"
+ */
+export function errorCalloutClass(lastError?: string | null): string {
+  return isUnconfiguredError(lastError) ? "callout muted" : "callout danger";
+}
+
 export function renderChannelAccountCount(
   key: ChannelKey,
   channelAccounts?: Record<string, ChannelAccountSnapshot[]> | null,

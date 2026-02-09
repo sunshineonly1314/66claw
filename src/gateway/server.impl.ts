@@ -73,6 +73,7 @@ import { createWizardSessionTracker } from "./server-wizard-sessions.js";
 import { attachGatewayWsHandlers } from "./server-ws-runtime.js";
 import { checkLicenseOnGatewayStart, getGatewayLicenseState } from "./license-check.js";
 import { LicenseErrorCode } from "../license/types.js";
+import { markGatewayReady, resetGatewayReady, setGatewayPhase, setGatewayShutdownCallback } from "./server-ready.js";
 
 export { __resetModelCatalogCacheForTest } from "./server-model-catalog.js";
 export { getGatewayLicenseState } from "./license-check.js";
@@ -152,6 +153,10 @@ export async function startGatewayServer(
   port = 18789,
   opts: GatewayServerOptions = {},
 ): Promise<GatewayServer> {
+  // Reset readiness in case this is an in-process restart (SIGUSR1 loop).
+  resetGatewayReady();
+  setGatewayPhase("loading config");
+
   // Ensure all default port derivations (browser/canvas) see the actual runtime port.
   process.env.CLAWDBOT_GATEWAY_PORT = String(port);
   logAcceptedEnvOption({
@@ -184,19 +189,28 @@ export async function startGatewayServer(
           .join("\n")}`,
       );
     }
+    // Re-read only after an actual migration write to pick up the
+    // persisted result.  When no legacy issues are present we skip
+    // this redundant second disk round-trip + Zod validation pass.
+    configSnapshot = await readConfigFileSnapshot();
   }
-
-  configSnapshot = await readConfigFileSnapshot();
+  // ── Graceful degradation on invalid config ────────────────────────────
+  // Instead of crashing the entire gateway (which triggers a watchdog
+  // restart loop), log the problems clearly and continue with the
+  // best-effort coerced config.  The user can fix the config at their
+  // leisure while the gateway remains reachable on the network.
+  let configInvalid = false;
   if (configSnapshot.exists && !configSnapshot.valid) {
     const issues =
       configSnapshot.issues.length > 0
         ? configSnapshot.issues
-            .map((issue) => `${issue.path || "<root>"}: ${issue.message}`)
+            .map((issue) => `- ${issue.path || "<root>"}: ${issue.message}`)
             .join("\n")
-        : "Unknown validation issue.";
-    throw new Error(
-      `Invalid config at ${configSnapshot.path}.\n${issues}\nRun "${formatCliCommand("clawdbot doctor")}" to repair, then retry.`,
-    );
+        : "- Unknown validation issue.";
+    log.error(`Invalid config at ${configSnapshot.path}:\n${issues}`);
+    log.error(`Run "${formatCliCommand("clawdbot doctor --fix")}" to repair.`);
+    log.warn("Gateway starting with best-effort config. Some features may be unavailable.");
+    configInvalid = true;
   }
 
   // Surface config warnings (e.g. missing plugin references) so the user
@@ -208,26 +222,56 @@ export async function startGatewayServer(
     log.warn(`Config warnings:\n${warnText}`);
   }
 
-  const autoEnable = applyPluginAutoEnable({ config: configSnapshot.config, env: process.env });
-  if (autoEnable.changes.length > 0) {
-    try {
-      await writeConfigFile(autoEnable.config);
-      log.info(
-        `gateway: auto-enabled plugins:\n${autoEnable.changes
-          .map((entry) => `- ${entry}`)
-          .join("\n")}`,
-      );
-    } catch (err) {
-      log.warn(`gateway: failed to persist plugin auto-enable changes: ${String(err)}`);
+  // Skip plugin auto-enable when config is invalid to avoid persisting
+  // a broken config back to disk.
+  if (!configInvalid) {
+    const autoEnable = applyPluginAutoEnable({ config: configSnapshot.config, env: process.env });
+    if (autoEnable.changes.length > 0) {
+      try {
+        await writeConfigFile(autoEnable.config);
+        log.info(
+          `gateway: auto-enabled plugins:\n${autoEnable.changes
+            .map((entry) => `- ${entry}`)
+            .join("\n")}`,
+        );
+      } catch (err) {
+        log.warn(`gateway: failed to persist plugin auto-enable changes: ${String(err)}`);
+      }
     }
   }
 
   const cfgAtStart = loadConfig();
 
-  // ========== License Verification (ClawdbotCN) ==========
-  const licenseResult = await checkLicenseOnGatewayStart(cfgAtStart);
+  // ── Parallel Phase: license check, TLS, and runtime config ────────────
+  // These three operations only depend on cfgAtStart and are independent of
+  // each other.  Running them concurrently saves 2-8 s on Windows where
+  // license verification involves network round-trips and TLS may need to
+  // read certificates from disk.
+  setGatewayPhase("verifying license");
+
+  const [licenseResult, gatewayTls, runtimeConfig] = await Promise.all([
+    // License check never rejects (integrity failures call process.exit).
+    // Wrap defensively so a coding error can't break the other two tasks.
+    checkLicenseOnGatewayStart(cfgAtStart).catch((err) => {
+      log.error(`Unexpected license check error: ${String(err)}`);
+      return null;
+    }),
+    loadGatewayTlsRuntime(cfgAtStart.gateway?.tls, log.child("tls")),
+    resolveGatewayRuntimeConfig({
+      cfg: cfgAtStart,
+      port,
+      bind: opts.bind,
+      host: opts.host,
+      controlUiEnabled: opts.controlUiEnabled,
+      openAiChatCompletionsEnabled: opts.openAiChatCompletionsEnabled,
+      openResponsesEnabled: opts.openResponsesEnabled,
+      auth: opts.auth,
+      tailscale: opts.tailscale,
+    }),
+  ]);
+
+  // ── Handle license result (non-blocking) ──────────────────────────────
   if (licenseResult && !licenseResult.canProceed) {
-    // 检查是否是明确的授权错误
     const criticalErrorCodes: (LicenseErrorCode | null)[] = [
       LicenseErrorCode.ERROR_KEY_EXPIRED,      // 1002: 已过期
       LicenseErrorCode.ERROR_KEY_REVOKED,      // 1003: 已撤销
@@ -237,18 +281,21 @@ export async function startGatewayServer(
     ];
 
     if (licenseResult.errorCode && criticalErrorCodes.includes(licenseResult.errorCode)) {
-      // 明确的授权错误，Gateway 仍启动但进入受限模式
-      // 用户可通过 UI 弹窗续费/激活
       log.error(`License verification failed: ${licenseResult.error} (code: ${licenseResult.errorCode})`);
       log.error("Gateway will start in restricted mode - user must resolve license issue via UI");
     } else {
-      // 其他错误（如网络错误），允许启动但功能受限
       log.warn(`License verification failed: ${licenseResult.error}`);
       log.warn("Gateway will start but some features may be restricted");
     }
   }
-  // ========================================================
 
+  // ── Handle TLS result ─────────────────────────────────────────────────
+  if (cfgAtStart.gateway?.tls?.enabled && !gatewayTls.enabled) {
+    throw new Error(gatewayTls.error ?? "gateway tls: failed to enable");
+  }
+
+  // ── Sequential Phase: subsystems that depend on plugins ───────────────
+  setGatewayPhase("initializing subsystems");
   const diagnosticsEnabled = isDiagnosticsEnabled(cfgAtStart);
   if (diagnosticsEnabled) {
     startDiagnosticHeartbeat();
@@ -274,17 +321,6 @@ export async function startGatewayServer(
   const channelMethods = listChannelPlugins().flatMap((plugin) => plugin.gatewayMethods ?? []);
   const gatewayMethods = Array.from(new Set([...baseGatewayMethods, ...channelMethods]));
   let pluginServices: PluginServicesHandle | null = null;
-  const runtimeConfig = await resolveGatewayRuntimeConfig({
-    cfg: cfgAtStart,
-    port,
-    bind: opts.bind,
-    host: opts.host,
-    controlUiEnabled: opts.controlUiEnabled,
-    openAiChatCompletionsEnabled: opts.openAiChatCompletionsEnabled,
-    openResponsesEnabled: opts.openResponsesEnabled,
-    auth: opts.auth,
-    tailscale: opts.tailscale,
-  });
   const {
     bindHost,
     controlUiEnabled,
@@ -304,10 +340,6 @@ export async function startGatewayServer(
 
   const deps = createDefaultDeps();
   let canvasHostServer: CanvasHostServer | null = null;
-  const gatewayTls = await loadGatewayTlsRuntime(cfgAtStart.gateway?.tls, log.child("tls"));
-  if (cfgAtStart.gateway?.tls?.enabled && !gatewayTls.enabled) {
-    throw new Error(gatewayTls.error ?? "gateway tls: failed to enable");
-  }
   const {
     canvasHost,
     httpServer,
@@ -534,6 +566,7 @@ export async function startGatewayServer(
     logTailscale,
   });
 
+  setGatewayPhase("starting channels");
   let browserControl: Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>> = null;
   ({ browserControl, pluginServices } = await startGatewaySidecars({
     cfg: cfgAtStart,
@@ -546,6 +579,10 @@ export async function startGatewayServer(
     logChannels,
     logBrowser,
   }));
+
+  // All subsystems initialised – mark gateway as fully ready so the
+  // loading page redirects to the real UI and health reports ready: true.
+  markGatewayReady();
 
   const { applyHotReload, requestGatewayRestart } = createGatewayReloadHandlers({
     deps,
@@ -609,6 +646,20 @@ export async function startGatewayServer(
     wss,
     httpServer,
     httpServers,
+  });
+
+  // Register graceful shutdown callback so /api/shutdown can trigger a clean exit.
+  setGatewayShutdownCallback(async () => {
+    if (diagnosticsEnabled) {
+      stopDiagnosticHeartbeat();
+    }
+    if (skillsRefreshTimer) {
+      clearTimeout(skillsRefreshTimer);
+      skillsRefreshTimer = null;
+    }
+    skillsChangeUnsub();
+    await close({ reason: "api-shutdown-request" });
+    process.exit(0);
   });
 
   return {

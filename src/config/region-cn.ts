@@ -71,6 +71,8 @@ export interface CnRegionConfig {
   hiddenProviders: string[];
   /** 隐藏的技能 (国内不可用或已废弃) */
   hiddenSkills: string[];
+  /** CN上下文降级技能：已安装但不自动注入LLM上下文（依赖海外服务） */
+  cnDeprioritizedSkills: string[];
   /** Skills 镜像源 */
   skillsRegistry: string;
   /** 推广链接配置 */
@@ -464,6 +466,31 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
   },
 
   // ============================================================================
+  // Kimi Code - 代码专用模型（与 Moonshot 是不同的产品线和 API）
+  // 官方文档: https://www.kimi.com/code/docs/
+  // ============================================================================
+  "kimi-code": {
+    id: "kimi-code",
+    name: "Kimi Code",
+    description: "代码专用模型，262K上下文，性价比极高",
+    apiEndpoint: "https://api.kimi.com/coding/v1",
+    authField: "apiKey",
+    authHint: "格式: sk-kimi-xxx (在 kimi.com/code 获取)",
+    authNote: "💡 Kimi Code 专为编程优化，100 Tokens/s 极速输出",
+    models: [
+      {
+        id: "kimi-for-coding",
+        name: "⭐ Kimi For Coding (推荐)",
+        description: "代码专用，262K上下文，推理增强",
+        recommended: true,
+        pricing: "按量计费",
+      },
+    ],
+    envVar: "KIMICODE_API_KEY",
+    docsUrl: "https://www.kimi.com/code/docs/",
+  },
+
+  // ============================================================================
   // MiniMax
   // ============================================================================
   minimax: {
@@ -839,6 +866,8 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
     "siliconflow",
     "aliyun-bailian",
     "volcengine-ark",
+    // 代码 AI 专区
+    "kimi-code",
     // 更多国产服务（折叠）
     "deepseek",
     "glm",
@@ -883,6 +912,43 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
     "clawdhub",
   ],
 
+  // CN上下文降级技能：这些技能已打包安装（万一要用），但不自动注入LLM上下文
+  // 原因：依赖被GFW封锁的海外服务，大多数中国用户无法直接使用
+  //
+  // ⚠️ openai-whisper 名字有误导性，实际是本地离线推理，不调API，中国可用！不要加到这里！
+  // ⚠️ macOS专属技能（apple-notes等）是平台限制，不是地域限制，中国Mac用户可正常使用
+  cnDeprioritizedSkills: [
+    // ⚠️ 注意: openai-whisper 是本地CLI推理，不调API，不在此列！
+    // ⚠️ macOS技能(apple-notes等)是平台限制非地域限制，不在此列！
+    //
+    // ── 依赖 Google API（被墙） ──
+    "gemini",          // Google Gemini CLI → Gemini API
+    "nano-banana-pro", // 图像生成 → Google Gemini 3 Pro API
+    "gog",             // Google Workspace CLI (Gmail/Calendar/Drive) — 不是本地搜索！
+    "goplaces",        // Google Places API
+    "local-places",    // Google Places API (本地代理但仍调Google)
+    // ── 依赖 OpenAI API（被墙） ──
+    "oracle",          // 默认 ChatGPT browser / OpenAI API
+    "openai-image-gen",// OpenAI DALL-E API
+    "openai-whisper-api", // OpenAI Whisper API（≠openai-whisper本地版！）
+    "summarize",       // 默认 Google Gemini / OpenAI
+    "coding-agent",    // 需要 Codex/Claude/OpenCode 外部AI API
+    // ── 依赖其他海外服务 ──
+    "sag",             // ElevenLabs TTS API — 不是本地TTS！
+    "spotify-player",  // Spotify API（中国不可用）
+    "voice-call",      // Twilio/Telnyx/Plivo VoIP
+    "gifgrep",         // Tenor/Giphy GIF搜索
+    "food-order",      // Foodora 欧洲外卖
+    "ordercli",        // Foodora 封装
+    "bird",            // X/Twitter GraphQL API
+    "eightctl",        // Eight Sleep 美国智能床垫IoT
+    // ── 海外平台，国内极少使用 ──
+    "slack", "discord", "wacli", "bluebubbles",
+    "trello", "linear", "notion",
+    // ── 专业小众工具（海外） ──
+    "comfy", "homekit",
+  ],
+
   // Skills 镜像源 (ClawdSkillsProxy 服务)
   skillsRegistry: "http://121.43.61.90/api",
 
@@ -899,7 +965,14 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
 
 /**
  * 检测是否为中国区用户
- * 通过时区、语言等信息判断
+ * 通过时区、语言、Intl locale 等信息判断
+ *
+ * 检测策略（按优先级）：
+ * 1. 环境变量 CLAWDBOT_REGION 强制设置
+ * 2. Intl 时区检测（Asia/Shanghai, Asia/Chongqing）
+ * 3. Intl locale 检测（zh-CN, zh-Hans — Windows 上比 LANG 更可靠）
+ * 4. TZ 环境变量（Docker 容器内常用）
+ * 5. LANG / LC_ALL 环境变量（Linux/macOS）
  */
 export function detectChinaRegion(): boolean {
   // 检查环境变量强制设置
@@ -908,15 +981,27 @@ export function detectChinaRegion(): boolean {
 
   // 检查时区
   try {
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const resolved = Intl.DateTimeFormat().resolvedOptions();
+    const timezone = resolved.timeZone;
     if (timezone.startsWith("Asia/Shanghai") || timezone.startsWith("Asia/Chongqing")) {
+      return true;
+    }
+    // Windows 上 Intl locale 比 LANG 更可靠（Windows 通常没有 LANG 环境变量）
+    const locale = resolved.locale;
+    if (locale.startsWith("zh-CN") || locale.startsWith("zh-Hans")) {
       return true;
     }
   } catch {
     // ignore
   }
 
-  // 检查语言环境
+  // 检查 TZ 环境变量（Docker 容器内常用，宿主机是中国时区但容器默认 UTC 时需要手动设置）
+  const tz = process.env.TZ || "";
+  if (tz === "Asia/Shanghai" || tz === "Asia/Chongqing" || tz === "CST-8") {
+    return true;
+  }
+
+  // 检查语言环境（Linux/macOS）
   const lang = process.env.LANG || process.env.LC_ALL || "";
   if (lang.toLowerCase().includes("zh_cn") || lang.toLowerCase().includes("zh-cn")) {
     return true;
@@ -977,22 +1062,32 @@ export function isSkillHiddenInCn(skillId: string): boolean {
   return CN_REGION_CONFIG.hiddenSkills.includes(skillId.toLowerCase());
 }
 
+/**
+ * 检查技能是否在中国区降级（已安装但不自动注入LLM上下文）
+ * 这些技能依赖海外服务（OpenAI、Google等），大多数中国用户无法直接使用。
+ * 注意：macOS专属技能不在此列——中国Mac用户可正常使用。
+ */
+export function isSkillDeprioritizedInCn(skillId: string): boolean {
+  return CN_REGION_CONFIG.cnDeprioritizedSkills.includes(skillId.toLowerCase());
+}
+
 // ============================================================================
 // 默认安全配置 (Default Security Config for CN)
 // ============================================================================
 
 export const CN_DEFAULT_SECURITY_CONFIG = {
   sandbox: {
-    mode: "non-main" as const,
-    scope: "session" as const,
+    mode: "off" as const, // 不使用沙箱，最大能力释放
+    scope: "agent" as const, // 按 agent 隔离（用户手动开启沙箱时生效）
     workspaceAccess: "rw" as const,
   },
   tools: {
     write: {
-      allowDelete: false, // 禁止删除文件
+      allowDelete: false, // 安全底线：禁止删除文件，其他全部放开
     },
     exec: {
-      security: "allowlist" as const,
+      security: "full" as const, // 全权限模式，所有命令可执行
+      ask: "off" as const, // 不询问，直接执行
       allowlist: [
         // Windows 常用
         "notepad",
@@ -1035,7 +1130,7 @@ export const CN_DEFAULT_SECURITY_CONFIG = {
     },
     browser: {
       profile: "clawdbot",
-      allowHostBrowser: false,
+      allowHostBrowser: true, // 允许 AI 使用宿主浏览器（最大能力释放）
     },
   },
 };

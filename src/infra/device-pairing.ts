@@ -66,6 +66,7 @@ type DevicePairingStateFile = {
 };
 
 const PENDING_TTL_MS = 5 * 60 * 1000;
+const REVOKED_DEVICE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function resolvePaths(baseDir?: string) {
   const root = baseDir ?? resolveStateDir();
@@ -115,6 +116,22 @@ function pruneExpiredPending(
   }
 }
 
+function pruneStaleDevices(
+  pairedByDeviceId: Record<string, PairedDevice>,
+  nowMs: number,
+) {
+  for (const [id, device] of Object.entries(pairedByDeviceId)) {
+    const tokens = device.tokens ? Object.values(device.tokens) : [];
+    if (tokens.length === 0) continue;
+    const allRevoked = tokens.every((t) => t.revokedAtMs != null);
+    if (!allRevoked) continue;
+    const latestRevoke = Math.max(...tokens.map((t) => t.revokedAtMs!));
+    if (nowMs - latestRevoke > REVOKED_DEVICE_TTL_MS) {
+      delete pairedByDeviceId[id];
+    }
+  }
+}
+
 let lock: Promise<void> = Promise.resolve();
 async function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const prev = lock;
@@ -140,7 +157,9 @@ async function loadState(baseDir?: string): Promise<DevicePairingStateFile> {
     pendingById: pending ?? {},
     pairedByDeviceId: paired ?? {},
   };
-  pruneExpiredPending(state.pendingById, Date.now());
+  const now = Date.now();
+  pruneExpiredPending(state.pendingById, now);
+  pruneStaleDevices(state.pairedByDeviceId, now);
   return state;
 }
 
@@ -478,6 +497,20 @@ export async function rotateDeviceToken(params: {
     state.pairedByDeviceId[device.deviceId] = device;
     await persistState(state, params.baseDir);
     return next;
+  });
+}
+
+export async function removeDevice(params: {
+  deviceId: string;
+  baseDir?: string;
+}): Promise<{ deviceId: string } | null> {
+  return await withLock(async () => {
+    const state = await loadState(params.baseDir);
+    const id = normalizeDeviceId(params.deviceId);
+    if (!state.pairedByDeviceId[id]) return null;
+    delete state.pairedByDeviceId[id];
+    await persistState(state, params.baseDir);
+    return { deviceId: id };
   });
 }
 

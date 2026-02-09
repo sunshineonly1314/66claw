@@ -1,3 +1,10 @@
+---
+name: canvas
+description: Display HTML content on connected Clawdbot nodes (Mac app, iOS, Android).
+nameZh: "画布展示"
+descriptionZh: "在画布上展示图表、代码等内容"
+---
+
 # Canvas Skill
 
 Display HTML content on connected Clawdbot nodes (Mac app, iOS, Android).

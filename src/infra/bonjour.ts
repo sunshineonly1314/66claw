@@ -169,11 +169,13 @@ export async function startGatewayBonjourAdvertiser(
     try {
       svc.on("name-change", (name: unknown) => {
         const next = typeof name === "string" ? name : String(name);
-        logWarn(`bonjour: ${label} name conflict resolved; newName=${JSON.stringify(next)}`);
+        // Downgraded from warn→info: name conflict is auto-resolved by ciao,
+        // not an error. Logging as [ERR] confuses customers.
+        getLogger().info(`bonjour: ${label} name conflict resolved; newName=${JSON.stringify(next)}`);
       });
       svc.on("hostname-change", (nextHostname: unknown) => {
         const next = typeof nextHostname === "string" ? nextHostname : String(nextHostname);
-        logWarn(
+        getLogger().info(
           `bonjour: ${label} hostname conflict resolved; newHostname=${JSON.stringify(next)}`,
         );
       });
@@ -263,6 +265,11 @@ export async function startGatewayBonjourAdvertiser(
       } finally {
         ciaoCancellationRejectionHandler?.();
       }
+      // Allow mDNS goodbye packets to propagate before the gateway restarts
+      // and a new advertiser re-probes with the same instance name.  Without
+      // this grace period the new instance often sees a stale record and
+      // appends "(2)" to the service name.
+      await new Promise((r) => setTimeout(r, 800));
     },
   };
 }

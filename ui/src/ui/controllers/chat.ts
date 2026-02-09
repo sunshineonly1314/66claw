@@ -1,8 +1,12 @@
-import { extractText } from "../chat/message-extract";
+import { extractText, extractRawText } from "../chat/message-extract";
 import { formatErrorHint } from "../chat/error-hints";
 import type { GatewayBrowserClient } from "../gateway";
 import { generateUUID } from "../uuid";
 import type { ChatAttachment } from "../ui-types";
+
+// ClawdbotCN: Track runs that detected a free model switch notification.
+// Used to trigger auto new-session when the run completes.
+const freeModelSwitchRuns = new Set<string>();
 
 export type ChatState = {
   client: GatewayBrowserClient | null;
@@ -52,11 +56,13 @@ function dataUrlToBase64(dataUrl: string): { content: string; mimeType: string }
   return { mimeType: match[1], content: match[2] };
 }
 
+export type ChatSendResult = boolean | { ok: false; isLicenseError: true; error: string };
+
 export async function sendChatMessage(
   state: ChatState,
   message: string,
   attachments?: ChatAttachment[],
-): Promise<boolean> {
+): Promise<ChatSendResult> {
   if (!state.client || !state.connected) return false;
   const msg = message.trim();
   const hasAttachments = attachments && attachments.length > 0;
@@ -133,8 +139,7 @@ export async function sendChatMessage(
                            error.includes("license");
     
     if (isLicenseError) {
-      // 返回特殊的授权错误结果，由调用方处理
-      return { ok: false, isLicenseError: true, error } as unknown as boolean;
+      return { ok: false, isLicenseError: true, error };
     }
     
     state.lastError = error;
@@ -202,10 +207,20 @@ export function handleChatEvent(
         state.chatStream = next;
       }
     }
+    // ClawdbotCN: detect free model switch notification in raw stream text
+    const rawText = extractRawText(payload.message);
+    if (rawText && /<!--CLAWDBOT_FREE_MODEL_NOTIFICATION:/.test(rawText)) {
+      freeModelSwitchRuns.add(payload.runId);
+    }
   } else if (payload.state === "final") {
-    state.chatStream = null;
+    const hadModelSwitch = freeModelSwitchRuns.delete(payload.runId);
+    // Don't clear chatStream here — let app-gateway clear it after loadChatHistory
+    // completes. This keeps the typewriter animation alive during the transition
+    // so the user sees smooth text reveal instead of a sudden flash.
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    // Return special indicator so gateway can auto-create new session
+    if (hadModelSwitch) return "final_model_switch";
   } else if (payload.state === "aborted") {
     state.chatStream = null;
     state.chatRunId = null;

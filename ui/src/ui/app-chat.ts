@@ -1,4 +1,4 @@
-import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat";
+import { abortChatRun, loadChatHistory, sendChatMessage, type ChatSendResult } from "./controllers/chat";
 import { loadSessions } from "./controllers/sessions";
 import { syncPerformanceProfile } from "./controllers/perf-profile";
 import { generateUUID } from "./uuid";
@@ -82,12 +82,10 @@ async function sendChatMessageNow(
   const app = host as unknown as ClawdbotApp;
   clearTimeout(app._justCompletedTimer);
   app.chatStreamJustCompleted = false;
-  const result = await sendChatMessage(app, message, opts?.attachments);
-  
+  const result: ChatSendResult = await sendChatMessage(app, message, opts?.attachments);
+
   // 检查是否为授权错误 - 如果是，弹出激活对话框而不是显示错误
-  const isLicenseError = typeof result === "object" && result !== null && 
-                         "isLicenseError" in result && (result as { isLicenseError?: boolean }).isLicenseError;
-  if (isLicenseError) {
+  if (typeof result === "object" && result.isLicenseError) {
     // 触发激活弹框
     host.showLicenseDialog = "activation";
     // 恢复用户输入

@@ -9,9 +9,13 @@ import { resolveStateDir } from "../../config/paths.js";
 import { getDeviceId } from "../../license/device-id.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
+import { detectChinaRegion } from "../../config/region-cn.js";
 
 /** 反馈 API 基础地址 */
 const FEEDBACK_API_BASE_URL = "https://www.tecbinai.com/api/api/v1/feedback";
+
+/** 中国区反馈 API 备用地址（国内备案域名反代） */
+const FEEDBACK_API_CN_FALLBACK_URL = "https://www.obplugins.cn/api/api/v1/feedback";
 
 /** 请求超时时间 */
 const REQUEST_TIMEOUT_MS = 30000;
@@ -161,31 +165,37 @@ async function syncFeedbackToRemote(feedback: StoredFeedback): Promise<boolean> 
     createdAt: feedback.createdAt,
   };
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // 中国区：先尝试国内反代，失败再回源
+  const urls = detectChinaRegion()
+    ? [`${FEEDBACK_API_CN_FALLBACK_URL}/submit`, `${FEEDBACK_API_BASE_URL}/submit`]
+    : [`${FEEDBACK_API_BASE_URL}/submit`];
 
-    const response = await fetch(`${FEEDBACK_API_BASE_URL}/submit`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "ClawdbotCN-Gateway/1.0",
-      },
-      body: JSON.stringify(request),
-      signal: controller.signal,
-    });
+  for (const url of urls) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-    clearTimeout(timeoutId);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "ClawdbotCN-Gateway/1.0",
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      return false;
+      clearTimeout(timeoutId);
+
+      if (!response.ok) continue;
+
+      const result = (await response.json()) as RemoteFeedbackResponse;
+      if (result.success === true) return true;
+    } catch {
+      continue;
     }
-
-    const result = (await response.json()) as RemoteFeedbackResponse;
-    return result.success === true;
-  } catch {
-    return false;
   }
+  return false;
 }
 
 /**
@@ -201,25 +211,31 @@ export const feedbackHandlers: GatewayRequestHandlers = {
    * 健康检查接口
    */
   "feedback.health": async ({ respond }) => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const urls = detectChinaRegion()
+      ? [`${FEEDBACK_API_CN_FALLBACK_URL}/health`, `${FEEDBACK_API_BASE_URL}/health`]
+      : [`${FEEDBACK_API_BASE_URL}/health`];
 
-      const response = await fetch(`${FEEDBACK_API_BASE_URL}/health`, {
-        method: "GET",
-        signal: controller.signal,
-      });
+    for (const url of urls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      clearTimeout(timeoutId);
+        const response = await fetch(url, {
+          method: "GET",
+          signal: controller.signal,
+        });
 
-      if (response.ok) {
-        respond(true, { status: "ok", remote: true }, undefined);
-      } else {
-        respond(true, { status: "degraded", remote: false, reason: "remote_unavailable" }, undefined);
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          respond(true, { status: "ok", remote: true }, undefined);
+          return;
+        }
+      } catch {
+        continue;
       }
-    } catch {
-      respond(true, { status: "degraded", remote: false, reason: "network_error" }, undefined);
     }
+    respond(true, { status: "degraded", remote: false, reason: "network_error" }, undefined);
   },
 
   /**

@@ -439,6 +439,10 @@ export function createBrowserTool(opts?: {
           const targetUrl = readStringParam(params, "targetUrl", {
             required: true,
           });
+          const openHint =
+            "Tab opened. Next step: use action='snapshot' with this targetId to see interactive elements and their refs. " +
+            "Then use action='act' with request={kind:'type', ref:'<ref>', text:'your text'} to type into inputs, " +
+            "or request={kind:'click', ref:'<ref>'} to click elements.";
           if (proxyRequest) {
             const result = await proxyRequest({
               method: "POST",
@@ -446,9 +450,9 @@ export function createBrowserTool(opts?: {
               profile,
               body: { url: targetUrl },
             });
-            return jsonResult(result);
+            return jsonResult({ ...(result as Record<string, unknown>), hint: openHint });
           }
-          return jsonResult(await browserOpenTab(baseUrl, targetUrl, { profile }));
+          return jsonResult({ ...(await browserOpenTab(baseUrl, targetUrl, { profile })), hint: openHint });
         }
         case "focus": {
           const targetId = readStringParam(params, "targetId", {
@@ -619,6 +623,9 @@ export function createBrowserTool(opts?: {
             required: true,
           });
           const targetId = readStringParam(params, "targetId");
+          const navHint =
+            "Navigation complete. Next step: use action='snapshot' to see interactive elements and their refs, " +
+            "then use action='act' to interact (type, click, etc).";
           if (proxyRequest) {
             const result = await proxyRequest({
               method: "POST",
@@ -629,15 +636,16 @@ export function createBrowserTool(opts?: {
                 targetId,
               },
             });
-            return jsonResult(result);
+            return jsonResult({ ...(result as Record<string, unknown>), hint: navHint });
           }
-          return jsonResult(
-            await browserNavigate(baseUrl, {
+          return jsonResult({
+            ...(await browserNavigate(baseUrl, {
               url: targetUrl,
               targetId,
               profile,
-            }),
-          );
+            })),
+            hint: navHint,
+          });
         }
         case "console": {
           const level = typeof params.level === "string" ? params.level.trim() : undefined;
@@ -758,7 +766,12 @@ export function createBrowserTool(opts?: {
               : await browserAct(baseUrl, request as Parameters<typeof browserAct>[1], {
                   profile,
                 });
-            return jsonResult(result);
+            const actKind = typeof request.kind === "string" ? request.kind : "";
+            const actHint =
+              actKind === "type" || actKind === "click" || actKind === "fill" || actKind === "press"
+                ? "Action completed. Use action='snapshot' to see the updated page state and verify the result."
+                : undefined;
+            return jsonResult(actHint ? { ...(result as Record<string, unknown>), hint: actHint } : result);
           } catch (err) {
             const msg = String(err);
             if (msg.includes("404:") && msg.includes("tab not found") && profile === "chrome") {

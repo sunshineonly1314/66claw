@@ -1,8 +1,10 @@
 ---
 name: songsee
 description: Generate spectrograms and feature-panel visualizations from audio with the songsee CLI.
+nameZh: "音乐识别"
+descriptionZh: "从音频生成频谱图和特征面板可视化"
 homepage: https://github.com/steipete/songsee
-metadata: {"clawdbot":{"emoji":"🌊","requires":{"bins":["songsee"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/songsee","bins":["songsee"],"label":"Install songsee (brew)"}]}}
+metadata: {"clawdbot":{"emoji":"🌊","requires":{"bins":["songsee"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/songsee","bins":["songsee"],"label":"Install songsee (brew)"},{"id":"download-mac","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"Download songsee (macOS)","os":["darwin"]},{"id":"download-win","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"Download songsee (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"Download songsee (Linux)","os":["linux"]}]}}
 ---
 
 # songsee

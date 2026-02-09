@@ -10,6 +10,7 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, WecomStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
+import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { WecomStatus } from "./channels.types";
@@ -60,7 +61,7 @@ export function renderWecomCard(params: {
           </div>
           ${account.lastError
             ? html`
-                <div class="account-card-error">
+                <div class="${isUnconfiguredError(account.lastError) ? "account-card-muted" : "account-card-error"}">
                   ${account.lastError}
                 </div>
               `
@@ -94,11 +95,14 @@ export function renderWecomCard(params: {
     "channel-card",
     wecom?.running ? "channel-card--running" : "",
     wecom?.configured && !wecom?.running ? "channel-card--configured" : "",
-    wecom?.lastError ? "channel-card--error" : "",
+    wecom?.lastError ? (isUnconfiguredError(wecom.lastError) ? "channel-card--unconfigured" : "channel-card--error") : "",
   ].filter(Boolean).join(" ");
 
+  // 自动展开：运行中 或 有真实错误
+  const shouldOpen = wecom?.running || (wecom?.lastError != null && !isUnconfiguredError(wecom.lastError));
+
   return html`
-    <details class="${cardClasses}" open>
+    <details class="${cardClasses}" ?open=${shouldOpen}>
       <summary class="channel-card__header">
         <div class="channel-card__left">
           <span class="channel-card__icon">💼</span>
@@ -118,7 +122,8 @@ export function renderWecomCard(params: {
                 ${wecomAccounts.map((account) => renderAccountCard(account))}
               </div>
             `
-          : html`
+          : (wecom?.configured || wecom?.running)
+            ? html`
               <div class="status-list">
                 <div>
                   <span class="label">${t("channels.configured")}</span>
@@ -141,10 +146,11 @@ export function renderWecomCard(params: {
                   <span>${wecom?.lastProbeAt ? formatAgo(wecom.lastProbeAt) : t("common.na")}</span>
                 </div>
               </div>
-            `}
+            `
+            : nothing}
 
         ${wecom?.lastError
-          ? html`<div class="callout danger" style="margin-top: 12px;">
+          ? html`<div class="${errorCalloutClass(wecom.lastError)}" style="margin-top: 12px;">
               ${wecom.lastError}
             </div>`
           : nothing}

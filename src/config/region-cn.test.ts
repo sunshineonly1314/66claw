@@ -121,17 +121,18 @@ describe("模型配置验证", () => {
     expect(emptyNames).toEqual([]);
   });
 
-  it("免费模型应该有 pricing: '免费' 标记", () => {
+  it("免费模型应该有 pricing 以 '免费' 开头的标记", () => {
     const inconsistent: string[] = [];
 
     for (const [providerId, provider] of Object.entries(CN_PROVIDERS)) {
       for (const model of provider.models) {
-        // 如果名称包含 🆓 或 "免费"，pricing 应该是 "免费"
+        // 如果名称包含 🆓 或 "免费"，pricing 应该以 "免费" 开头
+        // 允许 "免费"、"免费(2000次/天)"、"免费额度" 等格式
         const isFreeInName = model.name.includes("🆓") || model.name.includes("免费");
-        const isFreeInPricing = model.pricing === "免费";
+        const isFreeInPricing = model.pricing?.startsWith("免费") ?? false;
 
         if (isFreeInName && !isFreeInPricing) {
-          inconsistent.push(`${providerId}/${model.id}: 名称标记免费但 pricing 不是 "免费"`);
+          inconsistent.push(`${providerId}/${model.id}: 名称标记免费但 pricing 不是以 "免费" 开头`);
         }
       }
     }
@@ -399,8 +400,8 @@ describe("isProviderHiddenInCn()", () => {
 describe("CN_DEFAULT_SECURITY_CONFIG", () => {
   it("sandbox 配置应该完整", () => {
     expect(CN_DEFAULT_SECURITY_CONFIG.sandbox).toBeDefined();
-    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.mode).toBe("non-main");
-    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.scope).toBe("session");
+    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.mode).toBe("off");
+    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.scope).toBe("agent");
     expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.workspaceAccess).toBe("rw");
   });
 
@@ -408,8 +409,12 @@ describe("CN_DEFAULT_SECURITY_CONFIG", () => {
     expect(CN_DEFAULT_SECURITY_CONFIG.tools.write.allowDelete).toBe(false);
   });
 
-  it("tools.exec.security 应该是 allowlist 模式", () => {
-    expect(CN_DEFAULT_SECURITY_CONFIG.tools.exec.security).toBe("allowlist");
+  it("tools.exec.security 应该是 full 模式（最大能力释放）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.tools.exec.security).toBe("full");
+  });
+
+  it("tools.exec.ask 应该是 off（不询问，直接执行）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.tools.exec.ask).toBe("off");
   });
 
   it("tools.exec.allowlist 应该包含常用命令", () => {
@@ -468,17 +473,17 @@ describe("边界情况和潜在风险", () => {
     expect(emptyModels).toEqual([]);
   });
 
-  it("pricing 字段格式应该一致（包含 ¥/元/免费/付费 等）", () => {
+  it("pricing 字段格式应该一致（包含 ¥/元/免费/付费/按量计费 等）", () => {
     const inconsistent: string[] = [];
 
     for (const [providerId, provider] of Object.entries(CN_PROVIDERS)) {
       for (const model of provider.models) {
         if (model.pricing) {
-          // 支持的格式：免费、付费、免费额度、¥xx、xx元
+          // 支持的格式：免费、免费(xxx)、付费、免费额度、按量计费、¥xx、xx元
           const isValid =
-            model.pricing === "免费" ||
+            model.pricing.startsWith("免费") ||
             model.pricing === "付费" ||
-            model.pricing.includes("免费额度") ||
+            model.pricing === "按量计费" ||
             model.pricing.includes("¥") ||
             model.pricing.includes("元");
 
@@ -567,12 +572,12 @@ describe("特定厂商配置正确性", () => {
       expect(siliconflow.apiEndpoint).toBe("https://api.siliconflow.cn/v1");
     });
 
-    it("免费模型应该是 Qwen2（不是 Qwen2.5）", () => {
+    it("免费模型应该是 Qwen3（不是 Qwen2.5）", () => {
       const freeQwen = siliconflow.models.find(
         (m) => m.pricing === "免费" && m.id.includes("Qwen")
       );
       expect(freeQwen).toBeDefined();
-      expect(freeQwen?.id).toContain("Qwen2-7B");
+      expect(freeQwen?.id).toContain("Qwen3-8B");
       expect(freeQwen?.id).not.toContain("Qwen2.5");
     });
   });
@@ -584,8 +589,9 @@ describe("特定厂商配置正确性", () => {
       expect(minimax).toBeDefined();
     });
 
-    it("描述应该明确说不需要 Group ID", () => {
-      expect(minimax.description).toContain("不需要 Group ID");
+    it("描述或 authHint 应该明确说不需要 Group ID", () => {
+      const text = `${minimax.description} ${minimax.authHint ?? ""}`;
+      expect(text).toContain("不需要 Group ID");
     });
 
     it("不应该有 abab6.5s 模型（已停用）", () => {

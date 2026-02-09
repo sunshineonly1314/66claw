@@ -40,4 +40,6 @@ export type ToolCard = {
   name: string;
   args?: unknown;
   text?: string;
+  /** True when the tool call has no matching result yet (still executing). */
+  pending?: boolean;
 };

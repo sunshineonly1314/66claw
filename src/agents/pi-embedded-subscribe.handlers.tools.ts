@@ -13,6 +13,7 @@ import {
 } from "./pi-embedded-subscribe.tools.js";
 import { inferToolMetaFromArgs } from "./pi-embedded-utils.js";
 import { normalizeToolName } from "./tool-policy.js";
+import { isMCPToolName } from "../mcp/index.js";
 
 function extendExecMeta(toolName: string, args: unknown, meta?: string): string | undefined {
   const normalized = toolName.trim().toLowerCase();
@@ -60,6 +61,7 @@ export async function handleToolExecutionStart(
   );
 
   const shouldEmitToolEvents = ctx.shouldEmitToolResult();
+  const toolSource = isMCPToolName(toolName) ? "mcp" : "builtin";
   emitAgentEvent({
     runId: ctx.params.runId,
     stream: "tool",
@@ -68,6 +70,7 @@ export async function handleToolExecutionStart(
       name: toolName,
       toolCallId,
       args: args as Record<string, unknown>,
+      source: toolSource,
     },
   });
   // Best-effort typing signal; do not block tool summaries on slow emitters.
@@ -124,6 +127,7 @@ export function handleToolExecutionUpdate(
       name: toolName,
       toolCallId,
       partialResult: sanitized,
+      source: isMCPToolName(toolName) ? "mcp" : "builtin",
     },
   });
   void ctx.params.onAgentEvent?.({
@@ -194,6 +198,7 @@ export function handleToolExecutionEnd(
       meta,
       isError: isToolError,
       result: sanitizedResult,
+      source: isMCPToolName(toolName) ? "mcp" : "builtin",
     },
   });
   void ctx.params.onAgentEvent?.({

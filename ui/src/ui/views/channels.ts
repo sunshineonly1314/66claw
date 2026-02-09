@@ -21,7 +21,7 @@ import type {
   ChannelsChannelData,
   ChannelsProps,
 } from "./channels.types";
-import { channelEnabled, renderChannelAccountCount } from "./channels.shared";
+import { channelEnabled, isUnconfiguredError, renderChannelAccountCount } from "./channels.shared";
 import { renderChannelConfigSection } from "./channels.config";
 import { renderDiscordCard } from "./channels.discord";
 import { renderGoogleChatCard } from "./channels.googlechat";
@@ -61,15 +61,20 @@ function renderChannelOverview(props: ChannelsProps, data: ChannelsChannelData) 
   let configuredCount = 0;
   let runningCount = 0;
   let errorCount = 0;
-  
+  let unconfiguredCount = 0;
+
   for (const key of ALL_SUPPORTED_CHANNELS) {
     const status = channels?.[key] as { configured?: boolean; running?: boolean; lastError?: string } | undefined;
     if (status?.configured) configuredCount++;
     if (status?.running) runningCount++;
-    if (status?.lastError) errorCount++;
+    if (status?.lastError) {
+      if (isUnconfiguredError(status.lastError)) {
+        unconfiguredCount++;
+      } else {
+        errorCount++;
+      }
+    }
   }
-  
-  const totalChannels = ALL_SUPPORTED_CHANNELS.length;
   
   return html`
     <div class="channel-overview">
@@ -82,7 +87,7 @@ function renderChannelOverview(props: ChannelsProps, data: ChannelsChannelData) 
           </div>
           <div class="overview-card__indicator ${runningCount > 0 ? 'indicator--ok' : 'indicator--muted'}"></div>
         </div>
-        
+
         <div class="overview-card">
           <div class="overview-card__icon">⚙️</div>
           <div class="overview-card__content">
@@ -91,14 +96,16 @@ function renderChannelOverview(props: ChannelsProps, data: ChannelsChannelData) 
           </div>
         </div>
         
-        <div class="overview-card">
-          <div class="overview-card__icon">📊</div>
-          <div class="overview-card__content">
-            <div class="overview-card__value">${totalChannels}</div>
-            <div class="overview-card__label">支持渠道</div>
+        ${unconfiguredCount > 0 ? html`
+          <div class="overview-card overview-card--muted">
+            <div class="overview-card__icon">💤</div>
+            <div class="overview-card__content">
+              <div class="overview-card__value">${unconfiguredCount}</div>
+              <div class="overview-card__label">未配置</div>
+            </div>
           </div>
-        </div>
-        
+        ` : nothing}
+
         ${errorCount > 0 ? html`
           <div class="overview-card overview-card--danger">
             <div class="overview-card__icon">⚠️</div>
@@ -399,7 +406,7 @@ const CHANNEL_DESCRIPTIONS: Record<string, string> = {
 const DOMESTIC_CHANNELS = new Set(["feishu", "dingtalk", "wecom", "qqbot"]);
 
 // 默认展开的渠道列表（国内常用渠道）
-const DEFAULT_OPEN_CHANNELS = new Set(["feishu", "dingtalk", "wecom"]);
+const DEFAULT_OPEN_CHANNELS = new Set<string>([]);
 
 function renderGenericChannelCard(
   key: ChannelKey,

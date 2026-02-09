@@ -95,9 +95,11 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   const defaultWorkspace = getDefaultWorkspace();
   const logoBase64 = getLogoBase64();
   // 将 token 注入到页面中，供 JavaScript 使用
-  const tokenScript = gatewayToken 
-    ? `<script>window.__GATEWAY_TOKEN__ = ${JSON.stringify(gatewayToken)};</script>`
-    : `<script>window.__GATEWAY_TOKEN__ = null;</script>`;
+  // 防止 </script> 注入：将 </ 转义为 <\/ 避免提前关闭 script 标签
+  const safeToken = gatewayToken
+    ? JSON.stringify(gatewayToken).replace(/<\//g, "<\\/")
+    : "null";
+  const tokenScript = `<script>window.__GATEWAY_TOKEN__ = ${safeToken};</script>`;
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -106,10 +108,10 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ClawbotCN 安装向导</title>
   ${tokenScript}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.loli.net">
+  <link rel="preconnect" href="https://gstatic.loli.net" crossorigin>
+  <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.loli.net/icon?family=Material+Icons" rel="stylesheet">
   <style>
     :root {
       --bg-primary: #0f0f11;
@@ -927,6 +929,27 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     .model-select:focus {
       outline: none;
       border-color: var(--accent-blue);
+    }
+    .model-editable-tag {
+      position: absolute;
+      right: 40px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 12px;
+      color: var(--accent-blue);
+      background: rgba(59, 130, 246, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      white-space: nowrap;
+    }
+    .model-editable-tag.visible {
+      opacity: 1;
+    }
+    .model-combobox.open .model-editable-tag {
+      opacity: 0;
     }
     .model-combobox-arrow {
       position: absolute;
@@ -3393,6 +3416,67 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       color: var(--text-muted);
     }
 
+    /* 二维码获取秘钥区域 */
+    .qrcode-section {
+      margin-top: 20px;
+    }
+    .qrcode-card {
+      background: linear-gradient(135deg, rgba(60, 131, 246, 0.08) 0%, rgba(60, 131, 246, 0.02) 100%);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+    }
+    .qrcode-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      font-weight: 600;
+      font-size: 1em;
+    }
+    .qrcode-title {
+      color: var(--text-primary);
+    }
+    .qrcode-body {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .qrcode-image-wrapper {
+      flex-shrink: 0;
+      width: 140px;
+      height: 140px;
+      background: #fff;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .qrcode-image-wrapper img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .qrcode-loading {
+      font-size: 0.85em;
+      color: var(--text-muted);
+    }
+    .qrcode-desc {
+      flex: 1;
+    }
+    .qrcode-group-name {
+      font-weight: 600;
+      font-size: 1em;
+      margin-bottom: 6px;
+      color: var(--accent-blue);
+    }
+    .qrcode-hint {
+      font-size: 0.9em;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
     /* 凭证输入区域 */
     .license-input-section {
       margin-top: 20px;
@@ -4333,6 +4417,25 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         </div>
       </div>
 
+      <!-- 代码 AI 专区 -->
+      <div class="provider-code-section" style="margin-top: 20px;">
+        <div class="provider-section-title">💻 代码 AI</div>
+        <div class="provider-recommended-grid" style="grid-template-columns: 1fr;">
+          <div class="provider-card" data-provider="kimi-code" onclick="selectProvider('kimi-code')"
+               style="background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%); border: 1px solid #c2d4f0;">
+            <div class="provider-card-badge" style="background: linear-gradient(135deg, #4285f4, #1a73e8);">🚀 代码专用</div>
+            <div class="provider-card-icon">💻</div>
+            <div class="provider-card-name">Kimi Code</div>
+            <div class="provider-card-desc">代码专用模型 · 262K 超长上下文 · 100 Tokens/s 极速 · 性价比极高</div>
+            <a href="https://www.kimi.com/code/docs/" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+              <span class="material-icons">code</span>
+              查看文档，获取 API Key
+            </a>
+            <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
+          </div>
+        </div>
+      </div>
+
       <!-- 其他国内服务商 - 折叠 -->
       <div class="provider-other-section">
         <div class="provider-other-toggle" onclick="toggleOtherProviders()">
@@ -4512,15 +4615,16 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
           </div>
           <!-- 模型 Combobox：支持下拉选择和手动输入 -->
           <div class="model-combobox" id="modelCombobox">
-            <input type="text" class="model-select" id="modelSelect" 
-                   placeholder="-- 请先选择 AI 平台 --" 
+            <input type="text" class="model-select" id="modelSelect"
+                   placeholder="-- 请先选择 AI 平台 --"
                    autocomplete="off">
+            <span class="model-editable-tag" id="modelEditableTag">✏️ 可编辑</span>
             <span class="material-icons model-combobox-arrow">expand_more</span>
             <div class="model-dropdown" id="modelDropdown"></div>
           </div>
           <div class="model-input-hint">
-            <span class="model-input-hint-icon">✏️</span>
-            <span>支持手动输入任意模型名称，如 <code>qwen-plus</code>、<code>deepseek-chat</code> 等</span>
+            <span class="model-input-hint-icon">💡</span>
+            <span>选好后也能随时改 — 直接删改输入框里的模型名即可，不是选了就定死的</span>
           </div>
           <!-- 自定义 API 的端点提示（模型输入复用上面的 combobox） -->
           <div id="modelInputSection" class="hidden" style="margin-top: 8px;">
@@ -5721,11 +5825,34 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
           </div>
         </div>
 
+        <!-- 获取体验秘钥 - 二维码区域 -->
+        <div class="qrcode-section" id="setupQrcodeSection" style="display:none;">
+          <div class="qrcode-card">
+            <div class="qrcode-header">
+              <span class="material-icons" style="color: var(--accent-blue);">qr_code_2</span>
+              <span class="qrcode-title">获取专属体验秘钥</span>
+            </div>
+            <div class="qrcode-body">
+              <div class="qrcode-image-wrapper" id="setupQrcodeImage">
+                <div class="qrcode-loading"><span class="status-spinner"></span> 加载中...</div>
+              </div>
+              <div class="qrcode-desc">
+                <div class="qrcode-group-name" id="setupQrcodeGroupName"></div>
+                <div class="qrcode-hint">扫码加入体验群，群内获取免费体验秘钥</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 输入凭证 -->
         <div class="license-input-section">
           <label class="form-label">已有凭证？在这里激活</label>
           <div class="license-input-wrapper">
-            <input type="text" class="form-input mono" id="licenseTokenInput" placeholder="粘贴你的服务凭证...">
+            <input type="text" class="form-input mono" id="licenseTokenInput" placeholder="粘贴你的服务凭证（以 clawd- 或 test- 开头）">
+          </div>
+          <div class="form-help" style="margin-top: 8px; color: var(--text-muted); font-size: 0.85em;">
+            <span class="material-icons" style="font-size: 14px; vertical-align: middle; margin-right: 4px;">info</span>
+            凭证格式：以 <code style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace;">clawd-</code> 或 <code style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace;">test-</code> 开头，例如 <code style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace;">clawd-xxxx-xxxx</code>
           </div>
         </div>
 
@@ -6177,6 +6304,11 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       if (stepItem5 && step === 5) {
         stepItem5.classList.add('completed');
       }
+
+      // 进入 Step 4 时加载二维码
+      if (step === 4) {
+        loadSetupQrcode();
+      }
     }
 
     async function nextStep(step) {
@@ -6384,6 +6516,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       'tencent-hunyuan': 'hunyuan-standard',
       'minimax': 'MiniMax-M2.1',
       'moonshot': 'kimi-latest',
+      'kimi-code': 'kimi-for-coding',
       'openai': 'o4-mini',
       'anthropic': 'claude-sonnet-4-20250514',
       'google': 'gemini-3-flash-preview',
@@ -6426,6 +6559,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         'deepseek': '在 <a href="https://platform.deepseek.com/api_keys" target="_blank">DeepSeek 控制台</a> 获取 API Key',
         'glm': '在 <a href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank">智谱 AI 开放平台</a> 获取 API Key（有永久免费模型）',
         'moonshot': '在 <a href="https://platform.moonshot.cn/console/api-keys" target="_blank">Kimi 开放平台</a> 获取 API Key',
+        'kimi-code': '在 <a href="https://www.kimi.com/code/docs/" target="_blank">Kimi Code 文档</a> 获取 API Key（代码专用，262K 超长上下文）',
         'volcengine-ark': '在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank">火山引擎控制台</a> 获取 API Key，需先在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement" target="_blank">开通管理</a> 开通模型 <button class="tutorial-help-btn" onclick="openDoubaoTutorial()"><span class="material-icons">help_outline</span>新手教程</button>',
         'tencent-hunyuan': '在 <a href="https://console.cloud.tencent.com/hunyuan" target="_blank">腾讯云混元控制台</a> 获取 Secret ID 和 Secret Key',
         'minimax': '在 <a href="https://platform.minimaxi.com/user-center/basic-information/interface-key" target="_blank">MiniMax 开放平台</a> 获取 API Key（不需要 Group ID）',
@@ -6517,21 +6651,25 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         modelHint.textContent = '（需要填写 API 端点和模型名）';
         selectedModel = null;
         currentModels = [];  // 自定义 API 没有预设模型
+        showEditableTag(false);
         return;
       }
-      
+
       // 普通提供商 - 设置默认值
       if (defaultModel) {
         const defaultModelObj = models.find(m => m.id === defaultModel);
         input.value = defaultModel;
         selectedModel = defaultModel;
+        showEditableTag(true);
       } else if (models.length > 0) {
         input.value = models[0].id;
         selectedModel = models[0].id;
+        showEditableTag(true);
       } else {
         input.value = '';
         input.placeholder = '输入或选择模型';
         selectedModel = null;
+        showEditableTag(false);
       }
       
       // 更新提示文本
@@ -6657,6 +6795,18 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       input.value = value;
       selectedModel = value;
       closeCombobox();
+      showEditableTag(!!value);
+    }
+
+    function showEditableTag(visible) {
+      const tag = document.getElementById('modelEditableTag');
+      if (tag) {
+        if (visible) {
+          tag.classList.add('visible');
+        } else {
+          tag.classList.remove('visible');
+        }
+      }
     }
     
     function getFilteredModels(filter) {
@@ -7340,10 +7490,38 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     }
 
     // ==================== Step 4: 产品激活 ====================
+    // 加载二维码（进入 Step 4 时自动触发）
+    async function loadSetupQrcode() {
+      try {
+        const res = await fetch('/api/setup/qrcode');
+        const data = await res.json();
+        if (data.ok && data.data?.qrcode?.base64) {
+          const section = document.getElementById('setupQrcodeSection');
+          const imageWrapper = document.getElementById('setupQrcodeImage');
+          const groupNameEl = document.getElementById('setupQrcodeGroupName');
+          if (section && imageWrapper) {
+            imageWrapper.innerHTML = '<img src="' + data.data.qrcode.base64 + '" alt="体验群二维码">';
+            if (groupNameEl && data.data.qrcode.groupName) {
+              groupNameEl.textContent = data.data.qrcode.groupName;
+            }
+            section.style.display = 'block';
+          }
+        }
+      } catch (e) {
+        console.warn('[Setup] Failed to load QR code:', e);
+      }
+    }
+
     async function validateLicense() {
       const token = document.getElementById('licenseTokenInput').value.trim();
       if (!token) {
         showStatus('licenseStatus', '请输入服务凭证', 'error');
+        return;
+      }
+
+      // 前端格式校验：必须以 clawd- 或 test- 开头
+      if (!token.startsWith('clawd-') && !token.startsWith('test-')) {
+        showStatus('licenseStatus', '凭证格式不正确，请输入以 clawd- 或 test- 开头的秘钥', 'error');
         return;
       }
       
@@ -7902,6 +8080,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     // ==================== 工具函数 ====================
     function showStatus(elementId, message, type) {
       const el = document.getElementById(elementId);
+      if (!el) return;
       el.className = 'status-message show ' + type;
       if (type === 'loading') {
         el.innerHTML = '<span class="status-spinner"></span> ' + message;
@@ -7929,15 +8108,17 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     (function() {
       const urlParams = new URLSearchParams(window.location.search);
       const hasHistory = urlParams.get('hasHistory') === '1';
-      
+      const page0 = document.getElementById('page0');
+      const page1 = document.getElementById('page1');
+
       if (hasHistory) {
         // 显示欢迎回来页面
-        document.getElementById('page0').classList.remove('hidden');
-        document.getElementById('page1').classList.add('hidden');
+        if (page0) page0.classList.remove('hidden');
+        if (page1) page1.classList.add('hidden');
       } else {
         // 正常显示 Step 1
-        document.getElementById('page0').classList.add('hidden');
-        document.getElementById('page1').classList.remove('hidden');
+        if (page0) page0.classList.add('hidden');
+        if (page1) page1.classList.remove('hidden');
       }
     })();
   </script>

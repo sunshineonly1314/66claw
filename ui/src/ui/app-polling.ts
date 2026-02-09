@@ -1,12 +1,14 @@
 import { loadLogs } from "./controllers/logs";
 import { loadNodes } from "./controllers/nodes";
 import { loadDebug } from "./controllers/debug";
+import { initMcpCapabilities, type McpLifecycleCallbacks } from "./controllers/mcp-lifecycle";
 import type { ClawdbotApp } from "./app";
 
 type PollingHost = {
   nodesPollInterval: number | null;
   logsPollInterval: number | null;
   debugPollInterval: number | null;
+  mcpPollInterval: number | null;
   tab: string;
 };
 
@@ -50,4 +52,30 @@ export function stopDebugPolling(host: PollingHost) {
   if (host.debugPollInterval == null) return;
   clearInterval(host.debugPollInterval);
   host.debugPollInterval = null;
+}
+
+const MCP_POLL_INTERVAL_MS = 30_000;
+
+export function startMcpPolling(host: PollingHost) {
+  if (host.mcpPollInterval != null) return;
+  host.mcpPollInterval = window.setInterval(() => {
+    if (host.tab !== "extensions") return; // Tab-gated: only poll when on extensions page
+    const app = host as unknown as ClawdbotApp;
+    const client = app.client;
+    if (!client) return;
+    const callbacks: McpLifecycleCallbacks = {
+      onStateChange: (patch) => {
+        if (patch.capabilities !== undefined) app.mcpCapabilities = patch.capabilities;
+        if (patch.processes !== undefined) app.mcpProcesses = patch.processes;
+        if (patch.updateNotice !== undefined) app.mcpUpdateNotice = patch.updateNotice;
+      },
+    };
+    void initMcpCapabilities(client, callbacks);
+  }, MCP_POLL_INTERVAL_MS);
+}
+
+export function stopMcpPolling(host: PollingHost) {
+  if (host.mcpPollInterval == null) return;
+  clearInterval(host.mcpPollInterval);
+  host.mcpPollInterval = null;
 }

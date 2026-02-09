@@ -35,6 +35,11 @@ export default defineConfig({
       "dist/Clawdbot.app/**",
       "**/*.live.test.ts",
       "**/*.e2e.test.ts",
+      // Windows 缺少 NAPI-RS 原生模块预编译 (.node)，跳过依赖 matrix-sdk-crypto / lancedb 的测试
+      ...(isWindows ? [
+        "extensions/matrix/**/*.test.ts",
+        "extensions/memory-lancedb/**/*.test.ts",
+      ] : []),
     ],
     coverage: {
       provider: "v8",

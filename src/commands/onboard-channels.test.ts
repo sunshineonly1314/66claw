@@ -4,6 +4,7 @@ import type { ClawdbotConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { setupChannels } from "./onboard-channels.js";
+import { setLocale } from "../i18n/index.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import { discordPlugin } from "../../extensions/discord/src/channel.js";
@@ -31,6 +32,7 @@ vi.mock("./onboard-helpers.js", () => ({
 
 describe("setupChannels", () => {
   beforeEach(() => {
+    setLocale("en");
     setActivePluginRegistry(
       createTestRegistry([
         { pluginId: "discord", plugin: discordPlugin, source: "test" },

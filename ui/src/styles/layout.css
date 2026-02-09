@@ -5,14 +5,14 @@
 .shell {
   --shell-pad: 16px;
   --shell-gap: 16px;
-  --shell-nav-width: 220px;
-  --shell-topbar-height: 56px;
+  --shell-nav-width: 200px;
+  --shell-topbar-height: 48px;
   --shell-focus-duration: 200ms;
   --shell-focus-ease: var(--ease-out);
   height: 100vh;
   display: grid;
   grid-template-columns: var(--shell-nav-width) minmax(0, 1fr);
-  grid-template-rows: var(--shell-topbar-height) 1fr;
+  grid-template-rows: var(--shell-topbar-height) minmax(0, 1fr);
   grid-template-areas:
     "topbar topbar"
     "nav content";
@@ -29,14 +29,15 @@
 }
 
 .shell--chat {
-  min-height: 100vh;
   height: 100vh;
+  max-height: 100vh;
   overflow: hidden;
 }
 
 @supports (height: 100dvh) {
   .shell--chat {
     height: 100dvh;
+    max-height: 100dvh;
   }
 }
 
@@ -49,7 +50,7 @@
 }
 
 .shell--onboarding {
-  grid-template-rows: 0 1fr;
+  grid-template-rows: 0 minmax(0, 1fr);
 }
 
 .shell--onboarding .topbar {
@@ -77,8 +78,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 0 20px;
+  gap: 12px;
+  padding: 0 16px;
   height: var(--shell-topbar-height);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
@@ -91,8 +92,8 @@
 }
 
 .topbar .nav-collapse-toggle {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   margin-bottom: 0;
 }
 
@@ -114,8 +115,8 @@
 }
 
 .brand-logo {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
 }
 
@@ -160,16 +161,16 @@
 .topbar-status {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 /* TecbinAI Promo Banner - 高级简约风格 */
 .topbar-promo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 18px 8px 14px;
-  border-radius: 24px;
+  gap: 10px;
+  padding: 6px 14px 6px 12px;
+  border-radius: 20px;
   background: rgba(99, 102, 241, 0.1);
   border: 1.5px solid rgba(99, 102, 241, 0.25);
   text-decoration: none;
@@ -292,10 +293,10 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 13px;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 18px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
@@ -353,29 +354,48 @@
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
 }
 
-/* 试用用户：升级按钮 */
+/* 试用用户：升级按钮（金色 + 呼吸灯） */
 .topbar-support__btn--upgrade {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(16, 185, 129, 0.12));
-  border: 1.5px solid rgba(34, 197, 94, 0.35);
-  color: #22c55e;
+  background: linear-gradient(135deg, rgba(255, 185, 0, 0.18), rgba(255, 160, 0, 0.18));
+  border: 1.5px solid rgba(255, 185, 0, 0.5);
+  color: #cc7a00;
 }
 
 .topbar-support__btn--upgrade:hover {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(16, 185, 129, 0.22));
-  border-color: rgba(34, 197, 94, 0.5);
+  background: linear-gradient(135deg, rgba(255, 185, 0, 0.32), rgba(255, 160, 0, 0.32));
+  border-color: rgba(255, 185, 0, 0.75);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
+  box-shadow: 0 4px 16px rgba(255, 185, 0, 0.3);
   text-decoration: none;
-  color: #22c55e;
+  color: #a86200;
+}
+
+.topbar-support__btn--gold-breathe {
+  animation: topbar-gold-breathe 2.4s ease-in-out infinite;
+}
+
+.topbar-support__btn--gold-breathe:hover {
+  animation: none;
+}
+
+@keyframes topbar-gold-breathe {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 185, 0, 0.15);
+    border-color: rgba(255, 185, 0, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 185, 0, 0.35), 0 0 4px rgba(255, 160, 0, 0.2);
+    border-color: rgba(255, 185, 0, 0.7);
+  }
 }
 
 .topbar-support__icon {
-  font-size: 14px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 
 .topbar-support__text {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -447,6 +467,35 @@
   font-weight: 500;
 }
 
+/* QR code loading state */
+.topbar-support__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 160px;
+  height: 160px;
+  gap: 12px;
+}
+
+.topbar-support__spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: qrcode-spin 0.8s linear infinite;
+}
+
+@keyframes qrcode-spin {
+  to { transform: rotate(360deg); }
+}
+
+.topbar-support__loading-text {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* Dark mode */
 :root[data-theme="dark"] .topbar-support__btn--pro-support {
   background: linear-gradient(135deg, rgba(251, 191, 36, 0.1), rgba(245, 158, 11, 0.1));
@@ -461,9 +510,15 @@
 }
 
 :root[data-theme="dark"] .topbar-support__btn--upgrade {
-  background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(52, 211, 153, 0.1));
-  border-color: rgba(74, 222, 128, 0.3);
-  color: #4ade80;
+  background: linear-gradient(135deg, rgba(255, 185, 0, 0.12), rgba(255, 160, 0, 0.12));
+  border-color: rgba(255, 185, 0, 0.5);
+  color: #ffb900;
+}
+
+:root[data-theme="dark"] .topbar-support__btn--upgrade:hover {
+  color: #ffc933;
+  border-color: rgba(255, 185, 0, 0.75);
+  box-shadow: 0 4px 16px rgba(255, 185, 0, 0.25);
 }
 
 :root[data-theme="dark"] .topbar-support__popover {
@@ -486,11 +541,11 @@
 }
 
 .topbar-status .pill {
-  padding: 6px 10px;
-  gap: 6px;
-  font-size: 12px;
+  padding: 4px 8px;
+  gap: 5px;
+  font-size: 11px;
   font-weight: 500;
-  height: 32px;
+  height: 28px;
   box-sizing: border-box;
 }
 
@@ -523,11 +578,13 @@
 
 .nav {
   grid-area: nav;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px 12px;
+  padding: 10px 10px;
   background: var(--bg);
-  scrollbar-width: none; /* Firefox */
+  scrollbar-width: thin; /* Firefox: show thin scrollbar */
   transition:
     width var(--shell-focus-duration) var(--shell-focus-ease),
     padding var(--shell-focus-duration) var(--shell-focus-ease),
@@ -536,7 +593,20 @@
 }
 
 .nav::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
+  width: 4px; /* Chrome/Safari: thin scrollbar */
+}
+
+.nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nav::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 4px;
+}
+
+.nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.4);
 }
 
 .shell--chat-focus .nav {
@@ -606,9 +676,9 @@
 
 /* Nav groups */
 .nav-group {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .nav-group:last-child {
@@ -631,11 +701,11 @@
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
   color: var(--muted);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -681,7 +751,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: transparent;
@@ -716,7 +786,7 @@
 }
 
 .nav-item__text {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -747,10 +817,10 @@
 
 .content {
   grid-area: content;
-  padding: 12px 16px 32px;
+  padding: 8px 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -770,16 +840,17 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  padding: 4px 8px;
+  gap: 12px;
+  padding: 2px 8px;
   overflow: hidden;
+  flex-shrink: 0;
   transform-origin: top center;
   transition:
     opacity var(--shell-focus-duration) var(--shell-focus-ease),
     transform var(--shell-focus-duration) var(--shell-focus-ease),
     max-height var(--shell-focus-duration) var(--shell-focus-ease),
     padding var(--shell-focus-duration) var(--shell-focus-ease);
-  max-height: 80px;
+  max-height: 60px;
 }
 
 .shell--chat-focus .content-header {
@@ -791,7 +862,7 @@
 }
 
 .page-title {
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1.15;
@@ -800,9 +871,9 @@
 
 .page-sub {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
-  margin-top: 6px;
+  margin-top: 4px;
   letter-spacing: -0.01em;
 }
 
@@ -889,15 +960,20 @@
 
 .nav-footer {
   margin-top: auto;
-  padding-top: 16px;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  z-index: 1;
 }
 
 .nav-footer-link {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 10px 12px;
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, rgba(255, 92, 92, 0.12), rgba(168, 85, 247, 0.12));
   border: 1px solid rgba(255, 92, 92, 0.25);
@@ -914,7 +990,7 @@
 }
 
 .nav-footer-icon {
-  font-size: 22px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
@@ -926,7 +1002,7 @@
 }
 
 .nav-footer-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent);
   white-space: nowrap;
@@ -949,7 +1025,7 @@
     --shell-pad: 12px;
     --shell-gap: 12px;
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-areas:
       "topbar"
       "nav"
@@ -960,6 +1036,7 @@
     position: static;
     max-height: none;
     display: flex;
+    flex-direction: row;
     gap: 6px;
     overflow-x: auto;
     border-right: none;
@@ -1014,4 +1091,33 @@
   .list-item {
     grid-template-columns: 1fr;
   }
+}
+
+/* =============================================
+   QR CODE SCREENSHOT GUARD
+   Layer 1: @media print hides QR from print / PDF
+   Layer 2-5: JS toggles .qr-guard-active on <html>
+   ============================================= */
+
+/* Layer 1: Print / Save-as-PDF */
+@media print {
+  .topbar-support__qrcode,
+  .qr-wrap img {
+    visibility: hidden !important;
+  }
+}
+
+/* Layer 2-5: JS-driven guard — blur + hide all QR images */
+:root.qr-guard-active .topbar-support__qrcode,
+:root.qr-guard-active .qr-wrap img {
+  filter: blur(20px) brightness(1.2);
+  opacity: 0.3;
+  pointer-events: none;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+/* Smooth recovery when guard is removed */
+.topbar-support__qrcode,
+.qr-wrap img {
+  transition: filter 0.3s ease, opacity 0.3s ease;
 }

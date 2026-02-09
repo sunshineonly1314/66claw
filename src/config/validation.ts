@@ -220,9 +220,9 @@ export function validateConfigObjectWithPlugins(raw: unknown):
       const trimmed = key.trim();
       if (!trimmed) continue;
       if (!allowedChannels.has(trimmed)) {
-        issues.push({
+        warnings.push({
           path: `channels.${trimmed}`,
-          message: `unknown channel id: ${trimmed}`,
+          message: `unknown channel id: ${trimmed} (ignored)`,
         });
       }
     }

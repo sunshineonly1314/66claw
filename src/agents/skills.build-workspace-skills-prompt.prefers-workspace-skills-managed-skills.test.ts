@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildWorkspaceSkillsPrompt } from "./skills.js";
+import { clearBinaryCache } from "./skills/config.js";
 
 async function writeSkill(params: {
   dir: string;
@@ -112,10 +113,14 @@ describe("buildWorkspaceSkillsPrompt", () => {
       expect(defaultPrompt).not.toContain("env-skill");
 
       await fs.mkdir(binDir, { recursive: true });
-      const fakebinPath = path.join(binDir, "fakebin");
-      await fs.writeFile(fakebinPath, "#!/bin/sh\nexit 0\n", "utf-8");
-      await fs.chmod(fakebinPath, 0o755);
+      // Windows 需要 .cmd 扩展名才能被 hasBinary() 发现
+      const isWindows = process.platform === "win32";
+      const fakebinName = isWindows ? "fakebin.cmd" : "fakebin";
+      const fakebinPath = path.join(binDir, fakebinName);
+      await fs.writeFile(fakebinPath, isWindows ? "@echo off\nexit /b 0\n" : "#!/bin/sh\nexit 0\n", "utf-8");
+      if (!isWindows) await fs.chmod(fakebinPath, 0o755);
       process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+      clearBinaryCache(); // 清除缓存，让 hasBinary 重新扫描
 
       const gatedPrompt = buildWorkspaceSkillsPrompt(workspaceDir, {
         managedSkillsDir: path.join(workspaceDir, ".managed"),

@@ -8,7 +8,7 @@ import { isWebchatClient } from "../../utils/message-channel.js";
 
 import type { ResolvedGatewayAuth } from "../auth.js";
 import { isLoopbackAddress } from "../net.js";
-import { getHandshakeTimeoutMs } from "../server-constants.js";
+import { getHandshakeTimeoutMs, WS_PING_INTERVAL_MS, WS_PING_MAX_MISSED } from "../server-constants.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "../server-methods/types.js";
 import { formatError } from "../server-utils.js";
 import { logWs } from "../ws-log.js";
@@ -124,10 +124,12 @@ export function attachGatewayWsConnectionHandler(params: {
       payload: { nonce: connectNonce, ts: Date.now() },
     });
 
+    let _pingTimer: ReturnType<typeof setInterval> | null = null;
     const close = (code = 1000, reason?: string) => {
       if (closed) return;
       closed = true;
       clearTimeout(handshakeTimer);
+      if (_pingTimer) clearInterval(_pingTimer);
       if (client) clients.delete(client);
       try {
         socket.close(code, reason);
@@ -222,6 +224,36 @@ export function attachGatewayWsConnectionHandler(params: {
         close();
       }
     }, handshakeTimeoutMs);
+
+    // ── WebSocket ping/pong keepalive ──────────────────────────────
+    // Detects dead connections that TCP alone cannot catch (NAT timeouts,
+    // firewalls, proxies silently dropping idle sockets).  The interval
+    // is offset from the 30 s application-level tick to avoid burst.
+    let missedPongs = 0;
+    _pingTimer = setInterval(() => {
+      if (closed) {
+        if (_pingTimer) clearInterval(_pingTimer);
+        return;
+      }
+      if (missedPongs >= WS_PING_MAX_MISSED) {
+        logWsControl.warn(
+          `ping timeout conn=${connId} remote=${remoteAddr ?? "?"} missed=${missedPongs}`,
+        );
+        setCloseCause("ping-timeout", { missedPongs });
+        socket.terminate();
+        return;
+      }
+      missedPongs += 1;
+      try {
+        socket.ping();
+      } catch {
+        /* socket already closing */
+      }
+    }, WS_PING_INTERVAL_MS);
+
+    socket.on("pong", () => {
+      missedPongs = 0;
+    });
 
     attachGatewayWsMessageHandler({
       socket,

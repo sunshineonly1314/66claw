@@ -11,7 +11,7 @@ export const TAB_GROUPS = [
     label: "Control",
     tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"],
   },
-  { label: "Agent", tabs: ["playground", "skills", "nodes"] },
+  { label: "Agent", tabs: ["playground", "skills", "extensions", "nodes"] },
   { label: "Settings", tabs: ["config", "debug", "logs"] },
 ] as const;
 
@@ -25,7 +25,7 @@ export function getTabGroups() {
       label: t("nav.control"),
       tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"] as const,
     },
-    { label: t("nav.agent"), tabs: ["playground", "skills", "nodes"] as const },
+    { label: t("nav.agent"), tabs: ["playground", "skills", "extensions", "nodes"] as const },
     { label: t("nav.settings"), tabs: ["config", "debug", "logs"] as const },
   ];
 }
@@ -40,6 +40,7 @@ export type Tab =
   | "cron"
   | "playground"
   | "skills"
+  | "extensions"
   | "nodes"
   | "chat"
   | "config"
@@ -57,6 +58,7 @@ const TAB_PATHS: Record<Tab, string> = {
   cron: "/cron",
   playground: "/playground",
   skills: "/skills",
+  extensions: "/extensions",
   nodes: "/nodes",
   chat: "/chat",
   config: "/config",
@@ -150,6 +152,8 @@ export function iconForTab(tab: Tab): IconName {
       return "play";
     case "skills":
       return "zap";
+    case "extensions":
+      return "plug";
     case "nodes":
       return "monitor";
     case "config":
@@ -185,6 +189,8 @@ export function titleForTab(tab: Tab) {
       return t("nav.playground");
     case "skills":
       return t("nav.skills");
+    case "extensions":
+      return t("nav.extensions");
     case "nodes":
       return t("nav.nodes");
     case "chat":
@@ -222,6 +228,8 @@ export function subtitleForTab(tab: Tab) {
       return t("subtitle.playground");
     case "skills":
       return t("subtitle.skills");
+    case "extensions":
+      return t("subtitle.extensions");
     case "nodes":
       return t("subtitle.nodes");
     case "chat":

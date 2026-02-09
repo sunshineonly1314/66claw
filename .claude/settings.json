@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"d:\\\\codeknowledge\\\\clawdbot-main\\\\clawdbot-main\" log --oneline -5)"
+    ]
+  }
+}

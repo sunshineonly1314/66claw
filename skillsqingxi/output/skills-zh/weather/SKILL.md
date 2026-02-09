@@ -33,7 +33,7 @@ curl -s "wttr.in/London?T"
 提示：
 - 空格需 URL 编码：`wttr.in/New+York`
 - 支持机场代码：`wttr.in/JFK`
-- 单位：`?m`（公制）`?u`（英制）
+- 单位：`?m`（公制）`?u`（美制）
 - 仅今天：`?1` · 仅当前：`?0`
 - 生成 PNG 图片：`curl -s "wttr.in/Berlin.png" -o /tmp/weather.png`
 

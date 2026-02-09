@@ -129,6 +129,7 @@ namespace ClawdbotCN
         
         private int port = 18789;
         private string token = "clawdbot2026";
+        private string gatewayToken = null;  // Real token read from config (used for loading page)
         
         private int restartCount = 0;
         private DateTime lastRestartTime = DateTime.MinValue;
@@ -137,6 +138,11 @@ namespace ClawdbotCN
         
         // Thread-safe log writer
         private object logLock = new object();
+        // Batched output log buffer (reduces File.AppendAllText open/close per line)
+        private System.Text.StringBuilder outputLogBuffer = new System.Text.StringBuilder();
+        private int outputLogBufferCount = 0;
+        private string outputLogPath = null;
+        private const int OUTPUT_LOG_BATCH_SIZE = 20;
         
         // Menu items
         private ToolStripMenuItem menuStatus;
@@ -173,9 +179,9 @@ namespace ClawdbotCN
             healthTimer.Tick += HealthTimer_Tick;
             healthTimer.Start();
             
-            // Start watchdog timer (every 15 seconds)
+            // Start watchdog timer (every 30 seconds — generous to avoid false restarts on slow machines)
             watchdogTimer = new System.Windows.Forms.Timer();
-            watchdogTimer.Interval = 15000;
+            watchdogTimer.Interval = 30000;
             watchdogTimer.Tick += WatchdogTimer_Tick;
             watchdogTimer.Start();
             
@@ -261,7 +267,7 @@ namespace ClawdbotCN
             trayIcon = new NotifyIcon();
             trayIcon.ContextMenuStrip = contextMenu;
             trayIcon.Text = "ClawdbotCN AI";
-            trayIcon.DoubleClick += (s, e) => OpenConsole();
+            trayIcon.DoubleClick += (s, e) => { if (menuOpen != null && menuOpen.Enabled) OpenConsole(); };
             
             // 加载图标
             string iconPath = Path.Combine(installDir, "clawdbot.ico");
@@ -375,17 +381,17 @@ namespace ClawdbotCN
                 if (consecutiveUnhealthyCount <= 2)
                 {
                     // First few checks: likely still starting up, log at debug level
-                    LogDebug(string.Format("Watchdog: Gateway running but health check failed (attempt {0}/8, may still be starting)", 
+                    LogDebug(string.Format("Watchdog: Gateway running but health check failed (attempt {0}/4, may still be starting)",
                         consecutiveUnhealthyCount));
                 }
                 else
                 {
-                    Log(string.Format("Watchdog: Gateway running but not healthy (attempt {0}/8)", consecutiveUnhealthyCount));
+                    Log(string.Format("Watchdog: Gateway running but not healthy (attempt {0}/4)", consecutiveUnhealthyCount));
                 }
-                
-                // Give it 8 checks before force restart (8 * 15s = 120s)
-                // Gateway startup can take 30-60s on slow machines (license check, plugin init, etc.)
-                if (consecutiveUnhealthyCount >= 8)
+
+                // Give it 4 checks before force restart (4 * 30s = 120s)
+                // Gateway startup can take 30-90s on slow machines (license check, plugin init, etc.)
+                if (consecutiveUnhealthyCount >= 4)
                 {
                     LogWarn("Watchdog: Gateway unresponsive for 120+ seconds, force restarting...");
                     consecutiveUnhealthyCount = 0;
@@ -403,21 +409,32 @@ namespace ClawdbotCN
         
         private void CleanupBeforeRestart()
         {
-            // Clean lock file
-            string lockFile = Path.Combine(configDir, "gateway.lock");
-            if (File.Exists(lockFile))
+            // Clean lock files (Node.js stores locks in %TEMP%\clawdbot as gateway.{hash}.lock)
+            string lockDir = Path.Combine(Path.GetTempPath(), "clawdbot");
+            try
             {
-                try 
-                { 
-                    File.Delete(lockFile);
-                    Log("Cleaned up stale lock file");
-                } 
-                catch (Exception ex)
+                if (Directory.Exists(lockDir))
                 {
-                    Log("Failed to delete lock file: " + ex.Message);
+                    string[] lockFiles = Directory.GetFiles(lockDir, "gateway.*.lock");
+                    foreach (string lockFile in lockFiles)
+                    {
+                        try
+                        {
+                            File.Delete(lockFile);
+                            Log("Cleaned up stale lock file: " + Path.GetFileName(lockFile));
+                        }
+                        catch (Exception ex)
+                        {
+                            Log("Failed to delete lock file: " + ex.Message);
+                        }
+                    }
                 }
             }
-            
+            catch (Exception ex)
+            {
+                Log("Could not enumerate lock files: " + ex.Message);
+            }
+
             // Kill any orphan processes on port
             KillProcessOnPort(port);
         }
@@ -503,11 +520,18 @@ namespace ClawdbotCN
                 request.Timeout = 5000;
                 request.Method = "GET";
                 request.KeepAlive = false;  // Prevent stale connection reuse after gateway restart
-                
+
                 using (var response = request.GetResponse() as HttpWebResponse)
                 {
                     int statusCode = (int)response.StatusCode;
-                    return statusCode >= 200 && statusCode < 400;
+                    if (statusCode < 200 || statusCode >= 400) return false;
+                    // Check the "ready" field in JSON response (not just HTTP 200)
+                    // /api/health returns 200 even during startup; only "ready":true means fully initialised
+                    using (var reader = new System.IO.StreamReader(response.GetResponseStream()))
+                    {
+                        string body = reader.ReadToEnd();
+                        return body.Contains("\"ready\":true");
+                    }
                 }
             }
             catch (WebException ex)
@@ -574,24 +598,36 @@ namespace ClawdbotCN
                     return;
                 }
                 
-                // Clean up stale lock file
-                string lockFile = Path.Combine(configDir, "gateway.lock");
-                if (File.Exists(lockFile))
+                // Clean up stale lock files (pattern: gateway.{hash}.lock in %TEMP%\clawdbot)
+                try
                 {
-                    try
+                    string gatewayLockDir = Path.Combine(Path.GetTempPath(), "clawdbot");
+                    Directory.CreateDirectory(gatewayLockDir);
+                    string[] lockFiles = Directory.GetFiles(gatewayLockDir, "gateway.*.lock");
+                    foreach (string lockFile in lockFiles)
                     {
-                        File.Delete(lockFile);
-                        LogDebug("Removed stale lock file");
-                    }
-                    catch (Exception ex)
-                    {
-                        LogWarn("Could not delete lock file: " + ex.Message);
+                        try
+                        {
+                            File.Delete(lockFile);
+                            LogDebug("Removed stale lock file: " + Path.GetFileName(lockFile));
+                        }
+                        catch (Exception ex)
+                        {
+                            LogWarn("Could not delete lock file " + Path.GetFileName(lockFile) + ": " + ex.Message);
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    LogWarn("Could not enumerate lock files: " + ex.Message);
+                }
                 
-                // Kill any existing process on port
+                // Kill any existing process on port and wait for it to release
                 KillProcessOnPort(port);
-                Thread.Sleep(1000);
+                if (!WaitForPortAvailable(port, 10000))
+                {
+                    LogWarn("Port " + port + " still occupied after cleanup, proceeding anyway");
+                }
                 
                 // Ensure config file exists
                 EnsureConfig();
@@ -625,11 +661,13 @@ namespace ClawdbotCN
                 psi.EnvironmentVariables["CLAWDBOT_STATE_DIR"] = clawdbotCNConfigDir;
                 psi.EnvironmentVariables["CLAWDBOT_BUNDLED_PLUGINS_DIR"] = Path.Combine(installDir, "extensions");
                 psi.EnvironmentVariables["CLAWDBOT_BUNDLED_SKILLS_DIR"] = Path.Combine(installDir, "skills");
+                psi.EnvironmentVariables["CLAWDBOT_BUNDLED_TOOLS_DIR"] = Path.Combine(installDir, "tools");
                 psi.EnvironmentVariables["CLAWDBOT_GATEWAY_TOKEN"] = token;
                 psi.EnvironmentVariables["CLAWDBOT_REGION"] = "cn";
-                // Ensure system PATH is available
-                psi.EnvironmentVariables["PATH"] = Environment.GetEnvironmentVariable("PATH") + ";" + 
-                    Path.Combine(installDir, "node");
+                // Prepend node/ and tools/ to PATH so bundled binaries take priority over system-installed ones
+                // (consistent with start-gateway.bat: set "PATH=%NODE_PATH%;%TOOLS_PATH%;%PATH%")
+                psi.EnvironmentVariables["PATH"] = Path.Combine(installDir, "node") + ";" +
+                    Path.Combine(installDir, "tools") + ";" + Environment.GetEnvironmentVariable("PATH");
                 
                 gatewayProcess = Process.Start(psi);
                 
@@ -688,28 +726,28 @@ namespace ClawdbotCN
                 LogInfo("Gateway process started (PID: " + gatewayProcess.Id + ")");
                 
                 // Wait for startup (non-blocking for this thread, but blocks caller)
-                // Gateway may take up to 30-60s on first launch (license check, plugin init, etc.)
+                // Gateway may take up to 30-90s on first launch (license check, plugin init, etc.)
                 // Don't worry if this times out - the watchdog will continue monitoring
-                for (int i = 0; i < 60; i++)
+                for (int i = 0; i < 90; i++)
                 {
                     Thread.Sleep(1000);
-                    
+
                     // Check if process already exited (real crash)
                     if (gatewayProcess.HasExited)
                     {
                         LogError("Gateway process exited during startup (ExitCode: " + gatewayProcess.ExitCode + ")");
                         break;
                     }
-                    
+
                     if (IsGatewayHealthy())
                     {
                         LogInfo("Gateway is healthy after " + (i + 1) + " seconds");
                         consecutiveUnhealthyCount = 0;  // Reset watchdog counter on successful startup
                         break;
                     }
-                    if (i == 59)
+                    if (i == 89)
                     {
-                        LogWarn("Gateway startup timeout (60 seconds) - watchdog will continue monitoring");
+                        LogWarn("Gateway startup timeout (90 seconds) - watchdog will continue monitoring");
                     }
                 }
             }
@@ -737,38 +775,106 @@ namespace ClawdbotCN
         private void StopGatewayInternal()
         {
             LogInfo("Stopping Gateway...");
-            
+
+            // Flush any buffered gateway output before stopping
+            lock (logLock) { FlushOutputLogBuffer(); }
+
+            bool gracefulSuccess = false;
+
+            // Step 1: Try graceful shutdown via POST /api/shutdown
+            // The gateway's server-close.ts will stop Bonjour, channels, MCP,
+            // WebSockets, HTTP, etc. in order — avoiding resource leaks that
+            // contribute to heap corruption on subsequent restarts.
             try
             {
                 if (gatewayProcess != null && !gatewayProcess.HasExited)
                 {
-                    int pid = gatewayProcess.Id;
-                    gatewayProcess.Kill();
-                    bool exited = gatewayProcess.WaitForExit(5000);
-                    if (exited)
+                    var request = System.Net.WebRequest.Create(
+                        "http://127.0.0.1:" + port + "/api/shutdown") as System.Net.HttpWebRequest;
+                    request.Method = "POST";
+                    request.Timeout = 3000;
+                    request.ContentLength = 0;
+                    request.KeepAlive = false;
+                    request.Headers.Add("X-Clawdbot-Token", token);
+
+                    using (var response = request.GetResponse() as System.Net.HttpWebResponse)
                     {
-                        LogInfo("Gateway process " + pid + " stopped gracefully");
-                    }
-                    else
-                    {
-                        LogWarn("Gateway process " + pid + " did not exit within 5 seconds");
+                        if ((int)response.StatusCode == 200)
+                        {
+                            LogInfo("Graceful shutdown request accepted, waiting for process exit...");
+                            gracefulSuccess = gatewayProcess.WaitForExit(8000);
+                            if (gracefulSuccess)
+                            {
+                                LogInfo("Gateway exited gracefully (ExitCode: " + gatewayProcess.ExitCode + ")");
+                            }
+                            else
+                            {
+                                LogWarn("Graceful shutdown did not complete in 8s, falling back to kill");
+                            }
+                        }
                     }
                 }
+                else
+                {
+                    gracefulSuccess = true;
+                }
+            }
+            catch (System.Net.WebException)
+            {
+                LogDebug("Graceful shutdown endpoint not available (gateway may not be ready or is old version)");
             }
             catch (Exception ex)
             {
-                LogWarn("Error stopping Gateway: " + ex.Message);
+                LogDebug("Graceful shutdown request failed: " + ex.Message);
             }
-            
-            KillProcessOnPort(port);
-            
-            // Clean lock file
-            string lockFile = Path.Combine(configDir, "gateway.lock");
-            if (File.Exists(lockFile))
+
+            // Step 2: Fallback — Process.Kill() if graceful shutdown failed
+            if (!gracefulSuccess)
             {
-                try { File.Delete(lockFile); } catch { }
+                try
+                {
+                    if (gatewayProcess != null && !gatewayProcess.HasExited)
+                    {
+                        int pid = gatewayProcess.Id;
+                        gatewayProcess.Kill();
+                        bool exited = gatewayProcess.WaitForExit(5000);
+                        if (exited)
+                        {
+                            LogInfo("Gateway process " + pid + " killed (fallback)");
+                        }
+                        else
+                        {
+                            LogWarn("Gateway process " + pid + " did not exit within 5 seconds after kill");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogWarn("Error killing Gateway: " + ex.Message);
+                }
             }
-            
+
+            // Step 3: Kill any orphan processes still on the port
+            KillProcessOnPort(port);
+
+            // Step 4: Wait for port to become available (TCP TIME_WAIT cleanup)
+            WaitForPortAvailable(port, 10000);
+
+            // Step 5: Clean lock files (Node.js stores locks in %TEMP%\clawdbot, not configDir)
+            try
+            {
+                string lockDir = Path.Combine(Path.GetTempPath(), "clawdbot");
+                if (Directory.Exists(lockDir))
+                {
+                    string[] lockFiles = Directory.GetFiles(lockDir, "gateway.*.lock");
+                    foreach (string lf in lockFiles)
+                    {
+                        try { File.Delete(lf); } catch { }
+                    }
+                }
+            }
+            catch { }
+
             LogInfo("Gateway stopped");
         }
         
@@ -776,7 +882,8 @@ namespace ClawdbotCN
         {
             ThreadPool.QueueUserWorkItem(state => {
                 StopGatewayInternal();
-                Thread.Sleep(2000);
+                // StopGatewayInternal now includes WaitForPortAvailable,
+                // no additional sleep needed.
                 StartGatewayInternal();
                 UpdateStatusSafe();
             });
@@ -824,7 +931,65 @@ namespace ClawdbotCN
             }
             catch { }
         }
-        
+
+        /// <summary>
+        /// Wait for a TCP port to become available (no process listening).
+        /// Prevents restart storm caused by new gateway failing to bind because
+        /// the old gateway's socket is still in TCP TIME_WAIT.
+        /// </summary>
+        private bool WaitForPortAvailable(int targetPort, int maxWaitMs)
+        {
+            int elapsed = 0;
+            int pollInterval = 500;
+
+            while (elapsed < maxWaitMs)
+            {
+                if (!IsPortInUse(targetPort))
+                {
+                    if (elapsed > 0)
+                    {
+                        LogDebug("Port " + targetPort + " available after " + elapsed + "ms");
+                    }
+                    return true;
+                }
+
+                Thread.Sleep(pollInterval);
+                elapsed += pollInterval;
+            }
+
+            LogWarn("Port " + targetPort + " still in use after " + maxWaitMs + "ms");
+            return false;
+        }
+
+        /// <summary>
+        /// Check if a port is currently in use (something is listening and accepting connections).
+        /// </summary>
+        private bool IsPortInUse(int targetPort)
+        {
+            try
+            {
+                using (var client = new System.Net.Sockets.TcpClient())
+                {
+                    var result = client.BeginConnect("127.0.0.1", targetPort, null, null);
+                    bool connected = result.AsyncWaitHandle.WaitOne(500);
+                    if (connected)
+                    {
+                        try { client.EndConnect(result); } catch { }
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            catch (System.Net.Sockets.SocketException)
+            {
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private void EnsureConfig()
         {
             string configFile = Path.Combine(configDir, "clawdbot.json");
@@ -835,13 +1000,16 @@ namespace ClawdbotCN
                 Log("Created default config file");
             }
         }
-        
-        // Auto-fix config issues (missing plugins, invalid settings, etc.)
+
+        // Run doctor --fix SYNCHRONOUSLY before gateway start.
+        // Previously this ran on ThreadPool (async), causing a race condition where
+        // doctor and gateway both access the same config files concurrently.
+        // This race condition contributed to the Heap Corruption (0xC0000374) crash.
         private void RunDoctorFix(string nodePath, string entryPath)
         {
             try
             {
-                LogDebug("Running doctor --fix to clean up config...");
+                LogDebug("Running doctor --fix synchronously before gateway start...");
                 var psi = new ProcessStartInfo
                 {
                     FileName = nodePath,
@@ -852,33 +1020,31 @@ namespace ClawdbotCN
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };
-                
+
                 // Use isolated config directory
                 string clawdbotCNConfigDir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "ClawdbotCN"
                 );
-                
-                // 迁移旧版配置目录的设备ID（如果存在）
-                MigrateDeviceIdIfNeeded(clawdbotCNConfigDir);
-                
+
                 psi.EnvironmentVariables["CLAWDBOT_STATE_DIR"] = clawdbotCNConfigDir;
                 psi.EnvironmentVariables["CLAWDBOT_BUNDLED_PLUGINS_DIR"] = Path.Combine(installDir, "extensions");
                 psi.EnvironmentVariables["CLAWDBOT_REGION"] = "cn";
-                
+
                 var process = Process.Start(psi);
                 if (process != null)
                 {
-                    // Wait max 10 seconds for doctor to complete
-                    bool completed = process.WaitForExit(10000);
+                    // Wait max 15 seconds for doctor to complete
+                    bool completed = process.WaitForExit(15000);
                     if (completed && process.ExitCode == 0)
                     {
                         LogDebug("Doctor --fix completed successfully");
                     }
                     else if (!completed)
                     {
-                        LogWarn("Doctor --fix timed out, killing...");
+                        LogWarn("Doctor --fix timed out (15s), killing...");
                         try { process.Kill(); } catch { }
+                        try { process.WaitForExit(3000); } catch { }
                     }
                     else
                     {
@@ -967,9 +1133,12 @@ namespace ClawdbotCN
             string loadingPage = Path.Combine(installDir, "assets", "loading.html");
             if (File.Exists(loadingPage))
             {
-                string url = "file:///" + loadingPage.Replace("\\", "/") 
-                    + "?port=" + port 
-                    + "&token=" + token
+                // Use real gateway token from config so the loading page redirect
+                // can pass the correct token to the main UI (avoids auth mismatch).
+                string loadingToken = ReadGatewayTokenFromConfig();
+                string url = "file:///" + loadingPage.Replace("\\", "/")
+                    + "?port=" + port
+                    + "&token=" + loadingToken
                     + (isFirstLaunch && hasHistoryConfig ? "&hasHistory=1" : "");
                 Log("Opening loading page: " + url);
                 OpenUrl(url);
@@ -1024,7 +1193,7 @@ namespace ClawdbotCN
                 Thread.Sleep(1000);
             }
             
-            OpenUrl("http://localhost:" + port + "/setup");
+            OpenUrl("http://localhost:" + port + "/setup?token=" + token);
             UpdateStatusSafe();
         }
         
@@ -1210,13 +1379,23 @@ namespace ClawdbotCN
             LogInfo("========================================");
             LogInfo("Total Restarts This Session: " + totalRestarts);
             LogInfo("Total Errors This Hour: " + hourlyErrors);
-            
+
             healthTimer.Stop();
             watchdogTimer.Stop();
-            
+
+            // Stop gateway child process to prevent orphan node.exe
+            try
+            {
+                StopGatewayInternal();
+            }
+            catch (Exception ex)
+            {
+                LogWarn("Error stopping gateway during shutdown: " + ex.Message);
+            }
+
             trayIcon.Visible = false;
             trayIcon.Dispose();
-            
+
             LogInfo("Shutdown complete");
             Application.Exit();
         }
@@ -1290,13 +1469,39 @@ namespace ClawdbotCN
                 try
                 {
                     string line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + message + "\r\n";
-                    File.AppendAllText(logFile, line);
-                    RotateLogIfNeeded(logFile);
+                    outputLogBuffer.Append(line);
+                    outputLogBufferCount++;
+                    outputLogPath = logFile;
+
+                    if (outputLogBufferCount >= OUTPUT_LOG_BATCH_SIZE)
+                    {
+                        FlushOutputLogBuffer();
+                    }
                 }
                 catch { }
             }
         }
         
+        // Flush batched output log to disk
+        private void FlushOutputLogBuffer()
+        {
+            if (outputLogBufferCount > 0 && outputLogPath != null)
+            {
+                try
+                {
+                    File.AppendAllText(outputLogPath, outputLogBuffer.ToString());
+                    outputLogBuffer.Clear();
+                    outputLogBufferCount = 0;
+                    RotateLogIfNeeded(outputLogPath);
+                }
+                catch
+                {
+                    outputLogBuffer.Clear();
+                    outputLogBufferCount = 0;
+                }
+            }
+        }
+
         // 日志轮转：超过大小则重命名为 .1, .2, ...
         private void RotateLogIfNeeded(string logFile)
         {
@@ -1385,6 +1590,53 @@ namespace ClawdbotCN
             return "unknown";
         }
         
+        /// <summary>
+        /// Read the real gateway auth token from clawdbot.json config.
+        /// Falls back to the hardcoded placeholder token if unavailable.
+        /// </summary>
+        private string ReadGatewayTokenFromConfig()
+        {
+            try
+            {
+                string configFile = Path.Combine(configDir, "clawdbot.json");
+                if (!File.Exists(configFile)) return token;
+
+                string content = File.ReadAllText(configFile);
+                // Simple JSON parsing: find "gateway" > "auth" > "token" value
+                // Pattern: "token":"<value>" or "token": "<value>"
+                int gatewayIdx = content.IndexOf("\"gateway\"");
+                if (gatewayIdx < 0) return token;
+
+                int authIdx = content.IndexOf("\"auth\"", gatewayIdx);
+                if (authIdx < 0) return token;
+
+                int tokenIdx = content.IndexOf("\"token\"", authIdx);
+                if (tokenIdx < 0) return token;
+
+                // Find the value after "token":
+                int colonIdx = content.IndexOf(":", tokenIdx + 7);
+                if (colonIdx < 0) return token;
+
+                int quoteStart = content.IndexOf("\"", colonIdx + 1);
+                if (quoteStart < 0) return token;
+
+                int quoteEnd = content.IndexOf("\"", quoteStart + 1);
+                if (quoteEnd < 0) return token;
+
+                string configToken = content.Substring(quoteStart + 1, quoteEnd - quoteStart - 1).Trim();
+                if (configToken.Length >= 8)
+                {
+                    LogDebug("Using gateway token from config (" + configToken.Substring(0, 6) + "...)");
+                    return configToken;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug("Could not read gateway token from config: " + ex.Message);
+            }
+            return token;
+        }
+
         // 定期状态报告（每小时）
         private DateTime lastHourlyReport = DateTime.MinValue;
         private int totalRestarts = 0;

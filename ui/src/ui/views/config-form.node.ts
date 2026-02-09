@@ -3,9 +3,9 @@ import type { ConfigUiHints } from "../types";
 import {
   defaultValue,
   hintForPath,
-  humanize,
   isSensitivePath,
   pathKey,
+  resolveLabel,
   schemaType,
   type JsonSchema,
 } from "./config-form.shared";
@@ -49,7 +49,7 @@ export function renderNode(params: {
   const showLabel = params.showLabel ?? true;
   const type = schemaType(schema);
   const hint = hintForPath(path, hints);
-  const label = hint?.label ?? schema.title ?? humanize(String(path.at(-1)));
+  const label = resolveLabel(path, hint, schema);
   const help = hint?.help ?? schema.description;
   const key = pathKey(path);
 
@@ -228,7 +228,7 @@ function renderTextInput(params: {
   const { schema, value, path, hints, disabled, onPatch, inputType } = params;
   const showLabel = params.showLabel ?? true;
   const hint = hintForPath(path, hints);
-  const label = hint?.label ?? schema.title ?? humanize(String(path.at(-1)));
+  const label = resolveLabel(path, hint, schema);
   const help = hint?.help ?? schema.description;
   const isSensitive = hint?.sensitive ?? isSensitivePath(path);
   const placeholder =
@@ -287,7 +287,7 @@ function renderNumberInput(params: {
   const { schema, value, path, hints, disabled, onPatch } = params;
   const showLabel = params.showLabel ?? true;
   const hint = hintForPath(path, hints);
-  const label = hint?.label ?? schema.title ?? humanize(String(path.at(-1)));
+  const label = resolveLabel(path, hint, schema);
   const help = hint?.help ?? schema.description;
   const displayValue = value ?? schema.default ?? "";
   const numValue = typeof displayValue === "number" ? displayValue : 0;
@@ -338,7 +338,7 @@ function renderSelect(params: {
   const { schema, value, path, hints, disabled, options, onPatch } = params;
   const showLabel = params.showLabel ?? true;
   const hint = hintForPath(path, hints);
-  const label = hint?.label ?? schema.title ?? humanize(String(path.at(-1)));
+  const label = resolveLabel(path, hint, schema);
   const help = hint?.help ?? schema.description;
   const resolvedValue = value ?? schema.default;
   const currentIndex = options.findIndex(
@@ -381,7 +381,7 @@ function renderObject(params: {
   const { schema, value, path, hints, unsupported, disabled, onPatch } = params;
   const showLabel = params.showLabel ?? true;
   const hint = hintForPath(path, hints);
-  const label = hint?.label ?? schema.title ?? humanize(String(path.at(-1)));
+  const label = resolveLabel(path, hint, schema);
   const help = hint?.help ?? schema.description;
 
   const fallback = value ?? schema.default;
@@ -480,7 +480,7 @@ function renderArray(params: {
   const { schema, value, path, hints, unsupported, disabled, onPatch } = params;
   const showLabel = params.showLabel ?? true;
   const hint = hintForPath(path, hints);
-  const label = hint?.label ?? schema.title ?? humanize(String(path.at(-1)));
+  const label = resolveLabel(path, hint, schema);
   const help = hint?.help ?? schema.description;
 
   const itemsSchema = Array.isArray(schema.items) ? schema.items[0] : schema.items;

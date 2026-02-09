@@ -50,6 +50,7 @@ import {
 } from "./tool-policy.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { logWarn } from "../logger.js";
+import { initMCPManagerIfNeeded } from "../mcp/index.js";
 
 function isOpenAIProvider(provider?: string) {
   const normalized = provider?.trim().toLowerCase();
@@ -147,6 +148,9 @@ export function createClawdbotCodingTools(options?: {
   /** If true, the model has native vision capability */
   modelHasVision?: boolean;
 }): AnyAgentTool[] {
+  // Kick off MCP initialization (fire-and-forget, first call only)
+  void initMCPManagerIfNeeded(options?.config);
+
   const execToolName = "exec";
   const sandbox = options?.sandbox?.enabled ? options.sandbox : undefined;
   const {

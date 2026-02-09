@@ -23,7 +23,7 @@ import {
   filterNotificationsToShow,
   startTokenAutoRefresh,
 } from "../../license/index.js";
-import { enrichLicenseWithSupport } from "../../license/support-qrcode.js";
+import { enrichLicenseWithSupport, getPurchaseUrl } from "../../license/support-qrcode.js";
 import { getDeviceId } from "../../license/device-id.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -129,6 +129,14 @@ export const licenseHandlers: GatewayRequestHandlers = {
     const deviceId = state.device?.deviceId || getDeviceId();
     enrichLicenseWithSupport(state.license, deviceId);
 
+    // 注入购买链接到 renewalReminder（续费/过期弹窗的"立即续费"按钮使用）
+    if (state.renewalReminder && !state.renewalReminder.renewUrl) {
+      const purchaseUrl = getPurchaseUrl();
+      if (purchaseUrl) {
+        state.renewalReminder.renewUrl = purchaseUrl;
+      }
+    }
+
     respond(true, state);
   },
 
@@ -224,6 +232,14 @@ export const licenseHandlers: GatewayRequestHandlers = {
         // 注入技术支持二维码和购买链接
         const activatedDeviceId = response.device?.deviceId || getDeviceId();
         enrichLicenseWithSupport(response.license, activatedDeviceId);
+
+        // 注入购买链接到 renewalReminder
+        if (response.renewalReminder && !response.renewalReminder.renewUrl) {
+          const purchaseUrl = getPurchaseUrl();
+          if (purchaseUrl) {
+            response.renewalReminder.renewUrl = purchaseUrl;
+          }
+        }
 
         log.info("License activated successfully");
         respond(true, {

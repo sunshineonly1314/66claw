@@ -282,7 +282,17 @@ function createProfileContext(
         }
       }
 
+      // Retry loop: give the extension a few seconds to connect/attach a tab.
+      // Chrome may still be starting or the user may be clicking the extension icon.
+      const extensionDeadline = Date.now() + 5000;
+      while (Date.now() < extensionDeadline) {
+        if (await isReachable(600)) return;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      // Final check after retry window
       if (await isReachable(600)) return;
+
       // Relay server is up, but no attached tab yet. Prompt user to attach.
       throw new Error(
         `Chrome extension relay is running, but no tab is connected. Click the Clawdbot Chrome extension icon on a tab to attach it (profile "${profile.name}").`,

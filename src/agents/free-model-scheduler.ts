@@ -46,8 +46,18 @@ export class FreeModelScheduler {
    * 获取当前可用的免费模型账号
    */
   getAvailableAccounts(): FreeModelAccount[] {
+    const now = Date.now();
     return this.config.accounts
-      .filter((a) => a.enabled && a.status === "active")
+      .filter((a) => {
+        if (!a.enabled || a.status !== "active" || !a.apiKey?.trim()) return false;
+        // 过滤掉仍在冷却期内的账号（429 速率限制）
+        if (a.rateLimitedUntil) {
+          const cooldownEnd = new Date(a.rateLimitedUntil).getTime();
+          if (now < cooldownEnd) return false;
+          a.rateLimitedUntil = undefined;
+        }
+        return true;
+      })
       .sort((a, b) => a.priority - b.priority);
   }
 
@@ -259,6 +269,9 @@ export class FreeModelScheduler {
       (a) => a.providerId === providerId
     );
     if (account) {
+      if (!account.todayUsage) {
+        account.todayUsage = { tokens: 0, requests: 0, lastUpdated: new Date().toISOString() };
+      }
       account.todayUsage.tokens += tokens;
       account.todayUsage.requests += 1;
       account.todayUsage.lastUpdated = new Date().toISOString();
@@ -287,6 +300,10 @@ export class FreeModelScheduler {
           account.status = "active";
           account.lastError = undefined;
           account.lastErrorTime = undefined;
+        }
+        // 清除速率限制冷却标记
+        if (account.rateLimitedUntil) {
+          account.rateLimitedUntil = undefined;
         }
       }
 

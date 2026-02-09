@@ -296,7 +296,11 @@ describe("gateway bonjour advertiser", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(advertise).toHaveBeenCalledTimes(2);
 
-    await started.stop();
+    // stop() includes an 800 ms mDNS goodbye propagation delay that is a
+    // real setTimeout – advance fake timers so it resolves.
+    const stopPromise = started.stop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await stopPromise;
 
     await vi.advanceTimersByTimeAsync(120_000);
     expect(advertise).toHaveBeenCalledTimes(2);

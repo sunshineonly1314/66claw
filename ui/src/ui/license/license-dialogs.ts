@@ -16,6 +16,26 @@ import type {
 } from "./types.js";
 
 /**
+ * 打开购买/续费链接
+ * 优先使用传入的 URL，若为空则从 gateway /config/purchase-url 获取
+ */
+async function openPurchaseOrRenewUrl(renewUrl: string | null): Promise<void> {
+  if (renewUrl) {
+    window.open(renewUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+  try {
+    const resp = await fetch("/config/purchase-url");
+    if (!resp.ok) return;
+    const json = (await resp.json()) as { code?: number; data?: { xianyu?: string } };
+    const fetchedUrl = json?.code === 200 && json?.data?.xianyu ? json.data.xianyu : null;
+    if (fetchedUrl) {
+      window.open(fetchedUrl, "_blank", "noopener,noreferrer");
+    }
+  } catch { /* silent */ }
+}
+
+/**
  * 获取紧急程度对应的样式类
  */
 function getUrgencyClass(urgency: "info" | "warning" | "critical" | null): string {
@@ -47,6 +67,7 @@ function getUrgencyIcon(urgency: "info" | "warning" | "critical" | null): string
 
 /**
  * 渲染授权激活弹窗
+ * 前端校验：激活码必须以 "claw" 开头
  */
 export function renderActivationDialog(
   onActivate: (key: string) => void,
@@ -58,9 +79,29 @@ export function renderActivationDialog(
     e.preventDefault();
     const form = e.target as HTMLFormElement;
     const input = form.querySelector("input") as HTMLInputElement;
+    const errorEl = form.querySelector(".license-prefix-error") as HTMLElement | null;
     const value = input?.value?.trim();
-    if (value) {
-      onActivate(value);
+    if (!value) return;
+
+    // 前端校验：必须以 claw 开头
+    if (!value.toLowerCase().startsWith("claw")) {
+      if (errorEl) {
+        errorEl.textContent = "激活码必须以 claw 开头";
+        errorEl.style.display = "block";
+      }
+      input.focus();
+      return;
+    }
+    if (errorEl) errorEl.style.display = "none";
+    onActivate(value);
+  };
+
+  const handleInput = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const form = input.closest("form");
+    const errorEl = form?.querySelector(".license-prefix-error") as HTMLElement | null;
+    if (errorEl && input.value.toLowerCase().startsWith("claw")) {
+      errorEl.style.display = "none";
     }
   };
 
@@ -76,10 +117,12 @@ export function renderActivationDialog(
             <input
               type="text"
               class="license-input"
-              placeholder="请输入授权码 (如: clawd-xxx-xxx)"
+              placeholder="请输入授权码 (如: claw-xxx-xxx)"
               ?disabled=${loading}
+              @input=${handleInput}
               autofocus
             />
+            <p class="license-prefix-error license-error" style="display:none;"></p>
             ${error ? html`<p class="license-error">${error}</p>` : nothing}
             <div class="license-dialog-actions">
               <button type="button" class="license-btn license-btn-secondary" @click=${onCancel} ?disabled=${loading}>
@@ -91,7 +134,7 @@ export function renderActivationDialog(
             </div>
           </form>
           <p class="license-help">
-            还没有授权码？<a href="https://www.tecbinai.com/purchase" target="_blank">立即购买</a>
+            还没有授权码？<a href="#" @click=${(e: Event) => { e.preventDefault(); void openPurchaseOrRenewUrl(null); }} style="font-size:16px;font-weight:600;">立即购买</a>
           </p>
         </div>
       </div>
@@ -109,8 +152,7 @@ export function renderExpiredDialog(
   onClose: () => void,
 ): TemplateResult {
   const handleRenew = () => {
-    const url = renewUrl || "https://www.tecbinai.com";
-    window.open(url, "_blank");
+    void openPurchaseOrRenewUrl(renewUrl);
     onRenew();
   };
 
@@ -148,8 +190,7 @@ export function renderRenewalReminderDialog(
   const urgencyIcon = getUrgencyIcon(reminder.urgency);
 
   const handleRenew = () => {
-    const renewUrl = reminder.renewUrl || "https://www.tecbinai.com";
-    window.open(renewUrl, "_blank");
+    void openPurchaseOrRenewUrl(reminder.renewUrl);
     onRenew();
   };
 

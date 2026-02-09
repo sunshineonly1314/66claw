@@ -15,6 +15,13 @@ export type SkillsLoadConfig = {
   watch?: boolean;
   /** Debounce for the skills watcher (ms). */
   watchDebounceMs?: number;
+  /**
+   * Maximum number of skills injected into the system prompt.
+   * Prevents context-window explosion when many skills are installed.
+   * Skills are prioritised: always > has-deps-satisfied > no-deps.
+   * Default: 30. Set 0 to disable the limit.
+   */
+  maxPromptSkills?: number;
 };
 
 export type SkillsInstallConfig = {

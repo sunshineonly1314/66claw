@@ -14,6 +14,8 @@ import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
 import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import { handleControlUiAvatarRequest, handleControlUiHttpRequest } from "./control-ui.js";
+import { generateLoadingPageHtml } from "./server-loading-page.js";
+import { getGatewayPhase, isGatewayReady, requestGatewayShutdown } from "./server-ready.js";
 import { handleSetupWizardHttpRequest, shouldShowSetupWizard } from "./setup-wizard.js";
 import {
   extractHookToken,
@@ -238,13 +240,24 @@ export function createGatewayHttpServer(opts: {
 
     try {
       // Lightweight health check endpoint – no auth, no UI assets required.
-      // Used by the Windows service watchdog to verify the gateway is alive.
+      // Used by the Windows service watchdog and post-install scripts to verify
+      // the gateway is alive.  `ready` indicates full initialisation is complete;
+      // `phase` provides human-readable progress while `ready` is false.
       const healthPath = req.url?.split("?")[0];
       if (healthPath === "/api/health") {
+        const ready = isGatewayReady();
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache");
-        res.end(JSON.stringify({ ok: true, pid: process.pid, uptime: process.uptime() }));
+        res.end(
+          JSON.stringify({
+            ok: true,
+            ready,
+            phase: getGatewayPhase(),
+            pid: process.pid,
+            uptime: process.uptime(),
+          }),
+        );
         return;
       }
 
@@ -276,6 +289,95 @@ export function createGatewayHttpServer(opts: {
         res.setHeader("Cache-Control", "no-store");
         res.end(JSON.stringify({ ok: true, token: resolvedAuth.token ?? null }));
         return;
+      }
+
+      // Graceful shutdown endpoint — used by Windows service (ClawdbotService.cs)
+      // to trigger a clean shutdown instead of Process.Kill().
+      // Localhost-only + token-authenticated.
+      if (healthPath === "/api/shutdown") {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.setHeader("Allow", "POST");
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: false, error: "Method Not Allowed" }));
+          return;
+        }
+        const remoteIp = req.socket.remoteAddress;
+        const isLocal =
+          remoteIp === "127.0.0.1" ||
+          remoteIp === "::1" ||
+          remoteIp === "::ffff:127.0.0.1";
+        if (!isLocal) {
+          res.statusCode = 403;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: false, error: "Forbidden" }));
+          return;
+        }
+        const tokenHeader =
+          typeof req.headers["x-clawdbot-token"] === "string"
+            ? req.headers["x-clawdbot-token"].trim()
+            : undefined;
+        const authHeader = req.headers.authorization;
+        const bearerToken =
+          typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+            ? authHeader.slice(7).trim()
+            : undefined;
+        const providedToken = tokenHeader ?? bearerToken;
+        if (!providedToken || providedToken !== resolvedAuth.token) {
+          res.statusCode = 401;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
+          return;
+        }
+        // Respond immediately, then trigger graceful shutdown.
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: true, message: "shutdown initiated" }));
+        setImmediate(() => {
+          requestGatewayShutdown();
+        });
+        return;
+      }
+
+      // Purchase URL endpoint – public, no auth required.
+      // Client calls this to get the latest purchase link.
+      if (healthPath === "/config/purchase-url" && (req.method === "GET" || req.method === "HEAD")) {
+        try {
+          const { getPurchaseUrl, fetchRemotePurchaseUrl } = await import("../license/support-qrcode.js");
+          const localUrl = getPurchaseUrl();
+          const url = localUrl ?? (await fetchRemotePurchaseUrl());
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.setHeader("Cache-Control", "public, max-age=300");
+          res.end(JSON.stringify({
+            code: 200,
+            message: "success",
+            data: { xianyu: url ?? "" },
+          }));
+        } catch {
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({
+            code: 200,
+            message: "success",
+            data: { xianyu: "" },
+          }));
+        }
+        return;
+      }
+
+      // While subsystems are still initialising, serve a loading page for
+      // browser requests so users see progress instead of "connection refused".
+      // API and static-asset requests pass through so health polling works.
+      if (!isGatewayReady()) {
+        const reqPath = req.url?.split("?")[0] ?? "/";
+        if (!reqPath.startsWith("/api/") && !reqPath.startsWith("/assets/") && !/\.\w{1,5}$/.test(reqPath)) {
+          res.statusCode = 503;
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.setHeader("Retry-After", "3");
+          res.end(generateLoadingPageHtml());
+          return;
+        }
       }
 
       const configSnapshot = loadConfig();

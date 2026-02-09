@@ -7,7 +7,9 @@ import { resolveConfigPath, resolveGatewayLockDir, resolveStateDir } from "../co
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_POLL_INTERVAL_MS = 100;
-const DEFAULT_STALE_MS = 30_000;
+const DEFAULT_STALE_MS = 15_000;
+/** Interval at which the running gateway touches its heartbeat file. */
+const HEARTBEAT_TOUCH_INTERVAL_MS = 10_000;
 
 type LockPayload = {
   pid: number;
@@ -107,13 +109,42 @@ function readLinuxStartTime(pid: number): number | null {
   }
 }
 
+/** Derive the heartbeat file path from the lock file path. */
+function heartbeatPathFromLock(lockPath: string): string {
+  return lockPath.replace(/\.lock$/, ".heartbeat");
+}
+
+/** Check whether the heartbeat companion file was recently touched. */
+function isHeartbeatStale(lockPath: string, staleMs: number): boolean {
+  const hbPath = heartbeatPathFromLock(lockPath);
+  try {
+    const st = fsSync.statSync(hbPath);
+    return Date.now() - st.mtimeMs > staleMs;
+  } catch {
+    // Heartbeat file missing is treated as "unknown" – fall through to
+    // other checks rather than immediately declaring dead.
+    return false;
+  }
+}
+
 function resolveGatewayOwnerStatus(
   pid: number,
   payload: LockPayload | null,
   platform: NodeJS.Platform,
+  lockPath?: string,
+  staleMs?: number,
 ): LockOwnerStatus {
   if (!isAlive(pid)) return "dead";
-  if (platform !== "linux") return "alive";
+
+  // On non-Linux platforms (especially Windows) we cannot inspect /proc to
+  // verify the PID actually belongs to a gateway.  Use the heartbeat
+  // companion file as a secondary liveness signal.
+  if (platform !== "linux") {
+    if (lockPath && typeof staleMs === "number" && isHeartbeatStale(lockPath, staleMs)) {
+      return "dead";
+    }
+    return "alive";
+  }
 
   const payloadStartTime = payload?.startTime;
   if (Number.isFinite(payloadStartTime)) {
@@ -190,12 +221,35 @@ export async function acquireGatewayLock(
         payload.startTime = startTime;
       }
       await handle.writeFile(JSON.stringify(payload), "utf8");
+
+      // Start a background heartbeat that periodically touches a companion
+      // file so other processes (on any platform) can detect a hung gateway
+      // whose PID is still alive but unresponsive.
+      const hbPath = heartbeatPathFromLock(lockPath);
+      const touchHeartbeat = () => {
+        try {
+          const now = new Date();
+          fsSync.utimesSync(hbPath, now, now);
+        } catch {
+          try {
+            fsSync.writeFileSync(hbPath, "", "utf8");
+          } catch {
+            /* best-effort */
+          }
+        }
+      };
+      touchHeartbeat();
+      const hbTimer = setInterval(touchHeartbeat, HEARTBEAT_TOUCH_INTERVAL_MS);
+      hbTimer.unref?.();
+
       return {
         lockPath,
         configPath,
         release: async () => {
+          clearInterval(hbTimer);
           await handle.close().catch(() => undefined);
           await fs.rm(lockPath, { force: true });
+          await fs.rm(hbPath, { force: true }).catch(() => undefined);
         },
       };
     } catch (err) {
@@ -207,10 +261,11 @@ export async function acquireGatewayLock(
       lastPayload = await readLockPayload(lockPath);
       const ownerPid = lastPayload?.pid;
       const ownerStatus = ownerPid
-        ? resolveGatewayOwnerStatus(ownerPid, lastPayload, platform)
+        ? resolveGatewayOwnerStatus(ownerPid, lastPayload, platform, lockPath, staleMs)
         : "unknown";
       if (ownerStatus === "dead" && ownerPid) {
         await fs.rm(lockPath, { force: true });
+        await fs.rm(heartbeatPathFromLock(lockPath), { force: true }).catch(() => undefined);
         continue;
       }
       if (ownerStatus !== "alive") {

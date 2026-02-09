@@ -150,7 +150,9 @@ async function generateIndex(options) {
 
       const skill = {
         name: entry.name,
+        nameZh: meta.nameZh || meta.name_zh || undefined,
         description: description || meta.name || entry.name,
+        descriptionZh: meta.descriptionZh || meta.description_zh || undefined,
         emoji: meta.emoji || "📦",
         path: entry.name,
         version: meta.version || "1.0.0",

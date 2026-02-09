@@ -72,6 +72,64 @@ function resolveShellFromPath(name: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Normalize cmd.exe idioms that break in PowerShell.
+ *
+ * In cmd.exe: `start "window title" "C:\path\app.exe"` opens app with a title.
+ * In PowerShell: `start` is an alias for `Start-Process`, so the above becomes
+ * `Start-Process "" "C:\path\app.exe"` — FilePath="" which is an error.
+ *
+ * Also handles UWP/MSIX app paths (`shell:appsFolder\...` or WindowsApps paths)
+ * which cannot be launched directly and need `explorer.exe`.
+ *
+ * This function rewrites the most common broken patterns:
+ *   start "" "path"                    → Start-Process -FilePath "path"
+ *   start "title" "path"              → Start-Process -FilePath "path"
+ *   start "title" "shell:appsFolder\..." → explorer.exe "shell:appsFolder\..."
+ *   Start-Process "C:\...\WindowsApps\..." → explorer.exe "shell:appsFolder\<id>"
+ */
+export function normalizeWindowsCommand(command: string): string {
+  if (process.platform !== "win32") return command;
+
+  let result = command;
+
+  // Step 1: Fix `start "title" "path"` → `Start-Process -FilePath "path"`
+  // Full-line match
+  const startWithTitleRe = /^(\s*)start\s+"[^"]*"\s+"([^"]+)"\s*$/i;
+  const fullMatch = result.match(startWithTitleRe);
+  if (fullMatch) {
+    result = `${fullMatch[1]}Start-Process -FilePath "${fullMatch[2]}"`;
+  } else {
+    // Inline occurrences (after ; or &&)
+    result = result.replace(
+      /(?<=;\s*|&&\s*|^\s*)start\s+"[^"]*"\s+"([^"]+)"/gi,
+      (_, exePath) => `Start-Process -FilePath "${exePath}"`,
+    );
+  }
+
+  // Step 2: Fix shell:appsFolder references — these must use explorer.exe
+  // Pattern: Start-Process ... "shell:appsFolder\..." or start ... "shell:appsFolder\..."
+  result = result.replace(
+    /Start-Process\s+(?:-FilePath\s+)?"(shell:[^"]+)"/gi,
+    (_, shellUri) => `explorer.exe "${shellUri}"`,
+  );
+  // Also catch: start "shell:appsFolder\..." (single-arg start with shell: URI)
+  result = result.replace(
+    /^(\s*)start\s+"(shell:[^"]+)"\s*$/im,
+    (_, ws, shellUri) => `${ws}explorer.exe "${shellUri}"`,
+  );
+
+  // Step 3: Fix WindowsApps paths — these are protected, need shell:appsFolder
+  // Pattern: Start-Process ... "C:\Program Files\WindowsApps\<PackageId>\...\app.exe"
+  // Extract the PackageFamilyName and suggest explorer shell:appsFolder launch
+  result = result.replace(
+    /Start-Process\s+(?:-FilePath\s+)?"C:\\Program Files\\WindowsApps\\([^\\]+)\\[^"]*"/gi,
+    (_, packageId) => `explorer.exe "shell:appsFolder\\${packageId}!App"`,
+  );
+
+  return result;
+}
+
 export function sanitizeBinaryOutput(text: string): string {
   // Strip ANSI escape sequences (CSI, OSC, SS2/SS3, DCS, etc.) that pollute output
   // on Windows terminals. These come from PowerShell color codes, window title

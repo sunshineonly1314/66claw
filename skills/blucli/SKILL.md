@@ -1,6 +1,8 @@
 ---
 name: blucli
 description: BluOS CLI (blu) for discovery, playback, grouping, and volume.
+nameZh: "蓝牙控制"
+descriptionZh: "BluOS CLI用于发现、播放、分组和音量控制"
 homepage: https://blucli.sh
 metadata: {"clawdbot":{"emoji":"🫐","requires":{"bins":["blu"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/blucli/cmd/blu@latest","bins":["blu"],"label":"Install blucli (go)"}]}}
 ---

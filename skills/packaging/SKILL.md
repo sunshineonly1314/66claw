@@ -1,3 +1,10 @@
+---
+name: packaging
+description: 打包 Clawdbot 为各平台分发包的完整指南。
+nameZh: "打包工具"
+descriptionZh: "打包Clawdbot为各平台分发包的完整指南"
+---
+
 # Packaging Skill
 
 打包 Clawdbot 为各平台分发包的完整指南。

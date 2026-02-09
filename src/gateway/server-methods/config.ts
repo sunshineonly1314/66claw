@@ -30,7 +30,30 @@ import {
   validateConfigSchemaParams,
   validateConfigSetParams,
 } from "../protocol/index.js";
+import type { ClawdbotConfig } from "../../config/types.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
+
+/**
+ * Fields that must never be silently dropped when the incoming config omits
+ * them.  Before writing, we back-fill these from the current on-disk snapshot
+ * so that a partial config (e.g. from raw-edit mode or an external API call)
+ * cannot accidentally erase critical state such as the license key.
+ */
+const PROTECTED_CONFIG_FIELDS: ReadonlyArray<keyof ClawdbotConfig> = ["license"];
+
+function preserveProtectedFields(
+  incoming: ClawdbotConfig,
+  current: ClawdbotConfig | undefined,
+): ClawdbotConfig {
+  if (!current) return incoming;
+  let patched = incoming;
+  for (const field of PROTECTED_CONFIG_FIELDS) {
+    if (patched[field] === undefined && current[field] !== undefined) {
+      patched = { ...patched, [field]: current[field] };
+    }
+  }
+  return patched;
+}
 
 function resolveBaseHash(params: unknown): string | null {
   const raw = (params as { baseHash?: unknown })?.baseHash;
@@ -182,13 +205,14 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    await writeConfigFile(validated.config);
+    const safeCfg = preserveProtectedFields(validated.config, snapshot.config);
+    await writeConfigFile(safeCfg);
     respond(
       true,
       {
         ok: true,
         path: CONFIG_PATH_CLAWDBOT,
-        config: validated.config,
+        config: safeCfg,
       },
       undefined,
     );
@@ -357,13 +381,14 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    const safeCfg = preserveProtectedFields(validated.config, snapshot.config);
 
     // 计算配置变更，决定是热更新还是完整重启
     const prevConfig = loadConfig();
-    const changedPaths = diffConfigPaths(prevConfig, validated.config);
+    const changedPaths = diffConfigPaths(prevConfig, safeCfg);
     const reloadPlan = buildGatewayReloadPlan(changedPaths);
 
-    await writeConfigFile(validated.config);
+    await writeConfigFile(safeCfg);
 
     const sessionKey =
       typeof (params as { sessionKey?: unknown }).sessionKey === "string"
@@ -430,7 +455,7 @@ export const configHandlers: GatewayRequestHandlers = {
       {
         ok: true,
         path: CONFIG_PATH_CLAWDBOT,
-        config: validated.config,
+        config: safeCfg,
         restart,
         hotReloadedChannels: hotReloadedChannels.length > 0 ? hotReloadedChannels : undefined,
       },

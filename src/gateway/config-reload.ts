@@ -98,6 +98,8 @@ const BASE_RELOAD_RULES_TAIL: ReloadRule[] = [
   { prefix: "approvals", kind: "none" },    // 工具审批配置
   { prefix: "web", kind: "none" },          // WhatsApp Web 配置
   { prefix: "credentials", kind: "none" },  // 凭据存储
+  { prefix: "mcp", kind: "none" },          // MCP 服务器配置（独立生命周期，无需重启 Gateway）
+  { prefix: "setup", kind: "none" },        // 安装向导状态
   // ========================================
   // 需要重启 Gateway 的配置
   // ========================================

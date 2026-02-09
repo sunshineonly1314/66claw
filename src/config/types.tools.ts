@@ -332,8 +332,8 @@ export type ToolsConfig = {
     search?: {
       /** Enable web search tool (default: true when API key is present). */
       enabled?: boolean;
-      /** Search provider ("brave" or "perplexity"). */
-      provider?: "brave" | "perplexity";
+      /** Search provider ("brave", "perplexity", "baidu", or "bing"). */
+      provider?: "brave" | "perplexity" | "baidu" | "bing";
       /** Brave Search API key (optional; defaults to BRAVE_API_KEY env var). */
       apiKey?: string;
       /** Default search results count (1-10). */
@@ -424,6 +424,16 @@ export type ToolsConfig = {
     enabled?: boolean;
     /** Approved senders for /elevated (per-provider allowlists). */
     allowFrom?: AgentElevatedAllowFromConfig;
+  };
+  /** Write tool defaults. */
+  write?: {
+    /** Allow the write tool to delete files (default: true). */
+    allowDelete?: boolean;
+  };
+  /** Browser tool defaults. */
+  browser?: {
+    /** Browser user-data profile name (default: "default"). */
+    profile?: string;
   };
   /** Exec tool defaults. */
   exec?: ExecToolConfig;

@@ -1,6 +1,8 @@
 ---
 name: coding-agent
 description: Run Codex CLI, Claude Code, OpenCode, or Pi Coding Agent via background process for programmatic control.
+nameZh: "代码助手"
+descriptionZh: "通过后台进程运行代码助手进行编程"
 metadata: {"clawdbot":{"emoji":"🧩","requires":{"anyBins":["claude","codex","opencode","pi"]}}}
 ---
 

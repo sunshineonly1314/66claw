@@ -30,6 +30,9 @@ import { capabilityDetectHandlers } from "./server-methods/capability-detect.js"
 import { securityHandlers } from "./server-methods/security.js";
 import { feedbackHandlers } from "./server-methods/feedback.js";
 import { freeModelsHandlers } from "./server-methods/free-models.js";
+import { skillsBatchHandlers } from "./server-methods/skills-batch.js";
+import { supportQrcodeHandlers } from "./server-methods/support-qrcode.js";
+import { mcpHandlers } from "./server-methods/mcp-methods.js";
 
 const ADMIN_SCOPE = "operator.admin";
 const READ_SCOPE = "operator.read";
@@ -57,6 +60,7 @@ const PAIRING_METHODS = new Set([
   "device.pair.reject",
   "device.token.rotate",
   "device.token.revoke",
+  "device.remove",
   "node.rename",
 ]);
 const ADMIN_METHOD_PREFIXES = ["exec.approvals."];
@@ -98,6 +102,18 @@ const READ_METHODS = new Set([
   "freeModels.config.get",
   "freeModels.stats",
   "freeModels.current",
+  // Skills batch (read)
+  "skills.batch.check",
+  // Support QR code (read)
+  "support.qrcode.preload",
+  "support.qrcode.status",
+  // MCP (read)
+  "mcp.status",
+  "mcp.servers.list",
+  // MCP marketplace (read)
+  "mcp.marketplace.list",
+  "mcp.marketplace.detail",
+  "mcp.marketplace.recommend",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -132,6 +148,21 @@ const WRITE_METHODS = new Set([
   "freeModels.account.test",
   "freeModels.account.reorder",
   "freeModels.dailyReset",
+  // Skills batch (write)
+  "skills.batch.install",
+  "skills.batch.cancel",
+  "skills.batch.report-failures",
+  // MCP (write — operational control only, NOT config mutations)
+  "mcp.restart",
+  "mcp.disable",
+  "mcp.enable",
+  "mcp.sync",
+  // MCP marketplace (write)
+  "mcp.marketplace.install",
+  "mcp.marketplace.sync",
+  // MCP server management (write)
+  "mcp.servers.add",
+  "mcp.servers.remove",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {
@@ -220,6 +251,9 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...securityHandlers,
   ...feedbackHandlers,
   ...freeModelsHandlers,
+  ...skillsBatchHandlers,
+  ...supportQrcodeHandlers,
+  ...mcpHandlers,
 };
 
 export async function handleGatewayRequest(

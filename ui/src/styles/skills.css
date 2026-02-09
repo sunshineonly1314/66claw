@@ -454,6 +454,49 @@
   stroke-width: 1.5px;
 }
 
+/* Missing Dependencies - Grouped per-skill display */
+.skill-missing-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.skill-missing-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.skill-missing-group svg {
+  width: 13px;
+  height: 13px;
+  stroke: var(--warn);
+  fill: none;
+  stroke-width: 1.5px;
+  flex-shrink: 0;
+}
+
+.skill-missing-group__items {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.skill-missing-group__hint {
+  color: var(--muted);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.skill-missing-group__hint::before {
+  content: "·";
+  margin-right: 4px;
+}
+
 /* API Key Field */
 .skill-apikey {
   margin-top: 12px;

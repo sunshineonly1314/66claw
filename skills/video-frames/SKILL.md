@@ -1,8 +1,10 @@
 ---
 name: video-frames
 description: Extract frames or short clips from videos using ffmpeg.
+nameZh: "视频帧提取"
+descriptionZh: "从视频中提取关键帧图片"
 homepage: https://ffmpeg.org
-metadata: {"clawdbot":{"emoji":"🎞️","requires":{"bins":["ffmpeg"]},"install":[{"id":"brew","kind":"brew","formula":"ffmpeg","bins":["ffmpeg"],"label":"Install ffmpeg (brew)"}]}}
+metadata: {"clawdbot":{"emoji":"🎞️","requires":{"bins":["ffmpeg"]},"install":[{"id":"brew","kind":"brew","formula":"ffmpeg","bins":["ffmpeg"],"label":"Install ffmpeg (brew)"},{"id":"download","kind":"download","url":"https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip","archive":"zip","extract":true,"bins":["ffmpeg"],"label":"Download ffmpeg (Windows)","os":["win32"]}]}}
 ---
 
 # Video Frames (ffmpeg)

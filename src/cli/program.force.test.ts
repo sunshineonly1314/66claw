@@ -17,6 +17,10 @@ import {
   parseLsofOutput,
 } from "./ports.js";
 
+// lsof / SIGTERM / SIGKILL 均为 Unix 行为，Windows 使用 netstat + taskkill
+const isWindows = process.platform === "win32";
+const itUnix = isWindows ? it.skip : it;
+
 describe("gateway --force helpers", () => {
   let originalKill: typeof process.kill;
 
@@ -38,7 +42,7 @@ describe("gateway --force helpers", () => {
     ]);
   });
 
-  it("returns empty list when lsof finds nothing", () => {
+  itUnix("returns empty list when lsof finds nothing", () => {
     (execFileSync as unknown as vi.Mock).mockImplementation(() => {
       const err = new Error("no matches");
       // @ts-expect-error partial
@@ -48,7 +52,7 @@ describe("gateway --force helpers", () => {
     expect(listPortListeners(18789)).toEqual([]);
   });
 
-  it("throws when lsof missing", () => {
+  itUnix("throws when lsof missing", () => {
     (execFileSync as unknown as vi.Mock).mockImplementation(() => {
       const err = new Error("not found");
       // @ts-expect-error partial
@@ -58,7 +62,7 @@ describe("gateway --force helpers", () => {
     expect(() => listPortListeners(18789)).toThrow(/lsof not found/);
   });
 
-  it("kills each listener and returns metadata", () => {
+  itUnix("kills each listener and returns metadata", () => {
     (execFileSync as unknown as vi.Mock).mockReturnValue(
       ["p42", "cnode", "p99", "cssh", ""].join("\n"),
     );
@@ -78,7 +82,7 @@ describe("gateway --force helpers", () => {
     ]);
   });
 
-  it("retries until the port is free", async () => {
+  itUnix("retries until the port is free", async () => {
     vi.useFakeTimers();
     let call = 0;
     (execFileSync as unknown as vi.Mock).mockImplementation(() => {
@@ -110,7 +114,7 @@ describe("gateway --force helpers", () => {
     vi.useRealTimers();
   });
 
-  it("escalates to SIGKILL if SIGTERM doesn't free the port", async () => {
+  itUnix("escalates to SIGKILL if SIGTERM doesn't free the port", async () => {
     vi.useFakeTimers();
     let call = 0;
     (execFileSync as unknown as vi.Mock).mockImplementation(() => {

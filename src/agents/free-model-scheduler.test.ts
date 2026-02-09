@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { FreeModelScheduler, createFreeModelScheduler } from "./free-model-scheduler.js";
 import type { FreeModelsConfig, FreeModelAccount } from "../config/types.free-models.js";
+import { getBeijingDateString } from "../config/free-models-time.js";
 
 // ============================================================================
 // Mock 配置
@@ -421,7 +422,7 @@ describe("每日重置", () => {
   });
 
   it("同一天多次调用 dailyReset 不应该重复重置", async () => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getBeijingDateString();
     const config = createMockConfig({
       stats: {
         todaySavings: 10,

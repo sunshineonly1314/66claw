@@ -118,7 +118,9 @@ export const SkillsMarketListParamsSchema = Type.Object({}, { additionalProperti
 export const MarketSkillMetaSchema = Type.Object(
   {
     name: NonEmptyString,
+    nameZh: Type.Optional(Type.String()),
     description: Type.String(),
+    descriptionZh: Type.Optional(Type.String()),
     emoji: Type.Optional(Type.String()),
     path: NonEmptyString,
     version: Type.Optional(Type.String()),

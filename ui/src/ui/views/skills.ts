@@ -176,6 +176,16 @@ function getLocalizedSkillDesc(skillName: string, originalDesc: string): string 
   return t("skills.noDescription") || "点击安装了解更多";
 }
 
+/**
+ * 获取 tag 本地化名称
+ * 优先使用 i18n 翻译，否则原样返回（proxy 已可能返回中文 tag）
+ */
+function getLocalizedTag(tag: string): string {
+  const key = `skillTag.${tag.toLowerCase().replace(/[^a-z0-9-]/g, '-')}` as const;
+  const translated = tMaybe(key);
+  return (translated && translated !== key) ? translated : tag;
+}
+
 // ============================================================================
 // Skills 分类定义（面向用户场景）
 // ============================================================================
@@ -253,7 +263,7 @@ function categorizeSkill(skillName: string): string {
 }
 
 // 智能搜索：支持关键词和同义词匹配
-function smartSearchSkills<T extends { name: string; description: string; tags?: string[] }>(
+function smartSearchSkills<T extends { name: string; description: string; nameZh?: string; descriptionZh?: string; tags?: string[] }>(
   skills: T[],
   query: string,
 ): { matched: T[]; category: string | null } {
@@ -280,8 +290,10 @@ function smartSearchSkills<T extends { name: string; description: string; tags?:
     const searchText = [
       skill.name,
       skill.description,
+      skill.nameZh,
+      skill.descriptionZh,
       ...(skill.tags ?? []),
-    ].join(" ").toLowerCase();
+    ].filter(Boolean).join(" ").toLowerCase();
 
     // 直接文本匹配
     if (searchText.includes(lowerQuery)) {
@@ -686,9 +698,6 @@ export function renderSkills(props: SkillsProps) {
       </div>
     </section>
 
-    <!-- ClawdbotCN 专属：小白用户诊断卡片 -->
-    ${renderDiagnosticCard(skills, props)}
-    
     <!-- 帮助说明卡片 -->
     <section class="card help-card">
       <details>
@@ -985,7 +994,7 @@ function renderRemoteSkill(skill: RemoteSkillMeta, props: SkillsProps) {
         ${skill.tags && skill.tags.length > 0
           ? html`
               <div class="skill-tags">
-                ${skill.tags.slice(0, 5).map((tag) => html`<span class="skill-tag">${tag}</span>`)}
+                ${skill.tags.slice(0, 5).map((tag) => html`<span class="skill-tag">${getLocalizedTag(tag)}</span>`)}
                 ${skill.tags.length > 5 ? html`<span class="skill-tag">+${skill.tags.length - 5}</span>` : nothing}
               </div>
             `
@@ -1027,14 +1036,9 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
   const apiKey = props.edits[skill.skillKey] ?? "";
   const message = props.messages[skill.skillKey] ?? null;
   const canInstall = skill.install.length > 0 && skill.missing.bins.length > 0;
-  const missing = [
-    ...skill.missing.bins.map((b) => `bin:${b}`),
-    ...skill.missing.env.map((e) => `env:${e}`),
-    ...skill.missing.config.map((c) => `config:${c}`),
-    ...skill.missing.os.map((o) => `os:${o}`),
-  ];
-  const localizedName = getLocalizedSkillName(skill.name);
-  const localizedDesc = getLocalizedSkillDesc(skill.name, skill.description);
+  const hasMissing = skill.missing.bins.length > 0 || skill.missing.env.length > 0 || skill.missing.config.length > 0 || skill.missing.os.length > 0;
+  const localizedName = (skill as any).nameZh || getLocalizedSkillName(skill.name);
+  const localizedDesc = (skill as any).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
 
   return html`
     <div class="skill-card">
@@ -1042,24 +1046,47 @@ function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
       <div class="skill-icon ${skill.eligible ? "skill-icon--installed" : ""}">
         ${skill.eligible ? icons.shieldCheck : icons.package}
       </div>
-      
+
       <!-- Content -->
       <div class="skill-content">
         <div class="skill-header">
           <span class="skill-name">${localizedName}</span>
           <span class="skill-source">${skill.source}</span>
         </div>
-        
+
         <div class="skill-desc">${clampText(localizedDesc, 160)}</div>
-        
-        ${missing.length > 0
-          ? html`
-              <div class="skill-missing">
-                ${icons.alertCircle}
-                <span>${t("skills.missing")}: ${missing.join(", ")}</span>
+
+        ${hasMissing ? html`
+          <div class="skill-missing-groups">
+            ${skill.missing.bins.length > 0 ? html`
+              <div class="skill-missing-group">
+                ${icons.terminal}
+                <span class="skill-missing-group__items">${skill.missing.bins.join(", ")}</span>
+                <span class="skill-missing-group__hint">${canInstall ? (t("skills.diagnostic.installHint") || "点击安装") : (t("skills.diagnostic.installManual") || "需手动安装")}</span>
               </div>
-            `
-          : nothing}
+            ` : nothing}
+            ${skill.missing.env.length > 0 ? html`
+              <div class="skill-missing-group">
+                ${icons.key}
+                <span class="skill-missing-group__items">${skill.missing.env.join(", ")}</span>
+                <span class="skill-missing-group__hint">${skill.primaryEnv ? (t("skills.diagnostic.keyHintInline") || "填写下方密钥") : (t("skills.diagnostic.keyHintConfig") || "在设置中配置")}</span>
+              </div>
+            ` : nothing}
+            ${skill.missing.config.length > 0 ? html`
+              <div class="skill-missing-group">
+                ${icons.settings}
+                <span class="skill-missing-group__items">${skill.missing.config.join(", ")}</span>
+                <span class="skill-missing-group__hint">${t("skills.diagnostic.configHint") || "前往设置页配置"}</span>
+              </div>
+            ` : nothing}
+            ${skill.missing.os.length > 0 ? html`
+              <div class="skill-missing-group">
+                ${icons.alertCircle}
+                <span class="skill-missing-group__items">${t("skills.diagnostic.osRequired") || "需要"} ${skill.missing.os.join("/")}</span>
+              </div>
+            ` : nothing}
+          </div>
+        ` : nothing}
       </div>
       
       <!-- Actions -->

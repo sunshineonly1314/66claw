@@ -1,8 +1,10 @@
 ---
 name: gemini
 description: Gemini CLI for one-shot Q&A, summaries, and generation.
+nameZh: "Gemini AI"
+descriptionZh: "使用Gemini CLI进行问答、摘要和内容生成"
 homepage: https://ai.google.dev/
-metadata: {"clawdbot":{"emoji":"♊️","requires":{"bins":["gemini"]},"install":[{"id":"brew","kind":"brew","formula":"gemini-cli","bins":["gemini"],"label":"Install Gemini CLI (brew)"}]}}
+metadata: {"clawdbot":{"emoji":"♊️","requires":{"bins":["gemini"]},"install":[{"id":"brew","kind":"brew","formula":"gemini-cli","bins":["gemini"],"label":"Install Gemini CLI (brew)"},{"id":"npm","kind":"node","package":"@google/gemini-cli","bins":["gemini"],"label":"Install Gemini CLI (npm)"}]}}
 ---
 
 # Gemini CLI

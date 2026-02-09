@@ -1,6 +1,8 @@
 ---
 name: food-order
 description: Reorder Foodora orders + track ETA/status with ordercli. Never confirm without explicit user approval. Triggers: order food, reorder, track ETA.
+nameZh: "外卖点餐"
+descriptionZh: "使用ordercli重新下单和追踪外卖订单状态"
 homepage: https://ordercli.sh
 metadata: {"clawdbot":{"emoji":"🥡","requires":{"bins":["ordercli"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/ordercli/cmd/ordercli@latest","bins":["ordercli"],"label":"Install ordercli (go)"}]}}
 ---

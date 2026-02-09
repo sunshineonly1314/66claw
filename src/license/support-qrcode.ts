@@ -18,6 +18,7 @@ import crypto from "node:crypto";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { SupportQrcodeConfig } from "./types.js";
+import { detectChinaRegion } from "../config/region-cn.js";
 
 const log = createSubsystemLogger("license:support-qrcode");
 
@@ -287,7 +288,7 @@ export function getSupportQrcode(
   if (!base64) {
     const dir = getQrcodeDir(type);
     const filePath = path.join(dir, selectedFile);
-    base64 = readImageAsBase64(filePath);
+    base64 = readImageAsBase64(filePath) ?? undefined;
 
     if (!base64) {
       log.warn(`Failed to load QR code for device ${deviceId.substring(0, 8)}...: ${selectedFile}`);
@@ -392,13 +393,13 @@ export function enrichLicenseWithSupport(
   }
 
   // 购买链接（仅试用用户）
+  // 优先保留服务端返回的 purchaseUrl，仅在服务端未提供时回退到本地配置
   if (keyType === "test" || keyType === "trial") {
-    const url = getPurchaseUrl();
-    if (url) {
-      license.purchaseUrl = url;
-    } else {
-      // 配置被禁用时清除
-      license.purchaseUrl = undefined;
+    if (!license.purchaseUrl) {
+      const url = getPurchaseUrl();
+      if (url) {
+        license.purchaseUrl = url;
+      }
     }
   } else {
     // 正式用户不返回购买链接
@@ -407,9 +408,61 @@ export function enrichLicenseWithSupport(
 }
 
 /**
+ * 从远程 API 获取购买链接（作为本地配置的备选方案）
+ *
+ * API: GET https://www.tecbinai.com/api/config/purchase-url
+ * 响应: { code: 200, data: { xianyu: "..." } }
+ *
+ * 服务端调用，不受 CORS 限制。
+ * 结果缓存 10 分钟，避免频繁请求。
+ */
+let remotePurchaseUrlCache: { url: string | null; cachedAt: number } | null = null;
+const REMOTE_PURCHASE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 分钟
+
+export async function fetchRemotePurchaseUrl(): Promise<string | null> {
+  const now = Date.now();
+
+  if (remotePurchaseUrlCache && now - remotePurchaseUrlCache.cachedAt < REMOTE_PURCHASE_CACHE_TTL_MS) {
+    return remotePurchaseUrlCache.url;
+  }
+
+  // 中国区：先尝试国内反代，失败再回源
+  const urls = detectChinaRegion()
+    ? ["https://www.obplugins.cn/api/config/purchase-url", "https://www.tecbinai.com/api/config/purchase-url"]
+    : ["https://www.tecbinai.com/api/config/purchase-url"];
+
+  for (const apiUrl of urls) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+
+      const resp = await fetch(apiUrl, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!resp.ok) continue;
+
+      const data = (await resp.json()) as { code?: number; data?: { xianyu?: string } };
+      const url = data?.code === 200 && data?.data?.xianyu ? data.data.xianyu : null;
+
+      remotePurchaseUrlCache = { url, cachedAt: now };
+      return url;
+    } catch (error) {
+      log.debug(`Failed to fetch remote purchase URL from ${apiUrl}`, { error });
+      continue;
+    }
+  }
+
+  remotePurchaseUrlCache = { url: null, cachedAt: now };
+  return null;
+}
+
+/**
  * 清除所有缓存（用于测试）
  */
 export function clearSupportQrcodeCache(): void {
   cache.clear();
   purchaseConfigCache = null;
+  remotePurchaseUrlCache = null;
 }

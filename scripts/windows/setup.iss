@@ -1,9 +1,9 @@
-; ClawdbotCN Windows Installer
+﻿; ClawdbotCN Windows Installer
 ; Built with Inno Setup 6+
 
 #define MyAppName "ClawdbotCN"
 #define MyAppNameCN "ClawdbotCN AI"
-#define MyAppVersion "2026.2.7"
+#define MyAppVersion "2026.2.0"
 #define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
 
@@ -15,7 +15,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppNameCN}
 OutputDir=E:\clawdbuild
-OutputBaseFilename=ClawdbotCN-Setup-2026.2.7-x64
+OutputBaseFilename=ClawdbotCN-Setup-2026.2.0-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -41,6 +41,7 @@ Name: "startupicon"; Description: "{code:GetStartupDesc}"; GroupDescription: "{c
 Name: "{app}\config"; Permissions: users-modify
 Name: "{app}\data"; Permissions: users-modify
 Name: "{app}\logs"; Permissions: users-modify
+Name: "{app}\tools"; Permissions: users-modify
 
 [Files]
 Source: "node-portable\*"; DestDir: "{app}\node"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -49,15 +50,23 @@ Source: "..\..\package.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "E:\clawdbuild\test-prod-deps\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\..\skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; MCP marketplace index (bundled fallback for Extensions/Capability Store UI)
+Source: "..\..\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; Feishu extension
 Source: "..\..\extensions\feishu\*"; DestDir: "{app}\extensions\feishu"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; DingTalk 闁圭粯甯婂▎?- 闂傚洠鍋撻悷?dingtalk-stream
+; DingTalk extension - dingtalk-stream
 Source: "..\..\extensions\dingtalk\*"; DestDir: "{app}\extensions\dingtalk"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; WeCom extension
 Source: "..\..\extensions\wecom\*"; DestDir: "{app}\extensions\wecom"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\..\extensions\telegram\*"; DestDir: "{app}\extensions\telegram"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\..\extensions\discord\*"; DestDir: "{app}\extensions\discord"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\..\extensions\slack\*"; DestDir: "{app}\extensions\slack"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; QQ Bot extension (CN users)
+Source: "..\..\extensions\qqbot\*"; DestDir: "{app}\extensions\qqbot"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; Memory subsystem (core, no native deps)
+Source: "..\..\extensions\memory-core\*"; DestDir: "{app}\extensions\memory-core"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; WhatsApp extension
+Source: "..\..\extensions\whatsapp\*"; DestDir: "{app}\extensions\whatsapp"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; Templates - bot default role config
 Source: "..\..\docs\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "start-gateway.bat"; DestDir: "{app}"; Flags: ignoreversion
@@ -67,6 +76,17 @@ Source: "view-logs.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "native\ClawdbotService.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "assets\clawdbot.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "assets\loading.html"; DestDir: "{app}\assets"; Flags: ignoreversion
+; Pre-bundled tool binaries for CN users (GitHub not directly accessible)
+; B-class tools: steipete/tap + other brew-only tools with Windows binaries
+; Manually maintained in scripts\windows\bundled-bins\ (~36MB total)
+; skipifsourcedoesntexist: safe for dev builds without bundled-bins
+Source: "bundled-bins\camsnap.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled-bins\sag.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled-bins\gog.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled-bins\goplaces.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled-bins\openhue.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled-bins\spogo.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled-bins\jira.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{autodesktop}\{#MyAppNameCN}"; Filename: "{app}\ClawdbotService.exe"; Parameters: "open"; WorkingDir: "{app}"; IconFilename: "{app}\clawdbot.ico"; Tasks: desktopicon
@@ -82,14 +102,21 @@ Filename: "{app}\ClawdbotService.exe"; Parameters: "open"; WorkingDir: "{app}"; 
 ; Step 1: Kill ClawdbotService.exe
 Filename: "cmd.exe"; Parameters: "/c taskkill /f /im ClawdbotService.exe 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist
 ; Step 2: Kill node.exe processes started by ClawdbotCN (not all node.exe to avoid affecting Cursor IDE etc)
-Filename: "cmd.exe"; Parameters: "/c wmic process where ""name='node.exe' and commandline like '%ClawdbotCN%'"" call terminate 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist
-Filename: "cmd.exe"; Parameters: "/c wmic process where ""name='node.exe' and commandline like '%clawdbot%'"" call terminate 2>nul"; Flags: runhidden waituntilterminated skipifdoesntexist
+; Uses PowerShell Get-Process (wmic removed in Win11 24H2+)
+Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-Process node -EA SilentlyContinue | Where-Object {{ $_.Path -like '*ClawdbotCN*' -or $_.Path -like '*clawdbot*' }} | Stop-Process -Force -EA SilentlyContinue"""; Flags: runhidden waituntilterminated
+
+[InstallDelete]
+; Clean stale node_modules from previous version on upgrade (prevents version conflicts)
+Type: filesandordirs; Name: "{app}\node_modules"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\node_modules"
 Type: filesandordirs; Name: "{app}\config"
 Type: filesandordirs; Name: "{app}\data"
 Type: filesandordirs; Name: "{app}\logs"
+Type: filesandordirs; Name: "{app}\tools"
+; install.json is created programmatically by [Code], not via [Files], so must be explicitly listed
+Type: files; Name: "{app}\install.json"
 
 [Registry]
 Root: HKCU; Subkey: "SOFTWARE\ClawdbotCN"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
@@ -138,9 +165,12 @@ end;
 function InitializeSetup(): Boolean;
 var
   OldConfigDir: String;
+  FreeMB, TotalMB: Cardinal;
+  DrivePath: String;
+  ResultCode: Integer;
 begin
   Result := True;
-  
+
   // Check for 64-bit Windows
   if not IsWin64 then
   begin
@@ -148,7 +178,39 @@ begin
     Result := False;
     Exit;
   end;
-  
+
+  // Check disk space on target drive (require at least 1 GB free)
+  DrivePath := ExtractFileDrive(ExpandConstant('{autopf}')) + '\';
+  if GetSpaceOnDisk(DrivePath, True, FreeMB, TotalMB) then
+  begin
+    if FreeMB < 1024 then
+    begin
+      MsgBox(#$78C1#$76D8#$7A7A#$95F4#$4E0D#$8DB3#$FF01 + #13#10 + #13#10
+        + #$9700#$8981#$81F3#$5C11 + ' 1 GB ' + #$53EF#$7528#$7A7A#$95F4#$FF0C
+        + #$5F53#$524D#$53EA#$6709 + ' ' + IntToStr(FreeMB) + ' MB' + #13#10 + #13#10
+        + #$8BF7#$91CA#$653E#$78C1#$76D8#$7A7A#$95F4#$540E#$91CD#$8BD5#$3002,
+        mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+  end;
+
+  // Check if port 18789 is already in use (warning, not blocking)
+  Exec('cmd.exe', '/c netstat -an 2>nul | findstr ":18789 " | findstr "LISTENING" >nul 2>&1',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if ResultCode = 0 then
+  begin
+    if MsgBox(#$7AEF#$53E3 + ' 18789 ' + #$5DF2#$88AB#$5360#$7528#$FF01 + #13#10 + #13#10
+      + 'ClawdbotCN ' + #$9700#$8981#$4F7F#$7528#$6B64#$7AEF#$53E3#$3002 + #13#10
+      + #$5B89#$88C5#$7A0B#$5E8F#$5C06#$5728#$5B89#$88C5#$65F6#$81EA#$52A8#$5173#$95ED#$5360#$7528#$8FDB#$7A0B#$3002 + #13#10 + #13#10
+      + #$662F#$5426#$7EE7#$7EED#$5B89#$88C5#$FF1F,
+      mbConfirmation, MB_YESNO) = IDNO then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+
   // Check if old clawdbot config exists (from open-source version)
   OldConfigDir := GetEnv('USERPROFILE') + '\.clawdbot';
   if DirExists(OldConfigDir) then
@@ -179,71 +241,40 @@ begin
   begin
     // Get installation directory
     InstallDir := ExpandConstant('{app}');
-    
+
     // Step 1: Kill ClawdbotService.exe first
     Exec('cmd.exe', '/c taskkill /f /im ClawdbotService.exe 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    
+
     // Step 2: Kill node.exe processes started from installation directory
-    // Uses WMIC to find and kill node.exe with matching path
-    Exec('cmd.exe', '/c wmic process where "name=''node.exe'' and commandline like ''%ClawdbotCN%''" call terminate 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Exec('cmd.exe', '/c wmic process where "name=''node.exe'' and commandline like ''%clawdbot%''" call terminate 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    
+    // Uses PowerShell Get-Process (wmic removed in Win11 24H2+)
+    Exec('powershell.exe', '-NoProfile -Command "Get-Process node -EA SilentlyContinue | Where-Object { $_.Path -like ''*ClawdbotCN*'' -or $_.Path -like ''*clawdbot*'' } | Stop-Process -Force -EA SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
     // Step 3: Small delay to ensure processes are fully terminated
     Sleep(500);
   end;
-  
+
   if CurStep = ssPostInstall then
   begin
-    // Create install marker
+    // Create install marker (preserve firstLaunch=false on upgrade)
     InstallMarker := ExpandConstant('{app}\install.json');
-    MarkerContent := '{' + #13#10 +
-      '  "version": "{#MyAppVersion}",' + #13#10 +
-      '  "installTime": "' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '",' + #13#10 +
-      '  "firstLaunch": true' + #13#10 +
-      '}';
+    if FileExists(InstallMarker) then
+    begin
+      // Upgrade: update version but do NOT reset firstLaunch
+      MarkerContent := '{' + #13#10 +
+        '  "version": "{#MyAppVersion}",' + #13#10 +
+        '  "installTime": "' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '",' + #13#10 +
+        '  "firstLaunch": false' + #13#10 +
+        '}';
+    end
+    else
+    begin
+      // Fresh install
+      MarkerContent := '{' + #13#10 +
+        '  "version": "{#MyAppVersion}",' + #13#10 +
+        '  "installTime": "' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '",' + #13#10 +
+        '  "firstLaunch": true' + #13#10 +
+        '}';
+    end;
     SaveStringToFile(InstallMarker, MarkerContent, False);
   end;
 end;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

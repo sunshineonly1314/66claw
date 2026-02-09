@@ -36,7 +36,7 @@ describe("buildWorkspaceSkillStatus", () => {
       name: "status-skill",
       description: "Needs setup",
       metadata:
-        '{"clawdbot":{"requires":{"bins":["fakebin"],"env":["ENV_KEY"],"config":["browser.enabled"]},"install":[{"id":"brew","kind":"brew","formula":"fakebin","bins":["fakebin"],"label":"Install fakebin"}]}}',
+        '{"clawdbot":{"requires":{"bins":["fakebin"],"env":["ENV_KEY"],"config":["browser.enabled"]},"install":[{"id":"dl","kind":"download","url":"https://example.com/fakebin","bins":["fakebin"],"label":"Install fakebin"}]}}',
     });
 
     const report = buildWorkspaceSkillStatus(workspaceDir, {
@@ -50,7 +50,7 @@ describe("buildWorkspaceSkillStatus", () => {
     expect(skill?.missing.bins).toContain("fakebin");
     expect(skill?.missing.env).toContain("ENV_KEY");
     expect(skill?.missing.config).toContain("browser.enabled");
-    expect(skill?.install[0]?.id).toBe("brew");
+    expect(skill?.install[0]?.id).toBe("dl");
   });
   it("respects OS-gated skills", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdbot-"));

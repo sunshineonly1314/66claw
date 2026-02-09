@@ -1,0 +1,108 @@
+/**
+ * MCP (Model Context Protocol) type definitions.
+ *
+ * Types for server configuration, runtime state, and tool metadata.
+ */
+
+// ============================================================================
+// Server Configuration
+// ============================================================================
+
+/** Configuration for a single MCP server. */
+export type MCPServerConfig = {
+  /** Unique identifier, e.g. "filesystem". */
+  id: string;
+  /** Executable command to start the server. */
+  command: string;
+  /** Command-line arguments. */
+  args?: string[];
+  /** Environment variables for the server process. */
+  env?: Record<string, string>;
+  /** Working directory for the server process. */
+  cwd?: string;
+  /** Transport protocol. Currently only "stdio" is implemented. */
+  transport: "stdio" | "sse";
+  /** Whether this server is enabled. */
+  enabled: boolean;
+  /** Whether to auto-start this server when the agent initializes. */
+  autoStart: boolean;
+  /** Initialization timeout in ms (default: 30000). */
+  timeout?: number;
+};
+
+// ============================================================================
+// Runtime State
+// ============================================================================
+
+/** Process lifecycle status. */
+export type MCPServerStatus =
+  | "stopped"
+  | "spawning"
+  | "initializing"
+  | "running"
+  | "error"
+  | "restarting"
+  | "circuit_open";
+
+/** Runtime state of a single MCP server. */
+export type MCPServerState = {
+  config: MCPServerConfig;
+  status: MCPServerStatus;
+  pid?: number;
+  /** Tools exposed by this server (populated after initialize). */
+  tools: MCPToolInfo[];
+  /** Last error message (if status is "error" or "circuit_open"). */
+  error?: string;
+  /** Number of automatic restart attempts since last successful start. */
+  restartCount: number;
+  /** Timestamp of last successful health check. */
+  lastHealthCheck?: number;
+};
+
+// ============================================================================
+// Tool Metadata
+// ============================================================================
+
+/** Metadata for a single MCP tool. */
+export type MCPToolInfo = {
+  /** Server that owns this tool. */
+  serverId: string;
+  /** Original MCP tool name. */
+  name: string;
+  /** Namespaced name for the Agent tool chain: "mcp_{serverId}_{name}". */
+  bridgedName: string;
+  /** Human-readable description from MCP server. */
+  description: string;
+  /** JSON Schema for the tool's input parameters. */
+  inputSchema: Record<string, unknown>;
+};
+
+// ============================================================================
+// MCP Config Section (for clawdbot.yaml)
+// ============================================================================
+
+/** MCP configuration section in clawdbot.yaml. */
+export type MCPConfig = {
+  servers?: MCPServerConfig[];
+};
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+export const MCP_TOOL_PREFIX = "mcp_";
+export const MCP_MAX_RESTART_ATTEMPTS = 3;
+export const MCP_MAX_SERVERS = 20;
+export const MCP_INIT_TIMEOUT_MS = 30_000;
+export const MCP_CALL_TIMEOUT_MS = 60_000;
+export const MCP_HEALTH_INTERVAL_MS = 30_000;
+export const MCP_CIRCUIT_COOLDOWN_MS = 5 * 60_000;
+export const MCP_HEALTH_FAILURE_THRESHOLD = 3;
+export const MCP_SHUTDOWN_GRACE_MS = 5_000;
+/**
+ * Maximum bytes per MCP tool text result.
+ * This also prevents model context overflow — Snapshot tools can return
+ * hundreds of KB of UIA tree data that overwhelms smaller models.
+ * 64 KB ≈ 16 000 words, plenty for any actionable tool output.
+ */
+export const MCP_MAX_RESULT_BYTES = 65_536; // 64 KB

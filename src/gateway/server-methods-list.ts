@@ -37,6 +37,14 @@ const BASE_METHODS = [
   "skills.install",
   "skills.update",
   "skills.remote.list",
+  // Skills batch install (ClawdbotCN)
+  "skills.batch.check",
+  "skills.batch.install",
+  "skills.batch.cancel",
+  "skills.batch.report-failures",
+  // Support QR code (ClawdbotCN)
+  "support.qrcode.preload",
+  "support.qrcode.status",
   "update.run",
   "voicewake.get",
   "voicewake.set",
@@ -59,6 +67,7 @@ const BASE_METHODS = [
   "device.pair.reject",
   "device.token.rotate",
   "device.token.revoke",
+  "device.remove",
   "node.rename",
   "node.list",
   "node.describe",
@@ -108,4 +117,8 @@ export const GATEWAY_EVENTS = [
   "voicewake.changed",
   "exec.approval.requested",
   "exec.approval.resolved",
+  // Skills batch install events (ClawdbotCN)
+  "skills.batch.progress",
+  "skills.batch.complete",
+  "skills.batch.error",
 ];

@@ -1,6 +1,8 @@
 ---
 name: bluebubbles
 description: Build or update the BlueBubbles external channel plugin for Clawdbot (extension package, REST send/probe, webhook inbound).
+nameZh: "蓝泡泡消息"
+descriptionZh: "构建或更新Clawdbot的BlueBubbles外部通道插件"
 ---
 
 # BlueBubbles plugin

@@ -28,7 +28,10 @@ function coerceFrontmatterValue(value: unknown): string | undefined {
 
 function parseYamlFrontmatter(block: string): ParsedFrontmatter | null {
   try {
-    const parsed = YAML.parse(block) as unknown;
+    // logLevel: 'silent' suppresses warnings like "Keys with collection values
+    // will be stringified" that spam stderr when skills have array-valued
+    // frontmatter keys (e.g. `tools: ["touch"]`).
+    const parsed = YAML.parse(block, { logLevel: "silent" }) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const result: ParsedFrontmatter = {};
     for (const [rawKey, value] of Object.entries(parsed as Record<string, unknown>)) {

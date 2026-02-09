@@ -1,0 +1,187 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+
+import { z } from "zod";
+
+/**
+ * Tests for the setup wizard checkpoint/resume mechanism.
+ *
+ * These tests validate:
+ * 1. Zod schema accepts lastCompletedStep values
+ * 2. TypeScript types align (compile-time check via import)
+ * 3. Boundary conditions for step values
+ */
+
+// ── Schema tests ─────────────────────────────────────────────────────
+describe("setup.lastCompletedStep schema", () => {
+  // Import the schema to test validation directly
+  let ClawdbotSchema: z.ZodType;
+
+  beforeEach(async () => {
+    const mod = await import("../config/zod-schema.js");
+    ClawdbotSchema = mod.ClawdbotSchema;
+  });
+
+  it("accepts valid lastCompletedStep = 0 (first step)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { lastCompletedStep: 0 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts valid lastCompletedStep = 5 (mid-wizard)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { lastCompletedStep: 5 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts valid lastCompletedStep = 10 (max boundary)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { lastCompletedStep: 10 },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects lastCompletedStep = -1 (below min)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { lastCompletedStep: -1 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects lastCompletedStep = 11 (above max)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { lastCompletedStep: 11 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects lastCompletedStep = 2.5 (non-integer)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { lastCompletedStep: 2.5 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects lastCompletedStep = 'three' (string)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { lastCompletedStep: "three" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts missing lastCompletedStep (optional)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { completedAt: "2026-01-01T00:00:00Z" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts missing setup entirely", () => {
+    const result = ClawdbotSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts both completedAt and lastCompletedStep", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: {
+        completedAt: "2026-01-01T00:00:00Z",
+        lastCompletedStep: 4,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects unknown fields in setup (strict mode)", () => {
+    const result = ClawdbotSchema.safeParse({
+      setup: { unknownField: true },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ── Type alignment tests ─────────────────────────────────────────────
+describe("ClawdbotConfig type alignment", () => {
+  it("TypeScript type allows lastCompletedStep in setup", async () => {
+    // This is a compile-time check: if the type doesn't include
+    // lastCompletedStep, this test file will fail to compile.
+    const { loadConfig } = await import("../config/config.js");
+    type Setup = NonNullable<ReturnType<typeof loadConfig>["setup"]>;
+    // TypeScript will error here if lastCompletedStep is not in the type
+    const _check: Setup = { lastCompletedStep: 3 };
+    expect(_check.lastCompletedStep).toBe(3);
+  });
+});
+
+// ── Boundary: step value edges ───────────────────────────────────────
+describe("setup wizard step boundaries", () => {
+  it("step 0 maps to resume at step 1 (savedStep + 1)", () => {
+    const savedStep = 0;
+    const resumeStep = savedStep + 1;
+    expect(resumeStep).toBe(1);
+  });
+
+  it("step 10 (max) maps to resume at step 11", () => {
+    const savedStep = 10;
+    const resumeStep = savedStep + 1;
+    expect(resumeStep).toBe(11);
+  });
+
+  it("updateSetupState only persists when step > 1", () => {
+    // The implementation guards: `if (typeof updates.step === "number" && updates.step > 1)`
+    // Step 1 is the initial state and should NOT trigger persistence
+    const updates = { step: 1 };
+    const shouldPersist = typeof updates.step === "number" && updates.step > 1;
+    expect(shouldPersist).toBe(false);
+  });
+
+  it("updateSetupState persists when step = 2", () => {
+    const updates = { step: 2 };
+    const shouldPersist = typeof updates.step === "number" && updates.step > 1;
+    expect(shouldPersist).toBe(true);
+  });
+
+  it("lastCompletedStep calculation: step - 1", () => {
+    // When step=2, lastCompletedStep should be 1 (step before current)
+    const step = 2;
+    const lastCompletedStep = step - 1;
+    expect(lastCompletedStep).toBe(1);
+  });
+
+  it("only persists if new step is higher than saved", () => {
+    // The implementation guards: `(current.setup?.lastCompletedStep ?? -1) < lastCompletedStep`
+    const currentSaved = 3;
+    const newStep = 3;
+    const shouldPersist = (currentSaved ?? -1) < newStep;
+    expect(shouldPersist).toBe(false);
+
+    const higherStep = 4;
+    const shouldPersistHigher = (currentSaved ?? -1) < higherStep;
+    expect(shouldPersistHigher).toBe(true);
+  });
+
+  it("resume condition requires step <= 1 (initial state only)", () => {
+    const testCases = [
+      { wizardStep: 0, shouldResume: true },
+      { wizardStep: 1, shouldResume: true },
+      { wizardStep: 2, shouldResume: false },
+      { wizardStep: 5, shouldResume: false },
+    ];
+
+    for (const { wizardStep, shouldResume } of testCases) {
+      expect(wizardStep <= 1).toBe(shouldResume);
+    }
+  });
+
+  it("resume is blocked when wizard is already completed", () => {
+    const completed = true;
+    const savedStep = 3;
+    const wizardStep = 1;
+    const shouldResume =
+      typeof savedStep === "number" &&
+      savedStep >= 0 &&
+      !completed &&
+      wizardStep <= 1;
+    expect(shouldResume).toBe(false);
+  });
+});

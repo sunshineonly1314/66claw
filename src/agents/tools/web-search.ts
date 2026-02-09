@@ -17,11 +17,13 @@ import {
   writeCache,
 } from "./web-shared.js";
 
-const SEARCH_PROVIDERS = ["brave", "perplexity"] as const;
+const SEARCH_PROVIDERS = ["brave", "perplexity", "baidu", "bing"] as const;
 const DEFAULT_SEARCH_COUNT = 5;
 const MAX_SEARCH_COUNT = 10;
 
 const BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
+const BAIDU_SEARCH_URL = "https://www.baidu.com/s";
+const BING_SEARCH_URL = "https://cn.bing.com/search";
 const DEFAULT_PERPLEXITY_BASE_URL = "https://openrouter.ai/api/v1";
 const PERPLEXITY_DIRECT_BASE_URL = "https://api.perplexity.ai";
 const DEFAULT_PERPLEXITY_MODEL = "perplexity/sonar-pro";
@@ -101,6 +103,18 @@ type PerplexitySearchResponse = {
   citations?: string[];
 };
 
+type BaiduSearchResult = {
+  title: string;
+  url: string;
+  description: string;
+};
+
+type BingSearchResult = {
+  title: string;
+  url: string;
+  description: string;
+};
+
 type PerplexityBaseUrlHint = "direct" | "openrouter";
 
 function resolveSearchConfig(cfg?: ClawdbotConfig): WebSearchConfig {
@@ -131,6 +145,20 @@ function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
       docs: "https://docs.clawd.bot/tools/web",
     };
   }
+  if (provider === "baidu") {
+    return {
+      error: "baidu_no_key_needed",
+      message: "Baidu search does not require an API key.",
+      docs: "https://docs.clawd.bot/tools/web",
+    };
+  }
+  if (provider === "bing") {
+    return {
+      error: "bing_no_key_needed",
+      message: "Bing search does not require an API key.",
+      docs: "https://docs.clawd.bot/tools/web",
+    };
+  }
   return {
     error: "missing_brave_api_key",
     message: `web_search needs a Brave Search API key. Run \`${formatCliCommand("clawdbot configure --section web")}\` to store it, or set BRAVE_API_KEY in the Gateway environment.`,
@@ -144,6 +172,8 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
       ? search.provider.trim().toLowerCase()
       : "";
   if (raw === "perplexity") return "perplexity";
+  if (raw === "baidu") return "baidu";
+  if (raw === "bing") return "bing";
   if (raw === "brave") return "brave";
   return "brave";
 }
@@ -306,6 +336,136 @@ async function runPerplexitySearch(params: {
   return { content, citations };
 }
 
+function parseBaiduHtml(html: string): BaiduSearchResult[] {
+  const results: BaiduSearchResult[] = [];
+
+  // Match Baidu result containers: <div class="result c-container ..."> or <div class="c-container" ...>
+  const containerRegex = /<div[^>]*class="[^"]*(?:result|c-container)[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*(?:result|c-container)[^"]*"|<div\s+id="page"|$)/gi;
+  let containerMatch: RegExpExecArray | null;
+
+  while ((containerMatch = containerRegex.exec(html)) !== null) {
+    const block = containerMatch[1];
+
+    // Extract title from <h3><a ...>TITLE</a></h3>
+    const titleMatch = block.match(/<h3[^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>\s*<\/h3>/i);
+    if (!titleMatch) continue;
+    const title = titleMatch[1].replace(/<[^>]*>/g, "").replace(/&[^;]+;/g, " ").trim();
+    if (!title) continue;
+
+    // Extract URL from the <a> tag's href or data-url
+    const urlMatch = block.match(/<h3[^>]*>\s*<a[^>]*?(?:href|data-url)="([^"]*)"[^>]*>/i);
+    const url = urlMatch?.[1] ?? "";
+
+    // Extract description/snippet from <span class="content-right_..."> or common abstract containers
+    let description = "";
+    const descMatch =
+      block.match(/<span[^>]*class="[^"]*content-right[^"]*"[^>]*>([\s\S]*?)<\/span>/i) ||
+      block.match(/<div[^>]*class="[^"]*c-abstract[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+      block.match(/<span[^>]*class="[^"]*c-color-text[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+    if (descMatch) {
+      description = descMatch[1].replace(/<[^>]*>/g, "").replace(/&[^;]+;/g, " ").trim();
+    }
+
+    results.push({ title, url, description });
+  }
+
+  return results;
+}
+
+async function runBaiduSearch(params: {
+  query: string;
+  count: number;
+  timeoutSeconds: number;
+}): Promise<BaiduSearchResult[]> {
+  const url = new URL(BAIDU_SEARCH_URL);
+  url.searchParams.set("wd", params.query);
+  url.searchParams.set("rn", String(params.count));
+  url.searchParams.set("ie", "utf-8");
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "text/html,application/xhtml+xml",
+      "Accept-Language": "zh-CN,zh;q=0.9",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    },
+    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+  });
+
+  if (!res.ok) {
+    const detail = await readResponseText(res);
+    throw new Error(`Baidu search error (${res.status}): ${detail || res.statusText}`);
+  }
+
+  const html = await res.text();
+  return parseBaiduHtml(html);
+}
+
+function parseBingHtml(html: string): BingSearchResult[] {
+  const results: BingSearchResult[] = [];
+
+  // Match Bing organic result containers: <li class="b_algo">...</li>
+  const containerRegex = /<li\s+class="b_algo"[^>]*>([\s\S]*?)<\/li>/gi;
+  let containerMatch: RegExpExecArray | null;
+
+  while ((containerMatch = containerRegex.exec(html)) !== null) {
+    const block = containerMatch[1];
+
+    // Extract title + URL from <h2><a href="URL">TITLE</a></h2>
+    const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!titleMatch) continue;
+    const url = titleMatch[1] ?? "";
+    const title = titleMatch[2].replace(/<[^>]*>/g, "").replace(/&[^;]+;/g, " ").trim();
+    if (!title) continue;
+
+    // Extract snippet from <p> or <div class="b_caption"><p>
+    let description = "";
+    const descMatch =
+      block.match(/<div\s+class="b_caption"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i) ||
+      block.match(/<p\s+class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i) ||
+      block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+    if (descMatch) {
+      description = descMatch[1].replace(/<[^>]*>/g, "").replace(/&[^;]+;/g, " ").trim();
+    }
+
+    results.push({ title, url, description });
+  }
+
+  return results;
+}
+
+async function runBingSearch(params: {
+  query: string;
+  count: number;
+  timeoutSeconds: number;
+}): Promise<BingSearchResult[]> {
+  const url = new URL(BING_SEARCH_URL);
+  url.searchParams.set("q", params.query);
+  url.searchParams.set("count", String(params.count));
+  url.searchParams.set("setlang", "zh-Hans");
+  url.searchParams.set("cc", "CN");
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "text/html,application/xhtml+xml",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    },
+    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+  });
+
+  if (!res.ok) {
+    const detail = await readResponseText(res);
+    throw new Error(`Bing search error (${res.status}): ${detail || res.statusText}`);
+  }
+
+  const html = await res.text();
+  return parseBingHtml(html);
+}
+
 async function runWebSearch(params: {
   query: string;
   count: number;
@@ -329,6 +489,56 @@ async function runWebSearch(params: {
   if (cached) return { ...cached.value, cached: true };
 
   const start = Date.now();
+
+  if (params.provider === "baidu") {
+    const baiduResults = await runBaiduSearch({
+      query: params.query,
+      count: params.count,
+      timeoutSeconds: params.timeoutSeconds,
+    });
+
+    const mapped = baiduResults.map((entry) => ({
+      title: entry.title,
+      url: entry.url,
+      description: entry.description,
+      siteName: resolveSiteName(entry.url),
+    }));
+
+    const payload = {
+      query: params.query,
+      provider: params.provider,
+      count: mapped.length,
+      tookMs: Date.now() - start,
+      results: mapped,
+    };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
+  if (params.provider === "bing") {
+    const bingResults = await runBingSearch({
+      query: params.query,
+      count: params.count,
+      timeoutSeconds: params.timeoutSeconds,
+    });
+
+    const mapped = bingResults.map((entry) => ({
+      title: entry.title,
+      url: entry.url,
+      description: entry.description,
+      siteName: resolveSiteName(entry.url),
+    }));
+
+    const payload = {
+      query: params.query,
+      provider: params.provider,
+      count: mapped.length,
+      tookMs: Date.now() - start,
+      results: mapped,
+    };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
 
   if (params.provider === "perplexity") {
     const { content, citations } = await runPerplexitySearch({
@@ -416,10 +626,13 @@ export function createWebSearchTool(options?: {
   const provider = resolveSearchProvider(search);
   const perplexityConfig = resolvePerplexityConfig(search);
 
-  const description =
-    provider === "perplexity"
-      ? "Search the web using Perplexity Sonar (direct or via OpenRouter). Returns AI-synthesized answers with citations from real-time web search."
-      : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
+  const DESCRIPTIONS: Record<(typeof SEARCH_PROVIDERS)[number], string> = {
+    bing: "使用 Bing 搜索引擎搜索互联网。返回标题、链接和摘要。Search the web using Bing (cn.bing.com). Returns titles, URLs, and snippets.",
+    baidu: "使用百度搜索引擎搜索互联网。返回标题、链接和摘要，适合中文内容搜索。Search the web using Baidu. Returns titles, URLs, and snippets.",
+    perplexity: "Search the web using Perplexity Sonar (direct or via OpenRouter). Returns AI-synthesized answers with citations from real-time web search.",
+    brave: "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.",
+  };
+  const description = DESCRIPTIONS[provider];
 
   return {
     label: "Web Search",
@@ -430,7 +643,11 @@ export function createWebSearchTool(options?: {
       const perplexityAuth =
         provider === "perplexity" ? resolvePerplexityApiKey(perplexityConfig) : undefined;
       const apiKey =
-        provider === "perplexity" ? perplexityAuth?.apiKey : resolveSearchApiKey(search);
+        provider === "baidu" || provider === "bing"
+          ? "no-key-needed"
+          : provider === "perplexity"
+            ? perplexityAuth?.apiKey
+            : resolveSearchApiKey(search);
 
       if (!apiKey) {
         return jsonResult(missingSearchKeyPayload(provider));
@@ -486,4 +703,6 @@ export const __testing = {
   inferPerplexityBaseUrlFromApiKey,
   resolvePerplexityBaseUrl,
   normalizeFreshness,
+  parseBaiduHtml,
+  parseBingHtml,
 } as const;

@@ -88,12 +88,12 @@ describe("safeBins 白名单配置", () => {
 // ============================================================================
 
 describe("安全配置合理性", () => {
-  it("sandbox mode 应该是 non-main（非主线程）", () => {
-    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.mode).toBe("non-main");
+  it("sandbox mode 应该是 off（不使用沙箱，最大能力释放）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.mode).toBe("off");
   });
 
-  it("sandbox scope 应该是 session（会话级别）", () => {
-    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.scope).toBe("session");
+  it("sandbox scope 应该是 agent（按 agent 隔离）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.scope).toBe("agent");
   });
 
   it("workspaceAccess 应该是 rw（读写）", () => {
@@ -104,12 +104,16 @@ describe("安全配置合理性", () => {
     expect(CN_DEFAULT_SECURITY_CONFIG.tools.write.allowDelete).toBe(false);
   });
 
-  it("exec security 应该是 allowlist 模式", () => {
-    expect(CN_DEFAULT_SECURITY_CONFIG.tools.exec.security).toBe("allowlist");
+  it("exec security 应该是 full 模式（最大能力释放）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.tools.exec.security).toBe("full");
   });
 
-  it("browser allowHostBrowser 应该为 false", () => {
-    expect(CN_DEFAULT_SECURITY_CONFIG.tools.browser.allowHostBrowser).toBe(false);
+  it("exec ask 应该是 off（不询问，直接执行）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.tools.exec.ask).toBe("off");
+  });
+
+  it("browser allowHostBrowser 应该为 true（允许使用宿主浏览器）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.tools.browser.allowHostBrowser).toBe(true);
   });
 });
 

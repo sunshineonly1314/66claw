@@ -1,6 +1,8 @@
 ---
 name: openai-whisper-api
 description: Transcribe audio via OpenAI Audio Transcriptions API (Whisper).
+nameZh: "语音转文字API"
+descriptionZh: "通过OpenAI API将音频转换为文字"
 homepage: https://platform.openai.com/docs/guides/speech-to-text
 metadata: {"clawdbot":{"emoji":"☁️","requires":{"bins":["curl"],"env":["OPENAI_API_KEY"]},"primaryEnv":"OPENAI_API_KEY"}}
 ---

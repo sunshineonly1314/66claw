@@ -11,6 +11,7 @@ import {
   verifyLicenseOnStartup,
   type StartupVerifyResult,
   type LicenseClientState,
+  type LicenseModuleConfig,
   LicenseErrorCode,
   startTokenAutoRefresh,
   stopTokenAutoRefresh,
@@ -20,6 +21,7 @@ import {
   loadLicenseCache,
 } from "../license/index.js";
 import { loadConfig } from "../config/config.js";
+import { detectChinaRegion } from "../config/region-cn.js";
 import {
   startAntiDebug,
   stopAntiDebug,
@@ -69,11 +71,14 @@ function checkLicenseExpiry(expiresAtMs: number): boolean {
 let _licenseValidSnapshot = false;
 let _licenseExpiresAt: number | null = null;
 
+// pending 状态：验证进行中时阻止使用，避免 TOCTOU 竞态
+let _licensePending = false;
+
 /**
  * 检查是否启用 CN 版本的授权验证
  * 只有 ClawdbotCN 版本需要进行授权验证
  */
-function isLicenseCheckEnabled(config: ClawdbotConfig): boolean {
+export function isLicenseCheckEnabled(config: ClawdbotConfig): boolean {
   // 检查是否是 CN 版本（通过配置或环境变量）
   const isCnVersion =
     process.env.CLAWDBOT_CN === "1" ||
@@ -96,6 +101,7 @@ function isLicenseCheckEnabled(config: ClawdbotConfig): boolean {
  */
 export async function checkLicenseOnGatewayStart(
   config: ClawdbotConfig,
+  options?: { skipIntegrity?: boolean },
 ): Promise<StartupVerifyResult | null> {
   // 检查是否需要验证
   if (!isLicenseCheckEnabled(config)) {
@@ -104,40 +110,59 @@ export async function checkLicenseOnGatewayStart(
   }
 
   log.info("Checking license on gateway start...");
+  _licensePending = true;
 
-  // 步骤 1：文件完整性校验（强制，防止代码被篡改）
-  // 安全策略：任何完整性校验失败/异常都必须阻止启动
-  try {
-    const integrityPassed = await checkIntegrityOnStartup({
-      exitOnFailure: true, // 检测到篡改时强制退出程序
-    });
-    if (!integrityPassed) {
-      // 此处理论上不会执行，因为 exitOnFailure=true 时会直接 exit
-      log.error("SECURITY VIOLATION: File tampering detected, refusing to start");
-      console.error("[安全警告] 检测到文件被篡改，程序退出");
+  // 步骤 1：文件完整性校验（可通过 skipIntegrity 跳过，用于测试/并行启动）
+  if (!options?.skipIntegrity) {
+    // 安全策略：任何完整性校验失败/异常都必须阻止启动
+    try {
+      const integrityPassed = await checkIntegrityOnStartup({
+        exitOnFailure: true, // 检测到篡改时强制退出程序
+      });
+      if (!integrityPassed) {
+        // 此处理论上不会执行，因为 exitOnFailure=true 时会直接 exit
+        log.error("SECURITY VIOLATION: File tampering detected, refusing to start");
+        console.error("[安全警告] 检测到文件被篡改，程序退出");
+        process.exit(1);
+      }
+      log.debug("Integrity check passed");
+    } catch (error) {
+      // 安全策略：完整性校验出错时必须阻止启动
+      log.error(`SECURITY VIOLATION: Integrity check error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("[安全警告] 完整性校验失败，程序退出");
       process.exit(1);
     }
-    log.debug("Integrity check passed");
-  } catch (error) {
-    // 安全策略：完整性校验出错时必须阻止启动
-    // 可能的攻击场景：
-    // 1. 攻击者删除了哈希文件
-    // 2. 攻击者修改了完整性校验模块本身
-    // 3. 构建异常导致模块加载失败
-    // 无论哪种情况，都不允许继续启动
-    log.error(`SECURITY VIOLATION: Integrity check error: ${error instanceof Error ? error.message : String(error)}`);
-    console.error("[安全警告] 完整性校验失败，程序退出");
-    process.exit(1);
   }
 
   // 步骤 2：授权验证
+  // 中国区自动配置备用 URL 和更长离线宽限期
+  const cnLicenseOverrides: Partial<LicenseModuleConfig> | undefined =
+    detectChinaRegion()
+      ? {
+          apiFallbackUrls: [
+            // 国内备案域名反代（阿里云服务器，最优先）
+            "https://www.obplugins.cn/api/api/v1/license",
+            // IP 直连绕过 DNS 污染/解析失败（同一台腾讯云 HK 服务器）
+            "https://license.tecbinai.com/api/api/v1/license",
+          ],
+          offlineGracePeriodHours: 48, // CN 用户跨境网络不稳定，宽限期 48h
+        }
+      : undefined;
+
   try {
-    const result = await verifyLicenseOnStartup({
+    // 30 秒超时保护：防止网络不通时 license 校验永远卡住
+    // 超时后自动 fallback 到离线模式（使用本地缓存）
+    const LICENSE_VERIFY_TIMEOUT_MS = 30_000;
+    const verifyPromise = verifyLicenseOnStartup({
+      config: cnLicenseOverrides,
       onInvalid: () => {
         log.warn("License became invalid during runtime");
-        // 可以在这里添加通知客户端的逻辑
       },
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("License verification timed out after 30s")), LICENSE_VERIFY_TIMEOUT_MS),
+    );
+    const result = await Promise.race([verifyPromise, timeoutPromise]);
 
     // 保存全局状态
     globalLicenseState = result.clientState;
@@ -201,9 +226,48 @@ export async function checkLicenseOnGatewayStart(
     return result;
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    log.error(`License check error: ${errorMsg}`);
+    const isTimeout = errorMsg.includes("timed out");
+    log.error(`License check error${isTimeout ? " (timeout)" : ""}: ${errorMsg}`);
 
-    return {
+    // 超时或网络错误时尝试 fallback 到本地缓存
+    // 这对 CN 用户至关重要 — 网络不稳定不应阻止启动
+    const localCache = loadLicenseCacheForFallback();
+    if (localCache && localCache.valid && localCache.expiresAt) {
+      const expiresAt = new Date(localCache.expiresAt).getTime();
+      if (Date.now() < expiresAt) {
+        log.info(`License fallback to local cache (valid until ${localCache.expiresAt})`);
+        const fallbackResult: StartupVerifyResult = {
+          canProceed: true,
+          valid: true,
+          offlineMode: true,
+          deviceId: "",
+          nextCheckAfterHours: 1,
+          error: null,
+          errorCode: null,
+          response: null,
+          clientState: {
+            checking: false,
+            valid: true,
+            offlineMode: true,
+            error: null,
+            errorCode: null,
+            license: null,
+            device: null,
+            renewalReminder: null,
+            forceUpdate: null,
+            pendingNotifications: [],
+            lastVerifiedAt: Date.now(),
+            deviceSwitchInfo: null,
+            deviceSwitchCooldown: null,
+          },
+        };
+        globalLicenseState = fallbackResult.clientState;
+        _licenseValidSnapshot = true;
+        return fallbackResult;
+      }
+    }
+
+    const failResult: StartupVerifyResult = {
       canProceed: false,
       valid: false,
       offlineMode: false,
@@ -228,6 +292,12 @@ export async function checkLicenseOnGatewayStart(
         deviceSwitchCooldown: null,
       },
     };
+    // fail-close: 更新全局状态确保 isLicenseValid() 返回 false
+    globalLicenseState = failResult.clientState;
+    _licenseValidSnapshot = false;
+    return failResult;
+  } finally {
+    _licensePending = false;
   }
 }
 
@@ -244,6 +314,24 @@ export function stopSecurityServices(): void {
  * 获取当前 License 状态
  */
 export function getGatewayLicenseState(): LicenseClientState | null {
+  // pending 期间返回合成状态，避免 UI 崩溃或显示错误信息
+  if (_licensePending) {
+    return {
+      checking: true,
+      valid: false,
+      offlineMode: false,
+      error: "授权验证中，请稍候...",
+      errorCode: null,
+      license: null,
+      device: null,
+      renewalReminder: null,
+      forceUpdate: null,
+      pendingNotifications: [],
+      lastVerifiedAt: null,
+      deviceSwitchInfo: null,
+      deviceSwitchCooldown: null,
+    } as LicenseClientState;
+  }
   return globalLicenseState;
 }
 
@@ -270,6 +358,10 @@ export function updateGatewayLicenseState(state: LicenseClientState): void {
  * 4. 短期令牌有效性（核心防护，但有容错机制）
  */
 export function isLicenseValid(): boolean {
+  // pending 期间：验证尚未完成，不允许使用（防止 TOCTOU 竞态）
+  if (_licensePending) {
+    return false;
+  }
   if (!globalLicenseState) {
     return true; // 未初始化时默认有效（非 CN 版本）
   }

@@ -7,6 +7,7 @@ import { TOOL_INLINE_THRESHOLD } from "./constants";
 import {
   formatToolOutputForSidebar,
   getTruncatedPreview,
+  isErrorOutput,
 } from "./tool-helpers";
 import { isToolResultMessage } from "./message-normalizer";
 import { extractTextCached } from "./message-extract";
@@ -50,9 +51,22 @@ export function extractToolCards(message: unknown): ToolCard[] {
     cards.push({ kind: "result", name, text });
   }
 
+  // Mark call cards as pending when no matching result exists yet (tool still executing)
+  const hasResult = cards.some((card) => card.kind === "result");
+  if (!hasResult) {
+    for (const card of cards) {
+      if (card.kind === "call") card.pending = true;
+    }
+  }
+
   return cards;
 }
 
+/**
+ * Render a single tool card with collapse/expand behavior.
+ * Default state: compact (icon + friendly label + summary + status badge).
+ * Expanded: shows raw command detail and full output.
+ */
 export function renderToolCardSidebar(
   card: ToolCard,
   onOpenSidebar?: (content: string) => void,
@@ -60,62 +74,170 @@ export function renderToolCardSidebar(
   const display = resolveToolDisplay({ name: card.name, args: card.args });
   const detail = formatToolDetail(display);
   const hasText = Boolean(card.text?.trim());
+  const hasError = hasText && isErrorOutput(card.text!);
+  const hasRawDetail = Boolean(display.rawDetail);
 
-  const canClick = Boolean(onOpenSidebar);
-  const handleClick = canClick
-    ? () => {
-        if (hasText) {
-          onOpenSidebar!(formatToolOutputForSidebar(card.text!));
-          return;
-        }
-        const info = `## ${display.label}\n\n${
-          detail ? `**Command:** \`${detail}\`\n\n` : ""
-        }*No output — tool completed successfully.*`;
-        onOpenSidebar!(info);
+  // Determine if there is expandable content worth showing
+  const hasExpandableContent = hasRawDetail || hasText;
+
+  const handleToggle = hasExpandableContent
+    ? (e: Event) => {
+        const container = (e.currentTarget as HTMLElement).closest(
+          ".chat-tool-card",
+        );
+        container?.classList.toggle("chat-tool-card--expanded");
       }
     : undefined;
 
-  const isShort = hasText && (card.text?.length ?? 0) <= TOOL_INLINE_THRESHOLD;
-  const showCollapsed = hasText && !isShort;
-  const showInline = hasText && isShort;
-  const isEmpty = !hasText;
+  // Open sidebar for full output view
+  const handleViewFull =
+    onOpenSidebar && hasText
+      ? (e: Event) => {
+          e.stopPropagation();
+          onOpenSidebar(formatToolOutputForSidebar(card.text!));
+        }
+      : undefined;
+
+  const isPending = Boolean(card.pending);
 
   return html`
     <div
-      class="chat-tool-card ${canClick ? "chat-tool-card--clickable" : ""}"
-      @click=${handleClick}
-      role=${canClick ? "button" : nothing}
-      tabindex=${canClick ? "0" : nothing}
-      @keydown=${canClick
-        ? (e: KeyboardEvent) => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            handleClick?.();
-          }
-        : nothing}
+      class="chat-tool-card ${hasError ? "chat-tool-card--warning" : ""} ${isPending ? "chat-tool-card--pending" : ""} ${hasExpandableContent ? "chat-tool-card--has-expandable" : ""}"
     >
-      <div class="chat-tool-card__header">
+      <div
+        class="chat-tool-card__header ${hasExpandableContent ? "chat-tool-card__header--clickable" : ""}"
+        @click=${handleToggle ?? nothing}
+        role=${hasExpandableContent ? "button" : nothing}
+        tabindex=${hasExpandableContent ? "0" : nothing}
+        @keydown=${hasExpandableContent
+          ? (e: KeyboardEvent) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              handleToggle?.(e);
+            }
+          : nothing}
+      >
         <div class="chat-tool-card__title">
           <span class="chat-tool-card__icon">${icons[display.icon]}</span>
           <span>${display.label}</span>
+          ${isPending
+            ? html`<span class="chat-tool-card__badge chat-tool-card__badge--pending"><span class="chat-tool-card__spinner"></span></span>`
+            : hasError
+              ? html`<span class="chat-tool-card__badge chat-tool-card__badge--warning">${icons.alertCircle}</span>`
+              : html`<span class="chat-tool-card__badge chat-tool-card__badge--ok">${icons.check}</span>`}
         </div>
-        ${canClick
-          ? html`<span class="chat-tool-card__action">${hasText ? "View" : ""} ${icons.check}</span>`
+        ${hasExpandableContent
+          ? html`<span class="chat-tool-card__chevron">
+              <svg
+                class="chat-tool-card__chevron-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>`
           : nothing}
-        ${isEmpty && !canClick ? html`<span class="chat-tool-card__status">${icons.check}</span>` : nothing}
       </div>
-      ${detail
-        ? html`<div class="chat-tool-card__detail">${detail}</div>`
+      ${isPending
+        ? html`<div class="chat-tool-card__summary chat-tool-card__summary--pending">${detail ? `${detail} · ` : ""}正在执行...</div>`
+        : detail
+          ? html`<div class="chat-tool-card__summary">${detail}</div>`
+          : nothing}
+      ${hasExpandableContent
+        ? html`
+            <div class="chat-tool-card__expandable">
+              ${hasRawDetail
+                ? html`<div class="chat-tool-card__raw-detail mono">
+                    ${display.rawDetail}
+                  </div>`
+                : nothing}
+              ${hasText
+                ? html`<div class="chat-tool-card__output mono">
+                    ${getTruncatedPreview(card.text!)}
+                    ${handleViewFull
+                      ? html`<button
+                          class="chat-tool-card__view-btn"
+                          @click=${handleViewFull}
+                          type="button"
+                        >
+                          查看完整输出
+                        </button>`
+                      : nothing}
+                  </div>`
+                : nothing}
+            </div>
+          `
         : nothing}
-      ${isEmpty
-        ? html`<div class="chat-tool-card__status-text muted">Completed</div>`
-        : nothing}
-      ${showCollapsed
-        ? html`<div class="chat-tool-card__preview mono">${getTruncatedPreview(card.text!)}</div>`
-        : nothing}
-      ${showInline
-        ? html`<div class="chat-tool-card__inline mono">${card.text}</div>`
-        : nothing}
+    </div>
+  `;
+}
+
+/**
+ * Render a group of tool cards.
+ * - 1-2 cards: render individually (each collapsible)
+ * - 3+ cards: group with a summary header, only last card visible by default
+ */
+export function renderToolCardGroup(
+  cards: ToolCard[],
+  onOpenSidebar?: (content: string) => void,
+) {
+  if (cards.length === 0) return nothing;
+
+  if (cards.length <= 2) {
+    return html`${cards.map((card) =>
+      renderToolCardSidebar(card, onOpenSidebar),
+    )}`;
+  }
+
+  // 3+ cards: group them
+  const lastCard = cards[cards.length - 1];
+  const previousCards = cards.slice(0, -1);
+
+  const handleGroupToggle = (e: Event) => {
+    const container = (e.currentTarget as HTMLElement).closest(
+      ".chat-tool-group",
+    );
+    container?.classList.toggle("chat-tool-group--expanded");
+  };
+
+  return html`
+    <div class="chat-tool-group">
+      <div
+        class="chat-tool-group__header"
+        @click=${handleGroupToggle}
+        role="button"
+        tabindex="0"
+        @keydown=${(e: KeyboardEvent) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          handleGroupToggle(e);
+        }}
+      >
+        <span class="chat-tool-group__icon">${icons.wrench}</span>
+        <span class="chat-tool-group__count">
+          ${cards.length} 步操作已完成
+        </span>
+        <span class="chat-tool-group__chevron">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </span>
+      </div>
+      <div class="chat-tool-group__collapsed-cards">
+        ${previousCards.map((card) =>
+          renderToolCardSidebar(card, onOpenSidebar),
+        )}
+      </div>
+      <div class="chat-tool-group__last-card">
+        ${renderToolCardSidebar(lastCard, onOpenSidebar)}
+      </div>
     </div>
   `;
 }

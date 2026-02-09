@@ -600,3 +600,11 @@
 4. **响应性能**：页面切换 < 200ms，无明显卡顿
 5. **翻译完整**：无英文原始 key 显示
 6. **帮助可及**：每个页面都有上下文相关的帮助信息
+
+---
+
+## 待办：外部资源存档
+
+- [ ] **P1** 研究并集成 openclawdev-taskboard
+  - 仓库地址：https://github.com/rizqcon/openclawdev-taskboard
+  - 后续评估并整合到项目中使用

@@ -14,11 +14,14 @@ echo   此工具将修复 Gateway 启动问题
 echo.
 
 set "NODE_PATH=%~dp0node"
-set "PATH=%NODE_PATH%;%PATH%"
+set "TOOLS_PATH=%~dp0tools"
+set "PATH=%NODE_PATH%;%TOOLS_PATH%;%PATH%"
 set "CLAWDBOT_BUNDLED_PLUGINS_DIR=%~dp0extensions"
 set "CLAWDBOT_BUNDLED_SKILLS_DIR=%~dp0skills"
+set "CLAWDBOT_BUNDLED_TOOLS_DIR=%~dp0tools"
 set "CLAWDBOT_GATEWAY_TOKEN=clawdbot2026"
 set "CLAWDBOT_REGION=cn"
+set "CLAWDBOT_STATE_DIR=%APPDATA%\ClawdbotCN"
 
 echo [1/4] 设置 gateway.mode=local...
 "%NODE_PATH%\node.exe" "%~dp0dist\entry.js" config set gateway.mode local

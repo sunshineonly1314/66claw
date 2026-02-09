@@ -1,9 +1,30 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withTempHome } from "./test-helpers.js";
 
 describe("config pruning defaults", () => {
+  // 在 CN 机器上运行时 applyCnDefaults 会自动注入 contextPruning（ttl=5m），
+  // 必须显式设为 global 区域以隔离测试
+  const envSnapshot: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    envSnapshot.CLAWDBOT_REGION = process.env.CLAWDBOT_REGION;
+    envSnapshot.CLAWDBOT_CN = process.env.CLAWDBOT_CN;
+    process.env.CLAWDBOT_REGION = "global";
+    delete process.env.CLAWDBOT_CN;
+  });
+
+  afterEach(() => {
+    for (const [key, val] of Object.entries(envSnapshot)) {
+      if (val === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = val;
+      }
+    }
+  });
+
   it("does not enable contextPruning by default", async () => {
     const prevApiKey = process.env.ANTHROPIC_API_KEY;
     const prevOauthToken = process.env.ANTHROPIC_OAUTH_TOKEN;

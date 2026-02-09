@@ -359,7 +359,7 @@ export function renderApp(state: AppViewState) {
         </div>
         <div class="topbar-status">
           ${renderTopbarSupportButtons(state)}
-          <a href="https://www.tecbinai.com" target="_blank" rel="noreferrer" class="topbar-promo">
+          <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="topbar-promo">
             <span class="topbar-promo__dot"></span>
             <span class="topbar-promo__brand">TecbinAI</span>
             <span class="topbar-promo__sep"></span>
@@ -411,7 +411,7 @@ export function renderApp(state: AppViewState) {
         </div>
         <!-- tecbinai Footer Link -->
         <div class="nav-footer">
-          <a href="https://www.tecbinai.com" target="_blank" rel="noreferrer" class="nav-footer-link">
+          <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="nav-footer-link">
             <span class="nav-footer-icon">🚀</span>
             <span class="nav-footer-text">
               <span class="nav-footer-title">tecbinai</span>
@@ -1249,6 +1249,31 @@ export function renderApp(state: AppViewState) {
       ${renderLicenseDialogs(state)}
       ${renderFeedbackModal(buildFeedbackProps(state))}
       ${renderSkillsBatchOverlays(state)}
+      ${state.showAdaptationNotice
+          && state.tab === "chat"
+          && !state.showLicenseDialog
+          && !state.showOfflineBanner
+          && !shouldShowDiscovery(
+               state.discoveryState,
+               state.chatMessages.length > 0 || state.chatStream !== null || state.chatLoading,
+               state.connected,
+             )
+        ? html`
+          <div class="adaptation-notice-overlay" @click=${() => state.dismissAdaptationNotice()}>
+            <div class="adaptation-notice" @click=${(e: Event) => e.stopPropagation()}>
+              <button class="adaptation-notice__close" @click=${() => state.dismissAdaptationNotice()} title="关闭">✕</button>
+              <div class="adaptation-notice__icon">🚀</div>
+              <div class="adaptation-notice__title">正在变得更好</div>
+              <div class="adaptation-notice__body">
+                <p>Windows 版本正在快速迭代中，每一天都在向更完善的体验靠近。</p>
+                <p>我们正在全力拓展更多场景 —— <strong>电商客服、个人助理、资料收集、智能问答</strong>……更多能力持续上线中！</p>
+                <p>感谢你的陪伴，一起见证 Clawdbot 的成长 ✨</p>
+              </div>
+              <button class="adaptation-notice__cta" @click=${() => state.dismissAdaptationNotice()}>好的，继续探索 →</button>
+            </div>
+          </div>
+        `
+        : nothing}
     </div>
   `;
 }
@@ -1396,7 +1421,7 @@ function renderLicenseDialogs(state: AppViewState) {
 
     case "expired":
       return renderExpiredDialog(
-        state.licenseState?.renewalReminder?.renewUrl || null,
+        state.licenseState?.renewalReminder?.renewUrl || state.licenseState?.license?.purchaseUrl || null,
         Math.abs(state.licenseState?.renewalReminder?.daysRemaining || 0),
         () => {
           state.showLicenseDialog = null;
@@ -1584,9 +1609,7 @@ function renderSkillsBatchOverlays(state: AppViewState) {
   const phase = batch.batchPhase;
   const minimized = batch.batchMinimized;
 
-  // Helper: augment batch state with client ref for controller calls (mutates in-place)
   const withClient = () => Object.assign(batch, { client: state.client });
-  // Helper: trigger Lit re-render after in-place mutation
   const sync = () => { state.skillsBatch = { ...batch }; };
 
   const onMinimize = () => { batch.batchMinimized = true; sync(); };

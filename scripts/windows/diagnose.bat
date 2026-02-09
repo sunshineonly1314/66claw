@@ -34,10 +34,10 @@ if exist "%~dp0dist\entry.js" (
 ) else (
     echo   [错误] dist\entry.js 未找到
 )
-if exist "%~dp0ClawdbotLauncher.exe" (
-    echo   [OK] ClawdbotLauncher.exe 已找到
+if exist "%~dp0ClawdbotService.exe" (
+    echo   [OK] ClawdbotService.exe 已找到
 ) else (
-    echo   [警告] ClawdbotLauncher.exe 未找到 (桌面快捷方式可能无法工作)
+    echo   [警告] ClawdbotService.exe 未找到 (桌面快捷方式可能无法工作)
 )
 echo.
 
@@ -71,7 +71,8 @@ echo.
 
 echo [6/7] 配置文件检查 / Config Check
 echo ------------------------------------------------------------
-set "CONFIG_FILE=%USERPROFILE%\.clawdbot\clawdbot.json"
+:: ClawdbotCN uses isolated config dir at %APPDATA%\ClawdbotCN (not %USERPROFILE%\.clawdbot)
+set "CONFIG_FILE=%APPDATA%\ClawdbotCN\clawdbot.json"
 if exist "!CONFIG_FILE!" (
     echo   [OK] 配置文件存在: !CONFIG_FILE!
     findstr /c:"gateway" "!CONFIG_FILE!" >nul 2>&1
@@ -82,6 +83,12 @@ if exist "!CONFIG_FILE!" (
     )
 ) else (
     echo   [!] 配置文件不存在 (首次运行会自动创建)
+    echo   路径: !CONFIG_FILE!
+)
+:: Also check if old open-source config exists
+if exist "%USERPROFILE%\.clawdbot\clawdbot.json" (
+    echo   [!] 发现旧版 Clawdbot 配置: %USERPROFILE%\.clawdbot
+    echo       ClawdbotCN 使用独立目录，不会影响旧版配置
 )
 echo.
 

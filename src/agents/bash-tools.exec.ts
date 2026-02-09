@@ -53,7 +53,7 @@ import {
 } from "./bash-tools.shared.js";
 import { callGatewayTool } from "./tools/gateway.js";
 import { listNodes, resolveNodeIdFromList } from "./tools/nodes-utils.js";
-import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
+import { getShellConfig, normalizeWindowsCommand, sanitizeBinaryOutput } from "./shell-utils.js";
 import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
 import { parseAgentSessionKey, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 
@@ -369,6 +369,9 @@ async function runExecProcess(opts: {
   timeoutSec: number;
   onUpdate?: (partialResult: AgentToolResult<ExecToolDetails>) => void;
 }): Promise<ExecProcessHandle> {
+  // Normalize cmd.exe idioms (e.g. `start "" "path"`) to valid PowerShell on Windows
+  opts.command = normalizeWindowsCommand(opts.command);
+
   const startedAt = Date.now();
   const sessionId = createSessionSlug();
   let child: ChildProcessWithoutNullStreams | null = null;
@@ -904,8 +907,10 @@ export function createExecTool(
 
       if (host === "node") {
         const approvals = resolveExecApprovals(agentId, { security, ask });
-        const hostSecurity = minSecurity(security, approvals.agent.security);
-        const hostAsk = maxAsk(ask, approvals.agent.ask);
+        // 当 config 显式设置了最大权限值时，不让 exec-approvals.json 的默认值拉回来
+        // （与 gateway 路径保持一致）
+        const hostSecurity = security === "full" ? security : minSecurity(security, approvals.agent.security);
+        const hostAsk = ask === "off" ? ask : maxAsk(ask, approvals.agent.ask);
         const askFallback = approvals.agent.askFallback;
         if (hostSecurity === "deny") {
           throw new Error("exec denied: host=node security=deny");
@@ -1175,8 +1180,11 @@ export function createExecTool(
 
       if (host === "gateway" && !bypassApprovals) {
         const approvals = resolveExecApprovals(agentId, { security, ask });
-        const hostSecurity = minSecurity(security, approvals.agent.security);
-        const hostAsk = maxAsk(ask, approvals.agent.ask);
+        // 当 config 显式设置了最大权限值时，不让 exec-approvals.json 的默认值拉回来：
+        // - security="full" 表示管理员明确授权全部命令，不应被 approvals 默认的 "deny" 限制
+        // - ask="off" 表示管理员明确不需要审批，不应被 approvals 默认的 "on-miss" 升级
+        const hostSecurity = security === "full" ? security : minSecurity(security, approvals.agent.security);
+        const hostAsk = ask === "off" ? ask : maxAsk(ask, approvals.agent.ask);
         const askFallback = approvals.agent.askFallback;
         if (hostSecurity === "deny") {
           throw new Error("exec denied: host=gateway security=deny");

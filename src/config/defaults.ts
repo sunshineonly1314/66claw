@@ -1,7 +1,11 @@
+import os from "node:os";
 import { DEFAULT_CONTEXT_TOKENS } from "../agents/defaults.js";
 import { parseModelRef } from "../agents/model-selection.js";
+import { detectChinaRegion, CN_DEFAULT_SECURITY_CONFIG } from "./region-cn.js";
 import { resolveTalkApiKey } from "./talk.js";
 import type { ClawdbotConfig } from "./types.js";
+import type { PerformanceProfile } from "./types.clawdbot.js";
+import type { MCPServerConfig } from "../mcp/types.js";
 import { DEFAULT_AGENT_MAX_CONCURRENT, DEFAULT_SUBAGENT_MAX_CONCURRENT } from "./agent-limits.js";
 import type { ModelDefinitionConfig } from "./types.models.js";
 
@@ -384,6 +388,482 @@ export function applyCompactionDefaults(cfg: ClawdbotConfig): ClawdbotConfig {
         compaction: {
           ...compaction,
           mode: "safeguard",
+        },
+      },
+    },
+  };
+}
+
+/**
+ * CN 区域默认配置
+ *
+ * 仅当 detectChinaRegion() 为 true 时生效。
+ * 只填充用户未显式设置的字段（fill-empty），绝不覆盖已有值。
+ * 策略：最高权限 + 最大能力释放 + 省 token。
+ */
+export function applyCnDefaults(cfg: ClawdbotConfig): ClawdbotConfig {
+  if (!detectChinaRegion()) return cfg;
+
+  let mutated = false;
+  let next = cfg;
+
+  // ── 0. tools.exec.host: "gateway"（直接在宿主机执行，不走 Docker 沙箱）──
+  if (next.tools?.exec?.host === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        exec: {
+          ...next.tools?.exec,
+          host: "gateway",
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 1. tools.exec.security: "full"（全权限模式，最大能力释放）──
+  if (next.tools?.exec?.security === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        exec: {
+          ...next.tools?.exec,
+          security: "full",
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 2. tools.exec.ask: "off"（不询问，直接执行，最大效率）──
+  if (next.tools?.exec?.ask === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        exec: {
+          ...next.tools?.exec,
+          ask: "off",
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 2b. tools.exec.safeBins: 预置常用命令白名单 ──
+  if (next.tools?.exec?.safeBins === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        exec: {
+          ...next.tools?.exec,
+          safeBins: [...CN_DEFAULT_SECURITY_CONFIG.tools.exec.allowlist],
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 2c. tools.write.allowDelete: false（安全底线：禁止删除文件）──
+  if (next.tools?.write?.allowDelete === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        write: {
+          ...next.tools?.write,
+          allowDelete: CN_DEFAULT_SECURITY_CONFIG.tools.write.allowDelete,
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 2d. tools.browser.profile: "clawdbot"（浏览器 profile 隔离，避免污染用户默认 profile）──
+  if (next.tools?.browser?.profile === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        browser: {
+          ...next.tools?.browser,
+          profile: CN_DEFAULT_SECURITY_CONFIG.tools.browser.profile,
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 3. sandbox.mode: "off"（不使用沙箱，最大能力释放）──
+  const existingSandbox = next.agents?.defaults?.sandbox;
+  if (existingSandbox?.mode === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          sandbox: {
+            ...existingSandbox,
+            mode: CN_DEFAULT_SECURITY_CONFIG.sandbox.mode,
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 4. sandbox.scope: "agent"（按 agent 隔离，用户手动开启沙箱时生效）──
+  const sandbox4 = next.agents?.defaults?.sandbox;
+  if (sandbox4?.scope === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          sandbox: {
+            ...sandbox4,
+            scope: "agent",
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 5. sandbox.workspaceAccess: "rw" ──
+  const sandbox5 = next.agents?.defaults?.sandbox;
+  if (sandbox5?.workspaceAccess === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          sandbox: {
+            ...sandbox5,
+            workspaceAccess: "rw",
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 6. agents.defaults.timeoutSeconds: 900（15 分钟）──
+  if (next.agents?.defaults?.timeoutSeconds === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          timeoutSeconds: 900,
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 7. sandbox.browser.allowHostControl: true（允许 AI 使用宿主浏览器）──
+  const sandboxBrowser = next.agents?.defaults?.sandbox?.browser;
+  if (sandboxBrowser?.allowHostControl === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          sandbox: {
+            ...next.agents?.defaults?.sandbox,
+            browser: {
+              ...sandboxBrowser,
+              allowHostControl: true,
+            },
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 8. agents.defaults.thinkingDefault: "medium"（默认中等思考深度，平衡质量与 token）──
+  if (next.agents?.defaults?.thinkingDefault === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          thinkingDefault: "medium",
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 9. agents.defaults.blockStreamingDefault: "on"（IM 渠道分块输出，体验更好）──
+  if (next.agents?.defaults?.blockStreamingDefault === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          blockStreamingDefault: "on",
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 10. agents.defaults.blockStreamingBreak: "text_end"（文字段结束即发送）──
+  if (next.agents?.defaults?.blockStreamingBreak === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          blockStreamingBreak: "text_end",
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 11. agents.defaults.typingMode: "thinking"（AI 思考时显示打字状态）──
+  if (next.agents?.defaults?.typingMode === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          typingMode: "thinking",
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 12. agents.defaults.contextPruning: cache-ttl + 1h（自动清理过期 tool 结果，省 token）──
+  if (next.agents?.defaults?.contextPruning?.mode === undefined) {
+    next = {
+      ...next,
+      agents: {
+        ...next.agents,
+        defaults: {
+          ...next.agents?.defaults,
+          contextPruning: {
+            ...next.agents?.defaults?.contextPruning,
+            mode: "cache-ttl",
+            ttl: next.agents?.defaults?.contextPruning?.ttl ?? "5m",
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 13. tools.web.search.provider: "bing"（中国区默认使用 Bing 搜索，香港/大陆均可访问，无需 API key）──
+  if (next.tools?.web?.search?.provider === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        web: {
+          ...next.tools?.web,
+          search: {
+            ...next.tools?.web?.search,
+            provider: "bing",
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 14. tools.web.fetch.firecrawl: 切换到 Jina Reader（r.jina.ai，国内可用，免费，无需 API key）──
+  //        Firecrawl (api.firecrawl.dev) 国内不可访问，Jina Reader 是国产替代
+  if (next.tools?.web?.fetch?.firecrawl?.baseUrl === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        web: {
+          ...next.tools?.web,
+          fetch: {
+            ...next.tools?.web?.fetch,
+            firecrawl: {
+              ...next.tools?.web?.fetch?.firecrawl,
+              enabled: true,
+              baseUrl: "https://r.jina.ai",
+            },
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 15a. tools.web.fetch.timeoutSeconds: 60（国内网络延迟高，默认 30s 容易超时）──
+  if (next.tools?.web?.fetch?.timeoutSeconds === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        web: {
+          ...next.tools?.web,
+          fetch: {
+            ...next.tools?.web?.fetch,
+            timeoutSeconds: 60,
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 15b. tools.web.search.timeoutSeconds: 60（国内网络延迟高，默认 30s 容易超时）──
+  if (next.tools?.web?.search?.timeoutSeconds === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        web: {
+          ...next.tools?.web,
+          search: {
+            ...next.tools?.web?.search,
+            timeoutSeconds: 60,
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 16. mcp.servers: 预装 MCP 服务器（中国用户开箱即用）──
+  //
+  //   官方 MCP 服务器分两种运行时：
+  //     Node.js (npx):  @modelcontextprotocol/server-filesystem, server-sequential-thinking
+  //     Python  (uvx):  mcp-server-sqlite, mcp-server-fetch, mcp-server-time
+  //
+  //   npx 服务器: env.npm_config_registry → npmmirror.com（否则被墙）
+  //   uvx 服务器: env.UV_INDEX_URL → 清华 PyPI 镜像（否则被墙）
+  //              autoStart: false — Windows 安装版不含 uvx，用户需先安装 uv
+  //   timeout → 60s（国内网络延迟高，30s 默认值容易超时）
+  //
+  //   升级兼容：按 id 合并缺失的服务器（不覆盖用户已有配置）
+  {
+    const cnNpxEnv = { npm_config_registry: "https://registry.npmmirror.com" };
+    const cnUvxEnv = { UV_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple" };
+    const cnMcpTimeout = 60_000;
+    const cnDefaultMcpServers = [
+      // ── Node.js MCP 服务器（npx，自动启动）──
+      { id: "filesystem", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", os.homedir()], transport: "stdio" as const, enabled: true, autoStart: true, env: cnNpxEnv, timeout: cnMcpTimeout },
+      { id: "thinking", command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"], transport: "stdio" as const, enabled: true, autoStart: true, env: cnNpxEnv, timeout: cnMcpTimeout },
+      // ── Python MCP 服务器（uvx，需用户安装 uv 后手动启用）──
+      { id: "sqlite", command: "uvx", args: ["mcp-server-sqlite"], transport: "stdio" as const, enabled: true, autoStart: false, env: cnUvxEnv, timeout: cnMcpTimeout },
+      { id: "fetch", command: "uvx", args: ["mcp-server-fetch"], transport: "stdio" as const, enabled: true, autoStart: false, env: cnUvxEnv, timeout: cnMcpTimeout },
+      { id: "time", command: "uvx", args: ["mcp-server-time"], transport: "stdio" as const, enabled: true, autoStart: false, env: cnUvxEnv, timeout: cnMcpTimeout },
+    ];
+
+    if (next.mcp?.servers === undefined) {
+      // 全新安装：注入所有默认服务器
+      next = { ...next, mcp: { ...next.mcp, servers: cnDefaultMcpServers } };
+      mutated = true;
+    } else if (Array.isArray(next.mcp.servers)) {
+      // 升级：按 id 合并缺失的服务器（用户已有的不覆盖）
+      const existingIds = new Set(
+        (next.mcp.servers as Array<{ id?: string }>).map((s) => s.id).filter(Boolean),
+      );
+      const missing = cnDefaultMcpServers.filter((s) => !existingIds.has(s.id));
+      if (missing.length > 0) {
+        next = {
+          ...next,
+          mcp: { ...next.mcp, servers: [...(next.mcp.servers as MCPServerConfig[]), ...missing] },
+        };
+        mutated = true;
+      }
+    }
+  }
+
+  return mutated ? next : cfg;
+}
+
+/**
+ * 性能档位预设参数表
+ *
+ * 三档影响的字段：
+ * - thinkingDefault: 思考深度（AI 推理质量）
+ * - contextPruning.ttl: 上下文缓存保留时长
+ * - maxConcurrent: 最大并发 agent 数
+ * - heartbeat.every: 心跳间隔
+ */
+const PERFORMANCE_PRESETS: Record<
+  PerformanceProfile,
+  {
+    thinkingDefault: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    contextPruningTtl: string;
+    maxConcurrent: number;
+    heartbeatEvery: string;
+  }
+> = {
+  economy: {
+    thinkingDefault: "low",
+    contextPruningTtl: "10m",
+    maxConcurrent: 2,
+    heartbeatEvery: "1h",
+  },
+  balanced: {
+    thinkingDefault: "medium",
+    contextPruningTtl: "1h",
+    maxConcurrent: 4,
+    heartbeatEvery: "30m",
+  },
+  power: {
+    thinkingDefault: "high",
+    contextPruningTtl: "2h",
+    maxConcurrent: 6,
+    heartbeatEvery: "10m",
+  },
+};
+
+/**
+ * 应用性能档位到配置（显式覆盖，非 fill-empty）
+ *
+ * 切换档位时必须覆盖已有值，不能用 fill-empty 策略。
+ * 同时将 meta.performanceProfile 记录当前档位。
+ */
+export function applyPerformanceProfile(
+  cfg: ClawdbotConfig,
+  profile: PerformanceProfile,
+): ClawdbotConfig {
+  const preset = PERFORMANCE_PRESETS[profile];
+  return {
+    ...cfg,
+    meta: {
+      ...cfg.meta,
+      performanceProfile: profile,
+    },
+    agents: {
+      ...cfg.agents,
+      defaults: {
+        ...cfg.agents?.defaults,
+        thinkingDefault: preset.thinkingDefault,
+        maxConcurrent: preset.maxConcurrent,
+        contextPruning: {
+          ...cfg.agents?.defaults?.contextPruning,
+          ttl: preset.contextPruningTtl,
+        },
+        heartbeat: {
+          ...cfg.agents?.defaults?.heartbeat,
+          every: preset.heartbeatEvery,
         },
       },
     },

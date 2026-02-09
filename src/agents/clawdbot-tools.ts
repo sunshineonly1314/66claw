@@ -1,4 +1,5 @@
 import type { ClawdbotConfig } from "../config/config.js";
+import { getMCPManagerSafe } from "../mcp/index.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
@@ -18,6 +19,8 @@ import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { createTtsTool } from "./tools/tts-tool.js";
+import { createOpenAppTool } from "./tools/open-app.js";
+import { createDesktopControlTool } from "./tools/desktop-control.js";
 
 export function createClawdbotTools(options?: {
   browserControlUrl?: string;
@@ -73,6 +76,8 @@ export function createClawdbotTools(options?: {
     config: options?.config,
     sandboxed: options?.sandboxed,
   });
+  const openAppTool = createOpenAppTool();
+  const desktopControlTool = createDesktopControlTool();
   const tools: AnyAgentTool[] = [
     createBrowserTool({
       defaultControlUrl: options?.browserControlUrl,
@@ -143,6 +148,8 @@ export function createClawdbotTools(options?: {
     ...(webSearchTool ? [webSearchTool] : []),
     ...(webFetchTool ? [webFetchTool] : []),
     ...(imageTool ? [imageTool] : []),
+    ...(openAppTool ? [openAppTool] : []),
+    ...(desktopControlTool ? [desktopControlTool] : []),
   ];
 
   const pluginTools = resolvePluginTools({
@@ -163,5 +170,17 @@ export function createClawdbotTools(options?: {
     toolAllowlist: options?.pluginToolAllowlist,
   });
 
-  return [...tools, ...pluginTools];
+  // MCP tools: bridge all available MCP server tools into the Agent tool chain.
+  // Deduplicate: MCP tools must not shadow builtin or plugin tools.
+  const mcpToolsRaw = getMCPManagerSafe()?.getAvailableTools() ?? [];
+  const existingNames = new Set([...tools, ...pluginTools].map((t) => t.name));
+  const mcpTools = mcpToolsRaw.filter((t) => {
+    if (existingNames.has(t.name)) {
+      console.warn(`[mcp] Skipping MCP tool "${t.name}" — conflicts with existing tool`);
+      return false;
+    }
+    return true;
+  });
+
+  return [...tools, ...pluginTools, ...mcpTools];
 }

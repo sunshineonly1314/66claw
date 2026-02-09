@@ -1,6 +1,8 @@
 ---
 name: voice-call
 description: Start voice calls via the Clawdbot voice-call plugin.
+nameZh: "语音通话"
+descriptionZh: "通过Clawdbot语音通话插件发起语音通话"
 metadata: {"clawdbot":{"emoji":"📞","skillKey":"voice-call","requires":{"config":["plugins.entries.voice-call.enabled"]}}}
 ---
 

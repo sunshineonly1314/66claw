@@ -499,6 +499,8 @@ export interface LicenseClientState {
 export interface LicenseModuleConfig {
   /** API Base URL */
   apiBaseUrl: string;
+  /** 备用 API Base URLs（主 URL 网络失败时依次尝试） */
+  apiFallbackUrls?: string[];
   /** 签名密钥 (HMAC，旧方式) */
   signSecretKey: string;
   /** 离线宽限期(小时) */

@@ -1,6 +1,8 @@
 ---
 name: things-mac
 description: Manage Things 3 via the `things` CLI on macOS (add/update projects+todos via URL scheme; read/search/list from the local Things database). Use when a user asks Clawdbot to add a task to Things, list inbox/today/upcoming, search tasks, or inspect projects/areas/tags.
+nameZh: "Things待办"
+descriptionZh: "通过Things CLI管理Things 3待办事项和项目"
 homepage: https://github.com/ossianhempel/things3-cli
 metadata: {"clawdbot":{"emoji":"✅","os":["darwin"],"requires":{"bins":["things"]},"install":[{"id":"go","kind":"go","module":"github.com/ossianhempel/things3-cli/cmd/things@latest","bins":["things"],"label":"Install things3-cli (go)"}]}}
 ---

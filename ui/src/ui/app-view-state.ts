@@ -110,6 +110,13 @@ export type AppViewState = {
   licenseActivationError: string | null;
   licenseBoundDevices: BoundDevice[];
   showOfflineBanner: boolean;
+  // QR 码预加载状态 (ClawdbotCN)
+  qrcodePreloading: boolean;
+  qrcodePreloaded: boolean;
+  qrcodeExpiresAt: number | null;
+  // 性能档位 (Performance Profile)
+  performanceProfile: "economy" | "balanced" | "power";
+  performanceProfileSaving: boolean;
   configLoading: boolean;
   configRaw: string;
   configRawOriginal: string;
@@ -191,6 +198,17 @@ export type AppViewState = {
   playgroundInstallMessage: string | null;
   // 技能安装进度
   skillsInstallProgress: Record<string, import("./controllers/skills").InstallProgress>;
+  // 技能批量安装状态 (ClawdbotCN)
+  skillsBatch: import("./controllers/skills-batch").SkillsBatchState;
+  handleBatchEvent?: (event: Record<string, unknown>) => void;
+  // MCP 扩展工具状态 (Extensions)
+  mcpCapabilities: McpCapability[];
+  mcpAdvancedOpen: boolean;
+  mcpUpdateNotice: { count: number; names: string[] } | null;
+  mcpProcesses: McpProcessInfo[];
+  // MCP 市场状态
+  mcpExtTab: McpExtensionsTab;
+  mcpMarketplace: McpMarketplaceState;
   // 文档中心状态
   docsViewState: DocsViewState;
   // 意见反馈状态
@@ -310,6 +328,9 @@ export type AppViewState = {
   handleLogsLevelFilterToggle: (level: LogLevel) => void;
   handleLogsAutoFollowToggle: (next: boolean) => void;
   handleCallDebugMethod: (method: string, params: string) => Promise<void>;
+  // 适配公告弹框
+  showAdaptationNotice: boolean;
+  dismissAdaptationNotice: () => void;
   // 反馈功能处理函数
   handleFeedbackOpen: () => void;
   handleFeedbackClose: () => void;
@@ -349,3 +370,87 @@ export type AppViewState = {
   logsLimit: number;
   logsMaxBytes: number;
 };
+
+// ---------------------------------------------------------------------------
+// MCP / Extensions types
+// ---------------------------------------------------------------------------
+
+export type McpCapabilityStatus = "ready" | "needs_config" | "paused" | "fixing" | "unavailable";
+
+export type McpCapability = {
+  id: string;
+  friendlyName: string;
+  status: McpCapabilityStatus;
+  description: string[];
+  examplePrompt: string;
+  configNeeded?: string;
+  isNew?: boolean;
+};
+
+export type McpProcessInfo = {
+  id: string;
+  friendlyName: string;
+  status: "running" | "stopped" | "error";
+  memoryMB: number;
+  toolCount: number;
+};
+
+// ---------------------------------------------------------------------------
+// MCP Marketplace types
+// ---------------------------------------------------------------------------
+
+export type McpMarketplaceItem = {
+  serverId: string;
+  friendlyName: string;
+  friendlyNameEn: string;
+  description: string;
+  descriptionEn: string;
+  category: string;
+  tags: string[];
+  version: string;
+  npmPackage: string;
+  securityScore: number;
+  requiresApiKey: boolean;
+  apiKeyName?: string;
+  apiKeyGuideUrl?: string;
+  platforms: string[];
+  isOfficial: boolean;
+  isNew: boolean;
+  toolCount: number;
+  installStatus: "not_installed" | "installing" | "installed" | "error";
+  /** Capabilities list shown in detail modal */
+  capabilities?: string[];
+  /** Example prompts for "try saying" */
+  examplePrompts?: string[];
+  /** Tool names exposed by this server */
+  toolNames?: string[];
+  /** Installed version (if any) for update detection */
+  installedVersion?: string;
+  /** True when marketplace version > installed version */
+  hasUpdate?: boolean;
+};
+
+export type McpMarketplaceState = {
+  items: McpMarketplaceItem[];
+  loading: boolean;
+  error: string | null;
+  search: string;
+  activeCategory: string;
+  sort: "recommended" | "newest" | "popular" | "name";
+  recommendations: McpMarketplaceItem[];
+  showFirstVisit: boolean;
+  /** Currently open detail modal item */
+  detailItem: McpMarketplaceItem | null;
+  /** Config wizard target */
+  configTarget: McpMarketplaceItem | null;
+  /** Toast notification (auto-dismissed after 4s) */
+  toast: McpToast | null;
+};
+
+export type McpToast = {
+  message: string;
+  type: "success" | "error" | "info";
+  timestamp: number;
+};
+
+export type McpExtensionsTab = "my" | "store";

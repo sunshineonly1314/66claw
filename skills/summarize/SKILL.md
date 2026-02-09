@@ -1,8 +1,10 @@
 ---
 name: summarize
 description: Summarize or extract text/transcripts from URLs, podcasts, and local files (great fallback for “transcribe this YouTube/video”).
+nameZh: "内容总结"
+descriptionZh: "总结长文章和文档要点"
 homepage: https://summarize.sh
-metadata: {"clawdbot":{"emoji":"🧾","requires":{"bins":["summarize"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/summarize","bins":["summarize"],"label":"Install summarize (brew)"}]}}
+metadata: {"clawdbot":{"emoji":"🧾","requires":{"bins":["summarize"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/summarize","bins":["summarize"],"label":"Install summarize (brew)"},{"id":"download-mac","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"Download summarize (macOS)","os":["darwin"]},{"id":"download-win","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"Download summarize (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"Download summarize (Linux)","os":["linux"]}]}}
 ---
 
 # Summarize

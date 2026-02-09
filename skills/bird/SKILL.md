@@ -1,6 +1,8 @@
 ---
 name: bird
 description: X/Twitter CLI for reading, searching, posting, and engagement via cookies.
+nameZh: "Twitter/X"
+descriptionZh: "通过cookies进行Twitter/X的阅读、搜索、发帖和互动"
 homepage: https://bird.fast
 metadata: {"clawdbot":{"emoji":"🐦","requires":{"bins":["bird"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/bird","bins":["bird"],"label":"Install bird (brew)","os":["darwin"]},{"id":"npm","kind":"node","package":"@steipete/bird","bins":["bird"],"label":"Install bird (npm)"}]}}
 ---

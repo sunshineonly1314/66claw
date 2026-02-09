@@ -124,8 +124,46 @@ export interface PipelineResult {
   layer1: Layer1Result;
   layer2?: Layer2Result;
   layer3?: Layer3Result;
-  finalDecision: "accepted" | "rejected" | "review";
+  finalDecision: "accepted" | "rejected" | "review" | "error";
   finalTier?: "S" | "A" | "B";
   rejectReason?: string;
   totalTimeMs: number;
+}
+
+// ============================================================================
+// 断点续跑
+// ============================================================================
+
+export interface Checkpoint {
+  pipelineId: string;
+  startedAt: string;
+  completedSkillIds: string[];
+  results: PipelineResult[];
+}
+
+// ============================================================================
+// 批量统计
+// ============================================================================
+
+export interface BatchStats {
+  totalScanned: number;
+  layer1Rejected: number;
+  layer2Rejected: number;
+  layer2Review: number;
+  layer3Excluded: number;
+  finalAccepted: number;
+  tierDistribution: { S: number; A: number; B: number };
+  categoryDistribution: Record<string, number>;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  estimatedCostCNY: number;
+  totalProcessingMs: number;
+  securityFindings: {
+    promptInjection: number;
+    dataExfil: number;
+    commandInjection: number;
+    obfuscation: number;
+    cryptoMining: number;
+    privilegeEscalation: number;
+  };
 }

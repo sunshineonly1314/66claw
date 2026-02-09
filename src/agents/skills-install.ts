@@ -430,6 +430,10 @@ import {
   getHKBinaryDownloadUrl,
   getCurrentPlatformForHKBinary,
   CLI_TOOL_MIRRORS,
+  // 大包代理
+  CLAWDSKILLSPROXY_CONFIG,
+  LARGE_PACKAGE_PROXY_MAP,
+  getClawdSkillsProxyHeaders,
 } from "../config/cn-mirrors.js";
 import { validateUrlForSsrf } from "../infra/net/ssrf.js";
 
@@ -728,7 +732,12 @@ async function downloadFile(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1_000, timeoutMs));
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    // ClawdbotCN: 如果是 ClawdSkillsProxy URL, 需要携带认证头
+    const fetchOptions: RequestInit = { signal: controller.signal };
+    if (url.startsWith(CLAWDSKILLSPROXY_CONFIG.baseUrl)) {
+      fetchOptions.headers = getClawdSkillsProxyHeaders();
+    }
+    const response = await fetch(url, fetchOptions);
     if (!response.ok || !response.body) {
       throw new Error(`Download failed (${response.status} ${response.statusText})`);
     }
@@ -839,6 +848,42 @@ async function installDownloadSpec(params: {
     };
   }
 
+  // ClawdbotCN 专属：GitHub Release URL 优先走 HK 二进制服务器
+  const useCN = shouldUseCNMirror();
+  if (useCN && url.includes("github.com") && url.includes("/releases/")) {
+    const toolName = (spec.bins?.[0] ?? "").trim();
+    if (toolName && isToolHostedOnHK(toolName)) {
+      const hkResult = await installFromHKBinaryServer({ toolName, timeoutMs, onProgress });
+      if (hkResult.ok) return hkResult;
+      // HK 失败，继续尝试直接下载
+    }
+  }
+
+  // ClawdbotCN 专属：大体积 GitHub 包走 ClawdSkillsProxy（signal-cli、sherpa-onnx、ffmpeg）
+  let effectiveUrl = url;
+  if (useCN && url.includes("github.com")) {
+    for (const [repoKey, mapping] of Object.entries(LARGE_PACKAGE_PROXY_MAP)) {
+      if (url.includes(repoKey)) {
+        // 从 GitHub URL 提取文件名: .../download/v1.12.23/sherpa-onnx-xxx.tar.bz2
+        let fname = "";
+        try { fname = path.basename(new URL(url).pathname); } catch { /* ignore */ }
+        if (fname) {
+          const platform = process.platform === "win32" ? "windows-x64"
+            : process.platform === "darwin" ? "darwin-universal"
+            : "linux-x64";
+          effectiveUrl = `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${mapping.endpoint}/${platform}/${fname}`;
+          break;
+        }
+      }
+    }
+  }
+
+  // ClawdbotCN 专属：普通 GitHub URL 通过代理加速
+  const githubProxy = process.env.GITHUB_PROXY;
+  if (githubProxy && useCN && effectiveUrl === url && (url.includes("github.com") || url.includes("githubusercontent.com"))) {
+    effectiveUrl = `${githubProxy}/${url}`;
+  }
+
   let filename = "";
   try {
     const parsed = new URL(url);
@@ -853,11 +898,10 @@ async function installDownloadSpec(params: {
 
   const archivePath = path.join(targetDir, filename);
   let downloaded = 0;
-  const useCN = shouldUseCNMirror();
-  
+
   try {
     // ClawdbotCN 专属：带进度回调的下载
-    const result = await downloadFile(url, archivePath, timeoutMs, (progress) => {
+    const result = await downloadFile(effectiveUrl, archivePath, timeoutMs, (progress) => {
       onProgress?.({
         stage: "downloading",
         message: `正在下载 ${filename}...`,
@@ -988,21 +1032,13 @@ async function installFromHKBinaryServer(params: {
     };
   }
   
-  // 边界检查 2: 获取工具配置
+  // 边界检查 2: 获取工具配置（可选）
+  // 工具在 hkBinaries.tools 列表中即可尝试下载，无需完整 CLI_TOOL_MIRRORS 配置
   const toolConfig = CLI_TOOL_MIRRORS[toolName];
-  if (!toolConfig?.hkBinary) {
-    return {
-      ok: false,
-      message: `Tool ${toolName} missing hkBinary config`,
-      stdout: "",
-      stderr: "",
-      code: null,
-    };
-  }
-  
-  // 边界检查 3: 检查平台支持
   const platform = getCurrentPlatformForHKBinary();
-  if (!toolConfig.hkBinary.platforms.includes(platform)) {
+
+  // 如果有精确的平台配置，检查平台支持
+  if (toolConfig?.hkBinary && !toolConfig.hkBinary.platforms.includes(platform)) {
     return {
       ok: false,
       message: `Tool ${toolName} does not support platform ${platform}. Supported: ${toolConfig.hkBinary.platforms.join(", ")}`,
@@ -1328,12 +1364,16 @@ async function installFromHKBinaryServer(params: {
 function canInstallFromHKServer(toolName: string): boolean {
   if (!shouldUseCNMirror()) return false;
   if (!isToolHostedOnHK(toolName)) return false;
-  
+
+  // 工具在 hkBinaries.tools 列表中即可尝试，无需完整 hkBinary 配置
   const toolConfig = CLI_TOOL_MIRRORS[toolName];
-  if (!toolConfig?.hkBinary) return false;
-  
-  const platform = getCurrentPlatformForHKBinary();
-  return toolConfig.hkBinary.platforms.includes(platform);
+  if (toolConfig?.hkBinary) {
+    // 有精确平台配置时，检查平台支持
+    const platform = getCurrentPlatformForHKBinary();
+    return toolConfig.hkBinary.platforms.includes(platform);
+  }
+  // 无 hkBinary 配置但在 tools 列表中，仍允许尝试（服务器端处理平台检测）
+  return true;
 }
 
 // ============================================================================
