@@ -8,6 +8,10 @@ import { logTypingFailure, logAckFailure } from "../../channels/logging.js";
 import { createReplyPrefixContext } from "../../channels/reply-prefix.js";
 import { createTypingCallbacks } from "../../channels/typing.js";
 import {
+  sanitizeUntrustedMetadata,
+  sanitizeAdminSystemPrompt,
+} from "../../channels/prompt-sanitizer.js";
+import {
   formatInboundEnvelope,
   formatThreadStarterEnvelope,
   resolveEnvelopeFormatOptions,
@@ -141,10 +145,14 @@ export async function processDiscordMessage(ctx: DiscordMessagePreflightContext)
   const forumContextLine = isForumStarter ? `[Forum parent: #${forumParentSlug}]` : null;
   const groupChannel = isGuildMessage && displayChannelSlug ? `#${displayChannelSlug}` : undefined;
   const groupSubject = isDirectMessage ? undefined : groupChannel;
-  const channelDescription = channelInfo?.topic?.trim();
+  // ClawdbotCN 专属: 提示注入防护 - 净化不可信的渠道元数据
+  // See: SECURITY_AUDIT_BATCH_1_PHASE_2.md - Vulnerability #9
+  const sanitizedDescription = sanitizeUntrustedMetadata(channelInfo?.topic, { allowNewlines: true });
+  const sanitizedAdminPrompt = sanitizeAdminSystemPrompt(channelConfig?.systemPrompt);
+
   const systemPromptParts = [
-    channelDescription ? `Channel topic: ${channelDescription}` : null,
-    channelConfig?.systemPrompt?.trim() || null,
+    sanitizedDescription ? `Channel topic: ${sanitizedDescription}` : null,
+    sanitizedAdminPrompt || null,
   ].filter((entry): entry is string => Boolean(entry));
   const groupSystemPrompt =
     systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;

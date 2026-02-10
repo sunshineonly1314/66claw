@@ -11,6 +11,7 @@ import JSZip from "jszip";
 
 import { CONFIG_DIR, ensureDir } from "../../utils.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { validateUrlForSsrf } from "../../infra/net/ssrf.js";
 import type { RemoteSkillMeta, RemoteSkillsIndex, FetchIndexResult, InstallSkillResult } from "./gitee-registry.js";
 
 const logger = createSubsystemLogger("clawdskillsproxy-registry");
@@ -98,6 +99,10 @@ async function fetchWithAuth(
   config: ProxyRegistryConfig,
   options: RequestInit = {},
 ): Promise<Response> {
+  // ClawdbotCN 专属：SSRF 防护 - 阻止访问内网地址
+  // See: SECURITY_AUDIT_BATCH_1_PHASE_2.md - Vulnerability #7
+  validateUrlForSsrf(url);
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 

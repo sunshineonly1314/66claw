@@ -28,6 +28,10 @@ import {
 } from "../../../channels/ack-reactions.js";
 import { resolveMentionGatingWithBypass } from "../../../channels/mention-gating.js";
 import { resolveConversationLabel } from "../../../channels/conversation-label.js";
+import {
+  sanitizeUntrustedMetadata,
+  sanitizeAdminSystemPrompt,
+} from "../../../channels/prompt-sanitizer.js";
 import { resolveControlCommandGate } from "../../../channels/command-gating.js";
 import { logInboundDrop } from "../../../channels/logging.js";
 import { formatAllowlistMatchMeta } from "../../../channels/allowlist-match.js";
@@ -439,14 +443,19 @@ export async function prepareSlackMessage(params: {
 
   const slackTo = isDirectMessage ? `user:${message.user}` : `channel:${message.channel}`;
 
-  const channelDescription = [channelInfo?.topic, channelInfo?.purpose]
+  // ClawdbotCN 专属: 提示注入防护 - 净化不可信的渠道元数据
+  // See: SECURITY_AUDIT_BATCH_1_PHASE_2.md - Vulnerability #9
+  const rawDescription = [channelInfo?.topic, channelInfo?.purpose]
     .map((entry) => entry?.trim())
     .filter((entry): entry is string => Boolean(entry))
     .filter((entry, index, list) => list.indexOf(entry) === index)
     .join("\n");
+  const sanitizedDescription = sanitizeUntrustedMetadata(rawDescription, { allowNewlines: true });
+  const sanitizedAdminPrompt = sanitizeAdminSystemPrompt(channelConfig?.systemPrompt);
+
   const systemPromptParts = [
-    channelDescription ? `Channel description: ${channelDescription}` : null,
-    channelConfig?.systemPrompt?.trim() || null,
+    sanitizedDescription ? `Channel description: ${sanitizedDescription}` : null,
+    sanitizedAdminPrompt || null,
   ].filter((entry): entry is string => Boolean(entry));
   const groupSystemPrompt =
     systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;

@@ -1,3 +1,5 @@
+import { sanitizeUntrustedMetadata } from "./prompt-sanitizer.js";
+
 export type SenderLabelParams = {
   name?: string;
   username?: string;
@@ -11,6 +13,12 @@ function normalize(value?: string): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+/**
+ * Resolve sender label with prompt injection protection
+ *
+ * ClawdbotCN 专属: 提示注入防护 - 净化sender metadata
+ * See: SECURITY_AUDIT_BATCH_1_PHASE_2.md - Vulnerability #9
+ */
 export function resolveSenderLabel(params: SenderLabelParams): string | null {
   const name = normalize(params.name);
   const username = normalize(params.username);
@@ -18,12 +26,36 @@ export function resolveSenderLabel(params: SenderLabelParams): string | null {
   const e164 = normalize(params.e164);
   const id = normalize(params.id);
 
-  const display = name ?? username ?? tag ?? "";
+  // Sanitize display name (user-controlled, untrusted)
+  // E.164 and ID are system-generated, considered safe
+  const sanitizedName = sanitizeUntrustedMetadata(name, {
+    maxLength: 100,
+    allowNewlines: false,
+    validatePatterns: true,
+  });
+  const sanitizedUsername = sanitizeUntrustedMetadata(username, {
+    maxLength: 100,
+    allowNewlines: false,
+    validatePatterns: true,
+  });
+  const sanitizedTag = sanitizeUntrustedMetadata(tag, {
+    maxLength: 100,
+    allowNewlines: false,
+    validatePatterns: true,
+  });
+
+  const display = sanitizedName ?? sanitizedUsername ?? sanitizedTag ?? "";
   const idPart = e164 ?? id ?? "";
   if (display && idPart && display !== idPart) return `${display} (${idPart})`;
   return display || idPart || null;
 }
 
+/**
+ * List all possible sender label candidates (sanitized)
+ *
+ * ClawdbotCN 专属: 返回净化后的候选标签
+ * See: SECURITY_AUDIT_BATCH_1_PHASE_2.md - Vulnerability #9
+ */
 export function listSenderLabelCandidates(params: SenderLabelParams): string[] {
   const candidates = new Set<string>();
   const name = normalize(params.name);
@@ -32,11 +64,30 @@ export function listSenderLabelCandidates(params: SenderLabelParams): string[] {
   const e164 = normalize(params.e164);
   const id = normalize(params.id);
 
-  if (name) candidates.add(name);
-  if (username) candidates.add(username);
-  if (tag) candidates.add(tag);
+  // Sanitize user-controlled fields before adding to candidates
+  const sanitizedName = sanitizeUntrustedMetadata(name, {
+    maxLength: 100,
+    allowNewlines: false,
+    validatePatterns: true,
+  });
+  const sanitizedUsername = sanitizeUntrustedMetadata(username, {
+    maxLength: 100,
+    allowNewlines: false,
+    validatePatterns: true,
+  });
+  const sanitizedTag = sanitizeUntrustedMetadata(tag, {
+    maxLength: 100,
+    allowNewlines: false,
+    validatePatterns: true,
+  });
+
+  if (sanitizedName) candidates.add(sanitizedName);
+  if (sanitizedUsername) candidates.add(sanitizedUsername);
+  if (sanitizedTag) candidates.add(sanitizedTag);
+  // E.164 and ID are system-generated, considered safe
   if (e164) candidates.add(e164);
   if (id) candidates.add(id);
+
   const resolved = resolveSenderLabel(params);
   if (resolved) candidates.add(resolved);
   return Array.from(candidates);

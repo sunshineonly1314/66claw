@@ -1013,9 +1013,19 @@ function splitCommandChain(command: string): string[] | null {
       continue;
     }
 
-    if (ch === "&" && command[i + 1] === "&") {
+    // Handle ampersand operators: both && and single &
+    // Single & is a valid command separator on Windows (e.g., "cmd1 & cmd2")
+    // See: SECURITY_AUDIT_BATCH_1_PHASE_2.md - Vulnerability #6
+    if (ch === "&") {
+      if (command[i + 1] === "&") {
+        // Double ampersand: &&
+        if (!pushPart()) invalidChain = true;
+        i += 1; // Skip the second &
+        foundChain = true;
+        continue;
+      }
+      // Single ampersand: & (Windows command separator)
       if (!pushPart()) invalidChain = true;
-      i += 1;
       foundChain = true;
       continue;
     }

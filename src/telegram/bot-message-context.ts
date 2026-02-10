@@ -26,6 +26,10 @@ import { resolveMentionGatingWithBypass } from "../channels/mention-gating.js";
 import { resolveControlCommandGate } from "../channels/command-gating.js";
 import { logInboundDrop } from "../channels/logging.js";
 import {
+  sanitizeUntrustedMetadata,
+  sanitizeAdminSystemPrompt,
+} from "../channels/prompt-sanitizer.js";
+import {
   buildGroupLabel,
   buildSenderLabel,
   buildSenderName,
@@ -477,9 +481,16 @@ export const buildTelegramMessageContext = async ({
   }
 
   const skillFilter = firstDefined(topicConfig?.skills, groupConfig?.skills);
+
+  // ClawdbotCN 专属: 提示注入防护 - 净化不可信的渠道元数据
+  // See: SECURITY_AUDIT_BATCH_1_PHASE_2.md - Vulnerability #9
+  const sanitizedGroupPrompt = sanitizeAdminSystemPrompt(groupConfig?.systemPrompt);
+  const sanitizedTopicPrompt = sanitizeAdminSystemPrompt(topicConfig?.systemPrompt);
+  const sanitizedGroupTitle = sanitizeUntrustedMetadata(msg.chat.title);
+
   const systemPromptParts = [
-    groupConfig?.systemPrompt?.trim() || null,
-    topicConfig?.systemPrompt?.trim() || null,
+    sanitizedGroupPrompt || null,
+    sanitizedTopicPrompt || null,
   ].filter((entry): entry is string => Boolean(entry));
   const groupSystemPrompt =
     systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;
@@ -494,7 +505,7 @@ export const buildTelegramMessageContext = async ({
     AccountId: route.accountId,
     ChatType: isGroup ? "group" : "direct",
     ConversationLabel: conversationLabel,
-    GroupSubject: isGroup ? (msg.chat.title ?? undefined) : undefined,
+    GroupSubject: isGroup ? (sanitizedGroupTitle ?? undefined) : undefined,
     GroupSystemPrompt: isGroup ? groupSystemPrompt : undefined,
     SenderName: senderName,
     SenderId: senderId || undefined,
