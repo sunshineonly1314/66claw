@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ClawdbotConfig } from "../config/config.js";
 import type { ChannelPlugin } from "../channels/plugins/types.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
@@ -30,6 +30,19 @@ describe("gateway hooks helpers", () => {
     const resolved = resolveHooksConfig(base);
     expect(resolved?.basePath).toBe("/hooks");
     expect(resolved?.token).toBe("secret");
+  });
+
+  test("resolveHooksConfig returns null with warning when token missing", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cfg = {
+      hooks: { enabled: true },
+    } as ClawdbotConfig;
+    const result = resolveHooksConfig(cfg);
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("hooks.token is not set"),
+    );
+    warnSpy.mockRestore();
   });
 
   test("resolveHooksConfig rejects root path", () => {

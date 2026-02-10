@@ -320,9 +320,9 @@ function formatRelativeTime(isoTime: string | null): string {
   const diffDay = Math.floor(diffHour / 24);
   
   if (diffMin < 1) return t("skills.time.justNow") || "刚刚";
-  if (diffMin < 60) return `${diffMin} ${t("skills.time.minutesAgo") || "分钟前"}`;
-  if (diffHour < 24) return `${diffHour} ${t("skills.time.hoursAgo") || "小时前"}`;
-  return `${diffDay} ${t("skills.time.daysAgo") || "天前"}`;
+  if (diffMin < 60) return (t("skills.time.minutesAgo") || "{{count}} 分钟前").replace("{{count}}", String(diffMin));
+  if (diffHour < 24) return (t("skills.time.hoursAgo") || "{{count}} 小时前").replace("{{count}}", String(diffHour));
+  return (t("skills.time.daysAgo") || "{{count}} 天前").replace("{{count}}", String(diffDay));
 }
 
 // Loading Spinner Component

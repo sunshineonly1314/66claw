@@ -20,7 +20,11 @@ export function resolveHooksConfig(cfg: ClawdbotConfig): HooksConfigResolved | n
   if (cfg.hooks?.enabled !== true) return null;
   const token = cfg.hooks?.token?.trim();
   if (!token) {
-    throw new Error("hooks.enabled requires hooks.token");
+    console.warn(
+      "[hooks] hooks.enabled is true but hooks.token is not set – hooks will be disabled. " +
+        "Please configure hooks.token in your config to enable hooks.",
+    );
+    return null;
   }
   const rawPath = cfg.hooks?.path?.trim() || DEFAULT_HOOKS_PATH;
   const withSlash = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;

@@ -22,8 +22,9 @@ Gateway can expose a small HTTP webhook endpoint for external triggers.
 ```
 
 Notes:
-- `hooks.token` is required when `hooks.enabled=true`.
+- `hooks.token` is required when `hooks.enabled=true`. If token is missing, hooks will be silently disabled with a warning (gateway will still start normally).
 - `hooks.path` defaults to `/hooks`.
+- `hooks.enabled` controls the **HTTP webhook API** only. For internal agent event hooks (session-memory, boot-md, etc.), use `hooks.internal.enabled` instead.
 
 ## Auth
 

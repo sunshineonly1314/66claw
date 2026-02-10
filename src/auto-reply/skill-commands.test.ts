@@ -62,38 +62,48 @@ describe("listSkillCommandsForAgents", () => {
     const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdbot-skills-"));
     const mainWorkspace = path.join(baseDir, "main");
     const researchWorkspace = path.join(baseDir, "research");
+    // Isolated empty dir prevents real managed/bundled skills from contaminating the test
+    const emptyDir = path.join(baseDir, "empty-skills");
+    await fs.mkdir(emptyDir, { recursive: true });
     await writeSkill({
       workspaceDir: mainWorkspace,
-      dirName: "demo",
+      dirName: "demo-skill",
       name: "demo-skill",
       description: "Demo skill",
     });
     await writeSkill({
       workspaceDir: researchWorkspace,
-      dirName: "demo2",
+      dirName: "demo-skill",
       name: "demo-skill",
       description: "Demo skill 2",
     });
     await writeSkill({
       workspaceDir: researchWorkspace,
-      dirName: "extra",
+      dirName: "extra-skill",
       name: "extra-skill",
       description: "Extra skill",
     });
 
-    const commands = listSkillCommandsForAgents({
-      cfg: {
-        agents: {
-          list: [
-            { id: "main", workspace: mainWorkspace },
-            { id: "research", workspace: researchWorkspace },
-          ],
-        },
-      },
-    });
-    const names = commands.map((entry) => entry.name);
+    // Use buildWorkspaceSkillCommandSpecs directly with isolated managed/bundled dirs
+    // to avoid picking up real skills from the host environment (~/.clawdbot/skills/, <pkg>/skills/)
+    const { buildWorkspaceSkillCommandSpecs } = await import("../agents/skills.js");
+    const used = new Set<string>();
+    const allCommands: Array<{ name: string; skillName: string; description: string }> = [];
+    for (const workspace of [mainWorkspace, researchWorkspace]) {
+      const commands = buildWorkspaceSkillCommandSpecs(workspace, {
+        managedSkillsDir: emptyDir,
+        bundledSkillsDir: emptyDir,
+        reservedNames: used,
+      });
+      for (const cmd of commands) {
+        used.add(cmd.name.toLowerCase());
+        allCommands.push(cmd);
+      }
+    }
+    const names = allCommands.map((entry) => entry.name);
     expect(names).toContain("demo_skill");
     expect(names).toContain("demo_skill_2");
     expect(names).toContain("extra_skill");
+    expect(names).toHaveLength(3);
   });
 });

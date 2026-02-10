@@ -75,7 +75,12 @@ export async function resolveGatewayRuntimeConfig(params: {
     typeof resolvedAuth.password === "string" && resolvedAuth.password.trim().length > 0;
   const hasSharedSecret =
     (authMode === "token" && hasToken) || (authMode === "password" && hasPassword);
-  const hooksConfig = resolveHooksConfig(params.cfg);
+  let hooksConfig: ReturnType<typeof resolveHooksConfig> = null;
+  try {
+    hooksConfig = resolveHooksConfig(params.cfg);
+  } catch (err) {
+    console.warn(`[hooks] hooks config error, hooks disabled: ${String(err)}`);
+  }
   const canvasHostEnabled =
     process.env.CLAWDBOT_SKIP_CANVAS_HOST !== "1" && params.cfg.canvasHost?.enabled !== false;
 

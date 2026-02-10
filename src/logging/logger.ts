@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { Logger as TsLogger } from "tslog";
@@ -11,8 +12,12 @@ import { readLoggingConfig } from "./config.js";
 import { loggingState } from "./state.js";
 
 // Pin to /tmp so mac Debug UI and docs match; os.tmpdir() can be a per-user
-// randomized path on macOS which made the “Open log” button a no-op.
-export const DEFAULT_LOG_DIR = "/tmp/clawdbot";
+// randomized path on macOS which made the "Open log" button a no-op.
+// On Windows, /tmp resolves to <drive>:\tmp which may not exist — use os.tmpdir() instead.
+export const DEFAULT_LOG_DIR =
+  process.platform === "win32"
+    ? path.join(os.tmpdir(), "clawdbot")
+    : "/tmp/clawdbot";
 export const DEFAULT_LOG_FILE = path.join(DEFAULT_LOG_DIR, "clawdbot.log"); // legacy single-file path
 
 const LOG_PREFIX = "clawdbot";

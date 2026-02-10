@@ -81,7 +81,7 @@ const DEFAULT_MAX_PROMPT_SKILLS = 30;
  *   1 — skills with no `requires` at all (generic / community skills)
  */
 function skillPromptPriority(entry: SkillEntry, pinnedSet?: Set<string>): number {
-  if (pinnedSet?.has(entry.skill.name) || pinnedSet?.has(entry.clawdbot?.skillKey ?? "")) return 4;
+  if (pinnedSet?.has(entry.skill.name) || (entry.clawdbot?.skillKey && pinnedSet?.has(entry.clawdbot.skillKey))) return 4;
   if (entry.clawdbot?.always === true) return 3;
   const req = entry.clawdbot?.requires;
   const hasDeps =

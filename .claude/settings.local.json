@@ -5,13 +5,12 @@
       "Read(*)",
       "Write(*)",
       "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
       "WebFetch(*)",
-      "Bash(npx oxfmt:*)",
-      "Bash(node scripts/format-staged.js:*)",
-      "Bash(git commit:*)",
-      "Bash(bash:*)",
-      "Bash(node --input-type=module -e \"\nimport { spawnSync } from ''node:child_process'';\nconst r = spawnSync\\(''node_modules/.bin/oxfmt.cmd'', [''--write'', ''src/config/cn-mirrors.ts''], {\n  cwd: ''D:/codeknowledge/clawdbot-main/clawdbot-main'',\n  stdio: ''inherit'',\n}\\);\nconsole.log\\(''status:'', r.status\\);\nconsole.log\\(''error:'', r.error\\);\n\")",
-      "Bash(node:*)"
+      "WebSearch(*)",
+      "NotebookEdit(*)",
+      "Task(*)"
     ]
   }
 }

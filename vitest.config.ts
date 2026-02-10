@@ -18,6 +18,9 @@ export default defineConfig({
   test: {
     testTimeout: 120_000,
     hookTimeout: isWindows ? 180_000 : 120_000,
+    // Inline zod-to-json-schema ESM to avoid Node.js resolution issues on Windows
+    // (the package lacks "type":"module" but ships .js ESM files)
+    server: { deps: { inline: ["zod-to-json-schema"] } },
     pool: "forks",
     maxWorkers: isCI ? ciWorkers : localWorkers,
     include: [

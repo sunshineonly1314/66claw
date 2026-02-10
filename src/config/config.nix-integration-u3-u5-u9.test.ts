@@ -35,10 +35,15 @@ describe("Nix integration (U3, U5, U9)", () => {
   });
 
   describe("U5: CONFIG_PATH and STATE_DIR env var overrides", () => {
-    it("STATE_DIR_CLAWDBOT defaults to ~/.clawdbot when env not set", async () => {
+    it("STATE_DIR_CLAWDBOT defaults to ~/.clawdbot (or <appRoot>/data on Windows) when env not set", async () => {
       await withEnvOverride({ CLAWDBOT_STATE_DIR: undefined }, async () => {
         const { STATE_DIR_CLAWDBOT } = await import("./config.js");
-        expect(STATE_DIR_CLAWDBOT).toMatch(/\.clawdbot$/);
+        // On Windows, the portable data dir (<appRoot>/data/) takes precedence
+        if (process.platform === "win32") {
+          expect(STATE_DIR_CLAWDBOT).toMatch(/[/\\]data$/);
+        } else {
+          expect(STATE_DIR_CLAWDBOT).toMatch(/\.clawdbot$/);
+        }
       });
     });
 
@@ -49,12 +54,16 @@ describe("Nix integration (U3, U5, U9)", () => {
       });
     });
 
-    it("CONFIG_PATH_CLAWDBOT defaults to ~/.clawdbot/clawdbot.json when env not set", async () => {
+    it("CONFIG_PATH_CLAWDBOT defaults to ~/.clawdbot/clawdbot.json (or <appRoot>/data/clawdbot.json on Windows) when env not set", async () => {
       await withEnvOverride(
         { CLAWDBOT_CONFIG_PATH: undefined, CLAWDBOT_STATE_DIR: undefined },
         async () => {
           const { CONFIG_PATH_CLAWDBOT } = await import("./config.js");
-          expect(CONFIG_PATH_CLAWDBOT).toMatch(/\.clawdbot[\\/]clawdbot\.json$/);
+          if (process.platform === "win32") {
+            expect(CONFIG_PATH_CLAWDBOT).toMatch(/[/\\]data[/\\]clawdbot\.json$/);
+          } else {
+            expect(CONFIG_PATH_CLAWDBOT).toMatch(/\.clawdbot[\\/]clawdbot\.json$/);
+          }
         },
       );
     });

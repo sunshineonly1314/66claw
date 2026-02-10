@@ -445,10 +445,13 @@ ${descLines.join("\n")}`;
 
   const sectionStart = zhContent.indexOf('  // ============================================================================\n  // 技能名称中文翻译');
   if (sectionStart !== -1) {
-    const lastBrace = zhContent.lastIndexOf("}");
+    // 找技能翻译区域的结束点：auto-synced 注释或 } as const;（保留后续内容）
+    const autoSyncMarker = zhContent.indexOf('\n  // Auto-synced from en.ts', sectionStart);
+    const closingBrace = zhContent.lastIndexOf("} as const;");
+    const sectionEnd = autoSyncMarker !== -1 ? autoSyncMarker : closingBrace;
     const beforeSection = zhContent.substring(0, sectionStart);
-    const afterSection = zhContent.substring(lastBrace);
-    const newContent = beforeSection + translationBlock + "\n" + afterSection;
+    const afterSection = zhContent.substring(sectionEnd);
+    const newContent = beforeSection + translationBlock + afterSection;
     fs.writeFileSync(ZH_CN_FILE, newContent);
     console.log(`\n✅ zh-CN.ts 已自动更新!`);
   } else {

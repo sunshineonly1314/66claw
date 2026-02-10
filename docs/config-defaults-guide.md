@@ -993,7 +993,8 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
 | `skills.load.watch` | boolean | 无 | `true` | 技能热加载 |
 | `skills.install.preferBrew` | boolean | 无 | Mac=`true` | Homebrew 优先 |
 | `cron.enabled` | boolean | 无 | `true` | 定时任务 |
-| `hooks.enabled` | boolean | 无 | `true` | 钩子系统 |
+| `hooks.enabled` | boolean | 无 | `false` | HTTP webhook API（需配 token，一般用户不需要） |
+| `hooks.internal.enabled` | boolean | 无 | `true` | 内部事件钩子（session-memory 等） |
 | `logging.level` | string | 无 | `"info"` | 日志级别 |
 | `tts.enabled` | boolean | 无 | `false` | 语音合成（需 key） |
 | `canvasHost.enabled` | boolean | 自动 | 保持自动 | 画布服务 |
@@ -1064,7 +1065,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
   },
   skills: { load: { watch: true } },
   cron: { enabled: true },
-  hooks: { enabled: true },
+  hooks: { internal: { enabled: true } },
   freeModels: {
     enabled: true,
     scheduling: { strategy: "priority", showNotification: true, preCheck: true }
@@ -1134,7 +1135,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
   },
   skills: { load: { watch: true }, install: { preferBrew: true } },
   cron: { enabled: true },
-  hooks: { enabled: true },
+  hooks: { internal: { enabled: true } },
   freeModels: {
     enabled: true,
     scheduling: { strategy: "priority", showNotification: true, preCheck: true }
@@ -1204,7 +1205,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
   },
   skills: { load: { watch: true } },
   cron: { enabled: true },
-  hooks: { enabled: true },
+  hooks: { internal: { enabled: true } },
   freeModels: {
     enabled: true,
     scheduling: { strategy: "priority", showNotification: true, preCheck: true }
