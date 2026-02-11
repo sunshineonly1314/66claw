@@ -189,8 +189,9 @@ export const buildTelegramMessageContext = async ({
     if (dmPolicy === "disabled") return null;
 
     if (dmPolicy !== "open") {
-      const candidate = String(chatId);
       const senderUsername = msg.from?.username ?? "";
+      const senderUserId = msg.from?.id != null ? String(msg.from.id) : null;
+      const candidate = senderUserId ?? String(chatId);
       const allowMatch = resolveSenderAllowMatch({
         allow: effectiveDmAllow,
         senderId: candidate,
@@ -295,7 +296,7 @@ export const buildTelegramMessageContext = async ({
 
   let placeholder = "";
   if (msg.photo) placeholder = "<media:image>";
-  else if (msg.video) placeholder = "<media:video>";
+  else if (msg.video || msg.video_note) placeholder = "<media:video>";
   else if (msg.audio || msg.voice) placeholder = "<media:audio>";
   else if (msg.document) placeholder = "<media:document>";
 
@@ -488,10 +489,9 @@ export const buildTelegramMessageContext = async ({
   const sanitizedTopicPrompt = sanitizeAdminSystemPrompt(topicConfig?.systemPrompt);
   const sanitizedGroupTitle = sanitizeUntrustedMetadata(msg.chat.title);
 
-  const systemPromptParts = [
-    sanitizedGroupPrompt || null,
-    sanitizedTopicPrompt || null,
-  ].filter((entry): entry is string => Boolean(entry));
+  const systemPromptParts = [sanitizedGroupPrompt || null, sanitizedTopicPrompt || null].filter(
+    (entry): entry is string => Boolean(entry),
+  );
   const groupSystemPrompt =
     systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;
   const commandBody = normalizeCommandBody(rawBody, { botUsername });

@@ -203,6 +203,11 @@ export class DiscordExecApprovalHandler {
     this.opts = opts;
   }
 
+  isApprover(userId: string): boolean {
+    const approvers = this.opts.config.approvers ?? [];
+    return approvers.some((a) => String(a) === userId);
+  }
+
   shouldHandle(request: ExecApprovalRequest): boolean {
     const config = this.opts.config;
     if (!config.enabled) return false;
@@ -497,6 +502,19 @@ export class ExecApprovalButton extends Button {
   }
 
   async run(interaction: ButtonInteraction, data: ComponentData): Promise<void> {
+    const interactionUserId = interaction.user?.id;
+    if (!interactionUserId || !this.ctx.handler.isApprover(interactionUserId)) {
+      try {
+        await interaction.reply({
+          content: "You are not authorized to approve or deny this request.",
+          ephemeral: true,
+        });
+      } catch {
+        // Interaction may have expired
+      }
+      return;
+    }
+
     const parsed = parseExecApprovalData(data);
     if (!parsed) {
       try {

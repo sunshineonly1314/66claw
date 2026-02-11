@@ -71,18 +71,38 @@ type LobsterEnvelope =
       error: { type?: string; message: string };
     };
 
+const ALLOWED_LOBSTER_BASENAMES = new Set(["lobster", "lobster.exe", "lobster.cmd", "lobster.bat"]);
+
 function resolveExecutablePath(lobsterPathRaw: string | undefined) {
   const lobsterPath = lobsterPathRaw?.trim() || "lobster";
-  if (lobsterPath !== "lobster" && !path.isAbsolute(lobsterPath)) {
+  if (lobsterPath === "lobster") return lobsterPath; // use PATH lookup
+  if (!path.isAbsolute(lobsterPath)) {
     throw new Error("lobsterPath must be an absolute path (or omit to use PATH)");
+  }
+  // Security: verify basename is an allowed lobster executable name
+  const base = path.basename(lobsterPath).toLowerCase();
+  if (!ALLOWED_LOBSTER_BASENAMES.has(base)) {
+    throw new Error(`lobsterPath basename "${base}" is not an allowed lobster executable`);
+  }
+  // Verify file exists
+  try {
+    const stat = fs.statSync(lobsterPath);
+    if (!stat.isFile()) {
+      throw new Error(`lobsterPath is not a file: ${lobsterPath}`);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`lobsterPath does not exist: ${lobsterPath}`);
+    }
+    throw err;
   }
   return lobsterPath;
 }
 
-function isWindowsSpawnEINVAL(err: unknown) {
+function isWindowsSpawnErrorThatCanUseShell(err: unknown) {
   if (!err || typeof err !== "object") return false;
   const code = (err as { code?: unknown }).code;
-  return code === "EINVAL";
+  return code === "EINVAL" || code === "ENOENT";
 }
 
 async function runLobsterSubprocessOnce(
@@ -173,7 +193,7 @@ async function runLobsterSubprocess(params: {
   try {
     return await runLobsterSubprocessOnce(params, false);
   } catch (err) {
-    if (process.platform === "win32" && isWindowsSpawnEINVAL(err)) {
+    if (process.platform === "win32" && isWindowsSpawnErrorThatCanUseShell(err)) {
       return await runLobsterSubprocessOnce(params, true);
     }
     throw err;
@@ -224,14 +244,16 @@ export function createLobsterTool(api: ClawdbotPluginApi) {
       const execPath = resolveExecutablePath(
         typeof params.lobsterPath === "string" ? params.lobsterPath : undefined,
       );
-      const rawCwd = typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : process.cwd();
-      
+      const rawCwd =
+        typeof params.cwd === "string" && params.cwd.trim() ? params.cwd.trim() : process.cwd();
+
       // ClawdbotCN 专属：cwd 路径验证 - 防止路径遍历攻击
       validateCwdPath(rawCwd);
       const cwd = rawCwd;
-      
+
       const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 20_000;
-      const maxStdoutBytes = typeof params.maxStdoutBytes === "number" ? params.maxStdoutBytes : 512_000;
+      const maxStdoutBytes =
+        typeof params.maxStdoutBytes === "number" ? params.maxStdoutBytes : 512_000;
 
       const argv = (() => {
         if (action === "run") {

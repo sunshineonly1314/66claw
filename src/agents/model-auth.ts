@@ -5,6 +5,7 @@ import type { ClawdbotConfig } from "../config/config.js";
 import type { ModelProviderAuthMode, ModelProviderConfig } from "../config/types.js";
 import { getShellEnvAppliedKeys } from "../infra/shell-env.js";
 import { formatCliCommand } from "../cli/command-format.js";
+import { normalizeSecretInput } from "../utils/normalize-secret-input.js";
 import {
   type AuthProfileStore,
   ensureAuthProfileStore,
@@ -49,7 +50,7 @@ export function getCustomProviderApiKey(
   provider: string,
 ): string | undefined {
   const entry = resolveProviderConfig(cfg, provider);
-  const key = entry?.apiKey?.trim();
+  const key = normalizeSecretInput(entry?.apiKey);
   return key || undefined;
 }
 
@@ -233,7 +234,7 @@ export function resolveEnvApiKey(provider: string): EnvApiKeyResult | null {
   const normalized = normalizeProviderId(provider);
   const applied = new Set(getShellEnvAppliedKeys());
   const pick = (envVar: string): EnvApiKeyResult | null => {
-    const value = process.env[envVar]?.trim();
+    const value = normalizeSecretInput(process.env[envVar]);
     if (!value) return null;
     const source = applied.has(envVar) ? `shell env: ${envVar}` : `env: ${envVar}`;
     return { apiKey: value, source };
@@ -364,7 +365,7 @@ export async function getApiKeyForModel(params: {
 }
 
 export function requireApiKey(auth: ResolvedProviderAuth, provider: string): string {
-  const key = auth.apiKey?.trim();
+  const key = normalizeSecretInput(auth.apiKey);
   if (key) return key;
   throw new Error(`No API key resolved for provider "${provider}" (auth mode: ${auth.mode}).`);
 }

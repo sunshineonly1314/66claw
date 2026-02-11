@@ -19,11 +19,9 @@ function isValidMedia(candidate: string, opts?: { allowSpaces?: boolean }) {
   if (candidate.length > 4096) return false;
   if (!opts?.allowSpaces && /\s/.test(candidate)) return false;
   if (/^https?:\/\//i.test(candidate)) return true;
-  if (candidate.startsWith("/")) return true;
-  if (candidate.startsWith("./")) return true;
-  if (candidate.startsWith("../")) return true;
-  if (candidate.startsWith("~")) return true;
-  return false;
+  // Security: only allow safe relative paths (./...) without traversal.
+  // Absolute paths (/), tilde (~), and traversal (..) are blocked to prevent LFI.
+  return candidate.startsWith("./") && !candidate.includes("..");
 }
 
 function unwrapQuoted(value: string): string | undefined {
@@ -113,12 +111,8 @@ export function splitMediaFromOutput(raw: string): {
       }
 
       const trimmedPayload = payloadValue.trim();
-      const looksLikeLocalPath =
-        trimmedPayload.startsWith("/") ||
-        trimmedPayload.startsWith("./") ||
-        trimmedPayload.startsWith("../") ||
-        trimmedPayload.startsWith("~") ||
-        trimmedPayload.startsWith("file://");
+      // Only safe relative paths are considered local; absolute/tilde/traversal blocked for LFI.
+      const looksLikeLocalPath = trimmedPayload.startsWith("./") && !trimmedPayload.includes("..");
       if (
         !unwrapped &&
         validCount === 1 &&

@@ -157,7 +157,7 @@ export function describeReplyTarget(msg: TelegramMessage) {
   let body = replyBody;
   if (!body) {
     if (reply.photo) body = "<media:image>";
-    else if (reply.video) body = "<media:video>";
+    else if (reply.video || reply.video_note) body = "<media:video>";
     else if (reply.audio || reply.voice) body = "<media:audio>";
     else if (reply.document) body = "<media:document>";
     else {

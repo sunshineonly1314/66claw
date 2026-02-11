@@ -57,14 +57,23 @@ export function buildDockerExecArgs(params: {
   if (params.workdir) {
     args.push("-w", params.workdir);
   }
+  // Security: pass PATH via a dedicated env var to avoid shell injection.
+  // The raw PATH value is never interpolated into the shell command string.
+  const hasCustomPath = Boolean(params.env.PATH);
+  if (hasCustomPath) {
+    args.push("-e", `CLAWDBOT_PREPEND_PATH=${params.env.PATH}`);
+  }
   for (const [key, value] of Object.entries(params.env)) {
+    if (key === "PATH") continue; // handled above via CLAWDBOT_PREPEND_PATH
     args.push("-e", `${key}=${value}`);
   }
   // Login shell (-l) sources /etc/profile which resets PATH to a minimal set,
   // overriding both Docker ENV and -e PATH=... environment variables.
   // Prepend custom PATH after profile sourcing to ensure custom tools are accessible
   // while preserving system paths that /etc/profile may have added.
-  const pathExport = params.env.PATH ? `export PATH="${params.env.PATH}:$PATH"; ` : "";
+  const pathExport = hasCustomPath
+    ? 'export PATH="${CLAWDBOT_PREPEND_PATH}:$PATH"; unset CLAWDBOT_PREPEND_PATH; '
+    : "";
   args.push(params.containerName, "sh", "-lc", `${pathExport}${params.command}`);
   return args;
 }

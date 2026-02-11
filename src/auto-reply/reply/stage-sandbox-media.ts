@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveSandboxPath } from "../../agents/sandbox-paths.js";
 import { ensureSandboxWorkspaceForSession } from "../../agents/sandbox.js";
 import type { ClawdbotConfig } from "../../config/config.js";
 import { logVerbose } from "../../globals.js";
@@ -67,6 +68,17 @@ export async function stageSandboxMedia(params: {
       const source = resolveAbsolutePath(raw);
       if (!source) continue;
       if (staged.has(source)) continue;
+
+      // Security: when a sandbox is active, verify the source path stays within
+      // the allowed media directory to prevent LFI (local file inclusion).
+      if (sandbox) {
+        try {
+          resolveSandboxPath({ filePath: source, cwd: destDir, root: destDir });
+        } catch {
+          logVerbose(`Blocked media staging outside sandbox: ${source}`);
+          continue;
+        }
+      }
 
       const baseName = path.basename(source);
       if (!baseName) continue;

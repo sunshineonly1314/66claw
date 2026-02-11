@@ -469,7 +469,7 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
     [
       new GatewayPlugin({
         reconnect: {
-          maxAttempts: Number.POSITIVE_INFINITY,
+          maxAttempts: 50,
         },
         intents: resolveDiscordGatewayIntents(discordCfg.intents),
         autoInteractions: true,

@@ -183,7 +183,8 @@ export function applyModelDefaults(cfg: ClawdbotConfig): ClawdbotConfig {
         if (raw.contextWindow !== contextWindow) modelMutated = true;
 
         const defaultMaxTokens = Math.min(DEFAULT_MODEL_MAX_TOKENS, contextWindow);
-        const maxTokens = isPositiveNumber(raw.maxTokens) ? raw.maxTokens : defaultMaxTokens;
+        const rawMaxTokens = isPositiveNumber(raw.maxTokens) ? raw.maxTokens : defaultMaxTokens;
+        const maxTokens = Math.min(rawMaxTokens, contextWindow);
         if (raw.maxTokens !== maxTokens) modelMutated = true;
 
         if (!modelMutated) return model;
@@ -765,12 +766,57 @@ export function applyCnDefaults(cfg: ClawdbotConfig): ClawdbotConfig {
     const cnMcpTimeout = 60_000;
     const cnDefaultMcpServers = [
       // ── Node.js MCP 服务器（npx，自动启动）──
-      { id: "filesystem", command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", os.homedir()], transport: "stdio" as const, enabled: true, autoStart: true, env: cnNpxEnv, timeout: cnMcpTimeout },
-      { id: "thinking", command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"], transport: "stdio" as const, enabled: true, autoStart: true, env: cnNpxEnv, timeout: cnMcpTimeout },
+      {
+        id: "filesystem",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", os.homedir()],
+        transport: "stdio" as const,
+        enabled: true,
+        autoStart: true,
+        env: cnNpxEnv,
+        timeout: cnMcpTimeout,
+      },
+      {
+        id: "thinking",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        transport: "stdio" as const,
+        enabled: true,
+        autoStart: true,
+        env: cnNpxEnv,
+        timeout: cnMcpTimeout,
+      },
       // ── Python MCP 服务器（uvx，需用户安装 uv 后手动启用）──
-      { id: "sqlite", command: "uvx", args: ["mcp-server-sqlite"], transport: "stdio" as const, enabled: true, autoStart: false, env: cnUvxEnv, timeout: cnMcpTimeout },
-      { id: "fetch", command: "uvx", args: ["mcp-server-fetch"], transport: "stdio" as const, enabled: true, autoStart: false, env: cnUvxEnv, timeout: cnMcpTimeout },
-      { id: "time", command: "uvx", args: ["mcp-server-time"], transport: "stdio" as const, enabled: true, autoStart: false, env: cnUvxEnv, timeout: cnMcpTimeout },
+      {
+        id: "sqlite",
+        command: "uvx",
+        args: ["mcp-server-sqlite"],
+        transport: "stdio" as const,
+        enabled: true,
+        autoStart: false,
+        env: cnUvxEnv,
+        timeout: cnMcpTimeout,
+      },
+      {
+        id: "fetch",
+        command: "uvx",
+        args: ["mcp-server-fetch"],
+        transport: "stdio" as const,
+        enabled: true,
+        autoStart: false,
+        env: cnUvxEnv,
+        timeout: cnMcpTimeout,
+      },
+      {
+        id: "time",
+        command: "uvx",
+        args: ["mcp-server-time"],
+        transport: "stdio" as const,
+        enabled: true,
+        autoStart: false,
+        env: cnUvxEnv,
+        timeout: cnMcpTimeout,
+      },
     ];
 
     if (next.mcp?.servers === undefined) {
