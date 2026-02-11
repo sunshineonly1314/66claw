@@ -282,3 +282,15 @@ export async function setModelscopeApiKey(key: string, agentDir?: string) {
     agentDir: resolveAuthAgentDir(agentDir),
   });
 }
+
+export async function setOllamaApiKey(key: string, agentDir?: string) {
+  upsertAuthProfile({
+    profileId: "ollama:default",
+    credential: {
+      type: "api_key",
+      provider: "ollama",
+      key,
+    },
+    agentDir: resolveAuthAgentDir(agentDir),
+  });
+}

@@ -488,6 +488,17 @@ export const en = {
   "skills.overview.eligibleTooltip": "Dependencies met but not loaded into prompt due to max skills limit",
   "skills.pin": "Pin",
   "skills.unpin": "Unpin",
+  "skills.tab.core": "Active Core",
+  "skills.tab.ready": "Ready",
+  "skills.tab.blocked": "Missing Deps",
+  "skills.tab.core.hint": "Skills loaded into AI prompt, parameter-controlled limit",
+  "skills.tab.ready.hint": "Dependencies met, can be added to core anytime",
+  "skills.tab.blocked.hint": "Install missing dependencies to add to core",
+  "skills.action.addToCore": "Add to Core",
+  "skills.action.removeFromCore": "Remove",
+  "skills.action.installDeps": "Install Deps",
+  "skills.blocked.autoInstall": "Auto-installable",
+  "skills.blocked.manual": "Manual setup required",
 
   // ============================================================================
   // 节点页 (Nodes)
@@ -2009,6 +2020,11 @@ export const en = {
   "extensions.advanced.checkUpdate": "Check for new capabilities",
   "extensions.advanced.restart": "Restart",
   "extensions.advanced.disable": "Disable",
+  "extensions.advanced.enable": "Enable",
+  "extensions.advanced.test": "Test",
+  "extensions.advanced.testing": "Testing...",
+  "extensions.advanced.testSuccess": "Connected",
+  "extensions.advanced.testFailed": "Connection failed",
   "extensions.advanced.addManual": "Add Manually",
 
   // Extensions — Dual Tabs

@@ -128,7 +128,9 @@ export async function checkLicenseOnGatewayStart(
       log.debug("Integrity check passed");
     } catch (error) {
       // 安全策略：完整性校验出错时必须阻止启动
-      log.error(`SECURITY VIOLATION: Integrity check error: ${error instanceof Error ? error.message : String(error)}`);
+      log.error(
+        `SECURITY VIOLATION: Integrity check error: ${error instanceof Error ? error.message : String(error)}`,
+      );
       console.error("[安全警告] 完整性校验失败，程序退出");
       process.exit(1);
     }
@@ -136,31 +138,48 @@ export async function checkLicenseOnGatewayStart(
 
   // 步骤 2：授权验证
   // 中国区自动配置备用 URL 和更长离线宽限期
-  const cnLicenseOverrides: Partial<LicenseModuleConfig> | undefined =
-    detectChinaRegion()
-      ? {
-          apiFallbackUrls: [
-            // 主域名回源（obplugins.cn 不可用时兜底）
-            "https://www.tecbinai.com/api/api/v1/license",
-          ],
-          offlineGracePeriodHours: 48, // CN 用户跨境网络不稳定，宽限期 48h
-        }
-      : undefined;
+  const cnLicenseOverrides: Partial<LicenseModuleConfig> | undefined = detectChinaRegion()
+    ? {
+        apiFallbackUrls: [
+          // 主域名回源（obplugins.cn 不可用时兜底）
+          "https://www.tecbinai.com/api/api/v1/license",
+        ],
+        offlineGracePeriodHours: 48, // CN 用户跨境网络不稳定，宽限期 48h
+      }
+    : undefined;
 
   try {
     // 30 秒超时保护：防止网络不通时 license 校验永远卡住
     // 超时后自动 fallback 到离线模式（使用本地缓存）
     const LICENSE_VERIFY_TIMEOUT_MS = 30_000;
+    // Guard flag: if the timeout fires first, the still-running verify
+    // promise's callbacks (e.g. onInvalid) must not mutate global state
+    // that the fallback path has already set.
+    let licenseCheckAborted = false;
     const verifyPromise = verifyLicenseOnStartup({
       config: cnLicenseOverrides,
       onInvalid: () => {
+        // Guard: if we already timed out, don't mutate global state
+        if (licenseCheckAborted) return;
         log.warn("License became invalid during runtime");
       },
     });
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("License verification timed out after 30s")), LICENSE_VERIFY_TIMEOUT_MS),
-    );
-    const result = await Promise.race([verifyPromise, timeoutPromise]);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const t = setTimeout(
+        () => reject(new Error("License verification timed out after 30s")),
+        LICENSE_VERIFY_TIMEOUT_MS,
+      );
+      // Don't keep process alive just for this timer
+      t.unref?.();
+    });
+    let result: Awaited<typeof verifyPromise>;
+    try {
+      result = await Promise.race([verifyPromise, timeoutPromise]);
+    } catch (raceErr) {
+      // Mark aborted so the still-running verify promise won't mutate state
+      licenseCheckAborted = true;
+      throw raceErr;
+    }
 
     // 保存全局状态
     globalLicenseState = result.clientState;
@@ -197,7 +216,13 @@ export async function checkLicenseOnGatewayStart(
       log.debug("AI tamper protection initialized");
 
       // 步骤 5：启动短期令牌自动刷新
-      const cfg = loadConfig();
+      let cfg: ReturnType<typeof loadConfig>;
+      try {
+        cfg = loadConfig();
+      } catch (cfgErr) {
+        log.warn(`Failed to load config for token refresh setup: ${cfgErr}`);
+        cfg = {} as ReturnType<typeof loadConfig>;
+      }
       const licenseKey = cfg.license?.key;
       if (licenseKey) {
         startTokenAutoRefresh(licenseKey, {
@@ -369,7 +394,9 @@ export function isLicenseValid(): boolean {
   // 这样即使 Token 服务暂时不可用，用户仍可使用已验证的授权
   if (!hasValidToken()) {
     const tokenStatus = getTokenStatusSummary();
-    log.debug(`Token check: hasToken=${tokenStatus.hasToken}, isValid=${tokenStatus.isValid}, failureCount=${tokenStatus.failureCount}`);
+    log.debug(
+      `Token check: hasToken=${tokenStatus.hasToken}, isValid=${tokenStatus.isValid}, failureCount=${tokenStatus.failureCount}`,
+    );
 
     // 如果令牌无效且全局状态显示有效，可能是篡改
     if (globalLicenseState.valid && tokenStatus.hasToken) {
@@ -386,18 +413,26 @@ export function isLicenseValid(): boolean {
     // 2. 网络问题导致 token 刷新失败
     // 3. 首次启动/激活后 token 还在获取中
     // 4. 设备切换冷却中（本地有有效缓存但在线验证失败）
-    
+
     // 尝试后台获取 token（如果有 key）
     triggerBackgroundTokenRefresh();
-    
+
     // 【修复 v3】检查本地缓存作为后备验证
     // 即使在线验证失败（如设备冷却），只要本地缓存有效且未过期就允许使用
     const localCache = loadLicenseCacheForFallback();
-    
+
     if (localCache && localCache.valid && localCache.expiresAt) {
       const expiresAt = new Date(localCache.expiresAt).getTime();
+      // Guard against invalid date strings (NaN) which would cause
+      // checkLicenseExpiry to behave unpredictably.
+      if (!Number.isFinite(expiresAt)) {
+        log.warn("Token unavailable and local cache has invalid expiresAt");
+        return false;
+      }
       if (Date.now() < expiresAt) {
-        log.debug(`Token unavailable, using local cache as fallback (cache valid until ${localCache.expiresAt})`);
+        log.debug(
+          `Token unavailable, using local cache as fallback (cache valid until ${localCache.expiresAt})`,
+        );
         // 继续执行后续验证，但跳过 globalLicenseState.valid 检查
         return checkLicenseExpiry(expiresAt);
       } else {
@@ -405,12 +440,14 @@ export function isLicenseValid(): boolean {
         return false;
       }
     }
-    
+
     // 如果没有本地缓存，检查全局状态
     if (globalLicenseState.valid && globalLicenseState.license?.expiresAt) {
       const expiresAt = new Date(globalLicenseState.license.expiresAt).getTime();
       if (Date.now() < expiresAt) {
-        log.debug("Token unavailable, using global state as fallback (license valid and not expired)");
+        log.debug(
+          "Token unavailable, using global state as fallback (license valid and not expired)",
+        );
         // 继续执行后续验证
       } else {
         log.warn("Token unavailable and license expired");
@@ -502,38 +539,56 @@ export function hasLicenseFeature(feature: string): boolean {
 // 后台 Token 刷新状态
 let _backgroundRefreshPending = false;
 let _lastBackgroundRefreshAttempt = 0;
-const BACKGROUND_REFRESH_COOLDOWN_MS = 30 * 1000; // 30 秒冷却
+let _consecutiveRefreshFailures = 0;
+const BACKGROUND_REFRESH_BASE_COOLDOWN_MS = 30 * 1000; // 30 秒基础冷却
+const BACKGROUND_REFRESH_MAX_COOLDOWN_MS = 10 * 60 * 1000; // 最大 10 分钟冷却
 
 /**
  * 触发后台 Token 刷新
  * 用于在宽限期内或宽限期过期时尝试恢复 token
+ * 使用指数退避策略：连续失败时逐步增大冷却间隔
  */
 function triggerBackgroundTokenRefresh(): void {
   // 防止频繁刷新
   if (_backgroundRefreshPending) {
     return;
   }
-  
+
   const now = Date.now();
-  if (now - _lastBackgroundRefreshAttempt < BACKGROUND_REFRESH_COOLDOWN_MS) {
+  // Exponential backoff: 30s, 60s, 120s, ... up to 10min max
+  // Clamp exponent to avoid Infinity from Math.pow on very large failure counts
+  const cooldownMs = Math.min(
+    BACKGROUND_REFRESH_BASE_COOLDOWN_MS * Math.pow(2, Math.min(_consecutiveRefreshFailures, 20)),
+    BACKGROUND_REFRESH_MAX_COOLDOWN_MS,
+  );
+  if (now - _lastBackgroundRefreshAttempt < cooldownMs) {
     return;
   }
-  
-  const cfg = loadConfig();
+
+  let cfg: ReturnType<typeof loadConfig>;
+  try {
+    cfg = loadConfig();
+  } catch (cfgErr) {
+    log.debug(`Background refresh: config load failed: ${cfgErr}`);
+    return;
+  }
   const licenseKey = cfg.license?.key;
   if (!licenseKey) {
     return;
   }
-  
+
   _backgroundRefreshPending = true;
   _lastBackgroundRefreshAttempt = now;
-  
-  log.debug("Triggering background token refresh...");
-  
+
+  log.debug(
+    `Triggering background token refresh (attempt after ${_consecutiveRefreshFailures} failures, cooldown ${Math.round(cooldownMs / 1000)}s)...`,
+  );
+
   refreshToken(licenseKey)
     .then((success) => {
       if (success) {
         log.info("Background token refresh succeeded");
+        _consecutiveRefreshFailures = 0; // Reset backoff on success
         // 更新 lastVerifiedAt 以重置宽限期计时
         if (globalLicenseState) {
           globalLicenseState = {
@@ -542,11 +597,17 @@ function triggerBackgroundTokenRefresh(): void {
           };
         }
       } else {
-        log.debug("Background token refresh failed, will retry later");
+        _consecutiveRefreshFailures++;
+        log.debug(
+          `Background token refresh failed (consecutive: ${_consecutiveRefreshFailures}), will retry later`,
+        );
       }
     })
     .catch((err) => {
-      log.debug(`Background token refresh error: ${err}`);
+      _consecutiveRefreshFailures++;
+      log.debug(
+        `Background token refresh error (consecutive: ${_consecutiveRefreshFailures}): ${err}`,
+      );
     })
     .finally(() => {
       _backgroundRefreshPending = false;

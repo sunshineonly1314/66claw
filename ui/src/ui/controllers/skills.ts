@@ -1,7 +1,7 @@
 import type { GatewayBrowserClient } from "../gateway";
 import type { RemoteSkillsIndex, SkillStatusReport, SkillsMarketResponse } from "../types";
 
-export type SkillsTab = "active" | "library";
+export type SkillsTab = "active" | "library" | "blocked";
 
 /** 安装进度阶段 */
 export type InstallProgressStage = "downloading" | "installing" | "verifying" | "done";
@@ -108,7 +108,7 @@ export async function updateSkillEnabled(
     await loadSkills(state);
     setSkillMessage(state, skillKey, {
       kind: "success",
-      message: enabled ? "Skill enabled" : "Skill disabled",
+      message: enabled ? "技能已启用" : "技能已禁用",
     });
   } catch (err) {
     const message = getErrorMessage(err);
@@ -132,7 +132,7 @@ export async function saveSkillApiKey(state: SkillsState, skillKey: string) {
     await loadSkills(state);
     setSkillMessage(state, skillKey, {
       kind: "success",
-      message: "API key saved",
+      message: "API 密钥已保存",
     });
   } catch (err) {
     const message = getErrorMessage(err);
@@ -164,7 +164,7 @@ export async function installSkill(
     await loadSkills(state);
     setSkillMessage(state, skillKey, {
       kind: "success",
-      message: result?.message ?? "Installed",
+      message: result?.message ?? "已安装",
     });
   } catch (err) {
     const message = getErrorMessage(err);
@@ -191,7 +191,7 @@ export async function toggleSkillPinned(
     await loadSkills(state);
     setSkillMessage(state, skillKey, {
       kind: "success",
-      message: pinned ? "Skill pinned" : "Skill unpinned",
+      message: pinned ? "已置顶" : "已取消置顶",
     });
   } catch (err) {
     const message = getErrorMessage(err);
@@ -279,25 +279,25 @@ export async function installRemoteSkill(
     percent: 20,
   });
   
+  // 模拟下载进度（因为后端是一次性返回结果）
+  const progressTimer = setInterval(() => {
+    const current = state.skillsInstallProgress[skillName];
+    if (current && current.stage === "downloading" && (current.percent ?? 0) < 80) {
+      setInstallProgress(state, skillName, {
+        stage: "downloading",
+        message: "正在从云端下载技能包...",
+        percent: Math.min((current.percent ?? 20) + 10, 80),
+      });
+    }
+  }, 500);
+
   try {
-    // 模拟下载进度（因为后端是一次性返回结果）
-    const progressTimer = setInterval(() => {
-      const current = state.skillsInstallProgress[skillName];
-      if (current && current.stage === "downloading" && (current.percent ?? 0) < 80) {
-        setInstallProgress(state, skillName, {
-          stage: "downloading",
-          message: "正在从云端下载技能包...",
-          percent: Math.min((current.percent ?? 20) + 10, 80),
-        });
-      }
-    }, 500);
-    
     const result = (await state.client.request("skills.install", {
       name: skillName,
       installId: "gitee",
       timeoutMs: 120000,
     })) as { ok?: boolean; message?: string };
-    
+
     clearInterval(progressTimer);
     
     // 阶段2: 安装验证
@@ -328,6 +328,7 @@ export async function installRemoteSkill(
     }, 1500);
     
   } catch (err) {
+    clearInterval(progressTimer);
     const message = getErrorMessage(err);
     state.skillsRemoteError = message;
     state.skillsMarketError = message;

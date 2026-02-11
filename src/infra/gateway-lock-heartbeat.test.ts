@@ -183,15 +183,16 @@ describe("gateway lock heartbeat", () => {
     };
     await fs.writeFile(lockPath, JSON.stringify(payload), "utf8");
 
-    // Should NOT be able to acquire because the PID is alive
-    // and missing heartbeat defaults to "alive" (not "dead")
+    // Should NOT be able to acquire because the PID is alive.
+    // With no heartbeat file, the code checks lock createdAt against staleMs.
+    // Use a large staleMs so the fresh lock is not considered stale.
     await expect(
       acquireGatewayLock({
         env,
         allowInTests: true,
         timeoutMs: 200,
         pollIntervalMs: 20,
-        staleMs: 1,
+        staleMs: 60_000,
         platform: "win32",
       }),
     ).rejects.toBeInstanceOf(GatewayLockError);

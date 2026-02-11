@@ -139,9 +139,35 @@ function resolveGatewayOwnerStatus(
   // On non-Linux platforms (especially Windows) we cannot inspect /proc to
   // verify the PID actually belongs to a gateway.  Use the heartbeat
   // companion file as a secondary liveness signal.
+  //
+  // IMPORTANT: On Windows, PIDs can be reused quickly by unrelated processes.
+  // If the PID is alive but the heartbeat file is stale, the original gateway
+  // is dead and the PID now belongs to a different process.  We must also
+  // check the case where no heartbeat file exists — this means either the
+  // gateway never started its heartbeat timer, or the file was cleaned up.
+  // In that case, fall back to checking the lock file creation time.
   if (platform !== "linux") {
-    if (lockPath && typeof staleMs === "number" && isHeartbeatStale(lockPath, staleMs)) {
-      return "dead";
+    if (lockPath && typeof staleMs === "number") {
+      if (isHeartbeatStale(lockPath, staleMs)) {
+        return "dead";
+      }
+      // If heartbeat file doesn't exist at all, check lock file age as fallback.
+      // This covers the case where gateway crashed before writing its first heartbeat.
+      const hbPath = heartbeatPathFromLock(lockPath);
+      try {
+        fsSync.statSync(hbPath);
+      } catch {
+        // No heartbeat file — check if lock itself is stale
+        if (payload?.createdAt) {
+          const createdAt = Date.parse(payload.createdAt);
+          if (Number.isFinite(createdAt) && Date.now() - createdAt > staleMs) {
+            return "dead";
+          }
+        }
+        // Lock is fresh but no heartbeat yet — return unknown so caller
+        // can wait and retry rather than immediately declaring alive.
+        return "unknown";
+      }
     }
     return "alive";
   }
@@ -172,7 +198,15 @@ async function readLockPayload(lockPath: string): Promise<LockPayload | null> {
       configPath: parsed.configPath,
       startTime,
     };
-  } catch {
+  } catch (err) {
+    // Log at debug level to help diagnose stale/corrupt lock files without
+    // spamming production logs.  Distinguishes "file gone" from "corrupt JSON".
+    const code = (err as { code?: string }).code;
+    if (code !== "ENOENT") {
+      console.debug?.(
+        `[gateway-lock] readLockPayload failed for ${lockPath}: ${code ?? String(err)}`,
+      );
+    }
     return null;
   }
 }
@@ -226,15 +260,27 @@ export async function acquireGatewayLock(
       // file so other processes (on any platform) can detect a hung gateway
       // whose PID is still alive but unresponsive.
       const hbPath = heartbeatPathFromLock(lockPath);
+      let hbFailCount = 0;
       const touchHeartbeat = () => {
         try {
           const now = new Date();
           fsSync.utimesSync(hbPath, now, now);
+          hbFailCount = 0;
         } catch {
           try {
             fsSync.writeFileSync(hbPath, "", "utf8");
+            hbFailCount = 0;
           } catch {
-            /* best-effort */
+            hbFailCount++;
+            // Log a warning after 3 consecutive failures so the operator
+            // knows the heartbeat is stale (this could cause other
+            // processes to consider this gateway dead).
+            if (hbFailCount === 3) {
+              // Use stderr since the logging subsystem may not be available here
+              console.warn(
+                `[gateway-lock] heartbeat touch failed ${hbFailCount} consecutive times for ${hbPath}`,
+              );
+            }
           }
         }
       };

@@ -491,6 +491,18 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skills.overview.eligibleTooltip": "已满足所有依赖，因技能上限未加载进 AI 提示词",
   "skills.pin": "置顶",
   "skills.unpin": "取消置顶",
+  // 新三状态 Tab
+  "skills.tab.core": "已激活核心",
+  "skills.tab.ready": "就绪候补",
+  "skills.tab.blocked": "缺依赖",
+  "skills.tab.core.hint": "已加载到 AI 提示词的技能，参数控制上限",
+  "skills.tab.ready.hint": "依赖已满足，可随时添加到核心",
+  "skills.tab.blocked.hint": "安装缺少的依赖后，可添加到核心",
+  "skills.action.addToCore": "加入核心",
+  "skills.action.removeFromCore": "卸载",
+  "skills.action.installDeps": "安装依赖",
+  "skills.blocked.autoInstall": "可自动安装",
+  "skills.blocked.manual": "需手动处理",
 
   // ============================================================================
   // 节点页 (Nodes)
@@ -5598,6 +5610,11 @@ export const zhCN: Record<keyof typeof en, string> = {
   "extensions.advanced.state": "状态",
   "extensions.advanced.status": "运行状态",
   "extensions.advanced.tools": "工具",
+  "extensions.advanced.test": "测试",
+  "extensions.advanced.testing": "测试中...",
+  "extensions.advanced.testSuccess": "连接正常",
+  "extensions.advanced.testFailed": "连接失败",
+  "extensions.advanced.enable": "启用",
   "extensions.advanced.totalMemory": "总内存占用",
   "extensions.allReady": "全部就绪 — 在对话中直接使用即可",
   "extensions.canHelp": "可以帮你：",
@@ -5855,7 +5872,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "mcpUpdate.newAbilities": "新增 {{count}} 个能力",
   "mcpUpdate.newAbilitiesPlural": "新增 {{count}} 个能力",
   "mcpUpdate.view": "查看",
-  "nav.extensions": "扩展",
+  "nav.extensions": "扩展 MCP",
   "skillTag.ai": "AI",
   "skillTag.api": "API",
   "skillTag.audio": "音频",
@@ -5893,5 +5910,5 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skillTag.video": "视频",
   "skillTag.weather": "天气",
   "skillTag.writing": "写作",
-  "subtitle.extensions": "你的 AI 助手的扩展能力。",
+  "subtitle.extensions": "你的 AI 助手的扩展能力。管理 MCP 服务器与工具。",
 } as const;

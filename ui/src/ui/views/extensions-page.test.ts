@@ -45,6 +45,7 @@ function makeState(overrides: Partial<McpMarketplaceState> = {}): McpMarketplace
     showFirstVisit: false,
     detailItem: null,
     configTarget: null,
+    toast: null,
     ...overrides,
   };
 }

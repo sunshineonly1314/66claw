@@ -23,6 +23,7 @@ import {
   setMoonshotApiKey,
   setModelscopeApiKey,
   setKimiCodeApiKey,
+  setOllamaApiKey,
 } from "../../commands/onboard-auth.js";
 
 /**
@@ -74,13 +75,13 @@ export interface ProviderFullInfo {
 function isProviderAuthConfigured(provider: CnProviderConfig): boolean {
   const envVar = provider.envVar;
   if (!envVar) return false;
-  
+
   // 1. 检查环境变量是否已设置
   const value = process.env[envVar];
   if (value && value.trim().length > 0) {
     return true;
   }
-  
+
   // 2. 检查 auth-profiles.json（setXxxApiKey 函数保存的位置）
   try {
     const authStore = ensureAuthProfileStore();
@@ -100,11 +101,11 @@ function isProviderAuthConfigured(provider: CnProviderConfig): boolean {
   } catch {
     // ignore auth-profiles.json load errors
   }
-  
+
   // 3. 检查 clawdbot.json 中的配置（与 setup-wizard 兼容）
   try {
     const config = loadConfig();
-    
+
     // 检查 auth.profiles（setup-wizard 的保存方式）
     const profiles = config.auth?.profiles as Record<string, unknown> | undefined;
     if (profiles) {
@@ -120,7 +121,7 @@ function isProviderAuthConfigured(provider: CnProviderConfig): boolean {
         }
       }
     }
-    
+
     // 兼容：检查 credentials
     const credentials = config.credentials as Record<string, string> | undefined;
     if (credentials && credentials[envVar]) {
@@ -129,7 +130,7 @@ function isProviderAuthConfigured(provider: CnProviderConfig): boolean {
   } catch {
     // ignore
   }
-  
+
   return false;
 }
 
@@ -226,23 +227,25 @@ export const modelsHandlers: GatewayRequestHandlers = {
     try {
       const providers = getProvidersWithModels();
       const defaults = getDefaultModels();
-      
+
       // 获取当前配置的主模型
       const config = loadConfig();
       const currentModel = config.agents?.defaults?.model;
-      const primaryRef = typeof currentModel === "string"
-        ? currentModel
-        : currentModel?.primary;
-      
+      const primaryRef = typeof currentModel === "string" ? currentModel : currentModel?.primary;
+
       const current = primaryRef ? parseModelRef(primaryRef) : null;
-      
-      respond(true, {
-        providers,
-        defaults,
-        current: current
-          ? { provider: current.provider, model: current.model, ref: primaryRef }
-          : null,
-      }, undefined);
+
+      respond(
+        true,
+        {
+          providers,
+          defaults,
+          current: current
+            ? { provider: current.provider, model: current.model, ref: primaryRef }
+            : null,
+        },
+        undefined,
+      );
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
@@ -255,11 +258,7 @@ export const modelsHandlers: GatewayRequestHandlers = {
     try {
       const p = params as { provider?: string };
       if (!p.provider) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, "missing provider"),
-        );
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "missing provider"));
         return;
       }
 
@@ -274,12 +273,16 @@ export const modelsHandlers: GatewayRequestHandlers = {
       }
 
       const configured = isProviderAuthConfigured(provider);
-      respond(true, {
-        provider: p.provider,
-        configured,
-        authField: provider.authField ?? "apiKey",
-        envVar: provider.envVar,
-      }, undefined);
+      respond(
+        true,
+        {
+          provider: p.provider,
+          configured,
+          authField: provider.authField ?? "apiKey",
+          envVar: provider.envVar,
+        },
+        undefined,
+      );
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
@@ -291,19 +294,15 @@ export const modelsHandlers: GatewayRequestHandlers = {
    */
   "models.setAuth": async ({ params, respond }) => {
     try {
-      const p = params as { 
-        provider?: string; 
+      const p = params as {
+        provider?: string;
         apiKey?: string;
         secretId?: string;
         secretKey?: string;
       };
-      
+
       if (!p.provider) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, "missing provider"),
-        );
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "missing provider"));
         return;
       }
 
@@ -335,11 +334,7 @@ export const modelsHandlers: GatewayRequestHandlers = {
       } else {
         // 标准 API Key
         if (!p.apiKey) {
-          respond(
-            false,
-            undefined,
-            errorShape(ErrorCodes.INVALID_REQUEST, "missing apiKey"),
-          );
+          respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "missing apiKey"));
           return;
         }
         authValue = p.apiKey.trim();
@@ -375,6 +370,8 @@ export const modelsHandlers: GatewayRequestHandlers = {
         await setAnthropicApiKey(authValue);
       } else if (providerId === "nvidia") {
         await setNvidiaApiKey(authValue);
+      } else if (providerId === "ollama") {
+        await setOllamaApiKey(authValue);
       } else {
         // 未知提供商，保存到通用环境变量配置
         const config = loadConfig();
@@ -384,11 +381,15 @@ export const modelsHandlers: GatewayRequestHandlers = {
         process.env[providerConfig.envVar] = authValue;
       }
 
-      respond(true, {
-        ok: true,
-        provider: p.provider,
-        configured: true,
-      }, undefined);
+      respond(
+        true,
+        {
+          ok: true,
+          provider: p.provider,
+          configured: true,
+        },
+        undefined,
+      );
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
@@ -400,7 +401,7 @@ export const modelsHandlers: GatewayRequestHandlers = {
   "models.setPrimary": async ({ params, respond }) => {
     try {
       const p = params as { provider?: string; model?: string; ref?: string };
-      
+
       let modelRef: string;
       if (p.ref) {
         modelRef = p.ref;
@@ -457,14 +458,18 @@ export const modelsHandlers: GatewayRequestHandlers = {
 
       await writeConfigFile(nextConfig);
 
-      respond(true, {
-        ok: true,
-        model: {
-          provider: parsed.provider,
-          model: parsed.model,
-          ref: modelRef,
+      respond(
+        true,
+        {
+          ok: true,
+          model: {
+            provider: parsed.provider,
+            model: parsed.model,
+            ref: modelRef,
+          },
         },
-      }, undefined);
+        undefined,
+      );
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }

@@ -51,7 +51,11 @@ export function createGatewayCloseHandler(params: {
       }
     }
     if (params.tailscaleCleanup) {
-      await params.tailscaleCleanup();
+      try {
+        await params.tailscaleCleanup();
+      } catch (err) {
+        closeLog.debug(`tailscale cleanup failed: ${String(err)}`);
+      }
     }
     if (params.canvasHost) {
       try {
@@ -68,7 +72,11 @@ export function createGatewayCloseHandler(params: {
       }
     }
     for (const plugin of listChannelPlugins()) {
-      await params.stopChannel(plugin.id);
+      try {
+        await params.stopChannel(plugin.id);
+      } catch (err) {
+        closeLog.debug(`channel ${plugin.id} stop failed: ${String(err)}`);
+      }
     }
     if (params.pluginServices) {
       await params.pluginServices.stop().catch(() => {});
@@ -142,9 +150,26 @@ export function createGatewayCloseHandler(params: {
       if (typeof httpServer.closeIdleConnections === "function") {
         httpServer.closeIdleConnections();
       }
-      await new Promise<void>((resolve, reject) =>
-        httpServer.close((err) => (err ? reject(err) : resolve())),
-      );
+      // Add timeout protection to prevent httpServer.close from blocking shutdown indefinitely.
+      // Swallow close errors (e.g. closing an already-closed server) to avoid
+      // aborting the shutdown sequence midway through.
+      await Promise.race([
+        new Promise<void>((resolve) =>
+          httpServer.close((err) => {
+            if (err) {
+              closeLog.debug(`httpServer.close error (non-fatal): ${String(err)}`);
+            }
+            resolve();
+          }),
+        ),
+        new Promise<void>((resolve) => {
+          const t = setTimeout(() => {
+            closeLog.debug("httpServer.close timed out after 2 s, proceeding with shutdown");
+            resolve();
+          }, 2_000);
+          t.unref?.();
+        }),
+      ]);
     }
   };
 }

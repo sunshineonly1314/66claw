@@ -12,10 +12,10 @@ import type { ModelProviderConfig } from "../../config/types.models.js";
 
 /** 免费模型通知类型 */
 export type FreeModelNotificationType =
-  | "started"      // 开始使用免费模型
-  | "switched"     // 切换到另一个免费模型
-  | "exhausted"    // 所有免费模型额度用尽
-  | "fallback";    // 回退到付费模型
+  | "started" // 开始使用免费模型
+  | "switched" // 切换到另一个免费模型
+  | "exhausted" // 所有免费模型额度用尽
+  | "fallback"; // 回退到付费模型
 
 /** 免费模型通知 */
 export interface FreeModelNotification {
@@ -168,11 +168,11 @@ export function diagnoseFreeModelConfig(config: FreeModelsConfig): {
   issues: string[];
 } {
   const issues: string[] = [];
-  
+
   if (!config.enabled) {
     issues.push("免费模型功能未启用 (enabled=false)");
   }
-  
+
   if (config.accounts.length === 0) {
     issues.push("未配置任何免费模型账号");
   } else {
@@ -185,7 +185,9 @@ export function diagnoseFreeModelConfig(config: FreeModelsConfig): {
       } else if (account.status === "exhausted") {
         issues.push(`${providerName}: 今日额度已用尽 (status=exhausted)`);
       } else if (account.status === "error") {
-        issues.push(`${providerName}: 账号异常 (status=error, error=${account.lastError ?? "unknown"})`);
+        issues.push(
+          `${providerName}: 账号异常 (status=error, error=${account.lastError ?? "unknown"})`,
+        );
       } else if (account.status === "disabled") {
         issues.push(`${providerName}: 账号被禁用 (status=disabled)`);
       } else if (account.status !== "active") {
@@ -193,11 +195,11 @@ export function diagnoseFreeModelConfig(config: FreeModelsConfig): {
       }
     }
   }
-  
+
   const activeAccounts = config.accounts.filter(
-    (a) => a.enabled && a.status === "active" && a.apiKey?.trim()
+    (a) => a.enabled && a.status === "active" && a.apiKey?.trim(),
   ).length;
-  
+
   return {
     enabled: config.enabled,
     totalAccounts: config.accounts.length,
@@ -223,6 +225,23 @@ export async function checkFreeModelPriority(sessionKey?: string): Promise<FreeM
 
   // 检查功能是否启用
   if (!config.enabled) {
+    // 如果之前在使用免费模型，生成切换通知以触发自动新建会话
+    const lastUsedBeforeDisable = getLastUsedProvider(sessionKey);
+    if (lastUsedBeforeDisable) {
+      const previousProvider = getFreeModelProvider(lastUsedBeforeDisable);
+      setLastUsedProvider(sessionKey, undefined);
+      lastUsedFreeModelProvider = undefined;
+      return {
+        useFreeModel: false,
+        notification: {
+          type: "fallback",
+          providerName: previousProvider?.name ?? "",
+          message: "ClawdbotCN专属权益：免费模型已关闭，已切换回付费模型",
+          showInChat: true,
+        },
+        _debug: { reason: "功能已关闭，从免费模型切换回付费模型" },
+      };
+    }
     return { useFreeModel: false, _debug: { reason: "功能未启用" } };
   }
 
@@ -239,7 +258,7 @@ export async function checkFreeModelPriority(sessionKey?: string): Promise<FreeM
       reason: "没有可用的免费模型账号",
       diagnosis,
     };
-    
+
     if (lastUsed) {
       // 之前在使用免费模型，现在用完了
       const previousProvider = getFreeModelProvider(lastUsed);
@@ -322,7 +341,7 @@ export async function checkFreeModelPriority(sessionKey?: string): Promise<FreeM
  */
 async function checkAndPerformDailyReset(config: FreeModelsConfig): Promise<void> {
   const today = getBeijingDateString();
-  
+
   // 检查是否已经在今天重置过
   if (config.stats.lastResetDate === today) {
     return;
@@ -330,7 +349,7 @@ async function checkAndPerformDailyReset(config: FreeModelsConfig): Promise<void
 
   // 需要执行每日重置
   let needsSave = false;
-  
+
   for (const account of config.accounts) {
     // 重置今日使用统计
     if (account.todayUsage) {
@@ -338,7 +357,7 @@ async function checkAndPerformDailyReset(config: FreeModelsConfig): Promise<void
       account.todayUsage.requests = 0;
       account.todayUsage.lastUpdated = new Date().toISOString();
     }
-    
+
     // 恢复 exhausted 状态的账户
     if (account.status === "exhausted") {
       account.status = "active";
@@ -420,7 +439,7 @@ async function applyLocalDailyTokenLimits(config: FreeModelsConfig): Promise<voi
  */
 export function injectFreeModelConfig(
   cfg: ClawdbotConfig,
-  freeModelResult: FreeModelCheckResult
+  freeModelResult: FreeModelCheckResult,
 ): ClawdbotConfig {
   if (!freeModelResult.useFreeModel || !freeModelResult.providerConfig) {
     return cfg;
@@ -538,10 +557,7 @@ const QUOTA_ERROR_PHRASES_EN = [
 /**
  * 检测错误是否为额度用尽
  */
-export function detectQuotaExhaustedError(
-  error: unknown,
-  httpStatus?: number
-): boolean {
+export function detectQuotaExhaustedError(error: unknown, httpStatus?: number): boolean {
   // 从错误对象中提取消息（需要先提取，因为401需要结合消息判断）
   let errorMessage = "";
   if (error instanceof Error) {
@@ -563,8 +579,9 @@ export function detectQuotaExhaustedError(
   // Many providers return errors like "401 status code (no body)" or "403 Forbidden".
   let effectiveHttpStatus = httpStatus;
   if (!effectiveHttpStatus && errorMessage) {
-    const statusMatch = errorMessage.match(/\b(40[1-3]|429)\b.*(?:status|code|forbidden|unauthorized)/i)
-      || errorMessage.match(/(?:status|code|http)\s*[:=]?\s*(40[1-3]|429)/i);
+    const statusMatch =
+      errorMessage.match(/\b(40[1-3]|429)\b.*(?:status|code|forbidden|unauthorized)/i) ||
+      errorMessage.match(/(?:status|code|http)\s*[:=]?\s*(40[1-3]|429)/i);
     if (statusMatch) {
       effectiveHttpStatus = Number.parseInt(statusMatch[1], 10);
     }
@@ -583,14 +600,29 @@ export function detectQuotaExhaustedError(
     if (!errorMessage) return true; // 无 body 的 403，大概率是额度问题
     const lowerMsg = errorMessage.toLowerCase();
     const quotaKeywords = [
-      "quota", "balance", "limit", "credit", "额度", "余额", "用完", "耗尽",
-      "no body", "exhausted", "exceeded", "expired", "insufficient",
+      "quota",
+      "balance",
+      "limit",
+      "credit",
+      "额度",
+      "余额",
+      "用完",
+      "耗尽",
+      "no body",
+      "exhausted",
+      "exceeded",
+      "expired",
+      "insufficient",
     ];
     if (quotaKeywords.some((kw) => lowerMsg.includes(kw))) {
       return true;
     }
     // 空 body / no body 的 403
-    if (lowerMsg.includes("no body") || lowerMsg.includes("empty") || errorMessage.trim().length < 10) {
+    if (
+      lowerMsg.includes("no body") ||
+      lowerMsg.includes("empty") ||
+      errorMessage.trim().length < 10
+    ) {
       return true;
     }
   }
@@ -603,9 +635,7 @@ export function detectQuotaExhaustedError(
   // 但为了避免误判合法的认证错误，需要结合错误消息判断
   // 如果消息中包含quota/balance/limit等关键字，才认为是额度用尽
   if (effectiveHttpStatus === 401) {
-    const quotaKeywords = [
-      "quota", "balance", "limit", "credit", "额度", "余额", "用完", "耗尽"
-    ];
+    const quotaKeywords = ["quota", "balance", "limit", "credit", "额度", "余额", "用完", "耗尽"];
     if (quotaKeywords.some((kw) => lowerMessage.includes(kw))) {
       return true;
     }
@@ -646,7 +676,7 @@ const RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000;
 export async function handleFreeModelQuotaExhausted(
   currentProviderId: string,
   sessionKey?: string,
-  httpStatus?: number
+  httpStatus?: number,
 ): Promise<FreeModelCheckResult> {
   const config = await loadFreeModelsConfig();
 
@@ -707,11 +737,11 @@ export async function handleFreeModelQuotaExhausted(
   }
 
   const previousProvider = getFreeModelProvider(realProviderId);
-  
+
   // 更新缓存
   setLastUsedProvider(sessionKey, nextAccount.providerId);
   lastUsedFreeModelProvider = nextAccount.providerId;
-  
+
   const freeModelProviderId = `free-model-${nextAccount.providerId}`;
 
   return {

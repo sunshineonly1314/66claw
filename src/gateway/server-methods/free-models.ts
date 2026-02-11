@@ -10,15 +10,9 @@ import {
   getAllFreeModelProviders,
   getFreeModelProvider,
 } from "../../config/free-model-providers.js";
-import type {
-  FreeModelsConfig,
-  FreeModelAccount,
-} from "../../config/types.free-models.js";
+import type { FreeModelsConfig, FreeModelAccount } from "../../config/types.free-models.js";
 import { DEFAULT_FREE_MODELS_CONFIG } from "../../config/types.free-models.js";
-import {
-  FreeModelScheduler,
-  createFreeModelScheduler,
-} from "../../agents/free-model-scheduler.js";
+import { FreeModelScheduler, createFreeModelScheduler } from "../../agents/free-model-scheduler.js";
 
 // 调度器实例缓存
 let schedulerInstance: FreeModelScheduler | undefined;
@@ -70,9 +64,7 @@ async function loadFreeModelsConfig(): Promise<FreeModelsConfig> {
 /**
  * 保存免费模型配置
  */
-async function saveFreeModelsConfig(
-  freeModelsConfig: FreeModelsConfig
-): Promise<void> {
+async function saveFreeModelsConfig(freeModelsConfig: FreeModelsConfig): Promise<void> {
   const config = await loadConfig();
   (config as { freeModels?: FreeModelsConfig }).freeModels = freeModelsConfig;
   await writeConfigFile(config);
@@ -137,6 +129,15 @@ export const freeModelsHandlers: GatewayRequestHandlers = {
 
     // 只更新允许的字段
     if (typeof updates.enabled === "boolean") {
+      // 开启时必须至少有 1 个已配置的免费模型账号
+      if (updates.enabled && currentConfig.accounts.length === 0) {
+        respond(true, {
+          success: false,
+          error: "NO_ACCOUNTS",
+          message: "请先配置至少 1 个免费模型提供商",
+        });
+        return;
+      }
       currentConfig.enabled = updates.enabled;
     }
     if (updates.scheduling) {
@@ -306,7 +307,7 @@ export const freeModelsHandlers: GatewayRequestHandlers = {
   "freeModels.diagnose": async ({ respond }) => {
     const config = await loadFreeModelsConfig();
     const scheduler = await getScheduler();
-    
+
     const issues: string[] = [];
     const warnings: string[] = [];
     const info: string[] = [];
@@ -323,12 +324,12 @@ export const freeModelsHandlers: GatewayRequestHandlers = {
       issues.push("❌ 未配置任何免费模型账号");
     } else {
       info.push(`📋 已配置 ${config.accounts.length} 个免费模型账号`);
-      
+
       let activeCount = 0;
       for (const account of config.accounts) {
         const provider = getFreeModelProvider(account.providerId);
         const providerName = provider?.name ?? account.providerId;
-        
+
         // 检查 enabled 字段
         if (account.enabled === false) {
           issues.push(`❌ ${providerName}: 账号已手动禁用 (enabled = false)`);
@@ -337,7 +338,7 @@ export const freeModelsHandlers: GatewayRequestHandlers = {
         if (account.enabled === undefined) {
           warnings.push(`⚠️ ${providerName}: enabled 字段缺失，将默认为 true`);
         }
-        
+
         // 检查 status 字段
         if (account.status === undefined) {
           issues.push(`❌ ${providerName}: status 字段缺失，需要重新配置`);
@@ -353,18 +354,18 @@ export const freeModelsHandlers: GatewayRequestHandlers = {
         } else {
           issues.push(`❌ ${providerName}: 状态异常 (status = ${account.status})`);
         }
-        
+
         // 检查 todayUsage 字段
         if (!account.todayUsage) {
           warnings.push(`⚠️ ${providerName}: todayUsage 字段缺失`);
         }
-        
+
         // 检查 API Key
         if (!account.apiKey || account.apiKey.length < 10) {
           issues.push(`❌ ${providerName}: API Key 无效或过短`);
         }
       }
-      
+
       if (activeCount === 0 && config.accounts.length > 0) {
         issues.push("❌ 没有可用的活跃账号 (所有账号都处于非 active 状态)");
       } else {
@@ -468,9 +469,7 @@ export const freeModelsHandlers: GatewayRequestHandlers = {
     respond(true, {
       repaired,
       repairs,
-      message: repaired
-        ? `✅ 已修复 ${repairs.length} 个配置问题`
-        : "✅ 配置无需修复",
+      message: repaired ? `✅ 已修复 ${repairs.length} 个配置问题` : "✅ 配置无需修复",
     });
   },
 };

@@ -6,6 +6,7 @@
  * 仅在生产构建中启用
  */
 
+import { createRequire } from "node:module";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("security:anti-debug");
@@ -41,9 +42,7 @@ let checkInterval: ReturnType<typeof setInterval> | null = null;
 function detectDebugger(): boolean {
   // 方法 1：检测 Node.js 调试参数
   const debugArgs = ["--inspect", "--inspect-brk", "--debug", "--debug-brk"];
-  const hasDebugArg = process.execArgv.some((arg) =>
-    debugArgs.some((d) => arg.includes(d)),
-  );
+  const hasDebugArg = process.execArgv.some((arg) => debugArgs.some((d) => arg.includes(d)));
 
   if (hasDebugArg) {
     log.debug("Debugger detected: debug argument in execArgv");
@@ -69,8 +68,9 @@ function detectDebugger(): boolean {
 
   // 方法 4：检测 inspector 模块是否活跃
   try {
-    // 动态导入避免在非调试环境下加载
-    const inspector = require("node:inspector");
+    // 使用 createRequire 在 ESM 中同步加载 node:inspector
+    const esmRequire = createRequire(import.meta.url);
+    const inspector = esmRequire("node:inspector");
     if (inspector.url()) {
       log.debug("Debugger detected: inspector URL exists");
       return true;
@@ -90,16 +90,31 @@ function handleDebuggerDetected(config: AntiDebugConfig): void {
 
   // 调用自定义回调
   if (config.onDebuggerDetected) {
-    config.onDebuggerDetected();
+    try {
+      config.onDebuggerDetected();
+    } catch {
+      // Ignore callback errors — the critical path is cleanup + exit below
+    }
   }
 
-  // 清理敏感环境变量
-  const sensitiveEnvs = ["LICENSE_KEY", "CLAWDBOT_LICENSE_KEY"];
+  // 清理敏感环境变量（expanded list to cover all sensitive keys）
+  const sensitiveEnvs = [
+    "LICENSE_KEY",
+    "CLAWDBOT_LICENSE_KEY",
+    "CLAWDBOT_GATEWAY_TOKEN",
+    "CLAWDBOT_GATEWAY_PASSWORD",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+  ];
   for (const env of sensitiveEnvs) {
     if (process.env[env]) {
       process.env[env] = "";
     }
   }
+
+  // Stop the periodic check before exiting to prevent timer errors
+  stopAntiDebug();
 
   // 退出程序
   console.error("[安全] 检测到调试环境，程序退出");

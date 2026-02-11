@@ -8,6 +8,7 @@ import {
   validateConfigObjectWithPlugins,
   writeConfigFile,
 } from "../../config/config.js";
+import { redactConfigSnapshot } from "../../config/config-sanitizer.js";
 import { applyLegacyMigrations } from "../../config/legacy.js";
 import { applyMergePatch } from "../../config/merge-patch.js";
 import { buildConfigSchema } from "../../config/schema.js";
@@ -120,7 +121,7 @@ export const configHandlers: GatewayRequestHandlers = {
       return;
     }
     const snapshot = await readConfigFileSnapshot();
-    respond(true, snapshot, undefined);
+    respond(true, redactConfigSnapshot(snapshot), undefined);
   },
   "config.schema": ({ params, respond }) => {
     if (!validateConfigSchemaParams(params)) {

@@ -127,9 +127,24 @@ export async function toggleFreeModelsEnabled(
 ): Promise<void> {
   if (!host.client || !host.connected) return;
 
+  // 前端预校验：开启时必须有已配置的账号
+  if (enabled && host.freeModelsAccounts.length === 0) {
+    host.freeModelsError = "请先配置至少 1 个免费模型提供商，再开启此功能";
+    return;
+  }
+
   try {
-    await host.client.request("freeModels.config.update", { enabled });
+    const result = await host.client.request("freeModels.config.update", { enabled }) as
+      { success: boolean; error?: string; message?: string };
+
+    if (result && result.success === false) {
+      // 后端拒绝：例如 NO_ACCOUNTS
+      host.freeModelsError = result.message ?? "开启失败";
+      return;
+    }
+
     host.freeModelsEnabled = enabled;
+    host.freeModelsError = null;
   } catch (err) {
     host.freeModelsError = `更新失败: ${String(err)}`;
     // 恢复原状态

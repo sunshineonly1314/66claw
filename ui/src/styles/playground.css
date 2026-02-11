@@ -202,12 +202,16 @@
   display: flex;
   flex-direction: column;
   contain: content;
+  /* Skip rendering for off-screen cards — major paint perf win */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;
 }
 
 @media (hover: hover) {
   .playground-skill-card:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     transform: translateY(-2px);
+    will-change: transform;
   }
 }
 

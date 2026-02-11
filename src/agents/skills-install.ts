@@ -81,11 +81,10 @@ function resolvePythonScriptsDir(): string | undefined {
   const pythonExe = ["python", "python3"].find((cmd) => hasBinary(cmd));
   if (pythonExe) {
     try {
-      const pythonPath = execFileSync(
-        pythonExe,
-        ["-c", "import sys; print(sys.executable)"],
-        { timeout: 5000, encoding: "utf-8" },
-      ).trim();
+      const pythonPath = execFileSync(pythonExe, ["-c", "import sys; print(sys.executable)"], {
+        timeout: 5000,
+        encoding: "utf-8",
+      }).trim();
       if (pythonPath) {
         candidates.push(path.join(path.dirname(pythonPath), "Scripts"));
       }
@@ -118,7 +117,7 @@ function findGoExecutable(): string | undefined {
   if (hasBinary("go")) {
     return "go";
   }
-  
+
   // Windows 上检查常见安装路径
   if (process.platform === "win32") {
     for (const goPath of WINDOWS_GO_PATHS) {
@@ -136,7 +135,7 @@ function findGoExecutable(): string | undefined {
       }
     }
   }
-  
+
   return undefined;
 }
 
@@ -176,13 +175,13 @@ const WINDOWS_NODE_PATHS = [
 function findNodePackageManager(manager: string): string | undefined {
   const isWindows = process.platform === "win32";
   const extensions = isWindows ? [".cmd", ".exe", ""] : [""];
-  
+
   // Windows 上需要返回完整路径，因为 spawn 不能直接执行 .cmd 文件
   if (isWindows) {
     // 先检查常见安装路径
     for (const basePath of WINDOWS_NODE_PATHS) {
       if (!basePath) continue;
-      
+
       for (const ext of extensions) {
         const fullPath = path.join(basePath, `${manager}${ext}`);
         try {
@@ -198,7 +197,7 @@ function findNodePackageManager(manager: string): string | undefined {
         }
       }
     }
-    
+
     // 检查 PATH 中的目录
     const pathEnv = process.env.PATH ?? "";
     const pathDirs = pathEnv.split(path.delimiter).filter(Boolean);
@@ -220,7 +219,7 @@ function findNodePackageManager(manager: string): string | undefined {
       return manager;
     }
   }
-  
+
   return undefined;
 }
 
@@ -229,18 +228,20 @@ function findNodePackageManager(manager: string): string | undefined {
  * ClawdbotCN 专属：处理 Windows 上 npm 输出的乱码字符
  */
 function cleanTerminalOutput(text: string): string {
-  return text
-    // 移除 ANSI 转义序列
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
-    // 移除 npm spinner 字符（◆、●、○ 等）
-    .replace(/[◆●○◇◈◉◐◑◒◓◔◕⬤⬡⬢⬣⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/g, "")
-    // 移除其他 Unicode spinner 字符
-    .replace(/[\u2800-\u28FF]/g, "") // Braille patterns
-    // 移除回车符（npm 在更新 spinner 时用来覆盖行）
-    .replace(/\r/g, "\n")
-    // 合并多个连续空白行
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return (
+    text
+      // 移除 ANSI 转义序列
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
+      // 移除 npm spinner 字符（◆、●、○ 等）
+      .replace(/[◆●○◇◈◉◐◑◒◓◔◕⬤⬡⬢⬣⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/g, "")
+      // 移除其他 Unicode spinner 字符
+      .replace(/[\u2800-\u28FF]/g, "") // Braille patterns
+      // 移除回车符（npm 在更新 spinner 时用来覆盖行）
+      .replace(/\r/g, "\n")
+      // 合并多个连续空白行
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
 }
 
 function summarizeInstallOutput(text: string): string | undefined {
@@ -288,9 +289,12 @@ function sanitizeCommandOutput(text: string): string {
  * ClawdbotCN 专属：常见错误的友好中文解释
  * 让小白用户也能看懂错误原因和解决方法
  */
-function getFriendlyErrorMessage(stderr: string, stdout: string): { reason: string; solution: string } | undefined {
+function getFriendlyErrorMessage(
+  stderr: string,
+  stdout: string,
+): { reason: string; solution: string } | undefined {
   const combined = (stderr + " " + stdout).toLowerCase();
-  
+
   // 网络相关错误
   if (combined.includes("enotfound") || combined.includes("dns")) {
     return {
@@ -310,7 +314,11 @@ function getFriendlyErrorMessage(stderr: string, stdout: string): { reason: stri
       solution: "可能是镜像源临时不可用，请稍后重试",
     };
   }
-  if (combined.includes("certificate") || combined.includes("ssl") || combined.includes("unable to get local issuer")) {
+  if (
+    combined.includes("certificate") ||
+    combined.includes("ssl") ||
+    combined.includes("unable to get local issuer")
+  ) {
     return {
       reason: "SSL/HTTPS 证书验证失败",
       solution: "可能是网络环境的证书问题，尝试在不同网络环境下重试",
@@ -328,9 +336,13 @@ function getFriendlyErrorMessage(stderr: string, stdout: string): { reason: stri
       solution: "该包可能不存在或版本号错误，请检查技能配置",
     };
   }
-  
+
   // 权限相关错误
-  if (combined.includes("eacces") || combined.includes("permission denied") || combined.includes("access denied")) {
+  if (
+    combined.includes("eacces") ||
+    combined.includes("permission denied") ||
+    combined.includes("access denied")
+  ) {
     return {
       reason: "权限不足",
       solution: "请尝试以管理员身份运行，或检查安装目录的写入权限",
@@ -342,15 +354,19 @@ function getFriendlyErrorMessage(stderr: string, stdout: string): { reason: stri
       solution: "请右键点击应用，选择「以管理员身份运行」",
     };
   }
-  
+
   // 磁盘空间
-  if (combined.includes("enospc") || combined.includes("no space") || combined.includes("disk full")) {
+  if (
+    combined.includes("enospc") ||
+    combined.includes("no space") ||
+    combined.includes("disk full")
+  ) {
     return {
       reason: "磁盘空间不足",
       solution: "请清理磁盘空间后重试",
     };
   }
-  
+
   // 依赖相关
   if (combined.includes("peer dep") || combined.includes("peerdependencies")) {
     return {
@@ -364,7 +380,7 @@ function getFriendlyErrorMessage(stderr: string, stdout: string): { reason: stri
       solution: "请更新 Node.js 到最新 LTS 版本（推荐 v20+）",
     };
   }
-  
+
   // 包管理器相关
   if (combined.includes("npm err!") && combined.includes("code e")) {
     return {
@@ -372,7 +388,7 @@ function getFriendlyErrorMessage(stderr: string, stdout: string): { reason: stri
       solution: "请尝试运行 `npm cache clean --force` 清理缓存后重试",
     };
   }
-  
+
   return undefined;
 }
 
@@ -383,12 +399,12 @@ function formatInstallFailureMessage(result: {
 }): string {
   const useCN = shouldUseCNMirror();
   const code = typeof result.code === "number" ? `exit ${result.code}` : "unknown exit";
-  
+
   // ClawdbotCN 专属：清理输出中的乱码
   const cleanStderr = sanitizeCommandOutput(result.stderr);
   const cleanStdout = sanitizeCommandOutput(result.stdout);
   const summary = summarizeInstallOutput(cleanStderr) ?? summarizeInstallOutput(cleanStdout);
-  
+
   // ClawdbotCN 专属：为中国用户提供友好的错误解释
   if (useCN) {
     const friendly = getFriendlyErrorMessage(result.stderr, result.stdout);
@@ -398,7 +414,7 @@ function formatInstallFailureMessage(result: {
     if (!summary) return `安装失败（${code}）\n💡 请检查网络连接后重试，或在 Web UI 查看详细日志`;
     return `安装失败：${summary}\n💡 如需帮助，请访问 Web UI 查看完整错误信息`;
   }
-  
+
   if (!summary) return `Install failed (${code})`;
   return `Install failed (${code}): ${summary}`;
 }
@@ -424,6 +440,7 @@ import {
   getUvInstallScripts,
   getPipMirrors,
   getNpmMirrors,
+  getGitHubProxies,
   // 香港服务器二进制托管
   isToolHostedOnHK,
   getHKBinaryVersionUrl,
@@ -467,23 +484,23 @@ async function runCommandWithMirrorFallback(params: {
   onMirrorSwitch?: (from: string, to: string, error: string) => void;
 }): Promise<{ code: number | null; stdout: string; stderr: string; usedMirror?: string }> {
   const { buildCommand, mirrors, timeoutMs, env, onMirrorSwitch } = params;
-  
+
   let lastError = "";
   for (let i = 0; i < mirrors.length; i++) {
     const mirror = mirrors[i]!;
     const argv = buildCommand(mirror);
-    
+
     try {
       const result = await runCommandWithTimeout(argv, { timeoutMs, env });
-      
+
       // 成功或非网络相关错误，直接返回
       if (result.code === 0) {
         return { ...result, usedMirror: mirror };
       }
-      
+
       // 检查是否是网络/镜像相关错误（需要尝试下一个镜像）
       const stderr = result.stderr.toLowerCase();
-      const isNetworkError = 
+      const isNetworkError =
         stderr.includes("enotfound") ||
         stderr.includes("etimedout") ||
         stderr.includes("econnrefused") ||
@@ -499,12 +516,12 @@ async function runCommandWithMirrorFallback(params: {
         stderr.includes("502") ||
         stderr.includes("503") ||
         stderr.includes("timeout");
-      
+
       if (!isNetworkError || i === mirrors.length - 1) {
         // 非网络错误或已经是最后一个镜像，返回结果
         return { ...result, usedMirror: mirror };
       }
-      
+
       // 网络错误，尝试下一个镜像
       lastError = result.stderr;
       if (i + 1 < mirrors.length) {
@@ -520,7 +537,7 @@ async function runCommandWithMirrorFallback(params: {
       }
     }
   }
-  
+
   return { code: null, stdout: "", stderr: lastError || "所有镜像源均不可用" };
 }
 
@@ -539,12 +556,12 @@ function buildNodeInstallCommand(
 } {
   const useCNMirror = shouldUseCNMirror();
   const registry = mirror ?? (useCNMirror ? CN_MIRRORS.npm : undefined);
-  
+
   // ClawdbotCN 专属：使用完整路径确保 Windows 上能找到包管理器
   const getManagerPath = (manager: string): string => {
     return findNodePackageManager(manager) ?? manager;
   };
-  
+
   switch (prefs.nodeManager) {
     case "pnpm": {
       const pnpmPath = getManagerPath("pnpm");
@@ -593,7 +610,7 @@ async function installNodePackageWithFallback(params: {
 }): Promise<{ code: number | null; stdout: string; stderr: string; usedMirror?: string }> {
   const { packageName, prefs, timeoutMs, onProgress } = params;
   const useCN = shouldUseCNMirror();
-  
+
   if (!useCN) {
     // 非国内用户，直接安装
     const cmd = buildNodeInstallCommand(packageName, prefs);
@@ -603,15 +620,18 @@ async function installNodePackageWithFallback(params: {
       return { code: null, stdout: "", stderr: err instanceof Error ? err.message : String(err) };
     }
   }
-  
+
   // 国内用户，使用多镜像 fallback
   const mirrors = getNpmMirrors();
-  
+
   return runCommandWithMirrorFallback({
     buildCommand: (mirror) => buildNodeInstallCommand(packageName, prefs, mirror).argv,
     mirrors,
     timeoutMs,
-    env: prefs.nodeManager === "bun" ? { BUN_CONFIG_REGISTRY: mirrors[0] ?? CN_MIRRORS.npm } : undefined,
+    env:
+      prefs.nodeManager === "bun"
+        ? { BUN_CONFIG_REGISTRY: mirrors[0] ?? CN_MIRRORS.npm }
+        : undefined,
     onMirrorSwitch: (from, to, error) => {
       onProgress?.({
         stage: "installing",
@@ -742,7 +762,7 @@ async function downloadFile(
       throw new Error(`Download failed (${response.status} ${response.statusText})`);
     }
     await ensureDir(path.dirname(destPath));
-    
+
     // 获取文件总大小
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
     let downloaded = 0;
@@ -751,13 +771,13 @@ async function downloadFile(
 
     const file = fs.createWriteStream(destPath);
     const body = response.body as unknown;
-    
+
     // 创建进度追踪的 Transform 流
     const { Transform } = await import("node:stream");
     const progressTransform = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         downloaded += chunk.length;
-        
+
         // 限制进度回调频率（每 100ms 最多一次）
         const now = Date.now();
         if (onProgress && contentLength > 0 && now - lastProgressTime >= 100) {
@@ -766,7 +786,7 @@ async function downloadFile(
           const speed = elapsed > 0 ? downloaded / elapsed : 0;
           const remaining = contentLength - downloaded;
           const eta = speed > 0 ? remaining / speed : 0;
-          
+
           onProgress({
             downloaded,
             total: contentLength,
@@ -775,7 +795,7 @@ async function downloadFile(
             eta: eta > 0 ? `${Math.round(eta)}s` : "",
           });
         }
-        
+
         callback(null, chunk);
       },
     });
@@ -783,9 +803,9 @@ async function downloadFile(
     const readable = isNodeReadableStream(body)
       ? body
       : Readable.fromWeb(body as NodeReadableStream);
-    
+
     await pipeline(readable, progressTransform, file);
-    
+
     // 完成时发送 100% 进度
     if (onProgress && contentLength > 0) {
       onProgress({
@@ -796,7 +816,7 @@ async function downloadFile(
         eta: "",
       });
     }
-    
+
     const stat = await fs.promises.stat(destPath);
     return { bytes: stat.size };
   } finally {
@@ -866,11 +886,18 @@ async function installDownloadSpec(params: {
       if (url.includes(repoKey)) {
         // 从 GitHub URL 提取文件名: .../download/v1.12.23/sherpa-onnx-xxx.tar.bz2
         let fname = "";
-        try { fname = path.basename(new URL(url).pathname); } catch { /* ignore */ }
+        try {
+          fname = path.basename(new URL(url).pathname);
+        } catch {
+          /* ignore */
+        }
         if (fname) {
-          const platform = process.platform === "win32" ? "windows-x64"
-            : process.platform === "darwin" ? "darwin-universal"
-            : "linux-x64";
+          const platform =
+            process.platform === "win32"
+              ? "windows-x64"
+              : process.platform === "darwin"
+                ? "darwin-universal"
+                : "linux-x64";
           effectiveUrl = `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${mapping.endpoint}/${platform}/${fname}`;
           break;
         }
@@ -878,10 +905,13 @@ async function installDownloadSpec(params: {
     }
   }
 
-  // ClawdbotCN 专属：普通 GitHub URL 通过代理加速
-  const githubProxy = process.env.GITHUB_PROXY;
-  if (githubProxy && useCN && effectiveUrl === url && (url.includes("github.com") || url.includes("githubusercontent.com"))) {
-    effectiveUrl = `${githubProxy}/${url}`;
+  // ClawdbotCN 专属：普通 GitHub URL 通过多代理加速（按优先级尝试所有可用代理）
+  const isGitHubUrl = url.includes("github.com") || url.includes("githubusercontent.com");
+  if (useCN && effectiveUrl === url && isGitHubUrl) {
+    const githubProxy = process.env.GITHUB_PROXY;
+    if (githubProxy) {
+      effectiveUrl = `${githubProxy}/${url}`;
+    }
   }
 
   let filename = "";
@@ -899,26 +929,68 @@ async function installDownloadSpec(params: {
   const archivePath = path.join(targetDir, filename);
   let downloaded = 0;
 
-  try {
-    // ClawdbotCN 专属：带进度回调的下载
-    const result = await downloadFile(effectiveUrl, archivePath, timeoutMs, (progress) => {
-      onProgress?.({
-        stage: "downloading",
-        message: `正在下载 ${filename}...`,
-        percent: progress.percent,
-        usingCNMirror: useCN,
-        downloadInfo: {
-          speed: progress.speed,
-          eta: progress.eta,
-          downloaded: formatBytes(progress.downloaded),
-          total: formatBytes(progress.total),
-        },
+  // ClawdbotCN 专属：GitHub URL 多代理 fallback 下载
+  // 当一个代理失败时自动尝试下一个代理，而非直接报错
+  if (useCN && isGitHubUrl && effectiveUrl !== url) {
+    const ghProxies = getGitHubProxies();
+    let lastErr = "";
+    let downloadOk = false;
+    for (const proxy of ghProxies) {
+      const proxyUrl = `${proxy}/${url}`;
+      try {
+        const result = await downloadFile(proxyUrl, archivePath, timeoutMs, (progress) => {
+          onProgress?.({
+            stage: "downloading",
+            message: `正在下载 ${filename}...`,
+            percent: progress.percent,
+            usingCNMirror: useCN,
+            downloadInfo: {
+              speed: progress.speed,
+              eta: progress.eta,
+              downloaded: formatBytes(progress.downloaded),
+              total: formatBytes(progress.total),
+            },
+          });
+        });
+        downloaded = result.bytes;
+        downloadOk = true;
+        break;
+      } catch (err) {
+        lastErr = err instanceof Error ? err.message : String(err);
+        // 继续尝试下一个代理
+      }
+    }
+    if (!downloadOk) {
+      return {
+        ok: false,
+        message: `所有代理均下载失败: ${lastErr}`,
+        stdout: "",
+        stderr: lastErr,
+        code: null,
+      };
+    }
+  } else {
+    try {
+      // 非 GitHub URL 或非国内用户：单次下载
+      const result = await downloadFile(effectiveUrl, archivePath, timeoutMs, (progress) => {
+        onProgress?.({
+          stage: "downloading",
+          message: `正在下载 ${filename}...`,
+          percent: progress.percent,
+          usingCNMirror: useCN,
+          downloadInfo: {
+            speed: progress.speed,
+            eta: progress.eta,
+            downloaded: formatBytes(progress.downloaded),
+            total: formatBytes(progress.total),
+          },
+        });
       });
-    });
-    downloaded = result.bytes;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, message, stdout: "", stderr: message, code: null };
+      downloaded = result.bytes;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, message, stdout: "", stderr: message, code: null };
+    }
   }
 
   const archiveType = resolveArchiveType(spec, filename);
@@ -978,28 +1050,28 @@ async function getHKBinaryLatestVersion(
   timeoutMs: number,
 ): Promise<string | null> {
   const versionUrl = getHKBinaryVersionUrl(toolName);
-  
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    
+
     const response = await fetch(versionUrl, {
       signal: controller.signal,
       headers: { "User-Agent": "Clawdbot/1.0" },
     });
-    
+
     clearTimeout(timeout);
-    
+
     if (!response.ok) {
       return null;
     }
-    
+
     const version = (await response.text()).trim();
     // 版本号格式校验：应该是 x.y.z 格式
     if (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(version)) {
       return null;
     }
-    
+
     return version;
   } catch {
     return null;
@@ -1020,7 +1092,7 @@ async function installFromHKBinaryServer(params: {
 }): Promise<SkillInstallResult> {
   const { toolName, timeoutMs, onProgress } = params;
   const useCN = shouldUseCNMirror();
-  
+
   // 边界检查 1: 检查工具是否在香港服务器托管
   if (!isToolHostedOnHK(toolName)) {
     return {
@@ -1031,7 +1103,7 @@ async function installFromHKBinaryServer(params: {
       code: null,
     };
   }
-  
+
   // 边界检查 2: 获取工具配置（可选）
   // 工具在 hkBinaries.tools 列表中即可尝试下载，无需完整 CLI_TOOL_MIRRORS 配置
   const toolConfig = CLI_TOOL_MIRRORS[toolName];
@@ -1047,14 +1119,14 @@ async function installFromHKBinaryServer(params: {
       code: null,
     };
   }
-  
+
   onProgress?.({
     stage: "downloading",
     message: `🇭🇰 连接香港镜像服务器...`,
     usingCNMirror: useCN,
     percent: 2,
   });
-  
+
   // 步骤 1: 获取最新版本
   const version = await getHKBinaryLatestVersion(toolName, Math.min(timeoutMs, 10000));
   if (!version) {
@@ -1066,17 +1138,17 @@ async function installFromHKBinaryServer(params: {
       code: null,
     };
   }
-  
+
   onProgress?.({
     stage: "downloading",
     message: `🇭🇰 发现 ${toolName} v${version}，准备下载...`,
     usingCNMirror: useCN,
     percent: 5,
   });
-  
+
   // 步骤 2: 构建下载 URL
   const downloadUrl = getHKBinaryDownloadUrl(toolName, version, platform);
-  
+
   // 边界检查 4: URL 安全校验
   try {
     validateUrlForSsrf(downloadUrl);
@@ -1090,18 +1162,18 @@ async function installFromHKBinaryServer(params: {
       code: null,
     };
   }
-  
+
   // 步骤 3: 确定安装目录
   const installDir = path.join(CONFIG_DIR, "tools", toolName);
   await ensureDir(installDir);
-  
+
   const binaryName = platform.startsWith("windows") ? `${toolName}.exe` : toolName;
   const binaryPath = path.join(installDir, binaryName);
-  
+
   // 步骤 4: 下载二进制文件（带重试）
   const MAX_RETRIES = 3;
   let lastError: Error | null = null;
-  
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       if (attempt > 1) {
@@ -1112,188 +1184,188 @@ async function installFromHKBinaryServer(params: {
           percent: 10,
         });
         // 指数退避：2s, 4s
-        await new Promise(resolve => setTimeout(resolve, 2000 * (attempt - 1)));
+        await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt - 1)));
       }
-      
+
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      
+
       const response = await fetch(downloadUrl, {
         signal: controller.signal,
         headers: { "User-Agent": "Clawdbot/1.0" },
       });
-      
+
       clearTimeout(timeout);
-    
-    if (!response.ok) {
-      return {
-        ok: false,
-        message: `Download failed: HTTP ${response.status} ${response.statusText}`,
-        stdout: "",
-        stderr: `URL: ${downloadUrl}`,
-        code: null,
-      };
-    }
-    
-    // 边界检查 5: 检查响应大小
-    const contentLength = response.headers.get("content-length");
-    const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
-    
-    // 最大允许 100MB
-    const MAX_SIZE = 100 * 1024 * 1024;
-    if (totalSize > MAX_SIZE) {
-      return {
-        ok: false,
-        message: `Binary too large: ${totalSize} bytes (max: ${MAX_SIZE})`,
-        stdout: "",
-        stderr: "",
-        code: null,
-      };
-    }
-    
-    // 下载并写入文件
-    const body = response.body;
-    if (!body) {
-      return {
-        ok: false,
-        message: "Empty response body",
-        stdout: "",
-        stderr: "",
-        code: null,
-      };
-    }
-    
-    const writeStream = fs.createWriteStream(binaryPath);
-    let downloaded = 0;
-    const startTime = Date.now();
-    
-    const reader = body.getReader();
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      writeStream.write(Buffer.from(value));
-      downloaded += value.length;
-      
-      // 计算下载进度 (5% ~ 90%)
-      const percent = totalSize > 0 ? Math.round((downloaded / totalSize) * 85) + 5 : 50;
-      const elapsed = (Date.now() - startTime) / 1000;
-      const speed = elapsed > 0 ? formatBytes(downloaded / elapsed) + "/s" : "计算中...";
-      const eta = totalSize > 0 && elapsed > 0
-        ? Math.round((totalSize - downloaded) / (downloaded / elapsed)) + "s"
-        : "计算中...";
-      
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: `Download failed: HTTP ${response.status} ${response.statusText}`,
+          stdout: "",
+          stderr: `URL: ${downloadUrl}`,
+          code: null,
+        };
+      }
+
+      // 边界检查 5: 检查响应大小
+      const contentLength = response.headers.get("content-length");
+      const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
+
+      // 最大允许 100MB
+      const MAX_SIZE = 100 * 1024 * 1024;
+      if (totalSize > MAX_SIZE) {
+        return {
+          ok: false,
+          message: `Binary too large: ${totalSize} bytes (max: ${MAX_SIZE})`,
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
+      }
+
+      // 下载并写入文件
+      const body = response.body;
+      if (!body) {
+        return {
+          ok: false,
+          message: "Empty response body",
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
+      }
+
+      const writeStream = fs.createWriteStream(binaryPath);
+      let downloaded = 0;
+      const startTime = Date.now();
+
+      const reader = body.getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        writeStream.write(Buffer.from(value));
+        downloaded += value.length;
+
+        // 计算下载进度 (5% ~ 90%)
+        const percent = totalSize > 0 ? Math.round((downloaded / totalSize) * 85) + 5 : 50;
+        const elapsed = (Date.now() - startTime) / 1000;
+        const speed = elapsed > 0 ? formatBytes(downloaded / elapsed) + "/s" : "计算中...";
+        const eta =
+          totalSize > 0 && elapsed > 0
+            ? Math.round((totalSize - downloaded) / (downloaded / elapsed)) + "s"
+            : "计算中...";
+
+        onProgress?.({
+          stage: "downloading",
+          message: `🇭🇰 下载 ${toolName} v${version}...`,
+          percent,
+          usingCNMirror: useCN,
+          downloadInfo: {
+            speed,
+            eta,
+            downloaded: formatBytes(downloaded),
+            total: formatBytes(totalSize),
+          },
+        });
+      }
+
+      writeStream.end();
+
+      // 等待写入完成
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on("finish", resolve);
+        writeStream.on("error", reject);
+      });
+
+      // 边界检查 6: 验证下载大小
+      const stats = fs.statSync(binaryPath);
+      if (stats.size === 0) {
+        fs.unlinkSync(binaryPath);
+        return {
+          ok: false,
+          message: "Downloaded file is empty",
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
+      }
+
+      // 边界检查 7: 最小大小校验（至少 1KB）
+      if (stats.size < 1024) {
+        fs.unlinkSync(binaryPath);
+        return {
+          ok: false,
+          message: `Downloaded file too small: ${stats.size} bytes`,
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
+      }
+
+      // 步骤 5: SHA256 校验（可选，失败不阻断）
       onProgress?.({
-        stage: "downloading",
-        message: `🇭🇰 下载 ${toolName} v${version}...`,
-        percent,
+        stage: "verifying",
+        message: `🔍 校验文件完整性...`,
+        percent: 92,
         usingCNMirror: useCN,
-        downloadInfo: {
-          speed,
-          eta,
-          downloaded: formatBytes(downloaded),
-          total: formatBytes(totalSize),
-        },
       });
-    }
-    
-    writeStream.end();
-    
-    // 等待写入完成
-    await new Promise<void>((resolve, reject) => {
-      writeStream.on("finish", resolve);
-      writeStream.on("error", reject);
-    });
-    
-    // 边界检查 6: 验证下载大小
-    const stats = fs.statSync(binaryPath);
-    if (stats.size === 0) {
-      fs.unlinkSync(binaryPath);
-      return {
-        ok: false,
-        message: "Downloaded file is empty",
-        stdout: "",
-        stderr: "",
-        code: null,
-      };
-    }
-    
-    // 边界检查 7: 最小大小校验（至少 1KB）
-    if (stats.size < 1024) {
-      fs.unlinkSync(binaryPath);
-      return {
-        ok: false,
-        message: `Downloaded file too small: ${stats.size} bytes`,
-        stdout: "",
-        stderr: "",
-        code: null,
-      };
-    }
-    
-    // 步骤 5: SHA256 校验（可选，失败不阻断）
-    onProgress?.({
-      stage: "verifying",
-      message: `🔍 校验文件完整性...`,
-      percent: 92,
-      usingCNMirror: useCN,
-    });
-    
-    let sha256Verified = false;
-    try {
-      const sha256Url = `${downloadUrl}.sha256`;
-      const sha256Response = await fetch(sha256Url, {
-        headers: { "User-Agent": "Clawdbot/1.0" },
-        signal: AbortSignal.timeout(5000),
-      });
-      
-      if (sha256Response.ok) {
-        const expectedHash = (await sha256Response.text()).trim().split(/\s+/)[0]?.toLowerCase();
-        if (expectedHash && expectedHash.length === 64) {
-          const { createHash } = await import("node:crypto");
-          const fileBuffer = fs.readFileSync(binaryPath);
-          const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
-          
-          if (actualHash === expectedHash) {
-            sha256Verified = true;
-          } else {
-            // 哈希不匹配，删除文件
-            fs.unlinkSync(binaryPath);
-            return {
-              ok: false,
-              message: `SHA256 mismatch for ${toolName}`,
-              stdout: "",
-              stderr: `Expected: ${expectedHash}\nActual: ${actualHash}`,
-              code: null,
-            };
+
+      let sha256Verified = false;
+      try {
+        const sha256Url = `${downloadUrl}.sha256`;
+        const sha256Response = await fetch(sha256Url, {
+          headers: { "User-Agent": "Clawdbot/1.0" },
+          signal: AbortSignal.timeout(5000),
+        });
+
+        if (sha256Response.ok) {
+          const expectedHash = (await sha256Response.text()).trim().split(/\s+/)[0]?.toLowerCase();
+          if (expectedHash && expectedHash.length === 64) {
+            const { createHash } = await import("node:crypto");
+            const fileBuffer = fs.readFileSync(binaryPath);
+            const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
+
+            if (actualHash === expectedHash) {
+              sha256Verified = true;
+            } else {
+              // 哈希不匹配，删除文件
+              fs.unlinkSync(binaryPath);
+              return {
+                ok: false,
+                message: `SHA256 mismatch for ${toolName}`,
+                stdout: "",
+                stderr: `Expected: ${expectedHash}\nActual: ${actualHash}`,
+                code: null,
+              };
+            }
           }
         }
+      } catch {
+        // SHA256 校验失败不阻断安装，但记录日志
       }
-    } catch {
-      // SHA256 校验失败不阻断安装，但记录日志
-    }
-    
-    // 步骤 6: 设置可执行权限 (Unix)
-    if (process.platform !== "win32") {
-      fs.chmodSync(binaryPath, 0o755);
-    }
-    
-    const verifyNote = sha256Verified ? " (SHA256 ✓)" : "";
-    onProgress?.({
-      stage: "verifying",
-      message: `✅ ${toolName} v${version} 安装成功！${verifyNote}`,
-      percent: 100,
-      usingCNMirror: useCN,
-    });
-    
-    return {
-      ok: true,
-      message: `Installed ${toolName} v${version} to ${binaryPath}${verifyNote}`,
-      stdout: `Downloaded ${formatBytes(stats.size)} from HK server`,
-      stderr: "",
-      code: 0,
-    };
-    
+
+      // 步骤 6: 设置可执行权限 (Unix)
+      if (process.platform !== "win32") {
+        fs.chmodSync(binaryPath, 0o755);
+      }
+
+      const verifyNote = sha256Verified ? " (SHA256 ✓)" : "";
+      onProgress?.({
+        stage: "verifying",
+        message: `✅ ${toolName} v${version} 安装成功！${verifyNote}`,
+        percent: 100,
+        usingCNMirror: useCN,
+      });
+
+      return {
+        ok: true,
+        message: `Installed ${toolName} v${version} to ${binaryPath}${verifyNote}`,
+        stdout: `Downloaded ${formatBytes(stats.size)} from HK server`,
+        stderr: "",
+        code: 0,
+      };
     } catch (err) {
       // 清理失败的下载
       if (fs.existsSync(binaryPath)) {
@@ -1303,17 +1375,18 @@ async function installFromHKBinaryServer(params: {
           // ignore cleanup error
         }
       }
-      
+
       lastError = err instanceof Error ? err : new Error(String(err));
-      
+
       // 可重试的错误：网络超时、连接失败
       const message = lastError.message;
-      const isRetryable = message.includes("abort") || 
-                          message.includes("timeout") ||
-                          message.includes("ENOTFOUND") ||
-                          message.includes("ECONNREFUSED") ||
-                          message.includes("ETIMEDOUT");
-      
+      const isRetryable =
+        message.includes("abort") ||
+        message.includes("timeout") ||
+        message.includes("ENOTFOUND") ||
+        message.includes("ECONNREFUSED") ||
+        message.includes("ETIMEDOUT");
+
       if (!isRetryable || attempt === MAX_RETRIES) {
         // 边界检查 8: 网络错误友好提示
         if (message.includes("abort") || message.includes("timeout")) {
@@ -1325,7 +1398,7 @@ async function installFromHKBinaryServer(params: {
             code: null,
           };
         }
-        
+
         if (message.includes("ENOTFOUND") || message.includes("ECONNREFUSED")) {
           return {
             ok: false,
@@ -1335,7 +1408,7 @@ async function installFromHKBinaryServer(params: {
             code: null,
           };
         }
-        
+
         return {
           ok: false,
           message: `Download error: ${message}`,
@@ -1347,7 +1420,7 @@ async function installFromHKBinaryServer(params: {
       // 继续下一次重试
     }
   }
-  
+
   // 所有重试都失败
   return {
     ok: false,
@@ -1398,7 +1471,13 @@ async function installUvDependency(
       timeoutMs,
     });
     if (brewResult.code === 0) {
-      return { ok: true, message: "uv installed via brew", stdout: brewResult.stdout, stderr: "", code: 0 };
+      return {
+        ok: true,
+        message: "uv installed via brew",
+        stdout: brewResult.stdout,
+        stderr: "",
+        code: 0,
+      };
     }
     return {
       ok: false,
@@ -1415,12 +1494,18 @@ async function installUvDependency(
     if (hasBinary("pip") || hasBinary("pip3")) {
       const pipCmd = hasBinary("pip3") ? "pip3" : "pip";
       const pipArgs = useCN
-        ? ["install", "uv", "-i", getPipMirrors()[0], "--trusted-host", new URL(getPipMirrors()[0]).hostname]
+        ? [
+            "install",
+            "uv",
+            "-i",
+            getPipMirrors()[0],
+            "--trusted-host",
+            new URL(getPipMirrors()[0]).hostname,
+          ]
         : ["install", "uv"];
-      const pipResult = await runCommandWithTimeout(
-        [pipCmd, ...pipArgs],
-        { timeoutMs: Math.max(timeoutMs, 120_000) },
-      );
+      const pipResult = await runCommandWithTimeout([pipCmd, ...pipArgs], {
+        timeoutMs: Math.max(timeoutMs, 120_000),
+      });
       if (pipResult.code === 0) {
         // pip installs scripts to Python's Scripts dir; ensure it's on PATH
         const pythonScriptsDir = resolvePythonScriptsDir();
@@ -1442,15 +1527,22 @@ async function installUvDependency(
     // 方案2: 尝试 winget
     if (hasBinary("winget")) {
       const wingetResult = await runCommandWithTimeout(
-        ["winget", "install", "--id", "astral-sh.uv", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+        [
+          "winget",
+          "install",
+          "--id",
+          "astral-sh.uv",
+          "-e",
+          "--silent",
+          "--accept-package-agreements",
+          "--accept-source-agreements",
+        ],
         { timeoutMs: Math.max(timeoutMs, 180_000) },
       );
       if (wingetResult.code === 0) {
         return {
           ok: true,
-          message: useCN
-            ? "🇨🇳 ClawdbotCN 专属：uv 已通过 winget 安装"
-            : "uv installed via winget",
+          message: useCN ? "🇨🇳 ClawdbotCN 专属：uv 已通过 winget 安装" : "uv installed via winget",
           stdout: wingetResult.stdout,
           stderr: "",
           code: 0,
@@ -1460,12 +1552,12 @@ async function installUvDependency(
 
     // 方案3: 使用 PowerShell 脚本安装 - 支持多镜像源（国内代理不太稳定）
     const installScripts = getUvInstallScripts("ps1");
-    
+
     let lastError: string = "";
-    
+
     for (const scriptUrl of installScripts) {
       const installScript = `irm '${scriptUrl}' | iex`;
-      
+
       const result = await runCommandWithTimeout(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", installScript],
         { timeoutMs: Math.max(timeoutMs, 120_000) },
@@ -1480,9 +1572,7 @@ async function installUvDependency(
         }
         return {
           ok: true,
-          message: useCN
-            ? "🇨🇳 ClawdbotCN 专属：uv 已安装"
-            : "uv installed",
+          message: useCN ? "🇨🇳 ClawdbotCN 专属：uv 已安装" : "uv installed",
           stdout: result.stdout,
           stderr: "",
           code: 0,
@@ -1490,7 +1580,7 @@ async function installUvDependency(
       }
       lastError = result.stderr || result.stdout;
     }
-    
+
     return {
       ok: false,
       message: `Failed to install uv: pip/winget/powershell all failed. Last error: ${lastError}`,
@@ -1525,9 +1615,9 @@ async function installUvDependency(
 
     // 方案2: 使用 curl 安装脚本 - 支持多镜像源
     const installUrls = getUvInstallScripts("sh");
-    
+
     let lastError: string = "";
-    
+
     for (const installUrl of installUrls) {
       const installScript = `curl -LsSf "${installUrl}" | sh`;
       const result = await runCommandWithTimeout(["sh", "-c", installScript], {
@@ -1543,9 +1633,7 @@ async function installUvDependency(
         }
         return {
           ok: true,
-          message: useCN
-            ? "🇨🇳 ClawdbotCN 专属：uv 已通过国内镜像安装"
-            : "uv installed via curl",
+          message: useCN ? "🇨🇳 ClawdbotCN 专属：uv 已通过国内镜像安装" : "uv installed via curl",
           stdout: result.stdout,
           stderr: "",
           code: 0,
@@ -1553,7 +1641,7 @@ async function installUvDependency(
       }
       lastError = result.stderr || result.stdout;
     }
-    
+
     return {
       ok: false,
       message: `Failed to install uv: pip/curl all failed. Last error: ${lastError}`,
@@ -1590,7 +1678,13 @@ async function installGoDependency(
       timeoutMs,
     });
     if (brewResult.code === 0) {
-      return { ok: true, message: "go installed via brew", stdout: brewResult.stdout, stderr: "", code: 0 };
+      return {
+        ok: true,
+        message: "go installed via brew",
+        stdout: brewResult.stdout,
+        stderr: "",
+        code: 0,
+      };
     }
     return {
       ok: false,
@@ -1606,7 +1700,16 @@ async function installGoDependency(
     // 尝试 winget（Windows 10 1709+ 内置）
     if (hasBinary("winget")) {
       const wingetResult = await runCommandWithTimeout(
-        ["winget", "install", "--id", "GoLang.Go", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+        [
+          "winget",
+          "install",
+          "--id",
+          "GoLang.Go",
+          "-e",
+          "--silent",
+          "--accept-package-agreements",
+          "--accept-source-agreements",
+        ],
         { timeoutMs: Math.max(timeoutMs, 300_000) },
       );
       if (wingetResult.code === 0) {
@@ -1617,9 +1720,7 @@ async function installGoDependency(
         }
         return {
           ok: true,
-          message: useCN
-            ? "🇨🇳 ClawdbotCN 专属：Go 已通过 winget 安装"
-            : "go installed via winget",
+          message: useCN ? "🇨🇳 ClawdbotCN 专属：Go 已通过 winget 安装" : "go installed via winget",
           stdout: wingetResult.stdout,
           stderr: "",
           code: 0,
@@ -1629,16 +1730,13 @@ async function installGoDependency(
 
     // 尝试 scoop
     if (hasBinary("scoop")) {
-      const scoopResult = await runCommandWithTimeout(
-        ["scoop", "install", "go"],
-        { timeoutMs: Math.max(timeoutMs, 300_000) },
-      );
+      const scoopResult = await runCommandWithTimeout(["scoop", "install", "go"], {
+        timeoutMs: Math.max(timeoutMs, 300_000),
+      });
       if (scoopResult.code === 0) {
         return {
           ok: true,
-          message: useCN
-            ? "🇨🇳 ClawdbotCN 专属：Go 已通过 scoop 安装"
-            : "go installed via scoop",
+          message: useCN ? "🇨🇳 ClawdbotCN 专属：Go 已通过 scoop 安装" : "go installed via scoop",
           stdout: scoopResult.stdout,
           stderr: "",
           code: 0,
@@ -1651,38 +1749,36 @@ async function installGoDependency(
     const goVersion = "1.22.0";
     const arch = process.arch === "arm64" ? "arm64" : "amd64";
     const msiName = `go${goVersion}.windows-${arch}.msi`;
-    
+
     const tempDir = process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp";
     const msiPath = path.join(tempDir, msiName);
-    
+
     // 获取所有可用的镜像源
-    const mirrors = useCN
-      ? getGoBinaryMirrors()
-      : ["https://go.dev/dl"];
-    
+    const mirrors = useCN ? getGoBinaryMirrors() : ["https://go.dev/dl"];
+
     let lastError: string = "";
-    
+
     // 依次尝试每个镜像源
     for (const mirror of mirrors) {
       const downloadUrl = `${mirror}/${msiName}`;
-      
+
       try {
         // 下载 MSI
         await downloadFile(downloadUrl, msiPath, Math.max(timeoutMs, 300_000));
-        
+
         // 静默安装
         const msiexecResult = await runCommandWithTimeout(
           ["msiexec", "/i", msiPath, "/quiet", "/norestart"],
           { timeoutMs: Math.max(timeoutMs, 300_000) },
         );
-        
+
         // 清理安装包
         try {
           await fs.promises.unlink(msiPath);
         } catch {
           // 忽略
         }
-        
+
         if (msiexecResult.code === 0) {
           // 刷新 PATH
           const goPath = "C:\\Program Files\\Go\\bin";
@@ -1706,7 +1802,7 @@ async function installGoDependency(
         continue;
       }
     }
-    
+
     return {
       ok: false,
       message: `Failed to install Go: ${lastError}`,
@@ -1722,57 +1818,53 @@ async function installGoDependency(
     const goVersion = "1.22.0";
     const arch = process.arch === "arm64" ? "arm64" : "amd64";
     const tarName = `go${goVersion}.linux-${arch}.tar.gz`;
-    
+
     const goRoot = path.join(process.env.HOME || "", ".clawdbot", "tools", "go");
     const tarPath = path.join(goRoot, tarName);
-    
+
     // 获取所有可用的镜像源
-    const mirrors = useCN
-      ? getGoBinaryMirrors()
-      : ["https://go.dev/dl"];
-    
+    const mirrors = useCN ? getGoBinaryMirrors() : ["https://go.dev/dl"];
+
     let lastError: string = "";
-    
+
     // 依次尝试每个镜像源
     for (const mirror of mirrors) {
       const downloadUrl = `${mirror}/${tarName}`;
-      
+
       try {
         await ensureDir(goRoot);
-        
+
         // 下载
         await downloadFile(downloadUrl, tarPath, Math.max(timeoutMs, 180_000));
-        
+
         // 解压
         const extractResult = await runCommandWithTimeout(
           ["tar", "-xzf", tarPath, "-C", goRoot, "--strip-components=1"],
           { timeoutMs: 60_000 },
         );
-        
+
         if (extractResult.code !== 0) {
           lastError = `tar extract failed: ${extractResult.stderr}`;
           continue;
         }
-        
+
         // 清理 tar 文件
         try {
           await fs.promises.unlink(tarPath);
         } catch {
           // 忽略清理失败
         }
-        
+
         // 添加到 PATH
         const goBin = path.join(goRoot, "bin");
         if (!process.env.PATH?.includes(goBin)) {
           process.env.PATH = `${goBin}:${process.env.PATH}`;
         }
         process.env.GOROOT = goRoot;
-        
+
         return {
           ok: true,
-          message: useCN
-            ? `🇨🇳 ClawdbotCN 专属：Go 已通过国内镜像安装 (${mirror})`
-            : "go installed",
+          message: useCN ? `🇨🇳 ClawdbotCN 专属：Go 已通过国内镜像安装 (${mirror})` : "go installed",
           stdout: `Go installed to ${goRoot}`,
           stderr: "",
           code: 0,
@@ -1783,7 +1875,7 @@ async function installGoDependency(
         continue;
       }
     }
-    
+
     return {
       ok: false,
       message: `Failed to install Go: ${lastError}`,
@@ -1820,7 +1912,13 @@ async function installNodeDependency(
       timeoutMs,
     });
     if (brewResult.code === 0) {
-      return { ok: true, message: "node installed via brew", stdout: brewResult.stdout, stderr: "", code: 0 };
+      return {
+        ok: true,
+        message: "node installed via brew",
+        stdout: brewResult.stdout,
+        stderr: "",
+        code: 0,
+      };
     }
     return {
       ok: false,
@@ -1836,7 +1934,16 @@ async function installNodeDependency(
     // 尝试 winget
     if (hasBinary("winget")) {
       const wingetResult = await runCommandWithTimeout(
-        ["winget", "install", "--id", "OpenJS.NodeJS.LTS", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+        [
+          "winget",
+          "install",
+          "--id",
+          "OpenJS.NodeJS.LTS",
+          "-e",
+          "--silent",
+          "--accept-package-agreements",
+          "--accept-source-agreements",
+        ],
         { timeoutMs: Math.max(timeoutMs, 300_000) },
       );
       if (wingetResult.code === 0) {
@@ -1859,10 +1966,9 @@ async function installNodeDependency(
 
     // 尝试 scoop
     if (hasBinary("scoop")) {
-      const scoopResult = await runCommandWithTimeout(
-        ["scoop", "install", "nodejs-lts"],
-        { timeoutMs: Math.max(timeoutMs, 300_000) },
-      );
+      const scoopResult = await runCommandWithTimeout(["scoop", "install", "nodejs-lts"], {
+        timeoutMs: Math.max(timeoutMs, 300_000),
+      });
       if (scoopResult.code === 0) {
         return {
           ok: true,
@@ -1881,38 +1987,36 @@ async function installNodeDependency(
     const nodeVersion = "20.11.0";
     const arch = process.arch === "arm64" ? "arm64" : "x64";
     const msiName = `node-v${nodeVersion}-${arch}.msi`;
-    
+
     const tempDir = process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp";
     const msiPath = path.join(tempDir, msiName);
-    
+
     // 获取所有可用的镜像源
-    const mirrors = useCN
-      ? getNodeBinaryMirrors()
-      : ["https://nodejs.org/dist"];
-    
+    const mirrors = useCN ? getNodeBinaryMirrors() : ["https://nodejs.org/dist"];
+
     let lastError: string = "";
-    
+
     // 依次尝试每个镜像源
     for (const mirror of mirrors) {
       const downloadUrl = `${mirror}/v${nodeVersion}/${msiName}`;
-      
+
       try {
         // 下载 MSI
         await downloadFile(downloadUrl, msiPath, Math.max(timeoutMs, 300_000));
-        
+
         // 静默安装
         const msiexecResult = await runCommandWithTimeout(
           ["msiexec", "/i", msiPath, "/quiet", "/norestart"],
           { timeoutMs: Math.max(timeoutMs, 300_000) },
         );
-        
+
         // 清理安装包
         try {
           await fs.promises.unlink(msiPath);
         } catch {
           // 忽略
         }
-        
+
         if (msiexecResult.code === 0) {
           // 刷新 PATH
           const nodePath = "C:\\Program Files\\nodejs";
@@ -1936,7 +2040,7 @@ async function installNodeDependency(
         continue;
       }
     }
-    
+
     return {
       ok: false,
       message: `Failed to install Node.js: ${lastError}`,
@@ -1964,9 +2068,7 @@ async function installNodeDependency(
       if (aptResult.code === 0) {
         return {
           ok: true,
-          message: useCN
-            ? "🇨🇳 ClawdbotCN 专属：Node.js 已通过 apt 安装"
-            : "node installed via apt",
+          message: useCN ? "🇨🇳 ClawdbotCN 专属：Node.js 已通过 apt 安装" : "node installed via apt",
           stdout: aptResult.stdout,
           stderr: "",
           code: 0,
@@ -2024,25 +2126,25 @@ async function installNodeDependency(
     const fnmInstallUrl = useCN
       ? `${CN_MIRRORS.github}/https://fnm.vercel.app/install`
       : "https://fnm.vercel.app/install";
-    
+
     const fnmInstallScript = `curl -fsSL "${fnmInstallUrl}" | bash -s -- --skip-shell`;
     const fnmResult = await runCommandWithTimeout(["sh", "-c", fnmInstallScript], {
       timeoutMs: Math.max(timeoutMs, 60_000),
       cwd: process.env.HOME,
     });
-    
+
     if (fnmResult.code === 0) {
       // 配置 fnm 使用国内镜像
       const fnmPath = path.join(process.env.HOME || "", ".local", "share", "fnm");
       if (!process.env.PATH?.includes(fnmPath)) {
         process.env.PATH = `${fnmPath}:${process.env.PATH}`;
       }
-      
+
       // 设置 Node.js 镜像
       if (useCN) {
         process.env.FNM_NODE_DIST_MIRROR = CN_MIRRORS.node;
       }
-      
+
       // 安装 Node.js LTS
       const nodeInstallScript = `${fnmPath}/fnm install --lts && ${fnmPath}/fnm default lts-latest`;
       const nodeResult = await runCommandWithTimeout(["sh", "-c", nodeInstallScript], {
@@ -2050,7 +2152,7 @@ async function installNodeDependency(
         cwd: process.env.HOME,
         env: useCN ? { FNM_NODE_DIST_MIRROR: CN_MIRRORS.node } : undefined,
       });
-      
+
       if (nodeResult.code === 0) {
         return {
           ok: true,
@@ -2169,7 +2271,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   if (spec.kind === "download") {
     return await installDownloadSpec({ entry, spec, timeoutMs, onProgress: params.onProgress });
   }
-  
+
   const useCN = shouldUseCNMirror();
 
   const prefs = resolveSkillsInstallPreferences(params.config);
@@ -2198,13 +2300,13 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
         usingCNMirror: useCN,
         percent: 10,
       });
-      
+
       const hkResult = await installFromHKBinaryServer({
         toolName,
         timeoutMs,
         onProgress: params.onProgress,
       });
-      
+
       if (hkResult.ok) {
         return hkResult;
       }
@@ -2219,7 +2321,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
         code: null,
       };
     }
-    
+
     return {
       ok: false,
       message: "brew not installed",
@@ -2249,7 +2351,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
       percent: 30,
     });
   }
-  
+
   // ClawdbotCN 专属：自动安装 Node.js 依赖
   if (spec.kind === "node" && !hasBinary("node") && !hasBinary("npm")) {
     params.onProgress?.({
@@ -2271,7 +2373,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
       percent: 30,
     });
   }
-  
+
   if (!command.argv || command.argv.length === 0) {
     return {
       ok: false,
@@ -2288,7 +2390,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
 
   // ClawdbotCN 专属：检查 Go 是否可用（包括 Windows 常见安装路径）
   const goExe = spec.kind === "go" ? findGoExecutable() : undefined;
-  
+
   if (spec.kind === "go" && !goExe) {
     // ClawdbotCN 专属：自动安装 Go 依赖
     params.onProgress?.({
@@ -2313,7 +2415,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
 
   // ClawdbotCN 专属：合并命令自带的环境变量（如 bun 的 BUN_CONFIG_REGISTRY）
   let env: NodeJS.ProcessEnv | undefined = command.env ? { ...command.env } : undefined;
-  
+
   if (spec.kind === "go") {
     // Go 使用国内镜像加速
     const goProxyEnv = getGoProxyEnv();
@@ -2327,7 +2429,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     } else {
       env = { ...env, ...goProxyEnv };
     }
-    
+
     // ClawdbotCN 专属：如果找到 Go 的完整路径，替换命令中的 "go"
     const foundGoExe = findGoExecutable();
     if (foundGoExe && foundGoExe !== "go" && command.argv && command.argv[0] === "go") {
@@ -2338,9 +2440,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   // ClawdbotCN 专属：通知开始安装技能包
   params.onProgress?.({
     stage: "installing",
-    message: useCN
-      ? `🚀 正在安装 ${params.skillName}...`
-      : `Installing ${params.skillName}...`,
+    message: useCN ? `🚀 正在安装 ${params.skillName}...` : `Installing ${params.skillName}...`,
     usingCNMirror: useCN,
     percent: 50,
   });
@@ -2350,7 +2450,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     if (!argv || argv.length === 0) {
       return { code: null, stdout: "", stderr: "invalid install command" };
     }
-    
+
     // ClawdbotCN 专属：Node.js 包使用多镜像 fallback 机制
     if (spec.kind === "node" && spec.package && useCN) {
       const prefs = resolveSkillsInstallPreferences(params.config);
@@ -2361,7 +2461,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
         onProgress: params.onProgress,
       });
     }
-    
+
     try {
       return await runCommandWithTimeout(argv, {
         timeoutMs,
@@ -2374,7 +2474,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   })();
 
   const success = result.code === 0;
-  
+
   // ClawdbotCN 专属：通知安装验证
   if (success) {
     params.onProgress?.({
@@ -2384,11 +2484,11 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
       percent: 90,
     });
   }
-  
+
   // ClawdbotCN 专属：安装失败时尝试从香港服务器下载
   if (!success && spec.kind === "brew" && spec.formula && useCN) {
     const toolName = spec.formula.split("/").pop() || "";
-    
+
     // 检查是否支持香港服务器下载
     if (canInstallFromHKServer(toolName)) {
       params.onProgress?.({
@@ -2397,17 +2497,17 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
         usingCNMirror: useCN,
         percent: 60,
       });
-      
+
       const hkResult = await installFromHKBinaryServer({
         toolName,
         timeoutMs,
         onProgress: params.onProgress,
       });
-      
+
       if (hkResult.ok) {
         return hkResult;
       }
-      
+
       // 香港服务器也失败了，返回综合错误信息
       return {
         ok: false,
@@ -2420,7 +2520,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
       };
     }
   }
-  
+
   return {
     ok: success,
     message: success ? "Installed" : formatInstallFailureMessage(result),

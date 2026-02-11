@@ -1122,8 +1122,9 @@ function renderCategoryTab(
 }
 
 // 最大渲染数量 — 超过此值则截断，避免 DOM 爆炸导致页面卡死
-const ALL_VIEW_MAX_RENDER = 60;
-const CATEGORY_VIEW_MAX_RENDER = 150;
+// "全部"视图仅渲染 24 个卡片（首屏可见 ~8-12 个），减少初始 DOM 数量
+const ALL_VIEW_MAX_RENDER = 24;
+const CATEGORY_VIEW_MAX_RENDER = 80;
 
 // 渲染缓存：仅当 report 引用变化时才重新排序/分类（避免每次 Lit render 都 O(n log n)）
 let _cachedReportRef: SkillStatusReport | null = null;

@@ -665,25 +665,21 @@ export async function loadLicenseStatus(host: LicenseHost): Promise<void> {
 /**
  * 预加载技术支持二维码
  *
- * 在 license 状态加载完成后调用，确保用户进入 chat 页面
- * hover 到二维码按钮时能立即看到二维码图片。
- *
- * 策略：
- *   1. 如果 license 已有二维码数据（从 license.status 返回的）→ 标记已预加载
- *   2. 否则调用 support.qrcode.preload 触发远程拉取
- *   3. 拉取成功后更新 license 中的二维码数据
+ * 在 license 状态加载完成后调用。
+ * 二维码已由 gateway 端的 enrichLicenseWithSupport 注入到 license 对象中，
+ * 如果已有数据则直接标记完成，否则通过 gateway 方法获取。
  */
 async function preloadQrcodeForChat(host: LicenseHost): Promise<void> {
   if (!host.client) return;
 
-  // 如果 license 已经带有二维码数据，只需标记为已预加载
+  // 如果 license 已经带有二维码数据，直接标记完成
   if (host.licenseState?.license?.supportQrcode?.base64) {
     host.qrcodePreloaded = true;
     host.qrcodePreloading = false;
     return;
   }
 
-  // 触发远程预加载
+  // 通过 gateway 方法获取本地静态二维码
   host.qrcodePreloading = true;
   host.qrcodePreloaded = false;
 
@@ -692,28 +688,21 @@ async function preloadQrcodeForChat(host: LicenseHost): Promise<void> {
     if (result && typeof result === "object") {
       const data = result as Record<string, unknown>;
       const qrcode = data.qrcode as { base64: string; groupName: string } | null;
-      const purchaseUrl = data.purchaseUrl as string | null;
 
       if (qrcode?.base64) {
-        // 更新 license 状态中的二维码
         host.licenseState = {
           ...host.licenseState,
           license: {
             ...host.licenseState.license!,
             supportQrcode: qrcode,
-            purchaseUrl: purchaseUrl ?? host.licenseState.license?.purchaseUrl,
           },
         };
-        host.qrcodeExpiresAt = (data.expiresAt as number) ?? null;
         host.qrcodePreloaded = true;
-        console.log("[qrcode] Support QR code preloaded successfully");
       } else {
-        console.warn("[qrcode] Preload returned no QR code data");
         host.qrcodePreloaded = false;
       }
     }
-  } catch (error) {
-    console.error("[qrcode] Failed to preload support QR code:", error);
+  } catch {
     host.qrcodePreloaded = false;
   } finally {
     host.qrcodePreloading = false;

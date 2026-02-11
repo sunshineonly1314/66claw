@@ -262,6 +262,46 @@ export async function disableMcpServer(
 }
 
 /**
+ * Enable a previously disabled MCP server.
+ */
+export async function enableMcpServer(
+  client: GatewayClient | null,
+  serverId: string,
+  callbacks: McpLifecycleCallbacks,
+): Promise<void> {
+  if (!client) return;
+  try {
+    await client.request("mcp.enable", { id: serverId });
+    await initMcpCapabilities(client, callbacks);
+  } catch (err) {
+    console.error("[mcp-lifecycle] enable failed:", serverId, err);
+  }
+}
+
+/**
+ * Test an MCP server connection by calling mcp.status and checking if the
+ * server is running and has tools available.
+ * Returns true if the server responds, false otherwise.
+ */
+export async function testMcpServer(
+  client: GatewayClient | null,
+  serverId: string,
+): Promise<boolean> {
+  if (!client) return false;
+  try {
+    const response = await client.request("mcp.restart", { id: serverId });
+    // If the restart didn't throw, re-check status
+    const status = await client.request("mcp.status") as {
+      processes?: Array<{ id: string; status: string }>;
+    } | null;
+    const proc = status?.processes?.find((p) => p.id === serverId);
+    return proc?.status === "running";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check for capability updates (new MCP servers or tool changes).
  */
 export async function checkMcpUpdate(

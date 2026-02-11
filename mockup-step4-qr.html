@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 4 QR Preview</title>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #0f0f11;
+    --bg-secondary: #18181b;
+    --bg-tertiary: #1f1f23;
+    --bg-elevated: #27272a;
+    --bg-hover: #2d2d32;
+    --border-default: rgba(255, 255, 255, 0.08);
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    padding: 40px;
+    min-height: 100vh;
+  }
+  h2 { text-align: center; margin-bottom: 30px; color: var(--text-secondary); font-size: 0.9em; }
+
+  /* Step4 两栏布局 */
+  .step4-main-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+    margin-bottom: 20px;
+    align-items: stretch;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  @media (max-width: 800px) {
+    .step4-main-grid { grid-template-columns: 1fr; }
+  }
+
+  /* 左侧增值服务 */
+  .premium-service-card {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.08) 0%, rgba(255, 165, 0, 0.03) 100%);
+    border: 2px solid rgba(255, 215, 0, 0.4);
+    border-radius: var(--radius-xl);
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .premium-badge {
+    position: absolute;
+    top: 0;
+    right: 24px;
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    color: #1a1a1a;
+    font-size: 0.85em;
+    font-weight: 700;
+    padding: 6px 16px;
+    border-radius: 0 0 12px 12px;
+  }
+  .premium-content {
+    padding: 28px 24px;
+    text-align: center;
+  }
+  .premium-title {
+    font-size: 1.4em;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+  .premium-subtitle {
+    font-size: 0.95em;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+  }
+  .premium-features {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+    margin-bottom: 24px;
+  }
+  .premium-feature {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    font-size: 0.9em;
+    color: var(--text-secondary);
+  }
+  .premium-feature strong { color: var(--text-primary); }
+  .premium-buy-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    padding: 18px 32px;
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%);
+    border: none;
+    border-radius: var(--radius-lg);
+    color: #1a1a1a;
+    font-size: 1.15em;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(255, 165, 0, 0.4);
+  }
+  .premium-buy-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(255, 165, 0, 0.5);
+  }
+  .premium-buy-btn .material-icons { font-size: 1.4em; }
+  .premium-buy-text { flex: 1; text-align: center; }
+  .premium-buy-arrow { font-size: 1.3em; animation: bounceRight 1.5s infinite; }
+  @keyframes bounceRight {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(5px); }
+  }
+  .premium-buy-hint {
+    margin-top: 14px;
+    font-size: 0.85em;
+    color: var(--text-muted);
+  }
+
+  /* 右侧微信二维码卡片 */
+  .wechat-support-card {
+    background: linear-gradient(160deg, rgba(7, 193, 96, 0.06) 0%, rgba(7, 193, 96, 0.02) 100%);
+    border: 1.5px solid rgba(7, 193, 96, 0.25);
+    border-radius: var(--radius-xl);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .wechat-support-card:hover {
+    border-color: rgba(7, 193, 96, 0.45);
+    box-shadow: 0 4px 20px rgba(7, 193, 96, 0.1);
+  }
+  .wechat-support-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 16px 10px;
+    font-weight: 700;
+    font-size: 0.95em;
+    color: #07C160;
+    letter-spacing: 0.3px;
+  }
+  .wechat-support-header .material-icons { font-size: 1.2em; }
+  .wechat-support-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 16px 20px;
+    text-align: center;
+  }
+
+  /* 修改后：去掉内框，直接撑满 */
+  .wechat-qr-wrapper {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .wechat-qr-wrapper img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    border-radius: 10px;
+  }
+
+  .wechat-support-title {
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    line-height: 1.4;
+  }
+  .wechat-support-group {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #07C160;
+    margin-bottom: 6px;
+  }
+  .wechat-support-hint {
+    font-size: 0.82em;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .wechat-support-hint::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' fill='%2307C160' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 01.213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 00.167-.054l1.903-1.114a.864.864 0 01.717-.098 10.16 10.16 0 002.837.403c.276 0 .543-.027.811-.05a6.127 6.127 0 01-.253-1.736c0-3.56 3.143-6.443 7.02-6.443.35 0 .69.027 1.027.07-.91-3.223-4.59-5.523-8.905-5.523zm-2.7 3.805a1.065 1.065 0 110 2.13 1.065 1.065 0 010-2.13zm5.41 0a1.065 1.065 0 110 2.13 1.065 1.065 0 010-2.13z'/%3E%3Cpath d='M23.697 14.531c0-3.244-3.09-5.875-6.902-5.875-3.81 0-6.9 2.631-6.9 5.875 0 3.246 3.09 5.876 6.9 5.876.756 0 1.49-.098 2.18-.31a.67.67 0 01.553.074l1.468.86a.26.26 0 00.129.042.226.226 0 00.224-.228c0-.056-.022-.11-.037-.164l-.301-1.142a.456.456 0 01.164-.514c1.416-1.044 2.322-2.597 2.322-4.493zm-9.126-1.012a.822.822 0 110-1.645.822.822 0 010 1.645zm4.449 0a.822.822 0 110-1.645.822.822 0 010 1.645z'/%3E%3C/svg%3E") no-repeat center/contain;
+  }
+</style>
+</head>
+<body>
+  <h2>Step 4 - 模型选择页 QR 预览（修改后：二维码撑满，无内框）</h2>
+
+  <div class="step4-main-grid">
+    <!-- 左侧：增值服务卡片 -->
+    <div class="premium-service-card">
+      <div class="premium-badge">🎁 增值服务</div>
+      <div class="premium-content">
+        <div class="premium-title">ClawdBotCN 会员服务</div>
+        <div class="premium-subtitle">软件免费使用，增值服务助你更高效</div>
+        <div class="premium-features">
+          <div class="premium-feature">📚 <strong>中文教程文档</strong> · 从入门到精通</div>
+          <div class="premium-feature">🔌 <strong>国内AI平台适配</strong> · UI/Skills 深度汉化</div>
+          <div class="premium-feature">🔄 <strong>持续更新维护</strong> · 新功能新玩法第一时间体验</div>
+          <div class="premium-feature">💬 <strong>技术答疑支持</strong> · 遇到问题随时咨询</div>
+        </div>
+        <a href="#" class="premium-buy-btn">
+          <span class="material-icons">shopping_cart</span>
+          <span class="premium-buy-text">立即获取服务凭证</span>
+          <span class="premium-buy-arrow">→</span>
+        </a>
+        <div class="premium-buy-hint">在闲鱼搜索「ClawdBotCN」或点击上方按钮</div>
+      </div>
+    </div>
+
+    <!-- 右侧：微信二维码 - 免费技术支持 -->
+    <div class="wechat-support-card" id="wechatSupportCard">
+      <div class="wechat-support-header">
+        <span class="material-icons">support_agent</span>
+        <span>免费技术支持</span>
+      </div>
+      <div class="wechat-support-body">
+        <div class="wechat-qr-wrapper" id="wechatQrcodeImage">
+          <!-- 用占位 QR 图片模拟 -->
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://example.com/wechat-group&color=07C160" alt="微信技术支持群二维码">
+        </div>
+        <div class="wechat-support-title">获取免费专属技术支持及咨询</div>
+        <div class="wechat-support-group">扫码加群领体验码</div>
+        <div class="wechat-support-hint">微信扫码加入专属技术群</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

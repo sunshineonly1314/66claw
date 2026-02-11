@@ -24,6 +24,11 @@ export function rewriteUpdateFlagArgv(argv: string[]): string[] {
 }
 
 export async function runCli(argv: string[] = process.argv) {
+  // Enable Node.js module compile cache for faster subsequent startups (Node 22.8+)
+  if (typeof (process as { enableCompileCache?: () => void }).enableCompileCache === "function") {
+    try { (process as { enableCompileCache: () => void }).enableCompileCache(); } catch {}
+  }
+
   const normalizedArgv = stripWindowsNodeExec(argv);
   loadDotEnv({ quiet: true });
   normalizeEnv();

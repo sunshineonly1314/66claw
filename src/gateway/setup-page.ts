@@ -26,6 +26,20 @@ function getLogoBase64(): string {
 }
 
 /**
+ * 获取 Setup 引导页二维码的 base64 数据 URL（zlq.jpg）
+ */
+function getSetupQrcodeBase64(): string {
+  try {
+    const qrDir = path.resolve(import.meta.dirname, "../../data/qrcodes");
+    const qrPath = path.join(qrDir, "zlq.jpg");
+    const buf = fs.readFileSync(qrPath);
+    return `data:image/jpeg;base64,${buf.toString("base64")}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * 检测当前运行平台和版本
  */
 function detectPlatformInfo(): {
@@ -91,6 +105,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   const platformInfo = detectPlatformInfo();
   const defaultWorkspace = getDefaultWorkspace();
   const logoBase64 = getLogoBase64();
+  const setupQrcodeBase64 = getSetupQrcodeBase64();
   // 将 token 注入到页面中，供 JavaScript 使用
   // 防止 </script> 注入：将 </ 转义为 <\/ 避免提前关闭 script 标签
   const safeToken = gatewayToken ? JSON.stringify(gatewayToken).replace(/<\//g, "<\\/") : "null";
@@ -303,6 +318,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       padding: 32px;
       margin-bottom: 24px;
       animation: fadeInUp 0.4s ease-out;
+      position: relative;
     }
     .card-header {
       margin-bottom: 24px;
@@ -316,6 +332,111 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     .card-header p {
       color: var(--text-secondary);
       font-size: 0.95em;
+    }
+
+    /* 右上角悬浮二维码卡片 */
+    .qr-corner {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1.5px solid rgba(255, 185, 15, 0.30);
+      background: linear-gradient(135deg, rgba(255, 185, 15, 0.10) 0%, rgba(218, 165, 32, 0.04) 100%);
+      backdrop-filter: blur(12px);
+      cursor: pointer;
+      transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+      animation: qrBreathe 3s ease-in-out infinite;
+    }
+    .qr-corner:hover {
+      border-color: rgba(255, 185, 15, 0.70);
+      box-shadow: 0 4px 30px rgba(255, 185, 15, 0.20), 0 0 40px rgba(255, 185, 15, 0.08);
+      transform: translateY(-2px);
+      animation: none;
+    }
+    @keyframes qrBreathe {
+      0%, 100% {
+        border-color: rgba(255, 185, 15, 0.25);
+        box-shadow: 0 2px 12px rgba(255, 185, 15, 0.06);
+      }
+      50% {
+        border-color: rgba(255, 185, 15, 0.55);
+        box-shadow: 0 4px 20px rgba(255, 185, 15, 0.15), 0 0 24px rgba(255, 185, 15, 0.06);
+      }
+    }
+    .qr-corner-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .qr-corner-title {
+      font-size: 0.88em;
+      font-weight: 700;
+      color: #F5A623;
+      white-space: nowrap;
+    }
+    .qr-corner-tags {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .qr-corner-tag {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.72em;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .qr-corner-tag .material-icons {
+      font-size: 14px;
+      color: #F5A623;
+    }
+    .qr-corner-scan {
+      font-size: 0.68em;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .qr-corner-img {
+      width: 120px;
+      height: 120px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 2px solid rgba(255, 185, 15, 0.40);
+      animation: qrImgGlow 3s ease-in-out infinite;
+    }
+    @keyframes qrImgGlow {
+      0%, 100% {
+        box-shadow: 0 0 8px rgba(255, 185, 15, 0.10), 0 0 0 rgba(255, 185, 15, 0);
+        border-color: rgba(255, 185, 15, 0.35);
+      }
+      50% {
+        box-shadow: 0 0 20px rgba(255, 185, 15, 0.25), 0 0 40px rgba(255, 185, 15, 0.08);
+        border-color: rgba(255, 185, 15, 0.70);
+      }
+    }
+    .qr-corner-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform: scale(1.25);
+    }
+    @media (max-width: 700px) {
+      .qr-corner { position: static; margin-bottom: 12px; padding: 10px 12px; }
+      .qr-corner-img { width: 56px; height: 56px; }
+      .qr-corner-title { font-size: 0.8em; }
+      .qr-corner-tags { display: none; }
     }
 
     /* 提示框 */
@@ -3459,26 +3580,24 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 4px 24px 24px;
+      padding: 4px 16px 20px;
       text-align: center;
     }
     .wechat-qr-wrapper {
-      width: 180px;
-      height: 180px;
-      background: #ffffff;
-      border-radius: 14px;
+      width: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
       margin-bottom: 16px;
       position: relative;
     }
     .wechat-qr-wrapper img {
       width: 100%;
-      height: 100%;
-      object-fit: contain;
+      height: auto;
+      object-fit: cover;
+      border-radius: 10px;
+      transform: scale(1.25);
     }
     .wechat-qr-wrapper .qrcode-loading {
       font-size: 0.85em;
@@ -4419,6 +4538,23 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
 
     <!-- Step 1: 选择 AI 服务 -->
     <div id="page1" class="card hidden">
+      <!-- 右上角悬浮二维码（构建时内联 base64） -->
+      ${
+        setupQrcodeBase64
+          ? `<div class="qr-corner">
+        <div class="qr-corner-info">
+          <div class="qr-corner-title">🎁 免费领取教学视频</div>
+          <div class="qr-corner-tags">
+            <div class="qr-corner-tag"><span class="material-icons">play_circle</span> 专属安装教学视频</div>
+            <div class="qr-corner-tag"><span class="material-icons">school</span> 小白快速上手指南</div>
+            <div class="qr-corner-tag"><span class="material-icons">groups</span> 加入技术交流群</div>
+          </div>
+          <div class="qr-corner-scan">📱 微信扫码 · 立即领取</div>
+        </div>
+        <div class="qr-corner-img"><img src="${setupQrcodeBase64}" alt="领取专属教学视频二维码"></div>
+      </div>`
+          : ""
+      }
       <div class="card-header">
         <h2>第一步：选择 AI 服务</h2>
         <p>选择你要使用的 AI 平台，或者注册一个新账号</p>
@@ -4427,7 +4563,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       <!-- 小提示 -->
       <div class="provider-tip">
         <span class="provider-tip-icon">💡</span>
-        <span>不知道选哪个？选「硅基流动」就对了！免费送额度，包含最新 DeepSeek</span>
+        <span>不知道选哪个？选「Kimi Code」就对了！代码专用模型，262K 超长上下文，极速响应</span>
       </div>
       
       <!-- 模型选择提醒 -->
@@ -4440,14 +4576,14 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       <div class="provider-recommended-section">
         <div class="provider-section-title">🇨🇳 推荐服务</div>
         <div class="provider-recommended-grid">
-          <div class="provider-card featured selected" data-provider="siliconflow" onclick="selectProvider('siliconflow')">
+          <div class="provider-card featured selected" data-provider="kimi-code" onclick="selectProvider('kimi-code')">
             <div class="provider-card-badge">⭐ 首选推荐</div>
-            <div class="provider-card-icon">🔮</div>
-            <div class="provider-card-name">硅基流动</div>
-            <div class="provider-card-desc">免费送额度 · 包含最新 DeepSeek · 国内速度快</div>
-            <a href="https://cloud.siliconflow.cn/i/uXXX7IEi" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
-              <span class="material-icons">rocket_launch</span>
-              免费注册，立即开始
+            <div class="provider-card-icon">💻</div>
+            <div class="provider-card-name">Kimi Code</div>
+            <div class="provider-card-desc">代码专用模型 · 262K 超长上下文 · 100 Tokens/s 极速 · 性价比极高</div>
+            <a href="https://www.kimi.com/code/docs/" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+              <span class="material-icons">code</span>
+              查看文档，获取 API Key
             </a>
             <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
           </div>
@@ -4474,25 +4610,6 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         </div>
       </div>
 
-      <!-- 代码 AI 专区 -->
-      <div class="provider-code-section" style="margin-top: 20px;">
-        <div class="provider-section-title">💻 代码 AI</div>
-        <div class="provider-recommended-grid" style="grid-template-columns: 1fr;">
-          <div class="provider-card" data-provider="kimi-code" onclick="selectProvider('kimi-code')"
-               style="background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%); border: 1px solid #c2d4f0;">
-            <div class="provider-card-badge" style="background: linear-gradient(135deg, #4285f4, #1a73e8);">🚀 代码专用</div>
-            <div class="provider-card-icon">💻</div>
-            <div class="provider-card-name">Kimi Code</div>
-            <div class="provider-card-desc">代码专用模型 · 262K 超长上下文 · 100 Tokens/s 极速 · 性价比极高</div>
-            <a href="https://www.kimi.com/code/docs/" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
-              <span class="material-icons">code</span>
-              查看文档，获取 API Key
-            </a>
-            <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
-          </div>
-        </div>
-      </div>
-
       <!-- 其他国内服务商 - 折叠 -->
       <div class="provider-other-section">
         <div class="provider-other-toggle" onclick="toggleOtherProviders()">
@@ -4501,6 +4618,14 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         </div>
         <div class="provider-other-content hidden" id="providerOtherContent">
           <div class="provider-other-grid">
+            <div class="provider-option" data-provider="siliconflow" onclick="selectProvider('siliconflow')">
+              <div class="provider-option-icon">🔮</div>
+              <div class="provider-option-info">
+                <div class="provider-option-name">硅基流动</div>
+                <div class="provider-option-desc">免费送额度 · 包含最新 DeepSeek · 国内速度快</div>
+              </div>
+              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
             <div class="provider-option" data-provider="deepseek" onclick="selectProvider('deepseek')">
               <div class="provider-option-icon">🚀</div>
               <div class="provider-option-info">
@@ -5892,7 +6017,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
             </div>
             <div class="wechat-support-body">
               <div class="wechat-qr-wrapper" id="wechatQrcodeImage">
-                <div class="qrcode-loading"><span class="status-spinner"></span> 加载中...</div>
+                ${setupQrcodeBase64 ? `<img src="${setupQrcodeBase64}" alt="微信技术支持群二维码">` : `<div class="qrcode-loading"><span class="status-spinner"></span> 加载中...</div>`}
               </div>
               <div class="wechat-support-title">获取免费专属技术支持及咨询</div>
               <div class="wechat-support-group" id="wechatQrcodeGroupName"></div>
@@ -6600,7 +6725,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       document.querySelectorAll('.provider-card').forEach(el => {
         el.classList.toggle('selected', el.dataset.provider === id);
         // 保持 featured 类
-        if (el.dataset.provider === 'siliconflow') {
+        if (el.dataset.provider === 'kimi-code') {
           el.classList.add('featured');
         }
       });

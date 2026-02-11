@@ -37,7 +37,7 @@ vi.mock("../license/index.js", () => ({
   DeviceSwitchError: class extends Error {},
   LicenseErrorCode: { ERROR_DEVICE_SWITCH_REQUIRED: 1010, ERROR_DEVICE_SWITCH_COOLDOWN: 1011 },
   getDeviceId: () => "test-device-id",
-  getSupportQrcode: vi.fn(() => null),
+  getSetupQrcode: vi.fn(() => null),
 }));
 
 vi.mock("./license-check.js", () => ({
@@ -58,6 +58,8 @@ vi.mock("../commands/onboard-auth.js", () => ({
   setNvidiaApiKey: vi.fn(),
   setMoonshotApiKey: vi.fn(),
   setModelscopeApiKey: vi.fn(),
+  setKimiCodeApiKey: vi.fn(),
+  setOllamaApiKey: vi.fn(),
 }));
 
 vi.mock("./setup-page.js", () => ({

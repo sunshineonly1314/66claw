@@ -323,7 +323,7 @@ export class ClawdbotApp extends LitElement {
   @state() skillsBusyKey: string | null = null;
   @state() skillMessages: Record<string, SkillMessage> = {};
   @state() skillsInstallProgress: Record<string, import("./controllers/skills").InstallProgress> = {};
-  @state() skillsActiveTab: "active" | "library" = "active";
+  @state() skillsActiveTab: "active" | "library" | "blocked" = "active";
   @state() skillsRemoteLoading = false;
   @state() skillsRemoteIndex: RemoteSkillsIndex | null = null;
   @state() skillsRemoteError: string | null = null;
@@ -387,6 +387,9 @@ export class ClawdbotApp extends LitElement {
     configTarget: null,
     toast: null,
   };
+  @state() mcpTestingServerId: string | null = null;
+  @state() mcpTestResults: Record<string, "success" | "failed"> = {};
+  @state() mcpManualFormTrigger = 0;
   /** Timer for auto-clearing MCP toast notifications */
   _mcpToastTimer: number | null = null;
 
@@ -627,6 +630,8 @@ export class ClawdbotApp extends LitElement {
     if (!this.modelsPendingProvider || !this.modelsPendingModel) return;
     const provider = this.modelsPendingProvider;
     const model = this.modelsPendingModel;
+    // 记录切换前的模型，用于判断是否真正发生了变更
+    const prevRef = this.modelsCurrent?.ref;
     // 清除之前的消息
     this.modelsError = null;
     this.modelsSuccessMessage = null;
@@ -644,6 +649,11 @@ export class ClawdbotApp extends LitElement {
       setTimeout(() => {
         this.modelsSuccessMessage = null;
       }, 3000);
+      // 模型真正变了才静默新建会话
+      if (this.modelsCurrent?.ref !== prevRef) {
+        const { handleSendChat } = await import("./app-chat.js");
+        void handleSendChat(this, "/new", { restoreDraft: true });
+      }
     }
     // 失败时 modelsError 已由 setModelPrimary 设置，pending 状态保留方便重试
   }
@@ -662,13 +672,15 @@ export class ClawdbotApp extends LitElement {
     this.modelsAuthSaving = true;
     this.modelsError = null;
     this.modelsSuccessMessage = null;
-    
+
     try {
       const success = await setProviderAuth(this, provider, auth);
       if (success) {
         // 保存成功，关闭配置表单
         this.modelsConfiguringProvider = null;
         this.modelsAuthVerifyResult = null; // 清除验证结果
+        // 记录切换前的模型
+        const prevRef = this.modelsCurrent?.ref;
         // 重新加载提供商列表以更新状态
         await this.loadModelsProviders();
         // 自动切换到该提供商的模型：优先使用用户已手动选择的模型
@@ -690,6 +702,11 @@ export class ClawdbotApp extends LitElement {
           setTimeout(() => {
             this.modelsSuccessMessage = null;
           }, 3000);
+          // 模型真正变了才静默新建会话（首次配置时 prevRef 为 null，不触发）
+          if (prevRef && this.modelsCurrent?.ref !== prevRef) {
+            const { handleSendChat } = await import("./app-chat.js");
+            void handleSendChat(this, "/new", { restoreDraft: true });
+          }
         }
       }
     } finally {

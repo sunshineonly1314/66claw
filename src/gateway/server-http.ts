@@ -275,9 +275,7 @@ export function createGatewayHttpServer(opts: {
         }
         const remoteIp = req.socket.remoteAddress;
         const isLocal =
-          remoteIp === "127.0.0.1" ||
-          remoteIp === "::1" ||
-          remoteIp === "::ffff:127.0.0.1";
+          remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1";
         if (!isLocal) {
           res.statusCode = 403;
           res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -304,9 +302,7 @@ export function createGatewayHttpServer(opts: {
         }
         const remoteIp = req.socket.remoteAddress;
         const isLocal =
-          remoteIp === "127.0.0.1" ||
-          remoteIp === "::1" ||
-          remoteIp === "::ffff:127.0.0.1";
+          remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1";
         if (!isLocal) {
           res.statusCode = 403;
           res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -340,29 +336,20 @@ export function createGatewayHttpServer(opts: {
       }
 
       // Purchase URL endpoint – public, no auth required.
-      // Client calls this to get the latest purchase link.
-      if (healthPath === "/config/purchase-url" && (req.method === "GET" || req.method === "HEAD")) {
-        try {
-          const { getPurchaseUrl, fetchRemotePurchaseUrl } = await import("../license/support-qrcode.js");
-          const localUrl = getPurchaseUrl();
-          const url = localUrl ?? (await fetchRemotePurchaseUrl());
-          res.statusCode = 200;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.setHeader("Cache-Control", "public, max-age=300");
-          res.end(JSON.stringify({
+      if (
+        healthPath === "/config/purchase-url" &&
+        (req.method === "GET" || req.method === "HEAD")
+      ) {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Cache-Control", "public, max-age=300");
+        res.end(
+          JSON.stringify({
             code: 200,
             message: "success",
-            data: { xianyu: url ?? "" },
-          }));
-        } catch {
-          res.statusCode = 200;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(JSON.stringify({
-            code: 200,
-            message: "success",
-            data: { xianyu: "" },
-          }));
-        }
+            data: { xianyu: "https://m.tb.cn/h.7vUkYDe?tk=hLT6UlwfWs0" },
+          }),
+        );
         return;
       }
 
@@ -371,7 +358,11 @@ export function createGatewayHttpServer(opts: {
       // API and static-asset requests pass through so health polling works.
       if (!isGatewayReady()) {
         const reqPath = req.url?.split("?")[0] ?? "/";
-        if (!reqPath.startsWith("/api/") && !reqPath.startsWith("/assets/") && !/\.\w{1,5}$/.test(reqPath)) {
+        if (
+          !reqPath.startsWith("/api/") &&
+          !reqPath.startsWith("/assets/") &&
+          !/\.\w{1,5}$/.test(reqPath)
+        ) {
           res.statusCode = 503;
           res.setHeader("Content-Type", "text/html; charset=utf-8");
           res.setHeader("Retry-After", "3");

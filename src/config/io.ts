@@ -33,6 +33,7 @@ import { resolveConfigPath, resolveStateDir } from "./paths.js";
 import { applyConfigOverrides } from "./runtime-overrides.js";
 import type { ClawdbotConfig, ConfigFileSnapshot, LegacyConfigIssue } from "./types.js";
 import { validateConfigObjectWithPlugins } from "./validation.js";
+import { sanitizeConfig } from "./config-sanitizer.js";
 import { compareClawdbotVersions } from "./version.js";
 
 // Re-export for backwards compatibility
@@ -93,17 +94,18 @@ async function rotateConfigBackups(configPath: string, ioFs: typeof fs.promises)
   if (CONFIG_BACKUP_COUNT <= 1) return;
   const backupBase = `${configPath}.bak`;
   const maxIndex = CONFIG_BACKUP_COUNT - 1;
-  await ioFs.unlink(`${backupBase}.${maxIndex}`).catch(() => {
-    // best-effort
-  });
-  for (let index = maxIndex - 1; index >= 1; index -= 1) {
-    await ioFs.rename(`${backupBase}.${index}`, `${backupBase}.${index + 1}`).catch(() => {
-      // best-effort
-    });
+  // Best-effort rotation — log suppressed failures so operators can
+  // diagnose disk-full or permission problems from debug logs.
+  try {
+    await ioFs.unlink(`${backupBase}.${maxIndex}`).catch(() => {});
+    for (let index = maxIndex - 1; index >= 1; index -= 1) {
+      await ioFs.rename(`${backupBase}.${index}`, `${backupBase}.${index + 1}`).catch(() => {});
+    }
+    await ioFs.rename(backupBase, `${backupBase}.1`).catch(() => {});
+  } catch {
+    // Entire rotation failed — this is non-fatal. The main config write
+    // will still succeed even if backup rotation encounters issues.
   }
-  await ioFs.rename(backupBase, `${backupBase}.1`).catch(() => {
-    // best-effort
-  });
 }
 
 export type ConfigIoDeps = {
@@ -223,14 +225,40 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       const resolvedConfig = substituted;
       warnOnConfigMiskeys(resolvedConfig, deps.logger);
       if (typeof resolvedConfig !== "object" || resolvedConfig === null) return {};
-      const preValidationDuplicates = findDuplicateAgentDirs(resolvedConfig as ClawdbotConfig, {
+      // === ClawdbotCN: Auto-sanitize configuration before validation ===
+      let configToValidate = resolvedConfig;
+      try {
+        const sanitizeResult = sanitizeConfig(configToValidate as Record<string, unknown>);
+        if (sanitizeResult.modified) {
+          configToValidate = sanitizeResult.config;
+          for (const change of sanitizeResult.changes) {
+            deps.logger.warn(`[Config Auto-Fix] ${change}`);
+          }
+          try {
+            deps.fs.writeFileSync(
+              `${configPath}.auto-fixed`,
+              JSON.stringify(configToValidate, null, 2),
+              "utf-8",
+            );
+            deps.logger.warn(
+              `[Config Auto-Fix] Sanitized config saved to: ${configPath}.auto-fixed`,
+            );
+          } catch {
+            // Best-effort save
+          }
+        }
+      } catch (sanitizeErr) {
+        deps.logger.warn(`[Config Auto-Fix] Sanitizer failed: ${sanitizeErr}`);
+      }
+      // === End ClawdbotCN modification ===
+      const preValidationDuplicates = findDuplicateAgentDirs(configToValidate as ClawdbotConfig, {
         env: deps.env,
         homedir: deps.homedir,
       });
       if (preValidationDuplicates.length > 0) {
         throw new DuplicateAgentDirError(preValidationDuplicates);
       }
-      const validated = validateConfigObjectWithPlugins(resolvedConfig);
+      const validated = validateConfigObjectWithPlugins(configToValidate);
       if (!validated.ok) {
         const details = validated.issues
           .map((iss) => `- ${iss.path || "<root>"}: ${iss.message}`)
@@ -295,7 +323,20 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       if (error?.code === "INVALID_CONFIG") {
         return {};
       }
-      deps.logger.error(`Failed to read config at ${configPath}`, err);
+      // Differentiate error types so operators can diagnose the root cause
+      const errCode = error?.code;
+      if (errCode === "ENOENT") {
+        // File not found — this is normal for first run, no need for error-level logging
+      } else if (errCode === "EACCES" || errCode === "EPERM") {
+        deps.logger.warn(
+          `Config file at ${configPath} is not readable (${errCode}). Check file permissions. Using defaults.`,
+        );
+      } else {
+        deps.logger.error(
+          `Failed to read config at ${configPath} (code: ${errCode ?? "unknown"})`,
+          err,
+        );
+      }
       return {};
     }
   }
@@ -308,9 +349,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         applyModelDefaults(
           applyCompactionDefaults(
             applyContextPruningDefaults(
-              applyAgentDefaults(
-                applyCnDefaults(applySessionDefaults(applyMessageDefaults({}))),
-              ),
+              applyAgentDefaults(applyCnDefaults(applySessionDefaults(applyMessageDefaults({})))),
             ),
           ),
         ),
@@ -330,9 +369,14 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       };
     }
 
+    // Hoist raw + hash outside the try block so the catch handler can
+    // preserve the actual file content and hash when a later processing
+    // step (include resolution, env substitution, validation) fails.
+    let raw: string | null = null;
+    let hash: string = hashConfigRaw(null);
     try {
-      const raw = deps.fs.readFileSync(configPath, "utf-8");
-      const hash = hashConfigRaw(raw);
+      raw = deps.fs.readFileSync(configPath, "utf-8");
+      hash = hashConfigRaw(raw);
       const parsedRes = parseConfigJson5(raw, deps.json5);
       if (!parsedRes.ok) {
         return {
@@ -403,7 +447,20 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         };
       }
 
-      const resolvedConfigRaw = substituted;
+      let resolvedConfigRaw = substituted;
+      // === ClawdbotCN: Auto-sanitize configuration before validation (snapshot path) ===
+      try {
+        const sanitizeResult = sanitizeConfig(resolvedConfigRaw as Record<string, unknown>);
+        if (sanitizeResult.modified || sanitizeResult.changes.length > 0) {
+          resolvedConfigRaw = sanitizeResult.config;
+          for (const change of sanitizeResult.changes) {
+            deps.logger.warn(`[Config Auto-Fix] ${change}`);
+          }
+        }
+      } catch {
+        // If sanitizer fails, continue with original config
+      }
+      // === End ClawdbotCN modification ===
       const legacyIssues = findLegacyConfigIssues(resolvedConfigRaw);
 
       const validated = validateConfigObjectWithPlugins(resolvedConfigRaw);
@@ -434,7 +491,9 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
             applyModelDefaults(
               applyAgentDefaults(
                 applyCnDefaults(
-                  applySessionDefaults(applyLoggingDefaults(applyMessageDefaults(validated.config))),
+                  applySessionDefaults(
+                    applyLoggingDefaults(applyMessageDefaults(validated.config)),
+                  ),
                 ),
               ),
             ),
@@ -449,11 +508,11 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       return {
         path: configPath,
         exists: true,
-        raw: null,
+        raw,
         parsed: {},
         valid: false,
         config: {},
-        hash: hashConfigRaw(null),
+        hash,
         issues: [{ path: "", message: `read failed: ${String(err)}` }],
         warnings: [],
         legacyIssues: [],
@@ -463,7 +522,21 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
 
   async function writeConfigFile(cfg: ClawdbotConfig) {
     clearConfigCache();
-    const validated = validateConfigObjectWithPlugins(cfg);
+    // === ClawdbotCN: Auto-sanitize configuration before validation (write path) ===
+    let configToWrite: ClawdbotConfig = cfg;
+    try {
+      const sanitizeResult = sanitizeConfig(cfg as unknown as Record<string, unknown>);
+      if (sanitizeResult.modified) {
+        configToWrite = sanitizeResult.config as unknown as ClawdbotConfig;
+        for (const change of sanitizeResult.changes) {
+          deps.logger.warn(`[Config Write Auto-Fix] ${change}`);
+        }
+      }
+    } catch (sanitizeErr) {
+      deps.logger.warn(`[Config Write Auto-Fix] Sanitizer failed: ${sanitizeErr}`);
+    }
+    // === End ClawdbotCN modification ===
+    const validated = validateConfigObjectWithPlugins(configToWrite);
     if (!validated.ok) {
       const issue = validated.issues[0];
       const pathLabel = issue?.path ? issue.path : "<root>";
@@ -491,32 +564,41 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       mode: 0o600,
     });
 
-    if (deps.fs.existsSync(configPath)) {
-      await rotateConfigBackups(configPath, deps.fs.promises);
-      await deps.fs.promises.copyFile(configPath, `${configPath}.bak`).catch(() => {
-        // best-effort
-      });
-    }
-
+    // Ensure the temp file is always cleaned up, even if an unexpected error
+    // occurs between writeFile and rename (e.g. backup rotation failure that
+    // propagates, or SIGTERM at an unfortunate moment).
+    let tmpConsumed = false;
     try {
-      await deps.fs.promises.rename(tmp, configPath);
-    } catch (err) {
-      const code = (err as { code?: string }).code;
-      // Windows doesn't reliably support atomic replace via rename when dest exists.
-      if (code === "EPERM" || code === "EEXIST") {
-        await deps.fs.promises.copyFile(tmp, configPath);
-        await deps.fs.promises.chmod(configPath, 0o600).catch(() => {
+      if (deps.fs.existsSync(configPath)) {
+        await rotateConfigBackups(configPath, deps.fs.promises);
+        await deps.fs.promises.copyFile(configPath, `${configPath}.bak`).catch(() => {
           // best-effort
         });
+      }
+
+      try {
+        await deps.fs.promises.rename(tmp, configPath);
+        tmpConsumed = true;
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        // Windows doesn't reliably support atomic replace via rename when dest exists.
+        // copyFile duplicates content; finally block will clean up the temp file.
+        if (code === "EPERM" || code === "EEXIST") {
+          await deps.fs.promises.copyFile(tmp, configPath);
+          await deps.fs.promises.chmod(configPath, 0o600).catch(() => {
+            // best-effort
+          });
+          return;
+        }
+        throw err;
+      }
+    } finally {
+      // Clean up temp file if it wasn't consumed by a successful rename
+      if (!tmpConsumed) {
         await deps.fs.promises.unlink(tmp).catch(() => {
           // best-effort
         });
-        return;
       }
-      await deps.fs.promises.unlink(tmp).catch(() => {
-        // best-effort
-      });
-      throw err;
     }
   }
 

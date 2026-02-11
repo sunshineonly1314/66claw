@@ -30,8 +30,20 @@ export async function listenGatewayHttpServer(params: {
         err,
       );
     }
+    if (code === "EACCES") {
+      throw new GatewayLockError(
+        `permission denied binding ws://${bindHost}:${port} — try a port above 1024 or run with elevated privileges`,
+        err,
+      );
+    }
+    if (code === "EADDRNOTAVAIL") {
+      throw new GatewayLockError(
+        `bind address ${bindHost} is not available on this machine — check gateway.bind setting`,
+        err,
+      );
+    }
     throw new GatewayLockError(
-      `failed to bind gateway socket on ws://${bindHost}:${port}: ${String(err)}`,
+      `failed to bind gateway socket on ws://${bindHost}:${port}: ${code ?? String(err)}`,
       err,
     );
   }

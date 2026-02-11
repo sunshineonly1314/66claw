@@ -24,10 +24,7 @@ import {
 } from "./types.js";
 import { getDeviceId, getDeviceName, getOsInfo, getDeviceFingerprint } from "./device-id.js";
 import { generateSignParams } from "./sign.js";
-import {
-  verifyLicenseResponseSignature,
-  verifyHeartbeatResponseSignature,
-} from "./rsa-verify.js";
+import { verifyLicenseResponseSignature, verifyHeartbeatResponseSignature } from "./rsa-verify.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { VERSION } from "../version.js";
 
@@ -68,9 +65,7 @@ function extractNetworkErrorDetail(error: unknown): string {
   const cause = error instanceof Error ? (error.cause as Error) : undefined;
   const code = (cause as NodeJS.ErrnoException | undefined)?.code;
   const baseMsg = error instanceof Error ? error.message : String(error);
-  return code
-    ? `${code} (${cause?.message ?? baseMsg})`
-    : cause?.message ?? baseMsg;
+  return code ? `${code} (${cause?.message ?? baseMsg})` : (cause?.message ?? baseMsg);
 }
 
 /**
@@ -119,7 +114,9 @@ async function sendRequest<T>(
     }
 
     const isRetry = i > 0;
-    log.debug(`${isRetry ? `[fallback ${i}/${baseUrls.length - 1}] ` : ""}Sending ${method} request to ${url}`);
+    log.debug(
+      `${isRetry ? `[fallback ${i}/${baseUrls.length - 1}] ` : ""}Sending ${method} request to ${url}`,
+    );
 
     try {
       const response = await fetch(url, options);
@@ -149,7 +146,9 @@ async function sendRequest<T>(
       // 最后一个 URL 也失败，或者是 HTTP 业务错误
       const enriched = new Error(`Network error fetching ${endpoint}: ${detail}`);
       enriched.cause = error;
-      log.error(`Request failed: ${method} ${url} → ${detail}${lastError ? ` (all ${baseUrls.length} URLs exhausted)` : ""}`);
+      log.error(
+        `Request failed: ${method} ${url} → ${detail}${lastError ? ` (all ${baseUrls.length} URLs exhausted)` : ""}`,
+      );
       throw enriched;
     }
   }
@@ -234,6 +233,14 @@ export async function verifyLicense(
     if (response.code === 200) {
       const data = response.data;
 
+      // Validate response structure before accessing properties
+      if (!data || typeof data !== "object") {
+        throw new Error("服务端返回了无效的响应数据");
+      }
+      if (typeof data.valid !== "boolean") {
+        throw new Error("服务端响应缺少 valid 字段");
+      }
+
       // RSA 签名验证（如果启用）
       if (moduleConfig.enableRsaVerify) {
         if (!data.signature) {
@@ -278,9 +285,7 @@ export async function verifyLicense(
 /**
  * 发送心跳
  */
-export async function sendHeartbeat(
-  key: string,
-): Promise<LicenseHeartbeatResponseData> {
+export async function sendHeartbeat(key: string): Promise<LicenseHeartbeatResponseData> {
   if (moduleConfig.devMode) {
     return { valid: true, daysRemaining: 999, serverTime: Date.now() };
   }
@@ -297,11 +302,7 @@ export async function sendHeartbeat(
   }
 
   try {
-    const response = await sendRequest<LicenseHeartbeatResponseData>(
-      "POST",
-      "/heartbeat",
-      request,
-    );
+    const response = await sendRequest<LicenseHeartbeatResponseData>("POST", "/heartbeat", request);
 
     if (response.code === 200) {
       const data = response.data;
@@ -389,7 +390,13 @@ export async function unbindDevice(
 ): Promise<DeviceUnbindResponseData> {
   // 构建带签名的请求（使用当前设备 ID 签名，解绑目标设备）
   const currentDeviceId = getDeviceId();
-  const request: { key: string; deviceId: string; timestamp?: number; nonce?: string; sign?: string } = {
+  const request: {
+    key: string;
+    deviceId: string;
+    timestamp?: number;
+    nonce?: string;
+    sign?: string;
+  } = {
     key,
     deviceId: targetDeviceId,
   };
@@ -413,14 +420,16 @@ export async function unbindDevice(
     }
 
     // 业务失败（如冷却中）
-    const errorMsg = data.errorMessage || LICENSE_ERROR_MESSAGES[data.errorCode as LicenseErrorCode] || "解绑失败";
+    const errorMsg =
+      data.errorMessage || LICENSE_ERROR_MESSAGES[data.errorCode as LicenseErrorCode] || "解绑失败";
 
     // 如果是冷却错误，构造友好的错误消息
     if (data.errorCode === LicenseErrorCode.ERROR_UNBIND_COOLDOWN && data.cooldownRemainingHours) {
       const hours = data.cooldownRemainingHours;
-      const friendlyMsg = hours >= 1
-        ? `解绑冷却中，请 ${Math.ceil(hours)} 小时后再试`
-        : `解绑冷却中，请 ${Math.ceil(hours * 60)} 分钟后再试`;
+      const friendlyMsg =
+        hours >= 1
+          ? `解绑冷却中，请 ${Math.ceil(hours)} 小时后再试`
+          : `解绑冷却中，请 ${Math.ceil(hours * 60)} 分钟后再试`;
 
       throw new UnbindError(
         friendlyMsg,
@@ -480,7 +489,11 @@ export async function switchDevice(key: string): Promise<DeviceSwitchResponseDat
   log.info(`Switching device: ${deviceId.substring(0, 8)}...`);
 
   try {
-    const response = await sendRequest<DeviceSwitchResponseData>("POST", "/devices/switch", request);
+    const response = await sendRequest<DeviceSwitchResponseData>(
+      "POST",
+      "/devices/switch",
+      request,
+    );
 
     if (response.code === 200) {
       const data = response.data;
@@ -492,14 +505,21 @@ export async function switchDevice(key: string): Promise<DeviceSwitchResponseDat
       }
 
       // 业务失败（如冷却中）
-      const errorMsg = data.errorMessage || LICENSE_ERROR_MESSAGES[data.errorCode as LicenseErrorCode] || "设备切换失败";
+      const errorMsg =
+        data.errorMessage ||
+        LICENSE_ERROR_MESSAGES[data.errorCode as LicenseErrorCode] ||
+        "设备切换失败";
 
       // 如果是冷却错误，构造友好的错误消息
-      if (data.errorCode === LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN && data.cooldownRemainingHours) {
+      if (
+        data.errorCode === LicenseErrorCode.ERROR_DEVICE_SWITCH_COOLDOWN &&
+        data.cooldownRemainingHours
+      ) {
         const hours = data.cooldownRemainingHours;
-        const friendlyMsg = hours >= 1
-          ? `设备切换冷却中，请 ${Math.ceil(hours)} 小时后再试`
-          : `设备切换冷却中，请 ${Math.ceil(hours * 60)} 分钟后再试`;
+        const friendlyMsg =
+          hours >= 1
+            ? `设备切换冷却中，请 ${Math.ceil(hours)} 小时后再试`
+            : `设备切换冷却中，请 ${Math.ceil(hours * 60)} 分钟后再试`;
 
         throw new DeviceSwitchError(
           friendlyMsg,
@@ -591,10 +611,7 @@ function createDevModeResponse(): LicenseVerifyResponseData {
 /**
  * 创建验证缓存数据
  */
-export function createLicenseCache(
-  key: string,
-  response: LicenseVerifyResponseData,
-): LicenseCache {
+export function createLicenseCache(key: string, response: LicenseVerifyResponseData): LicenseCache {
   return {
     key,
     valid: response.valid,
@@ -636,9 +653,8 @@ export async function verifyLicenseWithRetry(
     } catch (error) {
       const isLastAttempt = attempt === maxRetries;
       const errorMsg = error instanceof Error ? error.message : String(error);
-      const causeMsg = error instanceof Error && error.cause instanceof Error
-        ? error.cause.message
-        : undefined;
+      const causeMsg =
+        error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined;
       const fullMsg = causeMsg ? `${errorMsg} (cause: ${causeMsg})` : errorMsg;
 
       if (isLastAttempt) {
@@ -646,9 +662,14 @@ export async function verifyLicenseWithRetry(
         throw error;
       }
 
-      // 指数退避
-      const delay = Math.pow(2, attempt - 1) * 1000;
-      log.warn(`License verification attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms: ${fullMsg}`);
+      // 指数退避 + 抖动 (half-jitter strategy)
+      // 防止多进程同时重试导致 thundering herd
+      const baseDelay = Math.pow(2, attempt - 1) * 1000;
+      const jitter = baseDelay * 0.5 * Math.random();
+      const delay = Math.round(baseDelay * 0.5 + jitter);
+      log.warn(
+        `License verification attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms: ${fullMsg}`,
+      );
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

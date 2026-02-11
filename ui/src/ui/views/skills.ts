@@ -3,23 +3,29 @@ import { html, nothing } from "lit";
 import { clampText } from "../format";
 import { t, tMaybe } from "../i18n/index.js";
 import { icons } from "../icons.js";
-import type { RemoteSkillMeta, RemoteSkillsIndex, SkillStatusEntry, SkillStatusReport, SkillsMarketResponse, MarketSkillMeta } from "../types";
+import type { SkillStatusEntry, SkillStatusReport, SkillsMarketResponse } from "../types";
 import type { SkillMessageMap, SkillsTab, InstallProgress } from "../controllers/skills";
-import { CATEGORIES as PLAYGROUND_CATEGORIES, categorizeSkill } from "./playground.js";
 
 // ============================================================================
-// 平台兼容性检测
+// 三状态 Tab 定义
 // ============================================================================
+export type SkillTabId = "core" | "ready" | "blocked";
 
-/** 获取当前平台 */
+// ============================================================================
+// 平台兼容性检测（缓存结果避免重复计算）
+// ============================================================================
+const _platformCache = new Map<string, { compatible: boolean; requiredPlatform?: string }>();
+let _currentPlatform: "win32" | "darwin" | "linux" | null = null;
+
 function getCurrentPlatform(): "win32" | "darwin" | "linux" {
+  if (_currentPlatform) return _currentPlatform;
   const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes("win")) return "win32";
-  if (ua.includes("mac")) return "darwin";
-  return "linux";
+  if (ua.includes("win")) _currentPlatform = "win32";
+  else if (ua.includes("mac")) _currentPlatform = "darwin";
+  else _currentPlatform = "linux";
+  return _currentPlatform;
 }
 
-/** macOS 专属技能的关键词 */
 const MACOS_ONLY_KEYWORDS = [
   "apple", "macos", "mac-os", "osx", "swiftui", "swift-ui",
   "bear-notes", "bear-note", "reminders", "apple-mail", "apple-notes",
@@ -30,81 +36,132 @@ const MACOS_ONLY_KEYWORDS = [
   "imessage", "facetime", "airdrop", "keychain", "launchd",
 ];
 
-/** Windows 专属技能的关键词 */
 const WINDOWS_ONLY_KEYWORDS = [
   "windows", "win32", "win64", "powershell", "cmd-", "-cmd",
   "registry", "wsl", "winget", "msedge", "outlook-win",
   "notepad", "explorer-", "taskbar", "cortana",
 ];
 
-/** Linux 专属技能的关键词 */
 const LINUX_ONLY_KEYWORDS = [
   "linux", "ubuntu", "debian", "fedora", "centos", "arch-linux",
   "systemd", "apt-get", "yum", "dnf", "pacman",
   "gnome", "kde", "xorg", "wayland",
 ];
 
-// ============================================================================
-// 隐藏技能列表（ClawdbotCN 专属）
-// ============================================================================
+const HIDDEN_SKILLS_CN = ["clawdhub"];
 
-/**
- * 在 ClawdbotCN 中隐藏的技能列表
- * 这些技能对中国用户没有意义或已被国内服务替代
- */
-const HIDDEN_SKILLS_CN = [
-  "clawdhub", // 国际版技能市场CLI工具，已被内置技能市场替代
+// ============================================================================
+// 技能分类定义（关键字匹配）
+// ============================================================================
+const SKILL_CATEGORIES: Array<{ id: string; emoji: string; keywords: string[] }> = [
+  { id: "all",           emoji: "\u{1F31F}", keywords: [] },
+  { id: "lifestyle",     emoji: "\u{1F3E1}", keywords: [
+    "weather", "food", "delivery", "maps", "music", "smart-home", "home-assistant",
+    "recipe", "cooking", "health", "fitness", "travel", "transport",
+    "spotify", "playlist", "workout", "meditation", "sleep", "nutrition",
+  ]},
+  { id: "finance",       emoji: "\u{1F4B0}", keywords: [
+    "stock", "fund", "budget", "invest", "finance", "bank", "payment", "crypto",
+    "bitcoin", "ethereum", "trading", "portfolio", "tax", "accounting", "ledger",
+    "a-stock", "coinbase", "stripe", "paypal",
+  ]},
+  { id: "computer",      emoji: "\u{1F4BB}", keywords: [
+    "screenshot", "screen-capture", "filesystem", "file-manager", "terminal", "shell",
+    "desktop", "keyboard", "mouse", "clipboard", "browser", "process-manager",
+    "disk", "cpu", "monitor", "display", "finder", "explorer",
+  ]},
+  { id: "productivity",  emoji: "\u26A1",    keywords: [
+    "notes", "reminder", "calendar", "todo", "email", "planner",
+    "schedule", "agenda", "notion", "obsidian", "evernote", "trello",
+    "asana", "jira", "linear", "spreadsheet", "excel",
+  ]},
+  { id: "creative",      emoji: "\u{1F3A8}", keywords: [
+    "image", "video", "draw", "drawing", "paint", "photo", "camera",
+    "animation", "3d", "midjourney", "dalle", "stable-diffusion",
+    "canvas", "illustration", "graphic", "artwork",
+  ]},
+  { id: "communication", emoji: "\u{1F4AC}", keywords: [
+    "message", "social", "chat", "voice-call", "sms", "whatsapp", "telegram",
+    "slack", "discord", "wechat", "weixin", "twitter", "facebook", "linkedin",
+    "instagram", "tiktok", "imessage", "facetime", "zoom", "teams",
+  ]},
+  { id: "development",   emoji: "\u{1F6E0}\uFE0F", keywords: [
+    "github", "gitlab", "code", "debug", "docker", "kubernetes", "npm",
+    "pip", "rust", "python", "javascript", "typescript", "sql", "database",
+    "postgres", "mysql", "redis", "aws", "azure", "gcp", "deploy", "ci-cd",
+    "lint", "compiler", "vscode", "gemini",
+  ]},
 ];
 
-/**
- * 检查技能是否应该被隐藏
- * @param skillName 技能名称或ID
- * @returns true 表示应该隐藏
- */
+// 技能分类缓存
+const _categoryCache = new Map<string, string>();
+
+/** 将关键字列表编译为单个正则（匹配单词边界），缓存在闭包中 */
+const _categoryRegexMap = new Map<string, RegExp>();
+function _getCategoryRegex(cat: typeof SKILL_CATEGORIES[number]): RegExp {
+  let re = _categoryRegexMap.get(cat.id);
+  if (!re) {
+    // 对每个关键字用 \b 包裹，合并为一个 OR 正则
+    const escaped = cat.keywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    re = new RegExp(`\\b(?:${escaped.join("|")})\\b`);
+    _categoryRegexMap.set(cat.id, re);
+  }
+  return re;
+}
+
+function getSkillCategory(skill: SkillStatusEntry): string {
+  const cached = _categoryCache.get(skill.skillKey);
+  if (cached) return cached;
+
+  // 主要匹配 skill name（连字符转空格以支持 \b 边界）
+  const nameText = skill.name.toLowerCase().replace(/-/g, " ");
+  // 描述文本作为辅助（使用本地化翻译函数获取中文）
+  const descText = [
+    skill.description,
+    getLocalizedSkillName(skill.name),
+    getLocalizedSkillDesc(skill.name, skill.description),
+  ].join(" ").toLowerCase();
+  const searchText = nameText + " " + descText;
+
+  for (const cat of SKILL_CATEGORIES) {
+    if (cat.id === "all") continue;
+    if (_getCategoryRegex(cat).test(searchText)) {
+      _categoryCache.set(skill.skillKey, cat.id);
+      return cat.id;
+    }
+  }
+
+  _categoryCache.set(skill.skillKey, "other");
+  return "other";
+}
+
 function isSkillHidden(skillName: string): boolean {
   return HIDDEN_SKILLS_CN.includes(skillName.toLowerCase());
 }
 
-/**
- * 检测技能是否兼容当前平台
- * @returns { compatible: boolean, requiredPlatform?: string }
- */
 function checkPlatformCompatibility(skillName: string): { compatible: boolean; requiredPlatform?: string } {
+  const cached = _platformCache.get(skillName);
+  if (cached) return cached;
+
   const platform = getCurrentPlatform();
   const name = skillName.toLowerCase();
-  
-  // 检测 macOS-only
-  if (MACOS_ONLY_KEYWORDS.some(kw => name.includes(kw))) {
-    if (platform !== "darwin") {
-      return { compatible: false, requiredPlatform: "macOS" };
-    }
+  let result: { compatible: boolean; requiredPlatform?: string } = { compatible: true };
+
+  if (MACOS_ONLY_KEYWORDS.some(kw => name.includes(kw)) && platform !== "darwin") {
+    result = { compatible: false, requiredPlatform: "macOS" };
+  } else if (WINDOWS_ONLY_KEYWORDS.some(kw => name.includes(kw)) && platform !== "win32") {
+    result = { compatible: false, requiredPlatform: "Windows" };
+  } else if (LINUX_ONLY_KEYWORDS.some(kw => name.includes(kw)) && platform !== "linux") {
+    result = { compatible: false, requiredPlatform: "Linux" };
   }
-  
-  // 检测 Windows-only
-  if (WINDOWS_ONLY_KEYWORDS.some(kw => name.includes(kw))) {
-    if (platform !== "win32") {
-      return { compatible: false, requiredPlatform: "Windows" };
-    }
-  }
-  
-  // 检测 Linux-only
-  if (LINUX_ONLY_KEYWORDS.some(kw => name.includes(kw))) {
-    if (platform !== "linux") {
-      return { compatible: false, requiredPlatform: "Linux" };
-    }
-  }
-  
-  return { compatible: true };
+
+  _platformCache.set(skillName, result);
+  return result;
 }
 
 // ============================================================================
-// 技能名称本地化辅助函数
+// 技能名称本地化
 // ============================================================================
-
-/**
- * 美化技能名称（kebab-case 转 Title Case）
- * 例如：api-credentials-hygiene -> API Credentials Hygiene
- */
 const _skillsUpperWords = new Set([
   'api', 'cli', 'ui', 'ai', 'id', 'url', 'http', 'https', 'ssh', 'ftp',
   'sql', 'pdf', 'csv', 'json', 'xml', 'html', 'css', 'js', 'ts', 'md',
@@ -121,153 +178,167 @@ function beautifySkillName(name: string): string {
     .join(' ');
 }
 
-/**
- * 翻译安装按钮标签
- * 将 "Install xxx (go)" 翻译成 "一键安装 xxx"
- */
 function translateInstallLabel(label: string): string {
-  // 匹配 "Install xxx (go/brew/node/uv)" 格式
   const match = label.match(/^Install\s+(.+?)\s*\((\w+)\)$/i);
   if (match) {
     const [, toolName] = match;
     return `${t("playground.oneClickInstall")} ${toolName}`;
   }
-  // 其他格式直接返回
   return label;
 }
 
-/**
- * 获取技能的本地化显示名称
- * 优先显示翻译后的中文名，如果没有翻译则美化原始名称
- */
 function getLocalizedSkillName(skillName: string): string {
-  // 尝试获取翻译
   const normalizedName = skillName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
   const translationKey = `skillName.${normalizedName}` as const;
   const translated = tMaybe(translationKey);
-  
-  // 如果有翻译，返回翻译后的名称
-  if (translated && translated !== translationKey) {
-    return translated;
-  }
-  
-  // 没有翻译则美化原始名称
+  if (translated && translated !== translationKey) return translated;
   return beautifySkillName(skillName);
 }
 
-/**
- * 获取技能的本地化描述
- * 如果没有翻译且原始描述为空，返回默认提示
- */
 function getLocalizedSkillDesc(skillName: string, originalDesc: string): string {
   const normalizedName = skillName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
   const translationKey = `skillDesc.${normalizedName}` as const;
   const translated = tMaybe(translationKey);
-  
-  // 有翻译则使用翻译
-  if (translated && translated !== translationKey) {
-    return translated;
-  }
-  
-  // 有原始描述则使用原始描述
-  if (originalDesc && originalDesc.trim()) {
-    return originalDesc;
-  }
-  
-  // 没有描述则返回默认提示
+  if (translated && translated !== translationKey) return translated;
+  if (originalDesc && originalDesc.trim()) return originalDesc;
   return t("skills.noDescription") || "点击安装了解更多";
 }
 
-/**
- * 获取 tag 本地化名称
- * 优先使用 i18n 翻译，否则原样返回（proxy 已可能返回中文 tag）
- */
-function getLocalizedTag(tag: string): string {
-  const key = `skillTag.${tag.toLowerCase().replace(/[^a-z0-9-]/g, '-')}` as const;
-  const translated = tMaybe(key);
-  return (translated && translated !== key) ? translated : tag;
+// ============================================================================
+// 分组缓存：避免每次渲染都重新分组
+// ============================================================================
+type SkillGroups = {
+  core: SkillStatusEntry[];
+  ready: SkillStatusEntry[];
+  blocked: SkillStatusEntry[];
+  disabled: SkillStatusEntry[];
+};
+
+let _lastSkills: SkillStatusEntry[] | null = null;
+let _lastGroups: SkillGroups | null = null;
+
+function getSkillGroups(allSkills: SkillStatusEntry[]): SkillGroups {
+  // 如果技能列表引用没变，直接返回缓存
+  if (_lastSkills === allSkills && _lastGroups) return _lastGroups;
+
+  // 技能数据变化时清除分类缓存
+  _categoryCache.clear();
+  _lastCategoryInput = null;
+  _lastCategoryResult = null;
+
+  // 先过滤不兼容/隐藏的技能
+  const skills = allSkills.filter(s =>
+    !isSkillHidden(s.name) &&
+    checkPlatformCompatibility(s.name).compatible &&
+    (!s.missing?.os || s.missing.os.length === 0)
+  );
+
+  // 单次遍历完成分组（O(n) 而非之前的 4*O(n)）
+  const core: SkillStatusEntry[] = [];
+  const ready: SkillStatusEntry[] = [];
+  const blocked: SkillStatusEntry[] = [];
+  const disabled: SkillStatusEntry[] = [];
+
+  for (const s of skills) {
+    if (s.disabled) {
+      disabled.push(s);
+    } else if (s.activeInPrompt) {
+      core.push(s);
+    } else if (s.eligible) {
+      ready.push(s);
+    } else {
+      blocked.push(s);
+    }
+  }
+
+  _lastSkills = allSkills;
+  _lastGroups = { core, ready, blocked, disabled };
+  return _lastGroups;
 }
 
 // ============================================================================
-// Skills 分类定义 — 复用 Playground 的统一分类体系
-// 两个页面共享同一套 categorizeSkill + CATEGORIES，保证用户心智模型一致
+// 搜索过滤（带缓存）
 // ============================================================================
-export type SkillCategory = {
-  id: string;
-  emoji: string;
-  labelKey: string;
-  descKey: string;
-};
+let _lastFilter = "";
+let _lastFilterInput: SkillStatusEntry[] | null = null;
+let _lastFilterResult: SkillStatusEntry[] | null = null;
 
-// 从 playground 导入的 CATEGORIES 不含 "all"，这里补上作为首项
-export const SKILL_CATEGORIES: SkillCategory[] = [
-  { id: "all", emoji: "✨", labelKey: "skills.category.all", descKey: "skills.category.allDesc" },
-  ...PLAYGROUND_CATEGORIES,
-];
-
-// ============================================================================
-// 语义搜索同义词索引（仅用于搜索框智能提示，分类逻辑已统一到 categorizeSkill）
-// ============================================================================
-const SKILL_SEARCH_SYNONYMS: Record<string, string[]> = {
-  finance: ["股票", "炒股", "行情", "涨跌", "A股", "港股", "美股", "基金", "理财", "记账", "投资", "财务", "金融", "加密", "比特币"],
-  entertainment: ["音乐", "游戏", "视频", "播放", "GIF", "动图", "播客", "娱乐", "休闲"],
-  work: ["笔记", "备忘录", "提醒", "日历", "待办", "任务", "密码", "效率", "办公", "工作", "日程", "邮件", "邮箱"],
-  lifestyle: ["天气", "外卖", "点餐", "美食", "地图", "附近", "餐厅", "智能家居", "家居", "生活", "健康", "运动", "旅行"],
-  creative: ["图片", "图像", "生成", "画图", "绘画", "创作", "设计", "总结", "摘要", "创意", "语音", "TTS", "翻译"],
-  communication: ["微信", "消息", "聊天", "发送", "通讯", "社交", "联系", "群组", "频道", "语音", "通话"],
-  development: ["代码", "编程", "开发", "GitHub", "仓库", "PR", "调试", "测试", "部署", "API", "接口", "搜索", "数据库"],
-  system: ["截图", "屏幕", "摄像头", "文件", "系统", "终端", "命令行", "桌面", "安全", "备份", "VPN"],
-};
-
-// 智能搜索：支持关键词和同义词匹配
-function smartSearchSkills<T extends { name: string; description: string; nameZh?: string; descriptionZh?: string; tags?: string[] }>(
-  skills: T[],
-  query: string,
-): { matched: T[]; category: string | null } {
-  if (!query.trim()) {
-    return { matched: skills, category: null };
+function filterSkillList(list: SkillStatusEntry[], filter: string): SkillStatusEntry[] {
+  if (!filter) return list;
+  if (list === _lastFilterInput && filter === _lastFilter && _lastFilterResult) {
+    return _lastFilterResult;
   }
-
-  const lowerQuery = query.toLowerCase().trim();
-  
-  // 1. 先检查是否匹配某个分类的同义词（用户可能在描述场景）
-  let matchedCategory: string | null = null;
-  for (const [category, synonyms] of Object.entries(SKILL_SEARCH_SYNONYMS)) {
-    for (const synonym of synonyms) {
-      if (lowerQuery.includes(synonym.toLowerCase()) || synonym.toLowerCase().includes(lowerQuery)) {
-        matchedCategory = category;
-        break;
-      }
-    }
-    if (matchedCategory) break;
-  }
-
-  // 2. 过滤 skills
-  const matched = skills.filter((skill) => {
-    const searchText = [
-      skill.name,
-      skill.description,
-      skill.nameZh,
-      skill.descriptionZh,
-      ...(skill.tags ?? []),
-    ].filter(Boolean).join(" ").toLowerCase();
-
-    // 直接文本匹配
-    if (searchText.includes(lowerQuery)) {
-      return true;
-    }
-
-    // 如果匹配到分类，返回该分类下的所有 skills（使用统一的 categorizeSkill）
-    if (matchedCategory) {
-      return categorizeSkill(skill.name) === matchedCategory;
-    }
-
-    return false;
+  const result = list.filter(s => {
+    const text = [
+      s.name,
+      s.description,
+      getLocalizedSkillName(s.name),
+      getLocalizedSkillDesc(s.name, s.description),
+    ].join(" ").toLowerCase();
+    return text.includes(filter);
   });
-
-  return { matched, category: matchedCategory };
+  _lastFilter = filter;
+  _lastFilterInput = list;
+  _lastFilterResult = result;
+  return result;
 }
 
+// ============================================================================
+// 分类过滤（带缓存）
+// ============================================================================
+let _lastCategoryFilter = "all";
+let _lastCategoryInput: SkillStatusEntry[] | null = null;
+let _lastCategoryResult: SkillStatusEntry[] | null = null;
+
+function filterSkillsByCategory(list: SkillStatusEntry[], category: string): SkillStatusEntry[] {
+  if (category === "all") return list;
+  if (list === _lastCategoryInput && category === _lastCategoryFilter && _lastCategoryResult) {
+    return _lastCategoryResult;
+  }
+  const result = list.filter(s => getSkillCategory(s) === category);
+  _lastCategoryFilter = category;
+  _lastCategoryInput = list;
+  _lastCategoryResult = result;
+  return result;
+}
+
+// ============================================================================
+// 分类标签栏（预计算 count，避免渲染时 N*M 遍历）
+// ============================================================================
+function renderCategoryBar(currentTab: SkillTabId, groups: SkillGroups, props: SkillsProps) {
+  // 一次遍历统计当前 tab 下各分类的数量
+  const tabSkills = currentTab === "core" ? groups.core
+    : currentTab === "ready" ? groups.ready.concat(groups.disabled)
+    : groups.blocked;
+
+  const countMap = new Map<string, number>();
+  let total = 0;
+  for (const s of tabSkills) {
+    const cat = getSkillCategory(s);
+    countMap.set(cat, (countMap.get(cat) ?? 0) + 1);
+    total++;
+  }
+
+  return html`
+    <div class="skills-category-bar">
+      ${SKILL_CATEGORIES.map(cat => {
+        const isActive = props.activeCategory === cat.id;
+        const count = cat.id === "all" ? total : (countMap.get(cat.id) ?? 0);
+        if (cat.id !== "all" && count === 0) return nothing;
+        return html`
+          <button
+            class="skills-category-chip ${isActive ? "skills-category-chip--active" : ""}"
+            @click=${() => props.onCategoryChange(isActive && cat.id !== "all" ? "all" : cat.id)}
+          >${cat.emoji} ${t(`skills.category.${cat.id}` as never)}${count > 0 ? html` <span class="skills-category-chip__count">${count}</span>` : nothing}</button>
+        `;
+      })}
+    </div>
+  `;
+}
+
+// ============================================================================
+// Props 定义（精简：移除未使用的 market/remote 属性）
+// ============================================================================
 export type SkillsProps = {
   loading: boolean;
   report: SkillStatusReport | null;
@@ -276,24 +347,18 @@ export type SkillsProps = {
   edits: Record<string, string>;
   busyKey: string | null;
   messages: SkillMessageMap;
-  // 连接状态
   connected: boolean;
-  // 安装进度
   installProgress: Record<string, InstallProgress>;
-  // Tab and remote (legacy)
   activeTab: SkillsTab;
   remoteLoading: boolean;
-  remoteIndex: RemoteSkillsIndex | null;
+  remoteIndex: null;
   remoteError: string | null;
-  // Market (new)
   marketLoading: boolean;
   marketResponse: SkillsMarketResponse | null;
   marketSyncing: boolean;
   marketLastSyncedAt: string | null;
   marketError: string | null;
-  // Category filter (new)
   activeCategory: string;
-  // Pagination
   visibleCount: number;
   onFilterChange: (next: string) => void;
   onLoadMore: () => void;
@@ -309,645 +374,555 @@ export type SkillsProps = {
   onPinToggle: (skillKey: string, pinned: boolean) => void;
 };
 
-// 格式化相对时间
-function formatRelativeTime(isoTime: string | null): string {
-  if (!isoTime) return "";
-  const date = new Date(isoTime);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-  
-  if (diffMin < 1) return t("skills.time.justNow") || "刚刚";
-  if (diffMin < 60) return (t("skills.time.minutesAgo") || "{{count}} 分钟前").replace("{{count}}", String(diffMin));
-  if (diffHour < 24) return (t("skills.time.hoursAgo") || "{{count}} 小时前").replace("{{count}}", String(diffHour));
-  return (t("skills.time.daysAgo") || "{{count}} 天前").replace("{{count}}", String(diffDay));
-}
-
-// Loading Spinner Component
+// ============================================================================
+// Loading Spinner
+// ============================================================================
 function renderSpinner() {
   return html`<span class="skill-spinner">${icons.loader}</span>`;
 }
 
+// ============================================================================
+// 主渲染函数（优化版：单次分组 + 仅渲染当前 Tab）
+// ============================================================================
 export function renderSkills(props: SkillsProps) {
   const allSkills = props.report?.skills ?? [];
-  const filter = props.filter.trim();
-  const activeCategory = props.activeCategory || "all";
-  const visibleCount = props.visibleCount || 50;
+  const filter = props.filter.trim().toLowerCase();
+  const groups = getSkillGroups(allSkills);
 
-  // 优先使用新的市场数据，兼容旧的 remoteIndex
-  const allMarketSkills = props.marketResponse?.skills ?? props.remoteIndex?.skills ?? [];
-
-  // 过滤掉隐藏的技能 + 不兼容当前操作系统的技能（直接不显示）
-  const skills = allSkills.filter(s =>
-    !isSkillHidden(s.name) &&
-    checkPlatformCompatibility(s.name).compatible &&
-    (!s.missing?.os || s.missing.os.length === 0)
-  );
-  const marketSkills = allMarketSkills.filter(s =>
-    !isSkillHidden(s.name) &&
-    checkPlatformCompatibility(s.name).compatible
-  );
-
-  // === Active tab data ===
-  // 仅 activeInPrompt 的技能（实际加载进 AI prompt 的，不需要搜索过滤）
-  const activePromptSkills = skills.filter(s => s.activeInPrompt);
-
-  // === Library tab data ===
-  const { matched: searchMatchedMarket, category: detectedCategory } = smartSearchSkills(
-    marketSkills,
-    filter,
-  );
-  const filteredMarket = activeCategory === "all"
-    ? searchMatchedMarket
-    : searchMatchedMarket.filter(skill => categorizeSkill(skill.name) === activeCategory);
-
-  // 非活跃本地技能（需要关注的：缺依赖或已禁用）
-  const needsAttention = skills.filter(s =>
-    !s.activeInPrompt && (!s.eligible || s.disabled)
-  );
-
-  // 同步状态
-  const isSyncing = props.marketSyncing || props.marketLoading;
-  const lastSyncedAt = props.marketLastSyncedAt ?? props.remoteIndex?.updated ?? null;
-
-  // 分页：只对 Library tab 生效（Active tab 展示全部 ~30 条）
-  const isActiveTab = props.activeTab === "active";
-  const libraryTotal = filteredMarket.length;
-  const pagedMarket = filteredMarket.slice(0, visibleCount);
-  const hasMore = libraryTotal > visibleCount;
-  const remaining = libraryTotal - visibleCount;
-
-  // 搜索无结果提示（仅 Library tab）
-  const showNoResultsHint = !isActiveTab && filter.trim() && libraryTotal === 0;
-
-  // 分类数量（仅 library tab 使用）— 单次遍历 O(N) 替代原来的 O(C*N)
-  const categoryCounts = new Map<string, number>();
-  if (!isActiveTab) {
-    categoryCounts.set("all", searchMatchedMarket.length);
-    for (const s of searchMatchedMarket) {
-      const cat = categorizeSkill(s.name);
-      categoryCounts.set(cat, (categoryCounts.get(cat) ?? 0) + 1);
-    }
-  }
+  // 当前 Tab
+  const currentTab: SkillTabId =
+    props.activeTab === "active" ? "core" :
+    props.activeTab === "library" ? "ready" :
+    props.activeTab === "blocked" ? "blocked" :
+    "core";
 
   // 概览数据
   const report = props.report;
-  const activeCount = report?.activeCount ?? 0;
   const maxPrompt = report?.maxPromptSkills ?? 30;
-  const eligibleCount = skills.filter(s => s.eligible && !s.activeInPrompt).length;
-  const blockedCount = skills.filter(s => !s.eligible && !s.disabled).length;
-  const disabledCount = skills.filter(s => s.disabled).length;
+
+  // 进度环百分比
+  const corePercent = Math.round((groups.core.length / maxPrompt) * 100);
+
+  // Tab 对应的技能数量（用于 badge 显示）
+  const coreCount = groups.core.length;
+  const readyCount = groups.ready.length + groups.disabled.length;
+  const blockedCount = groups.blocked.length;
 
   return html`
-    <section class="card">
+    <section class="card skills-page">
       <!-- 标题栏 -->
-      <div class="row" style="justify-content: space-between; align-items: flex-start;">
+      <div class="skills-header-bar">
         <div>
           <div class="card-title">${t("skills.cardTitle")}</div>
           <div class="card-sub">${t("skills.cardSub")}</div>
         </div>
         <button
-          class="btn"
-          ?disabled=${props.loading || props.remoteLoading || isSyncing}
-          @click=${isActiveTab ? props.onRefresh : props.onRefreshRemote}
+          class="btn skills-refresh-btn"
+          ?disabled=${props.loading}
+          @click=${props.onRefresh}
         >
-          ${(isActiveTab ? props.loading : (props.remoteLoading || isSyncing))
+          ${props.loading
             ? html`${renderSpinner()} ${t("common.loading")}`
             : html`${icons.refreshCw} ${t("common.refresh")}`}
         </button>
       </div>
 
-      <!-- Tab 切换 -->
-      <div class="skills-tabs" style="margin-top: 16px;">
-        <button
-          class="skills-tab ${isActiveTab ? "skills-tab--active" : ""}"
-          @click=${() => props.onTabChange("active")}
-        >
-          ${icons.zap}
-          <span>${t("skills.tab.active")}</span>
-          <span class="skills-tab-count">${activeCount}</span>
-        </button>
-        <button
-          class="skills-tab ${!isActiveTab ? "skills-tab--active" : ""}"
-          @click=${() => props.onTabChange("library")}
-        >
-          ${icons.layers}
-          <span>${t("skills.tab.library")}</span>
-          <span class="skills-tab-count">${marketSkills.length}</span>
-          ${isSyncing ? renderSpinner() : nothing}
-        </button>
+      <!-- 概览面板 -->
+      <div class="skills-dashboard">
+        <div class="skills-dashboard__ring">
+          <svg viewBox="0 0 80 80" class="skills-ring-svg">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border)" stroke-width="6" />
+            <circle cx="40" cy="40" r="34"
+              fill="none" stroke="var(--accent)" stroke-width="6"
+              stroke-linecap="round"
+              stroke-dasharray="${2 * Math.PI * 34}"
+              stroke-dashoffset="${2 * Math.PI * 34 * (1 - Math.min(corePercent, 100) / 100)}"
+              transform="rotate(-90 40 40)"
+              class="skills-ring-progress"
+            />
+          </svg>
+          <div class="skills-ring-text">
+            <span class="skills-ring-value">${coreCount}</span>
+            <span class="skills-ring-max">/ ${maxPrompt}</span>
+          </div>
+        </div>
+        <div class="skills-dashboard__stats">
+          <button
+            class="skills-stat-card ${currentTab === "core" ? "skills-stat-card--active" : ""}"
+            @click=${() => props.onTabChange("active")}
+          >
+            <div class="skills-stat-card__icon skills-stat-card__icon--core">${icons.zap}</div>
+            <div class="skills-stat-card__info">
+              <span class="skills-stat-card__value">${coreCount}</span>
+              <span class="skills-stat-card__label">已激活核心</span>
+            </div>
+          </button>
+          <button
+            class="skills-stat-card ${currentTab === "ready" ? "skills-stat-card--active" : ""}"
+            @click=${() => props.onTabChange("library")}
+          >
+            <div class="skills-stat-card__icon skills-stat-card__icon--ready">${icons.checkCircle}</div>
+            <div class="skills-stat-card__info">
+              <span class="skills-stat-card__value">${readyCount}</span>
+              <span class="skills-stat-card__label">就绪候补</span>
+            </div>
+          </button>
+          <button
+            class="skills-stat-card ${currentTab === "blocked" ? "skills-stat-card--active" : ""}"
+            @click=${() => props.onTabChange("blocked")}
+          >
+            <div class="skills-stat-card__icon skills-stat-card__icon--blocked">${icons.alertCircle}</div>
+            <div class="skills-stat-card__info">
+              <span class="skills-stat-card__value">${blockedCount}</span>
+              <span class="skills-stat-card__label">缺依赖</span>
+            </div>
+          </button>
+        </div>
       </div>
 
-      <!-- 概览条（Active tab） -->
-      ${isActiveTab && report ? html`
-        <div class="skills-overview-bar" style="margin-top: 16px;">
-          <div class="skills-overview-bar__stat">
-            <span class="skills-overview-bar__dot skills-overview-bar__dot--active"></span>
-            <span class="skills-overview-bar__value">${activeCount}</span>
-            <span class="skills-overview-bar__label">${t("skills.overview.active")}</span>
-            <span class="skills-overview-bar__label muted">/ ${maxPrompt}</span>
-          </div>
-          <div class="skills-overview-bar__sep"></div>
-          <div class="skills-overview-bar__stat" title="${t("skills.overview.eligibleTooltip")}">
-            <span class="skills-overview-bar__dot skills-overview-bar__dot--eligible"></span>
-            <span class="skills-overview-bar__value">${eligibleCount}</span>
-            <span class="skills-overview-bar__label">${t("skills.overview.eligible")}</span>
-          </div>
-          ${blockedCount > 0 ? html`
-            <div class="skills-overview-bar__sep"></div>
-            <div class="skills-overview-bar__stat">
-              <span class="skills-overview-bar__dot skills-overview-bar__dot--blocked"></span>
-              <span class="skills-overview-bar__value">${blockedCount}</span>
-              <span class="skills-overview-bar__label">${t("skills.overview.blocked")}</span>
-            </div>
-          ` : nothing}
-          ${disabledCount > 0 ? html`
-            <div class="skills-overview-bar__sep"></div>
-            <div class="skills-overview-bar__stat">
-              <span class="skills-overview-bar__dot skills-overview-bar__dot--disabled"></span>
-              <span class="skills-overview-bar__value">${disabledCount}</span>
-              <span class="skills-overview-bar__label">${t("skills.overview.disabled")}</span>
-            </div>
-          ` : nothing}
-        </div>
-      ` : nothing}
-
-      <!-- 搜索框（仅 Library tab，Active tab ~30条无需搜索） -->
-      ${!isActiveTab ? html`
-        <div class="skills-smart-search" style="margin-top: 16px;">
-          <div class="skills-smart-search__icon">${icons.search}</div>
-          <input
-            type="text"
-            class="skills-smart-search__input"
-            .value=${props.filter}
-            @input=${(e: Event) => {
-              const input = e.target as HTMLInputElement;
-              props.onFilterChange(input.value);
-            }}
-            @focus=${(e: Event) => {
-              const input = e.target as HTMLInputElement;
-              if (input.value !== props.filter) {
-                input.value = props.filter;
-              }
-            }}
-            placeholder="${t("skills.search.placeholder")}"
-            autocomplete="off"
-          />
-          ${filter ? html`
-            <button
-              class="skills-smart-search__clear"
-              @click=${() => props.onFilterChange("")}
-              title="${t("common.close")}"
-            >
-              ${icons.x}
-            </button>
-          ` : nothing}
-        </div>
-      ` : nothing}
-
-      <!-- 搜索智能提示 + 分类导航（仅 Library tab） -->
-      ${!isActiveTab ? html`
-        ${detectedCategory && filter ? html`
-          <div class="skills-search-hint" style="margin-top: 8px;">
-            ${icons.lightbulb}
-            <span>${t("skills.search.detected")}: </span>
-            <button
-              class="skills-search-hint__link"
-              @click=${() => {
-                props.onCategoryChange(detectedCategory);
-                props.onFilterChange("");
-              }}
-            >
-              ${tMaybe(`skills.category.${detectedCategory}`)}
-            </button>
-          </div>
+      <!-- 搜索框 -->
+      <div class="skills-search-bar">
+        <div class="skills-search-bar__icon">${icons.search}</div>
+        <input
+          type="text"
+          class="skills-search-bar__input"
+          .value=${props.filter}
+          @input=${(e: Event) => {
+            const input = e.target as HTMLInputElement;
+            props.onFilterChange(input.value);
+          }}
+          placeholder="搜索技能名称或描述..."
+          autocomplete="off"
+        />
+        ${props.filter ? html`
+          <button
+            class="skills-search-bar__clear"
+            @click=${() => props.onFilterChange("")}
+          >
+            ${icons.x}
+          </button>
         ` : nothing}
+      </div>
 
-        <div class="skills-categories__list" style="margin-top: 12px;">
-          ${SKILL_CATEGORIES.map(cat => {
-            const count = categoryCounts.get(cat.id) ?? 0;
-            if (cat.id !== "all" && count === 0) return nothing;
-            return html`
-              <button
-                class="skills-category-chip ${activeCategory === cat.id ? "skills-category-chip--active" : ""}"
-                @click=${() => props.onCategoryChange(cat.id)}
-                title="${tMaybe(cat.descKey)}"
-              >
-                <span class="skills-category-chip__emoji">${cat.emoji}</span>
-                <span class="skills-category-chip__label">${tMaybe(cat.labelKey)}</span>
-                <span class="skills-category-chip__count">${count}</span>
-              </button>
-            `;
-          })}
-        </div>
-      ` : nothing}
+      <!-- 分类筛选标签 -->
+      ${renderCategoryBar(currentTab, groups, props)}
 
-      <!-- 结果统计栏（仅 Library tab） -->
-      ${!isActiveTab ? html`
-        <div class="skills-results-bar" style="margin-top: 14px;">
-          <div class="skills-results-count">
-            ${libraryTotal} ${t("skills.shown")}
-            ${filter ? html`<span class="muted"> · "${filter}"</span>` : nothing}
-            ${activeCategory !== "all" ? html`<span class="muted"> · ${tMaybe(`skills.category.${activeCategory}`)}</span>` : nothing}
-          </div>
-          ${(filter || activeCategory !== "all") ? html`
-            <button
-              class="btn btn--sm btn--ghost"
-              @click=${() => {
-                props.onFilterChange("");
-                props.onCategoryChange("all");
-              }}
-            >
-              ${icons.x} ${t("skills.clearFilters")}
-            </button>
-          ` : nothing}
-        </div>
-      ` : nothing}
+      <!-- 错误提示 -->
+      ${props.error
+        ? html`<div class="callout danger" style="margin-top: 12px;">${props.error}</div>`
+        : nothing}
 
-      <!-- 内容区 -->
-      ${isActiveTab ? html`
-        ${props.error
-          ? html`<div class="callout danger" style="margin-top: 12px;">${props.error}</div>`
-          : nothing}
-
-        ${activePromptSkills.length === 0
-          ? renderEmptyState(props.loading, "active", props.onTabChange)
-          : html`
-              <div class="skills-list" style="margin-top: 16px;">
-                ${activePromptSkills.map((skill) => renderSkill(skill, props))}
-              </div>
-            `}
-
-        <!-- 需要关注的本地技能（缺依赖/已禁用） -->
-        ${needsAttention.length > 0 ? html`
-          <div class="skills-attention" style="margin-top: 16px;">
-            <div class="skills-attention__header">
-              ${icons.alertCircle}
-              <span>${t("skills.attention.title")} (${needsAttention.length})</span>
-            </div>
-            <div class="skills-list" style="margin-top: 8px;">
-              ${needsAttention.map((skill) => renderSkill(skill, props))}
-            </div>
-          </div>
-        ` : nothing}
-      ` : html`
-        ${props.marketError || props.remoteError
-          ? html`<div class="callout danger" style="margin-top: 12px;">${props.marketError || props.remoteError}</div>`
-          : nothing}
-
-        <!-- Sync Status Bar -->
-        ${lastSyncedAt || isSyncing
-          ? html`
-              <div class="skills-sync-bar ${isSyncing ? "skills-sync-bar--syncing" : ""}" style="margin-top: 12px;">
-                ${isSyncing
-                  ? html`${renderSpinner()} <span>${t("skills.market.syncing") || "正在同步..."}</span>`
-                  : html`${icons.clock} <span>${t("skills.remote.updated")}: ${formatRelativeTime(lastSyncedAt)}</span>`}
-                ${props.marketResponse?.message && !props.marketError
-                  ? html`<span class="muted" style="margin-left: auto;">${props.marketResponse.message}</span>`
-                  : nothing}
-              </div>
-            `
-          : nothing}
-
-        ${libraryTotal === 0
-          ? showNoResultsHint
-            ? renderNoResultsHint(filter, props)
-            : renderEmptyState(isSyncing, "library")
-          : html`
-              <div class="skills-list" style="margin-top: 16px;">
-                ${pagedMarket.map((skill) => renderRemoteSkill(skill as RemoteSkillMeta, props))}
-              </div>
-              ${hasMore ? html`
-                <div class="skills-load-more" style="margin-top: 16px; text-align: center;">
-                  <button
-                    class="btn btn--sm"
-                    @click=${() => props.onLoadMore()}
-                  >
-                    ${t("skills.loadMore") || `加载更多（还有 ${remaining} 个）`}
-                  </button>
-                </div>
-              ` : nothing}
-            `}
-      `}
+      <!-- Tab 内容区（仅渲染当前 Tab，其他 Tab 完全不进入 DOM） -->
+      ${currentTab === "core"
+        ? renderCoreTab(filterSkillList(filterSkillsByCategory(groups.core, props.activeCategory), filter), props, maxPrompt)
+        : currentTab === "ready"
+          ? renderReadyTab(
+              filterSkillList(filterSkillsByCategory(groups.ready, props.activeCategory), filter),
+              filterSkillList(filterSkillsByCategory(groups.disabled, props.activeCategory), filter),
+              props
+            )
+          : renderBlockedTab(filterSkillList(filterSkillsByCategory(groups.blocked, props.activeCategory), filter), props)}
     </section>
   `;
 }
 
-// 没找到结果时的引导提示
-function renderNoResultsHint(query: string, _props: SkillsProps) {
+// ============================================================================
+// Tab 1: 已激活核心（参数控制上限，支持卸载）
+// ============================================================================
+function renderCoreTab(skills: SkillStatusEntry[], props: SkillsProps, maxPrompt: number) {
+  if (skills.length === 0) {
+    return html`
+      <div class="skills-empty-state">
+        <div class="skills-empty-state__icon">${icons.zap}</div>
+        <div class="skills-empty-state__title">暂无已激活的技能</div>
+        <div class="skills-empty-state__desc">前往「就绪候补」添加技能到核心</div>
+        <button class="btn primary" style="margin-top: 12px;" @click=${() => props.onTabChange("library")}>
+          ${icons.zap} 添加技能
+        </button>
+      </div>
+    `;
+  }
+
+  // 分成置顶和普通两组
+  const pinned = skills.filter(s => s.pinned);
+  const unpinned = skills.filter(s => !s.pinned);
+
   return html`
-    <div class="skills-no-results">
-      <div class="skills-no-results__icon">${icons.searchX}</div>
-      <div class="skills-no-results__title">${t("skills.noResults.title")}</div>
-      <div class="skills-no-results__desc">
-        ${t("skills.noResults.desc").replace("{query}", query)}
+    <div class="skills-tab-header">
+      <div class="skills-tab-header__title">
+        ${icons.zap}
+        <span>已激活核心</span>
+        <span class="skills-tab-header__badge">${skills.length} / ${maxPrompt}</span>
       </div>
-      <div class="skills-no-results__actions">
-        <div class="skills-no-results__suggestion">
-          <div class="skills-no-results__suggestion-icon">${icons.lightbulb}</div>
-          <div class="skills-no-results__suggestion-content">
-            <div class="skills-no-results__suggestion-title">${t("skills.noResults.suggestion.title")}</div>
-            <div class="skills-no-results__suggestion-desc">${t("skills.noResults.suggestion.desc")}</div>
-          </div>
-        </div>
-      </div>
+      <div class="skills-tab-header__hint">已加载到 AI 提示词的技能，参数控制上限 ${maxPrompt} 个。支持卸载移出核心</div>
     </div>
+
+    ${pinned.length > 0 ? html`
+      <div class="skills-section-label">
+        <span class="skills-section-label__icon skills-section-label__icon--auto">📌</span>
+        <span>置顶优先 (${pinned.length})</span>
+      </div>
+      <div class="skills-grid">
+        ${pinned.map(skill => renderCoreSkillCard(skill, props))}
+      </div>
+    ` : nothing}
+
+    ${unpinned.length > 0 ? html`
+      ${pinned.length > 0 ? html`
+        <div class="skills-section-label" style="margin-top: 12px;">
+          <span class="skills-section-label__icon skills-section-label__icon--manual">${icons.zap}</span>
+          <span>普通加载 (${unpinned.length})</span>
+        </div>
+      ` : nothing}
+      <div class="skills-grid">
+        ${unpinned.map(skill => renderCoreSkillCard(skill, props))}
+      </div>
+    ` : nothing}
   `;
 }
 
-function renderEmptyState(loading: boolean, type: "active" | "library", onTabChange?: (tab: SkillsTab) => void) {
+// ============================================================================
+// Tab 2: 就绪候补（可添加到核心）
+// ============================================================================
+function renderReadyTab(readySkills: SkillStatusEntry[], disabledSkills: SkillStatusEntry[], props: SkillsProps) {
+  const total = readySkills.length + disabledSkills.length;
+
+  if (total === 0) {
+    return html`
+      <div class="skills-empty-state">
+        <div class="skills-empty-state__icon">${icons.checkCircle}</div>
+        <div class="skills-empty-state__title">没有就绪的候补技能</div>
+        <div class="skills-empty-state__desc">所有可用技能已在核心中，或查看「缺依赖」安装更多</div>
+      </div>
+    `;
+  }
+
   return html`
-    <div class="skills-empty">
-      <div class="skills-empty-icon">
-        ${type === "active" ? icons.zap : icons.layers}
+    <div class="skills-tab-header">
+      <div class="skills-tab-header__title">
+        ${icons.checkCircle}
+        <span>就绪候补</span>
+        <span class="skills-tab-header__badge skills-tab-header__badge--ready">${total}</span>
       </div>
-      <div class="skills-empty-title">
-        ${loading
-          ? t("common.loading")
-          : t("skills.noSkillsFound")}
+      <div class="skills-tab-header__hint">依赖已满足，可随时添加到核心。置顶可优先加载</div>
+    </div>
+
+    ${readySkills.length > 0 ? html`
+      <div class="skills-grid">
+        ${readySkills.map(skill => renderReadySkillCard(skill, props))}
       </div>
-      <div class="skills-empty-desc">
-        ${loading
-          ? (type === "library" ? t("skills.market.syncing") || "正在获取技能市场数据..." : "")
-          : (type === "library"
-              ? t("skills.market.emptyHint") || "点击刷新按钮获取技能市场"
-              : t("skills.active.emptyHint") || "暂无已激活的技能")}
+    ` : nothing}
+
+    ${disabledSkills.length > 0 ? html`
+      <div class="skills-section-divider">
+        <span class="skills-section-divider__label">${icons.shieldOff} 已禁用 (${disabledSkills.length})</span>
       </div>
-      ${!loading && type === "active" && onTabChange ? html`
+      <div class="skills-grid">
+        ${disabledSkills.map(skill => renderDisabledSkillCard(skill, props))}
+      </div>
+    ` : nothing}
+  `;
+}
+
+// ============================================================================
+// Tab 3: 缺依赖（支持安装依赖 + 加入核心）
+// ============================================================================
+function renderBlockedTab(skills: SkillStatusEntry[], props: SkillsProps) {
+  if (skills.length === 0) {
+    return html`
+      <div class="skills-empty-state">
+        <div class="skills-empty-state__icon">${icons.checkCircle}</div>
+        <div class="skills-empty-state__title">所有技能依赖已满足</div>
+        <div class="skills-empty-state__desc">太棒了！没有需要处理的依赖问题</div>
+      </div>
+    `;
+  }
+
+  // 分组：可自动安装 vs 需手动安装
+  const autoInstallable = skills.filter(s => s.install.length > 0 && s.missing.bins.length > 0);
+  const needsManual = skills.filter(s => !(s.install.length > 0 && s.missing.bins.length > 0));
+
+  return html`
+    <div class="skills-tab-header">
+      <div class="skills-tab-header__title">
+        ${icons.alertCircle}
+        <span>缺依赖</span>
+        <span class="skills-tab-header__badge skills-tab-header__badge--blocked">${skills.length}</span>
+      </div>
+      <div class="skills-tab-header__hint">安装缺少的依赖后，自动就绪可添加到核心</div>
+    </div>
+
+    ${autoInstallable.length > 0 ? html`
+      <div class="skills-section-label">
+        <span class="skills-section-label__icon skills-section-label__icon--auto">${icons.download}</span>
+        <span>可自动安装 (${autoInstallable.length})</span>
+      </div>
+      <div class="skills-grid">
+        ${autoInstallable.map(skill => renderBlockedSkillCard(skill, props))}
+      </div>
+    ` : nothing}
+
+    ${needsManual.length > 0 ? html`
+      <div class="skills-section-label" style="margin-top: 16px;">
+        <span class="skills-section-label__icon skills-section-label__icon--manual">${icons.wrench}</span>
+        <span>需手动处理 (${needsManual.length})</span>
+      </div>
+      <div class="skills-grid">
+        ${needsManual.map(skill => renderBlockedSkillCard(skill, props))}
+      </div>
+    ` : nothing}
+  `;
+}
+
+// ============================================================================
+// 技能卡片 — 核心已激活（支持卸载）
+// ============================================================================
+function renderCoreSkillCard(skill: SkillStatusEntry, props: SkillsProps) {
+  const busy = props.busyKey === skill.skillKey;
+  const message = props.messages[skill.skillKey] ?? null;
+  const localizedName = (skill as any).nameZh || getLocalizedSkillName(skill.name);
+  const localizedDesc = (skill as any).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
+
+  return html`
+    <div class="skill-card-v2 skill-card-v2--core">
+      <div class="skill-card-v2__main">
+        <div class="skill-card-v2__icon skill-card-v2__icon--core">
+          ${skill.emoji ? html`<span class="skill-card-v2__emoji">${skill.emoji}</span>` : icons.zap}
+        </div>
+        <div class="skill-card-v2__body">
+          <div class="skill-card-v2__title-row">
+            <span class="skill-card-v2__name">${localizedName}</span>
+            ${skill.pinned ? html`<span class="skill-card-v2__pin-badge">置顶</span>` : nothing}
+            <span class="skill-card-v2__source">${skill.source}</span>
+          </div>
+          <div class="skill-card-v2__desc">${clampText(localizedDesc, 120)}</div>
+        </div>
+      </div>
+      <div class="skill-card-v2__actions">
         <button
-          class="btn btn--sm primary"
-          style="margin-top: 12px;"
-          @click=${() => onTabChange("library")}
+          class="skill-card-v2__action-btn ${skill.pinned ? "skill-card-v2__action-btn--pinned" : ""}"
+          ?disabled=${busy}
+          @click=${() => props.onPinToggle(skill.skillKey, !skill.pinned)}
+          title="${skill.pinned ? "取消置顶" : "置顶优先加载"}"
         >
-          ${icons.layers} ${t("skills.tab.library") || "技能市场"}
+          ${skill.pinned ? "📌" : "📍"}
         </button>
+        <button
+          class="btn btn--sm skill-card-v2__unload-btn"
+          ?disabled=${busy}
+          @click=${() => props.onToggle(skill.skillKey, false)}
+          title="卸载（移出核心）"
+        >
+          ${busy ? renderSpinner() : icons.x}
+          <span>卸载</span>
+        </button>
+      </div>
+      ${message ? html`
+        <div class="skill-card-v2__message skill-card-v2__message--${message.kind}">
+          ${message.message}
+        </div>
       ` : nothing}
     </div>
   `;
 }
 
-/** 渲染安装进度按钮 */
-function renderInstallButton(skill: RemoteSkillMeta, props: SkillsProps) {
-  const busy = props.busyKey === skill.name;
-  const progress = props.installProgress[skill.name];
-  const isConnected = props.connected;
-  
-  if (!busy && !progress) {
-    // 未开始安装
-    if (!isConnected) {
-      // 未连接时显示禁用按钮和提示
-      return html`
-        <button
-          class="btn primary skill-install-btn"
-          disabled
-          title="${t("skills.notConnected.tooltip")}"
-        >
-          ${icons.download} ${t("skills.remote.install")}
-        </button>
-        <span class="skill-install-hint skill-install-hint--warning">
-          ${icons.alertCircle} ${t("skills.notConnected.hint")}
-        </span>
-      `;
-    }
-    return html`
-      <button
-        class="btn primary skill-install-btn"
-        @click=${() => props.onInstallRemote(skill.name)}
-      >
-        ${icons.download} ${t("skills.remote.install")}
-      </button>
-    `;
-  }
-  
-  // 正在安装 - 显示进度
-  const percent = progress?.percent ?? 0;
-  const message = progress?.message ?? (t("skills.installing") || "安装中...");
-  const stage = progress?.stage ?? "downloading";
-  
-  return html`
-    <div class="skill-install-progress">
-      <div class="skill-install-progress__btn">
-        <div 
-          class="skill-install-progress__fill" 
-          style="width: ${percent}%"
-        ></div>
-        <div class="skill-install-progress__content">
-          ${stage === "done" 
-            ? html`${icons.checkCircle}` 
-            : html`${renderSpinner()}`}
-          <span class="skill-install-progress__text">${message}</span>
-        </div>
-      </div>
-      <div class="skill-install-progress__hint">
-        ${stage === "downloading" ? (t("skills.install.downloading") || "请稍候，正在从云端拉取...") :
-          stage === "verifying" ? (t("skills.install.verifying") || "即将完成...") :
-          stage === "done" ? (t("skills.install.done") || "安装成功！") : ""}
-      </div>
-    </div>
-  `;
-}
-
-function renderRemoteSkill(skill: RemoteSkillMeta, props: SkillsProps) {
-  const busy = props.busyKey === skill.name;
-  const message = props.messages[skill.name] ?? null;
-  const isInstalled = (skill as RemoteSkillMeta & { installed?: boolean }).installed;
-  const progress = props.installProgress[skill.name];
-  // 优先使用后端返回的中文字段，否则使用翻译或美化名称
-  const localizedName = skill.nameZh || getLocalizedSkillName(skill.name);
-  const localizedDesc = skill.descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
-
-  return html`
-    <div class="skill-card ${busy || progress ? "skill-card--installing" : ""}">
-      <!-- Icon -->
-      <div class="skill-icon ${isInstalled ? "skill-icon--installed" : ""} ${busy || progress ? "skill-icon--installing" : ""}">
-        ${isInstalled ? icons.checkCircle : busy || progress ? icons.loader : icons.package}
-      </div>
-
-      <!-- Content -->
-      <div class="skill-content">
-        <div class="skill-header">
-          <span class="skill-name">${localizedName}</span>
-          ${skill.version ? html`<span class="skill-version">v${skill.version}</span>` : nothing}
-        </div>
-
-        <div class="skill-desc">${clampText(localizedDesc, 160)}</div>
-
-        <div class="skill-meta">
-          ${skill.author
-            ? html`<span class="skill-meta-item">${icons.user} ${skill.author}</span>`
-            : nothing}
-        </div>
-
-        ${skill.tags && skill.tags.length > 0
-          ? html`
-              <div class="skill-tags">
-                ${skill.tags.slice(0, 5).map((tag) => html`<span class="skill-tag">${getLocalizedTag(tag)}</span>`)}
-                ${skill.tags.length > 5 ? html`<span class="skill-tag">+${skill.tags.length - 5}</span>` : nothing}
-              </div>
-            `
-          : nothing}
-      </div>
-
-      <!-- Actions -->
-      <div class="skill-actions">
-        ${isInstalled
-          ? html`
-              <span class="skill-status skill-status--installed">
-                ${icons.checkCircle}
-                ${t("skills.remote.installed")}
-              </span>
-            `
-          : renderInstallButton(skill, props)}
-
-        ${message && !progress
-          ? html`
-              <div style="font-size: 12px; color: ${message.kind === "error" ? "var(--danger)" : "var(--ok)"};">
-                ${message.message}
-              </div>
-            `
-          : nothing}
-      </div>
-    </div>
-  `;
-}
-
-function renderSkill(skill: SkillStatusEntry, props: SkillsProps) {
+// ============================================================================
+// 技能卡片 — 就绪候补
+// ============================================================================
+function renderReadySkillCard(skill: SkillStatusEntry, props: SkillsProps) {
   const busy = props.busyKey === skill.skillKey;
-  const apiKey = props.edits[skill.skillKey] ?? "";
   const message = props.messages[skill.skillKey] ?? null;
-  const canInstall = skill.install.length > 0 && skill.missing.bins.length > 0;
-  const hasMissing = skill.missing.bins.length > 0 || skill.missing.env.length > 0 || skill.missing.config.length > 0;
-  const localizedName = (skill as SkillStatusEntry & { nameZh?: string }).nameZh || getLocalizedSkillName(skill.name);
-  const localizedDesc = (skill as SkillStatusEntry & { descriptionZh?: string }).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
+  const apiKey = props.edits[skill.skillKey] ?? "";
+  const localizedName = (skill as any).nameZh || getLocalizedSkillName(skill.name);
+  const localizedDesc = (skill as any).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
 
   return html`
-    <div class="skill-card">
-      <!-- Icon -->
-      <div class="skill-icon ${skill.activeInPrompt ? "skill-icon--installed" : ""}">
-        ${skill.activeInPrompt ? icons.shieldCheck : skill.eligible ? icons.checkCircle : icons.package}
+    <div class="skill-card-v2 skill-card-v2--ready">
+      <div class="skill-card-v2__main">
+        <div class="skill-card-v2__icon skill-card-v2__icon--ready">
+          ${skill.emoji ? html`<span class="skill-card-v2__emoji">${skill.emoji}</span>` : icons.checkCircle}
+        </div>
+        <div class="skill-card-v2__body">
+          <div class="skill-card-v2__title-row">
+            <span class="skill-card-v2__name">${localizedName}</span>
+            <span class="skill-card-v2__source">${skill.source}</span>
+          </div>
+          <div class="skill-card-v2__desc">${clampText(localizedDesc, 120)}</div>
+        </div>
+      </div>
+      <div class="skill-card-v2__actions">
+        <button
+          class="skill-card-v2__action-btn ${skill.pinned ? "skill-card-v2__action-btn--pinned" : ""}"
+          ?disabled=${busy}
+          @click=${() => props.onPinToggle(skill.skillKey, !skill.pinned)}
+          title="${skill.pinned ? "取消置顶" : "置顶优先加载"}"
+        >
+          ${skill.pinned ? "📌" : "📍"}
+        </button>
+        <button
+          class="btn btn--sm primary skill-card-v2__add-btn"
+          ?disabled=${busy}
+          @click=${() => props.onToggle(skill.skillKey, true)}
+          title="添加到核心"
+        >
+          ${busy ? renderSpinner() : icons.zap}
+          <span>加入核心</span>
+        </button>
       </div>
 
-      <!-- Content -->
-      <div class="skill-content">
-        <div class="skill-header">
-          <span class="skill-name">${localizedName}</span>
-          ${skill.pinned ? html`<span class="skill-pin-badge" title="${t("skills.pinned") || "已置顶"}">📌</span>` : nothing}
-          <span class="skill-source">${skill.source}</span>
+      ${skill.primaryEnv ? html`
+        <div class="skill-card-v2__apikey">
+          <div class="skill-card-v2__apikey-field">
+            <span class="skill-card-v2__apikey-label">${t("skills.apiKey")}</span>
+            <input
+              type="password"
+              .value=${apiKey}
+              @input=${(e: Event) => props.onEdit(skill.skillKey, (e.target as HTMLInputElement).value)}
+            />
+          </div>
+          <button
+            class="btn primary btn--sm"
+            ?disabled=${busy}
+            @click=${() => props.onSaveKey(skill.skillKey)}
+          >
+            ${t("skills.saveKey")}
+          </button>
         </div>
+      ` : nothing}
 
-        <div class="skill-desc">${clampText(localizedDesc, 160)}</div>
+      ${message ? html`
+        <div class="skill-card-v2__message skill-card-v2__message--${message.kind}">
+          ${message.message}
+        </div>
+      ` : nothing}
+    </div>
+  `;
+}
 
-        ${hasMissing ? html`
-          <div class="skill-missing-groups">
+// ============================================================================
+// 技能卡片 — 已禁用
+// ============================================================================
+function renderDisabledSkillCard(skill: SkillStatusEntry, props: SkillsProps) {
+  const busy = props.busyKey === skill.skillKey;
+  const localizedName = (skill as any).nameZh || getLocalizedSkillName(skill.name);
+  const localizedDesc = (skill as any).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
+
+  return html`
+    <div class="skill-card-v2 skill-card-v2--disabled">
+      <div class="skill-card-v2__main">
+        <div class="skill-card-v2__icon skill-card-v2__icon--disabled">
+          ${icons.shieldOff}
+        </div>
+        <div class="skill-card-v2__body">
+          <div class="skill-card-v2__title-row">
+            <span class="skill-card-v2__name">${localizedName}</span>
+            <span class="skill-card-v2__badge skill-card-v2__badge--disabled">已禁用</span>
+          </div>
+          <div class="skill-card-v2__desc">${clampText(localizedDesc, 120)}</div>
+        </div>
+      </div>
+      <div class="skill-card-v2__actions">
+        <button
+          class="btn btn--sm skill-card-v2__enable-btn"
+          ?disabled=${busy}
+          @click=${() => props.onToggle(skill.skillKey, true)}
+        >
+          ${busy ? renderSpinner() : icons.zap}
+          <span>启用</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================================
+// 技能卡片 — 缺依赖（支持安装依赖 + 增加到核心）
+// ============================================================================
+function renderBlockedSkillCard(skill: SkillStatusEntry, props: SkillsProps) {
+  const busy = props.busyKey === skill.skillKey;
+  const message = props.messages[skill.skillKey] ?? null;
+  const apiKey = props.edits[skill.skillKey] ?? "";
+  const canInstall = skill.install.length > 0 && skill.missing.bins.length > 0;
+  const localizedName = (skill as any).nameZh || getLocalizedSkillName(skill.name);
+  const localizedDesc = (skill as any).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
+
+  return html`
+    <div class="skill-card-v2 skill-card-v2--blocked">
+      <div class="skill-card-v2__main">
+        <div class="skill-card-v2__icon skill-card-v2__icon--blocked">
+          ${icons.alertCircle}
+        </div>
+        <div class="skill-card-v2__body">
+          <div class="skill-card-v2__title-row">
+            <span class="skill-card-v2__name">${localizedName}</span>
+            <span class="skill-card-v2__source">${skill.source}</span>
+          </div>
+          <div class="skill-card-v2__desc">${clampText(localizedDesc, 120)}</div>
+
+          <!-- 缺失详情 -->
+          <div class="skill-card-v2__missing">
             ${skill.missing.bins.length > 0 ? html`
-              <div class="skill-missing-group">
-                ${icons.terminal}
-                <span class="skill-missing-group__items">${skill.missing.bins.join(", ")}</span>
-                <span class="skill-missing-group__hint">${canInstall ? (t("skills.diagnostic.installHint") || "点击安装") : (t("skills.diagnostic.installManual") || "需手动安装")}</span>
+              <div class="skill-card-v2__missing-row">
+                <span class="skill-card-v2__missing-icon">${icons.terminal}</span>
+                <span class="skill-card-v2__missing-items">${skill.missing.bins.join(", ")}</span>
+                <span class="skill-card-v2__missing-hint">${canInstall ? "可自动安装" : "需手动安装"}</span>
               </div>
             ` : nothing}
             ${skill.missing.env.length > 0 ? html`
-              <div class="skill-missing-group">
-                ${icons.key}
-                <span class="skill-missing-group__items">${skill.missing.env.join(", ")}</span>
-                <span class="skill-missing-group__hint">${skill.primaryEnv ? (t("skills.diagnostic.keyHintInline") || "填写下方密钥") : (t("skills.diagnostic.keyHintConfig") || "在设置中配置")}</span>
+              <div class="skill-card-v2__missing-row">
+                <span class="skill-card-v2__missing-icon">${icons.key}</span>
+                <span class="skill-card-v2__missing-items">${skill.missing.env.join(", ")}</span>
+                <span class="skill-card-v2__missing-hint">${skill.primaryEnv ? "填写下方密钥" : "在设置中配置"}</span>
               </div>
             ` : nothing}
             ${skill.missing.config.length > 0 ? html`
-              <div class="skill-missing-group">
-                ${icons.settings}
-                <span class="skill-missing-group__items">${skill.missing.config.join(", ")}</span>
-                <span class="skill-missing-group__hint">${t("skills.diagnostic.configHint") || "前往设置页配置"}</span>
+              <div class="skill-card-v2__missing-row">
+                <span class="skill-card-v2__missing-icon">${icons.settings}</span>
+                <span class="skill-card-v2__missing-items">${skill.missing.config.join(", ")}</span>
+                <span class="skill-card-v2__missing-hint">前往设置页配置</span>
               </div>
             ` : nothing}
           </div>
+        </div>
+      </div>
+
+      <div class="skill-card-v2__actions">
+        ${canInstall ? html`
+          <button
+            class="btn btn--sm primary skill-card-v2__install-btn"
+            ?disabled=${busy}
+            @click=${() => props.onInstall(skill.skillKey, skill.name, skill.install[0].id)}
+          >
+            ${busy ? html`${renderSpinner()} 安装中...` : html`${icons.download} ${translateInstallLabel(skill.install[0].label)}`}
+          </button>
         ` : nothing}
       </div>
-      
-      <!-- Actions -->
-      <div class="skill-actions">
-        <!-- Status Badge (four-color: active > eligible > blocked > disabled) -->
-        <span class="skill-status ${
-          skill.disabled ? "skill-status--disabled" :
-          skill.activeInPrompt ? "skill-status--active" :
-          skill.eligible ? "skill-status--eligible" : "skill-status--blocked"
-        }">
-          ${skill.disabled
-            ? html`${icons.shieldOff} ${t("skills.disabled")}`
-            : skill.activeInPrompt
-              ? html`${icons.zap} ${t("skills.active") || "已激活"}`
-              : skill.eligible
-                ? html`${icons.shieldCheck} ${t("skills.eligible")}`
-                : html`${icons.alertCircle} ${t("skills.blocked")}`}
-        </span>
-        
-        <!-- Action Buttons -->
-        <div class="row" style="gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+
+      ${skill.primaryEnv ? html`
+        <div class="skill-card-v2__apikey">
+          <div class="skill-card-v2__apikey-field">
+            <span class="skill-card-v2__apikey-label">${t("skills.apiKey")}</span>
+            <input
+              type="password"
+              .value=${apiKey}
+              @input=${(e: Event) => props.onEdit(skill.skillKey, (e.target as HTMLInputElement).value)}
+            />
+          </div>
           <button
-            class="btn btn--sm skill-pin-toggle ${skill.pinned ? "skill-pin-toggle--active" : ""}"
+            class="btn primary btn--sm"
             ?disabled=${busy}
-            @click=${() => props.onPinToggle(skill.skillKey, !skill.pinned)}
-            title="${skill.pinned ? t("skills.unpin") : t("skills.pin")}"
+            @click=${() => props.onSaveKey(skill.skillKey)}
           >
-            ${skill.pinned ? "📌" : "📍"}
+            ${t("skills.saveKey")}
           </button>
-          <button
-            class="btn btn--sm"
-            ?disabled=${busy}
-            @click=${() => props.onToggle(skill.skillKey, skill.disabled)}
-          >
-            ${skill.disabled ? t("skills.enable") : t("skills.disable")}
-          </button>
-          ${canInstall
-            ? html`
-                <button
-                  class="btn btn--sm primary"
-                  ?disabled=${busy}
-                  @click=${() => props.onInstall(skill.skillKey, skill.name, skill.install[0].id)}
-                >
-                  ${busy ? html`${renderSpinner()}` : nothing}
-                  ${busy ? t("skills.installing") : translateInstallLabel(skill.install[0].label)}
-                </button>
-              `
-            : nothing}
         </div>
-        
-        ${message
-          ? html`
-              <div style="font-size: 12px; text-align: right; color: ${message.kind === "error" ? "var(--danger)" : "var(--ok)"};">
-                ${message.message}
-              </div>
-            `
-          : nothing}
-        
-        <!-- API Key Input -->
-        ${skill.primaryEnv
-          ? html`
-              <div class="skill-apikey">
-                <div class="field">
-                  <span>${t("skills.apiKey")}</span>
-                  <input
-                    type="password"
-                    .value=${apiKey}
-                    @input=${(e: Event) =>
-                      props.onEdit(skill.skillKey, (e.target as HTMLInputElement).value)}
-                    style="width: 100%;"
-                  />
-                </div>
-                <button
-                  class="btn primary btn--sm"
-                  style="margin-top: 8px;"
-                  ?disabled=${busy}
-                  @click=${() => props.onSaveKey(skill.skillKey)}
-                >
-                  ${t("skills.saveKey")}
-                </button>
-              </div>
-            `
-          : nothing}
-      </div>
+      ` : nothing}
+
+      ${message ? html`
+        <div class="skill-card-v2__message skill-card-v2__message--${message.kind}">
+          ${message.message}
+        </div>
+      ` : nothing}
     </div>
   `;
 }

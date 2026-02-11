@@ -5,17 +5,12 @@
  */
 
 import fs from "node:fs";
-import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
+import { buildBatchCheckStatus } from "../../agents/skills-status.js";
 import { loadConfig } from "../../config/config.js";
 import { getManagedSkillsDir } from "../../agents/skills/gitee-registry.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
-import {
-  batchInstall,
-} from "../../agents/skills/mirror-download-engine.js";
-import {
-  getInstallStateSummary,
-  dismissBanner,
-} from "../../agents/skills/install-state.js";
+import { batchInstall } from "../../agents/skills/mirror-download-engine.js";
+import { getInstallStateSummary, dismissBanner } from "../../agents/skills/install-state.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -56,32 +51,32 @@ const DEFAULT_SIZE_ESTIMATE = 20_000_000;
  */
 const CORE_SKILLS = new Set([
   // All verified: 国内服务 or 本地运行, no VPN needed
-  "weather",            // wttr.in + Open-Meteo, free, no API key
-  "baidu-search",       // 百度AI搜索, 国内原生 (替代gog)
-  "doubao-open-tts",    // 字节跳动/火山引擎TTS, 200+音色含灿灿 (替代sag)
-  "github",             // gh CLI, GitHub accessible in China
-  "himalaya",           // local IMAP/SMTP email client
-  "1password",          // local password manager
-  "camsnap",            // local camera capture
-  "nano-pdf",           // local PDF tool
-  "obsidian",           // local Obsidian notes
-  "openai-whisper",     // LOCAL speech-to-text (not an API call!)
+  "weather", // wttr.in + Open-Meteo, free, no API key
+  "baidu-search", // 百度AI搜索, 国内原生 (替代gog)
+  "doubao-open-tts", // 字节跳动/火山引擎TTS, 200+音色含灿灿 (替代sag)
+  "github", // gh CLI, GitHub accessible in China
+  "himalaya", // local IMAP/SMTP email client
+  "1password", // local password manager
+  "camsnap", // local camera capture
+  "nano-pdf", // local PDF tool
+  "obsidian", // local Obsidian notes
+  "openai-whisper", // LOCAL speech-to-text (not an API call!)
 ]);
 const RECOMMENDED_SKILLS = new Set([
   // ── 本地/离线工具 ──
-  "video-frames",      // local ffmpeg
-  "songsee",           // local audio visualization
-  "sherpa-onnx-tts",   // offline text-to-speech (Piper/VITS离线)
-  "faster-whisper",    // 4-6x faster local STT (升级版openai-whisper)
-  "openhue",           // local Philips Hue control
-  "canvas",            // local network canvas
-  "apple-notes",       // macOS: local Notes.app (CN Mac users OK)
-  "apple-reminders",   // macOS: local Reminders.app (CN Mac users OK)
+  "video-frames", // local ffmpeg
+  "songsee", // local audio visualization
+  "sherpa-onnx-tts", // offline text-to-speech (Piper/VITS离线)
+  "faster-whisper", // 4-6x faster local STT (升级版openai-whisper)
+  "openhue", // local Philips Hue control
+  "canvas", // local network canvas
+  "apple-notes", // macOS: local Notes.app (CN Mac users OK)
+  "apple-reminders", // macOS: local Reminders.app (CN Mac users OK)
   // ── CN大厂服务替代（需国内API Key，一次性配置）──
-  "seedream-image-gen",    // 字节豆包Seedream图像生成 (替代openai-image-gen)
-  "kimi-integration",      // 月之暗面Kimi K2.5 AI助手 (替代gemini/oracle)
+  "seedream-image-gen", // 字节豆包Seedream图像生成 (替代openai-image-gen)
+  "kimi-integration", // 月之暗面Kimi K2.5 AI助手 (替代gemini/oracle)
   "conversation-summary-api", // 腾讯对话摘要 (替代summarize)
-  "amap-traffic",          // 高德地图路况+路线+POI (替代goplaces/local-places)
+  "amap-traffic", // 高德地图路况+路线+POI (替代goplaces/local-places)
 ]);
 function getSkillTier(name: string): "core" | "recommended" | "optional" {
   if (CORE_SKILLS.has(name)) return "core";
@@ -96,8 +91,27 @@ function categorizeSkill(name: string): string {
     lifestyle: ["weather", "food", "goplaces", "local-places", "amap", "songsee", "music"],
     finance: ["stock", "finance", "budget", "investment", "crypto"],
     computer: ["peekaboo", "camsnap", "screenshot", "system", "terminal"],
-    productivity: ["1password", "obsidian", "himalaya", "calendar", "nano-pdf", "apple-notes", "apple-reminders", "conversation-summary"],
-    ai_tools: ["sherpa-onnx", "model-usage", "whisper", "skill-creator", "kimi", "faster-whisper", "edge-tts", "doubao", "seedream"],
+    productivity: [
+      "1password",
+      "obsidian",
+      "himalaya",
+      "calendar",
+      "nano-pdf",
+      "apple-notes",
+      "apple-reminders",
+      "conversation-summary",
+    ],
+    ai_tools: [
+      "sherpa-onnx",
+      "model-usage",
+      "whisper",
+      "skill-creator",
+      "kimi",
+      "faster-whisper",
+      "edge-tts",
+      "doubao",
+      "seedream",
+    ],
     creative: ["canvas", "openai-image", "gifgrep", "nano-banana", "video-frames", "blucli"],
     communication: ["discord", "slack", "imsg", "wacli", "telegram", "voice-call"],
     smart_home: ["openhue", "hue", "sonoscli"],
@@ -132,33 +146,36 @@ export const skillsBatchHandlers: GatewayRequestHandlers = {
    *   { missing, total_size_bytes, estimated_seconds, disk_available_bytes, disk_ok }
    */
   "skills.batch.check": ({ params, respond }) => {
+    // Early exit: banner dismissed → 零开销返回空结果
+    const installState = getInstallStateSummary();
+    if (installState.banner_dismissed) {
+      respond(
+        true,
+        {
+          missing: [],
+          installed: [],
+          total_size_bytes: 0,
+          estimated_seconds: 0,
+          disk_available_bytes: 0,
+          disk_ok: true,
+        },
+        undefined,
+      );
+      return;
+    }
+
     const cfg = loadConfig();
     const managedSkillsDir = getManagedSkillsDir();
-    const report = buildWorkspaceSkillStatus(managedSkillsDir, {
+
+    // 使用轻量版：只扫描有 install 指令的 skills（~50-100 个），而非全量 2693 个
+    const { skillsWithInstall } = buildBatchCheckStatus(managedSkillsDir, {
       config: cfg,
       eligibility: { remote: getRemoteSkillEligibility() },
     });
 
-    const installState = getInstallStateSummary();
-
-    // If banner was dismissed, return empty
-    if (installState.banner_dismissed) {
-      respond(true, {
-        missing: [],
-        total_size_bytes: 0,
-        estimated_seconds: 0,
-        disk_available_bytes: 0,
-        disk_ok: true,
-      }, undefined);
-      return;
-    }
-
-    const skillsWithInstall = report.skills.filter(
-      (s) => s.install && s.install.length > 0,
-    );
-
     const notInstalled = skillsWithInstall.filter(
-      (s) => !s.eligible || (s.missing && (s.missing.bins.length > 0 || s.missing.anyBins.length > 0)),
+      (s) =>
+        !s.eligible || (s.missing && (s.missing.bins.length > 0 || s.missing.anyBins.length > 0)),
     );
 
     // Build missing array with metadata for each skill
@@ -196,18 +213,23 @@ export const skillsBatchHandlers: GatewayRequestHandlers = {
     );
 
     const diskAvailableBytes = getDiskAvailableBytes(managedSkillsDir);
-    const diskOk = diskAvailableBytes < 0
-      ? true // Can't determine → optimistic
-      : diskAvailableBytes > totalSizeBytes * 1.5; // Need 1.5x headroom
+    const diskOk =
+      diskAvailableBytes < 0
+        ? true // Can't determine → optimistic
+        : diskAvailableBytes > totalSizeBytes * 1.5; // Need 1.5x headroom
 
-    respond(true, {
-      missing,
-      installed,
-      total_size_bytes: totalSizeBytes,
-      estimated_seconds: estimatedSeconds,
-      disk_available_bytes: diskAvailableBytes < 0 ? 0 : diskAvailableBytes,
-      disk_ok: diskOk,
-    }, undefined);
+    respond(
+      true,
+      {
+        missing,
+        installed,
+        total_size_bytes: totalSizeBytes,
+        estimated_seconds: estimatedSeconds,
+        disk_available_bytes: diskAvailableBytes < 0 ? 0 : diskAvailableBytes,
+        disk_ok: diskOk,
+      },
+      undefined,
+    );
   },
 
   /**
@@ -244,29 +266,35 @@ export const skillsBatchHandlers: GatewayRequestHandlers = {
       signal: abortController.signal,
       onProgress: (event) => {
         try {
-          context.broadcast("skills.batch.progress", { batch_id: batchId, ...event }, { dropIfSlow: true });
+          context.broadcast(
+            "skills.batch.progress",
+            { batch_id: batchId, ...event },
+            { dropIfSlow: true },
+          );
         } catch {
           // Ignore broadcast errors
         }
       },
-    }).then((result) => {
-      runningBatches.delete(batchId);
-      try {
-        context.broadcast("skills.batch.complete", { batch_id: batchId, ...result });
-      } catch {
-        // Ignore
-      }
-    }).catch((err) => {
-      runningBatches.delete(batchId);
-      try {
-        context.broadcast("skills.batch.error", {
-          batch_id: batchId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      } catch {
-        // Ignore
-      }
-    });
+    })
+      .then((result) => {
+        runningBatches.delete(batchId);
+        try {
+          context.broadcast("skills.batch.complete", { batch_id: batchId, ...result });
+        } catch {
+          // Ignore
+        }
+      })
+      .catch((err) => {
+        runningBatches.delete(batchId);
+        try {
+          context.broadcast("skills.batch.error", {
+            batch_id: batchId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        } catch {
+          // Ignore
+        }
+      });
   },
 
   /**
@@ -277,11 +305,7 @@ export const skillsBatchHandlers: GatewayRequestHandlers = {
     const p = params as { batch_id?: string };
 
     if (!p || !p.batch_id || typeof p.batch_id !== "string") {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "batch_id is required"),
-      );
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "batch_id is required"));
       return;
     }
 
@@ -327,10 +351,14 @@ export const skillsBatchHandlers: GatewayRequestHandlers = {
 
     const summary = getInstallStateSummary();
 
-    respond(true, {
-      acknowledged: true,
-      failed_count: p?.failed?.length ?? 0,
-      install_state: summary,
-    }, undefined);
+    respond(
+      true,
+      {
+        acknowledged: true,
+        failed_count: p?.failed?.length ?? 0,
+        install_state: summary,
+      },
+      undefined,
+    );
   },
 };

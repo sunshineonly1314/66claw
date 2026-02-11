@@ -61,6 +61,7 @@ export {
   setVolcengineArkApiKey,
   setTencentHunyuanApiKey,
   setModelscopeApiKey,
+  setOllamaApiKey,
 } from "./onboard-auth.credentials.js";
 export {
   buildKimiCodeModelDefinition,

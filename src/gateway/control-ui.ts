@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
 
 import type { ClawdbotConfig } from "../config/config.js";
 import { DEFAULT_ASSISTANT_IDENTITY, resolveAssistantIdentity } from "./assistant-identity.js";
@@ -11,6 +12,13 @@ import {
   normalizeControlUiBasePath,
   resolveAssistantAvatarUrl,
 } from "./control-ui-shared.js";
+
+// ── In-memory cache for compressed static assets ──
+// Avoids repeated fs.readFileSync + zlib.gzipSync on every request.
+// Cache is keyed by absolute file path; entries are evicted only on process restart.
+const _compressedCache = new Map<string, { raw: Buffer; gzip: Buffer; mtime: number }>();
+const COMPRESSIBLE_EXTS = new Set([".js", ".css", ".html", ".json", ".svg", ".map", ".txt"]);
+const CACHE_MAX_ENTRIES = 64; // prevent unbounded growth
 
 const ROOT_PREFIX = "/";
 
@@ -149,7 +157,7 @@ export function handleControlUiAvatarRequest(
     return true;
   }
 
-  serveFile(res, resolved.filePath);
+  serveFile(res, resolved.filePath, req);
   return true;
 }
 
@@ -159,13 +167,85 @@ function respondNotFound(res: ServerResponse) {
   res.end("Not Found");
 }
 
-function serveFile(res: ServerResponse, filePath: string) {
+/** Check if the client accepts gzip encoding */
+function acceptsGzip(req: IncomingMessage): boolean {
+  const ae = req.headers["accept-encoding"];
+  return typeof ae === "string" && ae.includes("gzip");
+}
+
+/** Determine cache-control header based on path.
+ *  Vite hashed assets (e.g. /assets/index-CSIfFBC3.js) are immutable — cache for 1 year.
+ *  Everything else uses no-cache for revalidation. */
+function cacheControlFor(urlPath: string): string {
+  if (urlPath.includes("/assets/")) {
+    return "public, max-age=31536000, immutable";
+  }
+  return "no-cache";
+}
+
+function getCompressed(filePath: string, ext: string): { raw: Buffer; gzip: Buffer | null } {
+  const isCompressible = COMPRESSIBLE_EXTS.has(ext);
+  // Read the file first — if it doesn't exist, let the caller handle the throw.
+  // Previously, a failed statSync would fall through to readFileSync which could
+  // throw again (race condition if file is deleted between stat and read).
+  let raw: Buffer;
+  let mtime: number;
+  try {
+    const stat = fs.statSync(filePath);
+    mtime = stat.mtimeMs;
+    // Check cache before reading file content
+    const cached = _compressedCache.get(filePath);
+    if (cached && cached.mtime === mtime) {
+      return { raw: cached.raw, gzip: isCompressible ? cached.gzip : null };
+    }
+    raw = fs.readFileSync(filePath);
+  } catch (err) {
+    // File may have been deleted or become inaccessible — throw a clean error
+    // instead of crashing with an unhandled exception deeper in the stack.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      throw err; // Caller (serveFile) should catch and return 404
+    }
+    // For permission errors or other I/O issues, still throw so the request
+    // handler can respond with an appropriate HTTP status.
+    throw err;
+  }
+  const gzip = isCompressible ? zlib.gzipSync(raw, { level: 6 }) : raw;
+  // Evict oldest entries if cache is full
+  if (_compressedCache.size >= CACHE_MAX_ENTRIES) {
+    const firstKey = _compressedCache.keys().next().value;
+    if (firstKey) _compressedCache.delete(firstKey);
+  }
+  _compressedCache.set(filePath, { raw, gzip, mtime });
+  return { raw, gzip: isCompressible ? gzip : null };
+}
+
+function serveFile(res: ServerResponse, filePath: string, req?: IncomingMessage, urlPath?: string) {
   const ext = path.extname(filePath).toLowerCase();
-  res.setHeader("Content-Type", contentTypeForExt(ext));
-  // Static UI should never be cached aggressively while iterating; allow the
-  // browser to revalidate.
-  res.setHeader("Cache-Control", "no-cache");
-  res.end(fs.readFileSync(filePath));
+  try {
+    const { raw, gzip } = getCompressed(filePath, ext);
+    res.setHeader("Content-Type", contentTypeForExt(ext));
+    res.setHeader("Cache-Control", cacheControlFor(urlPath ?? ""));
+    if (gzip && req && acceptsGzip(req)) {
+      res.setHeader("Content-Encoding", "gzip");
+      res.setHeader("Content-Length", gzip.length);
+      res.end(gzip);
+    } else {
+      res.setHeader("Content-Length", raw.length);
+      res.end(raw);
+    }
+  } catch (err) {
+    // File read failed (deleted, permission denied, etc.) — respond with
+    // appropriate HTTP status instead of crashing the request handler.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      respondNotFound(res);
+    } else {
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("Internal Server Error");
+    }
+  }
 }
 
 interface ControlUiInjectionOpts {
@@ -207,32 +287,59 @@ interface ServeIndexHtmlOpts {
   gatewayToken?: string;
 }
 
-function serveIndexHtml(res: ServerResponse, indexPath: string, opts: ServeIndexHtmlOpts) {
-  const { basePath, config, agentId, gatewayToken } = opts;
-  const identity = config
-    ? resolveAssistantIdentity({ cfg: config, agentId })
-    : DEFAULT_ASSISTANT_IDENTITY;
-  const resolvedAgentId =
-    typeof (identity as { agentId?: string }).agentId === "string"
-      ? (identity as { agentId?: string }).agentId
-      : agentId;
-  const avatarValue =
-    resolveAssistantAvatarUrl({
-      avatar: identity.avatar,
-      agentId: resolvedAgentId,
-      basePath,
-    }) ?? identity.avatar;
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache");
-  const raw = fs.readFileSync(indexPath, "utf8");
-  res.end(
-    injectControlUiConfig(raw, {
+function serveIndexHtml(
+  res: ServerResponse,
+  indexPath: string,
+  opts: ServeIndexHtmlOpts,
+  req?: IncomingMessage,
+) {
+  try {
+    const { basePath, config, agentId, gatewayToken } = opts;
+    const identity = config
+      ? resolveAssistantIdentity({ cfg: config, agentId })
+      : DEFAULT_ASSISTANT_IDENTITY;
+    const resolvedAgentId =
+      typeof (identity as { agentId?: string }).agentId === "string"
+        ? (identity as { agentId?: string }).agentId
+        : agentId;
+    const avatarValue =
+      resolveAssistantAvatarUrl({
+        avatar: identity.avatar,
+        agentId: resolvedAgentId,
+        basePath,
+      }) ?? identity.avatar;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    const raw = fs.readFileSync(indexPath, "utf8");
+    const body = injectControlUiConfig(raw, {
       basePath,
       assistantName: identity.name,
       assistantAvatar: avatarValue,
       gatewayToken,
-    }),
-  );
+    });
+    // Compress index.html (typically ~15KB raw, ~4KB gzipped)
+    if (req && acceptsGzip(req)) {
+      const compressed = zlib.gzipSync(Buffer.from(body, "utf8"), { level: 6 });
+      res.setHeader("Content-Encoding", "gzip");
+      res.setHeader("Content-Length", compressed.length);
+      res.end(compressed);
+    } else {
+      const buf = Buffer.from(body, "utf8");
+      res.setHeader("Content-Length", buf.length);
+      res.end(buf);
+    }
+  } catch (err) {
+    // Prevent unhandled exceptions from crashing the gateway when index.html
+    // becomes inaccessible (file deleted, disk error, race condition).
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      respondNotFound(res);
+    } else if (!res.headersSent) {
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("Internal Server Error");
+    }
+  }
 }
 
 function isSafeRelativePath(relPath: string) {
@@ -311,27 +418,37 @@ export function handleControlUiHttpRequest(
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     if (path.basename(filePath) === "index.html") {
-      serveIndexHtml(res, filePath, {
-        basePath,
-        config: opts?.config,
-        agentId: opts?.agentId,
-        gatewayToken: opts?.gatewayToken,
-      });
+      serveIndexHtml(
+        res,
+        filePath,
+        {
+          basePath,
+          config: opts?.config,
+          agentId: opts?.agentId,
+          gatewayToken: opts?.gatewayToken,
+        },
+        req,
+      );
       return true;
     }
-    serveFile(res, filePath);
+    serveFile(res, filePath, req, uiPath);
     return true;
   }
 
   // SPA fallback (client-side router): serve index.html for unknown paths.
   const indexPath = path.join(root, "index.html");
   if (fs.existsSync(indexPath)) {
-    serveIndexHtml(res, indexPath, {
-      basePath,
-      config: opts?.config,
-      agentId: opts?.agentId,
-      gatewayToken: opts?.gatewayToken,
-    });
+    serveIndexHtml(
+      res,
+      indexPath,
+      {
+        basePath,
+        config: opts?.config,
+        agentId: opts?.agentId,
+        gatewayToken: opts?.gatewayToken,
+      },
+      req,
+    );
     return true;
   }
 

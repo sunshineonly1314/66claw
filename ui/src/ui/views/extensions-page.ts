@@ -38,10 +38,16 @@ export type ExtensionsPageProps = {
   onTrySay: (prompt: string) => void;
   onRestart: (serverId: string) => void;
   onDisable: (serverId: string) => void;
+  onEnable: (serverId: string) => void;
+  onTest: (serverId: string) => void;
   onCheckUpdate: () => void;
   onViewUpdate?: () => void;
   processes: McpProcessInfo[];
   updateNotice: { count: number; names: string[] } | null;
+  /** Server currently being tested (shows spinner) */
+  testingServerId: string | null;
+  /** Last test result per server id */
+  testResults: Record<string, "success" | "failed">;
   // — new (Tab switch + marketplace) —
   activeTab: McpExtensionsTab;
   onTabChange: (tab: McpExtensionsTab) => void;
@@ -63,6 +69,8 @@ export type ExtensionsPageProps = {
   toast: McpToast | null;
   /** Manual add MCP server (advanced users) */
   onManualAdd?: (config: { id: string; command: string; args: string[]; transport: "stdio" | "sse"; env?: Record<string, string> }) => void;
+  /** Force re-render trigger for manual form */
+  manualFormTrigger?: number;
 };
 
 // ============================================================================
@@ -270,7 +278,8 @@ function renderInlineStats(props: ExtensionsPageProps): TemplateResult {
 function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
   const {
     capabilities, advancedOpen, onToggleAdvanced, onConfigClick, onTrySay,
-    onRestart, onDisable, onCheckUpdate, onViewUpdate, processes, updateNotice,
+    onRestart, onDisable, onEnable, onTest, onCheckUpdate, onViewUpdate, processes, updateNotice,
+    testingServerId, testResults,
   } = props;
 
   return html`
@@ -334,7 +343,7 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
         <span style="font-size:10px; transition:transform 150ms; transform:rotate(${advancedOpen ? "90deg" : "0deg"});">\u25B6</span>
         ${t("extensions.advanced")}
       </button>
-      ${advancedOpen ? renderAdvancedSection(processes, onRestart, onDisable, onCheckUpdate, props.onManualAdd) : nothing}
+      ${advancedOpen ? renderAdvancedSection(processes, onRestart, onDisable, onEnable, onTest, onCheckUpdate, testingServerId, testResults, props.onManualAdd, props.manualFormTrigger) : nothing}
     </div>
 
     <style>
@@ -813,8 +822,13 @@ function renderAdvancedSection(
   processes: McpProcessInfo[],
   onRestart: (id: string) => void,
   onDisable: (id: string) => void,
+  onEnable: (id: string) => void,
+  onTest: (id: string) => void,
   onCheckUpdate: () => void,
+  testingServerId: string | null,
+  testResults: Record<string, "success" | "failed">,
   onManualAdd?: ExtensionsPageProps["onManualAdd"],
+  _manualFormTrigger?: number,
 ): TemplateResult {
   const totalMemory = processes.reduce((sum, p) => sum + p.memoryMB, 0);
 
@@ -854,7 +868,10 @@ function renderAdvancedSection(
                 </thead>
                 <tbody>
                   ${processes.map(
-                    (p) => html`
+                    (p) => {
+                      const isTesting = testingServerId === p.id;
+                      const testResult = testResults[p.id];
+                      return html`
                       <tr style="border-top:1px solid var(--border); transition:background 150ms;" class="ext-process-row">
                         <td style="padding:12px 24px; color:var(--fg); font-weight:500;">${p.friendlyName}</td>
                         <td style="padding:12px 16px;">
@@ -873,21 +890,43 @@ function renderAdvancedSection(
                                 ? t("common.failed")
                                 : t("common.stopped")}
                           </span>
+                          ${testResult
+                            ? html`<span style="
+                                margin-left:6px;
+                                font-size:11px;
+                                padding:2px 8px;
+                                border-radius:var(--radius-full, 9999px);
+                                background:${testResult === "success" ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.1)"};
+                                color:${testResult === "success" ? "#34d399" : "#f87171"};
+                              ">${testResult === "success" ? t("extensions.advanced.testSuccess" as never) : t("extensions.advanced.testFailed" as never)}</span>`
+                            : nothing}
                         </td>
                         <td style="padding:12px 16px; color:var(--fg-secondary, #a0aec0); font-family:var(--mono);">${p.memoryMB}MB</td>
                         <td style="padding:12px 16px; color:var(--fg-secondary, #a0aec0);">${p.toolCount}</td>
-                        <td style="padding:12px 16px; text-align:right;">
+                        <td style="padding:12px 16px; text-align:right; white-space:nowrap;">
+                          <!-- Test button -->
+                          <button
+                            @click=${() => onTest(p.id)}
+                            ?disabled=${isTesting}
+                            style="all:unset; cursor:${isTesting ? "wait" : "pointer"}; font-size:12px; font-weight:500; color:var(--accent, #6c8cff); margin-right:14px; transition:opacity 150ms; opacity:${isTesting ? "0.5" : "1"};"
+                          >${isTesting ? t("extensions.advanced.testing" as never) : t("extensions.advanced.test" as never)}</button>
                           <button
                             @click=${() => onRestart(p.id)}
                             style="all:unset; cursor:pointer; font-size:12px; font-weight:500; color:var(--accent-2, #20d5bc); margin-right:14px; transition:opacity 150ms;"
                           >${t("extensions.advanced.restart")}</button>
-                          <button
-                            @click=${() => onDisable(p.id)}
-                            style="all:unset; cursor:pointer; font-size:12px; font-weight:500; color:var(--muted-strong, #6b7d91); transition:opacity 150ms;"
-                          >${t("extensions.advanced.disable")}</button>
+                          ${p.status === "running"
+                            ? html`<button
+                                @click=${() => onDisable(p.id)}
+                                style="all:unset; cursor:pointer; font-size:12px; font-weight:500; color:var(--muted-strong, #6b7d91); transition:opacity 150ms;"
+                              >${t("extensions.advanced.disable")}</button>`
+                            : html`<button
+                                @click=${() => onEnable(p.id)}
+                                style="all:unset; cursor:pointer; font-size:12px; font-weight:500; color:#34d399; transition:opacity 150ms;"
+                              >${t("extensions.advanced.enable" as never)}</button>`}
                         </td>
                       </tr>
-                    `,
+                    `;
+                    },
                   )}
                 </tbody>
               </table>
@@ -966,11 +1005,14 @@ function renderMcpToast(toast: McpToast): TemplateResult {
 // Manual add MCP server form (Feature 5)
 // ============================================================================
 
+/**
+ * Manual add form.
+ *
+ * Uses DOM-based value reading (querySelector) instead of module-level
+ * mutable state so that the form works correctly even though Lit cannot
+ * observe module-level variable changes for re-rendering.
+ */
 let _manualFormOpen = false;
-let _manualFormId = "";
-let _manualFormCommand = "npx";
-let _manualFormArgs = "";
-let _manualFormTransport: "stdio" | "sse" = "stdio";
 
 function renderManualAddForm(
   onManualAdd: ExtensionsPageProps["onManualAdd"],
@@ -978,9 +1020,17 @@ function renderManualAddForm(
   if (!onManualAdd) return html``;
 
   return html`
-    <div style="margin-top:16px;">
+    <div style="margin-top:16px;" id="mcp-manual-add-section">
       <button
-        @click=${() => { _manualFormOpen = !_manualFormOpen; }}
+        @click=${(e: Event) => {
+          _manualFormOpen = !_manualFormOpen;
+          // Force the sibling container to toggle visibility via DOM
+          const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
+          const form = section?.querySelector("#mcp-manual-form") as HTMLElement | null;
+          if (form) {
+            form.style.display = _manualFormOpen ? "flex" : "none";
+          }
+        }}
         style="
           all:unset; cursor:pointer;
           font-size:12px; color:var(--accent-2, #20d5bc);
@@ -991,118 +1041,122 @@ function renderManualAddForm(
         ${t("extensions.advanced.manualAdd" as never)}
       </button>
 
-      ${_manualFormOpen ? html`
-        <div style="
+      <div
+        id="mcp-manual-form"
+        style="
           margin-top:12px;
           padding:16px;
           border-radius:8px;
           background:var(--card);
           border:1px solid var(--border);
-          display:flex;
+          display:${_manualFormOpen ? "flex" : "none"};
           flex-direction:column;
           gap:10px;
           animation:extUpdateIn 200ms ease both;
-        ">
-          <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <input
-              type="text"
-              .value=${_manualFormId}
-              @input=${(e: Event) => { _manualFormId = (e.target as HTMLInputElement).value; }}
-              placeholder=${t("extensions.advanced.manualAdd.id" as never)}
-              style="
-                flex:1; min-width:140px;
-                padding:8px 12px;
-                border:1px solid var(--border);
-                border-radius:6px;
-                background:var(--bg);
-                color:var(--fg);
-                font-size:12px;
-                outline:none;
-              "
-            />
-            <input
-              type="text"
-              .value=${_manualFormCommand}
-              @input=${(e: Event) => { _manualFormCommand = (e.target as HTMLInputElement).value; }}
-              placeholder=${t("extensions.advanced.manualAdd.command" as never)}
-              style="
-                flex:1; min-width:100px;
-                padding:8px 12px;
-                border:1px solid var(--border);
-                border-radius:6px;
-                background:var(--bg);
-                color:var(--fg);
-                font-size:12px;
-                outline:none;
-              "
-            />
-          </div>
-
-          <textarea
-            .value=${_manualFormArgs}
-            @input=${(e: Event) => { _manualFormArgs = (e.target as HTMLTextAreaElement).value; }}
-            placeholder=${t("extensions.advanced.manualAdd.args" as never)}
-            rows="2"
+        "
+      >
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <input
+            type="text"
+            id="mcp-form-id"
+            placeholder=${t("extensions.advanced.manualAdd.id" as never)}
             style="
+              flex:1; min-width:140px;
               padding:8px 12px;
               border:1px solid var(--border);
               border-radius:6px;
               background:var(--bg);
               color:var(--fg);
               font-size:12px;
-              font-family:monospace;
-              resize:vertical;
               outline:none;
             "
-          ></textarea>
-
-          <div style="display:flex; align-items:center; gap:10px;">
-            <span style="font-size:11px; color:var(--muted-strong, #6b7d91);">
-              ${t("extensions.advanced.manualAdd.transport" as never)}:
-            </span>
-            <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
-              <input type="radio" name="mcp-transport" value="stdio"
-                .checked=${_manualFormTransport === "stdio"}
-                @change=${() => { _manualFormTransport = "stdio"; }}
-              /> stdio
-            </label>
-            <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
-              <input type="radio" name="mcp-transport" value="sse"
-                .checked=${_manualFormTransport === "sse"}
-                @change=${() => { _manualFormTransport = "sse"; }}
-              /> sse
-            </label>
-          </div>
-
-          <div style="display:flex; gap:8px; justify-content:flex-end;">
-            <button
-              @click=${() => {
-                if (!_manualFormId.trim() || !_manualFormCommand.trim()) return;
-                const args = _manualFormArgs.split("\n").map((a) => a.trim()).filter(Boolean);
-                onManualAdd({
-                  id: _manualFormId.trim(),
-                  command: _manualFormCommand.trim(),
-                  args,
-                  transport: _manualFormTransport,
-                });
-                _manualFormId = "";
-                _manualFormCommand = "npx";
-                _manualFormArgs = "";
-                _manualFormTransport = "stdio";
-                _manualFormOpen = false;
-              }}
-              style="
-                all:unset; cursor:pointer;
-                padding:6px 18px;
-                border-radius:6px;
-                font-size:12px; font-weight:600;
-                background:var(--accent, #6366f1);
-                color:#fff;
-              "
-            >${t("extensions.advanced.manualAdd.submit" as never)}</button>
-          </div>
+          />
+          <input
+            type="text"
+            id="mcp-form-command"
+            value="npx"
+            placeholder=${t("extensions.advanced.manualAdd.command" as never)}
+            style="
+              flex:1; min-width:100px;
+              padding:8px 12px;
+              border:1px solid var(--border);
+              border-radius:6px;
+              background:var(--bg);
+              color:var(--fg);
+              font-size:12px;
+              outline:none;
+            "
+          />
         </div>
-      ` : nothing}
+
+        <textarea
+          id="mcp-form-args"
+          placeholder=${t("extensions.advanced.manualAdd.args" as never)}
+          rows="2"
+          style="
+            padding:8px 12px;
+            border:1px solid var(--border);
+            border-radius:6px;
+            background:var(--bg);
+            color:var(--fg);
+            font-size:12px;
+            font-family:monospace;
+            resize:vertical;
+            outline:none;
+          "
+        ></textarea>
+
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:11px; color:var(--muted-strong, #6b7d91);">
+            ${t("extensions.advanced.manualAdd.transport" as never)}:
+          </span>
+          <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
+            <input type="radio" name="mcp-transport" value="stdio" checked /> stdio
+          </label>
+          <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
+            <input type="radio" name="mcp-transport" value="sse" /> sse
+          </label>
+        </div>
+
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+          <button
+            @click=${(e: Event) => {
+              const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
+              if (!section) return;
+              const idEl = section.querySelector("#mcp-form-id") as HTMLInputElement | null;
+              const cmdEl = section.querySelector("#mcp-form-command") as HTMLInputElement | null;
+              const argsEl = section.querySelector("#mcp-form-args") as HTMLTextAreaElement | null;
+              const transportEl = section.querySelector('input[name="mcp-transport"]:checked') as HTMLInputElement | null;
+
+              const id = idEl?.value.trim() ?? "";
+              const command = cmdEl?.value.trim() ?? "";
+              if (!id || !command) return;
+
+              const args = (argsEl?.value ?? "").split("\n").map((a) => a.trim()).filter(Boolean);
+              const transport = (transportEl?.value === "sse" ? "sse" : "stdio") as "stdio" | "sse";
+
+              onManualAdd({ id, command, args, transport });
+
+              // Reset form
+              if (idEl) idEl.value = "";
+              if (cmdEl) cmdEl.value = "npx";
+              if (argsEl) argsEl.value = "";
+              // Hide form
+              const form = section.querySelector("#mcp-manual-form") as HTMLElement | null;
+              if (form) form.style.display = "none";
+              _manualFormOpen = false;
+            }}
+            style="
+              all:unset; cursor:pointer;
+              padding:6px 18px;
+              border-radius:6px;
+              font-size:12px; font-weight:600;
+              background:var(--accent, #6366f1);
+              color:#fff;
+            "
+          >${t("extensions.advanced.manualAdd.submit" as never)}</button>
+        </div>
+      </div>
     </div>
   `;
 }

@@ -60,6 +60,8 @@ import { renderExtensions } from "./views/extensions-page";
 import {
   restartMcpServer,
   disableMcpServer,
+  enableMcpServer,
+  testMcpServer,
   checkMcpUpdate,
   handleConfigClick as mcpConfigClick,
   installMarketplaceItem,
@@ -714,23 +716,18 @@ export function renderApp(state: AppViewState) {
               edits: state.skillEdits,
               messages: state.skillMessages,
               busyKey: state.skillsBusyKey,
-              // 连接状态
               connected: state.connected ?? false,
-              // 安装进度
               installProgress: state.skillsInstallProgress ?? {},
               activeTab: state.skillsActiveTab ?? "active",
-              remoteLoading: state.skillsRemoteLoading ?? false,
-              remoteIndex: state.skillsRemoteIndex ?? null,
-              remoteError: state.skillsRemoteError ?? null,
-              // 新的市场属性
+              remoteLoading: false,
+              remoteIndex: null,
+              remoteError: null,
               marketLoading: state.skillsMarketLoading ?? false,
               marketResponse: state.skillsMarketResponse ?? null,
               marketSyncing: state.skillsMarketSyncing ?? false,
               marketLastSyncedAt: state.skillsMarketLastSyncedAt ?? null,
               marketError: state.skillsMarketError ?? null,
-              // 分类筛选
               activeCategory: state.skillsActiveCategory ?? "all",
-              // 分页
               visibleCount: state.skillsVisibleCount ?? SKILLS_PAGE_SIZE,
               onFilterChange: (next) => { state.skillsFilter = next; state.skillsVisibleCount = SKILLS_PAGE_SIZE; },
               onLoadMore: () => loadMoreSkills(state),
@@ -742,16 +739,6 @@ export function renderApp(state: AppViewState) {
                 installSkill(state, skillKey, name, installId),
               onTabChange: (tab) => {
                 setActiveTab(state, tab);
-                if (tab === "library") {
-                  // 加载市场数据
-                  loadMarketSkills(state).then(() => {
-                    // 如果市场数据为空，自动触发刷新
-                    const skills = state.skillsMarketResponse?.skills ?? [];
-                    if (skills.length === 0 && !state.skillsMarketSyncing) {
-                      refreshMarketSkills(state);
-                    }
-                  });
-                }
               },
               onRefreshRemote: () => refreshMarketSkills(state),
               onInstallRemote: (skillName) => installRemoteSkill(state, skillName),
@@ -792,6 +779,48 @@ export function renderApp(state: AppViewState) {
                   },
                 });
               },
+              onEnable: (id) => {
+                void enableMcpServer(state.client, id, {
+                  onStateChange: (patch: Partial<McpLifecycleState>) => {
+                    if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                    if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                    if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                  },
+                });
+              },
+              onTest: (id) => {
+                state.mcpTestingServerId = id;
+                // Clear previous result for this server
+                const results = { ...state.mcpTestResults };
+                delete results[id];
+                state.mcpTestResults = results;
+                void (async () => {
+                  try {
+                    const ok = await testMcpServer(state.client, id);
+                    state.mcpTestResults = { ...state.mcpTestResults, [id]: ok ? "success" : "failed" };
+                    if (ok) {
+                      showMcpToast(state, `${id} — ${t("extensions.advanced.testSuccess" as never)}`, "success");
+                    } else {
+                      showMcpToast(state, `${id} — ${t("extensions.advanced.testFailed" as never)}`, "error");
+                    }
+                    // Also refresh status after test
+                    await checkMcpUpdate(state.client, {
+                      onStateChange: (patch: Partial<McpLifecycleState>) => {
+                        if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                        if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                        if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                      },
+                    });
+                  } catch {
+                    state.mcpTestResults = { ...state.mcpTestResults, [id]: "failed" };
+                    showMcpToast(state, `${id} — ${t("extensions.advanced.testFailed" as never)}`, "error");
+                  } finally {
+                    state.mcpTestingServerId = null;
+                  }
+                })();
+              },
+              testingServerId: state.mcpTestingServerId,
+              testResults: state.mcpTestResults,
               onCheckUpdate: () => {
                 void checkMcpUpdate(state.client, {
                   onStateChange: (patch: Partial<McpLifecycleState>) => {
@@ -942,6 +971,7 @@ export function renderApp(state: AppViewState) {
                   }
                 })();
               },
+              manualFormTrigger: state.mcpManualFormTrigger,
             })
           : nothing}
 

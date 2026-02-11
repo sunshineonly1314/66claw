@@ -134,7 +134,9 @@ namespace ClawdbotCN
         private int restartCount = 0;
         private DateTime lastRestartTime = DateTime.MinValue;
         private bool isStarting = false;
+        private volatile bool isStopping = false;  // Prevent concurrent stop/restart races
         private int consecutiveUnhealthyCount = 0;
+        private int watchdogBackoffLevel = 0;  // Exponential backoff level for repeated restart failures
         
         // Thread-safe log writer
         private object logLock = new object();
@@ -354,22 +356,30 @@ namespace ClawdbotCN
                     restartCount++;
                     totalRestarts++;  // 总重启计数
                     lastRestartTime = DateTime.Now;
-                    
+
                     LogInfo(string.Format("Watchdog: Restart #{0} (total: {1})", restartCount, totalRestarts));
-                    
+
                     // Clean up before restart
                     CleanupBeforeRestart();
-                    
+
                     StartGateway();
-                    
-                    trayIcon.ShowBalloonTip(3000, "ClawdbotCN AI", 
+
+                    trayIcon.ShowBalloonTip(3000, "ClawdbotCN AI",
                         string.Format("\u670D\u52A1\u5DF2\u81EA\u52A8\u91CD\u542F (#{0})", totalRestarts), ToolTipIcon.Warning);  // 服务已自动重启
                 }
                 else
                 {
-                    LogError("Watchdog: Too many restart attempts (5 in 5 min), pausing for 5 minutes...");
-                    trayIcon.ShowBalloonTip(5000, "ClawdbotCN AI", 
-                        "\u670D\u52A1\u53CD\u590D\u5D29\u6E83\uFF0C\u8BF7\u67E5\u770B logs \u6587\u4EF6\u5939", ToolTipIcon.Error);  // 服务反复崩溃，请查看 logs 文件夹
+                    // Exponential backoff: 5min, 10min, 20min, ... capped at 30min
+                    int backoffMinutes = Math.Min(5 * (1 << Math.Min(watchdogBackoffLevel, 3)), 30);
+                    watchdogBackoffLevel++;
+                    LogError(string.Format("Watchdog: Too many restart attempts (5 in 5 min), backing off for {0} minutes (level {1})...",
+                        backoffMinutes, watchdogBackoffLevel));
+                    trayIcon.ShowBalloonTip(5000, "ClawdbotCN AI",
+                        string.Format("\u670D\u52A1\u53CD\u590D\u5D29\u6E83\uFF0C{0}\u5206\u949F\u540E\u91CD\u8BD5\uFF0C\u8BF7\u67E5\u770B logs", backoffMinutes),  // 服务反复崩溃，N分钟后重试，请查看 logs
+                        ToolTipIcon.Error);
+                    // Temporarily increase the restart window to implement backoff
+                    lastRestartTime = DateTime.Now.AddMinutes(backoffMinutes - 5);
+                    restartCount = 0;
                 }
             }
             else if (isRunning && !isHealthy)
@@ -485,12 +495,20 @@ namespace ClawdbotCN
                     RedirectStandardOutput = true,
                     CreateNoWindow = true
                 };
-                
+
                 using (var process = Process.Start(psi))
                 {
+                    // Read output with a timeout to prevent hangs if netstat is unresponsive
+                    // (e.g. system under heavy I/O load or antivirus scanning).
                     string output = process.StandardOutput.ReadToEnd();
-                    process.WaitForExit();
-                    
+                    bool exited = process.WaitForExit(5000);
+                    if (!exited)
+                    {
+                        try { process.Kill(); } catch { }
+                        LogDebug("IsGatewayRunning: netstat timed out after 5s");
+                        return false;
+                    }
+
                     // Check each line for BOTH port AND LISTENING on the SAME line
                     string portPattern = ":" + port;
                     foreach (string line in output.Split('\n'))
@@ -724,7 +742,20 @@ namespace ClawdbotCN
                 gatewayProcess.BeginErrorReadLine();
                 
                 LogInfo("Gateway process started (PID: " + gatewayProcess.Id + ")");
-                
+
+                // Early exit detection: if the process crashes immediately (within 500ms),
+                // capture the error right away instead of waiting for the health check loop.
+                Thread.Sleep(500);
+                if (gatewayProcess.HasExited)
+                {
+                    int earlyExitCode = gatewayProcess.ExitCode;
+                    string earlyReason = GetExitCodeDescription(earlyExitCode);
+                    LogError(string.Format("Gateway process exited immediately after launch (ExitCode: {0} [{1}])", earlyExitCode, earlyReason));
+                    LogError("Check gateway-output.log for details. Common causes: missing Node.js modules, config parse error, port already in use.");
+                    hourlyErrors++;
+                    return;
+                }
+
                 // Wait for startup (non-blocking for this thread, but blocks caller)
                 // Gateway may take up to 30-90s on first launch (license check, plugin init, etc.)
                 // Don't worry if this times out - the watchdog will continue monitoring
@@ -743,6 +774,7 @@ namespace ClawdbotCN
                     {
                         LogInfo("Gateway is healthy after " + (i + 1) + " seconds");
                         consecutiveUnhealthyCount = 0;  // Reset watchdog counter on successful startup
+                        watchdogBackoffLevel = 0;       // Reset backoff on successful startup
                         break;
                     }
                     if (i == 89)
@@ -774,6 +806,16 @@ namespace ClawdbotCN
         
         private void StopGatewayInternal()
         {
+            // Prevent concurrent stop calls from watchdog and user menu at the same time.
+            // Without this guard, two threads could both call Kill() on the same process,
+            // causing one to throw an exception and leaving state inconsistent.
+            if (isStopping)
+            {
+                LogDebug("StopGatewayInternal: already stopping, skipping duplicate call");
+                return;
+            }
+            isStopping = true;
+
             LogInfo("Stopping Gateway...");
 
             // Flush any buffered gateway output before stopping
@@ -795,7 +837,7 @@ namespace ClawdbotCN
                     request.Timeout = 3000;
                     request.ContentLength = 0;
                     request.KeepAlive = false;
-                    request.Headers.Add("X-Clawdbot-Token", token);
+                    request.Headers.Add("X-Clawdbot-Token", gatewayToken ?? token);
 
                     using (var response = request.GetResponse() as System.Net.HttpWebResponse)
                     {
@@ -875,9 +917,10 @@ namespace ClawdbotCN
             }
             catch { }
 
+            isStopping = false;
             LogInfo("Gateway stopped");
         }
-        
+
         public void RestartGateway()
         {
             ThreadPool.QueueUserWorkItem(state => {
@@ -1034,6 +1077,16 @@ namespace ClawdbotCN
                 var process = Process.Start(psi);
                 if (process != null)
                 {
+                    // Capture stdout/stderr for diagnostics.
+                    // Use StringBuilder for thread-safe append — the DataReceived
+                    // callbacks fire on thread-pool threads.
+                    var stdoutBuf = new System.Text.StringBuilder();
+                    var stderrBuf = new System.Text.StringBuilder();
+                    process.OutputDataReceived += (s, ev) => { if (ev.Data != null) stdoutBuf.AppendLine(ev.Data); };
+                    process.ErrorDataReceived += (s, ev) => { if (ev.Data != null) stderrBuf.AppendLine(ev.Data); };
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+
                     // Wait max 15 seconds for doctor to complete
                     bool completed = process.WaitForExit(15000);
                     if (completed && process.ExitCode == 0)
@@ -1043,12 +1096,21 @@ namespace ClawdbotCN
                     else if (!completed)
                     {
                         LogWarn("Doctor --fix timed out (15s), killing...");
+                        // Log captured output to help diagnose what doctor was stuck on
+                        string stdout = stdoutBuf.ToString();
+                        string stderr = stderrBuf.ToString();
+                        if (stdout.Length > 0) LogDebug("Doctor stdout (before timeout): " + stdout.TrimEnd());
+                        if (stderr.Length > 0) LogWarn("Doctor stderr (before timeout): " + stderr.TrimEnd());
                         try { process.Kill(); } catch { }
                         try { process.WaitForExit(3000); } catch { }
                     }
                     else
                     {
                         LogDebug("Doctor --fix exited with code: " + process.ExitCode);
+                        if (process.ExitCode != 0 && stderrBuf.Length > 0)
+                        {
+                            LogWarn("Doctor stderr: " + stderrBuf.ToString().TrimEnd());
+                        }
                     }
                 }
             }
@@ -1380,8 +1442,9 @@ namespace ClawdbotCN
             LogInfo("Total Restarts This Session: " + totalRestarts);
             LogInfo("Total Errors This Hour: " + hourlyErrors);
 
-            healthTimer.Stop();
-            watchdogTimer.Stop();
+            // Stop timers first to prevent new watchdog/health events during shutdown
+            try { healthTimer.Stop(); } catch { }
+            try { watchdogTimer.Stop(); } catch { }
 
             // Stop gateway child process to prevent orphan node.exe
             try
@@ -1393,8 +1456,23 @@ namespace ClawdbotCN
                 LogWarn("Error stopping gateway during shutdown: " + ex.Message);
             }
 
-            trayIcon.Visible = false;
-            trayIcon.Dispose();
+            // Flush any remaining output log buffer before exit
+            lock (logLock) { FlushOutputLogBuffer(); }
+
+            // Clean up tray icon and its associated resources
+            try
+            {
+                trayIcon.Visible = false;
+                if (trayIcon.Icon != null && trayIcon.Icon != SystemIcons.Application)
+                {
+                    trayIcon.Icon.Dispose();
+                }
+                trayIcon.Dispose();
+            }
+            catch { }
+
+            // Clean up context menu
+            try { contextMenu.Dispose(); } catch { }
 
             LogInfo("Shutdown complete");
             Application.Exit();

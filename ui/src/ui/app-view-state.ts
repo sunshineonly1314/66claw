@@ -180,7 +180,7 @@ export type AppViewState = {
   skillEdits: Record<string, string>;
   skillMessages: Record<string, SkillMessage>;
   skillsBusyKey: string | null;
-  skillsActiveTab: "active" | "library";
+  skillsActiveTab: "active" | "library" | "blocked";
   skillsRemoteLoading: boolean;
   skillsRemoteIndex: RemoteSkillsIndex | null;
   skillsRemoteError: string | null;
@@ -212,6 +212,9 @@ export type AppViewState = {
   mcpAdvancedOpen: boolean;
   mcpUpdateNotice: { count: number; names: string[] } | null;
   mcpProcesses: McpProcessInfo[];
+  mcpTestingServerId: string | null;
+  mcpTestResults: Record<string, "success" | "failed">;
+  mcpManualFormTrigger: number;
   // MCP 市场状态
   mcpExtTab: McpExtensionsTab;
   mcpMarketplace: McpMarketplaceState;

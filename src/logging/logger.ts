@@ -11,18 +11,16 @@ import { type LogLevel, levelToMinLevel, normalizeLogLevel } from "./levels.js";
 import { readLoggingConfig } from "./config.js";
 import { loggingState } from "./state.js";
 
-// Pin to /tmp so mac Debug UI and docs match; os.tmpdir() can be a per-user
-// randomized path on macOS which made the "Open log" button a no-op.
-// On Windows, /tmp resolves to <drive>:\tmp which may not exist — use os.tmpdir() instead.
+// 固定使用 /tmp 以便 macOS 调试界面和文档路径一致；os.tmpdir() 在 macOS 上可能返回
+// 每个用户独立的随机路径，导致"打开日志"按钮无法正常工作。
+// 在 Windows 上，/tmp 会解析为 <盘符>:\tmp 且可能不存在——改用 os.tmpdir()。
 export const DEFAULT_LOG_DIR =
-  process.platform === "win32"
-    ? path.join(os.tmpdir(), "clawdbot")
-    : "/tmp/clawdbot";
-export const DEFAULT_LOG_FILE = path.join(DEFAULT_LOG_DIR, "clawdbot.log"); // legacy single-file path
+  process.platform === "win32" ? path.join(os.tmpdir(), "clawdbot") : "/tmp/clawdbot";
+export const DEFAULT_LOG_FILE = path.join(DEFAULT_LOG_DIR, "clawdbot.log"); // 旧版单文件路径
 
 const LOG_PREFIX = "clawdbot";
 const LOG_SUFFIX = ".log";
-const MAX_LOG_AGE_MS = 24 * 60 * 60 * 1000; // 24h
+const MAX_LOG_AGE_MS = 24 * 60 * 60 * 1000; // 24小时
 
 const requireConfig = createRequire(import.meta.url);
 
@@ -51,7 +49,7 @@ function attachExternalTransport(logger: TsLogger<LogObj>, transport: LogTranspo
     try {
       transport(logObj as LogTransportRecord);
     } catch {
-      // never block on logging failures
+      // 日志写入失败时不阻塞主流程
     }
   });
 }
@@ -88,14 +86,14 @@ export function isFileLogLevelEnabled(level: LogLevel): boolean {
 
 function buildLogger(settings: ResolvedSettings): TsLogger<LogObj> {
   fs.mkdirSync(path.dirname(settings.file), { recursive: true });
-  // Clean up stale rolling logs when using a dated log filename.
+  // 使用按日期滚动的日志文件名时，清理过期的旧日志。
   if (isRollingPath(settings.file)) {
     pruneOldRollingLogs(path.dirname(settings.file));
   }
   const logger = new TsLogger<LogObj>({
     name: "clawdbot",
     minLevel: levelToMinLevel(settings.level),
-    type: "hidden", // no ansi formatting
+    type: "hidden", // 不使用 ANSI 格式化
   });
 
   logger.attachTransport((logObj: LogObj) => {
@@ -104,7 +102,7 @@ function buildLogger(settings: ResolvedSettings): TsLogger<LogObj> {
       const line = JSON.stringify({ ...logObj, time });
       fs.appendFileSync(settings.file, `${line}\n`, { encoding: "utf8" });
     } catch {
-      // never block on logging failures
+      // 日志写入失败时不阻塞主流程
     }
   });
   for (const transport of externalTransports) {
@@ -139,7 +137,7 @@ export function getChildLogger(
   });
 }
 
-// Baileys expects a pino-like logger shape. Provide a lightweight adapter.
+// Baileys 需要 pino 风格的日志接口。这里提供一个轻量级适配器。
 export function toPinoLikeLogger(logger: TsLogger<LogObj>, level: LogLevel): PinoLikeLogger {
   const buildChild = (bindings?: Record<string, unknown>) =>
     toPinoLikeLogger(
@@ -176,7 +174,7 @@ export function getResolvedLoggerSettings(): LoggerResolvedSettings {
   return resolveSettings();
 }
 
-// Test helpers
+// 测试辅助函数
 export function setLoggerOverride(settings: LoggerSettings | null) {
   loggingState.overrideSettings = settings;
   loggingState.cachedLogger = null;
@@ -237,10 +235,10 @@ function pruneOldRollingLogs(dir: string): void {
           fs.rmSync(fullPath, { force: true });
         }
       } catch {
-        // ignore errors during pruning
+        // 清理过程中的错误可忽略
       }
     }
   } catch {
-    // ignore missing dir or read errors
+    // 目录不存在或读取错误时忽略
   }
 }

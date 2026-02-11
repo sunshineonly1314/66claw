@@ -52,21 +52,11 @@ Source: "..\..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recurses
 Source: "..\..\skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; MCP marketplace index (bundled fallback for Extensions/Capability Store UI)
 Source: "..\..\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; Feishu extension
-Source: "..\..\extensions\feishu\*"; DestDir: "{app}\extensions\feishu"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; DingTalk extension - dingtalk-stream
-Source: "..\..\extensions\dingtalk\*"; DestDir: "{app}\extensions\dingtalk"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; WeCom extension
-Source: "..\..\extensions\wecom\*"; DestDir: "{app}\extensions\wecom"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "..\..\extensions\telegram\*"; DestDir: "{app}\extensions\telegram"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "..\..\extensions\discord\*"; DestDir: "{app}\extensions\discord"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "..\..\extensions\slack\*"; DestDir: "{app}\extensions\slack"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; QQ Bot extension (CN users)
-Source: "..\..\extensions\qqbot\*"; DestDir: "{app}\extensions\qqbot"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; Memory subsystem (core, no native deps)
-Source: "..\..\extensions\memory-core\*"; DestDir: "{app}\extensions\memory-core"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; WhatsApp extension
-Source: "..\..\extensions\whatsapp\*"; DestDir: "{app}\extensions\whatsapp"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; All extensions (33 plugins — wildcard to prevent future omissions)
+; Exclude node_modules (Inno Setup 32-bit OOM with feishu's 817-file dep tree under LZMA2)
+; Extensions with deps (feishu, dingtalk, etc.) install them on first run via postinstall
+; Exclude .turbo (dev-only build cache)
+Source: "..\..\extensions\*"; DestDir: "{app}\extensions"; Excludes: "node_modules\*,.turbo\*"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; Templates - bot default role config
 Source: "..\..\docs\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "start-gateway.bat"; DestDir: "{app}"; Flags: ignoreversion
@@ -87,6 +77,18 @@ Source: "bundled-bins\goplaces.exe"; DestDir: "{app}\tools"; Flags: ignoreversio
 Source: "bundled-bins\openhue.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "bundled-bins\spogo.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "bundled-bins\jira.exe"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
+; README, LICENSE, CHANGELOG (distribution compliance)
+Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+; pnpm patches (required by proper-lockfile@4.1.2)
+Source: "..\..\patches\*"; DestDir: "{app}\patches"; Flags: ignoreversion recursesubdirs createallsubdirs
+; postinstall scripts (referenced by package.json)
+Source: "..\..\scripts\postinstall.js"; DestDir: "{app}\scripts"; Flags: ignoreversion
+Source: "..\..\scripts\format-staged.js"; DestDir: "{app}\scripts"; Flags: ignoreversion
+Source: "..\..\scripts\setup-git-hooks.js"; DestDir: "{app}\scripts"; Flags: ignoreversion
+; git hooks (optional)
+Source: "..\..\git-hooks\*"; DestDir: "{app}\git-hooks"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 [Icons]
 Name: "{autodesktop}\{#MyAppNameCN}"; Filename: "{app}\ClawdbotService.exe"; Parameters: "open"; WorkingDir: "{app}"; IconFilename: "{app}\clawdbot.ico"; Tasks: desktopicon
@@ -118,8 +120,14 @@ Type: filesandordirs; Name: "{app}\config"
 ; agent workspace, and config that the user may want to keep for reinstall/recovery.
 Type: filesandordirs; Name: "{app}\logs"
 Type: filesandordirs; Name: "{app}\tools"
+Type: filesandordirs; Name: "{app}\patches"
+Type: filesandordirs; Name: "{app}\scripts"
+Type: filesandordirs; Name: "{app}\git-hooks"
 ; install.json is created programmatically by [Code], not via [Files], so must be explicitly listed
 Type: files; Name: "{app}\install.json"
+Type: files; Name: "{app}\README.md"
+Type: files; Name: "{app}\CHANGELOG.md"
+Type: files; Name: "{app}\LICENSE"
 
 [Registry]
 Root: HKCU; Subkey: "SOFTWARE\ClawdbotCN"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey

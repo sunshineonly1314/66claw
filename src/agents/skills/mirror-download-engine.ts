@@ -18,10 +18,7 @@ import {
 } from "../../config/cn-mirrors.js";
 import { loadConfig } from "../../config/config.js";
 import { CONFIG_DIR } from "../../utils.js";
-import {
-  markSkillInstalled,
-  recordBatchInstallTimestamp,
-} from "./install-state.js";
+import { markSkillInstalled, recordBatchInstallTimestamp } from "./install-state.js";
 import { getManagedSkillsDir, installRemoteSkill } from "./gitee-registry.js";
 import { loadWorkspaceSkillEntries, invalidateSkillEntriesCache } from "../../agents/skills.js";
 import { refreshInstalledList } from "./sync.js";
@@ -34,14 +31,7 @@ import { bumpSkillsSnapshotVersion } from "./refresh.js";
 export type SkillProgressEvent = {
   type: "skill.progress";
   skill: string;
-  stage:
-    | "queued"
-    | "downloading"
-    | "retrying"
-    | "verifying"
-    | "installing"
-    | "done"
-    | "failed";
+  stage: "queued" | "downloading" | "retrying" | "verifying" | "installing" | "done" | "failed";
   percent?: number;
   bytes_downloaded?: number;
   bytes_total?: number;
@@ -104,10 +94,7 @@ export class MirrorSelector {
           return {
             url,
             latency_ms: Date.now() - start,
-            available:
-              response.ok ||
-              response.status === 405 ||
-              response.status === 403,
+            available: response.ok || response.status === 405 || response.status === 403,
           };
         } catch {
           return { url, latency_ms: Date.now() - start, available: false };
@@ -216,7 +203,11 @@ export function buildMirrorEnv(): Record<string, string> {
     env["PIP_TRUSTED_HOST"] = new URL(pipMirrors[0]).hostname;
   }
   if (PACKAGE_MANAGER_MIRRORS.go) {
-    env["GOPROXY"] = [PACKAGE_MANAGER_MIRRORS.go.primary, PACKAGE_MANAGER_MIRRORS.go.fallback, "direct"].join(",");
+    env["GOPROXY"] = [
+      PACKAGE_MANAGER_MIRRORS.go.primary,
+      PACKAGE_MANAGER_MIRRORS.go.fallback,
+      "direct",
+    ].join(",");
     env["GONOSUMCHECK"] = "*";
   }
   if (PACKAGE_MANAGER_MIRRORS.cargo) {
@@ -268,8 +259,9 @@ function buildMirrorEnvForMethod(method: string, mirrorIndex: number): Record<st
       ];
       base["GOPROXY"] = proxies.join(",");
     }
-  } else if (method === "download" || method === "brew" || method === "cargo") {
-    // GitHub proxy rotation for binary download methods
+  } else {
+    // For download, brew, cargo, winget, scoop, and any other method:
+    // Always rotate GitHub proxy — many methods eventually need GitHub downloads
     const ghProxies = getGitHubProxies();
     if (ghProxies.length > 0) {
       const idx = mirrorIndex % ghProxies.length;
@@ -292,7 +284,9 @@ let _envMutexQueue: Promise<void> = Promise.resolve();
 function withEnvLock<T>(fn: () => Promise<T>): Promise<T> {
   const prev = _envMutexQueue;
   let resolve: () => void;
-  _envMutexQueue = new Promise<void>((r) => { resolve = r; });
+  _envMutexQueue = new Promise<void>((r) => {
+    resolve = r;
+  });
   return prev.then(async () => {
     try {
       return await fn();
@@ -302,7 +296,10 @@ function withEnvLock<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
-export async function withMirrorEnv<T>(fn: () => Promise<T>, mirrorEnv?: Record<string, string>): Promise<T> {
+export async function withMirrorEnv<T>(
+  fn: () => Promise<T>,
+  mirrorEnv?: Record<string, string>,
+): Promise<T> {
   return withEnvLock(async () => {
     const env = mirrorEnv ?? buildMirrorEnv();
     const keys = Object.keys(env);
@@ -348,21 +345,52 @@ async function installSingleSkill(
   const managedSkillsDir = getManagedSkillsDir();
 
   if (signal?.aborted) {
-    return { ok: false, skill: skillName, message: "cancelled", mirrors_tried: mirrorsTried, duration_ms: Date.now() - startTime };
+    return {
+      ok: false,
+      skill: skillName,
+      message: "cancelled",
+      mirrors_tried: mirrorsTried,
+      duration_ms: Date.now() - startTime,
+    };
   }
 
   onProgress({ type: "skill.progress", skill: skillName, stage: "downloading" });
 
-  // Step 1: Download skill definition from remote registry
-  const remoteResult = await installRemoteSkill(
-    { name: skillName, description: "", path: skillName },
-    undefined,
-    managedSkillsDir,
-  );
+  // Step 1: Download skill definition from remote registry (with retry)
+  // 注册表下载失败是国内最常见的问题，增加重试提高成功率
+  let remoteResult: Awaited<ReturnType<typeof installRemoteSkill>> | null = null;
+  for (let remoteAttempt = 0; remoteAttempt < 3; remoteAttempt++) {
+    if (signal?.aborted) {
+      return {
+        ok: false,
+        skill: skillName,
+        message: "cancelled",
+        mirrors_tried: mirrorsTried,
+        duration_ms: Date.now() - startTime,
+      };
+    }
+    if (remoteAttempt > 0) {
+      // 退避 1s → 3s
+      await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(3, remoteAttempt - 1)));
+    }
+    remoteResult = await installRemoteSkill(
+      { name: skillName, description: "", path: skillName },
+      undefined,
+      managedSkillsDir,
+    );
+    if (remoteResult.ok) break;
+  }
 
-  if (!remoteResult.ok) {
-    onProgress({ type: "skill.progress", skill: skillName, stage: "failed", error: remoteResult.error });
-    return { ok: false, skill: skillName, message: remoteResult.error, mirrors_tried: mirrorsTried, duration_ms: Date.now() - startTime };
+  if (!remoteResult || !remoteResult.ok) {
+    const error = remoteResult?.error ?? "registry download failed";
+    onProgress({ type: "skill.progress", skill: skillName, stage: "failed", error });
+    return {
+      ok: false,
+      skill: skillName,
+      message: error,
+      mirrors_tried: mirrorsTried,
+      duration_ms: Date.now() - startTime,
+    };
   }
 
   // Load skill entries once — used by both bundled-binary detection and install-spec resolution.
@@ -411,7 +439,13 @@ async function installSingleSkill(
             mirror_used: "local",
             size_bytes: 0,
           });
-          return { ok: true, skill: skillName, message: "installed (bundled)", mirrors_tried: ["local"], duration_ms: durationMs };
+          return {
+            ok: true,
+            skill: skillName,
+            message: "installed (bundled)",
+            mirrors_tried: ["local"],
+            duration_ms: durationMs,
+          };
         }
         // 复制失败则 fallthrough 到网络下载
       }
@@ -432,7 +466,7 @@ async function installSingleSkill(
     if (filteredInstall.length > 0) {
       const firstSpec = filteredInstall[0];
       const installId = firstSpec.id ?? `${firstSpec.kind}-0`;
-      const installMethod = firstSpec.kind ?? "download";
+      const installMethod: string = firstSpec.kind ?? "download";
 
       onProgress({ type: "skill.progress", skill: skillName, stage: "installing" });
 
@@ -443,28 +477,40 @@ async function installSingleSkill(
 
       for (let attempt = 0; attempt < maxRetries && !installOk; attempt++) {
         if (signal?.aborted) {
-          return { ok: false, skill: skillName, message: "cancelled", mirrors_tried: mirrorsTried, duration_ms: Date.now() - startTime };
+          return {
+            ok: false,
+            skill: skillName,
+            message: "cancelled",
+            mirrors_tried: mirrorsTried,
+            duration_ms: Date.now() - startTime,
+          };
         }
 
         // 指数退避: 0s → 1s → 3s（降低服务器压力，避免重试风暴）
         if (attempt > 0) {
           const backoffMs = Math.min(1000 * Math.pow(3, attempt - 1), 30_000);
-          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
         }
 
         const mirrorEnv = buildMirrorEnvForMethod(installMethod, attempt);
-        // Resolve mirror label based on actual install method, not just npm fallback
+        // Resolve mirror label based on actual install method
         let mirrorLabel: string;
-        if (installMethod === "node" && mirrorEnv["npm_config_registry"]) {
+        if (
+          (installMethod === "node" || installMethod === "npm") &&
+          mirrorEnv["npm_config_registry"]
+        ) {
           mirrorLabel = mirrorEnv["npm_config_registry"];
-        } else if (installMethod === "uv" && mirrorEnv["PIP_INDEX_URL"]) {
+        } else if (
+          (installMethod === "uv" || installMethod === "pip") &&
+          mirrorEnv["PIP_INDEX_URL"]
+        ) {
           mirrorLabel = mirrorEnv["PIP_INDEX_URL"];
         } else if (installMethod === "go" && mirrorEnv["GOPROXY"]) {
           mirrorLabel = mirrorEnv["GOPROXY"].split(",")[0];
-        } else if ((installMethod === "download" || installMethod === "brew") && mirrorEnv["GITHUB_PROXY"]) {
+        } else if (mirrorEnv["GITHUB_PROXY"]) {
           mirrorLabel = mirrorEnv["GITHUB_PROXY"];
         } else {
-          mirrorLabel = mirrorEnv["GITHUB_PROXY"] ?? mirrorEnv["npm_config_registry"] ?? "direct";
+          mirrorLabel = mirrorEnv["npm_config_registry"] ?? "direct";
         }
         mirrorsTried.push(mirrorLabel);
 
@@ -501,7 +547,13 @@ async function installSingleSkill(
 
       if (!installOk) {
         onProgress({ type: "skill.progress", skill: skillName, stage: "failed", error: lastError });
-        return { ok: false, skill: skillName, message: lastError, mirrors_tried: mirrorsTried, duration_ms: Date.now() - startTime };
+        return {
+          ok: false,
+          skill: skillName,
+          message: lastError,
+          mirrors_tried: mirrorsTried,
+          duration_ms: Date.now() - startTime,
+        };
       }
     }
   }
@@ -518,7 +570,13 @@ async function installSingleSkill(
 
   onProgress({ type: "skill.progress", skill: skillName, stage: "done" });
 
-  return { ok: true, skill: skillName, message: "installed", mirrors_tried: mirrorsTried, duration_ms: durationMs };
+  return {
+    ok: true,
+    skill: skillName,
+    message: "installed",
+    mirrors_tried: mirrorsTried,
+    duration_ms: durationMs,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -538,9 +596,7 @@ export type BatchInstallResult = {
   duration_ms: number;
 };
 
-export async function batchInstall(
-  options: BatchInstallOptions,
-): Promise<BatchInstallResult> {
+export async function batchInstall(options: BatchInstallOptions): Promise<BatchInstallResult> {
   const { skills: rawSkills, concurrency = 3, onProgress, signal } = options;
 
   // 小包优先排序: 大体积技能放到队列末尾，用户看到进度条快速推进
@@ -583,7 +639,11 @@ export async function batchInstall(
       if (result.ok) {
         succeeded.push(skillName);
       } else {
-        failed.push({ skill: skillName, error: result.message, mirrors_tried: result.mirrors_tried });
+        failed.push({
+          skill: skillName,
+          error: result.message,
+          mirrors_tried: result.mirrors_tried,
+        });
       }
 
       completedCount++;
@@ -606,7 +666,7 @@ export async function batchInstall(
 
   // Post-install housekeeping
   await recordBatchInstallTimestamp();
-  invalidateSkillEntriesCache();          // flush stale skill-entries cache
+  invalidateSkillEntriesCache(); // flush stale skill-entries cache
   refreshInstalledList().catch(() => {});
   bumpSkillsSnapshotVersion({ reason: "manual" });
 
