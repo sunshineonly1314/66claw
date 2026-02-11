@@ -25,8 +25,12 @@ export function rewriteUpdateFlagArgv(argv: string[]): string[] {
 
 export async function runCli(argv: string[] = process.argv) {
   // Enable Node.js module compile cache for faster subsequent startups (Node 22.8+)
-  if (typeof (process as { enableCompileCache?: () => void }).enableCompileCache === "function") {
-    try { (process as { enableCompileCache: () => void }).enableCompileCache(); } catch {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (typeof (process as any).enableCompileCache === "function") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try {
+      (process as any).enableCompileCache();
+    } catch {}
   }
 
   const normalizedArgv = stripWindowsNodeExec(argv);

@@ -42,6 +42,19 @@ import type { GatewayRequestHandlers, RespondFn } from "./types.js";
  */
 const PROTECTED_CONFIG_FIELDS: ReadonlyArray<keyof ClawdbotConfig> = ["license"];
 
+/**
+ * Detect whether an object value contains only redacted placeholder strings
+ * (e.g. { key: "***" }).  If so, the field was sanitized by
+ * redactConfigSnapshot and must NOT overwrite the real on-disk value.
+ */
+function isRedactedValue(value: unknown): boolean {
+  if (value === "***") return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return false;
+  return entries.some(([, v]) => v === "***");
+}
+
 function preserveProtectedFields(
   incoming: ClawdbotConfig,
   current: ClawdbotConfig | undefined,
@@ -49,8 +62,12 @@ function preserveProtectedFields(
   if (!current) return incoming;
   let patched = incoming;
   for (const field of PROTECTED_CONFIG_FIELDS) {
-    if (patched[field] === undefined && current[field] !== undefined) {
-      patched = { ...patched, [field]: current[field] };
+    if (current[field] !== undefined) {
+      // Back-fill if the incoming config dropped the field entirely,
+      // or if it contains redacted placeholder values from config.get.
+      if (patched[field] === undefined || isRedactedValue(patched[field])) {
+        patched = { ...patched, [field]: current[field] };
+      }
     }
   }
   return patched;

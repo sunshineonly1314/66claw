@@ -232,6 +232,26 @@ export async function runEmbeddedAttempt(
     const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider: params.provider });
     logToolSchemasForGoogle({ tools, provider: params.provider });
 
+    // Warn when a small/local model runs without sandbox and has web tools enabled
+    if (!sandbox?.enabled && tools.length > 0) {
+      const hasWebTools = tools.some((t) => t.name === "web_search" || t.name === "web_fetch");
+      if (hasWebTools) {
+        const modelLower = params.modelId.toLowerCase();
+        const isSmallModel =
+          /\b(1\.5b|3b|4b|7b|8b|14b|32b|70b|72b)\b/.test(modelLower) ||
+          /^(qwen|deepseek|yi-|phi-|mistral|llama|gemma|chatglm|glm-|baichuan|internlm|doubao)/.test(
+            modelLower,
+          );
+        if (isSmallModel) {
+          log.warn(
+            `[security] Model "${params.provider}/${params.modelId}" is running WITHOUT sandbox and has web tools enabled. ` +
+              `Small models with web access and no sandbox may be vulnerable to prompt injection. ` +
+              `Consider enabling sandbox (agents.defaults.sandbox) for this model.`,
+          );
+        }
+      }
+    }
+
     const machineName = await getMachineDisplayName();
     const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
     let runtimeCapabilities = runtimeChannel
@@ -710,8 +730,8 @@ export async function runEmbeddedAttempt(
         // 🔍 ClawdbotCN 诊断日志 - 记录 API 请求参数
         log.info(
           `[API Request] provider=${params.provider} model=${params.modelId} ` +
-          `baseUrl=${params.model.baseUrl ?? "default"} api=${params.model.api} ` +
-          `sessionId=${params.sessionId} promptLength=${effectivePrompt.length}`,
+            `baseUrl=${params.model.baseUrl ?? "default"} api=${params.model.api} ` +
+            `sessionId=${params.sessionId} promptLength=${effectivePrompt.length}`,
         );
         cacheTrace?.recordStage("prompt:before", {
           prompt: effectivePrompt,
@@ -792,7 +812,7 @@ export async function runEmbeddedAttempt(
           const errorStack = err instanceof Error ? err.stack : undefined;
           log.error(
             `[API Error] provider=${params.provider} model=${params.modelId} ` +
-            `sessionId=${params.sessionId} error=${errorMessage}`,
+              `sessionId=${params.sessionId} error=${errorMessage}`,
           );
           if (errorStack) {
             log.debug(`[API Error Stack] ${errorStack}`);
