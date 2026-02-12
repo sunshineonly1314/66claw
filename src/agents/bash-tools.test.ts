@@ -318,9 +318,13 @@ describe("buildDockerExecArgs", () => {
     });
 
     const commandArg = args[args.length - 1];
-    expect(commandArg).toContain('export PATH="/custom/bin:/usr/local/bin:/usr/bin:$PATH"');
+    // SEC-06: PATH is now passed via CLAWDBOT_PREPEND_PATH to prevent injection
+    expect(commandArg).toContain('export PATH="${CLAWDBOT_PREPEND_PATH}:$PATH"');
+    expect(commandArg).toContain("unset CLAWDBOT_PREPEND_PATH");
     expect(commandArg).toContain("echo hello");
-    expect(commandArg).toBe('export PATH="/custom/bin:/usr/local/bin:/usr/bin:$PATH"; echo hello');
+    expect(commandArg).toBe(
+      'export PATH="${CLAWDBOT_PREPEND_PATH}:$PATH"; unset CLAWDBOT_PREPEND_PATH; echo hello',
+    );
   });
 
   it("does not add PATH export when PATH is not in env", () => {

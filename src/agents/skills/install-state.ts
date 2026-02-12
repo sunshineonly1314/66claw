@@ -50,7 +50,9 @@ let _mutexQueue: Promise<void> = Promise.resolve();
 function withStateLock<T>(fn: () => Promise<T>): Promise<T> {
   const prev = _mutexQueue;
   let resolve: () => void;
-  _mutexQueue = new Promise<void>((r) => { resolve = r; });
+  _mutexQueue = new Promise<void>((r) => {
+    resolve = r;
+  });
   return prev.then(async () => {
     try {
       return await fn();
@@ -78,7 +80,8 @@ function readStateFromDisk(): SkillsInstallState {
     const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw) as SkillsInstallState;
     if (
-      typeof parsed !== "object" || parsed === null ||
+      typeof parsed !== "object" ||
+      parsed === null ||
       typeof parsed.version !== "string" ||
       typeof parsed.installed !== "object" ||
       typeof parsed.partial !== "object"
@@ -97,7 +100,11 @@ async function writeStateToDisk(state: SkillsInstallState): Promise<void> {
   const tmpPath = filePath + ".tmp";
   await fs.promises.writeFile(tmpPath, JSON.stringify(state, null, 2), "utf-8");
   // On Windows, rename fails if target exists. Remove target first.
-  try { await fs.promises.unlink(filePath); } catch { /* may not exist */ }
+  try {
+    await fs.promises.unlink(filePath);
+  } catch {
+    /* may not exist */
+  }
   await fs.promises.rename(tmpPath, filePath);
 }
 
@@ -141,7 +148,11 @@ export async function clearPartialDownload(skillName: string): Promise<void> {
     const state = readStateFromDisk();
     const partial = state.partial[skillName];
     if (partial) {
-      try { await fs.promises.unlink(partial.partial_path); } catch { /* ignore */ }
+      try {
+        await fs.promises.unlink(partial.partial_path);
+      } catch {
+        /* ignore */
+      }
       delete state.partial[skillName];
       await writeStateToDisk(state);
     }
@@ -172,15 +183,21 @@ export async function dismissBanner(): Promise<void> {
   });
 }
 
+/**
+ * Banner 关闭策略:
+ * - 每次点击"稍后"后,有 3 天冷却期不再显示
+ * - 累计点击 3 次后,永久关闭横幅
+ * - 冷却期过后,横幅会重新显示 (除非已点击 3 次)
+ */
 const BANNER_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000; // 3 天冷却期
-const BANNER_MAX_DISMISS_COUNT = 3; // 最多提醒 3 次后永久关闭
+const BANNER_MAX_DISMISS_COUNT = 3; // 点击"稍后"三次后永久关闭
 
 export function isBannerDismissed(): boolean {
   const state = readStateFromDisk();
   if (!state.banner_dismissed_at) return false;
   if ((state.banner_dismiss_count ?? 0) >= BANNER_MAX_DISMISS_COUNT) return true;
   const dismissedAt = new Date(state.banner_dismissed_at).getTime();
-  return (Date.now() - dismissedAt) < BANNER_COOLDOWN_MS;
+  return Date.now() - dismissedAt < BANNER_COOLDOWN_MS;
 }
 
 export async function recordBatchInstallTimestamp(): Promise<void> {
@@ -198,7 +215,11 @@ export async function pruneStalePartials(): Promise<number> {
     let pruned = 0;
     for (const [skillName, partial] of Object.entries(state.partial)) {
       if (now - new Date(partial.started_at).getTime() > PARTIAL_MAX_AGE_MS) {
-        try { await fs.promises.unlink(partial.partial_path); } catch { /* ignore */ }
+        try {
+          await fs.promises.unlink(partial.partial_path);
+        } catch {
+          /* ignore */
+        }
         delete state.partial[skillName];
         pruned++;
       }
