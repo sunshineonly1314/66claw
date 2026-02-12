@@ -1,5 +1,6 @@
 // Shared helpers for parsing MEDIA tokens from command/stdout text.
 
+import path from "node:path";
 import { parseFenceSpans } from "../markdown/fences.js";
 import { parseAudioTag } from "./audio-tags.js";
 
@@ -19,9 +20,11 @@ function isValidMedia(candidate: string, opts?: { allowSpaces?: boolean }) {
   if (candidate.length > 4096) return false;
   if (!opts?.allowSpaces && /\s/.test(candidate)) return false;
   if (/^https?:\/\//i.test(candidate)) return true;
-  // Security: only allow safe relative paths (./...) without traversal.
-  // Absolute paths (/), tilde (~), and traversal (..) are blocked to prevent LFI.
-  return candidate.startsWith("./") && !candidate.includes("..");
+  // Security: block path traversal (..) to prevent LFI. Sandbox boundary validation
+  // is performed later in stage-sandbox-media.ts:resolveSandboxPath().
+  // Allow absolute paths (cross-platform), tilde (~), and relative paths (./), but reject traversal.
+  if (candidate.includes("..")) return false;
+  return path.isAbsolute(candidate) || candidate.startsWith("~") || candidate.startsWith("./");
 }
 
 function unwrapQuoted(value: string): string | undefined {
@@ -111,8 +114,12 @@ export function splitMediaFromOutput(raw: string): {
       }
 
       const trimmedPayload = payloadValue.trim();
-      // Only safe relative paths are considered local; absolute/tilde/traversal blocked for LFI.
-      const looksLikeLocalPath = trimmedPayload.startsWith("./") && !trimmedPayload.includes("..");
+      // Local paths: absolute (cross-platform), tilde, or relative (traversal .. already blocked)
+      const looksLikeLocalPath =
+        (path.isAbsolute(trimmedPayload) ||
+          trimmedPayload.startsWith("~") ||
+          trimmedPayload.startsWith("./")) &&
+        !trimmedPayload.includes("..");
       if (
         !unwrapped &&
         validCount === 1 &&

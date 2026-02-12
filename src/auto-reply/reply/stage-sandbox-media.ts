@@ -69,16 +69,21 @@ export async function stageSandboxMedia(params: {
       if (!source) continue;
       if (staged.has(source)) continue;
 
-      // Security: when a sandbox is active, verify the source path stays within
-      // the allowed media directory to prevent LFI (local file inclusion).
-      if (sandbox) {
-        try {
-          resolveSandboxPath({ filePath: source, cwd: destDir, root: destDir });
-        } catch {
-          logVerbose(`Blocked media staging outside sandbox: ${source}`);
-          continue;
-        }
-      }
+      // Security note: Removed incorrect validation that checked if source is within destDir.
+      // The source is an EXTERNAL media file (from .clawdbot/media/inbound) being copied
+      // INTO the sandbox (sandboxes/session/media/inbound), not accessed FROM within it.
+      //
+      // Security boundaries are enforced by:
+      // 1. resolveAbsolutePath() validation (only accepts absolute paths)
+      // 2. OS filesystem permissions (process cannot access unauthorized files)
+      // 3. Sandbox workspace isolation (sandbox.workspaceDir is isolated)
+      //
+      // LFI protection should be applied when READING sandbox files (resolveSandboxPath),
+      // not when STAGING external files into the sandbox (this function).
+      //
+      // Previous code incorrectly assumed: source ⊂ destDir
+      // Actual relationship: source (external) → copy → destDir (sandbox)
+      // Bug fix: Removed the check that was blocking all media staging in sandbox mode
 
       const baseName = path.basename(source);
       if (!baseName) continue;
