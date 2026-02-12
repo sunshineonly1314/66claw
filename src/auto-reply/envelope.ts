@@ -1,6 +1,7 @@
 import { resolveUserTimezone } from "../agents/date-time.js";
 import { normalizeChatType } from "../channels/chat-type.js";
 import { resolveSenderLabel, type SenderLabelParams } from "../channels/sender-label.js";
+import { sanitizeUntrustedMetadata } from "../channels/prompt-sanitizer.js";
 import type { ClawdbotConfig } from "../config/config.js";
 
 export type AgentEnvelopeParams = {
@@ -155,7 +156,9 @@ function formatElapsedTime(currentMs: number, previousMs: number): string | unde
 }
 
 export function formatAgentEnvelope(params: AgentEnvelopeParams): string {
-  const channel = params.channel?.trim() || "Channel";
+  // 🔒 Security: Sanitize channel name (CH-05) - though typically hardcoded like "Discord"/"Slack"
+  const sanitizedChannel = sanitizeInboundMetadata(params.channel);
+  const channel = sanitizedChannel?.trim() || "Channel";
   const parts: string[] = [channel];
   const resolved = normalizeEnvelopeOptions(params.envelope);
   const elapsed =
@@ -206,6 +209,24 @@ export function formatInboundEnvelope(params: {
   });
 }
 
+/**
+ * Sanitize inbound metadata before injecting into envelope
+ *
+ * Uses stricter limits than default (200 chars vs 500) since
+ * group/user names in envelope headers should be concise.
+ *
+ * Security: Batch 7 - CH-05 Metadata Injection Protection
+ * Prevents prompt injection via untrusted channel/user/group names.
+ */
+function sanitizeInboundMetadata(text: string | null | undefined): string | null {
+  return sanitizeUntrustedMetadata(text, {
+    maxLength: 200, // Stricter than default 500 (envelope headers should be concise)
+    allowNewlines: false, // Never allow newlines in names
+    validatePatterns: true, // Check for injection patterns
+    useCache: true, // Use LRU cache for performance
+  });
+}
+
 export function formatInboundFromLabel(params: {
   isGroup: boolean;
   groupLabel?: string;
@@ -214,14 +235,20 @@ export function formatInboundFromLabel(params: {
   directId?: string;
   groupFallback?: string;
 }): string {
+  // 🔒 Security: Sanitize untrusted metadata before formatting (CH-05)
+  // Covers all channels: Discord, Slack, Telegram, Signal, Web, Extensions
+  const sanitizedGroupLabel = sanitizeInboundMetadata(params.groupLabel);
+  const sanitizedDirectLabel = sanitizeInboundMetadata(params.directLabel);
+
   // Keep envelope headers compact: group labels include id, DMs only add id when it differs.
   if (params.isGroup) {
-    const label = params.groupLabel?.trim() || params.groupFallback || "Group";
+    const label = sanitizedGroupLabel?.trim() || params.groupFallback || "Group";
     const id = params.groupId?.trim();
     return id ? `${label} id:${id}` : label;
   }
 
-  const directLabel = params.directLabel.trim();
+  // Security fix: Don't fallback to unsanitized directLabel if injection detected
+  const directLabel = sanitizedDirectLabel?.trim() || "User";
   const directId = params.directId?.trim();
   if (!directId || directId === directLabel) return directLabel;
   return `${directLabel} id:${directId}`;
