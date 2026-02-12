@@ -4,8 +4,9 @@
 
 | 项目 | 值 |
 |------|-----|
-| 外网域名 | 31k4r80556.zicp.vip |
-| 外网端口 | 16589 |
+| 外网域名 | 12io00807dp01.vicp.fun |
+| 外网端口 | 19102 |
+| 旧域名 | 31k4r80556.zicp.vip:16589 (已失效) |
 | 协议 | TCP (SSH) |
 | 用户名 | admin |
 | 密码 | 86112112 |
@@ -25,12 +26,12 @@
 
 ### Windows (PuTTY plink)
 ```bash
-"C:\Program Files\PuTTY\plink.exe" -ssh -P 16589 -l admin -pw 86112112 -hostkey SHA256:Kpox/4Vk55Hy439XlKbB8Lqi2q+spNQIeK7x4q8PfQs -batch 31k4r80556.zicp.vip "命令"
+"C:\Program Files\PuTTY\plink.exe" -ssh -P 19102 -l admin -pw 86112112 -batch 12io00807dp01.vicp.fun "命令"
 ```
 
 ### 通用 SSH
 ```bash
-ssh admin@31k4r80556.zicp.vip -p 16589
+ssh admin@12io00807dp01.vicp.fun -p 19102
 # 密码: 86112112
 ```
 

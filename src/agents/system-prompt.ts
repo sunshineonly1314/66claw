@@ -209,9 +209,13 @@ export function buildAgentSystemPrompt(params: {
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
     image: "Analyze an image with the configured image model",
-    open_app: "Find and launch a desktop application by name (Windows only); pass url to open a browser directly to a URL",
+    open_app:
+      "Find and launch a desktop application by name (Windows only); pass url to open a browser directly to a URL",
     desktop_control:
-      "Control desktop GUI: screenshot, click, type, key, list/focus windows (Windows; use for apps that cannot be controlled via CLI)",
+      "Control desktop GUI: screenshot, click, type, key, scroll, list/focus windows (Windows; use for apps that cannot be controlled via CLI)",
+    wechat_send: "Send a message to a WeChat contact (auto: search → click → type → send → verify)",
+    wechat_check:
+      "Check WeChat for unread messages: screenshot sidebar, scroll contact list, optionally open a chat to read messages",
   };
 
   const toolOrder = [
@@ -240,6 +244,8 @@ export function buildAgentSystemPrompt(params: {
     "image",
     "open_app",
     "desktop_control",
+    "wechat_send",
+    "wechat_check",
   ];
 
   const rawToolNames = (params.toolNames ?? []).map((tool) => tool.trim());
@@ -352,7 +358,7 @@ export function buildAgentSystemPrompt(params: {
         "- File paths: backslash `\\` is native; forward slash `/` works in most contexts",
         "- Absent commands: `head`, `tail`, `wc`, `file`, `strings`, `chmod`, `chown` — use PowerShell cmdlets",
         "- Error handling: `try { ... } catch { ... }` instead of `cmd || fallback`",
-        "- **CRITICAL**: `start` in PowerShell is an alias for `Start-Process`, NOT the same as cmd.exe `start`. NEVER use `start \"\" \"path\"` (cmd syntax) — it will fail. Use `Start-Process 'path'` instead.",
+        '- **CRITICAL**: `start` in PowerShell is an alias for `Start-Process`, NOT the same as cmd.exe `start`. NEVER use `start "" "path"` (cmd syntax) — it will fail. Use `Start-Process \'path\'` instead.',
         "",
         "### Opening / Finding Applications",
         "To open or find desktop applications, use the `open_app` tool with the app name. Example: open_app({name:'Chrome'}) or open_app({name:'网易云音乐'}). Use action:'find' to locate without launching.",
@@ -399,6 +405,18 @@ export function buildAgentSystemPrompt(params: {
         "- For text input: prefer `type` (clipboard paste) — it works everywhere without coordinates.",
         "- For navigation: prefer `key` (keyboard shortcuts) over `click` when possible.",
         "- `win+e` opens File Explorer, `win+d` shows desktop, `win+r` opens Run dialog — use `key` for these.",
+        "",
+        "### WeChat Desktop (重要 - 微信操作)",
+        "When interacting with WeChat desktop (微信):",
+        "- **Check messages**: `wechat_check({})` screenshots the sidebar to see unread badges. `wechat_check({scroll_pages:3})` scrolls down to see more contacts.",
+        "- **Read messages**: `wechat_check({contact:'小李'})` opens their chat and screenshots the conversation.",
+        "- **Send messages**: `wechat_send({contact:'小李', message:'你好'})` handles the full send flow.",
+        "- **Auto-reply**: wechat_check → analyze unread → wechat_check({contact}) → read → wechat_send({contact, message})",
+        "- **Scroll**: `desktop_control({action:'scroll', x, y, amount:-5})` for general scrolling (contact list, chat history).",
+        "- **NEVER click contacts in the left sidebar** — items are too dense, clicks miss frequently.",
+        "- **ALWAYS use Ctrl+F search** to switch contacts.",
+        "- After every action, `screenshot` to verify (correct contact, message sent, etc.).",
+        "- Read the `wechat-desktop` skill for detailed step-by-step workflows.",
         "",
         "### When to Use These Tools (重要)",
         "Proactively use desktop tools when the user mentions ANY of these:",

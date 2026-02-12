@@ -65,6 +65,7 @@ desktop_control({action: "focus", window: "ToDesk"})
 | `click` | `x`, `y` | `button`, `double` | Click at screen coordinates |
 | `type` | `text` | (none) | Type text via clipboard paste (Unicode/CJK safe) |
 | `key` | `keys` | (none) | Send keyboard shortcut |
+| `scroll` | `x`, `y` | `amount` | Scroll mouse wheel at coordinates |
 | `list_windows` | (none) | (none) | List visible windows with positions |
 | `focus` | `window` | (none) | Bring window to foreground by title match |
 
@@ -72,7 +73,7 @@ desktop_control({action: "focus", window: "ToDesk"})
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `action` | string | One of: screenshot, click, type, key, list_windows, focus |
+| `action` | string | One of: screenshot, click, type, key, scroll, list_windows, focus |
 | `x` | number | Screen X coordinate (physical pixels) |
 | `y` | number | Screen Y coordinate (physical pixels) |
 | `button` | string | Mouse button: "left" (default), "right", "middle" |
@@ -80,6 +81,7 @@ desktop_control({action: "focus", window: "ToDesk"})
 | `text` | string | Text to type (full Unicode support) |
 | `keys` | string | Keyboard combo: "ctrl+c", "alt+f4", "enter", "tab", etc. |
 | `window` | string | Window title substring for targeting |
+| `amount` | number | Scroll notches: positive=up, negative=down (default: -3) |
 
 ## Supported Keyboard Shortcuts
 
@@ -101,10 +103,11 @@ desktop_control({action: "focus", window: "ToDesk"})
 
 1. **Screenshot**: `System.Drawing.Graphics.CopyFromScreen()` captures screen as PNG
 2. **Click**: `user32.dll SetCursorPos + mouse_event` moves cursor and clicks
-3. **Type**: Sets clipboard text, then sends Ctrl+V (most reliable for Unicode/CJK)
+3. **Type**: `SendInput` with `KEYEVENTF_UNICODE` per character (CJK safe)
 4. **Key**: `System.Windows.Forms.SendKeys.SendWait()` sends keyboard shortcuts
-5. **List Windows**: `user32.dll EnumWindows` enumerates visible windows
-6. **Focus**: `user32.dll SetForegroundWindow + ShowWindow` activates window
+5. **Scroll**: `user32.dll mouse_event` with `MOUSEEVENTF_WHEEL` at cursor position
+6. **List Windows**: `user32.dll EnumWindows` enumerates visible windows
+7. **Focus**: `user32.dll SetForegroundWindow + ShowWindow` activates window
 
 All APIs are built into Windows .NET Framework — zero external dependencies.
 
@@ -117,3 +120,4 @@ All APIs are built into Windows .NET Framework — zero external dependencies.
 - Coordinates in screenshots are physical pixels matching click coordinates
 - The tool calls `SetProcessDPIAware()` for correct high-DPI coordinate handling
 - This tool is Windows-only; on macOS, use `Peekaboo` for similar functionality
+- For WeChat (微信): use the `wechat-desktop` skill for reliable contact switching via search instead of sidebar clicking

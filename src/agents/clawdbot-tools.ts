@@ -21,6 +21,8 @@ import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createOpenAppTool } from "./tools/open-app.js";
 import { createDesktopControlTool } from "./tools/desktop-control.js";
+import { createWeChatSendTool } from "./tools/wechat-send.js";
+import { createWeChatCheckTool } from "./tools/wechat-check.js";
 
 export function createClawdbotTools(options?: {
   browserControlUrl?: string;
@@ -78,6 +80,8 @@ export function createClawdbotTools(options?: {
   });
   const openAppTool = createOpenAppTool();
   const desktopControlTool = createDesktopControlTool();
+  const wechatSendTool = createWeChatSendTool();
+  const wechatCheckTool = createWeChatCheckTool();
   const tools: AnyAgentTool[] = [
     createBrowserTool({
       defaultControlUrl: options?.browserControlUrl,
@@ -151,6 +155,8 @@ export function createClawdbotTools(options?: {
     ...(imageTool ? [imageTool] : []),
     ...(openAppTool ? [openAppTool] : []),
     ...(desktopControlTool ? [desktopControlTool] : []),
+    ...(wechatSendTool ? [wechatSendTool] : []),
+    ...(wechatCheckTool ? [wechatCheckTool] : []),
   ];
 
   const pluginTools = resolvePluginTools({

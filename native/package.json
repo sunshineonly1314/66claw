@@ -1,0 +1,15 @@
+{
+  "name": "clawdbot-native",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native security addon for Clawdbot — RSA verification, integrity checks, anti-debug",
+  "main": "build/Release/clawdbot_native.node",
+  "scripts": {
+    "build": "node-gyp rebuild",
+    "build:release": "node-gyp rebuild --release",
+    "clean": "node-gyp clean"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.3.1"
+  }
+}

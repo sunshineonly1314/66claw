@@ -17,6 +17,7 @@ const DESKTOP_CONTROL_ACTIONS = [
   "click",
   "type",
   "key",
+  "scroll",
   "list_windows",
   "focus",
 ] as const;
@@ -25,8 +26,7 @@ const MOUSE_BUTTONS = ["left", "right", "middle"] as const;
 
 const DesktopControlSchema = Type.Object({
   action: stringEnum(DESKTOP_CONTROL_ACTIONS, {
-    description:
-      "Action to perform: screenshot, click, type, key, list_windows, focus",
+    description: "Action to perform: screenshot, click, type, key, scroll, list_windows, focus",
   }),
   x: Type.Optional(
     Type.Number({ description: "Screen X coordinate for click (physical pixels)." }),
@@ -37,22 +37,28 @@ const DesktopControlSchema = Type.Object({
   button: optionalStringEnum(MOUSE_BUTTONS, {
     description: "Mouse button for click (default: left).",
   }),
-  double: Type.Optional(
-    Type.Boolean({ description: "Double-click if true (default: false)." }),
-  ),
+  double: Type.Optional(Type.Boolean({ description: "Double-click if true (default: false)." })),
   text: Type.Optional(
     Type.String({
-      description: "Text to type at cursor position. Uses clipboard paste for full Unicode/CJK support.",
+      description:
+        "Text to type at cursor position. Uses clipboard paste for full Unicode/CJK support.",
     }),
   ),
   keys: Type.Optional(
     Type.String({
-      description: 'Keyboard shortcut string, e.g. "ctrl+c", "alt+f4", "enter", "tab", "ctrl+shift+s".',
+      description:
+        'Keyboard shortcut string, e.g. "ctrl+c", "alt+f4", "enter", "tab", "ctrl+shift+s".',
     }),
   ),
   window: Type.Optional(
     Type.String({
       description: "Window title substring for screenshot targeting or focus.",
+    }),
+  ),
+  amount: Type.Optional(
+    Type.Number({
+      description:
+        "Scroll amount in notches (positive=up, negative=down). Default: -3 (scroll down 3 notches).",
     }),
   ),
 });
@@ -79,9 +85,18 @@ const KEY_MAP: Record<string, string> = {
   left: "{LEFT}",
   right: "{RIGHT}",
   space: " ",
-  f1: "{F1}", f2: "{F2}", f3: "{F3}", f4: "{F4}",
-  f5: "{F5}", f6: "{F6}", f7: "{F7}", f8: "{F8}",
-  f9: "{F9}", f10: "{F10}", f11: "{F11}", f12: "{F12}",
+  f1: "{F1}",
+  f2: "{F2}",
+  f3: "{F3}",
+  f4: "{F4}",
+  f5: "{F5}",
+  f6: "{F6}",
+  f7: "{F7}",
+  f8: "{F8}",
+  f9: "{F9}",
+  f10: "{F10}",
+  f11: "{F11}",
+  f12: "{F12}",
   insert: "{INSERT}",
   ins: "{INSERT}",
   printscreen: "{PRTSC}",
@@ -92,7 +107,10 @@ const KEY_MAP: Record<string, string> = {
 
 /** Convert "ctrl+shift+s" → "^+s" in SendKeys format. */
 function toSendKeysCombo(combo: string): string {
-  const parts = combo.toLowerCase().split("+").map((s) => s.trim());
+  const parts = combo
+    .toLowerCase()
+    .split("+")
+    .map((s) => s.trim());
   let modifiers = "";
   let key = "";
 
@@ -136,18 +154,27 @@ function psEscape(s: string): string {
  * Using -File instead of -Command avoids parsing issues with complex scripts.
  */
 function psFile(script: string, timeoutMs = 10000): string {
-  const tmpFile = path.join(os.tmpdir(), `clawdbot-dc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
+  const tmpFile = path.join(
+    os.tmpdir(),
+    `clawdbot-dc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`,
+  );
   try {
     fs.writeFileSync(tmpFile, script, "utf-8");
-    return execFileSync(resolvePsExe(), [
-      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", tmpFile,
-    ], {
-      encoding: "utf-8",
-      timeout: timeoutMs,
-      windowsHide: true,
-    }).trim();
+    return execFileSync(
+      resolvePsExe(),
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", tmpFile],
+      {
+        encoding: "utf-8",
+        timeout: timeoutMs,
+        windowsHide: true,
+      },
+    ).trim();
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -155,7 +182,7 @@ function psFile(script: string, timeoutMs = 10000): string {
 
 /** Bump this version whenever the helper script content changes.
  *  This ensures a stale cached .ps1 in %TEMP% is regenerated. */
-const HELPER_SCRIPT_VERSION = 2;
+const HELPER_SCRIPT_VERSION = 4;
 const HELPER_SCRIPT_NAME = `clawdbot-desktop-control-helper-v${HELPER_SCRIPT_VERSION}.ps1`;
 
 function getHelperScriptPath(): string {
@@ -177,7 +204,8 @@ param(
     [string]$Text = "",
     [string]$Keys = "",
     [string]$Window = "",
-    [string]$OutputPath = ""
+    [string]$OutputPath = "",
+    [int]$Amount = -3
 )
 
 # UTF-8 output
@@ -210,6 +238,7 @@ public class WinInput {
     public const int MOUSEEVENTF_RIGHTUP    = 0x0010;
     public const int MOUSEEVENTF_MIDDLEDOWN = 0x0020;
     public const int MOUSEEVENTF_MIDDLEUP   = 0x0040;
+    public const int MOUSEEVENTF_WHEEL      = 0x0800;
 
     // Window management
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -230,6 +259,72 @@ public class WinInput {
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
+
+    // SendInput for KEYEVENTF_UNICODE character input
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    public const int INPUT_KEYBOARD = 1;
+    public const uint KEYEVENTF_UNICODE  = 0x0004;
+    public const uint KEYEVENTF_KEYUP    = 0x0002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HARDWAREINPUT {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct INPUTUNION {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+        [FieldOffset(0)] public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT {
+        public int type;
+        public INPUTUNION u;
+    }
+
+    public static void SendUnicodeChar(char c) {
+        var inputs = new INPUT[2];
+        inputs[0].type = INPUT_KEYBOARD;
+        inputs[0].u.ki.wVk = 0;
+        inputs[0].u.ki.wScan = (ushort)c;
+        inputs[0].u.ki.dwFlags = KEYEVENTF_UNICODE;
+        inputs[0].u.ki.time = 0;
+        inputs[0].u.ki.dwExtraInfo = IntPtr.Zero;
+
+        inputs[1].type = INPUT_KEYBOARD;
+        inputs[1].u.ki.wVk = 0;
+        inputs[1].u.ki.wScan = (ushort)c;
+        inputs[1].u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+        inputs[1].u.ki.time = 0;
+        inputs[1].u.ki.dwExtraInfo = IntPtr.Zero;
+
+        SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
 }
 "@
 
@@ -343,27 +438,27 @@ switch ($Action) {
         Write-Output "ok|clicked|$X|$Y|$Button"
     }
 
+    "scroll" {
+        [WinInput]::SetCursorPos($X, $Y) > $null
+        Start-Sleep -Milliseconds 50
+        $wheelDelta = $Amount * 120
+        [WinInput]::mouse_event([WinInput]::MOUSEEVENTF_WHEEL, 0, 0, $wheelDelta, 0)
+        Start-Sleep -Milliseconds 200
+        Write-Output "ok|scrolled|$X|$Y|$Amount"
+    }
+
     "type" {
-        # Use clipboard paste for full Unicode/CJK support
-        # Save original clipboard content and restore after paste
-        $hadClip = [System.Windows.Forms.Clipboard]::ContainsText()
-        $origClip = if ($hadClip) { [System.Windows.Forms.Clipboard]::GetText() } else { $null }
-        try {
-            [System.Windows.Forms.Clipboard]::SetText($Text)
-            Start-Sleep -Milliseconds 100
-            [System.Windows.Forms.SendKeys]::SendWait('^v')
-            Start-Sleep -Milliseconds 150
-        } finally {
-            # Restore original clipboard
-            try {
-                if ($origClip) {
-                    [System.Windows.Forms.Clipboard]::SetText($origClip)
-                } else {
-                    [System.Windows.Forms.Clipboard]::Clear()
-                }
-            } catch {}
+        # Use SendInput with KEYEVENTF_UNICODE for each character.
+        # This simulates real keyboard input per-character — more reliable
+        # than clipboard paste (Ctrl+V) which some apps block or ignore.
+        $chars = $Text.ToCharArray()
+        foreach ($c in $chars) {
+            [WinInput]::SendUnicodeChar($c)
+            # Small delay between characters to mimic human typing
+            Start-Sleep -Milliseconds 15
         }
-        Write-Output "ok|typed|$($Text.Length) chars"
+        Start-Sleep -Milliseconds 100
+        Write-Output "ok|typed|$($Text.Length) chars|sendinput"
     }
 
     "key" {
@@ -445,21 +540,22 @@ switch ($Action) {
 }
 
 /** Run the cached helper script with parameters. */
-function runHelper(args: string[], timeoutMs = 10000): string {
+export function runHelper(args: string[], timeoutMs = 10000): string {
   const helperPath = ensureHelperScript();
-  return execFileSync(resolvePsExe(), [
-    "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-    "-File", helperPath, ...args,
-  ], {
-    encoding: "utf-8",
-    timeout: timeoutMs,
-    windowsHide: true,
-  }).trim();
+  return execFileSync(
+    resolvePsExe(),
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helperPath, ...args],
+    {
+      encoding: "utf-8",
+      timeout: timeoutMs,
+      windowsHide: true,
+    },
+  ).trim();
 }
 
 // ─── Action handlers ────────────────────────────────────────────────
 
-async function handleScreenshot(
+export async function handleScreenshot(
   params: Record<string, unknown>,
 ): Promise<AgentToolResult<unknown>> {
   const window = readStringParam(params, "window");
@@ -496,7 +592,9 @@ async function handleScreenshot(
       offsetInfo && offsetInfo !== "offset:0,0"
         ? `多显示器偏移: ${offsetInfo.split(":")[1]} — click 坐标需加上此偏移`
         : "提示: 图片中的坐标即为 click 操作的物理像素坐标",
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     return await imageResultFromFile({
       label: "desktop_control:screenshot",
@@ -505,7 +603,11 @@ async function handleScreenshot(
       details: { status: "ok", action: "screenshot", width, height, mode, monitors: monitorCount },
     });
   } finally {
-    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -533,6 +635,31 @@ function handleClick(params: Record<string, unknown>): AgentToolResult<unknown> 
   return {
     content: [{ type: "text", text: `已${desc}${btnDesc} (${x}, ${y})` }],
     details: { status: "ok", action: "click", x, y, button, double: isDouble },
+  };
+}
+
+function handleScroll(params: Record<string, unknown>): AgentToolResult<unknown> {
+  const x = readNumberParam(params, "x", { required: true, integer: true });
+  const y = readNumberParam(params, "y", { required: true, integer: true });
+  const amount = readNumberParam(params, "amount", { integer: true }) ?? -3;
+
+  const args = ["-Action", "scroll", "-X", String(x), "-Y", String(y), "-Amount", String(amount)];
+  const out = runHelper(args, 5000);
+  const parts = out.split("|");
+
+  if (parts[0] !== "ok") {
+    return {
+      content: [{ type: "text", text: `滚动失败: ${out}` }],
+      details: { status: "error", action: "scroll" },
+    };
+  }
+
+  const direction = amount > 0 ? "上" : "下";
+  return {
+    content: [
+      { type: "text", text: `已在 (${x}, ${y}) 向${direction}滚动 ${Math.abs(amount)} 格` },
+    ],
+    details: { status: "ok", action: "scroll", x, y, amount },
   };
 }
 
@@ -569,22 +696,48 @@ function handleKey(params: Record<string, unknown>): AgentToolResult<unknown> {
     // For single letters/digits, VK code = ASCII code of uppercase letter.
     // Named keys need explicit mapping.
     const VK_NAMES: Record<string, string> = {
-      tab: "0x09", enter: "0x0D", return: "0x0D",
-      escape: "0x1B", esc: "0x1B", space: "0x20",
-      backspace: "0x08", delete: "0x2E", del: "0x2E",
-      insert: "0x2D", home: "0x24", end: "0x23",
-      pageup: "0x21", pagedown: "0x22",
-      up: "0x26", down: "0x28", left: "0x25", right: "0x27",
-      f1: "0x70", f2: "0x71", f3: "0x72", f4: "0x73",
-      f5: "0x74", f6: "0x75", f7: "0x76", f8: "0x77",
-      f9: "0x78", f10: "0x79", f11: "0x7A", f12: "0x7B",
+      tab: "0x09",
+      enter: "0x0D",
+      return: "0x0D",
+      escape: "0x1B",
+      esc: "0x1B",
+      space: "0x20",
+      backspace: "0x08",
+      delete: "0x2E",
+      del: "0x2E",
+      insert: "0x2D",
+      home: "0x24",
+      end: "0x23",
+      pageup: "0x21",
+      pagedown: "0x22",
+      up: "0x26",
+      down: "0x28",
+      left: "0x25",
+      right: "0x27",
+      f1: "0x70",
+      f2: "0x71",
+      f3: "0x72",
+      f4: "0x73",
+      f5: "0x74",
+      f6: "0x75",
+      f7: "0x76",
+      f8: "0x77",
+      f9: "0x78",
+      f10: "0x79",
+      f11: "0x7A",
+      f12: "0x7B",
     };
-    const vkCode = VK_NAMES[baseKey]
-      ?? (baseKey.length === 1 ? `0x${baseKey.toUpperCase().charCodeAt(0).toString(16).padStart(2, "0")}` : null);
+    const vkCode =
+      VK_NAMES[baseKey] ??
+      (baseKey.length === 1
+        ? `0x${baseKey.toUpperCase().charCodeAt(0).toString(16).padStart(2, "0")}`
+        : null);
 
     if (baseKey && !vkCode) {
       return {
-        content: [{ type: "text", text: `不支持的 Win 键组合: ${keys} (无法映射 '${baseKey}' 到虚拟键码)` }],
+        content: [
+          { type: "text", text: `不支持的 Win 键组合: ${keys} (无法映射 '${baseKey}' 到虚拟键码)` },
+        ],
         details: { status: "error", action: "key", error: `unknown vk for '${baseKey}'` },
       };
     }
@@ -607,7 +760,9 @@ function handleKey(params: Record<string, unknown>): AgentToolResult<unknown> {
       vkCode ? `[WinKeyHelper]::keybd_event(${vkCode}, 0, [WinKeyHelper]::KEYEVENTF_KEYUP, 0)` : "",
       "[WinKeyHelper]::keybd_event([WinKeyHelper]::VK_LWIN, 0, [WinKeyHelper]::KEYEVENTF_KEYUP, 0)",
       `Write-Output 'ok|key_sent|${psEscape(keys)}'`,
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     try {
       const out = psFile(script, 5000);
@@ -654,17 +809,20 @@ function handleListWindows(): AgentToolResult<unknown> {
     return jsonResult({ windows: [], status: "ok" });
   }
 
-  const windows = out.split(/\r?\n/).filter(Boolean).map((line) => {
-    const parts = line.split("|||");
-    return {
-      title: parts[0] || "",
-      process: parts[1] || "",
-      x: parseInt(parts[2] || "0", 10),
-      y: parseInt(parts[3] || "0", 10),
-      width: parseInt(parts[4] || "0", 10),
-      height: parseInt(parts[5] || "0", 10),
-    };
-  });
+  const windows = out
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("|||");
+      return {
+        title: parts[0] || "",
+        process: parts[1] || "",
+        x: parseInt(parts[2] || "0", 10),
+        y: parseInt(parts[3] || "0", 10),
+        width: parseInt(parts[4] || "0", 10),
+        height: parseInt(parts[5] || "0", 10),
+      };
+    });
 
   return jsonResult({ windows, count: windows.length, status: "ok" });
 }
@@ -699,16 +857,17 @@ export function createDesktopControlTool(): AnyAgentTool | null {
     name: "desktop_control",
     label: "Desktop Control",
     description: [
-      "Control Windows desktop GUI via screenshot, click, type, key, list/focus windows.",
+      "Control Windows desktop GUI via screenshot, click, type, key, scroll, list/focus windows.",
       "Use this to interact with apps that cannot be controlled via CLI.",
-      "Workflow: screenshot → analyze UI → click/type/key → screenshot to verify.",
+      "Workflow: screenshot → analyze UI → click/type/key/scroll → screenshot to verify.",
       "",
-      "Actions: screenshot, click, type, key, list_windows, focus",
+      "Actions: screenshot, click, type, key, scroll, list_windows, focus",
       "Examples:",
       '  desktop_control({action:"screenshot"})',
       '  desktop_control({action:"click", x:400, y:300})',
       '  desktop_control({action:"type", text:"Hello 你好"})',
       '  desktop_control({action:"key", keys:"ctrl+c"})',
+      '  desktop_control({action:"scroll", x:200, y:400, amount:-5})',
       '  desktop_control({action:"list_windows"})',
       '  desktop_control({action:"focus", window:"ToDesk"})',
     ].join("\n"),
@@ -727,6 +886,8 @@ export function createDesktopControlTool(): AnyAgentTool | null {
             return handleType(params);
           case "key":
             return handleKey(params);
+          case "scroll":
+            return handleScroll(params);
           case "list_windows":
             return handleListWindows();
           case "focus":

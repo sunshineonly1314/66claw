@@ -357,6 +357,17 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("Current elevated level: on");
   });
 
+  it("includes WeChat guidance when desktop_control tool is available", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/clawd",
+      toolNames: ["desktop_control", "open_app"],
+    });
+
+    expect(prompt).toContain("### WeChat Desktop");
+    expect(prompt).toContain("NEVER click contacts in the left sidebar");
+    expect(prompt).toContain("Ctrl+F search");
+  });
+
   it("includes reaction guidance when provided", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/clawd",
