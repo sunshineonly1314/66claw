@@ -5,6 +5,7 @@
  * 检测关键文件是否被篡改，防止本地代码修改攻击
  */
 
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,6 +13,31 @@ import { fileURLToPath } from "node:url";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("security:integrity");
+
+// ============================================================================
+// Native Addon Integration (Layer 3 — hardened integrity verification)
+// Hash computation and comparison happens in compiled C++, not patchable JS.
+// ============================================================================
+
+interface NativeIntegrityAddon {
+  computeFileHash(filePath: string): string | null;
+  verifyFileIntegrity(filePath: string, expectedHash: string): boolean;
+  verifyAllIntegrity(baseDir: string, hashes?: Array<{ path: string; hash: string }>): string[];
+}
+
+let nativeIntegrity: NativeIntegrityAddon | null = null;
+try {
+  const esmRequire = createRequire(import.meta.url);
+  const addon = esmRequire(
+    "../../native/build/Release/clawdbot_native.node",
+  ) as NativeIntegrityAddon;
+  if (typeof addon?.computeFileHash === "function") {
+    nativeIntegrity = addon;
+    log.debug("Native integrity addon loaded — using hardened hash verification");
+  }
+} catch {
+  log.debug("Native integrity addon not available, using JS fallback");
+}
 
 /**
  * 文件哈希记录
@@ -100,10 +126,12 @@ async function fetchHashesFromServer(apiBaseUrl: string): Promise<FileHash[] | n
  *
  * @param options - 初始化选项
  */
-export async function initIntegrityCheck(options: {
-  apiBaseUrl?: string;
-  useServerHashes?: boolean;
-} = {}): Promise<void> {
+export async function initIntegrityCheck(
+  options: {
+    apiBaseUrl?: string;
+    useServerHashes?: boolean;
+  } = {},
+): Promise<void> {
   if (initialized) {
     return;
   }
@@ -132,8 +160,19 @@ export async function initIntegrityCheck(options: {
 
 /**
  * 计算文件的 SHA-256 哈希
+ * 优先使用 native addon（C++ 实现，无法被 JS patch 绕过）
  */
 function computeFileHash(filePath: string): string {
+  // Prefer native computation (hardened, not patchable from JS)
+  if (nativeIntegrity) {
+    try {
+      const hash = nativeIntegrity.computeFileHash(filePath);
+      if (hash) return hash;
+    } catch {
+      // Fall through to JS implementation
+    }
+  }
+
   const content = fs.readFileSync(filePath);
   return createHash("sha256").update(content).digest("hex");
 }
@@ -197,12 +236,14 @@ export function verifyIntegrity(baseDir: string): IntegrityCheckResult {
  * @param options - 检查选项
  * @returns 是否通过校验
  */
-export async function checkIntegrityOnStartup(options: {
-  baseDir?: string;
-  apiBaseUrl?: string;
-  useServerHashes?: boolean;
-  exitOnFailure?: boolean;
-} = {}): Promise<boolean> {
+export async function checkIntegrityOnStartup(
+  options: {
+    baseDir?: string;
+    apiBaseUrl?: string;
+    useServerHashes?: boolean;
+    exitOnFailure?: boolean;
+  } = {},
+): Promise<boolean> {
   // 初始化
   await initIntegrityCheck({
     apiBaseUrl: options.apiBaseUrl,

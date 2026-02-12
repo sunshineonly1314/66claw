@@ -6507,17 +6507,17 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
 
         // 自定义 API 需要检查模型输入
         if (selectedProvider === 'custom') {
-          const modelInput = document.getElementById('modelInput').value.trim();
+          const modelInputValue = document.getElementById('modelSelect').value.trim();
           const customEndpoint = document.getElementById('customEndpoint').value.trim();
           if (!customEndpoint) {
             showStatus('apiKeyStatus', '请输入自定义 API 端点地址', 'error');
             return;
           }
-          if (!modelInput) {
+          if (!modelInputValue) {
             showStatus('apiKeyStatus', '请输入模型名称', 'error');
             return;
           }
-          selectedModel = modelInput;
+          selectedModel = modelInputValue;
         }
 
         const btn = document.getElementById('step1Next');
@@ -6527,7 +6527,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
         // 先验证 API Key 是否有效
         showStatus('apiKeyStatus', '正在验证 API Key...', 'loading');
         try {
-          const modelToUse = selectedModel || document.getElementById('modelSelect').value || document.getElementById('modelInput').value.trim();
+          const modelToUse = selectedModel || document.getElementById('modelSelect').value.trim();
           // 自定义 API 需要附带 endpoint 地址
           const customEndpointValue = selectedProvider === 'custom' ? (document.getElementById('customEndpoint').value.trim() || '') : '';
           const verifyPayload = { provider: selectedProvider, apiKey: apiKey, model: modelToUse };

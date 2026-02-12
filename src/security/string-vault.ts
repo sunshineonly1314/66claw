@@ -1,0 +1,195 @@
+/**
+ * Clawdbot Security Module - Sensitive String Vault
+ * 敏感字符串保险库
+ *
+ * 所有敏感字符串（RSA 公钥、API URL 等）在内存中以加密形式存储。
+ * 运行时按需解密到 Buffer，使用后立即 fill(0) 清零。
+ *
+ * 防护目标：
+ * - 防止内存 dump 提取敏感信息
+ * - 防止字符串搜索定位关键数据
+ * - 每次启动密钥不同，防止 dump 重用
+ */
+
+import { createHash, randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+
+const log = createSubsystemLogger("security:string-vault");
+
+// ============================================================================
+// Native Addon Integration
+// ============================================================================
+
+interface NativeVault {
+  decryptString(encrypted: Buffer, key: Buffer): Buffer;
+  wipeBuffer(buffer: Buffer): void;
+}
+
+let nativeVault: NativeVault | null = null;
+try {
+  const esmRequire = createRequire(import.meta.url);
+  const addon = esmRequire("../../native/build/Release/clawdbot_native.node") as NativeVault;
+  if (typeof addon?.wipeBuffer === "function") {
+    nativeVault = addon;
+  }
+} catch {
+  // Native addon not available
+}
+
+// ============================================================================
+// Runtime Key Derivation
+// ============================================================================
+
+/**
+ * Derive a unique runtime key from process entropy.
+ * This key is different for each process start, preventing
+ * reuse of memory dumps across sessions.
+ */
+function deriveRuntimeKey(): Buffer {
+  const entropy = [
+    process.pid.toString(),
+    process.ppid.toString(),
+    Date.now().toString(),
+    process.hrtime.bigint().toString(),
+    randomBytes(16).toString("hex"),
+  ].join("|");
+
+  return createHash("sha256").update(entropy).digest();
+}
+
+// ============================================================================
+// StringVault Class
+// ============================================================================
+
+/** The runtime encryption key, regenerated each process start */
+let runtimeKey: Buffer | null = null;
+
+/**
+ * Get or create the runtime key (lazy initialization)
+ */
+function getRuntimeKey(): Buffer {
+  if (!runtimeKey) {
+    runtimeKey = deriveRuntimeKey();
+  }
+  return runtimeKey;
+}
+
+/**
+ * Encrypt a string with XOR using the runtime key.
+ * Returns an encrypted Buffer.
+ */
+export function encryptSensitiveString(plaintext: string): Buffer {
+  const key = getRuntimeKey();
+  const plaintextBuf = Buffer.from(plaintext, "utf-8");
+  const encrypted = Buffer.alloc(plaintextBuf.length);
+
+  for (let i = 0; i < plaintextBuf.length; i++) {
+    encrypted[i] = plaintextBuf[i]! ^ key[i % key.length]!;
+  }
+
+  // Wipe the plaintext buffer
+  plaintextBuf.fill(0);
+
+  return encrypted;
+}
+
+/**
+ * Decrypt an encrypted Buffer back to a string.
+ * The returned Buffer should be wiped after use via wipeSensitiveBuffer().
+ */
+export function decryptSensitiveBuffer(encrypted: Buffer): Buffer {
+  // Prefer native decryption (avoids JS-level interception)
+  if (nativeVault) {
+    try {
+      return nativeVault.decryptString(encrypted, getRuntimeKey());
+    } catch {
+      // Fall through to JS
+    }
+  }
+
+  const key = getRuntimeKey();
+  const decrypted = Buffer.alloc(encrypted.length);
+
+  for (let i = 0; i < encrypted.length; i++) {
+    decrypted[i] = encrypted[i]! ^ key[i % key.length]!;
+  }
+
+  return decrypted;
+}
+
+/**
+ * Securely wipe a Buffer's contents (fill with zeros).
+ * Uses volatile-like writes to prevent compiler optimization.
+ */
+export function wipeSensitiveBuffer(buffer: Buffer): void {
+  // Prefer native wipe (uses volatile pointer, compiler can't optimize away)
+  if (nativeVault) {
+    try {
+      nativeVault.wipeBuffer(buffer);
+      return;
+    } catch {
+      // Fall through to JS
+    }
+  }
+
+  buffer.fill(0);
+}
+
+/**
+ * Use a sensitive string temporarily via Buffer, then auto-wipe.
+ * Preferred over withSensitiveString() because Buffer memory can be
+ * reliably zeroed, unlike JS strings which are immutable in V8.
+ *
+ * @param encrypted - The encrypted Buffer (from encryptSensitiveString)
+ * @param callback - Function that receives the decrypted Buffer (NOT a string)
+ * @returns The callback's return value
+ *
+ * @example
+ * const encApiUrl = encryptSensitiveString("https://api.example.com");
+ * const result = withSensitiveBuffer(encApiUrl, (buf) => fetch(buf.toString("utf-8")));
+ */
+export function withSensitiveBuffer<T>(
+  encrypted: Buffer,
+  callback: (decryptedBuf: Buffer) => T,
+): T {
+  const decrypted = decryptSensitiveBuffer(encrypted);
+  try {
+    return callback(decrypted);
+  } finally {
+    wipeSensitiveBuffer(decrypted);
+  }
+}
+
+/**
+ * Use a sensitive string temporarily, then auto-wipe the Buffer.
+ *
+ * WARNING: The JS string passed to the callback is an immutable V8 string
+ * and CANNOT be wiped from memory. It will persist until garbage collected.
+ * For maximum security, prefer withSensitiveBuffer() and work with the
+ * Buffer directly (e.g., pass buf.toString() inline to APIs).
+ *
+ * @param encrypted - The encrypted Buffer (from encryptSensitiveString)
+ * @param callback - Function that receives the decrypted string
+ * @returns The callback's return value
+ */
+export function withSensitiveString<T>(encrypted: Buffer, callback: (plaintext: string) => T): T {
+  const decrypted = decryptSensitiveBuffer(encrypted);
+  try {
+    const plaintext = decrypted.toString("utf-8");
+    return callback(plaintext);
+  } finally {
+    wipeSensitiveBuffer(decrypted);
+  }
+}
+
+/**
+ * Destroy the runtime key (call at process exit if needed).
+ */
+export function destroyVault(): void {
+  if (runtimeKey) {
+    runtimeKey.fill(0);
+    runtimeKey = null;
+    log.debug("String vault destroyed");
+  }
+}

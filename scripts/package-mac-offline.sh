@@ -208,21 +208,32 @@ download_node() {
 }
 
 # ============================================================================
-# 构建 TypeScript
+# 构建 TypeScript（5 层保护）
 # ============================================================================
 build_typescript() {
-    log_info "构建 TypeScript..."
-    
+    log_info "构建 TypeScript（5 层代码保护）..."
+
     cd "$PROJECT_ROOT"
-    
-    # 检查是否需要构建
+
+    # 检查构建产物是否完整（entry.js + 至少 1 个 .jsc 字节码文件）
+    local needs_build=false
     if [ ! -d "dist" ] || [ ! -f "dist/entry.js" ]; then
-        pnpm build
-    else
-        log_info "使用现有构建产物"
+        needs_build=true
+    elif [ -z "$(find dist -name '*.jsc' 2>/dev/null | head -1)" ]; then
+        log_warn "dist/ 存在但缺少 .jsc 字节码文件，需要重新构建"
+        needs_build=true
     fi
-    
-    log_ok "TypeScript 构建完成"
+
+    if [ "$needs_build" = true ]; then
+        # build:release = build:prod + obfuscate(双级) + bytecode:compile + integrity:gen
+        log_info "执行 build:release（混淆 + 字节码 + 完整性哈希）..."
+        pnpm build:release
+    else
+        local jsc_count=$(find dist -name '*.jsc' 2>/dev/null | wc -l | tr -d ' ')
+        log_info "使用现有构建产物（$jsc_count 个字节码文件）"
+    fi
+
+    log_ok "TypeScript 构建完成（含代码保护）"
 }
 
 # ============================================================================
@@ -241,6 +252,54 @@ build_ui() {
 }
 
 # ============================================================================
+# 编译 Native Addon（Layer 3 — C++ 安全模块）
+# ============================================================================
+build_native_addon() {
+    log_info "检查 Native Addon（Layer 3）..."
+
+    cd "$PROJECT_ROOT"
+
+    local native_dir="$PROJECT_ROOT/native"
+    local native_output="$native_dir/build/Release/clawdbot_native.node"
+
+    if [ ! -f "$native_dir/binding.gyp" ]; then
+        log_warn "native/binding.gyp 不存在，跳过 Native Addon 构建"
+        return
+    fi
+
+    # 检查是否有 node-gyp
+    if ! command -v node-gyp &>/dev/null && ! npx node-gyp --version &>/dev/null 2>&1; then
+        log_warn "node-gyp 不可用，跳过 Native Addon 构建"
+        log_info "安装方法: xcode-select --install (macOS) 或 pnpm add -D node-gyp"
+        return
+    fi
+
+    if [ -f "$native_output" ] && [ "$native_output" -nt "$native_dir/src/addon.cc" ]; then
+        local addon_size=$(du -h "$native_output" | cut -f1)
+        log_ok "Native Addon 已是最新: clawdbot_native.node ($addon_size)"
+        return
+    fi
+
+    log_info "编译 C++ Native Addon..."
+    if (cd "$native_dir" && npx node-gyp rebuild 2>&1); then
+        if [ -f "$native_output" ]; then
+            local addon_size=$(du -h "$native_output" | cut -f1)
+            log_ok "Native Addon 编译成功: clawdbot_native.node ($addon_size)"
+
+            # Strip native addon symbols
+            if command -v strip &>/dev/null; then
+                strip -x "$native_output" 2>/dev/null || true
+                log_ok "Native Addon 已 strip"
+            fi
+        else
+            log_warn "Native Addon 编译产物未找到（非致命，将使用 JS 回退）"
+        fi
+    else
+        log_warn "Native Addon 编译失败（非致命，安全函数将使用 JS 回退）"
+    fi
+}
+
+# ============================================================================
 # 打包 CLI 和依赖
 # ============================================================================
 package_cli() {
@@ -249,12 +308,27 @@ package_cli() {
     local cli_dir="$BUILD_DIR/clawdbot-cli"
     mkdir -p "$cli_dir"
     
-    # 复制编译产物
+    # 复制编译产物（包含 .jsc 字节码文件）
     cp -R "$PROJECT_ROOT/dist" "$cli_dir/"
-    
+
+    # 统计字节码文件
+    local jsc_count=$(find "$cli_dir/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$jsc_count" -gt 0 ]; then
+        log_ok "包含 $jsc_count 个 V8 字节码文件（Layer 1）"
+    fi
+
     # 复制 package.json
     cp "$PROJECT_ROOT/package.json" "$cli_dir/"
-    
+
+    # 复制 Native Addon（Layer 3）
+    local native_addon="$PROJECT_ROOT/native/build/Release/clawdbot_native.node"
+    if [ -f "$native_addon" ]; then
+        mkdir -p "$cli_dir/native/build/Release"
+        cp "$native_addon" "$cli_dir/native/build/Release/"
+        local addon_size=$(du -h "$native_addon" | cut -f1)
+        log_ok "Native Addon 已打包: clawdbot_native.node ($addon_size)"
+    fi
+
     # 复制扩展插件
     if [ -d "$PROJECT_ROOT/extensions" ]; then
         mkdir -p "$cli_dir/extensions"
@@ -303,7 +377,18 @@ install_dependencies() {
     done
     
     cd "$cli_dir"
-    
+
+    # 安装 bytenode 运行时依赖（.jsc 字节码加载需要）
+    if [ -n "$(find "$cli_dir/dist" -name '*.jsc' 2>/dev/null | head -1)" ]; then
+        log_info "安装 bytenode 运行时依赖（字节码加载需要）..."
+        npm install bytenode --no-save --legacy-peer-deps --no-audit --no-fund 2>/dev/null || true
+        if [ -d "$cli_dir/node_modules/bytenode" ]; then
+            log_ok "bytenode 运行时已安装"
+        else
+            log_warn "bytenode 安装失败，字节码加载可能无法工作"
+        fi
+    fi
+
     # 清理不必要的文件
     find node_modules -name "*.md" -delete 2>/dev/null || true
     find node_modules -name "*.ts" -delete 2>/dev/null || true
@@ -453,7 +538,8 @@ cleanup() {
 main() {
     echo ""
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║         Clawdbot macOS 离线包构建脚本                          ║${NC}"
+    echo -e "${CYAN}║     Clawdbot macOS 离线包构建脚本（5 层代码保护）               ║${NC}"
+    echo -e "${CYAN}║     L1:字节码 L2:混淆 L3:NativeAddon L4:Strip L5:运行时       ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
@@ -468,6 +554,7 @@ main() {
     download_node
     build_typescript
     build_ui
+    build_native_addon
     package_cli
     install_dependencies
     build_macos_app

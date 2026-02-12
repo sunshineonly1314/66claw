@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
  * Obfuscate dist/ directory after production build
- * 
- * This script:
- * 1. Finds all .js files in dist/ (excluding test files)
- * 2. Applies JavaScript obfuscation with safe config
- * 3. Overwrites original files with obfuscated versions
- * 
+ *
+ * Two-tier obfuscation strategy:
+ * - Standard config: general application code (moderate protection)
+ * - Aggressive config: critical dirs — license/, security/, gateway/, agents/, config/, commands/ (maximum protection)
+ *
+ * The aggressive tier uses RC4 string encryption, 90% control flow flattening,
+ * heavier dead code injection, and deeper wrapper chains.
+ *
  * Usage: node --import tsx scripts/obfuscate-dist.ts
  */
 
@@ -29,27 +31,40 @@ const SKIP_PATTERNS = [
   /\.map$/,
   /node_modules/,
   /\.json$/,
+  /\.jsc$/,             // Skip V8 bytecode files
   /tool-display\.js$/,  // Uses `import ... with { type: "json" }` syntax
 ];
 
-// Critical directories to obfuscate (prioritized)
+// Critical directories — these get aggressive obfuscation (RC4, 90% CFG)
+// Includes all dirs with sensitive business logic, API keys, or auth flows
 const PRIORITY_DIRS = [
   "license",
   "security",
   "gateway",
+  "agents",
+  "config",
+  "commands",
 ];
 
-// Load config
-async function loadConfig(): Promise<Record<string, unknown>> {
+/**
+ * Load both standard and aggressive configs from obfuscate.config.js
+ */
+async function loadConfigs(): Promise<{
+  standard: Record<string, unknown>;
+  aggressive: Record<string, unknown>;
+}> {
   try {
     // 使用 file:// URL 格式加载配置（Windows 兼容）
     const configUrl = `file://${CONFIG_PATH.replace(/\\/g, "/")}`;
-    const config = await import(configUrl);
-    return config.default || config;
+    const configModule = await import(configUrl);
+    return {
+      standard: configModule.standard || configModule.default || {},
+      aggressive: configModule.aggressive || configModule.standard || configModule.default || {},
+    };
   } catch (error) {
     console.error("Failed to load obfuscator config:", error instanceof Error ? error.message : error);
     console.error("Using defaults");
-    return {};
+    return { standard: {}, aggressive: {} };
   }
 }
 
@@ -112,65 +127,106 @@ function obfuscateFile(
   }
 }
 
+/**
+ * Check if a file path belongs to a critical (priority) directory
+ */
+function isPriorityFile(relativePath: string): boolean {
+  return PRIORITY_DIRS.some(
+    (dir) => relativePath.startsWith(dir + path.sep) || relativePath.startsWith(dir + "/"),
+  );
+}
+
 async function main(): Promise<void> {
   console.log("");
-  console.log("🔐 Starting code obfuscation...");
+  console.log("🔐 Starting two-tier code obfuscation...");
   console.log(`   Target: ${DIST_DIR}`);
+  console.log(`   Standard tier: general code (base64, 50% CFG, 20% dead code)`);
+  console.log(`   Aggressive tier: ${PRIORITY_DIRS.join(", ")} (RC4, 90% CFG, 40% dead code)`);
   console.log("");
-  
+
   if (!fs.existsSync(DIST_DIR)) {
     console.error("❌ dist/ directory not found. Run build first.");
     process.exit(1);
   }
-  
-  const config = await loadConfig();
+
+  const configs = await loadConfigs();
   const allFiles = getAllJsFiles(DIST_DIR);
-  
-  console.log(`   Found ${allFiles.length} JS files to process`);
+
+  // Separate files by tier
+  const priorityFiles: string[] = [];
+  const standardFiles: string[] = [];
+  for (const file of allFiles) {
+    const relativePath = path.relative(DIST_DIR, file);
+    if (isPriorityFile(relativePath)) {
+      priorityFiles.push(file);
+    } else {
+      standardFiles.push(file);
+    }
+  }
+
+  console.log(`   Found ${allFiles.length} JS files total`);
+  console.log(`     → ${priorityFiles.length} critical files (aggressive tier)`);
+  console.log(`     → ${standardFiles.length} general files (standard tier)`);
   console.log("");
-  
-  // Sort files: priority dirs first
-  const sortedFiles = allFiles.sort((a, b) => {
-    const aIsPriority = PRIORITY_DIRS.some((dir) => a.includes(`${path.sep}${dir}${path.sep}`));
-    const bIsPriority = PRIORITY_DIRS.some((dir) => b.includes(`${path.sep}${dir}${path.sep}`));
-    if (aIsPriority && !bIsPriority) return -1;
-    if (!aIsPriority && bIsPriority) return 1;
-    return 0;
-  });
-  
-  let successCount = 0;
+
+  let aggressiveCount = 0;
+  let standardCount = 0;
   let skipCount = 0;
   let errorCount = 0;
   const errors: { file: string; error: string }[] = [];
-  
-  for (const file of sortedFiles) {
-    const relativePath = path.relative(DIST_DIR, file);
-    const result = obfuscateFile(file, config);
-    
-    if (result.success) {
-      // Check if file was actually modified (not skipped due to size)
-      const code = fs.readFileSync(file, "utf-8");
-      if (code.length < 100) {
-        skipCount++;
-      } else {
-        successCount++;
-        // Show progress for priority files
-        if (PRIORITY_DIRS.some((dir) => relativePath.startsWith(dir + path.sep))) {
-          console.log(`   ✓ ${relativePath}`);
+
+  // Process critical files first with aggressive config
+  if (priorityFiles.length > 0) {
+    console.log("   --- Aggressive tier (critical dirs) ---");
+    for (const file of priorityFiles) {
+      const relativePath = path.relative(DIST_DIR, file);
+      const result = obfuscateFile(file, configs.aggressive);
+
+      if (result.success) {
+        const code = fs.readFileSync(file, "utf-8");
+        if (code.length < 100) {
+          skipCount++;
+        } else {
+          aggressiveCount++;
+          console.log(`   ✓ [AGG] ${relativePath}`);
         }
+      } else {
+        errorCount++;
+        errors.push({ file: relativePath, error: result.error || "Unknown error" });
+        console.log(`   ✗ [AGG] ${relativePath}: ${result.error}`);
       }
-    } else {
-      errorCount++;
-      errors.push({ file: relativePath, error: result.error || "Unknown error" });
+    }
+    console.log("");
+  }
+
+  // Process remaining files with standard config
+  if (standardFiles.length > 0) {
+    console.log("   --- Standard tier (general code) ---");
+    for (const file of standardFiles) {
+      const relativePath = path.relative(DIST_DIR, file);
+      const result = obfuscateFile(file, configs.standard);
+
+      if (result.success) {
+        const code = fs.readFileSync(file, "utf-8");
+        if (code.length < 100) {
+          skipCount++;
+        } else {
+          standardCount++;
+        }
+      } else {
+        errorCount++;
+        errors.push({ file: relativePath, error: result.error || "Unknown error" });
+      }
     }
   }
-  
+
   console.log("");
   console.log("========================================");
-  console.log("✅ Obfuscation complete!");
-  console.log(`   Obfuscated: ${successCount} files`);
+  console.log("✅ Two-tier obfuscation complete!");
+  console.log(`   Aggressive (RC4): ${aggressiveCount} files`);
+  console.log(`   Standard (base64): ${standardCount} files`);
   console.log(`   Skipped (small): ${skipCount} files`);
-  
+
   if (errorCount > 0) {
     console.log(`   ⚠️ Errors: ${errorCount} files`);
     console.log("");
@@ -182,7 +238,7 @@ async function main(): Promise<void> {
       console.log(`   ... and ${errors.length - 5} more`);
     }
   }
-  
+
   console.log("========================================");
   console.log("");
 }

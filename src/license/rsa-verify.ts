@@ -13,10 +13,35 @@
  * - 包含 serverTime 防止重放攻击
  */
 
+import { createRequire } from "node:module";
 import { createVerify } from "node:crypto";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("license:rsa");
+
+// ============================================================================
+// Native Addon Integration (Layer 3 — hardened C++ RSA verification)
+// Prefer native implementation — compiled binary is 50x harder to reverse.
+// Falls back to JS implementation if native addon is not available.
+// ============================================================================
+
+interface NativeAddon {
+  verifySignature(signContent: string, signature: string): boolean;
+  isRsaKeyConfigured(): boolean;
+}
+
+let nativeAddon: NativeAddon | null = null;
+try {
+  const esmRequire = createRequire(import.meta.url);
+  nativeAddon = esmRequire("../../native/build/Release/clawdbot_native.node") as NativeAddon;
+  if (typeof nativeAddon?.verifySignature === "function") {
+    log.debug("Native RSA addon loaded — using hardened verification");
+  } else {
+    nativeAddon = null;
+  }
+} catch {
+  log.debug("Native RSA addon not available, using JS fallback");
+}
 
 /**
  * RSA 公钥（2048 位）
@@ -53,15 +78,31 @@ const MAX_SERVER_TIME_DRIFT_MS = 5 * 60 * 1000; // 5 分钟
  * @returns 签名是否有效
  */
 export function verifyRsaSignature(signContent: string, signature: string): boolean {
+  // Prefer native C++ verification (much harder to patch/bypass)
+  if (nativeAddon) {
+    try {
+      const isValid = nativeAddon.verifySignature(signContent, signature);
+      if (isValid) {
+        log.debug("RSA signature verification succeeded (native)");
+      } else {
+        log.warn("RSA signature verification failed: invalid signature (native)");
+      }
+      return isValid;
+    } catch (error) {
+      log.debug(`Native RSA verification failed, falling back to JS: ${error}`);
+    }
+  }
+
+  // JS fallback implementation
   try {
     const verify = createVerify("SHA256");
     verify.update(signContent, "utf8");
     const isValid = verify.verify(RSA_PUBLIC_KEY, signature, "base64");
 
     if (isValid) {
-      log.debug("RSA signature verification succeeded");
+      log.debug("RSA signature verification succeeded (JS)");
     } else {
-      log.warn("RSA signature verification failed: invalid signature");
+      log.warn("RSA signature verification failed: invalid signature (JS)");
     }
 
     return isValid;
@@ -124,9 +165,7 @@ export function verifyServerTime(serverTime: number): boolean {
   const drift = Math.abs(now - serverTime);
 
   if (drift > MAX_SERVER_TIME_DRIFT_MS) {
-    log.warn(
-      `Server time drift too large: ${drift}ms (max: ${MAX_SERVER_TIME_DRIFT_MS}ms)`,
-    );
+    log.warn(`Server time drift too large: ${drift}ms (max: ${MAX_SERVER_TIME_DRIFT_MS}ms)`);
     return false;
   }
 

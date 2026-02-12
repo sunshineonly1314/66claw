@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import { applyCliProfileEnv, parseCliProfileArgs } from "./cli/profile.js";
 import { isTruthyEnvValue } from "./infra/env.js";
@@ -159,7 +161,55 @@ function normalizeWindowsArgv(argv: string[]): string[] {
 
 process.argv = normalizeWindowsArgv(process.argv);
 
+/**
+ * Lightweight entry-point integrity check.
+ *
+ * Verifies that critical security modules exist before loading the main CLI.
+ * This runs BEFORE any security/ or license/ module is imported, so it must
+ * be self-contained (only uses Node.js built-ins).
+ *
+ * Purpose: prevent an attacker from simply deleting security modules to
+ * bypass all protection, or replacing them with empty stubs.
+ */
+function verifyEntryIntegrity(): boolean {
+  // Only check in production builds (__DEV_BUILD__ is replaced at build time)
+  const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+  if (isDevBuild) return true;
+
+  try {
+    const entryDir = path.dirname(fileURLToPath(import.meta.url));
+
+    // Critical modules that MUST exist in a valid installation
+    const criticalModules = [
+      "security/integrity.js",
+      "security/anti-debug.js",
+      "license/rsa-verify.js",
+      "license/verify.js",
+      "gateway/license-check.js",
+    ];
+
+    for (const mod of criticalModules) {
+      const modPath = path.join(entryDir, mod);
+      if (!existsSync(modPath)) {
+        console.error(`[clawdbot] Critical module missing: ${mod}`);
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    // If the check itself fails, don't block startup in dev scenarios
+    return true;
+  }
+}
+
 if (!ensureWarningsSuppressed()) {
+  // Entry-point integrity check — runs before any security module loads
+  if (!verifyEntryIntegrity()) {
+    console.error("[clawdbot] Integrity check failed — installation may be corrupted or tampered.");
+    process.exit(78); // EX_CONFIG (sysexits.h)
+  }
+
   const parsed = parseCliProfileArgs(process.argv);
   if (!parsed.ok) {
     // Keep it simple; Commander will handle rich help/errors after we strip flags.

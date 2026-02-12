@@ -137,10 +137,13 @@ export function handleUpdated(
       host.chatStreamStartedAt !== null;
 
     if (isWaitingForResponse && host.readingIndicatorTimer === null) {
-      // Start timer to refresh reading indicator every second
+      // Start timer to refresh reading indicator.
+      // Use 3s interval instead of 1s to reduce full-tree re-renders which
+      // cause visible flickering on macOS packaged builds (WebView compositing).
+      // The reading indicator shows "Ns" elapsed — 3s granularity is acceptable.
       host.readingIndicatorTimer = window.setInterval(() => {
         host.requestUpdate();
-      }, 1000);
+      }, 3000);
     } else if (!isWaitingForResponse && host.readingIndicatorTimer !== null) {
       // Stop timer when no longer waiting
       window.clearInterval(host.readingIndicatorTimer);
@@ -152,7 +155,13 @@ export function handleUpdated(
       host.apiMonitorDismissed = false;
       host.apiMonitorTimer = window.setInterval(() => {
         if (host.chatStreamStartedAt !== null) {
-          host.apiMonitorElapsedMs = Date.now() - host.chatStreamStartedAt;
+          const next = Date.now() - host.chatStreamStartedAt;
+          // Only update the reactive property when the displayed second actually
+          // changes.  This avoids triggering a Lit re-render every interval tick
+          // when the rounded second value hasn't changed.
+          if (Math.floor(next / 1000) !== Math.floor(host.apiMonitorElapsedMs / 1000)) {
+            host.apiMonitorElapsedMs = next;
+          }
         }
       }, 1000);
     } else if (!isWaitingForResponse && host.apiMonitorTimer !== null) {

@@ -379,7 +379,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       const testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
 
       const response = await fetch(testUrl, {
@@ -444,7 +444,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "aliyun-bailian") {
       testUrl = `${endpoint}/chat/completions`;
@@ -455,7 +455,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "deepseek") {
       testUrl = `${endpoint}/chat/completions`;
@@ -466,7 +466,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "glm") {
       testUrl = `${endpoint}/chat/completions`;
@@ -477,7 +477,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "volcengine-ark") {
       testUrl = `${endpoint}/chat/completions`;
@@ -488,7 +488,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "tencent-hunyuan") {
       // 腾讯混元使用不同的认证方式，暂时跳过实际验证
@@ -507,7 +507,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "moonshot") {
       // Kimi (月之暗面) 使用 OpenAI 兼容 API
@@ -519,7 +519,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "kimi-code") {
       // Kimi Code 代码专用模型，使用 OpenAI 兼容 API + 特殊 User-Agent
@@ -532,7 +532,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "modelscope") {
       // 魔搭社区使用 OpenAI 兼容 API
@@ -616,7 +616,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "anthropic") {
       // Anthropic Claude 使用 Messages API
@@ -630,7 +630,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "nvidia") {
       // NVIDIA NIM 使用 OpenAI 兼容 API
@@ -643,7 +643,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
       testBody = JSON.stringify({
         model: testModel,
         messages: [{ role: "user", content: "Hi" }],
-        max_tokens: 1,
+        max_tokens: 5,
       });
     } else if (provider === "ollama") {
       // Ollama 本地模型：先检测服务是否运行，再验证模型是否可用
@@ -708,7 +708,7 @@ async function handleVerifyApiKey(req: IncomingMessage, res: ServerResponse): Pr
             body: JSON.stringify({
               model: testModel,
               messages: [{ role: "user", content: "Hi" }],
-              max_tokens: 1,
+              max_tokens: 5,
             }),
             signal: AbortSignal.timeout(30000),
           });

@@ -11,6 +11,31 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("security:anti-debug");
 
+// ============================================================================
+// Native Addon Integration (Layer 3 — OS-level anti-debug)
+// Native detection uses IsDebuggerPresent (Win), P_TRACED (macOS),
+// TracerPid (Linux) — much harder to bypass than JS checks.
+// ============================================================================
+
+interface NativeAntiDebug {
+  isDebuggerPresent(): boolean;
+  hasSuspiciousParent(): boolean;
+  detectTimingAnomaly(): boolean;
+  nativeAntiDebugFullCheck(): boolean;
+}
+
+let nativeAntiDebug: NativeAntiDebug | null = null;
+try {
+  const esmRequire = createRequire(import.meta.url);
+  const addon = esmRequire("../../native/build/Release/clawdbot_native.node") as NativeAntiDebug;
+  if (typeof addon?.nativeAntiDebugFullCheck === "function") {
+    nativeAntiDebug = addon;
+    log.debug("Native anti-debug addon loaded");
+  }
+} catch {
+  log.debug("Native anti-debug addon not available, using JS-only detection");
+}
+
 /**
  * 反调试配置
  */
@@ -40,6 +65,22 @@ let checkInterval: ReturnType<typeof setInterval> | null = null;
  * 检测是否在调试模式
  */
 function detectDebugger(): boolean {
+  // === Native OS-level detection (Layer 3 — highest priority) ===
+  // These checks use Win32 API / sysctl / /proc and are much
+  // harder to bypass than JavaScript-level checks.
+  if (nativeAntiDebug) {
+    try {
+      if (nativeAntiDebug.nativeAntiDebugFullCheck()) {
+        log.debug("Debugger detected: native OS-level check");
+        return true;
+      }
+    } catch {
+      // Native check failed, continue with JS checks
+    }
+  }
+
+  // === JS-level detection (fallback) ===
+
   // 方法 1：检测 Node.js 调试参数
   const debugArgs = ["--inspect", "--inspect-brk", "--debug", "--debug-brk"];
   const hasDebugArg = process.execArgv.some((arg) => debugArgs.some((d) => arg.includes(d)));
@@ -77,6 +118,15 @@ function detectDebugger(): boolean {
     }
   } catch {
     // inspector 模块不可用，忽略
+  }
+
+  // 方法 5：检测注入型调试工具（LD_PRELOAD / DYLD_INSERT_LIBRARIES）
+  const injectionEnvs = ["LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "DYLD_FORCE_FLAT_NAMESPACE"];
+  for (const env of injectionEnvs) {
+    if (process.env[env]) {
+      log.debug(`Debugger detected: injection env ${env} is set`);
+      return true;
+    }
   }
 
   return false;

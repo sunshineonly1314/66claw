@@ -34,3 +34,21 @@ export {
   createHoneypot,
   performSecuritySelfCheck,
 } from "./ai-tamper-protection.js";
+
+// 敏感字符串保险库 (Layer 5)
+export {
+  encryptSensitiveString,
+  decryptSensitiveBuffer,
+  wipeSensitiveBuffer,
+  withSensitiveBuffer,
+  withSensitiveString,
+  destroyVault,
+} from "./string-vault.js";
+
+// 进程完整性监控 (Layer 5)
+export {
+  checkProcessIntegrity,
+  startProcessIntegrityMonitor,
+  stopProcessIntegrityMonitor,
+  type ProcessIntegrityResult,
+} from "./process-integrity.js";

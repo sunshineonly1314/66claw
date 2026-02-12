@@ -262,40 +262,52 @@ export function connectGateway(host: GatewayHost) {
     clientName: "clawdbot-control-ui",
     mode: "webchat",
     onHello: (hello) => {
+      // --- Synchronous state updates (Lit batches these into one render) ---
       host.connected = true;
       host.lastError = null;
       host.hello = hello;
       consecutiveAuthFailures = 0;
       applySnapshot(host, hello);
+
+      // --- Critical async loads (needed for current view) ---
       void loadAssistantIdentity(host as unknown as ClawdbotApp);
-      void loadAgents(host as unknown as ClawdbotApp);
-      void loadNodes(host as unknown as ClawdbotApp, { quiet: true });
-      void loadDevices(host as unknown as ClawdbotApp, { quiet: true });
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
-      
-      // 加载 License 状态并检查是否需要弹框 (ClawdbotCN)
-      void loadLicenseStatus(host as unknown as ClawdbotApp);
-      
-      // ClawdbotCN: 检查是否有未安装的批量技能
-      void host.checkBatchSkills?.();
 
-      // 初始化 MCP 能力列表
-      void initMcpCapabilities(host.client, {
-        onStateChange: (patch: Partial<McpLifecycleState>) => {
-          if (patch.capabilities !== undefined) host.mcpCapabilities = patch.capabilities;
-          if (patch.processes !== undefined) host.mcpProcesses = patch.processes;
-          if (patch.updateNotice !== undefined) host.mcpUpdateNotice = patch.updateNotice;
-        },
-      });
+      // --- Deferred async loads ---
+      // Stagger non-critical data loads so their responses don't all land in
+      // the same frame, which causes a burst of Lit re-renders and visible
+      // flickering (especially noticeable on macOS packaged builds).
+      setTimeout(() => {
+        void loadAgents(host as unknown as ClawdbotApp);
+        void loadNodes(host as unknown as ClawdbotApp, { quiet: true });
+        void loadDevices(host as unknown as ClawdbotApp, { quiet: true });
+      }, 100);
 
-      // 首次使用时触发能力检测
-      if (host.discoveryState.isFirstVisit && !host.discoveryState.hasCompletedFirstVisit) {
-        void runCapabilityDetection(host.client, {
-          onStateChange: (patch) => {
-            host.discoveryState = { ...host.discoveryState, ...patch };
+      setTimeout(() => {
+        // 加载 License 状态并检查是否需要弹框 (ClawdbotCN)
+        void loadLicenseStatus(host as unknown as ClawdbotApp);
+
+        // ClawdbotCN: 检查是否有未安装的批量技能
+        void host.checkBatchSkills?.();
+
+        // 初始化 MCP 能力列表
+        void initMcpCapabilities(host.client, {
+          onStateChange: (patch: Partial<McpLifecycleState>) => {
+            if (patch.capabilities !== undefined) host.mcpCapabilities = patch.capabilities;
+            if (patch.processes !== undefined) host.mcpProcesses = patch.processes;
+            if (patch.updateNotice !== undefined) host.mcpUpdateNotice = patch.updateNotice;
           },
         });
-      }
+
+        // 首次使用时触发能力检测
+        if (host.discoveryState.isFirstVisit && !host.discoveryState.hasCompletedFirstVisit) {
+          void runCapabilityDetection(host.client, {
+            onStateChange: (patch) => {
+              host.discoveryState = { ...host.discoveryState, ...patch };
+            },
+          });
+        }
+      }, 300);
     },
     onClose: ({ code, reason }) => {
       host.connected = false;

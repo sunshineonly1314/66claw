@@ -110,10 +110,35 @@ merge_framework_machos() {
 echo "📦 Ensuring deps (pnpm install)"
 (cd "$ROOT_DIR" && pnpm install --no-frozen-lockfile --config.node-linker=hoisted)
 if [[ "${SKIP_TSC:-0}" != "1" ]]; then
-  echo "📦 Building JS (pnpm exec tsc)"
-  (cd "$ROOT_DIR" && pnpm exec tsc -p tsconfig.json)
+  if [[ "${SKIP_PROTECTION:-0}" != "1" ]]; then
+    echo "📦 Building JS with 5-layer protection (pnpm build:release)"
+    echo "   L1:Bytecode L2:Obfuscation(2-tier) L3:NativeAddon L4:Strip L5:Runtime"
+    (cd "$ROOT_DIR" && pnpm build:release)
+  else
+    echo "📦 Building JS (pnpm exec tsc) — protection skipped"
+    (cd "$ROOT_DIR" && pnpm exec tsc -p tsconfig.json)
+  fi
 else
   echo "📦 Skipping TS build (SKIP_TSC=1)"
+fi
+
+# Build native addon (Layer 3) if source exists and not skipped
+if [[ "${SKIP_NATIVE:-0}" != "1" ]] && [[ -f "$ROOT_DIR/native/binding.gyp" ]]; then
+  NATIVE_ADDON="$ROOT_DIR/native/build/Release/clawdbot_native.node"
+  if [[ ! -f "$NATIVE_ADDON" ]] || [[ "$ROOT_DIR/native/src/addon.cc" -nt "$NATIVE_ADDON" ]]; then
+    echo "🔧 Building C++ native addon (Layer 3)"
+    if (cd "$ROOT_DIR/native" && npx node-gyp rebuild 2>&1); then
+      if [[ -f "$NATIVE_ADDON" ]]; then
+        echo "   Native addon built: $(du -h "$NATIVE_ADDON" | cut -f1)"
+        # Strip symbols from native addon
+        strip -x "$NATIVE_ADDON" 2>/dev/null || true
+      fi
+    else
+      echo "WARN: Native addon build failed (JS fallback will be used)" >&2
+    fi
+  else
+    echo "🔧 Native addon up to date: $(du -h "$NATIVE_ADDON" | cut -f1)"
+  fi
 fi
 
 if [[ "${SKIP_UI_BUILD:-0}" != "1" ]]; then
@@ -249,6 +274,25 @@ else
   else
     echo "ERROR: Textual resource bundle not found. Set ALLOW_MISSING_TEXTUAL_BUNDLE=1 to bypass." >&2
     exit 1
+  fi
+fi
+
+# Embed native addon in .app bundle (Layer 3)
+NATIVE_ADDON="$ROOT_DIR/native/build/Release/clawdbot_native.node"
+if [[ -f "$NATIVE_ADDON" ]]; then
+  echo "📦 Embedding native addon (Layer 3)"
+  NATIVE_DEST="$APP_ROOT/Contents/Resources/native/build/Release"
+  mkdir -p "$NATIVE_DEST"
+  cp "$NATIVE_ADDON" "$NATIVE_DEST/"
+  echo "   Embedded: clawdbot_native.node ($(du -h "$NATIVE_ADDON" | cut -f1))"
+fi
+
+# Report protection status
+JSC_COUNT=$(find "$ROOT_DIR/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$JSC_COUNT" -gt 0 ]]; then
+  echo "🔒 Protection: $JSC_COUNT bytecode files (L1), 2-tier obfuscation (L2)"
+  if [[ -f "$NATIVE_ADDON" ]]; then
+    echo "   + Native addon (L3), strip (L4), runtime protection (L5)"
   fi
 fi
 
