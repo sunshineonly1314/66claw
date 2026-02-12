@@ -111,11 +111,7 @@ export const AFFILIATE_LINKS: Record<string, AffiliateLink> = {
     affiliateUrl: "https://bailian.console.aliyun.com/?ref=AFFILIATE_ID",
     consoleUrl: "https://bailian.console.aliyun.com/",
     apiKeyUrl: "https://bailian.console.aliyun.com/#/api-key",
-    benefits: [
-      "新用户赠送 100万 免费 Token",
-      "Qwen-Max 性能领先",
-      "国内访问速度最快",
-    ],
+    benefits: ["新用户赠送 100万 免费 Token", "Qwen-Max 性能领先", "国内访问速度最快"],
     recommended: false,
     priority: 2,
   },
@@ -127,11 +123,7 @@ export const AFFILIATE_LINKS: Record<string, AffiliateLink> = {
       "https://partner.volcengine.com/partners/auth/confirm?inviteToken=HNOCB9ZQY0R8BA3BEK685Z4OKDIYSYZX2UNQZ7IMCYQL7DL0DMPJII6RN9PS063F&partnerType=101&partnerName=%E4%B8%8A%E6%B5%B7%E6%9D%AD%E8%8A%82%E4%BA%91%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&identityType=11&PartnerEmployeeId=72406401",
     consoleUrl: "https://console.volcengine.com/ark/",
     apiKeyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
-    benefits: [
-      "新用户赠送 50万 免费 Token",
-      "豆包 Pro 32K 大模型",
-      "支持多模态",
-    ],
+    benefits: ["新用户赠送 50万 免费 Token", "豆包 Pro 32K 大模型", "支持多模态"],
     recommended: false,
     priority: 3,
   },
@@ -143,11 +135,7 @@ export const AFFILIATE_LINKS: Record<string, AffiliateLink> = {
     affiliateUrl: "https://cloud.tencent.com/product/hunyuan?ref=AFFILIATE_ID",
     consoleUrl: "https://console.cloud.tencent.com/hunyuan/",
     apiKeyUrl: "https://console.cloud.tencent.com/cam/capi",
-    benefits: [
-      "新用户赠送 30万 免费 Token",
-      "混元大模型",
-      "腾讯云生态集成",
-    ],
+    benefits: ["新用户赠送 30万 免费 Token", "混元大模型", "腾讯云生态集成"],
     recommended: false,
     priority: 4,
   },
@@ -370,7 +358,8 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
     apiEndpoint: "https://ark.cn-beijing.volces.com/api/v3",
     authField: "apiKey",
     authHint: "格式: 在火山引擎控制台创建 API Key",
-    authNote: "⚠️ 重要：使用前必须在火山方舟控制台「开通管理」页面开通对应模型！开通地址: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement",
+    authNote:
+      "⚠️ 重要：使用前必须在火山方舟控制台「开通管理」页面开通对应模型！开通地址: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement",
     models: [
       {
         id: "doubao-seed-1-8-251228",
@@ -849,6 +838,12 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
         description: "Google 开源模型",
         pricing: "免费额度",
       },
+      {
+        id: "minimaxai/minimax-m2.1",
+        name: "🧠 MiniMax M2.1",
+        description: "MiniMax 大语言模型，200K 上下文",
+        pricing: "按量计费",
+      },
     ],
     envVar: "NVIDIA_API_KEY",
     docsUrl: "https://build.nvidia.com/docs",
@@ -888,14 +883,7 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
   recommendedChannels: ["dingtalk", "feishu"],
 
   // 隐藏不可用的指挥渠道
-  hiddenChannels: [
-    "telegram",
-    "discord",
-    "whatsapp",
-    "slack",
-    "signal",
-    "imessage",
-  ],
+  hiddenChannels: ["telegram", "discord", "whatsapp", "slack", "signal", "imessage"],
 
   // 隐藏不可用的 AI 提供商
   hiddenProviders: [
@@ -908,9 +896,7 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
 
   // 隐藏的技能 (国内不可用或已废弃)
   // clawdhub: 国际版技能市场CLI工具，ClawdbotCN 已内置国内技能市场，无需此工具
-  hiddenSkills: [
-    "clawdhub",
-  ],
+  hiddenSkills: ["clawdhub"],
 
   // CN上下文降级技能：这些技能已打包安装（万一要用），但不自动注入LLM上下文
   // 原因：依赖被GFW封锁的海外服务，大多数中国用户无法直接使用
@@ -922,31 +908,37 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
     // ⚠️ macOS技能(apple-notes等)是平台限制非地域限制，不在此列！
     //
     // ── 依赖 Google API（被墙） ──
-    "gemini",          // Google Gemini CLI → Gemini API
+    "gemini", // Google Gemini CLI → Gemini API
     "nano-banana-pro", // 图像生成 → Google Gemini 3 Pro API
-    "gog",             // Google Workspace CLI (Gmail/Calendar/Drive) — 不是本地搜索！
-    "goplaces",        // Google Places API
-    "local-places",    // Google Places API (本地代理但仍调Google)
+    "gog", // Google Workspace CLI (Gmail/Calendar/Drive) — 不是本地搜索！
+    "goplaces", // Google Places API
+    "local-places", // Google Places API (本地代理但仍调Google)
     // ── 依赖 OpenAI API（被墙） ──
-    "oracle",          // 默认 ChatGPT browser / OpenAI API
-    "openai-image-gen",// OpenAI DALL-E API
+    "oracle", // 默认 ChatGPT browser / OpenAI API
+    "openai-image-gen", // OpenAI DALL-E API
     "openai-whisper-api", // OpenAI Whisper API（≠openai-whisper本地版！）
-    "summarize",       // 默认 Google Gemini / OpenAI
-    "coding-agent",    // 需要 Codex/Claude/OpenCode 外部AI API
+    "summarize", // 默认 Google Gemini / OpenAI
+    "coding-agent", // 需要 Codex/Claude/OpenCode 外部AI API
     // ── 依赖其他海外服务 ──
-    "sag",             // ElevenLabs TTS API — 不是本地TTS！
-    "spotify-player",  // Spotify API（中国不可用）
-    "voice-call",      // Twilio/Telnyx/Plivo VoIP
-    "gifgrep",         // Tenor/Giphy GIF搜索
-    "food-order",      // Foodora 欧洲外卖
-    "ordercli",        // Foodora 封装
-    "bird",            // X/Twitter GraphQL API
-    "eightctl",        // Eight Sleep 美国智能床垫IoT
+    "sag", // ElevenLabs TTS API — 不是本地TTS！
+    "spotify-player", // Spotify API（中国不可用）
+    "voice-call", // Twilio/Telnyx/Plivo VoIP
+    "gifgrep", // Tenor/Giphy GIF搜索
+    "food-order", // Foodora 欧洲外卖
+    "ordercli", // Foodora 封装
+    "bird", // X/Twitter GraphQL API
+    "eightctl", // Eight Sleep 美国智能床垫IoT
     // ── 海外平台，国内极少使用 ──
-    "slack", "discord", "wacli", "bluebubbles",
-    "trello", "linear", "notion",
+    "slack",
+    "discord",
+    "wacli",
+    "bluebubbles",
+    "trello",
+    "linear",
+    "notion",
     // ── 专业小众工具（海外） ──
-    "comfy", "homekit",
+    "comfy",
+    "homekit",
   ],
 
   // Skills 镜像源 (ClawdSkillsProxy 服务)
@@ -1134,4 +1126,3 @@ export const CN_DEFAULT_SECURITY_CONFIG = {
     },
   },
 };
-
