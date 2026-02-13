@@ -48,6 +48,14 @@ import {
 } from "./app-scroll";
 import { connectGateway as connectGatewayInternal } from "./app-gateway";
 import { initQrGuard } from "./qr-guard";
+import type { RecordingState } from "./voice/audio-recorder";
+import { AudioRecorder } from "./voice/audio-recorder";
+import {
+  checkAsrAvailability,
+  dismissMascot,
+  isMascotDismissed,
+  transcribeAudio,
+} from "./controllers/voice";
 import {
   handleConnected,
   handleDisconnected,
@@ -151,6 +159,13 @@ export class ClawdbotApp extends LitElement {
   @state() chatThinkingLevel: string | null = null;
   @state() chatQueue: ChatQueueItem[] = [];
   @state() chatAttachments: ChatAttachment[] = [];
+  // Voice mascot state
+  @state() voiceAsrAvailable: boolean | null = null;
+  @state() voiceMascotDismissed = isMascotDismissed();
+  @state() voiceRecordingState: RecordingState = "idle";
+  @state() voiceError: string | null = null;
+  private audioRecorder: AudioRecorder | null = null;
+
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
   @state() sidebarContent: string | null = null;
@@ -956,6 +971,47 @@ export class ClawdbotApp extends LitElement {
     const newRatio = Math.max(0.4, Math.min(0.7, ratio));
     this.splitRatio = newRatio;
     this.applySettings({ ...this.settings, splitRatio: newRatio });
+  }
+
+  // ── Voice mascot handlers ──────────────────────────────
+
+  async checkVoiceCapabilities() {
+    if (!this.client) return;
+    this.voiceAsrAvailable = await checkAsrAvailability(this.client);
+  }
+
+  async handleVoiceStartRecording() {
+    if (!this.client) return;
+    this.voiceError = null;
+    this.audioRecorder = new AudioRecorder({
+      onStateChange: (s) => { this.voiceRecordingState = s; },
+      onError: (err) => { this.voiceError = err; this.voiceRecordingState = "idle"; },
+      onComplete: async (wavBase64) => {
+        this.voiceRecordingState = "processing";
+        try {
+          const result = await transcribeAudio(this.client!, wavBase64);
+          if ("text" in result && result.text) {
+            this.chatMessage = (this.chatMessage ? `${this.chatMessage} ` : "") + result.text;
+          } else if ("error" in result) {
+            this.voiceError = result.error;
+          }
+        } catch {
+          this.voiceError = "voice.error.transcriptionFailed";
+        } finally {
+          this.voiceRecordingState = "idle";
+        }
+      },
+    });
+    await this.audioRecorder.start();
+  }
+
+  handleVoiceStopRecording() {
+    this.audioRecorder?.stop();
+  }
+
+  handleVoiceMascotDismiss() {
+    dismissMascot();
+    this.voiceMascotDismissed = true;
   }
 
   // 关闭适配公告弹框（永久记住）

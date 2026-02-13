@@ -639,8 +639,10 @@ function renderBlockedTab(skills: SkillStatusEntry[], props: SkillsProps) {
   }
 
   // 分组：可自动安装 vs 需手动安装
-  const autoInstallable = skills.filter(s => s.install.length > 0 && s.missing.bins.length > 0);
-  const needsManual = skills.filter(s => !(s.install.length > 0 && s.missing.bins.length > 0));
+  const isAutoInstallable = (s: SkillStatusEntry) =>
+    s.install.length > 0 && (s.missing.bins.length > 0 || s.install.some(opt => opt.kind === "download"));
+  const autoInstallable = skills.filter(s => isAutoInstallable(s));
+  const needsManual = skills.filter(s => !isAutoInstallable(s));
 
   return html`
     <div class="skills-tab-header">
@@ -735,6 +737,7 @@ function renderReadySkillCard(skill: SkillStatusEntry, props: SkillsProps) {
   const apiKey = props.edits[skill.skillKey] ?? "";
   const localizedName = (skill as any).nameZh || getLocalizedSkillName(skill.name);
   const localizedDesc = (skill as any).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
+  const downloadInstalls = skill.install.filter(opt => opt.kind === "download");
 
   return html`
     <div class="skill-card-v2 skill-card-v2--ready">
@@ -769,6 +772,20 @@ function renderReadySkillCard(skill: SkillStatusEntry, props: SkillsProps) {
           <span>加入核心</span>
         </button>
       </div>
+
+      ${downloadInstalls.length > 0 ? html`
+        <div class="skill-card-v2__downloads">
+          ${downloadInstalls.map(opt => html`
+            <button
+              class="btn btn--sm skill-card-v2__install-btn"
+              ?disabled=${busy}
+              @click=${() => props.onInstall(skill.skillKey, skill.name, opt.id)}
+            >
+              ${busy ? html`${renderSpinner()} 下载中...` : html`${icons.download} ${opt.label}`}
+            </button>
+          `)}
+        </div>
+      ` : nothing}
 
       ${skill.primaryEnv ? html`
         <div class="skill-card-v2__apikey">
@@ -842,7 +859,8 @@ function renderBlockedSkillCard(skill: SkillStatusEntry, props: SkillsProps) {
   const busy = props.busyKey === skill.skillKey;
   const message = props.messages[skill.skillKey] ?? null;
   const apiKey = props.edits[skill.skillKey] ?? "";
-  const canInstall = skill.install.length > 0 && skill.missing.bins.length > 0;
+  const hasDownloadInstall = skill.install.some(opt => opt.kind === "download");
+  const canInstall = skill.install.length > 0 && (skill.missing.bins.length > 0 || hasDownloadInstall);
   const localizedName = (skill as any).nameZh || getLocalizedSkillName(skill.name);
   const localizedDesc = (skill as any).descriptionZh || getLocalizedSkillDesc(skill.name, skill.description);
 
@@ -888,13 +906,15 @@ function renderBlockedSkillCard(skill: SkillStatusEntry, props: SkillsProps) {
 
       <div class="skill-card-v2__actions">
         ${canInstall ? html`
-          <button
-            class="btn btn--sm primary skill-card-v2__install-btn"
-            ?disabled=${busy}
-            @click=${() => props.onInstall(skill.skillKey, skill.name, skill.install[0].id)}
-          >
-            ${busy ? html`${renderSpinner()} 安装中...` : html`${icons.download} ${translateInstallLabel(skill.install[0].label)}`}
-          </button>
+          ${skill.install.map(opt => html`
+            <button
+              class="btn btn--sm primary skill-card-v2__install-btn"
+              ?disabled=${busy}
+              @click=${() => props.onInstall(skill.skillKey, skill.name, opt.id)}
+            >
+              ${busy ? html`${renderSpinner()} 安装中...` : html`${icons.download} ${translateInstallLabel(opt.label)}`}
+            </button>
+          `)}
         ` : nothing}
       </div>
 

@@ -21,6 +21,10 @@ import {
   renderWelcomeDiscovery,
   type WelcomeDiscoveryProps,
 } from "./welcome-discovery";
+import {
+  renderVoiceMascot,
+  type VoiceMascotProps,
+} from "./voice-mascot";
 
 /**
  * 打开购买链接
@@ -112,6 +116,8 @@ export type ChatProps = {
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
+  // Voice mascot
+  voiceMascot?: VoiceMascotProps | null;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -573,6 +579,7 @@ export function renderChat(props: ChatProps) {
         : nothing}
 
       <div class="chat-compose">
+        ${props.voiceMascot ? renderVoiceMascot(props.voiceMascot) : nothing}
         ${renderAttachmentPreview(props)}
         <div class="chat-compose__row">
           <label class="field chat-compose__field">

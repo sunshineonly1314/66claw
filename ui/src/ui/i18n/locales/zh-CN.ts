@@ -5911,4 +5911,13 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skillTag.weather": "天气",
   "skillTag.writing": "写作",
   "subtitle.extensions": "你的 AI 助手的扩展能力。管理 MCP 服务器与工具。",
+  "voice.error.encodingFailed": "音频编码失败",
+  "voice.error.noMic": "无法访问麦克风",
+  "voice.error.notSupported": "浏览器不支持语音录制",
+  "voice.error.recordingFailed": "录音失败，请重试",
+  "voice.error.transcriptionFailed": "语音识别失败，请重试",
+  "voice.mascot.hint": "语音告诉我",
+  "voice.processing": "识别中...",
+  "voice.startRecording": "开始语音输入",
+  "voice.stopRecording": "停止录音",
 } as const;

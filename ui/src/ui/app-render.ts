@@ -1207,6 +1207,15 @@ export function renderApp(state: AppViewState) {
                   return false;
                 }
               },
+              // Voice mascot (语音吉祥物)
+              voiceMascot: state.voiceAsrAvailable === true && !state.voiceMascotDismissed ? {
+                visible: true,
+                recordingState: state.voiceRecordingState,
+                error: state.voiceError,
+                onStartRecording: () => state.handleVoiceStartRecording(),
+                onStopRecording: () => state.handleVoiceStopRecording(),
+                onDismiss: () => state.handleVoiceMascotDismiss(),
+              } : null,
             })
           : nothing}
 

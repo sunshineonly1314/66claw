@@ -299,6 +299,9 @@ export function connectGateway(host: GatewayHost) {
           },
         });
 
+        // 检测语音识别能力（ASR 模型是否已安装）
+        void (host as unknown as ClawdbotApp).checkVoiceCapabilities?.();
+
         // 首次使用时触发能力检测
         if (host.discoveryState.isFirstVisit && !host.discoveryState.hasCompletedFirstVisit) {
           void runCapabilityDetection(host.client, {

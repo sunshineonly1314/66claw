@@ -32,6 +32,7 @@ import { feedbackHandlers } from "./server-methods/feedback.js";
 import { freeModelsHandlers } from "./server-methods/free-models.js";
 import { skillsBatchHandlers } from "./server-methods/skills-batch.js";
 import { supportQrcodeHandlers } from "./server-methods/support-qrcode.js";
+import { asrHandlers } from "./server-methods/asr.js";
 import { mcpHandlers } from "./server-methods/mcp-methods.js";
 
 const ADMIN_SCOPE = "operator.admin";
@@ -254,6 +255,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...skillsBatchHandlers,
   ...supportQrcodeHandlers,
   ...mcpHandlers,
+  ...asrHandlers,
 };
 
 export async function handleGatewayRequest(

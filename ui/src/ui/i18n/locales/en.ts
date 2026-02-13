@@ -2317,6 +2317,19 @@ export const en = {
   "batch.confirm.mirrorHint": "Auto-selecting optimal node",
   "batch.confirm.alreadyInstalled": "Installed",
   "batch.confirm.itemCount": "{count} items",
+  // ============================================================================
+  // Voice Mascot (语音吉祥物)
+  // ============================================================================
+  "voice.mascot.hint": "Speak to me!",
+  "voice.startRecording": "Start voice input",
+  "voice.stopRecording": "Stop recording",
+  "voice.processing": "Transcribing...",
+  "voice.error.noMic": "Cannot access microphone",
+  "voice.error.notSupported": "Browser does not support audio recording",
+  "voice.error.recordingFailed": "Recording failed, please try again",
+  "voice.error.encodingFailed": "Audio encoding failed",
+  "voice.error.transcriptionFailed": "Transcription failed, please try again",
+
   // Skill translations (auto-synced from zh-CN)
   "skillName.1": "1",
   "skillName.2captcha": "2captcha",
