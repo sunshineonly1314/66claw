@@ -39,7 +39,7 @@ export function renderVoiceMascot(props: VoiceMascotProps) {
       <button
         class="voice-mascot__dismiss"
         @click=${props.onDismiss}
-        aria-label="Dismiss"
+        aria-label=${t("common.close")}
         type="button"
       >${icons.x}</button>
 
@@ -84,7 +84,7 @@ export function renderVoiceMascot(props: VoiceMascotProps) {
       ${
 				props.error
 					? html`
-        <span class="voice-mascot__error">${t(props.error as Parameters<typeof t>[0])}</span>
+        <span class="voice-mascot__error" title=${t(props.error as Parameters<typeof t>[0])}>${t(props.error as Parameters<typeof t>[0])}</span>
       `
 					: nothing
 			}

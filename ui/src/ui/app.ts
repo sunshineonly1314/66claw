@@ -165,6 +165,7 @@ export class ClawdbotApp extends LitElement {
   @state() voiceRecordingState: RecordingState = "idle";
   @state() voiceError: string | null = null;
   private audioRecorder: AudioRecorder | null = null;
+  private voiceErrorTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
@@ -975,6 +976,14 @@ export class ClawdbotApp extends LitElement {
 
   // ── Voice mascot handlers ──────────────────────────────
 
+  private setVoiceError(err: string | null) {
+    if (this.voiceErrorTimer) { clearTimeout(this.voiceErrorTimer); this.voiceErrorTimer = null; }
+    this.voiceError = err;
+    if (err) {
+      this.voiceErrorTimer = setTimeout(() => { this.voiceError = null; }, 5000);
+    }
+  }
+
   async checkVoiceCapabilities() {
     if (!this.client) return;
     this.voiceAsrAvailable = await checkAsrAvailability(this.client);
@@ -982,21 +991,24 @@ export class ClawdbotApp extends LitElement {
 
   async handleVoiceStartRecording() {
     if (!this.client) return;
-    this.voiceError = null;
+    this.setVoiceError(null);
+    // Dispose previous recorder to release mic tracks if still held
+    this.audioRecorder?.dispose();
     this.audioRecorder = new AudioRecorder({
       onStateChange: (s) => { this.voiceRecordingState = s; },
-      onError: (err) => { this.voiceError = err; this.voiceRecordingState = "idle"; },
+      onError: (err) => { this.setVoiceError(err); this.voiceRecordingState = "idle"; },
       onComplete: async (wavBase64) => {
+        if (!this.client) return;
         this.voiceRecordingState = "processing";
         try {
-          const result = await transcribeAudio(this.client!, wavBase64);
+          const result = await transcribeAudio(this.client, wavBase64);
           if ("text" in result && result.text) {
             this.chatMessage = (this.chatMessage ? `${this.chatMessage} ` : "") + result.text;
           } else if ("error" in result) {
-            this.voiceError = result.error;
+            this.setVoiceError(result.error);
           }
         } catch {
-          this.voiceError = "voice.error.transcriptionFailed";
+          this.setVoiceError("voice.error.transcriptionFailed");
         } finally {
           this.voiceRecordingState = "idle";
         }

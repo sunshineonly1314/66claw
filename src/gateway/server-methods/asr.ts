@@ -34,7 +34,20 @@ export const asrHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    const format = typeof params.format === "string" ? params.format : "wav";
+    // 10 MB base64 limit (~7.5 MB decoded) — well above 30s 16kHz mono WAV (~960 KB)
+    const MAX_BASE64_LENGTH = 10 * 1024 * 1024;
+    if (audioBase64.length > MAX_BASE64_LENGTH) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "audioBase64 exceeds 10 MB limit"),
+      );
+      return;
+    }
+
+    const rawFormat = typeof params.format === "string" ? params.format : "wav";
+    // Sanitize format to alphanumeric only — prevent path traversal via extension
+    const format = rawFormat.replace(/[^a-zA-Z0-9]/g, "") || "wav";
     const tmpPath = path.join(
       os.tmpdir(),
       `clawdbot-asr-rpc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${format}`,
