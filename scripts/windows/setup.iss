@@ -57,8 +57,8 @@ Source: "..\..\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdi
 ; Extensions with deps (feishu, dingtalk, etc.) install them on first run via postinstall
 ; Exclude .turbo (dev-only build cache)
 Source: "..\..\extensions\*"; DestDir: "{app}\extensions"; Excludes: "node_modules\*,.turbo\*"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; Templates - bot default role config
-Source: "..\..\docs\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Templates - bot default role config (CN build uses Chinese templates)
+Source: "..\..\docs-cn\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "start-gateway.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "clawdbot.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "diagnose.bat"; DestDir: "{app}"; Flags: ignoreversion
