@@ -1,0 +1,314 @@
+# dispatch.yaml — Intelligent Dispatch Configuration
+# Place this file in your agent directory or workspace directory.
+# Clawdbot will auto-detect and load it.
+
+version: 1
+
+# Global settings
+settings:
+  enabled: true
+  # Minimum confidence from rule-based matching to skip LLM fallback (0.0 - 1.0)
+  ruleConfidenceThreshold: 0.7
+  # Maximum latency budget for dispatch (ms) — if exceeded, use default routing
+  timeoutMs: 3000
+  # Log dispatch decisions for debugging
+  debug: false
+
+# LLM classifier configuration (used when rules produce low confidence)
+classifier:
+  # Model to use for classification (should be fast and cheap)
+  model: "anthropic/claude-haiku-3"
+  # Alternative: domestic model for lower latency in China
+  # model: "aliyun-bailian/qwen-turbo"
+  maxTokens: 100
+  systemPrompt: |
+    You are an intent classifier. Given a user message, classify it into exactly one intent.
+    Return ONLY a JSON object: {"intent": "<intent_id>", "confidence": <0.0-1.0>}
+    Available intents: {{intent_ids}}
+
+# Intent definitions — ordered by specificity (most specific first)
+intents:
+  # --- Image Generation ---
+  - id: "image_generation"
+    description: "Generate images from text descriptions"
+    patterns:
+      keywords:
+        - "画图"
+        - "画一个"
+        - "画一张"
+        - "画一只"
+        - "生成图"
+        - "生图"
+        - "AI绘画"
+        - "绘画"
+        - "生成一张"
+        - "来张图"
+        - "generate image"
+        - "draw a"
+        - "create image"
+        - "make a picture"
+      regex:
+        - "(画|绘|生成|create|generate|make).*?(图|画|image|picture|photo|illustration)"
+        - "seed\\s*dance"
+      semanticTags: ["image", "visual", "drawing", "illustration", "artwork"]
+      # When user sends an image, boost this intent (e.g. "modify this image")
+      mediaTypes: ["image"]
+      # Prevent false matches from unrelated words containing "画"
+      excludeKeywords: ["计划", "规划", "策划", "动画片", "笔画", "动漫"]
+    routing:
+      model: "seeddance/seeddance-2.0"
+      fallbackModel: "openai/dall-e-3"
+    skills: ["openai-image-gen"]
+    mcpTools: []
+    systemHint: "User wants to generate an image. Use the image generation capability."
+
+  # --- WeChat Operations ---
+  - id: "wechat_operation"
+    description: "WeChat messaging and automation"
+    patterns:
+      keywords:
+        - "微信"
+        - "wechat"
+        - "发消息给"
+        - "发微信"
+        - "查看微信"
+        - "未读消息"
+        - "回复微信"
+        - "微信联系人"
+      regex:
+        - "(微信|wechat)"
+        - "(发|发送|send).*(消息|message).*(给|to)"
+      semanticTags: ["messaging", "wechat", "chat", "im"]
+    routing:
+      model: null  # Use default model — wechat works with any model
+    skills: ["wechat-desktop"]
+    mcpTools: []
+    toolBinding: "required"  # WeChat ops MUST use wechat tools
+
+  # --- Database Queries ---
+  - id: "database_query"
+    description: "Database operations and SQL queries"
+    patterns:
+      keywords:
+        - "SQL"
+        - "数据库"
+        - "database"
+        - "查询数据"
+        - "建表"
+        - "表结构"
+      regex:
+        # Require SQL-like structure: SELECT <columns> FROM <table>, not bare "select"
+        - "SELECT\\s+(?:\\*|[\\w.]+(?:\\s*,\\s*[\\w.]+)*)\\s+FROM\\s"
+        - "INSERT\\s+INTO"
+        - "UPDATE\\s+\\w+\\s+SET"
+        - "DELETE\\s+FROM"
+        - "CREATE\\s+TABLE"
+        - "ALTER\\s+TABLE"
+        - "DROP\\s+TABLE"
+        - "(数据库|database|DB).*(查询|query|操作|operation)"
+      semanticTags: ["database", "sql", "data", "query", "table"]
+    routing:
+      model: null
+    skills: []
+    mcpTools: ["mcp_database_*"]
+
+  # --- Code/Development ---
+  - id: "coding"
+    description: "Code writing, review, debugging, and development tasks"
+    patterns:
+      keywords:
+        - "代码"
+        - "code"
+        - "debug"
+        - "编程"
+        - "函数"
+        - "function"
+        - "bug"
+        - "编译"
+        - "compile"
+        - "重构"
+        - "refactor"
+        - "写个"
+        - "模块"
+        - "脚本"
+        - "script"
+        - "Python"
+        - "Java"
+        - "TypeScript"
+      regex:
+        - "(write|fix|debug|refactor|review|implement).*(code|function|class|module|component)"
+        - "```[a-z]+"
+        - "\\.(ts|js|py|go|rs|java|cpp|c|rb|php|swift|kt)\\b"
+      semanticTags: ["coding", "development", "programming", "software"]
+      # Code files attached → boost coding intent
+      mediaTypes: ["document"]
+    routing:
+      model: "anthropic/claude-opus-4-5"
+      fallbackModel: "anthropic/claude-sonnet-4-5-20250929"
+    skills: ["coding-agent"]
+    mcpTools: []
+
+  # --- Smart Home / IoT ---
+  - id: "smart_home_query"
+    description: "Query smart home device states, check appliance status, search for devices"
+    patterns:
+      keywords:
+        - "冰箱"
+        - "空调"
+        - "窗帘"
+        - "门锁"
+        - "扫地机"
+        - "洗衣机"
+        - "热水器"
+        - "加湿器"
+        - "智能家居"
+        - "smart home"
+        - "IoT"
+        - "家里温度"
+        - "家里湿度"
+        - "室内温度"
+      regex:
+        - "(冰箱|空调|窗帘|电视|洗衣机|扫地机|热水器|加湿器|门锁).*(状态|怎么样|多少度|有什么|开着|关着)"
+        - "(家里|室内|房间|屋里).*(多少度|温度|湿度)"
+        - "(查看|检查|看看).*(家电|智能家居|设备状态)"
+      semanticTags: ["home", "device", "iot", "appliance", "sensor", "smart_home"]
+    routing:
+      model: null
+    skills: ["smart-home"]
+    mcpTools: ["mcp_homeassistant_*"]
+
+  - id: "smart_home_control"
+    description: "Control smart home devices: turn on/off, set temperature, execute scenes"
+    patterns:
+      keywords:
+        - "开灯"
+        - "关灯"
+        - "开空调"
+        - "关空调"
+        - "调温"
+        - "打开窗帘"
+        - "关窗帘"
+        - "场景"
+        - "回家模式"
+        - "睡眠模式"
+        - "电影模式"
+      regex:
+        - "(打开|关闭|关上|开|关).*(灯|空调|窗帘|电视|风扇|门锁|加湿器|热水器)"
+        - "(调|设置|设定).*(温度|亮度|音量)"
+        - "(场景|模式).*(启动|开启|执行|切换)"
+      semanticTags: ["control", "home", "automation", "scene"]
+    routing:
+      model: null
+    skills: ["smart-home"]
+    mcpTools: ["mcp_homeassistant_*"]
+    toolBinding: "required"  # Smart home control MUST use HA tools
+
+  - id: "robot_command"
+    description: "Send tasks or commands to robots (robot dog, robot arm, etc.)"
+    patterns:
+      keywords:
+        - "机器狗"
+        - "机器人"
+        - "robot"
+        - "拿快递"
+        - "取快递"
+        - "巡逻"
+        - "送东西"
+      regex:
+        - "(机器狗|机器人|robot).*(去|帮|拿|送|取|巡逻|回来)"
+        - "(拿|取|送).*(快递|包裹|东西|package)"
+      semanticTags: ["robot", "automation", "task", "delivery"]
+    routing:
+      model: null
+    skills: ["smart-home"]
+    mcpTools: []
+
+  # --- Desktop Control ---
+  - id: "desktop_control"
+    description: "Control desktop applications and GUI automation"
+    patterns:
+      keywords:
+        - "打开应用"
+        - "启动应用"
+        - "截图"
+        - "截屏"
+        - "点击"
+        - "操作桌面"
+        - "操作电脑"
+        - "桌面操作"
+      regex:
+        - "(打开|启动|运行|open|launch|start).*(应用|app|软件|program)"
+        - "(截图|screenshot|截屏)"
+        - "(帮我|help me).*(操作|use|control)"
+      semanticTags: ["desktop", "gui", "application", "window"]
+      # Screenshots sent → likely desktop control context
+      mediaTypes: ["image"]
+      # Prevent ambiguous single-char matches
+      excludeKeywords: ["启动资金", "运行机制", "窗口期", "桌面研究"]
+    routing:
+      model: null
+    skills: ["desktop-control"]
+    mcpTools: []
+    toolBinding: "strong"  # Desktop control should strongly prefer its tools
+
+  # --- Web Browsing / Search ---
+  - id: "web_browsing"
+    description: "Web browsing, search, and information retrieval"
+    patterns:
+      keywords:
+        - "搜索"
+        - "search"
+        - "浏览"
+        - "browse"
+        - "网页"
+        - "网站"
+        - "website"
+        - "访问"
+      regex:
+        - "(搜索|search|查找|find|look up).*(网|web|online|internet)"
+        - "https?://"
+        - "(打开|访问|浏览|go to).*(网站|网页|站点|site|page|url)"
+      semanticTags: ["web", "search", "browse", "internet"]
+    routing:
+      model: null
+    skills: []
+    mcpTools: []
+
+  # --- Audio/Voice Processing ---
+  - id: "audio_processing"
+    description: "Audio transcription, voice messages, and sound processing"
+    patterns:
+      keywords:
+        - "语音"
+        - "音频"
+        - "audio"
+        - "voice"
+        - "转文字"
+        - "transcribe"
+        - "听"
+      regex:
+        - "(语音|音频|audio|voice).*(转|to|convert).*(文字|text)"
+      semanticTags: ["audio", "voice", "speech", "transcription"]
+      mediaTypes: ["audio", "voice"]
+    routing:
+      model: null
+    skills: []
+    mcpTools: []
+
+  # --- General (catch-all, must be last) ---
+  - id: "general"
+    description: "General conversation, Q&A, and miscellaneous tasks"
+    patterns:
+      keywords: []
+      regex: []
+      semanticTags: []
+    routing:
+      model: null
+    skills: []
+    mcpTools: []
+
+# Default routing when no intent matches or dispatch is disabled
+defaults:
+  model: null
+  skills: []
+  mcpTools: []

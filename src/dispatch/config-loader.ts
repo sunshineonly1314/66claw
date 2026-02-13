@@ -1,0 +1,464 @@
+/**
+ * Dispatch config loader — loads, validates, and caches dispatch.yaml.
+ *
+ * Search order: {agentDir}/dispatch.yaml → {workspaceDir}/dispatch.yaml
+ * Supports hot-reload via mtime checking (debounced).
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import YAML from "yaml";
+import type {
+  BudgetConfig,
+  ClassifierConfig,
+  ComplexityConfig,
+  ComplexityStrategyConfig,
+  CompiledDispatchConfig,
+  CompiledIntent,
+  DispatchConfig,
+  DispatchDefaults,
+  DispatchSettings,
+  IntentDefinition,
+} from "./types.js";
+import { invalidateSynonymIndex, registerCustomSynonyms } from "./synonym-expander.js";
+
+const CONFIG_FILENAME = "dispatch.yaml";
+const CONFIG_CHECK_INTERVAL_MS = 10_000;
+
+// ---------------------------------------------------------------------------
+// Cache state
+// ---------------------------------------------------------------------------
+
+let cachedConfig: CompiledDispatchConfig | null = null;
+let cachedConfigPath: string | null = null;
+let cachedConfigMtime = 0;
+let lastCheckTime = 0;
+
+// ---------------------------------------------------------------------------
+// Default values
+// ---------------------------------------------------------------------------
+
+const DEFAULT_SETTINGS: DispatchSettings = {
+  enabled: true,
+  ruleConfidenceThreshold: 0.7,
+  timeoutMs: 3000,
+  debug: false,
+};
+
+const DEFAULT_CLASSIFIER: ClassifierConfig = {
+  model: "anthropic/claude-haiku-3",
+  maxTokens: 100,
+  systemPrompt: [
+    "You are an intent classifier. Given a user message, classify it into exactly one intent.",
+    'Return ONLY a JSON object: {"intent": "<intent_id>", "confidence": <0.0-1.0>}',
+    "Available intents: {{intent_ids}}",
+  ].join("\n"),
+};
+
+const DEFAULT_DEFAULTS: DispatchDefaults = {
+  model: null,
+  skills: [],
+  mcpTools: [],
+};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Load dispatch.yaml from agentDir or workspaceDir.
+ * Returns compiled config (with pre-compiled regex) or null if no config found.
+ * Caches result and hot-reloads when file changes.
+ */
+export function loadDispatchConfig(params: {
+  agentDir: string;
+  workspaceDir: string;
+}): CompiledDispatchConfig | null {
+  const now = Date.now();
+
+  // Debounce file-stat checks
+  if (cachedConfig && now - lastCheckTime < CONFIG_CHECK_INTERVAL_MS) {
+    return cachedConfig;
+  }
+  lastCheckTime = now;
+
+  // Find config file
+  const configPath = findConfigFile(params.agentDir, params.workspaceDir);
+  if (!configPath) {
+    cachedConfig = null;
+    cachedConfigPath = null;
+    return null;
+  }
+
+  // Check if file changed since last load
+  try {
+    const stat = fs.statSync(configPath);
+    const mtime = stat.mtimeMs;
+    if (cachedConfig && cachedConfigPath === configPath && mtime === cachedConfigMtime) {
+      return cachedConfig;
+    }
+
+    // Load and parse
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const parsed = YAML.parse(raw);
+    const validated = validateDispatchConfig(parsed);
+    const compiled = compileConfig(validated);
+
+    cachedConfig = compiled;
+    cachedConfigPath = configPath;
+    cachedConfigMtime = mtime;
+
+    // Invalidate synonym cache so it rebuilds with any new synonym groups.
+    invalidateSynonymIndex();
+
+    if (validated.settings.debug) {
+      console.log(
+        `[dispatch] Loaded config from ${configPath} (${validated.intents.length} intents)`,
+      );
+    }
+
+    return compiled;
+  } catch (err) {
+    console.warn(`[dispatch] Failed to load config from ${configPath}:`, err);
+    return cachedConfig;
+  }
+}
+
+/**
+ * Validate a raw parsed dispatch config object.
+ * Fills in defaults for missing optional fields.
+ */
+export function validateDispatchConfig(raw: unknown): DispatchConfig {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("[dispatch] Config must be a non-null object");
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  // Version
+  const version = typeof obj.version === "number" ? obj.version : 1;
+
+  // Settings (merge with defaults)
+  const rawSettings = (obj.settings ?? {}) as Partial<DispatchSettings>;
+  const settings: DispatchSettings = {
+    enabled: rawSettings.enabled ?? DEFAULT_SETTINGS.enabled,
+    ruleConfidenceThreshold:
+      rawSettings.ruleConfidenceThreshold ?? DEFAULT_SETTINGS.ruleConfidenceThreshold,
+    timeoutMs: rawSettings.timeoutMs ?? DEFAULT_SETTINGS.timeoutMs,
+    debug: rawSettings.debug ?? DEFAULT_SETTINGS.debug,
+  };
+
+  // Classifier (merge with defaults)
+  const rawClassifier = (obj.classifier ?? {}) as Partial<ClassifierConfig>;
+  const classifier: ClassifierConfig = {
+    model: rawClassifier.model ?? DEFAULT_CLASSIFIER.model,
+    maxTokens: rawClassifier.maxTokens ?? DEFAULT_CLASSIFIER.maxTokens,
+    systemPrompt: rawClassifier.systemPrompt ?? DEFAULT_CLASSIFIER.systemPrompt,
+  };
+
+  // Intents
+  const rawIntents = Array.isArray(obj.intents) ? obj.intents : [];
+  const intents: IntentDefinition[] = rawIntents.map((intent: unknown, idx: number) => {
+    return validateIntent(intent, idx);
+  });
+
+  // Defaults
+  const rawDefaults = (obj.defaults ?? {}) as Partial<DispatchDefaults>;
+  const defaults: DispatchDefaults = {
+    model: (rawDefaults.model as string) ?? DEFAULT_DEFAULTS.model,
+    skills: Array.isArray(rawDefaults.skills) ? rawDefaults.skills : DEFAULT_DEFAULTS.skills,
+    mcpTools: Array.isArray(rawDefaults.mcpTools)
+      ? rawDefaults.mcpTools
+      : DEFAULT_DEFAULTS.mcpTools,
+  };
+
+  // Complexity config (optional section)
+  const complexity = validateComplexityConfig(obj.complexity);
+
+  // Budget config (optional section)
+  const budget = validateBudgetConfig(obj.budget);
+
+  return { version, settings, classifier, intents, defaults, complexity, budget };
+}
+
+/**
+ * Force-invalidate the cached dispatch config.
+ * Call this after explicit config reload commands.
+ */
+export function invalidateDispatchConfigCache(): void {
+  cachedConfig = null;
+  cachedConfigPath = null;
+  cachedConfigMtime = 0;
+  lastCheckTime = 0;
+  invalidateSynonymIndex();
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function validateComplexityConfig(raw: unknown): ComplexityConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+
+  const obj = raw as Record<string, unknown>;
+  const enabled = obj.enabled === true;
+  if (!enabled) return { enabled: false, ruleConfidenceThreshold: 0.5, strategies: {} };
+
+  const ruleConfidenceThreshold =
+    typeof obj.ruleConfidenceThreshold === "number" ? obj.ruleConfidenceThreshold : 0.5;
+
+  const rawStrategies = (obj.strategies ?? {}) as Record<string, unknown>;
+  const strategies: ComplexityStrategyConfig = {};
+
+  if (rawStrategies.single && typeof rawStrategies.single === "object") {
+    const s = rawStrategies.single as Record<string, unknown>;
+    strategies.single = { model: typeof s.model === "string" ? s.model : undefined };
+  }
+  if (rawStrategies.enhanced && typeof rawStrategies.enhanced === "object") {
+    const s = rawStrategies.enhanced as Record<string, unknown>;
+    strategies.enhanced = { model: typeof s.model === "string" ? s.model : undefined };
+  }
+  if (rawStrategies.multi && typeof rawStrategies.multi === "object") {
+    const s = rawStrategies.multi as Record<string, unknown>;
+    strategies.multi = {
+      orchestratorModel: typeof s.orchestratorModel === "string" ? s.orchestratorModel : undefined,
+      workerModel: typeof s.workerModel === "string" ? s.workerModel : undefined,
+      maxWorkers: typeof s.maxWorkers === "number" ? s.maxWorkers : 5,
+    };
+  }
+
+  return { enabled, ruleConfidenceThreshold, strategies };
+}
+
+function validateBudgetConfig(raw: unknown): BudgetConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+
+  const obj = raw as Record<string, unknown>;
+  return {
+    maxPerRequestUsd: typeof obj.maxPerRequestUsd === "number" ? obj.maxPerRequestUsd : 0.5,
+    maxHourlyUsd: typeof obj.maxHourlyUsd === "number" ? obj.maxHourlyUsd : 10.0,
+    maxDailyUsd: typeof obj.maxDailyUsd === "number" ? obj.maxDailyUsd : 50.0,
+  };
+}
+
+function findConfigFile(agentDir: string, workspaceDir: string): string | null {
+  const candidates = [
+    path.join(agentDir, CONFIG_FILENAME),
+    path.join(workspaceDir, CONFIG_FILENAME),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      // ignore access errors
+    }
+  }
+  return null;
+}
+
+function validateIntent(raw: unknown, idx: number): IntentDefinition {
+  if (!raw || typeof raw !== "object") {
+    throw new Error(`[dispatch] intents[${idx}] must be an object`);
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  const id = typeof obj.id === "string" ? obj.id.trim() : "";
+  if (!id) {
+    throw new Error(`[dispatch] intents[${idx}].id is required`);
+  }
+
+  const description = typeof obj.description === "string" ? obj.description : "";
+
+  const rawPatterns = (obj.patterns ?? {}) as Record<string, unknown>;
+  const patterns = {
+    keywords: Array.isArray(rawPatterns.keywords)
+      ? (rawPatterns.keywords as string[]).map(String)
+      : [],
+    regex: Array.isArray(rawPatterns.regex) ? (rawPatterns.regex as string[]).map(String) : [],
+    semanticTags: Array.isArray(rawPatterns.semanticTags)
+      ? (rawPatterns.semanticTags as string[]).map(String)
+      : [],
+    mediaTypes: Array.isArray(rawPatterns.mediaTypes)
+      ? (rawPatterns.mediaTypes as string[]).map(String)
+      : undefined,
+    excludeKeywords: Array.isArray(rawPatterns.excludeKeywords)
+      ? (rawPatterns.excludeKeywords as string[]).map(String)
+      : undefined,
+  };
+
+  const rawRouting = (obj.routing ?? {}) as Record<string, unknown>;
+  const routing = {
+    model: rawRouting.model == null ? null : String(rawRouting.model),
+    fallbackModel: rawRouting.fallbackModel ? String(rawRouting.fallbackModel) : undefined,
+  };
+
+  const skills = Array.isArray(obj.skills) ? (obj.skills as string[]).map(String) : [];
+  const mcpTools = Array.isArray(obj.mcpTools) ? (obj.mcpTools as string[]).map(String) : [];
+  const systemHint = typeof obj.systemHint === "string" ? obj.systemHint : undefined;
+
+  // Tool binding strength: "hint" (default) | "strong" | "required"
+  const validBindings = new Set(["hint", "strong", "required"]);
+  const rawBinding = typeof obj.toolBinding === "string" ? obj.toolBinding : undefined;
+  const toolBinding =
+    rawBinding && validBindings.has(rawBinding)
+      ? (rawBinding as "hint" | "strong" | "required")
+      : undefined;
+
+  // Custom synonym groups: array of string arrays
+  const synonyms = Array.isArray(obj.synonyms)
+    ? (obj.synonyms as unknown[]).filter(
+        (s): s is string[] => Array.isArray(s) && s.every((v) => typeof v === "string"),
+      )
+    : undefined;
+
+  return {
+    id,
+    description,
+    patterns,
+    routing,
+    skills,
+    mcpTools,
+    systemHint,
+    toolBinding,
+    synonyms,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Regex complexity guard (ReDoS protection)
+// ---------------------------------------------------------------------------
+
+/** Maximum allowed length for a regex pattern string. */
+const MAX_REGEX_LENGTH = 500;
+
+/**
+ * Detect potentially catastrophic regex patterns that can cause ReDoS.
+ * Checks for nested quantifiers, overlapping alternation, and greedy
+ * quantifiers repeated inside groups (which cause exponential backtracking).
+ */
+function isRegexDangerous(pattern: string): boolean {
+  if (pattern.length > MAX_REGEX_LENGTH) return true;
+  // Nested quantifiers: (X+)+, (X*)+, (X+)*, (X*)*, (X{n,})+, etc.
+  if (/\([^)]*[+*][^)]*\)[+*{]/.test(pattern)) return true;
+  // Overlapping alternation with quantifiers: (a|a)+
+  // Simplified heuristic: alternation inside a quantified group
+  if (/\([^)]*\|[^)]*\)[+*]{1,2}/.test(pattern)) return true;
+  // Greedy .* or .+ repeated inside a group with quantifier: (.*){2,}, (.+){3,}
+  if (/\([^)]*\.\*[^)]*\)\{/.test(pattern)) return true;
+  if (/\([^)]*\.\+[^)]*\)\{/.test(pattern)) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Config validation warnings
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit non-fatal warnings for potential config issues.
+ * These don't prevent loading but help users spot typos.
+ */
+function emitConfigWarnings(config: DispatchConfig): void {
+  const seenIds = new Set<string>();
+  for (const intent of config.intents) {
+    // Duplicate intent IDs
+    if (seenIds.has(intent.id)) {
+      console.warn(`[dispatch] Warning: duplicate intent id "${intent.id}"`);
+    }
+    seenIds.add(intent.id);
+
+    // Model ref format validation (should be "provider/model" or null)
+    if (intent.routing.model && !intent.routing.model.includes("/")) {
+      console.warn(
+        `[dispatch] Warning: intent "${intent.id}" model "${intent.routing.model}" ` +
+          `missing provider prefix (expected "provider/model" format)`,
+      );
+    }
+    if (intent.routing.fallbackModel && !intent.routing.fallbackModel.includes("/")) {
+      console.warn(
+        `[dispatch] Warning: intent "${intent.id}" fallbackModel "${intent.routing.fallbackModel}" ` +
+          `missing provider prefix (expected "provider/model" format)`,
+      );
+    }
+
+    // Empty patterns on non-catch-all intent
+    if (
+      intent.id !== "general" &&
+      intent.patterns.keywords.length === 0 &&
+      intent.patterns.regex.length === 0 &&
+      (!intent.patterns.mediaTypes || intent.patterns.mediaTypes.length === 0)
+    ) {
+      console.warn(
+        `[dispatch] Warning: intent "${intent.id}" has no keywords, regex, or mediaTypes ` +
+          `— it will only match as catch-all with very low confidence`,
+      );
+    }
+  }
+
+  // Classifier model ref
+  if (config.classifier.model && !config.classifier.model.includes("/")) {
+    console.warn(
+      `[dispatch] Warning: classifier model "${config.classifier.model}" ` +
+        `missing provider prefix (expected "provider/model" format)`,
+    );
+  }
+}
+
+/**
+ * Compile a validated config: pre-compile regex patterns and lowercase keywords.
+ * Also runs validation warnings and ReDoS guards.
+ */
+function compileConfig(config: DispatchConfig): CompiledDispatchConfig {
+  // Emit non-fatal warnings
+  emitConfigWarnings(config);
+
+  const compiledIntents: CompiledIntent[] = config.intents.map((intent) => {
+    const compiledRegex: RegExp[] = [];
+    for (let pattern of intent.patterns.regex) {
+      try {
+        // Strip PCRE-style (?i) flag — we already compile with "i" flag
+        pattern = pattern.replace(/^\(\?i\)/i, "");
+
+        // ReDoS guard: skip dangerous patterns
+        if (isRegexDangerous(pattern)) {
+          console.warn(
+            `[dispatch] Skipping potentially dangerous regex in intent "${intent.id}": ${pattern.slice(0, 80)}... ` +
+              `(nested quantifiers or excessive length detected)`,
+          );
+          continue;
+        }
+
+        compiledRegex.push(new RegExp(pattern, "i"));
+      } catch (err) {
+        console.warn(`[dispatch] Invalid regex in intent "${intent.id}": ${pattern}`, err);
+      }
+    }
+
+    const lowerKeywords = intent.patterns.keywords.map((kw) => kw.toLowerCase());
+    const lowerExcludeKeywords = (intent.patterns.excludeKeywords ?? []).map((kw) =>
+      kw.toLowerCase(),
+    );
+
+    return {
+      ...intent,
+      compiledRegex,
+      lowerKeywords,
+      lowerExcludeKeywords,
+    };
+  });
+
+  // Collect custom synonym groups from intent definitions and register them
+  // so the synonym index includes user-defined synonyms from dispatch.yaml.
+  const customSynonyms: Record<string, string[][]> = {};
+  for (const intent of config.intents) {
+    if (intent.synonyms && intent.synonyms.length > 0) {
+      customSynonyms[intent.id] = intent.synonyms;
+    }
+  }
+  registerCustomSynonyms(customSynonyms);
+
+  return {
+    ...config,
+    intents: compiledIntents,
+  };
+}

@@ -1,0 +1,481 @@
+/**
+ * Intent Classifier — rule-based + LLM fallback.
+ *
+ * Fast path: keyword/regex matching with confidence scoring.
+ * Slow path: lightweight LLM classification when rules produce low confidence.
+ */
+
+import type { ClawdbotConfig } from "../config/config.js";
+import type {
+  ClassifierConfig,
+  ClassifyIntentParams,
+  ClassifyIntentResult,
+  ComplexityLevel,
+  CompiledDispatchConfig,
+  CompiledIntent,
+  DispatchConfig,
+  IntentDefinition,
+  RuleMatchResult,
+} from "./types.js";
+import { normalizeComplexityLevel } from "./complexity-classifier.js";
+import { calculateSynonymBoost, getSynonymIndex } from "./synonym-expander.js";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Keyword-only matching caps at this confidence. */
+const KEYWORD_MAX_SCORE = 0.6;
+/** Regex-only matching caps at this confidence. */
+const REGEX_MAX_SCORE = 0.8;
+/** Bonus for both keyword + regex matching the same intent. */
+const COMBINED_BONUS = 0.1;
+/** Catch-all intent (no patterns) gets this fixed low score. */
+const CATCHALL_SCORE = 0.1;
+
+// CJK character detection — used to decide matching strategy
+const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/;
+
+// Cache for keyword boundary RegExp objects to avoid recreating on every call.
+// Bounded to prevent unbounded memory growth in long-running processes.
+const KEYWORD_CACHE_MAX = 1000;
+const keywordRegexCache = new Map<string, RegExp>();
+
+function getKeywordBoundaryRegex(keyword: string): RegExp {
+  let re = keywordRegexCache.get(keyword);
+  if (!re) {
+    re = new RegExp(`\\b${escapeRegex(keyword)}\\b`, "i");
+    // Evict oldest entry if cache is full (simple FIFO — Map preserves insertion order)
+    if (keywordRegexCache.size >= KEYWORD_CACHE_MAX) {
+      const oldest = keywordRegexCache.keys().next().value;
+      if (oldest !== undefined) keywordRegexCache.delete(oldest);
+    }
+    keywordRegexCache.set(keyword, re);
+  }
+  return re;
+}
+
+// ---------------------------------------------------------------------------
+// Rule-based Classifier
+// ---------------------------------------------------------------------------
+
+/**
+ * Score a single intent against the user prompt using rules.
+ * Returns null if no patterns match at all.
+ */
+function scoreIntentByRules(promptLower: string, intent: CompiledIntent): RuleMatchResult | null {
+  const { lowerKeywords, compiledRegex, id } = intent;
+
+  // Catch-all intent (no patterns defined) → lowest confidence
+  if (lowerKeywords.length === 0 && compiledRegex.length === 0) {
+    return {
+      intentId: id,
+      confidence: CATCHALL_SCORE,
+      matchedBy: "combined",
+      matchDetails: "catch-all",
+    };
+  }
+
+  // --- Keyword scoring ---
+  let keywordScore = 0;
+  let keywordMatched = 0;
+  let singleCharCJKMatches = 0;
+  const matchedKeywords: string[] = [];
+
+  for (const kw of lowerKeywords) {
+    if (kw.length === 0) continue;
+
+    // CJK keywords: substring match (Chinese doesn't have word boundaries)
+    // ASCII keywords: word boundary match (cached RegExp)
+    const isCJK = CJK_RE.test(kw);
+    const matches = isCJK
+      ? promptLower.includes(kw)
+      : getKeywordBoundaryRegex(kw).test(promptLower);
+
+    if (matches) {
+      keywordMatched++;
+      matchedKeywords.push(kw);
+      // Single CJK chars (e.g. "画", "听") are prone to false positives
+      // like "计画" or "动画片". Track them for scoring penalty.
+      if (isCJK && kw.length === 1) {
+        singleCharCJKMatches++;
+      }
+    }
+  }
+
+  if (keywordMatched > 0 && lowerKeywords.length > 0) {
+    // If ALL matched keywords are single CJK chars, halve effective match count
+    // to penalize weak signals that easily appear in unrelated context.
+    let effectiveMatches = keywordMatched;
+    if (singleCharCJKMatches > 0 && singleCharCJKMatches === keywordMatched) {
+      effectiveMatches *= 0.5;
+    }
+    keywordScore = Math.min(
+      KEYWORD_MAX_SCORE,
+      (effectiveMatches / lowerKeywords.length) * KEYWORD_MAX_SCORE * 3,
+    );
+  }
+
+  // --- Regex scoring ---
+  let regexScore = 0;
+  let regexMatched = 0;
+  const matchedRegexIdx: number[] = [];
+
+  for (let i = 0; i < compiledRegex.length; i++) {
+    if (compiledRegex[i].test(promptLower)) {
+      regexMatched++;
+      matchedRegexIdx.push(i);
+    }
+  }
+
+  if (regexMatched > 0 && compiledRegex.length > 0) {
+    regexScore = Math.min(
+      REGEX_MAX_SCORE,
+      (regexMatched / compiledRegex.length) * REGEX_MAX_SCORE * 2,
+    );
+  }
+
+  // --- No match at all ---
+  if (keywordScore === 0 && regexScore === 0) {
+    return null;
+  }
+
+  // --- Exclude keywords penalty ---
+  // If the intent defines excludeKeywords and any of them appear in the prompt,
+  // heavily penalize the score to prevent false positives.
+  // e.g. "画" matching "image_generation" should be suppressed when prompt contains "计划"
+  // CJK exclude keywords use substring matching; ASCII ones use word-boundary matching
+  // to avoid "plan" suppressing "explain" or "airplane".
+  let excluded = false;
+  const excludeKws = intent.lowerExcludeKeywords;
+  if (excludeKws && excludeKws.length > 0) {
+    excluded = excludeKws.some((ek) => {
+      const isCJKExclude = CJK_RE.test(ek);
+      return isCJKExclude
+        ? promptLower.includes(ek)
+        : getKeywordBoundaryRegex(ek).test(promptLower);
+    });
+    if (excluded) {
+      keywordScore *= 0.2;
+      regexScore *= 0.2;
+    }
+  }
+
+  // --- Combined score ---
+  let confidence = Math.min(1.0, keywordScore + regexScore);
+  let matchedBy: RuleMatchResult["matchedBy"] = "keyword";
+
+  if (keywordScore > 0 && regexScore > 0) {
+    confidence = Math.min(1.0, confidence + COMBINED_BONUS);
+    matchedBy = "combined";
+  } else if (regexScore > 0) {
+    matchedBy = "regex";
+  }
+
+  // Build match details
+  const details: string[] = [];
+  if (matchedKeywords.length > 0) {
+    details.push(`keywords:[${matchedKeywords.join(",")}]`);
+  }
+  if (matchedRegexIdx.length > 0) {
+    details.push(`regex:[#${matchedRegexIdx.join(",#")}]`);
+  }
+  if (excluded) {
+    details.push("excluded");
+  }
+
+  return {
+    intentId: id,
+    confidence,
+    matchedBy,
+    matchDetails: details.join(" "),
+  };
+}
+
+/**
+ * Run all intent rules against the prompt.
+ * Returns matches sorted by confidence (descending). Only returns non-null results.
+ */
+export function classifyByRules(prompt: string, intents: CompiledIntent[]): RuleMatchResult[] {
+  const promptLower = prompt.toLowerCase();
+  const synonymMap = getSynonymIndex();
+  const results: RuleMatchResult[] = [];
+
+  for (const intent of intents) {
+    const result = scoreIntentByRules(promptLower, intent);
+    if (result) {
+      // Apply synonym-based confidence boost.
+      // When excludeKeywords fired (marked as "excluded" in matchDetails),
+      // apply the same 0.2x penalty to synonym boost to prevent synonyms
+      // from diluting the exclude suppression.
+      const { boost, matchedTerms } = calculateSynonymBoost(promptLower, intent.id, synonymMap);
+      if (boost > 0) {
+        const wasExcluded = result.matchDetails.includes("excluded");
+        const effectiveBoost = wasExcluded ? boost * 0.2 : boost;
+        result.confidence = Math.min(1.0, result.confidence + effectiveBoost);
+        result.matchDetails += ` synonyms:[${matchedTerms.join(",")}]+${effectiveBoost.toFixed(2)}`;
+      }
+      results.push(result);
+    } else {
+      // Even with no keyword/regex match, synonyms alone can produce a match
+      const { boost, matchedTerms } = calculateSynonymBoost(promptLower, intent.id, synonymMap);
+      if (boost > 0) {
+        results.push({
+          intentId: intent.id,
+          confidence: boost,
+          matchedBy: "keyword",
+          matchDetails: `synonym-only:[${matchedTerms.join(",")}]+${boost.toFixed(2)}`,
+        });
+      }
+    }
+  }
+
+  // Sort by confidence descending, then by intent order (first match wins on tie)
+  results.sort((a, b) => b.confidence - a.confidence);
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// LLM Fallback Classifier
+// ---------------------------------------------------------------------------
+
+/**
+ * Use a lightweight LLM to classify the prompt.
+ * Only called when rule-based confidence < threshold.
+ *
+ * Implementation note: This is a simplified direct-call approach that
+ * sends a single classification request to a lightweight model.
+ * It does NOT use `runEmbeddedPiAgent()` to avoid circular dependencies
+ * and keep the dispatch layer independent.
+ */
+export async function classifyByLLM(params: {
+  prompt: string;
+  intents: IntentDefinition[];
+  classifierConfig: ClassifierConfig;
+  cfg: ClawdbotConfig;
+  agentDir: string;
+  timeoutMs: number;
+  /** When true, the LLM is also asked to assess complexity (zero extra cost). */
+  includeComplexity?: boolean;
+  /** AbortSignal for cancelling the LLM call. */
+  signal?: AbortSignal;
+}): Promise<{ intentId: string; confidence: number; complexity?: ComplexityLevel } | null> {
+  try {
+    // Build the classification prompt
+    const intentDescriptions = params.intents
+      .filter((i) => i.id !== "general") // Don't include catch-all in LLM options
+      .map((i) => `- ${i.id}: ${i.description} (tags: ${i.patterns.semanticTags.join(", ")})`)
+      .join("\n");
+
+    const intentIds = params.intents.map((i) => i.id).join(", ");
+
+    const systemPrompt = params.classifierConfig.systemPrompt.replace("{{intent_ids}}", intentIds);
+
+    // When complexity assessment is enabled, extend the prompt to also return complexity.
+    // This piggybacks on the same API call — zero extra cost.
+    const complexityInstruction = params.includeComplexity
+      ? [
+          "\n\nAlso assess the task complexity:",
+          "- low: simple greeting, translation, single-step question, short factual query",
+          "- medium: requires thought but single direction — code change, single-file analysis, explanation",
+          "- high: multi-step research, multi-aspect comparison, parallel exploration, cross-domain analysis",
+          '\n\nRespond with JSON only: {"intent": "<id>", "confidence": <0.0-1.0>, "complexity": "low"|"medium"|"high"}',
+        ].join("\n")
+      : '\nRespond with JSON only: {"intent": "<id>", "confidence": <0.0-1.0>}';
+
+    const userPrompt = [
+      "Classify this message:\n",
+      `"${params.prompt.slice(0, 500)}"`,
+      "\nAvailable intents:\n",
+      intentDescriptions,
+      complexityInstruction,
+    ].join("");
+
+    // Try to use the lightweight model via the provider infrastructure.
+    // We dynamically import to avoid hard circular dependencies.
+    const { classifyWithLightweightModel } = await import("./llm-classify.js");
+    const result = await classifyWithLightweightModel({
+      systemPrompt,
+      userPrompt,
+      model: params.classifierConfig.model,
+      maxTokens: params.classifierConfig.maxTokens,
+      cfg: params.cfg,
+      agentDir: params.agentDir,
+      timeoutMs: params.timeoutMs,
+      signal: params.signal,
+    });
+
+    if (!result) return null;
+
+    // Parse JSON response — extract the outermost {...} containing "intent"
+    const parsed = extractIntentJson(result);
+    if (!parsed || !parsed.intent || typeof parsed.confidence !== "number") return null;
+
+    // Validate that the intent exists
+    const validIds = new Set(params.intents.map((i) => i.id));
+    if (!validIds.has(parsed.intent)) return null;
+
+    // Parse complexity if present
+    const complexity = parsed.complexity
+      ? (normalizeComplexityLevel(parsed.complexity) ?? undefined)
+      : undefined;
+
+    return {
+      intentId: parsed.intent,
+      confidence: Math.min(1.0, Math.max(0, parsed.confidence)),
+      complexity,
+    };
+  } catch (err) {
+    console.warn("[dispatch] LLM classification failed:", err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Combined Classifier Entry Point
+// ---------------------------------------------------------------------------
+
+/**
+ * Main classification entry point.
+ * Tries rules first; falls back to LLM if confidence is below threshold.
+ */
+export async function classifyIntent(params: ClassifyIntentParams): Promise<ClassifyIntentResult> {
+  const compiled = params.config as CompiledDispatchConfig;
+  const threshold = compiled.settings.ruleConfidenceThreshold;
+
+  // Step 1: Rule-based classification
+  const ruleResults = classifyByRules(params.prompt, compiled.intents);
+
+  if (ruleResults.length > 0 && ruleResults[0].confidence >= threshold) {
+    if (compiled.settings.debug) {
+      console.log(
+        `[dispatch] Rule match: intent=${ruleResults[0].intentId} ` +
+          `confidence=${ruleResults[0].confidence.toFixed(2)} ` +
+          `by=${ruleResults[0].matchedBy} (${ruleResults[0].matchDetails})`,
+      );
+    }
+    return {
+      intentId: ruleResults[0].intentId,
+      confidence: ruleResults[0].confidence,
+      classifierUsed: "rules",
+    };
+  }
+
+  // Step 2: LLM fallback
+  // When complexity assessment is enabled, piggyback it onto the same LLM call.
+  const complexityEnabled = compiled.complexity?.enabled === true;
+  // Check if already aborted before making an LLM call
+  if (params.signal?.aborted) {
+    return { intentId: "general", confidence: 0, classifierUsed: "default" };
+  }
+
+  const llmResult = await classifyByLLM({
+    prompt: params.prompt,
+    intents: compiled.intents,
+    classifierConfig: compiled.classifier,
+    cfg: params.clawdbotConfig,
+    agentDir: params.agentDir,
+    timeoutMs: compiled.settings.timeoutMs,
+    includeComplexity: complexityEnabled,
+    signal: params.signal,
+  });
+
+  if (llmResult) {
+    if (compiled.settings.debug) {
+      console.log(
+        `[dispatch] LLM match: intent=${llmResult.intentId} ` +
+          `confidence=${llmResult.confidence.toFixed(2)}` +
+          (llmResult.complexity ? ` complexity=${llmResult.complexity}` : ""),
+      );
+    }
+    return {
+      intentId: llmResult.intentId,
+      confidence: llmResult.confidence,
+      classifierUsed: "llm",
+      llmComplexity: llmResult.complexity,
+    };
+  }
+
+  // Step 3: Fall back to best rule match (even if below threshold) or "general"
+  if (ruleResults.length > 0) {
+    if (compiled.settings.debug) {
+      console.log(
+        `[dispatch] Fallback to best rule: intent=${ruleResults[0].intentId} ` +
+          `confidence=${ruleResults[0].confidence.toFixed(2)}`,
+      );
+    }
+    return {
+      intentId: ruleResults[0].intentId,
+      confidence: ruleResults[0].confidence,
+      classifierUsed: "rules",
+    };
+  }
+
+  // Step 4: Default
+  return {
+    intentId: "general",
+    confidence: 0,
+    classifierUsed: "default",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Extract the first balanced JSON object from a string that contains an "intent" key.
+ * Handles braces inside JSON string values correctly by tracking quote state.
+ */
+function extractIntentJson(
+  text: string,
+): { intent?: string; confidence?: number; complexity?: string } | null {
+  // Find the first '{' that is followed somewhere by "intent"
+  const intentIdx = text.indexOf('"intent"');
+  if (intentIdx === -1) return null;
+
+  // Walk backwards to find the opening brace
+  let start = -1;
+  for (let i = intentIdx - 1; i >= 0; i--) {
+    if (text[i] === "{") {
+      start = i;
+      break;
+    }
+  }
+  if (start === -1) return null;
+
+  // Walk forward counting braces to find the matching closing brace.
+  // Track whether we're inside a JSON string to ignore braces in string values.
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\" && i + 1 < text.length) {
+        i++; // skip escaped character
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
