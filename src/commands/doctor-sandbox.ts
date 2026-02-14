@@ -66,7 +66,7 @@ async function runSandboxScript(scriptRel: string, runtime: RuntimeEnv): Promise
 async function isDockerAvailable(): Promise<boolean> {
   try {
     await runExec("docker", ["version", "--format", "{{.Server.Version}}"], {
-      timeoutMs: 5_000,
+      timeoutMs: 2_000, // Reduced from 5s to 2s for faster failure on Windows
     });
     return true;
   } catch {
@@ -76,7 +76,7 @@ async function isDockerAvailable(): Promise<boolean> {
 
 async function dockerImageExists(image: string): Promise<boolean> {
   try {
-    await runExec("docker", ["image", "inspect", image], { timeoutMs: 5_000 });
+    await runExec("docker", ["image", "inspect", image], { timeoutMs: 2_000 }); // Reduced from 5s to 2s
     return true;
   } catch (error: any) {
     const stderr = error?.stderr || error?.message || "";
@@ -180,7 +180,10 @@ export async function maybeRepairSandboxImages(
 
   const dockerAvailable = await isDockerAvailable();
   if (!dockerAvailable) {
-    note("Docker not available; skipping sandbox image checks.", "Sandbox");
+    // Don't log on Windows to avoid confusing users - Docker is optional
+    if (process.platform !== "win32") {
+      note("Docker not available; skipping sandbox image checks.", "Sandbox");
+    }
     return cfg;
   }
 
