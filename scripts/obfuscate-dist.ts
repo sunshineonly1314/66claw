@@ -95,37 +95,40 @@ function getAllJsFiles(dir: string): string[] {
   return files;
 }
 
-// Obfuscate a single file
+// Obfuscate a single file — returns "skipped" when file is too small
 function obfuscateFile(
   filePath: string,
   config: Record<string, unknown>
-): { success: boolean; error?: string } {
+): { success: boolean; skipped?: boolean; error?: string } {
   try {
     const code = fs.readFileSync(filePath, "utf-8");
-    
+
     // Skip empty files
     if (!code.trim()) {
-      return { success: true };
+      return { success: true, skipped: true };
     }
-    
+
     // Skip very small files (likely just exports)
     if (code.length < 100) {
-      return { success: true };
+      return { success: true, skipped: true };
     }
-    
+
     const result = JavaScriptObfuscator.obfuscate(code, config as any);
     const obfuscatedCode = result.getObfuscatedCode();
-    
+
     fs.writeFileSync(filePath, obfuscatedCode, "utf-8");
-    
+
     return { success: true };
   } catch (error) {
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : String(error) 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
+
+// Batch size before forcing GC to prevent OOM on large codebases
+const BATCH_SIZE = 50;
 
 /**
  * Check if a file path belongs to a critical (priority) directory
@@ -175,16 +178,23 @@ async function main(): Promise<void> {
   let errorCount = 0;
   const errors: { file: string; error: string }[] = [];
 
+  // Helper: try to trigger GC every BATCH_SIZE files to prevent OOM
+  const tryGC = () => {
+    if (typeof globalThis.gc === "function") {
+      globalThis.gc();
+    }
+  };
+
   // Process critical files first with aggressive config
   if (priorityFiles.length > 0) {
     console.log("   --- Aggressive tier (critical dirs) ---");
-    for (const file of priorityFiles) {
+    for (let i = 0; i < priorityFiles.length; i++) {
+      const file = priorityFiles[i];
       const relativePath = path.relative(DIST_DIR, file);
       const result = obfuscateFile(file, configs.aggressive);
 
       if (result.success) {
-        const code = fs.readFileSync(file, "utf-8");
-        if (code.length < 100) {
+        if (result.skipped) {
           skipCount++;
         } else {
           aggressiveCount++;
@@ -195,6 +205,11 @@ async function main(): Promise<void> {
         errors.push({ file: relativePath, error: result.error || "Unknown error" });
         console.log(`   ✗ [AGG] ${relativePath}: ${result.error}`);
       }
+
+      if ((i + 1) % BATCH_SIZE === 0) {
+        tryGC();
+        console.log(`   ... ${i + 1}/${priorityFiles.length} aggressive files done`);
+      }
     }
     console.log("");
   }
@@ -202,13 +217,13 @@ async function main(): Promise<void> {
   // Process remaining files with standard config
   if (standardFiles.length > 0) {
     console.log("   --- Standard tier (general code) ---");
-    for (const file of standardFiles) {
+    for (let i = 0; i < standardFiles.length; i++) {
+      const file = standardFiles[i];
       const relativePath = path.relative(DIST_DIR, file);
       const result = obfuscateFile(file, configs.standard);
 
       if (result.success) {
-        const code = fs.readFileSync(file, "utf-8");
-        if (code.length < 100) {
+        if (result.skipped) {
           skipCount++;
         } else {
           standardCount++;
@@ -216,6 +231,11 @@ async function main(): Promise<void> {
       } else {
         errorCount++;
         errors.push({ file: relativePath, error: result.error || "Unknown error" });
+      }
+
+      if ((i + 1) % BATCH_SIZE === 0) {
+        tryGC();
+        console.log(`   ... ${i + 1}/${standardFiles.length} standard files done`);
       }
     }
   }

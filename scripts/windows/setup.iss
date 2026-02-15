@@ -44,11 +44,12 @@ Name: "{app}\logs"; Permissions: users-modify
 Name: "{app}\tools"; Permissions: users-modify
 
 [Files]
-Source: "node-portable\*"; DestDir: "{app}\node"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "node-portable\*"; DestDir: "{app}\node"; Excludes: "node_modules\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\package.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "E:\clawdbuild\test-prod-deps\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; Standard mode: core skills/ (60); Full mode: dynamically replaced with full-skills/ (3061)
 Source: "..\..\skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; MCP marketplace index (bundled fallback for Extensions/Capability Store UI)
 Source: "..\..\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
