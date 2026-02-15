@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Clawdbot Linux Portable Builder
+# OpenClawCN Linux Portable Builder
 # 创建便携版安装包（需要用户自行安装 Node.js）
 #
 # 用法:
 #   ./build-portable.sh
 #
 # 输出:
-#   build/linux/clawdbot-linux-portable.tar.gz
+#   build/linux/openclawcn-linux-portable.tar.gz
 
 set -euo pipefail
 
@@ -16,12 +16,12 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/build/linux}"
 
 echo ""
 echo "================================================"
-echo " Clawdbot Linux Portable Builder"
+echo " OpenClawCN Linux Portable Builder"
 echo "================================================"
 echo ""
 
 # 创建输出目录
-PORTABLE_DIR="$OUTPUT_DIR/clawdbot-portable"
+PORTABLE_DIR="$OUTPUT_DIR/openclawcn-portable"
 if [[ -d "$PORTABLE_DIR" ]]; then
   echo "清理旧构建..."
   rm -rf "$PORTABLE_DIR"
@@ -50,12 +50,12 @@ console.log(JSON.stringify(pkg, null, 2));
 echo "创建 install.sh..."
 cat > "$PORTABLE_DIR/install.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 安装脚本
+# OpenClawCN 安装脚本
 set -e
 
 echo ""
 echo "================================================"
-echo " Clawdbot 安装程序"
+echo " OpenClawCN 安装程序"
 echo "================================================"
 echo ""
 
@@ -112,7 +112,7 @@ set -e
 
 echo ""
 echo "================================================"
-echo " Clawdbot Gateway"
+echo " OpenClawCN Gateway"
 echo "================================================"
 echo ""
 echo " 启动中..."
@@ -132,7 +132,7 @@ set -e
 
 echo ""
 echo "================================================"
-echo " Clawdbot 配置向导"
+echo " OpenClawCN 配置向导"
 echo "================================================"
 echo ""
 
@@ -151,7 +151,7 @@ chmod +x "$PORTABLE_DIR/setup.sh"
 
 # 创建 README
 cat > "$PORTABLE_DIR/README.md" << 'README'
-# Clawdbot 便携版 (Linux)
+# OpenClawCN 便携版 (Linux)
 
 ## 安装步骤
 
@@ -184,10 +184,10 @@ README
 # 创建压缩包
 echo ""
 echo "创建压缩包..."
-TARBALL_NAME="clawdbot-linux-portable.tar.gz"
+TARBALL_NAME="openclawcn-linux-portable.tar.gz"
 TARBALL_PATH="$OUTPUT_DIR/$TARBALL_NAME"
 cd "$OUTPUT_DIR"
-tar -czf "$TARBALL_NAME" clawdbot-portable
+tar -czf "$TARBALL_NAME" openclawcn-portable
 
 TARBALL_SIZE=$(du -sm "$TARBALL_PATH" | cut -f1)
 

@@ -11,7 +11,7 @@
 
 ### 1.1 最简方案：检查用户 config
 
-让用户打开 `clawdbot.json`，检查 `workspace` 相关配置：
+让用户打开 `openclawcn.json`，检查 `workspace` 相关配置：
 
 ```json
 // 错误示例 ——  "/" 在 Windows 上会变成 "C:\"
@@ -37,7 +37,7 @@
 
 ```powershell
 # 永久生效（写入用户环境变量，设一次就行）
-[Environment]::SetEnvironmentVariable("CLAWDBOT_STATE_DIR", "$env:LOCALAPPDATA\.clawdbot", "User")
+[Environment]::SetEnvironmentVariable("OPENCLAWCN_STATE_DIR", "$env:LOCALAPPDATA\.openclawcn", "User")
 ```
 
 设置后重启程序即可。
@@ -79,7 +79,7 @@ at getReplyFromConfig (file:///.../dist/auto-reply/reply/get-reply.js:94:27)
 |------|------|------|
 | config 中 `workspace: "/"` | `path.resolve("/")` 在 Windows = `C:\` | 改为 `"~/clawd"` |
 | config 中 `workspace: "\"` | 同上 | 改为 `"~/clawd"` |
-| 管理员 + 无 HOME/USERPROFILE | `os.homedir()` 回退到盘符根目录 | 设 `CLAWDBOT_STATE_DIR` |
+| 管理员 + 无 HOME/USERPROFILE | `os.homedir()` 回退到盘符根目录 | 设 `OPENCLAWCN_STATE_DIR` |
 | Windows 服务（SYSTEM 账户） | SYSTEM 没有用户 profile | 在服务配置中添加环境变量 |
 
 ---
@@ -112,12 +112,12 @@ EPERM: operation not permitted, mkdir 'C:\'
 
 修复后（config 异常）：
 ```
-agent "main" workspace resolved to filesystem root "C:\". Fix the workspace path in clawdbot.json (e.g. use ~/clawd instead of /).
+agent "main" workspace resolved to filesystem root "C:\". Fix the workspace path in openclawcn.json (e.g. use ~/clawd instead of /).
 ```
 
 修复后（homedir 异常）：
 ```
-Cannot resolve home directory: HOME / USERPROFILE are not set and os.homedir() returned drive root "C:\". Set CLAWDBOT_STATE_DIR or run as a normal user.
+Cannot resolve home directory: HOME / USERPROFILE are not set and os.homedir() returned drive root "C:\". Set OPENCLAWCN_STATE_DIR or run as a normal user.
 ```
 
 ---
@@ -130,14 +130,14 @@ Cannot resolve home directory: HOME / USERPROFILE are not set and os.homedir() r
 - [ ] config 中 `workspace: "/"` → 抛出明确错误而非 EPERM
 - [ ] 管理员运行 + HOME 缺失 → 自动降级到 `LOCALAPPDATA`
 - [ ] 所有环境变量缺失 → 抛出明确错误提示
-- [ ] `CLAWDBOT_STATE_DIR` 已设置 → 优先使用用户指定路径
+- [ ] `OPENCLAWCN_STATE_DIR` 已设置 → 优先使用用户指定路径
 
 ### 4.2 客户回复话术
 
 > 您好，这个报错是配置文件中 workspace 路径设置的问题。
-> 请打开您的 clawdbot.json，找到 workspace 配置，把 `"/"` 改成 `"~/clawd"` 即可。
+> 请打开您的 openclawcn.json，找到 workspace 配置，把 `"/"` 改成 `"~/clawd"` 即可。
 > 如果找不到 config，可以在 PowerShell 里执行一行命令：
-> `[Environment]::SetEnvironmentVariable("CLAWDBOT_STATE_DIR", "$env:LOCALAPPDATA\.clawdbot", "User")`
+> `[Environment]::SetEnvironmentVariable("OPENCLAWCN_STATE_DIR", "$env:LOCALAPPDATA\.openclawcn", "User")`
 > 设置一次永久生效。
 
 ---

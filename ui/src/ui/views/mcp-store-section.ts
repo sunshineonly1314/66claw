@@ -1,0 +1,360 @@
+/**
+ * mcp-store-section.ts
+ * Shared MCP marketplace rendering module.
+ *
+ * Used by both:
+ *   - Skills page (as "MCP 市场" tab)
+ *   - Extensions page (as "Capability Store" tab)
+ *
+ * Provides search, category chips, sort, card grid, detail modal, and config wizard.
+ */
+
+import { html, nothing, type TemplateResult } from "lit";
+import { t } from "../i18n/index.js";
+import type {
+  McpMarketplaceItem,
+  McpMarketplaceState,
+} from "../app-view-state.js";
+import { renderMarketplaceCard } from "./mcp-marketplace-card.js";
+import { renderMcpDetailModal } from "./mcp-detail-modal.js";
+import { renderMcpConfigWizard } from "./mcp-config-wizard.js";
+
+// ============================================================================
+// Props
+// ============================================================================
+
+export type McpStoreSectionProps = {
+  marketplace: McpMarketplaceState;
+  onSearchChange: (search: string) => void;
+  onCategoryChange: (category: string) => void;
+  onSortChange: (sort: McpMarketplaceState["sort"]) => void;
+  onOpenDetail: (item: McpMarketplaceItem) => void;
+  onCloseDetail: () => void;
+  onInstall: (item: McpMarketplaceItem) => void;
+  onUninstall: (serverId: string) => void;
+  onOpenConfigWizard: (item: McpMarketplaceItem) => void;
+  onCloseConfigWizard: () => void;
+  /** Current running process count for limit guard */
+  runningCount: number;
+};
+
+// ============================================================================
+// Categories
+// ============================================================================
+
+const CATEGORIES = [
+  { id: "all", emoji: "\u{1F4CB}" },
+  { id: "filesystem", emoji: "\u{1F4C1}" },
+  { id: "database", emoji: "\u{1F5C4}" },
+  { id: "search", emoji: "\u{1F50D}" },
+  { id: "productivity", emoji: "\u{1F4CA}" },
+  { id: "development", emoji: "\u{1F6E0}" },
+  { id: "network", emoji: "\u{1F310}" },
+  { id: "ai", emoji: "\u{1F916}" },
+  { id: "social", emoji: "\u{1F4AC}" },
+  { id: "smarthome", emoji: "\u{1F3E0}" },
+  { id: "other", emoji: "\u{1F4E6}" },
+] as const;
+
+const MCP_MAX_RUNNING = 8;
+
+// ============================================================================
+// Search debounce
+// ============================================================================
+
+let _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedSearch(value: string, cb: (s: string) => void): void {
+  if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => cb(value), 300);
+}
+
+// ============================================================================
+// Main render
+// ============================================================================
+
+/**
+ * Render the MCP marketplace section with search, categories, cards, and modals.
+ */
+export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResult {
+  const { marketplace, onSearchChange, onCategoryChange, onSortChange, onOpenDetail, onInstall, onOpenConfigWizard, runningCount } = props;
+
+  const filtered = filterItems(marketplace);
+
+  return html`
+    <!-- Process limit warning -->
+    ${runningCount >= MCP_MAX_RUNNING
+      ? html`
+          <div style="
+            padding:12px 20px;
+            margin-bottom:20px;
+            border-radius:var(--radius-lg, 12px);
+            background:rgba(251,191,36,0.08);
+            border:1px solid rgba(251,191,36,0.2);
+            font-size:13px;
+            color:#fbbf24;
+            display:flex;
+            align-items:center;
+            gap:10px;
+          ">
+            <span style="font-size:16px;">\u26A0\uFE0F</span>
+            ${(t("extensions.store.limitReached") as string)
+              .replace("{{count}}", String(runningCount))
+              .replace("{{max}}", String(MCP_MAX_RUNNING))}
+          </div>
+        `
+      : nothing}
+
+    <!-- Toolbar: search + categories + sort -->
+    <div style="
+      display:flex;
+      gap:12px;
+      margin-bottom:16px;
+      align-items:center;
+      flex-wrap:wrap;
+    ">
+      <!-- Search box -->
+      <div style="
+        width:280px; flex-shrink:0;
+        display:flex; align-items:center;
+        padding:0 14px;
+        border:1px solid var(--border);
+        border-radius:var(--radius-md, 8px);
+        background:var(--card);
+        transition:border-color 150ms, box-shadow 150ms;
+        height:36px;
+      " class="mcp-store-search-box">
+        <span style="font-size:13px; color:var(--muted-strong, #6b7d91); margin-right:8px;">\u{1F50D}</span>
+        <input
+          type="text"
+          .value=${marketplace.search}
+          @input=${(e: Event) => debouncedSearch((e.target as HTMLInputElement).value, onSearchChange)}
+          placeholder=${t("extensions.store.searchPlaceholder")}
+          style="
+            all:unset;
+            flex:1;
+            padding:8px 0;
+            font-size:13px;
+            color:var(--fg);
+          "
+        />
+        ${marketplace.search
+          ? html`<button
+              @click=${() => onSearchChange("")}
+              style="all:unset; cursor:pointer; font-size:16px; color:var(--muted-strong, #6b7d91); padding:0 4px; line-height:1;"
+            >&times;</button>`
+          : nothing}
+      </div>
+
+      <!-- Category chips -->
+      <div style="
+        display:flex;
+        gap:6px;
+        flex-wrap:wrap;
+        flex:1;
+        align-items:center;
+      ">
+        ${CATEGORIES.map((cat) => {
+          const isActive = marketplace.activeCategory === cat.id;
+          const count = cat.id === "all"
+            ? marketplace.items.length
+            : marketplace.items.filter((i) => i.category === cat.id).length;
+
+          return html`
+            <button
+              @click=${() => onCategoryChange(isActive && cat.id !== "all" ? "all" : cat.id)}
+              style="
+                all:unset; cursor:pointer;
+                padding:4px 12px;
+                border-radius:var(--radius-full, 9999px);
+                font-size:11px;
+                white-space:nowrap;
+                border:1px solid ${isActive ? "var(--accent, #6c8cff)" : "var(--border)"};
+                background:${isActive ? "rgba(108,140,255,0.1)" : "transparent"};
+                color:${isActive ? "var(--accent, #6c8cff)" : "var(--muted-strong, #6b7d91)"};
+                transition:all 150ms;
+                user-select:none;
+              "
+            >${cat.emoji} ${t(`extensions.category.${cat.id}` as never)}${count > 0 ? ` (${count})` : ""}</button>
+          `;
+        })}
+      </div>
+
+      <!-- Sort dropdown -->
+      <select
+        @change=${(e: Event) => onSortChange((e.target as HTMLSelectElement).value as McpMarketplaceState["sort"])}
+        .value=${marketplace.sort}
+        style="
+          padding:0 12px;
+          height:36px;
+          border:1px solid var(--border);
+          border-radius:var(--radius-md, 8px);
+          background:var(--card);
+          color:var(--fg);
+          font-size:12px;
+          outline:none;
+          cursor:pointer;
+          flex-shrink:0;
+        "
+      >
+        <option value="recommended">${t("extensions.store.sort.recommended")}</option>
+        <option value="newest">${t("extensions.store.sort.newest")}</option>
+        <option value="popular">${t("extensions.store.sort.popular")}</option>
+        <option value="name">${t("extensions.store.sort.name")}</option>
+      </select>
+    </div>
+
+    <!-- Content: loading / empty / no results / cards grid -->
+    ${marketplace.loading
+      ? renderStoreLoading()
+      : marketplace.error
+        ? renderStoreEmpty(marketplace.error)
+        : marketplace.items.length === 0
+          ? renderStoreEmpty("")
+          : filtered.length === 0
+            ? renderNoResults(marketplace.search, () => onSearchChange(""))
+            : html`
+                <div class="mcp-store-grid" style="
+                  display:grid;
+                  gap:16px;
+                  margin-bottom:28px;
+                ">
+                  ${filtered.map(
+                    (item) => renderMarketplaceCard({
+                      item,
+                      onClick: () => onOpenDetail(item),
+                      onInstall: () => onInstall(item),
+                      onConfigInstall: () => onOpenConfigWizard(item),
+                    }),
+                  )}
+                </div>
+              `}
+
+    <!-- Detail modal overlay -->
+    ${marketplace.detailItem
+      ? renderMcpDetailModal({
+          item: marketplace.detailItem,
+          onClose: props.onCloseDetail,
+          onInstall: () => onInstall(marketplace.detailItem!),
+          onUninstall: () => props.onUninstall(marketplace.detailItem!.serverId),
+          onConfigInstall: () => onOpenConfigWizard(marketplace.detailItem!),
+          onTrySay: () => { /* not available in shared context */ },
+        })
+      : nothing}
+
+    <!-- Config wizard modal overlay -->
+    ${marketplace.configTarget
+      ? renderMcpConfigWizard({
+          item: marketplace.configTarget,
+          onClose: props.onCloseConfigWizard,
+          onSaveAndEnable: (_env: Record<string, string>) => {
+            const target = marketplace.configTarget!;
+            onInstall({ ...target, installStatus: "installing" } as McpMarketplaceItem);
+            props.onCloseConfigWizard();
+          },
+          onTestConnection: () => { /* not wired in shared context */ },
+          testState: "idle",
+        })
+      : nothing}
+
+    <style>
+      .mcp-store-search-box:focus-within {
+        border-color:var(--accent, #6c8cff) !important;
+        box-shadow:0 0 0 3px rgba(108,140,255,0.1);
+      }
+      .mcp-store-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+      @media (max-width: 1400px) {
+        .mcp-store-grid { grid-template-columns: repeat(3, 1fr); }
+      }
+      @media (max-width: 1000px) {
+        .mcp-store-grid { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 600px) {
+        .mcp-store-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  `;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function filterItems(state: McpMarketplaceState): McpMarketplaceItem[] {
+  let items = state.items;
+
+  if (state.activeCategory !== "all") {
+    items = items.filter((i) => i.category === state.activeCategory);
+  }
+
+  if (state.search.trim()) {
+    const q = state.search.trim().toLowerCase();
+    items = items.filter(
+      (i) =>
+        i.friendlyName.toLowerCase().includes(q) ||
+        (i.friendlyNameEn ?? "").toLowerCase().includes(q) ||
+        i.description.toLowerCase().includes(q) ||
+        (i.descriptionEn ?? "").toLowerCase().includes(q) ||
+        i.tags.some((tag) => tag.toLowerCase().includes(q)),
+    );
+  }
+
+  switch (state.sort) {
+    case "newest":
+      items = [...items].sort((a, b) => (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0));
+      break;
+    case "name":
+      items = [...items].sort((a, b) => a.friendlyName.localeCompare(b.friendlyName));
+      break;
+    case "popular":
+      items = [...items].sort((a, b) => (b.securityScore ?? 0) - (a.securityScore ?? 0));
+      break;
+    default:
+      items = [...items].sort((a, b) => {
+        if (a.isOfficial !== b.isOfficial) return a.isOfficial ? -1 : 1;
+        return (b.securityScore ?? 0) - (a.securityScore ?? 0);
+      });
+  }
+
+  return items;
+}
+
+function renderStoreLoading(): TemplateResult {
+  return html`
+    <div style="text-align:center; padding:60px 20px; color:var(--muted-strong, #6b7d91);">
+      <div style="width:24px; height:24px; border:3px solid var(--accent-2, #20d5bc); border-top-color:transparent; border-radius:50%; animation:mcpStoreSpinShared 0.8s linear infinite; margin:0 auto 16px;"></div>
+      <div style="font-size:14px;">${t("extensions.store.loading")}</div>
+      <div style="font-size:12px; margin-top:6px; opacity:0.7;">${t("extensions.store.loadingHint")}</div>
+    </div>
+    <style>
+      @keyframes mcpStoreSpinShared { to { transform:rotate(360deg); } }
+    </style>
+  `;
+}
+
+function renderStoreEmpty(error: string): TemplateResult {
+  return html`
+    <div style="text-align:center; padding:60px 20px; color:var(--muted-strong, #6b7d91);">
+      <div style="font-size:28px; margin-bottom:12px;">\u{1F4E1}</div>
+      <div style="font-size:14px; font-weight:600;">${t("extensions.store.empty")}</div>
+      <div style="font-size:12px; margin-top:8px; max-width:300px; margin-left:auto; margin-right:auto;">${t("extensions.store.emptyHint")}</div>
+      <div style="font-size:11px; margin-top:6px; opacity:0.5;">${error}</div>
+    </div>
+  `;
+}
+
+function renderNoResults(query: string, onClear: () => void): TemplateResult {
+  return html`
+    <div style="text-align:center; padding:60px 20px; color:var(--muted-strong, #6b7d91);">
+      <div style="font-size:28px; margin-bottom:12px;">\u{1F50D}</div>
+      <div style="font-size:14px;">${(t("extensions.store.noResults") as string).replace("{{query}}", query)}</div>
+      <div style="font-size:12px; margin-top:8px;">${t("extensions.store.noResultsHint")}</div>
+      <button
+        @click=${onClear}
+        style="all:unset; cursor:pointer; margin-top:16px; font-size:12px; font-weight:600; padding:6px 20px; border-radius:6px; border:1px solid var(--border); color:var(--fg-secondary, #a0aec0);"
+      >${t("extensions.store.clearSearch")}</button>
+    </div>
+  `;
+}

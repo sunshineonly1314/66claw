@@ -4,7 +4,7 @@ description: "CLI to manage emails via IMAP/SMTP. Use `himalaya` to list, read, 
 nameZh: "邮件管理"
 descriptionZh: "通过IMAP/SMTP在终端管理邮件（收发、搜索、整理）"
 homepage: https://github.com/pimalaya/himalaya
-metadata: {"clawdbot":{"emoji":"📧","requires":{"bins":["himalaya"]},"install":[{"id":"brew","kind":"brew","formula":"himalaya","bins":["himalaya"],"label":"Install Himalaya (brew)"},{"id":"download","kind":"download","url":"https://github.com/pimalaya/himalaya/releases/latest","bins":["himalaya"],"label":"Download himalaya binary","os":["win32","linux"]}]}}
+metadata: {"openclawcn":{"emoji":"📧","requires":{"bins":["himalaya"]},"install":[{"id":"brew","kind":"brew","formula":"himalaya","bins":["himalaya"],"label":"Install Himalaya (brew)"},{"id":"download","kind":"download","url":"https://github.com/pimalaya/himalaya/releases/latest","bins":["himalaya"],"label":"Download himalaya binary","os":["win32","linux"]}]}}
 ---
 
 # Himalaya Email CLI

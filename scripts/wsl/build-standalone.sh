@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clawdbot WSL Standalone Builder
+# OpenClawCN WSL Standalone Builder
 # 创建专为 WSL 环境优化的完整独立安装包
 #
 # 特点:
@@ -11,7 +11,7 @@
 #   ./build-standalone.sh [--arch arm64|x64] [--node-version 22.13.1]
 #
 # 输出:
-#   build/wsl-standalone/clawdbot-wsl-{arch}-standalone.tar.gz
+#   build/wsl-standalone/openclawcn-wsl-{arch}-standalone.tar.gz
 
 set -euo pipefail
 
@@ -77,7 +77,7 @@ done
 
 echo ""
 echo "================================================"
-echo " Clawdbot WSL Standalone Builder"
+echo " OpenClawCN WSL Standalone Builder"
 echo " (专为 WSL 环境优化，包含 Node.js)"
 echo "================================================"
 echo ""
@@ -88,7 +88,7 @@ echo "  输出目录:   $OUTPUT_DIR"
 echo ""
 
 # 创建输出目录
-STANDALONE_DIR="$OUTPUT_DIR/clawdbot"
+STANDALONE_DIR="$OUTPUT_DIR/openclawcn"
 if [[ -d "$STANDALONE_DIR" ]]; then
   echo "清理旧构建..."
   rm -rf "$STANDALONE_DIR"
@@ -152,7 +152,7 @@ echo "创建 WSL 专用启动脚本..."
 
 cat > "$STANDALONE_DIR/start.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot Gateway 启动脚本 (WSL 版)
+# OpenClawCN Gateway 启动脚本 (WSL 版)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -160,7 +160,7 @@ export PATH="$SCRIPT_DIR/node/bin:$PATH"
 
 echo ""
 echo "================================================"
-echo " Clawdbot Gateway (WSL)"
+echo " OpenClawCN Gateway (WSL)"
 echo "================================================"
 echo ""
 echo " 启动中..."
@@ -177,7 +177,7 @@ chmod +x "$STANDALONE_DIR/start.sh"
 # 创建 WSL 专用 setup 脚本 (使用 wslview)
 cat > "$STANDALONE_DIR/setup.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 配置向导 (WSL 版)
+# OpenClawCN 配置向导 (WSL 版)
 # 自动使用 Windows 浏览器打开配置页面
 set -e
 
@@ -186,7 +186,7 @@ export PATH="$SCRIPT_DIR/node/bin:$PATH"
 
 echo ""
 echo "================================================"
-echo " Clawdbot 配置向导 (WSL)"
+echo " OpenClawCN 配置向导 (WSL)"
 echo "================================================"
 echo ""
 echo " 正在启动服务并打开 Windows 浏览器..."
@@ -239,29 +239,29 @@ chmod +x "$STANDALONE_DIR/setup.sh"
 # 创建后台启动脚本
 cat > "$STANDALONE_DIR/start-daemon.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot Gateway 后台启动脚本 (WSL 版)
+# OpenClawCN Gateway 后台启动脚本 (WSL 版)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$SCRIPT_DIR/node/bin:$PATH"
 
 LOG_FILE="$SCRIPT_DIR/logs/gateway.log"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 mkdir -p "$SCRIPT_DIR/logs"
 
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE")
   if kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "Clawdbot 已在运行 (PID: $OLD_PID)"
+    echo "OpenClawCN 已在运行 (PID: $OLD_PID)"
     exit 1
   fi
 fi
 
-echo "启动 Clawdbot Gateway (后台模式)..."
+echo "启动 OpenClawCN Gateway (后台模式)..."
 nohup "$SCRIPT_DIR/node/bin/node" "$SCRIPT_DIR/dist/entry.js" gateway run --port 18789 > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
-echo "Clawdbot 已启动 (PID: $(cat "$PID_FILE"))"
+echo "OpenClawCN 已启动 (PID: $(cat "$PID_FILE"))"
 echo "日志文件: $LOG_FILE"
 echo "访问地址: http://localhost:18789"
 echo ""
@@ -272,23 +272,23 @@ chmod +x "$STANDALONE_DIR/start-daemon.sh"
 # 创建停止脚本
 cat > "$STANDALONE_DIR/stop.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 停止 Clawdbot Gateway
+# 停止 OpenClawCN Gateway
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then
-  echo "Clawdbot 未在运行"
+  echo "OpenClawCN 未在运行"
   exit 0
 fi
 
 PID=$(cat "$PID_FILE")
 if kill -0 "$PID" 2>/dev/null; then
-  echo "停止 Clawdbot (PID: $PID)..."
+  echo "停止 OpenClawCN (PID: $PID)..."
   kill "$PID"
   rm -f "$PID_FILE"
   echo "已停止"
 else
-  echo "Clawdbot 未在运行 (清理旧 PID 文件)"
+  echo "OpenClawCN 未在运行 (清理旧 PID 文件)"
   rm -f "$PID_FILE"
 fi
 SCRIPT
@@ -297,7 +297,7 @@ chmod +x "$STANDALONE_DIR/stop.sh"
 # 创建 Windows 快捷方式生成脚本
 cat > "$STANDALONE_DIR/create-windows-shortcut.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 在 Windows 桌面创建 Clawdbot 快捷方式
+# 在 Windows 桌面创建 OpenClawCN 快捷方式
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -326,20 +326,20 @@ echo "WSL 路径: $WSL_PATH"
 echo "Windows 路径: $WIN_PATH"
 
 # 创建 .bat 文件作为启动器
-cat > "$WIN_DESKTOP/Clawdbot.bat" << EOF
+cat > "$WIN_DESKTOP/OpenClawCN.bat" << EOF
 @echo off
 wsl -e bash -c "cd '$WSL_PATH' && ./setup.sh"
 EOF
 
 echo ""
-echo "快捷方式已创建: $WIN_DESKTOP/Clawdbot.bat"
-echo "双击即可启动 Clawdbot!"
+echo "快捷方式已创建: $WIN_DESKTOP/OpenClawCN.bat"
+echo "双击即可启动 OpenClawCN!"
 SCRIPT
 chmod +x "$STANDALONE_DIR/create-windows-shortcut.sh"
 
 # 创建 README
 cat > "$STANDALONE_DIR/README.md" << 'README'
-# Clawdbot 独立版 (WSL)
+# OpenClawCN 独立版 (WSL)
 
 专为 Windows Subsystem for Linux (WSL) 环境优化的版本！
 
@@ -394,7 +394,7 @@ sudo apt install wslu
 ./create-windows-shortcut.sh
 ```
 
-这会在 Windows 桌面创建一个 `Clawdbot.bat` 文件，双击即可启动！
+这会在 Windows 桌面创建一个 `OpenClawCN.bat` 文件，双击即可启动！
 
 ## 配置为 systemd 服务 (需 WSL2 + systemd)
 
@@ -420,15 +420,15 @@ wsl --shutdown
 ```bash
 # 复制 service 文件
 mkdir -p ~/.config/systemd/user/
-cp clawdbot.service ~/.config/systemd/user/
+cp openclawcn.service ~/.config/systemd/user/
 
 # 编辑路径
-nano ~/.config/systemd/user/clawdbot.service
+nano ~/.config/systemd/user/openclawcn.service
 
 # 启用并启动
 systemctl --user daemon-reload
-systemctl --user enable clawdbot
-systemctl --user start clawdbot
+systemctl --user enable openclawcn
+systemctl --user start openclawcn
 ```
 
 ## 故障排除
@@ -464,16 +464,16 @@ https://www.tecbinai.com/
 README
 
 # 创建 systemd service 文件
-cat > "$STANDALONE_DIR/clawdbot.service" << SYSTEMD
+cat > "$STANDALONE_DIR/openclawcn.service" << SYSTEMD
 [Unit]
-Description=Clawdbot AI Gateway (WSL)
+Description=OpenClawCN AI Gateway (WSL)
 After=network.target
 
 [Service]
 Type=simple
 User=%i
-WorkingDirectory=%h/clawdbot
-ExecStart=%h/clawdbot/node/bin/node %h/clawdbot/dist/entry.js gateway run --port 18789
+WorkingDirectory=%h/openclawcn
+ExecStart=%h/openclawcn/node/bin/node %h/openclawcn/dist/entry.js gateway run --port 18789
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
@@ -500,10 +500,10 @@ echo "  总计:         ${TOTAL_SIZE}MB"
 # 创建压缩包
 echo ""
 echo "创建压缩包..."
-TARBALL_NAME="clawdbot-wsl-${ARCH}-standalone.tar.gz"
+TARBALL_NAME="openclawcn-wsl-${ARCH}-standalone.tar.gz"
 TARBALL_PATH="$OUTPUT_DIR/$TARBALL_NAME"
 cd "$OUTPUT_DIR"
-tar -czf "$TARBALL_NAME" clawdbot
+tar -czf "$TARBALL_NAME" openclawcn
 
 TARBALL_SIZE=$(du -sm "$TARBALL_PATH" | cut -f1)
 

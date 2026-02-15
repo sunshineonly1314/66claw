@@ -29,6 +29,7 @@ export type CronFormState = {
   payloadKind: "systemEvent" | "agentTurn";
   payloadText: string;
   deliver: boolean;
+  deliveryMode: "none" | "announce";
   channel: string;
   to: string;
   timeoutSeconds: string;

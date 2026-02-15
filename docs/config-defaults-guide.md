@@ -1,9 +1,9 @@
-# Clawdbot 全参数配置指南 —— 开箱即用最大化价值
+# OpenClawCN 全参数配置指南 —— 开箱即用最大化价值
 
 > 本文档面向产品经理、运维人员、以及需要理解"每个参数干什么"的开发者。
-> 目标：让新装用户零配置（或最少配置）即可获得 Clawdbot 最大能力。
+> 目标：让新装用户零配置（或最少配置）即可获得 OpenClawCN 最大能力。
 >
-> 配置文件位置：`~/.clawdbot/clawdbot.json`（Linux/Mac）或 `{安装目录}/data/clawdbot.json`（Windows）
+> 配置文件位置：`~/.openclawcn/openclawcn.json`（Linux/Mac）或 `{安装目录}/data/openclawcn.json`（Windows）
 > 文件格式：JSON5（支持注释、尾逗号）
 
 ---
@@ -32,7 +32,7 @@
 
 **这是什么？**
 
-Clawdbot 本身不是 AI，它是一个"管家"，需要接入一个真正的 AI 大脑才能工作。就像一个手机壳，你得选装什么牌子的手机进去。
+OpenClawCN 本身不是 AI，它是一个"管家"，需要接入一个真正的 AI 大脑才能工作。就像一个手机壳，你得选装什么牌子的手机进去。
 
 **国内用户可以选的"大脑"有**：
 - 硅基流动(SiliconFlow) — 聚合平台，一个 key 能用几十种模型，有免费额度
@@ -138,7 +138,7 @@ Clawdbot 本身不是 AI，它是一个"管家"，需要接入一个真正的 AI
 - 适合谁：个人电脑、信任 AI 的开发者
 - 体验如何：**最强大**。"帮我整理桌面"、"帮我装个 Python"、"帮我配置环境"全都能做
 
-**为什么个人用户推荐 "full"？** 因为如果选了 deny 或 allowlist，用户的第一反应就是"这 AI 什么都做不了，废物"。Clawdbot 的核心价值就是**能动手干活**，把这个能力阉割掉等于自废武功。
+**为什么个人用户推荐 "full"？** 因为如果选了 deny 或 allowlist，用户的第一反应就是"这 AI 什么都做不了，废物"。OpenClawCN 的核心价值就是**能动手干活**，把这个能力阉割掉等于自废武功。
 
 **会不会把电脑搞坏？** 有可能，就像你雇了一个很能干但偶尔犯错的助手。但对于个人电脑来说，这个风险可以接受——重要文件有备份就行。
 
@@ -264,7 +264,7 @@ AI 可以打开一个真实的 Chrome 浏览器，像一个人一样去点击、
 
 ### 3.1 服务开在哪个端口？（`gateway.port`）
 
-Clawdbot 启动后会开一个"服务窗口"，你的浏览器和各种聊天渠道都通过这个窗口跟 AI 通信。端口号就像门牌号。
+OpenClawCN 启动后会开一个"服务窗口"，你的浏览器和各种聊天渠道都通过这个窗口跟 AI 通信。端口号就像门牌号。
 
 **默认 18789**，没有特殊需求不用改。除非这个端口被其他软件占了（极小概率），才需要改成别的数字。
 
@@ -274,7 +274,7 @@ Clawdbot 启动后会开一个"服务窗口"，你的浏览器和各种聊天渠
 
 **这是整个配置里对小白影响最大的参数之一。**
 
-把 Clawdbot 想象成一家店铺，bind 决定了这家店铺的"大门朝向"：
+把 OpenClawCN 想象成一家店铺，bind 决定了这家店铺的"大门朝向"：
 
 **"loopback"（只开内门）**
 - 店铺只有一个内部通道，只有在店里的人才能进来
@@ -316,12 +316,12 @@ Clawdbot 启动后会开一个"服务窗口"，你的浏览器和各种聊天渠
 
 ### 3.4 要不要加密？（`gateway.tls`）
 
-你的浏览器和 Clawdbot 之间传输的数据要不要加密。就像寄信：
+你的浏览器和 OpenClawCN 之间传输的数据要不要加密。就像寄信：
 - 不加密（HTTP） = 明信片，邮递员和路上的人都能看到内容
 - 加密（HTTPS） = 密封信件，只有你和收件人能看到
 
 **本机用的话**（loopback 模式）：
-数据从你的浏览器到你电脑上的 Clawdbot，走的是电脑内部通道，根本不经过网络。**不需要加密**，就像你在自己房间里自言自语，不需要加密。
+数据从你的浏览器到你电脑上的 OpenClawCN，走的是电脑内部通道，根本不经过网络。**不需要加密**，就像你在自己房间里自言自语，不需要加密。
 
 **远程用的话**（lan 模式，尤其是云服务器）：
 数据要经过互联网传输。你的 API Key、聊天内容、甚至 auth token 都在网络上裸奔。**必须加密**。
@@ -472,7 +472,7 @@ AI 能同时处理的任务数。比如你让 AI "帮我写一个网页"，AI �
 
 ### 7.1 免费模型轮转（`freeModels`）
 
-一些国内 AI 厂商提供每日免费额度。Clawdbot 可以自动管理多个免费账号，当一个账号的今日额度用完了，自动切换到下一个。就像你有 3 张充值卡，一张用完自动换下一张。
+一些国内 AI 厂商提供每日免费额度。OpenClawCN 可以自动管理多个免费账号，当一个账号的今日额度用完了，自动切换到下一个。就像你有 3 张充值卡，一张用完自动换下一张。
 
 **`strategy: "priority"`**：按你设定的优先级顺序使用。高优先级的号用完了才用低优先级的。
 
@@ -578,7 +578,7 @@ AI 能同时处理的任务数。比如你让 AI "帮我写一个网页"，AI �
   │     ├─ CN → 加载 CN provider 列表 + freeModels.enabled=true
   │     └─ Global → 加载 Global provider 列表
   │
-  └─ 写入 clawdbot.json → 启动 Setup Wizard
+  └─ 写入 openclawcn.json → 启动 Setup Wizard
 ```
 
 ---
@@ -591,7 +591,7 @@ AI 能同时处理的任务数。比如你让 AI "帮我写一个网页"，AI �
 
 ### 10.1 最简单：概览页面快捷卡片（推荐小白首选）
 
-**在哪？** 打开 Clawdbot Web 管理页面，首页（`/`）就是。
+**在哪？** 打开 OpenClawCN Web 管理页面，首页（`/`）就是。
 
 **长什么样？** 首页有几张"卡片"，每张卡片负责一个最常用的设置：
 
@@ -769,19 +769,19 @@ AI 回复：
 
 **三个命令**：
 
-#### 命令一：`clawdbot config`（直接读写某个参数）
+#### 命令一：`openclawcn config`（直接读写某个参数）
 
 ```bash
 # 看某个值
-clawdbot config get agents.defaults.temperature
+openclawcn config get agents.defaults.temperature
 # 输出: 0.7
 
 # 改某个值
-clawdbot config set agents.defaults.temperature 0.5
+openclawcn config set agents.defaults.temperature 0.5
 # 输出: ✓ Updated
 
 # 删某个值
-clawdbot config unset tools.web.search.apiKey
+openclawcn config unset tools.web.search.apiKey
 # 输出: ✓ Removed
 ```
 
@@ -790,10 +790,10 @@ clawdbot config unset tools.web.search.apiKey
 - `agents.list[0].name` → 数组用方括号和序号
 - `channels.feishu.appId` → 渠道下的子属性
 
-#### 命令二：`clawdbot configure`（交互式菜单）
+#### 命令二：`openclawcn configure`（交互式菜单）
 
 ```bash
-clawdbot configure
+openclawcn configure
 ```
 
 会出现一个菜单让你选：
@@ -811,14 +811,14 @@ clawdbot configure
 
 也可以直接跳到某个部分：
 ```bash
-clawdbot configure --section channels
+openclawcn configure --section channels
 ```
 
-#### 命令三：`clawdbot setup`（重新初始化）
+#### 命令三：`openclawcn setup`（重新初始化）
 
 ```bash
-clawdbot setup          # 重新走初始化流程
-clawdbot setup --wizard  # 打开浏览器走可视化向导
+openclawcn setup          # 重新走初始化流程
+openclawcn setup --wizard  # 打开浏览器走可视化向导
 ```
 
 ---
@@ -826,9 +826,9 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
 ### 10.7 直接编辑配置文件：最原始但最灵活
 
 **文件在哪？**
-- Windows: `C:\Users\你的用户名\.clawdbot\clawdbot.json`
-- macOS: `~/.clawdbot/clawdbot.json`
-- Linux: `~/.clawdbot/clawdbot.json`
+- Windows: `C:\Users\你的用户名\.openclawcn\openclawcn.json`
+- macOS: `~/.openclawcn/openclawcn.json`
+- Linux: `~/.openclawcn/openclawcn.json`
 
 **用什么打开？** 任何文本编辑器——记事本、VS Code、vim 都行。
 
@@ -837,7 +837,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
 - 尾部逗号（最后一项后面可以有逗号）
 - 不加引号的 key
 
-**编辑完怎么生效？** 需要重启 Clawdbot 服务。
+**编辑完怎么生效？** 需要重启 OpenClawCN 服务。
 
 **什么时候直接编辑文件？**
 - 系统完全起不来，Web 页面打不开 → 只能改文件
@@ -845,7 +845,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
 - 批量修改大量参数 → 文件里改更快
 
 **注意事项**：
-- 改之前先备份！`cp clawdbot.json clawdbot.json.backup`
+- 改之前先备份！`cp openclawcn.json openclawcn.json.backup`
 - JSON5 语法错误会导致服务起不来
 - 改完后重启服务
 
@@ -861,8 +861,8 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
 | **我在聊天时想临时调参数** | 聊天命令 `/config set` | 不用切页面 |
 | **我想试试某个参数但不确定** | 聊天命令 `/debug set` | 临时生效，重启恢复 |
 | **我想详细调整很多参数** | 可视化配置编辑器 | 功能最全，有表单 |
-| **我在Linux服务器上没浏览器** | 命令行 `clawdbot configure` | 终端交互式菜单 |
-| **我要写脚本批量部署** | 命令行 `clawdbot config set` | 可脚本化 |
+| **我在Linux服务器上没浏览器** | 命令行 `openclawcn configure` | 终端交互式菜单 |
+| **我要写脚本批量部署** | 命令行 `openclawcn config set` | 可脚本化 |
 | **系统起不来了** | 直接编辑配置文件 | 最后手段 |
 
 ---
@@ -940,7 +940,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
 | `tools.web.fetch.readability` | boolean | `true` | `true` | 提取正文去广告 |
 | `browser.enabled` | boolean | 无 | `true` | AI 操控浏览器 |
 | `browser.allowHostBrowser` | boolean | 无 | 有桌面=`true`, 无桌面=`false` | 用本机浏览器 |
-| `browser.profile` | string | 无 | `"clawdbot"` | 浏览器配置隔离 |
+| `browser.profile` | string | 无 | `"openclawcn"` | 浏览器配置隔离 |
 
 ### 记忆类
 
@@ -1039,7 +1039,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
       query: { hybrid: { enabled: true } },
       cache: { enabled: true }
     },
-    browser: { profile: "clawdbot", allowHostBrowser: true }
+    browser: { profile: "openclawcn", allowHostBrowser: true }
   },
   gateway: {
     port: 18789,
@@ -1109,7 +1109,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
       query: { hybrid: { enabled: true } },
       cache: { enabled: true }
     },
-    browser: { profile: "clawdbot", allowHostBrowser: true }
+    browser: { profile: "openclawcn", allowHostBrowser: true }
   },
   gateway: {
     port: 18789,
@@ -1179,7 +1179,7 @@ clawdbot setup --wizard  # 打开浏览器走可视化向导
       query: { hybrid: { enabled: true } },
       cache: { enabled: true }
     },
-    browser: { profile: "clawdbot", allowHostBrowser: false }
+    browser: { profile: "openclawcn", allowHostBrowser: false }
   },
   gateway: {
     port: 18789,

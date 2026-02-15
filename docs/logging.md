@@ -8,7 +8,7 @@ read_when:
 
 # Logging
 
-Clawdbot logs in two places:
+OpenClawCN logs in two places:
 
 - **File logs** (JSON lines) written by the Gateway.
 - **Console output** shown in terminals and the Control UI.
@@ -20,16 +20,16 @@ levels and formats.
 
 By default, the Gateway writes a rolling log file under:
 
-`/tmp/clawdbot/clawdbot-YYYY-MM-DD.log`
+`/tmp/openclawcn/openclawcn-YYYY-MM-DD.log`
 
 The date uses the gateway host's local timezone.
 
-You can override this in `~/.clawdbot/clawdbot.json`:
+You can override this in `~/.openclawcn/openclawcn.json`:
 
 ```json
 {
   "logging": {
-    "file": "/path/to/clawdbot.log"
+    "file": "/path/to/openclawcn.log"
   }
 }
 ```
@@ -41,7 +41,7 @@ You can override this in `~/.clawdbot/clawdbot.json`:
 Use the CLI to tail the gateway log file via RPC:
 
 ```bash
-clawdbot logs --follow
+openclawcn logs --follow
 ```
 
 Output modes:
@@ -62,7 +62,7 @@ In JSON mode, the CLI emits `type`-tagged objects:
 If the Gateway is unreachable, the CLI prints a short hint to run:
 
 ```bash
-clawdbot doctor
+openclawcn doctor
 ```
 
 ### Control UI (web)
@@ -75,7 +75,7 @@ See [/web/control-ui](/web/control-ui) for how to open it.
 To filter channel activity (WhatsApp/Telegram/etc), use:
 
 ```bash
-clawdbot channels logs --channel whatsapp
+openclawcn channels logs --channel whatsapp
 ```
 
 ## Log formats
@@ -97,13 +97,13 @@ Console formatting is controlled by `logging.consoleStyle`.
 
 ## Configuring logging
 
-All logging configuration lives under `logging` in `~/.clawdbot/clawdbot.json`.
+All logging configuration lives under `logging` in `~/.openclawcn/openclawcn.json`.
 
 ```json
 {
   "logging": {
     "level": "info",
-    "file": "/tmp/clawdbot/clawdbot-YYYY-MM-DD.log",
+    "file": "/tmp/openclawcn/openclawcn-YYYY-MM-DD.log",
     "consoleLevel": "info",
     "consoleStyle": "pretty",
     "redactSensitive": "tools",
@@ -151,7 +151,7 @@ diagnostics + the exporter plugin are enabled.
 
 - **OpenTelemetry (OTel)**: the data model + SDKs for traces, metrics, and logs.
 - **OTLP**: the wire protocol used to export OTel data to a collector/backend.
-- Clawdbot exports via **OTLP/HTTP (protobuf)** today.
+- OpenClawCN exports via **OTLP/HTTP (protobuf)** today.
 
 ### Signals exported
 
@@ -208,7 +208,7 @@ Flags are case-insensitive and support wildcards (e.g. `telegram.*` or `*`).
 Env override (one-off):
 
 ```
-CLAWDBOT_DIAGNOSTICS=telegram.http,telegram.payload
+OPENCLAWCN_DIAGNOSTICS=telegram.http,telegram.payload
 ```
 
 Notes:
@@ -237,7 +237,7 @@ works with any OpenTelemetry collector/backend that accepts OTLP/HTTP.
       "enabled": true,
       "endpoint": "http://otel-collector:4318",
       "protocol": "http/protobuf",
-      "serviceName": "clawdbot-gateway",
+      "serviceName": "openclawcn-gateway",
       "traces": true,
       "metrics": true,
       "logs": true,
@@ -249,7 +249,7 @@ works with any OpenTelemetry collector/backend that accepts OTLP/HTTP.
 ```
 
 Notes:
-- You can also enable the plugin with `clawdbot plugins enable diagnostics-otel`.
+- You can also enable the plugin with `openclawcn plugins enable diagnostics-otel`.
 - `protocol` currently supports `http/protobuf` only. `grpc` is ignored.
 - Metrics include token usage, cost, context size, run duration, and message-flow
   counters/histograms (webhooks, queueing, session state, queue depth/wait).
@@ -262,58 +262,58 @@ Notes:
 ### Exported metrics (names + types)
 
 Model usage:
-- `clawdbot.tokens` (counter, attrs: `clawdbot.token`, `clawdbot.channel`,
-  `clawdbot.provider`, `clawdbot.model`)
-- `clawdbot.cost.usd` (counter, attrs: `clawdbot.channel`, `clawdbot.provider`,
-  `clawdbot.model`)
-- `clawdbot.run.duration_ms` (histogram, attrs: `clawdbot.channel`,
-  `clawdbot.provider`, `clawdbot.model`)
-- `clawdbot.context.tokens` (histogram, attrs: `clawdbot.context`,
-  `clawdbot.channel`, `clawdbot.provider`, `clawdbot.model`)
+- `openclawcn.tokens` (counter, attrs: `openclawcn.token`, `openclawcn.channel`,
+  `openclawcn.provider`, `openclawcn.model`)
+- `openclawcn.cost.usd` (counter, attrs: `openclawcn.channel`, `openclawcn.provider`,
+  `openclawcn.model`)
+- `openclawcn.run.duration_ms` (histogram, attrs: `openclawcn.channel`,
+  `openclawcn.provider`, `openclawcn.model`)
+- `openclawcn.context.tokens` (histogram, attrs: `openclawcn.context`,
+  `openclawcn.channel`, `openclawcn.provider`, `openclawcn.model`)
 
 Message flow:
-- `clawdbot.webhook.received` (counter, attrs: `clawdbot.channel`,
-  `clawdbot.webhook`)
-- `clawdbot.webhook.error` (counter, attrs: `clawdbot.channel`,
-  `clawdbot.webhook`)
-- `clawdbot.webhook.duration_ms` (histogram, attrs: `clawdbot.channel`,
-  `clawdbot.webhook`)
-- `clawdbot.message.queued` (counter, attrs: `clawdbot.channel`,
-  `clawdbot.source`)
-- `clawdbot.message.processed` (counter, attrs: `clawdbot.channel`,
-  `clawdbot.outcome`)
-- `clawdbot.message.duration_ms` (histogram, attrs: `clawdbot.channel`,
-  `clawdbot.outcome`)
+- `openclawcn.webhook.received` (counter, attrs: `openclawcn.channel`,
+  `openclawcn.webhook`)
+- `openclawcn.webhook.error` (counter, attrs: `openclawcn.channel`,
+  `openclawcn.webhook`)
+- `openclawcn.webhook.duration_ms` (histogram, attrs: `openclawcn.channel`,
+  `openclawcn.webhook`)
+- `openclawcn.message.queued` (counter, attrs: `openclawcn.channel`,
+  `openclawcn.source`)
+- `openclawcn.message.processed` (counter, attrs: `openclawcn.channel`,
+  `openclawcn.outcome`)
+- `openclawcn.message.duration_ms` (histogram, attrs: `openclawcn.channel`,
+  `openclawcn.outcome`)
 
 Queues + sessions:
-- `clawdbot.queue.lane.enqueue` (counter, attrs: `clawdbot.lane`)
-- `clawdbot.queue.lane.dequeue` (counter, attrs: `clawdbot.lane`)
-- `clawdbot.queue.depth` (histogram, attrs: `clawdbot.lane` or
-  `clawdbot.channel=heartbeat`)
-- `clawdbot.queue.wait_ms` (histogram, attrs: `clawdbot.lane`)
-- `clawdbot.session.state` (counter, attrs: `clawdbot.state`, `clawdbot.reason`)
-- `clawdbot.session.stuck` (counter, attrs: `clawdbot.state`)
-- `clawdbot.session.stuck_age_ms` (histogram, attrs: `clawdbot.state`)
-- `clawdbot.run.attempt` (counter, attrs: `clawdbot.attempt`)
+- `openclawcn.queue.lane.enqueue` (counter, attrs: `openclawcn.lane`)
+- `openclawcn.queue.lane.dequeue` (counter, attrs: `openclawcn.lane`)
+- `openclawcn.queue.depth` (histogram, attrs: `openclawcn.lane` or
+  `openclawcn.channel=heartbeat`)
+- `openclawcn.queue.wait_ms` (histogram, attrs: `openclawcn.lane`)
+- `openclawcn.session.state` (counter, attrs: `openclawcn.state`, `openclawcn.reason`)
+- `openclawcn.session.stuck` (counter, attrs: `openclawcn.state`)
+- `openclawcn.session.stuck_age_ms` (histogram, attrs: `openclawcn.state`)
+- `openclawcn.run.attempt` (counter, attrs: `openclawcn.attempt`)
 
 ### Exported spans (names + key attributes)
 
-- `clawdbot.model.usage`
-  - `clawdbot.channel`, `clawdbot.provider`, `clawdbot.model`
-  - `clawdbot.sessionKey`, `clawdbot.sessionId`
-  - `clawdbot.tokens.*` (input/output/cache_read/cache_write/total)
-- `clawdbot.webhook.processed`
-  - `clawdbot.channel`, `clawdbot.webhook`, `clawdbot.chatId`
-- `clawdbot.webhook.error`
-  - `clawdbot.channel`, `clawdbot.webhook`, `clawdbot.chatId`,
-    `clawdbot.error`
-- `clawdbot.message.processed`
-  - `clawdbot.channel`, `clawdbot.outcome`, `clawdbot.chatId`,
-    `clawdbot.messageId`, `clawdbot.sessionKey`, `clawdbot.sessionId`,
-    `clawdbot.reason`
-- `clawdbot.session.stuck`
-  - `clawdbot.state`, `clawdbot.ageMs`, `clawdbot.queueDepth`,
-    `clawdbot.sessionKey`, `clawdbot.sessionId`
+- `openclawcn.model.usage`
+  - `openclawcn.channel`, `openclawcn.provider`, `openclawcn.model`
+  - `openclawcn.sessionKey`, `openclawcn.sessionId`
+  - `openclawcn.tokens.*` (input/output/cache_read/cache_write/total)
+- `openclawcn.webhook.processed`
+  - `openclawcn.channel`, `openclawcn.webhook`, `openclawcn.chatId`
+- `openclawcn.webhook.error`
+  - `openclawcn.channel`, `openclawcn.webhook`, `openclawcn.chatId`,
+    `openclawcn.error`
+- `openclawcn.message.processed`
+  - `openclawcn.channel`, `openclawcn.outcome`, `openclawcn.chatId`,
+    `openclawcn.messageId`, `openclawcn.sessionKey`, `openclawcn.sessionId`,
+    `openclawcn.reason`
+- `openclawcn.session.stuck`
+  - `openclawcn.state`, `openclawcn.ageMs`, `openclawcn.queueDepth`,
+    `openclawcn.sessionKey`, `openclawcn.sessionId`
 
 ### Sampling + flushing
 
@@ -337,7 +337,7 @@ Queues + sessions:
 
 ## Troubleshooting tips
 
-- **Gateway not reachable?** Run `clawdbot doctor` first.
+- **Gateway not reachable?** Run `openclawcn doctor` first.
 - **Logs empty?** Check that the Gateway is running and writing to the file path
   in `logging.file`.
 - **Need more detail?** Set `logging.level` to `debug` or `trace` and retry.

@@ -1,12 +1,25 @@
 type EnvelopeTimestampZone = string;
 
+function formatWeekday(date: Date, timeZone?: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      ...(timeZone ? { timeZone } : {}),
+      weekday: "short",
+    }).format(date);
+  } catch {
+    return "";
+  }
+}
+
 function formatUtcTimestamp(date: Date): string {
   const yyyy = String(date.getUTCFullYear()).padStart(4, "0");
   const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(date.getUTCDate()).padStart(2, "0");
   const hh = String(date.getUTCHours()).padStart(2, "0");
   const min = String(date.getUTCMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}Z`;
+  const weekday = formatWeekday(date, "UTC");
+  const ts = `${yyyy}-${mm}-${dd}T${hh}:${min}Z`;
+  return weekday ? `${weekday} ${ts}` : ts;
 }
 
 function formatZonedTimestamp(date: Date, timeZone?: string): string {
@@ -36,7 +49,9 @@ function formatZonedTimestamp(date: Date, timeZone?: string): string {
     throw new Error("Missing date parts for envelope timestamp formatting.");
   }
 
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}${tz ? ` ${tz}` : ""}`;
+  const weekday = formatWeekday(date, timeZone);
+  const ts = `${yyyy}-${mm}-${dd} ${hh}:${min}${tz ? ` ${tz}` : ""}`;
+  return weekday ? `${weekday} ${ts}` : ts;
 }
 
 export function formatEnvelopeTimestamp(date: Date, zone: EnvelopeTimestampZone = "utc"): string {

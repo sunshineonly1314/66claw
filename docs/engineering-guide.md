@@ -1,6 +1,6 @@
-# Clawdbot 工程结构与架构详解（struct.md）
+# OpenClawCN 工程结构与架构详解（struct.md）
 
-> 适用对象：第一次接手/二开 Clawdbot 的工程同学。  
+> 适用对象：第一次接手/二开 OpenClawCN 的工程同学。  
 > 目标：尽可能覆盖“所有代码”的功能边界与关键实现链路，并给出前端/后端/客户端节点的一致架构图。  
 > 说明：仓库体量很大（`src/` 约 2k+ TS 文件 + `apps/*` 原生端 + `extensions/*` 插件包）。本文采取“**全量目录归类覆盖 + 关键入口深读**”策略：所有目录都做职责映射；对运行链路的入口与核心子系统做深入到代码级的解释；并明确指出可能需要进一步下钻的“深水区”。
 
@@ -10,7 +10,7 @@
 
 如果你是第一次接触这类工程，可以先用下面这几段“人话”把系统概念建立起来，然后再回去看第 1~11 节的技术细节。
 
-### 0.1 用 3 句话理解 Clawdbot
+### 0.1 用 3 句话理解 OpenClawCN
 
 - **它就是一个“家里常开着的 AI 助手服务”**：你把它跑在家里的电脑/服务器上，它一直在线。
 - **它通过一个“总开关/总控台”统一管理一切**：这个总控台叫 **Gateway（网关/控制面）**。手机、浏览器页面、电脑 App、各种聊天软件都通过它连接。
@@ -19,7 +19,7 @@
 ### 0.2 你只需要先记住 5 个“角色”
 
 - **Gateway（网关）**：整个系统的“总机/中控”。默认只在本机 `127.0.0.1:18789` 上监听。
-- **CLI（命令行 clawdbot）**：你的“遥控器”。用它安装、配置、启动/停止网关、查看状态、发消息。
+- **CLI（命令行 openclawcn）**：你的“遥控器”。用它安装、配置、启动/停止网关、查看状态、发消息。
 - **WebChat / Control UI（网页控制台）**：一个网页界面，能看状态、改配置、管理渠道、直接聊天。
 - **Channel（渠道）**：你在哪个平台跟它说话（WhatsApp/Telegram/Discord/...）。每个渠道都有“接入适配器”。
 - **Node（节点）**：你的设备（手机/电脑）作为“能力提供者”连上网关，比如相机、屏幕录制、语音唤醒等能力。
@@ -28,7 +28,7 @@
 
 ### 0.3 从 0 到“能用”的最短路线（不看代码也能理解）
 
-1. **安装并跑起来**：用 `clawdbot onboard` 跟着向导配置，然后 `clawdbot gateway ...` 启动网关。
+1. **安装并跑起来**：用 `openclawcn onboard` 跟着向导配置，然后 `openclawcn gateway ...` 启动网关。
 2. **先选一个渠道接入**（最简单通常是 Telegram bot 或 WebChat）：配好 token/账号后，测试能收发消息。
 3. **确认安全策略**：默认模式下，陌生人 DM 需要“配对/批准”才会被处理（避免任何人随便控制你的助手）。
 4. （可选）**出差手机遥控**：不要把网关直接暴露到公网；推荐用 **Tailscale Serve** 或 SSH 隧道来远程访问（见 0.6）。
@@ -72,7 +72,7 @@
 
 ## 1. 总览：这是一套什么系统？
 
-**一句话**：Clawdbot 是一个“运行在你自己设备上的个人 AI 助手平台”，用一个 **Gateway（控制面，类似总机/中控）** 把多渠道消息、工具、会话/多 agent、Web UI、以及 macOS/iOS/Android 节点统一起来。
+**一句话**：OpenClawCN 是一个“运行在你自己设备上的个人 AI 助手平台”，用一个 **Gateway（控制面，类似总机/中控）** 把多渠道消息、工具、会话/多 agent、Web UI、以及 macOS/iOS/Android 节点统一起来。
 
 核心形态：
 
@@ -93,14 +93,14 @@
 
 ### 2.2 典型运行（从用户视角）
 
-Clawdbot 推荐通过 CLI onboarding 启动网关并配置渠道：
+OpenClawCN 推荐通过 CLI onboarding 启动网关并配置渠道：
 
-- `clawdbot onboard --install-daemon`
-- `clawdbot gateway --port 18789 --verbose`
+- `openclawcn onboard --install-daemon`
+- `openclawcn gateway --port 18789 --verbose`
 
 > 默认 Gateway 端口 **18789**（见 `src/gateway/server.impl.ts` 的默认参数；CLI 也会从 config 解析端口）。
 >
-> 小白解释：你可以把 `clawdbot gateway ...` 理解成“把总机开机”。只要总机开着，网页、手机、聊天渠道才能连进来。
+> 小白解释：你可以把 `openclawcn gateway ...` 理解成“把总机开机”。只要总机开着，网页、手机、聊天渠道才能连进来。
 
 ### 2.3 从源码构建（开发视角）
 
@@ -118,8 +118,8 @@ Clawdbot 推荐通过 CLI onboarding 启动网关并配置渠道：
 - 源：`src/gateway/protocol/schema/protocol-schemas.ts`（导出 `ProtocolSchemas`，以及 `PROTOCOL_VERSION = 3`）
 - JSON Schema：`scripts/protocol-gen.ts` → `dist/protocol.schema.json`
 - Swift：`scripts/protocol-gen-swift.ts` →  
-  - `apps/macos/Sources/ClawdbotProtocol/GatewayModels.swift`  
-  - `apps/shared/ClawdbotKit/Sources/ClawdbotProtocol/GatewayModels.swift`
+  - `apps/macos/Sources/OpenClawCNProtocol/GatewayModels.swift`  
+  - `apps/shared/OpenClawCNKit/Sources/OpenClawCNProtocol/GatewayModels.swift`
 
 小白解释：这是“统一口径”。因为 Web 前端、手机 App、macOS App 都要跟网关说同一种“语言”。这套脚本保证大家用的是同一份“字典/协议”，不会各说各话。
 
@@ -188,7 +188,7 @@ flowchart TB
     Phone[手机\n(iOS/Android)]
     Mac[macOS 菜单栏 App\n+ Node Mode]
     BrowserUI[浏览器\nControl UI/WebChat]
-    CLI[CLI: clawdbot]
+    CLI[CLI: openclawcn]
   end
 
   subgraph GatewayHost[家里/服务器（网关宿主机）]
@@ -268,7 +268,7 @@ Web UI 在 `ui/`，使用 Lit（Web Components）+ Vite 构建；构建产物输
 ```mermaid
 flowchart TB
   subgraph WebUI[Control UI/WebChat (ui/)]
-    App[ClawdbotApp\nui/src/ui/app.ts]
+    App[OpenClawCNApp\nui/src/ui/app.ts]
     Views[views/*\nchat/overview/channels/nodes/logs/...]
     Ctrls[controllers/*\nchat/channels/config/nodes/...]
     GWClient[GatewayBrowserClient\nui/src/ui/gateway.ts]
@@ -295,10 +295,10 @@ flowchart TB
 
 - **静态资源托管与 SPA fallback**：`src/gateway/control-ui.ts`
   - `resolveControlUiRoot()` 搜索 `control-ui` 资源目录（可在 packaged / dist / source / cwd 下工作）
-  - `handleControlUiHttpRequest()` 支持 basePath、asset 路径解析、`index.html` 注入 `window.__CLAWDBOT_CONTROL_UI_BASE_PATH__` 等
+  - `handleControlUiHttpRequest()` 支持 basePath、asset 路径解析、`index.html` 注入 `window.__OPENCLAWCN_CONTROL_UI_BASE_PATH__` 等
 - **设备身份**：`ui/src/ui/device-identity.ts`
   - 私钥随机生成，公钥计算，`deviceId = SHA-256(publicKey)` 的 hex 指纹
-  - 存储在 `localStorage("clawdbot-device-identity-v1")`
+  - 存储在 `localStorage("openclawcn-device-identity-v1")`
 - **WS connect 握手 + challenge**：`ui/src/ui/gateway.ts`
   - 先连 WS，收 `connect.challenge`（nonce）再发 `connect`
   - `connect` params 里包含 `minProtocol/maxProtocol=3`、client info、role/scopes、device 签名信息
@@ -372,11 +372,11 @@ Agent 的核心职责是：把“消息上下文 + 可用工具 + 模型配置�
 - 系统提示词拼装：`src/agents/system-prompt.ts`
   - 将工具说明、workspace、docs、sandbox 信息等注入 system prompt
 - 工具创建与策略过滤：`src/agents/pi-tools.ts`
-  - `createClawdbotCodingTools()` 组合：
+  - `createOpenClawCNCodingTools()` 组合：
     - 基础 coding tools（read/write/edit 等）
     - exec/process（支持后台、审批、sandbox 容器执行）
     - channel-defined agent tools（例如登录工具）
-    - clawdbot 内建工具（browser/canvas/nodes/cron/message/gateway/...）
+    - openclawcn 内建工具（browser/canvas/nodes/cron/message/gateway/...）
   - 关键：通过多层 policy 过滤（global/agent/group/provider/profile/sandbox/subagent）
   - 插件工具也会以“group”形式注入 allowlist（`buildPluginToolGroups`）
 - 嵌入式 runner：`src/agents/pi-embedded.ts`（导出 run/queue/compact 等）
@@ -439,16 +439,16 @@ Gateway 侧：
 
 ## 6. 插件系统（extensions/* 如何“长”进核心）
 
-插件加载入口：`src/plugins/loader.ts`（`loadClawdbotPlugins()`）
+插件加载入口：`src/plugins/loader.ts`（`loadOpenClawCNPlugins()`）
 
 小白解释：插件系统就是“插U盘扩容”。核心系统留一套接口，插件往里插就能增加新能力（新渠道、新工具、新命令），你不需要改核心代码就能扩展。
 
 关键机制：
 
-- **发现**：`discoverClawdbotPlugins()` 收集候选（workspaceDir + extra paths）
-- **manifest**：`loadPluginManifestRegistry()` 读取 `clawdbot.plugin.json` 等元信息（含 config schema/ui hints）
+- **发现**：`discoverOpenClawCNPlugins()` 收集候选（workspaceDir + extra paths）
+- **manifest**：`loadPluginManifestRegistry()` 读取 `openclawcn.plugin.json` 等元信息（含 config schema/ui hints）
 - **加载执行**：使用 `jiti` 动态加载 TS/JS 模块
-  - 并注入 alias：`clawdbot/plugin-sdk` 指向仓库内的 plugin-sdk（src 或 dist，按运行环境决定）
+  - 并注入 alias：`openclawcn/plugin-sdk` 指向仓库内的 plugin-sdk（src 或 dist，按运行环境决定）
 - **启用策略**：`resolveEnableState()` 根据 config 决定启用/禁用原因
 - **配置校验**：`validateJsonSchemaValue()` 校验插件 config（插件必须有 schema，否则报错）
 - **slot 选择**：memory 插件 slot 只能选一个（`resolveMemorySlotDecision()`）
@@ -556,7 +556,7 @@ Web UI 的设备身份签名依赖 `crypto.subtle`（安全上下文：HTTPS/loc
 6. `src/agents/pi-tools.ts` + `src/agents/system-prompt.ts` → agent runtime 与工具系统
 7. `ui/src/ui/gateway.ts` + `ui/src/ui/app.ts` → WebChat/Control UI 与鉴权握手
 8. `src/plugins/loader.ts` → 插件如何被发现/加载/校验/注入
-9. `apps/shared/ClawdbotKit/*` → 节点端协议与连接抽象（再下钻各平台实现）
+9. `apps/shared/OpenClawCNKit/*` → 节点端协议与连接抽象（再下钻各平台实现）
 
 小白解释：这条顺序就是“从总入口到分支”。你跟着读，不会在 2000+ 文件里迷路：先看入口文件，再看网关怎么拼装，再看具体功能模块。
 
@@ -602,7 +602,7 @@ Web UI 的设备身份签名依赖 `crypto.subtle`（安全上下文：HTTPS/loc
 ### 10.5 插件/扩展
 - `src/plugins/loader.ts`：插件发现/加载/校验/registry
 - `src/plugins/cli.ts`：插件 CLI 命令注册
-- `extensions/*`：插件包（每个包有 `clawdbot.plugin.json` 与 `index.ts`/`src/*`）
+- `extensions/*`：插件包（每个包有 `openclawcn.plugin.json` 与 `index.ts`/`src/*`）
 
 ---
 

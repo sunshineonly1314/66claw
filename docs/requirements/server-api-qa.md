@@ -466,7 +466,7 @@ export const DEFAULT_LICENSE_CONFIG: LicenseModuleConfig = {
 
 **现状**：
 - 客户端在本地存储已展示的通知 ID
-- 文件位置：`~/.clawdbot/shown_notifications.json`
+- 文件位置：`~/.openclawcn/shown_notifications.json`
 - 每次请求时通过 `shownNotificationIds` 参数告诉服务端
 
 **问题场景**：

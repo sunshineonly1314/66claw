@@ -9,7 +9,7 @@
 ## 正确性 / 设计
 
 - **根因判断正确**：仅用 `loadConfig()` 时 `models.providers` 常为空，与「所有模型都报错」现象一致。
-- **合并入口合理**：`getMergedProvidersForAgent` 与 `ensureClawdbotModelsJson` 使用同一套合并逻辑，行为一致。
+- **合并入口合理**：`getMergedProvidersForAgent` 与 `ensureOpenClawCNModelsJson` 使用同一套合并逻辑，行为一致。
 - **volcengine-ark 双写**：`resolveImplicitProviders` 同时注册 `doubao` 与 `volcengine-ark`（同一引用），与向导/中国区 UI 一致，无逻辑错误。
 
 ---
@@ -37,7 +37,7 @@
 ## 风险与注意事项（无需改代码，但需知晓）
 
 1. **重复计算**  
-   同一次请求内会先执行 `ensureClawdbotModelsJson`（内部调用 `resolveImplicitProviders`），再执行 `getMergedProvidersForAgent`（再次调用 `resolveImplicitProviders`）。同一轮会做两次「隐式 providers 解析」。当前是只读（auth store + env），无副作用，仅多一次 I/O 与合并计算，可接受；若后续要优化，可考虑让 `ensureClawdbotModelsJson` 返回合并后的 providers 供调用方复用。
+   同一次请求内会先执行 `ensureOpenClawCNModelsJson`（内部调用 `resolveImplicitProviders`），再执行 `getMergedProvidersForAgent`（再次调用 `resolveImplicitProviders`）。同一轮会做两次「隐式 providers 解析」。当前是只读（auth store + env），无副作用，仅多一次 I/O 与合并计算，可接受；若后续要优化，可考虑让 `ensureOpenClawCNModelsJson` 返回合并后的 providers 供调用方复用。
 
 2. **doubao / volcengine-ark 共享同一对象**  
    `providers["volcengine-ark"] = doubaoProvider` 是同一引用。若有代码修改 `providers["doubao"]`（如删 apiKey），会同时影响 `volcengine-ark`。当前使用处均为只读，风险低；后续若有写操作需避免直接改共享对象。

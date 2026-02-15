@@ -1,11 +1,11 @@
 ---
-summary: "CLI reference for `clawdbot directory` (self, peers, groups)"
+summary: "CLI reference for `openclawcn directory` (self, peers, groups)"
 read_when:
   - You want to look up contacts/groups/self ids for a channel
   - You are developing a channel directory adapter
 ---
 
-# `clawdbot directory`
+# `openclawcn directory`
 
 Directory lookups for channels that support it (contacts/peers, groups, and “me”).
 
@@ -15,15 +15,15 @@ Directory lookups for channels that support it (contacts/peers, groups, and “m
 - `--json`: output JSON
 
 ## Notes
-- `directory` is meant to help you find IDs you can paste into other commands (especially `clawdbot message send --target ...`).
+- `directory` is meant to help you find IDs you can paste into other commands (especially `openclawcn message send --target ...`).
 - For many channels, results are config-backed (allowlists / configured groups) rather than a live provider directory.
 - Default output is `id` (and sometimes `name`) separated by a tab; use `--json` for scripting.
 
 ## Using results with `message send`
 
 ```bash
-clawdbot directory peers list --channel slack --query "U0"
-clawdbot message send --channel slack --target user:U012ABCDEF --message "hello"
+openclawcn directory peers list --channel slack --query "U0"
+openclawcn message send --channel slack --target user:U012ABCDEF --message "hello"
 ```
 
 ## ID formats (by channel)
@@ -40,21 +40,21 @@ clawdbot message send --channel slack --target user:U012ABCDEF --message "hello"
 ## Self (“me”)
 
 ```bash
-clawdbot directory self --channel zalouser
+openclawcn directory self --channel zalouser
 ```
 
 ## Peers (contacts/users)
 
 ```bash
-clawdbot directory peers list --channel zalouser
-clawdbot directory peers list --channel zalouser --query "name"
-clawdbot directory peers list --channel zalouser --limit 50
+openclawcn directory peers list --channel zalouser
+openclawcn directory peers list --channel zalouser --query "name"
+openclawcn directory peers list --channel zalouser --limit 50
 ```
 
 ## Groups
 
 ```bash
-clawdbot directory groups list --channel zalouser
-clawdbot directory groups list --channel zalouser --query "work"
-clawdbot directory groups members --channel zalouser --group-id <id>
+openclawcn directory groups list --channel zalouser
+openclawcn directory groups list --channel zalouser --query "work"
+openclawcn directory groups members --channel zalouser --group-id <id>
 ```

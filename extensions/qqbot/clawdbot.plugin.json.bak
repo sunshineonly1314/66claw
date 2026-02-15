@@ -1,0 +1,11 @@
+{
+  "id": "qqbot",
+  "channels": [
+    "qqbot"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

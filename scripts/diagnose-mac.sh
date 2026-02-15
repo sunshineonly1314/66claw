@@ -1,11 +1,11 @@
 #!/bin/bash
 # ============================================================================
-# Clawdbot macOS 诊断信息收集器
+# OpenClawCN macOS 诊断信息收集器
 # ============================================================================
 # 一键收集所有诊断信息，方便用户反馈问题
 #
 # 用法: ./diagnose-mac.sh
-# 输出: 桌面上的 clawdbot-diagnostics-{日期}.txt
+# 输出: 桌面上的 openclawcn-diagnostics-{日期}.txt
 #
 # 参考 Windows CollectDiagnostics.ps1
 # ============================================================================
@@ -16,9 +16,9 @@ set -e
 # 配置
 # ============================================================================
 TIMESTAMP=$(date '+%Y%m%d-%H%M%S')
-OUTPUT_FILE="$HOME/Desktop/clawdbot-diagnostics-$TIMESTAMP.txt"
-CONFIG_DIR="$HOME/.clawdbot"
-APP_PATH="/Applications/Clawdbot.app"
+OUTPUT_FILE="$HOME/Desktop/openclawcn-diagnostics-$TIMESTAMP.txt"
+CONFIG_DIR="$HOME/.openclawcn"
+APP_PATH="/Applications/OpenClawCN.app"
 PORT=18789
 
 # ============================================================================
@@ -37,7 +37,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}  ╔════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}  ║                                                                ║${NC}"
-    echo -e "${CYAN}  ║              Clawdbot 诊断信息收集器                           ║${NC}"
+    echo -e "${CYAN}  ║              OpenClawCN 诊断信息收集器                           ║${NC}"
     echo -e "${CYAN}  ║                                                                ║${NC}"
     echo -e "${CYAN}  ╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -58,7 +58,7 @@ write_line() {
 # 初始化
 # ============================================================================
 init_output() {
-    echo "Clawdbot macOS 诊断报告" > "$OUTPUT_FILE"
+    echo "OpenClawCN macOS 诊断报告" > "$OUTPUT_FILE"
     echo "生成时间: $(date '+%Y-%m-%d %H:%M:%S')" >> "$OUTPUT_FILE"
     echo "======================================================================" >> "$OUTPUT_FILE"
 }
@@ -115,16 +115,16 @@ collect_disk_info() {
 }
 
 # ============================================================================
-# 3. Clawdbot 安装状态
+# 3. OpenClawCN 安装状态
 # ============================================================================
 collect_installation_info() {
     echo -e "  [3/8] 检查安装状态..."
     
-    write_section "Clawdbot 安装状态"
+    write_section "OpenClawCN 安装状态"
     
     # 检查 App
     if [ -d "$APP_PATH" ]; then
-        write_line "Clawdbot.app: 已安装"
+        write_line "OpenClawCN.app: 已安装"
         write_line "App 路径: $APP_PATH"
         
         # 版本信息
@@ -152,23 +152,23 @@ collect_installation_info() {
             write_line "Gatekeeper 隔离: 已清除"
         fi
     else
-        write_line "Clawdbot.app: 未安装"
+        write_line "OpenClawCN.app: 未安装"
     fi
     
     # 检查配置文件
     write_line ""
     write_line "--- 配置文件 ---"
-    if [ -f "$CONFIG_DIR/clawdbot.json" ]; then
+    if [ -f "$CONFIG_DIR/openclawcn.json" ]; then
         write_line "配置文件: 存在"
         # 不输出敏感信息（Token）
         write_line "配置内容（已脱敏）:"
-        cat "$CONFIG_DIR/clawdbot.json" 2>/dev/null | sed 's/"token"[[:space:]]*:[[:space:]]*"[^"]*"/"token": "***REDACTED***"/g' >> "$OUTPUT_FILE"
+        cat "$CONFIG_DIR/openclawcn.json" 2>/dev/null | sed 's/"token"[[:space:]]*:[[:space:]]*"[^"]*"/"token": "***REDACTED***"/g' >> "$OUTPUT_FILE"
     else
         write_line "配置文件: 不存在"
     fi
     
     # 检查内置 CLI
-    local cli_path="$APP_PATH/Contents/Resources/clawdbot-cli"
+    local cli_path="$APP_PATH/Contents/Resources/openclawcn-cli"
     if [ -d "$cli_path" ]; then
         write_line ""
         write_line "内置 CLI: 存在"
@@ -206,10 +206,10 @@ collect_process_info() {
     
     write_section "进程状态"
     
-    # Clawdbot 进程
-    write_line "--- Clawdbot 进程 ---"
-    local clawdbot_procs=$(pgrep -l -f "Clawdbot|clawdbot" 2>/dev/null || echo "无")
-    write_line "$clawdbot_procs"
+    # OpenClawCN 进程
+    write_line "--- OpenClawCN 进程 ---"
+    local openclawcn_procs=$(pgrep -l -f "OpenClawCN|openclawcn" 2>/dev/null || echo "无")
+    write_line "$openclawcn_procs"
     
     # Node.js 进程
     write_line ""
@@ -275,7 +275,7 @@ collect_logs() {
     
     write_section "日志文件"
     
-    # Clawdbot 日志
+    # OpenClawCN 日志
     local log_files=(
         "$CONFIG_DIR/logs/install.log:安装日志"
         "$CONFIG_DIR/logs/gateway.log:Gateway 日志"
@@ -298,10 +298,10 @@ collect_logs() {
         fi
     done
     
-    # 系统日志（Clawdbot 相关）
+    # 系统日志（OpenClawCN 相关）
     write_line ""
     write_line "--- 系统日志 (最近 1 小时) ---"
-    log show --predicate 'subsystem CONTAINS "clawdbot" OR process CONTAINS "Clawdbot"' --last 1h 2>/dev/null | tail -100 >> "$OUTPUT_FILE" || write_line "无法获取系统日志"
+    log show --predicate 'subsystem CONTAINS "openclawcn" OR process CONTAINS "OpenClawCN"' --last 1h 2>/dev/null | tail -100 >> "$OUTPUT_FILE" || write_line "无法获取系统日志"
 }
 
 # ============================================================================

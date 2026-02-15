@@ -1,4 +1,4 @@
-# Clawdbot Skills 3000+ 全景总览
+# OpenClawCN Skills 3000+ 全景总览
 
 > 生成时间: 2026-02-09 | 数据来源: skills-merged (3,061 skills) + skills-awesome (2,901 skills)
 > 质量评估管线版本: 1.1.0 | Schema v2
@@ -60,7 +60,7 @@ name: skill-name
 description: 技能的一句话描述
 homepage: https://github.com/xxx/xxx
 metadata:
-  clawdbot:
+  openclawcn:
     emoji: "🔧"
     requires:
       bins: ["curl", "jq"]       # 必须安装的命令行工具
@@ -163,12 +163,12 @@ metadata:
 
 ## 5. 平台生态命名空间
 
-Clawdbot 生态包含多个品牌/平台命名空间：
+OpenClawCN 生态包含多个品牌/平台命名空间：
 
 | 命名空间 | 数量 | 定位 |
 |----------|------|------|
 | **claw-*** | 117 | Claw 核心生态工具 (安全、同步、邮件、浏览器等) |
-| **clawd-*** | 43 | Clawdbot 本体功能 (文件系统、安全检查、日志、构建等) |
+| **clawd-*** | 43 | OpenClawCN 本体功能 (文件系统、安全检查、日志、构建等) |
 | **molt-*** | 67 | Molt 社区生态 (社交、游戏、媒体、安全审计等) |
 | **openclaw-*** | 20 | OpenClaw 开放平台 (Nextcloud、安全、迁移等) |
 | **agent-*** | 136 | Agent 智能体框架 (浏览器、邮件、编排、身份等) |
@@ -183,8 +183,8 @@ Clawdbot 生态包含多个品牌/平台命名空间：
 | claw-swarm | 多 Agent 编排 |
 | clawguard | 安全防护 |
 | clawscan | 安全扫描 |
-| clawdbot-filesystem | 高级文件系统操作 |
-| clawdbot-security-suite | 安全套件 |
+| openclawcn-filesystem | 高级文件系统操作 |
+| openclawcn-security-suite | 安全套件 |
 
 ---
 
@@ -945,4 +945,4 @@ CN 可用率 (已评审): 52% (14/27)
 
 ---
 
-*本文档由 Clawdbot Skills 质量评估管线 v1.1.0 + 人工分析生成*
+*本文档由 OpenClawCN Skills 质量评估管线 v1.1.0 + 人工分析生成*

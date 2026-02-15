@@ -2,7 +2,7 @@
 
 > 基于 `docs/chattodo.md` 需求文档，针对中国用户进行的全面 UI/UE 优化
 > 迭代日期：2026-01-31
-> 品牌升级：clawdbot → ClawbotCN
+> 品牌升级：openclawcn → ClawbotCN
 > 技术支持：tecbinai (www.tecbinai.com)
 
 ---
@@ -27,8 +27,8 @@
 
 | 原名称 | 新名称 |
 |--------|--------|
-| Clawdbot | ClawbotCN |
-| CLAWDBOT | ClawbotCN |
+| OpenClawCN | ClawbotCN |
+| OPENCLAWCN | ClawbotCN |
 | ClawdCN | ClawbotCN |
 
 ### 1.2 修改详情
@@ -38,7 +38,7 @@
 ```html
 <!-- 修改前 -->
 <html lang="en">
-<title>Clawdbot Control</title>
+<title>OpenClawCN Control</title>
 
 <!-- 修改后 -->
 <html lang="zh-CN">
@@ -50,7 +50,7 @@
 
 ```typescript
 // 修改前
-<div class="brand-title">CLAWDBOT</div>
+<div class="brand-title">OPENCLAWCN</div>
 <div class="brand-sub">Gateway Dashboard</div>
 
 // 修改后
@@ -305,11 +305,11 @@ const copyCommand = (cmd: string) => {
 
 // 命令复制按钮
 <div class="connection-hint__cmd">
-  <code>clawdbot dashboard --no-open</code>
+  <code>openclawcn dashboard --no-open</code>
   <button 
     class="btn btn--sm" 
     type="button"
-    @click=${() => copyCommand("clawdbot dashboard --no-open")}
+    @click=${() => copyCommand("openclawcn dashboard --no-open")}
     title="${t("connection.hint.copyCommand")}"
   >
     ${t("common.copy")}
@@ -444,12 +444,12 @@ const copyCommand = (cmd: string) => {
 
 ### 6.7 产品名称替换
 
-在翻译文件中将所有 `Clawdbot` 替换为 `ClawbotCN`：
+在翻译文件中将所有 `OpenClawCN` 替换为 `ClawbotCN`：
 
 ```typescript
 // 修改前
-"nodes.help.description": "节点是连接到 Clawdbot 网关的远程设备...",
-"subtitle.playground": "发现技能玩法，探索 Clawdbot 的无限可能",
+"nodes.help.description": "节点是连接到 OpenClawCN 网关的远程设备...",
+"subtitle.playground": "发现技能玩法，探索 OpenClawCN 的无限可能",
 
 // 修改后
 "nodes.help.description": "节点是连接到 ClawbotCN 网关的远程设备...",

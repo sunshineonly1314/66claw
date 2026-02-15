@@ -4,12 +4,12 @@ description: Manage Trello boards, lists, and cards via the Trello REST API.
 nameZh: "Trello看板"
 descriptionZh: "通过REST API管理Trello看板、列表和卡片"
 homepage: https://developer.atlassian.com/cloud/trello/rest/
-metadata: {"clawdbot":{"emoji":"📋","requires":{"bins":["jq"],"env":["TRELLO_API_KEY","TRELLO_TOKEN"]}}}
+metadata: {"openclawcn":{"emoji":"📋","requires":{"bins":["jq"],"env":["TRELLO_API_KEY","TRELLO_TOKEN"]}}}
 ---
 
 # Trello Skill
 
-Manage Trello boards, lists, and cards directly from Clawdbot.
+Manage Trello boards, lists, and cards directly from OpenClawCN.
 
 ## Setup
 

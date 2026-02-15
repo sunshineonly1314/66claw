@@ -104,7 +104,7 @@
 
 ### TC-05: License 并行启动 — 服务器提前可达（P0，CN 版本）
 
-**前提**: ClawdbotCN 版本，需要 license 验证
+**前提**: OpenClawCN 版本，需要 license 验证
 
 **步骤**:
 1. 停止 Gateway
@@ -129,7 +129,7 @@
 
 ### TC-06: License 验证失败 — fail-close 安全（P0，CN 版本）
 
-**前提**: ClawdbotCN 版本，模拟 license 服务器不可达
+**前提**: OpenClawCN 版本，模拟 license 服务器不可达
 
 **步骤**:
 1. 断开网络（或配置无效的 license server 地址）
@@ -146,7 +146,7 @@
 
 ### TC-07: License pending 期间 isLicenseValid 返回 false（P0，CN 版本）
 
-**前提**: ClawdbotCN 版本
+**前提**: OpenClawCN 版本
 
 **步骤**:
 1. 启动 Gateway
@@ -161,7 +161,7 @@
 
 ### TC-08: 完整性检查失败 — 阻止启动（P0，CN 版本）
 
-**前提**: ClawdbotCN 版本
+**前提**: OpenClawCN 版本
 
 **步骤**:
 1. 修改一个受保护的核心文件（如 license-check.js）
@@ -195,10 +195,10 @@
 
 ### TC-10: 非 CN 版本不受影响（P1）
 
-**前提**: 非 CN 版本（CLAWDBOT_CN 未设置，无 license key）
+**前提**: 非 CN 版本（OPENCLAWCN_CN 未设置，无 license key）
 
 **步骤**:
-1. 确认环境变量 `CLAWDBOT_CN` 未设置
+1. 确认环境变量 `OPENCLAWCN_CN` 未设置
 2. 确认配置中无 `license.key`
 3. 启动 Gateway
 4. 正常使用所有功能
@@ -245,7 +245,7 @@
 
 ### TC-13: getGatewayLicenseState() pending 状态返回（P2，CN 版本）
 
-**前提**: ClawdbotCN 版本
+**前提**: OpenClawCN 版本
 
 **步骤**:
 1. 启动 Gateway

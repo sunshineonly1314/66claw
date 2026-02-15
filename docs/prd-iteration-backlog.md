@@ -159,7 +159,7 @@ export type IncompatibleReason =
 
 #### Phase 8: 技能元数据修正 — 9 个 SKILL.md
 
-在以下 9 个 brew-only 技能的 `clawdbot` 元数据中添加 `"os":["darwin"]`：
+在以下 9 个 brew-only 技能的 `openclawcn` 元数据中添加 `"os":["darwin"]`：
 
 | 技能 | 说明 | 影响 |
 |------|------|------|

@@ -3,7 +3,7 @@ name: skills-troubleshoot
 description: 诊断并修复 Skills 页面问题（卡顿、显示0个技能、无法点击、技能市场为空）。当用户反馈技能页面异常时使用此技能。
 nameZh: "技能排错"
 descriptionZh: "诊断并修复技能页面显示异常问题"
-metadata: {"clawdbot":{"emoji":"🔧"}}
+metadata: {"openclawcn":{"emoji":"🔧"}}
 ---
 
 # Skills 页面故障排除
@@ -28,7 +28,7 @@ UI 请求 skills.status
     ↓
 loadSkillEntries() 从多个目录加载:
     - bundledSkillsDir (环境变量或 skills/)
-    - managedSkillsDir (~/.clawdbot/skills/)
+    - managedSkillsDir (~/.openclawcn/skills/)
     - workspaceSkillsDir (<workspace>/skills/)
     ↓
 loadSkillsFromDir() (@mariozechner/pi-coding-agent)
@@ -93,7 +93,7 @@ node scripts/fix-skills-names.js            # 执行修复
 
 **症状**: 标题显示"本地技能 (51)"但列表显示"未找到匹配的技能"
 
-**原因**: 筛选框中有之前输入的文本（如 "D:\clawdbot-build"）
+**原因**: 筛选框中有之前输入的文本（如 "D:\openclawcn-build"）
 
 **解决方案**: 清除筛选框内容
 
@@ -118,16 +118,16 @@ node scripts/generate-skills-index.js
 
 ### 问题 4: 环境变量未传递
 
-**症状**: 设置了 `CLAWDBOT_BUNDLED_SKILLS_DIR` 但日志中没有显示
+**症状**: 设置了 `OPENCLAWCN_BUNDLED_SKILLS_DIR` 但日志中没有显示
 
 **解决方案**:
 ```powershell
 # 方法 1: 在同一 shell 设置并启动
-$env:CLAWDBOT_BUNDLED_SKILLS_DIR = "d:\path\to\skills"
+$env:OPENCLAWCN_BUNDLED_SKILLS_DIR = "d:\path\to\skills"
 node dist\entry.js gateway run --port 18789
 
 # 方法 2: 使用 cmd
-cmd /c "set CLAWDBOT_BUNDLED_SKILLS_DIR=d:\path\to\skills&& node dist\entry.js gateway run --port 18789"
+cmd /c "set OPENCLAWCN_BUNDLED_SKILLS_DIR=d:\path\to\skills&& node dist\entry.js gateway run --port 18789"
 ```
 
 ### 问题 5: 页面卡顿
@@ -144,7 +144,7 @@ cmd /c "set CLAWDBOT_BUNDLED_SKILLS_DIR=d:\path\to\skills&& node dist\entry.js g
 ## 快速诊断流程
 
 1. **检查进程**: `Get-Process node`
-2. **检查日志**: 查看是否有 `[skills] Using CLAWDBOT_BUNDLED_SKILLS_DIR:` 和 `skills.status` 响应时间
+2. **检查日志**: 查看是否有 `[skills] Using OPENCLAWCN_BUNDLED_SKILLS_DIR:` 和 `skills.status` 响应时间
 3. **检查筛选框**: 确保为空
 4. **检查 skills 目录**: name 是否与目录名匹配
 5. **检查技能市场**: Gitee 仓库是否可访问

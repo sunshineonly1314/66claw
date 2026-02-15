@@ -4,7 +4,7 @@ description: Search for places (restaurants, cafes, etc.) via Google Places API 
 nameZh: "附近地点"
 descriptionZh: "搜索附近的餐厅、商店、景点等"
 homepage: https://github.com/Hyaxia/local_places
-metadata: {"clawdbot":{"emoji":"📍","requires":{"bins":["uv"],"env":["GOOGLE_PLACES_API_KEY"]},"primaryEnv":"GOOGLE_PLACES_API_KEY","install":[{"id":"uv-brew","kind":"brew","formula":"uv","bins":["uv"],"label":"Install uv (brew)"},{"id":"uv-pip","kind":"pip","package":"uv","bins":["uv"],"label":"Install uv (pip)"}]}}
+metadata: {"openclawcn":{"emoji":"📍","requires":{"bins":["uv"],"env":["GOOGLE_PLACES_API_KEY"]},"primaryEnv":"GOOGLE_PLACES_API_KEY","install":[{"id":"uv-brew","kind":"brew","formula":"uv","bins":["uv"],"label":"Install uv (brew)"},{"id":"uv-pip","kind":"pip","package":"uv","bins":["uv"],"label":"Install uv (pip)"}]}}
 ---
 
 # 📍 Local Places

@@ -373,6 +373,8 @@ export const zhCN: Record<keyof typeof en, string> = {
   // 技能页 (Skills)
   // ============================================================================
   "skills.title": "技能",
+  "skills.tab.list": "技能列表",
+  "skills.tab.mcpStore": "MCP 市场",
   "skills.cardTitle": "技能管理",
   "skills.cardSub": "管理内置技能、托管技能和工作区技能。技能可以扩展 AI 助手的能力。",
   "skills.installed": "已安装",

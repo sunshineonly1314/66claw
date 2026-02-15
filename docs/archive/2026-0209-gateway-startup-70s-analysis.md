@@ -2,7 +2,7 @@
 
 > 日期：2026-02-09
 > 状态：已分析，待优化
-> 关联：ClawdbotService.cs、license-check.ts、entry.ts、server.impl.ts
+> 关联：OpenClawCNService.cs、license-check.ts、entry.ts、server.impl.ts
 
 ---
 
@@ -27,7 +27,7 @@ Gateway 从启动到 Node.js 进程真正拉起并就绪，耗时 70+ 秒。用�
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ ClawdbotService.cs / start-gateway.bat                       │
+│ OpenClawCNService.cs / start-gateway.bat                       │
 │  ├─ KillProcessOnPort() + Thread.Sleep(1000)        ~3s     │
 │  ├─ RunDoctorFix() → spawn node doctor --fix        0-15s   │
 │  ├─ Process.Start(node gateway)                     instant  │
@@ -84,7 +84,7 @@ checkLicenseOnGatewayStart():
 
 ### 3.2 Pre-Node 硬编码等待（8-20s）
 
-**文件：** `scripts/windows/native/ClawdbotService.cs:627,728-749`
+**文件：** `scripts/windows/native/OpenClawCNService.cs:627,728-749`
 
 | 操作 | 耗时 | 说明 |
 |------|------|------|
@@ -99,7 +99,7 @@ checkLicenseOnGatewayStart():
 `ensureWarningsSuppressed()` 检查 `NODE_OPTIONS` 是否包含警告抑制标志。如果没有，**整个进程重启**——即 node.exe 冷启动两次。
 
 ```javascript
-if (!process.env.CLAWDBOT_NODE_OPTIONS_READY) {
+if (!process.env.OPENCLAWCN_NODE_OPTIONS_READY) {
   // 重新 spawn 自己，附加 NODE_OPTIONS
   // 第一次启动的 node.exe 白白浪费
 }
@@ -127,7 +127,7 @@ Phase 3-4 的 ~10 个子系统全部串行 init：插件加载、mDNS 发现、�
 ## 四、时间线（最坏情况，CN + Windows）
 
 ```
-[0s]    ClawdbotService 杀端口 + sleep         → 3s
+[0s]    OpenClawCNService 杀端口 + sleep         → 3s
 [3s]    RunDoctorFix spawn node doctor          → +15s
 [18s]   启动 node.exe gateway                   → +0s
 [18s]   entry.ts 自我重启补 NODE_OPTIONS        → +5s
@@ -146,8 +146,8 @@ Phase 3-4 的 ~10 个子系统全部串行 init：插件加载、mDNS 发现、�
 | 常量 | 值 | 位置 |
 |------|-----|------|
 | `STARTUP_GRACE_PERIOD_MS` | 120,000 (2 min) | `app-gateway.startup-grace.test.ts` |
-| Watchdog 启动超时 | 120s (4×30s) | `ClawdbotService.cs:393-394` |
-| 启动等待循环 | 90 次 × 1s | `ClawdbotService.cs:728` |
+| Watchdog 启动超时 | 120s (4×30s) | `OpenClawCNService.cs:393-394` |
+| 启动等待循环 | 90 次 × 1s | `OpenClawCNService.cs:728` |
 
 注释原文：`// Gateway startup can take 30-90s on slow machines (license check, plugin init, etc.)`
 

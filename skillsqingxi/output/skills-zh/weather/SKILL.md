@@ -2,7 +2,7 @@
 name: weather
 description: 获取当前天气和预报（无需 API Key）。
 homepage: https://wttr.in/:help
-metadata: {"clawdbot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
+metadata: {"openclawcn":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
 ---
 
 # 天气

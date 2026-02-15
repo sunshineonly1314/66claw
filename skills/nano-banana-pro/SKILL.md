@@ -4,7 +4,7 @@ description: Generate or edit images via Gemini 3 Pro Image (Nano Banana Pro).
 nameZh: "AI图片生成Pro"
 descriptionZh: "使用Gemini 3 Pro生成或编辑图片"
 homepage: https://ai.google.dev/
-metadata: {"clawdbot":{"emoji":"🍌","requires":{"bins":["uv"],"env":["GEMINI_API_KEY"]},"primaryEnv":"GEMINI_API_KEY","install":[{"id":"uv-brew","kind":"brew","formula":"uv","bins":["uv"],"label":"Install uv (brew)"},{"id":"uv-pip","kind":"pip","package":"uv","bins":["uv"],"label":"Install uv (pip)"}]}}
+metadata: {"openclawcn":{"emoji":"🍌","requires":{"bins":["uv"],"env":["GEMINI_API_KEY"]},"primaryEnv":"GEMINI_API_KEY","install":[{"id":"uv-brew","kind":"brew","formula":"uv","bins":["uv"],"label":"Install uv (brew)"},{"id":"uv-pip","kind":"pip","package":"uv","bins":["uv"],"label":"Install uv (pip)"}]}}
 ---
 
 # Nano Banana Pro (Gemini 3 Pro Image)
@@ -28,10 +28,10 @@ uv run {baseDir}/scripts/generate_image.py --prompt "combine these into one scen
 
 API key
 - `GEMINI_API_KEY` env var
-- Or set `skills."nano-banana-pro".apiKey` / `skills."nano-banana-pro".env.GEMINI_API_KEY` in `~/.clawdbot/clawdbot.json`
+- Or set `skills."nano-banana-pro".apiKey` / `skills."nano-banana-pro".env.GEMINI_API_KEY` in `~/.openclawcn/openclawcn.json`
 
 Notes
 - Resolutions: `1K` (default), `2K`, `4K`.
 - Use timestamps in filenames: `yyyy-mm-dd-hh-mm-ss-name.png`.
-- The script prints a `MEDIA:` line for Clawdbot to auto-attach on supported chat providers.
+- The script prints a `MEDIA:` line for OpenClawCN to auto-attach on supported chat providers.
 - Do not read the image back; report the saved path only.

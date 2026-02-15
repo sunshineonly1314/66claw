@@ -4,7 +4,9 @@ read_when:
   - Implementing the macOS Canvas panel
   - Adding agent controls for visual workspace
   - Debugging WKWebView canvas loads
+title: "Canvas"
 ---
+
 # Canvas (macOS app)
 
 The macOS app embeds an agent‑controlled **Canvas panel** using `WKWebView`. It
@@ -15,16 +17,17 @@ UI surfaces.
 
 Canvas state is stored under Application Support:
 
-- `~/Library/Application Support/Clawdbot/canvas/<session>/...`
+- `~/Library/Application Support/OpenClawCN/canvas/<session>/...`
 
 The Canvas panel serves those files via a **custom URL scheme**:
 
-- `clawdbot-canvas://<session>/<path>`
+- `openclawcncn-canvas://<session>/<path>`
 
 Examples:
-- `clawdbot-canvas://main/` → `<canvasRoot>/main/index.html`
-- `clawdbot-canvas://main/assets/app.css` → `<canvasRoot>/main/assets/app.css`
-- `clawdbot-canvas://main/widgets/todo/` → `<canvasRoot>/main/widgets/todo/index.html`
+
+- `openclawcncn-canvas://main/` → `<canvasRoot>/main/index.html`
+- `openclawcncn-canvas://main/assets/app.css` → `<canvasRoot>/main/assets/app.css`
+- `openclawcncn-canvas://main/widgets/todo/` → `<canvasRoot>/main/widgets/todo/index.html`
 
 If no `index.html` exists at the root, the app shows a **built‑in scaffold page**.
 
@@ -50,13 +53,14 @@ Canvas is exposed via the **Gateway WebSocket**, so the agent can:
 CLI examples:
 
 ```bash
-clawdbot nodes canvas present --node <id>
-clawdbot nodes canvas navigate --node <id> --url "/"
-clawdbot nodes canvas eval --node <id> --js "document.title"
-clawdbot nodes canvas snapshot --node <id>
+openclawcn nodes canvas present --node <id>
+openclawcn nodes canvas navigate --node <id> --url "/"
+openclawcn nodes canvas eval --node <id> --js "document.title"
+openclawcn nodes canvas snapshot --node <id>
 ```
 
 Notes:
+
 - `canvas.navigate` accepts **local canvas paths**, `http(s)` URLs, and `file://` URLs.
 - If you pass `"/"`, the Canvas shows the local scaffold or `index.html`.
 
@@ -69,7 +73,7 @@ A2UI host page on first open.
 Default A2UI host URL:
 
 ```
-http://<gateway-host>:18793/__clawdbot__/a2ui/
+http://<gateway-host>:18789/__openclawcncn__/a2ui/
 ```
 
 ### A2UI commands (v0.8)
@@ -91,25 +95,25 @@ cat > /tmp/a2ui-v0.8.jsonl <<'EOFA2'
 {"beginRendering":{"surfaceId":"main","root":"root"}}
 EOFA2
 
-clawdbot nodes canvas a2ui push --jsonl /tmp/a2ui-v0.8.jsonl --node <id>
+openclawcn nodes canvas a2ui push --jsonl /tmp/a2ui-v0.8.jsonl --node <id>
 ```
 
 Quick smoke:
 
 ```bash
-clawdbot nodes canvas a2ui push --node <id> --text "Hello from A2UI"
+openclawcn nodes canvas a2ui push --node <id> --text "Hello from A2UI"
 ```
 
 ## Triggering agent runs from Canvas
 
 Canvas can trigger new agent runs via deep links:
 
-- `clawdbot://agent?...`
+- `openclawcn://agent?...`
 
 Example (in JS):
 
 ```js
-window.location.href = "clawdbot://agent?message=Review%20this%20design";
+window.location.href = "openclawcn://agent?message=Review%20this%20design";
 ```
 
 The app prompts for confirmation unless a valid key is provided.

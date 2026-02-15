@@ -1,12 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# Clawdbot Linux 安装脚本示例
+# OpenClawCN Linux 安装脚本示例
 # 
 # 此文件是 install.sh 的参考示例，实际安装脚本位于:
-# https://github.com/clawdbot/clawd.bot/blob/main/public/install.sh
+# https://github.com/openclawcn/openclawcn.com/blob/main/public/install.sh
 #
 # 使用方法:
-#   curl -fsSL https://clawd.bot/install.sh | bash
+#   curl -fsSL https://openclawcn.com/install.sh | bash
 # =============================================================================
 
 set -e
@@ -20,7 +20,7 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}"
 echo "  ╔═══════════════════════════════════════════╗"
-echo "  ║         Clawdbot 安装程序                 ║"
+echo "  ║         OpenClawCN 安装程序                 ║"
 echo "  ╚═══════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -51,27 +51,27 @@ check_node() {
     return 1
 }
 
-# 安装 Clawdbot
-install_clawdbot() {
-    echo -e "${BLUE}正在安装 Clawdbot...${NC}"
+# 安装 OpenClawCN
+install_openclawcn() {
+    echo -e "${BLUE}正在安装 OpenClawCN...${NC}"
     
     # 使用 npm 全局安装
     if command -v pnpm &> /dev/null; then
-        pnpm install -g clawdbot@latest
+        pnpm install -g openclawcn@latest
     elif command -v npm &> /dev/null; then
-        npm install -g clawdbot@latest
+        npm install -g openclawcn@latest
     else
         echo -e "${RED}✗ 未找到 npm 或 pnpm${NC}"
         exit 1
     fi
     
-    echo -e "${GREEN}✓ Clawdbot 安装完成${NC}"
+    echo -e "${GREEN}✓ OpenClawCN 安装完成${NC}"
 }
 
 # 初始化配置
 init_config() {
     echo -e "${BLUE}正在初始化配置...${NC}"
-    clawdbot setup
+    openclawcn setup
     echo -e "${GREEN}✓ 配置初始化完成${NC}"
 }
 
@@ -84,8 +84,8 @@ main() {
         exit 1
     fi
     
-    # 安装 Clawdbot
-    install_clawdbot
+    # 安装 OpenClawCN
+    install_openclawcn
     
     # 初始化配置
     init_config
@@ -98,7 +98,7 @@ main() {
     echo -e "  ${YELLOW}运行以下命令启动配置向导：${NC}"
     echo -e "  ${YELLOW}Run the following command to start setup:${NC}"
     echo ""
-    echo -e "    ${BLUE}clawdbot setup --start${NC}"
+    echo -e "    ${BLUE}openclawcn setup --start${NC}"
     echo ""
     echo -e "  然后在浏览器中打开显示的 URL 完成配置"
     echo -e "  Then open the displayed URL in your browser"

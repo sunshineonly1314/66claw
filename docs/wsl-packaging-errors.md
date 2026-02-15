@@ -1,6 +1,6 @@
 # WSL 离线打包常见错误及解决方案
 
-本文档记录了 Clawdbot Windows WSL 离线安装包开发过程中遇到的所有问题及解决方案。
+本文档记录了 OpenClawCN Windows WSL 离线安装包开发过程中遇到的所有问题及解决方案。
 
 ## 目录
 
@@ -89,7 +89,7 @@ Cannot extract .tar.xz file
 & "$env:ProgramFiles\7-Zip\7z.exe" x ubuntu.tar.xz
 
 # 新代码（使用内置 tar）
-wsl --import ClawdbotUbuntu "$installDir\wsl" ubuntu.tar.gz
+wsl --import OpenClawCNUbuntu "$installDir\wsl" ubuntu.tar.gz
 ```
 
 ---
@@ -98,7 +98,7 @@ wsl --import ClawdbotUbuntu "$installDir\wsl" ubuntu.tar.gz
 
 ### 错误现象
 ```
-wsl -l -q 不显示 ClawdbotUbuntu
+wsl -l -q 不显示 OpenClawCNUbuntu
 The specified distribution does not exist
 ```
 
@@ -110,7 +110,7 @@ The specified distribution does not exist
 1. 确保安装脚本没有解析错误（参见问题 #1）
 2. 添加错误检查：
 ```powershell
-wsl --import ClawdbotUbuntu "$installDir\wsl" "$rootfsPath"
+wsl --import OpenClawCNUbuntu "$installDir\wsl" "$rootfsPath"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "WSL import failed"
     exit 1
@@ -134,13 +134,13 @@ Gateway process exits immediately
 ### 解决方案
 1. 使用完整路径调用 Node.js：
 ```powershell
-/opt/node/bin/node /opt/clawdbot/dist/entry.js gateway run
+/opt/node/bin/node /opt/openclawcn/dist/entry.js gateway run
 ```
 
 2. 使用 `Start-Process` 替代 `nohup`：
 ```powershell
-$wslArgs = @("-d", "ClawdbotUbuntu", "-e", "/opt/node/bin/node", 
-             "/opt/clawdbot/dist/entry.js", "gateway", "run", 
+$wslArgs = @("-d", "OpenClawCNUbuntu", "-e", "/opt/node/bin/node", 
+             "/opt/openclawcn/dist/entry.js", "gateway", "run", 
              "--port", "18789", "--bind", "lan")
 Start-Process -FilePath "wsl" -ArgumentList $wslArgs -WindowStyle Hidden
 ```
@@ -172,7 +172,7 @@ if ($svc.Status -ne "Running") {
 
 2. 正确配置端口转发：
 ```powershell
-$wslIp = (wsl -d ClawdbotUbuntu -- hostname -I).Trim().Split()[0]
+$wslIp = (wsl -d OpenClawCNUbuntu -- hostname -I).Trim().Split()[0]
 netsh interface portproxy delete v4tov4 listenport=18789 listenaddress=0.0.0.0
 netsh interface portproxy add v4tov4 listenport=18789 listenaddress=0.0.0.0 connectport=18789 connectaddress=$wslIp
 ```
@@ -184,7 +184,7 @@ netsh interface portproxy add v4tov4 listenport=18789 listenaddress=0.0.0.0 conn
 ### 错误现象
 ```
 FixGateway.ps1: "WSL distro not found!"
-但 wsl -l -q 确实显示 ClawdbotUbuntu
+但 wsl -l -q 确实显示 OpenClawCNUbuntu
 ```
 
 ### 原因
@@ -194,7 +194,7 @@ FixGateway.ps1: "WSL distro not found!"
 清理 WSL 输出：
 ```powershell
 $distros = (wsl -l -q) -replace '\x00', '' -replace '\s+', ' '
-$found = $distros -match "ClawdbotUbuntu"
+$found = $distros -match "OpenClawCNUbuntu"
 ```
 
 ---
@@ -203,25 +203,25 @@ $found = $distros -match "ClawdbotUbuntu"
 
 ### 错误现象
 ```
-Missing config. Run 'clawdbot setup' or set 'gateway.mode=local'
+Missing config. Run 'openclawcn setup' or set 'gateway.mode=local'
 ```
 
 ### 原因
-安装脚本未创建 `~/.clawdbot/clawdbot.json` 配置文件
+安装脚本未创建 `~/.openclawcn/openclawcn.json` 配置文件
 
 ### 解决方案
 在安装脚本中创建配置文件：
 ```powershell
-wsl -d ClawdbotUbuntu -- bash -c @"
-mkdir -p ~/.clawdbot
-cat > ~/.clawdbot/clawdbot.json << 'EOFCONFIG'
+wsl -d OpenClawCNUbuntu -- bash -c @"
+mkdir -p ~/.openclawcn
+cat > ~/.openclawcn/openclawcn.json << 'EOFCONFIG'
 {
   "gateway": {
     "mode": "local",
     "port": 18789,
     "bind": "lan",
     "auth": {
-      "token": "clawdbot2026"
+      "token": "openclawcn2026"
     }
   }
 }
@@ -285,7 +285,7 @@ window.location.href = buildRedirectUrl();
 ```
 
 **方案 2（备选）**：使用 Watchdog 监控
-- 部署 `ClawdbotWatchdog.ps1` 自动监控和重启 Gateway
+- 部署 `OpenClawCNWatchdog.ps1` 自动监控和重启 Gateway
 
 ### 动态读取的配置（不需要重启）
 | 配置 | 说明 |
@@ -340,7 +340,7 @@ dns.setDefaultResultOrder("ipv4first");
 ### 错误现象
 ```
 Error: Missing workspace template: AGENTS.md 
-(/opt/clawdbot/docs/reference/templates/AGENTS.md)
+(/opt/openclawcn/docs/reference/templates/AGENTS.md)
 ```
 
 ### 原因
@@ -350,8 +350,8 @@ Error: Missing workspace template: AGENTS.md
 1. 手动复制（临时修复）：
 ```powershell
 $srcDir = "d:\...\docs\reference\templates"
-wsl -d ClawdbotUbuntu -- mkdir -p /opt/clawdbot/docs/reference/templates
-wsl -d ClawdbotUbuntu -- cp -r /mnt/d/.../docs/reference/templates/* /opt/clawdbot/docs/reference/templates/
+wsl -d OpenClawCNUbuntu -- mkdir -p /opt/openclawcn/docs/reference/templates
+wsl -d OpenClawCNUbuntu -- cp -r /mnt/d/.../docs/reference/templates/* /opt/openclawcn/docs/reference/templates/
 ```
 
 2. 更新打包脚本（永久修复）：
@@ -396,8 +396,8 @@ Copy-Item -Recurse "docs\reference\templates" "$packageDir\docs\reference\templa
 ### 解决方案
 1. 复制 `skills/` 目录到 WSL：
 ```powershell
-wsl -d ClawdbotUbuntu -- mkdir -p /opt/clawdbot/skills
-wsl -d ClawdbotUbuntu -- cp -r /mnt/d/.../skills/* /opt/clawdbot/skills/
+wsl -d OpenClawCNUbuntu -- mkdir -p /opt/openclawcn/skills
+wsl -d OpenClawCNUbuntu -- cp -r /mnt/d/.../skills/* /opt/openclawcn/skills/
 ```
 
 2. 更新打包脚本包含 skills 目录：
@@ -408,8 +408,8 @@ Copy-Item -Recurse "skills" "$packageDir\skills"
 
 ### 验证
 ```bash
-ls /opt/clawdbot/skills/  # 应显示 55+ 个技能目录
-ls /opt/clawdbot/skills/github/SKILL.md  # 应存在
+ls /opt/openclawcn/skills/  # 应显示 55+ 个技能目录
+ls /opt/openclawcn/skills/github/SKILL.md  # 应存在
 ```
 
 ---
@@ -425,7 +425,7 @@ ls /opt/clawdbot/skills/github/SKILL.md  # 应存在
 ```
 
 ### 原因
-`build-wsl-offline.ps1` 打包脚本只从 `build\wsl-standalone\clawdbot` 目录复制 `dist` 和 `node_modules`，缺少以下关键目录：
+`build-wsl-offline.ps1` 打包脚本只从 `build\wsl-standalone\openclawcn` 目录复制 `dist` 和 `node_modules`，缺少以下关键目录：
 - `ui/` - 前端界面
 - `extensions/` - 扩展插件（飞书、钉钉、企业微信等）
 - `skills/` - 内置技能
@@ -435,12 +435,12 @@ ls /opt/clawdbot/skills/github/SKILL.md  # 应存在
 
 ### 诊断
 ```powershell
-# 检查 wsl-offline/clawdbot-src 目录内容
-Get-ChildItem "build\wsl-offline\clawdbot-src" -Directory
+# 检查 wsl-offline/openclawcn-src 目录内容
+Get-ChildItem "build\wsl-offline\openclawcn-src" -Directory
 # 只显示 dist, node_modules（缺少 ui, extensions, skills 等）
 
-# 检查 WSL 中的 clawdbot 目录
-wsl bash -c "ls ~/clawdbot/"
+# 检查 WSL 中的 openclawcn 目录
+wsl bash -c "ls ~/openclawcn/"
 # 对比应有的完整目录列表
 ```
 
@@ -497,7 +497,7 @@ if (Test-Path "$src\docs") {
 ### 验证
 ```powershell
 # 重新运行打包脚本后检查
-Get-ChildItem "build\wsl-offline\clawdbot-src" -Directory
+Get-ChildItem "build\wsl-offline\openclawcn-src" -Directory
 # 应显示: dist, node_modules, ui, extensions, skills, patches, assets, scripts, docs
 ```
 
@@ -520,8 +520,8 @@ Gateway 启动失败
 在 `build-wsl-offline.ps1` 中，复制完 `node_modules` 后增加一步：注入 Linux 原生绑定。
 
 1. 使用 `npm pack @mariozechner/clipboard-linux-x64-gnu@0.3.0` 下载 tgz 到 `build/cache/`
-2. 用 `tar -xzf` 解压到临时目录，将 `package/` 内容复制到 `clawdbot-src/node_modules/@mariozechner/clipboard-linux-x64-gnu/`
-3. 若解压失败（如无 tar），回退为在 `clawdbot-src` 下执行 `npm install @mariozechner/clipboard-linux-x64-gnu@0.3.0 --no-save --ignore-scripts`
+2. 用 `tar -xzf` 解压到临时目录，将 `package/` 内容复制到 `openclawcn-src/node_modules/@mariozechner/clipboard-linux-x64-gnu/`
+3. 若解压失败（如无 tar），回退为在 `openclawcn-src` 下执行 `npm install @mariozechner/clipboard-linux-x64-gnu@0.3.0 --no-save --ignore-scripts`
 
 ### 修改文件
 - `build/scripts/windows/build-wsl-offline.ps1`
@@ -529,7 +529,7 @@ Gateway 启动失败
 ### 验证
 ```bash
 # WSL 内检查
-ls /opt/clawdbot/node_modules/@mariozechner/clipboard-linux-x64-gnu/
+ls /opt/openclawcn/node_modules/@mariozechner/clipboard-linux-x64-gnu/
 # 应存在 package.json 与 .node 原生文件
 ```
 
@@ -561,4 +561,4 @@ ls /opt/clawdbot/node_modules/@mariozechner/clipboard-linux-x64-gnu/
 ---
 
 *文档版本: 2026-02-01*
-*适用于: Clawdbot WSL 离线安装包*
+*适用于: OpenClawCN WSL 离线安装包*

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Clawdbot macOS 离线包构建脚本
+# OpenClawCN macOS 离线包构建脚本
 # ============================================================================
 # 构建包含所有依赖的离线安装包，实现真正的一键部署
 #
@@ -13,7 +13,7 @@
 #   --skip-deps                 跳过 node_modules 打包
 #
 # 输出:
-#   dist/Clawdbot-offline-{arch}.tar.gz
+#   dist/OpenClawCN-offline-{arch}.tar.gz
 #
 # 参考 Windows build-offline-cn.ps1 和 setup.iss
 # ============================================================================
@@ -82,7 +82,7 @@ parse_args() {
                 shift
                 ;;
             --help|-h)
-                echo "Clawdbot macOS 离线包构建脚本"
+                echo "OpenClawCN macOS 离线包构建脚本"
                 echo ""
                 echo "用法: $0 [选项]"
                 echo ""
@@ -260,7 +260,7 @@ build_native_addon() {
     cd "$PROJECT_ROOT"
 
     local native_dir="$PROJECT_ROOT/native"
-    local native_output="$native_dir/build/Release/clawdbot_native.node"
+    local native_output="$native_dir/build/Release/openclawcn_native.node"
 
     if [ ! -f "$native_dir/binding.gyp" ]; then
         log_warn "native/binding.gyp 不存在，跳过 Native Addon 构建"
@@ -276,7 +276,7 @@ build_native_addon() {
 
     if [ -f "$native_output" ] && [ "$native_output" -nt "$native_dir/src/addon.cc" ]; then
         local addon_size=$(du -h "$native_output" | cut -f1)
-        log_ok "Native Addon 已是最新: clawdbot_native.node ($addon_size)"
+        log_ok "Native Addon 已是最新: openclawcn_native.node ($addon_size)"
         return
     fi
 
@@ -284,7 +284,7 @@ build_native_addon() {
     if (cd "$native_dir" && npx node-gyp rebuild 2>&1); then
         if [ -f "$native_output" ]; then
             local addon_size=$(du -h "$native_output" | cut -f1)
-            log_ok "Native Addon 编译成功: clawdbot_native.node ($addon_size)"
+            log_ok "Native Addon 编译成功: openclawcn_native.node ($addon_size)"
 
             # Strip native addon symbols
             if command -v strip &>/dev/null; then
@@ -305,7 +305,7 @@ build_native_addon() {
 package_cli() {
     log_info "打包 CLI..."
     
-    local cli_dir="$BUILD_DIR/clawdbot-cli"
+    local cli_dir="$BUILD_DIR/openclawcn-cli"
     mkdir -p "$cli_dir"
     
     # 复制编译产物（包含 .jsc 字节码文件）
@@ -321,12 +321,12 @@ package_cli() {
     cp "$PROJECT_ROOT/package.json" "$cli_dir/"
 
     # 复制 Native Addon（Layer 3）
-    local native_addon="$PROJECT_ROOT/native/build/Release/clawdbot_native.node"
+    local native_addon="$PROJECT_ROOT/native/build/Release/openclawcn_native.node"
     if [ -f "$native_addon" ]; then
         mkdir -p "$cli_dir/native/build/Release"
         cp "$native_addon" "$cli_dir/native/build/Release/"
         local addon_size=$(du -h "$native_addon" | cut -f1)
-        log_ok "Native Addon 已打包: clawdbot_native.node ($addon_size)"
+        log_ok "Native Addon 已打包: openclawcn_native.node ($addon_size)"
     fi
 
     # 复制扩展插件
@@ -358,7 +358,7 @@ install_dependencies() {
     
     log_info "安装生产依赖（这可能需要几分钟）..."
     
-    local cli_dir="$BUILD_DIR/clawdbot-cli"
+    local cli_dir="$BUILD_DIR/openclawcn-cli"
     cd "$cli_dir"
     
     # 使用国内镜像
@@ -416,9 +416,9 @@ build_macos_app() {
     fi
     
     # 检查是否已有构建好的 App
-    if [ -d "$DIST_DIR/Clawdbot.app" ]; then
+    if [ -d "$DIST_DIR/OpenClawCN.app" ]; then
         log_info "使用现有构建的 App"
-        cp -R "$DIST_DIR/Clawdbot.app" "$BUILD_DIR/"
+        cp -R "$DIST_DIR/OpenClawCN.app" "$BUILD_DIR/"
         return
     fi
     
@@ -432,8 +432,8 @@ build_macos_app() {
         SKIP_UI_BUILD=1 \
         "$SCRIPT_DIR/package-mac-app.sh"
         
-        if [ -d "$DIST_DIR/Clawdbot.app" ]; then
-            cp -R "$DIST_DIR/Clawdbot.app" "$BUILD_DIR/"
+        if [ -d "$DIST_DIR/OpenClawCN.app" ]; then
+            cp -R "$DIST_DIR/OpenClawCN.app" "$BUILD_DIR/"
         fi
     else
         log_warn "package-mac-app.sh 不存在，跳过 App 构建"
@@ -446,10 +446,10 @@ build_macos_app() {
 embed_cli_in_app() {
     log_info "将 CLI 嵌入 App..."
     
-    local app_path="$BUILD_DIR/Clawdbot.app"
+    local app_path="$BUILD_DIR/OpenClawCN.app"
     
     if [ ! -d "$app_path" ]; then
-        log_warn "Clawdbot.app 不存在，创建独立 CLI 包"
+        log_warn "OpenClawCN.app 不存在，创建独立 CLI 包"
         return
     fi
     
@@ -463,8 +463,8 @@ embed_cli_in_app() {
     fi
     
     # 嵌入 CLI
-    if [ -d "$BUILD_DIR/clawdbot-cli" ]; then
-        cp -R "$BUILD_DIR/clawdbot-cli" "$resources_dir/"
+    if [ -d "$BUILD_DIR/openclawcn-cli" ]; then
+        cp -R "$BUILD_DIR/openclawcn-cli" "$resources_dir/"
         log_ok "CLI 已嵌入"
     fi
 }
@@ -475,18 +475,18 @@ embed_cli_in_app() {
 create_offline_package() {
     log_info "创建离线安装包..."
     
-    local package_name="Clawdbot-offline-${ARCH}"
+    local package_name="OpenClawCN-offline-${ARCH}"
     local package_dir="$BUILD_DIR/$package_name"
     local output_file="$DIST_DIR/${package_name}.tar.gz"
     
     mkdir -p "$package_dir"
     
     # 复制 App 或 CLI
-    if [ -d "$BUILD_DIR/Clawdbot.app" ]; then
-        cp -R "$BUILD_DIR/Clawdbot.app" "$package_dir/"
+    if [ -d "$BUILD_DIR/OpenClawCN.app" ]; then
+        cp -R "$BUILD_DIR/OpenClawCN.app" "$package_dir/"
     else
         # 没有 App，创建独立 CLI 包
-        cp -R "$BUILD_DIR/clawdbot-cli" "$package_dir/"
+        cp -R "$BUILD_DIR/openclawcn-cli" "$package_dir/"
         if [ -d "$BUILD_DIR/node" ]; then
             cp -R "$BUILD_DIR/node" "$package_dir/"
         fi
@@ -499,13 +499,13 @@ create_offline_package() {
     
     # 创建 README
     cat > "$package_dir/README.txt" << EOF
-Clawdbot macOS 离线安装包
+OpenClawCN macOS 离线安装包
 版本: $VERSION
 架构: $ARCH
 
 安装方法:
-1. 将 Clawdbot.app 拖拽到 Applications 文件夹
-2. 双击打开 Clawdbot.app
+1. 将 OpenClawCN.app 拖拽到 Applications 文件夹
+2. 双击打开 OpenClawCN.app
 3. 如遇"无法验证开发者"提示，右键点击 → 打开
 
 如遇问题，运行 quickfix-mac.sh 进行快速修复
@@ -528,7 +528,7 @@ EOF
 cleanup() {
     log_info "清理构建目录..."
     # 保留构建产物，只清理临时文件
-    rm -rf "$BUILD_DIR/node" "$BUILD_DIR/clawdbot-cli"
+    rm -rf "$BUILD_DIR/node" "$BUILD_DIR/openclawcn-cli"
     log_ok "清理完成"
 }
 
@@ -538,7 +538,7 @@ cleanup() {
 main() {
     echo ""
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║     Clawdbot macOS 离线包构建脚本（5 层代码保护）               ║${NC}"
+    echo -e "${CYAN}║     OpenClawCN macOS 离线包构建脚本（5 层代码保护）               ║${NC}"
     echo -e "${CYAN}║     L1:字节码 L2:混淆 L3:NativeAddon L4:Strip L5:运行时       ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -567,7 +567,7 @@ main() {
     echo -e "${GREEN}║                     构建完成！                                 ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  输出文件: ${CYAN}$DIST_DIR/Clawdbot-offline-${ARCH}.tar.gz${NC}"
+    echo -e "  输出文件: ${CYAN}$DIST_DIR/OpenClawCN-offline-${ARCH}.tar.gz${NC}"
     echo ""
 }
 

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createClawdbotTools } from "../agents/clawdbot-tools.js";
+import { createOpenClawCNTools } from "../agents/openclaw-tools.js";
 import { resolveSessionTranscriptPath } from "../config/sessions.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import {
@@ -9,6 +9,7 @@ import {
   getFreePort,
   installGatewayTestHooks,
   startGatewayServer,
+  testState,
 } from "./test-helpers.js";
 
 installGatewayTestHooks({ scope: "suite" });
@@ -17,27 +18,29 @@ let server: Awaited<ReturnType<typeof startGatewayServer>>;
 let gatewayPort: number;
 let prevGatewayPort: string | undefined;
 let prevGatewayToken: string | undefined;
+const gatewayToken = "test-token";
 
 beforeAll(async () => {
-  prevGatewayPort = process.env.CLAWDBOT_GATEWAY_PORT;
-  prevGatewayToken = process.env.CLAWDBOT_GATEWAY_TOKEN;
+  prevGatewayPort = process.env.OPENCLAWCN_GATEWAY_PORT;
+  prevGatewayToken = process.env.OPENCLAWCN_GATEWAY_TOKEN;
   gatewayPort = await getFreePort();
-  process.env.CLAWDBOT_GATEWAY_PORT = String(gatewayPort);
-  process.env.CLAWDBOT_GATEWAY_TOKEN = "test-token";
+  testState.gatewayAuth = { mode: "token", token: gatewayToken };
+  process.env.OPENCLAWCN_GATEWAY_PORT = String(gatewayPort);
+  process.env.OPENCLAWCN_GATEWAY_TOKEN = gatewayToken;
   server = await startGatewayServer(gatewayPort);
 });
 
 afterAll(async () => {
   await server.close();
   if (prevGatewayPort === undefined) {
-    delete process.env.CLAWDBOT_GATEWAY_PORT;
+    delete process.env.OPENCLAWCN_GATEWAY_PORT;
   } else {
-    process.env.CLAWDBOT_GATEWAY_PORT = prevGatewayPort;
+    process.env.OPENCLAWCN_GATEWAY_PORT = prevGatewayPort;
   }
   if (prevGatewayToken === undefined) {
-    delete process.env.CLAWDBOT_GATEWAY_TOKEN;
+    delete process.env.OPENCLAWCN_GATEWAY_TOKEN;
   } else {
-    process.env.CLAWDBOT_GATEWAY_TOKEN = prevGatewayToken;
+    process.env.OPENCLAWCN_GATEWAY_TOKEN = prevGatewayToken;
   }
 });
 
@@ -86,8 +89,10 @@ describe("sessions_send gateway loopback", () => {
       });
     });
 
-    const tool = createClawdbotTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    const tool = createOpenClawCNTools().find((candidate) => candidate.name === "sessions_send");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     const result = await tool.execute("call-loopback", {
       sessionKey: "main",
@@ -103,8 +108,14 @@ describe("sessions_send gateway loopback", () => {
     expect(details.reply).toBe("pong");
     expect(details.sessionKey).toBe("main");
 
-    const firstCall = spy.mock.calls[0]?.[0] as { lane?: string } | undefined;
+    const firstCall = spy.mock.calls[0]?.[0] as
+      | { lane?: string; inputProvenance?: { kind?: string; sourceTool?: string } }
+      | undefined;
     expect(firstCall?.lane).toBe("nested");
+    expect(firstCall?.inputProvenance).toMatchObject({
+      kind: "inter_session",
+      sourceTool: "sessions_send",
+    });
   });
 });
 
@@ -151,8 +162,10 @@ describe("sessions_send label lookup", () => {
       timeoutMs: 5000,
     });
 
-    const tool = createClawdbotTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    const tool = createOpenClawCNTools().find((candidate) => candidate.name === "sessions_send");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     // Send using label instead of sessionKey
     const result = await tool.execute("call-by-label", {
@@ -171,8 +184,10 @@ describe("sessions_send label lookup", () => {
   });
 
   it("returns error when label not found", { timeout: 60_000 }, async () => {
-    const tool = createClawdbotTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    const tool = createOpenClawCNTools().find((candidate) => candidate.name === "sessions_send");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     const result = await tool.execute("call-missing-label", {
       label: "nonexistent-label",
@@ -185,8 +200,10 @@ describe("sessions_send label lookup", () => {
   });
 
   it("returns error when neither sessionKey nor label provided", { timeout: 60_000 }, async () => {
-    const tool = createClawdbotTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    const tool = createOpenClawCNTools().find((candidate) => candidate.name === "sessions_send");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     const result = await tool.execute("call-no-key", {
       message: "hello",

@@ -47,15 +47,15 @@ plugins.entries.whatsapp: plugin not found: whatsapp
 **根本原因：**
 1. 用户之前安装过的版本配置文件中启用了插件
 2. 新安装的 Windows 版本没有包含这些插件
-3. 配置文件 `~/.clawdbot/clawdbot.json` 中的 `plugins.entries` 引用了不存在的插件
+3. 配置文件 `~/.openclawcn/openclawcn.json` 中的 `plugins.entries` 引用了不存在的插件
 
 **修复方案：**
 1. 修改 `build/scripts/windows/build-lite-exe.ps1`，添加复制 extensions 目录的逻辑
-2. 在启动脚本中设置 `CLAWDBOT_BUNDLED_PLUGINS_DIR` 环境变量
+2. 在启动脚本中设置 `OPENCLAWCN_BUNDLED_PLUGINS_DIR` 环境变量
 3. 包含常用插件：feishu, dingtalk, wecom, qwen-portal-auth, telegram, discord, slack, whatsapp, signal, googlechat
 
 **临时解决方案（用户侧）：**
-编辑 `C:\Users\<用户名>\.clawdbot\clawdbot.json`，将 `plugins.entries` 清空：
+编辑 `C:\Users\<用户名>\.openclawcn\openclawcn.json`，将 `plugins.entries` 清空：
 ```json
 "plugins": {
   "slots": {},
@@ -96,15 +96,15 @@ plugins.entries.whatsapp: plugin not found: whatsapp
 **修复方案：**
 修改 `build/installer/windows-lite.iss`：
 ```diff
-- Name: "{autodesktop}\ClawdbotCN"; Filename: "{app}\setup.bat"; ...
-+ Name: "{autodesktop}\ClawdbotCN"; Filename: "{app}\start.bat"; ...
+- Name: "{autodesktop}\OpenClawCN"; Filename: "{app}\setup.bat"; ...
++ Name: "{autodesktop}\OpenClawCN"; Filename: "{app}\start.bat"; ...
 ```
 
 **修复版本：** v2026.1.30
 
 **用户升级说明：**
 1. 卸载当前版本（通过控制面板或开始菜单的卸载选项）
-2. 安装新版本 `ClawdbotCN-Setup-v2026.1.30.exe`
+2. 安装新版本 `OpenClawCN-Setup-v2026.1.30.exe`
 
 **临时解决方案（无需重装）：**
 1. 右键桌面快捷方式 → 属性
@@ -122,13 +122,13 @@ plugins.entries.whatsapp: plugin not found: whatsapp
 
 | 文件 | 修改内容 |
 |------|---------|
-| `build/scripts/windows/build-lite-exe.ps1` | 添加 extensions 复制逻辑，添加 CLAWDBOT_BUNDLED_PLUGINS_DIR 环境变量 |
+| `build/scripts/windows/build-lite-exe.ps1` | 添加 extensions 复制逻辑，添加 OPENCLAWCN_BUNDLED_PLUGINS_DIR 环境变量 |
 | `build/installer/windows-lite.iss` | 桌面快捷方式改为指向 start.bat |
 | `src/gateway/setup-page.ts` | 为各提供商添加具体的帮助信息链接 |
 | `src/config/region-cn.ts` | 更新 MiniMax 描述，说明不需要 Group ID |
 | `scripts/windows/setup.iss` | 添加常用插件打包 |
-| `scripts/windows/start-gateway.bat` | 添加 CLAWDBOT_BUNDLED_PLUGINS_DIR 环境变量 |
-| `scripts/windows/clawdbot.bat` | 添加 CLAWDBOT_BUNDLED_PLUGINS_DIR 环境变量 |
+| `scripts/windows/start-gateway.bat` | 添加 OPENCLAWCN_BUNDLED_PLUGINS_DIR 环境变量 |
+| `scripts/windows/openclawcn.bat` | 添加 OPENCLAWCN_BUNDLED_PLUGINS_DIR 环境变量 |
 | `scripts/windows/build-portable.ps1` | 更新说明区分首次配置和日常使用 |
 | `scripts/windows/build-standalone.ps1` | 更新说明区分首次配置和日常使用 |
 | `build/scripts/windows/build-lite.ps1` | [Bug #6] node_modules 复制逻辑需要加验证 |
@@ -161,7 +161,7 @@ plugins.entries.whatsapp: plugin not found: whatsapp
 
 **长期改进方案（TODO）：**
 1. [ ] 在安装包中预置 Python（或提供一键安装脚本）
-2. [ ] 首次启动时自动创建默认工作目录（如 `C:\Users\<用户>\ClawdbotCN\workspace`）
+2. [ ] 首次启动时自动创建默认工作目录（如 `C:\Users\<用户>\OpenClawCN\workspace`）
 3. [ ] 在配置向导中添加环境检测，提示缺少的依赖
 4. [ ] 对于缺少 Python 的情况，提供友好的错误提示和安装引导
 
@@ -194,7 +194,7 @@ plugins.entries.whatsapp: plugin not found: whatsapp
 **问题描述：**
 用户安装后第一步就无法启动，浏览器显示 "localhost 拒绝连接"，命令行报错：
 ```
-Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'chalk' imported from D:\123pan\ClawdbotCN\app\dist\logging\subsystem.js
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'chalk' imported from D:\123pan\OpenClawCN\app\dist\logging\subsystem.js
 ```
 
 **根本原因：**
@@ -213,7 +213,7 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'chalk' imported from D:\123pa
 **临时解决方案（用户侧）：**
 在命令行执行：
 ```batch
-cd /d D:\123pan\ClawdbotCN\app
+cd /d D:\123pan\OpenClawCN\app
 npm install --omit=dev
 ```
 然后重新启动程序。
@@ -232,7 +232,7 @@ npm install --omit=dev
 ### Bug #7: 智能模式 + 白名单导致什么都做不了
 
 **问题描述：**
-用户使用 `ClawdbotCN-Setup-v2026.1.30.exe` 安装后，选择「智能模式 + 指令白名单」，然后让 Clawdbot 干什么都不行，所有命令都被拒绝。
+用户使用 `OpenClawCN-Setup-v2026.1.30.exe` 安装后，选择「智能模式 + 指令白名单」，然后让 OpenClawCN 干什么都不行，所有命令都被拒绝。
 
 **根本原因：**
 在 `src/gateway/setup-wizard.ts` 第 773-779 行，当用户选择 `standard`（智能保护）模式时：
@@ -291,7 +291,7 @@ tools: {
 | `safeBins: [...]` | 预置常用命令白名单 |
 
 **临时解决方案（用户侧）：**
-编辑 `~/.clawdbot/config.yaml`（或 `C:\Users\<用户名>\.clawdbot\config.yaml`）：
+编辑 `~/.openclawcn/config.yaml`（或 `C:\Users\<用户名>\.openclawcn\config.yaml`）：
 
 ```yaml
 tools:
@@ -328,7 +328,7 @@ tools:
 ## 注意事项
 
 1. **Windows 路径长度限制**：复制 extensions 时需要排除 node_modules 目录，否则会因路径过长失败
-2. **插件加载顺序**：`CLAWDBOT_BUNDLED_PLUGINS_DIR` 环境变量优先级最高
+2. **插件加载顺序**：`OPENCLAWCN_BUNDLED_PLUGINS_DIR` 环境变量优先级最高
 3. **配置文件兼容性**：旧配置文件可能引用不存在的插件，需要容错处理
 4. **小白用户体验**：需要提供更友好的错误提示和环境配置引导
 5. **构建前置检查**：构建安装包前必须先运行 `pnpm install`，确保 `node_modules` 存在且完整

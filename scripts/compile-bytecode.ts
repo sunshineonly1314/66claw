@@ -136,98 +136,16 @@ function compileToBytecode(cjsPath: string): string {
 }
 
 /**
- * Extract exported names from a JS file (works with both original and obfuscated code).
- *
- * Handles:
- *   export const/let/var/function/class NAME
- *   export async function NAME
- *   export enum NAME
- *   export { A, B, C }
- *   export { A as B }
- *   export { A, B } from "./other.js"  (re-exports)
- *   export * from "./other.js"  (star re-exports — recursively resolves)
- *   export default  → skipped (handled separately in the loader)
- */
-function extractExportNames(code: string, filePath?: string, visited?: Set<string>): string[] {
-  const names = new Set<string>();
-
-  // Cycle guard for recursive resolution of export * from
-  if (!visited) visited = new Set();
-  if (filePath) {
-    const resolved = path.resolve(filePath);
-    if (visited.has(resolved)) return [];
-    visited.add(resolved);
-  }
-
-  // export const/let/var NAME
-  for (const m of code.matchAll(/\bexport\s+(?:const|let|var)\s+([a-zA-Z_$][\w$]*)/g)) {
-    if (m[1] !== "default") names.add(m[1]);
-  }
-
-  // export [async] function [*] NAME / export class NAME
-  // Handles: export function foo, export async function foo, export function* foo
-  for (const m of code.matchAll(/\bexport\s+(?:async\s+)?(?:function\*?|class)\s+([a-zA-Z_$][\w$]*)/g)) {
-    if (m[1] !== "default") names.add(m[1]);
-  }
-
-  // export enum NAME (tsc compiles enums to var/const, but just in case)
-  for (const m of code.matchAll(/\bexport\s+enum\s+([a-zA-Z_$][\w$]*)/g)) {
-    names.add(m[1]);
-  }
-
-  // export { A, B as C, D }  (local exports or re-exports from another module)
-  for (const m of code.matchAll(/\bexport\s*\{([^}]+)\}/g)) {
-    const inner = m[1];
-    for (const item of inner.split(",")) {
-      const trimmed = item.trim();
-      if (!trimmed) continue;
-      // "A as B" → exported name is B
-      const asMatch = trimmed.match(/\bas\s+([a-zA-Z_$][\w$]*)/);
-      const name = asMatch ? asMatch[1] : trimmed.split(/\s/)[0];
-      if (name && name !== "default") {
-        names.add(name);
-      }
-    }
-  }
-
-  // export * from "./other.js"  — recursively resolve star re-exports
-  if (filePath) {
-    const dir = path.dirname(filePath);
-    for (const m of code.matchAll(/\bexport\s*\*\s*from\s*["']([^"']+)["']/g)) {
-      const specifier = m[1];
-      const targetPath = path.resolve(dir, specifier);
-      if (fs.existsSync(targetPath)) {
-        try {
-          const targetCode = fs.readFileSync(targetPath, "utf-8");
-          const targetNames = extractExportNames(targetCode, targetPath, visited);
-          for (const n of targetNames) names.add(n);
-        } catch { /* skip unreadable files */ }
-      }
-    }
-  }
-
-  // Remove "default" if it snuck in
-  names.delete("default");
-
-  return [...names].sort();
-}
-
-/**
  * Generate a thin ESM loader that loads the .jsc bytecode at runtime.
  *
  * The loader:
  * 1. Uses createRequire to get a CJS require function
  * 2. Loads bytenode to register .jsc support
  * 3. Requires the .jsc file
- * 4. Re-exports all named exports explicitly (ESM requires static export names)
+ * 4. Re-exports everything as ESM named exports
  */
-function generateEsmLoader(originalJsPath: string, jscPath: string, exportNames: string[]): string {
+function generateEsmLoader(originalJsPath: string, jscPath: string): string {
   const jscBasename = path.basename(jscPath);
-
-  // Build explicit re-export lines for each named export
-  const reExportLines = exportNames
-    .map((name) => `export const ${name} = _mod.${name};`)
-    .join("\n");
 
   // The loader replaces the original .js file
   return `// V8 Bytecode Loader — compiled from source, do not edit
@@ -245,69 +163,49 @@ require("bytenode");
 // Load compiled bytecode module
 const _mod = require(path.join(__dirname, "${jscBasename}"));
 
-// Re-export default
-export default _mod.default || _mod;
-
 // Re-export all named exports
-${reExportLines}
+const _keys = Object.keys(_mod);
+export default _mod.default || _mod;
+${
+  // Export each key individually for tree-shaking compatibility
+  "export const __bytecodeModule = _mod;\n"
+}
+// Dynamic re-exports: consumers should use:
+//   import mod from "./xxx.js"; mod.functionName(...)
+// or: import { __bytecodeModule } from "./xxx.js"; __bytecodeModule.functionName(...)
 `;
 }
 
 /**
- * Phase 1: Pre-scan all target files to extract their export names BEFORE any
- * files are modified. This is critical because `export * from "./other.js"`
- * requires reading the target file's original code — if we processed files
- * sequentially, the target might already be replaced with a bytecode loader.
+ * Process a single file: ESM → CJS → bytecode → ESM loader
  */
-function prescanExports(
-  targetFiles: string[],
-): Map<string, { code: string; exportNames: string[]; skip: boolean }> {
-  const result = new Map<string, { code: string; exportNames: string[]; skip: boolean }>();
-
-  // First pass: read all files and detect which ones to skip
-  for (const filePath of targetFiles) {
-    const code = fs.readFileSync(filePath, "utf-8");
-    const skip = code.length < 200;
-    result.set(filePath, { code, exportNames: [], skip });
-  }
-
-  // Second pass: extract export names (now export * from can safely read any file
-  // since nothing has been modified yet)
-  for (const [filePath, entry] of result) {
-    if (entry.skip) continue;
-    entry.exportNames = extractExportNames(entry.code, filePath);
-  }
-
-  return result;
-}
-
-/**
- * Phase 2: Process a single file — ESM → CJS → bytecode → ESM loader.
- * Uses pre-scanned export names instead of reading the file again.
- */
-function processFile(
-  filePath: string,
-  exportNames: string[],
-): { success: boolean; exportCount?: number; error?: string } {
+function processFile(filePath: string): { success: boolean; error?: string } {
+  const relativePath = path.relative(DIST_DIR, filePath);
   let cjsPath: string | null = null;
 
   try {
-    // Step 1: Convert ESM → CJS
+    // Step 1: Read original to check if worth compiling
+    const originalCode = fs.readFileSync(filePath, "utf-8");
+    if (originalCode.length < 200) {
+      return { success: true }; // Skip tiny files
+    }
+
+    // Step 2: Convert ESM → CJS
     cjsPath = convertToCjs(filePath);
 
-    // Step 2: Compile CJS → bytecode
+    // Step 3: Compile CJS → bytecode
     const jscPath = compileToBytecode(cjsPath);
 
-    // Step 3: Replace original .js with ESM loader (with explicit named re-exports)
-    const loader = generateEsmLoader(filePath, jscPath, exportNames);
+    // Step 4: Replace original .js with ESM loader
+    const loader = generateEsmLoader(filePath, jscPath);
     fs.writeFileSync(filePath, loader, "utf-8");
 
-    // Step 4: Clean up intermediate CJS file
+    // Step 5: Clean up intermediate CJS file
     if (cjsPath && fs.existsSync(cjsPath)) {
       fs.unlinkSync(cjsPath);
     }
 
-    return { success: true, exportCount: exportNames.length };
+    return { success: true };
   } catch (error) {
     // Clean up on failure
     if (cjsPath && fs.existsSync(cjsPath)) {
@@ -354,16 +252,6 @@ async function main(): Promise<void> {
   console.log(`   Found ${targetFiles.length} files to compile`);
   console.log("");
 
-  // Phase 1: Pre-scan ALL files to extract export names before modifying anything.
-  // This ensures `export * from` resolution works correctly even when target files
-  // are in the same compilation set.
-  console.log("   Phase 1: Pre-scanning exports...");
-  const prescan = prescanExports(targetFiles);
-  console.log(`   Pre-scanned ${prescan.size} files`);
-  console.log("");
-
-  // Phase 2: Compile each file to bytecode using pre-scanned export names.
-  console.log("   Phase 2: Compiling to bytecode...");
   let successCount = 0;
   let skipCount = 0;
   let errorCount = 0;
@@ -371,21 +259,14 @@ async function main(): Promise<void> {
 
   for (const file of targetFiles) {
     const relativePath = path.relative(DIST_DIR, file);
-    const entry = prescan.get(file)!;
-
-    if (entry.skip) {
-      skipCount++;
-      continue;
-    }
-
-    const result = processFile(file, entry.exportNames);
+    const result = processFile(file);
 
     if (result.success) {
+      // Check if it was actually compiled (not skipped due to size)
       const jscPath = file.replace(/\.js$/, ".jsc");
       if (fs.existsSync(jscPath)) {
         successCount++;
-        const exportInfo = result.exportCount ? ` (${result.exportCount} exports)` : "";
-        console.log(`   ✓ ${relativePath} → .jsc${exportInfo}`);
+        console.log(`   ✓ ${relativePath} → .jsc`);
       } else {
         skipCount++;
       }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ================================================================
-# Clawdbot Linux 全平台并行打包脚本
+# OpenClawCN Linux 全平台并行打包脚本
 # 使用 GNU parallel / xargs 实现最多 22 线程并行构建
 #
 # 用法:
@@ -69,7 +69,7 @@ ALL_TARGETS=(
 # ─── 帮助信息 ─────────────────────────────────────────────────
 show_help() {
   echo ""
-  echo -e "${BOLD}Clawdbot Linux 全平台并行打包工具${NC}"
+  echo -e "${BOLD}OpenClawCN Linux 全平台并行打包工具${NC}"
   echo ""
   echo "用法: $0 [选项]"
   echo ""
@@ -126,7 +126,7 @@ log_step()    { echo -e "${CYAN}[STEP]${NC} ${BOLD}$*${NC}"; }
 # ─── Banner ───────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║     Clawdbot Linux 全平台并行打包系统           ║${NC}"
+echo -e "${BOLD}║     OpenClawCN Linux 全平台并行打包系统           ║${NC}"
 echo -e "${BOLD}║     Parallel Build System (max ${MAX_JOBS} threads)       ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -306,7 +306,7 @@ build_standalone() {
     echo "[$(date '+%H:%M:%S')] 开始构建: standalone-${arch}"
 
     rm -rf "$target_dir"
-    mkdir -p "$target_dir/clawdbot"
+    mkdir -p "$target_dir/openclawcn"
 
     # 下载 Node.js
     local node_tarball="node-v${NODE_VERSION}-linux-${node_arch}.tar.xz"
@@ -323,36 +323,36 @@ build_standalone() {
     local temp_dir="$target_dir/temp-node"
     mkdir -p "$temp_dir"
     tar -xJf "$node_cache" -C "$temp_dir"
-    mv "$temp_dir"/node-* "$target_dir/clawdbot/node"
+    mv "$temp_dir"/node-* "$target_dir/openclawcn/node"
     rm -rf "$temp_dir"
 
     # 复制通用产物
     echo "  复制产物..."
-    cp -r "$COMMON_DIR/dist" "$target_dir/clawdbot/dist"
-    cp "$COMMON_DIR/package.json" "$target_dir/clawdbot/"
-    cp -r "$COMMON_DIR/node_modules" "$target_dir/clawdbot/node_modules"
+    cp -r "$COMMON_DIR/dist" "$target_dir/openclawcn/dist"
+    cp "$COMMON_DIR/package.json" "$target_dir/openclawcn/"
+    cp -r "$COMMON_DIR/node_modules" "$target_dir/openclawcn/node_modules"
 
-    [[ -d "$COMMON_DIR/extensions" ]] && cp -r "$COMMON_DIR/extensions" "$target_dir/clawdbot/"
-    [[ -d "$COMMON_DIR/skills" ]] && cp -r "$COMMON_DIR/skills" "$target_dir/clawdbot/"
+    [[ -d "$COMMON_DIR/extensions" ]] && cp -r "$COMMON_DIR/extensions" "$target_dir/openclawcn/"
+    [[ -d "$COMMON_DIR/skills" ]] && cp -r "$COMMON_DIR/skills" "$target_dir/openclawcn/"
 
     for f in README.md CHANGELOG.md LICENSE; do
-      [[ -f "$COMMON_DIR/$f" ]] && cp "$COMMON_DIR/$f" "$target_dir/clawdbot/"
+      [[ -f "$COMMON_DIR/$f" ]] && cp "$COMMON_DIR/$f" "$target_dir/openclawcn/"
     done
 
     # 生成运行时脚本
-    generate_runtime_scripts "$target_dir/clawdbot" "standalone"
+    generate_runtime_scripts "$target_dir/openclawcn" "standalone"
 
     # 打包
     echo "  创建压缩包..."
     cd "$target_dir"
-    tar -czf "$OUTPUT_DIR/clawdbot-linux-${arch}-standalone.tar.gz" clawdbot
+    tar -czf "$OUTPUT_DIR/openclawcn-linux-${arch}-standalone.tar.gz" openclawcn
 
     local size
-    size=$(du -sm "$OUTPUT_DIR/clawdbot-linux-${arch}-standalone.tar.gz" | cut -f1)
+    size=$(du -sm "$OUTPUT_DIR/openclawcn-linux-${arch}-standalone.tar.gz" | cut -f1)
     echo "[$(date '+%H:%M:%S')] 完成: standalone-${arch} (${size}MB)"
   } > "$log_file" 2>&1
 
-  echo -e "  ${GREEN}✓${NC} standalone-${arch} 完成 ($(du -sm "$OUTPUT_DIR/clawdbot-linux-${arch}-standalone.tar.gz" | cut -f1)MB)"
+  echo -e "  ${GREEN}✓${NC} standalone-${arch} 完成 ($(du -sm "$OUTPUT_DIR/openclawcn-linux-${arch}-standalone.tar.gz" | cut -f1)MB)"
 }
 
 build_portable() {
@@ -363,34 +363,34 @@ build_portable() {
     echo "[$(date '+%H:%M:%S')] 开始构建: portable"
 
     rm -rf "$target_dir"
-    mkdir -p "$target_dir/clawdbot"
+    mkdir -p "$target_dir/openclawcn"
 
     # 复制产物 (无 node_modules，用户自行安装)
-    cp -r "$COMMON_DIR/dist" "$target_dir/clawdbot/dist"
-    cp "$COMMON_DIR/package.json" "$target_dir/clawdbot/"
-    [[ -d "$COMMON_DIR/extensions" ]] && cp -r "$COMMON_DIR/extensions" "$target_dir/clawdbot/"
-    [[ -d "$COMMON_DIR/skills" ]] && cp -r "$COMMON_DIR/skills" "$target_dir/clawdbot/"
+    cp -r "$COMMON_DIR/dist" "$target_dir/openclawcn/dist"
+    cp "$COMMON_DIR/package.json" "$target_dir/openclawcn/"
+    [[ -d "$COMMON_DIR/extensions" ]] && cp -r "$COMMON_DIR/extensions" "$target_dir/openclawcn/"
+    [[ -d "$COMMON_DIR/skills" ]] && cp -r "$COMMON_DIR/skills" "$target_dir/openclawcn/"
 
     for f in README.md CHANGELOG.md LICENSE; do
-      [[ -f "$COMMON_DIR/$f" ]] && cp "$COMMON_DIR/$f" "$target_dir/clawdbot/"
+      [[ -f "$COMMON_DIR/$f" ]] && cp "$COMMON_DIR/$f" "$target_dir/openclawcn/"
     done
 
     # 生成运行时脚本
-    generate_runtime_scripts "$target_dir/clawdbot" "portable"
+    generate_runtime_scripts "$target_dir/openclawcn" "portable"
 
     # 生成安装脚本
-    generate_install_script "$target_dir/clawdbot"
+    generate_install_script "$target_dir/openclawcn"
 
     # 打包
     cd "$target_dir"
-    tar -czf "$OUTPUT_DIR/clawdbot-linux-portable.tar.gz" clawdbot
+    tar -czf "$OUTPUT_DIR/openclawcn-linux-portable.tar.gz" openclawcn
 
     local size
-    size=$(du -sm "$OUTPUT_DIR/clawdbot-linux-portable.tar.gz" | cut -f1)
+    size=$(du -sm "$OUTPUT_DIR/openclawcn-linux-portable.tar.gz" | cut -f1)
     echo "[$(date '+%H:%M:%S')] 完成: portable (${size}MB)"
   } > "$log_file" 2>&1
 
-  echo -e "  ${GREEN}✓${NC} portable 完成 ($(du -sm "$OUTPUT_DIR/clawdbot-linux-portable.tar.gz" | cut -f1)MB)"
+  echo -e "  ${GREEN}✓${NC} portable 完成 ($(du -sm "$OUTPUT_DIR/openclawcn-linux-portable.tar.gz" | cut -f1)MB)"
 }
 
 build_deb() {
@@ -411,7 +411,7 @@ build_deb() {
   } > "$log_file" 2>&1
 
   local deb_file
-  deb_file=$(ls "$OUTPUT_DIR"/clawdbot*"${arch}"*.deb 2>/dev/null | head -1)
+  deb_file=$(ls "$OUTPUT_DIR"/openclawcn*"${arch}"*.deb 2>/dev/null | head -1)
   if [[ -n "$deb_file" ]]; then
     echo -e "  ${GREEN}✓${NC} deb-${arch} 完成 ($(du -sm "$deb_file" | cut -f1)MB)"
   else
@@ -437,7 +437,7 @@ build_rpm() {
   } > "$log_file" 2>&1
 
   local rpm_file
-  rpm_file=$(ls "$OUTPUT_DIR"/clawdbot*"${arch}"*.rpm 2>/dev/null | head -1)
+  rpm_file=$(ls "$OUTPUT_DIR"/openclawcn*"${arch}"*.rpm 2>/dev/null | head -1)
   if [[ -n "$rpm_file" ]]; then
     echo -e "  ${GREEN}✓${NC} rpm-${arch} 完成 ($(du -sm "$rpm_file" | cut -f1)MB)"
   else
@@ -474,13 +474,13 @@ export PATH="$SCRIPT_DIR/node/bin:$PATH"'
   # ── start.sh ──
   cat > "$dir/start.sh" << SCRIPT
 #!/usr/bin/env bash
-# Clawdbot Gateway 启动脚本
+# OpenClawCN Gateway 启动脚本
 set -e
 ${node_prefix}
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║       Clawdbot Gateway 正在启动          ║"
+echo "║       OpenClawCN Gateway 正在启动          ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "  访问地址:  http://localhost:18789"
@@ -498,7 +498,7 @@ SCRIPT
   # ── setup.sh (一键启动+配置) ──
   cat > "$dir/setup.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 一键配置向导
+# OpenClawCN 一键配置向导
 # 启动服务并自动打开浏览器配置页面
 set -e
 
@@ -512,13 +512,13 @@ fi
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║       Clawdbot 配置向导                  ║"
+echo "║       OpenClawCN 配置向导                  ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
 # 自动生成 token
-CONFIG_DIR="$HOME/.clawdbot"
-CONFIG_FILE="$CONFIG_DIR/clawdbot.json"
+CONFIG_DIR="$HOME/.openclawcn"
+CONFIG_FILE="$CONFIG_DIR/openclawcn.json"
 mkdir -p "$CONFIG_DIR"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -581,7 +581,7 @@ SCRIPT
   # ── start-daemon.sh (后台运行) ──
   cat > "$dir/start-daemon.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot Gateway 后台启动脚本
+# OpenClawCN Gateway 后台启动脚本
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -594,7 +594,7 @@ fi
 
 LOG_DIR="$SCRIPT_DIR/logs"
 LOG_FILE="$LOG_DIR/gateway.log"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 mkdir -p "$LOG_DIR"
 
@@ -602,7 +602,7 @@ mkdir -p "$LOG_DIR"
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE")
   if kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "Clawdbot 已在运行 (PID: $OLD_PID)"
+    echo "OpenClawCN 已在运行 (PID: $OLD_PID)"
     echo "如需重启，请先运行 ./stop.sh"
     exit 1
   fi
@@ -610,7 +610,7 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 echo "╔══════════════════════════════════════════╗"
-echo "║  Clawdbot Gateway 后台启动               ║"
+echo "║  OpenClawCN Gateway 后台启动               ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
@@ -632,7 +632,7 @@ for i in $(seq 1 15); do
   if curl -sf http://localhost:18789/api/health > /dev/null 2>&1; then
     echo ""
     echo ""
-    echo "  ✓ Clawdbot 已成功启动！"
+    echo "  ✓ OpenClawCN 已成功启动！"
     echo ""
     exit 0
   fi
@@ -648,25 +648,25 @@ SCRIPT
   # ── stop.sh ──
   cat > "$dir/stop.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 停止 Clawdbot Gateway
+# 停止 OpenClawCN Gateway
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then
   # 尝试用 pkill 找到进程
-  if pgrep -f "clawdbot.*gateway" > /dev/null 2>&1; then
-    echo "找到 Clawdbot 进程，正在停止..."
-    pkill -f "clawdbot.*gateway" || true
+  if pgrep -f "openclawcn.*gateway" > /dev/null 2>&1; then
+    echo "找到 OpenClawCN 进程，正在停止..."
+    pkill -f "openclawcn.*gateway" || true
     echo "✓ 已停止"
   else
-    echo "Clawdbot 未在运行"
+    echo "OpenClawCN 未在运行"
   fi
   exit 0
 fi
 
 PID=$(cat "$PID_FILE")
 if kill -0 "$PID" 2>/dev/null; then
-  echo "停止 Clawdbot (PID: $PID)..."
+  echo "停止 OpenClawCN (PID: $PID)..."
   kill "$PID"
   # 等待进程退出
   for i in $(seq 1 10); do
@@ -683,7 +683,7 @@ if kill -0 "$PID" 2>/dev/null; then
   rm -f "$PID_FILE"
   echo "✓ 已停止"
 else
-  echo "Clawdbot 未在运行 (清理旧 PID 文件)"
+  echo "OpenClawCN 未在运行 (清理旧 PID 文件)"
   rm -f "$PID_FILE"
 fi
 SCRIPT
@@ -692,9 +692,9 @@ SCRIPT
   # ── restart.sh ──
   cat > "$dir/restart.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 重启 Clawdbot Gateway
+# 重启 OpenClawCN Gateway
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "正在重启 Clawdbot..."
+echo "正在重启 OpenClawCN..."
 "$SCRIPT_DIR/stop.sh"
 sleep 2
 "$SCRIPT_DIR/start-daemon.sh"
@@ -704,13 +704,13 @@ SCRIPT
   # ── status.sh ──
   cat > "$dir/status.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 状态检查
+# OpenClawCN 状态检查
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║       Clawdbot 状态检查                  ║"
+echo "║       OpenClawCN 状态检查                  ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
@@ -752,7 +752,7 @@ SCRIPT
   # ── logs.sh ──
   cat > "$dir/logs.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 查看 Clawdbot 日志
+# 查看 OpenClawCN 日志
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="$SCRIPT_DIR/logs/gateway.log"
 
@@ -762,7 +762,7 @@ if [[ ! -f "$LOG_FILE" ]]; then
   exit 0
 fi
 
-echo "═══ Clawdbot Gateway 日志 ═══"
+echo "═══ OpenClawCN Gateway 日志 ═══"
 echo "文件: $LOG_FILE"
 echo ""
 
@@ -779,11 +779,11 @@ SCRIPT
   # ── install-service.sh (systemd 安装) ──
   cat > "$dir/install-service.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot systemd 服务安装脚本
+# OpenClawCN systemd 服务安装脚本
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="clawdbot"
+SERVICE_NAME="openclawcn"
 SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
 
 # 如果是独立版，使用内置 Node
@@ -799,7 +799,7 @@ fi
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║  安装 Clawdbot 为系统服务                ║"
+echo "║  安装 OpenClawCN 为系统服务                ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
@@ -807,7 +807,7 @@ mkdir -p "$HOME/.config/systemd/user"
 
 cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=Clawdbot AI Gateway
+Description=OpenClawCN AI Gateway
 After=network-online.target
 Wants=network-online.target
 
@@ -828,7 +828,7 @@ StandardError=append:$SCRIPT_DIR/logs/gateway-error.log
 # 安全限制
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=$HOME/.clawdbot $SCRIPT_DIR/logs
+ReadWritePaths=$HOME/.openclawcn $SCRIPT_DIR/logs
 
 [Install]
 WantedBy=default.target
@@ -844,11 +844,11 @@ echo ""
 echo "  ✓ 服务已安装！"
 echo ""
 echo "  常用命令:"
-echo "    systemctl --user start clawdbot     # 启动"
-echo "    systemctl --user stop clawdbot      # 停止"
-echo "    systemctl --user restart clawdbot   # 重启"
-echo "    systemctl --user status clawdbot    # 状态"
-echo "    journalctl --user -u clawdbot -f    # 日志"
+echo "    systemctl --user start openclawcn     # 启动"
+echo "    systemctl --user stop openclawcn      # 停止"
+echo "    systemctl --user restart openclawcn   # 重启"
+echo "    systemctl --user status openclawcn    # 状态"
+echo "    journalctl --user -u openclawcn -f    # 日志"
 echo ""
 echo "  现在启动? (y/n)"
 read -r answer
@@ -864,24 +864,24 @@ SCRIPT
   # ── uninstall.sh ──
   cat > "$dir/uninstall.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 卸载脚本
+# OpenClawCN 卸载脚本
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="clawdbot"
+SERVICE_NAME="openclawcn"
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║       Clawdbot 卸载程序                  ║"
+echo "║       OpenClawCN 卸载程序                  ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
 echo "将卸载以下内容:"
-echo "  1. 停止运行中的 Clawdbot"
+echo "  1. 停止运行中的 OpenClawCN"
 echo "  2. 移除 systemd 服务 (如果已安装)"
 echo "  3. 移除安装目录: $SCRIPT_DIR"
 echo ""
-echo "  ⚠  配置文件 (~/.clawdbot) 将保留"
+echo "  ⚠  配置文件 (~/.openclawcn) 将保留"
 echo ""
 echo "确认卸载? (输入 yes 确认)"
 read -r answer
@@ -915,22 +915,22 @@ cd /tmp
 rm -rf "$SCRIPT_DIR"
 
 echo ""
-echo "✓ Clawdbot 已卸载"
+echo "✓ OpenClawCN 已卸载"
 echo ""
-echo "配置文件保留在: ~/.clawdbot"
-echo "如需完全清除: rm -rf ~/.clawdbot"
+echo "配置文件保留在: ~/.openclawcn"
+echo "如需完全清除: rm -rf ~/.openclawcn"
 echo ""
 SCRIPT
   chmod +x "$dir/uninstall.sh"
 
   # ── logrotate 配置 ──
   mkdir -p "$dir/config"
-  cat > "$dir/config/clawdbot-logrotate" << 'SCRIPT'
-# Clawdbot 日志轮转配置
-# 安装: sudo cp config/clawdbot-logrotate /etc/logrotate.d/clawdbot
-# 或手动: logrotate -f config/clawdbot-logrotate
+  cat > "$dir/config/openclawcn-logrotate" << 'SCRIPT'
+# OpenClawCN 日志轮转配置
+# 安装: sudo cp config/openclawcn-logrotate /etc/logrotate.d/openclawcn
+# 或手动: logrotate -f config/openclawcn-logrotate
 
-$HOME/clawdbot/logs/*.log {
+$HOME/openclawcn/logs/*.log {
     daily
     missingok
     rotate 7
@@ -947,7 +947,7 @@ SCRIPT
   version=$(node -e "console.log(require('$ROOT_DIR/package.json').version)" 2>/dev/null || echo "latest")
 
   cat > "$dir/README.md" << README
-# Clawdbot v${version} (Linux)
+# OpenClawCN v${version} (Linux)
 
 个人 AI 助手网关 - 解压即用！
 
@@ -955,8 +955,8 @@ SCRIPT
 
 \`\`\`bash
 # 1. 解压
-tar -xzf clawdbot-linux-*.tar.gz
-cd clawdbot
+tar -xzf openclawcn-linux-*.tar.gz
+cd openclawcn
 
 # 2. 启动配置向导
 ./setup.sh
@@ -1005,7 +1005,7 @@ generate_install_script() {
 
   cat > "$dir/install.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 依赖安装脚本
+# OpenClawCN 依赖安装脚本
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1013,7 +1013,7 @@ cd "$SCRIPT_DIR"
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║       Clawdbot 安装程序                  ║"
+echo "║       OpenClawCN 安装程序                  ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
@@ -1181,6 +1181,6 @@ echo "  输出目录: $OUTPUT_DIR"
 echo "  构建日志: $LOGS_DIR/"
 echo ""
 echo "  用户使用方式:"
-echo "    tar -xzf clawdbot-linux-*.tar.gz"
-echo "    cd clawdbot && ./setup.sh"
+echo "    tar -xzf openclawcn-linux-*.tar.gz"
+echo "    cd openclawcn && ./setup.sh"
 echo ""

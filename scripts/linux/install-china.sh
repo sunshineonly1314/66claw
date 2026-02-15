@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ================================================================
-# Clawdbot 中国区一键安装脚本
+# OpenClawCN 中国区一键安装脚本
 #
 # 国内用户直接使用:
-#   curl -fsSL https://gitee.com/tecbinai/clawdbot-releases/raw/main/install.sh | bash
+#   curl -fsSL https://gitee.com/tecbinai/openclawcn-releases/raw/main/install.sh | bash
 #
 # 等价于:
 #   curl -fsSL https://get.tecbinai.com/linux | bash -s -- --mirror china
@@ -24,7 +24,7 @@ if [[ -f "$SCRIPT_DIR/install-online.sh" ]]; then
   exec bash "$SCRIPT_DIR/install-online.sh" --mirror china "$@"
 else
   # 在线调用 (被 pipe 进来的)
-  TEMP_SCRIPT=$(mktemp /tmp/clawdbot-install-XXXXXXXX.sh)
-  curl -fsSL "https://gitee.com/tecbinai/clawdbot-releases/raw/main/install-online.sh" -o "$TEMP_SCRIPT"
+  TEMP_SCRIPT=$(mktemp /tmp/openclawcn-install-XXXXXXXX.sh)
+  curl -fsSL "https://gitee.com/tecbinai/openclawcn-releases/raw/main/install-online.sh" -o "$TEMP_SCRIPT"
   exec bash "$TEMP_SCRIPT" --mirror china "$@"
 fi

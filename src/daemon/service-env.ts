@@ -1,5 +1,4 @@
 import path from "node:path";
-
 import { VERSION } from "../version.js";
 import {
   GATEWAY_SERVICE_KIND,
@@ -43,15 +42,21 @@ export function resolveLinuxUserBinDirs(
   home: string | undefined,
   env?: Record<string, string | undefined>,
 ): string[] {
-  if (!home) return [];
+  if (!home) {
+    return [];
+  }
 
   const dirs: string[] = [];
 
   const add = (dir: string | undefined) => {
-    if (dir) dirs.push(dir);
+    if (dir) {
+      dirs.push(dir);
+    }
   };
   const appendSubdir = (base: string | undefined, subdir: string) => {
-    if (!base) return undefined;
+    if (!base) {
+      return undefined;
+    }
     return base.endsWith(`/${subdir}`) ? base : path.posix.join(base, subdir);
   };
 
@@ -82,7 +87,9 @@ export function resolveLinuxUserBinDirs(
 
 export function getMinimalServicePathParts(options: MinimalServicePathOptions = {}): string[] {
   const platform = options.platform ?? process.platform;
-  if (platform === "win32") return [];
+  if (platform === "win32") {
+    return [];
+  }
 
   const parts: string[] = [];
   const extraDirs = options.extraDirs ?? [];
@@ -93,14 +100,24 @@ export function getMinimalServicePathParts(options: MinimalServicePathOptions = 
     platform === "linux" ? resolveLinuxUserBinDirs(options.home, options.env) : [];
 
   const add = (dir: string) => {
-    if (!dir) return;
-    if (!parts.includes(dir)) parts.push(dir);
+    if (!dir) {
+      return;
+    }
+    if (!parts.includes(dir)) {
+      parts.push(dir);
+    }
   };
 
-  for (const dir of extraDirs) add(dir);
+  for (const dir of extraDirs) {
+    add(dir);
+  }
   // User dirs first so user-installed binaries take precedence
-  for (const dir of linuxUserDirs) add(dir);
-  for (const dir of systemDirs) add(dir);
+  for (const dir of linuxUserDirs) {
+    add(dir);
+  }
+  for (const dir of systemDirs) {
+    add(dir);
+  }
 
   return parts;
 }
@@ -131,24 +148,26 @@ export function buildServiceEnvironment(params: {
   launchdLabel?: string;
 }): Record<string, string | undefined> {
   const { env, port, token, launchdLabel } = params;
-  const profile = env.CLAWDBOT_PROFILE;
+  const profile = env.OPENCLAWCN_PROFILE;
   const resolvedLaunchdLabel =
     launchdLabel ||
     (process.platform === "darwin" ? resolveGatewayLaunchAgentLabel(profile) : undefined);
   const systemdUnit = `${resolveGatewaySystemdServiceName(profile)}.service`;
+  const stateDir = env.OPENCLAWCN_STATE_DIR;
+  const configPath = env.OPENCLAWCN_CONFIG_PATH;
   return {
     HOME: env.HOME,
     PATH: buildMinimalServicePath({ env }),
-    CLAWDBOT_PROFILE: profile,
-    CLAWDBOT_STATE_DIR: env.CLAWDBOT_STATE_DIR,
-    CLAWDBOT_CONFIG_PATH: env.CLAWDBOT_CONFIG_PATH,
-    CLAWDBOT_GATEWAY_PORT: String(port),
-    CLAWDBOT_GATEWAY_TOKEN: token,
-    CLAWDBOT_LAUNCHD_LABEL: resolvedLaunchdLabel,
-    CLAWDBOT_SYSTEMD_UNIT: systemdUnit,
-    CLAWDBOT_SERVICE_MARKER: GATEWAY_SERVICE_MARKER,
-    CLAWDBOT_SERVICE_KIND: GATEWAY_SERVICE_KIND,
-    CLAWDBOT_SERVICE_VERSION: VERSION,
+    OPENCLAWCN_PROFILE: profile,
+    OPENCLAWCN_STATE_DIR: stateDir,
+    OPENCLAWCN_CONFIG_PATH: configPath,
+    OPENCLAWCN_GATEWAY_PORT: String(port),
+    OPENCLAWCN_GATEWAY_TOKEN: token,
+    OPENCLAWCN_LAUNCHD_LABEL: resolvedLaunchdLabel,
+    OPENCLAWCN_SYSTEMD_UNIT: systemdUnit,
+    OPENCLAWCN_SERVICE_MARKER: GATEWAY_SERVICE_MARKER,
+    OPENCLAWCN_SERVICE_KIND: GATEWAY_SERVICE_KIND,
+    OPENCLAWCN_SERVICE_VERSION: VERSION,
   };
 }
 
@@ -156,18 +175,20 @@ export function buildNodeServiceEnvironment(params: {
   env: Record<string, string | undefined>;
 }): Record<string, string | undefined> {
   const { env } = params;
+  const stateDir = env.OPENCLAWCN_STATE_DIR;
+  const configPath = env.OPENCLAWCN_CONFIG_PATH;
   return {
     HOME: env.HOME,
     PATH: buildMinimalServicePath({ env }),
-    CLAWDBOT_STATE_DIR: env.CLAWDBOT_STATE_DIR,
-    CLAWDBOT_CONFIG_PATH: env.CLAWDBOT_CONFIG_PATH,
-    CLAWDBOT_LAUNCHD_LABEL: resolveNodeLaunchAgentLabel(),
-    CLAWDBOT_SYSTEMD_UNIT: resolveNodeSystemdServiceName(),
-    CLAWDBOT_WINDOWS_TASK_NAME: resolveNodeWindowsTaskName(),
-    CLAWDBOT_TASK_SCRIPT_NAME: NODE_WINDOWS_TASK_SCRIPT_NAME,
-    CLAWDBOT_LOG_PREFIX: "node",
-    CLAWDBOT_SERVICE_MARKER: NODE_SERVICE_MARKER,
-    CLAWDBOT_SERVICE_KIND: NODE_SERVICE_KIND,
-    CLAWDBOT_SERVICE_VERSION: VERSION,
+    OPENCLAWCN_STATE_DIR: stateDir,
+    OPENCLAWCN_CONFIG_PATH: configPath,
+    OPENCLAWCN_LAUNCHD_LABEL: resolveNodeLaunchAgentLabel(),
+    OPENCLAWCN_SYSTEMD_UNIT: resolveNodeSystemdServiceName(),
+    OPENCLAWCN_WINDOWS_TASK_NAME: resolveNodeWindowsTaskName(),
+    OPENCLAWCN_TASK_SCRIPT_NAME: NODE_WINDOWS_TASK_SCRIPT_NAME,
+    OPENCLAWCN_LOG_PREFIX: "node",
+    OPENCLAWCN_SERVICE_MARKER: NODE_SERVICE_MARKER,
+    OPENCLAWCN_SERVICE_KIND: NODE_SERVICE_KIND,
+    OPENCLAWCN_SERVICE_VERSION: VERSION,
   };
 }

@@ -1,6 +1,6 @@
-# ClawdbotCN 系统交互逻辑全景 — 用户视角 + 技术视角
+# OpenClawCN 系统交互逻辑全景 — 用户视角 + 技术视角
 
-> 本文档从**用户**和**技术**两个视角，完整介绍 ClawdbotCN Web 管理界面的交互逻辑。
+> 本文档从**用户**和**技术**两个视角，完整介绍 OpenClawCN Web 管理界面的交互逻辑。
 > 适合：产品经理理解功能、开发者理解架构、新团队成员快速上手。
 
 ---
@@ -38,9 +38,9 @@
 
 ## 一、整体架构一句话说清
 
-**用户视角**：ClawdbotCN 是一个装在你电脑上的 AI 助手，你通过浏览器网页管理它，通过钉钉/飞书/网页跟它聊天。
+**用户视角**：OpenClawCN 是一个装在你电脑上的 AI 助手，你通过浏览器网页管理它，通过钉钉/飞书/网页跟它聊天。
 
-**技术视角**：ClawdbotCN 由一个 Node.js Gateway 服务 + 一个 Lit Web Components 前端组成，前后端通过 WebSocket 全双工通信，前端状态由 Lit 响应式系统驱动。
+**技术视角**：OpenClawCN 由一个 Node.js Gateway 服务 + 一个 Lit Web Components 前端组成，前后端通过 WebSocket 全双工通信，前端状态由 Lit 响应式系统驱动。
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -120,7 +120,7 @@
 │        │  [连接]  [刷新]                               │
 │        │                                              │
 │        │  💡 不知道令牌？在终端运行：                   │
-│        │  clawdbot dashboard --no-open    [复制]      │
+│        │  openclawcn dashboard --no-open    [复制]      │
 │        │                                              │
 └────────┴──────────────────────────────────────────────┘
 ```
@@ -260,9 +260,9 @@
 
 5️⃣ 配置编辑器     ──→ 完整的可视化表单 + 原始 JSON 编辑
 
-6️⃣ 命令行工具     ──→ clawdbot config / configure / setup
+6️⃣ 命令行工具     ──→ openclawcn config / configure / setup
 
-7️⃣ 直接改文件     ──→ 编辑 ~/.clawdbot/clawdbot.json
+7️⃣ 直接改文件     ──→ 编辑 ~/.openclawcn/openclawcn.json
 ```
 
 **配置编辑器的操作流程**：
@@ -310,7 +310,7 @@ QQ Bot   ──→ 在QQ群里 @AI助手 对话
 
 ```
 1. 用户在钉钉开放平台创建机器人 → 获得 AppKey 和 AppSecret
-2. 在 ClawdbotCN 渠道页面 → 找到"钉钉"卡片 → 填入 AppKey 和 AppSecret
+2. 在 OpenClawCN 渠道页面 → 找到"钉钉"卡片 → 填入 AppKey 和 AppSecret
 3. 点击"保存" → 系统自动建立 WebSocket 长连接到钉钉服务器
 4. 在钉钉群里添加机器人 → 群成员就可以 @机器人 跟 AI 对话了
 ```
@@ -324,7 +324,7 @@ QQ Bot   ──→ 在QQ群里 @AI助手 对话
 
 ### 2.7 省钱功能：免费模型轮转
 
-国内多家 AI 厂商提供每日免费额度。ClawdbotCN 可以自动管理多个免费账号：
+国内多家 AI 厂商提供每日免费额度。OpenClawCN 可以自动管理多个免费账号：
 
 ```
 用户配置了 3 个免费账号：
@@ -369,7 +369,7 @@ QQ Bot   ──→ 在QQ群里 @AI助手 对话
 ### 3.2 前端架构图
 
 ```
-┌─ clawdbot-app (LitElement 自定义元素) ─────────────────────────┐
+┌─ openclawcn-app (LitElement 自定义元素) ─────────────────────────┐
 │                                                                │
 │  ┌─ @state() 响应式属性 ─────────────────────────────────────┐  │
 │  │ connected, tab, chatMessages, configForm, skillsReport,   │  │
@@ -523,7 +523,7 @@ QQ Bot   ──→ 在QQ群里 @AI助手 对话
 
 ### 3.4 状态管理机制
 
-ClawdbotCN 前端没有使用 Redux/Vuex/MobX 等外部状态库，而是直接用 Lit 框架的响应式属性系统：
+OpenClawCN 前端没有使用 Redux/Vuex/MobX 等外部状态库，而是直接用 Lit 框架的响应式属性系统：
 
 **原理**：
 
@@ -624,7 +624,7 @@ UI 更新（只更新变化的 DOM 部分）
 **前端持久化（localStorage）**：
 
 ```typescript
-// 存储 key: "clawdbot-ui-settings"
+// 存储 key: "openclawcn-ui-settings"
 {
   gatewayUrl: "ws://localhost:18789",    // WebSocket 地址
   token: "a3f8b2c1...",                  // 认证令牌
@@ -639,14 +639,14 @@ UI 更新（只更新变化的 DOM 部分）
 }
 
 // 首次访问标记
-"clawdbot:discovery:firstVisit": "2025-02-08T..."
-"clawdbot:discovery:completed": "true"
+"openclawcn:discovery:firstVisit": "2025-02-08T..."
+"openclawcn:discovery:completed": "true"
 ```
 
 **Token 来源优先级**：
 
 ```
-1. window.__CLAWDBOT_GATEWAY_TOKEN__  ← 服务端注入（同源页面）
+1. window.__OPENCLAWCN_GATEWAY_TOKEN__  ← 服务端注入（同源页面）
 2. URL ?token=xxx                     ← URL 参数
 3. localStorage 存储的 token           ← 之前保存的
 4. 空（需要用户手动输入）
@@ -655,7 +655,7 @@ UI 更新（只更新变化的 DOM 部分）
 **后端持久化（JSON5 文件）**：
 
 ```
-~/.clawdbot/clawdbot.json
+~/.openclawcn/openclawcn.json
   │
   ├─ 所有配置参数（几十个）
   ├─ AI 厂商 API Key

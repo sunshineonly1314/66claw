@@ -22,8 +22,8 @@ CN 区域用户首次启动时，**不需要手动配置安全、沙箱、并发
 
 | 优先级 | 条件 | 结果 |
 |:---:|------|------|
-| 1 | `CLAWDBOT_REGION=cn` | 强制 CN |
-| 2 | `CLAWDBOT_REGION=global` | 强制非 CN |
+| 1 | `OPENCLAWCN_REGION=cn` | 强制 CN |
+| 2 | `OPENCLAWCN_REGION=global` | 强制非 CN |
 | 3 | 系统时区 `Asia/Shanghai` | CN |
 | 4 | `LANG` 包含 `zh_CN` | CN |
 | 5 | 以上均不匹配 | 非 CN |
@@ -31,7 +31,7 @@ CN 区域用户首次启动时，**不需要手动配置安全、沙箱、并发
 ### 1.3 核心原则
 
 - **只填空不覆盖**：仅当配置字段值为 `undefined` 时写入默认值
-- **运行时生效**：默认值不持久化到 `clawdbot.json`，迁移到非 CN 区域时自动失效
+- **运行时生效**：默认值不持久化到 `openclawcn.json`，迁移到非 CN 区域时自动失效
 - **用户通过 Setup Wizard 或 UI 手动设置的值永远优先**
 
 ---
@@ -172,7 +172,7 @@ Windows 并发数更低，因为：
 
 **文件**：`src/gateway/setup-wizard.ts`
 
-Setup Wizard 的安全配置步骤（Step 4）会显式设置这些值并**持久化到 clawdbot.json**。一旦持久化，`applyCnDefaults` 发现字段已有值就跳过。
+Setup Wizard 的安全配置步骤（Step 4）会显式设置这些值并**持久化到 openclawcn.json**。一旦持久化，`applyCnDefaults` 发现字段已有值就跳过。
 
 ---
 
@@ -186,18 +186,18 @@ Setup Wizard 的安全配置步骤（Step 4）会显式设置这些值并**持�
 | 2 | **Overview 安全卡片** | 普通用户 | 需重启 |
 | 3 | **Config 页面** | 进阶用户 | 热更新/重启 |
 | 4 | **RPC API** (`config.set/patch/apply`) | 开发者 | 热更新/重启 |
-| 5 | **CLI** (`clawdbot config set ...`) | 运维人员 | 需重启 |
+| 5 | **CLI** (`openclawcn config set ...`) | 运维人员 | 需重启 |
 | 6 | **手动编辑文件** | 高级用户 | 文件监听自动重载 |
 
 ### 4.2 配置文件位置
 
 | 平台 | 路径 |
 |------|------|
-| Windows | `%USERPROFILE%\.clawdbot\clawdbot.json` |
-| macOS | `~/.clawdbot/clawdbot.json` |
-| Linux | `~/.clawdbot/clawdbot.json` |
+| Windows | `%USERPROFILE%\.openclawcn\openclawcn.json` |
+| macOS | `~/.openclawcn/openclawcn.json` |
+| Linux | `~/.openclawcn/openclawcn.json` |
 
-可通过环境变量 `CLAWDBOT_CONFIG_PATH` 或 `CLAWDBOT_STATE_DIR` 覆盖。
+可通过环境变量 `OPENCLAWCN_CONFIG_PATH` 或 `OPENCLAWCN_STATE_DIR` 覆盖。
 
 ### 4.3 修改示例
 
@@ -206,26 +206,26 @@ Setup Wizard 的安全配置步骤（Step 4）会显式设置这些值并**持�
 **通过 CLI**：
 ```bash
 # 查看当前值
-clawdbot config get tools.exec.security
+openclawcn config get tools.exec.security
 
 # 修改为完全信任模式
-clawdbot config set tools.exec.security full
+openclawcn config set tools.exec.security full
 
 # 修改并发数
-clawdbot config set agents.defaults.maxConcurrent 6 --json
+openclawcn config set agents.defaults.maxConcurrent 6 --json
 ```
 
 **通过 API**：
 ```bash
-clawdbot gateway call config.patch --params '{"raw":"{\"tools\":{\"exec\":{\"security\":\"full\"}}}"}'
+openclawcn gateway call config.patch --params '{"raw":"{\"tools\":{\"exec\":{\"security\":\"full\"}}}"}'
 ```
 
 **手动编辑**：
 ```bash
 # 编辑配置文件（推荐 VSCode 或 nano）
-code ~/.clawdbot/clawdbot.json
+code ~/.openclawcn/openclawcn.json
 # 编辑后验证
-clawdbot doctor
+openclawcn doctor
 ```
 
 ---
@@ -240,7 +240,7 @@ clawdbot doctor
 
 **文件**：`src/gateway/config-reload.ts`
 
-- **监听方式**：Chokidar 文件监听器，监视 `~/.clawdbot/clawdbot.json` 的 `add/change/unlink` 事件
+- **监听方式**：Chokidar 文件监听器，监视 `~/.openclawcn/openclawcn.json` 的 `add/change/unlink` 事件
 - **防抖**：300ms（可通过 `gateway.reload.debounceMs` 配置）
 - **重载模式**（`gateway.reload.mode`）：
 
@@ -263,7 +263,7 @@ clawdbot doctor
 
 `applyCnDefaults` 修改的字段（`tools.exec.*`, `agents.defaults.*`）属于**免重启**类别，修改后通过文件监听自动生效。但由于 `applyCnDefaults` 是运行时填充（不写入文件），以下场景会触发：
 
-1. 用户通过 UI/CLI 显式设置值 → 写入 `clawdbot.json` → 文件监听触发 → 热更新生效
+1. 用户通过 UI/CLI 显式设置值 → 写入 `openclawcn.json` → 文件监听触发 → 热更新生效
 2. `applyCnDefaults` 的默认值 → 仅在 `loadConfig()` / `readConfigFileSnapshot()` 时填入 → Gateway 启动时生效
 
 ---
@@ -360,9 +360,9 @@ clawdbot doctor
 | 项目 | 说明 |
 |------|------|
 | **只填空不覆盖** | 仅当字段值 `=== undefined` 时写入，用户任何手动设置（包括 `"deny"`、`"off"` 等限制性值）都不会被覆盖 |
-| **运行时生效，不持久化** | 默认值不写入 `clawdbot.json`，仅存在于内存。迁移到非 CN 区域后自动失效 |
+| **运行时生效，不持久化** | 默认值不写入 `openclawcn.json`，仅存在于内存。迁移到非 CN 区域后自动失效 |
 | **链顺序** | `applySessionDefaults` → **`applyCnDefaults`** → `applyAgentDefaults`。CN 先写入 Win:3，`applyAgentDefaults` 发现已有值跳过，不会覆盖为全局默认 4 |
 | **平台检测** | `os.platform() === "win32"` 区分 Windows；macOS (`darwin`) 和 Linux (`linux`) 使用相同值 |
-| **区域检测** | `detectChinaRegion()`: 环境变量 `CLAWDBOT_REGION` > 时区 `Asia/Shanghai` > `LANG=zh_CN` |
+| **区域检测** | `detectChinaRegion()`: 环境变量 `OPENCLAWCN_REGION` > 时区 `Asia/Shanghai` > `LANG=zh_CN` |
 | **Gateway 热更新** | `tools.*` 和 `agents.*` 属于免重启类别，用户通过 UI/CLI 修改后立即生效（Chokidar 文件监听 + 300ms 防抖） |
 | **代码来源对齐** | 所有安全相关值与 `setup-wizard.ts` L1042-1074 和 `CN_DEFAULT_SECURITY_CONFIG` L984-1041 完全一致 |

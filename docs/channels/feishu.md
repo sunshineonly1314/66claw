@@ -169,7 +169,7 @@ https://open.feishu.cn/app
 - ✅ 不需要购买服务器
 - ✅ 不需要有公网 IP
 - ✅ 不需要配置域名和 HTTPS
-- ✅ 在自己电脑上运行 Clawdbot 就能收到消息
+- ✅ 在自己电脑上运行 OpenClawCN 就能收到消息
 
 ### 步骤 2：保存配置
 
@@ -261,13 +261,13 @@ https://open.feishu.cn/app
 
 ---
 
-## 10. 配置 Clawdbot
+## 10. 配置 OpenClawCN
 
-现在回到你的电脑，配置 Clawdbot 连接飞书。
+现在回到你的电脑，配置 OpenClawCN 连接飞书。
 
 ### Windows 用户
 
-1. 打开 Clawdbot 安装目录（通常是 `C:\Users\你的用户名\.clawdbot\`）
+1. 打开 OpenClawCN 安装目录（通常是 `C:\Users\你的用户名\.openclawcn\`）
 2. 找到或创建 `config.yaml` 文件（用记事本打开）
 3. 添加以下内容：
 
@@ -287,7 +287,7 @@ channels:
 2. 编辑配置文件：
 
 ```bash
-nano ~/.clawdbot/config.yaml
+nano ~/.openclawcn/config.yaml
 ```
 
 3. 添加上面的配置内容，然后按 `Ctrl+O` 保存，`Ctrl+X` 退出
@@ -298,15 +298,15 @@ nano ~/.clawdbot/config.yaml
 
 ### Windows 用户
 
-1. 双击桌面上的 **Clawdbot** 图标启动
-2. 或者在开始菜单搜索 `Clawdbot` 启动
+1. 双击桌面上的 **OpenClawCN** 图标启动
+2. 或者在开始菜单搜索 `OpenClawCN` 启动
 
 ### Mac/Linux 用户
 
 打开终端，运行：
 
 ```bash
-clawdbot gateway run
+openclawcn gateway run
 ```
 
 ### 测试机器人
@@ -350,7 +350,7 @@ clawdbot gateway run
 - [ ] 是否选择了「**使用长连接接收事件**」（第 6 步）
 - [ ] 应用是否已发布（第 9 步）
 - [ ] 所有权限状态是否为"已开通"
-- [ ] Clawdbot 是否在运行
+- [ ] OpenClawCN 是否在运行
 
 ### 找不到「添加应用能力」在哪？
 
@@ -563,9 +563,9 @@ channels:
 
 **最简单的方法**：
 1. 先不配置 `allowFrom`（或设置 `dmPolicy: "open"` 和 `allowFrom: ["*"]`）
-2. 启动 Clawdbot
+2. 启动 OpenClawCN
 3. 用飞书给机器人发一条消息
-4. 在 Clawdbot 日志中找到 `from=ou_xxxx...`，这就是你的 Open ID
+4. 在 OpenClawCN 日志中找到 `from=ou_xxxx...`，这就是你的 Open ID
 
 ### 如何限制谁可以使用机器人？
 
@@ -604,7 +604,7 @@ channels:
 启动网关后，使用以下命令验证：
 
 ```bash
-clawdbot channels status --probe
+openclawcn channels status --probe
 ```
 
 期望输出：
@@ -614,7 +614,7 @@ clawdbot channels status --probe
 ├─ 状态: ✅ 已连接
 ├─ 模式: WebSocket
 ├─ 应用: cli_xxxxx
-└─ 机器人: Clawdbot 助手
+└─ 机器人: OpenClawCN 助手
 ```
 
 ---

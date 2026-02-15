@@ -28,7 +28,7 @@ skills/ 目录（用户手动添加 SKILL.md）
     POST → ClawdSkillsProxy /api/skills/publish
     │
     ▼ ④ 用户端自动同步
-    ~/.clawdbot/skills-index.json 定期刷新
+    ~/.openclawcn/skills-index.json 定期刷新
     │
     ▼ ⑤ UI 展示
     分类浏览 + CN 筛选 + 标签搜索 + 一键安装
@@ -72,7 +72,7 @@ skills/ 目录（用户手动添加 SKILL.md）
 
 ### 3.4 平台标签
 
-从 SKILL.md frontmatter `metadata.clawdbot.os` 字段提取：
+从 SKILL.md frontmatter `metadata.openclawcn.os` 字段提取：
 
 | 标签 | 含义 |
 |------|------|
@@ -157,9 +157,9 @@ interface EnrichedSkillMeta {
 ```
 category (Qwen 输出的中文分类名)  →  categoryId 映射表  →  category (ID)
 cn_blocked + cn_compatibility     →  cnStatus 三级标签
-metadata.clawdbot.os              →  platforms
-metadata.clawdbot.requires.bins   →  requiresBins
-metadata.clawdbot.install[].kind  →  installMethods
+metadata.openclawcn.os              →  platforms
+metadata.openclawcn.requires.bins   →  requiresBins
+metadata.openclawcn.install[].kind  →  installMethods
 ```
 
 ### 5.2 分类映射表
@@ -192,9 +192,9 @@ function computeCnStatus(cnBlocked: boolean, cnCompatibility: number): string {
 ### 5.4 平台/依赖提取
 
 从 `parseSkillMd()` 解析的 frontmatter 中提取：
-- `metadata.clawdbot.os` → `platforms`
-- `metadata.clawdbot.requires.bins` + `requires.anyBins` → `requiresBins`
-- `metadata.clawdbot.install[].kind` → `installMethods` (去重)
+- `metadata.openclawcn.os` → `platforms`
+- `metadata.openclawcn.requires.bins` + `requires.anyBins` → `requiresBins`
+- `metadata.openclawcn.install[].kind` → `installMethods` (去重)
 
 ---
 

@@ -74,10 +74,10 @@
 | 项目 | 说明 |
 |------|------|
 | **只填空不覆盖** | 仅当字段值 `=== undefined` 时写入，用户任何手动设置（包括 `"deny"`、`"off"` 等限制性值）都不会被覆盖 |
-| **运行时生效，不持久化** | 默认值不写入 `clawdbot.json`，仅存在于内存。迁移到非 CN 区域后自动失效 |
+| **运行时生效，不持久化** | 默认值不写入 `openclawcn.json`，仅存在于内存。迁移到非 CN 区域后自动失效 |
 | **链顺序** | `applySessionDefaults` → **`applyCnDefaults`** → `applyAgentDefaults`。CN 先写入 Win:3，`applyAgentDefaults` 发现已有值跳过，不会覆盖为全局默认 4 |
 | **平台检测** | `os.platform() === "win32"` 区分 Windows；macOS (`darwin`) 和 Linux (`linux`) 使用相同值 |
-| **区域检测** | `detectChinaRegion()`: 环境变量 `CLAWDBOT_REGION` > 时区 `Asia/Shanghai` > `LANG=zh_CN` |
+| **区域检测** | `detectChinaRegion()`: 环境变量 `OPENCLAWCN_REGION` > 时区 `Asia/Shanghai` > `LANG=zh_CN` |
 | **Gateway 热更新** | `tools.*` 和 `agents.*` 属于免重启类别，用户通过 UI/CLI 修改后立即生效（Chokidar 文件监听 + 300ms 防抖） |
 | **代码来源对齐** | 所有安全相关值与 `setup-wizard.ts` L1042-1074 和 `CN_DEFAULT_SECURITY_CONFIG` L984-1041 完全一致 |
 

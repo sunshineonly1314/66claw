@@ -1,4 +1,4 @@
-# Clawdbot Skills 生态三平台深度对比报告
+# OpenClawCN Skills 生态三平台深度对比报告
 
 > 调研日期: 2026-02-09 | 基于 master 分支代码分析
 
@@ -75,8 +75,8 @@
 |-------|------|------|
 | **weather** | `curl` | 全平台完美支持 |
 | **trello** | `jq` + API KEY | 全平台（jq 全平台可用） |
-| **discord** | Clawdbot 内置 channel | 全平台（无 CLI 依赖） |
-| **slack** | Clawdbot 内置 channel | 全平台 |
+| **discord** | OpenClawCN 内置 channel | 全平台（无 CLI 依赖） |
+| **slack** | OpenClawCN 内置 channel | 全平台 |
 | **voice-call** | Twilio/Telnyx 插件 | 全平台 |
 | **coding-agent** | 无外部依赖 | 全平台 |
 | **model-usage** | 无外部依赖 | 全平台 |
@@ -254,7 +254,7 @@
 
 | 步骤 | macOS | Windows | Linux |
 |------|:---:|:---:|:---:|
-| 安装 Clawdbot 本体 | ⭐⭐⭐ (npm/brew) | ⭐⭐⭐⭐⭐ (一键 exe 安装器) | ⭐⭐ (需 npm 或 Docker) |
+| 安装 OpenClawCN 本体 | ⭐⭐⭐ (npm/brew) | ⭐⭐⭐⭐⭐ (一键 exe 安装器) | ⭐⭐ (需 npm 或 Docker) |
 | 安装 Skill 依赖 | ⭐⭐⭐⭐ (brew 一条命令) | ⭐⭐⭐ (bundled-bins 帮忙，但部分需手动) | ⭐⭐ (全部需手动) |
 | 首次配置 | ⭐⭐⭐ | ⭐⭐⭐⭐ (Setup Wizard) | ⭐⭐ |
 | 日常使用 | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ (托盘图标) | ⭐⭐⭐ (需终端) |

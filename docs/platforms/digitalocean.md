@@ -1,15 +1,15 @@
 ---
-summary: "Clawdbot on DigitalOcean (simple paid VPS option)"
+summary: "OpenClawCN on DigitalOcean (simple paid VPS option)"
 read_when:
-  - Setting up Clawdbot on DigitalOcean
-  - Looking for cheap VPS hosting for Clawdbot
+  - Setting up OpenClawCN on DigitalOcean
+  - Looking for cheap VPS hosting for OpenClawCN
 ---
 
-# Clawdbot on DigitalOcean
+# OpenClawCN on DigitalOcean
 
 ## Goal
 
-Run a persistent Clawdbot Gateway on DigitalOcean for **$6/month** (or $4/mo with reserved pricing).
+Run a persistent OpenClawCN Gateway on DigitalOcean for **$6/month** (or $4/mo with reserved pricing).
 
 If you want a $0/month option and don’t mind ARM + provider-specific setup, see the [Oracle Cloud guide](/platforms/oracle).
 
@@ -54,7 +54,7 @@ If you want a $0/month option and don’t mind ARM + provider-specific setup, se
 ssh root@YOUR_DROPLET_IP
 ```
 
-## 3) Install Clawdbot
+## 3) Install OpenClawCN
 
 ```bash
 # Update system
@@ -64,17 +64,17 @@ apt update && apt upgrade -y
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs
 
-# Install Clawdbot
-curl -fsSL https://clawd.bot/install.sh | bash
+# Install OpenClawCN
+curl -fsSL https://openclawcn.com/install.sh | bash
 
 # Verify
-clawdbot --version
+openclawcn --version
 ```
 
 ## 4) Run Onboarding
 
 ```bash
-clawdbot onboard --install-daemon
+openclawcn onboard --install-daemon
 ```
 
 The wizard will walk you through:
@@ -87,13 +87,13 @@ The wizard will walk you through:
 
 ```bash
 # Check status
-clawdbot status
+openclawcn status
 
 # Check service
-systemctl --user status clawdbot-gateway.service
+systemctl --user status openclawcn-gateway.service
 
 # View logs
-journalctl --user -u clawdbot-gateway.service -f
+journalctl --user -u openclawcn-gateway.service -f
 ```
 
 ## 6) Access the Dashboard
@@ -115,8 +115,8 @@ curl -fsSL https://tailscale.com/install.sh | sh
 tailscale up
 
 # Configure Gateway to use Tailscale Serve
-clawdbot config set gateway.tailscale.mode serve
-clawdbot gateway restart
+openclawcn config set gateway.tailscale.mode serve
+openclawcn gateway restart
 ```
 
 Open: `https://<magicdns>/`
@@ -127,8 +127,8 @@ Notes:
 
 **Option C: Tailnet bind (no Serve)**
 ```bash
-clawdbot config set gateway.bind tailnet
-clawdbot gateway restart
+openclawcn config set gateway.bind tailnet
+openclawcn gateway restart
 ```
 
 Open: `http://<tailscale-ip>:18789` (token required).
@@ -137,13 +137,13 @@ Open: `http://<tailscale-ip>:18789` (token required).
 
 ### Telegram
 ```bash
-clawdbot pairing list telegram
-clawdbot pairing approve telegram <CODE>
+openclawcn pairing list telegram
+openclawcn pairing approve telegram <CODE>
 ```
 
 ### WhatsApp
 ```bash
-clawdbot channels login whatsapp
+openclawcn channels login whatsapp
 # Scan QR code
 ```
 
@@ -180,12 +180,12 @@ htop
 ## Persistence
 
 All state lives in:
-- `~/.clawdbot/` — config, credentials, session data
+- `~/.openclawcn/` — config, credentials, session data
 - `~/clawd/` — workspace (SOUL.md, memory, etc.)
 
 These survive reboots. Back them up periodically:
 ```bash
-tar -czvf clawdbot-backup.tar.gz ~/.clawdbot ~/clawd
+tar -czvf openclawcn-backup.tar.gz ~/.openclawcn ~/clawd
 ```
 
 ---
@@ -213,9 +213,9 @@ For the full setup guide, see [Oracle Cloud](/platforms/oracle). For signup tips
 
 ### Gateway won't start
 ```bash
-clawdbot gateway status
-clawdbot doctor --non-interactive
-journalctl -u clawdbot --no-pager -n 50
+openclawcn gateway status
+openclawcn doctor --non-interactive
+journalctl -u openclawcn --no-pager -n 50
 ```
 
 ### Port already in use

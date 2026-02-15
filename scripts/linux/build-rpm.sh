@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ================================================================
-# Clawdbot RPM 包构建脚本
+# OpenClawCN RPM 包构建脚本
 # 构建适用于 CentOS/RHEL/Fedora 的 .rpm 安装包
 #
 # 用法:
@@ -48,7 +48,7 @@ if [[ -z "$RPM_VERSION" ]]; then
   RPM_VERSION="1.0.0"
 fi
 
-PKG_NAME="clawdbot"
+PKG_NAME="openclawcn"
 
 echo "构建 RPM 包"
 echo "  架构: $RPM_ARCH"
@@ -68,7 +68,7 @@ mkdir -p "$RPM_ROOT"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
 # 准备源代码 tarball
 SRC_DIR="$RPM_ROOT/BUILD/${PKG_NAME}-${RPM_VERSION}"
-INSTALL_DIR="$SRC_DIR/opt/clawdbot"
+INSTALL_DIR="$SRC_DIR/opt/openclawcn"
 mkdir -p "$INSTALL_DIR" "$SRC_DIR/usr/local/bin" "$SRC_DIR/etc/systemd/user"
 
 # 下载并解压 Node.js
@@ -103,31 +103,31 @@ else
 fi
 
 # CLI 入口
-cat > "$SRC_DIR/usr/local/bin/clawdbot" << 'EOF'
+cat > "$SRC_DIR/usr/local/bin/openclawcn" << 'EOF'
 #!/usr/bin/env bash
-export PATH="/opt/clawdbot/node/bin:$PATH"
-exec /opt/clawdbot/node/bin/node /opt/clawdbot/dist/entry.js "$@"
+export PATH="/opt/openclawcn/node/bin:$PATH"
+exec /opt/openclawcn/node/bin/node /opt/openclawcn/dist/entry.js "$@"
 EOF
-chmod +x "$SRC_DIR/usr/local/bin/clawdbot"
+chmod +x "$SRC_DIR/usr/local/bin/openclawcn"
 
 # systemd 服务
-cat > "$SRC_DIR/etc/systemd/user/clawdbot.service" << EOF
+cat > "$SRC_DIR/etc/systemd/user/openclawcn.service" << EOF
 [Unit]
-Description=Clawdbot AI Gateway
+Description=OpenClawCN AI Gateway
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/clawdbot
-ExecStart=/opt/clawdbot/node/bin/node /opt/clawdbot/dist/entry.js gateway run --port 18789 --allow-unconfigured
+WorkingDirectory=/opt/openclawcn
+ExecStart=/opt/openclawcn/node/bin/node /opt/openclawcn/dist/entry.js gateway run --port 18789 --allow-unconfigured
 ExecReload=/bin/kill -USR1 \$MAINPID
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=clawdbot
+SyslogIdentifier=openclawcn
 NoNewPrivileges=true
 
 [Install]
@@ -139,13 +139,13 @@ cat > "$RPM_ROOT/SPECS/${PKG_NAME}.spec" << SPEC
 Name:           ${PKG_NAME}
 Version:        ${RPM_VERSION}
 Release:        1%{?dist}
-Summary:        Clawdbot AI Gateway - 个人AI助手网关
+Summary:        OpenClawCN AI Gateway - 个人AI助手网关
 License:        MIT
 URL:            https://www.tecbinai.com/
 AutoReqProv:    no
 
 %description
-Clawdbot 是一个多渠道 AI 助手网关，支持通过
+OpenClawCN 是一个多渠道 AI 助手网关，支持通过
 Web界面进行配置，连接多种AI模型和消息渠道。
 
 安装后访问 http://localhost:18789/setup 进行配置。
@@ -154,27 +154,27 @@ Web界面进行配置，连接多种AI模型和消息渠道。
 cp -a %{_builddir}/${PKG_NAME}-${RPM_VERSION}/* %{buildroot}/
 
 %files
-%dir /opt/clawdbot
-/opt/clawdbot/*
-/usr/local/bin/clawdbot
-/etc/systemd/user/clawdbot.service
+%dir /opt/openclawcn
+/opt/openclawcn/*
+/usr/local/bin/openclawcn
+/etc/systemd/user/openclawcn.service
 
 %post
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║   Clawdbot 安装完成！                    ║"
+echo "║   OpenClawCN 安装完成！                    ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-echo "  快速开始: clawdbot gateway run"
+echo "  快速开始: openclawcn gateway run"
 echo "  配置向导: http://localhost:18789/setup"
 echo ""
-mkdir -p /opt/clawdbot/logs
-chmod 755 /opt/clawdbot/logs
+mkdir -p /opt/openclawcn/logs
+chmod 755 /opt/openclawcn/logs
 
 %preun
-systemctl --user stop clawdbot 2>/dev/null || true
-systemctl --user disable clawdbot 2>/dev/null || true
-pkill -f "clawdbot.*gateway" 2>/dev/null || true
+systemctl --user stop openclawcn 2>/dev/null || true
+systemctl --user disable openclawcn 2>/dev/null || true
+pkill -f "openclawcn.*gateway" 2>/dev/null || true
 SPEC
 
 # 构建 RPM

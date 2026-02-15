@@ -4,7 +4,7 @@ description: Monitor blogs and RSS/Atom feeds for updates using the blogwatcher 
 nameZh: "博客监控"
 descriptionZh: "监控博客和RSS/Atom订阅源的更新"
 homepage: https://github.com/Hyaxia/blogwatcher
-metadata: {"clawdbot":{"emoji":"📰","requires":{"bins":["blogwatcher"]},"install":[{"id":"go","kind":"go","module":"github.com/Hyaxia/blogwatcher/cmd/blogwatcher@latest","bins":["blogwatcher"],"label":"Install blogwatcher (go)"}]}}
+metadata: {"openclawcn":{"emoji":"📰","requires":{"bins":["blogwatcher"]},"install":[{"id":"go","kind":"go","module":"github.com/Hyaxia/blogwatcher/cmd/blogwatcher@latest","bins":["blogwatcher"],"label":"Install blogwatcher (go)"}]}}
 ---
 
 # blogwatcher

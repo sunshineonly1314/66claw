@@ -1,6 +1,6 @@
 #!/bin/bash
 # ════════════════════════════════════════════════════════════════
-# ClawdbotCN macOS 远程打包监控脚本
+# OpenClawCN macOS 远程打包监控脚本
 # ════════════════════════════════════════════════════════════════
 set -e
 
@@ -47,7 +47,7 @@ error_exit() {
 # 开始
 echo -e "${WHITE}"
 echo "════════════════════════════════════════════════════════════════"
-echo "  ClawdbotCN macOS 自动化打包脚本 v1.0"
+echo "  OpenClawCN macOS 自动化打包脚本 v1.0"
 echo "  开始时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "════════════════════════════════════════════════════════════════"
 echo -e "${NC}"
@@ -87,10 +87,10 @@ log_step "[1/6] 定位项目目录"
 
 # 尝试多个常见位置
 POSSIBLE_PATHS=(
-    "$HOME/clawdbot-cn"
+    "$HOME/openclawcn-cn"
     "$HOME/clawd-cn"
-    "$HOME/Projects/clawdbot-cn"
-    "$HOME/Desktop/clawdbot-cn"
+    "$HOME/Projects/openclawcn-cn"
+    "$HOME/Desktop/openclawcn-cn"
     "$(pwd)"
 )
 
@@ -180,7 +180,7 @@ log_info "打包脚本: $BUILD_SCRIPT"
 BUILD_START=$(date +%s)
 
 # 执行打包并实时显示输出
-if ./"$BUILD_SCRIPT" 2>&1 | tee /tmp/clawdbot-build.log; then
+if ./"$BUILD_SCRIPT" 2>&1 | tee /tmp/openclawcn-build.log; then
     BUILD_END=$(date +%s)
     BUILD_TIME=$((BUILD_END - BUILD_START))
     BUILD_MINUTES=$((BUILD_TIME / 60))
@@ -188,8 +188,8 @@ if ./"$BUILD_SCRIPT" 2>&1 | tee /tmp/clawdbot-build.log; then
 
     log_ok "打包完成！耗时: ${BUILD_MINUTES}分${BUILD_SECONDS}秒"
 else
-    log_error "打包失败！查看日志: /tmp/clawdbot-build.log"
-    tail -50 /tmp/clawdbot-build.log
+    log_error "打包失败！查看日志: /tmp/openclawcn-build.log"
+    tail -50 /tmp/openclawcn-build.log
     error_exit "构建进程退出异常"
 fi
 
@@ -200,7 +200,7 @@ log_step "[5/6] 查找并移动 DMG 文件"
 
 # 查找 DMG 文件
 log_info "搜索 DMG 文件..."
-DMG_FILES=$(find build/output -name "ClawdbotCN-macOS-*.dmg" -type f 2>/dev/null)
+DMG_FILES=$(find build/output -name "OpenClawCN-macOS-*.dmg" -type f 2>/dev/null)
 DMG_COUNT=$(echo "$DMG_FILES" | grep -c "dmg" || echo "0")
 
 if [ "$DMG_COUNT" -eq 0 ]; then
@@ -292,4 +292,4 @@ if [ "$OPEN_FINDER" = "y" ]; then
     open "$DESKTOP"
 fi
 
-log_info "完整构建日志已保存到: /tmp/clawdbot-build.log"
+log_info "完整构建日志已保存到: /tmp/openclawcn-build.log"

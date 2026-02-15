@@ -1,4 +1,4 @@
-# ClawdbotCN 稳定性增强 & 代码审查报告
+# OpenClawCN 稳定性增强 & 代码审查报告
 
 > 日期: 2026-02-11
 > 分支: security-fixes-batch-1-phase-1
@@ -77,7 +77,7 @@
 - 锁文件超过staleMs且无心跳时直接判定"dead"
 
 ### 3.2 托盘并发Stop/Restart竞态
-**文件:** `scripts/windows/native/ClawdbotService.cs`
+**文件:** `scripts/windows/native/OpenClawCNService.cs`
 **问题:** 看门狗和用户同时触发Stop/Restart，两个线程同时调用 `Process.Kill()` → 其中一个抛异常 → 状态不一致
 **修复:**
 - 添加 `volatile bool isStopping` 标志
@@ -85,7 +85,7 @@
 - 完成后重置标志
 
 ### 3.3 netstat调用无超时保护
-**文件:** `scripts/windows/native/ClawdbotService.cs`
+**文件:** `scripts/windows/native/OpenClawCNService.cs`
 **问题:** `IsGatewayRunning()` 调用 `netstat -ano` 但无超时，系统负载高时可能挂起
 **修复:** 添加5秒 `WaitForExit(5000)` 超时，超时后Kill进程并返回false
 
@@ -100,7 +100,7 @@
 **修复:** 两处 `loadConfig()` 调用均添加 try-catch，失败时优雅降级
 
 ### 3.6 退出时资源泄漏
-**文件:** `scripts/windows/native/ClawdbotService.cs`
+**文件:** `scripts/windows/native/OpenClawCNService.cs`
 **问题:** `ExitApplication()` 中 tray icon 和 context menu 的 Dispose 不完整，自定义icon未释放
 **修复:**
 - 添加icon资源释放（非系统图标）
@@ -162,7 +162,7 @@
 | `src/gateway/server-close.ts` | HTTP close错误不中断关闭流程 | 🟡 High |
 | `src/infra/gateway-lock.ts` | Windows心跳逻辑修正 | 🟡 High |
 | `src/gateway/license-check.ts` | Date NaN保护 + loadConfig防御 | 🟡 High |
-| `scripts/windows/native/ClawdbotService.cs` | 并发保护 + netstat超时 + 资源释放 | 🟡 High |
+| `scripts/windows/native/OpenClawCNService.cs` | 并发保护 + netstat超时 + 资源释放 | 🟡 High |
 | `src/config/io.ts` | 备份轮转异常隔离 | 🟢 Medium |
 | `src/config/config-sanitizer.ts` | modified标志修复 + port类型矫正 | 🟢 Medium |
 | `src/security/anti-debug.ts` | 扩展环境变量清理 + 回调保护 | 🟢 Medium |

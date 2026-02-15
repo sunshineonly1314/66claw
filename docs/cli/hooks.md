@@ -1,27 +1,30 @@
 ---
-summary: "CLI reference for `clawdbot hooks` (agent hooks)"
+summary: "CLI reference for `openclawcn hooks` (agent hooks)"
 read_when:
   - You want to manage agent hooks
   - You want to install or update hooks
+title: "hooks"
 ---
 
-# `clawdbot hooks`
+# `openclawcn hooks`
 
 Manage agent hooks (event-driven automations for commands like `/new`, `/reset`, and gateway startup).
 
 Related:
-- Hooks: [Hooks](/hooks)
-- Plugin hooks: [Plugins](/plugin#plugin-hooks)
+
+- Hooks: [Hooks](/automation/hooks)
+- Plugin hooks: [Plugins](/tools/plugin#plugin-hooks)
 
 ## List All Hooks
 
 ```bash
-clawdbot hooks list
+openclawcn hooks list
 ```
 
 List all discovered hooks from workspace, managed, and bundled directories.
 
 **Options:**
+
 - `--eligible`: Show only eligible hooks (requirements met)
 - `--json`: Output as JSON
 - `-v, --verbose`: Show detailed information including missing requirements
@@ -33,15 +36,15 @@ Hooks (4/4 ready)
 
 Ready:
   🚀 boot-md ✓ - Run BOOT.md on gateway startup
+  📎 bootstrap-extra-files ✓ - Inject extra workspace bootstrap files during agent bootstrap
   📝 command-logger ✓ - Log all command events to a centralized audit file
   💾 session-memory ✓ - Save session context to memory when /new command is issued
-  😈 soul-evil ✓ - Swap injected SOUL content during a purge window or by random chance
 ```
 
 **Example (verbose):**
 
 ```bash
-clawdbot hooks list --verbose
+openclawcn hooks list --verbose
 ```
 
 Shows missing requirements for ineligible hooks.
@@ -49,7 +52,7 @@ Shows missing requirements for ineligible hooks.
 **Example (JSON):**
 
 ```bash
-clawdbot hooks list --json
+openclawcn hooks list --json
 ```
 
 Returns structured JSON for programmatic use.
@@ -57,21 +60,23 @@ Returns structured JSON for programmatic use.
 ## Get Hook Information
 
 ```bash
-clawdbot hooks info <name>
+openclawcn hooks info <name>
 ```
 
 Show detailed information about a specific hook.
 
 **Arguments:**
+
 - `<name>`: Hook name (e.g., `session-memory`)
 
 **Options:**
+
 - `--json`: Output as JSON
 
 **Example:**
 
 ```bash
-clawdbot hooks info session-memory
+openclawcn hooks info session-memory
 ```
 
 **Output:**
@@ -82,10 +87,10 @@ clawdbot hooks info session-memory
 Save session context to memory when /new command is issued
 
 Details:
-  Source: clawdbot-bundled
-  Path: /path/to/clawdbot/hooks/bundled/session-memory/HOOK.md
-  Handler: /path/to/clawdbot/hooks/bundled/session-memory/handler.ts
-  Homepage: https://docs.clawd.bot/hooks#session-memory
+  Source: openclawcncn-bundled
+  Path: /path/to/openclawcn/hooks/bundled/session-memory/HOOK.md
+  Handler: /path/to/openclawcn/hooks/bundled/session-memory/handler.ts
+  Homepage: https://docs.openclawcncn.com/automation/hooks#session-memory
   Events: command:new
 
 Requirements:
@@ -95,12 +100,13 @@ Requirements:
 ## Check Hooks Eligibility
 
 ```bash
-clawdbot hooks check
+openclawcn hooks check
 ```
 
 Show summary of hook eligibility status (how many are ready vs. not ready).
 
 **Options:**
+
 - `--json`: Output as JSON
 
 **Example output:**
@@ -116,21 +122,22 @@ Not ready: 0
 ## Enable a Hook
 
 ```bash
-clawdbot hooks enable <name>
+openclawcn hooks enable <name>
 ```
 
-Enable a specific hook by adding it to your config (`~/.clawdbot/config.json`).
+Enable a specific hook by adding it to your config (`~/.openclawcn/config.json`).
 
-**Note:** Hooks managed by plugins show `plugin:<id>` in `clawdbot hooks list` and
+**Note:** Hooks managed by plugins show `plugin:<id>` in `openclawcn hooks list` and
 can’t be enabled/disabled here. Enable/disable the plugin instead.
 
 **Arguments:**
+
 - `<name>`: Hook name (e.g., `session-memory`)
 
 **Example:**
 
 ```bash
-clawdbot hooks enable session-memory
+openclawcn hooks enable session-memory
 ```
 
 **Output:**
@@ -140,28 +147,31 @@ clawdbot hooks enable session-memory
 ```
 
 **What it does:**
+
 - Checks if hook exists and is eligible
 - Updates `hooks.internal.entries.<name>.enabled = true` in your config
 - Saves config to disk
 
 **After enabling:**
+
 - Restart the gateway so hooks reload (menu bar app restart on macOS, or restart your gateway process in dev).
 
 ## Disable a Hook
 
 ```bash
-clawdbot hooks disable <name>
+openclawcn hooks disable <name>
 ```
 
 Disable a specific hook by updating your config.
 
 **Arguments:**
+
 - `<name>`: Hook name (e.g., `command-logger`)
 
 **Example:**
 
 ```bash
-clawdbot hooks disable command-logger
+openclawcn hooks disable command-logger
 ```
 
 **Output:**
@@ -171,22 +181,28 @@ clawdbot hooks disable command-logger
 ```
 
 **After disabling:**
+
 - Restart the gateway so hooks reload
 
 ## Install Hooks
 
 ```bash
-clawdbot hooks install <path-or-spec>
+openclawcn hooks install <path-or-spec>
 ```
 
 Install a hook pack from a local folder/archive or npm.
 
+Npm specs are **registry-only** (package name + optional version/tag). Git/URL/file
+specs are rejected. Dependency installs run with `--ignore-scripts` for safety.
+
 **What it does:**
-- Copies the hook pack into `~/.clawdbot/hooks/<id>`
+
+- Copies the hook pack into `~/.openclawcn/hooks/<id>`
 - Enables the installed hooks in `hooks.internal.entries.*`
 - Records the install under `hooks.internal.installs`
 
 **Options:**
+
 - `-l, --link`: Link a local directory instead of copying (adds it to `hooks.internal.load.extraDirs`)
 
 **Supported archives:** `.zip`, `.tgz`, `.tar.gz`, `.tar`
@@ -195,28 +211,29 @@ Install a hook pack from a local folder/archive or npm.
 
 ```bash
 # Local directory
-clawdbot hooks install ./my-hook-pack
+openclawcn hooks install ./my-hook-pack
 
 # Local archive
-clawdbot hooks install ./my-hook-pack.zip
+openclawcn hooks install ./my-hook-pack.zip
 
 # NPM package
-clawdbot hooks install @clawdbot/my-hook-pack
+openclawcn hooks install @openclawcn/my-hook-pack
 
 # Link a local directory without copying
-clawdbot hooks install -l ./my-hook-pack
+openclawcn hooks install -l ./my-hook-pack
 ```
 
 ## Update Hooks
 
 ```bash
-clawdbot hooks update <id>
-clawdbot hooks update --all
+openclawcn hooks update <id>
+openclawcn hooks update --all
 ```
 
 Update installed hook packs (npm installs only).
 
 **Options:**
+
 - `--all`: Update all tracked hook packs
 - `--dry-run`: Show what would change without writing
 
@@ -229,12 +246,24 @@ Saves session context to memory when you issue `/new`.
 **Enable:**
 
 ```bash
-clawdbot hooks enable session-memory
+openclawcn hooks enable session-memory
 ```
 
-**Output:** `~/clawd/memory/YYYY-MM-DD-slug.md`
+**Output:** `~/.openclawcn/workspace/memory/YYYY-MM-DD-slug.md`
 
-**See:** [session-memory documentation](/hooks#session-memory)
+**See:** [session-memory documentation](/automation/hooks#session-memory)
+
+### bootstrap-extra-files
+
+Injects additional bootstrap files (for example monorepo-local `AGENTS.md` / `TOOLS.md`) during `agent:bootstrap`.
+
+**Enable:**
+
+```bash
+openclawcn hooks enable bootstrap-extra-files
+```
+
+**See:** [bootstrap-extra-files documentation](/automation/hooks#bootstrap-extra-files)
 
 ### command-logger
 
@@ -243,37 +272,25 @@ Logs all command events to a centralized audit file.
 **Enable:**
 
 ```bash
-clawdbot hooks enable command-logger
+openclawcn hooks enable command-logger
 ```
 
-**Output:** `~/.clawdbot/logs/commands.log`
+**Output:** `~/.openclawcn/logs/commands.log`
 
 **View logs:**
 
 ```bash
 # Recent commands
-tail -n 20 ~/.clawdbot/logs/commands.log
+tail -n 20 ~/.openclawcn/logs/commands.log
 
 # Pretty-print
-cat ~/.clawdbot/logs/commands.log | jq .
+cat ~/.openclawcn/logs/commands.log | jq .
 
 # Filter by action
-grep '"action":"new"' ~/.clawdbot/logs/commands.log | jq .
+grep '"action":"new"' ~/.openclawcn/logs/commands.log | jq .
 ```
 
-**See:** [command-logger documentation](/hooks#command-logger)
-
-### soul-evil
-
-Swaps injected `SOUL.md` content with `SOUL_EVIL.md` during a purge window or by random chance.
-
-**Enable:**
-
-```bash
-clawdbot hooks enable soul-evil
-```
-
-**See:** [SOUL Evil Hook](/hooks/soul-evil)
+**See:** [command-logger documentation](/automation/hooks#command-logger)
 
 ### boot-md
 
@@ -284,7 +301,7 @@ Runs `BOOT.md` when the gateway starts (after channels start).
 **Enable**:
 
 ```bash
-clawdbot hooks enable boot-md
+openclawcn hooks enable boot-md
 ```
 
-**See:** [boot-md documentation](/hooks#boot-md)
+**See:** [boot-md documentation](/automation/hooks#boot-md)

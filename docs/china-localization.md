@@ -1,6 +1,6 @@
-# Clawdbot 中国本地化指南
+# OpenClawCN 中国本地化指南
 
-本文档介绍如何配置 Clawdbot 以支持国产大模型和企业 IM 渠道（飞书/钉钉）。
+本文档介绍如何配置 OpenClawCN 以支持国产大模型和企业 IM 渠道（飞书/钉钉）。
 
 ## 概述
 
@@ -49,7 +49,7 @@ export GLM_API_KEY="your-api-key"
 
 #### 方式二：配置文件
 
-在 `~/.clawdbot/config.json5` 中添加配置：
+在 `~/.openclawcn/config.json5` 中添加配置：
 
 ```json5
 {
@@ -232,7 +232,7 @@ pnpm install
 
 1. 复制示例配置：
    ```bash
-   cp config.china.example.json5 ~/.clawdbot/config.json5
+   cp config.china.example.json5 ~/.openclawcn/config.json5
    ```
 
 2. 编辑配置文件，填入你的 API Key
@@ -240,14 +240,14 @@ pnpm install
 ### 4.3 启用插件
 
 ```bash
-clawdbot plugins enable feishu
-clawdbot plugins enable dingtalk
+openclawcn plugins enable feishu
+openclawcn plugins enable dingtalk
 ```
 
 ### 4.4 启动网关
 
 ```bash
-clawdbot gateway run
+openclawcn gateway run
 ```
 
 ### 4.5 访问 UI
@@ -266,7 +266,7 @@ src/agents/models-config.providers.ts  # 修改：添加国产模型配置
 
 # 飞书插件
 extensions/feishu/
-├── clawdbot.plugin.json
+├── openclawcn.plugin.json
 ├── package.json
 ├── index.ts
 └── src/
@@ -276,7 +276,7 @@ extensions/feishu/
 
 # 钉钉插件
 extensions/dingtalk/
-├── clawdbot.plugin.json
+├── openclawcn.plugin.json
 ├── package.json
 ├── index.ts
 └── src/

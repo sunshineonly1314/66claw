@@ -49,7 +49,7 @@
 
 所有启动脚本已添加环境变量：
 ```batch
-set "CLAWDBOT_REGION=cn"
+set "OPENCLAWCN_REGION=cn"
 ```
 
 这会自动启用：
@@ -129,7 +129,7 @@ set "CLAWDBOT_REGION=cn"
 ### 输出
 
 ```
-E:\clawdbuild\ClawdbotCN-Setup-2026.2.2-x64.exe (~105MB)
+E:\clawdbuild\OpenClawCN-Setup-2026.2.2-x64.exe (~105MB)
 ```
 
 ---
@@ -157,7 +157,7 @@ E:\clawdbuild\ClawdbotCN-Setup-2026.2.2-x64.exe (~105MB)
 
 **问题**: GitHub 代理全部不可靠（404/暂停），以下工具无法通过代理下载：
 - Signal CLI (github.com/AsamK/signal-cli)
-- 能力包 (oss.clawdbot.cn 无法访问)
+- 能力包 (oss.openclawcn.cn 无法访问)
 
 **解决方案**: 在 ClawdSkillsProxy 上自建镜像
 
@@ -277,7 +277,7 @@ E:\clawdbuild\ClawdbotCN-Setup-2026.2.2-x64.exe (~105MB)
 - ✅ PATH 环境变量包含 Node.js 路径
 
 **v2026.2.9 - .NET 原生服务** (问题 #21):
-- ✅ 创建 `ClawdbotService.exe` (19KB) 替代 PowerShell/VBScript
+- ✅ 创建 `OpenClawCNService.exe` (19KB) 替代 PowerShell/VBScript
 - ✅ 一个 EXE 集成：托盘图标 + Gateway 管理 + Watchdog
 - ✅ `CreateNoWindow = true` 完全隐藏 Node.js 启动窗口
 - ✅ 智能等待 Gateway 启动（最多 30 秒）后再打开浏览器
@@ -288,7 +288,7 @@ E:\clawdbuild\ClawdbotCN-Setup-2026.2.2-x64.exe (~105MB)
 
 **Windows 离线版**:
 - ✅ 修复 Gateway 启动问题 (`--allow-unconfigured`)
-- ✅ 所有启动脚本添加 `CLAWDBOT_REGION=cn`
+- ✅ 所有启动脚本添加 `OPENCLAWCN_REGION=cn`
 - ✅ npm 使用国内镜像 (npmmirror.com)
 - ✅ Skills 使用 ClawdSkillsProxy (121.43.61.90)
 - ✅ 重新打包 v2026.2.2 离线版 (104.55 MB)

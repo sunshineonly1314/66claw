@@ -3,7 +3,7 @@ name: open-app
 description: "Find and launch any desktop application on Windows by name. Supports Chinese and English app names, common aliases, registry, shortcuts, and UWP Store apps."
 nameZh: "打开应用"
 descriptionZh: "通过名称查找并启动Windows桌面应用程序"
-metadata: {"clawdbot":{"emoji":"🚀","os":["win32"],"always":true}}
+metadata: {"openclawcn":{"emoji":"🚀","os":["win32"],"always":true}}
 ---
 
 # Open App Skill (Windows)

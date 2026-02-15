@@ -1,7 +1,7 @@
 # SkillWash 实施状态评估报告
 
 > **评估日期**: 2026-02-08
-> **评估对象**: `skillsqingxi/` 目录（对应 PRD: `todo/PRD-skills-cleaning-pipeline.md`）
+> **评估对象**: `skillsqingxi/` 目录（对应 PRD: `docs/roadmap/PRD-skills-cleaning-pipeline.md`）
 > **结论**: 核心 Pipeline 已实现并验证通过，但尚未达到生产级批量运行标准
 
 ---
@@ -180,7 +180,7 @@ Pipeline 总耗时: 26.3s
 | 集成项 | 状态 | 说明 |
 |--------|------|------|
 | 目录位置 | 不符合 | 应迁入 `src/skills-wash/` 或 `src/agents/skills/wash/` |
-| CLI 注册 | 未集成 | 需注册为 `clawdbot skills wash` 子命令 |
+| CLI 注册 | 未集成 | 需注册为 `openclawcn skills wash` 子命令 |
 | ClawdSkillsProxy 对接 | 未实现 | 缺少 `skills-index.json` 生成和上传逻辑 |
 | 单元测试 | 无 | 无任何 `.test.ts` 文件 |
 | 环境变量管理 | 有风险 | API Key 硬编码需清理 |
@@ -212,7 +212,7 @@ SkillWash Pipeline 的**核心三层架构已完整实现**，安全防护到位
 | Layer 0 去重 | 文本相似度去重，减少同质化 |
 | 双模型交叉验证 | 对 medium/high 风险 skill 增加 qwen-plus 二审 |
 | Red Team 测试集 | 标准化对抗测试，验证检测率 |
-| 集成到主 CLI | 迁移目录 + 注册 `clawdbot skills wash` |
+| 集成到主 CLI | 迁移目录 + 注册 `openclawcn skills wash` |
 | ClawdSkillsProxy 对接 | 生成索引 + 自动上传 |
 
 ---

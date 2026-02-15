@@ -6,7 +6,7 @@
 set -e
 
 echo "========================================"
-echo "  Clawdbot Skills 二进制同步部署"
+echo "  OpenClawCN Skills 二进制同步部署"
 echo "========================================"
 echo ""
 

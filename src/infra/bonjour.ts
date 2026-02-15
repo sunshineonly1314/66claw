@@ -1,5 +1,3 @@
-import os from "node:os";
-
 import { logDebug, logWarn } from "../logger.js";
 import { getLogger } from "../logging.js";
 import { ignoreCiaoCancellationRejection } from "./bonjour-ciao.js";
@@ -28,20 +26,26 @@ export type GatewayBonjourAdvertiseOpts = {
 };
 
 function isDisabledByEnv() {
-  if (isTruthyEnvValue(process.env.CLAWDBOT_DISABLE_BONJOUR)) return true;
-  if (process.env.NODE_ENV === "test") return true;
-  if (process.env.VITEST) return true;
+  if (isTruthyEnvValue(process.env.OPENCLAWCN_DISABLE_BONJOUR)) {
+    return true;
+  }
+  if (process.env.NODE_ENV === "test") {
+    return true;
+  }
+  if (process.env.VITEST) {
+    return true;
+  }
   return false;
 }
 
 function safeServiceName(name: string) {
   const trimmed = name.trim();
-  return trimmed.length > 0 ? trimmed : "Clawdbot";
+  return trimmed.length > 0 ? trimmed : "OpenClawCN";
 }
 
 function prettifyInstanceName(name: string) {
   const normalized = name.trim().replace(/\s+/g, " ");
-  return normalized.replace(/\s+\(Clawdbot\)\s*$/i, "").trim() || normalized;
+  return normalized.replace(/\s+\(OpenClawCN\)\s*$/i, "").trim() || normalized;
 }
 
 type BonjourService = {
@@ -90,16 +94,19 @@ export async function startGatewayBonjourAdvertiser(
   // mDNS service instance names are single DNS labels; dots in hostnames (like
   // `Mac.localdomain`) can confuse some resolvers/browsers and break discovery.
   // Keep only the first label and normalize away a trailing `.local`.
+  const hostnameRaw =
+    process.env.OPENCLAWCN_MDNS_HOSTNAME?.trim() ||
+    process.env.OPENCLAWCN_MDNS_HOSTNAME?.trim() ||
+    "openclawcn";
   const hostname =
-    os
-      .hostname()
+    hostnameRaw
       .replace(/\.local$/i, "")
       .split(".")[0]
-      .trim() || "clawdbot";
+      .trim() || "openclawcn";
   const instanceName =
     typeof opts.instanceName === "string" && opts.instanceName.trim()
       ? opts.instanceName.trim()
-      : `${hostname} (Clawdbot)`;
+      : `${hostname} (OpenClawCN)`;
   const displayName = prettifyInstanceName(instanceName);
 
   const txtBase: Record<string, string> = {
@@ -140,7 +147,7 @@ export async function startGatewayBonjourAdvertiser(
 
   const gateway = responder.createService({
     name: safeServiceName(instanceName),
-    type: "clawdbot-gw",
+    type: "openclawcn-gw",
     protocol: Protocol.TCP,
     port: opts.gatewayPort,
     domain: "local",
@@ -169,13 +176,11 @@ export async function startGatewayBonjourAdvertiser(
     try {
       svc.on("name-change", (name: unknown) => {
         const next = typeof name === "string" ? name : String(name);
-        // Downgraded from warn→info: name conflict is auto-resolved by ciao,
-        // not an error. Logging as [ERR] confuses customers.
-        getLogger().info(`bonjour: ${label} name conflict resolved; newName=${JSON.stringify(next)}`);
+        logWarn(`bonjour: ${label} name conflict resolved; newName=${JSON.stringify(next)}`);
       });
       svc.on("hostname-change", (nextHostname: unknown) => {
         const next = typeof nextHostname === "string" ? nextHostname : String(nextHostname);
-        getLogger().info(
+        logWarn(
           `bonjour: ${label} hostname conflict resolved; newHostname=${JSON.stringify(next)}`,
         );
       });
@@ -213,8 +218,12 @@ export async function startGatewayBonjourAdvertiser(
   const watchdog = setInterval(() => {
     for (const { label, svc } of services) {
       const stateUnknown = (svc as { serviceState?: unknown }).serviceState;
-      if (typeof stateUnknown !== "string") continue;
-      if (stateUnknown === "announced" || stateUnknown === "announcing") continue;
+      if (typeof stateUnknown !== "string") {
+        continue;
+      }
+      if (stateUnknown === "announced" || stateUnknown === "announcing") {
+        continue;
+      }
 
       let key = label;
       try {
@@ -224,7 +233,9 @@ export async function startGatewayBonjourAdvertiser(
       }
       const now = Date.now();
       const last = lastRepairAttempt.get(key) ?? 0;
-      if (now - last < 30_000) continue;
+      if (now - last < 30_000) {
+        continue;
+      }
       lastRepairAttempt.set(key, now);
 
       logWarn(
@@ -265,11 +276,6 @@ export async function startGatewayBonjourAdvertiser(
       } finally {
         ciaoCancellationRejectionHandler?.();
       }
-      // Allow mDNS goodbye packets to propagate before the gateway restarts
-      // and a new advertiser re-probes with the same instance name.  Without
-      // this grace period the new instance often sees a stale record and
-      // appends "(2)" to the service name.
-      await new Promise((r) => setTimeout(r, 800));
     },
   };
 }

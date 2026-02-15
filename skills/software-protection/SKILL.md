@@ -1,8 +1,8 @@
 ---
 name: software-protection
-description: Clawdbot 软件保护方案 - 防止逆向、破解、修改的加密策略
-homepage: https://github.com/nicekate/clawdbot
-metadata: {"clawdbot":{"emoji":"🔐","category":"security"}}
+description: OpenClawCN 软件保护方案 - 防止逆向、破解、修改的加密策略
+homepage: https://github.com/nicekate/openclawcn
+metadata: {"openclawcn":{"emoji":"🔐","category":"security"}}
 ---
 
 # 软件保护方案（Software Protection）
@@ -40,7 +40,7 @@ metadata: {"clawdbot":{"emoji":"🔐","category":"security"}}
 ## 二、项目架构概览
 
 ```
-Clawdbot 架构
+OpenClawCN 架构
 ├── 核心层：Node.js 22+ (TypeScript → dist/)
 │   ├── src/license/    许可证验证（RSA + HMAC）
 │   ├── src/security/   安全模块（完整性、反调试）
@@ -57,7 +57,7 @@ Clawdbot 架构
 ```
 
 **特殊情况**：
-- API Key 存在用户本地（`~/.clawdbot/agents/<id>/agent/auth-profiles.json`）
+- API Key 存在用户本地（`~/.openclawcn/agents/<id>/agent/auth-profiles.json`）
 - 插件使用 jiti 动态加载 TypeScript
 - 核心价值是 AI 调用能力
 
@@ -123,8 +123,8 @@ function isDevMode(): boolean {
   }
   return (
     process.env.NODE_ENV === "development" ||
-    process.env.CLAWDBOT_DEV === "1" ||
-    process.env.CLAWDBOT_LICENSE_DEV === "1"
+    process.env.OPENCLAWCN_DEV === "1" ||
+    process.env.OPENCLAWCN_LICENSE_DEV === "1"
   );
 }
 ```

@@ -2,7 +2,7 @@
 
 > 调研日期: 2026-02-04
 > 项目地址: https://github.com/NevaMind-AI/memU
-> 调研目的: 分析 memU 的主动式记忆机制，评估对 Clawdbot 记忆功能的借鉴价值
+> 调研目的: 分析 memU 的主动式记忆机制，评估对 OpenClawCN 记忆功能的借鉴价值
 
 ---
 
@@ -102,11 +102,11 @@ result = await service.retrieve(
 
 ---
 
-## 三、与 Clawdbot 对比
+## 三、与 OpenClawCN 对比
 
 ### 3.1 存储架构对比
 
-| 维度 | memU | Clawdbot |
+| 维度 | memU | OpenClawCN |
 |------|------|----------|
 | 存储后端 | PostgreSQL + pgvector | SQLite + sqlite-vec |
 | 文件格式 | 结构化数据库 | Markdown 文件 |
@@ -117,7 +117,7 @@ result = await service.retrieve(
 
 ### 3.2 检索能力对比
 
-| 维度 | memU | Clawdbot |
+| 维度 | memU | OpenClawCN |
 |------|------|----------|
 | 向量搜索 | ✅ | ✅ |
 | 关键词搜索 | ❓ | ✅ BM25 FTS5 |
@@ -127,7 +127,7 @@ result = await service.retrieve(
 
 ### 3.3 主动性对比
 
-| 维度 | memU | Clawdbot |
+| 维度 | memU | OpenClawCN |
 |------|------|----------|
 | 24/7 后台监控 | ✅ | ❌ |
 | 自动记忆提取 | ✅ | ❌ |
@@ -136,7 +136,7 @@ result = await service.retrieve(
 | 预压缩记忆保存 | ❌ | ✅ Memory Flush |
 | 文件监视同步 | ❌ | ✅ chokidar watcher |
 
-### 3.4 Clawdbot 现有优势
+### 3.4 OpenClawCN 现有优势
 
 1. **本地优先**: 无需外部数据库依赖
 2. **透明可控**: Markdown 文件用户可直接编辑
@@ -166,7 +166,7 @@ result = await service.retrieve(
 
 ### 5.1 自动记忆提取 ⭐⭐⭐⭐⭐
 
-**现状**: Clawdbot 仅在预压缩时触发 Memory Flush，被动等待用户主动写入记忆。
+**现状**: OpenClawCN 仅在预压缩时触发 Memory Flush，被动等待用户主动写入记忆。
 
 **借鉴点**: 在会话结束或空闲时自动分析对话，提取重要事实。
 
@@ -188,7 +188,7 @@ async function extractMemoriesFromSession(sessionTranscript: string) {
 
 ### 5.2 三层记忆架构 ⭐⭐⭐⭐
 
-**现状**: Clawdbot 使用扁平的 `memory/YYYY-MM-DD.md` 结构。
+**现状**: OpenClawCN 使用扁平的 `memory/YYYY-MM-DD.md` 结构。
 
 **借鉴点**: 增加结构化层，便于分类检索。
 

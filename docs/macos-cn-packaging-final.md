@@ -1,4 +1,4 @@
-# ClawdbotCN macOS 无证书打包方案（最终版）
+# OpenClawCN macOS 无证书打包方案（最终版）
 
 > 2026-02-09 | 基于深度调研的技术决策
 > 目标：苹果小白用户零命令行安装
@@ -68,7 +68,7 @@ macOS 15 重大变化（2024年秋季）：
   3. 打开"系统设置"
   4. 点击"隐私与安全性"
   5. 滚动到底部找到安全性区域
-  6. 看到"ClawdbotCN 已被阻止" → 点击"仍然打开"
+  6. 看到"OpenClawCN 已被阻止" → 点击"仍然打开"
   7. 输入密码/Touch ID → 确认
 
   macOS 15.1 还出过 Bug：完全无法打开未签名应用（15.2 已修复）
@@ -99,7 +99,7 @@ macOS 15 重大变化（2024年秋季）：
 │  ──────────────────────────────────                      │
 │  对于完全搞不定 Gatekeeper 的用户：                       │
 │  打开终端，粘贴一行命令：                                 │
-│  curl -fsSL https://oss.clawdbot.cn/install.sh | bash   │
+│  curl -fsSL https://oss.openclawcn.cn/install.sh | bash   │
 │                                                          │
 │  原理：curl 下载的内容不带隔离属性                        │
 │  效果：完全绕过 Gatekeeper，零警告                        │
@@ -115,12 +115,12 @@ macOS 15 重大变化（2024年秋季）：
 不使用 Swift/Xcode，直接用 shell 脚本构建 .app bundle：
 
 ```
-ClawdbotCN.app/
+OpenClawCN.app/
 ├── Contents/
 │   ├── Info.plist                    # 应用元数据
 │   ├── PkgInfo                       # "APPL????"
 │   ├── MacOS/
-│   │   └── ClawdbotCN               # ★ Shell 脚本入口（非编译二进制）
+│   │   └── OpenClawCN               # ★ Shell 脚本入口（非编译二进制）
 │   └── Resources/
 │       ├── AppIcon.icns              # 应用图标
 │       ├── node/                     # 内嵌 Node.js Universal Binary
@@ -143,11 +143,11 @@ ClawdbotCN.app/
 │       └── version.json             # 版本信息
 ```
 
-### 3.2 核心启动脚本 (`Contents/MacOS/ClawdbotCN`)
+### 3.2 核心启动脚本 (`Contents/MacOS/OpenClawCN`)
 
 ```bash
 #!/bin/bash
-# ClawdbotCN macOS 启动脚本
+# OpenClawCN macOS 启动脚本
 # 这是一个 shell 脚本，不是编译的二进制
 # macOS 会用 /bin/bash（系统自带，已签名）来执行
 
@@ -159,8 +159,8 @@ RESOURCES="$MACOS_DIR/../Resources"
 NODE_BIN="$RESOURCES/node/bin/node"
 GATEWAY_DIR="$RESOURCES/gateway"
 TOOLS_DIR="$RESOURCES/tools"
-STATE_DIR="$HOME/Library/Application Support/ClawdbotCN"
-LOG_DIR="$HOME/Library/Logs/ClawdbotCN"
+STATE_DIR="$HOME/Library/Application Support/OpenClawCN"
+LOG_DIR="$HOME/Library/Logs/OpenClawCN"
 PORT=18789
 
 export PATH="$RESOURCES/node/bin:$TOOLS_DIR:$PATH"
@@ -187,7 +187,7 @@ if ! "$NODE_BIN" --version >/dev/null 2>&1; then
 
     # 再次检查
     if ! "$NODE_BIN" --version >/dev/null 2>&1; then
-        osascript -e 'display dialog "Node.js 运行时初始化失败。\n\n请尝试在终端运行：\nxattr -cr /Applications/ClawdbotCN.app\n\n或使用一键安装命令：\ncurl -fsSL https://oss.clawdbot.cn/install.sh | bash" with title "ClawdbotCN" buttons {"好"} default button 1 with icon stop'
+        osascript -e 'display dialog "Node.js 运行时初始化失败。\n\n请尝试在终端运行：\nxattr -cr /Applications/OpenClawCN.app\n\n或使用一键安装命令：\ncurl -fsSL https://oss.openclawcn.cn/install.sh | bash" with title "OpenClawCN" buttons {"好"} default button 1 with icon stop'
         exit 1
     fi
 fi
@@ -199,10 +199,10 @@ mkdir -p "$STATE_DIR/tools" 2>/dev/null || true
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 # ── 设置环境变量 ──
-export CLAWDBOT_BUNDLED_SKILLS_DIR="$RESOURCES/gateway/skills"
-export CLAWDBOT_BUNDLED_TOOLS_DIR="$TOOLS_DIR"
-export CLAWDBOT_BUNDLED_PLUGINS_DIR="$RESOURCES/gateway/extensions"
-export CLAWDBOT_STATE_DIR="$STATE_DIR"
+export OPENCLAWCN_BUNDLED_SKILLS_DIR="$RESOURCES/gateway/skills"
+export OPENCLAWCN_BUNDLED_TOOLS_DIR="$TOOLS_DIR"
+export OPENCLAWCN_BUNDLED_PLUGINS_DIR="$RESOURCES/gateway/extensions"
+export OPENCLAWCN_STATE_DIR="$STATE_DIR"
 export NODE_ENV=production
 
 # ── 检查端口 ──
@@ -232,17 +232,17 @@ exec "$NODE_BIN" dist/entry.js gateway run --port "$PORT" \
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>ClawdbotCN</string>
+    <string>OpenClawCN</string>
     <key>CFBundleDisplayName</key>
-    <string>ClawdbotCN</string>
+    <string>OpenClawCN</string>
     <key>CFBundleIdentifier</key>
-    <string>cn.clawdbot.mac</string>
+    <string>cn.openclawcn.mac</string>
     <key>CFBundleVersion</key>
     <string>2026.2.0</string>
     <key>CFBundleShortVersionString</key>
     <string>2026.2.0</string>
     <key>CFBundleExecutable</key>
-    <string>ClawdbotCN</string>
+    <string>OpenClawCN</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -256,7 +256,7 @@ exec "$NODE_BIN" dist/entry.js gateway run --port "$PORT" \
     <key>LSUIElement</key>
     <false/>
     <key>NSHumanReadableCopyright</key>
-    <string>ClawdbotCN 2026</string>
+    <string>OpenClawCN 2026</string>
 </dict>
 </plist>
 ```
@@ -280,12 +280,12 @@ exec "$NODE_BIN" dist/entry.js gateway run --port "$PORT" \
 │   │     4. 输入密码确认                           │  │
 │   │                                              │  │
 │   │  💡 也可以在终端粘贴一行命令自动安装：        │  │
-│   │     curl -fsSL oss.clawdbot.cn/i | bash      │  │
+│   │     curl -fsSL oss.openclawcn.cn/i | bash      │  │
 │   └──────────────────────────────────────────────┘  │
 │                                                     │
 │      ┌──────────┐           ┌──────────────┐       │
 │      │          │           │              │       │
-│      │ Clawdbot │    →→→    │ Applications │       │
+│      │ OpenClawCN │    →→→    │ Applications │       │
 │      │   CN     │           │    文件夹     │       │
 │      │          │           │              │       │
 │      └──────────┘           └──────────────┘       │
@@ -299,9 +299,9 @@ exec "$NODE_BIN" dist/entry.js gateway run --port "$PORT" \
 #!/bin/bash
 # build/scripts/create-cn-dmg.sh
 
-APP_PATH="$1"                              # ClawdbotCN.app 路径
+APP_PATH="$1"                              # OpenClawCN.app 路径
 VERSION="${2:-$(date +%Y.%-m.0)}"
-DMG_NAME="ClawdbotCN-macOS-v${VERSION}-universal"
+DMG_NAME="OpenClawCN-macOS-v${VERSION}-universal"
 DMG_TEMP="build/dmg-temp"
 DMG_FINAL="build/output/${DMG_NAME}.dmg"
 BG_IMAGE="build/macos/dmg-background-cn.png"  # 中文背景图
@@ -318,12 +318,12 @@ ln -s /Applications "$DMG_TEMP/Applications"
 
 # 复制 README
 cat > "$DMG_TEMP/安装说明.txt" << 'README'
-ClawdbotCN 安装说明
+OpenClawCN 安装说明
 ==================
 
 方法一：拖拽安装（推荐）
-  1. 将 ClawdbotCN 图标拖到 Applications 文件夹
-  2. 打开 启动台(Launchpad)，找到 ClawdbotCN
+  1. 将 OpenClawCN 图标拖到 Applications 文件夹
+  2. 打开 启动台(Launchpad)，找到 OpenClawCN
   3. 双击打开
   4. 如果提示"无法验证开发者"：
      → 打开「系统设置」→「隐私与安全性」
@@ -333,7 +333,7 @@ ClawdbotCN 安装说明
 方法二：终端一键安装（如果方法一不行）
   1. 打开「终端」(在 启动台 → 其他 → 终端)
   2. 粘贴这行命令，按回车：
-     curl -fsSL https://oss.clawdbot.cn/install.sh | bash
+     curl -fsSL https://oss.openclawcn.cn/install.sh | bash
 
 启动后会自动打开浏览器配置页面。
 README
@@ -364,7 +364,7 @@ tell application "Finder"
         set arrangement of theViewOptions to not arranged
         set icon size of theViewOptions to 100
         set background picture of theViewOptions to file ".background:background.png"
-        set position of item "ClawdbotCN.app" of container window to {160, 320}
+        set position of item "OpenClawCN.app" of container window to {160, 320}
         set position of item "Applications" of container window to {460, 320}
         set position of item "安装说明.txt" of container window to {310, 445}
         close
@@ -399,21 +399,21 @@ echo "大小: $(du -h "$DMG_FINAL" | cut -f1)"
 ```
 用户操作                          系统行为
 ─────────                        ──────
-① 下载 ClawdbotCN.dmg            浏览器下载 ~140MB
+① 下载 OpenClawCN.dmg            浏览器下载 ~140MB
         ↓
 ② 双击 .dmg 文件                 DMG 正常挂载（不触发 Gatekeeper）
         ↓                        显示 DMG 窗口 + 中文背景指引
         ↓
-③ 拖 ClawdbotCN.app             复制到 /Applications/
+③ 拖 OpenClawCN.app             复制到 /Applications/
    到 Applications 文件夹
         ↓
 ④ 弹出 DMG                      关闭虚拟磁盘
         ↓
-⑤ 在启动台找到 ClawdbotCN        显示应用图标
+⑤ 在启动台找到 OpenClawCN        显示应用图标
    双击打开
         ↓
    ┌─ macOS 弹出 ─────────────────────────────────┐
-   │ "ClawdbotCN"无法打开，因为 Apple 无法检查      │
+   │ "OpenClawCN"无法打开，因为 Apple 无法检查      │
    │  其是否包含恶意软件。                           │
    │                              [好的]            │
    └───────────────────────────────────────────────┘
@@ -425,7 +425,7 @@ echo "大小: $(du -h "$DMG_FINAL" | cut -f1)"
    → 滚动到底部
         ↓
    ┌─ 安全性区域 ─────────────────────────────────┐
-   │ "ClawdbotCN"已被阻止使用，                     │
+   │ "OpenClawCN"已被阻止使用，                     │
    │  因为来自身份不明的开发者。                      │
    │                         [仍然打开]             │
    └───────────────────────────────────────────────┘
@@ -433,7 +433,7 @@ echo "大小: $(du -h "$DMG_FINAL" | cut -f1)"
 ⑧ 点击「仍然打开」               弹出密码/Touch ID 验证
    输入密码确认
         ↓
-⑨ ClawdbotCN 启动！              脚本自动执行：
+⑨ OpenClawCN 启动！              脚本自动执行：
                                   1. xattr -cr（修复内部二进制）
                                   2. 启动 Node.js Gateway
                                   3. 3秒后打开浏览器
@@ -457,14 +457,14 @@ echo "大小: $(du -h "$DMG_FINAL" | cut -f1)"
    (或 Spotlight 搜索 "终端")
 
 ② 粘贴命令，按回车：
-   curl -fsSL https://oss.clawdbot.cn/install.sh | bash
+   curl -fsSL https://oss.openclawcn.cn/install.sh | bash
 
         ↓                        curl 下载的内容不带隔离属性！
                                  → 完全绕过 Gatekeeper
 
    ┌─ 终端输出 ────────────────────────────────────┐
    │                                               │
-   │  ClawdbotCN macOS 安装程序                     │
+   │  OpenClawCN macOS 安装程序                     │
    │  ═══════════════════════                      │
    │                                               │
    │  [1/6] 检测系统环境...                         │
@@ -473,7 +473,7 @@ echo "大小: $(du -h "$DMG_FINAL" | cut -f1)"
    │        国内网络，使用 CN 镜像加速               │
    │  [3/6] 下载安装包 (140MB)...                   │
    │        ████████████████████ 100% (12.3 MB/s)  │
-   │  [4/6] 安装到 /Applications/ClawdbotCN.app...  │
+   │  [4/6] 安装到 /Applications/OpenClawCN.app...  │
    │        解压完成，设置权限                       │
    │  [5/6] 启动 Gateway 服务...                    │
    │        Gateway 已在端口 18789 启动              │
@@ -481,7 +481,7 @@ echo "大小: $(du -h "$DMG_FINAL" | cut -f1)"
    │        浏览器已打开 http://localhost:18789      │
    │                                               │
    │  ✓ 安装完成！                                  │
-   │  以后双击启动台中的 ClawdbotCN 即可使用         │
+   │  以后双击启动台中的 OpenClawCN 即可使用         │
    │                                               │
    └───────────────────────────────────────────────┘
 ```
@@ -505,8 +505,8 @@ echo "大小: $(du -h "$DMG_FINAL" | cut -f1)"
 
 ```bash
 #!/bin/bash
-# ClawdbotCN macOS 一键安装脚本
-# 用法: curl -fsSL https://oss.clawdbot.cn/install.sh | bash
+# OpenClawCN macOS 一键安装脚本
+# 用法: curl -fsSL https://oss.openclawcn.cn/install.sh | bash
 #
 # 原理：通过 curl 管道执行的脚本创建的文件不带隔离属性
 # 效果：完全绕过 macOS Gatekeeper
@@ -524,16 +524,16 @@ BOLD='\033[1m'
 
 # ── 配置 ──
 VERSION="2026.2.0"
-INSTALL_DIR="/Applications/ClawdbotCN.app"
-STATE_DIR="$HOME/Library/Application Support/ClawdbotCN"
-LOG_DIR="$HOME/Library/Logs/ClawdbotCN"
+INSTALL_DIR="/Applications/OpenClawCN.app"
+STATE_DIR="$HOME/Library/Application Support/OpenClawCN"
+LOG_DIR="$HOME/Library/Logs/OpenClawCN"
 PORT=18789
 
 # CDN 镜像列表（按优先级）
 CDN_MIRRORS=(
-    "https://oss.clawdbot.cn/macos/releases"
-    "https://cos.clawdbot.cn/macos/releases"
-    "https://gh-proxy.com/https://github.com/clawdbot/releases/download"
+    "https://oss.openclawcn.cn/macos/releases"
+    "https://cos.openclawcn.cn/macos/releases"
+    "https://gh-proxy.com/https://github.com/openclawcn/releases/download"
 )
 
 # ── 工具函数 ──
@@ -548,7 +548,7 @@ TOTAL_STEPS=6
 # ── 主流程 ──
 main() {
     echo ""
-    info "  ClawdbotCN macOS 安装程序"
+    info "  OpenClawCN macOS 安装程序"
     info "  ═══════════════════════"
     echo ""
 
@@ -580,8 +580,8 @@ main() {
     success "安装完成！"
     echo ""
     echo "  以后使用方法："
-    echo "    • 在启动台(Launchpad)中找到 ClawdbotCN，双击启动"
-    echo "    • 或在终端运行: open /Applications/ClawdbotCN.app"
+    echo "    • 在启动台(Launchpad)中找到 OpenClawCN，双击启动"
+    echo "    • 或在终端运行: open /Applications/OpenClawCN.app"
     echo ""
     echo "  配置页面: http://localhost:$PORT"
     echo ""
@@ -646,7 +646,7 @@ detect_network() {
 }
 
 download_package() {
-    local filename="ClawdbotCN-macOS-v${VERSION}-universal.tar.gz"
+    local filename="OpenClawCN-macOS-v${VERSION}-universal.tar.gz"
     local download_dir
     download_dir=$(mktemp -d)
     local download_path="$download_dir/$filename"
@@ -686,7 +686,7 @@ install_app() {
     # 停止已有实例
     if lsof -i ":$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
         warn "检测到已运行的实例，正在停止..."
-        pkill -f "ClawdbotCN.*gateway" 2>/dev/null || true
+        pkill -f "OpenClawCN.*gateway" 2>/dev/null || true
         sleep 2
     fi
 
@@ -703,16 +703,16 @@ install_app() {
 
     # 找到 .app 目录
     local app_dir
-    app_dir=$(find "$temp_extract" -name "ClawdbotCN.app" -maxdepth 2 -type d | head -1)
+    app_dir=$(find "$temp_extract" -name "OpenClawCN.app" -maxdepth 2 -type d | head -1)
     if [ -z "$app_dir" ]; then
-        error "安装包结构异常：找不到 ClawdbotCN.app"
+        error "安装包结构异常：找不到 OpenClawCN.app"
     fi
 
     # 移动到 Applications
     mv "$app_dir" "$INSTALL_DIR"
 
     # 设置权限（关键：通过 curl 安装不需要 xattr，但权限仍需设置）
-    chmod +x "$INSTALL_DIR/Contents/MacOS/ClawdbotCN"
+    chmod +x "$INSTALL_DIR/Contents/MacOS/OpenClawCN"
     chmod +x "$INSTALL_DIR/Contents/Resources/node/bin/node" 2>/dev/null || true
     find "$INSTALL_DIR/Contents/Resources/tools" -type f -exec chmod +x {} \; 2>/dev/null || true
 
@@ -741,10 +741,10 @@ start_gateway() {
     local gateway_dir="$INSTALL_DIR/Contents/Resources/gateway"
 
     export PATH="$(dirname "$node_bin"):$INSTALL_DIR/Contents/Resources/tools:$PATH"
-    export CLAWDBOT_BUNDLED_SKILLS_DIR="$gateway_dir/skills"
-    export CLAWDBOT_BUNDLED_TOOLS_DIR="$INSTALL_DIR/Contents/Resources/tools"
-    export CLAWDBOT_BUNDLED_PLUGINS_DIR="$gateway_dir/extensions"
-    export CLAWDBOT_STATE_DIR="$STATE_DIR"
+    export OPENCLAWCN_BUNDLED_SKILLS_DIR="$gateway_dir/skills"
+    export OPENCLAWCN_BUNDLED_TOOLS_DIR="$INSTALL_DIR/Contents/Resources/tools"
+    export OPENCLAWCN_BUNDLED_PLUGINS_DIR="$gateway_dir/extensions"
+    export OPENCLAWCN_STATE_DIR="$STATE_DIR"
     export NODE_ENV=production
 
     # 后台启动
@@ -784,7 +784,7 @@ main "$@"
 
 ```bash
 #!/bin/bash
-# ClawdbotCN macOS 一键构建脚本（无 Swift，无 Xcode 依赖）
+# OpenClawCN macOS 一键构建脚本（无 Swift，无 Xcode 依赖）
 # 用法:
 #   ./build/scripts/build-macos-cn.sh                  # 自动检测
 #   ./build/scripts/build-macos-cn.sh --cn             # 强制使用国内镜像
@@ -804,7 +804,7 @@ SKIP_BUILD="${SKIP_BUILD:-false}"
 USE_CN="${USE_CN:-auto}"
 
 echo "╔═══════════════════════════════════════════╗"
-echo "║  ClawdbotCN macOS 构建 v${VERSION}          ║"
+echo "║  OpenClawCN macOS 构建 v${VERSION}          ║"
 echo "║  架构: ${ARCH} | Node: ${NODE_VERSION}            ║"
 echo "╚═══════════════════════════════════════════╝"
 echo ""
@@ -882,9 +882,9 @@ case "$ARCH" in
 esac
 
 # ── Step 5: 组装 .app ──
-echo "[5/7] 组装 ClawdbotCN.app..."
+echo "[5/7] 组装 OpenClawCN.app..."
 rm -rf "$STAGING_DIR"
-APP_DIR="$STAGING_DIR/ClawdbotCN.app/Contents"
+APP_DIR="$STAGING_DIR/OpenClawCN.app/Contents"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources/node/bin"
 mkdir -p "$APP_DIR/Resources/gateway"
@@ -896,12 +896,12 @@ cat > "$APP_DIR/Info.plist" << PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>ClawdbotCN</string>
-    <key>CFBundleDisplayName</key><string>ClawdbotCN</string>
-    <key>CFBundleIdentifier</key><string>cn.clawdbot.mac</string>
+    <key>CFBundleName</key><string>OpenClawCN</string>
+    <key>CFBundleDisplayName</key><string>OpenClawCN</string>
+    <key>CFBundleIdentifier</key><string>cn.openclawcn.mac</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleExecutable</key><string>ClawdbotCN</string>
+    <key>CFBundleExecutable</key><string>OpenClawCN</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSMinimumSystemVersion</key><string>12.0</string>
@@ -915,8 +915,8 @@ echo "APPL????" > "$APP_DIR/PkgInfo"
 # 启动脚本（核心）
 # [从上面第三章 3.2 节的脚本复制到这里]
 # 由于内容较长，实际构建时从 build/macos/launcher.sh 模板复制
-cp "$SCRIPT_DIR/../macos/launcher.sh" "$APP_DIR/MacOS/ClawdbotCN"
-chmod +x "$APP_DIR/MacOS/ClawdbotCN"
+cp "$SCRIPT_DIR/../macos/launcher.sh" "$APP_DIR/MacOS/OpenClawCN"
+chmod +x "$APP_DIR/MacOS/OpenClawCN"
 
 # 复制 Node.js
 cp "$NODE_BIN_DIR/node" "$APP_DIR/Resources/node/bin/"
@@ -982,40 +982,40 @@ find "$NM_DIR" -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true
 # Ad-hoc 签名
 codesign --sign - --force "$APP_DIR/Resources/node/bin/node" 2>/dev/null || true
 find "$APP_DIR/Resources/tools" -type f -exec codesign --sign - --force {} \; 2>/dev/null || true
-codesign --sign - --force "$STAGING_DIR/ClawdbotCN.app" 2>/dev/null || true
+codesign --sign - --force "$STAGING_DIR/OpenClawCN.app" 2>/dev/null || true
 
-echo "  清理后大小: $(du -sh "$STAGING_DIR/ClawdbotCN.app" | cut -f1)"
+echo "  清理后大小: $(du -sh "$STAGING_DIR/OpenClawCN.app" | cut -f1)"
 
 # ── Step 7: 打包 ──
 echo "[7/7] 创建发行包..."
 mkdir -p "$BUILD_DIR"
 
 # tar.gz（用于 curl 安装）
-tar -czf "$BUILD_DIR/ClawdbotCN-macOS-v${VERSION}-${ARCH}.tar.gz" \
-    -C "$STAGING_DIR" ClawdbotCN.app
+tar -czf "$BUILD_DIR/OpenClawCN-macOS-v${VERSION}-${ARCH}.tar.gz" \
+    -C "$STAGING_DIR" OpenClawCN.app
 
 # DMG
 if command -v hdiutil >/dev/null 2>&1; then
     bash "$SCRIPT_DIR/create-cn-dmg.sh" \
-        "$STAGING_DIR/ClawdbotCN.app" "$VERSION"
+        "$STAGING_DIR/OpenClawCN.app" "$VERSION"
 fi
 
 # ZIP
 if command -v ditto >/dev/null 2>&1; then
     ditto -c -k --sequesterRsrc \
-        "$STAGING_DIR/ClawdbotCN.app" \
-        "$BUILD_DIR/ClawdbotCN-macOS-v${VERSION}-${ARCH}.zip"
+        "$STAGING_DIR/OpenClawCN.app" \
+        "$BUILD_DIR/OpenClawCN-macOS-v${VERSION}-${ARCH}.zip"
 fi
 
 # 校验和
 cd "$BUILD_DIR"
-shasum -a 256 ClawdbotCN-macOS-v${VERSION}-${ARCH}.* > "SHA256SUMS-${VERSION}.txt" 2>/dev/null
+shasum -a 256 OpenClawCN-macOS-v${VERSION}-${ARCH}.* > "SHA256SUMS-${VERSION}.txt" 2>/dev/null
 
 echo ""
 echo "╔═══════════════════════════════════════════╗"
 echo "║  构建完成！                                ║"
 echo "╠═══════════════════════════════════════════╣"
-ls -lh "$BUILD_DIR"/ClawdbotCN-macOS-v${VERSION}* 2>/dev/null | \
+ls -lh "$BUILD_DIR"/OpenClawCN-macOS-v${VERSION}* 2>/dev/null | \
     awk '{printf "║  %-40s %s ║\n", $NF, $5}'
 echo "╚═══════════════════════════════════════════╝"
 ```
@@ -1027,12 +1027,12 @@ echo "╚═══════════════════════�
 ### 8.1 启动（双击 .app 后的体验）
 
 ```
-用户双击 ClawdbotCN.app
+用户双击 OpenClawCN.app
     ↓
 浏览器自动打开 http://localhost:18789
     ↓
 ┌─────────────────────────────────────────┐
-│  ClawdbotCN 控制面板                     │
+│  OpenClawCN 控制面板                     │
 │  ─────────────────                      │
 │                                         │
 │  状态: ✅ 运行中                         │
@@ -1066,7 +1066,7 @@ echo "╚═══════════════════════�
 
 方式二：
   重新执行 curl 命令（自动覆盖旧版本）
-  curl -fsSL https://oss.clawdbot.cn/install.sh | bash
+  curl -fsSL https://oss.openclawcn.cn/install.sh | bash
 ```
 
 ---

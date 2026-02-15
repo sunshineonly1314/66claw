@@ -180,7 +180,7 @@ export type AppViewState = {
   skillEdits: Record<string, string>;
   skillMessages: Record<string, SkillMessage>;
   skillsBusyKey: string | null;
-  skillsActiveTab: "active" | "library" | "blocked";
+  skillsActiveTab: "active" | "library" | "blocked" | "mcp-store";
   skillsRemoteLoading: boolean;
   skillsRemoteIndex: RemoteSkillsIndex | null;
   skillsRemoteError: string | null;

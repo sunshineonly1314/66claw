@@ -1,7 +1,7 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# ClawdbotCN macOS 一键安装脚本
-# 用法: curl -fsSL https://oss.clawdbot.cn/install.sh | bash
+# OpenClawCN macOS 一键安装脚本
+# 用法: curl -fsSL https://oss.openclawcn.cn/install.sh | bash
 #
 # 通过 curl 管道执行的文件不带隔离属性 → 完全绕过 Gatekeeper
 # ═══════════════════════════════════════════════════════════════
@@ -25,24 +25,24 @@ step() { echo -e "\n${C}[$1/$TOTAL]${NC} ${W}$2${NC}"; }
 
 TOTAL=6
 VERSION="2026.2.0"
-INSTALL_DIR="/Applications/ClawdbotCN.app"
-STATE_DIR="$HOME/Library/Application Support/ClawdbotCN"
-LOG_DIR="$HOME/Library/Logs/ClawdbotCN"
-CACHE_DIR="$HOME/Library/Caches/ClawdbotCN"
+INSTALL_DIR="/Applications/OpenClawCN.app"
+STATE_DIR="$HOME/Library/Application Support/OpenClawCN"
+LOG_DIR="$HOME/Library/Logs/OpenClawCN"
+CACHE_DIR="$HOME/Library/Caches/OpenClawCN"
 PORT=18789
 MOUNT_POINT=""
 
 # DMG 下载源 (按优先级)
 CDN_MIRRORS=(
-    "https://oss.clawdbot.cn/macos/releases"
-    "https://cos.clawdbot.cn/macos/releases"
+    "https://oss.openclawcn.cn/macos/releases"
+    "https://cos.openclawcn.cn/macos/releases"
 )
 INTL_MIRRORS=(
-    "https://github.com/clawdbot/releases/download/v${VERSION}"
+    "https://github.com/openclawcn/releases/download/v${VERSION}"
 )
 
 echo ""
-echo -e "${W}  ClawdbotCN macOS 安装程序${NC}"
+echo -e "${W}  OpenClawCN macOS 安装程序${NC}"
 echo -e "${W}  ═══════════════════════${NC}"
 echo ""
 
@@ -69,10 +69,10 @@ FREE_MB=$(df -m /Applications 2>/dev/null | tail -1 | awk '{print $4}')
 [ "${FREE_MB:-0}" -gt 500 ] || fail "磁盘空间不足 (需要 500MB, 可用 ${FREE_MB}MB)"
 
 # 写入权限检查
-if ! touch /Applications/.clawdbot-write-test 2>/dev/null; then
-    fail "/Applications 目录无写入权限。请尝试:\n  sudo bash -c \"\$(curl -fsSL https://oss.clawdbot.cn/install.sh)\""
+if ! touch /Applications/.openclawcn-write-test 2>/dev/null; then
+    fail "/Applications 目录无写入权限。请尝试:\n  sudo bash -c \"\$(curl -fsSL https://oss.openclawcn.cn/install.sh)\""
 fi
-rm -f /Applications/.clawdbot-write-test 2>/dev/null || true
+rm -f /Applications/.openclawcn-write-test 2>/dev/null || true
 
 ok "macOS $MACOS_VER / $ARCH_LABEL / 可用 ${FREE_MB}MB"
 
@@ -103,7 +103,7 @@ fi
 # ═══════════════════════════════════════════════════════════════
 step 3 "下载安装包"
 
-DMG_NAME="ClawdbotCN-macOS-v${VERSION}-universal.dmg"
+DMG_NAME="OpenClawCN-macOS-v${VERSION}-universal.dmg"
 TEMP_DIR=$(mktemp -d)
 DMG_PATH="$TEMP_DIR/$DMG_NAME"
 DOWNLOADED=false
@@ -136,7 +136,7 @@ $DOWNLOADED || fail "所有镜像下载失败。请检查网络后重试。"
 step 4 "安装应用"
 
 # 先卸载 LaunchAgent (如果存在)
-LAUNCH_AGENT_LABEL="cn.clawdbot.gateway"
+LAUNCH_AGENT_LABEL="cn.openclawcn.gateway"
 LAUNCH_AGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist"
 if launchctl list "$LAUNCH_AGENT_LABEL" >/dev/null 2>&1; then
     launchctl bootout "gui/$(id -u)/$LAUNCH_AGENT_LABEL" 2>/dev/null || \
@@ -180,7 +180,7 @@ if [ -d "$INSTALL_DIR" ]; then
     warn "检测到旧版本, 备份到: $(basename "$BACKUP")"
     if ! mv "$INSTALL_DIR" "$BACKUP"; then
         warn "备份失败 (应用可能正在被 Finder 使用), 尝试强制替换..."
-        rm -rf "$INSTALL_DIR" || fail "无法删除旧版本。请手动关闭 ClawdbotCN 后重试。"
+        rm -rf "$INSTALL_DIR" || fail "无法删除旧版本。请手动关闭 OpenClawCN 后重试。"
     fi
 fi
 
@@ -190,16 +190,16 @@ MOUNT_POINT=$(echo "$MOUNT_INFO" | tail -1 | awk '{$1=$2=""; print $0}' | sed 's
 
 if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT" ]; then
     # 如果挂载失败, 尝试从 /Volumes 找
-    MOUNT_POINT=$(ls -d /Volumes/ClawdbotCN* 2>/dev/null | head -1)
+    MOUNT_POINT=$(ls -d /Volumes/OpenClawCN* 2>/dev/null | head -1)
 fi
 
-if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT/ClawdbotCN.app" ]; then
+if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT/OpenClawCN.app" ]; then
     fail "DMG 挂载失败或内容异常"
 fi
 
 # 复制 (通过 curl 安装的不带隔离属性!)
-if ! cp -R "$MOUNT_POINT/ClawdbotCN.app" /Applications/; then
-    fail "复制 ClawdbotCN.app 到 /Applications 失败。请检查磁盘空间和权限。"
+if ! cp -R "$MOUNT_POINT/OpenClawCN.app" /Applications/; then
+    fail "复制 OpenClawCN.app 到 /Applications 失败。请检查磁盘空间和权限。"
 fi
 hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true
 MOUNT_POINT=""  # 已卸载, 清空变量防止 trap 重复卸载
@@ -208,7 +208,7 @@ MOUNT_POINT=""  # 已卸载, 清空变量防止 trap 重复卸载
 xattr -cr "$INSTALL_DIR" 2>/dev/null || true
 
 # 设置权限
-chmod +x "$INSTALL_DIR/Contents/MacOS/ClawdbotCN"
+chmod +x "$INSTALL_DIR/Contents/MacOS/OpenClawCN"
 chmod +x "$INSTALL_DIR/Contents/Resources/node/bin/node" 2>/dev/null || true
 find "$INSTALL_DIR/Contents/Resources/tools" -type f -exec chmod +x {} \; 2>/dev/null || true
 
@@ -230,15 +230,15 @@ mkdir -p "$LOG_DIR"
 mkdir -p "$CACHE_DIR"
 
 # 迁移旧配置
-LEGACY="$HOME/.clawdbot"
+LEGACY="$HOME/.openclawcn"
 if [ -d "$LEGACY" ] && [ ! -f "$STATE_DIR/.migrated" ]; then
-    [ -f "$LEGACY/clawdbot.json" ] && [ ! -f "$STATE_DIR/config/clawdbot.json" ] && \
-        cp "$LEGACY/clawdbot.json" "$STATE_DIR/config/" 2>/dev/null || true
+    [ -f "$LEGACY/openclawcn.json" ] && [ ! -f "$STATE_DIR/config/openclawcn.json" ] && \
+        cp "$LEGACY/openclawcn.json" "$STATE_DIR/config/" 2>/dev/null || true
     # 凭据迁移
     [ -d "$LEGACY/credentials" ] && \
         cp -R "$LEGACY/credentials/"* "$STATE_DIR/credentials/" 2>/dev/null || true
     touch "$STATE_DIR/.migrated"
-    ok "已从 ~/.clawdbot 迁移配置"
+    ok "已从 ~/.openclawcn 迁移配置"
 fi
 
 # 写入网络配置
@@ -252,7 +252,7 @@ cat > "$STATE_DIR/config/network-profile.json" << NETJSON
 NETJSON
 
 # 清理 3 天前的备份
-find /Applications -maxdepth 1 -name "ClawdbotCN.app.backup.*" -mtime +3 -exec rm -rf {} \; 2>/dev/null || true
+find /Applications -maxdepth 1 -name "OpenClawCN.app.backup.*" -mtime +3 -exec rm -rf {} \; 2>/dev/null || true
 
 ok "安装到 $INSTALL_DIR"
 
@@ -266,19 +266,19 @@ GATEWAY_DIR="$INSTALL_DIR/Contents/Resources/gateway"
 TOOLS_DIR="$INSTALL_DIR/Contents/Resources/tools"
 
 export PATH="$(dirname "$NODE_BIN"):$TOOLS_DIR:$PATH"
-export CLAWDBOT_BUNDLED_SKILLS_DIR="$GATEWAY_DIR/skills"
-export CLAWDBOT_BUNDLED_TOOLS_DIR="$TOOLS_DIR"
-export CLAWDBOT_BUNDLED_PLUGINS_DIR="$GATEWAY_DIR/extensions"
-export CLAWDBOT_STATE_DIR="$STATE_DIR"
-export CLAWDBOT_GATEWAY_TOKEN="clawdbot2026"
-export CLAWDBOT_REGION=cn
+export OPENCLAWCN_BUNDLED_SKILLS_DIR="$GATEWAY_DIR/skills"
+export OPENCLAWCN_BUNDLED_TOOLS_DIR="$TOOLS_DIR"
+export OPENCLAWCN_BUNDLED_PLUGINS_DIR="$GATEWAY_DIR/extensions"
+export OPENCLAWCN_STATE_DIR="$STATE_DIR"
+export OPENCLAWCN_GATEWAY_TOKEN="openclawcn2026"
+export OPENCLAWCN_REGION=cn
 export NODE_ENV=production
 
 # 清理残留锁文件
 rm -f "$STATE_DIR/gateway.lock" 2>/dev/null || true
-rm -f "$HOME/.clawdbot/gateway.lock" 2>/dev/null || true
-rm -f /tmp/clawdbot-"$(id -u)"/gateway.*.lock 2>/dev/null || true
-rm -f /tmp/clawdbot-"$(id -u)"/gateway.*.heartbeat 2>/dev/null || true
+rm -f "$HOME/.openclawcn/gateway.lock" 2>/dev/null || true
+rm -f /tmp/openclawcn-"$(id -u)"/gateway.*.lock 2>/dev/null || true
+rm -f /tmp/openclawcn-"$(id -u)"/gateway.*.heartbeat 2>/dev/null || true
 
 # 后台启动
 cd "$GATEWAY_DIR"
@@ -315,7 +315,7 @@ fi
 step 6 "打开配置页面"
 
 # 检测是首次还是已配置
-CONFIG_FILE="$STATE_DIR/config/clawdbot.json"
+CONFIG_FILE="$STATE_DIR/config/openclawcn.json"
 if [ -f "$CONFIG_FILE" ] && grep -q '"providers"' "$CONFIG_FILE" 2>/dev/null; then
     TARGET="http://localhost:$PORT/"
 else
@@ -333,18 +333,18 @@ echo ""
 echo -e "${G}  ✓ 安装完成!${NC}"
 echo ""
 echo "  以后使用方法:"
-echo "    • 在启动台(Launchpad)找到 ClawdbotCN, 双击启动"
-echo "    • 或在终端运行: open /Applications/ClawdbotCN.app"
+echo "    • 在启动台(Launchpad)找到 OpenClawCN, 双击启动"
+echo "    • 或在终端运行: open /Applications/OpenClawCN.app"
 echo ""
 echo "  配置页面: http://localhost:$PORT"
 echo "  日志位置: $LOG_DIR/"
 echo ""
 echo "  停止 Gateway:"
-echo "    launchctl unload ~/Library/LaunchAgents/cn.clawdbot.gateway.plist 2>/dev/null"
-echo "    kill \$(cat ~/Library/Application\\ Support/ClawdbotCN/gateway.pid) 2>/dev/null"
+echo "    launchctl unload ~/Library/LaunchAgents/cn.openclawcn.gateway.plist 2>/dev/null"
+echo "    kill \$(cat ~/Library/Application\\ Support/OpenClawCN/gateway.pid) 2>/dev/null"
 echo ""
 echo "  卸载方法:"
-echo "    bash /Applications/ClawdbotCN.app/Contents/Resources/uninstall.sh"
+echo "    bash /Applications/OpenClawCN.app/Contents/Resources/uninstall.sh"
 echo "    # 完全清除 (含配置数据):"
-echo "    bash /Applications/ClawdbotCN.app/Contents/Resources/uninstall.sh --all"
+echo "    bash /Applications/OpenClawCN.app/Contents/Resources/uninstall.sh --all"
 echo ""

@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Configuration
-SUBSYSTEM="com.clawdbot"
+SUBSYSTEM="com.openclawcn"
 DEFAULT_LEVEL="info"
 
 # Colors for output
@@ -48,17 +48,17 @@ SHOW_HELP=false
 # Function to show usage
 show_usage() {
     cat << EOF
-clawlog - Clawdbot Logging Utility
+clawlog - OpenClawCN Logging Utility
 
 USAGE:
     clawlog [OPTIONS]
 
 DESCRIPTION:
-    View Clawdbot logs with full details (bypasses Apple's privacy redaction).
+    View OpenClawCN logs with full details (bypasses Apple's privacy redaction).
     Requires sudo access configured for /usr/bin/log command.
 
 LOG FLOW ARCHITECTURE:
-    Clawdbot logs flow through the macOS unified log (subsystem: com.clawdbot).
+    OpenClawCN logs flow through the macOS unified log (subsystem: com.openclawcn).
 
 LOG CATEGORIES (examples):
     • voicewake           - Voice wake detection/test harness

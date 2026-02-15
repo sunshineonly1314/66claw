@@ -117,16 +117,16 @@ build/
 build/output/
 ├── windows/
 │   ├── lite/
-│   │   └── Clawdbot-Lite-vX.X.X.zip
+│   │   └── OpenClawCN-Lite-vX.X.X.zip
 │   └── pro/
-│       └── Clawdbot-Pro-Core-vX.X.X.zip
+│       └── OpenClawCN-Pro-Core-vX.X.X.zip
 ├── macos/
 │   └── ClawbotCN-macOS-vX.X.X-arm64.zip
 └── linux/
     ├── lite/
-    │   └── clawdbot-lite-vX.X.X-linux-x64.tar.gz
+    │   └── openclawcn-lite-vX.X.X-linux-x64.tar.gz
     └── pro/
-        └── clawdbot-pro-vX.X.X-linux-x64.tar.gz
+        └── openclawcn-pro-vX.X.X-linux-x64.tar.gz
 ```
 
 ## 技能作者

@@ -11,7 +11,7 @@
 | 指标 | 数量 |
 |------|------|
 | 技能总数 (含 SKILL.md) | 987 |
-| 有 clawdbot metadata | 374 (38%) |
+| 有 openclawcn metadata | 374 (38%) |
 | 无 metadata (纯 Markdown 技能) | 613 (62%) |
 | 有 requires.bins/env | 306 (31%) |
 | 有 install spec | 102 (10%) |

@@ -1,7 +1,7 @@
 ---
-summary: "Use OpenAI via API keys or Codex subscription in Clawdbot"
+summary: "Use OpenAI via API keys or Codex subscription in OpenClawCN"
 read_when:
-  - You want to use OpenAI models in Clawdbot
+  - You want to use OpenAI models in OpenClawCN
   - You want Codex subscription auth instead of API keys
 ---
 # OpenAI
@@ -17,9 +17,9 @@ Get your API key from the OpenAI dashboard.
 ### CLI setup
 
 ```bash
-clawdbot onboard --auth-choice openai-api-key
+openclawcn onboard --auth-choice openai-api-key
 # or non-interactive
-clawdbot onboard --openai-api-key "$OPENAI_API_KEY"
+openclawcn onboard --openai-api-key "$OPENAI_API_KEY"
 ```
 
 ### Config snippet
@@ -40,10 +40,10 @@ Codex cloud requires ChatGPT sign-in, while the Codex CLI supports ChatGPT or AP
 
 ```bash
 # Run Codex OAuth in the wizard
-clawdbot onboard --auth-choice openai-codex
+openclawcn onboard --auth-choice openai-codex
 
 # Or run OAuth directly
-clawdbot models auth login --provider openai-codex
+openclawcn models auth login --provider openai-codex
 ```
 
 ### Config snippet

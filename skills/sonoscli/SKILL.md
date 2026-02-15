@@ -4,7 +4,7 @@ description: Control Sonos speakers (discover/status/play/volume/group).
 nameZh: "音箱控制"
 descriptionZh: "控制Sonos音箱（发现、播放、音量、分组）"
 homepage: https://sonoscli.sh
-metadata: {"clawdbot":{"emoji":"🔊","requires":{"bins":["sonos"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/sonoscli/cmd/sonos@latest","bins":["sonos"],"label":"Install sonoscli (go)"}]}}
+metadata: {"openclawcn":{"emoji":"🔊","requires":{"bins":["sonos"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/sonoscli/cmd/sonos@latest","bins":["sonos"],"label":"Install sonoscli (go)"}]}}
 ---
 
 # Sonos CLI

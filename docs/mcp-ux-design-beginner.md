@@ -84,7 +84,7 @@ MCP 对用户来说，就是"AI 的手"——看不见，但能帮你做事。
 ### 原则 1: 零步骤可用
 
 ```
-用户安装 Clawdbot -> 打开 Chat -> 说"帮我查天气" -> 直接得到结果
+用户安装 OpenClawCN -> 打开 Chat -> 说"帮我查天气" -> 直接得到结果
                                                     ^
                                            中间发生了什么？
                                            1. MCP 预装包随安装包一起就位
@@ -174,7 +174,7 @@ MCP 崩了:
 
 ### 3.4 我们的差异化优势
 
-相比所有竞品，ClawdbotCN 的 MCP 方案有三个独特优势：
+相比所有竞品，OpenClawCN 的 MCP 方案有三个独特优势：
 
 1. **完全无感** — Cherry Studio/Cursor 都需要用户打开 MCP 设置页；我们不需要
 2. **静默降级** — 所有竞品 MCP 崩了就直接报错；我们 MCP → Skill 双轨热备
@@ -187,7 +187,7 @@ MCP 崩了:
 ### 4.1 用户视角
 
 ```
-用户安装完 Clawdbot，第一次打开
+用户安装完 OpenClawCN，第一次打开
 
 Chat 页面显示:
 +-------------------------------------------------------------+
@@ -216,8 +216,8 @@ Chat 页面显示:
   mcp/packages/*.tgz          <- 预打包的 npm 包
 
 首次启动 Gateway:
-  1. 检测 ~/.clawdbot/mcp-install-state.json 不存在
-  2. 从 {app}/mcp/ 复制到 ~/.clawdbot/mcp/
+  1. 检测 ~/.openclawcn/mcp-install-state.json 不存在
+  2. 从 {app}/mcp/ 复制到 ~/.openclawcn/mcp/
   3. 本地离线安装 (npm install from .tgz, 0 网络)
   4. spawn MCP 进程 (filesystem, sqlite, fetch, time, sequential-thinking)
   5. 写入 mcp-install-state.json

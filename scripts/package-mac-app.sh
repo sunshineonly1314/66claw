@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build and bundle Clawdbot into a minimal .app we can open.
-# Outputs to dist/Clawdbot.app
+# Build and bundle OpenClawCN into a minimal .app we can open.
+# Outputs to dist/OpenClawCN.app
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_ROOT="$ROOT_DIR/dist/Clawdbot.app"
+APP_ROOT="$ROOT_DIR/dist/OpenClawCN.app"
 BUILD_ROOT="$ROOT_DIR/apps/macos/.build"
-PRODUCT="Clawdbot"
-BUNDLE_ID="${BUNDLE_ID:-com.clawdbot.mac.debug}"
+PRODUCT="OpenClawCN"
+BUNDLE_ID="${BUNDLE_ID:-com.openclawcn.mac.debug}"
 PKG_VERSION="$(cd "$ROOT_DIR" && node -p "require('./package.json').version" 2>/dev/null || echo "0.0.0")"
 BUILD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_COMMIT=$(cd "$ROOT_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -23,7 +23,7 @@ fi
 IFS=' ' read -r -a BUILD_ARCHS <<< "$BUILD_ARCHS_VALUE"
 PRIMARY_ARCH="${BUILD_ARCHS[0]}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-AGCY8w5vHirVfGGDGc8Szc5iuOqupZSh9pMj/Qs67XI=}"
-SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://raw.githubusercontent.com/clawdbot/clawdbot/main/appcast.xml}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://raw.githubusercontent.com/openclawcn/openclawcn/main/appcast.xml}"
 AUTO_CHECKS=true
 if [[ "$BUNDLE_ID" == *.debug ]]; then
   SPARKLE_FEED_URL=""
@@ -124,7 +124,7 @@ fi
 
 # Build native addon (Layer 3) if source exists and not skipped
 if [[ "${SKIP_NATIVE:-0}" != "1" ]] && [[ -f "$ROOT_DIR/native/binding.gyp" ]]; then
-  NATIVE_ADDON="$ROOT_DIR/native/build/Release/clawdbot_native.node"
+  NATIVE_ADDON="$ROOT_DIR/native/build/Release/openclawcn_native.node"
   if [[ ! -f "$NATIVE_ADDON" ]] || [[ "$ROOT_DIR/native/src/addon.cc" -nt "$NATIVE_ADDON" ]]; then
     echo "🔧 Building C++ native addon (Layer 3)"
     if (cd "$ROOT_DIR/native" && npx node-gyp rebuild 2>&1); then
@@ -165,7 +165,7 @@ mkdir -p "$APP_ROOT/Contents/Resources"
 mkdir -p "$APP_ROOT/Contents/Frameworks"
 
 echo "📄 Copying Info.plist template"
-INFO_PLIST_SRC="$ROOT_DIR/apps/macos/Sources/Clawdbot/Resources/Info.plist"
+INFO_PLIST_SRC="$ROOT_DIR/apps/macos/Sources/OpenClawCN/Resources/Info.plist"
 if [ ! -f "$INFO_PLIST_SRC" ]; then
   echo "ERROR: Info.plist template missing at $INFO_PLIST_SRC" >&2
   exit 1
@@ -174,8 +174,8 @@ cp "$INFO_PLIST_SRC" "$APP_ROOT/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "$APP_ROOT/Contents/Info.plist" || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APP_VERSION}" "$APP_ROOT/Contents/Info.plist" || true
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${APP_BUILD}" "$APP_ROOT/Contents/Info.plist" || true
-/usr/libexec/PlistBuddy -c "Set :ClawdbotBuildTimestamp ${BUILD_TS}" "$APP_ROOT/Contents/Info.plist" || true
-/usr/libexec/PlistBuddy -c "Set :ClawdbotGitCommit ${GIT_COMMIT}" "$APP_ROOT/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :OpenClawCNBuildTimestamp ${BUILD_TS}" "$APP_ROOT/Contents/Info.plist" || true
+/usr/libexec/PlistBuddy -c "Set :OpenClawCNGitCommit ${GIT_COMMIT}" "$APP_ROOT/Contents/Info.plist" || true
 /usr/libexec/PlistBuddy -c "Set :SUFeedURL ${SPARKLE_FEED_URL}" "$APP_ROOT/Contents/Info.plist" \
   || /usr/libexec/PlistBuddy -c "Add :SUFeedURL string ${SPARKLE_FEED_URL}" "$APP_ROOT/Contents/Info.plist" || true
 /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey ${SPARKLE_PUBLIC_ED_KEY}" "$APP_ROOT/Contents/Info.plist" \
@@ -187,17 +187,17 @@ else
 fi
 
 echo "🚚 Copying binary"
-cp "$BIN_PRIMARY" "$APP_ROOT/Contents/MacOS/Clawdbot"
+cp "$BIN_PRIMARY" "$APP_ROOT/Contents/MacOS/OpenClawCN"
 if [[ "${#BUILD_ARCHS[@]}" -gt 1 ]]; then
   BIN_INPUTS=()
   for arch in "${BUILD_ARCHS[@]}"; do
     BIN_INPUTS+=("$(bin_for_arch "$arch")")
   done
-  /usr/bin/lipo -create "${BIN_INPUTS[@]}" -output "$APP_ROOT/Contents/MacOS/Clawdbot"
+  /usr/bin/lipo -create "${BIN_INPUTS[@]}" -output "$APP_ROOT/Contents/MacOS/OpenClawCN"
 fi
-chmod +x "$APP_ROOT/Contents/MacOS/Clawdbot"
+chmod +x "$APP_ROOT/Contents/MacOS/OpenClawCN"
 # SwiftPM outputs ad-hoc signed binaries; strip the signature before install_name_tool to avoid warnings.
-/usr/bin/codesign --remove-signature "$APP_ROOT/Contents/MacOS/Clawdbot" 2>/dev/null || true
+/usr/bin/codesign --remove-signature "$APP_ROOT/Contents/MacOS/OpenClawCN" 2>/dev/null || true
 
 SPARKLE_FRAMEWORK_PRIMARY="$(sparkle_framework_for_arch "$PRIMARY_ARCH")"
 if [ -d "$SPARKLE_FRAMEWORK_PRIMARY" ]; then
@@ -226,11 +226,11 @@ else
 fi
 
 echo "🖼  Copying app icon"
-cp "$ROOT_DIR/apps/macos/Sources/Clawdbot/Resources/Clawdbot.icns" "$APP_ROOT/Contents/Resources/Clawdbot.icns"
+cp "$ROOT_DIR/apps/macos/Sources/OpenClawCN/Resources/OpenClawCN.icns" "$APP_ROOT/Contents/Resources/OpenClawCN.icns"
 
 echo "📦 Copying device model resources"
 rm -rf "$APP_ROOT/Contents/Resources/DeviceModels"
-cp -R "$ROOT_DIR/apps/macos/Sources/Clawdbot/Resources/DeviceModels" "$APP_ROOT/Contents/Resources/DeviceModels"
+cp -R "$ROOT_DIR/apps/macos/Sources/OpenClawCN/Resources/DeviceModels" "$APP_ROOT/Contents/Resources/DeviceModels"
 
 echo "📦 Copying model catalog"
 MODEL_CATALOG_SRC="$ROOT_DIR/node_modules/@mariozechner/pi-ai/dist/models.generated.js"
@@ -241,13 +241,13 @@ else
   echo "WARN: model catalog missing at $MODEL_CATALOG_SRC (continuing)" >&2
 fi
 
-echo "📦 Copying ClawdbotKit resources"
-CLAWDBOTKIT_BUNDLE="$(build_path_for_arch "$PRIMARY_ARCH")/$BUILD_CONFIG/ClawdbotKit_ClawdbotKit.bundle"
-if [ -d "$CLAWDBOTKIT_BUNDLE" ]; then
-  rm -rf "$APP_ROOT/Contents/Resources/ClawdbotKit_ClawdbotKit.bundle"
-  cp -R "$CLAWDBOTKIT_BUNDLE" "$APP_ROOT/Contents/Resources/ClawdbotKit_ClawdbotKit.bundle"
+echo "📦 Copying OpenClawCNKit resources"
+OPENCLAWCNKIT_BUNDLE="$(build_path_for_arch "$PRIMARY_ARCH")/$BUILD_CONFIG/OpenClawCNKit_OpenClawCNKit.bundle"
+if [ -d "$OPENCLAWCNKIT_BUNDLE" ]; then
+  rm -rf "$APP_ROOT/Contents/Resources/OpenClawCNKit_OpenClawCNKit.bundle"
+  cp -R "$OPENCLAWCNKIT_BUNDLE" "$APP_ROOT/Contents/Resources/OpenClawCNKit_OpenClawCNKit.bundle"
 else
-  echo "WARN: ClawdbotKit resource bundle not found at $CLAWDBOTKIT_BUNDLE (continuing)" >&2
+  echo "WARN: OpenClawCNKit resource bundle not found at $OPENCLAWCNKIT_BUNDLE (continuing)" >&2
 fi
 
 echo "📦 Copying Textual resources"
@@ -278,13 +278,13 @@ else
 fi
 
 # Embed native addon in .app bundle (Layer 3)
-NATIVE_ADDON="$ROOT_DIR/native/build/Release/clawdbot_native.node"
+NATIVE_ADDON="$ROOT_DIR/native/build/Release/openclawcn_native.node"
 if [[ -f "$NATIVE_ADDON" ]]; then
   echo "📦 Embedding native addon (Layer 3)"
   NATIVE_DEST="$APP_ROOT/Contents/Resources/native/build/Release"
   mkdir -p "$NATIVE_DEST"
   cp "$NATIVE_ADDON" "$NATIVE_DEST/"
-  echo "   Embedded: clawdbot_native.node ($(du -h "$NATIVE_ADDON" | cut -f1))"
+  echo "   Embedded: openclawcn_native.node ($(du -h "$NATIVE_ADDON" | cut -f1))"
 fi
 
 # Report protection status
@@ -296,8 +296,8 @@ if [[ "$JSC_COUNT" -gt 0 ]]; then
   fi
 fi
 
-echo "⏹  Stopping any running Clawdbot"
-killall -q Clawdbot 2>/dev/null || true
+echo "⏹  Stopping any running OpenClawCN"
+killall -q OpenClawCN 2>/dev/null || true
 
 echo "🔏 Signing bundle (auto-selects signing identity if SIGN_IDENTITY is unset)"
 "$ROOT_DIR/scripts/codesign-mac-app.sh" "$APP_ROOT"

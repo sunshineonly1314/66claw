@@ -53,6 +53,8 @@ function resolveChannelLabel(props: CronProps, channel: string): string {
   return props.channelLabels?.[channel] ?? channel;
 }
 
+const DELIVERY_MODES = ["none", "announce"] as const;
+
 export function renderCron(props: CronProps) {
   const channelOptions = buildChannelOptions(props);
   return html`

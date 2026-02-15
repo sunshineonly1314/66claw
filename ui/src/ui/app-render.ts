@@ -69,7 +69,7 @@ import {
   loadMarketplaceRecommendations,
   type McpLifecycleState,
   type MarketplaceCallbacks,
-} from "./controllers/mcp-lifecycle";
+} from "./controllers/mcp-lifecycle.js";
 import { renderSkillsBatchBanner } from "./views/skills-batch-banner";
 import { renderSkillsBatchConfirm } from "./views/skills-batch-confirm";
 import { renderSkillsBatchProgress } from "./views/skills-batch-progress";
@@ -739,11 +739,98 @@ export function renderApp(state: AppViewState) {
                 installSkill(state, skillKey, name, installId),
               onTabChange: (tab) => {
                 setActiveTab(state, tab);
+                // Lazy-load MCP marketplace when switching to mcp-store tab
+                if (tab === "mcp-store" && state.mcpMarketplace.items.length === 0 && !state.mcpMarketplace.loading) {
+                  const mcpCallbacks: MarketplaceCallbacks = {
+                    onStateChange: (patch) => {
+                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                    },
+                  };
+                  void loadMarketplaceItems(state.client, mcpCallbacks);
+                }
               },
               onRefreshRemote: () => refreshMarketSkills(state),
               onInstallRemote: (skillName) => installRemoteSkill(state, skillName),
               onCategoryChange: (category) => { state.skillsActiveCategory = category; state.skillsVisibleCount = SKILLS_PAGE_SIZE; },
               onPinToggle: (skillKey, pinned) => toggleSkillPinned(state, skillKey, pinned),
+              // MCP marketplace props for "MCP 市场" tab
+              mcpMarketplace: state.mcpMarketplace,
+              onMcpSearchChange: (search) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, search };
+              },
+              onMcpCategoryChange: (category) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, activeCategory: category };
+              },
+              onMcpSortChange: (sort) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, sort };
+              },
+              onMcpOpenDetail: (item) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: item };
+              },
+              onMcpCloseDetail: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: null };
+              },
+              onMcpInstall: (item) => {
+                const runningCount = state.mcpProcesses.filter((p) => p.status === "running").length;
+                if (runningCount >= 8) {
+                  showMcpToast(state, t("extensions.store.limitReached").replace("{{count}}", "8").replace("{{max}}", "8"), "error");
+                  return;
+                }
+                void installMarketplaceItem(
+                  state.client,
+                  item,
+                  undefined,
+                  {
+                    currentItems: state.mcpMarketplace.items,
+                    onStateChange: (patch) => {
+                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "installed")) {
+                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.installed" as never)}`, "success");
+                        void checkMcpUpdate(state.client, {
+                          onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                            if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                            if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                            if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                          },
+                        });
+                      }
+                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "error")) {
+                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.error" as never)}`, "error");
+                      }
+                    },
+                  },
+                );
+              },
+              onMcpUninstall: (serverId) => {
+                void (async () => {
+                  try {
+                    await state.client?.request("mcp.servers.remove", { id: serverId });
+                    const items = state.mcpMarketplace.items.map((i) =>
+                      i.serverId === serverId ? { ...i, installStatus: "not_installed" as const } : i,
+                    );
+                    state.mcpMarketplace = { ...state.mcpMarketplace, items };
+                    const name = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName ?? serverId;
+                    showMcpToast(state, `${name} ${t("extensions.toast.uninstalled" as never)}`, "info");
+                    void checkMcpUpdate(state.client, {
+                      onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                        if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                        if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                        if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                      },
+                    });
+                  } catch (err) {
+                    console.error("[mcp] uninstall failed:", serverId, err);
+                    showMcpToast(state, `${t("extensions.toast.error" as never)}: ${serverId}`, "error");
+                  }
+                })();
+              },
+              onMcpOpenConfigWizard: (item) => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: item };
+              },
+              onMcpCloseConfigWizard: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: null };
+              },
+              mcpRunningCount: state.mcpProcesses.filter((p) => p.status === "running").length,
             })
           : nothing}
 

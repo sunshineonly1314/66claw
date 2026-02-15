@@ -1,15 +1,15 @@
-# ClawdbotCN 授权系统 - 服务端对接需求
+# OpenClawCN 授权系统 - 服务端对接需求
 
 > 文档版本：v1.0
 > 创建时间：2026-02-03
-> 客户端版本：ClawdbotCN
+> 客户端版本：OpenClawCN
 > 优先级说明：P0=阻塞发布，P1=发布后尽快，P2=后续迭代
 
 ---
 
 ## 一、概述
 
-ClawdbotCN 客户端需要 tecbinai.com 服务端提供授权验证 API 和用户页面。本文档详细说明服务端需要实现的所有内容。
+OpenClawCN 客户端需要 tecbinai.com 服务端提供授权验证 API 和用户页面。本文档详细说明服务端需要实现的所有内容。
 
 ### 1.1 API 基础信息
 

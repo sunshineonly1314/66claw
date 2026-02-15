@@ -1,8 +1,8 @@
-# Clawdbot项目快速熟知文档
+# OpenClawCN项目快速熟知文档
 
 ## 1. 项目概述
 
-Clawdbot是一个运行在用户自己设备上的个人AI助手，它可以在用户已经使用的多种聊天渠道上响应，包括WhatsApp、Telegram、Slack、Discord、Google Chat、Signal、iMessage、Microsoft Teams等，以及BlueBubbles、Matrix、Zalo等扩展渠道。
+OpenClawCN是一个运行在用户自己设备上的个人AI助手，它可以在用户已经使用的多种聊天渠道上响应，包括WhatsApp、Telegram、Slack、Discord、Google Chat、Signal、iMessage、Microsoft Teams等，以及BlueBubbles、Matrix、Zalo等扩展渠道。
 
 ### 核心目标
 - 提供个人、单用户的AI助手体验，感觉本地、快速且始终在线
@@ -145,10 +145,10 @@ Clawdbot是一个运行在用户自己设备上的个人AI助手，它可以在�
 
 | 服务/API | 用途 | 接入方式 | 配置信息 |
 |---------|------|---------|---------|
-| Anthropic | AI模型（Claude Pro/Max） | OAuth | 通过`clawdbot models auth`配置 |
-| OpenAI | AI模型（ChatGPT/Codex） | OAuth | 通过`clawdbot models auth`配置 |
+| Anthropic | AI模型（Claude Pro/Max） | OAuth | 通过`openclawcn models auth`配置 |
+| OpenAI | AI模型（ChatGPT/Codex） | OAuth | 通过`openclawcn models auth`配置 |
 | ElevenLabs | 语音合成 | API密钥 | 在配置文件中设置 |
-| WhatsApp | 消息渠道 | Baileys库 | 通过`clawdbot channels login`配置 |
+| WhatsApp | 消息渠道 | Baileys库 | 通过`openclawcn channels login`配置 |
 | Telegram | 消息渠道 | grammY库 | 设置`TELEGRAM_BOT_TOKEN`环境变量或配置文件 |
 | Slack | 消息渠道 | Bolt库 | 设置`SLACK_BOT_TOKEN`和`SLACK_APP_TOKEN`环境变量 |
 | Discord | 消息渠道 | discord.js库 | 设置`DISCORD_BOT_TOKEN`环境变量或配置文件 |
@@ -158,7 +158,7 @@ Clawdbot是一个运行在用户自己设备上的个人AI助手，它可以在�
 
 ### 4.2 配置文件
 
-- **主配置文件**：`~/.clawdbot/clawdbot.json`
+- **主配置文件**：`~/.openclawcn/openclawcn.json`
 - **会话配置**：存储在工作区目录中
 - **渠道配置**：存储在主配置文件的`channels`部分
 - **模型配置**：存储在主配置文件的`agent`部分
@@ -177,10 +177,10 @@ Clawdbot是一个运行在用户自己设备上的个人AI助手，它可以在�
 ### 5.1 推荐安装方式
 
 ```bash
-npm install -g clawdbot@latest
-# 或: pnpm add -g clawdbot@latest
+npm install -g openclawcn@latest
+# 或: pnpm add -g openclawcn@latest
 
-clawdbot onboard --install-daemon
+openclawcn onboard --install-daemon
 ```
 
 onboarding向导会引导用户完成gateway、工作区、渠道和技能的设置，并安装Gateway守护进程（launchd/systemd用户服务）以保持运行。
@@ -188,14 +188,14 @@ onboarding向导会引导用户完成gateway、工作区、渠道和技能的设
 ### 5.2 从源码构建
 
 ```bash
-git clone https://github.com/clawdbot/clawdbot.git
-cd clawdbot
+git clone https://github.com/openclawcn/openclawcn.git
+cd openclawcn
 
 pnpm install
 pnpm ui:build # 首次运行时自动安装UI依赖
 pnpm build
 
-pnpm clawdbot onboard --install-daemon
+pnpm openclawcn onboard --install-daemon
 
 # 开发循环（TS更改时自动重载）
 pnpm gateway:watch
@@ -203,13 +203,13 @@ pnpm gateway:watch
 
 ### 5.3 Docker部署
 
-支持通过Docker部署，详情请参考官方文档：https://docs.clawd.bot/install/docker
+支持通过Docker部署，详情请参考官方文档：https://docs.openclawcn.com/install/docker
 
 ## 6. 安全模型
 
 ### 6.1 DM访问控制
 - **默认行为**：未知发送者会收到一个简短的配对代码，机器人不会处理他们的消息
-- **配对方式**：使用`clawdbot pairing approve \u003cchannel\u003e \u003ccode\u003e`批准发送者
+- **配对方式**：使用`openclawcn pairing approve \u003cchannel\u003e \u003ccode\u003e`批准发送者
 - **公开DM**：需要显式选择加入，设置`dmPolicy="open"`并在渠道允许列表中包含`"*"`
 
 ### 6.2 沙箱模式
@@ -220,20 +220,20 @@ pnpm gateway:watch
 ## 7. 监控和维护
 
 ### 7.1 健康检查
-- 使用`clawdbot doctor`检查系统状态和配置问题
-- 使用`clawdbot status`查看会话状态（模型 + 令牌，成本可用时）
+- 使用`openclawcn doctor`检查系统状态和配置问题
+- 使用`openclawcn status`查看会话状态（模型 + 令牌，成本可用时）
 
 ### 7.2 日志管理
 - 详细的日志系统，支持不同级别的日志记录
-- 使用`clawdbot logs`查看日志
+- 使用`openclawcn logs`查看日志
 
 ### 7.3 常见问题排查
-- 运行`clawdbot doctor`以发现风险/错误配置的DM策略
+- 运行`openclawcn doctor`以发现风险/错误配置的DM策略
 - 参考官方文档中的故障排除指南
 
 ## 8. 总结
 
-Clawdbot是一个功能强大、灵活可扩展的个人AI助手平台，它通过集成多种聊天渠道、提供丰富的工具和技能生态系统，以及支持语音交互和可视化工作区，为用户提供了一个统一、高效的AI助手体验。
+OpenClawCN是一个功能强大、灵活可扩展的个人AI助手平台，它通过集成多种聊天渠道、提供丰富的工具和技能生态系统，以及支持语音交互和可视化工作区，为用户提供了一个统一、高效的AI助手体验。
 
 ### 核心优势
 - **本地运行**：保护隐私，数据存储在用户自己的设备上
@@ -249,7 +249,7 @@ Clawdbot是一个功能强大、灵活可扩展的个人AI助手平台，它通�
 - **安全设置**：保持DM访问控制为默认的配对模式，仅批准信任的发送者
 - **沙箱模式**：对于群组和公共渠道，启用沙箱模式以增强安全性
 - **远程访问**：使用Tailscale Serve/Funnel进行安全的远程访问
-- **定期维护**：使用`clawdbot doctor`定期检查系统状态和配置问题
+- **定期维护**：使用`openclawcn doctor`定期检查系统状态和配置问题
 - **技能管理**：根据需要安装和管理技能，保持技能库的整洁和高效
 
-通过合理配置和使用，Clawdbot可以成为用户日常生活和工作中的得力助手，帮助处理各种任务和提供信息支持。
+通过合理配置和使用，OpenClawCN可以成为用户日常生活和工作中的得力助手，帮助处理各种任务和提供信息支持。

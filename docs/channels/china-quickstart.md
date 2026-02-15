@@ -1,6 +1,6 @@
 # 中国 IM 渠道快速上手
 
-本文档帮助你快速配置 Clawdbot 连接国内主流 IM 平台。
+本文档帮助你快速配置 OpenClawCN 连接国内主流 IM 平台。
 
 ## 一分钟选择指南
 
@@ -27,8 +27,8 @@
 
 ```bash
 # 下载配置模板
-curl -O https://raw.githubusercontent.com/clawdbot/clawdbot/main/docker-compose.yml
-curl -O https://raw.githubusercontent.com/clawdbot/clawdbot/main/.env.example
+curl -O https://raw.githubusercontent.com/openclawcn/openclawcn/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/openclawcn/openclawcn/main/.env.example
 
 # 复制并编辑配置
 cp .env.example .env
@@ -40,32 +40,32 @@ cp .env.example .env
 
 ```bash
 # AI 模型配置（必填）
-CLAWDBOT_API_KEY=sk-xxx
-CLAWDBOT_BASE_URL=https://api.openai.com/v1
-CLAWDBOT_MODEL_ID=gpt-4
+OPENCLAWCN_API_KEY=sk-xxx
+OPENCLAWCN_BASE_URL=https://api.openai.com/v1
+OPENCLAWCN_MODEL_ID=gpt-4
 
 # Gateway 配置（可选）
-CLAWDBOT_GATEWAY_TOKEN=your-secure-token
-CLAWDBOT_GATEWAY_PORT=18789
+OPENCLAWCN_GATEWAY_TOKEN=your-secure-token
+OPENCLAWCN_GATEWAY_PORT=18789
 
 # === 选择以下渠道之一配置 ===
 
 # 飞书（推荐）
-CLAWDBOT_FEISHU_APP_ID=cli_xxxxx
-CLAWDBOT_FEISHU_APP_SECRET=xxxxx
+OPENCLAWCN_FEISHU_APP_ID=cli_xxxxx
+OPENCLAWCN_FEISHU_APP_SECRET=xxxxx
 
 # 钉钉
-CLAWDBOT_DINGTALK_APP_KEY=xxxxx
-CLAWDBOT_DINGTALK_APP_SECRET=xxxxx
+OPENCLAWCN_DINGTALK_APP_KEY=xxxxx
+OPENCLAWCN_DINGTALK_APP_SECRET=xxxxx
 
 # 企业微信
-CLAWDBOT_WECOM_CORP_ID=ww1234567890abcdef
-CLAWDBOT_WECOM_AGENT_ID=1000002
-CLAWDBOT_WECOM_AGENT_SECRET=xxxxx
+OPENCLAWCN_WECOM_CORP_ID=ww1234567890abcdef
+OPENCLAWCN_WECOM_AGENT_ID=1000002
+OPENCLAWCN_WECOM_AGENT_SECRET=xxxxx
 
 # QQ 机器人
-CLAWDBOT_QQBOT_APP_ID=xxxxx
-CLAWDBOT_QQBOT_APP_SECRET=xxxxx
+OPENCLAWCN_QQBOT_APP_ID=xxxxx
+OPENCLAWCN_QQBOT_APP_SECRET=xxxxx
 ```
 
 ### 3. 启动服务
@@ -102,9 +102,9 @@ docker-compose up -d
 ### 配置
 
 ```bash
-CLAWDBOT_FEISHU_APP_ID=cli_xxxxx
-CLAWDBOT_FEISHU_APP_SECRET=xxxxx
-CLAWDBOT_FEISHU_MODE=websocket  # 推荐，无需公网 IP
+OPENCLAWCN_FEISHU_APP_ID=cli_xxxxx
+OPENCLAWCN_FEISHU_APP_SECRET=xxxxx
+OPENCLAWCN_FEISHU_MODE=websocket  # 推荐，无需公网 IP
 ```
 
 详细文档：[飞书配置指南](/channels/feishu)
@@ -124,9 +124,9 @@ CLAWDBOT_FEISHU_MODE=websocket  # 推荐，无需公网 IP
 ### 配置
 
 ```bash
-CLAWDBOT_DINGTALK_APP_KEY=xxxxx
-CLAWDBOT_DINGTALK_APP_SECRET=xxxxx
-CLAWDBOT_DINGTALK_MODE=stream  # 推荐，无需公网 IP
+OPENCLAWCN_DINGTALK_APP_KEY=xxxxx
+OPENCLAWCN_DINGTALK_APP_SECRET=xxxxx
+OPENCLAWCN_DINGTALK_MODE=stream  # 推荐，无需公网 IP
 ```
 
 详细文档：[钉钉配置指南](/channels/dingtalk)
@@ -149,11 +149,11 @@ CLAWDBOT_DINGTALK_MODE=stream  # 推荐，无需公网 IP
 ### 配置
 
 ```bash
-CLAWDBOT_WECOM_CORP_ID=ww1234567890abcdef
-CLAWDBOT_WECOM_AGENT_ID=1000002
-CLAWDBOT_WECOM_AGENT_SECRET=xxxxx
-CLAWDBOT_WECOM_TOKEN=your-callback-token
-CLAWDBOT_WECOM_ENCODING_AES_KEY=xxxxx
+OPENCLAWCN_WECOM_CORP_ID=ww1234567890abcdef
+OPENCLAWCN_WECOM_AGENT_ID=1000002
+OPENCLAWCN_WECOM_AGENT_SECRET=xxxxx
+OPENCLAWCN_WECOM_TOKEN=your-callback-token
+OPENCLAWCN_WECOM_ENCODING_AES_KEY=xxxxx
 ```
 
 详细文档：[企业微信配置指南](/channels/wecom)
@@ -179,9 +179,9 @@ CLAWDBOT_WECOM_ENCODING_AES_KEY=xxxxx
 ### 配置
 
 ```bash
-CLAWDBOT_QQBOT_APP_ID=xxxxx
-CLAWDBOT_QQBOT_APP_SECRET=xxxxx
-CLAWDBOT_QQBOT_SANDBOX=false  # 正式环境设为 false
+OPENCLAWCN_QQBOT_APP_ID=xxxxx
+OPENCLAWCN_QQBOT_APP_SECRET=xxxxx
+OPENCLAWCN_QQBOT_SANDBOX=false  # 正式环境设为 false
 ```
 
 详细文档：[QQ 机器人配置指南](/channels/qqbot)
@@ -194,8 +194,8 @@ CLAWDBOT_QQBOT_SANDBOX=false  # 正式环境设为 false
 
 **推荐方案**：使用飞书或钉钉的长连接模式，无需公网 IP。
 
-- 飞书：设置 `CLAWDBOT_FEISHU_MODE=websocket`
-- 钉钉：设置 `CLAWDBOT_DINGTALK_MODE=stream`
+- 飞书：设置 `OPENCLAWCN_FEISHU_MODE=websocket`
+- 钉钉：设置 `OPENCLAWCN_DINGTALK_MODE=stream`
 
 **其他方案**：
 - 使用内网穿透工具（如 frp、ngrok）
@@ -210,7 +210,7 @@ CLAWDBOT_QQBOT_SANDBOX=false  # 正式环境设为 false
 
 ### 3. 如何同时配置多个渠道？
 
-在 `.env` 文件中填写多个渠道的配置即可，Clawdbot 会自动启用所有已配置的渠道。
+在 `.env` 文件中填写多个渠道的配置即可，OpenClawCN 会自动启用所有已配置的渠道。
 
 ### 4. 如何切换 AI 模型？
 
@@ -218,14 +218,14 @@ CLAWDBOT_QQBOT_SANDBOX=false  # 正式环境设为 false
 
 ```bash
 # OpenAI
-CLAWDBOT_BASE_URL=https://api.openai.com/v1
-CLAWDBOT_API_KEY=sk-xxx
-CLAWDBOT_MODEL_ID=gpt-4
+OPENCLAWCN_BASE_URL=https://api.openai.com/v1
+OPENCLAWCN_API_KEY=sk-xxx
+OPENCLAWCN_MODEL_ID=gpt-4
 
 # 国内模型（如通义千问）
-CLAWDBOT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-CLAWDBOT_API_KEY=sk-xxx
-CLAWDBOT_MODEL_ID=qwen-max
+OPENCLAWCN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENCLAWCN_API_KEY=sk-xxx
+OPENCLAWCN_MODEL_ID=qwen-max
 ```
 
 ## 下一步

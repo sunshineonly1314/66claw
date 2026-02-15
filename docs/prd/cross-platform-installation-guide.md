@@ -1,4 +1,4 @@
-# Clawdbot 跨平台安装方案
+# OpenClawCN 跨平台安装方案
 
 ## 文档信息
 
@@ -40,7 +40,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Clawdbot 安装包                            │
+│                      OpenClawCN 安装包                            │
 ├───────────────┬───────────────────┬─────────────────────────────┤
 │   Windows     │      macOS        │         Linux               │
 │   (.exe)      │      (.dmg)       │     (.AppImage/.deb)        │
@@ -141,7 +141,7 @@ public static bool IsRunAsAdmin()
 │                                                                 │
 │   ─────────────────────────────────────────────────────────     │
 │                                                                 │
-│   Clawdbot 安装程序需要管理员权限才能完成安装。                 │
+│   OpenClawCN 安装程序需要管理员权限才能完成安装。                 │
 │                                                                 │
 │   📋 请按以下步骤操作：                                         │
 │                                                                 │
@@ -152,7 +152,7 @@ public static bool IsRunAsAdmin()
 │   3. 选择「以管理员身份运行」                                    │
 │                                                                 │
 │      ┌─────────────────────────┐                                │
-│      │ 📁 Clawdbot-Setup.exe   │                                │
+│      │ 📁 OpenClawCN-Setup.exe   │                                │
 │      ├─────────────────────────┤                                │
 │      │   打开                  │                                │
 │      │ → 以管理员身份运行 🛡️   │  ← 点这个                      │
@@ -231,7 +231,7 @@ public static bool IsRunAsAdmin()
 │                                                                 │
 │   ─────────────────────────────────────────────────────────     │
 │                                                                 │
-│   Clawdbot 需要使用 Windows 的 Linux 子系统 (WSL2)，            │
+│   OpenClawCN 需要使用 Windows 的 Linux 子系统 (WSL2)，            │
 │   这要求您的电脑开启虚拟化功能。                                 │
 │                                                                 │
 │   📋 开启步骤：                                                 │
@@ -257,7 +257,7 @@ public static bool IsRunAsAdmin()
 │   💡 小提示：                                                   │
 │   • 大多数 2015 年后的电脑都支持虚拟化                          │
 │   • 如果找不到相关选项，可能需要更新 BIOS                       │
-│   • 遇到困难？联系我们：support@clawd.bot                       │
+│   • 遇到困难？联系我们：support@openclawcn.com                       │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -298,13 +298,13 @@ if ($vmFirmwareEnabled -eq $true) {
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                                                              │
-│                    🤖 Clawdbot 安装程序                       │
+│                    🤖 OpenClawCN 安装程序                       │
 │                                                              │
 │   ══════════════════════════════════════════════════════     │
 │                                                              │
-│                    欢迎安装 Clawdbot！                        │
+│                    欢迎安装 OpenClawCN！                        │
 │                                                              │
-│        Clawdbot 是您的智能 AI 助手，可以帮您：               │
+│        OpenClawCN 是您的智能 AI 助手，可以帮您：               │
 │        • 打开应用程序和网页                                   │
 │        • 搜索和整理文件                                       │
 │        • 执行各种自动化任务                                   │
@@ -373,15 +373,15 @@ if ($vmFirmwareEnabled -eq $true) {
 │                                                              │
 │   ══════════════════════════════════════════════════════     │
 │                                                              │
-│        Clawdbot 已成功安装到您的电脑！                        │
+│        OpenClawCN 已成功安装到您的电脑！                        │
 │                                                              │
 │        📍 您可以在以下位置找到它：                            │
 │           • 桌面快捷方式                                      │
 │           • 屏幕右下角托盘图标 [🟢]                          │
 │           • 开始菜单                                          │
 │                                                              │
-│        ☑️ 开机自动启动 Clawdbot                              │
-│        ☑️ 立即打开 Clawdbot                                  │
+│        ☑️ 开机自动启动 OpenClawCN                              │
+│        ☑️ 立即打开 OpenClawCN                                  │
 │                                                              │
 │                      [完成]                                  │
 │                                                              │
@@ -421,7 +421,7 @@ if ($vmFirmwareEnabled -eq $true) {
 阶段 3: Ubuntu 环境部署 (30-60%) 【使用预配置镜像，无黑窗口！】
 ├── 【本地解压】从安装包解压预配置 Ubuntu 镜像 (~250MB 压缩)
 ├── 【静默导入】wsl --import（完全无窗口）
-├── 【配置】设置默认用户为 clawdbot
+├── 【配置】设置默认用户为 openclawcn
 └── 【验证】测试 WSL 可正常执行命令
 
 阶段 4: Playwright 下载 (60-80%) 【唯一需要下载的大文件】
@@ -430,8 +430,8 @@ if ($vmFirmwareEnabled -eq $true) {
 ├── 支持断点续传
 └── 下载失败自动切换备用镜像
 
-阶段 5: Clawdbot 安装 (80-90%) 【从安装包解压，无需下载】
-├── 【本地】解压 Clawdbot 包（已打包在安装程序中）
+阶段 5: OpenClawCN 安装 (80-90%) 【从安装包解压，无需下载】
+├── 【本地】解压 OpenClawCN 包（已打包在安装程序中）
 ├── 【本地】安装项目自带 Skills
 ├── 【配置】在 WSL 内配置 npm 镜像
 └── 【配置】配置环境变量和路径
@@ -493,20 +493,20 @@ if ($vmFirmwareEnabled -eq $true) {
 // 1. 写入 RunOnce 注册表，确保重启后自动继续
 Registry.SetValue(
     @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-    "ClawdbotSetupContinue",
+    "OpenClawCNSetupContinue",
     $"\"{installerPath}\" --continue-install"
 );
 
 // 2. 写入安装状态，记录当前进度
 Registry.SetValue(
-    @"HKEY_CURRENT_USER\Software\Clawdbot\Setup",
+    @"HKEY_CURRENT_USER\Software\OpenClawCN\Setup",
     "InstallStage",
     "WSL_ENABLED_PENDING_REBOOT"
 );
 
 // 3. 提示用户重启
 // 用户点击"立即重启"后执行：
-Process.Start("shutdown", "/r /t 5 /c \"Clawdbot 安装需要重启电脑\"");
+Process.Start("shutdown", "/r /t 5 /c \"OpenClawCN 安装需要重启电脑\"");
 ```
 
 ---
@@ -538,9 +538,9 @@ Process.Start("shutdown", "/r /t 5 /c \"Clawdbot 安装需要重启电脑\"");
 # 1. 在开发机上创建标准 Ubuntu WSL
 wsl --install -d Ubuntu-22.04
 
-# 2. 完成初始化（输入用户名 clawdbot，设置密码）
-# 用户名: clawdbot
-# 密码: clawdbot（或其他默认密码）
+# 2. 完成初始化（输入用户名 openclawcn，设置密码）
+# 用户名: openclawcn
+# 密码: openclawcn（或其他默认密码）
 
 # 3. 配置国内镜像源
 sudo sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
@@ -561,24 +561,24 @@ sudo rm -rf /var/lib/apt/lists/*
 npm cache clean --force
 
 # 8. 导出为 tar 包
-wsl --export Ubuntu-22.04 clawdbot-ubuntu.tar
+wsl --export Ubuntu-22.04 openclawcn-ubuntu.tar
 
 # 9. 压缩（约 250-300MB）
-gzip clawdbot-ubuntu.tar
+gzip openclawcn-ubuntu.tar
 ```
 
 **安装时导入（完全静默）**：
 
 ```powershell
 # 解压预配置镜像（从安装包中）
-Expand-Archive -Path "clawdbot-ubuntu.tar.gz" -DestinationPath $tempDir
+Expand-Archive -Path "openclawcn-ubuntu.tar.gz" -DestinationPath $tempDir
 
 # 静默导入，无任何窗口弹出
-wsl --import Clawdbot "$env:LOCALAPPDATA\Clawdbot\wsl" "$tempDir\clawdbot-ubuntu.tar" --version 2
+wsl --import OpenClawCN "$env:LOCALAPPDATA\OpenClawCN\wsl" "$tempDir\openclawcn-ubuntu.tar" --version 2
 
 # 设置默认用户（避免以 root 运行）
 # 在导入的 WSL 中执行
-wsl -d Clawdbot -- bash -c "echo '[user]\ndefault=clawdbot' | sudo tee /etc/wsl.conf"
+wsl -d OpenClawCN -- bash -c "echo '[user]\ndefault=openclawcn' | sudo tee /etc/wsl.conf"
 ```
 
 #### 方案B 对安装包大小的影响
@@ -799,7 +799,7 @@ Wait-Job $jobs
 
 | 渠道 | 说明 | 备注 |
 |-----|------|------|
-| **官网直链** | clawd.bot/download | 主要渠道，50MB 轻松托管 |
+| **官网直链** | openclawcn.com/download | 主要渠道，50MB 轻松托管 |
 | **GitHub Releases** | github.com/xxx/releases | 开发者渠道 |
 | **蓝奏云** | 免费，无需登录，限制 100MB | 完全够用 |
 
@@ -860,7 +860,7 @@ Write-Output "PROGRESS:100:安装完成"
 
 ### 3.7 安装包规格（混合方案：小包 + 公共镜像下载）
 
-> ✅ **核心思路**：安装包只打包必须的内容（Clawdbot + Skills），其他组件（Ubuntu、Node.js、Playwright）安装时从**国内公共镜像**下载，不需要我们自己的服务器！
+> ✅ **核心思路**：安装包只打包必须的内容（OpenClawCN + Skills），其他组件（Ubuntu、Node.js、Playwright）安装时从**国内公共镜像**下载，不需要我们自己的服务器！
 
 #### 3.7.1 包内容明细（修订版）
 
@@ -873,7 +873,7 @@ Write-Output "PROGRESS:100:安装完成"
 | 安装程序 GUI | ~5MB | NSIS/Inno Setup |
 | Windows 托盘应用 | ~3MB | 原生 Windows 应用 |
 | **预配置 Ubuntu 镜像** | **~250MB** | 已配置用户、镜像源、Node.js |
-| Clawdbot 源码/包 | ~30MB | 核心代码 |
+| OpenClawCN 源码/包 | ~30MB | 核心代码 |
 | 项目自带 Skills | ~10MB | 必需的 Skills |
 | 配置脚本 | ~2MB | 安装流程控制 |
 | **安装包总计** | **~300-350MB** | 用户下载约需 5-10 分钟 |
@@ -979,7 +979,7 @@ macOS 已有完善的 Menubar App 方案：
 ### 4.2 安装流程
 
 ```
-下载 Clawdbot.dmg
+下载 OpenClawCN.dmg
       ↓
 双击打开 DMG
       ↓
@@ -1003,7 +1003,7 @@ macOS 已有完善的 Menubar App 方案：
 ```
 ┌─────────────────────────────────────────────────────┐
 │                                                     │
-│   ⚠️ 无法打开"Clawdbot"，因为无法验证开发者。       │
+│   ⚠️ 无法打开"OpenClawCN"，因为无法验证开发者。       │
 │                                                     │
 │   macOS 无法验证此 App 不包含恶意软件。              │
 │                                                     │
@@ -1028,7 +1028,7 @@ macOS 已有完善的 Menubar App 方案：
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│   📁 Clawdbot.app                    📁 Applications        │
+│   📁 OpenClawCN.app                    📁 Applications        │
 │        ↓                                   ↓                │
 │      [图标]  ─────────────────────→     [文件夹]            │
 │                  拖拽到这里                                  │
@@ -1045,14 +1045,14 @@ macOS 已有完善的 Menubar App 方案：
 
 ### 4.2.2 权限授权流程
 
-首次运行 Clawdbot 后，系统会弹出权限请求：
+首次运行 OpenClawCN 后，系统会弹出权限请求：
 
 **权限 1：辅助功能（Accessibility）**
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                                                     │
-│   "Clawdbot" 想要控制此电脑。                       │
+│   "OpenClawCN" 想要控制此电脑。                       │
 │                                                     │
 │   控制权限可让 App 访问其他 App 中的文稿            │
 │   和执行管理任务。                                   │
@@ -1069,12 +1069,12 @@ macOS 已有完善的 Menubar App 方案：
 │                                                             │
 │   🔐 需要授权辅助功能权限                                   │
 │                                                             │
-│   Clawdbot 需要"辅助功能"权限才能控制其他应用程序。         │
+│   OpenClawCN 需要"辅助功能"权限才能控制其他应用程序。         │
 │                                                             │
 │   📋 请按以下步骤操作：                                     │
 │                                                             │
 │   1. 点击下方按钮，打开系统设置                             │
-│   2. 在左侧找到 Clawdbot                                   │
+│   2. 在左侧找到 OpenClawCN                                   │
 │   3. 点击开关，开启权限                                     │
 │   4. 返回此窗口                                             │
 │                                                             │
@@ -1133,7 +1133,7 @@ macOS 已有完善的 Menubar App 方案：
 **用户流程**：
 
 ```
-1. 下载 Clawdbot-x86_64.AppImage
+1. 下载 OpenClawCN-x86_64.AppImage
 
 2. 首次运行可能提示：
    ┌─────────────────────────────────────────┐
@@ -1150,13 +1150,13 @@ macOS 已有完善的 Menubar App 方案：
 #### 方式 2：.deb 图形化安装（Ubuntu/Debian）
 
 ```
-1. 下载 clawdbot_x.x.x_amd64.deb
+1. 下载 openclawcn_x.x.x_amd64.deb
 
 2. 双击打开（Ubuntu 软件中心会接管）
    ┌─────────────────────────────────────────┐
    │  Ubuntu 软件                            │
    │                                         │
-   │  Clawdbot                               │
+   │  OpenClawCN                               │
    │  智能 AI 助手                           │
    │                                         │
    │           [安装]                        │
@@ -1165,21 +1165,21 @@ macOS 已有完善的 Menubar App 方案：
 
 3. 点击"安装"，输入密码
 
-4. 安装完成后可在应用菜单找到 Clawdbot
+4. 安装完成后可在应用菜单找到 OpenClawCN
 ```
 
 #### 方式 3：命令行安装（技术用户）
 
 ```bash
 # Ubuntu/Debian
-sudo dpkg -i clawdbot_x.x.x_amd64.deb
+sudo dpkg -i openclawcn_x.x.x_amd64.deb
 sudo apt-get install -f  # 安装依赖
 
 # Fedora/CentOS
-sudo rpm -i clawdbot-x.x.x.x86_64.rpm
+sudo rpm -i openclawcn-x.x.x.x86_64.rpm
 
 # 通用（需要 Node.js）
-npm install -g clawdbot
+npm install -g openclawcn
 ```
 
 ---
@@ -1203,7 +1203,7 @@ npm install -g clawdbot
 
 ```bash
 # 需要执行（或通过图形界面设置）
-chmod +x Clawdbot-x86_64.AppImage
+chmod +x OpenClawCN-x86_64.AppImage
 ```
 
 **解决方案**：在下载页面提供图形化说明
@@ -1222,14 +1222,14 @@ chmod +x Clawdbot-x86_64.AppImage
 ### 5.4 systemd 服务（自动后台运行）
 
 ```bash
-# /etc/systemd/user/clawdbot-gateway.service
+# /etc/systemd/user/openclawcn-gateway.service
 [Unit]
-Description=Clawdbot Gateway
+Description=OpenClawCN Gateway
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/clawdbot gateway run
+ExecStart=/usr/bin/openclawcn gateway run
 Restart=always
 RestartSec=10
 
@@ -1240,8 +1240,8 @@ WantedBy=default.target
 **设置开机自启**：
 
 ```bash
-systemctl --user enable clawdbot-gateway
-systemctl --user start clawdbot-gateway
+systemctl --user enable openclawcn-gateway
+systemctl --user start openclawcn-gateway
 ```
 
 ---
@@ -1276,10 +1276,10 @@ systemctl --user start clawdbot-gateway
 
 ```
 ┌───────────────────────┐
-│ Clawdbot              │
+│ OpenClawCN              │
 │ ● 运行中              │
 ├───────────────────────┤
-│ 打开 Clawdbot         │
+│ 打开 OpenClawCN         │
 ├───────────────────────┤
 │ 重新启动              │
 │ 停止服务              │
@@ -1476,15 +1476,15 @@ systemctl --user start clawdbot-gateway
 | 文件读写 | 配置存储、日志 | 运行时 | 仅限用户目录 |
 | 开机自启 | 自动启动服务 | 安装时（可选） | 用户级注册表 |
 
-> 💡 **重要说明**：管理员权限仅在安装时需要（用于启用 Windows 的 WSL 功能）。安装完成后，日常使用 Clawdbot 不需要管理员权限。
+> 💡 **重要说明**：管理员权限仅在安装时需要（用于启用 Windows 的 WSL 功能）。安装完成后，日常使用 OpenClawCN 不需要管理员权限。
 
 ### 9.2 数据存储位置
 
 | 平台 | 配置目录 | 日志目录 |
 |-----|---------|---------|
-| Windows | `%LOCALAPPDATA%\Clawdbot` | `%LOCALAPPDATA%\Clawdbot\logs` |
-| macOS | `~/.clawdbot` | `~/Library/Logs/Clawdbot` |
-| Linux | `~/.clawdbot` | `~/.clawdbot/logs` |
+| Windows | `%LOCALAPPDATA%\OpenClawCN` | `%LOCALAPPDATA%\OpenClawCN\logs` |
+| macOS | `~/.openclawcn` | `~/Library/Logs/OpenClawCN` |
+| Linux | `~/.openclawcn` | `~/.openclawcn/logs` |
 
 ---
 
@@ -1509,7 +1509,7 @@ systemctl --user start clawdbot-gateway
       ↓
 ┌──────────────────────────────────────────┐
 │                                          │
-│   🔄 正在更新 Clawdbot                   │
+│   🔄 正在更新 OpenClawCN                   │
 │                                          │
 │   [████████████████░░░░░░░░] 60%         │
 │                                          │
@@ -1547,13 +1547,13 @@ A: 安装过程需要启用 Windows 的 Linux 子系统 (WSL) 功能，这是 Wi
 A: 右键点击安装程序文件，在弹出的菜单中选择「以管理员身份运行」。
 
 **Q: 为什么需要开启虚拟化？**
-A: Clawdbot 使用 Windows 的 Linux 子系统来运行高级功能，这需要虚拟化支持。
+A: OpenClawCN 使用 Windows 的 Linux 子系统来运行高级功能，这需要虚拟化支持。
 
 **Q: 开启虚拟化会影响电脑性能吗？**
 A: 不会，虚拟化是 CPU 的内置功能，开启后对日常使用没有影响。
 
 **Q: 我的电脑不支持虚拟化怎么办？**
-A: 2015 年后的电脑几乎都支持虚拟化。如果确实不支持，可以尝试使用 Clawdbot 的纯 Web 版本（功能会受限）。
+A: 2015 年后的电脑几乎都支持虚拟化。如果确实不支持，可以尝试使用 OpenClawCN 的纯 Web 版本（功能会受限）。
 
 **Q: 安装需要多长时间？**
 A: 首次安装约 5-15 分钟，取决于网络速度。

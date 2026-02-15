@@ -12,11 +12,11 @@
 
 ### 1.1 业务背景
 
-ClawdbotCN 面向的用户群体 AI 水平参差不齐，从完全零基础的小白到有一定 AI 使用经验的进阶用户都有。为了：
+OpenClawCN 面向的用户群体 AI 水平参差不齐，从完全零基础的小白到有一定 AI 使用经验的进阶用户都有。为了：
 
 - **精准了解用户画像**：掌握用户的 AI 认知水平、工具使用经验
 - **课程设计参考**：为后续 AI 培训课程提供数据支撑，设计适配不同层级的教学内容
-- **产品迭代方向**：了解用户对 ClawdbotCN 的核心期待，指导功能优先级
+- **产品迭代方向**：了解用户对 OpenClawCN 的核心期待，指导功能优先级
 - **社群运营**：基于用户水平分层，提供差异化的社群服务
 
 ### 1.2 为什么不放在 Setup 流程里
@@ -74,7 +74,7 @@ ClawdbotCN 面向的用户群体 AI 水平参差不齐，从完全零基础的�
 ### 3.1 触发条件（全部满足才弹出）
 
 ```typescript
-function shouldShowSurvey(config: ClawdbotConfig, now: number): boolean {
+function shouldShowSurvey(config: OpenClawCNConfig, now: number): boolean {
   const license = config.license;
   
   // 条件 1: 有有效授权码（已通过验证）
@@ -189,7 +189,7 @@ function shouldShowSurvey(config: ClawdbotConfig, now: number): boolean {
 | 深度玩家，各种工具都试过 | `advanced` | 需要专业内容 |
 
 > **设计说明**: 从 v1 的 5 个选项精简为 4 个。去掉了「完全零基础从未用过」——
-> 用户既然已经用了一天 ClawdbotCN，就不是「从未用过 AI」了。
+> 用户既然已经用了一天 OpenClawCN，就不是「从未用过 AI」了。
 > 选项措辞用口语化表达，降低阅读负担。
 
 ---

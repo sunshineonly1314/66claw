@@ -1,4 +1,4 @@
-# ClawdbotCN UI/UX 交互逻辑与功能设计方案
+# OpenClawCN UI/UX 交互逻辑与功能设计方案
 
 > 基于源码深度审查，面向中国小白用户的全面交互体验重设计
 > 目标：将新手友好度从 4/10 提升至 8/10，同时保留高级功能完整度
@@ -249,7 +249,7 @@
 
 基于 `capability-detect.ts` 已有逻辑（`isFirstVisit` + localStorage）。
 
-当检测到新用户时（无 `clawdbot:discovery:completed` 标记），显示全屏欢迎页。
+当检测到新用户时（无 `openclawcn:discovery:completed` 标记），显示全屏欢迎页。
 
 **欢迎页布局**：
 
@@ -359,7 +359,7 @@
   ├─ 设置安全模式 → full + ask=off（个人默认）
   ├─ 设置工作目录 → ~/clawd
   ├─ 设置全部默认参数（参见 config-defaults-guide.md）
-  └─ 写入 clawdbot.json → 启动服务 → 跳转聊天页
+  └─ 写入 openclawcn.json → 启动服务 → 跳转聊天页
 ```
 
 ---
@@ -454,7 +454,7 @@
 │  │  ❌ 未连接到 AI 服务                             │   │
 │  │                                                  │   │
 │  │  可能的原因：                                     │   │
-│  │  1. ClawdbotCN 服务还没启动                       │   │
+│  │  1. OpenClawCN 服务还没启动                       │   │
 │  │  2. 令牌（Token）不正确                           │   │
 │  │                                                  │   │
 │  │  WebSocket 地址: [ws://localhost:18789         ]  │   │
@@ -464,7 +464,7 @@
 │  │  [连接]   [刷新]                                  │   │
 │  │                                                  │   │
 │  │  💡 不知道令牌？在终端运行：                       │   │
-│  │  clawdbot dashboard --no-open    [复制]           │   │
+│  │  openclawcn dashboard --no-open    [复制]           │   │
 │  │                                                  │   │
 │  │  📖 查看文档                                      │   │
 │  └─────────────────────────────────────────────────┘   │
@@ -962,7 +962,7 @@ AI 回复：
 ```
 [首次访问]
     │
-    ├─ 检测 localStorage "clawdbot:discovery:firstVisit"
+    ├─ 检测 localStorage "openclawcn:discovery:firstVisit"
     │
     ▼
 [欢迎页] ──→ 点击"快速开始" ──→ [三步配置]

@@ -1,4 +1,4 @@
-# Clawdbot 下载与安装指南
+# OpenClawCN 下载与安装指南
 
 > 让 AI 助手成为你的得力助手，一份完整的安装配置指南
 
@@ -6,7 +6,7 @@
 
 ## 一、支持平台
 
-Clawdbot 支持主流桌面操作系统，提供 **Lite（轻量版）** 和 **Pro（专业版）** 两种版本满足不同安全需求。
+OpenClawCN 支持主流桌面操作系统，提供 **Lite（轻量版）** 和 **Pro（专业版）** 两种版本满足不同安全需求。
 
 ### 平台支持矩阵
 
@@ -47,8 +47,8 @@ Clawdbot 支持主流桌面操作系统，提供 **Lite（轻量版）** 和 **P
 
 | 版本 | 下载链接 | 大小 | 说明 |
 |------|---------|------|------|
-| **Lite 轻量版** | [Clawdbot-Lite-Setup.exe](https://github.com/clawdbot/clawdbot/releases/latest) | ~25 MB | 推荐大多数用户 |
-| **Pro 专业版** | [Clawdbot-Pro-Setup.exe](https://github.com/clawdbot/clawdbot/releases/latest) | ~25 MB | 需要 Docker Desktop |
+| **Lite 轻量版** | [OpenClawCN-Lite-Setup.exe](https://github.com/openclawcn/openclawcn/releases/latest) | ~25 MB | 推荐大多数用户 |
+| **Pro 专业版** | [OpenClawCN-Pro-Setup.exe](https://github.com/openclawcn/openclawcn/releases/latest) | ~25 MB | 需要 Docker Desktop |
 
 **安装步骤：**
 1. 下载 EXE 安装包
@@ -67,13 +67,13 @@ Clawdbot 支持主流桌面操作系统，提供 **Lite（轻量版）** 和 **P
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://clawd.bot/install.sh | bash
+curl -fsSL https://openclawcn.com/install.sh | bash
 ```
 
 **Windows（以管理员身份打开 PowerShell）**
 
 ```powershell
-iwr -useb https://clawd.bot/install.ps1 | iex
+iwr -useb https://openclawcn.com/install.ps1 | iex
 ```
 
 ### 方式二：npm 全局安装
@@ -82,10 +82,10 @@ iwr -useb https://clawd.bot/install.ps1 | iex
 
 ```bash
 # 使用 npm
-npm install -g clawdbot@latest
+npm install -g openclawcn@latest
 
 # 或使用 pnpm
-pnpm add -g clawdbot@latest
+pnpm add -g openclawcn@latest
 ```
 
 ### 方式三：下载安装包
@@ -94,21 +94,21 @@ pnpm add -g clawdbot@latest
 
 | 平台 | 文件名 | 说明 |
 |------|--------|------|
-| **Windows Lite** | `Clawdbot-Lite-vX.X.X.zip` | 便携版，解压即用 |
-| **Windows Lite** | `Clawdbot-Lite-Setup-vX.X.X.exe` | 安装程序版 |
-| **Windows Pro** | `Clawdbot-Pro-Full-vX.X.X.exe` | 完整安装（含 Docker 环境） |
+| **Windows Lite** | `OpenClawCN-Lite-vX.X.X.zip` | 便携版，解压即用 |
+| **Windows Lite** | `OpenClawCN-Lite-Setup-vX.X.X.exe` | 安装程序版 |
+| **Windows Pro** | `OpenClawCN-Pro-Full-vX.X.X.exe` | 完整安装（含 Docker 环境） |
 | **macOS (Apple Silicon)** | `ClawbotCN-macOS-vX.X.X-arm64.zip` | M1/M2/M3 芯片 |
 | **macOS (Intel)** | `ClawbotCN-macOS-vX.X.X-x64.zip` | Intel 芯片 |
 | **macOS (通用)** | `ClawbotCN-macOS-vX.X.X-universal.zip` | 兼容所有 Mac |
-| **Linux (x64)** | `clawdbot-lite-vX.X.X-linux-x64.tar.gz` | 通用压缩包 |
-| **Linux (DEB)** | `clawdbot-lite_X.X.X_amd64.deb` | Debian/Ubuntu |
-| **Linux (RPM)** | `clawdbot-lite-X.X.X-1.x86_64.rpm` | RHEL/CentOS/Fedora |
+| **Linux (x64)** | `openclawcn-lite-vX.X.X-linux-x64.tar.gz` | 通用压缩包 |
+| **Linux (DEB)** | `openclawcn-lite_X.X.X_amd64.deb` | Debian/Ubuntu |
+| **Linux (RPM)** | `openclawcn-lite-X.X.X-1.x86_64.rpm` | RHEL/CentOS/Fedora |
 
 ---
 
 ## 三、安装向导
 
-首次启动 Clawdbot 后，会自动打开 Web 配置向导（`http://localhost:端口/setup`），引导你完成全部配置。整个过程分为 **6 个步骤**：
+首次启动 OpenClawCN 后，会自动打开 Web 配置向导（`http://localhost:端口/setup`），引导你完成全部配置。整个过程分为 **6 个步骤**：
 
 ```
 Step 1        Step 2        Step 3        Step 4        Step 5        Step 6
@@ -173,7 +173,7 @@ AI服务    →   安全设置   →   工作目录   →   指挥渠道   →  
 
 ### Step 3：设置工作目录
 
-指定 Clawdbot 可以操控的文件夹范围。
+指定 OpenClawCN 可以操控的文件夹范围。
 
 #### 主工作目录
 
@@ -181,9 +181,9 @@ AI服务    →   安全设置   →   工作目录   →   指挥渠道   →  
 
 | 平台 | 默认路径 |
 |------|---------|
-| Windows | `D:\Clawdbot\workspace` |
+| Windows | `D:\OpenClawCN\workspace` |
 | macOS | `~/.clawbotcn/workspace` |
-| Linux | `/opt/clawdbot/workspace` |
+| Linux | `/opt/openclawcn/workspace` |
 
 #### 额外信任目录（可选）
 
@@ -214,7 +214,7 @@ AI服务    →   安全设置   →   工作目录   →   指挥渠道   →  
 
 ### Step 5：产品验证
 
-激活你的 Clawdbot 许可证。
+激活你的 OpenClawCN 许可证。
 
 #### 获取许可证
 
@@ -247,7 +247,7 @@ AI服务    →   安全设置   →   工作目录   →   指挥渠道   →  
 - ✅ AI 服务：阿里云百炼
 - ✅ 运行环境：Windows Lite（轻量沙盒）
 - ✅ 安全模式：智能保护
-- ✅ 工作目录：D:\clawdbot-workspace
+- ✅ 工作目录：D:\openclawcn-workspace
 - ✅ 额外信任目录：2 个目录
 - ✅ 指挥渠道：钉钉、飞书
 - ✅ 许可证：已激活（有效期至 2026年12月31日）
@@ -277,13 +277,13 @@ AI服务    →   安全设置   →   工作目录   →   指挥渠道   →  
 
 ```bash
 # 启动服务
-sudo systemctl start clawdbot
+sudo systemctl start openclawcn
 
 # 设置开机自启
-sudo systemctl enable clawdbot
+sudo systemctl enable openclawcn
 
 # 查看运行日志
-journalctl -u clawdbot -f
+journalctl -u openclawcn -f
 ```
 
 ---
@@ -314,7 +314,7 @@ journalctl -u clawdbot -f
 ## 六、获取帮助
 
 - Skills 仓库：`gitee.com/tecbinai/skills`
-- 遇到问题？运行 `clawdbot doctor` 进行自检
+- 遇到问题？运行 `openclawcn doctor` 进行自检
 
 ---
 

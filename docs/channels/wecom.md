@@ -12,7 +12,7 @@ read_when: "Setting up WeCom (WeChat Work) or debugging WeCom integration"
 1. 在企业微信管理后台创建自建应用
 2. 获取 CorpID、AgentId、AgentSecret
 3. 配置回调 URL 并获取 Token 和 EncodingAESKey
-4. 配置 Clawdbot 并启动网关
+4. 配置 OpenClawCN 并启动网关
 
 最小配置:
 ```json5
@@ -45,7 +45,7 @@ read_when: "Setting up WeCom (WeChat Work) or debugging WeCom integration"
 1. 在管理后台点击 **应用管理** → **应用** → **自建**
 2. 点击 **创建应用**
 3. 填写应用信息:
-   - 应用名称: 如 "Clawdbot"
+   - 应用名称: 如 "OpenClawCN"
    - 应用 logo: 上传应用图标
    - 可见范围: 选择可以使用此应用的部门/成员
 4. 创建完成后，进入应用详情页
@@ -62,7 +62,7 @@ read_when: "Setting up WeCom (WeChat Work) or debugging WeCom integration"
    - **EncodingAESKey**: 点击 **随机获取** (用于消息加解密)
 4. 点击 **保存** (此时企业微信会验证 URL，确保网关已启动)
 
-### 4. 配置 Clawdbot
+### 4. 配置 OpenClawCN
 
 ```json5
 {
@@ -92,7 +92,7 @@ read_when: "Setting up WeCom (WeChat Work) or debugging WeCom integration"
 启动网关后，使用以下命令验证连接:
 
 ```bash
-clawdbot channels status --probe
+openclawcn channels status --probe
 ```
 
 在企业微信 App 中打开自建应用，发送消息测试。
@@ -238,7 +238,7 @@ clawdbot channels status --probe
 检查:
 1. `agentSecret` 是否正确
 2. 目标用户是否在应用可见范围内
-3. 运行 `clawdbot channels status --probe` 查看连接状态
+3. 运行 `openclawcn channels status --probe` 查看连接状态
 
 ### 获取 Access Token 失败
 

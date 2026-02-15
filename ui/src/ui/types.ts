@@ -309,6 +309,8 @@ export type PresenceEntry = {
   platform?: string | null;
   deviceFamily?: string | null;
   modelIdentifier?: string | null;
+  roles?: string[] | null;
+  scopes?: string[] | null;
   mode?: string | null;
   lastInputSeconds?: number | null;
   reason?: string | null;
@@ -338,6 +340,41 @@ export type AgentsListResult = {
   mainKey: string;
   scope: string;
   agents: GatewayAgentRow[];
+};
+
+export type AgentIdentityResult = {
+  agentId: string;
+  name: string;
+  avatar: string;
+  emoji?: string;
+};
+
+export type AgentFileEntry = {
+  name: string;
+  path: string;
+  missing: boolean;
+  size?: number;
+  updatedAtMs?: number;
+  content?: string;
+};
+
+export type AgentsFilesListResult = {
+  agentId: string;
+  workspace: string;
+  files: AgentFileEntry[];
+};
+
+export type AgentsFilesGetResult = {
+  agentId: string;
+  workspace: string;
+  file: AgentFileEntry;
+};
+
+export type AgentsFilesSetResult = {
+  ok: true;
+  agentId: string;
+  workspace: string;
+  file: AgentFileEntry;
 };
 
 export type GatewaySessionRow = {
@@ -387,8 +424,18 @@ export type SessionsPatchResult = {
   };
 };
 
+export type {
+  CostUsageDailyEntry,
+  CostUsageSummary,
+  SessionsUsageEntry,
+  SessionsUsageResult,
+  SessionsUsageTotals,
+  SessionUsageTimePoint,
+  SessionUsageTimeSeries,
+} from "./usage-types.ts";
+
 export type CronSchedule =
-  | { kind: "at"; atMs: number }
+  | { kind: "at"; at: string }
   | { kind: "every"; everyMs: number; anchorMs?: number }
   | { kind: "cron"; expr: string; tz?: string };
 
@@ -402,22 +449,13 @@ export type CronPayload =
       message: string;
       thinking?: string;
       timeoutSeconds?: number;
-      deliver?: boolean;
-      provider?:
-        | "last"
-        | "whatsapp"
-        | "telegram"
-        | "discord"
-        | "slack"
-        | "signal"
-        | "imessage"
-        | "msteams";
-      to?: string;
-      bestEffortDeliver?: boolean;
     };
 
-export type CronIsolation = {
-  postToMainPrefix?: string;
+export type CronDelivery = {
+  mode: "none" | "announce";
+  channel?: string;
+  to?: string;
+  bestEffort?: boolean;
 };
 
 export type CronJobState = {
@@ -442,7 +480,7 @@ export type CronJob = {
   sessionTarget: CronSessionTarget;
   wakeMode: CronWakeMode;
   payload: CronPayload;
-  isolation?: CronIsolation;
+  delivery?: CronDelivery;
   state?: CronJobState;
 };
 
@@ -459,17 +497,18 @@ export type CronRunLogEntry = {
   durationMs?: number;
   error?: string;
   summary?: string;
+  sessionId?: string;
+  sessionKey?: string;
 };
 
 export type SkillsStatusConfigCheck = {
   path: string;
-  value: unknown;
   satisfied: boolean;
 };
 
 export type SkillInstallOption = {
   id: string;
-  kind: "brew" | "node" | "go" | "uv" | "download";
+  kind: "brew" | "node" | "go" | "uv";
   label: string;
   bins: string[];
 };
@@ -481,17 +520,14 @@ export type SkillStatusEntry = {
   filePath: string;
   baseDir: string;
   skillKey: string;
+  bundled?: boolean;
   primaryEnv?: string;
   emoji?: string;
   homepage?: string;
   always: boolean;
-  /** 用户置顶（config.skills.pinnedSkills） */
-  pinned: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
   eligible: boolean;
-  /** 是否实际被加载进 AI prompt（受 maxPromptSkills 限制） */
-  activeInPrompt: boolean;
   requirements: {
     bins: string[];
     env: string[];
@@ -512,64 +548,13 @@ export type SkillStatusReport = {
   workspaceDir: string;
   managedSkillsDir: string;
   skills: SkillStatusEntry[];
-  /** 实际被加载进 prompt 的技能数量 */
-  activeCount: number;
-  /** prompt 技能数量上限 */
-  maxPromptSkills: number;
-};
-
-// Remote skills (from Gitee registry)
-export type RemoteSkillMeta = {
-  name: string;
-  nameZh?: string;  // 中文名称（后端支持后使用）
-  description: string;
-  descriptionZh?: string;  // 中文描述（后端支持后使用）
-  emoji?: string;
-  path: string;
-  version?: string;
-  tags?: string[];
-  author?: string;
-  installed?: boolean;
-};
-
-export type RemoteSkillsIndex = {
-  version: number;
-  updated: string;
-  skills: RemoteSkillMeta[];
-};
-
-// Skills Market (local index based)
-export type MarketSkillMeta = {
-  name: string;
-  nameZh?: string;  // 中文名称（后端支持后使用）
-  description: string;
-  descriptionZh?: string;  // 中文描述（后端支持后使用）
-  emoji?: string;
-  path: string;
-  version?: string;
-  tags?: string[];
-  author?: string;
-  installed: boolean;
-};
-
-export type SkillsMarketResponse = {
-  skills: MarketSkillMeta[];
-  lastSyncedAt: string | null;
-  syncing: boolean;
-  message?: string;
 };
 
 export type StatusSummary = Record<string, unknown>;
 
 export type HealthSnapshot = Record<string, unknown>;
 
-export type LogLevel =
-  | "trace"
-  | "debug"
-  | "info"
-  | "warn"
-  | "error"
-  | "fatal";
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
 export type LogEntry = {
   raw: string;
@@ -578,26 +563,4 @@ export type LogEntry = {
   subsystem?: string | null;
   message?: string | null;
   meta?: Record<string, unknown> | null;
-};
-
-// Token 使用量统计相关类型
-export type CostUsageTotals = {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  totalTokens: number;
-  totalCost: number;
-  missingCostEntries: number;
-};
-
-export type CostUsageDailyEntry = CostUsageTotals & {
-  date: string;
-};
-
-export type CostUsageSummary = {
-  updatedAt: number;
-  days: number;
-  daily: CostUsageDailyEntry[];
-  totals: CostUsageTotals;
 };

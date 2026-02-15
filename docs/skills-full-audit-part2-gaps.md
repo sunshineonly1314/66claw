@@ -119,7 +119,7 @@
 | **xvfb-run** | smalltalk | Linux 虚拟 X11 framebuffer，Windows/macOS 无此概念 |
 | **nix** | nix-mode | Nix 包管理器，依赖 Unix 文件系统和守护进程 |
 | **lp/lpstat/lpadmin** | printer | CUPS 打印系统 CLI，macOS/Linux 专用 |
-| **rsync** | clawdbot-update-plus | Unix 文件同步工具，Windows 需 WSL |
+| **rsync** | openclawcn-update-plus | Unix 文件同步工具，Windows 需 WSL |
 | **bc** | raindrop | Unix 任意精度计算器，Windows 无原生版 |
 
 ### D3: 上游开发者未发布 Windows 版 — 不是平台限制，是发布策略问题

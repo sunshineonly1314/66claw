@@ -1,7 +1,7 @@
 import { loadLogs } from "./controllers/logs";
 import { loadNodes } from "./controllers/nodes";
 import { loadDebug } from "./controllers/debug";
-import { initMcpCapabilities, type McpLifecycleCallbacks } from "./controllers/mcp-lifecycle";
+import { initMcpCapabilities, type McpLifecycleCallbacks } from "./controllers/mcp-lifecycle.js";
 import type { ClawdbotApp } from "./app";
 
 type PollingHost = {

@@ -4,7 +4,7 @@ description: Control Philips Hue lights/scenes via the OpenHue CLI.
 nameZh: "智能灯光"
 descriptionZh: "控制飞利浦Hue智能灯光"
 homepage: https://www.openhue.io/cli
-metadata: {"clawdbot":{"emoji":"💡","requires":{"bins":["openhue"]},"install":[{"id":"brew","kind":"brew","formula":"openhue/cli/openhue-cli","bins":["openhue"],"label":"Install OpenHue CLI (brew)"},{"id":"download","kind":"download","url":"https://github.com/openhue/openhue-cli/releases/latest","bins":["openhue"],"label":"Download openhue binary","os":["win32","linux"]}]}}
+metadata: {"openclawcn":{"emoji":"💡","requires":{"bins":["openhue"]},"install":[{"id":"brew","kind":"brew","formula":"openhue/cli/openhue-cli","bins":["openhue"],"label":"Install OpenHue CLI (brew)"},{"id":"download","kind":"download","url":"https://github.com/openhue/openhue-cli/releases/latest","bins":["openhue"],"label":"Download openhue binary","os":["win32","linux"]}]}}
 ---
 
 # OpenHue CLI

@@ -52,9 +52,9 @@ pnpm ui:build
 
 | 模式 | 输出文件 |
 |------|----------|
-| full | `E:\clawdbuild\ClawdbotCN-Full-Setup-{version}-x64.exe` |
-| standard | `E:\clawdbuild\ClawdbotCN-Setup-{version}-x64.exe` |
-| dev | `E:\clawdbuild\ClawdbotCN-*-{version}-x64-dev.exe` |
+| full | `E:\clawdbuild\OpenClawCN-Full-Setup-{version}-x64.exe` |
+| standard | `E:\clawdbuild\OpenClawCN-Setup-{version}-x64.exe` |
+| dev | `E:\clawdbuild\OpenClawCN-*-{version}-x64-dev.exe` |
 
 ## 关键注意事项 (Windows)
 
@@ -81,7 +81,7 @@ pnpm ui:build
 
 # Developer ID 签名 + 公证
 SIGN_IDENTITY="Developer ID Application: YourCo" \
-NOTARYTOOL_PROFILE="clawdbotcn" \
+NOTARYTOOL_PROFILE="openclawcncn" \
 ./build/scripts/build-macos-cn.sh
 ```
 
@@ -102,9 +102,9 @@ NOTARYTOOL_PROFILE="clawdbotcn" \
 
 | 脚本 | 输出文件 |
 |------|----------|
-| CN 版 | `build/output/ClawdbotCN-macOS-v{version}-{arch}.dmg` |
-| 国际版 | `build/output/macos/Clawdbot-{version}-macos-{arch}.dmg` |
-| 国际版 | `build/output/macos/Clawdbot-{version}-macos-{arch}.tar.gz` |
+| CN 版 | `build/output/OpenClawCN-macOS-v{version}-{arch}.dmg` |
+| 国际版 | `build/output/macos/OpenClawCN-{version}-macos-{arch}.dmg` |
+| 国际版 | `build/output/macos/OpenClawCN-{version}-macos-{arch}.tar.gz` |
 
 ### 关键注意事项 (macOS)
 

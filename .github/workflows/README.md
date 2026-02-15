@@ -14,7 +14,7 @@ Docker 镜像打包测试工作流。
 
 #### 手动触发步骤
 
-1. 进入仓库页面：https://github.com/kevinGoGoGo123/clawdbotCNDocker
+1. 进入仓库页面：https://github.com/kevinGoGoGo123/openclawcnCNDocker
 2. 点击顶部的 **Actions** 标签
 3. 左侧选择 **Docker Build Test**
 4. 点击右侧的 **Run workflow** 按钮
@@ -66,7 +66,7 @@ Docker 镜像打包测试工作流。
 4. 点击 **Personal access tokens** → **Tokens (classic)**
 5. 点击 **Generate new token (classic)**
 6. 配置：
-   - **Note**: `clawdbot-docker-build`
+   - **Note**: `openclawcn-docker-build`
    - **Expiration**: 90 days
    - **Scopes**: 勾选
      - ✅ `repo`

@@ -3,10 +3,12 @@ summary: "Bonjour/mDNS discovery + debugging (Gateway beacons, clients, and comm
 read_when:
   - Debugging Bonjour discovery issues on macOS/iOS
   - Changing mDNS service types, TXT records, or discovery UX
+title: "Bonjour Discovery"
 ---
+
 # Bonjour / mDNS discovery
 
-Clawdbot uses Bonjour (mDNS / DNS‑SD) as a **LAN‑only convenience** to discover
+OpenClawCN uses Bonjour (mDNS / DNS‑SD) as a **LAN‑only convenience** to discover
 an active Gateway (WebSocket endpoint). It is best‑effort and does **not** replace SSH or
 Tailnet-based connectivity.
 
@@ -18,39 +20,40 @@ boundary. You can keep the same discovery UX by switching to **unicast DNS‑SD*
 
 High‑level steps:
 
-1) Run a DNS server on the gateway host (reachable over Tailnet).
-2) Publish DNS‑SD records for `_clawdbot-gw._tcp` under a dedicated zone
-   (example: `clawdbot.internal.`).
-3) Configure Tailscale **split DNS** so `clawdbot.internal` resolves via that
+1. Run a DNS server on the gateway host (reachable over Tailnet).
+2. Publish DNS‑SD records for `_openclawcncn-gw._tcp` under a dedicated zone
+   (example: `openclawcn.internal.`).
+3. Configure Tailscale **split DNS** so your chosen domain resolves via that
    DNS server for clients (including iOS).
 
-Clawdbot standardizes on `clawdbot.internal.` for this mode. iOS/Android nodes
-browse both `local.` and `clawdbot.internal.` automatically.
+OpenClawCN supports any discovery domain; `openclawcn.internal.` is just an example.
+iOS/Android nodes browse both `local.` and your configured wide‑area domain.
 
 ### Gateway config (recommended)
 
 ```json5
 {
   gateway: { bind: "tailnet" }, // tailnet-only (recommended)
-  discovery: { wideArea: { enabled: true } } // enables clawdbot.internal DNS-SD publishing
+  discovery: { wideArea: { enabled: true } }, // enables wide-area DNS-SD publishing
 }
 ```
 
 ### One‑time DNS server setup (gateway host)
 
 ```bash
-clawdbot dns setup --apply
+openclawcn dns setup --apply
 ```
 
 This installs CoreDNS and configures it to:
+
 - listen on port 53 only on the gateway’s Tailscale interfaces
-- serve `clawdbot.internal.` from `~/.clawdbot/dns/clawdbot.internal.db`
+- serve your chosen domain (example: `openclawcn.internal.`) from `~/.openclawcn/dns/<domain>.db`
 
 Validate from a tailnet‑connected machine:
 
 ```bash
-dns-sd -B _clawdbot-gw._tcp clawdbot.internal.
-dig @<TAILNET_IPV4> -p 53 _clawdbot-gw._tcp.clawdbot.internal PTR +short
+dns-sd -B _openclawcncn-gw._tcp openclawcn.internal.
+dig @<TAILNET_IPV4> -p 53 _openclawcncn-gw._tcp.openclawcn.internal PTR +short
 ```
 
 ### Tailscale DNS settings
@@ -58,10 +61,10 @@ dig @<TAILNET_IPV4> -p 53 _clawdbot-gw._tcp.clawdbot.internal PTR +short
 In the Tailscale admin console:
 
 - Add a nameserver pointing at the gateway’s tailnet IP (UDP/TCP 53).
-- Add split DNS so the domain `clawdbot.internal` uses that nameserver.
+- Add split DNS so your discovery domain uses that nameserver.
 
 Once clients accept tailnet DNS, iOS nodes can browse
-`_clawdbot-gw._tcp` in `clawdbot.internal.` without multicast.
+`_openclawcncn-gw._tcp` in your discovery domain without multicast.
 
 ### Gateway listener security (recommended)
 
@@ -69,16 +72,17 @@ The Gateway WS port (default `18789`) binds to loopback by default. For LAN/tail
 access, bind explicitly and keep auth enabled.
 
 For tailnet‑only setups:
-- Set `gateway.bind: "tailnet"` in `~/.clawdbot/clawdbot.json`.
+
+- Set `gateway.bind: "tailnet"` in `~/.openclawcn/openclawcn.json`.
 - Restart the Gateway (or restart the macOS menubar app).
 
 ## What advertises
 
-Only the Gateway advertises `_clawdbot-gw._tcp`.
+Only the Gateway advertises `_openclawcncn-gw._tcp`.
 
 ## Service types
 
-- `_clawdbot-gw._tcp` — gateway transport beacon (used by macOS/iOS/Android nodes).
+- `_openclawcncn-gw._tcp` — gateway transport beacon (used by macOS/iOS/Android nodes).
 
 ## TXT keys (non‑secret hints)
 
@@ -90,23 +94,33 @@ The Gateway advertises small non‑secret hints to make UI flows convenient:
 - `gatewayPort=<port>` (Gateway WS + HTTP)
 - `gatewayTls=1` (only when TLS is enabled)
 - `gatewayTlsSha256=<sha256>` (only when TLS is enabled and fingerprint is available)
-- `canvasPort=<port>` (only when the canvas host is enabled; default `18793`)
+- `canvasPort=<port>` (only when the canvas host is enabled; currently the same as `gatewayPort`)
 - `sshPort=<port>` (defaults to 22 when not overridden)
 - `transport=gateway`
-- `cliPath=<path>` (optional; absolute path to a runnable `clawdbot` entrypoint)
+- `cliPath=<path>` (optional; absolute path to a runnable `openclawcn` entrypoint)
 - `tailnetDns=<magicdns>` (optional hint when Tailnet is available)
+
+Security notes:
+
+- Bonjour/mDNS TXT records are **unauthenticated**. Clients must not treat TXT as authoritative routing.
+- Clients should route using the resolved service endpoint (SRV + A/AAAA). Treat `lanHost`, `tailnetDns`, `gatewayPort`, and `gatewayTlsSha256` as hints only.
+- TLS pinning must never allow an advertised `gatewayTlsSha256` to override a previously stored pin.
+- iOS/Android nodes should treat discovery-based direct connects as **TLS-only** and require explicit user confirmation before trusting a first-time fingerprint.
 
 ## Debugging on macOS
 
 Useful built‑in tools:
 
 - Browse instances:
+
   ```bash
-  dns-sd -B _clawdbot-gw._tcp local.
+  dns-sd -B _openclawcncn-gw._tcp local.
   ```
+
 - Resolve one instance (replace `<instance>`):
+
   ```bash
-  dns-sd -L "<instance>" _clawdbot-gw._tcp local.
+  dns-sd -L "<instance>" _openclawcncn-gw._tcp local.
   ```
 
 If browsing works but resolving fails, you’re usually hitting a LAN policy or
@@ -123,9 +137,10 @@ The Gateway writes a rolling log file (printed on startup as
 
 ## Debugging on iOS node
 
-The iOS node uses `NWBrowser` to discover `_clawdbot-gw._tcp`.
+The iOS node uses `NWBrowser` to discover `_openclawcncn-gw._tcp`.
 
 To capture logs:
+
 - Settings → Gateway → Advanced → **Discovery Debug Logs**
 - Settings → Gateway → Advanced → **Discovery Logs** → reproduce → **Copy**
 
@@ -150,11 +165,11 @@ sequences (e.g. spaces become `\032`).
 
 ## Disabling / configuration
 
-- `CLAWDBOT_DISABLE_BONJOUR=1` disables advertising.
-- `gateway.bind` in `~/.clawdbot/clawdbot.json` controls the Gateway bind mode.
-- `CLAWDBOT_SSH_PORT` overrides the SSH port advertised in TXT.
-- `CLAWDBOT_TAILNET_DNS` publishes a MagicDNS hint in TXT.
-- `CLAWDBOT_CLI_PATH` overrides the advertised CLI path.
+- `OPENCLAWCN_DISABLE_BONJOUR=1` disables advertising (legacy: `OPENCLAWCN_DISABLE_BONJOUR`).
+- `gateway.bind` in `~/.openclawcn/openclawcn.json` controls the Gateway bind mode.
+- `OPENCLAWCN_SSH_PORT` overrides the SSH port advertised in TXT (legacy: `OPENCLAWCN_SSH_PORT`).
+- `OPENCLAWCN_TAILNET_DNS` publishes a MagicDNS hint in TXT (legacy: `OPENCLAWCN_TAILNET_DNS`).
+- `OPENCLAWCN_CLI_PATH` overrides the advertised CLI path (legacy: `OPENCLAWCN_CLI_PATH`).
 
 ## Related docs
 

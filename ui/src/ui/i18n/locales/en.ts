@@ -370,6 +370,8 @@ export const en = {
   // 技能页 (Skills)
   // ============================================================================
   "skills.title": "Skills",
+  "skills.tab.list": "Skills",
+  "skills.tab.mcpStore": "MCP Store",
   "skills.cardTitle": "Skills",
   "skills.cardSub": "Bundled, managed, and workspace skills. Skills extend your AI assistant's capabilities.",
   "skills.installed": "Installed",

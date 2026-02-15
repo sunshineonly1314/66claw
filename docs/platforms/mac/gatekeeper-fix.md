@@ -1,10 +1,10 @@
 # macOS Gatekeeper 警告解决方案
 
 ## 问题现象
-用户在macOS上安装ClawdbotCN后，系统弹出警告：
+用户在macOS上安装OpenClawCN后，系统弹出警告：
 ```
-未打开 "ClawdbotCN"
-Apple无法验证"ClawdbotCN"是否包含可能危害Mac安全或泄漏隐私的恶意软件。
+未打开 "OpenClawCN"
+Apple无法验证"OpenClawCN"是否包含可能危害Mac安全或泄漏隐私的恶意软件。
 ```
 
 ## 根本原因
@@ -31,13 +31,13 @@ Apple无法验证"ClawdbotCN"是否包含可能危害Mac安全或泄漏隐私的
 
 ```bash
 # 方法1：使用API密钥（推荐）
-xcrun notarytool store-credentials "clawdbotcn" \
+xcrun notarytool store-credentials "openclawcncn" \
   --key /path/to/AuthKey_XXXXXXXXXX.p8 \
   --key-id XXXXXXXXXX \
   --issuer XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
 
 # 方法2：使用Apple ID（需要App专用密码）
-xcrun notarytool store-credentials "clawdbotcn" \
+xcrun notarytool store-credentials "openclawcncn" \
   --apple-id "your-email@example.com" \
   --team-id TEAMID \
   --password "xxxx-xxxx-xxxx-xxxx"
@@ -50,7 +50,7 @@ xcrun notarytool store-credentials "clawdbotcn" \
 ```bash
 # 设置环境变量
 export SIGN_IDENTITY="Developer ID Application: YourCompany (TEAMID)"
-export NOTARYTOOL_PROFILE="clawdbotcn"
+export NOTARYTOOL_PROFILE="openclawcncn"
 
 # 构建（自动签名+公证）
 ./build/scripts/build-macos-cn.sh
@@ -68,60 +68,60 @@ export NOTARYTOOL_PROFILE="clawdbotcn"
 ```bash
 # 1. 签名应用
 SIGN_IDENTITY="Developer ID Application: YourCompany (TEAMID)" \
-  scripts/codesign-mac-app.sh /path/to/ClawdbotCN.app
+  scripts/codesign-mac-app.sh /path/to/OpenClawCN.app
 
 # 2. 创建ZIP（用于公证）
 ditto -c -k --sequesterRsrc --keepParent \
-  /path/to/ClawdbotCN.app \
-  /tmp/ClawdbotCN-signed.zip
+  /path/to/OpenClawCN.app \
+  /tmp/OpenClawCN-signed.zip
 
 # 3. 提交公证
-xcrun notarytool submit /tmp/ClawdbotCN-signed.zip \
-  --keychain-profile "clawdbotcn" \
+xcrun notarytool submit /tmp/OpenClawCN-signed.zip \
+  --keychain-profile "openclawcncn" \
   --wait
 
 # 4. 装订公证票据
-xcrun stapler staple /path/to/ClawdbotCN.app
+xcrun stapler staple /path/to/OpenClawCN.app
 
 # 5. 验证
-xcrun stapler validate /path/to/ClawdbotCN.app
-spctl -a -v /path/to/ClawdbotCN.app
+xcrun stapler validate /path/to/OpenClawCN.app
+spctl -a -v /path/to/OpenClawCN.app
 ```
 
 ### 4. 创建公证的DMG分发包
 
 ```bash
 # 1. 创建DMG
-hdiutil create -volname "ClawdbotCN" \
-  -srcfolder /path/to/ClawdbotCN.app \
+hdiutil create -volname "OpenClawCN" \
+  -srcfolder /path/to/OpenClawCN.app \
   -ov -format UDZO \
   -imagekey zlib-level=9 \
-  /tmp/ClawdbotCN.dmg
+  /tmp/OpenClawCN.dmg
 
 # 2. 签名DMG
-codesign --force --sign "$SIGN_IDENTITY" --timestamp /tmp/ClawdbotCN.dmg
+codesign --force --sign "$SIGN_IDENTITY" --timestamp /tmp/OpenClawCN.dmg
 
 # 3. 提交DMG公证
-xcrun notarytool submit /tmp/ClawdbotCN.dmg \
-  --keychain-profile "clawdbotcn" \
+xcrun notarytool submit /tmp/OpenClawCN.dmg \
+  --keychain-profile "openclawcncn" \
   --wait
 
 # 4. 装订DMG
-xcrun stapler staple /tmp/ClawdbotCN.dmg
+xcrun stapler staple /tmp/OpenClawCN.dmg
 
 # 5. 验证
-xcrun stapler validate /tmp/ClawdbotCN.dmg
-spctl -a -t open --context context:primary-signature -v /tmp/ClawdbotCN.dmg
+xcrun stapler validate /tmp/OpenClawCN.dmg
+spctl -a -t open --context context:primary-signature -v /tmp/OpenClawCN.dmg
 ```
 
 ### 5. 验证公证状态
 
 ```bash
 # 检查应用的公证状态
-spctl -a -vv /path/to/ClawdbotCN.app
+spctl -a -vv /path/to/OpenClawCN.app
 
 # 预期输出（成功）：
-# ClawdbotCN.app: accepted
+# OpenClawCN.app: accepted
 # source=Notarized Developer ID
 ```
 
@@ -130,18 +130,18 @@ spctl -a -vv /path/to/ClawdbotCN.app
 如果应用尚未公证，用户可以通过以下方式临时允许运行：
 
 **方法1：右键打开（推荐）**
-1. 右键点击ClawdbotCN.app
+1. 右键点击OpenClawCN.app
 2. 选择"打开"
 3. 在弹出对话框中点击"打开"
 
 **方法2：系统设置**
 1. 系统设置 → 隐私与安全性
-2. 在"安全性"部分找到ClawdbotCN的提示
+2. 在"安全性"部分找到OpenClawCN的提示
 3. 点击"仍要打开"
 
 **方法3：命令行移除隔离属性（仅限开发）**
 ```bash
-xattr -d com.apple.quarantine /Applications/ClawdbotCN.app
+xattr -d com.apple.quarantine /Applications/OpenClawCN.app
 ```
 
 ## 构建脚本参数说明
@@ -151,7 +151,7 @@ xattr -d com.apple.quarantine /Applications/ClawdbotCN.app
 ```bash
 # 完整示例
 SIGN_IDENTITY="Developer ID Application: YourCo (TEAMID)" \
-NOTARYTOOL_PROFILE="clawdbotcn" \
+NOTARYTOOL_PROFILE="openclawcncn" \
 ./build/scripts/build-macos-cn.sh
 
 # 跳过公证（测试用）
@@ -173,7 +173,7 @@ A: 通常5-15分钟，高峰期可能更长。`--wait` 参数会等待完成。
 ### Q: 公证失败怎么办？
 A: 查看失败日志：
 ```bash
-xcrun notarytool log <submission-id> --keychain-profile "clawdbotcn"
+xcrun notarytool log <submission-id> --keychain-profile "openclawcncn"
 ```
 常见原因：
 - 未签名所有二进制文件（.node模块、node可执行文件等）

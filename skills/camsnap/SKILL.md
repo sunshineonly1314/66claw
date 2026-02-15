@@ -4,7 +4,7 @@ description: Capture frames or clips from RTSP/ONVIF cameras.
 nameZh: "摄像头拍照"
 descriptionZh: "使用摄像头拍摄照片"
 homepage: https://camsnap.ai
-metadata: {"clawdbot":{"emoji":"📸","requires":{"bins":["camsnap"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/camsnap","bins":["camsnap"],"label":"Install camsnap (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/camsnap/releases/latest","bins":["camsnap"],"label":"Download camsnap binary","os":["win32","linux"]}]}}
+metadata: {"openclawcn":{"emoji":"📸","requires":{"bins":["camsnap"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/camsnap","bins":["camsnap"],"label":"Install camsnap (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/camsnap/releases/latest","bins":["camsnap"],"label":"Download camsnap binary","os":["win32","linux"]}]}}
 ---
 
 # camsnap

@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================================
-# Clawdbot macOS 一键安装脚本
+# OpenClawCN macOS 一键安装脚本
 # ============================================================================
-# 用法: curl -fsSL https://clawd.bot/install-mac.sh | bash
-# 国内: curl -fsSL https://download.clawd.bot/install-mac.sh | bash
+# 用法: curl -fsSL https://openclawcn.com/install-mac.sh | bash
+# 国内: curl -fsSL https://download.openclawcn.com/install-mac.sh | bash
 #
 # 功能：
 #   - 自动检测系统架构（arm64/x64）
@@ -20,20 +20,20 @@ set -e
 # ============================================================================
 # 配置
 # ============================================================================
-VERSION="${CLAWDBOT_VERSION:-latest}"
-MIRROR="${CLAWDBOT_MIRROR:-default}"  # default, cn
+VERSION="${OPENCLAWCN_VERSION:-latest}"
+MIRROR="${OPENCLAWCN_MIRROR:-default}"  # default, cn
 PORT=18789
 MAX_WAIT=60
 INSTALL_DIR="/Applications"
-APP_NAME="Clawdbot.app"
-CONFIG_DIR="$HOME/.clawdbot"
-CONFIG_FILE="$CONFIG_DIR/clawdbot.json"
+APP_NAME="OpenClawCN.app"
+CONFIG_DIR="$HOME/.openclawcn"
+CONFIG_FILE="$CONFIG_DIR/openclawcn.json"
 LOG_DIR="$CONFIG_DIR/logs"
 LOG_FILE="$LOG_DIR/install.log"
 
 # 下载源
-DOWNLOAD_BASE_DEFAULT="https://download.clawd.bot"
-DOWNLOAD_BASE_CN="https://download.clawd.bot"  # TODO: 替换为国内CDN
+DOWNLOAD_BASE_DEFAULT="https://download.openclawcn.com"
+DOWNLOAD_BASE_CN="https://download.openclawcn.com"  # TODO: 替换为国内CDN
 
 # ============================================================================
 # 统一错误码（与 Windows ErrorCodes.ps1 对应）
@@ -94,7 +94,7 @@ NC='\033[0m' # No Color
 # ============================================================================
 init_logging() {
     mkdir -p "$LOG_DIR"
-    echo "========== Clawdbot 安装日志 ==========" > "$LOG_FILE"
+    echo "========== OpenClawCN 安装日志 ==========" > "$LOG_FILE"
     echo "安装时间: $(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_FILE"
     echo "系统: $(uname -s) $(uname -r)" >> "$LOG_FILE"
     echo "架构: $(uname -m)" >> "$LOG_FILE"
@@ -122,7 +122,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}  ╔════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}  ║                                                                ║${NC}"
-    echo -e "${CYAN}  ║              ${BOLD}Clawdbot macOS 一键安装器${NC}${CYAN}                        ║${NC}"
+    echo -e "${CYAN}  ║              ${BOLD}OpenClawCN macOS 一键安装器${NC}${CYAN}                        ║${NC}"
     echo -e "${CYAN}  ║                                                                ║${NC}"
     echo -e "${CYAN}  ╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -232,7 +232,7 @@ check_disk_space() {
 
 check_existing_installation() {
     if [ -d "$INSTALL_DIR/$APP_NAME" ]; then
-        print_warn "检测到已安装的 Clawdbot"
+        print_warn "检测到已安装的 OpenClawCN"
         echo ""
         echo -e "  ${YELLOW}是否覆盖安装？${NC}"
         echo -e "    ${GRAY}[Y] 覆盖安装  [N] 取消${NC}"
@@ -261,9 +261,9 @@ check_port() {
         local process_name=$(echo "$port_info" | awk '{print $1}' | head -1)
         local cmdline=$(ps -p "$pid" -o command= 2>/dev/null || echo "unknown")
         
-        # 检查是否是 Clawdbot Gateway
+        # 检查是否是 OpenClawCN Gateway
         if echo "$cmdline" | grep -q "gateway"; then
-            print_warn "Clawdbot Gateway 已在运行 (PID: $pid)"
+            print_warn "OpenClawCN Gateway 已在运行 (PID: $pid)"
             echo ""
             echo -e "  ${YELLOW}是否重启服务？${NC}"
             echo -e "    ${GRAY}[Y] 重启服务  [N] 保持现状并退出${NC}"
@@ -304,9 +304,9 @@ check_port() {
 }
 
 stop_existing_gateway() {
-    # 停止所有 Clawdbot 相关进程
-    pkill -9 -f "Clawdbot" 2>/dev/null || true
-    pkill -9 -f "clawdbot.*gateway" 2>/dev/null || true
+    # 停止所有 OpenClawCN 相关进程
+    pkill -9 -f "OpenClawCN" 2>/dev/null || true
+    pkill -9 -f "openclawcn.*gateway" 2>/dev/null || true
     
     # 清理锁文件（参考 Windows）
     local lock_file="$CONFIG_DIR/gateway.lock"
@@ -351,8 +351,8 @@ download_with_retry() {
 }
 
 download_and_install() {
-    local download_url="$DOWNLOAD_BASE/releases/$VERSION/Clawdbot-$ARCH.tar.gz"
-    local temp_file="/tmp/clawdbot-$$.tar.gz"
+    local download_url="$DOWNLOAD_BASE/releases/$VERSION/OpenClawCN-$ARCH.tar.gz"
+    local temp_file="/tmp/openclawcn-$$.tar.gz"
     
     print_debug "下载地址: $download_url"
     
@@ -365,7 +365,7 @@ download_and_install() {
         if [ "$MIRROR" != "cn" ]; then
             print_warn "主下载源失败，尝试国内镜像..."
             DOWNLOAD_BASE="$DOWNLOAD_BASE_CN"
-            download_url="$DOWNLOAD_BASE/releases/$VERSION/Clawdbot-$ARCH.tar.gz"
+            download_url="$DOWNLOAD_BASE/releases/$VERSION/OpenClawCN-$ARCH.tar.gz"
             
             if ! download_with_retry "$download_url" "$temp_file"; then
                 exit_with_error $ERROR_DOWNLOAD_FAILED "下载失败，请检查网络连接"
@@ -407,7 +407,7 @@ handle_gatekeeper() {
         print_warn "无法移除隔离属性，首次启动可能需要手动确认"
         echo ""
         echo -e "  ${YELLOW}提示: 如果首次打开被拦截:${NC}"
-        echo -e "    ${GRAY}1. 右键点击 Clawdbot.app${NC}"
+        echo -e "    ${GRAY}1. 右键点击 OpenClawCN.app${NC}"
         echo -e "    ${GRAY}2. 选择「打开」${NC}"
         echo -e "    ${GRAY}3. 在弹出的对话框中点击「打开」${NC}"
         echo ""
@@ -417,7 +417,7 @@ handle_gatekeeper() {
 }
 
 # ============================================================================
-# 配置文件（参考 Windows StartClawdbot.ps1）
+# 配置文件（参考 Windows StartOpenClawCN.ps1）
 # ============================================================================
 generate_random_token() {
     # 生成 24 字节的随机 Token（与 Windows 一致）
@@ -468,12 +468,12 @@ EOF
 # 启动服务
 # ============================================================================
 start_gateway() {
-    print_debug "启动 Clawdbot..."
+    print_debug "启动 OpenClawCN..."
     
     # 打开应用（macOS 会自动处理 Gateway 启动）
     open "$INSTALL_DIR/$APP_NAME"
     
-    print_ok "Clawdbot 启动命令已发送"
+    print_ok "OpenClawCN 启动命令已发送"
 }
 
 wait_for_gateway() {
@@ -572,7 +572,7 @@ main() {
     setup_config
     
     # Step 7: 启动服务
-    print_step 7 $total_steps "启动 Clawdbot..."
+    print_step 7 $total_steps "启动 OpenClawCN..."
     start_gateway
     
     if ! wait_for_gateway; then
@@ -586,7 +586,7 @@ main() {
         echo -e "    ${GRAY}2. 端口 $PORT 被占用${NC}"
         echo -e "    ${GRAY}3. 系统权限问题${NC}"
         echo ""
-        echo -e "  ${CYAN}请稍后手动打开 Clawdbot.app 重试${NC}"
+        echo -e "  ${CYAN}请稍后手动打开 OpenClawCN.app 重试${NC}"
         echo -e "  ${CYAN}日志文件: $LOG_FILE${NC}"
         echo ""
         exit $ERROR_GATEWAY_TIMEOUT
@@ -605,7 +605,7 @@ main() {
     echo -e "  浏览器已打开配置页面，请在浏览器中完成设置。"
     echo ""
     echo -e "  ${CYAN}提示:${NC}"
-    echo -e "    ${GRAY}- Clawdbot 正在后台运行（查看菜单栏图标）${NC}"
+    echo -e "    ${GRAY}- OpenClawCN 正在后台运行（查看菜单栏图标）${NC}"
     echo -e "    ${GRAY}- 可以安全关闭此窗口${NC}"
     echo -e "    ${GRAY}- 如需重新打开控制台，点击菜单栏图标${NC}"
     echo ""
@@ -635,7 +635,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --help|-h)
-            echo "Clawdbot macOS 一键安装脚本"
+            echo "OpenClawCN macOS 一键安装脚本"
             echo ""
             echo "用法: $0 [选项]"
             echo ""

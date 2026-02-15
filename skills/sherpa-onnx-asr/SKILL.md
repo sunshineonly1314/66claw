@@ -3,7 +3,7 @@ name: sherpa-onnx-asr
 description: Local speech recognition via sherpa-onnx (offline, no cloud)
 nameZh: "本地语音识别"
 descriptionZh: "本地离线语音转文字（无需云服务，支持中英日韩粤）"
-metadata: {"clawdbot":{"emoji":"🎙️","os":["darwin","linux","win32"],"install":[{"id":"download-sensevoice-model","kind":"download","url":"https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/model.int8.onnx","extract":false,"targetDir":"~/.clawdbot/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17","label":"下载 SenseVoice 模型 (zh/en/ja/ko/yue, 228MB)"},{"id":"download-sensevoice-tokens","kind":"download","url":"https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/tokens.txt","extract":false,"targetDir":"~/.clawdbot/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17","label":"下载 SenseVoice 词表 (316KB)"}]}}
+metadata: {"openclawcn":{"emoji":"🎙️","os":["darwin","linux","win32"],"install":[{"id":"download-sensevoice-model","kind":"download","url":"https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/model.int8.onnx","extract":false,"targetDir":"~/.openclawcn/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17","label":"下载 SenseVoice 模型 (zh/en/ja/ko/yue, 228MB)"},{"id":"download-sensevoice-tokens","kind":"download","url":"https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/tokens.txt","extract":false,"targetDir":"~/.openclawcn/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17","label":"下载 SenseVoice 词表 (316KB)"}]}}
 ---
 
 # sherpa-onnx-asr
@@ -33,7 +33,7 @@ metadata: {"clawdbot":{"emoji":"🎙️","os":["darwin","linux","win32"],"instal
 2. 找到「本地语音识别」
 3. 点击下载模型文件 (model.int8.onnx + tokens.txt)
 
-模型文件下载到 `~/.clawdbot/tools/sherpa-onnx-asr/models/` 目录。
+模型文件下载到 `~/.openclawcn/tools/sherpa-onnx-asr/models/` 目录。
 
 ## 手动下载
 
@@ -41,8 +41,8 @@ metadata: {"clawdbot":{"emoji":"🎙️","os":["darwin","linux","win32"],"instal
 
 ```bash
 # 创建目录
-mkdir -p ~/.clawdbot/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
-cd ~/.clawdbot/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
+mkdir -p ~/.openclawcn/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
+cd ~/.openclawcn/tools/sherpa-onnx-asr/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
 
 # 从 ModelScope 下载 (国内推荐, ~2.3 MB/s)
 wget https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/model.int8.onnx

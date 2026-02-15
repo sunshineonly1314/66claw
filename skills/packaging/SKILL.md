@@ -1,17 +1,17 @@
 ---
 name: packaging
-description: ClawdbotCN 跨平台构建与打包指南 (Windows + macOS)。
+description: OpenClawCN 跨平台构建与打包指南 (Windows + macOS)。
 nameZh: "打包工具"
-descriptionZh: "ClawdbotCN 跨平台构建与打包完整指南 (Windows + macOS)"
+descriptionZh: "OpenClawCN 跨平台构建与打包完整指南 (Windows + macOS)"
 ---
 
 # Packaging Skill
 
-ClawdbotCN 跨平台构建与打包指南 (Windows + macOS)。
+OpenClawCN 跨平台构建与打包指南 (Windows + macOS)。
 
 ## 概述
 
-ClawdbotCN 使用统一构建脚本 `build/scripts/windows/build-windows.ps1` 完成 Windows 平台的全量编译、依赖安装和 Inno Setup 打包。
+OpenClawCN 使用统一构建脚本 `build/scripts/windows/build-windows.ps1` 完成 Windows 平台的全量编译、依赖安装和 Inno Setup 打包。
 
 | 构建模式 | 说明 | 预估大小 |
 |----------|------|----------|
@@ -139,9 +139,9 @@ powershell -ExecutionPolicy Bypass -File build\scripts\windows\build-windows.ps1
 
 | 模式 | 文件名 | 位置 |
 |------|--------|------|
-| standard | `ClawdbotCN-Setup-{version}-x64.exe` | `E:\clawdbuild\` |
-| full | `ClawdbotCN-Full-Setup-{version}-x64.exe` | `E:\clawdbuild\` |
-| dev (fast) | `ClawdbotCN-*-{version}-x64-dev.exe` | `E:\clawdbuild\` |
+| standard | `OpenClawCN-Setup-{version}-x64.exe` | `E:\clawdbuild\` |
+| full | `OpenClawCN-Full-Setup-{version}-x64.exe` | `E:\clawdbuild\` |
+| dev (fast) | `OpenClawCN-*-{version}-x64-dev.exe` | `E:\clawdbuild\` |
 
 ### 安装包内容
 
@@ -160,7 +160,7 @@ powershell -ExecutionPolicy Bypass -File build\scripts\windows\build-windows.ps1
 ├── docs\reference\templates\# Bot 角色模板
 ├── patches\                 # pnpm patches
 ├── scripts\                 # postinstall 脚本
-├── ClawdbotService.exe      # C# 系统托盘服务
+├── OpenClawCNService.exe      # C# 系统托盘服务
 ├── start-gateway.bat        # 网关启动脚本
 ├── package.json             # 项目描述
 └── install.json             # 安装标记（安装时自动生成）
@@ -225,7 +225,7 @@ pnpm integrity:gen
 | `scripts/generate-integrity-hashes.ts` | 完整性哈希生成器 |
 | `scripts/windows/node-portable/` | Node.js 便携版运行时 |
 | `scripts/windows/bundled-bins/` | 预置工具二进制 |
-| `scripts/windows/native/ClawdbotService.exe` | C# 系统托盘服务 |
+| `scripts/windows/native/OpenClawCNService.exe` | C# 系统托盘服务 |
 | `scripts/windows/assets/` | 安装程序图标和 banner |
 
 ---
@@ -284,8 +284,8 @@ macOS 有两个构建脚本:
 SIGN_IDENTITY="Developer ID Application: YourCo (TEAMID)" ./build/scripts/build-macos-cn.sh
 
 # 公证 (需提前配置)
-xcrun notarytool store-credentials "clawdbotcn"
-NOTARYTOOL_PROFILE="clawdbotcn" ./build/scripts/build-macos-cn.sh
+xcrun notarytool store-credentials "openclawcncn"
+NOTARYTOOL_PROFILE="openclawcncn" ./build/scripts/build-macos-cn.sh
 ```
 
 ### 8 步构建流水线
@@ -350,14 +350,14 @@ Job E 自动扫描所有 `extensions/*/package.json`, 对有 `"dependencies"` �
 
 | 文件 | 位置 |
 |------|------|
-| `ClawdbotCN-macOS-v{VERSION}-{ARCH}.dmg` | `build/output/` |
-| `ClawdbotCN-macOS-v{VERSION}-{ARCH}.dmg.sha256` | `build/output/` |
+| `OpenClawCN-macOS-v{VERSION}-{ARCH}.dmg` | `build/output/` |
+| `OpenClawCN-macOS-v{VERSION}-{ARCH}.dmg.sha256` | `build/output/` |
 
 ### .app 内部结构
 
 ```
-ClawdbotCN.app/Contents/
-├── MacOS/ClawdbotCN              # 启动脚本 (bash, 非编译二进制)
+OpenClawCN.app/Contents/
+├── MacOS/OpenClawCN              # 启动脚本 (bash, 非编译二进制)
 ├── Info.plist                     # 应用元数据
 ├── PkgInfo                        # APPL????
 └── Resources/
@@ -403,7 +403,7 @@ ClawdbotCN.app/Contents/
 **修复:** 构建脚本已使用 `node-linker=hoisted` 和 `rsync -rL` 解决。如仍有问题:
 ```bash
 # 在 .app 内部重新安装依赖
-cd /Applications/ClawdbotCN.app/Contents/Resources/gateway
+cd /Applications/OpenClawCN.app/Contents/Resources/gateway
 npm install --omit=dev
 ```
 
@@ -413,7 +413,7 @@ npm install --omit=dev
 
 **修复:** 右键 → 打开, 或:
 ```bash
-xattr -cr /Applications/ClawdbotCN.app
+xattr -cr /Applications/OpenClawCN.app
 ```
 
 使用 Developer ID 签名 + 公证可避免此问题。

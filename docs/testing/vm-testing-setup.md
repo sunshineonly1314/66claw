@@ -2,7 +2,7 @@
 
 ## 目的
 
-搭建一个干净的 Windows 虚拟机环境，用于测试 Clawdbot 安装包，模拟真实用户的全新电脑环境。
+搭建一个干净的 Windows 虚拟机环境，用于测试 OpenClawCN 安装包，模拟真实用户的全新电脑环境。
 
 ---
 
@@ -55,7 +55,7 @@
 #### 1. 新建虚拟机
 
 ```
-名称：Clawdbot-Test-Win11
+名称：OpenClawCN-Test-Win11
 类型：Microsoft Windows
 版本：Windows 11 (64-bit)
 ```
@@ -95,7 +95,7 @@
 
 | 配置 | 值 |
 |------|-----|
-| 文件夹路径 | `D:\codeknowledge\clawdbot-main\clawdbot-main\buildout\windows` |
+| 文件夹路径 | `D:\codeknowledge\openclawcn-main\openclawcn-main\buildout\windows` |
 | 文件夹名称 | `buildout` |
 | 只读 | ✅ |
 | 自动挂载 | ✅ |
@@ -128,7 +128,7 @@
 #### 1. 安装测试
 
 ```
-测试文件：Z:\Clawdbot-Lite-Setup-v2026.1.29.exe
+测试文件：Z:\OpenClawCN-Lite-Setup-v2026.1.29.exe
 ```
 
 - [ ] 双击安装包，安装向导正常显示
@@ -143,7 +143,7 @@
 - [ ] 命令行窗口显示正常（无乱码）
 - [ ] 显示"Installing dependencies..."
 - [ ] 依赖下载成功完成（约2-5分钟）
-- [ ] 显示"Starting Clawdbot Gateway..."
+- [ ] 显示"Starting OpenClawCN Gateway..."
 - [ ] 浏览器自动打开 http://localhost:18789
 
 #### 3. 功能测试
@@ -154,7 +154,7 @@
 
 #### 4. 卸载测试
 
-- [ ] 控制面板 → 程序和功能 → 卸载 Clawdbot
+- [ ] 控制面板 → 程序和功能 → 卸载 OpenClawCN
 - [ ] 卸载完成，无残留文件
 
 ---
@@ -193,10 +193,10 @@
 ## 七、测试报告模板
 
 ```markdown
-## Clawdbot 安装包测试报告
+## OpenClawCN 安装包测试报告
 
 **测试日期：** 2026-01-29
-**测试版本：** Clawdbot-Lite-Setup-v2026.1.29.exe
+**测试版本：** OpenClawCN-Lite-Setup-v2026.1.29.exe
 **测试环境：** Windows 11 家庭版 (VirtualBox VM)
 **测试人员：** XXX
 
@@ -236,13 +236,13 @@
 VBoxManage list vms
 
 # 启动虚拟机
-VBoxManage startvm "Clawdbot-Test-Win11"
+VBoxManage startvm "OpenClawCN-Test-Win11"
 
 # 恢复快照
-VBoxManage snapshot "Clawdbot-Test-Win11" restore "Clean-Windows-Ready"
+VBoxManage snapshot "OpenClawCN-Test-Win11" restore "Clean-Windows-Ready"
 
 # 关闭虚拟机
-VBoxManage controlvm "Clawdbot-Test-Win11" poweroff
+VBoxManage controlvm "OpenClawCN-Test-Win11" poweroff
 ```
 
 ---

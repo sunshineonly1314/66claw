@@ -1,11 +1,11 @@
 ---
-summary: "CLI reference for `clawdbot memory` (status/index/search)"
+summary: "CLI reference for `openclawcn memory` (status/index/search)"
 read_when:
   - You want to index or search semantic memory
   - You’re debugging memory availability or indexing
 ---
 
-# `clawdbot memory`
+# `openclawcn memory`
 
 Manage semantic memory indexing and search.
 Provided by the active memory plugin (default: `memory-core`; set `plugins.slots.memory = "none"` to disable).
@@ -17,15 +17,15 @@ Related:
 ## Examples
 
 ```bash
-clawdbot memory status
-clawdbot memory status --deep
-clawdbot memory status --deep --index
-clawdbot memory status --deep --index --verbose
-clawdbot memory index
-clawdbot memory index --verbose
-clawdbot memory search "release checklist"
-clawdbot memory status --agent main
-clawdbot memory index --agent main --verbose
+openclawcn memory status
+openclawcn memory status --deep
+openclawcn memory status --deep --index
+openclawcn memory status --deep --index --verbose
+openclawcn memory index
+openclawcn memory index --verbose
+openclawcn memory search "release checklist"
+openclawcn memory status --agent main
+openclawcn memory index --agent main --verbose
 ```
 
 ## Options

@@ -177,12 +177,12 @@ describe("buildEmbeddedRunPayloads", () => {
     expect(payloads[0]?.text).toContain("code 1");
   });
 
-  it("suppresses recoverable tool errors containing 'required'", () => {
+  it("suppresses recoverable tool errors containing 'required' for non-mutating tools", () => {
     const payloads = buildEmbeddedRunPayloads({
       assistantTexts: [],
       toolMetas: [],
       lastAssistant: undefined,
-      lastToolError: { toolName: "message", meta: "reply", error: "text required" },
+      lastToolError: { toolName: "browser", error: "url required" },
       sessionKey: "session:telegram",
       inlineToolResultsAllowed: false,
       verboseLevel: "off",
@@ -190,16 +190,16 @@ describe("buildEmbeddedRunPayloads", () => {
       toolResultFormat: "plain",
     });
 
-    // Recoverable errors should not be sent to the user
+    // Recoverable errors for non-mutating tools should not be sent to the user
     expect(payloads).toHaveLength(0);
   });
 
-  it("suppresses recoverable tool errors containing 'missing'", () => {
+  it("suppresses recoverable tool errors containing 'missing' for non-mutating tools", () => {
     const payloads = buildEmbeddedRunPayloads({
       assistantTexts: [],
       toolMetas: [],
       lastAssistant: undefined,
-      lastToolError: { toolName: "message", error: "messageId missing" },
+      lastToolError: { toolName: "browser", error: "url missing" },
       sessionKey: "session:telegram",
       inlineToolResultsAllowed: false,
       verboseLevel: "off",
@@ -210,12 +210,12 @@ describe("buildEmbeddedRunPayloads", () => {
     expect(payloads).toHaveLength(0);
   });
 
-  it("suppresses recoverable tool errors containing 'invalid'", () => {
+  it("suppresses recoverable tool errors containing 'invalid' for non-mutating tools", () => {
     const payloads = buildEmbeddedRunPayloads({
       assistantTexts: [],
       toolMetas: [],
       lastAssistant: undefined,
-      lastToolError: { toolName: "message", error: "invalid parameter: to" },
+      lastToolError: { toolName: "browser", error: "invalid parameter: url" },
       sessionKey: "session:telegram",
       inlineToolResultsAllowed: false,
       verboseLevel: "off",

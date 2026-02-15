@@ -21,11 +21,32 @@ vi.mock("../config/config.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../config/sessions.js", () => ({
+  loadSessionStore: () => ({}),
+  resolveStorePath: () => "/tmp/sessions.json",
+  resolveSessionFilePath: () => "/tmp/transcript.json",
+  resolveAgentIdFromSessionKey: (key: string) => {
+    const match = key.match(/^agent:([^:]+):/);
+    return match?.[1] ?? "main";
+  },
+  resolveMainSessionKey: () => "agent:main:main",
+}));
+
+vi.mock("./tools/agent-step.js", () => ({
+  readLatestAssistantReply: vi.fn().mockResolvedValue("raw subagent reply"),
+}));
+
+vi.mock("./pi-embedded.js", () => ({
+  isEmbeddedPiRunActive: () => false,
+  queueEmbeddedPiMessage: () => false,
+  waitForEmbeddedPiRunEnd: () => Promise.resolve(true),
+}));
+
 import "./test-helpers/fast-core-tools.js";
-import { createClawdbotTools } from "./clawdbot-tools.js";
+import { createOpenClawCNTools } from "./openclaw-tools.js";
 import { resetSubagentRegistryForTests } from "./subagent-registry.js";
 
-describe("clawdbot-tools: subagents", () => {
+describe("openclawcn-tools: subagents", () => {
   beforeEach(() => {
     configOverride = {
       session: {
@@ -89,7 +110,7 @@ describe("clawdbot-tools: subagents", () => {
       return {};
     });
 
-    const tool = createClawdbotTools({
+    const tool = createOpenClawCNTools({
       agentSessionKey: "discord:group:req",
       agentChannel: "discord",
     }).find((candidate) => candidate.name === "sessions_spawn");

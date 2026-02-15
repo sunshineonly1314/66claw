@@ -41,25 +41,25 @@ interface BinaryTarget {
 const TARGETS: BinaryTarget[] = [
   {
     platform: "win",
-    filename: "clawdbot-win-x64.exe",
+    filename: "openclawcn-win-x64.exe",
     canStrip: false,  // Windows: pkg already strips
     canUpx: true,
   },
   {
     platform: "mac-arm",
-    filename: "clawdbot-macos-arm64",
+    filename: "openclawcn-macos-arm64",
     canStrip: true,
     canUpx: true,
   },
   {
     platform: "mac-x64",
-    filename: "clawdbot-macos-x64",
+    filename: "openclawcn-macos-x64",
     canStrip: true,
     canUpx: true,
   },
   {
     platform: "linux",
-    filename: "clawdbot-linux-x64",
+    filename: "openclawcn-linux-x64",
     canStrip: true,
     canUpx: true,
   },

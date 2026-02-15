@@ -1,4 +1,4 @@
-# ClawdbotCN 合并测试报告
+# OpenClawCN 合并测试报告
 
 > **测试日期**：2026-01-30  
 > **测试人员**：顶级开发人员  
@@ -80,7 +80,7 @@ pnpm build → ✅ 成功
 | 文件 | 状态 | 说明 |
 |-----|------|------|
 | `scripts/windows/build-installer.ps1` | ✅ 通过 | 中国区插件检查已添加 |
-| `build/installer/clawdbot-windows-unified.iss` | ✅ 通过 | 飞书/钉钉/企微已配置 |
+| `build/installer/openclawcn-windows-unified.iss` | ✅ 通过 | 飞书/钉钉/企微已配置 |
 
 **已实现功能**：
 - 自动检测中国区插件（feishu, dingtalk, wecom, qwen-portal-auth）

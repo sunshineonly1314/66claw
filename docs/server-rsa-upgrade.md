@@ -40,15 +40,15 @@
 
 ```bash
 # 生成 2048 位 RSA 私钥
-openssl genrsa -out clawdbot_license_private.pem 2048
+openssl genrsa -out openclawcn_license_private.pem 2048
 
 # 从私钥导出公钥
-openssl rsa -in clawdbot_license_private.pem -pubout -out clawdbot_license_public.pem
+openssl rsa -in openclawcn_license_private.pem -pubout -out openclawcn_license_public.pem
 ```
 
 **密钥存储：**
-- `clawdbot_license_private.pem` → 服务端环境变量或密钥管理系统（**绝不能泄露**）
-- `clawdbot_license_public.pem` → 发给客户端开发者，硬编码到客户端
+- `openclawcn_license_private.pem` → 服务端环境变量或密钥管理系统（**绝不能泄露**）
+- `openclawcn_license_public.pem` → 发给客户端开发者，硬编码到客户端
 
 ---
 

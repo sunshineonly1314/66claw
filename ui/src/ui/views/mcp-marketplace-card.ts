@@ -248,6 +248,15 @@ export function renderMarketplaceCard(props: MarketplaceCardProps): TemplateResu
               background:rgba(148,163,184,0.1);
               color:var(--muted-strong, #6b7d91);
             ">v${item.version}</span>
+            ${item.installedVersion && item.installedVersion !== item.version
+              ? html`<span style="
+                  font-size:9px;
+                  padding:2px 6px;
+                  border-radius:var(--radius-sm, 6px);
+                  background:rgba(251,191,36,0.1);
+                  color:#fbbf24;
+                ">v${item.installedVersion} \u2192 v${item.version}</span>`
+              : nothing}
             ${renderSecurityScore(item.securityScore)}
           </div>
           <div style="font-size:11px; color:var(--muted-strong, #6b7d91); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">

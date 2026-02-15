@@ -21,12 +21,33 @@ vi.mock("../config/config.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../config/sessions.js", () => ({
+  loadSessionStore: () => ({}),
+  resolveStorePath: () => "/tmp/sessions.json",
+  resolveSessionFilePath: () => "/tmp/transcript.json",
+  resolveAgentIdFromSessionKey: (key: string) => {
+    const match = key.match(/^agent:([^:]+):/);
+    return match?.[1] ?? "main";
+  },
+  resolveMainSessionKey: () => "agent:main:main",
+}));
+
+vi.mock("./tools/agent-step.js", () => ({
+  readLatestAssistantReply: vi.fn().mockResolvedValue("raw subagent reply"),
+}));
+
+vi.mock("./pi-embedded.js", () => ({
+  isEmbeddedPiRunActive: () => false,
+  queueEmbeddedPiMessage: () => false,
+  waitForEmbeddedPiRunEnd: () => Promise.resolve(true),
+}));
+
 import { emitAgentEvent } from "../infra/agent-events.js";
 import "./test-helpers/fast-core-tools.js";
-import { createClawdbotTools } from "./clawdbot-tools.js";
+import { createOpenClawCNTools } from "./openclaw-tools.js";
 import { resetSubagentRegistryForTests } from "./subagent-registry.js";
 
-describe("clawdbot-tools: subagents", () => {
+describe("openclawcn-tools: subagents", () => {
   beforeEach(() => {
     configOverride = {
       session: {
@@ -95,7 +116,7 @@ describe("clawdbot-tools: subagents", () => {
       return {};
     });
 
-    const tool = createClawdbotTools({
+    const tool = createOpenClawCNTools({
       agentSessionKey: "main",
       agentChannel: "whatsapp",
     }).find((candidate) => candidate.name === "sessions_spawn");
@@ -143,7 +164,7 @@ describe("clawdbot-tools: subagents", () => {
     // Second call: main agent trigger (not "Sub-agent announce step." anymore)
     const second = agentCalls[1]?.params as { sessionKey?: string; message?: string } | undefined;
     expect(second?.sessionKey).toBe("main");
-    expect(second?.message).toContain("background task");
+    expect(second?.message).toContain("subagent task");
 
     // No direct send to external channel (main agent handles delivery)
     const sendCalls = calls.filter((c) => c.method === "send");
@@ -155,7 +176,7 @@ describe("clawdbot-tools: subagents", () => {
     resetSubagentRegistryForTests();
     callGatewayMock.mockReset();
 
-    const tool = createClawdbotTools({
+    const tool = createOpenClawCNTools({
       agentSessionKey: "main",
       agentChannel: "whatsapp",
     }).find((candidate) => candidate.name === "sessions_spawn");

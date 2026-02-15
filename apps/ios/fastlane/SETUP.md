@@ -1,4 +1,4 @@
-# fastlane setup (Clawdbot iOS)
+# fastlane setup (OpenClawCN iOS)
 
 Install:
 

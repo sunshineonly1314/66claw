@@ -1,0 +1,119 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+const ROOT = path.resolve(__dirname, "../..");
+
+describe("brand consistency - extension package.json", () => {
+  const extensionDirs = ["dingtalk", "wecom", "qqbot", "feishu"];
+
+  for (const ext of extensionDirs) {
+    it("extensions/" + ext + "/package.json uses @openclawcn scope", async () => {
+      const pkgPath = path.join(ROOT, "extensions", ext, "package.json");
+      try {
+        const raw = await fs.readFile(pkgPath, "utf-8");
+        const pkg = JSON.parse(raw);
+        expect(pkg.name).toMatch(/^@openclawcn\//);
+        expect(pkg.name).not.toContain("@clawdbot/");
+        if (pkg.openclawcn) {
+          expect(pkg.openclawcn.extensions).toBeDefined();
+        }
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+          // Extension dir may not exist in all builds
+          return;
+        }
+        throw e;
+      }
+    });
+  }
+});
+
+describe("brand consistency - binary filenames", () => {
+  it("protect-binary.ts uses openclawcn- prefix (not clawdbot-)", async () => {
+    const filePath = path.join(ROOT, "scripts", "protect-binary.ts");
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      expect(content).toContain("openclawcn-win-x64.exe");
+      expect(content).toContain("openclawcn-macos-arm64");
+      expect(content).toContain("openclawcn-linux-x64");
+      expect(content).not.toContain("clawdbot-win-x64.exe");
+      expect(content).not.toContain("clawdbot-macos-arm64");
+      expect(content).not.toContain("clawdbot-linux-x64");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+  });
+});
+
+describe("brand consistency - no double-CN artifacts", () => {
+  const filesToCheck = [
+    "scripts/dev/gateway-smoke.ts",
+    "scripts/dev/ios-node-e2e.ts",
+    "test/helpers/temp-home.ts",
+  ];
+
+  for (const file of filesToCheck) {
+    it(file + " has no openclawcncn double-CN", async () => {
+      const filePath = path.join(ROOT, file);
+      try {
+        const content = await fs.readFile(filePath, "utf-8");
+        expect(content).not.toContain("openclawcncn");
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw e;
+      }
+    });
+  }
+});
+
+describe("compat exports", () => {
+  it("createOpenClawCNTools is re-exported from openclawcn-tools", async () => {
+    const mod = await import("./openclaw-tools.js");
+    expect(mod.createOpenClawCNTools).toBeDefined();
+    expect(mod.createOpenClawCNTools).toBeDefined();
+    expect(mod.createOpenClawCNTools).toBe(mod.createOpenClawCNTools);
+  });
+});
+
+describe("pi-embedded-subscribe types import", () => {
+  it("imports OpenClawCNConfig from types.clawdbot.js (not types.openclawcn.js)", async () => {
+    const filePath = path.join(ROOT, "src", "agents", "pi-embedded-subscribe.types.ts");
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      expect(content).toContain("types.clawdbot.js");
+      expect(content).not.toContain("types.openclawcn.js");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+  });
+});
+
+describe("PluginRuntime gateway property", () => {
+  it("types.ts exports PluginRuntime with gateway field", async () => {
+    const filePath = path.join(ROOT, "src", "plugins", "runtime", "types.ts");
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      expect(content).toContain("gateway?:");
+      expect(content).toContain("port?: number");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+  });
+});
+
+describe("FeishuGroupConfig tools field", () => {
+  it("feishu types.ts has tools field in FeishuGroupConfig", async () => {
+    const filePath = path.join(ROOT, "extensions", "feishu", "src", "types.ts");
+    try {
+      const content = await fs.readFile(filePath, "utf-8");
+      expect(content).toContain("tools?:");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+  });
+});

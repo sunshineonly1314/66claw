@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Clawdbot Linux Standalone Builder
+# OpenClawCN Linux Standalone Builder
 # 创建包含 Node.js 的完整独立安装包
 #
 # 用法:
 #   ./build-standalone.sh [--arch arm64|x64] [--node-version 22.13.1]
 #
 # 输出:
-#   build/linux-standalone/clawdbot-linux-{arch}-standalone.tar.gz
+#   build/linux-standalone/openclawcn-linux-{arch}-standalone.tar.gz
 
 set -euo pipefail
 
@@ -72,7 +72,7 @@ done
 
 echo ""
 echo "================================================"
-echo " Clawdbot Linux Standalone Builder"
+echo " OpenClawCN Linux Standalone Builder"
 echo " (包含 Node.js，无需用户安装)"
 echo "================================================"
 echo ""
@@ -83,7 +83,7 @@ echo "  输出目录:   $OUTPUT_DIR"
 echo ""
 
 # 创建输出目录
-STANDALONE_DIR="$OUTPUT_DIR/clawdbot"
+STANDALONE_DIR="$OUTPUT_DIR/openclawcn"
 if [[ -d "$STANDALONE_DIR" ]]; then
   echo "清理旧构建..."
   rm -rf "$STANDALONE_DIR"
@@ -147,7 +147,7 @@ echo "创建启动脚本..."
 
 cat > "$STANDALONE_DIR/start.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot Gateway 启动脚本
+# OpenClawCN Gateway 启动脚本
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -155,7 +155,7 @@ export PATH="$SCRIPT_DIR/node/bin:$PATH"
 
 echo ""
 echo "================================================"
-echo " Clawdbot Gateway"
+echo " OpenClawCN Gateway"
 echo "================================================"
 echo ""
 echo " 启动中..."
@@ -171,7 +171,7 @@ chmod +x "$STANDALONE_DIR/start.sh"
 
 cat > "$STANDALONE_DIR/setup.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 配置向导
+# OpenClawCN 配置向导
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -179,7 +179,7 @@ export PATH="$SCRIPT_DIR/node/bin:$PATH"
 
 echo ""
 echo "================================================"
-echo " Clawdbot 配置向导"
+echo " OpenClawCN 配置向导"
 echo "================================================"
 echo ""
 echo " 正在启动服务并打开配置页面..."
@@ -201,29 +201,29 @@ chmod +x "$STANDALONE_DIR/setup.sh"
 # 创建后台启动脚本
 cat > "$STANDALONE_DIR/start-daemon.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot Gateway 后台启动脚本
+# OpenClawCN Gateway 后台启动脚本
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$SCRIPT_DIR/node/bin:$PATH"
 
 LOG_FILE="$SCRIPT_DIR/logs/gateway.log"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 mkdir -p "$SCRIPT_DIR/logs"
 
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE")
   if kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "Clawdbot 已在运行 (PID: $OLD_PID)"
+    echo "OpenClawCN 已在运行 (PID: $OLD_PID)"
     exit 1
   fi
 fi
 
-echo "启动 Clawdbot Gateway (后台模式)..."
+echo "启动 OpenClawCN Gateway (后台模式)..."
 nohup "$SCRIPT_DIR/node/bin/node" "$SCRIPT_DIR/dist/entry.js" gateway run --port 18789 > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
-echo "Clawdbot 已启动 (PID: $(cat "$PID_FILE"))"
+echo "OpenClawCN 已启动 (PID: $(cat "$PID_FILE"))"
 echo "日志文件: $LOG_FILE"
 echo "访问地址: http://localhost:18789"
 SCRIPT
@@ -232,39 +232,39 @@ chmod +x "$STANDALONE_DIR/start-daemon.sh"
 # 创建停止脚本
 cat > "$STANDALONE_DIR/stop.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 停止 Clawdbot Gateway
+# 停止 OpenClawCN Gateway
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then
-  echo "Clawdbot 未在运行"
+  echo "OpenClawCN 未在运行"
   exit 0
 fi
 
 PID=$(cat "$PID_FILE")
 if kill -0 "$PID" 2>/dev/null; then
-  echo "停止 Clawdbot (PID: $PID)..."
+  echo "停止 OpenClawCN (PID: $PID)..."
   kill "$PID"
   rm -f "$PID_FILE"
   echo "已停止"
 else
-  echo "Clawdbot 未在运行 (清理旧 PID 文件)"
+  echo "OpenClawCN 未在运行 (清理旧 PID 文件)"
   rm -f "$PID_FILE"
 fi
 SCRIPT
 chmod +x "$STANDALONE_DIR/stop.sh"
 
 # 创建 systemd service 文件
-cat > "$STANDALONE_DIR/clawdbot.service" << SYSTEMD
+cat > "$STANDALONE_DIR/openclawcn.service" << SYSTEMD
 [Unit]
-Description=Clawdbot AI Gateway
+Description=OpenClawCN AI Gateway
 After=network.target
 
 [Service]
 Type=simple
 User=%i
-WorkingDirectory=%h/clawdbot
-ExecStart=%h/clawdbot/node/bin/node %h/clawdbot/dist/entry.js gateway run --port 18789
+WorkingDirectory=%h/openclawcn
+ExecStart=%h/openclawcn/node/bin/node %h/openclawcn/dist/entry.js gateway run --port 18789
 Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
@@ -275,7 +275,7 @@ SYSTEMD
 
 # 创建 README
 cat > "$STANDALONE_DIR/README.md" << 'README'
-# Clawdbot 独立版 (Linux)
+# OpenClawCN 独立版 (Linux)
 
 本安装包已包含所有必需组件（包括 Node.js），解压即可使用！
 
@@ -293,7 +293,7 @@ cat > "$STANDALONE_DIR/README.md" << 'README'
 | `start.sh` | 启动服务（前台，显示日志） |
 | `start-daemon.sh` | 后台启动服务 |
 | `stop.sh` | 停止后台服务 |
-| `clawdbot.service` | systemd 服务文件 |
+| `openclawcn.service` | systemd 服务文件 |
 
 ## 访问地址
 
@@ -305,17 +305,17 @@ cat > "$STANDALONE_DIR/README.md" << 'README'
 ```bash
 # 复制 service 文件
 mkdir -p ~/.config/systemd/user/
-cp clawdbot.service ~/.config/systemd/user/
+cp openclawcn.service ~/.config/systemd/user/
 
-# 编辑 service 文件，将 %h/clawdbot 替换为实际安装路径
+# 编辑 service 文件，将 %h/openclawcn 替换为实际安装路径
 
 # 启用并启动服务
 systemctl --user daemon-reload
-systemctl --user enable clawdbot
-systemctl --user start clawdbot
+systemctl --user enable openclawcn
+systemctl --user start openclawcn
 
 # 查看状态
-systemctl --user status clawdbot
+systemctl --user status openclawcn
 ```
 
 ## Skills 仓库
@@ -345,10 +345,10 @@ echo "  总计:         ${TOTAL_SIZE}MB"
 # 创建压缩包
 echo ""
 echo "创建压缩包..."
-TARBALL_NAME="clawdbot-linux-${ARCH}-standalone.tar.gz"
+TARBALL_NAME="openclawcn-linux-${ARCH}-standalone.tar.gz"
 TARBALL_PATH="$OUTPUT_DIR/$TARBALL_NAME"
 cd "$OUTPUT_DIR"
-tar -czf "$TARBALL_NAME" clawdbot
+tar -czf "$TARBALL_NAME" openclawcn
 
 TARBALL_SIZE=$(du -sm "$TARBALL_PATH" | cut -f1)
 

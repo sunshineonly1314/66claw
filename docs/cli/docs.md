@@ -1,15 +1,15 @@
 ---
-summary: "CLI reference for `clawdbot docs` (search the live docs index)"
+summary: "CLI reference for `openclawcn docs` (search the live docs index)"
 read_when:
-  - You want to search the live Clawdbot docs from the terminal
+  - You want to search the live OpenClawCN docs from the terminal
 ---
 
-# `clawdbot docs`
+# `openclawcn docs`
 
 Search the live docs index.
 
 ```bash
-clawdbot docs browser extension
-clawdbot docs sandbox allowHostControl
+openclawcn docs browser extension
+openclawcn docs sandbox allowHostControl
 ```
 

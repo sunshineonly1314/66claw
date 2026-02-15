@@ -1,6 +1,6 @@
 # Windows 打包指南
 
-本文档详细说明如何为 Clawdbot 构建 Windows 安装包。
+本文档详细说明如何为 OpenClawCN 构建 Windows 安装包。
 
 ## 目录
 
@@ -40,27 +40,27 @@ winget install JRSoftware.InnoSetup
 ```
 build/
 ├── installer/
-│   ├── clawdbot-windows-unified.iss   # Inno Setup 主配置文件
+│   ├── openclawcn-windows-unified.iss   # Inno Setup 主配置文件
 │   ├── package.json                    # 精简版 package.json（无开发脚本）
 │   ├── ChineseSimplified.isl          # 中文语言文件
 │   └── scripts/                        # 安装包内置脚本
-│       ├── StartClawdbot.ps1          # 启动脚本（可见窗口）
-│       ├── StartClawdbot.bat          # 启动批处理
-│       ├── StopClawdbot.ps1           # 停止脚本
-│       ├── StopClawdbot.bat           # 停止批处理
-│       ├── RestartClawdbot.ps1        # 重启脚本
-│       ├── RestartClawdbot.bat        # 重启批处理
+│       ├── StartOpenClawCN.ps1          # 启动脚本（可见窗口）
+│       ├── StartOpenClawCN.bat          # 启动批处理
+│       ├── StopOpenClawCN.ps1           # 停止脚本
+│       ├── StopOpenClawCN.bat           # 停止批处理
+│       ├── RestartOpenClawCN.ps1        # 重启脚本
+│       ├── RestartOpenClawCN.bat        # 重启批处理
 │       ├── StartGatewayBackground.ps1 # 后台启动脚本
 │       ├── StartBackground.vbs        # VBS 静默启动器
-│       ├── ClawdbotTray.ps1           # 系统托盘应用
+│       ├── OpenClawCNTray.ps1           # 系统托盘应用
 │       ├── StartTray.vbs              # 托盘启动器
-│       ├── ClawdbotWatchdog.ps1       # 守护进程
+│       ├── OpenClawCNWatchdog.ps1       # 守护进程
 │       ├── ManageWatchdog.ps1         # 守护进程管理
 │       ├── setup-environment.ps1      # 安装后环境配置
 │       └── uninstall.ps1              # 卸载清理脚本
 ├── output/
 │   └── windows/
-│       └── ClawdbotCN-Setup-v*.exe    # 生成的安装程序
+│       └── OpenClawCN-Setup-v*.exe    # 生成的安装程序
 └── scripts/
     └── build-all.ps1                   # 统一构建脚本
 ```
@@ -82,7 +82,7 @@ pnpm ui:build
 
 ```powershell
 # 方法 1: 使用命令行
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".\build\installer\clawdbot-windows-unified.iss"
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".\build\installer\openclawcn-windows-unified.iss"
 
 # 方法 2: 使用构建脚本
 .\build\scripts\build-all.ps1
@@ -92,24 +92,24 @@ pnpm ui:build
 
 ```powershell
 # 检查生成的安装程序
-Get-Item ".\build\output\windows\ClawdbotCN-Setup-v*.exe"
+Get-Item ".\build\output\windows\OpenClawCN-Setup-v*.exe"
 ```
 
 ---
 
 ## 关键文件说明
 
-### 1. Inno Setup 配置 (`clawdbot-windows-unified.iss`)
+### 1. Inno Setup 配置 (`openclawcn-windows-unified.iss`)
 
 主要配置项：
 
 ```inno
 [Setup]
-AppName=Clawdbot AI 助手
+AppName=OpenClawCN AI 助手
 AppVersion=2026.1.30
-DefaultDirName=D:\Clawdbot
+DefaultDirName=D:\OpenClawCN
 OutputDir=..\output\windows
-OutputBaseFilename=ClawdbotCN-Setup-v{#MyAppVersion}
+OutputBaseFilename=OpenClawCN-Setup-v{#MyAppVersion}
 ```
 
 **重要配置说明：**
@@ -138,7 +138,7 @@ OutputBaseFilename=ClawdbotCN-Setup-v{#MyAppVersion}
 - 减少安装包体积
 - 避免用户看到开发相关的脚本
 
-### 3. 启动脚本 (`StartClawdbot.ps1`)
+### 3. 启动脚本 (`StartOpenClawCN.ps1`)
 
 启动流程（7 步）：
 
@@ -156,7 +156,7 @@ OutputBaseFilename=ClawdbotCN-Setup-v{#MyAppVersion}
 
 1. **端口冲突智能处理**
    - 检测端口是否被占用
-   - 判断是 Clawdbot 进程还是其他程序
+   - 判断是 OpenClawCN 进程还是其他程序
    - 提供一键解决方案（Y/N 交互）
 
 2. **依赖包自动安装**
@@ -165,7 +165,7 @@ OutputBaseFilename=ClawdbotCN-Setup-v{#MyAppVersion}
    - 实时显示安装进度
 
 3. **配置文件自动创建**
-   - 自动创建 `~/.clawdbot/config.json`
+   - 自动创建 `~/.openclawcn/config.json`
    - 设置 `gateway.mode=local`
 
 4. **详细日志**
@@ -194,9 +194,9 @@ OutputBaseFilename=ClawdbotCN-Setup-v{#MyAppVersion}
 - `package-lock.json` - 锁定文件
 
 **保留内容：**
-- `~/.clawdbot/` - 用户配置（需手动删除）
+- `~/.openclawcn/` - 用户配置（需手动删除）
 
-### 5. 系统托盘应用 (`ClawdbotTray.ps1`)
+### 5. 系统托盘应用 (`OpenClawCNTray.ps1`)
 
 功能：
 - 显示 Gateway 运行状态（运行中/已停止/启动中/错误）
@@ -204,7 +204,7 @@ OutputBaseFilename=ClawdbotCN-Setup-v{#MyAppVersion}
 - 单实例运行（Mutex 防止多开）
 - 定时状态检测（每 5 秒）
 
-### 6. 守护进程 (`ClawdbotWatchdog.ps1`)
+### 6. 守护进程 (`OpenClawCNWatchdog.ps1`)
 
 功能：
 - 监控 Gateway 进程状态
@@ -258,8 +258,8 @@ $content = Get-Content "script.ps1" -Raw -Encoding UTF8
 
 ```powershell
 $config = @{gateway = @{mode = "local"}} | ConvertTo-Json
-New-Item -Path "$env:USERPROFILE\.clawdbot" -ItemType Directory -Force
-Set-Content -Path "$env:USERPROFILE\.clawdbot\config.json" -Value $config
+New-Item -Path "$env:USERPROFILE\.openclawcn" -ItemType Directory -Force
+Set-Content -Path "$env:USERPROFILE\.openclawcn\config.json" -Value $config
 ```
 
 ### Q2: npm install 失败
@@ -283,7 +283,7 @@ Set-Content -Path "$env:USERPROFILE\.clawdbot\config.json" -Value $config
 
 ### Q5: 卸载后残留文件
 
-**解决**: 卸载程序会自动清理 `node_modules`、`logs` 等目录，用户配置 `~/.clawdbot` 需手动删除
+**解决**: 卸载程序会自动清理 `node_modules`、`logs` 等目录，用户配置 `~/.openclawcn` 需手动删除
 
 ---
 
@@ -291,7 +291,7 @@ Set-Content -Path "$env:USERPROFILE\.clawdbot\config.json" -Value $config
 
 更新版本时需要修改的文件：
 
-1. `build/installer/clawdbot-windows-unified.iss`
+1. `build/installer/openclawcn-windows-unified.iss`
    - `MyAppVersion` 定义
    - `VersionInfoVersion` (4 段格式)
 

@@ -3,7 +3,7 @@ name: wechat-desktop
 description: "WeChat desktop automation for Windows. Send messages via wechat_send, check for new messages via wechat_check, read conversations, and auto-reply. Login handling and manual fallback via desktop_control."
 nameZh: "微信桌面操作"
 descriptionZh: "Windows微信自动化：发消息用wechat_send，查看新消息用wechat_check，读取对话和自动回复"
-metadata: {"clawdbot":{"emoji":"💬","os":["win32"],"always":true}}
+metadata: {"openclawcn":{"emoji":"💬","os":["win32"],"always":true}}
 ---
 
 # WeChat Desktop Automation (Windows)

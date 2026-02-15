@@ -1,4 +1,4 @@
-# Clawdbot 优化快速开始指南
+# OpenClawCN 优化快速开始指南
 **Quick Start Guide - 立即可执行的优化步骤**
 
 ---
@@ -428,7 +428,7 @@ EOF
 #!/bin/bash
 # scripts/daily-check.sh
 
-echo "📊 Clawdbot 优化进度 - $(date +%Y-%m-%d)"
+echo "📊 OpenClawCN 优化进度 - $(date +%Y-%m-%d)"
 echo ""
 
 echo "🔍 1. Eval使用情况:"

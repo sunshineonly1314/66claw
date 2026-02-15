@@ -1,4 +1,4 @@
-# Clawdbot WSL 打包指南
+# OpenClawCN WSL 打包指南
 
 本目录包含专为 Windows Subsystem for Linux (WSL) 环境优化的打包脚本。
 
@@ -14,9 +14,9 @@ scripts/wsl/
 └── launchers/             # Windows 启动器脚本
     ├── setup-wsl.ps1      # WSL 环境配置
     ├── deploy-to-wsl.ps1  # 部署到 WSL
-    ├── start-clawdbot.bat # 启动脚本 (命令行)
-    ├── start-clawdbot.vbs # 启动脚本 (后台静默)
-    ├── stop-clawdbot.bat  # 停止脚本
+    ├── start-openclawcn.bat # 启动脚本 (命令行)
+    ├── start-openclawcn.vbs # 启动脚本 (后台静默)
+    ├── stop-openclawcn.bat  # 停止脚本
     └── check-wsl.ps1      # 环境检查脚本
 ```
 
@@ -61,7 +61,7 @@ pnpm ui:build
 
 ### 2. 构建 Windows EXE 安装程序（推荐）
 
-一键安装程序，用户双击即可自动完成 WSL 环境配置和 Clawdbot 部署：
+一键安装程序，用户双击即可自动完成 WSL 环境配置和 OpenClawCN 部署：
 
 ```powershell
 # 在 Windows PowerShell 中运行
@@ -73,12 +73,12 @@ cd scripts/wsl
 1. 安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 2. 已在 WSL 中构建独立版包（见下方步骤 3）
 
-**输出：** `buildout/wsl/Clawdbot-WSL-Setup-vX.X.X.exe`
+**输出：** `buildout/wsl/OpenClawCN-WSL-Setup-vX.X.X.exe`
 
 **安装程序功能：**
 - 自动检测并安装 WSL2
 - 自动安装 Ubuntu 发行版
-- 自动部署 Clawdbot 到 WSL
+- 自动部署 OpenClawCN 到 WSL
 - 创建 Windows 桌面快捷方式
 - 安装完成后自动打开 Windows 浏览器配置页面
 
@@ -100,7 +100,7 @@ cd scripts/wsl
 ./build-standalone.sh --node-version 22.13.1
 ```
 
-输出：`build/wsl-standalone/clawdbot-wsl-{arch}-standalone.tar.gz`
+输出：`build/wsl-standalone/openclawcn-wsl-{arch}-standalone.tar.gz`
 
 ### 4. 构建便携版 tar.gz
 
@@ -111,22 +111,22 @@ cd scripts/wsl
 ./build-portable.sh
 ```
 
-输出：`build/wsl/clawdbot-wsl-portable.tar.gz`
+输出：`build/wsl/openclawcn-wsl-portable.tar.gz`
 
 ## 输出目录
 
 ```
 buildout/
 └── wsl/
-    └── Clawdbot-WSL-Setup-vX.X.X.exe    # Windows 一键安装程序
+    └── OpenClawCN-WSL-Setup-vX.X.X.exe    # Windows 一键安装程序
 
 build/
 ├── wsl/
-│   ├── clawdbot-portable/
-│   └── clawdbot-wsl-portable.tar.gz
+│   ├── openclawcn-portable/
+│   └── openclawcn-wsl-portable.tar.gz
 └── wsl-standalone/
-    ├── clawdbot/
-    └── clawdbot-wsl-x64-standalone.tar.gz
+    ├── openclawcn/
+    └── openclawcn-wsl-x64-standalone.tar.gz
 ```
 
 ## 包大小参考
@@ -143,8 +143,8 @@ build/
 
 ```bash
 # 解压
-tar -xzf clawdbot-wsl-x64-standalone.tar.gz
-cd clawdbot
+tar -xzf openclawcn-wsl-x64-standalone.tar.gz
+cd openclawcn
 
 # 启动并打开配置向导（自动打开 Windows 浏览器）
 ./setup.sh
@@ -164,8 +164,8 @@ cd clawdbot
 
 ```bash
 # 解压
-tar -xzf clawdbot-wsl-portable.tar.gz
-cd clawdbot-portable
+tar -xzf openclawcn-wsl-portable.tar.gz
+cd openclawcn-portable
 
 # 安装依赖（首次）
 ./install.sh

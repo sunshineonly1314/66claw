@@ -10,7 +10,7 @@
 
 ### 1.1 背景
 
-ClawdbotCN 面向中国初级用户，大量配置参数对新手不友好。参数审计发现 4 个关键参数（`thinkingDefault`、`contextPruning.ttl`、`maxConcurrent`、`heartbeat.every`）对 AI 性能影响显著，但彼此耦合——单独调整某一项可能导致不一致的行为。
+OpenClawCN 面向中国初级用户，大量配置参数对新手不友好。参数审计发现 4 个关键参数（`thinkingDefault`、`contextPruning.ttl`、`maxConcurrent`、`heartbeat.every`）对 AI 性能影响显著，但彼此耦合——单独调整某一项可能导致不一致的行为。
 
 **核心需求**：提供"一键式"性能档位，让用户无需理解具体参数，直接选择使用偏好。
 
@@ -42,7 +42,7 @@ ClawdbotCN 面向中国初级用户，大量配置参数对新手不友好。参
 
 #### 类型定义
 
-**文件**：`src/config/types.clawdbot.ts`
+**文件**：`src/config/types.openclawcn.ts`
 
 ```typescript
 export type PerformanceProfile = "economy" | "balanced" | "power";
@@ -69,9 +69,9 @@ meta: z.object({
 
 ```typescript
 export function applyPerformanceProfile(
-  cfg: ClawdbotConfig,
+  cfg: OpenClawCNConfig,
   profile: PerformanceProfile,
-): ClawdbotConfig
+): OpenClawCNConfig
 ```
 
 - 纯函数，返回新对象（不修改输入）
@@ -168,7 +168,7 @@ performanceProfileSaving: boolean;
 
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
-| `src/config/types.clawdbot.ts` | 修改 | 新增 `PerformanceProfile` 类型 + `meta.performanceProfile` 字段 |
+| `src/config/types.openclawcn.ts` | 修改 | 新增 `PerformanceProfile` 类型 + `meta.performanceProfile` 字段 |
 | `src/config/zod-schema.ts` | 修改 | meta 对象新增 `performanceProfile` enum |
 | `src/config/defaults.ts` | 修改 | P0 ttl 修复 + `PERFORMANCE_PRESETS` + `applyPerformanceProfile()` |
 | `ui/src/ui/app-view-state.ts` | 修改 | 新增 2 个状态字段 |

@@ -73,10 +73,10 @@ import { CN_PROVIDERS, detectChinaRegion } from "../config/region-cn.js";
 
 **产出物：**
 ```
-clawdbot-offline-win-x64-2026.x.x.zip
+openclawcn-offline-win-x64-2026.x.x.zip
 ├── node-v22.x.x-win-x64/     # 内置 Node.js
 ├── node_modules/             # 离线依赖
-├── clawdbot/                 # 主程序
+├── openclawcn/                 # 主程序
 ├── 一键启动.bat              # 双击运行
 ├── 使用说明.txt              # 中文说明
 └── 常见问题.txt              # FAQ
@@ -96,7 +96,7 @@ clawdbot-offline-win-x64-2026.x.x.zip
 
 ### TODO 2.2: 安装脚本镜像优化 [P1]
 
-**文件位置：** `../clawd.bot/public/install.sh`（注意：在另一个仓库）
+**文件位置：** `../openclawcn.com/public/install.sh`（注意：在另一个仓库）
 
 **改动点：**
 - [ ] 自动检测中国区（通过 IP 或 DNS）
@@ -114,9 +114,9 @@ clawdbot-offline-win-x64-2026.x.x.zip
 ### TODO 3.1: Mac/Linux 离线包 [P2]
 
 **产出物：**
-- `clawdbot-offline-macos-arm64-2026.x.x.tar.gz`
-- `clawdbot-offline-macos-x64-2026.x.x.tar.gz`
-- `clawdbot-offline-linux-x64-2026.x.x.tar.gz`
+- `openclawcn-offline-macos-arm64-2026.x.x.tar.gz`
+- `openclawcn-offline-macos-x64-2026.x.x.tar.gz`
+- `openclawcn-offline-linux-x64-2026.x.x.tar.gz`
 
 **备注：** Mac/Linux 用户通常技术水平较高，优先级降低
 

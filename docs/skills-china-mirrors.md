@@ -139,7 +139,7 @@ session-logs, video-frames (需 ffmpeg/jq/rg), tmux, github (需 gh), canvas, co
 
 ```jsonc
 {
-  "$schema": "https://clawdbot.tecbin.ai/schemas/mirrors-manifest-v1.json",
+  "$schema": "https://openclawcn.tecbin.ai/schemas/mirrors-manifest-v1.json",
   "version": "1.0.0",
   "updated": "2026-02-08T00:00:00Z",
 
@@ -449,7 +449,7 @@ HOMEBREW_BREW_GIT_REMOTE=https://mirrors.aliyun.com/homebrew/brew.git
 2. 拼接 GitHub Release URL
 3. 通过 3 个 GitHub 代理依次尝试下载
 4. SHA256 校验
-5. 解压到 `~/.clawdbot/bin/` 并加入 PATH
+5. 解压到 `~/.openclawcn/bin/` 并加入 PATH
 
 ---
 

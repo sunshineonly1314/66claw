@@ -1,4 +1,4 @@
-# ClawdbotCN 任务分配方案
+# OpenClawCN 任务分配方案
 
 > **日期**：2026-01-30  
 > **人员**：4 人并行开发  
@@ -383,7 +383,7 @@ Write-Host ""
 Write-Host "步骤 X: 后置验证..." -ForegroundColor Green
 
 # 验证安装包大小
-$installerPath = Join-Path $OutputDir "ClawdbotCN-Setup-v$Version.exe"
+$installerPath = Join-Path $OutputDir "OpenClawCN-Setup-v$Version.exe"
 if (Test-Path $installerPath) {
     $size = (Get-Item $installerPath).Length / 1MB
     if ($size -lt 50) {
@@ -407,7 +407,7 @@ $requiredFiles = @(
 
 ### C-2 详细说明：飞书/钉钉打包验证
 
-**文件**：`build/installer/clawdbot-windows-unified.iss`
+**文件**：`build/installer/openclawcn-windows-unified.iss`
 
 **添加飞书/钉钉到安装脚本**：
 ```iss
@@ -424,7 +424,7 @@ Source: "{#SourceDir}\extensions\wecom\*"; DestDir: "{app}\extensions\wecom"; Fl
 **验证命令**：
 ```powershell
 # 构建后验证
-$installDir = "C:\Program Files\ClawdbotCN"
+$installDir = "C:\Program Files\OpenClawCN"
 @("feishu", "dingtalk", "wecom") | ForEach-Object {
     $pluginPath = Join-Path $installDir "extensions\$_"
     if (Test-Path $pluginPath) {
@@ -468,7 +468,7 @@ const DEFAULT_APPROVAL_TIMEOUT_MS = 300_000; // 默认 5 分钟
 /**
  * 从配置读取审批超时时间
  */
-function getApprovalTimeoutMs(cfg?: ClawdbotConfig): number {
+function getApprovalTimeoutMs(cfg?: OpenClawCNConfig): number {
   const configValue = cfg?.tools?.exec?.approvalTimeoutMs;
   if (typeof configValue === "number" && configValue >= 60_000) {
     return Math.min(configValue, 600_000); // 最大 10 分钟
@@ -519,7 +519,7 @@ const BASE_RELOAD_RULES: ReloadRule[] = [
 
 **添加删除检查函数**：
 ```typescript
-import type { ClawdbotConfig } from "../config/config.js";
+import type { OpenClawCNConfig } from "../config/config.js";
 
 type DeletePolicy = boolean | "workspace-only";
 
@@ -556,7 +556,7 @@ function isDeleteOperation(params: Record<string, unknown>): boolean {
  */
 export function createDeleteProtectedWriteTool(
   root: string,
-  cfg?: ClawdbotConfig
+  cfg?: OpenClawCNConfig
 ) {
   const base = createWriteTool(root) as unknown as AnyAgentTool;
   const policy = cfg?.tools?.write?.allowDelete ?? false;

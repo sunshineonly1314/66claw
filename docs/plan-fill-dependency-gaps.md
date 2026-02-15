@@ -122,7 +122,7 @@ These are binaries that can ONLY be obtained from GitHub Releases and have no pa
 
 | Bin | Notes |
 |-----|-------|
-| `clawdhub` | Internal ClawdbotCN tool |
+| `clawdhub` | Internal OpenClawCN tool |
 | `clawhub` | Variant of clawdhub |
 | `openclaw-liveavatar` | Internal OpenClaw tool |
 | `openclaws-bot` | Internal OpenClaw tool |

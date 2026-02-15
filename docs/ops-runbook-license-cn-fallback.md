@@ -12,7 +12,7 @@ apiFallbackUrls: ["http://121.43.61.90/api/api/v1/license"],
 紧急临时方案：对正在报错的客户，让他们设环境变量绕过 DNS：
 
 
-CLAWDBOT_LICENSE_API_URL=https://IP地址/api/api/v1/license
+OPENCLAWCN_LICENSE_API_URL=https://IP地址/api/api/v1/license
 排查根因：www.tecbinai.com 从内陆最近大面积不通，可能是：
 
 域名没有 ICP 备案 → 部分省份 ISP 拦截
@@ -32,19 +32,19 @@ DNS 被 SNI 检测命中
 ```powershell
 # 替换 <IP> 为实际可达的服务器 IP
 [System.Environment]::SetEnvironmentVariable(
-  'CLAWDBOT_LICENSE_API_URL',
+  'OPENCLAWCN_LICENSE_API_URL',
   'https://<IP>/api/api/v1/license',
   'User'
 )
 ```
 
-设置后重启 Clawdbot Gateway 即可生效。
+设置后重启 OpenClawCN Gateway 即可生效。
 
 **Linux / macOS：**
 
 ```bash
 # 写入 shell profile（替换 <IP> 为实际可达的服务器 IP）
-echo 'export CLAWDBOT_LICENSE_API_URL="https://<IP>/api/api/v1/license"' >> ~/.bashrc
+echo 'export OPENCLAWCN_LICENSE_API_URL="https://<IP>/api/api/v1/license"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -53,7 +53,7 @@ source ~/.bashrc
 ```yaml
 # docker-compose.yml
 environment:
-  - CLAWDBOT_LICENSE_API_URL=https://<IP>/api/api/v1/license
+  - OPENCLAWCN_LICENSE_API_URL=https://<IP>/api/api/v1/license
 ```
 
 ### 1.2 获取可用 IP
@@ -217,7 +217,7 @@ curl -v --connect-timeout 10 \
 - [ ] 主 URL 网络失败时：自动降级到备用 URL
 - [ ] 主 URL HTTP 错误时（4xx/5xx）：**不降级**（服务端能响应说明网络通了）
 - [ ] 所有 URL 都失败时：进入离线模式（CN 用户 48h 宽限）
-- [ ] 环境变量 `CLAWDBOT_LICENSE_API_URL` 设置时：覆盖主 URL
+- [ ] 环境变量 `OPENCLAWCN_LICENSE_API_URL` 设置时：覆盖主 URL
 - [ ] Setup Wizard 输入授权码验证：使用已配置的降级逻辑（3 次重试）
 - [ ] 错误日志包含详细信息：`ENOTFOUND` / `ECONNREFUSED` / `ETIMEDOUT`（不再是 `fetch failed`）
 
@@ -225,7 +225,7 @@ curl -v --connect-timeout 10 \
 
 > 您好，我们已定位到近期授权验证失败的原因（内陆到香港服务器的网络波动），
 > 新版本已增加自动降级和备用线路支持。请更新到最新版后重试。
-> 如仍有问题，可临时设置环境变量 `CLAWDBOT_LICENSE_API_URL` 直连服务器 IP。
+> 如仍有问题，可临时设置环境变量 `OPENCLAWCN_LICENSE_API_URL` 直连服务器 IP。
 
 ---
 
@@ -235,7 +235,7 @@ curl -v --connect-timeout 10 \
 |------|------|
 | `src/license/types.ts` | `LicenseModuleConfig` 新增 `apiFallbackUrls?: string[]` |
 | `src/license/verify.ts` | `sendRequest()` 支持多 URL 降级 + 网络错误诊断增强 |
-| `src/license/startup.ts` | 支持 `CLAWDBOT_LICENSE_API_URL` 环境变量覆盖 |
+| `src/license/startup.ts` | 支持 `OPENCLAWCN_LICENSE_API_URL` 环境变量覆盖 |
 | `src/gateway/license-check.ts` | CN 区域自动注入备用 URL + 离线宽限期 48h |
 | `src/gateway/setup-wizard.ts` | Setup Wizard 重试次数 2→3 |
 

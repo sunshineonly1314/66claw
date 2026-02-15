@@ -4,7 +4,7 @@ description: Get current weather and forecasts (no API key required).
 nameZh: "天气查询"
 descriptionZh: "查询全球各地实时天气和未来预报"
 homepage: https://wttr.in/:help
-metadata: {"clawdbot":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
+metadata: {"openclawcn":{"emoji":"🌤️","requires":{"bins":["curl"]}}}
 ---
 
 # Weather

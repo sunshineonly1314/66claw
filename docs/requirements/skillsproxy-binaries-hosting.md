@@ -1,4 +1,4 @@
-# Clawdbot Skills 二进制托管方案（香港服务器）
+# OpenClawCN Skills 二进制托管方案（香港服务器）
 
 > 📅 日期：2026-02-06  
 > 👤 负责人：架构组  
@@ -10,7 +10,7 @@
 
 ### 问题描述
 
-Clawdbot 的 900+ Skills 依赖多个命令行工具，其中约 **13 个工具** 来自 GitHub 个人仓库（如 `steipete/tap`），国内用户无法直接访问 GitHub Release 下载。
+OpenClawCN 的 900+ Skills 依赖多个命令行工具，其中约 **13 个工具** 来自 GitHub 个人仓库（如 `steipete/tap`），国内用户无法直接访问 GitHub Release 下载。
 
 ### 现状
 
@@ -398,7 +398,7 @@ curl http://hk-server/ordercli/0.1.0/darwin-arm64.sha256
 ```python
 #!/usr/bin/env python3
 """
-Clawdbot Skills 二进制同步脚本（香港服务器版）
+OpenClawCN Skills 二进制同步脚本（香港服务器版）
 直连 GitHub Release 同步工具二进制到本地
 
 使用方法:
@@ -455,7 +455,7 @@ def get_github_headers():
     """获取 GitHub API 请求头"""
     headers = {
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Clawdbot-BinarySync/1.0",
+        "User-Agent": "OpenClawCN-BinarySync/1.0",
     }
     if GITHUB_TOKEN:
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
@@ -704,7 +704,7 @@ def sync_tool(tool_config: dict, sync_config: dict, force: bool = False) -> bool
 def main():
     """主函数"""
     log("=" * 60)
-    log("Clawdbot Skills 二进制同步服务 (香港节点)")
+    log("OpenClawCN Skills 二进制同步服务 (香港节点)")
     log("GitHub 直连模式")
     log("=" * 60)
     
@@ -791,7 +791,7 @@ echo "✅ 初始化完成"
 
 ## 七、客户端对接
 
-客户端（Clawdbot）会自动调用香港服务器的 API：
+客户端（OpenClawCN）会自动调用香港服务器的 API：
 
 1. 用户安装 Skill 时，检测缺少的工具
 2. 调用 `/api/binaries/{tool}/mirrors` 获取镜像源列表
@@ -965,4 +965,4 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### 安装目录
 
-二进制文件安装到 `~/.clawdbot/tools/{toolName}/` 目录下。
+二进制文件安装到 `~/.openclawcn/tools/{toolName}/` 目录下。

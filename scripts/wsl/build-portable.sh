@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clawdbot WSL Portable Builder
+# OpenClawCN WSL Portable Builder
 # 创建专为 WSL 环境优化的便携版安装包（需要用户自行安装 Node.js）
 #
 # 特点:
@@ -11,7 +11,7 @@
 #   ./build-portable.sh
 #
 # 输出:
-#   build/wsl/clawdbot-wsl-portable.tar.gz
+#   build/wsl/openclawcn-wsl-portable.tar.gz
 
 set -euo pipefail
 
@@ -21,13 +21,13 @@ OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/build/wsl}"
 
 echo ""
 echo "================================================"
-echo " Clawdbot WSL Portable Builder"
+echo " OpenClawCN WSL Portable Builder"
 echo " (专为 WSL 环境优化)"
 echo "================================================"
 echo ""
 
 # 创建输出目录
-PORTABLE_DIR="$OUTPUT_DIR/clawdbot-portable"
+PORTABLE_DIR="$OUTPUT_DIR/openclawcn-portable"
 if [[ -d "$PORTABLE_DIR" ]]; then
   echo "清理旧构建..."
   rm -rf "$PORTABLE_DIR"
@@ -56,12 +56,12 @@ console.log(JSON.stringify(pkg, null, 2));
 echo "创建 install.sh..."
 cat > "$PORTABLE_DIR/install.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 安装脚本 (WSL 版)
+# OpenClawCN 安装脚本 (WSL 版)
 set -e
 
 echo ""
 echo "================================================"
-echo " Clawdbot 安装程序 (WSL)"
+echo " OpenClawCN 安装程序 (WSL)"
 echo "================================================"
 echo ""
 
@@ -145,12 +145,12 @@ chmod +x "$PORTABLE_DIR/install.sh"
 # 创建启动脚本
 cat > "$PORTABLE_DIR/start.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot Gateway 启动脚本 (WSL 版)
+# OpenClawCN Gateway 启动脚本 (WSL 版)
 set -e
 
 echo ""
 echo "================================================"
-echo " Clawdbot Gateway (WSL)"
+echo " OpenClawCN Gateway (WSL)"
 echo "================================================"
 echo ""
 echo " 启动中..."
@@ -167,13 +167,13 @@ chmod +x "$PORTABLE_DIR/start.sh"
 # 创建 WSL 专用 setup 脚本
 cat > "$PORTABLE_DIR/setup.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot 配置向导 (WSL 版)
+# OpenClawCN 配置向导 (WSL 版)
 # 自动使用 Windows 浏览器打开配置页面
 set -e
 
 echo ""
 echo "================================================"
-echo " Clawdbot 配置向导 (WSL)"
+echo " OpenClawCN 配置向导 (WSL)"
 echo "================================================"
 echo ""
 echo " 正在启动服务并打开 Windows 浏览器..."
@@ -226,27 +226,27 @@ chmod +x "$PORTABLE_DIR/setup.sh"
 # 创建后台启动脚本
 cat > "$PORTABLE_DIR/start-daemon.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# Clawdbot Gateway 后台启动脚本 (WSL 版)
+# OpenClawCN Gateway 后台启动脚本 (WSL 版)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="$SCRIPT_DIR/logs/gateway.log"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 mkdir -p "$SCRIPT_DIR/logs"
 
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE")
   if kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "Clawdbot 已在运行 (PID: $OLD_PID)"
+    echo "OpenClawCN 已在运行 (PID: $OLD_PID)"
     exit 1
   fi
 fi
 
-echo "启动 Clawdbot Gateway (后台模式)..."
+echo "启动 OpenClawCN Gateway (后台模式)..."
 nohup node "$SCRIPT_DIR/dist/entry.js" gateway run --port 18789 > "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
-echo "Clawdbot 已启动 (PID: $(cat "$PID_FILE"))"
+echo "OpenClawCN 已启动 (PID: $(cat "$PID_FILE"))"
 echo "日志文件: $LOG_FILE"
 echo "访问地址: http://localhost:18789"
 echo ""
@@ -257,23 +257,23 @@ chmod +x "$PORTABLE_DIR/start-daemon.sh"
 # 创建停止脚本
 cat > "$PORTABLE_DIR/stop.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 停止 Clawdbot Gateway
+# 停止 OpenClawCN Gateway
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PID_FILE="$SCRIPT_DIR/clawdbot.pid"
+PID_FILE="$SCRIPT_DIR/openclawcn.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then
-  echo "Clawdbot 未在运行"
+  echo "OpenClawCN 未在运行"
   exit 0
 fi
 
 PID=$(cat "$PID_FILE")
 if kill -0 "$PID" 2>/dev/null; then
-  echo "停止 Clawdbot (PID: $PID)..."
+  echo "停止 OpenClawCN (PID: $PID)..."
   kill "$PID"
   rm -f "$PID_FILE"
   echo "已停止"
 else
-  echo "Clawdbot 未在运行 (清理旧 PID 文件)"
+  echo "OpenClawCN 未在运行 (清理旧 PID 文件)"
   rm -f "$PID_FILE"
 fi
 SCRIPT
@@ -282,7 +282,7 @@ chmod +x "$PORTABLE_DIR/stop.sh"
 # 创建 Windows 快捷方式生成脚本
 cat > "$PORTABLE_DIR/create-windows-shortcut.sh" << 'SCRIPT'
 #!/usr/bin/env bash
-# 在 Windows 桌面创建 Clawdbot 快捷方式
+# 在 Windows 桌面创建 OpenClawCN 快捷方式
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -311,20 +311,20 @@ echo "WSL 路径: $WSL_PATH"
 echo "Windows 路径: $WIN_PATH"
 
 # 创建 .bat 文件作为启动器
-cat > "$WIN_DESKTOP/Clawdbot.bat" << EOF
+cat > "$WIN_DESKTOP/OpenClawCN.bat" << EOF
 @echo off
 wsl -e bash -c "cd '$WSL_PATH' && ./setup.sh"
 EOF
 
 echo ""
-echo "快捷方式已创建: $WIN_DESKTOP/Clawdbot.bat"
-echo "双击即可启动 Clawdbot!"
+echo "快捷方式已创建: $WIN_DESKTOP/OpenClawCN.bat"
+echo "双击即可启动 OpenClawCN!"
 SCRIPT
 chmod +x "$PORTABLE_DIR/create-windows-shortcut.sh"
 
 # 创建 README
 cat > "$PORTABLE_DIR/README.md" << 'README'
-# Clawdbot 便携版 (WSL)
+# OpenClawCN 便携版 (WSL)
 
 专为 Windows Subsystem for Linux (WSL) 环境优化的轻量版本！
 
@@ -390,10 +390,10 @@ README
 # 创建压缩包
 echo ""
 echo "创建压缩包..."
-TARBALL_NAME="clawdbot-wsl-portable.tar.gz"
+TARBALL_NAME="openclawcn-wsl-portable.tar.gz"
 TARBALL_PATH="$OUTPUT_DIR/$TARBALL_NAME"
 cd "$OUTPUT_DIR"
-tar -czf "$TARBALL_NAME" clawdbot-portable
+tar -czf "$TARBALL_NAME" openclawcn-portable
 
 TARBALL_SIZE=$(du -sm "$TARBALL_PATH" | cut -f1)
 

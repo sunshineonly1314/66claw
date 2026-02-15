@@ -53,7 +53,7 @@
         "descriptionZh": "安全管理API凭证和密钥", // 中文描述
         "emoji": "🔐",                          // 图标emoji
         "tags": ["security", "api", "credentials"], // 标签
-        "author": "clawdbot",                   // 作者
+        "author": "openclawcn",                   // 作者
         "os": ["darwin"]                        // 支持的平台列表（可选）
       }
     ]
@@ -89,7 +89,7 @@ tags:
   - security
   - api
   - credentials
-author: clawdbot
+author: openclawcn
 os:
   - darwin
   - win32

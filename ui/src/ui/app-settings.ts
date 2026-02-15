@@ -1,30 +1,42 @@
-import { loadConfig, loadConfigSchema } from "./controllers/config";
-import { loadCronJobs, loadCronStatus } from "./controllers/cron";
-import { loadChannels } from "./controllers/channels";
-import { loadDebug } from "./controllers/debug";
-import { loadLogs } from "./controllers/logs";
-import { loadDevices } from "./controllers/devices";
-import { loadNodes } from "./controllers/nodes";
-import { loadExecApprovals } from "./controllers/exec-approvals";
-import { loadPresence } from "./controllers/presence";
-import { loadSessions } from "./controllers/sessions";
-import { loadSkills, loadMarketSkills } from "./controllers/skills";
-import { loadPlaygroundSkills } from "./controllers/playground";
-import { loadUsageSummary } from "./controllers/usage";
-import { loadFreeModels } from "./controllers/free-models";
-import { loadModelsProviders } from "./controllers/models";
-import { loadSecurityModes } from "./controllers/security";
-import { inferBasePathFromPathname, normalizeBasePath, normalizePath, pathForTab, tabFromPath, type Tab } from "./navigation";
-import { saveSettings, type UiSettings } from "./storage";
-import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme";
-import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition";
-import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll";
-import { startLogsPolling, stopLogsPolling, startDebugPolling, stopDebugPolling } from "./app-polling";
-import { refreshChat } from "./app-chat";
-import type { ClawdbotApp } from "./app";
+import type { OpenClawCNApp } from "./app.ts";
+import type { AgentsListResult } from "./types.ts";
+import { refreshChat } from "./app-chat.ts";
+import {
+  startLogsPolling,
+  stopLogsPolling,
+  startDebugPolling,
+  stopDebugPolling,
+} from "./app-polling.ts";
+import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
+import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
+import { loadAgentSkills } from "./controllers/agent-skills.ts";
+import { loadAgents } from "./controllers/agents.ts";
+import { loadChannels } from "./controllers/channels.ts";
+import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
+import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
+import { loadDebug } from "./controllers/debug.ts";
+import { loadDevices } from "./controllers/devices.ts";
+import { loadExecApprovals } from "./controllers/exec-approvals.ts";
+import { loadLogs } from "./controllers/logs.ts";
+import { loadNodes } from "./controllers/nodes.ts";
+import { loadPresence } from "./controllers/presence.ts";
+import { loadSessions } from "./controllers/sessions.ts";
+import { loadSkills } from "./controllers/skills.ts";
+import {
+  inferBasePathFromPathname,
+  normalizeBasePath,
+  normalizePath,
+  pathForTab,
+  tabFromPath,
+  type Tab,
+} from "./navigation.ts";
+import { saveSettings, type UiSettings } from "./storage.ts";
+import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition.ts";
+import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme.ts";
 
 type SettingsHost = {
   settings: UiSettings;
+  password?: string;
   theme: ThemeMode;
   themeResolved: ResolvedTheme;
   applySessionKey: string;
@@ -36,8 +48,12 @@ type SettingsHost = {
   eventLog: unknown[];
   eventLogBuffer: unknown[];
   basePath: string;
+  agentsList?: AgentsListResult | null;
+  agentsSelectedId?: string | null;
+  agentsPanel?: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
   themeMedia: MediaQueryList | null;
   themeMediaHandler: ((event: MediaQueryListEvent) => void) | null;
+  pendingGatewayUrl?: string | null;
 };
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
@@ -56,18 +72,27 @@ export function applySettings(host: SettingsHost, next: UiSettings) {
 
 export function setLastActiveSessionKey(host: SettingsHost, next: string) {
   const trimmed = next.trim();
-  if (!trimmed) return;
-  if (host.settings.lastActiveSessionKey === trimmed) return;
+  if (!trimmed) {
+    return;
+  }
+  if (host.settings.lastActiveSessionKey === trimmed) {
+    return;
+  }
   applySettings(host, { ...host.settings, lastActiveSessionKey: trimmed });
 }
 
 export function applySettingsFromUrl(host: SettingsHost) {
-  if (!window.location.search) return;
-  const params = new URLSearchParams(window.location.search);
-  const tokenRaw = params.get("token");
-  const passwordRaw = params.get("password");
-  const sessionRaw = params.get("session");
-  const gatewayUrlRaw = params.get("gatewayUrl");
+  if (!window.location.search && !window.location.hash) {
+    return;
+  }
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+
+  const tokenRaw = params.get("token") ?? hashParams.get("token");
+  const passwordRaw = params.get("password") ?? hashParams.get("password");
+  const sessionRaw = params.get("session") ?? hashParams.get("session");
+  const gatewayUrlRaw = params.get("gatewayUrl") ?? hashParams.get("gatewayUrl");
   let shouldCleanUrl = false;
 
   if (tokenRaw != null) {
@@ -76,15 +101,14 @@ export function applySettingsFromUrl(host: SettingsHost) {
       applySettings(host, { ...host.settings, token });
     }
     params.delete("token");
+    hashParams.delete("token");
     shouldCleanUrl = true;
   }
 
   if (passwordRaw != null) {
-    const password = passwordRaw.trim();
-    if (password) {
-      (host as { password: string }).password = password;
-    }
+    // Never hydrate password from URL params; strip only.
     params.delete("password");
+    hashParams.delete("password");
     shouldCleanUrl = true;
   }
 
@@ -103,44 +127,44 @@ export function applySettingsFromUrl(host: SettingsHost) {
   if (gatewayUrlRaw != null) {
     const gatewayUrl = gatewayUrlRaw.trim();
     if (gatewayUrl && gatewayUrl !== host.settings.gatewayUrl) {
-      applySettings(host, { ...host.settings, gatewayUrl });
+      host.pendingGatewayUrl = gatewayUrl;
     }
     params.delete("gatewayUrl");
+    hashParams.delete("gatewayUrl");
     shouldCleanUrl = true;
   }
 
-  if (!shouldCleanUrl) return;
-  const url = new URL(window.location.href);
+  if (!shouldCleanUrl) {
+    return;
+  }
   url.search = params.toString();
+  const nextHash = hashParams.toString();
+  url.hash = nextHash ? `#${nextHash}` : "";
   window.history.replaceState({}, "", url.toString());
 }
 
 export function setTab(host: SettingsHost, next: Tab) {
-  // Auto-dismiss skills batch banner when leaving chat — prevents re-showing on tab switch.
-  // _bannerCheckedThisSession (in skills-batch controller) prevents re-check, so banner stays gone.
-  if (host.tab === "chat" && next !== "chat") {
-    const app = host as unknown as ClawdbotApp;
-    if (app.skillsBatch?.batchPhase === "banner") {
-      app.skillsBatch = { ...app.skillsBatch, batchPhase: "idle" };
-    }
+  if (host.tab !== next) {
+    host.tab = next;
   }
-  if (host.tab !== next) host.tab = next;
-  if (next === "chat") host.chatHasAutoScrolled = false;
-  if (next === "logs")
+  if (next === "chat") {
+    host.chatHasAutoScrolled = false;
+  }
+  if (next === "logs") {
     startLogsPolling(host as unknown as Parameters<typeof startLogsPolling>[0]);
-  else stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
-  if (next === "debug")
+  } else {
+    stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
+  }
+  if (next === "debug") {
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
-  else stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
+  } else {
+    stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
+  }
   void refreshActiveTab(host);
   syncUrlWithTab(host, next, false);
 }
 
-export function setTheme(
-  host: SettingsHost,
-  next: ThemeMode,
-  context?: ThemeTransitionContext,
-) {
+export function setTheme(host: SettingsHost, next: ThemeMode, context?: ThemeTransitionContext) {
   const applyTheme = () => {
     host.theme = next;
     applySettings(host, { ...host.settings, theme: next });
@@ -155,24 +179,51 @@ export function setTheme(
 }
 
 export async function refreshActiveTab(host: SettingsHost) {
-  if (host.tab === "overview") await loadOverview(host);
-  if (host.tab === "usage") await loadUsageSummary(host as unknown as ClawdbotApp);
-  if (host.tab === "free-models") await loadFreeModels(host as unknown as ClawdbotApp);
-  if (host.tab === "channels") await loadChannelsTab(host);
-  if (host.tab === "instances") await loadPresence(host as unknown as ClawdbotApp);
-  if (host.tab === "sessions") await loadSessions(host as unknown as ClawdbotApp);
-  if (host.tab === "cron") await loadCron(host);
-  if (host.tab === "playground") await loadPlaygroundSkills(host as unknown as ClawdbotApp);
+  if (host.tab === "overview") {
+    await loadOverview(host);
+  }
+  if (host.tab === "channels") {
+    await loadChannelsTab(host);
+  }
+  if (host.tab === "instances") {
+    await loadPresence(host as unknown as OpenClawCNApp);
+  }
+  if (host.tab === "sessions") {
+    await loadSessions(host as unknown as OpenClawCNApp);
+  }
+  if (host.tab === "cron") {
+    await loadCron(host);
+  }
   if (host.tab === "skills") {
-    await loadSkills(host as unknown as ClawdbotApp);
-    // 同时加载市场数据，使技能市场 Tab 有数据
-    loadMarketSkills(host as unknown as ClawdbotApp);
+    await loadSkills(host as unknown as OpenClawCNApp);
+  }
+  if (host.tab === "agents") {
+    await loadAgents(host as unknown as OpenClawCNApp);
+    await loadConfig(host as unknown as OpenClawCNApp);
+    const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];
+    if (agentIds.length > 0) {
+      void loadAgentIdentities(host as unknown as OpenClawCNApp, agentIds);
+    }
+    const agentId =
+      host.agentsSelectedId ?? host.agentsList?.defaultId ?? host.agentsList?.agents?.[0]?.id;
+    if (agentId) {
+      void loadAgentIdentity(host as unknown as OpenClawCNApp, agentId);
+      if (host.agentsPanel === "skills") {
+        void loadAgentSkills(host as unknown as OpenClawCNApp, agentId);
+      }
+      if (host.agentsPanel === "channels") {
+        void loadChannels(host as unknown as OpenClawCNApp, false);
+      }
+      if (host.agentsPanel === "cron") {
+        void loadCron(host);
+      }
+    }
   }
   if (host.tab === "nodes") {
-    await loadNodes(host as unknown as ClawdbotApp);
-    await loadDevices(host as unknown as ClawdbotApp);
-    await loadConfig(host as unknown as ClawdbotApp);
-    await loadExecApprovals(host as unknown as ClawdbotApp);
+    await loadNodes(host as unknown as OpenClawCNApp);
+    await loadDevices(host as unknown as OpenClawCNApp);
+    await loadConfig(host as unknown as OpenClawCNApp);
+    await loadExecApprovals(host as unknown as OpenClawCNApp);
   }
   if (host.tab === "chat") {
     await refreshChat(host as unknown as Parameters<typeof refreshChat>[0]);
@@ -182,26 +233,25 @@ export async function refreshActiveTab(host: SettingsHost) {
     );
   }
   if (host.tab === "config") {
-    await loadConfigSchema(host as unknown as ClawdbotApp);
-    await loadConfig(host as unknown as ClawdbotApp);
+    await loadConfigSchema(host as unknown as OpenClawCNApp);
+    await loadConfig(host as unknown as OpenClawCNApp);
   }
   if (host.tab === "debug") {
-    await loadDebug(host as unknown as ClawdbotApp);
+    await loadDebug(host as unknown as OpenClawCNApp);
     host.eventLog = host.eventLogBuffer;
   }
   if (host.tab === "logs") {
     host.logsAtBottom = true;
-    await loadLogs(host as unknown as ClawdbotApp, { reset: true });
-    scheduleLogsScroll(
-      host as unknown as Parameters<typeof scheduleLogsScroll>[0],
-      true,
-    );
+    await loadLogs(host as unknown as OpenClawCNApp, { reset: true });
+    scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
   }
 }
 
 export function inferBasePath() {
-  if (typeof window === "undefined") return "";
-  const configured = window.__CLAWDBOT_CONTROL_UI_BASE_PATH__;
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const configured = window.__OPENCLAWCN_CONTROL_UI_BASE_PATH__;
   if (typeof configured === "string" && configured.trim()) {
     return normalizeBasePath(configured);
   }
@@ -215,17 +265,23 @@ export function syncThemeWithSettings(host: SettingsHost) {
 
 export function applyResolvedTheme(host: SettingsHost, resolved: ResolvedTheme) {
   host.themeResolved = resolved;
-  if (typeof document === "undefined") return;
+  if (typeof document === "undefined") {
+    return;
+  }
   const root = document.documentElement;
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
 }
 
 export function attachThemeListener(host: SettingsHost) {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return;
+  }
   host.themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
   host.themeMediaHandler = (event) => {
-    if (host.theme !== "system") return;
+    if (host.theme !== "system") {
+      return;
+    }
     applyResolvedTheme(host, event.matches ? "dark" : "light");
   };
   if (typeof host.themeMedia.addEventListener === "function") {
@@ -239,7 +295,9 @@ export function attachThemeListener(host: SettingsHost) {
 }
 
 export function detachThemeListener(host: SettingsHost) {
-  if (!host.themeMedia || !host.themeMediaHandler) return;
+  if (!host.themeMedia || !host.themeMediaHandler) {
+    return;
+  }
   if (typeof host.themeMedia.removeEventListener === "function") {
     host.themeMedia.removeEventListener("change", host.themeMediaHandler);
     return;
@@ -253,16 +311,22 @@ export function detachThemeListener(host: SettingsHost) {
 }
 
 export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") {
+    return;
+  }
   const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chat";
   setTabFromRoute(host, resolved);
   syncUrlWithTab(host, resolved, replace);
 }
 
 export function onPopState(host: SettingsHost) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") {
+    return;
+  }
   const resolved = tabFromPath(window.location.pathname, host.basePath);
-  if (!resolved) return;
+  if (!resolved) {
+    return;
+  }
 
   const url = new URL(window.location.href);
   const session = url.searchParams.get("session")?.trim();
@@ -279,26 +343,31 @@ export function onPopState(host: SettingsHost) {
 }
 
 export function setTabFromRoute(host: SettingsHost, next: Tab) {
-  // Auto-dismiss skills batch banner when leaving chat (browser navigation)
-  if (host.tab === "chat" && next !== "chat") {
-    const app = host as unknown as ClawdbotApp;
-    if (app.skillsBatch?.batchPhase === "banner") {
-      app.skillsBatch = { ...app.skillsBatch, batchPhase: "idle" };
-    }
+  if (host.tab !== next) {
+    host.tab = next;
   }
-  if (host.tab !== next) host.tab = next;
-  if (next === "chat") host.chatHasAutoScrolled = false;
-  if (next === "logs")
+  if (next === "chat") {
+    host.chatHasAutoScrolled = false;
+  }
+  if (next === "logs") {
     startLogsPolling(host as unknown as Parameters<typeof startLogsPolling>[0]);
-  else stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
-  if (next === "debug")
+  } else {
+    stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
+  }
+  if (next === "debug") {
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
-  else stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
-  if (host.connected) void refreshActiveTab(host);
+  } else {
+    stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
+  }
+  if (host.connected) {
+    void refreshActiveTab(host);
+  }
 }
 
 export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") {
+    return;
+  }
   const targetPath = normalizePath(pathForTab(tab, host.basePath));
   const currentPath = normalizePath(window.location.pathname);
   const url = new URL(window.location.href);
@@ -320,43 +389,41 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
   }
 }
 
-export function syncUrlWithSessionKey(
-  host: SettingsHost,
-  sessionKey: string,
-  replace: boolean,
-) {
-  if (typeof window === "undefined") return;
+export function syncUrlWithSessionKey(host: SettingsHost, sessionKey: string, replace: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
   const url = new URL(window.location.href);
   url.searchParams.set("session", sessionKey);
-  if (replace) window.history.replaceState({}, "", url.toString());
-  else window.history.pushState({}, "", url.toString());
+  if (replace) {
+    window.history.replaceState({}, "", url.toString());
+  } else {
+    window.history.pushState({}, "", url.toString());
+  }
 }
 
 export async function loadOverview(host: SettingsHost) {
   await Promise.all([
-    loadChannels(host as unknown as ClawdbotApp, false),
-    loadPresence(host as unknown as ClawdbotApp),
-    loadSessions(host as unknown as ClawdbotApp),
-    loadCronStatus(host as unknown as ClawdbotApp),
-    loadDebug(host as unknown as ClawdbotApp),
-    loadUsageSummary(host as unknown as ClawdbotApp),
-    loadModelsProviders(host as unknown as ClawdbotApp),
-    loadSecurityModes(host as unknown as ClawdbotApp),
+    loadChannels(host as unknown as OpenClawCNApp, false),
+    loadPresence(host as unknown as OpenClawCNApp),
+    loadSessions(host as unknown as OpenClawCNApp),
+    loadCronStatus(host as unknown as OpenClawCNApp),
+    loadDebug(host as unknown as OpenClawCNApp),
   ]);
 }
 
 export async function loadChannelsTab(host: SettingsHost) {
   await Promise.all([
-    loadChannels(host as unknown as ClawdbotApp, true),
-    loadConfigSchema(host as unknown as ClawdbotApp),
-    loadConfig(host as unknown as ClawdbotApp),
+    loadChannels(host as unknown as OpenClawCNApp, true),
+    loadConfigSchema(host as unknown as OpenClawCNApp),
+    loadConfig(host as unknown as OpenClawCNApp),
   ]);
 }
 
 export async function loadCron(host: SettingsHost) {
   await Promise.all([
-    loadChannels(host as unknown as ClawdbotApp, false),
-    loadCronStatus(host as unknown as ClawdbotApp),
-    loadCronJobs(host as unknown as ClawdbotApp),
+    loadChannels(host as unknown as OpenClawCNApp, false),
+    loadCronStatus(host as unknown as OpenClawCNApp),
+    loadCronJobs(host as unknown as OpenClawCNApp),
   ]);
 }

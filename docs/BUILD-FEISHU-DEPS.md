@@ -91,13 +91,13 @@ cd scripts/windows
 
 打包完成后，请检查：
 
-### 离线版 (ClawdbotCN-Setup-xxx-x64.exe)
+### 离线版 (OpenClawCN-Setup-xxx-x64.exe)
 
 - [ ] `extensions/feishu/node_modules/@larksuiteoapi/node-sdk` 存在
 - [ ] 安装后飞书 WebSocket 模式可用
 - [ ] 安装包大小约 105-110MB
 
-### 在线版 (ClawdbotCN-Setup-xxx-x64-online.exe)
+### 在线版 (OpenClawCN-Setup-xxx-x64-online.exe)
 
 - [ ] 安装时 `install-deps.bat` 正确执行
 - [ ] 控制台显示 "Installing Feishu dependencies..."

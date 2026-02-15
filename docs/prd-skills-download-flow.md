@@ -29,7 +29,7 @@
 
 ### 1.1 背景
 
-Clawdbot CN 的 Skills 系统依赖大量第三方工具（brew 包、npm 包、Go 工具、二进制文件等）。中国用户在安装这些依赖时面临两个核心问题：
+OpenClawCN CN 的 Skills 系统依赖大量第三方工具（brew 包、npm 包、Go 工具、二进制文件等）。中国用户在安装这些依赖时面临两个核心问题：
 
 1. **网络不可达** — GitHub Release、npmjs.org、proxy.golang.org 等被墙或极慢
 2. **安装复杂** — 用户需要逐个手动安装，门槛极高
@@ -49,7 +49,7 @@ Clawdbot CN 的 Skills 系统依赖大量第三方工具（brew 包、npm 包、
 
 ### 1.4 用户角色
 
-- **新用户** — 首次安装 Clawdbot，完全不了解 Skills 体系
+- **新用户** — 首次安装 OpenClawCN，完全不了解 Skills 体系
 - **回访用户** — 更新版本后，需要增量安装新增的 Skills
 - **开发者用户** — 想了解每个 Skill 的具体功能和依赖情况
 
@@ -812,7 +812,7 @@ type MirrorsManifest = {
 ### 7.2 本地安装状态
 
 ```typescript
-// 存储在 ~/.clawdbot/skills-install-state.json
+// 存储在 ~/.openclawcn/skills-install-state.json
 type SkillsInstallState = {
   version: string;
   installed: Record<string, {
@@ -1063,13 +1063,13 @@ type FailedSkillItem = {
 | # | 风险 | 影响 | 建议 | 优先级 |
 |---|------|------|------|--------|
 | T-1 | `go install` 可能需要本地 Go 环境 | Windows 用户可能没装 Go | 对 Go 工具改用预编译二进制下载 (同 brew 方案), 不依赖 go install | P0 |
-| T-2 | npm install -g 需要 Node.js 环境 | 如果用户没装 Node | Clawdbot 自带 Node runtime; 或改用 npx 下载预打包版本 | P1 |
+| T-2 | npm install -g 需要 Node.js 环境 | 如果用户没装 Node | OpenClawCN 自带 Node runtime; 或改用 npx 下载预打包版本 | P1 |
 | T-3 | GitHub 代理镜像稳定性不可控 | 公共代理可能随时挂 | manifest 需要远程热更新能力, TecbinAI 能快速替换挂掉的镜像 | P0 |
 | T-4 | 3 并发可能触发镜像限速 | 被 429 Too Many Requests | 实现指数退避 (exponential backoff): 1s→2s→4s; 动态降并发 | P1 |
 | T-5 | SHA256 值需要持续维护 | 上游版本更新后 SHA256 变化 | 实现自动化 CI: 定期检查上游版本, 自动更新 manifest 中的 hash | P1 |
 | T-6 | `.partial` 文件可能占用大量磁盘 | 中断后残留文件 | 实现清理机制: 超过 7 天的 partial 文件自动删除 | P2 |
 | T-7 | Gateway 重启时 batch install 状态丢失 | 进度丢失 | install state 持久化到 `skills-install-state.json`, 重启后恢复 | P1 |
-| T-8 | `Notification API` 需要浏览器权限 | 用户可能拒绝 | 降级: 如果权限被拒, 改用页面标题闪烁 `[✓ 安装完成] Clawdbot` | P3 |
+| T-8 | `Notification API` 需要浏览器权限 | 用户可能拒绝 | 降级: 如果权限被拒, 改用页面标题闪烁 `[✓ 安装完成] OpenClawCN` | P3 |
 | T-9 | 中国 HTTPS 证书验证可能有 SNI 问题 | 部分镜像 TLS 握手失败 | 连接时设置较长的 TLS 超时 (10s), 失败后立即切镜像 | P2 |
 
 ### 11.2 性能预估
@@ -1170,7 +1170,7 @@ type FailedSkillItem = {
 
 | 术语 | 说明 |
 |------|------|
-| Skill | Clawdbot 的一个能力模块, 依赖外部工具 |
+| Skill | OpenClawCN 的一个能力模块, 依赖外部工具 |
 | Mirror | 中国国内镜像源, 代理海外资源 |
 | Fallback | 镜像失败后的直连回退 |
 | Partial | 下载中断后的部分文件 (用于断点续传) |

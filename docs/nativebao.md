@@ -54,7 +54,7 @@
 | `notes-pack.zip` | ❌ 未构建 | 功能在规划中，代码未完成 |
 | `image-pack.zip` | ❌ 未构建 | 功能在规划中，代码未完成 |
 | `smarthome-pack.zip` | ❌ 未构建 | 功能在规划中，代码未完成 |
-| `clawdbot-wsl-latest.tar.gz` | ❌ 暂不需要 | Windows 原生版不使用 WSL |
+| `openclawcn-wsl-latest.tar.gz` | ❌ 暂不需要 | Windows 原生版不使用 WSL |
 
 ### 对用户的影响
 
@@ -80,7 +80,7 @@ Windows 原生离线版打包时：
 ### 认证方式
 
 ```
-Authorization: Bearer clawdbotCN778
+Authorization: Bearer openclawcnCN778
 ```
 
 ### Signal CLI 接口 ✅ 需要实现
@@ -89,7 +89,7 @@ Authorization: Bearer clawdbotCN778
 
 ```http
 GET http://121.43.61.90/api/binaries/signal-cli/latest
-Authorization: Bearer clawdbotCN778
+Authorization: Bearer openclawcnCN778
 ```
 
 响应：
@@ -121,7 +121,7 @@ Authorization: Bearer clawdbotCN778
 
 ```http
 GET http://121.43.61.90/api/binaries/signal-cli/{version}/{filename}
-Authorization: Bearer clawdbotCN778
+Authorization: Bearer openclawcnCN778
 ```
 
 示例：
@@ -135,7 +135,7 @@ GET http://121.43.61.90/api/binaries/signal-cli/0.13.4/signal-cli-0.13.4-Linux.t
 
 ```http
 GET http://121.43.61.90/api/capabilities
-Authorization: Bearer clawdbotCN778
+Authorization: Bearer openclawcnCN778
 ```
 
 建议响应：
@@ -157,7 +157,7 @@ Authorization: Bearer clawdbotCN778
 // src/config/cn-mirrors.ts
 export const CLAWDSKILLSPROXY_CONFIG = {
   baseUrl: "http://121.43.61.90",
-  token: "clawdbotCN778",
+  token: "openclawcnCN778",
   endpoints: {
     skills: "/api/skills/index",
     signalCliLatest: "/api/binaries/signal-cli/latest",
@@ -178,11 +178,11 @@ export const CLAWDSKILLSPROXY_CONFIG = {
 ```powershell
 # 测试 Signal CLI 版本接口
 Invoke-RestMethod -Uri "http://121.43.61.90/api/binaries/signal-cli/latest" `
-  -Headers @{ Authorization = "Bearer clawdbotCN778" }
+  -Headers @{ Authorization = "Bearer openclawcnCN778" }
 
 # 测试 Signal CLI 下载
 Invoke-WebRequest -Uri "http://121.43.61.90/api/binaries/signal-cli/0.13.4/signal-cli-0.13.4-Linux.tar.gz" `
-  -Headers @{ Authorization = "Bearer clawdbotCN778" } `
+  -Headers @{ Authorization = "Bearer openclawcnCN778" } `
   -OutFile "signal-cli.tar.gz"
 ```
 

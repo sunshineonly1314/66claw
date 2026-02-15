@@ -68,7 +68,7 @@ process.platform === "darwin" → "darwin-universal"
 ### 2.3 认证
 
 ```
-Authorization: Bearer clawdbotCN778
+Authorization: Bearer openclawcnCN778
 ```
 
 与现有 signal-cli 端点保持一致。如果 Nginx 层已有统一鉴权，新端点走同样的规则即可。
@@ -178,7 +178,7 @@ Accept-Ranges: bytes
 
 location /api/binaries/ {
     # 鉴权（与现有端点一致）
-    if ($http_authorization != "Bearer clawdbotCN778") {
+    if ($http_authorization != "Bearer openclawcnCN778") {
         return 401;
     }
 
@@ -218,7 +218,7 @@ public ResponseEntity<Resource> downloadBinary(
     @RequestHeader("Authorization") String auth
 ) {
     // 1. 验证 token
-    if (!"Bearer clawdbotCN778".equals(auth)) {
+    if (!"Bearer openclawcnCN778".equals(auth)) {
         return ResponseEntity.status(401).build();
     }
 
@@ -249,7 +249,7 @@ Nginx 对 `/api/binaries/` 路径优先尝试静态文件，找不到再 fallbac
 
 ```nginx
 location /api/binaries/ {
-    if ($http_authorization != "Bearer clawdbotCN778") {
+    if ($http_authorization != "Bearer openclawcnCN778") {
         return 401;
     }
 
@@ -272,7 +272,7 @@ location @java_backend {
 所有二进制文件已下载到开发机：
 
 ```
-d:\codeknowledge\clawdbot-main\clawdbot-main\build\download-output\proxy-binaries\
+d:\codeknowledge\openclawcn-main\openclawcn-main\build\download-output\proxy-binaries\
 ├── gh\         (4 文件, 52 MB)
 ├── himalaya\   (4 文件, 41 MB)
 ├── yt-dlp\     (3 文件, 87 MB)
@@ -303,11 +303,11 @@ ssh root@121.43.61.90 "chown -R www-data:www-data /data/binaries/ && chmod -R 64
 ssh root@121.43.61.90 "find /data/binaries -type f | sort"
 
 # 测试端点
-curl -H "Authorization: Bearer clawdbotCN778" \
+curl -H "Authorization: Bearer openclawcnCN778" \
   "http://121.43.61.90/api/binaries/gh/windows-x64/gh_2.86.0_windows_amd64.zip" \
   -o /dev/null -w "HTTP %{http_code}, Size: %{size_download}\n"
 
-curl -H "Authorization: Bearer clawdbotCN778" \
+curl -H "Authorization: Bearer openclawcnCN778" \
   "http://121.43.61.90/api/binaries/uv/windows-x64/uv-x86_64-pc-windows-msvc.zip" \
   -o /dev/null -w "HTTP %{http_code}, Size: %{size_download}\n"
 ```
@@ -326,7 +326,7 @@ curl -H "Authorization: Bearer clawdbotCN778" \
 4. 重写 URL:
    http://121.43.61.90/api/binaries/gh/windows-x64/gh_2.86.0_windows_amd64.zip
 5. downloadFile() 发起 HTTP GET 下载
-6. 解压到 ~/.clawdbot/bin/
+6. 解压到 ~/.openclawcn/bin/
 ```
 
 **客户端代码位置**: `src/agents/skills-install.ts:857-874`

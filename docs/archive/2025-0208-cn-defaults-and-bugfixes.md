@@ -10,7 +10,7 @@
 
 ### 1.1 背景
 
-ClawdbotCN 面向中国用户，核心理念是"开箱即用"——用户只需填写 API Key，其他参数自动配好最优值。
+OpenClawCN 面向中国用户，核心理念是"开箱即用"——用户只需填写 API Key，其他参数自动配好最优值。
 
 **此前的问题**：
 
@@ -103,7 +103,7 @@ applyModelDefaults(
 | 链集成测试 | 2 | 与 applyAgentDefaults 链式调用时 CN 值不被冲掉 |
 | 不可变性测试 | 2 | 原始 config 对象不被修改 |
 
-Mock 方式：`process.env.CLAWDBOT_REGION = "cn"` + `vi.spyOn(os, "platform")`
+Mock 方式：`process.env.OPENCLAWCN_REGION = "cn"` + `vi.spyOn(os, "platform")`
 
 ---
 

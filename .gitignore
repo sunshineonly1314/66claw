@@ -1,131 +1,49 @@
-node_modules
-**/node_modules/
+# Dependencies
+node_modules/
+extensions/*/node_modules/
+ui/node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Rust / Tauri build cache
+apps/desktop/src-tauri/target/
+
+# Environment & secrets
 .env
-docker-compose.extra.yml
-dist
-*.bun-build
-pnpm-lock.yaml
-bun.lock
-bun.lockb
-coverage
-.pnpm-store
-.worktrees/
+.env.local
+.env.*.local
+
+# OS files
 .DS_Store
-**/.DS_Store
-ui/src/ui/__screenshots__/
-ui/playwright-report/
-ui/test-results/
+Thumbs.db
 
-# Bun build artifacts
-*.bun-build
-apps/macos/.build/
-apps/shared/ClawdbotKit/.build/
-**/ModuleCache/
-bin/
-bin/clawdbot-mac
-bin/docs-list
-apps/macos/.build-local/
-apps/macos/.swiftpm/
-apps/shared/ClawdbotKit/.swiftpm/
-Core/
-apps/ios/*.xcodeproj/
-apps/ios/*.xcworkspace/
-apps/ios/.swiftpm/
-vendor/
-apps/ios/Clawdbot.xcodeproj/
-apps/ios/Clawdbot.xcodeproj/**
-apps/macos/.build/**
-**/*.bun-build
-apps/ios/*.xcfilelist
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/settings.json
+.vscode/launch.json
 
-# Vendor build artifacts
-vendor/a2ui/renderers/lit/dist/
-.bundle.hash
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
-# fastlane (iOS)
-apps/ios/fastlane/README.md
-apps/ios/fastlane/report.xml
-apps/ios/fastlane/Preview.html
-apps/ios/fastlane/screenshots/
-apps/ios/fastlane/test_output/
-apps/ios/fastlane/logs/
-apps/ios/fastlane/.env
-apps/ios/fastlane/report.xml
+# Test coverage
+coverage/
 
-# fastlane build artifacts (local)
-apps/ios/*.ipa
-apps/ios/*.dSYM.zip
+# npm lock files (project uses pnpm)
+package-lock.json
 
-# provisioning profiles (local)
-apps/ios/*.mobileprovision
-.env
+# npm pack artifacts
+*.tgz
 
-# Local untracked files
-.local/
-.vscode/
-IDENTITY.md
-USER.md
-.tgz
+# Windows system files
+Microsoft/
 
-# Test API keys (DO NOT COMMIT!)
-config.test-keys.json5
-config.test-keys.json
-*.test-keys.*
-
-# local tooling
-.serena/
-
-# Build output and packaging artifacts
-build/pkg/
-build/output/
-scripts/windows/buildout/
-clawdbot-portable/
-*.pid
-*-standalone.zip
-node-v*.zip
-
-# Skills mirror (local only, regenerate via script)
-clawdhub-skills-mirror/
-nul
-
-# === CN deployment: sensitive / local-only ===
-
-# SSL certificates and keys (NEVER commit!)
-*.key
-*.pem
-yunwei/
-23452575_www.obplugins.cn_nginx/
-
-# Runtime data and logs
-data/
-logs/
-
-# Local dev utilities
-dev/
-
-# Bundled binaries (too large for git)
-scripts/windows/bundled-bins/
-
-# Build download cache
-build/download-output/
-
-# Skills bulk data (regenerate via scripts)
-skills-awesome/
-skills-merged/
-skillsqingxi/output/
-skillsqingxi/output-all/
-skillsupdate/
-
-# UI test artifacts and screenshots
-ui/*.html
-ui/*.png
-ui/*.py
-ui/src/ui/views/__screenshots__/
-
-# Temp translation/checkpoint files
-scripts/translate-checkpoint.json
-scripts/skill-translations.json
-scripts/skills-untranslated.json
-
-# Misc temp files
-d*skills_list.txt
+# Dev temp
+devTemp/

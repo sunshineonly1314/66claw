@@ -180,12 +180,12 @@
 
 ### 2026-02-04: memU 调研结论
 
-**决策**: 不直接引入 memU，借鉴其主动式记忆理念改进 Clawdbot。
+**决策**: 不直接引入 memU，借鉴其主动式记忆理念改进 OpenClawCN。
 
 **原因**:
-1. memU 依赖 PostgreSQL，与 Clawdbot 本地优先策略不符
+1. memU 依赖 PostgreSQL，与 OpenClawCN 本地优先策略不符
 2. memU 缺少国内模型原生支持
-3. Clawdbot 现有 Markdown 存储方案用户友好度更高
+3. OpenClawCN 现有 Markdown 存储方案用户友好度更高
 
 **下一步**: 实施 P0 自动记忆提取功能
 
@@ -195,4 +195,4 @@
 
 - [memU GitHub](https://github.com/NevaMind-AI/memU)
 - [调研报告](./memu-research-proactive-memory.md)
-- [Clawdbot 记忆文档](../concepts/memory.md)
+- [OpenClawCN 记忆文档](../concepts/memory.md)

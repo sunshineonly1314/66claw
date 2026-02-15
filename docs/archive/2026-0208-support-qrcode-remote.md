@@ -10,7 +10,7 @@
 
 ### 1.1 背景
 
-ClawdbotCN 需要在 UI 顶栏显示技术支持群二维码，用户鼠标悬浮即可扫码入群。这是核心商业转化入口。
+OpenClawCN 需要在 UI 顶栏显示技术支持群二维码，用户鼠标悬浮即可扫码入群。这是核心商业转化入口。
 
 **此前的问题**：
 
@@ -61,7 +61,7 @@ Content-Type: application/json
   "success": true,
   "data": {
     "base64": "data:image/png;base64,/9j/4QEi...",
-    "groupName": "Clawdbot 试用交流群 2",
+    "groupName": "OpenClawCN 试用交流群 2",
     "version": "v20260208041336",
     "expiresAt": 1740000000000,
     "ttlSeconds": 86400

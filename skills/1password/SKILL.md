@@ -4,7 +4,7 @@ description: Set up and use 1Password CLI (op). Use when installing the CLI, ena
 nameZh: "密码管理"
 descriptionZh: "安全管理和自动填充密码"
 homepage: https://developer.1password.com/docs/cli/get-started/
-metadata: {"clawdbot":{"emoji":"🔐","requires":{"bins":["op"]},"install":[{"id":"brew","kind":"brew","formula":"1password-cli","bins":["op"],"label":"Install 1Password CLI (brew)"},{"id":"download-win","kind":"download","url":"https://cache.agilebits.com/dist/1P/op2/pkg/v2.30.3/op_windows_amd64_v2.30.3.zip","bins":["op"],"label":"Download 1Password CLI (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://cache.agilebits.com/dist/1P/op2/pkg/v2.30.3/op_linux_amd64_v2.30.3.zip","bins":["op"],"label":"Download 1Password CLI (Linux)","os":["linux"]}]}}
+metadata: {"openclawcn":{"emoji":"🔐","requires":{"bins":["op"]},"install":[{"id":"brew","kind":"brew","formula":"1password-cli","bins":["op"],"label":"Install 1Password CLI (brew)"},{"id":"download-win","kind":"download","url":"https://cache.agilebits.com/dist/1P/op2/pkg/v2.30.3/op_windows_amd64_v2.30.3.zip","bins":["op"],"label":"Download 1Password CLI (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://cache.agilebits.com/dist/1P/op2/pkg/v2.30.3/op_linux_amd64_v2.30.3.zip","bins":["op"],"label":"Download 1Password CLI (Linux)","os":["linux"]}]}}
 ---
 
 # 1Password CLI
@@ -33,9 +33,9 @@ The shell tool uses a fresh TTY per command. To avoid re-prompts and failures, a
 Example (see `tmux` skill for socket conventions, do not reuse old session names):
 
 ```bash
-SOCKET_DIR="${CLAWDBOT_TMUX_SOCKET_DIR:-${TMPDIR:-/tmp}/clawdbot-tmux-sockets}"
+SOCKET_DIR="${OPENCLAWCN_TMUX_SOCKET_DIR:-${TMPDIR:-/tmp}/openclawcn-tmux-sockets}"
 mkdir -p "$SOCKET_DIR"
-SOCKET="$SOCKET_DIR/clawdbot-op.sock"
+SOCKET="$SOCKET_DIR/openclawcn-op.sock"
 SESSION="op-auth-$(date +%Y%m%d-%H%M%S)"
 
 tmux -S "$SOCKET" new -d -s "$SESSION" -n shell

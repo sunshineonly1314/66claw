@@ -5,7 +5,7 @@
 
 ## 方案简介
 
-香港服务器作为 **静态文件服务器**，直连 GitHub 同步 13 个工具的二进制文件，供 Clawdbot 客户端下载。
+香港服务器作为 **静态文件服务器**，直连 GitHub 同步 13 个工具的二进制文件，供 OpenClawCN 客户端下载。
 
 ```
 GitHub Release → 香港服务器 → 用户客户端
@@ -246,7 +246,7 @@ server {
     autoindex on;  # 允许目录浏览（可选）
 
     location / {
-        # 允许跨域（Clawdbot 客户端需要）
+        # 允许跨域（OpenClawCN 客户端需要）
         add_header Access-Control-Allow-Origin *;
         add_header Access-Control-Allow-Methods 'GET, OPTIONS';
         

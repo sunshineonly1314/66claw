@@ -1,12 +1,12 @@
 /**
- * Clawdbot 中国本地化配置示例
+ * OpenClawCN 中国本地化配置示例
  * China Localization Configuration Example
  *
- * 配置文件位置: ~/.clawdbot/config.json5
+ * 配置文件位置: ~/.openclawcn/config.json5
  * 使用方法:
- *   1. 复制此文件到 ~/.clawdbot/config.json5
+ *   1. 复制此文件到 ~/.openclawcn/config.json5
  *   2. 填入你的 API Key 和配置
- *   3. 启动网关: clawdbot gateway run
+ *   3. 启动网关: openclawcn gateway run
  *
  * 环境变量 (可选):
  *   - DASHSCOPE_API_KEY: 通义千问 API Key

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ================================================================
-# Clawdbot 一键在线安装脚本
+# OpenClawCN 一键在线安装脚本
 #
 # 小白用户只需运行一行命令:
 #   curl -fsSL https://get.tecbinai.com/linux | bash
@@ -10,8 +10,8 @@
 #
 # 功能:
 #   1. 自动检测系统架构 (x64/arm64)
-#   2. 下载最新版 Clawdbot 独立包
-#   3. 解压到 ~/clawdbot
+#   2. 下载最新版 OpenClawCN 独立包
+#   3. 解压到 ~/openclawcn
 #   4. 自动启动配置向导
 # ================================================================
 
@@ -27,12 +27,12 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── 配置 ─────────────────────────────────────────────────────
-INSTALL_DIR="${CLAWDBOT_INSTALL_DIR:-$HOME/clawdbot}"
+INSTALL_DIR="${OPENCLAWCN_INSTALL_DIR:-$HOME/openclawcn}"
 MIRROR=""
 VERSION="latest"
 SKIP_START=false
-DOWNLOAD_BASE="https://github.com/clawdbot/clawdbot/releases/latest/download"
-CHINA_DOWNLOAD_BASE="https://gitee.com/tecbinai/clawdbot-releases/releases/latest/download"
+DOWNLOAD_BASE="https://github.com/openclawcn/openclawcn/releases/latest/download"
+CHINA_DOWNLOAD_BASE="https://gitee.com/tecbinai/openclawcn-releases/releases/latest/download"
 
 # ─── 解析参数 ─────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -48,13 +48,13 @@ while [[ $# -gt 0 ]]; do
     --version)   VERSION="$2";     shift 2 ;;
     --skip-start) SKIP_START=true; shift ;;
     -h|--help)
-      echo "Clawdbot Linux 一键安装脚本"
+      echo "OpenClawCN Linux 一键安装脚本"
       echo ""
       echo "用法: curl -fsSL https://get.tecbinai.com/linux | bash"
       echo ""
       echo "选项:"
       echo "  --mirror china   使用中国镜像 (推荐国内用户)"
-      echo "  --dir PATH       安装目录 (默认: ~/clawdbot)"
+      echo "  --dir PATH       安装目录 (默认: ~/openclawcn)"
       echo "  --skip-start     安装后不启动"
       echo ""
       exit 0
@@ -75,7 +75,7 @@ echo ""
 echo -e "${BOLD}"
 echo "   ╔══════════════════════════════════════════╗"
 echo "   ║                                          ║"
-echo "   ║          Clawdbot 一键安装程序            ║"
+echo "   ║          OpenClawCN 一键安装程序            ║"
 echo "   ║          个人 AI 助手网关                 ║"
 echo "   ║                                          ║"
 echo "   ╚══════════════════════════════════════════╝"
@@ -101,7 +101,7 @@ case "$ARCH" in
   aarch64|arm64)  ARCH="arm64" ;;
   *)
     log_error "不支持的架构: $ARCH"
-    log_error "Clawdbot 支持 x64 和 arm64"
+    log_error "OpenClawCN 支持 x64 和 arm64"
     exit 1
     ;;
 esac
@@ -154,11 +154,11 @@ if [[ -d "$INSTALL_DIR" ]] && [[ -f "$INSTALL_DIR/dist/entry.js" ]]; then
 fi
 
 # ─── 下载 ─────────────────────────────────────────────────────
-TARBALL_NAME="clawdbot-linux-${ARCH}-standalone.tar.gz"
+TARBALL_NAME="openclawcn-linux-${ARCH}-standalone.tar.gz"
 DOWNLOAD_URL="${DOWNLOAD_BASE}/${TARBALL_NAME}"
-TEMP_FILE=$(mktemp "/tmp/clawdbot-XXXXXXXX.tar.gz")
+TEMP_FILE=$(mktemp "/tmp/openclawcn-XXXXXXXX.tar.gz")
 
-log_info "下载 Clawdbot..."
+log_info "下载 OpenClawCN..."
 echo "  URL: $DOWNLOAD_URL"
 echo ""
 
@@ -186,7 +186,7 @@ log_success "下载完成 (${DOWNLOAD_SIZE}MB)"
 
 # 校验文件完整性 (如果有校验和文件)
 CHECKSUM_URL="${DOWNLOAD_BASE}/${TARBALL_NAME}.sha256"
-TEMP_CHECKSUM=$(mktemp "/tmp/clawdbot-checksum-XXXXXXXX")
+TEMP_CHECKSUM=$(mktemp "/tmp/openclawcn-checksum-XXXXXXXX")
 if download_file "$CHECKSUM_URL" "$TEMP_CHECKSUM" 2>/dev/null; then
   log_info "验证文件完整性..."
   EXPECTED_HASH=$(cat "$TEMP_CHECKSUM" | awk '{print $1}')
@@ -222,8 +222,8 @@ fi
 mkdir -p "$(dirname "$INSTALL_DIR")"
 tar -xzf "$TEMP_FILE" -C "$(dirname "$INSTALL_DIR")"
 
-# tar 解压出来的目录可能是 clawdbot，确保路径正确
-EXTRACTED_DIR="$(dirname "$INSTALL_DIR")/clawdbot"
+# tar 解压出来的目录可能是 openclawcn，确保路径正确
+EXTRACTED_DIR="$(dirname "$INSTALL_DIR")/openclawcn"
 if [[ "$EXTRACTED_DIR" != "$INSTALL_DIR" ]] && [[ -d "$EXTRACTED_DIR" ]]; then
   mv "$EXTRACTED_DIR" "$INSTALL_DIR"
 fi
@@ -250,9 +250,9 @@ fi
 PATH_LINE="export PATH=\"$INSTALL_DIR:\$PATH\""
 
 if [[ -n "$SHELL_RC" ]]; then
-  if ! grep -q "clawdbot" "$SHELL_RC" 2>/dev/null; then
+  if ! grep -q "openclawcn" "$SHELL_RC" 2>/dev/null; then
     echo "" >> "$SHELL_RC"
-    echo "# Clawdbot" >> "$SHELL_RC"
+    echo "# OpenClawCN" >> "$SHELL_RC"
     echo "$PATH_LINE" >> "$SHELL_RC"
     log_success "已添加到 PATH ($SHELL_RC)"
   fi
@@ -267,7 +267,7 @@ echo ""
 echo -e "${BOLD}"
 echo "   ╔══════════════════════════════════════════╗"
 echo "   ║                                          ║"
-echo "   ║        ✓ Clawdbot 安装成功!              ║"
+echo "   ║        ✓ OpenClawCN 安装成功!              ║"
 echo "   ║                                          ║"
 echo "   ╚══════════════════════════════════════════╝"
 echo -e "${NC}"

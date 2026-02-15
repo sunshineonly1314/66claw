@@ -23,8 +23,8 @@ QQ 机器人渠道支持通过 QQ 开放平台官方机器人与用户交互。
 或使用环境变量：
 
 ```bash
-CLAWDBOT_QQBOT_APP_ID=你的AppID
-CLAWDBOT_QQBOT_APP_SECRET=你的AppSecret
+OPENCLAWCN_QQBOT_APP_ID=你的AppID
+OPENCLAWCN_QQBOT_APP_SECRET=你的AppSecret
 ```
 
 ## 平台配置步骤
@@ -110,12 +110,12 @@ QQ 开放平台要求配置 IP 白名单才能调用 API：
 
 ```bash
 # 必填
-CLAWDBOT_QQBOT_APP_ID=1234567890
-CLAWDBOT_QQBOT_APP_SECRET=your-app-secret
+OPENCLAWCN_QQBOT_APP_ID=1234567890
+OPENCLAWCN_QQBOT_APP_SECRET=your-app-secret
 
 # 可选
-CLAWDBOT_QQBOT_TOKEN=your-callback-token
-CLAWDBOT_QQBOT_SANDBOX=false
+OPENCLAWCN_QQBOT_TOKEN=your-callback-token
+OPENCLAWCN_QQBOT_SANDBOX=false
 ```
 
 ## 消息类型支持

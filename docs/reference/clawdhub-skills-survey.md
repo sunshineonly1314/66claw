@@ -2,7 +2,7 @@
 
 ## 一、https://clawdhub.com 当前状态
 
-- **站点**：https://clawdhub.com（与 MoltHub 同源，clawdhub.com 为 Clawdbot 使用的技能注册表）
+- **站点**：https://clawdhub.com（与 MoltHub 同源，clawdhub.com 为 OpenClawCN 使用的技能注册表）
 - **Registry 发现**：`https://clawdhub.com/.well-known/clawdhub.json` 返回 `apiBase` / `registry` 为 `https://clawdhub.com`
 - **公开 API 基址**：`https://clawdhub.com`（v1 能力与 [moltbot/molthub](https://github.com/moltbot/molthub) 一致）
 
@@ -28,9 +28,9 @@
      MoltHub/ClawdHub 的 HTTP 路由里有 `ApiRoutes.download`（GET），CLI 的「按版本下载 zip」会请求该接口。  
      若你要自己做脚本，可参考 [molthub/convex/http.ts](https://github.com/moltbot/molthub/blob/main/convex/http.ts) 里 `downloadZip` 与路由注册，以及 clawdhub CLI 源码中的下载 URL 构造（一般形态为：registry + download 路径 + slug + version/tag）。
 3. **「需要时再安装」**  
-   你本地已经有一份「全量 skills 目录」后，要装到某个 Clawdbot 工作区时，可以：
+   你本地已经有一份「全量 skills 目录」后，要装到某个 OpenClawCN 工作区时，可以：
    - 从该目录拷贝对应 `<slug>` 子目录到目标 `skills/`，或  
-   - 在 `~/.clawdbot/clawdbot.json` 里用 `skills.load.extraDirs` 把你的「全量技能根目录」加进去，由 Clawdbot 按需加载（仍以 workspace / managed / bundled 的优先级为准）。
+   - 在 `~/.openclawcn/openclawcn.json` 里用 `skills.load.extraDirs` 把你的「全量技能根目录」加进去，由 OpenClawCN 按需加载（仍以 workspace / managed / bundled 的优先级为准）。
 
 ### 方案 B：下载到本地后再推到 Gitee，需要时从 Gitee 拉
 
@@ -40,7 +40,7 @@
    - 之后更新时：再跑一遍「列表 → 按 slug 下载/更新」，然后 `git add/commit/push` 到 Gitee。
 3. **需要时从 Gitee 拉**  
    - 方式 1：`git clone` 或 `git pull` 你的 Gitee 仓库到某目录，再在 `skills.load.extraDirs` 里指向这个目录；  
-   - 方式 2：写一个小脚本/任务，按需从 Gitee 拉取指定 slug 子目录到当前 workspace 的 `skills/` 下，再启动 Clawdbot。
+   - 方式 2：写一个小脚本/任务，按需从 Gitee 拉取指定 slug 子目录到当前 workspace 的 `skills/` 下，再启动 OpenClawCN。
 
 两种方案都只依赖「列表 API + 按 slug 下载」（或等价地使用 `clawdhub install`），不要求登录；登录仅在你需要「发布/更新技能到 clawdhub.com」时才用。
 
@@ -55,7 +55,7 @@
 3. **License / 再分发**  
    - 技能作者各自授权不同，把整库镜像到 Gitee 再公开时，需自行确认不违反各技能的 license 与 ClawdHub 使用条款；若仅内网或私有 Gitee 使用，一般更易满足合规。
 4. **与现有加载优先级的关系**  
-   - Clawdbot 的加载顺序（从高到低）：workspace → managed → bundled → extraDirs。  
+   - OpenClawCN 的加载顺序（从高到低）：workspace → managed → bundled → extraDirs。  
    - 把「全量下载目录」或「Gitee 克隆目录」配成 `skills.load.extraDirs` 后，只有在你没有在 workspace/managed 里覆盖同名技能时，才会用到这些镜像里的版本。
 
 ## 五、小结
@@ -67,4 +67,4 @@
 | 能否再放到 Gitee，需要时再拉？ | **能**。把本地「全量技能目录」做成 Git 仓推到 Gitee，需要时用 `extraDirs` 或按需拷贝到 workspace。 |
 | 列表/下载的入口？ | 列表：`GET https://clawdhub.com/api/v1/skills?limit=100&cursor=...`；下载：使用 clawdhub CLI 或与 `ApiRoutes.download` 对应的 GET 接口（参见 molthub 与 clawdhub CLI 实现）。 |
 
-以上结论基于对 [clawdhub.com](https://clawdhub.com)、[.well-known/clawdhub.json](https://clawdhub.com/.well-known/clawdhub.json)、[molthub 的 HTTP API 与 Convex 路由](https://github.com/moltbot/molthub/tree/main/convex) 及 Clawdbot 文档的阅读与实测。
+以上结论基于对 [clawdhub.com](https://clawdhub.com)、[.well-known/clawdhub.json](https://clawdhub.com/.well-known/clawdhub.json)、[molthub 的 HTTP API 与 Convex 路由](https://github.com/moltbot/molthub/tree/main/convex) 及 OpenClawCN 文档的阅读与实测。

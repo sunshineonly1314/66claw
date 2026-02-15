@@ -3,7 +3,7 @@ name: xiaohongshu
 description: "Automate Xiaohongshu (RedNote) content research via browser: search keywords, filter by most-liked/most-commented, analyze articles (title, text, images/video), and generate Chinese summary reports."
 nameZh: "小红书内容研究"
 descriptionZh: "自动化小红书内容调研：搜索关键词、按最多点赞/评论筛选、逐篇分析标题文案图片视频、生成中文总结报告"
-metadata: {"clawdbot":{"emoji":"📕"}}
+metadata: {"openclawcn":{"emoji":"📕"}}
 ---
 
 # 小红书内容调研自动化 (Xiaohongshu Content Research)

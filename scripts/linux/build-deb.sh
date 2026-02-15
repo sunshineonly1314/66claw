@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ================================================================
-# Clawdbot DEB 包构建脚本
+# OpenClawCN DEB 包构建脚本
 # 构建适用于 Ubuntu/Debian 的 .deb 安装包
 #
 # 用法:
@@ -49,7 +49,7 @@ if [[ -z "$DEB_VERSION" ]]; then
   DEB_VERSION="1.0.0"
 fi
 
-PKG_NAME="clawdbot"
+PKG_NAME="openclawcn"
 DEB_FILE="${PKG_NAME}_${DEB_VERSION}_${DEB_ARCH}.deb"
 
 echo "构建 DEB 包: $DEB_FILE"
@@ -67,7 +67,7 @@ fi
 BUILD_DIR="$OUTPUT_DIR/.deb-build-${DEB_ARCH}"
 rm -rf "$BUILD_DIR"
 
-INSTALL_DIR="$BUILD_DIR/opt/clawdbot"
+INSTALL_DIR="$BUILD_DIR/opt/openclawcn"
 BIN_DIR="$BUILD_DIR/usr/local/bin"
 SYSTEMD_DIR="$BUILD_DIR/etc/systemd/user"
 DEBIAN_DIR="$BUILD_DIR/DEBIAN"
@@ -112,26 +112,26 @@ fi
 
 # ─── 创建 CLI 入口 ────────────────────────────────────────────
 
-cat > "$BIN_DIR/clawdbot" << 'EOF'
+cat > "$BIN_DIR/openclawcn" << 'EOF'
 #!/usr/bin/env bash
-# Clawdbot CLI wrapper
-export PATH="/opt/clawdbot/node/bin:$PATH"
-exec /opt/clawdbot/node/bin/node /opt/clawdbot/dist/entry.js "$@"
+# OpenClawCN CLI wrapper
+export PATH="/opt/openclawcn/node/bin:$PATH"
+exec /opt/openclawcn/node/bin/node /opt/openclawcn/dist/entry.js "$@"
 EOF
-chmod +x "$BIN_DIR/clawdbot"
+chmod +x "$BIN_DIR/openclawcn"
 
 # ─── 创建 systemd 用户服务 ─────────────────────────────────────
 
-cat > "$SYSTEMD_DIR/clawdbot.service" << EOF
+cat > "$SYSTEMD_DIR/openclawcn.service" << EOF
 [Unit]
-Description=Clawdbot AI Gateway
+Description=OpenClawCN AI Gateway
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/clawdbot
-ExecStart=/opt/clawdbot/node/bin/node /opt/clawdbot/dist/entry.js gateway run --port 18789 --allow-unconfigured
+WorkingDirectory=/opt/openclawcn
+ExecStart=/opt/openclawcn/node/bin/node /opt/openclawcn/dist/entry.js gateway run --port 18789 --allow-unconfigured
 ExecReload=/bin/kill -USR1 \$MAINPID
 Restart=on-failure
 RestartSec=10
@@ -139,7 +139,7 @@ Environment=NODE_ENV=production
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=clawdbot
+SyslogIdentifier=openclawcn
 
 NoNewPrivileges=true
 
@@ -160,10 +160,10 @@ Priority: optional
 Architecture: ${DEB_ARCH}
 Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6 (>= 2.17), libstdc++6
-Maintainer: Clawdbot Team <support@tecbinai.com>
+Maintainer: OpenClawCN Team <support@tecbinai.com>
 Homepage: https://www.tecbinai.com/
-Description: Clawdbot AI Gateway - 个人AI助手网关
- Clawdbot 是一个多渠道 AI 助手网关，支持通过
+Description: OpenClawCN AI Gateway - 个人AI助手网关
+ OpenClawCN 是一个多渠道 AI 助手网关，支持通过
  Web界面进行配置，连接多种AI模型和消息渠道。
  .
  安装后访问 http://localhost:18789/setup 进行配置。
@@ -176,23 +176,23 @@ set -e
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║   Clawdbot 安装完成！                    ║"
+echo "║   OpenClawCN 安装完成！                    ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 echo "  快速开始:"
-echo "    clawdbot gateway run     # 启动服务"
+echo "    openclawcn gateway run     # 启动服务"
 echo ""
 echo "  或安装为系统服务:"
 echo "    systemctl --user daemon-reload"
-echo "    systemctl --user enable clawdbot"
-echo "    systemctl --user start clawdbot"
+echo "    systemctl --user enable openclawcn"
+echo "    systemctl --user start openclawcn"
 echo ""
 echo "  配置向导: http://localhost:18789/setup"
 echo ""
 
 # 创建日志目录 (当前用户可写)
-mkdir -p /opt/clawdbot/logs
-chmod 755 /opt/clawdbot/logs
+mkdir -p /opt/openclawcn/logs
+chmod 755 /opt/openclawcn/logs
 
 exit 0
 EOF
@@ -204,11 +204,11 @@ cat > "$DEBIAN_DIR/prerm" << 'EOF'
 set -e
 
 # 停止服务（用户级）
-systemctl --user stop clawdbot 2>/dev/null || true
-systemctl --user disable clawdbot 2>/dev/null || true
+systemctl --user stop openclawcn 2>/dev/null || true
+systemctl --user disable openclawcn 2>/dev/null || true
 
 # 停止其他可能运行的实例
-pkill -f "clawdbot.*gateway" 2>/dev/null || true
+pkill -f "openclawcn.*gateway" 2>/dev/null || true
 
 exit 0
 EOF
@@ -220,9 +220,9 @@ cat > "$DEBIAN_DIR/postrm" << 'EOF'
 set -e
 
 if [ "$1" = "purge" ]; then
-  rm -rf /opt/clawdbot
-  echo "已清除 Clawdbot 安装目录"
-  echo "配置文件保留在: ~/.clawdbot"
+  rm -rf /opt/openclawcn
+  echo "已清除 OpenClawCN 安装目录"
+  echo "配置文件保留在: ~/.openclawcn"
 fi
 
 exit 0

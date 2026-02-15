@@ -3,7 +3,7 @@ name: desktop-control
 description: "Control any Windows desktop application GUI via screenshots, clicks, typing, and keyboard shortcuts. Works with all apps including custom-rendered ones (ToDesk, DingTalk, etc.)."
 nameZh: "桌面控制"
 descriptionZh: "通过截图、点击、输入和快捷键控制Windows桌面应用"
-metadata: {"clawdbot":{"emoji":"🖥️","os":["win32"],"always":true}}
+metadata: {"openclawcn":{"emoji":"🖥️","os":["win32"],"always":true}}
 ---
 
 # Desktop Control Skill (Windows)

@@ -2,7 +2,7 @@
 # 快速检查 macOS 打包进度
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  ClawdbotCN 打包进度检查"
+echo "  OpenClawCN 打包进度检查"
 echo "  时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "════════════════════════════════════════════════════════════════"
 echo ""
@@ -20,9 +20,9 @@ echo ""
 
 # 2. 检查构建日志
 echo "【2】最新构建日志..."
-if [ -f /tmp/clawdbot-build.log ]; then
+if [ -f /tmp/openclawcn-build.log ]; then
     echo "  最后 10 行日志:"
-    tail -10 /tmp/clawdbot-build.log | sed 's/^/    /'
+    tail -10 /tmp/openclawcn-build.log | sed 's/^/    /'
 else
     echo "  ✗ 未找到日志文件"
 fi
@@ -33,7 +33,7 @@ echo "【3】检查构建产物..."
 
 # 查找项目目录
 PROJECT_DIRS=(
-    "$HOME/clawdbot-cn"
+    "$HOME/openclawcn-cn"
     "$HOME/clawd-cn"
     "$(pwd)"
 )
@@ -70,7 +70,7 @@ echo ""
 
 # 4. 检查桌面 DMG
 echo "【4】检查桌面..."
-DESKTOP_DMG=$(ls -1 "$HOME/Desktop"/ClawdbotCN*.dmg 2>/dev/null)
+DESKTOP_DMG=$(ls -1 "$HOME/Desktop"/OpenClawCN*.dmg 2>/dev/null)
 if [ -n "$DESKTOP_DMG" ]; then
     echo "  ✓ 桌面已有 DMG:"
     ls -lh "$DESKTOP_DMG" | awk '{print "    " $9 " (" $5 ")"}'
@@ -88,21 +88,21 @@ echo ""
 
 # 6. 估计进度
 echo "【6】进度估计..."
-if [ -f /tmp/clawdbot-build.log ]; then
+if [ -f /tmp/openclawcn-build.log ]; then
     # 检查关键阶段标记
-    if grep -q "创建 DMG" /tmp/clawdbot-build.log; then
+    if grep -q "创建 DMG" /tmp/openclawcn-build.log; then
         echo "  ▓▓▓▓▓▓▓▓▓░ 90% - 正在创建 DMG"
-    elif grep -q "代码签名" /tmp/clawdbot-build.log; then
+    elif grep -q "代码签名" /tmp/openclawcn-build.log; then
         echo "  ▓▓▓▓▓▓▓▓░░ 80% - 正在签名"
-    elif grep -q "清理优化" /tmp/clawdbot-build.log; then
+    elif grep -q "清理优化" /tmp/openclawcn-build.log; then
         echo "  ▓▓▓▓▓▓▓░░░ 70% - 正在清理"
-    elif grep -q "验证完整性" /tmp/clawdbot-build.log; then
+    elif grep -q "验证完整性" /tmp/openclawcn-build.log; then
         echo "  ▓▓▓▓▓▓░░░░ 60% - 正在验证"
-    elif grep -q "并行复制内容" /tmp/clawdbot-build.log; then
+    elif grep -q "并行复制内容" /tmp/openclawcn-build.log; then
         echo "  ▓▓▓▓░░░░░░ 40% - 正在复制文件"
-    elif grep -q "并行编译" /tmp/clawdbot-build.log; then
+    elif grep -q "并行编译" /tmp/openclawcn-build.log; then
         echo "  ▓▓░░░░░░░░ 20% - 正在编译"
-    elif grep -q "前置检查" /tmp/clawdbot-build.log; then
+    elif grep -q "前置检查" /tmp/openclawcn-build.log; then
         echo "  ▓░░░░░░░░░ 10% - 正在初始化"
     else
         echo "  ░░░░░░░░░░  0% - 准备中"

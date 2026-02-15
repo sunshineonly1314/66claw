@@ -1,4 +1,4 @@
-# ClawdbotCN macOS 中国用户打包方案
+# OpenClawCN macOS 中国用户打包方案
 
 > 深度调研文档 | 2026-02-09
 > 目标用户：苹果小白用户（零技术门槛）
@@ -55,7 +55,7 @@
 ┌─────────────────────────────────────────────────┐
 │ 第一步：区域预判（0ms，本地完成）                    │
 ├─────────────────────────────────────────────────┤
-│ 1. 检查 CLAWDBOT_REGION 环境变量                  │
+│ 1. 检查 OPENCLAWCN_REGION 环境变量                  │
 │    → "cn" → 直接使用 CN 方案                      │
 │    → "global" → 直接使用国际方案                   │
 │                                                   │
@@ -91,7 +91,7 @@
 ┌─────────────────────────────────────────────────┐
 │ 第三步：写入配置（持久化，后续不再重复检测）          │
 ├─────────────────────────────────────────────────┤
-│ 写入 ~/.clawdbot/network-profile.json:            │
+│ 写入 ~/.openclawcn/network-profile.json:            │
 │ {                                                 │
 │   "detectedAt": "2026-02-09T10:30:00Z",          │
 │   "networkMode": "cn-only",                       │
@@ -164,9 +164,9 @@ async function detectNetworkProfile(): Promise<NetworkProfile> {
 
 | 格式 | 文件 | 大小 | 适合用户 |
 |------|------|------|---------|
-| **DMG（推荐）** | `ClawdbotCN-macOS-v2026.2.0-universal.dmg` | ~140MB | 小白用户，拖拽安装 |
-| **ZIP** | `ClawdbotCN-macOS-v2026.2.0-universal.zip` | ~130MB | 偏好便携/解压即用 |
-| **PKG** | `ClawdbotCN-macOS-v2026.2.0-universal.pkg` | ~135MB | 企业批量部署 |
+| **DMG（推荐）** | `OpenClawCN-macOS-v2026.2.0-universal.dmg` | ~140MB | 小白用户，拖拽安装 |
+| **ZIP** | `OpenClawCN-macOS-v2026.2.0-universal.zip` | ~130MB | 偏好便携/解压即用 |
+| **PKG** | `OpenClawCN-macOS-v2026.2.0-universal.pkg` | ~135MB | 企业批量部署 |
 
 ### 3.2 DMG 内容布局
 
@@ -175,12 +175,12 @@ async function detectNetworkProfile(): Promise<NetworkProfile> {
 │                                             │
 │      ┌──────────┐    ┌──────────────┐      │
 │      │          │    │              │      │
-│      │ Clawdbot │    │ Applications │      │
+│      │ OpenClawCN │    │ Applications │      │
 │      │   .app   │ →  │    文件夹     │      │
 │      │          │    │              │      │
 │      └──────────┘    └──────────────┘      │
 │                                             │
-│  ← 将 Clawdbot 拖到 Applications 文件夹 →   │
+│  ← 将 OpenClawCN 拖到 Applications 文件夹 →   │
 │                                             │
 │  📖 使用指南.pdf                              │
 │                                             │
@@ -190,13 +190,13 @@ async function detectNetworkProfile(): Promise<NetworkProfile> {
 ### 3.3 应用包内部结构
 
 ```
-Clawdbot.app/
+OpenClawCN.app/
 ├── Contents/
 │   ├── Info.plist                    # 应用元数据
 │   ├── MacOS/
-│   │   └── Clawdbot                  # Universal Binary (Swift 菜单栏应用)
+│   │   └── OpenClawCN                  # Universal Binary (Swift 菜单栏应用)
 │   ├── Resources/
-│   │   ├── Clawdbot.icns             # 应用图标
+│   │   ├── OpenClawCN.icns             # 应用图标
 │   │   ├── DeviceModels/             # 设备模型
 │   │   ├── node/                     # ★ 内置 Node.js 运行时
 │   │   │   └── bin/
@@ -234,15 +234,15 @@ Clawdbot.app/
 |------|-------------|-------------------|
 | **安装方式** | Inno Setup .exe | DMG 拖拽 / PKG |
 | **运行时** | scripts/windows/node-portable/ | Contents/Resources/node/ |
-| **启动入口** | ClawdbotService.exe (C# 托盘) | Clawdbot.app (Swift 菜单栏) |
+| **启动入口** | OpenClawCNService.exe (C# 托盘) | OpenClawCN.app (Swift 菜单栏) |
 | **服务管理** | Windows 启动文件夹 | launchd LaunchAgent |
 | **自动更新** | 手动 | Sparkle 框架 |
-| **区域标识** | 环境变量 CLAWDBOT_REGION=cn | 同 + 时区/语言自动检测 |
+| **区域标识** | 环境变量 OPENCLAWCN_REGION=cn | 同 + 时区/语言自动检测 |
 | **工具目录** | {app}\tools\ | Contents/Resources/tools/ |
 | **Skills目录** | {app}\skills\ | Contents/Resources/gateway/skills/ |
 | **Web UI 端口** | 18789 | 18789 |
 | **代码签名** | 无（EXE 会被 SmartScreen 拦截） | Developer ID + 公证 |
-| **中国优化** | CLAWDBOT_REGION=cn 硬编码 | 智能检测 + 手动切换 |
+| **中国优化** | OPENCLAWCN_REGION=cn 硬编码 | 智能检测 + 手动切换 |
 
 ---
 
@@ -285,7 +285,7 @@ Clawdbot.app/
                           ↓
 ┌─────────────────────────────────────────────────────────┐
 │  Phase 4: 组装 .app                                      │
-│  - 创建 Clawdbot.app 目录结构                             │
+│  - 创建 OpenClawCN.app 目录结构                             │
 │  - 写入 Info.plist (版本号、Bundle ID、Sparkle配置)        │
 │  - 复制 Swift 二进制到 MacOS/                             │
 │  - 复制 Node.js、gateway、tools、skills 到 Resources/    │
@@ -333,7 +333,7 @@ jobs:
       - run: pnpm install
       - run: pnpm build
       - run: pnpm ui:build
-      - run: swift build -c release --product Clawdbot --arch arm64
+      - run: swift build -c release --product OpenClawCN --arch arm64
       # 下载 Node.js arm64
       - run: |
           curl -fsSL https://nodejs.org/dist/v22.13.0/node-v22.13.0-darwin-arm64.tar.gz | tar xz
@@ -360,24 +360,24 @@ jobs:
       - run: |
           lipo -create arm64/node/bin/node x64/node/bin/node \
             -output universal/node/bin/node
-          lipo -create arm64/MacOS/Clawdbot x64/MacOS/Clawdbot \
-            -output universal/MacOS/Clawdbot
+          lipo -create arm64/MacOS/OpenClawCN x64/MacOS/OpenClawCN \
+            -output universal/MacOS/OpenClawCN
       # 组装 .app
       - run: bash build/scripts/assemble-macos-app.sh
       # 代码签名
-      - run: bash scripts/codesign-mac-app.sh dist/Clawdbot.app
+      - run: bash scripts/codesign-mac-app.sh dist/OpenClawCN.app
       # 公证
       - run: |
-          xcrun notarytool submit dist/Clawdbot.app.zip \
+          xcrun notarytool submit dist/OpenClawCN.app.zip \
             --apple-id "$APPLE_ID" \
             --password "$APP_PASSWORD" \
             --team-id "$TEAM_ID" \
             --wait
-          xcrun stapler staple dist/Clawdbot.app
+          xcrun stapler staple dist/OpenClawCN.app
       # 创建 DMG
       - run: bash scripts/create-dmg.sh
       # 创建 ZIP
-      - run: ditto -c -k --sequesterRsrc dist/Clawdbot.app dist/ClawdbotCN.zip
+      - run: ditto -c -k --sequesterRsrc dist/OpenClawCN.app dist/OpenClawCN.zip
       # 生成校验和
       - run: shasum -a 256 dist/*.dmg dist/*.zip > dist/SHA256SUMS.txt
       # 上传到 CDN
@@ -529,7 +529,7 @@ NODE_MIRRORS=(
 ```
 步骤 1: 下载
   用户从官网/微信群/百度网盘下载：
-  ClawdbotCN-macOS-v2026.2.0-universal.dmg（~140MB）
+  OpenClawCN-macOS-v2026.2.0-universal.dmg（~140MB）
 
 步骤 2: 安装
   ┌──────────────────────────────────────┐
@@ -537,7 +537,7 @@ NODE_MIRRORS=(
   │  ↓                                   │
   │ 看到应用图标和 Applications 文件夹     │
   │  ↓                                   │
-  │ 拖拽 Clawdbot.app → Applications     │
+  │ 拖拽 OpenClawCN.app → Applications     │
   │  ↓                                   │
   │ 完成！弹出 DMG                        │
   └──────────────────────────────────────┘
@@ -545,11 +545,11 @@ NODE_MIRRORS=(
 步骤 3: 首次启动
   ┌──────────────────────────────────────┐
   │ 在 Launchpad 或 Applications 中      │
-  │ 双击 Clawdbot                        │
+  │ 双击 OpenClawCN                        │
   │  ↓                                   │
   │ [已签名+公证] 直接打开，无安全提示     │
   │  ↓                                   │
-  │ 菜单栏出现 Clawdbot 图标             │
+  │ 菜单栏出现 OpenClawCN 图标             │
   │  ↓                                   │
   │ 自动检测网络环境（3秒）               │
   │  ↓                                   │
@@ -574,11 +574,11 @@ NODE_MIRRORS=(
 
   方案1（推荐，GUI 操作）:
     打开 系统设置 → 隐私与安全性 → 下滑找到
-    "Clawdbot 已被阻止" → 点击"仍然打开"
+    "OpenClawCN 已被阻止" → 点击"仍然打开"
 
   方案2（终端操作）:
     打开终端.app，粘贴命令：
-    xattr -cr /Applications/Clawdbot.app
+    xattr -cr /Applications/OpenClawCN.app
     然后再次双击打开
 
 步骤 B: 权限授予
@@ -594,7 +594,7 @@ NODE_MIRRORS=(
 ```
 macOS 菜单栏（右上角）:
 
-  🤖 Clawdbot 图标
+  🤖 OpenClawCN 图标
    │
    ├─ 打开控制面板        → 浏览器打开 Web UI
    ├─ ──────────────
@@ -612,23 +612,23 @@ macOS 菜单栏（右上角）:
    ├─ 查看日志...
    ├─ 检查更新...         → Sparkle 自动更新
    ├─ ──────────────
-   └─ 退出 Clawdbot
+   └─ 退出 OpenClawCN
 ```
 
 ### 6.4 Launchd 服务管理
 
 ```xml
-<!-- ~/Library/LaunchAgents/com.clawdbot.gateway.plist -->
+<!-- ~/Library/LaunchAgents/com.openclawcn.gateway.plist -->
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "...">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.clawdbot.gateway</string>
+    <string>com.openclawcn.gateway</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/Clawdbot.app/Contents/Resources/node/bin/node</string>
-        <string>/Applications/Clawdbot.app/Contents/Resources/gateway/dist/entry.js</string>
+        <string>/Applications/OpenClawCN.app/Contents/Resources/node/bin/node</string>
+        <string>/Applications/OpenClawCN.app/Contents/Resources/gateway/dist/entry.js</string>
         <string>gateway</string>
         <string>run</string>
         <string>--port</string>
@@ -636,14 +636,14 @@ macOS 菜单栏（右上角）:
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>CLAWDBOT_BUNDLED_SKILLS_DIR</key>
-        <string>/Applications/Clawdbot.app/Contents/Resources/gateway/skills</string>
-        <key>CLAWDBOT_BUNDLED_TOOLS_DIR</key>
-        <string>/Applications/Clawdbot.app/Contents/Resources/tools</string>
-        <key>CLAWDBOT_BUNDLED_PLUGINS_DIR</key>
-        <string>/Applications/Clawdbot.app/Contents/Resources/gateway/extensions</string>
-        <key>CLAWDBOT_STATE_DIR</key>
-        <string>~/Library/Application Support/ClawdbotCN</string>
+        <key>OPENCLAWCN_BUNDLED_SKILLS_DIR</key>
+        <string>/Applications/OpenClawCN.app/Contents/Resources/gateway/skills</string>
+        <key>OPENCLAWCN_BUNDLED_TOOLS_DIR</key>
+        <string>/Applications/OpenClawCN.app/Contents/Resources/tools</string>
+        <key>OPENCLAWCN_BUNDLED_PLUGINS_DIR</key>
+        <string>/Applications/OpenClawCN.app/Contents/Resources/gateway/extensions</string>
+        <key>OPENCLAWCN_STATE_DIR</key>
+        <string>~/Library/Application Support/OpenClawCN</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -653,9 +653,9 @@ macOS 菜单栏（右上角）:
         <false/>
     </dict>
     <key>StandardOutPath</key>
-    <string>~/Library/Logs/ClawdbotCN/gateway.log</string>
+    <string>~/Library/Logs/OpenClawCN/gateway.log</string>
     <key>StandardErrorPath</key>
-    <string>~/Library/Logs/ClawdbotCN/gateway-error.log</string>
+    <string>~/Library/Logs/OpenClawCN/gateway-error.log</string>
 </dict>
 </plist>
 ```
@@ -668,9 +668,9 @@ macOS 菜单栏（右上角）:
 
 | 渠道 | URL | 说明 |
 |------|-----|------|
-| **阿里云 OSS** | `https://oss.clawdbot.cn/macos/latest/` | 主 CDN，全国加速 |
-| **腾讯云 COS** | `https://cos.clawdbot.cn/macos/latest/` | 备用 CDN |
-| **官网下载页** | `https://clawdbot.cn/download` | 自动检测架构 |
+| **阿里云 OSS** | `https://oss.openclawcn.cn/macos/latest/` | 主 CDN，全国加速 |
+| **腾讯云 COS** | `https://cos.openclawcn.cn/macos/latest/` | 备用 CDN |
+| **官网下载页** | `https://openclawcn.cn/download` | 自动检测架构 |
 
 ### 7.2 社交渠道分发
 
@@ -689,7 +689,7 @@ CN 用户的 Sparkle 更新源指向国内 CDN：
 ```xml
 <!-- Info.plist -->
 <key>SUFeedURL</key>
-<string>https://oss.clawdbot.cn/macos/sparkle/appcast.xml</string>
+<string>https://oss.openclawcn.cn/macos/sparkle/appcast.xml</string>
 ```
 
 ```xml
@@ -697,15 +697,15 @@ CN 用户的 Sparkle 更新源指向国内 CDN：
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>ClawdbotCN macOS Updates</title>
+    <title>OpenClawCN macOS Updates</title>
     <item>
       <title>版本 2026.2.1</title>
       <sparkle:releaseNotesLink>
-        https://oss.clawdbot.cn/macos/sparkle/notes/2026.2.1-cn.html
+        https://oss.openclawcn.cn/macos/sparkle/notes/2026.2.1-cn.html
       </sparkle:releaseNotesLink>
       <pubDate>Mon, 10 Feb 2026 00:00:00 +0800</pubDate>
       <enclosure
-        url="https://oss.clawdbot.cn/macos/releases/ClawdbotCN-2026.2.1.dmg"
+        url="https://oss.openclawcn.cn/macos/releases/OpenClawCN-2026.2.1.dmg"
         sparkle:version="20260201"
         sparkle:shortVersionString="2026.2.1"
         length="146800640"
@@ -734,34 +734,34 @@ CN 用户的 Sparkle 更新源指向国内 CDN：
 
 ```bash
 # 1. 打包为 ZIP（公证要求）
-ditto -c -k --sequesterRsrc dist/Clawdbot.app dist/Clawdbot-notarize.zip
+ditto -c -k --sequesterRsrc dist/OpenClawCN.app dist/OpenClawCN-notarize.zip
 
 # 2. 提交公证
-xcrun notarytool submit dist/Clawdbot-notarize.zip \
-  --apple-id "developer@clawdbot.cn" \
+xcrun notarytool submit dist/OpenClawCN-notarize.zip \
+  --apple-id "developer@openclawcn.cn" \
   --password "@keychain:AC_PASSWORD" \
   --team-id "TEAM_ID" \
   --wait --timeout 30m
 
 # 3. 查看公证结果（如果失败）
 xcrun notarytool log <submission-id> \
-  --apple-id "developer@clawdbot.cn" \
+  --apple-id "developer@openclawcn.cn" \
   --password "@keychain:AC_PASSWORD" \
   --team-id "TEAM_ID"
 
 # 4. 装订公证票据
-xcrun stapler staple dist/Clawdbot.app
+xcrun stapler staple dist/OpenClawCN.app
 
 # 5. 验证
-spctl -a -vvv dist/Clawdbot.app
-# 预期输出: dist/Clawdbot.app: accepted
+spctl -a -vvv dist/OpenClawCN.app
+# 预期输出: dist/OpenClawCN.app: accepted
 # source=Notarized Developer ID
 ```
 
 ### 8.3 权限文件 (Entitlements)
 
 ```xml
-<!-- build/macos/Clawdbot.entitlements -->
+<!-- build/macos/OpenClawCN.entitlements -->
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "...">
 <plist version="1.0">
@@ -796,9 +796,9 @@ spctl -a -vvv dist/Clawdbot.app
 ### 9.1 macOS 目录约定
 
 ```
-~/Library/Application Support/ClawdbotCN/    # 主数据目录
+~/Library/Application Support/OpenClawCN/    # 主数据目录
 ├── config/
-│   ├── clawdbot.json                        # 主配置
+│   ├── openclawcn.json                        # 主配置
 │   ├── network-profile.json                 # 网络检测结果
 │   └── exec-approvals.json                  # 命令执行授权
 ├── data/
@@ -814,14 +814,14 @@ spctl -a -vvv dist/Clawdbot.app
 └── models/                                  # LLM 模型（可选）
     └── ...
 
-~/Library/Logs/ClawdbotCN/                   # 系统日志目录
+~/Library/Logs/OpenClawCN/                   # 系统日志目录
 ├── gateway.log
 └── gateway-error.log
 
 ~/Library/LaunchAgents/
-└── com.clawdbot.gateway.plist               # 开机自启配置
+└── com.openclawcn.gateway.plist               # 开机自启配置
 
-~/Library/Caches/ClawdbotCN/                 # 缓存（可清理）
+~/Library/Caches/OpenClawCN/                 # 缓存（可清理）
 ├── npm-cache/
 ├── pip-cache/
 └── download-cache/
@@ -831,9 +831,9 @@ spctl -a -vvv dist/Clawdbot.app
 
 | 用途 | Windows | macOS |
 |------|---------|-------|
-| 主数据 | `%APPDATA%\ClawdbotCN\` | `~/Library/Application Support/ClawdbotCN/` |
-| 日志 | `%APPDATA%\ClawdbotCN\logs\` | `~/Library/Logs/ClawdbotCN/` |
-| 缓存 | `%LOCALAPPDATA%\ClawdbotCN\Cache\` | `~/Library/Caches/ClawdbotCN/` |
+| 主数据 | `%APPDATA%\OpenClawCN\` | `~/Library/Application Support/OpenClawCN/` |
+| 日志 | `%APPDATA%\OpenClawCN\logs\` | `~/Library/Logs/OpenClawCN/` |
+| 缓存 | `%LOCALAPPDATA%\OpenClawCN\Cache\` | `~/Library/Caches/OpenClawCN/` |
 | 自启动 | 启动文件夹快捷方式 | LaunchAgent plist |
 | 工具安装 | `{app}\tools\` | 应用包内 + 运行时目录 |
 
@@ -978,7 +978,7 @@ P0 ─→ P1 ─→ P2 ─→ P5 （核心构建链路，先跑通）
 ### 14.1 跨平台统一的配置
 
 ```json
-// ~/.clawdbot/clawdbot.json（macOS 和 Windows 共用 schema）
+// ~/.openclawcn/openclawcn.json（macOS 和 Windows 共用 schema）
 {
   "region": "cn",
   "network": {
@@ -1004,12 +1004,12 @@ P0 ─→ P1 ─→ P2 ─→ P5 （核心构建链路，先跑通）
 
 | 环境变量 | Windows | macOS | 说明 |
 |---------|---------|-------|------|
-| `CLAWDBOT_REGION` | start-gateway.bat | LaunchAgent plist | 区域标识 |
-| `CLAWDBOT_BUNDLED_SKILLS_DIR` | {app}\skills | Resources/gateway/skills | Skills 目录 |
-| `CLAWDBOT_BUNDLED_TOOLS_DIR` | {app}\tools | Resources/tools | 工具目录 |
-| `CLAWDBOT_BUNDLED_PLUGINS_DIR` | {app}\extensions | Resources/gateway/extensions | 扩展目录 |
-| `CLAWDBOT_STATE_DIR` | %APPDATA%\ClawdbotCN | ~/Library/Application Support/ClawdbotCN | 数据目录 |
-| `CLAWDBOT_GATEWAY_TOKEN` | 固定值 | 首次启动生成 | Gateway 认证 |
+| `OPENCLAWCN_REGION` | start-gateway.bat | LaunchAgent plist | 区域标识 |
+| `OPENCLAWCN_BUNDLED_SKILLS_DIR` | {app}\skills | Resources/gateway/skills | Skills 目录 |
+| `OPENCLAWCN_BUNDLED_TOOLS_DIR` | {app}\tools | Resources/tools | 工具目录 |
+| `OPENCLAWCN_BUNDLED_PLUGINS_DIR` | {app}\extensions | Resources/gateway/extensions | 扩展目录 |
+| `OPENCLAWCN_STATE_DIR` | %APPDATA%\OpenClawCN | ~/Library/Application Support/OpenClawCN | 数据目录 |
+| `OPENCLAWCN_GATEWAY_TOKEN` | 固定值 | 首次启动生成 | Gateway 认证 |
 
 ---
 

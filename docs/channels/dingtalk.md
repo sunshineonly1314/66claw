@@ -5,7 +5,7 @@ read_when: "Setting up DingTalk bot or debugging DingTalk integration"
 
 # 钉钉机器人接入指南
 
-> 手把手教你创建钉钉企业内部机器人，对接 Clawdbot AI 助手
+> 手把手教你创建钉钉企业内部机器人，对接 OpenClawCN AI 助手
 
 ---
 
@@ -18,7 +18,7 @@ read_when: "Setting up DingTalk bot or debugging DingTalk integration"
 | 管理员权限 | 钉钉企业管理员或开发者权限 | 是 |
 | 企业认证 | 企业已完成钉钉认证 | 是 |
 | 钉钉登录 | 电脑已登录钉钉账号 | 是 |
-| 已安装 Clawdbot | 如未安装请先参考 [安装指南](/install) | 是 |
+| 已安装 OpenClawCN | 如未安装请先参考 [安装指南](/install) | 是 |
 
 > **注意**：普通员工账号无法创建应用，必须使用管理员账号。没有企业账号？可以免费创建一个钉钉团队：打开钉钉 App → 工作台 → 创建团队
 
@@ -38,7 +38,7 @@ read_when: "Setting up DingTalk bot or debugging DingTalk integration"
 | **推荐度** | 强烈推荐 | 不推荐 |
 
 **Stream 模式的优势：**
-- 在自己电脑上运行 Clawdbot 就能收到消息
+- 在自己电脑上运行 OpenClawCN 就能收到消息
 - 无需购买服务器或配置网络
 - 支持打字机效果的流式响应
 
@@ -194,9 +194,9 @@ read_when: "Setting up DingTalk bot or debugging DingTalk integration"
 
 ---
 
-### 第八步：配置 Clawdbot
+### 第八步：配置 OpenClawCN
 
-现在回到你的电脑，配置 Clawdbot 连接钉钉。
+现在回到你的电脑，配置 OpenClawCN 连接钉钉。
 
 #### 方式一：通过 Web 界面配置（推荐）
 
@@ -212,7 +212,7 @@ read_when: "Setting up DingTalk bot or debugging DingTalk integration"
 
 **Windows 用户**：
 
-1. 按 `Win+R`，输入 `%USERPROFILE%\.clawdbot\` 按回车
+1. 按 `Win+R`，输入 `%USERPROFILE%\.openclawcn\` 按回车
 
 2. 找到或创建 `config.yaml` 文件，用记事本打开
 
@@ -233,7 +233,7 @@ channels:
 
 ```bash
 # 编辑配置文件
-nano ~/.clawdbot/config.yaml
+nano ~/.openclawcn/config.yaml
 
 # 添加上面的配置内容后
 # 按 Ctrl+O 保存，Ctrl+X 退出
@@ -243,14 +243,14 @@ nano ~/.clawdbot/config.yaml
 
 ### 第九步：启动并测试
 
-#### 启动 Clawdbot
+#### 启动 OpenClawCN
 
-**Windows**：双击桌面上的 Clawdbot 图标，或在开始菜单搜索 `Clawdbot`
+**Windows**：双击桌面上的 OpenClawCN 图标，或在开始菜单搜索 `OpenClawCN`
 
 **Mac/Linux**：
 
 ```bash
-clawdbot gateway run
+openclawcn gateway run
 ```
 
 #### 测试机器人
@@ -291,16 +291,16 @@ clawdbot gateway run
 2. **检查是否选择了 Stream 模式**
    - 进入「机器人」配置页面确认消息接收模式
 
-3. **检查 Clawdbot Gateway 是否运行**
+3. **检查 OpenClawCN Gateway 是否运行**
 
    ```bash
-   clawdbot channels status --probe
+   openclawcn channels status --probe
    ```
 
 4. **查看日志排查问题**
 
    ```bash
-   clawdbot logs --follow
+   openclawcn logs --follow
    ```
 
 ### Q: 提示「AppKey 不存在或无效」？
@@ -319,7 +319,7 @@ clawdbot gateway run
 1. 回到开放平台「凭证与基础信息」页面
 2. 点击 AppSecret 的「重置」按钮
 3. 重新生成并复制新的 Secret
-4. 更新 Clawdbot 配置
+4. 更新 OpenClawCN 配置
 
 ### Q: 找不到「应用开发」菜单？
 
@@ -408,7 +408,7 @@ channels:
 启动网关后，使用以下命令验证连接状态：
 
 ```bash
-clawdbot channels status --probe
+openclawcn channels status --probe
 ```
 
 期望输出：

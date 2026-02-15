@@ -1,9 +1,9 @@
 ---
 name: voice-call
-description: Start voice calls via the Clawdbot voice-call plugin.
+description: Start voice calls via the OpenClawCN voice-call plugin.
 nameZh: "语音通话"
-descriptionZh: "通过Clawdbot语音通话插件发起语音通话"
-metadata: {"clawdbot":{"emoji":"📞","skillKey":"voice-call","requires":{"config":["plugins.entries.voice-call.enabled"]}}}
+descriptionZh: "通过OpenClawCN语音通话插件发起语音通话"
+metadata: {"openclawcn":{"emoji":"📞","skillKey":"voice-call","requires":{"config":["plugins.entries.voice-call.enabled"]}}}
 ---
 
 # Voice Call
@@ -13,8 +13,8 @@ Use the voice-call plugin to start or inspect calls (Twilio, Telnyx, Plivo, or m
 ## CLI
 
 ```bash
-clawdbot voicecall call --to "+15555550123" --message "Hello from Clawdbot"
-clawdbot voicecall status --call-id <id>
+openclawcn voicecall call --to "+15555550123" --message "Hello from OpenClawCN"
+openclawcn voicecall status --call-id <id>
 ```
 
 ## Tool

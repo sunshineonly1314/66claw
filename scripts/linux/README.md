@@ -1,6 +1,6 @@
 # Linux 打包脚本
 
-本目录包含 Clawdbot Linux 版本的完整打包系统。
+本目录包含 OpenClawCN Linux 版本的完整打包系统。
 
 ## 快速开始
 
@@ -108,13 +108,13 @@ sudo dnf install parallel    # Fedora
 
 ```
 build/linux-release/
-├── clawdbot-linux-x64-standalone.tar.gz     # 独立版 x64
-├── clawdbot-linux-arm64-standalone.tar.gz   # 独立版 arm64
-├── clawdbot-linux-portable.tar.gz           # 便携版
-├── clawdbot_2026.2.0_amd64.deb             # DEB x64
-├── clawdbot_2026.2.0_arm64.deb             # DEB arm64
-├── clawdbot-2026.2.0-1.x86_64.rpm          # RPM x64
-├── clawdbot-2026.2.0-1.aarch64.rpm         # RPM arm64
+├── openclawcn-linux-x64-standalone.tar.gz     # 独立版 x64
+├── openclawcn-linux-arm64-standalone.tar.gz   # 独立版 arm64
+├── openclawcn-linux-portable.tar.gz           # 便携版
+├── openclawcn_2026.2.0_amd64.deb             # DEB x64
+├── openclawcn_2026.2.0_arm64.deb             # DEB arm64
+├── openclawcn-2026.2.0-1.x86_64.rpm          # RPM x64
+├── openclawcn-2026.2.0-1.aarch64.rpm         # RPM arm64
 ├── .cache/                                  # Node.js 下载缓存
 ├── .common/                                 # 共享构建产物
 └── logs/                                    # 构建日志
@@ -138,27 +138,27 @@ build/linux-release/
 curl -fsSL https://get.tecbinai.com/linux | bash
 
 # 国内
-curl -fsSL https://gitee.com/tecbinai/clawdbot-releases/raw/main/install.sh | bash
+curl -fsSL https://gitee.com/tecbinai/openclawcn-releases/raw/main/install.sh | bash
 ```
 
 ### 方式2: 独立版 (手动下载)
 ```bash
-tar -xzf clawdbot-linux-x64-standalone.tar.gz
-cd clawdbot
+tar -xzf openclawcn-linux-x64-standalone.tar.gz
+cd openclawcn
 ./setup.sh
 ```
 
 ### 方式3: DEB 包 (Ubuntu/Debian)
 ```bash
-sudo dpkg -i clawdbot_*.deb
-clawdbot gateway run
+sudo dpkg -i openclawcn_*.deb
+openclawcn gateway run
 # 浏览器打开: http://localhost:18789/setup
 ```
 
 ### 方式4: RPM 包 (CentOS/Fedora)
 ```bash
-sudo rpm -i clawdbot-*.rpm
-clawdbot gateway run
+sudo rpm -i openclawcn-*.rpm
+openclawcn gateway run
 # 浏览器打开: http://localhost:18789/setup
 ```
 

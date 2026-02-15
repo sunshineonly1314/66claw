@@ -160,7 +160,7 @@ Web UI 采用分组标签式导航，分为以下四个主要组：
 | 配置项 | 说明 | 用途 |
 |--------|------|------|
 | 网关地址 | WebSocket URL | 连接到网关的地址，默认 `ws://localhost:18789` |
-| 令牌 (Token) | 认证令牌 | 用于网关认证，通过 `clawdbot gateway token` 生成 |
+| 令牌 (Token) | 认证令牌 | 用于网关认证，通过 `openclawcn gateway token` 生成 |
 | 密码 | 可选认证方式 | 替代令牌的认证方式 |
 
 ##### 2. 连接操作
@@ -330,7 +330,7 @@ Web UI 采用分组标签式导航，分为以下四个主要组：
 | 作用域 | 权限作用域 |
 | 平台 | 操作系统平台 |
 | 设备类型 | 设备类型（desktop, mobile 等） |
-| 版本 | Clawdbot 版本 |
+| 版本 | OpenClawCN 版本 |
 | 最后输入 | 最后一次接收输入的时间 |
 
 ##### 2. 刷新操作
@@ -1133,10 +1133,10 @@ http://localhost:18789/chat?token=eyJ...&session=work
 
 | 文件 | 路径 | 说明 |
 |------|------|------|
-| 主配置 | `~/.clawdbot/config.json` | 系统主配置文件 |
-| 凭证 | `~/.clawdbot/credentials/` | API 密钥存储 |
-| 会话 | `~/.clawdbot/sessions/` | 会话数据 |
-| 日志 | `~/.clawdbot/logs/` | 日志文件 |
+| 主配置 | `~/.openclawcn/config.json` | 系统主配置文件 |
+| 凭证 | `~/.openclawcn/credentials/` | API 密钥存储 |
+| 会话 | `~/.openclawcn/sessions/` | 会话数据 |
+| 日志 | `~/.openclawcn/logs/` | 日志文件 |
 
 ---
 

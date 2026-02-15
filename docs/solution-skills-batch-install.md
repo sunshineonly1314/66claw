@@ -135,7 +135,7 @@ export class BatchInstallOrchestrator {
 
   constructor(
     private readonly pushEvent: (event: any) => void,
-    private readonly statePath: string, // ~/.clawdbot/install-state.json
+    private readonly statePath: string, // ~/.openclawcn/install-state.json
   ) {
     this.restoreState();
   }

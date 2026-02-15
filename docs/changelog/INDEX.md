@@ -1,4 +1,4 @@
-# ClawdbotCN 变更归档索引
+# OpenClawCN 变更归档索引
 
 > **使用说明**：AI 每次只需读取本文件的 **索引表** 即可了解所有历史变更。
 > 需要详情时，按 `entry-id` 读取 `docs/changelog/entries/{entry-id}.md`。

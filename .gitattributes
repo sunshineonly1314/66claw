@@ -1,1 +1,19 @@
 * text=auto eol=lf
+
+# Binary files (prevent git diff and ensure proper handling)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.svg text
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+# Large binary assets - candidates for Git LFS
+# To enable: git lfs install && git lfs track "*.png" "*.icns"
+# *.png filter=lfs diff=lfs merge=lfs -text
+# *.icns filter=lfs diff=lfs merge=lfs -text

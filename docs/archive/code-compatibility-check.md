@@ -1,4 +1,4 @@
-# Clawdbot 代码兼容性检查报告
+# OpenClawCN 代码兼容性检查报告
 
 > **检查日期**：2026-01-30  
 > **检查人**：顶级开发人员  
@@ -171,7 +171,7 @@ function sendWindowsToast(title: string, message: string) {
     $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template)
     $xml.GetElementsByTagName("text")[0].AppendChild($xml.CreateTextNode("${title}")) | Out-Null
     $xml.GetElementsByTagName("text")[1].AppendChild($xml.CreateTextNode("${message}")) | Out-Null
-    $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Clawdbot")
+    $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("OpenClawCN")
     $notifier.Show([Windows.UI.Notifications.ToastNotification]::new($xml))
   `;
   spawn('powershell', ['-Command', script]);

@@ -21,10 +21,10 @@
 [ERR] [getReplyFromConfig] Unhandled error in reply pipeline: EPERM: operation not permitted, mkdir 'C:\'
 [ERR] Stack: Error: EPERM: operation not permitted, mkdir 'C:\'
     at Object.mkdir (node:internal/fs/promises:857:10)
-    at ensureAgentWorkspace (file:///D:/ClawdbotCN/dist/agents/workspace.js:95:5)
-    at getReplyFromConfig (file:///D:/ClawdbotCN/dist/auto-reply/reply/get-reply.js:94:27)
-    at dispatchReplyFromConfig (file:///D:/ClawdbotCN/dist/auto-reply/reply/dispatch-from-config.js:226:29)
-    at dispatchInboundMessage (file:///D:/ClawdbotCN/dist/auto-reply/dispatch.js:26:12)
+    at ensureAgentWorkspace (file:///D:/OpenClawCN/dist/agents/workspace.js:95:5)
+    at getReplyFromConfig (file:///D:/OpenClawCN/dist/auto-reply/reply/get-reply.js:94:27)
+    at dispatchReplyFromConfig (file:///D:/OpenClawCN/dist/auto-reply/reply/dispatch-from-config.js:226:29)
+    at dispatchInboundMessage (file:///D:/OpenClawCN/dist/auto-reply/dispatch.js:26:12)
 ```
 
 ## 2. 问题分析
@@ -36,7 +36,7 @@
 | `os.homedir()` 返回值 | 管理员/SYSTEM 运行时，`HOME` 和 `USERPROFILE` 环境变量可能缺失，Node.js 的 `os.homedir()` 回退返回盘符根目录 `C:\` |
 | 实际 mkdir 路径 | `C:\` —— 直接在盘符根目录创建文件夹 |
 | 失败原因 | Windows 对盘符根目录有额外保护，即使管理员也触发 `EPERM` |
-| 设计缺陷 | 上游开源项目沿用 Unix 惯例（`~/.clawdbot`），所有数据默认存 C 盘用户主目录，不适配 Windows 便携部署场景 |
+| 设计缺陷 | 上游开源项目沿用 Unix 惯例（`~/.openclawcn`），所有数据默认存 C 盘用户主目录，不适配 Windows 便携部署场景 |
 
 ### 2.2 调用链
 
@@ -65,7 +65,7 @@ getReplyFromConfig()                          ← src/auto-reply/reply/get-reply
 | `src/agents/agent-scope.ts:158` | `path.join(os.homedir(), ...)` | 非默认 agent workspace |
 | `src/config/sessions/paths.ts:67,71` | `os.homedir()` tilde 展开 | session store 路径 |
 | `src/hooks/bundled/session-memory/handler.ts:74` | `path.join(os.homedir(), "clawd")` | 记忆钩子 fallback |
-| `src/gateway/session-utils.fs.ts:50` | `path.join(os.homedir(), ".clawdbot", ...)` | session 文件查找 |
+| `src/gateway/session-utils.fs.ts:50` | `path.join(os.homedir(), ".openclawcn", ...)` | session 文件查找 |
 | `src/cron/store.ts:15` | `os.homedir()` tilde 展开 | cron store 路径 |
 
 ## 3. 修复方案
@@ -76,16 +76,16 @@ getReplyFromConfig()                          ← src/auto-reply/reply/get-reply
 
 ```
 修复前：                                 修复后：
-C:\Users\xxx\.clawdbot\  (状态)         D:\ClawdbotCN\data\         (状态)
-C:\Users\xxx\clawd\      (workspace)    D:\ClawdbotCN\data\clawd\   (workspace)
+C:\Users\xxx\.openclawcn\  (状态)         D:\OpenClawCN\data\         (状态)
+C:\Users\xxx\clawd\      (workspace)    D:\OpenClawCN\data\clawd\   (workspace)
 ```
 
 路径解析优先级：
 
 ```
-1. CLAWDBOT_STATE_DIR 环境变量         （显式覆盖，最高优先级）
+1. OPENCLAWCN_STATE_DIR 环境变量         （显式覆盖，最高优先级）
 2. <安装目录>/data/                     （Windows 便携模式，新增）
-3. ~/.clawdbot                          （macOS/Linux 或 Windows 回退）
+3. ~/.openclawcn                          （macOS/Linux 或 Windows 回退）
 ```
 
 实现方式：通过 `import.meta.url` 自动检测应用安装目录，在 Windows 上返回 `<appRoot>/data/`。
@@ -129,7 +129,7 @@ InnoSetup 安装脚本 `[UninstallDelete]` 不再删除 `{app}\data`，卸载后
 
 ```powershell
 # 永久生效（写入用户环境变量）
-[Environment]::SetEnvironmentVariable("CLAWDBOT_STATE_DIR", "$env:LOCALAPPDATA\.clawdbot", "User")
+[Environment]::SetEnvironmentVariable("OPENCLAWCN_STATE_DIR", "$env:LOCALAPPDATA\.openclawcn", "User")
 ```
 
 ## 6. 验证方法
@@ -139,12 +139,12 @@ InnoSetup 安装脚本 `[UninstallDelete]` 不再删除 `{app}\data`，卸载后
 ```powershell
 # 1. 确认路径不再指向 C 盘
 node -e "import('./dist/config/paths.js').then(m => console.log('stateDir:', m.resolveStateDir()))"
-# 预期输出：stateDir: D:\ClawdbotCN\data  (或其他安装盘符)
+# 预期输出：stateDir: D:\OpenClawCN\data  (或其他安装盘符)
 
 # 2. 以管理员身份运行，确认不再报 EPERM
 # 直接发送消息给 bot，应正常回复
 
 # 3. 确认便携目录结构
-dir D:\ClawdbotCN\data\
+dir D:\OpenClawCN\data\
 # 预期看到：clawd\, agents\, credentials\ 等子目录
 ```

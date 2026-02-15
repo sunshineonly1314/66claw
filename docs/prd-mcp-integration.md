@@ -15,7 +15,7 @@
 3. [系统架构总览](#三系统架构总览)
 4. [MCP 爬取管线 (mcpqingxi)](#四mcp-爬取管线-mcpqingxi)
 5. [服务端架构 (ClawdSkillsProxy Java)](#五服务端架构-clawdskillsproxy-java)
-6. [客户端架构 (Clawdbot Node.js)](#六客户端架构-clawdbot-nodejs)
+6. [客户端架构 (OpenClawCN Node.js)](#六客户端架构-openclawcn-nodejs)
 7. [MCP 运行时引擎](#七mcp-运行时引擎)
 8. [数据结构设计](#八数据结构设计)
 9. [API 设计](#九api-设计)
@@ -35,7 +35,7 @@
 
 ### 1.1 背景
 
-Clawdbot 现有 Skills 系统通过 Markdown 文档注入 AI 上下文，赋予 AI "知道怎么做"的能力。但 Skills 本质是**知识层**——AI 读取 SKILL.md 后知道该调用什么命令，但实际执行仍依赖用户本地已安装的工具链。
+OpenClawCN 现有 Skills 系统通过 Markdown 文档注入 AI 上下文，赋予 AI "知道怎么做"的能力。但 Skills 本质是**知识层**——AI 读取 SKILL.md 后知道该调用什么命令，但实际执行仍依赖用户本地已安装的工具链。
 
 MCP (Model Context Protocol) 是 Anthropic 于 2024 年底推出的开放协议，提供**执行层**能力——通过标准化的 JSON-RPC 2.0 接口，让 AI 直接调用外部工具、访问数据源、触发操作，无需用户手动安装底层依赖。
 
@@ -72,7 +72,7 @@ MCP (Model Context Protocol) 是 Anthropic 于 2024 年底推出的开放协议�
 |------|------|
 | **小白用户** | 首次接触 AI 工具，不了解 MCP 概念，期望"会说话就会用" |
 | **进阶用户** | 知道 MCP 是什么，想手动添加/配置自定义 MCP Server |
-| **开发者** | 想开发自己的 MCP Server 并集成到 Clawdbot |
+| **开发者** | 想开发自己的 MCP Server 并集成到 OpenClawCN |
 
 **本 PRD 以小白用户为第一优先级。**
 
@@ -80,7 +80,7 @@ MCP (Model Context Protocol) 是 Anthropic 于 2024 年底推出的开放协议�
 
 ```
 +-----------------------------------------------------+
-|                    Clawdbot 能力体系                    |
+|                    OpenClawCN 能力体系                    |
 +----------------+----------------+--------------------+
 |  Skills 知识层   |  MCP 执行层     |   Memory 记忆层     |
 |  (SKILL.md)    |  (JSON-RPC)    | (SQLite+sqlite-vec)|
@@ -98,7 +98,7 @@ MCP (Model Context Protocol) 是 Anthropic 于 2024 年底推出的开放协议�
 
 ### US-01: 小白用户首次使用 MCP
 
-> 作为小白用户，安装 Clawdbot 后打开聊天页面，AI 就能帮我查天气、搜文件、操作数据库，我不需要知道背后是什么技术。
+> 作为小白用户，安装 OpenClawCN 后打开聊天页面，AI 就能帮我查天气、搜文件、操作数据库，我不需要知道背后是什么技术。
 
 **验收标准:**
 - 安装包内预置精选 MCP 索引
@@ -108,7 +108,7 @@ MCP (Model Context Protocol) 是 Anthropic 于 2024 年底推出的开放协议�
 
 ### US-02: MCP 自动增量更新
 
-> 作为老用户，社区新增了一个好用的 MCP，我不需要做任何操作，下次打开 Clawdbot 就能用。
+> 作为老用户，社区新增了一个好用的 MCP，我不需要做任何操作，下次打开 OpenClawCN 就能用。
 
 **验收标准:**
 - 客户端启动时自动检查 ClawdSkillsProxy 是否有 MCP 更新
@@ -128,7 +128,7 @@ MCP (Model Context Protocol) 是 Anthropic 于 2024 年底推出的开放协议�
 
 ### US-04: 手动添加自定义 MCP
 
-> 作为开发者，我有自己开发的 MCP Server，想添加到 Clawdbot 中使用。
+> 作为开发者，我有自己开发的 MCP Server，想添加到 OpenClawCN 中使用。
 
 **验收标准:**
 - 提供"添加自定义 MCP"入口
@@ -186,7 +186,7 @@ MCP (Model Context Protocol) 是 Anthropic 于 2024 年底推出的开放协议�
                                   | (Bearer Token Auth)
                                   v
             +------------------------------------------+
-            |      [3] Clawdbot 客户端 (Node.js)        |
+            |      [3] OpenClawCN 客户端 (Node.js)        |
             |  +-----------+  +-------------------+    |
             |  | MCP 注册表 |  |  MCP 运行时引擎    |    |
             |  | (同步管理)  |<>| (进程管理+工具桥)  |    |
@@ -504,7 +504,7 @@ CREATE TABLE mcp_package_cache (
 
 ---
 
-## 六、客户端架构 (Clawdbot Node.js)
+## 六、客户端架构 (OpenClawCN Node.js)
 
 ### 6.1 新增文件结构
 
@@ -565,7 +565,7 @@ export class MCPManager {
 
   /**
    * 获取所有可用的 MCP 工具
-   * 在 createClawdbotCodingTools() 中调用
+   * 在 createOpenClawCNCodingTools() 中调用
    */
   async getAvailableTools(): Promise<AgentTool[]> {
     const mcpServers = this.runtime.getRunningServers();
@@ -676,12 +676,12 @@ export class MCPToolBridge {
 
 ### 6.3 集成到现有工具链
 
-MCP 工具注入的关键位置在 `src/agents/clawdbot-tools.ts`：
+MCP 工具注入的关键位置在 `src/agents/openclawcn-tools.ts`：
 
 ```typescript
-// src/agents/clawdbot-tools.ts (修改)
+// src/agents/openclawcn-tools.ts (修改)
 
-export function createClawdbotTools(options: ClawdbotToolsOptions): AgentTool[] {
+export function createOpenClawCNTools(options: OpenClawCNToolsOptions): AgentTool[] {
   const tools: AgentTool[] = [
     // ... 现有工具 (bash, read, write, edit, glob, grep, etc.)
   ];
@@ -701,7 +701,7 @@ export function createClawdbotTools(options: ClawdbotToolsOptions): AgentTool[] 
 ### 6.4 本地状态持久化
 
 ```jsonc
-// ~/.clawdbot/mcp-install-state.json
+// ~/.openclawcn/mcp-install-state.json
 {
   "globalVersion": 42,
   "lastSyncAt": "2026-02-08T03:00:00Z",
@@ -802,7 +802,7 @@ export class MCPRuntimeManager {
     await client.initialize({
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      clientInfo: { name: 'clawdbot', version: '1.0.0' }
+      clientInfo: { name: 'openclawcn', version: '1.0.0' }
     });
 
     // 3. 发现工具
@@ -994,7 +994,7 @@ export interface MCPRemovedEntry {
 ### 8.3 本地配置类型
 
 ```typescript
-// 用户本地 MCP 配置 (持久化到 ~/.clawdbot/mcp-config.json)
+// 用户本地 MCP 配置 (持久化到 ~/.openclawcn/mcp-config.json)
 export interface MCPLocalConfig {
   // 预装 MCP 的启用/禁用状态
   managed: Record<string, {
@@ -1195,7 +1195,7 @@ Response: 200 OK
   |                                      |
   |  处理 added:                          |
   |  1. 下载 npm 包 (from /api/mcp/package)
-  |  2. npm install 到 ~/.clawdbot/mcp/  |
+  |  2. npm install 到 ~/.openclawcn/mcp/  |
   |  3. spawn 进程并验证                   |
   |                                      |
   |  处理 updated:                        |
@@ -1230,7 +1230,7 @@ Response: 200 OK
 
 ```
 安装包结构:
-  clawdbot-setup.exe
+  openclawcn-setup.exe
     skills/               # 现有 Skills
     mcp/                  # 新增
       mcp-index.json                 # 预置 MCP 索引 (打包时最新)
@@ -1261,12 +1261,12 @@ Source: "mcp\packages\*"; DestDir: "{app}\mcp\packages"; Flags: ignoreversion re
 安装完成 => 首次启动 Gateway
                 |
                 v
-        检测 ~/.clawdbot/mcp-install-state.json 是否存在
+        检测 ~/.openclawcn/mcp-install-state.json 是否存在
                 |
            不存在 (首次)
                 |
                 v
-        从 {app}/mcp/ 复制预装索引和包到 ~/.clawdbot/mcp/
+        从 {app}/mcp/ 复制预装索引和包到 ~/.openclawcn/mcp/
                 |
                 v
         执行离线安装 (从本地 tarballs)
@@ -1466,7 +1466,7 @@ foreach ($entry in $index.entries |
 小白用户不需要知道什么是 MCP。他们的体验是：
 
 ```
-1. 安装 Clawdbot => 自动安装预装 MCP (后台完成)
+1. 安装 OpenClawCN => 自动安装预装 MCP (后台完成)
 
 2. 打开 Chat 页面，像平常一样对话:
    用户: "帮我看看桌面上有什么文件"
@@ -1785,7 +1785,7 @@ pi-coding-agent 决策过程:
 2. **ACP 兼容**: 现有 `src/acp/translator.ts` 显式忽略 MCP (`mcpCapabilities: { http: false, sse: false }`)，需修改此逻辑或绕过 ACP 层直接管理 MCP
 3. **工具命名冲突**: MCP 工具使用 `mcp_{serverId}_{toolName}` 命名空间隔离，确保不与 core tools 冲突
 
-**建议**: 首期不修改 ACP 层，直接在 `createClawdbotTools` 层注入 MCP 工具，避免触碰 ACP SDK 的兼容性风险。
+**建议**: 首期不修改 ACP 层，直接在 `createOpenClawCNTools` 层注入 MCP 工具，避免触碰 ACP SDK 的兼容性风险。
 
 ### 17.2 UI/UX 设计师评审
 
@@ -1853,7 +1853,7 @@ pi-coding-agent 决策过程:
 | 任务 | 输出 | 优先级 |
 |------|------|--------|
 | 实现 `MCPManager` 中央管理器 | 统一生命周期管理 | P0 |
-| 集成到 `createClawdbotTools()` | Agent 可使用 MCP 工具 | P0 |
+| 集成到 `createOpenClawCNTools()` | Agent 可使用 MCP 工具 | P0 |
 | 实现 `MCPHealthMonitor` | 健康监控 + 熔断 | P0 |
 | 实现权限沙箱 + 人机确认 | 安全防线 | P0 |
 | 手动配置 3 个 MCP 进行端到端测试 | E2E 验证 | P0 |
@@ -1904,10 +1904,10 @@ Week 12: [M5] 首批 10 个 MCP 上线，面向用户发布
 
 | 文件 | 修改 | 说明 |
 |------|------|------|
-| `src/agents/clawdbot-tools.ts` | 注入 `mcpTools` | MCP 工具进入 Agent 工具链 |
+| `src/agents/openclawcn-tools.ts` | 注入 `mcpTools` | MCP 工具进入 Agent 工具链 |
 | `src/gateway/server.impl.ts` | 初始化 `MCPManager` | Gateway 启动时启动 MCP |
 | `src/gateway/server-methods-list.ts` | 注册 `mcp.*` RPC | WebSocket 新增 MCP 方法 |
-| `src/config/types.clawdbot.ts` | 添加 `mcp?: MCPConfig` | 配置类型扩展 |
+| `src/config/types.openclawcn.ts` | 添加 `mcp?: MCPConfig` | 配置类型扩展 |
 | `ui/src/ui/navigation.ts` | 添加 "mcp" tab | 导航新增 MCP 入口 |
 | `ui/src/ui/app-render.ts` | 添加 MCP 视图路由 | 渲染 MCP 页面 |
 | `ui/src/ui/app.ts` | 添加 MCP 状态属性 | Lit 组件状态管理 |
@@ -1918,7 +1918,7 @@ Week 12: [M5] 首批 10 个 MCP 上线，面向用户发布
 | 文件 | 原因 |
 |------|------|
 | `src/acp/*` | Phase 1 不触碰 ACP 层，避免兼容性风险 |
-| `src/agents/pi-tools.ts` | 通过 clawdbot-tools.ts 注入，无需修改 pi-tools |
+| `src/agents/pi-tools.ts` | 通过 openclawcn-tools.ts 注入，无需修改 pi-tools |
 | `skillsqingxi/*` | MCP 管线独立，不修改 Skill 清洗管线 |
 
 ---

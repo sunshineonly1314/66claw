@@ -228,7 +228,7 @@ server {
 
 ```bash
 # 1. Skills API 正常（通过 IP）
-curl -H "Authorization: Bearer clawdbotCN778" http://121.43.61.90/api/binaries/gh/windows-x64/gh_2.86.0_windows_amd64.zip
+curl -H "Authorization: Bearer openclawcnCN778" http://121.43.61.90/api/binaries/gh/windows-x64/gh_2.86.0_windows_amd64.zip
 # 期望：200
 
 # 2. HTTP → HTTPS 重定向

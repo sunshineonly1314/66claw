@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Clawdbot macOS 快速修复工具
+# OpenClawCN macOS 快速修复工具
 # ============================================================================
 # 自动尝试修复最常见的问题，无需用户了解技术细节
 #
@@ -15,8 +15,8 @@ set -e
 # 配置
 # ============================================================================
 PORT=18789
-APP_PATH="/Applications/Clawdbot.app"
-CONFIG_DIR="$HOME/.clawdbot"
+APP_PATH="/Applications/OpenClawCN.app"
+CONFIG_DIR="$HOME/.openclawcn"
 LOG_DIR="$CONFIG_DIR/logs"
 LOG_FILE="$LOG_DIR/quickfix.log"
 MAX_WAIT=30
@@ -51,7 +51,7 @@ print_banner() {
     echo ""
     echo -e "${CYAN}  ╔════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}  ║                                                                ║${NC}"
-    echo -e "${CYAN}  ║              Clawdbot 快速修复工具                             ║${NC}"
+    echo -e "${CYAN}  ║              OpenClawCN 快速修复工具                             ║${NC}"
     echo -e "${CYAN}  ║                                                                ║${NC}"
     echo -e "${CYAN}  ╚════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -103,9 +103,9 @@ step_stop_gateway() {
     
     local stopped=false
     
-    # 停止 Clawdbot App
-    if pgrep -q "Clawdbot"; then
-        pkill -9 "Clawdbot" 2>/dev/null || true
+    # 停止 OpenClawCN App
+    if pgrep -q "OpenClawCN"; then
+        pkill -9 "OpenClawCN" 2>/dev/null || true
         stopped=true
     fi
     
@@ -154,7 +154,7 @@ step_cleanup() {
     fi
     
     # 清理临时文件
-    rm -f /tmp/clawdbot-* 2>/dev/null || true
+    rm -f /tmp/openclawcn-* 2>/dev/null || true
     
     if [ "$cleaned" = true ]; then
         print_ok "清理完成"
@@ -172,7 +172,7 @@ step_fix_gatekeeper() {
     print_step 3 6 "修复 Gatekeeper 限制..."
     
     if [ ! -d "$APP_PATH" ]; then
-        print_warn "Clawdbot.app 未安装"
+        print_warn "OpenClawCN.app 未安装"
         add_result "Gatekeeper" "false"
         return
     fi
@@ -211,7 +211,7 @@ step_fix_config() {
     mkdir -p "$LOG_DIR"
     
     # 检查/创建配置文件
-    local config_file="$CONFIG_DIR/clawdbot.json"
+    local config_file="$CONFIG_DIR/openclawcn.json"
     
     if [ ! -f "$config_file" ]; then
         # 生成随机 Token
@@ -266,7 +266,7 @@ step_start_gateway() {
     print_step 5 6 "启动 Gateway..."
     
     if [ ! -d "$APP_PATH" ]; then
-        print_error "Clawdbot.app 未安装"
+        print_error "OpenClawCN.app 未安装"
         add_result "启动 Gateway" "false"
         return
     fi
@@ -335,7 +335,7 @@ print_summary() {
     if [ "$success_count" -eq "$total_count" ] && [ "$service_running" = true ]; then
         echo -e "  ${GREEN}✓ 修复完成！所有 $total_count 项检查通过${NC}"
         echo ""
-        echo -e "  您现在可以正常使用 Clawdbot 了"
+        echo -e "  您现在可以正常使用 OpenClawCN 了"
         echo -e "  ${CYAN}访问地址: http://localhost:$PORT/${NC}"
         
         # 打开浏览器

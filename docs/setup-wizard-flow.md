@@ -316,8 +316,8 @@ Content-Type: application/json
    - 输入框（只读）
    - 「浏览...」按钮 → 打开文件夹选择器
    - **默认值**（按平台）:
-     - Windows: `D:\Clawdbot\workspace`
-     - Linux: `/opt/clawdbot/workspace`
+     - Windows: `D:\OpenClawCN\workspace`
+     - Linux: `/opt/openclawcn/workspace`
      - macOS: `~/.clawbotcn/workspace`
 
 4. **提示信息**:
@@ -394,7 +394,7 @@ POST /api/setup/configure-workspace
 Content-Type: application/json
 
 {
-  "workspace": "D:\\clawdbot-workspace"
+  "workspace": "D:\\openclawcn-workspace"
 }
 ```
 
@@ -417,11 +417,11 @@ Content-Type: application/json
 {
   "agents": {
     "defaults": {
-      "workspace": "D:\\clawdbot-workspace",
+      "workspace": "D:\\openclawcn-workspace",
       "sandbox": {
         "mode": "non-main",
         "allowedPaths": [
-          "D:\\clawdbot-workspace",
+          "D:\\openclawcn-workspace",
           "D:\\apps",
           "D:\\tools"
         ]
@@ -437,12 +437,12 @@ Content-Type: application/json
 {
   "agents": {
     "defaults": {
-      "workspace": "D:\\clawdbot-workspace",
+      "workspace": "D:\\openclawcn-workspace",
       "sandbox": {
         "mode": "non-main",
         "docker": {
           "binds": [
-            "D:\\clawdbot-workspace:/workspace:rw",
+            "D:\\openclawcn-workspace:/workspace:rw",
             "D:\\apps:/trusted/apps:rw",
             "D:\\tools:/trusted/tools:rw"
           ]
@@ -474,8 +474,8 @@ D:\apps → D:\apps:/trusted/apps:rw
 
 | 平台 | 默认工作目录 |
 |------|-------------|
-| **Windows** | `D:\Clawdbot\workspace` |
-| **Linux** | `/opt/clawdbot/workspace` |
+| **Windows** | `D:\OpenClawCN\workspace` |
+| **Linux** | `/opt/openclawcn/workspace` |
 | **macOS** | `~/.clawbotcn/workspace` |
 
 ---
@@ -636,7 +636,7 @@ Response (失败):
 ```
 
 ### 开发模式
-- 环境变量 `NODE_ENV=development` 或 `CLAWDBOT_DEV=1` 时
+- 环境变量 `NODE_ENV=development` 或 `OPENCLAWCN_DEV=1` 时
 - 如果 Tecbinai 服务不可用，允许跳过验证
 - 配置中 `status` 设为 `"dev"`
 
@@ -657,7 +657,7 @@ Response (失败):
    • ✅ AI 服务：阿里云百炼
    • ✅ 运行环境：Windows Lite（轻量沙盒）
    • ✅ 安全模式：智能保护
-   • ✅ 工作目录：D:\clawdbot-workspace
+   • ✅ 工作目录：D:\openclawcn-workspace
    • ✅ 额外信任目录：2 个目录
    • ✅ 指挥渠道：钉钉、飞书
    • ✅ 许可证：已激活 (有效期至 2026年12月31日)
@@ -686,8 +686,8 @@ Response (失败):
    **Windows Lite 额外提示**:
    ```
    🪟 Windows 用户提示：
-   • 工作目录位于: D:\Clawdbot\workspace
-   • 配置文件位于: D:\Clawdbot\config\
+   • 工作目录位于: D:\OpenClawCN\workspace
+   • 配置文件位于: D:\OpenClawCN\config\
    • 可通过开始菜单或桌面快捷方式启动
    ```
 
@@ -696,28 +696,28 @@ Response (失败):
    🪟 Windows Pro 用户提示：
    • 请确保 Docker Desktop 正在运行
    • 首次启动可能需要拉取沙盒镜像（约 80MB）
-   • 工作目录位于: D:\Clawdbot\workspace
+   • 工作目录位于: D:\OpenClawCN\workspace
    • 如遇 Docker 问题，可在设置中临时切换到轻量沙盒模式
    ```
 
    **Linux 额外提示**:
    ```
    🐧 Linux 用户提示：
-   • 启动服务: sudo systemctl start clawdbot
-   • 开机自启: sudo systemctl enable clawdbot
-   • 查看日志: journalctl -u clawdbot -f
-   • 工作目录位于: /opt/clawdbot/workspace
-   • 配置文件位于: /opt/clawdbot/config/
+   • 启动服务: sudo systemctl start openclawcn
+   • 开机自启: sudo systemctl enable openclawcn
+   • 查看日志: journalctl -u openclawcn -f
+   • 工作目录位于: /opt/openclawcn/workspace
+   • 配置文件位于: /opt/openclawcn/config/
    ```
 
    **Linux Pro 额外提示**:
    ```
    🐧 Linux Pro 用户提示：
    • 请确保 Docker 服务正在运行: systemctl status docker
-   • 启动 Clawdbot: sudo systemctl start clawdbot
-   • 开机自启: sudo systemctl enable clawdbot
-   • 查看日志: journalctl -u clawdbot -f
-   • 工作目录位于: /opt/clawdbot/workspace
+   • 启动 OpenClawCN: sudo systemctl start openclawcn
+   • 开机自启: sudo systemctl enable openclawcn
+   • 查看日志: journalctl -u openclawcn -f
+   • 工作目录位于: /opt/openclawcn/workspace
    ```
 
 4. **重启按钮**:
@@ -830,8 +830,8 @@ Response:
       "dockerAvailable": false  // Pro 版是否 Docker 可用
     },
     "defaults": {
-      "workspace": "C:\\Clawdbot\\workspace",
-      "configPath": "C:\\Clawdbot\\config\\settings.json"
+      "workspace": "C:\\OpenClawCN\\workspace",
+      "configPath": "C:\\OpenClawCN\\config\\settings.json"
     }
   }
 }
@@ -860,16 +860,16 @@ Response:
 
 | 平台 | 配置文件路径 |
 |------|-------------|
-| **Windows** | `D:\Clawdbot\config\settings.json` |
-| **Linux** | `/opt/clawdbot/config/settings.json` |
+| **Windows** | `D:\OpenClawCN\config\settings.json` |
+| **Linux** | `/opt/openclawcn/config/settings.json` |
 | **macOS** | `~/.clawbotcn/config/settings.json` |
 
 ### 用户数据目录（按平台）
 
 | 平台 | 用户数据目录 |
 |------|-------------|
-| **Windows** | `D:\Clawdbot\` |
-| **Linux** | `/opt/clawdbot/` |
+| **Windows** | `D:\OpenClawCN\` |
+| **Linux** | `/opt/openclawcn/` |
 | **macOS** | `~/.clawbotcn/` |
 
 ### 配置文件示例
@@ -888,11 +888,11 @@ Response:
   
   "agents": {
     "defaults": {
-      "workspace": "D:\\clawdbot-workspace",
+      "workspace": "D:\\openclawcn-workspace",
       "sandbox": {
         "mode": "non-main",
         "allowedPaths": [
-          "D:\\clawdbot-workspace",
+          "D:\\openclawcn-workspace",
           "D:\\apps"
         ]
       }
@@ -936,13 +936,13 @@ Response:
   
   "agents": {
     "defaults": {
-      "workspace": "D:\\clawdbot-workspace",
+      "workspace": "D:\\openclawcn-workspace",
       "sandbox": {
         "mode": "non-main",
         "docker": {
-          "image": "clawdbot-sandbox:bookworm-slim",
+          "image": "openclawcn-sandbox:bookworm-slim",
           "binds": [
-            "D:\\clawdbot-workspace:/workspace:rw",
+            "D:\\openclawcn-workspace:/workspace:rw",
             "D:\\apps:/trusted/apps:rw"
           ]
         }
@@ -1009,12 +1009,12 @@ const platformDefaults = {
     configPath: '~/.clawbotcn/config/'
   },
   win32: {
-    workspace: 'C:\\Clawdbot\\workspace',
-    configPath: 'C:\\Clawdbot\\config\\'
+    workspace: 'C:\\OpenClawCN\\workspace',
+    configPath: 'C:\\OpenClawCN\\config\\'
   },
   linux: {
-    workspace: '/opt/clawdbot/workspace',
-    configPath: '/opt/clawdbot/config/'
+    workspace: '/opt/openclawcn/workspace',
+    configPath: '/opt/openclawcn/config/'
   }
 };
 
@@ -1160,7 +1160,7 @@ function initDefaults() {
 - `variant` 取决于安装包类型（Lite/Pro）
 
 ### 7. 开发模式
-- `NODE_ENV=development` 或 `CLAWDBOT_DEV=1`
+- `NODE_ENV=development` 或 `OPENCLAWCN_DEV=1`
 - 许可证验证失败时允许跳过
 - 方便开发调试
 
