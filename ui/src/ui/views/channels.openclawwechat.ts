@@ -158,75 +158,105 @@ export function renderOpenclawwechatCard(params: {
             <span class="help-badge">详细教程</span>
           </summary>
           <div class="channel-card__help-content">
-            <div class="callout" style="margin-bottom: 16px;">
-              <strong>💡 工作原理：</strong>个人微信消息 → ClawChat 桥接服务器 → OpenClawCN AI → 回复到微信。
-              无需公网 IP，无需企业认证，个人微信号即可使用。
+            <div class="callout success" style="margin-bottom: 16px;">
+              <strong>💡 优势：</strong>无需公网 IP，无需企业认证，无需翻墙。用你的个人微信号就能接入 AI，5 分钟完成配置。
             </div>
 
-            <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
-              <strong style="font-size: 13px;">第一部分：上游 ClawChat 桥接服务配置</strong>
+            <div class="callout" style="margin-bottom: 16px;">
+              <strong>工作原理：</strong>ClawChat 是一个桥接服务，它会把别人发给你微信的消息转发给 OpenClawCN，AI 处理完后再通过微信回复对方。流程如下：
+              <br><br>
+              <code style="display: block; padding: 8px; background: var(--bg-elevated); border-radius: 4px; font-size: 12px; text-align: center;">
+                对方发微信消息 → ClawChat 桥接 → OpenClawCN AI 处理 → 微信自动回复
+              </code>
+            </div>
+
+            <div style="margin-bottom: 12px; padding: 10px 12px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
+              <strong>第一步：在 ClawChat 上完成准备工作</strong>（约 3 分钟）
             </div>
 
             <div class="config-steps">
               <div class="config-step">
                 <div class="step-number">1</div>
                 <div class="step-content">
-                  <strong>注册 ClawChat 账号</strong>
-                  <p>在微信中搜索「ClawChat」小程序，或访问 ClawChat 官网</p>
-                  <p>使用微信扫码注册 / 登录 ClawChat 账号</p>
+                  <strong>打开 ClawChat 小程序</strong>
+                  <p>打开微信，在顶部搜索栏搜索「ClawChat」，点击进入小程序</p>
+                  <p>如果是第一次使用，按提示完成注册（微信授权即可，无需手动填写信息）</p>
                 </div>
               </div>
 
               <div class="config-step">
                 <div class="step-number">2</div>
                 <div class="step-content">
-                  <strong>绑定个人微信号</strong>
-                  <p>进入 ClawChat 小程序，按照引导完成个人微信号绑定</p>
-                  <p>绑定后，你的个人微信收到的消息会被转发到桥接服务器</p>
+                  <strong>绑定你的个人微信号</strong>
+                  <p>进入小程序后，按照页面引导扫码绑定你的微信号</p>
+                  <p>绑定成功后，别人给你发微信消息时，ClawChat 就能收到并转发给 AI</p>
+                  <div class="callout warning" style="margin-top: 8px;">
+                    <strong>⚠️ 注意：</strong>绑定的是<strong>你自己的微信号</strong>，不是创建新号。绑定后你的微信正常使用，只是消息会额外被转发一份给 AI 处理。
+                  </div>
                 </div>
               </div>
 
               <div class="config-step">
                 <div class="step-number">3</div>
                 <div class="step-content">
-                  <strong>生成 API Key</strong>
-                  <p>进入 ClawChat →「我的」→「APIKey 管理」→ 点击「生成 APIKey」</p>
-                  <p>格式为 <code>bot_id:secret</code>（包含冒号），请完整复制</p>
+                  <strong>生成 API Key（连接密钥）</strong>
+                  <p>在 ClawChat 小程序中，依次点击：</p>
+                  <ul style="margin: 4px 0 4px 16px; padding: 0; list-style: disc;">
+                    <li>底部导航栏 →「我的」</li>
+                    <li>「APIKey 管理」</li>
+                    <li>点击「生成 APIKey」按钮</li>
+                  </ul>
+                  <p>生成后，<strong>长按复制</strong>整个 API Key</p>
+                  <div class="callout danger" style="margin-top: 8px;">
+                    <strong>🔐 重要：</strong>API Key 的格式是 <code>bot_id:secret</code>（中间有个冒号），例如 <code>12345:abcdef1234567890</code>。请<strong>完整复制</strong>，不要漏掉冒号和后面的部分！
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div style="margin: 16px 0 16px; padding: 12px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
-              <strong style="font-size: 13px;">第二部分：OpenClawCN 端配置</strong>
+            <div style="margin: 16px 0 12px; padding: 10px 12px; background: var(--bg-elevated); border-radius: 8px; border-left: 3px solid var(--accent);">
+              <strong>第二步：在 OpenClawCN 中填入 API Key</strong>（约 1 分钟）
             </div>
 
             <div class="config-steps">
               <div class="config-step">
                 <div class="step-number">4</div>
                 <div class="step-content">
-                  <strong>填写 API Key</strong>
-                  <p>在下方配置表单中填入你的 ClawChat API Key</p>
-                  <p>或通过配置文件设置：<code style="display: inline-block; margin-top: 4px; padding: 2px 6px; background: var(--bg-elevated); border-radius: 4px; font-size: 12px;">plugins.entries.openclawwechat.config.apiKey</code></p>
-                  <p>或通过命令行向导：<code style="display: inline-block; margin-top: 4px; padding: 2px 6px; background: var(--bg-elevated); border-radius: 4px; font-size: 12px;">openclawcn setup</code></p>
+                  <strong>粘贴你的 API Key</strong>
+                  <p>回到这个页面，<strong>向下滚动</strong>找到配置表单，把刚才复制的 API Key 粘贴进去，然后点击保存</p>
                 </div>
               </div>
 
               <div class="config-step">
                 <div class="step-number">5</div>
                 <div class="step-content">
-                  <strong>启动网关并测试</strong>
-                  <p>启动网关：<code style="padding: 2px 6px; background: var(--bg-elevated); border-radius: 4px; font-size: 12px;">openclawcn gateway run</code></p>
-                  <p>在微信中给绑定的个人号发送一条消息，约 2 秒内即可收到 AI 回复</p>
+                  <strong>启动网关，发条消息试试！</strong>
+                  <p>如果网关已经在运行（页面上方状态显示「运行中」），保存后直接跳到下面发消息测试。</p>
+                  <p>如果还没启动网关，需要在电脑上打开<strong>终端</strong>（命令行窗口），输入启动命令：</p>
+                  <div class="callout" style="margin: 8px 0; padding: 10px 12px; font-size: 12px;">
+                    <strong>怎么打开终端？</strong>
+                    <ul style="margin: 4px 0 0 16px; padding: 0; list-style: disc;">
+                      <li><strong>Windows</strong>：按键盘 <code>Win + R</code>，输入 <code>cmd</code>，按回车</li>
+                      <li><strong>Mac</strong>：按 <code>Command + 空格</code>，输入 <code>Terminal</code>，按回车</li>
+                      <li><strong>Linux</strong>：按 <code>Ctrl + Alt + T</code></li>
+                    </ul>
+                  </div>
+                  <p>在终端窗口里，输入下面这行命令，然后按<strong>回车键</strong>执行：</p>
+                  <code style="display: block; margin: 6px 0; padding: 8px 12px; background: var(--bg-elevated); border-radius: 4px; font-size: 13px; user-select: all;">openclawcn gateway run</code>
+                  <p style="margin-top: 8px;">网关启动后，用<strong>另一个微信号</strong>（朋友的、家人的、或你的小号）给你绑定的微信号发一条消息，比如发「你好」</p>
+                  <p>等待约 <strong>2 秒</strong>，如果收到 AI 的自动回复 — 恭喜，配置成功了！</p>
                 </div>
               </div>
             </div>
 
             <div class="callout warning" style="margin-top: 12px;">
-              <strong>⚠️ 注意：</strong>API Key 中包含冒号（:），系统会自动处理 URL 编码，无需手动修改。
-            </div>
-
-            <div class="callout" style="margin-top: 8px;">
-              <strong>🔍 调试提示：</strong>若未收到回复，在配置中设置 <code>debug: true</code>，然后执行 <code>openclawcn logs --follow</code> 查看日志。
+              <strong>⚠️ 没收到回复？按顺序排查：</strong>
+              <ol style="margin: 8px 0 0 16px; padding: 0;">
+                <li>回 ClawChat 小程序看看微信号绑定状态是否正常</li>
+                <li>检查 API Key 是否粘贴完整（必须包含冒号 <code>:</code>）</li>
+                <li>打开终端，输入 <code>openclawcn gateway status</code> 按回车，看网关是否在运行</li>
+                <li>在配置中把 <code>debug</code> 改为 <code>true</code>，保存后在终端输入 <code>openclawcn logs --follow</code> 按回车，查看日志找原因</li>
+              </ol>
             </div>
           </div>
         </details>
