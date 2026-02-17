@@ -258,18 +258,30 @@ export async function checkIntegrityOnStartup(
   const result = verifyIntegrity(baseDir);
 
   if (!result.valid) {
-    log.error("Integrity check failed!");
+    // Distinguish "tampered" from "likely upgrade/incomplete install" for better UX.
+    // Missing-only (no tampered) is commonly caused by version upgrades where old
+    // integrity hashes reference files that no longer exist in the new version.
+    const isMissingOnly = result.missingFiles.length > 0 && result.tamperedFiles.length === 0;
 
-    if (result.tamperedFiles.length > 0) {
-      log.error(`Tampered files: ${result.tamperedFiles.join(", ")}`);
-    }
-
-    if (result.missingFiles.length > 0) {
-      log.error(`Missing files: ${result.missingFiles.join(", ")}`);
+    if (isMissingOnly) {
+      log.warn(
+        "Integrity check: missing files detected — possible version upgrade or incomplete installation",
+      );
+      log.warn(`Missing files: ${result.missingFiles.join(", ")}`);
+    } else {
+      log.error("Integrity check failed!");
+      if (result.tamperedFiles.length > 0) {
+        log.error(`Tampered files: ${result.tamperedFiles.join(", ")}`);
+      }
+      if (result.missingFiles.length > 0) {
+        log.error(`Missing files: ${result.missingFiles.join(", ")}`);
+      }
     }
 
     if (options.exitOnFailure) {
-      console.error("[安全警告] 检测到文件被篡改，程序退出");
+      console.error("[安全警告] 检测到文件完整性异常，程序退出");
+      console.error("  可能原因：版本升级后残留旧文件、安装不完整、或文件被篡改");
+      console.error("  建议：重新安装或运行 pnpm build:secure 重新构建");
       process.exit(1);
     }
 
