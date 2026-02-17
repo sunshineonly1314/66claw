@@ -93,6 +93,16 @@ export type QqbotStatus = {
   } | null;
 };
 
+// 个人微信渠道状态类型（通过 ClawChat 桥接）
+export type OpenclawwechatStatus = {
+  configured?: boolean;
+  running?: boolean;
+  connected?: boolean;
+  lastStartAt?: number | null;
+  lastStopAt?: number | null;
+  lastError?: string | null;
+};
+
 export type ChannelsProps = {
   connected: boolean;
   loading: boolean;
@@ -131,6 +141,7 @@ export type ChannelsChannelData = {
   dingtalk?: DingtalkStatus;
   wecom?: WecomStatus;
   qqbot?: QqbotStatus;
+  openclawwechat?: OpenclawwechatStatus;
   whatsapp?: WhatsAppStatus;
   telegram?: TelegramStatus;
   discord?: DiscordStatus | null;

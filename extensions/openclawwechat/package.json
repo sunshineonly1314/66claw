@@ -1,0 +1,27 @@
+{
+  "name": "@openclawcn/openclawwechat",
+  "version": "2026.2.15",
+  "type": "module",
+  "description": "OpenClawCN WeChat Personal channel plugin - 个人微信渠道 (via ClawChat bridge)",
+  "openclawcn": {
+    "extensions": ["./index.ts"],
+    "channel": {
+      "id": "openclawwechat",
+      "label": "微信 (WeChat)",
+      "selectionLabel": "个人微信 (WeChat Personal)",
+      "docsPath": "/channels/openclawwechat",
+      "docsLabel": "openclawwechat",
+      "blurb": "个人微信渠道 - 通过 ClawChat 桥接服务接入，无需 VPN，支持文本、图片、视频、文档",
+      "aliases": ["wechat", "wx", "personal-wechat"],
+      "order": -1
+    },
+    "install": {
+      "npmSpec": "@openclawcn/openclawwechat",
+      "localPath": "extensions/openclawwechat",
+      "defaultChoice": "local"
+    }
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}

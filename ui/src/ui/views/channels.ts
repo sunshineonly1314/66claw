@@ -35,14 +35,16 @@ import { renderFeishuCard } from "./channels.feishu";
 import { renderDingtalkCard } from "./channels.dingtalk";
 import { renderWecomCard } from "./channels.wecom";
 import { renderQqbotCard } from "./channels.qq";
-import type { FeishuStatus, DingtalkStatus, WecomStatus, QqbotStatus } from "./channels.types";
+import { renderOpenclawwechatCard } from "./channels.openclawwechat";
+import type { FeishuStatus, DingtalkStatus, WecomStatus, QqbotStatus, OpenclawwechatStatus } from "./channels.types";
 
 // 所有支持的渠道列表（始终显示，不管后端是否返回）
 const ALL_SUPPORTED_CHANNELS: ChannelKey[] = [
-  "feishu",      // 飞书
-  "dingtalk",    // 钉钉
-  "wecom",       // 企业微信
-  "qqbot",       // QQ 机器人
+  "feishu",           // 飞书
+  "dingtalk",         // 钉钉
+  "wecom",            // 企业微信
+  "qqbot",            // QQ 机器人
+  "openclawwechat",   // 个人微信 (ClawChat 桥接)
   "whatsapp",
   "telegram",
   "discord",
@@ -139,6 +141,7 @@ export function renderChannels(props: ChannelsProps) {
   const dingtalk = (channels?.dingtalk ?? undefined) as DingtalkStatus | undefined;
   const wecom = (channels?.wecom ?? undefined) as WecomStatus | undefined;
   const qqbot = (channels?.qqbot ?? undefined) as QqbotStatus | undefined;
+  const openclawwechat = (channels?.openclawwechat ?? undefined) as OpenclawwechatStatus | undefined;
   // 国际渠道
   const whatsapp = (channels?.whatsapp ?? undefined) as
     | WhatsAppStatus
@@ -174,6 +177,7 @@ export function renderChannels(props: ChannelsProps) {
     dingtalk,
     wecom,
     qqbot,
+    openclawwechat,
     whatsapp,
     telegram,
     discord,
@@ -199,7 +203,7 @@ export function renderChannels(props: ChannelsProps) {
         </div>
         <div class="channel-group__tip">
           <span class="tip-icon">💡</span>
-          <span>飞书、钉钉、企业微信 - 无需翻墙，Stream/长连接模式无需公网 IP</span>
+          <span>飞书、钉钉、企业微信、个人微信 - 无需翻墙，Stream/长连接模式无需公网 IP</span>
         </div>
         <section class="channels-grid">
           ${domesticChannels.map((channel) =>
@@ -294,6 +298,13 @@ function renderChannel(
         qqbotAccounts: data.channelAccounts?.qqbot ?? [],
         accountCountLabel,
       });
+    case "openclawwechat":
+      return renderOpenclawwechatCard({
+        props,
+        openclawwechat: data.openclawwechat,
+        openclawwechatAccounts: data.channelAccounts?.openclawwechat ?? [],
+        accountCountLabel,
+      });
     // 国际渠道
     case "whatsapp":
       return renderWhatsAppCard({
@@ -376,6 +387,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   dingtalk: "钉钉",
   wecom: "企业微信",
   qqbot: "QQ",
+  openclawwechat: "微信 (个人号)",
   whatsapp: "WhatsApp",
   telegram: "Telegram",
   discord: "Discord",
@@ -392,6 +404,7 @@ const CHANNEL_DESCRIPTIONS: Record<string, string> = {
   dingtalk: "钉钉机器人状态和配置。适用于企业办公和团队协作。",
   wecom: "企业微信机器人状态和配置。适用于企业内部通讯。",
   qqbot: "QQ 机器人状态和配置。支持 QQ 开放平台官方机器人。",
+  openclawwechat: "个人微信渠道。通过 ClawChat 桥接服务接入个人号，无需企业认证，支持文本、图片、视频、文档。",
   whatsapp: "WhatsApp Web 连接状态和配置。",
   telegram: "Telegram 机器人状态和配置。",
   discord: "Discord 机器人状态和配置。",
@@ -403,7 +416,7 @@ const CHANNEL_DESCRIPTIONS: Record<string, string> = {
 };
 
 // 国内渠道列表
-const DOMESTIC_CHANNELS = new Set(["feishu", "dingtalk", "wecom", "qqbot"]);
+const DOMESTIC_CHANNELS = new Set(["feishu", "dingtalk", "wecom", "qqbot", "openclawwechat"]);
 
 // 默认展开的渠道列表（国内常用渠道）
 const DEFAULT_OPEN_CHANNELS = new Set<string>([]);

@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Machine-readable CN protection list. Source of truth for .gitattributes merge rules, CI validation, and merge scripts. Regenerate .gitattributes via: bash scripts/generate-gitattributes-merge.sh",
+  "lastUpdated": "2026-02-17",
+
+  "section1_cn_only": {
+    "description": "CN-only files. Upstream does not have these. Strategy: merge=ours (always keep CN version).",
+    "files": [
+      "src/config/region-cn.ts",
+      "src/config/cn-mirrors.ts",
+      "src/config/cn-mirrors-data.ts",
+      "src/config/cn-mirrors.test.ts",
+      "src/config/zod-schema.providers-cn.ts",
+      "src/config/defaults-cn.test.ts",
+      "src/config/region-cn.test.ts",
+      "src/commands/auth-choice.apply.cn-providers.ts",
+      "src/agents/siliconflow-models.ts",
+      "src/agents/cn-brand-consistency.test.ts",
+      "src/agents/model-auth.cn-providers.test.ts",
+      "src/agents/tools/wechat-send.ts",
+      "src/agents/tools/wechat-check.ts",
+      "src/agents/tools/asr-tool.ts",
+      "src/agents/tools/tts-tool.ts",
+      "src/gateway/server-methods/asr.ts",
+      "src/gateway/server-methods/tts.ts",
+      "src/gateway/server-methods/voicewake.ts",
+      "src/infra/voicewake.ts",
+      "src/i18n/locales/zh-CN.ts",
+      "ui/src/ui/i18n/locales/zh-CN.ts",
+      "ui/src/ui/views/channels.feishu.ts",
+      "ui/src/ui/views/channels.dingtalk.ts",
+      "ui/src/ui/views/channels.wecom.ts",
+      "config/dispatch.yaml",
+      "config/config.china.example.json5",
+      "scripts/install-mac-cn.sh",
+      "scripts/install-macos-cn.sh",
+      "scripts/linux/install-china.sh",
+      "scripts/merge-upstream-files.sh",
+      "scripts/setup-merge-drivers.sh",
+      "scripts/merge-upstream.sh",
+      "scripts/generate-gitattributes-merge.sh",
+      "scripts/autopipeline/analyze-upstream-diff.sh",
+      "scripts/autopipeline/ai-analyze-upstream.sh",
+      "scripts/autopipeline/apply-cn-brand.sh",
+      "scripts/autopipeline/agent-resolve-conflicts.sh",
+      "scripts/autopipeline/agent-fix-failures.sh",
+      "scripts/autopipeline/ai-merge-pipeline.sh",
+      ".github/workflows/build-macos-cn.yml",
+      ".github/workflows/daily-upstream-sync.yml",
+      "docs/china-localization.md",
+      "docs/channels/china-quickstart.md",
+      "docs/channels/feishu.md",
+      "docs/channels/dingtalk.md",
+      "docs/channels/wecom.md",
+      "docs/channels/qqbot.md",
+      "docs/skills-china-mirrors.md",
+      "docs/skills-cn-download-audit.md",
+      "docs/cn-defaults-requirements.md",
+      "docs/macos-cn-packaging-plan.md",
+      "docs/macos-cn-packaging-final.md",
+      "docs/ops-runbook-license-cn-fallback.md",
+      "docs/ops-runbook-obplugins-cn-proxy.md",
+      "docs/requirements/cn-user-experience-todo.md",
+      "docs/archive/2025-0208-cn-defaults-and-bugfixes.md",
+      "docs/archive/2025-0208-cn-defaults-full-parameter-reference.md",
+      "docs/roadmap/TODO-12-daily-upstream-merge-automation.md",
+      "cn/docs/CN_CUSTOMIZATIONS.md",
+      "config/cn-protected-files.json",
+      "MODULES_GUIDE.md",
+      "src/gateway/cn-handlers.ts",
+      "src/gateway/server-methods/modality-capability.ts",
+      "src/gateway/server-methods/modality-capability.test.ts",
+      "src/agents/modality-capability-checker.ts",
+      "src/agents/modality-capability-checker.test.ts",
+      "ui/src/ui/views/modality-config-guide.ts",
+      "ui/src/ui/views/modality-config-guide.css",
+      "ui/src/ui/controllers/modality-guard.ts",
+      "docs/modality-jit-configuration.md",
+      "docs/modality-jit-integration-example.md",
+      "src/agents/tools/image-gen-tool.ts",
+      "ui/src/ui/chat/image-lightbox.ts",
+      "ui/src/styles/chat/image-lightbox.css",
+      "ui/src/ui/views/channels.openclawwechat.ts",
+      "docs/channels/openclawwechat-setup.md",
+      "versionrecord.md",
+      "skills/version-record/SKILL.md"
+    ],
+    "directories": [
+      "src/dispatch/",
+      "extensions/feishu/",
+      "extensions/dingtalk/",
+      "extensions/wecom/",
+      "extensions/qqbot/",
+      "extensions/openclawwechat/",
+      "cn/",
+      "apps/desktop/",
+      "scripts/autopipeline/",
+      "scripts/desktop/",
+      "native/",
+      "ui/src/docscn/",
+      "build/windows/deploy/docs/"
+    ]
+  },
+
+  "section2_modified_upstream": {
+    "description": "Upstream files with CN modifications injected. Strategy: manual merge required. These need human or AI-assisted conflict resolution.",
+    "files": [
+      {
+        "path": "src/config/defaults.ts",
+        "cn_injection": "Calls applyCnDefaults() to inject CN region defaults",
+        "marker": "applyCnDefaults"
+      },
+      {
+        "path": "src/config/auto-detect-env.ts",
+        "cn_injection": "CN region auto-detection logic",
+        "marker": "region-cn"
+      },
+      {
+        "path": "src/agents/models-config.ts",
+        "cn_injection": "References CN providers (siliconflow, deepseek, zhipu, etc.)",
+        "marker": "siliconflow|cn-providers"
+      },
+      {
+        "path": "src/agents/models-config.providers.ts",
+        "cn_injection": "Integrates CN provider list",
+        "marker": "cn-providers"
+      },
+      {
+        "path": "package.json",
+        "cn_injection": "CN version number, CN build scripts, CN dependencies",
+        "marker": "openclawcn|build-macos-cn"
+      },
+      {
+        "path": "AGENTS.md",
+        "cn_injection": "References ITERATION.md, CN dev conventions",
+        "marker": "ITERATION|CN"
+      },
+      {
+        "path": "src/auto-reply/reply/get-reply.ts",
+        "cn_injection": "Injects modality-aware smart routing (routeByModality)",
+        "marker": "routeByModality"
+      },
+      {
+        "path": "src/agents/model-fallback.ts",
+        "cn_injection": "Injects provider health tracking (recordProviderSuccess/Failure)",
+        "marker": "recordProvider"
+      },
+      {
+        "path": "src/media-understanding/providers/openai/index.ts",
+        "cn_injection": "Fixes OpenAI audio capability declaration",
+        "marker": "audio"
+      },
+      {
+        "path": "src/media-understanding/defaults.ts",
+        "cn_injection": "Extends AUTO_VIDEO_KEY_PROVIDERS with openai, zai",
+        "marker": "AUTO_VIDEO_KEY_PROVIDERS"
+      },
+      {
+        "path": "src/media-understanding/attachments.ts",
+        "cn_injection": "Adds document type detection in resolveAttachmentKind",
+        "marker": "resolveAttachmentKind.*document"
+      },
+      {
+        "path": "src/config/types.agent-defaults.ts",
+        "cn_injection": "Adds preferDomestic config option for modality routing",
+        "marker": "preferDomestic"
+      },
+      {
+        "path": "ui/src/ui/app-gateway.ts",
+        "cn_injection": "UI gateway customizations",
+        "marker": "CN|openclawcn"
+      },
+      {
+        "path": "ui/src/ui/storage.ts",
+        "cn_injection": "Storage customizations",
+        "marker": "CN|openclawcn"
+      },
+      {
+        "path": "src/gateway/server.impl.ts",
+        "cn_injection": "Injects cnGatewayHandlers into extraHandlers for CN-only gateway methods",
+        "marker": "cnGatewayHandlers"
+      }
+    ]
+  },
+
+  "cn_api_endpoints": {
+    "description": "Critical CN API endpoints that must exist in the codebase after merge.",
+    "endpoints": [
+      { "service": "SiliconFlow", "pattern": "api.siliconflow.cn" },
+      { "service": "Tongyi Qwen", "pattern": "dashscope.aliyuncs.com" },
+      { "service": "Volcengine", "pattern": "ark.cn-beijing.volces.com" },
+      { "service": "Zhipu GLM", "pattern": "open.bigmodel.cn" },
+      { "service": "Moonshot", "pattern": "api.moonshot.cn" },
+      { "service": "Tencent Hunyuan", "pattern": "hunyuan.tencentcloudapi.com" },
+      { "service": "ModelScope", "pattern": "api-inference.modelscope.cn" }
+    ]
+  },
+
+  "cn_env_vars": {
+    "description": "Environment variables whose detection logic must be preserved.",
+    "vars": [
+      "OPENCLAWCN_REGION",
+      "OPENCLAWCN_USE_CN_MIRROR",
+      "TZ=Asia/Shanghai",
+      "LANG=zh_CN"
+    ]
+  },
+
+  "cn_critical_files": {
+    "description": "Subset of section1 files that are absolutely critical. CI must verify these exist after every merge.",
+    "files": [
+      "src/config/region-cn.ts",
+      "src/config/cn-mirrors.ts",
+      "src/config/defaults-cn.test.ts",
+      "src/dispatch/engine.ts",
+      "src/i18n/locales/zh-CN.ts",
+      "ui/src/ui/i18n/locales/zh-CN.ts",
+      "ui/src/ui/views/channels.feishu.ts",
+      "config/dispatch.yaml",
+      "config/cn-protected-files.json",
+      ".github/workflows/build-macos-cn.yml",
+      "docs/china-localization.md"
+    ]
+  }
+}
