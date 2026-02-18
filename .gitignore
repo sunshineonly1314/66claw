@@ -8,8 +8,12 @@ dist/
 build/
 *.tsbuildinfo
 
-# Rust / Tauri build cache
+# Rust / Tauri build cache & generated files
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/schemas/
+apps/desktop/src-tauri/resources/
+apps/desktop/node_modules/
+.cache/node/
 
 # Environment & secrets
 .env
@@ -47,3 +51,33 @@ Microsoft/
 
 # Dev temp
 devTemp/
+
+# Upstream analysis working data (reports saved to docs/upstream-reports/)
+.upstream-analysis/
+merge-*.log
+
+# Backup files (from brand rename operations)
+*.bak
+
+# Build artifacts
+arm64-pkg/
+
+# Runtime data (should not be committed)
+data/
+
+# CN pipeline outputs (large generated data)
+cn/skills-mirror/
+cn/skills-qc/output*/
+cn/skills-publish/output*/
+
+# Build artifacts (CI/CD)
+build/
+*.exe
+*.dmg
+*.app
+*.AppImage
+*.deb
+*.rpm
+
+# Large assets
+assets/60ad649637d6797ad09120d309408d4c.png
