@@ -11,6 +11,7 @@
     "skipLibCheck": true
   },
   "include": [
+    "src/global.d.ts",
     "src/dispatch/**/*.ts",
     "src/license/**/*.ts",
     "src/security/**/*.ts",
