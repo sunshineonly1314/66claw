@@ -50,17 +50,17 @@ if (-not (Get-Command "pnpm" -ErrorAction SilentlyContinue)) {
 Write-Host "  pnpm  : $(pnpm --version)"
 Write-Host ""
 
-# ── Step 2: Build Node.js backend ──
-Write-Host "[2/6] Building Node.js backend (pnpm build)..." -ForegroundColor Yellow
+# ── Step 2: Build Node.js backend + CN encryption ──
+Write-Host "[2/6] Building Node.js backend (pnpm build:secure)..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
-pnpm build
+pnpm build:secure
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Backend build failed!" -ForegroundColor Red
+    Write-Host "ERROR: Backend build (secure) failed!" -ForegroundColor Red
     Pop-Location
     exit 1
 }
 Pop-Location
-Write-Host "  Backend build OK" -ForegroundColor Green
+Write-Host "  Backend build + CN encryption OK" -ForegroundColor Green
 
 # ── Step 3: Build UI ──
 Write-Host "[3/6] Building control UI..." -ForegroundColor Yellow

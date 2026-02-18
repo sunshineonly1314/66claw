@@ -414,6 +414,14 @@ async function main(): Promise<void> {
   console.log(`   Found ${targetFiles.length} files to compile`);
   console.log("");
 
+  if (targetFiles.length === 0) {
+    console.error("❌ FATAL: 0 bytecode targets found!");
+    console.error("   No CN files found for V8 bytecode compilation. This means");
+    console.error("   core CN code would ship without bytecode protection.");
+    console.error("   Check that build:cn-compile ran before this step.");
+    process.exit(1);
+  }
+
   // Phase 1: Pre-scan ALL files to extract export names before modifying anything.
   // This ensures `export * from` resolution works correctly even when target files
   // are in the same compilation set.

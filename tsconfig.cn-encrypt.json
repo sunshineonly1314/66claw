@@ -1,0 +1,54 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noEmitOnError": false,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "allowImportingTsExtensions": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/dispatch/**/*.ts",
+    "src/license/**/*.ts",
+    "src/security/**/*.ts",
+
+    "src/gateway/cn-handlers.ts",
+    "src/gateway/server-methods/asr.ts",
+    "src/gateway/server-methods/tts.ts",
+    "src/gateway/server-methods/voicewake.ts",
+    "src/gateway/server-methods/modality-capability.ts",
+    "src/agents/modality-capability-checker.ts",
+    "src/agents/siliconflow-models.ts",
+    "src/agents/tools/wechat-send.ts",
+    "src/agents/tools/wechat-check.ts",
+    "src/agents/tools/asr-tool.ts",
+    "src/agents/tools/tts-tool.ts",
+    "src/agents/tools/image-gen-tool.ts",
+    "src/config/region-cn.ts",
+    "src/config/cn-mirrors.ts",
+    "src/config/cn-mirrors-data.ts",
+    "src/config/zod-schema.providers-cn.ts",
+    "src/commands/auth-choice.apply.cn-providers.ts",
+    "src/infra/voicewake.ts",
+    "src/mcp/marketplace/db-schema.ts",
+    "src/mcp/marketplace/db.ts",
+    "src/gateway/server-methods/mcp-marketplace-search.ts",
+
+    "src/i18n/locales/zh-CN.ts",
+    "src/config/types.tool-discovery.ts",
+    "src/mcp/on-demand-loader.ts",
+    "src/agents/tools/mcp-install-tool.ts",
+    "src/agents/skills/marketplace/db.ts",
+    "src/agents/skills/marketplace/db-schema.ts"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/*.e2e.ts",
+    "node_modules",
+    "dist"
+  ]
+}

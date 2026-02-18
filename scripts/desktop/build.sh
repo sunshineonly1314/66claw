@@ -45,10 +45,10 @@ fi
 echo "  Node  : $(node --version)"
 echo ""
 
-# ── Step 2: Build Node.js backend ──
-echo "[2/6] Building Node.js backend (pnpm build)..."
-(cd "$PROJECT_ROOT" && pnpm build)
-echo "  Backend build OK"
+# ── Step 2: Build Node.js backend + CN encryption ──
+echo "[2/6] Building Node.js backend (pnpm build:secure)..."
+(cd "$PROJECT_ROOT" && pnpm build:secure)
+echo "  Backend build + CN encryption OK"
 
 # ── Step 3: Build UI ──
 echo "[3/6] Building control UI..."

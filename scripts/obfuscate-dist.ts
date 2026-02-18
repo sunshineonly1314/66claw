@@ -94,6 +94,14 @@ async function main(): Promise<void> {
   console.log(`   Upstream files: skipped (not encrypted)`);
   console.log("");
 
+  if (totalCnFiles === 0) {
+    console.error("❌ FATAL: 0 CN files found for obfuscation!");
+    console.error("   The encryption pipeline found no targets. This means CN code");
+    console.error("   would ship unencrypted. Check that build:cn-compile and");
+    console.error("   build:cn-extensions ran before this step.");
+    process.exit(1);
+  }
+
   let successCount = 0;
   let skipCount = 0;
   let errorCount = 0;
