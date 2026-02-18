@@ -95,14 +95,17 @@ try {
     Write-Host "  Running npm install --omit=dev ..."
     Push-Location $tempInstallDir
     try {
-        # Use npm (bundled with node) to install — produces flat node_modules, no hardlinks
-        $npmOutput = npm install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1
+        # Use cmd /c to avoid PowerShell $ErrorActionPreference="Stop" catching npm's
+        # stderr warnings (deprecated packages) as terminating errors
+        $npmLog = cmd /c "npm install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1"
         $npmExitCode = $LASTEXITCODE
         Write-Host "  npm install exit code: $npmExitCode [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+        # Show last few lines of output
+        $npmLog -split "`n" | Select-Object -Last 5 | ForEach-Object { Write-Host "    $_" }
 
         if ($npmExitCode -ne 0) {
-            Write-Host "  npm install output:" -ForegroundColor Yellow
-            $npmOutput | ForEach-Object { Write-Host "    $_" }
+            Write-Host "  Full npm output:" -ForegroundColor Yellow
+            $npmLog -split "`n" | ForEach-Object { Write-Host "    $_" }
             throw "npm install failed with exit code $npmExitCode"
         }
     } finally {
