@@ -1,4 +1,4 @@
-* text=auto eol=lf
+﻿* text=auto eol=lf
 
 # Binary files (prevent git diff and ensure proper handling)
 *.png binary
@@ -25,99 +25,187 @@
 # When merging upstream/main, these files keep the CN version.
 
 # --- Section I: CN-Only Files (always keep ours) ---
-src/config/region-cn.ts merge=ours
-src/config/cn-mirrors.ts merge=ours
-src/config/cn-mirrors-data.ts merge=ours
-src/config/cn-mirrors.test.ts merge=ours
-src/config/zod-schema.providers-cn.ts merge=ours
-src/config/defaults-cn.test.ts merge=ours
-src/config/region-cn.test.ts merge=ours
-src/commands/auth-choice.apply.cn-providers.ts merge=ours
-src/agents/siliconflow-models.ts merge=ours
-src/agents/cn-brand-consistency.test.ts merge=ours
-src/agents/model-auth.cn-providers.test.ts merge=ours
-src/agents/tools/wechat-send.ts merge=ours
-src/agents/tools/wechat-check.ts merge=ours
-src/agents/tools/asr-tool.ts merge=ours
-src/agents/tools/tts-tool.ts merge=ours
-src/gateway/server-methods/asr.ts merge=ours
-src/gateway/server-methods/tts.ts merge=ours
-src/gateway/server-methods/voicewake.ts merge=ours
-src/infra/voicewake.ts merge=ours
-src/i18n/locales/zh-CN.ts merge=ours
-ui/src/ui/i18n/locales/zh-CN.ts merge=ours
-ui/src/ui/views/channels.feishu.ts merge=ours
-ui/src/ui/views/channels.dingtalk.ts merge=ours
-ui/src/ui/views/channels.wecom.ts merge=ours
-config/dispatch.yaml merge=ours
-config/config.china.example.json5 merge=ours
-scripts/install-mac-cn.sh merge=ours
-scripts/install-macos-cn.sh merge=ours
-scripts/linux/install-china.sh merge=ours
-scripts/merge-upstream-files.sh merge=ours
-scripts/setup-merge-drivers.sh merge=ours
-scripts/merge-upstream.sh merge=ours
-scripts/generate-gitattributes-merge.sh merge=ours
-scripts/autopipeline/analyze-upstream-diff.sh merge=ours
-scripts/autopipeline/ai-analyze-upstream.sh merge=ours
-scripts/autopipeline/apply-cn-brand.sh merge=ours
-scripts/autopipeline/agent-resolve-conflicts.sh merge=ours
-scripts/autopipeline/agent-fix-failures.sh merge=ours
-scripts/autopipeline/ai-merge-pipeline.sh merge=ours
-.github/workflows/build-macos-cn.yml merge=ours
-.github/workflows/daily-upstream-sync.yml merge=ours
-docs/china-localization.md merge=ours
-docs/channels/china-quickstart.md merge=ours
-docs/channels/feishu.md merge=ours
-docs/channels/dingtalk.md merge=ours
-docs/channels/wecom.md merge=ours
-docs/channels/qqbot.md merge=ours
-docs/skills-china-mirrors.md merge=ours
-docs/skills-cn-download-audit.md merge=ours
-docs/cn-defaults-requirements.md merge=ours
-docs/macos-cn-packaging-plan.md merge=ours
-docs/macos-cn-packaging-final.md merge=ours
-docs/ops-runbook-license-cn-fallback.md merge=ours
-docs/ops-runbook-obplugins-cn-proxy.md merge=ours
-docs/requirements/cn-user-experience-todo.md merge=ours
-docs/archive/2025-0208-cn-defaults-and-bugfixes.md merge=ours
-docs/archive/2025-0208-cn-defaults-full-parameter-reference.md merge=ours
-docs/roadmap/TODO-12-daily-upstream-merge-automation.md merge=ours
-cn/docs/CN_CUSTOMIZATIONS.md merge=ours
-config/cn-protected-files.json merge=ours
-MODULES_GUIDE.md merge=ours
-src/gateway/cn-handlers.ts merge=ours
-src/gateway/server-methods/modality-capability.ts merge=ours
-src/gateway/server-methods/modality-capability.test.ts merge=ours
-src/agents/modality-capability-checker.ts merge=ours
-src/agents/modality-capability-checker.test.ts merge=ours
-ui/src/ui/views/modality-config-guide.ts merge=ours
-ui/src/ui/views/modality-config-guide.css merge=ours
-ui/src/ui/controllers/modality-guard.ts merge=ours
-docs/modality-jit-configuration.md merge=ours
-docs/modality-jit-integration-example.md merge=ours
-ui/src/ui/views/channels.openclawwechat.ts merge=ours
-docs/channels/openclawwechat-setup.md merge=ours
-versionrecord.md merge=ours
-skills/version-record/SKILL.md merge=ours
+src/config/region-cn.ts
+ merge=ours
+src/config/cn-mirrors.ts
+ merge=ours
+src/config/cn-mirrors-data.ts
+ merge=ours
+src/config/cn-mirrors.test.ts
+ merge=ours
+src/config/zod-schema.providers-cn.ts
+ merge=ours
+src/config/defaults-cn.test.ts
+ merge=ours
+src/config/region-cn.test.ts
+ merge=ours
+src/commands/auth-choice.apply.cn-providers.ts
+ merge=ours
+src/agents/siliconflow-models.ts
+ merge=ours
+src/agents/cn-brand-consistency.test.ts
+ merge=ours
+src/agents/model-auth.cn-providers.test.ts
+ merge=ours
+src/agents/tools/wechat-send.ts
+ merge=ours
+src/agents/tools/wechat-check.ts
+ merge=ours
+src/agents/tools/asr-tool.ts
+ merge=ours
+src/agents/tools/tts-tool.ts
+ merge=ours
+src/gateway/server-methods/asr.ts
+ merge=ours
+src/gateway/server-methods/tts.ts
+ merge=ours
+src/gateway/server-methods/voicewake.ts
+ merge=ours
+src/infra/voicewake.ts
+ merge=ours
+src/i18n/locales/zh-CN.ts
+ merge=ours
+ui/src/ui/i18n/locales/zh-CN.ts
+ merge=ours
+ui/src/ui/views/channels.feishu.ts
+ merge=ours
+ui/src/ui/views/channels.dingtalk.ts
+ merge=ours
+ui/src/ui/views/channels.wecom.ts
+ merge=ours
+config/dispatch.yaml
+ merge=ours
+config/config.china.example.json5
+ merge=ours
+scripts/install-mac-cn.sh
+ merge=ours
+scripts/install-macos-cn.sh
+ merge=ours
+scripts/linux/install-china.sh
+ merge=ours
+scripts/merge-upstream-files.sh
+ merge=ours
+scripts/setup-merge-drivers.sh
+ merge=ours
+scripts/merge-upstream.sh
+ merge=ours
+scripts/generate-gitattributes-merge.sh
+ merge=ours
+scripts/autopipeline/analyze-upstream-diff.sh
+ merge=ours
+scripts/autopipeline/ai-analyze-upstream.sh
+ merge=ours
+scripts/autopipeline/apply-cn-brand.sh
+ merge=ours
+scripts/autopipeline/agent-resolve-conflicts.sh
+ merge=ours
+scripts/autopipeline/agent-fix-failures.sh
+ merge=ours
+scripts/autopipeline/ai-merge-pipeline.sh
+ merge=ours
+.github/workflows/build-macos-cn.yml
+ merge=ours
+.github/workflows/daily-upstream-sync.yml
+ merge=ours
+docs/china-localization.md
+ merge=ours
+docs/channels/china-quickstart.md
+ merge=ours
+docs/channels/feishu.md
+ merge=ours
+docs/channels/dingtalk.md
+ merge=ours
+docs/channels/wecom.md
+ merge=ours
+docs/channels/qqbot.md
+ merge=ours
+docs/skills-china-mirrors.md
+ merge=ours
+docs/skills-cn-download-audit.md
+ merge=ours
+docs/cn-defaults-requirements.md
+ merge=ours
+docs/macos-cn-packaging-plan.md
+ merge=ours
+docs/macos-cn-packaging-final.md
+ merge=ours
+docs/ops-runbook-license-cn-fallback.md
+ merge=ours
+docs/ops-runbook-obplugins-cn-proxy.md
+ merge=ours
+docs/requirements/cn-user-experience-todo.md
+ merge=ours
+docs/archive/2025-0208-cn-defaults-and-bugfixes.md
+ merge=ours
+docs/archive/2025-0208-cn-defaults-full-parameter-reference.md
+ merge=ours
+docs/roadmap/TODO-12-daily-upstream-merge-automation.md
+ merge=ours
+cn/docs/CN_CUSTOMIZATIONS.md
+ merge=ours
+config/cn-protected-files.json
+ merge=ours
+MODULES_GUIDE.md
+ merge=ours
+src/gateway/cn-handlers.ts
+ merge=ours
+src/gateway/server-methods/modality-capability.ts
+ merge=ours
+src/gateway/server-methods/modality-capability.test.ts
+ merge=ours
+src/agents/modality-capability-checker.ts
+ merge=ours
+src/agents/modality-capability-checker.test.ts
+ merge=ours
+ui/src/ui/views/modality-config-guide.ts
+ merge=ours
+ui/src/ui/views/modality-config-guide.css
+ merge=ours
+ui/src/ui/controllers/modality-guard.ts
+ merge=ours
+docs/modality-jit-configuration.md
+ merge=ours
+docs/modality-jit-integration-example.md
+ merge=ours
+ui/src/ui/views/channels.openclawwechat.ts
+ merge=ours
+docs/channels/openclawwechat-setup.md
+ merge=ours
+versionrecord.md
+ merge=ours
+skills/version-record/SKILL.md
+ merge=ours
 src/agents/tools/image-gen-tool.ts merge=ours
 ui/src/ui/chat/image-lightbox.ts merge=ours
 ui/src/styles/chat/image-lightbox.css merge=ours
 
 # --- Section I: CN-Only Directories ---
-src/dispatch//** merge=ours
-extensions/feishu//** merge=ours
-extensions/dingtalk//** merge=ours
-extensions/wecom//** merge=ours
-extensions/qqbot//** merge=ours
-extensions/openclawwechat//** merge=ours
-cn//** merge=ours
-apps/desktop//** merge=ours
-scripts/autopipeline//** merge=ours
-scripts/desktop//** merge=ours
-native//** merge=ours
-ui/src/docscn//** merge=ours
-build/windows/deploy/docs//** merge=ours
+src/dispatch/
+/** merge=ours
+extensions/feishu/
+/** merge=ours
+extensions/dingtalk/
+/** merge=ours
+extensions/wecom/
+/** merge=ours
+extensions/qqbot/
+/** merge=ours
+extensions/openclawwechat/
+/** merge=ours
+cn/
+/** merge=ours
+apps/desktop/
+/** merge=ours
+scripts/autopipeline/
+/** merge=ours
+scripts/desktop/
+/** merge=ours
+native/
+/** merge=ours
+ui/src/docscn/
+/** merge=ours
+build/windows/deploy/docs/
+/** merge=ours
 
 ui/src/ui/views/mcp-batch-config.ts merge=ours
 src/mcp/marketplace/db-schema.ts merge=ours

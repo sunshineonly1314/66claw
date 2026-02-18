@@ -79,5 +79,27 @@ build/
 *.deb
 *.rpm
 
+# All Rust/Tauri build outputs
+**/target/
+**/src-tauri/target/
+*.rlib
+*.rmeta
+*.lib
+
+# Node portable and tools
+scripts/windows/node-portable/
+scripts/windows/tauri-src/target/
+tools/
+
+# TypeScript/Serena cache
+.serena/
+
+# Development/WIP documentation (not for distribution)
+docs/AUTO-UPDATE-FINAL-SIMPLE.md
+docs/QUICK-START-AUTO-UPDATE.md
+
+# Git operations
+.git-rewrite/
+
 # Large assets
 assets/60ad649637d6797ad09120d309408d4c.png
