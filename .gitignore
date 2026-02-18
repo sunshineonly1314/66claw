@@ -3,9 +3,10 @@ node_modules/
 extensions/*/node_modules/
 ui/node_modules/
 
-# Build outputs
+# Build outputs (keep build/scripts/)
 dist/
-build/
+build/*
+!build/scripts/
 *.tsbuildinfo
 
 # Rust / Tauri build cache & generated files
@@ -71,7 +72,6 @@ cn/skills-qc/output*/
 cn/skills-publish/output*/
 
 # Build artifacts (CI/CD)
-build/
 *.exe
 *.dmg
 *.app
