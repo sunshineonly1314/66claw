@@ -72,6 +72,7 @@ export function createMcpInstallTool(): AnyAgentTool {
                 text: `MCP server "${params.serverId}" installed successfully. ${result.toolCount ?? 0} tools now available. You can now use tools prefixed with "mcp_${params.serverId}_".`,
               },
             ],
+            details: {},
           };
         } else {
           return {
@@ -81,6 +82,7 @@ export function createMcpInstallTool(): AnyAgentTool {
                 text: `Failed to install MCP server "${params.serverId}": ${result.error}`,
               },
             ],
+            details: {},
           };
         }
       } catch (err) {
@@ -92,6 +94,7 @@ export function createMcpInstallTool(): AnyAgentTool {
               text: `Error installing MCP server: ${message}`,
             },
           ],
+          details: {},
         };
       }
     },

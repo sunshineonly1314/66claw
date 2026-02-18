@@ -20,7 +20,7 @@ import { runHelper } from "./desktop-control.js";
 import type { OpenClawCNConfig } from "../../config/config.js";
 import { getApiKeyForModel, requireApiKey } from "../model-auth.js";
 import { ensureOpenClawCNModelsJson } from "../models-config.js";
-import { discoverModels } from "../pi-model-discovery.js";
+import { discoverAuthStorage, discoverModels } from "../pi-model-discovery.js";
 
 // ─── Helpers (reused from wechat-send.ts) ──────────────────────────
 
@@ -167,8 +167,10 @@ async function analyzeScreenshotWithQwen(
   const cfg = options.cfg;
 
   // 1) Discover models from agent's models.json
-  const modelsJson = agentDir ? await ensureOpenClawCNModelsJson(agentDir) : null;
-  const models = modelsJson ? discoverModels(modelsJson) : [];
+  if (agentDir) await ensureOpenClawCNModelsJson(cfg, agentDir);
+  const authStorage = agentDir ? discoverAuthStorage(agentDir) : null;
+  const registry = authStorage && agentDir ? discoverModels(authStorage, agentDir) : null;
+  const models = registry ? registry.getAll() : [];
 
   // 2) Find qwen-vl-max (vision model)
   const visionModel = models.find((m) => m.id === "qwen-vl-max" || m.id === "qwen-vl-plus");

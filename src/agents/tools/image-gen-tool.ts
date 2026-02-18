@@ -316,8 +316,10 @@ export function createImageGenTool(options?: {
 
       try {
         // Discover available models and find one that supports image generation
-        const modelsJson = agentDir ? await ensureOpenClawCNModelsJson(agentDir) : null;
-        const models = modelsJson ? discoverModels(modelsJson) : [];
+        if (agentDir) await ensureOpenClawCNModelsJson(cfg, agentDir);
+        const authStorage = agentDir ? discoverAuthStorage(agentDir) : null;
+        const registry = authStorage && agentDir ? discoverModels(authStorage, agentDir) : null;
+        const models = registry ? registry.getAll() : [];
 
         // Find an image generation model
         const imageGenModel = models.find((m) => {

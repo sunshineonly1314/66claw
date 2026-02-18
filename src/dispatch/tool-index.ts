@@ -732,7 +732,7 @@ export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig):
     } catch (err) {
       clearTimeout(timeoutId);
       // FIX: 区分超时错误
-      if (err.name === "AbortError") {
+      if (err instanceof Error && err.name === "AbortError") {
         throw new Error(`Embedding API timeout after ${timeout}ms`);
       }
       throw err;
@@ -907,7 +907,11 @@ function readMeta(db: DatabaseSync, key: string): string | null {
 }
 
 /** 安全执行 SQL（如果表不存在则静默忽略）。 */
-function safeExec(db: DatabaseSync, sql: string, params?: unknown[]): void {
+function safeExec(
+  db: DatabaseSync,
+  sql: string,
+  params?: (string | number | bigint | Buffer | null)[],
+): void {
   try {
     if (params) {
       db.prepare(sql).run(...params);

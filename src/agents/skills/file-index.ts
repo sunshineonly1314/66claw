@@ -107,10 +107,7 @@ function readFileIndex(indexPath: string): SkillEntriesFileIndex | null {
 }
 
 /** Atomic write: .tmp → rename (same pattern as local-index.ts:230-233). */
-async function writeFileIndex(
-  indexPath: string,
-  index: SkillEntriesFileIndex,
-): Promise<void> {
+async function writeFileIndex(indexPath: string, index: SkillEntriesFileIndex): Promise<void> {
   const dir = path.dirname(indexPath);
   await fsp.mkdir(dir, { recursive: true });
   const tmpPath = `${indexPath}.tmp`;
@@ -137,11 +134,7 @@ function scanDirChildSkills(dir: string): string[] {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     return entries
-      .filter(
-        (e) =>
-          e.isDirectory() &&
-          fs.existsSync(path.join(dir, e.name, "SKILL.md")),
-      )
+      .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "SKILL.md")))
       .map((e) => e.name)
       .sort();
   } catch {
@@ -203,6 +196,7 @@ function recordToEntry(record: SkillFileRecord): SkillEntry {
       filePath: record.filePath,
       baseDir: record.baseDir,
       source: record.source,
+      disableModelInvocation: false,
     },
     frontmatter: record.frontmatter,
     metadata: record.metadata,
@@ -238,11 +232,9 @@ export function loadSkillEntriesFromFileIndex(
   const existingIndex = readFileIndex(indexPath);
 
   // Resolve all skill root directories (same logic as workspace.ts:loadSkillEntriesUncached)
-  const managedSkillsDir =
-    opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
+  const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
   const workspaceSkillsDir = path.join(workspaceDir, "skills");
-  const bundledSkillsDir =
-    opts?.bundledSkillsDir ?? resolveBundledSkillsDir();
+  const bundledSkillsDir = opts?.bundledSkillsDir ?? resolveBundledSkillsDir();
   const extraDirsRaw = opts?.config?.skills?.load?.extraDirs ?? [];
   const extraDirs = extraDirsRaw
     .map((d) => (typeof d === "string" ? d.trim() : ""))
@@ -364,10 +356,7 @@ export function invalidateAllFileIndices(): void {
   try {
     const entries = fs.readdirSync(CONFIG_DIR);
     for (const f of entries) {
-      if (
-        f.startsWith("skill-entries-cache-") &&
-        f.endsWith(".json")
-      ) {
+      if (f.startsWith("skill-entries-cache-") && f.endsWith(".json")) {
         try {
           fs.unlinkSync(path.join(CONFIG_DIR, f));
         } catch {

@@ -16,6 +16,7 @@
 
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { ExecutionWorkspace, StepOutputStatus } from "./execution-workspace.js";
+import type { OpenClawCNConfig } from "../config/config.js";
 
 const log = createSubsystemLogger("dag-executor");
 
@@ -55,7 +56,7 @@ export type StepRunnerFn = (params: {
   workspace: ExecutionWorkspace;
   originalTask: string;
   model: string;
-  cfg: unknown;
+  cfg: OpenClawCNConfig;
   agentDir: string;
   timeBudgetMs: number;
   signal?: AbortSignal;
@@ -70,7 +71,7 @@ export type DagExecutionConfig = {
   /** Model for worker LLM calls. */
   workerModel: string;
   /** OpenClawCN config object. */
-  cfg: unknown;
+  cfg: OpenClawCNConfig;
   /** Agent directory for API key resolution. */
   agentDir: string;
   /** Original user task (injected into each step's context). */

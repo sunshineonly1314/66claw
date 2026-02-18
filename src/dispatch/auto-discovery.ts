@@ -10,7 +10,10 @@
  */
 
 import { readMarketplaceIndex } from "../mcp/marketplace-index.js";
-import { filterSkillEntries, loadAllSkillFiles } from "../agents/skills/workspace.js";
+import {
+  filterWorkspaceSkillEntries,
+  loadWorkspaceSkillEntries,
+} from "../agents/skills/workspace.js";
 import type { SkillEntry } from "../agents/skills/types.js";
 import type { McpMarketplaceItem } from "../mcp/marketplace/types.js";
 import type { OpenClawCNConfig } from "../config/config.js";
@@ -165,8 +168,8 @@ async function discoverSkills(
   if (keywords.length === 0) return [];
 
   // 加载所有 skills（利用现有的文件索引缓存，~6ms）
-  const allSkills = await loadAllSkillFiles({ config });
-  const eligible = filterSkillEntries(allSkills, config);
+  const allSkills = loadWorkspaceSkillEntries(process.cwd(), { config });
+  const eligible = filterWorkspaceSkillEntries(allSkills, config);
 
   const scored: ScoredItem<SkillEntry>[] = [];
 
@@ -181,7 +184,7 @@ async function discoverSkills(
     const { score, matchedTerms } = calculateTextScore(
       keywords,
       searchText,
-      entry.frontmatter.tags as string[] | undefined,
+      entry.frontmatter.tags as unknown as string[] | undefined,
     );
 
     if (score > 0.1) {
@@ -204,11 +207,11 @@ async function discoverMCP(prompt: string, topN = 5): Promise<ScoredItem<McpMark
 
   // 读取 MCP marketplace index（利用现有缓存，5min TTL）
   const marketplace = await readMarketplaceIndex();
-  if (!marketplace || marketplace.items.length === 0) return [];
+  if (!marketplace || marketplace.length === 0) return [];
 
   const scored: ScoredItem<McpMarketplaceItem>[] = [];
 
-  for (const item of marketplace.items) {
+  for (const item of marketplace) {
     const searchText = [
       item.friendlyName,
       item.friendlyNameCn || "",

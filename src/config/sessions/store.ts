@@ -743,12 +743,12 @@ async function withSessionStoreLock<T>(
     };
 
     let settled = false;
-    const safeResolve = (value: T) => {
+    const safeResolve = (value: unknown) => {
       if (settled) return;
       settled = true;
-      resolve(value);
+      resolve(value as T);
     };
-    const safeReject = (error: Error) => {
+    const safeReject = (error: unknown) => {
       if (settled) return;
       settled = true;
       reject(error);
