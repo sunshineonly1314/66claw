@@ -81,16 +81,20 @@ fi
 # 执行构建
 echo "🔨 Starting macOS build..."
 
-chmod +x build/scripts/build-macos-cn.sh
-
-BUILD_ARGS="--arch $ARCH --jobs 4"
+if [ -f "build/scripts/build-macos-cn.sh" ]; then
+  chmod +x build/scripts/build-macos-cn.sh
+else
+  echo "❌ Build script not found: build/scripts/build-macos-cn.sh"
+  ls -la build/scripts/ 2>/dev/null || echo "build/scripts/ not found"
+  exit 1
+fi
 
 # 如果指定了版本，添加到环境变量
 if [ -n "$VERSION" ]; then
   export BUILD_VERSION="$VERSION"
 fi
 
-bash build/scripts/build-macos-cn.sh $BUILD_ARGS
+bash build/scripts/build-macos-cn.sh --arch "$ARCH"
 
 # 检查构建产物
 if ls build/output/ClawdbotCN-macOS-*.dmg 1> /dev/null 2>&1; then
