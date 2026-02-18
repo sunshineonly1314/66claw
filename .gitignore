@@ -63,8 +63,8 @@ merge-*.log
 # Build artifacts
 arm64-pkg/
 
-# Runtime data (should not be committed)
-data/
+# Runtime data (should not be committed, root-level only)
+/data/
 
 # CN pipeline outputs (large generated data)
 cn/skills-mirror/
