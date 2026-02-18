@@ -21,7 +21,7 @@ export type WebhookTarget = {
   runtime: BlueBubblesRuntimeEnv;
   core: BlueBubblesCoreRuntime;
   path: string;
-  statusSink?: (status: { lastInboundAt?: number }) => void;
+  statusSink?: (status: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
 };
 
 /** Options for starting the BlueBubbles monitor/provider. */
@@ -30,7 +30,7 @@ export type BlueBubblesMonitorOptions = {
   config: OpenClawCNConfig;
   runtime: BlueBubblesRuntimeEnv;
   abortSignal?: AbortSignal;
-  statusSink?: (status: { lastInboundAt?: number }) => void;
+  statusSink?: (status: { lastInboundAt?: number; lastOutboundAt?: number }) => void;
   webhookPath?: string;
 };
 

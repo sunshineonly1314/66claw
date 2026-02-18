@@ -3,6 +3,7 @@ import type {
   ChannelOnboardingDmPolicy,
   ClawdbotConfig,
   DmPolicy,
+  MSTeamsTeamConfig,
   WizardPrompter,
 } from "openclawcn/plugin-sdk";
 import {
@@ -165,7 +166,7 @@ function setMSTeamsTeamsAllowlist(
   entries: Array<{ teamKey: string; channelKey?: string }>,
 ): ClawdbotConfig {
   const baseTeams = cfg.channels?.msteams?.teams ?? {};
-  const teams: Record<string, { channels?: Record<string, unknown> }> = { ...baseTeams };
+  const teams: Record<string, MSTeamsTeamConfig> = { ...baseTeams };
   for (const entry of entries) {
     const teamKey = entry.teamKey;
     if (!teamKey) continue;

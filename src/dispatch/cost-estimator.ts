@@ -62,7 +62,6 @@ export type BudgetCheckResult = {
 const MODEL_PRICING: Record<string, ModelPricing> = {
   // Anthropic
   "claude-opus-4-6": { inputPer1M: 15.0, outputPer1M: 75.0, cachedInputPer1M: 1.5 },
-  "claude-opus-4-6": { inputPer1M: 15.0, outputPer1M: 75.0, cachedInputPer1M: 1.5 },
   "claude-sonnet-4-5": { inputPer1M: 3.0, outputPer1M: 15.0, cachedInputPer1M: 0.3 },
   "claude-haiku-4-5": { inputPer1M: 0.8, outputPer1M: 4.0, cachedInputPer1M: 0.08 },
   "claude-haiku-3": { inputPer1M: 0.25, outputPer1M: 1.25, cachedInputPer1M: 0.03 },
@@ -357,7 +356,6 @@ export function suggestModel(params: {
   // Model tiers by quality (best first)
   const tiersByComplexity: Record<ComplexityLevel, string[]> = {
     high: [
-      "claude-opus-4-6",
       "claude-opus-4-6",
       "o1",
       "o3",

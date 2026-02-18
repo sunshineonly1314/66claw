@@ -43,7 +43,9 @@ describe("Nix integration (U3, U5, U9)", () => {
 
   describe("U5: CONFIG_PATH and STATE_DIR env var overrides", () => {
     it("STATE_DIR defaults to ~/.openclawcn when env not set", () => {
-      expect(resolveStateDir(envWith({ OPENCLAWCN_STATE_DIR: undefined }))).toMatch(/\.openclawcn$/);
+      expect(resolveStateDir(envWith({ OPENCLAWCN_STATE_DIR: undefined }))).toMatch(
+        /\.openclawcn$/,
+      );
     });
 
     it("STATE_DIR respects OPENCLAWCN_STATE_DIR override", () => {
@@ -99,10 +101,17 @@ describe("Nix integration (U3, U5, U9)", () => {
       });
     });
 
-    it("CONFIG_PATH uses STATE_DIR when only state dir is overridden", () => {
-      expect(resolveConfigPathCandidate(envWith({ OPENCLAWCN_STATE_DIR: "/custom/state" }))).toBe(
-        path.join(path.resolve("/custom/state"), "openclawcn.json"),
-      );
+    it("CONFIG_PATH uses STATE_DIR when only state dir is overridden", async () => {
+      // Use withTempHome to isolate from any existing ~/.openclawcn/openclawcn.json
+      // on the developer's machine (which would shadow the STATE_DIR candidate).
+      await withTempHome(async (home) => {
+        expect(
+          resolveConfigPathCandidate(
+            envWith({ OPENCLAWCN_HOME: home, OPENCLAWCN_STATE_DIR: "/custom/state" }),
+            () => home,
+          ),
+        ).toBe(path.join(path.resolve("/custom/state"), "openclawcn.json"));
+      });
     });
   });
 

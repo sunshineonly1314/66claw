@@ -14,7 +14,7 @@ export function registerMatrixMonitorEvents(params: {
   logger: { warn: (meta: Record<string, unknown>, message: string) => void };
   formatNativeDependencyHint: PluginRuntime["system"]["formatNativeDependencyHint"];
   onRoomMessage: (roomId: string, event: MatrixRawEvent) => void | Promise<void>;
-}): void {
+}): () => void {
   const {
     client,
     auth,
@@ -26,23 +26,24 @@ export function registerMatrixMonitorEvents(params: {
     onRoomMessage,
   } = params;
 
-  client.on("room.message", onRoomMessage);
+  const onRoomMessageHandler = onRoomMessage;
+  client.on("room.message", onRoomMessageHandler);
 
-  client.on("room.encrypted_event", (roomId: string, event: MatrixRawEvent) => {
+  const onEncryptedEvent = (roomId: string, event: MatrixRawEvent) => {
     const eventId = event?.event_id ?? "unknown";
     const eventType = event?.type ?? "unknown";
     logVerboseMessage(`matrix: encrypted event room=${roomId} type=${eventType} id=${eventId}`);
-  });
+  };
+  client.on("room.encrypted_event", onEncryptedEvent);
 
-  client.on("room.decrypted_event", (roomId: string, event: MatrixRawEvent) => {
+  const onDecryptedEvent = (roomId: string, event: MatrixRawEvent) => {
     const eventId = event?.event_id ?? "unknown";
     const eventType = event?.type ?? "unknown";
     logVerboseMessage(`matrix: decrypted event room=${roomId} type=${eventType} id=${eventId}`);
-  });
+  };
+  client.on("room.decrypted_event", onDecryptedEvent);
 
-  client.on(
-    "room.failed_decryption",
-    async (roomId: string, event: MatrixRawEvent, error: Error) => {
+  const onFailedDecryption = async (roomId: string, event: MatrixRawEvent, error: Error) => {
       logger.warn(
         { roomId, eventId: event.event_id, error: error.message },
         "Failed to decrypt message",
@@ -50,24 +51,26 @@ export function registerMatrixMonitorEvents(params: {
       logVerboseMessage(
         `matrix: failed decrypt room=${roomId} id=${event.event_id ?? "unknown"} error=${error.message}`,
       );
-    },
-  );
+  };
+  client.on("room.failed_decryption", onFailedDecryption);
 
-  client.on("room.invite", (roomId: string, event: MatrixRawEvent) => {
+  const onRoomInvite = (roomId: string, event: MatrixRawEvent) => {
     const eventId = event?.event_id ?? "unknown";
     const sender = event?.sender ?? "unknown";
     const isDirect = (event?.content as { is_direct?: boolean } | undefined)?.is_direct === true;
     logVerboseMessage(
       `matrix: invite room=${roomId} sender=${sender} direct=${String(isDirect)} id=${eventId}`,
     );
-  });
+  };
+  client.on("room.invite", onRoomInvite);
 
-  client.on("room.join", (roomId: string, event: MatrixRawEvent) => {
+  const onRoomJoin = (roomId: string, event: MatrixRawEvent) => {
     const eventId = event?.event_id ?? "unknown";
     logVerboseMessage(`matrix: join room=${roomId} id=${eventId}`);
-  });
+  };
+  client.on("room.join", onRoomJoin);
 
-  client.on("room.event", (roomId: string, event: MatrixRawEvent) => {
+  const onRoomEvent = (roomId: string, event: MatrixRawEvent) => {
     const eventType = event?.type ?? "unknown";
     if (eventType === EventType.RoomMessageEncrypted) {
       logVerboseMessage(
@@ -99,5 +102,17 @@ export function registerMatrixMonitorEvents(params: {
         `matrix: member event room=${roomId} stateKey=${stateKey} membership=${membership ?? "unknown"}`,
       );
     }
-  });
+  };
+  client.on("room.event", onRoomEvent);
+
+  // Return cleanup function to remove all event listeners
+  return () => {
+    client.off("room.message", onRoomMessageHandler);
+    client.off("room.encrypted_event", onEncryptedEvent);
+    client.off("room.decrypted_event", onDecryptedEvent);
+    client.off("room.failed_decryption", onFailedDecryption);
+    client.off("room.invite", onRoomInvite);
+    client.off("room.join", onRoomJoin);
+    client.off("room.event", onRoomEvent);
+  };
 }

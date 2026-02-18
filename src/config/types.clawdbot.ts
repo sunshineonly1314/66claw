@@ -26,6 +26,7 @@ import type { SkillsConfig } from "./types.skills.js";
 import type { ToolsConfig } from "./types.tools.js";
 import type { LicenseConfig } from "./types.license.js";
 import type { StateStoreConfig } from "../infra/state-store/types.js";
+import type { ToolDiscoveryConfig } from "./types.tool-discovery.js";
 
 export type PerformanceProfile = "economy" | "balanced" | "power";
 
@@ -118,6 +119,22 @@ export type OpenClawCNConfig = {
   mcp?: import("../mcp/types.js").MCPConfig;
   /** Distributed state store configuration (memory or redis). */
   stateStore?: StateStoreConfig;
+  /** OpenClawCN 智能调度总开关。需显式设为 true 才启用，默认关闭。 */
+  dispatch?: {
+    /** 是否启用智能调度引擎（意图识别 + 复杂度评估 + 自动选模型）。默认 false。 */
+    enabled?: boolean;
+    /** 是否启用模态感知路由（根据图片/音频等附件自动选模型）。默认 true。 */
+    modalityRouter?: boolean;
+    /** 是否启用多 Agent 编排（复杂任务自动拆分并行执行）。默认 true。 */
+    multiAgent?: boolean;
+    /** 是否启用工具筛选 Gate（从 ~50 候选中精选 3-8 个工具）。默认 true。 */
+    toolSelector?: boolean;
+    /** 是否启用 DAG 拓扑执行器（替代旧版并行/顺序编排）。默认 true。 */
+    dagExecutor?: boolean;
+  };
+  // ── [CN-PATCH:tool-discovery] 智能工具发现配置 ──
+  /** 智能工具发现配置（FTS5 + 向量混合搜索，CN 区域默认启用）。 */
+  toolDiscovery?: ToolDiscoveryConfig;
 };
 
 export type ConfigValidationIssue = {

@@ -8,6 +8,7 @@
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { parseModelRef } from "../agents/model-selection.js";
+import { recordPerfMeasurement, getPerfTrace } from "../infra/perf-tracker.js";
 
 const log = createSubsystemLogger("dispatch/engine");
 import {
@@ -16,11 +17,7 @@ import {
   scoreToComplexityLevel,
 } from "./complexity-classifier.js";
 import { loadDispatchConfig } from "./config-loader.js";
-import {
-  checkBudget,
-  estimateCost,
-  recordSpending,
-} from "./cost-estimator.js";
+import { checkBudget, estimateCost, recordSpending } from "./cost-estimator.js";
 import {
   buildEventFromDecision,
   isTelemetryEnabled,
@@ -97,6 +94,12 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
   let ruleLatencyMs = 0;
   let llmLatencyMs = 0;
 
+  // 🔍 Performance Tracking: 检查是否有 runId (从 replyOptions 传递)
+  const trace = params.runId ? getPerfTrace(params.runId) : undefined;
+  if (trace) {
+    recordPerfMeasurement(params.runId!, "dispatch_start");
+  }
+
   try {
     // 1. Load dispatch config (cached with hot-reload)
     const dispatchConfig = loadDispatchConfig({
@@ -116,6 +119,9 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
 
     // 3. Classify intent (track latency)
     const classifyStart = performance.now();
+    if (trace) {
+      recordPerfMeasurement(params.runId!, "dispatch_intent_classify");
+    }
     const classification = await classifyIntent({
       prompt: params.prompt,
       config: dispatchConfig,
@@ -169,7 +175,140 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
       params.availableMCPTools ?? [],
     );
 
+    // ── [CN-PATCH:tool-discovery] 智能工具发现（优先于旧版 auto-discovery）──
+    let autoDiscoveryHints: {
+      skillHints?: string[];
+      mcpToolHints?: string[];
+      toolHints?: string[];
+      toolSummaryPrompt?: string;
+      mcpSuggestions?: RoutingDecision["mcpSuggestions"];
+    } = {};
+    const hasManualSkillHints = finalIntent.intentDef.skills.length > 0;
+    const hasManualMcpHints = mcpToolHints.length > 0;
+    let discoveryRawResults:
+      | import("../config/types.tool-discovery.js").ToolSearchResult[]
+      | undefined;
+
+    if (
+      (!hasManualSkillHints || !hasManualMcpHints) &&
+      params.openclawcnConfig?.toolDiscovery?.enabled !== false
+    ) {
+      try {
+        const { discoverTools } = await import("./tool-discovery.js");
+        const discovered = await discoverTools(
+          params.prompt,
+          params.openclawcnConfig?.toolDiscovery,
+        );
+        if (discovered.confidence > 0) {
+          if (!hasManualSkillHints && discovered.skillHints.length > 0) {
+            autoDiscoveryHints.skillHints = discovered.skillHints;
+          }
+          if (!hasManualMcpHints && discovered.mcpToolHints.length > 0) {
+            autoDiscoveryHints.mcpToolHints = discovered.mcpToolHints;
+          }
+          if (discovered.toolHints.length > 0) {
+            autoDiscoveryHints.toolHints = discovered.toolHints;
+          }
+          autoDiscoveryHints.toolSummaryPrompt = discovered.toolSummaryPrompt;
+          autoDiscoveryHints.mcpSuggestions = discovered.mcpSuggestions;
+          discoveryRawResults = discovered.rawResults;
+          if (dispatchConfig.settings.debug) {
+            log.debug(
+              `[tool-discovery] confidence=${discovered.confidence.toFixed(2)} skills=[${discovered.skillHints.join(",")}] mcps=[${discovered.mcpToolHints.join(",")}] tools=[${discovered.toolHints.join(",")}] latency=${discovered.searchLatencyMs.toFixed(0)}ms`,
+            );
+          }
+        }
+      } catch {
+        /* tool-discovery 不可用，fallback 到旧版 */
+      }
+    }
+
+    // Fallback: 旧版 auto-discovery（当 tool-discovery 没有结果时）
+    if (
+      !autoDiscoveryHints.skillHints &&
+      !autoDiscoveryHints.mcpToolHints &&
+      (!hasManualSkillHints || !hasManualMcpHints)
+    ) {
+      try {
+        const { autoDiscover } = await import("./auto-discovery.js");
+        const discovered = await autoDiscover(params.prompt, params.openclawcnConfig);
+        if (dispatchConfig.settings.debug) {
+          log.debug(`[auto-discovery] ${discovered.matchDetails}`);
+        }
+        if (!hasManualSkillHints && discovered.skillHints.length > 0) {
+          autoDiscoveryHints.skillHints = discovered.skillHints;
+        }
+        if (!hasManualMcpHints && discovered.mcpToolHints.length > 0) {
+          autoDiscoveryHints.mcpToolHints = discovered.mcpToolHints;
+        }
+        if (discovered.toolHints.length > 0) {
+          autoDiscoveryHints.toolHints = discovered.toolHints;
+        }
+      } catch {
+        /* auto-discovery fallback also failed, continue without hints */
+      }
+    }
+
+    // 8.5 Tool Selection Gate — filter ~50 candidates to 3-8 precise tools via lightweight LLM
+    let filteredToolIds: string[] | undefined;
+    let toolSelectionReasoning: string | undefined;
+    if (
+      discoveryRawResults &&
+      discoveryRawResults.length > 0 &&
+      params.openclawcnConfig?.dispatch?.toolSelector !== false
+    ) {
+      try {
+        const { selectTools } = await import("./tool-selector.js");
+        const selection = await selectTools({
+          prompt: params.prompt,
+          candidates: discoveryRawResults,
+          intent: finalIntent.intentDef.id,
+          complexity: "medium", // preliminary — actual complexity assessed in step 9
+          cfg: params.openclawcnConfig,
+          agentDir: params.agentDir,
+        });
+        filteredToolIds = selection.selectedToolIds;
+        toolSelectionReasoning = selection.reasoning;
+
+        // Filter autoDiscoveryHints to only include selected tools
+        const selectedSet = new Set(selection.selectedToolIds);
+        if (autoDiscoveryHints.skillHints) {
+          autoDiscoveryHints.skillHints = autoDiscoveryHints.skillHints.filter((name) =>
+            discoveryRawResults!.some(
+              (r) =>
+                r.entry.type === "skill" && r.entry.name === name && selectedSet.has(r.entry.id),
+            ),
+          );
+        }
+        if (autoDiscoveryHints.toolHints) {
+          autoDiscoveryHints.toolHints = autoDiscoveryHints.toolHints.filter((name) =>
+            discoveryRawResults!.some(
+              (r) =>
+                r.entry.type === "core" && r.entry.name === name && selectedSet.has(r.entry.id),
+            ),
+          );
+        }
+        if (autoDiscoveryHints.mcpSuggestions) {
+          autoDiscoveryHints.mcpSuggestions = autoDiscoveryHints.mcpSuggestions.filter(
+            (s) => selectedSet.has(`mcp:${s.serverId}`) || selectedSet.has(s.serverId),
+          );
+        }
+
+        if (dispatchConfig.settings.debug) {
+          log.debug(
+            `[tool-selector] ${selection.selectedToolIds.length}/${discoveryRawResults.length} tools selected ` +
+              `(fallback=${selection.isFallback}, ${selection.latencyMs.toFixed(0)}ms): ${selection.reasoning}`,
+          );
+        }
+      } catch {
+        /* tool-selector 不可用，继续用全量 discovery 结果 */
+      }
+    }
+
     // 9. Assess complexity
+    if (trace) {
+      recordPerfMeasurement(params.runId!, "dispatch_complexity");
+    }
     let { complexity, strategy, complexitySignals } = assessComplexity(
       params.prompt,
       finalIntent.intentDef.id,
@@ -240,9 +379,7 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
     const strategyDegraded = !resourceCheck.allowed;
 
     if (strategyDegraded && dispatchConfig.settings.debug) {
-      log.debug(
-        `Strategy degraded: ${strategy} → ${finalStrategy} (${resourceCheck.reason})`,
-      );
+      log.debug(`Strategy degraded: ${strategy} → ${finalStrategy} (${resourceCheck.reason})`);
     }
 
     // 12. Apply strategy-based model override (if configured and no intent-level override)
@@ -295,8 +432,15 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
       confidence: finalIntent.confidence,
       classifierUsed: classification.classifierUsed,
       modelOverride: effectiveModelOverride,
-      skillHints: finalIntent.intentDef.skills,
-      mcpToolHints,
+      skillHints: autoDiscoveryHints.skillHints ?? finalIntent.intentDef.skills,
+      mcpToolHints: autoDiscoveryHints.mcpToolHints ?? mcpToolHints,
+      toolHints: autoDiscoveryHints.toolHints ?? [], // ← 新增 toolHints
+      // ── [CN-PATCH:tool-discovery] ──
+      toolSummaryPrompt: autoDiscoveryHints.toolSummaryPrompt,
+      mcpSuggestions: autoDiscoveryHints.mcpSuggestions,
+      // ── [CN-PATCH:tool-selector] ──
+      filteredToolIds,
+      toolSelectionReasoning,
       systemHint: finalIntent.intentDef.systemHint,
       complexity,
       strategy: finalStrategy,

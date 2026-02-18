@@ -1,0 +1,110 @@
+
+============================================================
+Test: Short Chinese (LIKE fallback)
+Query: "微信" --limit 5
+============================================================
+
+📊 Found 5 results:
+
+1. ⚙️ open_app (core)
+   ID: core:open_app
+   打开启动运行桌面应用程序
+   标签: open, app, launch, start, run, 打开, 启动, 运行, 应用, 程序, 软件, 微信, WeChat, QQ, Chrome, 浏览器, 钉钉, 飞书
+
+2. ⚙️ wechat_send (core)
+   ID: core:wechat_send
+   通过桌面自动化发送微信消息
+   标签: wechat, send, 微信, 发送, 消息, 聊天
+
+3. ⚙️ wechat_check (core)
+   ID: core:wechat_check
+   检查微信未读消息
+   标签: wechat, check, 微信, 未读, 消息, 查看
+
+4. 🔌 微信读书 (mcp)
+   ID: mcp:@package-mcp-server-weread
+   一个为微信读书提供MCP（Model Context Protocol）服务的工具，支持将微信读书的书籍、笔记和划线数据提供给支持MCP的大语言模型客户端，如Claude Desktop。
+   标签: ai
+
+5. 🔌 企业微信机器人消息服务器 (mcp)
+   ID: mcp:@loonghao-wecom-bot-mcp-server
+   一个使用FastMCP通过企业微信机器人发送消息的服务器，支持通过Webhook进行异步通信和消息追踪。
+   标签: other
+
+
+
+============================================================
+Test: FTS5 3-gram
+Query: "地图导航" --limit 5 --type mcp
+============================================================
+
+❌ No results found.
+
+
+
+============================================================
+Test: English query
+Query: "search" --limit 5 --china
+============================================================
+
+📊 Found 5 results:
+
+1. ⚙️ web_search (core)
+   ID: core:web_search
+   使用搜索引擎搜索网页
+   标签: search, web, 搜索
+
+2. ⚙️ grep (core)
+   ID: core:grep
+   搜索文件内容
+   标签: grep, search, 搜索, 内容
+
+3. 🎯 ddg-search (skill)
+   ID: skill:ddg-search
+   使用DuckDuckGo进行网络搜索，适用于无API密钥或偏好Brave Search时。
+   标签: 网络搜索, 隐私搜索, 替代搜索引擎, 无API搜索, Brave Search, DuckDuckGo, 网络搜索, 隐私保护, 替代搜索, Brave Search, 无API, 搜索工具, 搜索服务, 网络查询
+   ✅ 中国可用性: available
+
+4. 🎯 brave-search (skill)
+   ID: skill:brave-search
+   通过Brave Search API进行网页搜索和内容提取，无需浏览器。
+   标签: 网络搜索, 内容提取, API调用, 轻量级, 无浏览器, Brave Search, 网页搜索, 内容提取, API, 轻量, 无浏览器, 搜索API, 内容检索
+   ✅ 中国可用性: available
+
+5. 🎯 baidu-search (skill)
+   ID: skill:baidu-search
+   利用百度AI搜索引擎进行网络搜索，获取实时信息和文档。
+   标签: AI搜索, 网络搜索, 信息检索, 实时信息, 文档搜索, 百度搜索, AI搜索引擎, 网络信息, 实时数据, 文档查询, BDSE, Baidu AI Search Engine
+   ✅ 中国可用性: available
+
+
+
+============================================================
+Test: Skills only
+Query: "文件" --limit 3 --type skill
+============================================================
+
+📊 Found 3 results:
+
+1. 🎯 4chan-reader (skill)
+   ID: skill:4chan-reader
+   浏览4chan板块并提取帖子讨论内容为结构化文本文件，支持获取目录信息及指定线程的正文与附件元数据。
+   标签: 网络爬虫, 数据采集, 命令行工具, 论坛分析, 4chan, web scraping, thread parsing, catalog API, post metadata, board crawler, JSON export, CLI tool
+   ✅ 中国可用性: available
+
+2. 🎯 agent-builder (skill)
+   ID: skill:agent-builder
+   端到端构建高性能 OpenClaw 智能体，生成 SOUL.md 等核心配置文件，支持创建新 Agent 及迭代优化行为规则与自主模型。
+   标签: 开发工具, Agent构建, OpenClaw, 智能体开发, 配置生成, OpenClaw, Agent Builder, 智能体构建, SOUL.md, IDENTITY.md, AGENTS.md, HEARTBEAT.md, MEMORY.md, Agent设计, 自主模型
+   ⚠️ 中国可用性: vpn-required
+
+3. 🎯 agent-church (skill)
+   ID: skill:agent-church
+   通过SOUL.md文件为AI智能体构建身份认同、人格特征与行为准则的框架工具。
+   标签: AI智能体, 身份管理, 人格配置, 开发框架, agent-church, SOUL.md, AI Agent, Identity Formation, 身份构建, Persona, 智能体配置, Agent Identity, 角色定义, 元数据管理
+   ✅ 中国可用性: available
+
+
+
+✅ All tests completed!
+

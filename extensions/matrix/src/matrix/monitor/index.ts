@@ -3,6 +3,7 @@ import { format } from "node:util";
 import {
   mergeAllowlist,
   summarizeMapping,
+  type OpenClawCNConfig,
   type RuntimeEnv,
 } from "openclawcn/plugin-sdk";
 import type { CoreConfig, ReplyToMode } from "../../types.js";
@@ -55,7 +56,7 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
   };
   const logVerboseMessage = (message: string) => {
     if (!core.logging.shouldLogVerbose()) return;
-    logger.debug(message);
+    logger.debug?.(message);
   };
 
   const normalizeUserEntry = (raw: string) =>
@@ -136,7 +137,7 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
         if (!source) return;
         if (entry.resolved && entry.id) {
           if (!nextRooms[entry.id]) {
-            nextRooms[entry.id] = roomsConfig[source.input];
+            nextRooms[entry.id] = roomsConfig![source.input];
           }
           mapping.push(`${source.input}→${entry.id}`);
         } else {
@@ -180,7 +181,7 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
   });
   setActiveMatrixClient(client);
 
-  const mentionRegexes = core.channel.mentions.buildMentionRegexes(cfg);
+  const mentionRegexes = core.channel.mentions.buildMentionRegexes(cfg as unknown as OpenClawCNConfig);
   const defaultGroupPolicy = cfg.channels?.defaults?.groupPolicy;
   const groupPolicyRaw = cfg.channels?.matrix?.groupPolicy ?? defaultGroupPolicy ?? "allowlist";
   const groupPolicy = allowlistOnly && groupPolicyRaw === "open" ? "allowlist" : groupPolicyRaw;
@@ -190,7 +191,7 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
   const dmEnabled = dmConfig?.enabled ?? true;
   const dmPolicyRaw = dmConfig?.policy ?? "pairing";
   const dmPolicy = allowlistOnly && dmPolicyRaw !== "disabled" ? "allowlist" : dmPolicyRaw;
-  const textLimit = core.channel.text.resolveTextChunkLimit(cfg, "matrix");
+  const textLimit = core.channel.text.resolveTextChunkLimit(cfg as unknown as OpenClawCNConfig, "matrix");
   const mediaMaxMb = opts.mediaMaxMb ?? cfg.channels?.matrix?.mediaMaxMb ?? DEFAULT_MEDIA_MAX_MB;
   const mediaMaxBytes = Math.max(1, mediaMaxMb) * 1024 * 1024;
   const startupMs = Date.now();
@@ -203,12 +204,12 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
   const { getRoomInfo, getMemberDisplayName } = createMatrixRoomInfoResolver(client);
   const handleRoomMessage = createMatrixRoomMessageHandler({
     client,
-    core,
+    core: core as unknown as Parameters<typeof createMatrixRoomMessageHandler>[0]["core"],
     cfg,
     runtime,
-    logger,
+    logger: logger as unknown as Parameters<typeof createMatrixRoomMessageHandler>[0]["logger"],
     logVerboseMessage,
-    allowFrom,
+    allowFrom: allowFrom.map(String),
     roomsConfig,
     mentionRegexes,
     groupPolicy,
@@ -225,13 +226,13 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
     getMemberDisplayName,
   });
 
-  registerMatrixMonitorEvents({
+  const cleanupEvents = registerMatrixMonitorEvents({
     client,
     auth,
     logVerboseMessage,
     warnedEncryptedRooms,
     warnedCryptoMissingRooms,
-    logger,
+    logger: { warn: (meta, message) => logger.warn(message, meta) },
     formatNativeDependencyHint: core.system.formatNativeDependencyHint,
     onRoomMessage: handleRoomMessage,
   });
@@ -251,12 +252,13 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
   if (auth.encryption && client.crypto) {
     try {
       // Request verification from other sessions
-      const verificationRequest = await client.crypto.requestOwnUserVerification();
+      const crypto = client.crypto as { requestOwnUserVerification?: () => Promise<unknown> };
+      const verificationRequest = await crypto.requestOwnUserVerification?.();
       if (verificationRequest) {
         logger.info("matrix: device verification requested - please verify in another client");
       }
     } catch (err) {
-      logger.debug({ error: String(err) }, "Device verification request failed (may already be verified)");
+      logger.debug?.(`Device verification request failed (may already be verified): ${String(err)}`);
     }
   }
 
@@ -264,6 +266,7 @@ export async function monitorMatrixProvider(opts: MonitorMatrixOpts = {}): Promi
     const onAbort = () => {
       try {
         logVerboseMessage("matrix: stopping client");
+        cleanupEvents(); // Remove all event listeners
         stopSharedClient();
       } finally {
         setActiveMatrixClient(null);

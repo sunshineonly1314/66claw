@@ -1,0 +1,120 @@
+/**
+ * MCP Marketplace SQLite Database Schema
+ * CN-ONLY FILE - 完全独立实现，不影响上游 OpenClaw
+ */
+
+export const MCP_DB_SCHEMA = {
+  // 主表：存储所有 MCP 元数据
+  items: `
+    CREATE TABLE IF NOT EXISTS mcp_items (
+      server_id TEXT PRIMARY KEY,
+      friendly_name TEXT NOT NULL,
+      friendly_name_cn TEXT,
+      description TEXT,
+      description_cn TEXT,
+      category TEXT,
+      tags TEXT,  -- JSON array
+      tags_cn TEXT,  -- JSON array
+      version TEXT,
+      requires_api_key INTEGER DEFAULT 0,  -- boolean
+      platforms TEXT,  -- JSON array
+      is_official INTEGER DEFAULT 0,
+      is_new INTEGER DEFAULT 0,
+      tool_count INTEGER DEFAULT 0,
+      source TEXT,
+      source_url TEXT,
+
+      -- AI 增强字段
+      china_friendly_score INTEGER,  -- 0-100
+      requires_vpn INTEGER DEFAULT 0,
+      china_block_reasons TEXT,  -- JSON array
+      runtime_deps TEXT,  -- JSON array
+      system_deps TEXT,  -- JSON array
+      platform_notes TEXT,
+      category_enhanced TEXT,  -- JSON array of {category, confidence}
+
+      -- 推荐评分
+      beginner_friendly INTEGER,  -- 0-100
+      enterprise_ready INTEGER,  -- 0-100
+      community_activity INTEGER,  -- 0-100
+
+      -- 元数据
+      enhanced_at TEXT,
+      ai_model TEXT,
+      ai_version INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+
+  // FTS5 全文搜索表（中文优化）
+  searchIndex: `
+    CREATE VIRTUAL TABLE IF NOT EXISTS mcp_search USING fts5(
+      server_id UNINDEXED,
+      friendly_name_cn,
+      description_cn,
+      tags_cn,
+      content='mcp_items',
+      content_rowid='rowid',
+      tokenize='unicode61 remove_diacritics 2'
+    )
+  `,
+
+  // FTS 触发器：自动同步
+  searchTriggers: [
+    // INSERT 触发器
+    `
+    CREATE TRIGGER IF NOT EXISTS mcp_search_insert AFTER INSERT ON mcp_items BEGIN
+      INSERT INTO mcp_search(rowid, server_id, friendly_name_cn, description_cn, tags_cn)
+      VALUES (new.rowid, new.server_id, new.friendly_name_cn, new.description_cn, new.tags_cn);
+    END
+    `,
+    // UPDATE 触发器
+    `
+    CREATE TRIGGER IF NOT EXISTS mcp_search_update AFTER UPDATE ON mcp_items BEGIN
+      UPDATE mcp_search
+      SET friendly_name_cn = new.friendly_name_cn,
+          description_cn = new.description_cn,
+          tags_cn = new.tags_cn
+      WHERE rowid = new.rowid;
+    END
+    `,
+    // DELETE 触发器
+    `
+    CREATE TRIGGER IF NOT EXISTS mcp_search_delete AFTER DELETE ON mcp_items BEGIN
+      DELETE FROM mcp_search WHERE rowid = old.rowid;
+    END
+    `,
+  ],
+
+  // 索引优化
+  indexes: [
+    `CREATE INDEX IF NOT EXISTS idx_category ON mcp_items(category)`,
+    `CREATE INDEX IF NOT EXISTS idx_china_friendly ON mcp_items(china_friendly_score)`,
+    `CREATE INDEX IF NOT EXISTS idx_requires_vpn ON mcp_items(requires_vpn)`,
+    `CREATE INDEX IF NOT EXISTS idx_is_official ON mcp_items(is_official)`,
+    `CREATE INDEX IF NOT EXISTS idx_source ON mcp_items(source)`,
+    `CREATE INDEX IF NOT EXISTS idx_updated_at ON mcp_items(updated_at DESC)`,
+  ],
+};
+
+/**
+ * 初始化数据库（创建所有表和索引）
+ */
+export function initializeSchema(db: any) {
+  // 1. 创建主表
+  db.prepare(MCP_DB_SCHEMA.items).run();
+
+  // 2. 创建 FTS5 搜索表
+  db.prepare(MCP_DB_SCHEMA.searchIndex).run();
+
+  // 3. 创建触发器
+  for (const trigger of MCP_DB_SCHEMA.searchTriggers) {
+    db.prepare(trigger).run();
+  }
+
+  // 4. 创建索引
+  for (const index of MCP_DB_SCHEMA.indexes) {
+    db.prepare(index).run();
+  }
+}

@@ -1,111 +1,93 @@
-# GitHub Actions 工作流说明
+# GitHub Actions Workflows
 
-## 可用的工作流
-
-### 1. Docker Build Test (`docker-build-test.yml`)
-
-Docker 镜像打包测试工作流。
-
-#### 触发方式
-
-1. **手动触发**（推荐测试时使用）
-2. **推送代码**到 main/master 分支
-3. **Pull Request** 到 main/master 分支
-
-#### 手动触发步骤
-
-1. 进入仓库页面：https://github.com/kevinGoGoGo123/openclawcnCNDocker
-2. 点击顶部的 **Actions** 标签
-3. 左侧选择 **Docker Build Test**
-4. 点击右侧的 **Run workflow** 按钮
-5. 填写参数：
-   - **版本号**: 如 `2026.1.30`
-   - **是否推送镜像**: 选择 `true` 或 `false`
-6. 点击 **Run workflow** 开始构建
-
-#### 构建产物
-
-- Docker 镜像 tar.gz 包
-- 保留 7 天
-- 可在 Actions 页面下载
+本目录包含所有 CI/CD 自动化流程配置。
 
 ---
 
-## 配置 Secrets
+## 🚀 快速开始
 
-如果需要推送镜像到私有仓库，需要配置以下 Secrets：
+### 方式 1: Commit 触发自动构建
 
-### 配置步骤
+在 commit message 中添加 `[build]` 标记：
 
-1. 进入仓库 **Settings**
-2. 左侧菜单选择 **Secrets and variables** → **Actions**
-3. 点击 **New repository secret**
+```bash
+git commit -m "feat: 新功能 [build]"
+git push
+```
 
-### 需要的 Secrets
+### 方式 2: Tag 触发正式发布
 
-| Secret 名称 | 说明 | 必需 |
-|------------|------|------|
-| `GITHUB_TOKEN` | 自动提供，无需配置 | - |
-| `ALIYUN_REGISTRY_USERNAME` | 阿里云镜像仓库用户名 | 可选 |
-| `ALIYUN_REGISTRY_PASSWORD` | 阿里云镜像仓库密码 | 可选 |
+推送版本标签自动创建 Release：
 
----
+```bash
+git tag v2026.2.18
+git push origin v2026.2.18
+```
 
-## 获取 GitHub Token
+### 方式 3: 手动触发
 
-### 用途
-
-- 推送镜像到 GitHub Container Registry (ghcr.io)
-- API 调用（手动触发等）
-
-### 获取步骤
-
-1. 登录 GitHub
-2. 点击右上角头像 → **Settings**
-3. 滚动到底部，点击 **Developer settings**
-4. 点击 **Personal access tokens** → **Tokens (classic)**
-5. 点击 **Generate new token (classic)**
-6. 配置：
-   - **Note**: `openclawcn-docker-build`
-   - **Expiration**: 90 days
-   - **Scopes**: 勾选
-     - ✅ `repo`
-     - ✅ `workflow`
-     - ✅ `write:packages`
-7. 点击 **Generate token**
-8. **立即复制保存！**
-
-### 在仓库中配置 Token
-
-如果需要从其他地方触发工作流：
-
-1. 进入仓库 Settings → Secrets → Actions
-2. 添加 Secret：
-   - Name: `PAT_TOKEN`
-   - Value: 粘贴你的 Token
+进入 GitHub Actions 页面，选择 workflow 并点击 "Run workflow"。
 
 ---
 
-## 常见问题
+## 📋 Workflows 列表
 
-### Q: Actions 页面看不到工作流？
+### 核心构建流程
 
-确保 `.github/workflows/` 目录下的 yml 文件已经推送到仓库。
+| Workflow | 触发方式 | 用途 |
+|----------|----------|------|
+| **release-build.yml** | Tag / 手动 | 正式发布，全平台构建 + GitHub Release |
+| **quick-build.yml** | `[build]` / 手动 | 快速测试构建（单平台） |
 
-### Q: 手动触发按钮在哪？
+### 平台专用
 
-1. 进入 Actions 页面
-2. 左侧选择工作流名称
-3. 右侧会显示 "Run workflow" 按钮
+| Workflow | 触发方式 | 用途 |
+|----------|----------|------|
+| **build-macos.yml** | 手动 | macOS ZIP 包构建 |
+| **build-macos-cn.yml** | 手动 | macOS DMG 包构建 |
 
-### Q: 构建失败怎么办？
+### 测试和检查
 
-1. 点击失败的运行记录
-2. 查看具体失败的步骤
-3. 展开查看详细日志
+| Workflow | 触发方式 | 用途 |
+|----------|----------|------|
+| **ci.yml** | Push / PR | 代码检查、单元测试、lint |
+| **docker-e2e-test.yml** | 手动 | Docker E2E 测试 |
+| **docker-build-test.yml** | Push / 手动 | Docker 镜像构建测试 |
 
-### Q: 如何下载构建产物？
+---
 
-1. 点击成功的运行记录
-2. 滚动到页面底部 "Artifacts" 部分
-3. 点击下载
+## 🎯 常见场景
+
+### 场景 1: 日常开发测试
+
+```bash
+# Commit 时添加 [build] 标记
+git commit -m "fix: 修复问题 [build]"
+git push
+```
+
+### 场景 2: 发布新版本
+
+```bash
+# 使用 npm version
+npm version 2026.2.18
+git push --follow-tags
+```
+
+### 场景 3: 单平台快速构建
+
+```bash
+# 指定平台
+git commit -m "fix(windows): 修复启动 [build] windows"
+git push
+```
+
+---
+
+## 📚 详细文档
+
+完整指南请查看: [docs/cicd-guide.md](../../docs/cicd-guide.md)
+
+---
+
+**最后更新:** 2026-02-18

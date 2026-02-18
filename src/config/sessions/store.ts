@@ -692,8 +692,16 @@ async function drainSessionStoreLockQueue(storePath: string): Promise<void> {
         await lock?.release().catch(() => undefined);
       }
       if (hasFailure) {
+        if (task.timer) {
+          clearTimeout(task.timer);
+          task.timer = undefined;
+        }
         task.reject(failed);
         continue;
+      }
+      if (task.timer) {
+        clearTimeout(task.timer);
+        task.timer = undefined;
       }
       task.resolve(result);
     }
@@ -734,6 +742,20 @@ async function withSessionStoreLock<T>(
       timedOut: false,
     };
 
+    let settled = false;
+    const safeResolve = (value: T) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const safeReject = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    task.resolve = safeResolve;
+    task.reject = safeReject;
+
     if (hasTimeout) {
       task.timer = setTimeout(() => {
         if (task.started || task.timedOut) {
@@ -741,7 +763,7 @@ async function withSessionStoreLock<T>(
         }
         task.timedOut = true;
         removePendingTask(queue, task);
-        reject(lockTimeoutError(storePath));
+        safeReject(lockTimeoutError(storePath));
       }, timeoutMs);
     }
 

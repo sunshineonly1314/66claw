@@ -33,6 +33,11 @@ export function wasMSTeamsMessageSent(conversationId: string, messageId: string)
   const entry = sentMessages.get(conversationId);
   if (!entry) return false;
   cleanupExpired(entry);
+  // Remove empty conversation entries to prevent outer map growth
+  if (entry.messageIds.size === 0) {
+    sentMessages.delete(conversationId);
+    return false;
+  }
   return entry.messageIds.has(messageId);
 }
 

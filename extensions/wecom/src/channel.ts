@@ -23,6 +23,7 @@ import { sendWecomMessage, probeWecomConnection } from "./api.js";
 import { createWecomWebhookHandler } from "./webhook.js";
 import { WecomConfigSchema } from "./config-schema.js";
 import type {
+  WecomAccountConfig,
   WecomChannelConfig,
   WecomProbeResult,
   ResolvedWecomAccount,
@@ -137,7 +138,7 @@ function getDefaultWecomAccountId(cfg: ClawdbotConfig): string {
  */
 function mergeAccountConfig(
   baseConfig: WecomChannelConfig,
-  accountConfig: WecomChannelConfig["accounts"] extends Record<string, infer T> ? T : never,
+  accountConfig: WecomAccountConfig | undefined,
 ): WecomChannelConfig {
   // 从基础配置中提取，排除 accounts 和 defaultAccount
   const { accounts: _accounts, defaultAccount: _defaultAccount, ...baseFields } = baseConfig;
@@ -234,6 +235,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
   id: WECOM_CHANNEL_ID,
   meta: {
     ...meta,
+    aliases: [...meta.aliases],
   },
   pairing: {
     idLabel: "wecomUserId",
@@ -344,10 +346,6 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
         .map((entry) => String(entry).trim())
         .filter(Boolean)
         .map((entry) => entry.toLowerCase()),
-    resolveGroupAllowFrom: ({ cfg, accountId }) => {
-      const account = resolveWecomAccount({ cfg, accountId });
-      return account.config?.groupAllowFrom ?? [];
-    },
   },
   groups: {
     resolveRequireMention: ({ cfg }) => {
@@ -358,8 +356,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
   security: {
     collectWarnings: ({ cfg }) => {
       const channelConfig = cfg.channels?.wecom as WecomChannelConfig | undefined;
-      const defaultDmPolicy = cfg.channels?.defaults?.dmPolicy;
-      const dmPolicy = channelConfig?.dmPolicy ?? defaultDmPolicy ?? "allowlist";
+      const dmPolicy = channelConfig?.dmPolicy ?? "allowlist";
       const groupPolicy = channelConfig?.groupPolicy ?? "allowlist";
       const warnings: string[] = [];
 
@@ -381,7 +378,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
   messaging: {
     normalizeTarget: (raw) => {
       const trimmed = raw.trim();
-      if (!trimmed) return null;
+      if (!trimmed) return undefined;
       return trimmed;
     },
     targetResolver: {
@@ -442,13 +439,13 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
       const result = await sendWecomMessage(channelConfig, to, text, {
         msgType: "text",
       });
-      return { channel: WECOM_CHANNEL_ID, ...result };
+      return { channel: WECOM_CHANNEL_ID, messageId: result.msgid ?? "", ...result };
     },
     sendMedia: async ({ to, text, cfg }) => {
       // 暂时用文本消息代替
       const channelConfig = cfg.channels?.wecom as WecomChannelConfig;
       const result = await sendWecomMessage(channelConfig, to, text);
-      return { channel: WECOM_CHANNEL_ID, ...result };
+      return { channel: WECOM_CHANNEL_ID, messageId: result.msgid ?? "", ...result };
     },
   },
   status: {

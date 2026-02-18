@@ -1,5 +1,5 @@
 import type { ChannelGroupContext, GroupToolPolicyConfig } from "openclawcn/plugin-sdk";
-import type { FeishuConfig, FeishuGroupConfig } from "./types.js";
+import type { FeishuChannelConfig, FeishuGroupConfig } from "./types.js";
 
 export type FeishuAllowlistMatch = {
   allowed: boolean;
@@ -37,7 +37,7 @@ export function resolveFeishuAllowlistMatch(params: {
 }
 
 export function resolveFeishuGroupConfig(params: {
-  cfg?: FeishuConfig;
+  cfg?: FeishuChannelConfig;
   groupId?: string | null;
 }): FeishuGroupConfig | undefined {
   const groups = params.cfg?.groups ?? {};
@@ -59,7 +59,7 @@ export function resolveFeishuGroupConfig(params: {
 export function resolveFeishuGroupToolPolicy(
   params: ChannelGroupContext,
 ): GroupToolPolicyConfig | undefined {
-  const cfg = params.cfg.channels?.feishu as FeishuConfig | undefined;
+  const cfg = params.cfg.channels?.feishu as FeishuChannelConfig | undefined;
   if (!cfg) {
     return undefined;
   }
@@ -90,7 +90,7 @@ export function isFeishuGroupAllowed(params: {
 
 export function resolveFeishuReplyPolicy(params: {
   isDirectMessage: boolean;
-  globalConfig?: FeishuConfig;
+  globalConfig?: FeishuChannelConfig;
   groupConfig?: FeishuGroupConfig;
 }): { requireMention: boolean } {
   if (params.isDirectMessage) {

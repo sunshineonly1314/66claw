@@ -18,12 +18,31 @@ type CacheEntry = {
   timestamp: number;
 };
 
+/** Maximum number of cached entries before eviction kicks in. */
+const MAX_CACHE_SIZE = 10_000;
+
 /** Map from message UUID to cache entry. */
 let uuidToEntry = new Map<string, CacheEntry>();
 /** Map from short ID to message UUID. */
 let shortIdToUuid = new Map<string, string>();
 /** Next short ID counter. */
 let nextShortId = 1;
+
+/**
+ * Evict the oldest entries when the cache exceeds MAX_CACHE_SIZE.
+ * Uses insertion order (Map iterates in insertion order) as a proxy for age.
+ */
+function evictIfNeeded(): void {
+  if (uuidToEntry.size <= MAX_CACHE_SIZE) return;
+  const toRemove = uuidToEntry.size - MAX_CACHE_SIZE;
+  let removed = 0;
+  for (const [uuid, entry] of uuidToEntry) {
+    if (removed >= toRemove) break;
+    uuidToEntry.delete(uuid);
+    shortIdToUuid.delete(entry.shortId);
+    removed++;
+  }
+}
 
 /** Reset all cached state (for tests). */
 export function _resetBlueBubblesShortIdState(): void {
@@ -67,6 +86,7 @@ export function rememberBlueBubblesReplyCache(params: {
 
   uuidToEntry.set(params.messageId, entry);
   shortIdToUuid.set(shortId, params.messageId);
+  evictIfNeeded();
 
   return entry;
 }

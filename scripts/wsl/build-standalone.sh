@@ -8,7 +8,7 @@
 #   - 优化的 WSL 环境检测
 #
 # 用法:
-#   ./build-standalone.sh [--arch arm64|x64] [--node-version 22.13.1]
+#   ./build-standalone.sh [--arch arm64|x64] [--node-version 22.14.0]
 #
 # 输出:
 #   build/wsl-standalone/openclawcn-wsl-{arch}-standalone.tar.gz
@@ -19,7 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/build/wsl-standalone}"
-NODE_VERSION="${NODE_VERSION:-22.13.1}"
+NODE_VERSION="${NODE_VERSION:-22.14.0}"
 ARCH="${ARCH:-$(uname -m)}"
 
 # 架构映射

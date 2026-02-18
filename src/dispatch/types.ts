@@ -162,6 +162,24 @@ export type RoutingDecision = {
   modelOverride: { provider: string; model: string } | null;
   skillHints: string[];
   mcpToolHints: string[];
+  toolHints?: string[]; // ← 新增：Core tools hints (从 30+ 核心工具中推荐)
+  // ── [CN-PATCH:tool-selector] 工具筛选 Gate 结果 ──
+  /** 经 tool-selector gate 筛选后的工具 ID 列表（3-8 个）。 */
+  filteredToolIds?: string[];
+  /** tool-selector gate 给出的筛选理由（调试用）。 */
+  toolSelectionReasoning?: string;
+  // ── [CN-PATCH:tool-discovery] 智能工具发现扩展字段 ──
+  /** 工具摘要 prompt，注入 system prompt 给 LLM 做最终工具选择。 */
+  toolSummaryPrompt?: string;
+  /** MCP 安装建议详情（来自 tool-discovery 搜索结果）。 */
+  mcpSuggestions?: Array<{
+    serverId: string;
+    friendlyName: string;
+    description: string;
+    npmPackage?: string;
+    sseUrl?: string;
+    score: number;
+  }>;
   systemHint?: string;
   /** Task complexity level. Defaults to "medium" when complexity assessment is disabled. */
   complexity: ComplexityLevel;
@@ -201,6 +219,8 @@ export type DispatchRequestParams = {
   mediaTypes?: string[];
   /** Session identifier for multi-turn context tracking. */
   sessionId?: string;
+  /** Run ID for performance tracking (optional). */
+  runId?: string;
   /** AbortSignal for cancelling dispatch when timeout is reached. */
   signal?: AbortSignal;
   /** Signals from proactive memory recall to influence complexity/routing. */

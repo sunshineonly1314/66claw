@@ -21,6 +21,8 @@ type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
 const LOG_HEADER_MAX_LEN = 300;
 const LOG_HEADER_FORMAT_REGEX = /\p{Cf}/gu;
+// Memory optimization: reuse whitespace regex instead of creating new one each call
+const WHITESPACE_REGEX = /\s+/g;
 
 function replaceControlChars(value: string): string {
   let cleaned = "";
@@ -43,7 +45,7 @@ const sanitizeLogValue = (value: string | undefined): string | undefined => {
   }
   const cleaned = replaceControlChars(value)
     .replace(LOG_HEADER_FORMAT_REGEX, " ")
-    .replace(/\s+/g, " ")
+    .replace(WHITESPACE_REGEX, " ")
     .trim();
   if (!cleaned) {
     return undefined;
@@ -165,10 +167,13 @@ export function attachGatewayWsConnectionHandler(params: {
       payload: { nonce: connectNonce, ts: Date.now() },
     });
 
+    let closing = false;
     const close = (code = 1000, reason?: string) => {
-      if (closed) {
+      // Guard against concurrent close() calls
+      if (closed || closing) {
         return;
       }
+      closing = true;
       closed = true;
       clearTimeout(handshakeTimer);
       if (client) {

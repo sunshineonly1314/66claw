@@ -3,7 +3,9 @@ import type { NativeCommandsSetting } from "./types.js";
 import { normalizeChannelId } from "../channels/plugins/index.js";
 
 function resolveAutoDefault(providerId?: ChannelId): boolean {
-  const id = normalizeChannelId(providerId);
+  // normalizeChannelId depends on plugin registry; fall back to simple lowercase
+  // when the registry is not yet populated (e.g. early config resolution, tests).
+  const id = normalizeChannelId(providerId) ?? providerId?.trim().toLowerCase();
   if (!id) {
     return false;
   }

@@ -6,7 +6,8 @@ WORKDIR /app
 
 ENV NODE_OPTIONS="--disable-warning=ExperimentalWarning --disable-warning=DEP0040 --disable-warning=DEP0060"
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json vitest.config.ts vitest.e2e.config.ts ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY config ./config
 COPY src ./src
 COPY test ./test
 COPY scripts ./scripts

@@ -52,11 +52,11 @@ const DEFAULT_ORCHESTRATOR_MODEL = "anthropic/claude-sonnet-4-5-20250929";
 // Task Decomposer
 // ---------------------------------------------------------------------------
 
-const DECOMPOSE_SYSTEM_PROMPT = `You are a task decomposition expert. Given a user request, split it into 2-4 independent subtasks that can be executed in parallel.
+const DECOMPOSE_SYSTEM_PROMPT = `You are a task decomposition expert. Given a user request, split it into 2-4 subtasks.
 
 Rules:
-- Each subtask must be self-contained and not depend on results from other subtasks.
-- If tasks have dependencies, mark them with depends_on (these will run sequentially).
+- Prefer independent subtasks that can run in parallel (depends_on: []).
+- When a subtask genuinely needs another's output, mark it with depends_on so they run sequentially.
 - Keep subtasks focused and specific.
 - Choose the merge strategy based on the task type:
   - "synthesize": For research, analysis, or comparison tasks — combine results into a unified report.
@@ -104,7 +104,10 @@ async function decomposeTask(params: {
   }
 
   try {
-    const cleaned = result.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const cleaned = result
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
     const parsed = JSON.parse(cleaned) as {
       subtasks?: Array<{
         id?: string;
@@ -201,6 +204,38 @@ async function executeWorker(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Legacy Execution (fallback when DAG executor is unavailable)
+// ---------------------------------------------------------------------------
+
+async function executeLegacy(
+  subtasks: Subtask[],
+  originalTask: string,
+  model: string,
+  cfg: OpenClawCNConfig,
+  agentDir: string,
+): Promise<WorkerResult[]> {
+  const independentTasks = subtasks.filter((st) => st.dependsOn.length === 0);
+  const dependentTasks = subtasks.filter((st) => st.dependsOn.length > 0);
+
+  const results: WorkerResult[] = [];
+  if (independentTasks.length > 0) {
+    const parallelResults = await Promise.all(
+      independentTasks.map((subtask) =>
+        executeWorker({ subtask, originalTask, model, cfg, agentDir }),
+      ),
+    );
+    results.push(...parallelResults);
+  }
+
+  for (const subtask of dependentTasks) {
+    const result = await executeWorker({ subtask, originalTask, model, cfg, agentDir });
+    results.push(result);
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -261,35 +296,43 @@ export async function runMultiAgentOrchestration(params: {
         limitedSubtasks.map((s) => `[${s.id}] ${s.role}`).join(", "),
     );
 
-    // 4. Execute workers — separate independent and dependent tasks
-    const independentTasks = limitedSubtasks.filter((st) => st.dependsOn.length === 0);
-    const dependentTasks = limitedSubtasks.filter((st) => st.dependsOn.length > 0);
+    // 4. Execute workers via DAG executor (topological wave scheduling)
+    let results: WorkerResult[];
+    const dagEnabled = cfg.dispatch?.dagExecutor !== false;
+    try {
+      if (!dagEnabled) throw new Error("DAG executor disabled by config");
+      const { executeDag } = await import("./dag-executor.js");
+      const { createWorkspace } = await import("./execution-workspace.js");
 
-    const results: WorkerResult[] = [];
-    if (independentTasks.length > 0) {
-      const parallelResults = await Promise.all(
-        independentTasks.map((subtask) =>
-          executeWorker({
-            subtask,
-            originalTask: task,
-            model: workerModel,
-            cfg,
-            agentDir,
-          }),
-        ),
-      );
-      results.push(...parallelResults);
-    }
+      const workspace = createWorkspace(task);
+      const dagNodes = limitedSubtasks.map((st) => ({
+        id: st.id,
+        task: st.task,
+        role: st.role,
+        dependsOn: st.dependsOn,
+      }));
 
-    for (const subtask of dependentTasks) {
-      const result = await executeWorker({
-        subtask,
-        originalTask: task,
-        model: workerModel,
+      const dagResult = await executeDag(dagNodes, {
+        timeBudgetMs: WORKER_TIMEOUT_MS * Math.max(1, limitedSubtasks.length),
+        maxParallelism: maxWorkers,
+        workerModel,
         cfg,
         agentDir,
+        originalTask: task,
+        workspace,
       });
-      results.push(result);
+
+      results = [...dagResult.results.values()].map((r) => ({
+        taskId: r.nodeId,
+        task: limitedSubtasks.find((s) => s.id === r.nodeId)?.task ?? "",
+        output: r.output,
+        status: r.status === "ok" ? ("ok" as const) : ("error" as const),
+        durationMs: r.durationMs,
+      }));
+    } catch (dagErr) {
+      // Fallback: legacy parallel/sequential execution
+      log.warn(`DAG executor failed, falling back to legacy execution: ${String(dagErr)}`);
+      results = await executeLegacy(limitedSubtasks, task, workerModel, cfg, agentDir);
     }
 
     const successCount = results.filter((r) => r.status === "ok").length;

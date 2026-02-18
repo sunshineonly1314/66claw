@@ -225,7 +225,7 @@ export function buildAgentSystemPrompt(params: {
     grep: "Search file contents for patterns",
     find: "Find files by glob pattern",
     ls: "List directory contents",
-    exec: "Run shell commands (pty available for TTY-required CLIs)",
+    exec: "Run shell commands (pty available for TTY-required CLIs). Do NOT use exec to launch desktop apps — use open_app instead",
     process: "Manage background exec sessions",
     web_search: "Search the web (Brave API)",
     web_fetch: "Fetch and extract readable content from a URL",
@@ -244,6 +244,13 @@ export function buildAgentSystemPrompt(params: {
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
     image: "Analyze an image with the configured image model",
+    open_app:
+      "Find and launch desktop applications by name (supports Chinese/English aliases, e.g. 微信/WeChat/Chrome). ALWAYS prefer this over exec for opening apps",
+    desktop_control:
+      "Control desktop GUI: screenshot, click, type, key, scroll, list_windows, focus",
+    wechat_send: "Send WeChat messages via desktop automation",
+    wechat_check: "Check WeChat unread messages",
+    image_gen: "Generate images with AI (DALL-E, DashScope, SiliconFlow)",
   };
 
   const toolOrder = [
@@ -270,6 +277,11 @@ export function buildAgentSystemPrompt(params: {
     "sessions_send",
     "session_status",
     "image",
+    "open_app",
+    "desktop_control",
+    "wechat_send",
+    "wechat_check",
+    "image_gen",
   ];
 
   const rawToolNames = (params.toolNames ?? []).map((tool) => tool.trim());

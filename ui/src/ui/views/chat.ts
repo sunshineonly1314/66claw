@@ -25,6 +25,7 @@ import {
   renderVoiceMascot,
   type VoiceMascotProps,
 } from "./voice-mascot";
+import { detectTextDirection } from "../text-direction";
 
 /**
  * 打开购买链接
@@ -101,6 +102,9 @@ export type ChatProps = {
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
+  // Scroll control
+  showNewMessages?: boolean;
+  onScrollToBottom?: () => void;
   // Discovery props (首次使用发现)
   discoveryProps?: WelcomeDiscoveryProps | null;
   showDiscovery?: boolean;
@@ -172,25 +176,53 @@ function generateAttachmentId(): string {
   return `att-${Date.now()}-${hex}`;
 }
 
-function handlePaste(
+/**
+ * Enhanced paste handler with multi-format support:
+ * 1. Standard image files (from OS clipboard)
+ * 2. Base64 data URLs (e.g., data:image/png;base64,...)
+ * 3. HTTP(S) URLs pointing to images
+ * 4. Local file paths (if accessible)
+ */
+async function handlePaste(
   e: ClipboardEvent,
   props: ChatProps,
 ) {
   const items = e.clipboardData?.items;
   if (!items || !props.onAttachmentsChange) return;
 
+  let hasImages = false;
+
+  // Step 1: Check for standard image files
   const imageItems: DataTransferItem[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item.type.startsWith("image/")) {
       imageItems.push(item);
+      hasImages = true;
     }
   }
 
-  if (imageItems.length === 0) return;
+  // Step 2: Check for text content that might contain image references
+  let textContent = "";
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.type === "text/plain") {
+      textContent = await new Promise<string>((resolve) => {
+        item.getAsString(resolve);
+      });
+      break;
+    }
+  }
 
-  e.preventDefault();
+  // If we found images OR text that looks like an image reference, prevent default
+  if (hasImages || isImageReference(textContent)) {
+    e.preventDefault();
+  } else {
+    // No images, let default paste behavior continue
+    return;
+  }
 
+  // Process standard image files
   for (const item of imageItems) {
     const file = item.getAsFile();
     if (!file) continue;
@@ -202,6 +234,128 @@ function handlePaste(
         id: generateAttachmentId(),
         dataUrl,
         mimeType: file.type,
+      };
+      const current = props.attachments ?? [];
+      props.onAttachmentsChange?.([...current, newAttachment]);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Process text-based image references
+  if (textContent && !hasImages) {
+    await handleTextImageReference(textContent, props);
+  }
+}
+
+/**
+ * Check if text content is an image reference
+ */
+function isImageReference(text: string): boolean {
+  if (!text || text.trim().length === 0) return false;
+  const trimmed = text.trim();
+
+  // Base64 data URL
+  if (trimmed.startsWith("data:image/")) return true;
+
+  // HTTP(S) URL ending with image extension
+  if (/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(trimmed)) return true;
+
+  // File path ending with image extension
+  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(trimmed)) return true;
+
+  return false;
+}
+
+/**
+ * Handle text-based image references (base64, URLs, file paths)
+ */
+async function handleTextImageReference(
+  text: string,
+  props: ChatProps,
+): Promise<void> {
+  const trimmed = text.trim();
+
+  // Case 1: Base64 data URL (already in correct format)
+  if (trimmed.startsWith("data:image/")) {
+    const mimeTypeMatch = trimmed.match(/^data:(image\/[^;]+);base64,/);
+    if (mimeTypeMatch) {
+      const newAttachment: ChatAttachment = {
+        id: generateAttachmentId(),
+        dataUrl: trimmed,
+        mimeType: mimeTypeMatch[1],
+      };
+      const current = props.attachments ?? [];
+      props.onAttachmentsChange?.([...current, newAttachment]);
+      return;
+    }
+  }
+
+  // Case 2: HTTP(S) URL - fetch and convert to base64
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const response = await fetch(trimmed, { mode: 'cors' });
+      if (!response.ok) {
+        console.warn(`[handlePaste] Failed to fetch image from URL: ${response.status}`);
+        return;
+      }
+
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/")) {
+        console.warn(`[handlePaste] URL does not point to an image: ${blob.type}`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const newAttachment: ChatAttachment = {
+          id: generateAttachmentId(),
+          dataUrl,
+          mimeType: blob.type,
+        };
+        const current = props.attachments ?? [];
+        props.onAttachmentsChange?.([...current, newAttachment]);
+      };
+      reader.readAsDataURL(blob);
+    } catch (err) {
+      console.warn(`[handlePaste] Failed to load image from URL:`, err);
+    }
+    return;
+  }
+
+  // Case 3: Local file path - show helpful error
+  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(trimmed)) {
+    console.warn(
+      `[handlePaste] Pasted a file path, but browsers cannot access local files directly: ${trimmed}\n` +
+      `Please drag and drop the file instead, or use a file picker.`
+    );
+    // Could show a toast notification to the user here
+  }
+}
+
+// OpenClawCN: 拖拽上传支持
+function handleDrop(
+  e: DragEvent,
+  props: ChatProps,
+) {
+  e.preventDefault();
+  (e.currentTarget as HTMLElement)?.classList.remove("chat--drag-over");
+  if (!props.onAttachmentsChange) return;
+
+  const files = e.dataTransfer?.files;
+  if (!files || files.length === 0) return;
+
+  for (const file of Array.from(files)) {
+    if (!file.type.startsWith("image/")) continue;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const newAttachment: ChatAttachment = {
+        id: generateAttachmentId(),
+        dataUrl,
+        mimeType: file.type,
+        fileName: file.name,
+        fileSize: file.size,
       };
       const current = props.attachments ?? [];
       props.onAttachmentsChange?.([...current, newAttachment]);
@@ -223,6 +377,8 @@ function renderAttachmentPreview(props: ChatProps) {
               src=${att.dataUrl}
               alt="Attachment preview"
               class="chat-attachment__img"
+              loading="lazy"
+              decoding="async"
             />
             <button
               class="chat-attachment__remove"
@@ -407,6 +563,16 @@ export function renderChat(props: ChatProps) {
         // Pre-compute last assistant group key once (O(n)), instead of per-group (O(M*n))
         const lastAsstKey = props.justCompleted ? findLastAssistantGroupKey(chatItems) : null;
         return repeat(chatItems, (item) => item.key, (item) => {
+          if (item.kind === "divider") {
+            return html`
+              <div class="chat-divider" role="separator" data-ts=${String(item.timestamp)}>
+                <span class="chat-divider__line"></span>
+                <span class="chat-divider__label">${item.label}</span>
+                <span class="chat-divider__line"></span>
+              </div>
+            `;
+          }
+
           if (item.kind === "reading-indicator") {
             return renderReadingIndicatorGroup(assistantIdentity, item.startedAt, props.error);
           }
@@ -438,7 +604,20 @@ export function renderChat(props: ChatProps) {
   `;
 
   return html`
-    <section class="card chat">
+    <section
+      class="card chat"
+      @dragover=${(e: DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer!.dropEffect = "copy";
+        (e.currentTarget as HTMLElement).classList.add("chat--drag-over");
+      }}
+      @dragleave=${(e: DragEvent) => {
+        if (e.currentTarget === e.target) {
+          (e.currentTarget as HTMLElement).classList.remove("chat--drag-over");
+        }
+      }}
+      @drop=${(e: DragEvent) => handleDrop(e, props)}
+    >
       ${props.disabledReason
         ? html`<div class="callout">${props.disabledReason}</div>`
         : nothing}
@@ -463,6 +642,20 @@ export function renderChat(props: ChatProps) {
           : nothing}
 
       ${renderCompactionIndicator(props.compactionStatus)}
+
+      ${
+        props.showNewMessages
+          ? html`
+            <button
+              class="btn chat-new-messages"
+              type="button"
+              @click=${props.onScrollToBottom}
+            >
+              ${t("chat.newMessages")} ${icons.arrowDown}
+            </button>
+          `
+          : nothing
+      }
 
       ${props.focusMode
         ? html`
@@ -586,6 +779,7 @@ export function renderChat(props: ChatProps) {
             <span>Message</span>
             <textarea
               .value=${props.draft}
+              dir=${detectTextDirection(props.draft)}
               ?disabled=${!props.connected}
               @keydown=${(e: KeyboardEvent) => {
                 if (e.key !== "Enter") return;
@@ -602,6 +796,52 @@ export function renderChat(props: ChatProps) {
             ></textarea>
           </label>
           <div class="chat-compose__actions">
+            ${props.onAttachmentsChange ? html`
+              <input
+                type="file"
+                id="chat-file-input"
+                accept="image/*"
+                multiple
+                style="display: none;"
+                @change=${(e: Event) => {
+                  const input = e.target as HTMLInputElement;
+                  if (!input.files || input.files.length === 0) return;
+
+                  for (const file of Array.from(input.files)) {
+                    if (!file.type.startsWith("image/")) continue;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const dataUrl = reader.result as string;
+                      const newAttachment: ChatAttachment = {
+                        id: generateAttachmentId(),
+                        dataUrl,
+                        mimeType: file.type,
+                        fileName: file.name,
+                        fileSize: file.size,
+                      };
+                      const current = props.attachments ?? [];
+                      props.onAttachmentsChange?.([...current, newAttachment]);
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                  // Reset input to allow selecting the same file again
+                  input.value = '';
+                }}
+              />
+              <button
+                type="button"
+                class="btn chat-attach-btn"
+                ?disabled=${!props.connected}
+                @click=${() => {
+                  const input = document.getElementById('chat-file-input') as HTMLInputElement;
+                  input?.click();
+                }}
+                title="Attach images (Ctrl+V to paste, or drag and drop)"
+                aria-label="Attach images"
+              >
+                ${icons.paperclip}
+              </button>
+            ` : nothing}
             <button
               class="btn"
               ?disabled=${!props.connected || (!canAbort && props.sending)}
@@ -695,6 +935,20 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
     const normalized = normalizeMessage(msg);
+    const raw = msg as Record<string, unknown>;
+    const marker = raw.__openclawcn as Record<string, unknown> | undefined;
+    if (marker && marker.kind === "compaction") {
+      items.push({
+        kind: "divider",
+        key:
+          typeof marker.id === "string"
+            ? `divider:compaction:${marker.id}`
+            : `divider:compaction:${normalized.timestamp}:${i}`,
+        label: t("chat.compaction"),
+        timestamp: normalized.timestamp ?? Date.now(),
+      });
+      continue;
+    }
 
     if (!props.showThinking && normalized.role.toLowerCase() === "toolresult") {
       continue;

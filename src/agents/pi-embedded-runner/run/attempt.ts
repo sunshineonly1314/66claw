@@ -591,7 +591,7 @@ export async function runEmbeddedAttempt(
 
       // Ollama native API: bypass SDK's streamSimple and use direct /api/chat calls
       // for reliable streaming + tool calling support (#11828).
-      if (params.model.api === "ollama") {
+      if ((params.model.api as string) === "ollama") {
         // Use the resolved model baseUrl first so custom provider aliases work.
         const providerConfig = params.config?.models?.providers?.[params.model.provider];
         const modelBaseUrl =

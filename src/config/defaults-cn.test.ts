@@ -209,11 +209,11 @@ describe("applyCnDefaults — 新增参数", () => {
     expect(result.agents?.defaults?.typingMode).toBe("thinking");
   });
 
-  it("agents.defaults.contextPruning.mode = 'cache-ttl'（省 token）", () => {
+  it("agents.defaults.contextPruning 不由 CN 无条件注入（依赖上游 Anthropic auth 检测）", () => {
     setCnRegion(true);
+    // 空 config 无 Anthropic auth → 上游不注入 contextPruning → CN 也不注入
     const result = applyCnDefaults({});
-    expect(result.agents?.defaults?.contextPruning?.mode).toBe("cache-ttl");
-    expect(result.agents?.defaults?.contextPruning?.ttl).toBe("5m");
+    expect(result.agents?.defaults?.contextPruning?.mode).toBeUndefined();
   });
 
   it("sandbox.browser.allowHostControl = true（允许宿主浏览器）", () => {

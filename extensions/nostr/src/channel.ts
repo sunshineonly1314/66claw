@@ -147,7 +147,7 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = {
       const message = core.channel.text.convertMarkdownTables(text ?? "", tableMode);
       const normalizedTo = normalizePubkey(to);
       await bus.sendDm(normalizedTo, message);
-      return { channel: "nostr", to: normalizedTo };
+      return { channel: "nostr" as const, messageId: "", meta: { to: normalizedTo } };
     },
   },
 
@@ -219,43 +219,60 @@ export const nostrPlugin: ChannelPlugin<ResolvedNostrAccount> = {
         privateKey: account.privateKey,
         relays: account.relays,
         onMessage: async (senderPubkey, text, reply) => {
-          ctx.log?.debug(`[${account.accountId}] DM from ${senderPubkey}: ${text.slice(0, 50)}...`);
+          ctx.log?.debug?.(`[${account.accountId}] DM from ${senderPubkey}: ${text.slice(0, 50)}...`);
 
-          // Forward to clawdbot's message pipeline
-          await runtime.channel.reply.handleInboundMessage({
-            channel: "nostr",
-            accountId: account.accountId,
-            senderId: senderPubkey,
-            chatType: "direct",
-            chatId: senderPubkey, // For DMs, chatId is the sender's pubkey
-            text,
-            reply: async (responseText: string) => {
-              await reply(responseText);
+          // Forward to clawdbot's message pipeline via dispatchReplyWithBufferedBlockDispatcher
+          const inboundCtx = {
+            Channel: "nostr",
+            AccountId: account.accountId,
+            SenderId: senderPubkey,
+            From: `nostr:${senderPubkey}`,
+            To: `nostr:${account.publicKey}`,
+            Body: text,
+            RawBody: text,
+            ChatType: "direct" as const,
+            ChatId: senderPubkey,
+            Timestamp: Date.now(),
+          };
+          await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+            ctx: inboundCtx,
+            cfg: ctx.cfg,
+            dispatcherOptions: {
+              deliver: async (payload) => {
+                const responseText = payload.text ?? "";
+                if (responseText) {
+                  await reply(responseText);
+                }
+              },
+              onError: (err) => {
+                ctx.log?.error(`[${account.accountId}] Reply error: ${err}`);
+              },
             },
+            replyOptions: {},
           });
         },
         onError: (error, context) => {
           ctx.log?.error(`[${account.accountId}] Nostr error (${context}): ${error.message}`);
         },
         onConnect: (relay) => {
-          ctx.log?.debug(`[${account.accountId}] Connected to relay: ${relay}`);
+          ctx.log?.debug?.(`[${account.accountId}] Connected to relay: ${relay}`);
         },
         onDisconnect: (relay) => {
-          ctx.log?.debug(`[${account.accountId}] Disconnected from relay: ${relay}`);
+          ctx.log?.debug?.(`[${account.accountId}] Disconnected from relay: ${relay}`);
         },
         onEose: (relays) => {
-          ctx.log?.debug(`[${account.accountId}] EOSE received from relays: ${relays}`);
+          ctx.log?.debug?.(`[${account.accountId}] EOSE received from relays: ${relays}`);
         },
         onMetric: (event: MetricEvent) => {
           // Log significant metrics at appropriate levels
           if (event.name.startsWith("event.rejected.")) {
-            ctx.log?.debug(`[${account.accountId}] Metric: ${event.name}`, event.labels);
+            ctx.log?.debug?.(`[${account.accountId}] Metric: ${event.name}`);
           } else if (event.name === "relay.circuit_breaker.open") {
-            ctx.log?.warn(`[${account.accountId}] Circuit breaker opened for relay: ${event.labels?.relay}`);
+            ctx.log?.warn?.(`[${account.accountId}] Circuit breaker opened for relay: ${event.labels?.relay}`);
           } else if (event.name === "relay.circuit_breaker.close") {
-            ctx.log?.info(`[${account.accountId}] Circuit breaker closed for relay: ${event.labels?.relay}`);
+            ctx.log?.info?.(`[${account.accountId}] Circuit breaker closed for relay: ${event.labels?.relay}`);
           } else if (event.name === "relay.error") {
-            ctx.log?.debug(`[${account.accountId}] Relay error: ${event.labels?.relay}`);
+            ctx.log?.debug?.(`[${account.accountId}] Relay error: ${event.labels?.relay}`);
           }
           // Update cached metrics snapshot
           if (busHandle) {

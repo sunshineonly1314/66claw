@@ -374,21 +374,23 @@ Job 4: report     -> 成功->创建 PR + 飞书通知 | 失败->创建 Issue + �
 ## 五、实施路线图
 
 ```
-Week 0 (Day 1)
-  [ ] .gitattributes 添加 merge=ours 规则
-  [ ] scripts/setup-merge-drivers.sh
-  [ ] scripts/merge-upstream.sh (升级版)
+Week 0 (Day 1) — 2026-02-16 已完成
+  [x] .gitattributes 添加 merge=ours 规则 (66 条规则)
+  [x] scripts/setup-merge-drivers.sh
+  [x] scripts/merge-upstream.sh (升级版，含 7 步完整流程)
+  [x] scripts/generate-gitattributes-merge.sh (从 JSON 生成规则)
+  [x] config/cn-protected-files.json (机器可读保护清单，提前到 Week 0)
 
-Week 1
-  [ ] .github/workflows/daily-upstream-sync.yml
-  [ ] ci.yml 增加 cn-validation job
+Week 1 — 2026-02-16 已完成
+  [x] .github/workflows/daily-upstream-sync.yml (4-job 架构)
+  [x] ci.yml 增加 cn-validation job (文件完整性 + 品牌一致性 + API 端点 + 冲突标记)
   [ ] GitHub Secrets 配置 (SYNC_TOKEN, FEISHU_WEBHOOK)
   [ ] 首次手动触发验证
 
 Week 2
-  [ ] config/cn-protected-files.json
-  [ ] scripts/generate-gitattributes-merge.sh
-  [ ] 合并脚本改为读取 JSON 配置
+  [x] config/cn-protected-files.json (提前到 Week 0 完成)
+  [x] scripts/generate-gitattributes-merge.sh (提前到 Week 0 完成)
+  [ ] 合并脚本改为读取 JSON 配置 (merge-upstream.sh 已部分实现)
 
 Week 3+
   [ ] 观察运行情况，调优 cron 时间

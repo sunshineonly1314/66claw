@@ -110,6 +110,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
   id: FEISHU_CHANNEL_ID,
   meta: {
     ...meta,
+    aliases: [...meta.aliases] as string[],
   },
   pairing: {
     idLabel: "feishuUserId",
@@ -170,7 +171,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       configured: account.configured,
       domain: account.domain,
     }),
-    resolveAllowFrom: ({ cfg }) => (cfg.channels?.feishu as FeishuChannelConfig)?.allowFrom ?? [],
+    resolveAllowFrom: ({ cfg }) =>
+      ((cfg.channels?.feishu as FeishuChannelConfig)?.allowFrom ?? []).map(String),
     formatAllowFrom: ({ allowFrom }) =>
       allowFrom
         .map((entry) => String(entry).trim())
@@ -189,7 +191,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     },
   },
   messaging: {
-    normalizeTarget: normalizeFeishuTarget,
+    normalizeTarget: (raw: string) => normalizeFeishuTarget(raw) ?? undefined,
     targetResolver: {
       looksLikeId: looksLikeFeishuId,
       hint: "<chatId|openId|unionId>",

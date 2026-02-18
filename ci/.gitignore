@@ -1,0 +1,30 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 日志
+logs/
+*.log
+
+# 构建产物
+artifacts/
+tmp/
+
+# SSH 密钥（安全起见）
+*.pem
+*.key
+id_rsa*
+
+# 本地配置（可能包含敏感信息）
+config.local.json
+
+# 进程 ID
+*.pid
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db

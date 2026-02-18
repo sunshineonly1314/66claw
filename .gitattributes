@@ -119,4 +119,16 @@ native//** merge=ours
 ui/src/docscn//** merge=ours
 build/windows/deploy/docs//** merge=ours
 
+ui/src/ui/views/mcp-batch-config.ts merge=ours
+src/mcp/marketplace/db-schema.ts merge=ours
+src/mcp/marketplace/db.ts merge=ours
+src/mcp/marketplace/db.test.ts merge=ours
+src/gateway/server-methods/mcp-marketplace-search.ts merge=ours
+scripts/mcp-sync-to-db.ts merge=ours
+src/config/types.tool-discovery.ts merge=ours
+src/mcp/on-demand-loader.ts merge=ours
+src/agents/tools/mcp-install-tool.ts merge=ours
+scripts/build-tool-index.ts merge=ours
+docs/modality-jit-configuration.md merge=ours
+docs/modality-jit-integration-example.md merge=ours
 # === CN MERGE PROTECTION END ===

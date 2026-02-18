@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Image Paste Test - OpenClawCN</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .test-area {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            resize: vertical;
+        }
+
+        .preview-area {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .preview-item {
+            position: relative;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .preview-item img {
+            max-width: 200px;
+            max-height: 200px;
+            display: block;
+        }
+
+        .preview-item .remove-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(255, 0, 0, 0.8);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .preview-item .remove-btn:hover {
+            background: red;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .log {
+            margin-top: 20px;
+            padding: 12px;
+            background: #1f2937;
+            color: #10b981;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 6px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin: 4px 0;
+        }
+
+        .log-entry.error {
+            color: #ef4444;
+        }
+
+        .log-entry.success {
+            color: #10b981;
+        }
+
+        .log-entry.info {
+            color: #60a5fa;
+        }
+
+        .instructions {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .instructions h3 {
+            color: #1e40af;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .instructions ul {
+            margin-left: 20px;
+            color: #1e3a8a;
+        }
+
+        .instructions li {
+            margin: 4px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖼️ Enhanced Image Paste Test</h1>
+
+        <div class="instructions">
+            <h3>📋 测试说明</h3>
+            <ul>
+                <li><strong>粘贴测试</strong>: 在下方文本框中粘贴图片（Ctrl+V）</li>
+                <li><strong>支持格式</strong>:
+                    <ul>
+                        <li>标准图片文件（截图、复制的图片）</li>
+                        <li>Base64 Data URL</li>
+                        <li>HTTP(S) 图片链接</li>
+                    </ul>
+                </li>
+                <li><strong>文件选择</strong>: 点击 "选择图片" 按钮</li>
+                <li><strong>拖拽上传</strong>: 拖动图片到虚线区域</li>
+            </ul>
+        </div>
+
+        <div class="test-area" id="dropArea">
+            <textarea
+                id="pasteArea"
+                placeholder="在这里粘贴图片、Base64 或图片 URL...
+
+测试示例：
+1. 截图后粘贴（Win+Shift+S）
+2. 粘贴这个 Base64:
+   data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==
+
+3. 粘贴这个 URL:
+   https://picsum.photos/200/300"
+            ></textarea>
+
+            <div class="actions">
+                <input type="file" id="fileInput" class="file-input" accept="image/*" multiple>
+                <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                    📎 选择图片
+                </button>
+                <button class="btn-secondary" onclick="clearPreviews()">
+                    🗑️ 清除预览
+                </button>
+            </div>
+
+            <div class="preview-area" id="previewArea"></div>
+        </div>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        const pasteArea = document.getElementById('pasteArea');
+        const previewArea = document.getElementById('previewArea');
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const logDiv = document.getElementById('log');
+
+        let attachments = [];
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function generateId() {
+            return `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        }
+
+        function addAttachment(dataUrl, mimeType, fileName = '') {
+            const id = generateId();
+            attachments.push({ id, dataUrl, mimeType, fileName });
+            renderPreviews();
+            log(`✅ 添加图片: ${fileName || mimeType} (ID: ${id})`, 'success');
+        }
+
+        function removeAttachment(id) {
+            attachments = attachments.filter(att => att.id !== id);
+            renderPreviews();
+            log(`🗑️ 移除图片 (ID: ${id})`, 'info');
+        }
+
+        function clearPreviews() {
+            attachments = [];
+            renderPreviews();
+            log('🗑️ 清除所有预览', 'info');
+        }
+
+        function renderPreviews() {
+            previewArea.innerHTML = '';
+            attachments.forEach(att => {
+                const div = document.createElement('div');
+                div.className = 'preview-item';
+                div.innerHTML = `
+                    <img src="${att.dataUrl}" alt="Preview">
+                    <button class="remove-btn" onclick="removeAttachment('${att.id}')">×</button>
+                `;
+                previewArea.appendChild(div);
+            });
+        }
+
+        function isImageReference(text) {
+            if (!text || text.trim().length === 0) return false;
+            const trimmed = text.trim();
+
+            if (trimmed.startsWith('data:image/')) return true;
+            if (/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(trimmed)) return true;
+            if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(trimmed)) return true;
+
+            return false;
+        }
+
+        async function handleTextImageReference(text) {
+            const trimmed = text.trim();
+
+            // Case 1: Base64 data URL
+            if (trimmed.startsWith('data:image/')) {
+                const mimeTypeMatch = trimmed.match(/^data:(image\/[^;]+);base64,/);
+                if (mimeTypeMatch) {
+                    addAttachment(trimmed, mimeTypeMatch[1], 'Base64 Image');
+                    return true;
+                }
+            }
+
+            // Case 2: HTTP(S) URL
+            if (/^https?:\/\//i.test(trimmed)) {
+                log(`🌐 正在下载图片: ${trimmed}`, 'info');
+                try {
+                    const response = await fetch(trimmed, { mode: 'cors' });
+                    if (!response.ok) {
+                        log(`❌ 下载失败: HTTP ${response.status}`, 'error');
+                        return false;
+                    }
+
+                    const blob = await response.blob();
+                    if (!blob.type.startsWith('image/')) {
+                        log(`❌ URL 不是图片: ${blob.type}`, 'error');
+                        return false;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        addAttachment(reader.result, blob.type, trimmed.split('/').pop());
+                    };
+                    reader.readAsDataURL(blob);
+                    return true;
+                } catch (err) {
+                    log(`❌ 下载图片失败: ${err.message}`, 'error');
+                    return false;
+                }
+            }
+
+            // Case 3: Local file path
+            if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(trimmed)) {
+                log(`⚠️ 检测到文件路径，但浏览器无法直接访问本地文件`, 'error');
+                log(`💡 请使用拖拽或文件选择器`, 'info');
+                return false;
+            }
+
+            return false;
+        }
+
+        // Paste handler
+        pasteArea.addEventListener('paste', async (e) => {
+            log('📋 检测到粘贴事件', 'info');
+
+            const items = e.clipboardData?.items;
+            if (!items) {
+                log('❌ 无法访问剪贴板数据', 'error');
+                return;
+            }
+
+            let hasImages = false;
+            const imageItems = [];
+
+            // Check for image files
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.type.startsWith('image/')) {
+                    imageItems.push(item);
+                    hasImages = true;
+                }
+            }
+
+            // Check for text content
+            let textContent = '';
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.type === 'text/plain') {
+                    textContent = await new Promise(resolve => {
+                        item.getAsString(resolve);
+                    });
+                    break;
+                }
+            }
+
+            if (hasImages || isImageReference(textContent)) {
+                e.preventDefault();
+                log('🖼️ 检测到图片内容，阻止默认粘贴', 'info');
+            } else {
+                log('📝 普通文本粘贴，允许默认行为', 'info');
+                return;
+            }
+
+            // Process image files
+            for (const item of imageItems) {
+                const file = item.getAsFile();
+                if (!file) continue;
+
+                log(`🖼️ 处理图片文件: ${file.name || 'unnamed'} (${file.type})`, 'info');
+                const reader = new FileReader();
+                reader.onload = () => {
+                    addAttachment(reader.result, file.type, file.name);
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Process text-based image references
+            if (textContent && !hasImages) {
+                log(`🔍 检测文本内容: ${textContent.substring(0, 50)}...`, 'info');
+                await handleTextImageReference(textContent);
+            }
+        });
+
+        // File input handler
+        fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+
+            log(`📂 选择了 ${files.length} 个文件`, 'info');
+
+            for (const file of Array.from(files)) {
+                if (!file.type.startsWith('image/')) {
+                    log(`⚠️ 跳过非图片文件: ${file.name}`, 'error');
+                    continue;
+                }
+
+                const reader = new FileReader();
+                reader.onload = () => {
+                    addAttachment(reader.result, file.type, file.name);
+                };
+                reader.readAsDataURL(file);
+            }
+
+            fileInput.value = '';
+        });
+
+        // Drag and drop
+        dropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            dropArea.style.borderColor = '#3b82f6';
+            dropArea.style.background = '#eff6ff';
+        });
+
+        dropArea.addEventListener('dragleave', (e) => {
+            if (e.currentTarget === e.target) {
+                dropArea.style.borderColor = '#ccc';
+                dropArea.style.background = '#fafafa';
+            }
+        });
+
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.style.borderColor = '#ccc';
+            dropArea.style.background = '#fafafa';
+
+            const files = e.dataTransfer?.files;
+            if (!files || files.length === 0) return;
+
+            log(`🎯 拖放了 ${files.length} 个文件`, 'info');
+
+            for (const file of Array.from(files)) {
+                if (!file.type.startsWith('image/')) {
+                    log(`⚠️ 跳过非图片文件: ${file.name}`, 'error');
+                    continue;
+                }
+
+                const reader = new FileReader();
+                reader.onload = () => {
+                    addAttachment(reader.result, file.type, file.name);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Initial log
+        log('✅ 图片粘贴测试页面已加载', 'success');
+        log('📋 支持格式: 图片文件、Base64 Data URL、HTTP(S) URL', 'info');
+    </script>
+</body>
+</html>

@@ -27,6 +27,68 @@ const BLOCKED_CWD_PATTERNS = [
 ];
 
 /**
+ * Validate environment variables to prevent injection attacks.
+ * Blocks dangerous environment variables that could lead to code execution.
+ *
+ * @param env - Environment variables object to validate
+ */
+export function validateEnvVars(env: Record<string, string | undefined> | undefined): void {
+  if (!env) {
+    return;
+  }
+
+  // Dangerous environment variables that can lead to code execution
+  const DANGEROUS_ENV_VARS = new Set([
+    "NODE_OPTIONS", // Can load arbitrary modules
+    "LD_PRELOAD", // Linux library injection
+    "LD_LIBRARY_PATH", // Can hijack shared libraries
+    "DYLD_INSERT_LIBRARIES", // macOS library injection
+    "DYLD_LIBRARY_PATH", // macOS library path hijacking
+    "PERL5LIB", // Perl module injection
+    "PYTHONPATH", // Python module injection
+    "RUBYLIB", // Ruby library injection
+  ]);
+
+  // Validate each environment variable
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) {
+      continue;
+    }
+
+    // Block dangerous variables
+    if (DANGEROUS_ENV_VARS.has(key)) {
+      throw new Error(
+        `SECURITY: Forbidden environment variable: ${key}\n` +
+          `This variable can be used for code injection attacks.\n` +
+          `If you need to set this variable, please use a controlled wrapper.`,
+      );
+    }
+
+    // Validate value length (prevent buffer overflow attacks)
+    if (value.length > 10000) {
+      throw new Error(
+        `SECURITY: Environment variable ${key} exceeds maximum length (10000 characters)`,
+      );
+    }
+
+    // Check for suspicious patterns in values
+    const suspiciousPatterns = [
+      /[;&|`$()]/, // Shell metacharacters
+      /\x00/, // Null byte injection
+    ];
+
+    for (const pattern of suspiciousPatterns) {
+      if (pattern.test(value)) {
+        throw new Error(
+          `SECURITY: Suspicious pattern detected in environment variable ${key}\n` +
+            `Value contains potentially dangerous characters: ${value.substring(0, 100)}`,
+        );
+      }
+    }
+  }
+}
+
+/**
  * Validate cwd path to prevent path traversal and access to sensitive directories.
  * OpenClawCN: path injection protection.
  *
@@ -45,7 +107,9 @@ export function validateCwdPath(cwd: string | undefined, baseDir?: string): void
   if (baseDir !== undefined) {
     const normalizedBase = path.resolve(baseDir);
     if (!normalizedCwd.startsWith(normalizedBase + path.sep) && normalizedCwd !== normalizedBase) {
-      throw new Error(`Blocked cwd: path traversal detected - path is outside base directory: ${cwd}`);
+      throw new Error(
+        `Blocked cwd: path traversal detected - path is outside base directory: ${cwd}`,
+      );
     }
   }
 
@@ -177,6 +241,9 @@ export async function runCommandWithTimeout(
     validateCwdPath(cwd, cwdBaseDir);
   }
 
+  // SECURITY: validate environment variables for injection attempts
+  validateEnvVars(env);
+
   const shouldSuppressNpmFund = (() => {
     const cmd = path.basename(argv[0] ?? "");
     if (cmd === "npm" || cmd === "npm.cmd" || cmd === "npm.exe") {
@@ -220,9 +287,19 @@ export async function runCommandWithTimeout(
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let killed = false;
+    const MAX_OUTPUT_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent memory exhaustion
+
     const timer = setTimeout(() => {
-      if (typeof child.kill === "function") {
-        child.kill("SIGKILL");
+      if (typeof child.kill === "function" && !killed) {
+        killed = true;
+        // Try graceful SIGTERM first, then SIGKILL
+        child.kill("SIGTERM");
+        setTimeout(() => {
+          if (!settled && typeof child.kill === "function") {
+            child.kill("SIGKILL");
+          }
+        }, 2000); // 2s grace period
       }
     }, timeoutMs);
 
@@ -232,10 +309,40 @@ export async function runCommandWithTimeout(
     }
 
     child.stdout?.on("data", (d) => {
-      stdout += d.toString();
+      const chunk = d.toString();
+      if (stdout.length + chunk.length > MAX_OUTPUT_SIZE) {
+        if (!killed && !settled) {
+          killed = true;
+          settled = true;
+          clearTimeout(timer);
+          child.kill("SIGKILL");
+          reject(
+            new Error(
+              `Process output exceeded maximum size (${MAX_OUTPUT_SIZE} bytes). stdout: ${stdout.length} bytes, stderr: ${stderr.length} bytes`,
+            ),
+          );
+        }
+        return;
+      }
+      stdout += chunk;
     });
     child.stderr?.on("data", (d) => {
-      stderr += d.toString();
+      const chunk = d.toString();
+      if (stderr.length + chunk.length > MAX_OUTPUT_SIZE) {
+        if (!killed && !settled) {
+          killed = true;
+          settled = true;
+          clearTimeout(timer);
+          child.kill("SIGKILL");
+          reject(
+            new Error(
+              `Process output exceeded maximum size (${MAX_OUTPUT_SIZE} bytes). stdout: ${stdout.length} bytes, stderr: ${stderr.length} bytes`,
+            ),
+          );
+        }
+        return;
+      }
+      stderr += chunk;
     });
     child.on("error", (err) => {
       if (settled) {

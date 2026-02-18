@@ -75,18 +75,23 @@ function storeSync(runId: string, entry: SubagentRunRecord | null): void {
 
     if (entry === null) {
       await store.hdel(SUBAGENT_STORE_KEY, runId);
+      // Clean up sequence tracking for deleted entries AFTER successful delete
+      // Only delete if we're still the latest sequence (防止竞态)
+      if (storeSyncSeq.get(runId) === seq) {
+        storeSyncSeq.delete(runId);
+      }
     } else {
       // Re-check after async gap — a release may have fired in between
       if (storeSyncSeq.get(runId) !== seq) return;
       await store.hset(SUBAGENT_STORE_KEY, runId, entry);
     }
-
-    // Clean up sequence tracking for deleted entries
-    if (entry === null) {
-      storeSyncSeq.delete(runId);
-    }
   })().catch((err) => {
     log.warn(`storeSync failed for ${runId}: ${String(err)}`);
+    // On error, only clean up sequence if we're still the latest
+    // This prevents a failed operation from blocking future attempts
+    if (entry === null && storeSyncSeq.get(runId) === seq) {
+      storeSyncSeq.delete(runId);
+    }
   });
 }
 

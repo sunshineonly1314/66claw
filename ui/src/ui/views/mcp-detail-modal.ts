@@ -16,6 +16,7 @@ export type McpDetailModalProps = {
   onInstall: () => void;
   onConfigInstall: () => void;
   onUninstall: () => void;
+  onUpdate: () => void;
   onTrySay: (prompt: string) => void;
 };
 
@@ -44,7 +45,7 @@ function badgePill(bg: string, fg: string, label: string): TemplateResult {
 /* ── main render ───────────────────────────────────────── */
 
 export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult {
-  const { item, onClose, onInstall, onConfigInstall, onUninstall, onTrySay } = props;
+  const { item, onClose, onInstall, onConfigInstall, onUninstall, onUpdate, onTrySay } = props;
   const emoji = CATEGORY_EMOJI[item.category] ?? "\u{1F527}";
   const scoreColor = item.securityScore >= 80 ? "#34d399" : item.securityScore >= 60 ? "#fbbf24" : "#94a3b8";
 
@@ -62,6 +63,9 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
 
     <!-- Modal -->
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="${item.friendlyName}"
       style="
         position:fixed;
         top:50%; left:50%;
@@ -81,6 +85,7 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
       <!-- Close button -->
       <button
         @click=${onClose}
+        aria-label="Close"
         style="
           all:unset; cursor:pointer;
           position:absolute; top:16px; right:16px;
@@ -266,23 +271,45 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
 
       <div style="border-top:1px solid var(--border); margin:20px -28px 0; padding:0 28px;"></div>
 
-      <!-- Footer install/uninstall buttons -->
+      <!-- Footer install/uninstall/update buttons -->
       <div style="margin-top:20px; text-align:center; display:flex; justify-content:center; gap:12px;">
         ${item.installStatus === "installed"
           ? html`
+              ${item.hasUpdate
+                ? html`
+                    <button
+                      @click=${() => { onUpdate(); onClose(); }}
+                      style="
+                        all:unset; cursor:pointer;
+                        font-size:13px; font-weight:600;
+                        padding:10px 32px;
+                        border-radius:8px;
+                        background:linear-gradient(135deg, #6366f1, #818cf8);
+                        color:#fff;
+                        transition:opacity 150ms;
+                      "
+                    >\u2B06\uFE0F ${t("extensions.detail.updateNow" as never)}</button>
+                  `
+                : html`
+                    <button
+                      @click=${onClose}
+                      style="
+                        all:unset; cursor:pointer;
+                        font-size:13px; font-weight:600;
+                        padding:10px 32px;
+                        border-radius:8px;
+                        background:rgba(52,211,153,0.1);
+                        color:#34d399;
+                      "
+                    >&#10003; ${t("extensions.detail.installedManage")}</button>
+                  `}
               <button
-                @click=${onClose}
-                style="
-                  all:unset; cursor:pointer;
-                  font-size:13px; font-weight:600;
-                  padding:10px 32px;
-                  border-radius:8px;
-                  background:rgba(52,211,153,0.1);
-                  color:#34d399;
-                "
-              >&#10003; ${t("extensions.detail.installedManage")}</button>
-              <button
-                @click=${() => { onUninstall(); onClose(); }}
+                @click=${() => {
+                  if (confirm(t("extensions.detail.uninstallConfirm" as never).replace("{{name}}", item.friendlyName))) {
+                    onUninstall();
+                    onClose();
+                  }
+                }}
                 style="
                   all:unset; cursor:pointer;
                   font-size:12px;
@@ -291,7 +318,7 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
                   border:1px solid rgba(248,113,113,0.2);
                   color:#f87171;
                 "
-              >${t("extensions.advanced.disable")}</button>
+              >${t("extensions.detail.uninstall" as never)}</button>
             `
           : item.installStatus === "installing"
             ? html`

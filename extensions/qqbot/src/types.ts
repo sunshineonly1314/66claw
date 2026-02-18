@@ -20,6 +20,8 @@ export interface QqbotAppConfig {
   appSecret: string;
   /** QQ 机器人 Token (用于验证回调) */
   token?: string;
+  /** QQ 机器人公钥 (用于 Ed25519 签名验证，hex 格式) */
+  publicKey?: string;
 }
 
 /**

@@ -203,15 +203,13 @@ function findNodePackageManager(manager: string): string | undefined {
  * OpenClawCN: Clean terminal control characters and spinner symbols from output
  */
 function cleanTerminalOutput(text: string): string {
-  return (
-    text
-      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
-      .replace(/[◆●○◇◈◉◐◑◒◓◔◕⬤⬡⬢⬣⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/g, "")
-      .replace(/[\u2800-\u28FF]/g, "")
-      .replace(/\r/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  );
+  return text
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
+    .replace(/[◆●○◇◈◉◐◑◒◓◔◕⬤⬡⬢⬣⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/g, "")
+    .replace(/[\u2800-\u28FF]/g, "")
+    .replace(/\r/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function summarizeInstallOutput(text: string): string | undefined {
@@ -1231,24 +1229,52 @@ async function installFromHKBinaryServer(params: {
   const useCN = shouldUseCNMirror();
 
   if (!isToolHostedOnHK(toolName)) {
-    return { ok: false, message: `Tool ${toolName} is not hosted on HK binary server`, stdout: "", stderr: "", code: null };
+    return {
+      ok: false,
+      message: `Tool ${toolName} is not hosted on HK binary server`,
+      stdout: "",
+      stderr: "",
+      code: null,
+    };
   }
 
   const toolConfig = CLI_TOOL_MIRRORS[toolName];
   const platform = getCurrentPlatformForHKBinary();
 
   if (toolConfig?.hkBinary && !toolConfig.hkBinary.platforms.includes(platform)) {
-    return { ok: false, message: `Tool ${toolName} does not support platform ${platform}. Supported: ${toolConfig.hkBinary.platforms.join(", ")}`, stdout: "", stderr: "", code: null };
+    return {
+      ok: false,
+      message: `Tool ${toolName} does not support platform ${platform}. Supported: ${toolConfig.hkBinary.platforms.join(", ")}`,
+      stdout: "",
+      stderr: "",
+      code: null,
+    };
   }
 
-  onProgress?.({ stage: "downloading", message: `连接香港镜像服务器...`, usingCNMirror: useCN, percent: 2 });
+  onProgress?.({
+    stage: "downloading",
+    message: `连接香港镜像服务器...`,
+    usingCNMirror: useCN,
+    percent: 2,
+  });
 
   const version = await getHKBinaryLatestVersion(toolName, Math.min(timeoutMs, 10000));
   if (!version) {
-    return { ok: false, message: `Failed to get latest version for ${toolName} from HK server`, stdout: "", stderr: "版本信息获取失败，服务器可能暂时不可用", code: null };
+    return {
+      ok: false,
+      message: `Failed to get latest version for ${toolName} from HK server`,
+      stdout: "",
+      stderr: "版本信息获取失败，服务器可能暂时不可用",
+      code: null,
+    };
   }
 
-  onProgress?.({ stage: "downloading", message: `发现 ${toolName} v${version}，准备下载...`, usingCNMirror: useCN, percent: 5 });
+  onProgress?.({
+    stage: "downloading",
+    message: `发现 ${toolName} v${version}，准备下载...`,
+    usingCNMirror: useCN,
+    percent: 5,
+  });
 
   const downloadUrl = getHKBinaryDownloadUrl(toolName, version, platform);
 
@@ -1256,7 +1282,13 @@ async function installFromHKBinaryServer(params: {
     validateUrlForSsrf(downloadUrl);
   } catch (ssrfError) {
     const reason = ssrfError instanceof Error ? ssrfError.message : "URL validation failed";
-    return { ok: false, message: `Invalid download URL: ${reason}`, stdout: "", stderr: reason, code: null };
+    return {
+      ok: false,
+      message: `Invalid download URL: ${reason}`,
+      stdout: "",
+      stderr: reason,
+      code: null,
+    };
   }
 
   const installDir = path.join(CONFIG_DIR, "tools", toolName);
@@ -1271,24 +1303,44 @@ async function installFromHKBinaryServer(params: {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       if (attempt > 1) {
-        onProgress?.({ stage: "downloading", message: `下载重试 (${attempt}/${MAX_RETRIES})...`, usingCNMirror: useCN, percent: 10 });
+        onProgress?.({
+          stage: "downloading",
+          message: `下载重试 (${attempt}/${MAX_RETRIES})...`,
+          usingCNMirror: useCN,
+          percent: 10,
+        });
         await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt - 1)));
       }
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const response = await fetch(downloadUrl, { signal: controller.signal, headers: { "User-Agent": "OpenClawCN/1.0" } });
+      const response = await fetch(downloadUrl, {
+        signal: controller.signal,
+        headers: { "User-Agent": "OpenClawCN/1.0" },
+      });
       clearTimeout(timeout);
 
       if (!response.ok) {
-        return { ok: false, message: `Download failed: HTTP ${response.status} ${response.statusText}`, stdout: "", stderr: `URL: ${downloadUrl}`, code: null };
+        return {
+          ok: false,
+          message: `Download failed: HTTP ${response.status} ${response.statusText}`,
+          stdout: "",
+          stderr: `URL: ${downloadUrl}`,
+          code: null,
+        };
       }
 
       const contentLength = response.headers.get("content-length");
       const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
       const MAX_SIZE = 100 * 1024 * 1024;
       if (totalSize > MAX_SIZE) {
-        return { ok: false, message: `Binary too large: ${totalSize} bytes (max: ${MAX_SIZE})`, stdout: "", stderr: "", code: null };
+        return {
+          ok: false,
+          message: `Binary too large: ${totalSize} bytes (max: ${MAX_SIZE})`,
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
       }
 
       const body = response.body;
@@ -1310,56 +1362,163 @@ async function installFromHKBinaryServer(params: {
         const percent = totalSize > 0 ? Math.round((downloaded / totalSize) * 85) + 5 : 50;
         const elapsed = (Date.now() - startTime) / 1000;
         const speed = elapsed > 0 ? formatBytes(downloaded / elapsed) + "/s" : "计算中...";
-        const eta = totalSize > 0 && elapsed > 0 ? Math.round((totalSize - downloaded) / (downloaded / elapsed)) + "s" : "计算中...";
+        const eta =
+          totalSize > 0 && elapsed > 0
+            ? Math.round((totalSize - downloaded) / (downloaded / elapsed)) + "s"
+            : "计算中...";
 
-        onProgress?.({ stage: "downloading", message: `下载 ${toolName} v${version}...`, percent, usingCNMirror: useCN, downloadInfo: { speed, eta, downloaded: formatBytes(downloaded), total: formatBytes(totalSize) } });
+        onProgress?.({
+          stage: "downloading",
+          message: `下载 ${toolName} v${version}...`,
+          percent,
+          usingCNMirror: useCN,
+          downloadInfo: {
+            speed,
+            eta,
+            downloaded: formatBytes(downloaded),
+            total: formatBytes(totalSize),
+          },
+        });
       }
 
       writeStream.end();
-      await new Promise<void>((resolve, reject) => { writeStream.on("finish", resolve); writeStream.on("error", reject); });
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on("finish", resolve);
+        writeStream.on("error", reject);
+      });
 
       const stats = fs.statSync(binaryPath);
-      if (stats.size === 0) { fs.unlinkSync(binaryPath); return { ok: false, message: "Downloaded file is empty", stdout: "", stderr: "", code: null }; }
-      if (stats.size < 1024) { fs.unlinkSync(binaryPath); return { ok: false, message: `Downloaded file too small: ${stats.size} bytes`, stdout: "", stderr: "", code: null }; }
+      if (stats.size === 0) {
+        fs.unlinkSync(binaryPath);
+        return {
+          ok: false,
+          message: "Downloaded file is empty",
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
+      }
+      if (stats.size < 1024) {
+        fs.unlinkSync(binaryPath);
+        return {
+          ok: false,
+          message: `Downloaded file too small: ${stats.size} bytes`,
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
+      }
 
       // SHA256 verification (optional, non-blocking)
-      onProgress?.({ stage: "verifying", message: `校验文件完整性...`, percent: 92, usingCNMirror: useCN });
+      onProgress?.({
+        stage: "verifying",
+        message: `校验文件完整性...`,
+        percent: 92,
+        usingCNMirror: useCN,
+      });
       let sha256Verified = false;
       try {
         const sha256Url = `${downloadUrl}.sha256`;
-        const sha256Response = await fetch(sha256Url, { headers: { "User-Agent": "OpenClawCN/1.0" }, signal: AbortSignal.timeout(5000) });
+        const sha256Response = await fetch(sha256Url, {
+          headers: { "User-Agent": "OpenClawCN/1.0" },
+          signal: AbortSignal.timeout(5000),
+        });
         if (sha256Response.ok) {
           const expectedHash = (await sha256Response.text()).trim().split(/\s+/)[0]?.toLowerCase();
           if (expectedHash && expectedHash.length === 64) {
             const { createHash } = await import("node:crypto");
             const fileBuffer = fs.readFileSync(binaryPath);
             const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
-            if (actualHash === expectedHash) { sha256Verified = true; }
-            else { fs.unlinkSync(binaryPath); return { ok: false, message: `SHA256 mismatch for ${toolName}`, stdout: "", stderr: `Expected: ${expectedHash}\nActual: ${actualHash}`, code: null }; }
+            if (actualHash === expectedHash) {
+              sha256Verified = true;
+            } else {
+              fs.unlinkSync(binaryPath);
+              return {
+                ok: false,
+                message: `SHA256 mismatch for ${toolName}`,
+                stdout: "",
+                stderr: `Expected: ${expectedHash}\nActual: ${actualHash}`,
+                code: null,
+              };
+            }
           }
         }
-      } catch { /* SHA256 check failure is non-blocking */ }
+      } catch {
+        /* SHA256 check failure is non-blocking */
+      }
 
-      if (process.platform !== "win32") { fs.chmodSync(binaryPath, 0o755); }
+      if (process.platform !== "win32") {
+        fs.chmodSync(binaryPath, 0o755);
+      }
 
       const verifyNote = sha256Verified ? " (SHA256 verified)" : "";
-      onProgress?.({ stage: "verifying", message: `${toolName} v${version} 安装成功！${verifyNote}`, percent: 100, usingCNMirror: useCN });
+      onProgress?.({
+        stage: "verifying",
+        message: `${toolName} v${version} 安装成功！${verifyNote}`,
+        percent: 100,
+        usingCNMirror: useCN,
+      });
 
-      return { ok: true, message: `Installed ${toolName} v${version} to ${binaryPath}${verifyNote}`, stdout: `Downloaded ${formatBytes(stats.size)} from HK server`, stderr: "", code: 0 };
+      return {
+        ok: true,
+        message: `Installed ${toolName} v${version} to ${binaryPath}${verifyNote}`,
+        stdout: `Downloaded ${formatBytes(stats.size)} from HK server`,
+        stderr: "",
+        code: 0,
+      };
     } catch (err) {
-      if (fs.existsSync(binaryPath)) { try { fs.unlinkSync(binaryPath); } catch { /* ignore */ } }
+      if (fs.existsSync(binaryPath)) {
+        try {
+          fs.unlinkSync(binaryPath);
+        } catch {
+          /* ignore */
+        }
+      }
       lastError = err instanceof Error ? err : new Error(String(err));
       const message = lastError.message;
-      const isRetryable = message.includes("abort") || message.includes("timeout") || message.includes("ENOTFOUND") || message.includes("ECONNREFUSED") || message.includes("ETIMEDOUT");
+      const isRetryable =
+        message.includes("abort") ||
+        message.includes("timeout") ||
+        message.includes("ENOTFOUND") ||
+        message.includes("ECONNREFUSED") ||
+        message.includes("ETIMEDOUT");
       if (!isRetryable || attempt === MAX_RETRIES) {
-        if (message.includes("abort") || message.includes("timeout")) { return { ok: false, message: `Download timeout for ${toolName}`, stdout: "", stderr: `网络连接超时，已重试 ${attempt} 次`, code: null }; }
-        if (message.includes("ENOTFOUND") || message.includes("ECONNREFUSED")) { return { ok: false, message: `Cannot connect to HK binary server`, stdout: "", stderr: "无法连接香港服务器，请检查网络连接", code: null }; }
-        return { ok: false, message: `Download error: ${message}`, stdout: "", stderr: message, code: null };
+        if (message.includes("abort") || message.includes("timeout")) {
+          return {
+            ok: false,
+            message: `Download timeout for ${toolName}`,
+            stdout: "",
+            stderr: `网络连接超时，已重试 ${attempt} 次`,
+            code: null,
+          };
+        }
+        if (message.includes("ENOTFOUND") || message.includes("ECONNREFUSED")) {
+          return {
+            ok: false,
+            message: `Cannot connect to HK binary server`,
+            stdout: "",
+            stderr: "无法连接香港服务器，请检查网络连接",
+            code: null,
+          };
+        }
+        return {
+          ok: false,
+          message: `Download error: ${message}`,
+          stdout: "",
+          stderr: message,
+          code: null,
+        };
       }
     }
   }
 
-  return { ok: false, message: `Download failed after ${MAX_RETRIES} attempts`, stdout: "", stderr: lastError?.message ?? "Unknown error", code: null };
+  return {
+    ok: false,
+    message: `Download failed after ${MAX_RETRIES} attempts`,
+    stdout: "",
+    stderr: lastError?.message ?? "Unknown error",
+    code: null,
+  };
 }
 
 function canInstallFromHKServer(toolName: string): boolean {
@@ -1386,90 +1545,239 @@ async function installUvDependency(
 
   if (platform === "darwin" && brewExe) {
     const brewResult = await runCommandWithTimeout([brewExe, "install", "uv"], { timeoutMs });
-    if (brewResult.code === 0) { return { ok: true, message: "uv installed via brew", stdout: brewResult.stdout, stderr: "", code: 0 }; }
-    return { ok: false, message: "Failed to install uv (brew)", stdout: brewResult.stdout.trim(), stderr: brewResult.stderr.trim(), code: brewResult.code };
+    if (brewResult.code === 0) {
+      return {
+        ok: true,
+        message: "uv installed via brew",
+        stdout: brewResult.stdout,
+        stderr: "",
+        code: 0,
+      };
+    }
+    return {
+      ok: false,
+      message: "Failed to install uv (brew)",
+      stdout: brewResult.stdout.trim(),
+      stderr: brewResult.stderr.trim(),
+      code: brewResult.code,
+    };
   }
 
   if (platform === "win32") {
     if (hasBinary("pip") || hasBinary("pip3")) {
       const pipCmd = hasBinary("pip3") ? "pip3" : "pip";
       const pipArgs = useCN
-        ? ["install", "uv", "-i", getPipMirrors()[0], "--trusted-host", new URL(getPipMirrors()[0]).hostname]
+        ? [
+            "install",
+            "uv",
+            "-i",
+            getPipMirrors()[0],
+            "--trusted-host",
+            new URL(getPipMirrors()[0]).hostname,
+          ]
         : ["install", "uv"];
-      const pipResult = await runCommandWithTimeout([pipCmd, ...pipArgs], { timeoutMs: Math.max(timeoutMs, 120_000) });
+      const pipResult = await runCommandWithTimeout([pipCmd, ...pipArgs], {
+        timeoutMs: Math.max(timeoutMs, 120_000),
+      });
       if (pipResult.code === 0) {
         const pythonScriptsDir = resolvePythonScriptsDir();
-        if (pythonScriptsDir && !process.env.PATH?.includes(pythonScriptsDir)) { process.env.PATH = `${pythonScriptsDir};${process.env.PATH}`; }
-        return { ok: true, message: useCN ? "OpenClawCN: uv 已通过国内 PyPI 镜像安装" : "uv installed via pip", stdout: pipResult.stdout, stderr: "", code: 0 };
+        if (pythonScriptsDir && !process.env.PATH?.includes(pythonScriptsDir)) {
+          process.env.PATH = `${pythonScriptsDir};${process.env.PATH}`;
+        }
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: uv 已通过国内 PyPI 镜像安装" : "uv installed via pip",
+          stdout: pipResult.stdout,
+          stderr: "",
+          code: 0,
+        };
       }
     }
     if (hasBinary("winget")) {
-      const wingetResult = await runCommandWithTimeout(["winget", "install", "--id", "astral-sh.uv", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements"], { timeoutMs: Math.max(timeoutMs, 180_000) });
-      if (wingetResult.code === 0) { return { ok: true, message: useCN ? "OpenClawCN: uv 已通过 winget 安装" : "uv installed via winget", stdout: wingetResult.stdout, stderr: "", code: 0 }; }
+      const wingetResult = await runCommandWithTimeout(
+        [
+          "winget",
+          "install",
+          "--id",
+          "astral-sh.uv",
+          "-e",
+          "--silent",
+          "--accept-package-agreements",
+          "--accept-source-agreements",
+        ],
+        { timeoutMs: Math.max(timeoutMs, 180_000) },
+      );
+      if (wingetResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: uv 已通过 winget 安装" : "uv installed via winget",
+          stdout: wingetResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
     }
     const installScripts = getUvInstallScripts("ps1");
     let lastError = "";
     for (const scriptUrl of installScripts) {
       const installScript = `irm '${scriptUrl}' | iex`;
-      const result = await runCommandWithTimeout(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", installScript], { timeoutMs: Math.max(timeoutMs, 120_000) });
+      const result = await runCommandWithTimeout(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", installScript],
+        { timeoutMs: Math.max(timeoutMs, 120_000) },
+      );
       if (result.code === 0) {
         const userProfile = process.env.USERPROFILE || "";
         const uvPath = path.join(userProfile, ".local", "bin");
-        if (!process.env.PATH?.includes(uvPath)) { process.env.PATH = `${uvPath};${process.env.PATH}`; }
-        return { ok: true, message: useCN ? "OpenClawCN: uv 已安装" : "uv installed", stdout: result.stdout, stderr: "", code: 0 };
+        if (!process.env.PATH?.includes(uvPath)) {
+          process.env.PATH = `${uvPath};${process.env.PATH}`;
+        }
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: uv 已安装" : "uv installed",
+          stdout: result.stdout,
+          stderr: "",
+          code: 0,
+        };
       }
       lastError = result.stderr || result.stdout;
     }
-    return { ok: false, message: `Failed to install uv: pip/winget/powershell all failed. Last error: ${lastError}`, stdout: "", stderr: lastError, code: null };
+    return {
+      ok: false,
+      message: `Failed to install uv: pip/winget/powershell all failed. Last error: ${lastError}`,
+      stdout: "",
+      stderr: lastError,
+      code: null,
+    };
   }
 
   if (platform === "linux") {
     if (hasBinary("pip") || hasBinary("pip3")) {
       const pipCmd = hasBinary("pip3") ? "pip3" : "pip";
       const pipMirror = getPipMirrors()[0];
-      const pipResult = await runCommandWithTimeout([pipCmd, "install", "uv", "-i", pipMirror, "--trusted-host", new URL(pipMirror).hostname], { timeoutMs: Math.max(timeoutMs, 120_000) });
-      if (pipResult.code === 0) { return { ok: true, message: useCN ? "OpenClawCN: uv 已通过国内 PyPI 镜像安装" : "uv installed via pip", stdout: pipResult.stdout, stderr: "", code: 0 }; }
+      const pipResult = await runCommandWithTimeout(
+        [pipCmd, "install", "uv", "-i", pipMirror, "--trusted-host", new URL(pipMirror).hostname],
+        { timeoutMs: Math.max(timeoutMs, 120_000) },
+      );
+      if (pipResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: uv 已通过国内 PyPI 镜像安装" : "uv installed via pip",
+          stdout: pipResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
     }
     const installUrls = getUvInstallScripts("sh");
     let lastError = "";
     for (const installUrl of installUrls) {
       const installScript = `curl -LsSf "${installUrl}" | sh`;
-      const result = await runCommandWithTimeout(["sh", "-c", installScript], { timeoutMs: Math.max(timeoutMs, 120_000), cwd: process.env.HOME });
+      const result = await runCommandWithTimeout(["sh", "-c", installScript], {
+        timeoutMs: Math.max(timeoutMs, 120_000),
+        cwd: process.env.HOME,
+      });
       if (result.code === 0) {
         const uvPath = path.join(process.env.HOME || "", ".local", "bin");
-        if (!process.env.PATH?.includes(uvPath)) { process.env.PATH = `${uvPath}:${process.env.PATH}`; }
-        return { ok: true, message: useCN ? "OpenClawCN: uv 已通过国内镜像安装" : "uv installed via curl", stdout: result.stdout, stderr: "", code: 0 };
+        if (!process.env.PATH?.includes(uvPath)) {
+          process.env.PATH = `${uvPath}:${process.env.PATH}`;
+        }
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: uv 已通过国内镜像安装" : "uv installed via curl",
+          stdout: result.stdout,
+          stderr: "",
+          code: 0,
+        };
       }
       lastError = result.stderr || result.stdout;
     }
-    return { ok: false, message: `Failed to install uv: pip/curl all failed. Last error: ${lastError}`, stdout: "", stderr: lastError, code: null };
+    return {
+      ok: false,
+      message: `Failed to install uv: pip/curl all failed. Last error: ${lastError}`,
+      stdout: "",
+      stderr: lastError,
+      code: null,
+    };
   }
 
-  return { ok: false, message: "uv not installed (please install manually: https://docs.astral.sh/uv/)", stdout: "", stderr: "", code: null };
+  return {
+    ok: false,
+    message: "uv not installed (please install manually: https://docs.astral.sh/uv/)",
+    stdout: "",
+    stderr: "",
+    code: null,
+  };
 }
 
-async function installGoDependency(timeoutMs: number, brewExe?: string): Promise<SkillInstallResult> {
+async function installGoDependency(
+  timeoutMs: number,
+  brewExe?: string,
+): Promise<SkillInstallResult> {
   const useCN = shouldUseCNMirror();
   const platform = process.platform;
 
   if (platform === "darwin" && brewExe) {
     const brewResult = await runCommandWithTimeout([brewExe, "install", "go"], { timeoutMs });
-    if (brewResult.code === 0) { return { ok: true, message: "go installed via brew", stdout: brewResult.stdout, stderr: "", code: 0 }; }
-    return { ok: false, message: "Failed to install go (brew)", stdout: brewResult.stdout.trim(), stderr: brewResult.stderr.trim(), code: brewResult.code };
+    if (brewResult.code === 0) {
+      return {
+        ok: true,
+        message: "go installed via brew",
+        stdout: brewResult.stdout,
+        stderr: "",
+        code: 0,
+      };
+    }
+    return {
+      ok: false,
+      message: "Failed to install go (brew)",
+      stdout: brewResult.stdout.trim(),
+      stderr: brewResult.stderr.trim(),
+      code: brewResult.code,
+    };
   }
 
   if (platform === "win32") {
     if (hasBinary("winget")) {
-      const wingetResult = await runCommandWithTimeout(["winget", "install", "--id", "GoLang.Go", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements"], { timeoutMs: Math.max(timeoutMs, 300_000) });
+      const wingetResult = await runCommandWithTimeout(
+        [
+          "winget",
+          "install",
+          "--id",
+          "GoLang.Go",
+          "-e",
+          "--silent",
+          "--accept-package-agreements",
+          "--accept-source-agreements",
+        ],
+        { timeoutMs: Math.max(timeoutMs, 300_000) },
+      );
       if (wingetResult.code === 0) {
         const goPath = "C:\\Program Files\\Go\\bin";
-        if (!process.env.PATH?.includes(goPath)) { process.env.PATH = `${goPath};${process.env.PATH}`; }
-        return { ok: true, message: useCN ? "OpenClawCN: Go 已通过 winget 安装" : "go installed via winget", stdout: wingetResult.stdout, stderr: "", code: 0 };
+        if (!process.env.PATH?.includes(goPath)) {
+          process.env.PATH = `${goPath};${process.env.PATH}`;
+        }
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: Go 已通过 winget 安装" : "go installed via winget",
+          stdout: wingetResult.stdout,
+          stderr: "",
+          code: 0,
+        };
       }
     }
     if (hasBinary("scoop")) {
-      const scoopResult = await runCommandWithTimeout(["scoop", "install", "go"], { timeoutMs: Math.max(timeoutMs, 300_000) });
-      if (scoopResult.code === 0) { return { ok: true, message: useCN ? "OpenClawCN: Go 已通过 scoop 安装" : "go installed via scoop", stdout: scoopResult.stdout, stderr: "", code: 0 }; }
+      const scoopResult = await runCommandWithTimeout(["scoop", "install", "go"], {
+        timeoutMs: Math.max(timeoutMs, 300_000),
+      });
+      if (scoopResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: Go 已通过 scoop 安装" : "go installed via scoop",
+          stdout: scoopResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
     }
 
     const goVersion = "1.22.0";
@@ -1483,17 +1791,41 @@ async function installGoDependency(timeoutMs: number, brewExe?: string): Promise
       const downloadUrl = `${mirror}/${msiName}`;
       try {
         await downloadFile(downloadUrl, msiPath, Math.max(timeoutMs, 300_000));
-        const msiexecResult = await runCommandWithTimeout(["msiexec", "/i", msiPath, "/quiet", "/norestart"], { timeoutMs: Math.max(timeoutMs, 300_000) });
-        try { await fs.promises.unlink(msiPath); } catch { /* ignore */ }
+        const msiexecResult = await runCommandWithTimeout(
+          ["msiexec", "/i", msiPath, "/quiet", "/norestart"],
+          { timeoutMs: Math.max(timeoutMs, 300_000) },
+        );
+        try {
+          await fs.promises.unlink(msiPath);
+        } catch {
+          /* ignore */
+        }
         if (msiexecResult.code === 0) {
           const goPath = "C:\\Program Files\\Go\\bin";
-          if (!process.env.PATH?.includes(goPath)) { process.env.PATH = `${goPath};${process.env.PATH}`; }
-          return { ok: true, message: useCN ? `OpenClawCN: Go 已通过国内镜像安装 (${mirror})` : "go installed", stdout: `Go installed to C:\\Program Files\\Go`, stderr: "", code: 0 };
+          if (!process.env.PATH?.includes(goPath)) {
+            process.env.PATH = `${goPath};${process.env.PATH}`;
+          }
+          return {
+            ok: true,
+            message: useCN ? `OpenClawCN: Go 已通过国内镜像安装 (${mirror})` : "go installed",
+            stdout: `Go installed to C:\\Program Files\\Go`,
+            stderr: "",
+            code: 0,
+          };
         }
         lastError = `msiexec failed: ${msiexecResult.stderr}`;
-      } catch (err) { lastError = err instanceof Error ? err.message : String(err); continue; }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        continue;
+      }
     }
-    return { ok: false, message: `Failed to install Go: ${lastError}`, stdout: "", stderr: lastError, code: null };
+    return {
+      ok: false,
+      message: `Failed to install Go: ${lastError}`,
+      stdout: "",
+      stderr: lastError,
+      code: null,
+    };
   }
 
   if (platform === "linux") {
@@ -1509,46 +1841,126 @@ async function installGoDependency(timeoutMs: number, brewExe?: string): Promise
       try {
         await ensureDir(goRoot);
         await downloadFile(downloadUrl, tarPath, Math.max(timeoutMs, 180_000));
-        const extractResult = await runCommandWithTimeout(["tar", "-xzf", tarPath, "-C", goRoot, "--strip-components=1"], { timeoutMs: 60_000 });
-        if (extractResult.code !== 0) { lastError = `tar extract failed: ${extractResult.stderr}`; continue; }
-        try { await fs.promises.unlink(tarPath); } catch { /* ignore */ }
+        const extractResult = await runCommandWithTimeout(
+          ["tar", "-xzf", tarPath, "-C", goRoot, "--strip-components=1"],
+          { timeoutMs: 60_000 },
+        );
+        if (extractResult.code !== 0) {
+          lastError = `tar extract failed: ${extractResult.stderr}`;
+          continue;
+        }
+        try {
+          await fs.promises.unlink(tarPath);
+        } catch {
+          /* ignore */
+        }
         const goBin = path.join(goRoot, "bin");
-        if (!process.env.PATH?.includes(goBin)) { process.env.PATH = `${goBin}:${process.env.PATH}`; }
+        if (!process.env.PATH?.includes(goBin)) {
+          process.env.PATH = `${goBin}:${process.env.PATH}`;
+        }
         process.env.GOROOT = goRoot;
-        return { ok: true, message: useCN ? `OpenClawCN: Go 已通过国内镜像安装 (${mirror})` : "go installed", stdout: `Go installed to ${goRoot}`, stderr: "", code: 0 };
-      } catch (err) { lastError = err instanceof Error ? err.message : String(err); continue; }
+        return {
+          ok: true,
+          message: useCN ? `OpenClawCN: Go 已通过国内镜像安装 (${mirror})` : "go installed",
+          stdout: `Go installed to ${goRoot}`,
+          stderr: "",
+          code: 0,
+        };
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        continue;
+      }
     }
-    return { ok: false, message: `Failed to install Go: ${lastError}`, stdout: "", stderr: lastError, code: null };
+    return {
+      ok: false,
+      message: `Failed to install Go: ${lastError}`,
+      stdout: "",
+      stderr: lastError,
+      code: null,
+    };
   }
 
-  return { ok: false, message: "go not installed (please install manually: https://go.dev/dl/)", stdout: "", stderr: "", code: null };
+  return {
+    ok: false,
+    message: "go not installed (please install manually: https://go.dev/dl/)",
+    stdout: "",
+    stderr: "",
+    code: null,
+  };
 }
 
-async function installNodeDependency(timeoutMs: number, brewExe?: string): Promise<SkillInstallResult> {
+async function installNodeDependency(
+  timeoutMs: number,
+  brewExe?: string,
+): Promise<SkillInstallResult> {
   const useCN = shouldUseCNMirror();
   const platform = process.platform;
 
   if (platform === "darwin" && brewExe) {
     const brewResult = await runCommandWithTimeout([brewExe, "install", "node"], { timeoutMs });
-    if (brewResult.code === 0) { return { ok: true, message: "node installed via brew", stdout: brewResult.stdout, stderr: "", code: 0 }; }
-    return { ok: false, message: "Failed to install node (brew)", stdout: brewResult.stdout.trim(), stderr: brewResult.stderr.trim(), code: brewResult.code };
+    if (brewResult.code === 0) {
+      return {
+        ok: true,
+        message: "node installed via brew",
+        stdout: brewResult.stdout,
+        stderr: "",
+        code: 0,
+      };
+    }
+    return {
+      ok: false,
+      message: "Failed to install node (brew)",
+      stdout: brewResult.stdout.trim(),
+      stderr: brewResult.stderr.trim(),
+      code: brewResult.code,
+    };
   }
 
   if (platform === "win32") {
     if (hasBinary("winget")) {
-      const wingetResult = await runCommandWithTimeout(["winget", "install", "--id", "OpenJS.NodeJS.LTS", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements"], { timeoutMs: Math.max(timeoutMs, 300_000) });
+      const wingetResult = await runCommandWithTimeout(
+        [
+          "winget",
+          "install",
+          "--id",
+          "OpenJS.NodeJS.LTS",
+          "-e",
+          "--silent",
+          "--accept-package-agreements",
+          "--accept-source-agreements",
+        ],
+        { timeoutMs: Math.max(timeoutMs, 300_000) },
+      );
       if (wingetResult.code === 0) {
         const nodePath = "C:\\Program Files\\nodejs";
-        if (!process.env.PATH?.includes(nodePath)) { process.env.PATH = `${nodePath};${process.env.PATH}`; }
-        return { ok: true, message: useCN ? "OpenClawCN: Node.js 已通过 winget 安装" : "node installed via winget", stdout: wingetResult.stdout, stderr: "", code: 0 };
+        if (!process.env.PATH?.includes(nodePath)) {
+          process.env.PATH = `${nodePath};${process.env.PATH}`;
+        }
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: Node.js 已通过 winget 安装" : "node installed via winget",
+          stdout: wingetResult.stdout,
+          stderr: "",
+          code: 0,
+        };
       }
     }
     if (hasBinary("scoop")) {
-      const scoopResult = await runCommandWithTimeout(["scoop", "install", "nodejs-lts"], { timeoutMs: Math.max(timeoutMs, 300_000) });
-      if (scoopResult.code === 0) { return { ok: true, message: useCN ? "OpenClawCN: Node.js 已通过 scoop 安装" : "node installed via scoop", stdout: scoopResult.stdout, stderr: "", code: 0 }; }
+      const scoopResult = await runCommandWithTimeout(["scoop", "install", "nodejs-lts"], {
+        timeoutMs: Math.max(timeoutMs, 300_000),
+      });
+      if (scoopResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: Node.js 已通过 scoop 安装" : "node installed via scoop",
+          stdout: scoopResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
     }
 
-    const nodeVersion = "20.11.0";
+    const nodeVersion = "22.13.1";
     const arch = process.arch === "arm64" ? "arm64" : "x64";
     const msiName = `node-v${nodeVersion}-${arch}.msi`;
     const tempDir = process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp";
@@ -1559,58 +1971,156 @@ async function installNodeDependency(timeoutMs: number, brewExe?: string): Promi
       const downloadUrl = `${mirror}/v${nodeVersion}/${msiName}`;
       try {
         await downloadFile(downloadUrl, msiPath, Math.max(timeoutMs, 300_000));
-        const msiexecResult = await runCommandWithTimeout(["msiexec", "/i", msiPath, "/quiet", "/norestart"], { timeoutMs: Math.max(timeoutMs, 300_000) });
-        try { await fs.promises.unlink(msiPath); } catch { /* ignore */ }
+        const msiexecResult = await runCommandWithTimeout(
+          ["msiexec", "/i", msiPath, "/quiet", "/norestart"],
+          { timeoutMs: Math.max(timeoutMs, 300_000) },
+        );
+        try {
+          await fs.promises.unlink(msiPath);
+        } catch {
+          /* ignore */
+        }
         if (msiexecResult.code === 0) {
           const nodePath = "C:\\Program Files\\nodejs";
-          if (!process.env.PATH?.includes(nodePath)) { process.env.PATH = `${nodePath};${process.env.PATH}`; }
-          return { ok: true, message: useCN ? `OpenClawCN: Node.js 已通过国内镜像安装 (${mirror})` : "node installed", stdout: `Node.js installed to ${nodePath}`, stderr: "", code: 0 };
+          if (!process.env.PATH?.includes(nodePath)) {
+            process.env.PATH = `${nodePath};${process.env.PATH}`;
+          }
+          return {
+            ok: true,
+            message: useCN
+              ? `OpenClawCN: Node.js 已通过国内镜像安装 (${mirror})`
+              : "node installed",
+            stdout: `Node.js installed to ${nodePath}`,
+            stderr: "",
+            code: 0,
+          };
         }
         lastError = `msiexec failed: ${msiexecResult.stderr}`;
-      } catch (err) { lastError = err instanceof Error ? err.message : String(err); continue; }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        continue;
+      }
     }
-    return { ok: false, message: `Failed to install Node.js: ${lastError}`, stdout: "", stderr: lastError, code: null };
+    return {
+      ok: false,
+      message: `Failed to install Node.js: ${lastError}`,
+      stdout: "",
+      stderr: lastError,
+      code: null,
+    };
   }
 
   if (platform === "linux") {
     let lastError = "";
     if (hasBinary("apt-get")) {
       await runCommandWithTimeout(["sudo", "apt-get", "update", "-qq"], { timeoutMs: 60_000 });
-      const aptResult = await runCommandWithTimeout(["sudo", "apt-get", "install", "-y", "nodejs", "npm"], { timeoutMs: Math.max(timeoutMs, 120_000) });
-      if (aptResult.code === 0) { return { ok: true, message: useCN ? "OpenClawCN: Node.js 已通过 apt 安装" : "node installed via apt", stdout: aptResult.stdout, stderr: "", code: 0 }; }
+      const aptResult = await runCommandWithTimeout(
+        ["sudo", "apt-get", "install", "-y", "nodejs", "npm"],
+        { timeoutMs: Math.max(timeoutMs, 120_000) },
+      );
+      if (aptResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: Node.js 已通过 apt 安装" : "node installed via apt",
+          stdout: aptResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
       lastError = aptResult.stderr;
     }
     const yumCmd = hasBinary("dnf") ? "dnf" : hasBinary("yum") ? "yum" : null;
     if (yumCmd) {
-      const yumResult = await runCommandWithTimeout(["sudo", yumCmd, "install", "-y", "nodejs", "npm"], { timeoutMs: Math.max(timeoutMs, 120_000) });
-      if (yumResult.code === 0) { return { ok: true, message: useCN ? `OpenClawCN: Node.js 已通过 ${yumCmd} 安装` : `node installed via ${yumCmd}`, stdout: yumResult.stdout, stderr: "", code: 0 }; }
+      const yumResult = await runCommandWithTimeout(
+        ["sudo", yumCmd, "install", "-y", "nodejs", "npm"],
+        { timeoutMs: Math.max(timeoutMs, 120_000) },
+      );
+      if (yumResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN
+            ? `OpenClawCN: Node.js 已通过 ${yumCmd} 安装`
+            : `node installed via ${yumCmd}`,
+          stdout: yumResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
       lastError = yumResult.stderr;
     }
     if (hasBinary("pacman")) {
-      const pacmanResult = await runCommandWithTimeout(["sudo", "pacman", "-S", "--noconfirm", "nodejs", "npm"], { timeoutMs: Math.max(timeoutMs, 120_000) });
-      if (pacmanResult.code === 0) { return { ok: true, message: useCN ? "OpenClawCN: Node.js 已通过 pacman 安装" : "node installed via pacman", stdout: pacmanResult.stdout, stderr: "", code: 0 }; }
+      const pacmanResult = await runCommandWithTimeout(
+        ["sudo", "pacman", "-S", "--noconfirm", "nodejs", "npm"],
+        { timeoutMs: Math.max(timeoutMs, 120_000) },
+      );
+      if (pacmanResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN ? "OpenClawCN: Node.js 已通过 pacman 安装" : "node installed via pacman",
+          stdout: pacmanResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
       lastError = pacmanResult.stderr;
     }
 
-    const fnmInstallUrl = useCN ? `${CN_MIRRORS.github}/https://fnm.vercel.app/install` : "https://fnm.vercel.app/install";
+    const fnmInstallUrl = useCN
+      ? `${CN_MIRRORS.github}/https://fnm.vercel.app/install`
+      : "https://fnm.vercel.app/install";
     const fnmInstallScript = `curl -fsSL "${fnmInstallUrl}" | bash -s -- --skip-shell`;
-    const fnmResult = await runCommandWithTimeout(["sh", "-c", fnmInstallScript], { timeoutMs: Math.max(timeoutMs, 60_000), cwd: process.env.HOME });
+    const fnmResult = await runCommandWithTimeout(["sh", "-c", fnmInstallScript], {
+      timeoutMs: Math.max(timeoutMs, 60_000),
+      cwd: process.env.HOME,
+    });
     if (fnmResult.code === 0) {
       const fnmPath = path.join(process.env.HOME || "", ".local", "share", "fnm");
-      if (!process.env.PATH?.includes(fnmPath)) { process.env.PATH = `${fnmPath}:${process.env.PATH}`; }
-      if (useCN) { process.env.FNM_NODE_DIST_MIRROR = CN_MIRRORS.node; }
+      if (!process.env.PATH?.includes(fnmPath)) {
+        process.env.PATH = `${fnmPath}:${process.env.PATH}`;
+      }
+      if (useCN) {
+        process.env.FNM_NODE_DIST_MIRROR = CN_MIRRORS.node;
+      }
       const nodeInstallScript = `${fnmPath}/fnm install --lts && ${fnmPath}/fnm default lts-latest`;
-      const nodeResult = await runCommandWithTimeout(["sh", "-c", nodeInstallScript], { timeoutMs: Math.max(timeoutMs, 180_000), cwd: process.env.HOME, env: useCN ? { FNM_NODE_DIST_MIRROR: CN_MIRRORS.node } : undefined });
-      if (nodeResult.code === 0) { return { ok: true, message: useCN ? "OpenClawCN: Node.js 已通过 fnm + 国内镜像安装" : "node installed via fnm", stdout: nodeResult.stdout, stderr: "", code: 0 }; }
+      const nodeResult = await runCommandWithTimeout(["sh", "-c", nodeInstallScript], {
+        timeoutMs: Math.max(timeoutMs, 180_000),
+        cwd: process.env.HOME,
+        env: useCN ? { FNM_NODE_DIST_MIRROR: CN_MIRRORS.node } : undefined,
+      });
+      if (nodeResult.code === 0) {
+        return {
+          ok: true,
+          message: useCN
+            ? "OpenClawCN: Node.js 已通过 fnm + 国内镜像安装"
+            : "node installed via fnm",
+          stdout: nodeResult.stdout,
+          stderr: "",
+          code: 0,
+        };
+      }
       lastError = nodeResult.stderr;
     } else {
       lastError = fnmResult.stderr || "fnm installation failed (GitHub may be inaccessible)";
     }
 
-    return { ok: false, message: useCN ? "Node.js 安装失败。请手动安装：sudo apt install nodejs npm 或 sudo yum install nodejs npm" : `Failed to install Node.js: ${lastError}`, stdout: "", stderr: lastError, code: null };
+    return {
+      ok: false,
+      message: useCN
+        ? "Node.js 安装失败。请手动安装：sudo apt install nodejs npm 或 sudo yum install nodejs npm"
+        : `Failed to install Node.js: ${lastError}`,
+      stdout: "",
+      stderr: lastError,
+      code: null,
+    };
   }
 
-  return { ok: false, message: "node not installed (please install manually: https://nodejs.org/)", stdout: "", stderr: "", code: null };
+  return {
+    ok: false,
+    message: "node not installed (please install manually: https://nodejs.org/)",
+    stdout: "",
+    stderr: "",
+    code: null,
+  };
 }
 
 async function resolveBrewBinDir(timeoutMs: number, brewExe?: string): Promise<string | undefined> {
@@ -1702,7 +2212,12 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   }
 
   if (spec.kind === "download") {
-    const downloadResult = await installDownloadSpec({ entry, spec, timeoutMs, onProgress: params.onProgress });
+    const downloadResult = await installDownloadSpec({
+      entry,
+      spec,
+      timeoutMs,
+      onProgress: params.onProgress,
+    });
     return withWarnings(downloadResult, warnings);
   }
 
@@ -1721,32 +2236,84 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     // OpenClawCN: Try HK binary server fallback when brew is unavailable
     if (spec.formula && canInstallFromHKServer(spec.formula.split("/").pop() || "")) {
       const toolName = spec.formula.split("/").pop() || "";
-      params.onProgress?.({ stage: "installing", message: useCN ? `brew 未安装，尝试从香港服务器下载 ${toolName}...` : `brew not installed, trying HK binary server for ${toolName}...`, usingCNMirror: useCN, percent: 10 });
-      const hkResult = await installFromHKBinaryServer({ toolName, timeoutMs, onProgress: params.onProgress });
+      params.onProgress?.({
+        stage: "installing",
+        message: useCN
+          ? `brew 未安装，尝试从香港服务器下载 ${toolName}...`
+          : `brew not installed, trying HK binary server for ${toolName}...`,
+        usingCNMirror: useCN,
+        percent: 10,
+      });
+      const hkResult = await installFromHKBinaryServer({
+        toolName,
+        timeoutMs,
+        onProgress: params.onProgress,
+      });
       if (hkResult.ok) return withWarnings(hkResult, warnings);
-      return withWarnings({ ok: false, message: useCN ? `brew 未安装，且香港服务器下载失败: ${hkResult.message}` : `brew not installed, HK fallback failed: ${hkResult.message}`, stdout: hkResult.stdout, stderr: hkResult.stderr, code: null }, warnings);
+      return withWarnings(
+        {
+          ok: false,
+          message: useCN
+            ? `brew 未安装，且香港服务器下载失败: ${hkResult.message}`
+            : `brew not installed, HK fallback failed: ${hkResult.message}`,
+          stdout: hkResult.stdout,
+          stderr: hkResult.stderr,
+          code: null,
+        },
+        warnings,
+      );
     }
-    return withWarnings({ ok: false, message: "brew not installed", stdout: "", stderr: "", code: null }, warnings);
+    return withWarnings(
+      { ok: false, message: "brew not installed", stdout: "", stderr: "", code: null },
+      warnings,
+    );
   }
 
   if (spec.kind === "uv" && !hasBinary("uv")) {
     // OpenClawCN: Auto-install uv dependency
-    params.onProgress?.({ stage: "installing", message: useCN ? "正在为您安装 Python 包管理器 (uv)..." : "Installing uv...", currentDependency: "uv", usingCNMirror: useCN, percent: 10 });
+    params.onProgress?.({
+      stage: "installing",
+      message: useCN ? "正在为您安装 Python 包管理器 (uv)..." : "Installing uv...",
+      currentDependency: "uv",
+      usingCNMirror: useCN,
+      percent: 10,
+    });
     const uvInstallResult = await installUvDependency(timeoutMs, brewExe);
     if (!uvInstallResult.ok) return withWarnings(uvInstallResult, warnings);
-    params.onProgress?.({ stage: "installing", message: useCN ? "uv 安装成功" : "uv installed", currentDependency: "uv", usingCNMirror: useCN, percent: 30 });
+    params.onProgress?.({
+      stage: "installing",
+      message: useCN ? "uv 安装成功" : "uv installed",
+      currentDependency: "uv",
+      usingCNMirror: useCN,
+      percent: 30,
+    });
   }
 
   // OpenClawCN: Auto-install Node.js dependency
   if (spec.kind === "node" && !hasBinary("node") && !hasBinary("npm")) {
-    params.onProgress?.({ stage: "installing", message: useCN ? "正在为您安装 Node.js 运行时..." : "Installing Node.js...", currentDependency: "node", usingCNMirror: useCN, percent: 10 });
+    params.onProgress?.({
+      stage: "installing",
+      message: useCN ? "正在为您安装 Node.js 运行时..." : "Installing Node.js...",
+      currentDependency: "node",
+      usingCNMirror: useCN,
+      percent: 10,
+    });
     const nodeInstallResult = await installNodeDependency(timeoutMs, brewExe);
     if (!nodeInstallResult.ok) return withWarnings(nodeInstallResult, warnings);
-    params.onProgress?.({ stage: "installing", message: useCN ? "Node.js 安装成功" : "Node.js installed", currentDependency: "node", usingCNMirror: useCN, percent: 30 });
+    params.onProgress?.({
+      stage: "installing",
+      message: useCN ? "Node.js 安装成功" : "Node.js installed",
+      currentDependency: "node",
+      usingCNMirror: useCN,
+      percent: 30,
+    });
   }
 
   if (!command.argv || command.argv.length === 0) {
-    return withWarnings({ ok: false, message: "invalid install command", stdout: "", stderr: "", code: null }, warnings);
+    return withWarnings(
+      { ok: false, message: "invalid install command", stdout: "", stderr: "", code: null },
+      warnings,
+    );
   }
 
   if (spec.kind === "brew" && brewExe && command.argv[0] === "brew") {
@@ -1758,10 +2325,22 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
 
   if (spec.kind === "go" && !goExe) {
     // OpenClawCN: Auto-install Go dependency
-    params.onProgress?.({ stage: "installing", message: useCN ? "正在为您安装 Go 语言运行时..." : "Installing Go...", currentDependency: "go", usingCNMirror: useCN, percent: 10 });
+    params.onProgress?.({
+      stage: "installing",
+      message: useCN ? "正在为您安装 Go 语言运行时..." : "Installing Go...",
+      currentDependency: "go",
+      usingCNMirror: useCN,
+      percent: 10,
+    });
     const goInstallResult = await installGoDependency(timeoutMs, brewExe);
     if (!goInstallResult.ok) return withWarnings(goInstallResult, warnings);
-    params.onProgress?.({ stage: "installing", message: useCN ? "Go 安装成功" : "Go installed", currentDependency: "go", usingCNMirror: useCN, percent: 30 });
+    params.onProgress?.({
+      stage: "installing",
+      message: useCN ? "Go 安装成功" : "Go installed",
+      currentDependency: "go",
+      usingCNMirror: useCN,
+      percent: 30,
+    });
   }
 
   // Merge environment variables (CN mirrors + command-specific)
@@ -1771,8 +2350,11 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     const goProxyEnv = getGoProxyEnv();
     if (brewExe) {
       const brewBin = await resolveBrewBinDir(timeoutMs, brewExe);
-      if (brewBin) { env = { ...env, GOBIN: brewBin, ...goProxyEnv }; }
-      else { env = { ...env, ...goProxyEnv }; }
+      if (brewBin) {
+        env = { ...env, GOBIN: brewBin, ...goProxyEnv };
+      } else {
+        env = { ...env, ...goProxyEnv };
+      }
     } else {
       env = { ...env, ...goProxyEnv };
     }
@@ -1783,7 +2365,12 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   }
 
   // OpenClawCN: Progress notification
-  params.onProgress?.({ stage: "installing", message: useCN ? `正在安装 ${params.skillName}...` : `Installing ${params.skillName}...`, usingCNMirror: useCN, percent: 50 });
+  params.onProgress?.({
+    stage: "installing",
+    message: useCN ? `正在安装 ${params.skillName}...` : `Installing ${params.skillName}...`,
+    usingCNMirror: useCN,
+    percent: 50,
+  });
 
   const result = await (async () => {
     const argv = command.argv;
@@ -1813,23 +2400,42 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   const success = result.code === 0;
 
   if (success) {
-    params.onProgress?.({ stage: "verifying", message: useCN ? "正在验证安装..." : "Verifying installation...", usingCNMirror: useCN, percent: 90 });
+    params.onProgress?.({
+      stage: "verifying",
+      message: useCN ? "正在验证安装..." : "Verifying installation...",
+      usingCNMirror: useCN,
+      percent: 90,
+    });
   }
 
   // OpenClawCN: Fallback to HK binary server when brew install fails
   if (!success && spec.kind === "brew" && spec.formula && useCN) {
     const toolName = spec.formula.split("/").pop() || "";
     if (canInstallFromHKServer(toolName)) {
-      params.onProgress?.({ stage: "installing", message: `brew 安装失败，尝试从香港服务器下载 ${toolName}...`, usingCNMirror: useCN, percent: 60 });
-      const hkResult = await installFromHKBinaryServer({ toolName, timeoutMs, onProgress: params.onProgress });
+      params.onProgress?.({
+        stage: "installing",
+        message: `brew 安装失败，尝试从香港服务器下载 ${toolName}...`,
+        usingCNMirror: useCN,
+        percent: 60,
+      });
+      const hkResult = await installFromHKBinaryServer({
+        toolName,
+        timeoutMs,
+        onProgress: params.onProgress,
+      });
       if (hkResult.ok) return withWarnings(hkResult, warnings);
-      return withWarnings({
-        ok: false,
-        message: useCN ? `安装失败：brew 和香港服务器都无法安装 ${toolName}` : `Installation failed: both brew and HK server failed for ${toolName}`,
-        stdout: `brew error: ${result.stdout}\nHK error: ${hkResult.stdout}`,
-        stderr: `brew: ${result.stderr}\nHK: ${hkResult.stderr}`,
-        code: result.code,
-      }, warnings);
+      return withWarnings(
+        {
+          ok: false,
+          message: useCN
+            ? `安装失败：brew 和香港服务器都无法安装 ${toolName}`
+            : `Installation failed: both brew and HK server failed for ${toolName}`,
+          stdout: `brew error: ${result.stdout}\nHK error: ${hkResult.stdout}`,
+          stderr: `brew: ${result.stderr}\nHK: ${hkResult.stderr}`,
+          code: result.code,
+        },
+        warnings,
+      );
     }
   }
 

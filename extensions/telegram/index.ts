@@ -11,7 +11,7 @@ const plugin = {
   configSchema: emptyPluginConfigSchema(),
   register(api: ClawdbotPluginApi) {
     setTelegramRuntime(api.runtime);
-    api.registerChannel({ plugin: telegramPlugin });
+    api.registerChannel({ plugin: telegramPlugin as any });
   },
 };
 

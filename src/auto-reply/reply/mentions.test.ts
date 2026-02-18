@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { matchesMentionWithExplicit } from "./mentions.js";
 
 describe("matchesMentionWithExplicit", () => {
-  const mentionRegexes = [/\bopenclaw\b/i];
+  const mentionRegexes = [/\bopenclawcn\b/i];
 
   it("skips mentionPatterns when explicit mention resolution is available and bot is not mentioned", () => {
     const result = matchesMentionWithExplicit({

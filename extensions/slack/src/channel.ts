@@ -533,10 +533,19 @@ export const slackPlugin: ChannelPlugin<ResolvedSlackAccount> = {
       const account = ctx.account;
       const botToken = account.botToken?.trim();
       const appToken = account.appToken?.trim();
+
+      // Validate tokens before starting
+      if (!botToken) {
+        throw new Error(`[${account.accountId}] botToken is required but missing or empty`);
+      }
+      if (!appToken) {
+        throw new Error(`[${account.accountId}] appToken is required but missing or empty`);
+      }
+
       ctx.log?.info(`[${account.accountId}] starting provider`);
       return getSlackRuntime().channel.slack.monitorSlackProvider({
-        botToken: botToken ?? "",
-        appToken: appToken ?? "",
+        botToken,
+        appToken,
         accountId: account.accountId,
         config: ctx.cfg,
         runtime: ctx.runtime,

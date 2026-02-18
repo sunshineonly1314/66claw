@@ -71,7 +71,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
   config: {
     listAccountIds: (cfg) => getLineRuntime().channel.line.listLineAccountIds(cfg),
     resolveAccount: (cfg, accountId) =>
-      getLineRuntime().channel.line.resolveLineAccount({ cfg, accountId }),
+      getLineRuntime().channel.line.resolveLineAccount({ cfg, accountId: accountId ?? undefined }),
     defaultAccountId: (cfg) => getLineRuntime().channel.line.resolveDefaultLineAccountId(cfg),
     setAccountEnabled: ({ cfg, accountId, enabled }) => {
       const lineConfig = (cfg.channels?.line ?? {}) as LineConfig;
@@ -138,7 +138,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
       tokenSource: account.tokenSource,
     }),
     resolveAllowFrom: ({ cfg, accountId }) =>
-      (getLineRuntime().channel.line.resolveLineAccount({ cfg, accountId }).config.allowFrom ?? []).map(
+      (getLineRuntime().channel.line.resolveLineAccount({ cfg, accountId: accountId ?? undefined }).config.allowFrom ?? []).map(
         (entry) => String(entry),
       ),
     formatAllowFrom: ({ allowFrom }) =>
@@ -180,9 +180,9 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
   },
   groups: {
     resolveRequireMention: ({ cfg, accountId, groupId }) => {
-      const account = getLineRuntime().channel.line.resolveLineAccount({ cfg, accountId });
+      const account = getLineRuntime().channel.line.resolveLineAccount({ cfg, accountId: accountId ?? undefined });
       const groups = account.config.groups;
-      if (!groups) return false;
+      if (!groups || !groupId) return false;
       const groupConfig = groups[groupId] ?? groups["*"];
       return groupConfig?.requireMention ?? false;
     },
@@ -190,7 +190,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
   messaging: {
     normalizeTarget: (target) => {
       const trimmed = target.trim();
-      if (!trimmed) return null;
+      if (!trimmed) return undefined;
       return trimmed.replace(/^line:(group|room|user):/i, "").replace(/^line:/i, "");
     },
     targetResolver: {
@@ -357,7 +357,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
       const sendMessageBatch = async (messages: Array<Record<string, unknown>>) => {
         if (messages.length === 0) return;
         for (let i = 0; i < messages.length; i += 5) {
-          const result = await sendBatch(to, messages.slice(i, i + 5), {
+          const result = await sendBatch(to, messages.slice(i, i + 5) as Parameters<typeof sendBatch>[1], {
             verbose: false,
             accountId: accountId ?? undefined,
           });
@@ -390,7 +390,7 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
           lastResult = await sendFlex(
             to,
             lineData.flexMessage.altText,
-            lineData.flexMessage.contents,
+            lineData.flexMessage.contents as Parameters<typeof sendFlex>[2],
             {
               verbose: false,
               accountId: accountId ?? undefined,
@@ -560,21 +560,27 @@ export const linePlugin: ChannelPlugin<ResolvedLineAccount> = {
       lastStopAt: null,
       lastError: null,
     },
-    collectStatusIssues: ({ account }) => {
-      const issues: Array<{ level: "error" | "warning"; message: string }> = [];
-      if (!account.channelAccessToken?.trim()) {
-        issues.push({
-          level: "error",
-          message: "LINE channel access token not configured",
-        });
-      }
-      if (!account.channelSecret?.trim()) {
-        issues.push({
-          level: "error",
-          message: "LINE channel secret not configured",
-        });
-      }
-      return issues;
+    collectStatusIssues: (accounts) => {
+      return accounts.flatMap((account) => {
+        const issues: Array<{ channel: "line"; accountId: string; kind: "config"; message: string }> = [];
+        if (!account.channelAccessToken?.trim()) {
+          issues.push({
+            channel: "line",
+            accountId: account.accountId,
+            kind: "config",
+            message: "LINE channel access token not configured",
+          });
+        }
+        if (!account.channelSecret?.trim()) {
+          issues.push({
+            channel: "line",
+            accountId: account.accountId,
+            kind: "config",
+            message: "LINE channel secret not configured",
+          });
+        }
+        return issues;
+      });
     },
     buildChannelSummary: ({ snapshot }) => ({
       configured: snapshot.configured ?? false,

@@ -29,7 +29,7 @@ BUILD_DIR="$PROJECT_ROOT/build/mac-offline"
 DIST_DIR="$PROJECT_ROOT/dist"
 
 # Node.js 版本
-NODE_VERSION="22.11.0"
+NODE_VERSION="22.14.0"
 NODE_BASE_URL="https://nodejs.org/dist/v${NODE_VERSION}"
 
 # 默认架构为当前系统架构

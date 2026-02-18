@@ -75,8 +75,14 @@ export function waitForEmbeddedPiRunEnd(sessionId: string, timeoutMs = 15_000): 
   diag.debug(`waiting for run end: sessionId=${sessionId} timeoutMs=${timeoutMs}`);
   return new Promise((resolve) => {
     const waiters = EMBEDDED_RUN_WAITERS.get(sessionId) ?? new Set();
+    let settled = false;
+    const safeResolve = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     const waiter: EmbeddedRunWaiter = {
-      resolve,
+      resolve: safeResolve,
       timer: setTimeout(
         () => {
           waiters.delete(waiter);
@@ -84,20 +90,21 @@ export function waitForEmbeddedPiRunEnd(sessionId: string, timeoutMs = 15_000): 
             EMBEDDED_RUN_WAITERS.delete(sessionId);
           }
           diag.warn(`wait timeout: sessionId=${sessionId} timeoutMs=${timeoutMs}`);
-          resolve(false);
+          safeResolve(false);
         },
         Math.max(100, timeoutMs),
       ),
     };
     waiters.add(waiter);
     EMBEDDED_RUN_WAITERS.set(sessionId, waiters);
+    // Re-check after registration to handle race between check and wait registration
     if (!ACTIVE_EMBEDDED_RUNS.has(sessionId)) {
       waiters.delete(waiter);
       if (waiters.size === 0) {
         EMBEDDED_RUN_WAITERS.delete(sessionId);
       }
       clearTimeout(waiter.timer);
-      resolve(true);
+      safeResolve(true);
     }
   });
 }

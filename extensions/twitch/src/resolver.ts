@@ -51,7 +51,7 @@ export async function resolveTwitchTargets(
 ): Promise<ChannelResolveResult[]> {
   const log = createLogger(logger);
 
-  if (!account.clientId || !account.token) {
+  if (!account.clientId || !account.accessToken) {
     log.error("Missing Twitch client ID or token");
     return inputs.map((input) => ({
       input,
@@ -60,7 +60,7 @@ export async function resolveTwitchTargets(
     }));
   }
 
-  const normalizedToken = normalizeToken(account.token);
+  const normalizedToken = normalizeToken(account.accessToken);
 
   const authProvider = new StaticAuthProvider(account.clientId, normalizedToken);
   const apiClient = new ApiClient({ authProvider });

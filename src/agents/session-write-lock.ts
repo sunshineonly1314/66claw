@@ -100,14 +100,20 @@ function handleTerminationSignal(signal: CleanupSignal): void {
   }
 }
 
+let exitHandlerRegistered = false;
+
 function registerCleanupHandlers(): void {
   const cleanupState = resolveCleanupState();
   if (!cleanupState.registered) {
     cleanupState.registered = true;
     // Cleanup on normal exit and process.exit() calls
-    process.on("exit", () => {
-      releaseAllLocksSync();
-    });
+    // Use process.once() to prevent listener accumulation
+    if (!exitHandlerRegistered) {
+      exitHandlerRegistered = true;
+      process.once("exit", () => {
+        releaseAllLocksSync();
+      });
+    }
   }
 
   // Handle termination signals

@@ -18,6 +18,10 @@ import { loadDebug } from "./controllers/debug.ts";
 import { loadDevices } from "./controllers/devices.ts";
 import { loadExecApprovals } from "./controllers/exec-approvals.ts";
 import { loadLogs } from "./controllers/logs.ts";
+import {
+  loadMarketplaceItems,
+  loadMarketplaceRecommendations,
+} from "./controllers/mcp-lifecycle.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import { loadSessions } from "./controllers/sessions.ts";
@@ -231,6 +235,19 @@ export async function refreshActiveTab(host: SettingsHost) {
       host as unknown as Parameters<typeof scheduleChatScroll>[0],
       !host.chatHasAutoScrolled,
     );
+  }
+  if (host.tab === "extensions") {
+    // Preload marketplace data so the store tab is ready when opened
+    const app = host as unknown as OpenClawCNApp;
+    if (app.mcpMarketplace && app.mcpMarketplace.items.length === 0 && !app.mcpMarketplace.loading) {
+      const callbacks = {
+        onStateChange: (patch: Record<string, unknown>) => {
+          app.mcpMarketplace = { ...app.mcpMarketplace, ...patch };
+        },
+      };
+      void loadMarketplaceItems(app.client, callbacks);
+      void loadMarketplaceRecommendations(app.client, callbacks);
+    }
   }
   if (host.tab === "config") {
     await loadConfigSchema(host as unknown as OpenClawCNApp);

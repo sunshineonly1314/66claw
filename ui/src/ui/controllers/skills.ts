@@ -13,6 +13,29 @@ export type InstallProgress = {
   percent?: number;
 };
 
+/** Skills marketplace 服务端搜索结果 */
+export type SkillsMarketSearchResult = {
+  items: Array<{
+    skillId: string;
+    name: string;
+    nameCn?: string;
+    description: string;
+    descriptionCn?: string;
+    category?: string;
+    tags?: string[];
+    emoji?: string;
+    tier?: string;
+    overallScore?: number;
+    cnBlocked?: boolean;
+    installed?: boolean;
+    path: string;
+  }>;
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
 export type SkillsState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -35,6 +58,9 @@ export type SkillsState = {
   skillsMarketSyncing: boolean;
   skillsMarketLastSyncedAt: string | null;
   skillsMarketError: string | null;
+  // Skills Market (SQLite-backed search)
+  skillsMarketSearchResult: SkillsMarketSearchResult | null;
+  skillsMarketPage: number;
   // Category filter
   skillsActiveCategory: string;
   // Filter
@@ -417,4 +443,62 @@ export async function refreshMarketSkills(state: SkillsState) {
     state.skillsMarketLoading = false;
     state.skillsMarketSyncing = false;
   }
+}
+
+// ============================================================================
+// Skills Market Search (SQLite-backed) - 服务端搜索+分页
+// ============================================================================
+
+/**
+ * 服务端搜索技能市场（FTS5 全文搜索 + 分页）
+ * 使用 skills_marketplace.search RPC 端点
+ */
+export async function searchMarketSkills(
+  state: SkillsState,
+  options?: {
+    keyword?: string;
+    category?: string;
+    page?: number;
+    pageSize?: number;
+  },
+) {
+  if (!state.client || !state.connected) return;
+  state.skillsMarketLoading = true;
+  state.skillsMarketError = null;
+  try {
+    const result = (await state.client.request("skills_marketplace.search", {
+      keyword: options?.keyword || state.skillsFilter || undefined,
+      category: options?.category || state.skillsActiveCategory || undefined,
+      page: options?.page ?? state.skillsMarketPage ?? 1,
+      pageSize: options?.pageSize ?? 20,
+      orderBy: "overall_score",
+      orderDirection: "DESC",
+    })) as SkillsMarketSearchResult | undefined;
+    if (result) {
+      state.skillsMarketSearchResult = result;
+      state.skillsMarketPage = result.page;
+    }
+  } catch (err) {
+    state.skillsMarketError = getErrorMessage(err);
+  } finally {
+    state.skillsMarketLoading = false;
+  }
+}
+
+/**
+ * 翻页：加载下一页
+ */
+export async function searchMarketSkillsNextPage(state: SkillsState) {
+  const current = state.skillsMarketSearchResult;
+  if (!current || current.page >= current.totalPages) return;
+  await searchMarketSkills(state, { page: current.page + 1 });
+}
+
+/**
+ * 翻页：加载上一页
+ */
+export async function searchMarketSkillsPrevPage(state: SkillsState) {
+  const current = state.skillsMarketSearchResult;
+  if (!current || current.page <= 1) return;
+  await searchMarketSkills(state, { page: current.page - 1 });
 }

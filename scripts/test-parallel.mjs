@@ -57,7 +57,7 @@ const runs = [
             "vitest",
             "run",
             "--config",
-            "vitest.unit.config.ts",
+            "config/vitest.unit.config.ts",
             "--pool=vmForks",
             ...(disableIsolation ? ["--isolate=false"] : []),
             ...unitIsolatedFiles.flatMap((file) => ["--exclude", file]),
@@ -69,7 +69,7 @@ const runs = [
             "vitest",
             "run",
             "--config",
-            "vitest.unit.config.ts",
+            "config/vitest.unit.config.ts",
             "--pool=forks",
             ...unitIsolatedFiles,
           ],
@@ -78,7 +78,7 @@ const runs = [
     : [
         {
           name: "unit",
-          args: ["vitest", "run", "--config", "vitest.unit.config.ts"],
+          args: ["vitest", "run", "--config", "config/vitest.unit.config.ts"],
         },
       ]),
   {
@@ -87,7 +87,7 @@ const runs = [
       "vitest",
       "run",
       "--config",
-      "vitest.extensions.config.ts",
+      "config/vitest.extensions.config.ts",
       ...(useVmForks ? ["--pool=vmForks"] : []),
     ],
   },
@@ -97,7 +97,7 @@ const runs = [
       "vitest",
       "run",
       "--config",
-      "vitest.gateway.config.ts",
+      "config/vitest.gateway.config.ts",
       // Gateway tests are sensitive to vmForks behavior (global state + env stubs).
       // Keep them on process forks for determinism even when other suites use vmForks.
       "--pool=forks",

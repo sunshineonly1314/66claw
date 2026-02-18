@@ -144,3 +144,23 @@ export { runMultiAgentOrchestration } from "./orchestrator.js";
 export { mergeWorkerResults } from "./result-merger.js";
 
 export type { MergeStrategy, WorkerResult } from "./result-merger.js";
+
+// DAG Executor — wave-based topological execution (CN-only)
+export { topologicalWaves, executeDag } from "./dag-executor.js";
+
+export type { DagNode, DagExecutionResult, StepRunResult } from "./dag-executor.js";
+
+// Step Runner — per-step execution with validation and retry (CN-only)
+export { runStep } from "./step-runner.js";
+
+export type { StepRunParams } from "./step-runner.js";
+
+// Execution Workspace — in-memory context store for DAG steps (CN-only)
+export { createWorkspace } from "./execution-workspace.js";
+
+export type { ExecutionWorkspace, StepOutput, WorkspaceMetadata } from "./execution-workspace.js";
+
+// Tool Selection Gate — filter ~50 candidates to 3-8 precise tools (CN-only)
+export { selectTools } from "./tool-selector.js";
+
+export type { ToolSelectionResult, ToolSelectionParams } from "./tool-selector.js";

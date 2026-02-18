@@ -19,7 +19,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ARCH="x64"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/build/linux-release}"
 COMMON_DIR=""
-NODE_VERSION="22.13.1"
+NODE_VERSION="22.14.0"
 MIRROR=""
 
 # 解析参数

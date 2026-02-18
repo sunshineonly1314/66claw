@@ -1,0 +1,42 @@
+[
+  {
+    "serverId": "@modelcontextprotocol-fetch",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "@amap-amap-maps",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "slcatwujian-bing-cn-mcp-server",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "Alipay-alipay-subscription",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "dingtalk-DingTalk-Docs",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "@supabase-community-supabase-mcp",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "yorklu-AI_Go_Hotel_MCP",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "zephyr-douyin-mcp-server",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "Launini-ChatPPT-MCP",
+    "error": "This operation was aborted"
+  },
+  {
+    "serverId": "MChina-mcd_mcp_server",
+    "error": "This operation was aborted"
+  }
+]

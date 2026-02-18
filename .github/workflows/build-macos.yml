@@ -27,7 +27,7 @@ jobs:
 
     env:
       VERSION: ${{ github.event.inputs.version || '2026.1.30' }}
-      NODE_VERSION: '22.13.0'
+      NODE_VERSION: '22.14.0'
 
     steps:
       - name: Checkout
@@ -49,8 +49,22 @@ jobs:
         run: |
           pnpm install --no-frozen-lockfile --ignore-scripts=false || pnpm install --ignore-scripts=false
 
-      - name: Build project
-        run: pnpm build
+      - name: Build project with CN encryption
+        run: |
+          # Step 1: build:secure = TypeScript build + CN-only obfuscation + integrity hashes
+          echo "=== Step 1: build:secure (TypeScript + CN-only obfuscation) ==="
+          pnpm build:secure
+
+          # Step 2: Bytecode compilation (V8 bytecode is platform/version specific)
+          # CI runner Node matches packaged Node, so compile directly
+          echo ""
+          echo "=== Step 2: V8 bytecode compilation ==="
+          node --import tsx cn/scripts/build/compile-bytecode.ts
+
+          # Step 3: Regenerate integrity hashes (must be AFTER bytecode, loader stubs changed)
+          echo ""
+          echo "=== Step 3: Regenerate integrity hashes ==="
+          pnpm integrity:gen
 
       - name: Verify build output
         run: |
@@ -423,7 +437,7 @@ jobs:
             "platform": "darwin",
             "arch": "universal",
             "buildDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "nodeVersion": "22.13.0"
+            "nodeVersion": "$NODE_VERSION"
           }
           EOF
           

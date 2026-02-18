@@ -215,7 +215,7 @@ function resolveBrowserBaseUrl(params: {
       "Browser control is disabled. Set browser.enabled=true in ~/.openclawcn/openclawcn.json.",
     );
   }
-  return resolved.controlUrl;
+  return `http://127.0.0.1:${resolved.controlPort}`;
 }
 
 export function createBrowserTool(opts?: {

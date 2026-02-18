@@ -364,13 +364,20 @@ export function startGatewayConfigReloader(opts: {
   watcher.on("change", schedule);
   watcher.on("unlink", schedule);
   let watcherClosed = false;
+  let watcherErrorCount = 0;
   watcher.on("error", (err) => {
     if (watcherClosed) {
       return;
     }
-    watcherClosed = true;
-    opts.log.warn(`config watcher error: ${String(err)}`);
-    void watcher.close().catch(() => {});
+    watcherErrorCount++;
+    opts.log.warn(`config watcher error (#${watcherErrorCount}): ${String(err)}`);
+    // Only close the watcher after repeated errors to avoid killing hot-reload
+    // on transient filesystem hiccups (e.g. permission denied during rename).
+    if (watcherErrorCount >= 5) {
+      watcherClosed = true;
+      opts.log.warn("config watcher closed after repeated errors");
+      void watcher.close().catch(() => {});
+    }
   });
 
   return {

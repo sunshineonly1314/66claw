@@ -105,7 +105,7 @@ export async function sendMessageMSTeams(
   const ctx = await resolveMSTeamsSendContext({ cfg, to });
   const { adapter, appId, conversationId, ref, log, conversationType, tokenProvider, sharePointSiteId } = ctx;
 
-  log.debug("sending proactive message", {
+  log.debug?.("sending proactive message", {
     conversationId,
     conversationType,
     textLength: messageText.length,
@@ -124,7 +124,7 @@ export async function sendMessageMSTeams(
     const fallbackFileName = await extractFilename(mediaUrl);
     const fileName = media.fileName ?? fallbackFileName;
 
-    log.debug("processing media", {
+    log.debug?.("processing media", {
       fileName,
       contentType: media.contentType,
       size: media.buffer.length,
@@ -146,7 +146,7 @@ export async function sendMessageMSTeams(
         description: messageText || undefined,
       });
 
-      log.debug("sending file consent card", { uploadId, fileName, size: media.buffer.length });
+      log.debug?.("sending file consent card", { uploadId, fileName, size: media.buffer.length });
 
       const baseRef = buildConversationReference(ref);
       const proactiveRef = { ...baseRef, activityId: undefined };
@@ -195,7 +195,7 @@ export async function sendMessageMSTeams(
     try {
       if (sharePointSiteId) {
         // Use SharePoint upload + Graph API for native file card
-        log.debug("uploading to SharePoint for native file card", {
+        log.debug?.("uploading to SharePoint for native file card", {
           fileName,
           conversationType,
           siteId: sharePointSiteId,
@@ -211,7 +211,7 @@ export async function sendMessageMSTeams(
           usePerUserSharing: conversationType === "groupChat",
         });
 
-        log.debug("SharePoint upload complete", {
+        log.debug?.("SharePoint upload complete", {
           itemId: uploaded.itemId,
           shareUrl: uploaded.shareUrl,
         });
@@ -223,7 +223,7 @@ export async function sendMessageMSTeams(
           tokenProvider,
         });
 
-        log.debug("driveItem properties retrieved", {
+        log.debug?.("driveItem properties retrieved", {
           eTag: driveItem.eTag,
           webDavUrl: driveItem.webDavUrl,
         });
@@ -255,7 +255,7 @@ export async function sendMessageMSTeams(
       }
 
       // Fallback: no SharePoint site configured, use OneDrive with markdown link
-      log.debug("uploading to OneDrive (no SharePoint site configured)", { fileName, conversationType });
+      log.debug?.("uploading to OneDrive (no SharePoint site configured)", { fileName, conversationType });
 
       const uploaded = await uploadAndShareOneDrive({
         buffer: media.buffer,
@@ -264,7 +264,7 @@ export async function sendMessageMSTeams(
         tokenProvider,
       });
 
-      log.debug("OneDrive upload complete", {
+      log.debug?.("OneDrive upload complete", {
         itemId: uploaded.itemId,
         shareUrl: uploaded.shareUrl,
       });
@@ -322,7 +322,7 @@ async function sendTextWithMedia(
       messages: [{ text: text || undefined, mediaUrl }],
       retry: {},
       onRetry: (event) => {
-        log.debug("retrying send", { conversationId, ...event });
+        log.debug?.("retrying send", { conversationId, ...event });
       },
       tokenProvider,
       sharePointSiteId,
@@ -364,7 +364,7 @@ export async function sendPollMSTeams(
     maxSelections,
   });
 
-  log.debug("sending poll", {
+  log.debug?.("sending poll", {
     conversationId,
     pollId: pollCard.pollId,
     optionCount: pollCard.options.length,
@@ -423,7 +423,7 @@ export async function sendAdaptiveCardMSTeams(
     to,
   });
 
-  log.debug("sending adaptive card", {
+  log.debug?.("sending adaptive card", {
     conversationId,
     cardType: card.type,
     cardVersion: card.version,

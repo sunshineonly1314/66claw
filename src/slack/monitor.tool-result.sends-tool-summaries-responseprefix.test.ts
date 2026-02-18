@@ -304,7 +304,7 @@ describe("monitorSlackProvider tool results", () => {
     expect(replyMock.mock.calls[0][0].WasMentioned).toBe(true);
   });
 
-  it("accepts channel messages when mentionPatterns match even if another user is mentioned", async () => {
+  it("skips channel messages when another user is explicitly mentioned even if mentionPatterns match", async () => {
     slackTestState.config = {
       messages: {
         responsePrefix: "PFX",
@@ -330,8 +330,9 @@ describe("monitorSlackProvider tool results", () => {
       },
     });
 
-    expect(replyMock).toHaveBeenCalledTimes(1);
-    expect(replyMock.mock.calls[0][0].WasMentioned).toBe(true);
+    // When explicit mention resolution is available and the bot is not explicitly
+    // mentioned, regex patterns are intentionally not checked to avoid false positives.
+    expect(replyMock).toHaveBeenCalledTimes(0);
   });
 
   it("treats replies to bot threads as implicit mentions", async () => {

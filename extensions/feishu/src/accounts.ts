@@ -1,11 +1,24 @@
 import type { ClawdbotConfig } from "openclawcn/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclawcn/plugin-sdk/account-id";
 import type {
-  FeishuConfig,
-  FeishuAccountConfig,
+  FeishuChannelConfig,
   FeishuDomain,
   ResolvedFeishuAccount,
 } from "./types.js";
+
+/**
+ * Multi-account config: extends FeishuChannelConfig with an accounts map.
+ */
+type FeishuConfig = FeishuChannelConfig & {
+  accounts?: Record<string, FeishuAccountConfig>;
+};
+
+/**
+ * Per-account config: extends FeishuChannelConfig with an optional display name.
+ */
+type FeishuAccountConfig = FeishuChannelConfig & {
+  name?: string;
+};
 
 /**
  * List all configured account IDs from the accounts field.
@@ -76,7 +89,7 @@ function mergeFeishuAccountConfig(cfg: ClawdbotConfig, accountId: string): Feish
 /**
  * Resolve Feishu credentials from a config.
  */
-export function resolveFeishuCredentials(cfg?: FeishuConfig): {
+export function resolveFeishuCredentials(cfg?: FeishuChannelConfig): {
   appId: string;
   appSecret: string;
   encryptKey?: string;
@@ -124,13 +137,10 @@ export function resolveFeishuAccount(params: {
     accountId,
     enabled,
     configured: Boolean(creds),
-    name: (merged as FeishuAccountConfig).name?.trim() || undefined,
-    appId: creds?.appId,
-    appSecret: creds?.appSecret,
-    encryptKey: creds?.encryptKey,
-    verificationToken: creds?.verificationToken,
-    domain: creds?.domain ?? "feishu",
+    appId: creds?.appId ?? null,
+    appSecret: creds?.appSecret ?? null,
     config: merged,
+    domain: creds?.domain ?? "feishu",
   };
 }
 

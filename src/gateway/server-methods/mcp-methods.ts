@@ -19,9 +19,40 @@ import { buildWorkspaceSkillStatus, type SkillStatusEntry } from "../../agents/s
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 import type { MCPServerConfig } from "../../mcp/types.js";
+import { shouldUseCNMirror, getNpmMirrorUrl, getPipMirrorUrl } from "../../config/cn-mirrors.js";
 
 function mcpError(message: string) {
   return errorShape(ErrorCodes.INVALID_REQUEST, message);
+}
+
+// ============================================================================
+// CN mirror injection helper
+// ============================================================================
+
+/**
+ * Build CN mirror env vars for MCP server installs.
+ * When the user is in China, inject npm/pip registry URLs so that
+ * npx/uvx commands use domestic mirrors for faster downloads.
+ *
+ * Existing env vars take precedence — if the user manually configured
+ * a registry via the config wizard's advanced section, we do not override it.
+ */
+function buildCNMirrorEnv(
+  type: "npm" | "pypi",
+  existingEnv?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!shouldUseCNMirror()) return existingEnv;
+
+  const mirrorEnv: Record<string, string> = {};
+  if (type === "npm") {
+    mirrorEnv.npm_config_registry = getNpmMirrorUrl();
+  } else {
+    mirrorEnv.UV_INDEX_URL = getPipMirrorUrl();
+    mirrorEnv.PIP_INDEX_URL = getPipMirrorUrl();
+  }
+
+  // Merge: existing env vars take precedence (user explicitly set them)
+  return existingEnv ? { ...mirrorEnv, ...existingEnv } : mirrorEnv;
 }
 
 // ============================================================================
@@ -38,8 +69,18 @@ const SAFE_PACKAGE_NAME_RE = /^[a-zA-Z0-9@/_.\-]+$/;
 function isValidPackageName(name: string): boolean {
   if (!name || name.length > 200) return false;
   if (!SAFE_PACKAGE_NAME_RE.test(name)) return false;
-  // Block path traversal
+  // Block path traversal patterns
   if (name.includes("..")) return false;
+  // Block absolute paths (e.g. /etc/passwd, //host/share)
+  if (name.startsWith("/") && !name.startsWith("@")) return false;
+  // Scoped packages must follow @scope/name pattern (max one slash after @)
+  if (name.startsWith("@")) {
+    const slashCount = (name.match(/\//g) ?? []).length;
+    if (slashCount !== 1) return false;
+  } else {
+    // Non-scoped packages should have no slashes
+    if (name.includes("/")) return false;
+  }
   return true;
 }
 
@@ -88,6 +129,25 @@ function isValidSseUrl(url: string): boolean {
   }
 }
 
+/**
+ * Lightweight semver "less than" comparison (a < b).
+ * Handles standard major.minor.patch format. Falls back to string comparison
+ * for non-standard versions.
+ */
+function semverLessThan(a: string, b: string): boolean {
+  const parseVer = (v: string) => {
+    const match = v.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+    if (!match) return null;
+    return [Number(match[1]), Number(match[2]), Number(match[3])] as const;
+  };
+  const pa = parseVer(a);
+  const pb = parseVer(b);
+  if (!pa || !pb) return a !== b; // fallback: any difference = update
+  if (pa[0] !== pb[0]) return pa[0] < pb[0];
+  if (pa[1] !== pb[1]) return pa[1] < pb[1];
+  return pa[2] < pb[2];
+}
+
 /** Wrap a handler with top-level error boundary to prevent gateway crashes. */
 function safeHandler(handler: GatewayRequestHandler): GatewayRequestHandler {
   return async (opts) => {
@@ -109,19 +169,26 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
   // Map to UI-friendly capability status
   const capabilities = status.servers.map((s) => ({
     id: s.config.id,
-    status: s.status === "running" ? "ready" as const
-      : s.status === "error" || s.status === "circuit_open" ? "unavailable" as const
-      : !s.config.enabled ? "paused" as const
-      : "needs_config" as const,
+    status:
+      s.status === "running"
+        ? ("ready" as const)
+        : s.status === "error" || s.status === "circuit_open"
+          ? ("unavailable" as const)
+          : !s.config.enabled
+            ? ("paused" as const)
+            : ("needs_config" as const),
     isNew: false,
   }));
   // Process info for the advanced settings UI panel
   const processes = status.servers.map((s) => ({
     id: s.config.id,
     friendlyName: s.config.id,
-    status: s.status === "running" ? "running" as const
-      : s.status === "error" || s.status === "circuit_open" ? "error" as const
-      : "stopped" as const,
+    status:
+      s.status === "running"
+        ? ("running" as const)
+        : s.status === "error" || s.status === "circuit_open"
+          ? ("error" as const)
+          : ("stopped" as const),
     memoryMB: 0,
     toolCount: s.tools.length,
   }));
@@ -240,13 +307,18 @@ const mcpServersListHandler: GatewayRequestHandler = safeHandler(async ({ respon
       version: c.version,
       enabled: c.enabled,
       autoStart: c.autoStart,
+      // Expose env key names and configured status (never expose values — security)
+      envKeys: c.env ? Object.keys(c.env) : [],
+      envConfigured: c.env
+        ? Object.fromEntries(Object.entries(c.env).map(([k, v]) => [k, !!v]))
+        : {},
     })),
   });
 });
 
 const mcpServersAddHandler: GatewayRequestHandler = safeHandler(async ({ params, respond }) => {
   const id = typeof params.id === "string" ? params.id : "";
-  const transport = params.transport === "sse" ? "sse" as const : "stdio" as const;
+  const transport = params.transport === "sse" ? ("sse" as const) : ("stdio" as const);
   const command = typeof params.command === "string" ? params.command : "";
   // SSE servers don't need a command, stdio servers do
   if (!id || (transport !== "sse" && !command)) {
@@ -272,23 +344,35 @@ const mcpServersAddHandler: GatewayRequestHandler = safeHandler(async ({ params,
       args: Array.isArray(params.args)
         ? params.args.filter((a): a is string => typeof a === "string")
         : undefined,
-      env: params.env && typeof params.env === "object"
-        ? params.env as Record<string, string>
-        : undefined,
+      env:
+        params.env && typeof params.env === "object"
+          ? (params.env as Record<string, string>)
+          : undefined,
       transport,
       url,
-      headers: params.headers && typeof params.headers === "object"
-        ? params.headers as Record<string, string>
-        : undefined,
+      headers:
+        params.headers && typeof params.headers === "object"
+          ? (params.headers as Record<string, string>)
+          : undefined,
       version: typeof params.version === "string" ? params.version : undefined,
       enabled: params.enabled !== false,
       autoStart: params.autoStart !== false,
       timeout: typeof params.timeout === "number" ? params.timeout : undefined,
     };
+
+    // Inject CN mirror env for npx/uvx commands
+    if (command === "npx" || command === "npm") {
+      serverConfig.env = buildCNMirrorEnv("npm", serverConfig.env);
+    } else if (command === "uvx" || command === "uv" || command === "pip") {
+      serverConfig.env = buildCNMirrorEnv("pypi", serverConfig.env);
+    }
+
     await manager.addServer(serverConfig);
 
     // Persist to config file
-    persistMcpServerAdd(serverConfig).catch(() => { /* log but don't fail */ });
+    persistMcpServerAdd(serverConfig).catch((err) => {
+      console.error("[mcp] Failed to persist server config (non-fatal):", err);
+    });
 
     respond(true, { ok: true });
   } catch (err) {
@@ -311,13 +395,159 @@ const mcpServersRemoveHandler: GatewayRequestHandler = safeHandler(async ({ para
     await manager.removeServer(id);
 
     // Persist removal to config file
-    persistMcpServerRemove(id).catch(() => { /* log but don't fail */ });
+    persistMcpServerRemove(id).catch(() => {
+      /* log but don't fail */
+    });
 
     respond(true, { ok: true });
   } catch (err) {
     respond(false, undefined, mcpError(String(err)));
   }
 });
+
+// ============================================================================
+// Server env update handlers (batch API key configuration)
+// ============================================================================
+
+/**
+ * mcp.servers.updateEnv — Update env vars for an existing server.
+ * Parameters: { id: string, env: Record<string, string> }
+ *
+ * Merges new env into existing, re-creates the server, and persists.
+ * Used by single-item API key configuration.
+ */
+const mcpServersUpdateEnvHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    const id = typeof params.id === "string" ? params.id : "";
+    if (!id) {
+      respond(false, undefined, mcpError("id required"));
+      return;
+    }
+    const env =
+      params.env && typeof params.env === "object" && !Array.isArray(params.env)
+        ? (params.env as Record<string, string>)
+        : undefined;
+    if (!env || Object.keys(env).length === 0) {
+      respond(false, undefined, mcpError("env required (non-empty object)"));
+      return;
+    }
+
+    const manager = getMCPManagerSafe();
+    if (!manager) {
+      respond(false, undefined, mcpError("MCP not initialized"));
+      return;
+    }
+
+    const existing = manager.registry.getServer(id);
+    if (!existing) {
+      respond(false, undefined, mcpError("Server not found: " + id));
+      return;
+    }
+
+    try {
+      // Merge new env into existing (new values overwrite)
+      let mergedEnv = { ...(existing.env ?? {}), ...env };
+
+      // Also inject CN mirrors if applicable
+      if (existing.command === "npx" || existing.command === "npm") {
+        mergedEnv = buildCNMirrorEnv("npm", mergedEnv) ?? mergedEnv;
+      } else if (
+        existing.command === "uvx" ||
+        existing.command === "uv" ||
+        existing.command === "pip"
+      ) {
+        mergedEnv = buildCNMirrorEnv("pypi", mergedEnv) ?? mergedEnv;
+      }
+
+      const updatedConfig: MCPServerConfig = { ...existing, env: mergedEnv };
+
+      // Stop old, re-add with updated config
+      await manager.removeServer(id);
+      await manager.addServer(updatedConfig);
+
+      // Persist to config
+      persistMcpServerAdd(updatedConfig).catch((err) => {
+        console.error("[mcp] Failed to persist env update (non-fatal):", err);
+      });
+
+      respond(true, { ok: true, id });
+    } catch (err) {
+      respond(false, undefined, mcpError(String(err)));
+    }
+  },
+);
+
+/**
+ * mcp.servers.batchUpdateEnv — Update env vars for multiple servers at once.
+ * Parameters: { updates: Array<{ id: string, env: Record<string, string> }> }
+ *
+ * Used by the batch API key configuration UI.
+ */
+const mcpServersBatchUpdateEnvHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    const updates = Array.isArray(params.updates) ? params.updates : [];
+    if (updates.length === 0) {
+      respond(false, undefined, mcpError("updates array required (non-empty)"));
+      return;
+    }
+
+    const manager = getMCPManagerSafe();
+    if (!manager) {
+      respond(false, undefined, mcpError("MCP not initialized"));
+      return;
+    }
+
+    const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+
+    for (const update of updates) {
+      const id = typeof update.id === "string" ? update.id : "";
+      const env =
+        update.env && typeof update.env === "object" && !Array.isArray(update.env)
+          ? (update.env as Record<string, string>)
+          : null;
+
+      if (!id || !env || Object.keys(env).length === 0) {
+        results.push({ id, ok: false, error: "Invalid id or env" });
+        continue;
+      }
+
+      const existing = manager.registry.getServer(id);
+      if (!existing) {
+        results.push({ id, ok: false, error: "Server not found" });
+        continue;
+      }
+
+      try {
+        let mergedEnv = { ...(existing.env ?? {}), ...env };
+
+        // Inject CN mirrors if applicable
+        if (existing.command === "npx" || existing.command === "npm") {
+          mergedEnv = buildCNMirrorEnv("npm", mergedEnv) ?? mergedEnv;
+        } else if (
+          existing.command === "uvx" ||
+          existing.command === "uv" ||
+          existing.command === "pip"
+        ) {
+          mergedEnv = buildCNMirrorEnv("pypi", mergedEnv) ?? mergedEnv;
+        }
+
+        const updatedConfig: MCPServerConfig = { ...existing, env: mergedEnv };
+
+        await manager.removeServer(id);
+        await manager.addServer(updatedConfig);
+
+        persistMcpServerAdd(updatedConfig).catch(() => {
+          /* log but don't fail */
+        });
+        results.push({ id, ok: true });
+      } catch (err) {
+        results.push({ id, ok: false, error: String(err) });
+      }
+    }
+
+    respond(true, { results });
+  },
+);
 
 // ============================================================================
 // Marketplace RPC handlers
@@ -328,207 +558,267 @@ const mcpServersRemoveHandler: GatewayRequestHandler = safeHandler(async ({ para
  * Reads from local cached index (mcp-index.json) synced by ClawdSkillsProxy.
  * Parameters: { category?, search?, sort?, page?, pageSize? }
  */
-const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(async ({ params, respond }) => {
-  try {
-    const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
-    const allItems = await readMarketplaceIndex();
+const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    try {
+      const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
+      const allItems = await readMarketplaceIndex();
 
-    let items = allItems;
-
-    // Category filter
-    const category = typeof params.category === "string" ? params.category : "";
-    if (category && category !== "all") {
-      items = items.filter((i: Record<string, unknown>) => i.category === category);
-    }
-
-    // Search filter
-    const search = typeof params.search === "string" ? params.search.trim().toLowerCase() : "";
-    if (search) {
-      items = items.filter((i: Record<string, unknown>) => {
-        const name = String(i.friendlyName ?? "").toLowerCase();
-        const nameEn = String(i.friendlyNameEn ?? "").toLowerCase();
-        const desc = String(i.description ?? "").toLowerCase();
-        const tags = Array.isArray(i.tags) ? i.tags.map(String) : [];
-        return name.includes(search) || nameEn.includes(search) ||
-          desc.includes(search) || tags.some((t: string) => t.toLowerCase().includes(search));
-      });
-    }
-
-    // Annotate install status and version detection from registry
-    const manager = getMCPManagerSafe();
-    const installedIds = new Set(
-      manager ? manager.registry.getAllServers().map((s) => s.id) : [],
-    );
-
-    const annotated = items.map((i: Record<string, unknown>) => {
-      const id = String(i.serverId ?? "");
-      if (installedIds.has(id)) {
-        const serverConfig = manager?.registry.getServer(id);
-        const installedVersion = serverConfig?.version ?? "";
-        const marketVersion = String(i.version ?? "");
-        const hasUpdate = installedVersion && marketVersion && installedVersion !== marketVersion;
-        return { ...i, installStatus: "installed", installedVersion, hasUpdate };
+      // If index is empty, trigger background sync so next request gets data
+      if (allItems.length === 0) {
+        import("../../mcp/marketplace-sync.js")
+          .then(({ syncMcpIndexBackground }) => {
+            syncMcpIndexBackground({ force: true });
+          })
+          .catch(() => {
+            /* best-effort */
+          });
       }
-      return { ...i, installStatus: i.installStatus ?? "not_installed" };
-    });
 
-    // Pagination
-    const page = typeof params.page === "number" ? Math.max(1, params.page) : 1;
-    const pageSize = typeof params.pageSize === "number" ? Math.min(100, Math.max(1, params.pageSize)) : 50;
-    const start = (page - 1) * pageSize;
-    const paged = annotated.slice(start, start + pageSize);
+      let items = allItems;
 
-    respond(true, { items: paged, total: annotated.length, page, pageSize });
-  } catch {
-    // Index not available yet — return empty
-    respond(true, { items: [], total: 0 });
-  }
-});
+      // Category filter
+      const category = typeof params.category === "string" ? params.category : "";
+      if (category && category !== "all") {
+        items = items.filter((i) => i.category === category);
+      }
+
+      // Search filter
+      const search = typeof params.search === "string" ? params.search.trim().toLowerCase() : "";
+      if (search) {
+        items = items.filter((i) => {
+          const name = (i.friendlyName ?? "").toLowerCase();
+          const nameEn = (i.friendlyNameEn ?? "").toLowerCase();
+          const desc = (i.description ?? "").toLowerCase();
+          const tags = i.tags ?? [];
+          return (
+            name.includes(search) ||
+            nameEn.includes(search) ||
+            desc.includes(search) ||
+            tags.some((t) => t.toLowerCase().includes(search))
+          );
+        });
+      }
+
+      // Annotate install status and version detection from registry
+      const manager = getMCPManagerSafe();
+      const installedIds = new Set(
+        manager ? manager.registry.getAllServers().map((s) => s.id) : [],
+      );
+
+      const annotated = items.map((i) => {
+        const id = i.serverId ?? "";
+        if (installedIds.has(id)) {
+          const serverConfig = manager?.registry.getServer(id);
+          const installedVersion = serverConfig?.version ?? "";
+          const marketVersion = i.version ?? "";
+          const hasUpdate = !!(
+            installedVersion &&
+            marketVersion &&
+            semverLessThan(installedVersion, marketVersion)
+          );
+          return { ...i, installStatus: "installed" as const, installedVersion, hasUpdate };
+        }
+        return { ...i, installStatus: "not_installed" as const };
+      });
+
+      // Pagination
+      const page = typeof params.page === "number" ? Math.max(1, params.page) : 1;
+      const pageSize =
+        typeof params.pageSize === "number" ? Math.min(100, Math.max(1, params.pageSize)) : 50;
+      const start = (page - 1) * pageSize;
+      const paged = annotated.slice(start, start + pageSize);
+
+      respond(true, { items: paged, total: annotated.length, page, pageSize });
+    } catch {
+      // Index not available yet — return empty
+      respond(true, { items: [], total: 0 });
+    }
+  },
+);
 
 /**
  * mcp.marketplace.detail — Return full detail for one marketplace item.
  * Parameters: { serverId }
  */
-const mcpMarketplaceDetailHandler: GatewayRequestHandler = safeHandler(async ({ params, respond }) => {
-  const serverId = typeof params.serverId === "string" ? params.serverId : "";
-  if (!serverId) {
-    respond(false, undefined, mcpError("serverId required"));
-    return;
-  }
-
-  try {
-    const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
-    const allItems = await readMarketplaceIndex();
-    const item = allItems.find((i: Record<string, unknown>) => i.serverId === serverId);
-
-    if (!item) {
-      respond(false, undefined, mcpError("Item not found: " + serverId));
+const mcpMarketplaceDetailHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    const serverId = typeof params.serverId === "string" ? params.serverId : "";
+    if (!serverId) {
+      respond(false, undefined, mcpError("serverId required"));
       return;
     }
 
-    respond(true, item);
-  } catch {
-    respond(false, undefined, mcpError("Marketplace index not available"));
-  }
-});
+    try {
+      const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
+      const allItems = await readMarketplaceIndex();
+      const item = allItems.find((i: Record<string, unknown>) => i.serverId === serverId);
+
+      if (!item) {
+        respond(false, undefined, mcpError("Item not found: " + serverId));
+        return;
+      }
+
+      respond(true, item);
+    } catch {
+      respond(false, undefined, mcpError("Marketplace index not available"));
+    }
+  },
+);
 
 /**
  * mcp.marketplace.install — Install a marketplace item.
  * Parameters: { serverId, env? }
  * Delegates to mcp.servers.add then starts the server.
  */
-const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(async ({ params, respond }) => {
-  const serverId = typeof params.serverId === "string" ? params.serverId : "";
-  if (!serverId) {
-    respond(false, undefined, mcpError("serverId required"));
-    return;
-  }
-
-  try {
-    const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
-    const allItems = await readMarketplaceIndex();
-    const item = allItems.find((i: Record<string, unknown>) => i.serverId === serverId) as
-      Record<string, unknown> | undefined;
-
-    if (!item) {
-      respond(false, undefined, mcpError("Item not found: " + serverId));
+const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    const serverId = typeof params.serverId === "string" ? params.serverId : "";
+    if (!serverId) {
+      respond(false, undefined, mcpError("serverId required"));
       return;
     }
 
-    const manager = getMCPManagerSafe();
-    if (!manager) {
-      respond(false, undefined, mcpError("MCP not initialized"));
-      return;
-    }
+    try {
+      const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
+      const allItems = await readMarketplaceIndex();
+      const item = allItems.find((i: Record<string, unknown>) => i.serverId === serverId) as
+        | Record<string, unknown>
+        | undefined;
 
-    // Build server config from marketplace item
-    const npmPackage = String(item.npmPackage ?? "");
-    const pypiPackage = String(item.pypiPackage ?? "");
-    const version = String(item.version ?? "");
-    const sseUrl = String(item.sseUrl ?? "");
-    const env = params.env && typeof params.env === "object"
-      ? params.env as Record<string, string>
-      : undefined;
+      if (!item) {
+        respond(false, undefined, mcpError("Item not found: " + serverId));
+        return;
+      }
 
-    // Security: validate package names and version to prevent command injection
-    if (npmPackage && !isValidPackageName(npmPackage)) {
-      respond(false, undefined, mcpError("Invalid npm package name"));
-      return;
-    }
-    if (pypiPackage && !isValidPackageName(pypiPackage)) {
-      respond(false, undefined, mcpError("Invalid PyPI package name"));
-      return;
-    }
-    if (!isValidVersion(version)) {
-      respond(false, undefined, mcpError("Invalid version string"));
-      return;
-    }
-    // Security: validate SSE URL to prevent SSRF
-    if (sseUrl && !isValidSseUrl(sseUrl)) {
-      respond(false, undefined, mcpError("Invalid or disallowed SSE URL"));
-      return;
-    }
+      const manager = getMCPManagerSafe();
+      if (!manager) {
+        respond(false, undefined, mcpError("MCP not initialized"));
+        return;
+      }
 
-    // Determine install method: npm (npx), Python (uvx), or SSE
-    let serverConfig: MCPServerConfig;
-    if (npmPackage) {
-      const versionedPkg = version ? `${npmPackage}@${version}` : npmPackage;
-      serverConfig = {
-        id: serverId,
-        command: "npx",
-        args: ["-y", versionedPkg],
-        env,
-        transport: "stdio",
-        version: version || undefined,
-        enabled: true,
-        autoStart: true,
-      };
-    } else if (pypiPackage) {
-      const versionedPkg = version ? `${pypiPackage}==${version}` : pypiPackage;
-      serverConfig = {
-        id: serverId,
-        command: "uvx",
-        args: [versionedPkg],
-        env,
-        transport: "stdio",
-        version: version || undefined,
-        enabled: true,
-        autoStart: true,
-      };
-    } else if (sseUrl) {
-      serverConfig = {
-        id: serverId,
-        command: "",
-        transport: "sse",
-        url: sseUrl,
-        env,
-        version: version || undefined,
-        enabled: true,
-        autoStart: true,
-      };
-    } else {
-      respond(false, undefined, mcpError("Item has no installable package or SSE URL"));
-      return;
+      // Build server config from marketplace item
+      const npmPackage = String(item.npmPackage ?? "");
+      const pypiPackage = String(item.pypiPackage ?? "");
+      const version = String(item.version ?? "");
+      const sseUrl = String(item.sseUrl ?? "");
+      const env =
+        params.env && typeof params.env === "object"
+          ? (params.env as Record<string, string>)
+          : undefined;
+
+      // Security: validate package names and version to prevent command injection
+      if (npmPackage && !isValidPackageName(npmPackage)) {
+        respond(false, undefined, mcpError("Invalid npm package name"));
+        return;
+      }
+      if (pypiPackage && !isValidPackageName(pypiPackage)) {
+        respond(false, undefined, mcpError("Invalid PyPI package name"));
+        return;
+      }
+      if (!isValidVersion(version)) {
+        respond(false, undefined, mcpError("Invalid version string"));
+        return;
+      }
+      // Security: validate SSE URL to prevent SSRF
+      if (sseUrl && !isValidSseUrl(sseUrl)) {
+        respond(false, undefined, mcpError("Invalid or disallowed SSE URL"));
+        return;
+      }
+
+      // Determine install method: npm (npx), Python (uvx), or SSE
+      let serverConfig: MCPServerConfig;
+      if (npmPackage) {
+        const versionedPkg = version ? `${npmPackage}@${version}` : npmPackage;
+        serverConfig = {
+          id: serverId,
+          command: "npx",
+          args: ["-y", versionedPkg],
+          env: buildCNMirrorEnv("npm", env),
+          transport: "stdio",
+          version: version || undefined,
+          enabled: true,
+          autoStart: true,
+        };
+      } else if (pypiPackage) {
+        const versionedPkg = version ? `${pypiPackage}==${version}` : pypiPackage;
+        serverConfig = {
+          id: serverId,
+          command: "uvx",
+          args: [versionedPkg],
+          env: buildCNMirrorEnv("pypi", env),
+          transport: "stdio",
+          version: version || undefined,
+          enabled: true,
+          autoStart: true,
+        };
+      } else if (sseUrl) {
+        serverConfig = {
+          id: serverId,
+          command: "",
+          transport: "sse",
+          url: sseUrl,
+          env,
+          version: version || undefined,
+          enabled: true,
+          autoStart: true,
+        };
+      } else {
+        respond(false, undefined, mcpError("Item has no installable package or SSE URL"));
+        return;
+      }
+
+      await manager.addServer(serverConfig);
+
+      // Persist to config file
+      persistMcpServerAdd(serverConfig).catch((err) => {
+        console.error("[mcp] Failed to persist server config (non-fatal):", err);
+      });
+
+      respond(true, { ok: true, serverId });
+    } catch (err) {
+      respond(false, undefined, mcpError(String(err)));
     }
-
-    await manager.addServer(serverConfig);
-
-    // Persist to config file
-    persistMcpServerAdd(serverConfig).catch(() => { /* log but don't fail */ });
-
-    respond(true, { ok: true, serverId });
-  } catch (err) {
-    respond(false, undefined, mcpError(String(err)));
-  }
-});
+  },
+);
 
 // ── Recommendation helpers ──────────────────────────────────
 
 const RECOMMEND_STOP_WORDS = new Set([
-  "the", "and", "for", "use", "when", "you", "need", "with", "via",
-  "from", "that", "this", "can", "are", "has", "have", "using",
-  "tool", "cli", "run", "get", "set", "all", "not", "its", "into",
-  "also", "any", "etc", "will", "your", "like", "more", "other",
+  "the",
+  "and",
+  "for",
+  "use",
+  "when",
+  "you",
+  "need",
+  "with",
+  "via",
+  "from",
+  "that",
+  "this",
+  "can",
+  "are",
+  "has",
+  "have",
+  "using",
+  "tool",
+  "cli",
+  "run",
+  "get",
+  "set",
+  "all",
+  "not",
+  "its",
+  "into",
+  "also",
+  "any",
+  "etc",
+  "will",
+  "your",
+  "like",
+  "more",
+  "other",
 ]);
 
 function extractSkillKeywords(skills: SkillStatusEntry[]): Set<string> {
@@ -556,7 +846,10 @@ function scoreRecommendation(item: Record<string, unknown>, keywords: Set<string
 
   for (const kw of keywords) {
     // serverId exact match: +10
-    if (serverId === kw) { score += 10; continue; }
+    if (serverId === kw) {
+      score += 10;
+      continue;
+    }
     // Tag matching
     for (const tag of tags) {
       const tagLower = tag.toLowerCase();
@@ -590,9 +883,7 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
 
     // 3. Get installed MCP servers (to exclude)
     const manager = getMCPManagerSafe();
-    const installedMcp = new Set(
-      manager ? manager.registry.getAllServers().map((s) => s.id) : [],
-    );
+    const installedMcp = new Set(manager ? manager.registry.getAllServers().map((s) => s.id) : []);
 
     // 4. Extract keywords from skills
     const keywords = extractSkillKeywords(skills);
@@ -606,7 +897,10 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
         if (item.requiresApiKey === true) return false;
         return true;
       })
-      .map((item: Record<string, unknown>) => ({ item, score: scoreRecommendation(item, keywords) }))
+      .map((item: Record<string, unknown>) => ({
+        item,
+        score: scoreRecommendation(item, keywords),
+      }))
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score);
 
@@ -624,14 +918,192 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
 });
 
 /**
- * mcp.marketplace.sync — Force-sync the MCP marketplace index from ClawdSkillsProxy.
+ * mcp.marketplace.uninstall — Uninstall a marketplace item.
+ * Stops the server, removes from runtime + config.
+ * Parameters: { serverId }
+ */
+const mcpMarketplaceUninstallHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    const serverId = typeof params.serverId === "string" ? params.serverId : "";
+    if (!serverId) {
+      respond(false, undefined, mcpError("serverId required"));
+      return;
+    }
+
+    const manager = getMCPManagerSafe();
+    if (!manager) {
+      respond(false, undefined, mcpError("MCP not initialized"));
+      return;
+    }
+
+    try {
+      await manager.removeServer(serverId);
+      persistMcpServerRemove(serverId).catch((err) => {
+        console.error("[mcp] Failed to persist server removal (non-fatal):", err);
+      });
+      respond(true, { ok: true, serverId });
+    } catch (err) {
+      respond(false, undefined, mcpError(String(err)));
+    }
+  },
+);
+
+/**
+ * mcp.marketplace.update — Update an installed marketplace item to latest version.
+ * Stops the old server, re-installs with the latest version from index, then starts.
+ * Parameters: { serverId }
+ */
+const mcpMarketplaceUpdateHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    const serverId = typeof params.serverId === "string" ? params.serverId : "";
+    if (!serverId) {
+      respond(false, undefined, mcpError("serverId required"));
+      return;
+    }
+
+    const manager = getMCPManagerSafe();
+    if (!manager) {
+      respond(false, undefined, mcpError("MCP not initialized"));
+      return;
+    }
+
+    try {
+      const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
+      const allItems = await readMarketplaceIndex();
+      const item = allItems.find((i) => i.serverId === serverId);
+
+      if (!item) {
+        respond(false, undefined, mcpError("Item not found in marketplace: " + serverId));
+        return;
+      }
+
+      const npmPackage = item.npmPackage ?? "";
+      const pypiPackage = item.pypiPackage ?? "";
+      const version = item.version ?? "";
+      const sseUrl = item.sseUrl ?? "";
+
+      if (npmPackage && !isValidPackageName(npmPackage)) {
+        respond(false, undefined, mcpError("Invalid npm package name"));
+        return;
+      }
+      if (pypiPackage && !isValidPackageName(pypiPackage)) {
+        respond(false, undefined, mcpError("Invalid PyPI package name"));
+        return;
+      }
+      if (!isValidVersion(version)) {
+        respond(false, undefined, mcpError("Invalid version string"));
+        return;
+      }
+      if (sseUrl && !isValidSseUrl(sseUrl)) {
+        respond(false, undefined, mcpError("Invalid or disallowed SSE URL"));
+        return;
+      }
+
+      // Preserve existing env vars from current config
+      const existingConfig = manager.registry.getServer(serverId);
+      const existingEnv = existingConfig?.env;
+
+      // Stop and remove old server
+      await manager.removeServer(serverId);
+
+      // Build updated config
+      let serverConfig: MCPServerConfig;
+      if (npmPackage) {
+        const versionedPkg = version ? `${npmPackage}@${version}` : npmPackage;
+        serverConfig = {
+          id: serverId,
+          command: "npx",
+          args: ["-y", versionedPkg],
+          env: buildCNMirrorEnv("npm", existingEnv),
+          transport: "stdio",
+          version: version || undefined,
+          enabled: true,
+          autoStart: true,
+        };
+      } else if (pypiPackage) {
+        const versionedPkg = version ? `${pypiPackage}==${version}` : pypiPackage;
+        serverConfig = {
+          id: serverId,
+          command: "uvx",
+          args: [versionedPkg],
+          env: buildCNMirrorEnv("pypi", existingEnv),
+          transport: "stdio",
+          version: version || undefined,
+          enabled: true,
+          autoStart: true,
+        };
+      } else if (sseUrl) {
+        serverConfig = {
+          id: serverId,
+          command: "",
+          transport: "sse",
+          url: sseUrl,
+          env: existingEnv,
+          version: version || undefined,
+          enabled: true,
+          autoStart: true,
+        };
+      } else {
+        respond(false, undefined, mcpError("Item has no installable package or SSE URL"));
+        return;
+      }
+
+      await manager.addServer(serverConfig);
+      persistMcpServerAdd(serverConfig).catch((err) => {
+        console.error("[mcp] Failed to persist server config (non-fatal):", err);
+      });
+      respond(true, { ok: true, serverId, version });
+    } catch (err) {
+      respond(false, undefined, mcpError(String(err)));
+    }
+  },
+);
+
+/**
+ * mcp.marketplace.testConnection — Test if a server starts and responds.
+ * Restarts the server and checks if it reaches "running" status.
+ * Parameters: { serverId, env? }
+ */
+const mcpMarketplaceTestConnectionHandler: GatewayRequestHandler = safeHandler(
+  async ({ params, respond }) => {
+    const serverId = typeof params.serverId === "string" ? params.serverId : "";
+    if (!serverId) {
+      respond(false, undefined, mcpError("serverId required"));
+      return;
+    }
+
+    const manager = getMCPManagerSafe();
+    if (!manager) {
+      respond(false, undefined, mcpError("MCP not initialized"));
+      return;
+    }
+
+    try {
+      await manager.restartServer(serverId);
+      const state = manager.runtime.getServerState(serverId);
+      const running = state?.status === "running";
+      const toolCount = state?.tools.length ?? 0;
+      respond(true, { ok: running, serverId, toolCount });
+    } catch (err) {
+      respond(true, { ok: false, serverId, error: String(err) });
+    }
+  },
+);
+
+/**
+ * mcp.marketplace.sync — Force-sync the MCP marketplace index.
  * Parameters: {} (no params needed, always force)
  */
 const mcpMarketplaceSyncHandler: GatewayRequestHandler = safeHandler(async ({ respond }) => {
   try {
     const { syncMcpIndex } = await import("../../mcp/marketplace-sync.js");
     const result = await syncMcpIndex({ force: true });
-    respond(true, { ok: result.ok, synced: result.synced, itemCount: result.itemCount ?? 0, source: result.source ?? "" });
+    respond(true, {
+      ok: result.ok,
+      synced: result.synced,
+      itemCount: result.itemCount ?? 0,
+      source: result.source ?? "",
+    });
   } catch (err) {
     respond(false, undefined, mcpError(String(err)));
   }
@@ -647,8 +1119,14 @@ let _configWriteLock: Promise<void> = Promise.resolve();
 function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
   const prev = _configWriteLock;
   let release: () => void;
-  _configWriteLock = new Promise<void>((resolve) => { release = resolve; });
-  return prev.then(fn).finally(() => release!());
+  _configWriteLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // Wait for previous lock to release (catch prevents dead lock if prev somehow rejects)
+  return prev
+    .catch(() => {})
+    .then(fn)
+    .finally(() => release!());
 }
 
 /**
@@ -717,9 +1195,14 @@ export const mcpHandlers: GatewayRequestHandlers = {
   "mcp.servers.list": mcpServersListHandler,
   "mcp.servers.add": mcpServersAddHandler,
   "mcp.servers.remove": mcpServersRemoveHandler,
+  "mcp.servers.updateEnv": mcpServersUpdateEnvHandler,
+  "mcp.servers.batchUpdateEnv": mcpServersBatchUpdateEnvHandler,
   "mcp.marketplace.list": mcpMarketplaceListHandler,
   "mcp.marketplace.detail": mcpMarketplaceDetailHandler,
   "mcp.marketplace.install": mcpMarketplaceInstallHandler,
+  "mcp.marketplace.uninstall": mcpMarketplaceUninstallHandler,
+  "mcp.marketplace.update": mcpMarketplaceUpdateHandler,
+  "mcp.marketplace.testConnection": mcpMarketplaceTestConnectionHandler,
   "mcp.marketplace.recommend": mcpMarketplaceRecommendHandler,
   "mcp.marketplace.sync": mcpMarketplaceSyncHandler,
 };

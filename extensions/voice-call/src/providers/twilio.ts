@@ -20,6 +20,7 @@ import type { TelephonyTtsProvider } from "../telephony-tts.js";
 import type { VoiceCallProvider } from "./base.js";
 import { twilioApiRequest } from "./twilio/api.js";
 import { verifyTwilioProviderWebhook } from "./twilio/webhook.js";
+import { twimlCache } from "../twiml-cache.js";
 
 /**
  * Twilio Voice API provider implementation.
@@ -39,6 +40,8 @@ export interface TwilioProviderOptions {
   streamPath?: string;
   /** Skip webhook signature verification (development only) */
   skipVerification?: boolean;
+  /** Webhook security configuration (proxy trust, allowed hosts) */
+  webhookSecurity?: import("../config.js").WebhookSecurityConfig;
 }
 
 export class TwilioProvider implements VoiceCallProvider {
@@ -62,8 +65,18 @@ export class TwilioProvider implements VoiceCallProvider {
   /** Map of call SID to stream SID for media streams */
   private callStreamMap = new Map<string, string>();
 
-  /** Storage for TwiML content (for notify mode with URL-based TwiML) */
-  private readonly twimlStorage = new Map<string, string>();
+  /**
+   * Storage for TwiML content (for notify mode with URL-based TwiML)
+   *
+   * 使用 LRU 缓存防止内存泄漏:
+   * - 最多 500 个条目
+   * - 30 分钟自动过期
+   *
+   * 注意: 使用全局 twimlCache 而非实例 Map，确保跨实例共享缓存
+   */
+  // ❌ 旧实现（无限增长）: private readonly twimlStorage = new Map<string, string>();
+  // ✅ 新实现（LRU 缓存）: 使用全局 twimlCache
+
   /** Track notify-mode calls to avoid streaming on follow-up callbacks */
   private readonly notifyCalls = new Set<string>();
 
@@ -74,7 +87,7 @@ export class TwilioProvider implements VoiceCallProvider {
    * webhook request (notify mode). Subsequent webhooks should not reuse it.
    */
   private deleteStoredTwiml(callId: string): void {
-    this.twimlStorage.delete(callId);
+    twimlCache.delete(callId); // 使用全局 LRU 缓存
     this.notifyCalls.delete(callId);
   }
 
@@ -316,7 +329,7 @@ export class TwilioProvider implements VoiceCallProvider {
     // Handle initial TwiML request (when Twilio first initiates the call)
     // Check if we have stored TwiML for this call (notify mode)
     if (callIdFromQuery && !isStatusCallback) {
-      const storedTwiml = this.twimlStorage.get(callIdFromQuery);
+      const storedTwiml = twimlCache.get(callIdFromQuery); // 使用全局 LRU 缓存
       if (storedTwiml) {
         // Clean up after serving (one-time use)
         this.deleteStoredTwiml(callIdFromQuery);
@@ -418,7 +431,7 @@ export class TwilioProvider implements VoiceCallProvider {
     // Store TwiML content if provided (for notify mode)
     // We now serve it from the webhook endpoint instead of sending inline
     if (input.inlineTwiml) {
-      this.twimlStorage.set(input.callId, input.inlineTwiml);
+      twimlCache.set(input.callId, input.inlineTwiml); // 使用全局 LRU 缓存
       this.notifyCalls.add(input.callId);
     }
 

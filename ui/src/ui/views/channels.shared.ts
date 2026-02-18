@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 
+import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelKey, ChannelsProps } from "./channels.types";
 
@@ -60,5 +61,5 @@ export function renderChannelAccountCount(
 ) {
   const count = getChannelAccountCount(key, channelAccounts);
   if (count < 2) return nothing;
-  return html`<div class="account-count">Accounts (${count})</div>`;
+  return html`<div class="account-count">${t("channel.accounts")} (${count})</div>`;
 }

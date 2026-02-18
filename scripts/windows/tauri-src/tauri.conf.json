@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ClawdbotCN",
+  "version": "2026.2.0",
+  "identifier": "com.clawdbot.cn",
+  "build": {
+    "beforeDevCommand": "",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "",
+    "frontendDist": "../../../dist/control-ui"
+  },
+  "bundle": {
+    "active": false,
+    "targets": []
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ClawdbotCN AI",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

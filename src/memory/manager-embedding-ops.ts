@@ -141,6 +141,8 @@ class MemoryManagerEmbeddingOps {
         now,
       );
     }
+    // Prune cache periodically during hot path to prevent unbounded growth
+    this.pruneEmbeddingCacheIfNeeded();
   }
 
   private pruneEmbeddingCacheIfNeeded(): void {

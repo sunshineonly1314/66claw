@@ -85,6 +85,12 @@ vi.mock("../../config/config.js", () => ({
   writeConfigFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../../config/cn-mirrors.js", () => ({
+  shouldUseCNMirror: () => false,
+  getNpmMirrorUrl: () => "https://registry.npmmirror.com/",
+  getPipMirrorUrl: () => "https://pypi.tuna.tsinghua.edu.cn/simple",
+}));
+
 // Import handlers after mocks
 import { mcpHandlers } from "./mcp-methods.js";
 
@@ -122,10 +128,13 @@ describe("mcp.marketplace.list", () => {
     const opts = makeOpts("mcp.marketplace.list");
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(true, expect.objectContaining({
-      items: expect.any(Array),
-      total: 3,
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        items: expect.any(Array),
+        total: 3,
+      }),
+    );
     const result = opts.respond.mock.calls[0][1] as { items: unknown[] };
     expect(result.items).toHaveLength(3);
   });
@@ -134,7 +143,10 @@ describe("mcp.marketplace.list", () => {
     const opts = makeOpts("mcp.marketplace.list", { category: "search" });
     await handler(opts);
 
-    const result = opts.respond.mock.calls[0][1] as { items: Array<{ serverId: string }>; total: number };
+    const result = opts.respond.mock.calls[0][1] as {
+      items: Array<{ serverId: string }>;
+      total: number;
+    };
     expect(result.total).toBe(1);
     expect(result.items[0].serverId).toBe("brave-search");
   });
@@ -151,7 +163,10 @@ describe("mcp.marketplace.list", () => {
     const opts = makeOpts("mcp.marketplace.list", { search: "数据" });
     await handler(opts);
 
-    const result = opts.respond.mock.calls[0][1] as { items: Array<{ serverId: string }>; total: number };
+    const result = opts.respond.mock.calls[0][1] as {
+      items: Array<{ serverId: string }>;
+      total: number;
+    };
     expect(result.total).toBe(1);
     expect(result.items[0].serverId).toBe("sqlite");
   });
@@ -160,7 +175,10 @@ describe("mcp.marketplace.list", () => {
     const opts = makeOpts("mcp.marketplace.list", { search: "web" });
     await handler(opts);
 
-    const result = opts.respond.mock.calls[0][1] as { items: Array<{ serverId: string }>; total: number };
+    const result = opts.respond.mock.calls[0][1] as {
+      items: Array<{ serverId: string }>;
+      total: number;
+    };
     expect(result.total).toBe(1);
     expect(result.items[0].serverId).toBe("brave-search");
   });
@@ -177,7 +195,12 @@ describe("mcp.marketplace.list", () => {
     const opts = makeOpts("mcp.marketplace.list", { page: 2, pageSize: 1 });
     await handler(opts);
 
-    const result = opts.respond.mock.calls[0][1] as { items: unknown[]; total: number; page: number; pageSize: number };
+    const result = opts.respond.mock.calls[0][1] as {
+      items: unknown[];
+      total: number;
+      page: number;
+      pageSize: number;
+    };
     expect(result.items).toHaveLength(1);
     expect(result.total).toBe(3);
     expect(result.page).toBe(2);
@@ -189,10 +212,13 @@ describe("mcp.marketplace.list", () => {
     const opts = makeOpts("mcp.marketplace.list");
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(true, expect.objectContaining({
-      items: [],
-      total: 0,
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        items: [],
+        total: 0,
+      }),
+    );
   });
 });
 
@@ -207,28 +233,39 @@ describe("mcp.marketplace.detail", () => {
     const opts = makeOpts("mcp.marketplace.detail", { serverId: "brave-search" });
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(true, expect.objectContaining({
-      serverId: "brave-search",
-      friendlyName: "网页搜索",
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        serverId: "brave-search",
+        friendlyName: "网页搜索",
+      }),
+    );
   });
 
   it("returns error for missing serverId", async () => {
     const opts = makeOpts("mcp.marketplace.detail", {});
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(false, undefined, expect.objectContaining({
-      message: expect.stringContaining("serverId required"),
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("serverId required"),
+      }),
+    );
   });
 
   it("returns error for non-existent item", async () => {
     const opts = makeOpts("mcp.marketplace.detail", { serverId: "nonexistent" });
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(false, undefined, expect.objectContaining({
-      message: expect.stringContaining("not found"),
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("not found"),
+      }),
+    );
   });
 });
 
@@ -248,15 +285,17 @@ describe("mcp.marketplace.install", () => {
     const opts = makeOpts("mcp.marketplace.install", { serverId: "filesystem" });
     await handler(opts);
 
-    expect(mockManager.addServer).toHaveBeenCalledWith(expect.objectContaining({
-      id: "filesystem",
-      command: "npx",
-      args: ["-y", "@anthropic/mcp-filesystem@2024.1"],
-      transport: "stdio",
-      version: "2024.1",
-      enabled: true,
-      autoStart: true,
-    }));
+    expect(mockManager.addServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "filesystem",
+        command: "npx",
+        args: ["-y", "@anthropic/mcp-filesystem@2024.1"],
+        transport: "stdio",
+        version: "2024.1",
+        enabled: true,
+        autoStart: true,
+      }),
+    );
     expect(opts.respond).toHaveBeenCalledWith(true, expect.objectContaining({ ok: true }));
   });
 
@@ -267,10 +306,12 @@ describe("mcp.marketplace.install", () => {
     });
     await handler(opts);
 
-    expect(mockManager.addServer).toHaveBeenCalledWith(expect.objectContaining({
-      id: "brave-search",
-      env: { BRAVE_API_KEY: "test-key-123" },
-    }));
+    expect(mockManager.addServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "brave-search",
+        env: { BRAVE_API_KEY: "test-key-123" },
+      }),
+    );
   });
 
   it("returns error for non-existent serverId", async () => {
@@ -278,9 +319,13 @@ describe("mcp.marketplace.install", () => {
     await handler(opts);
 
     expect(mockManager.addServer).not.toHaveBeenCalled();
-    expect(opts.respond).toHaveBeenCalledWith(false, undefined, expect.objectContaining({
-      message: expect.stringContaining("not found"),
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("not found"),
+      }),
+    );
   });
 
   it("returns error when MCP manager not initialized", async () => {
@@ -288,9 +333,13 @@ describe("mcp.marketplace.install", () => {
     const opts = makeOpts("mcp.marketplace.install", { serverId: "filesystem" });
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(false, undefined, expect.objectContaining({
-      message: expect.stringContaining("not initialized"),
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("not initialized"),
+      }),
+    );
   });
 
   it("returns error when addServer throws", async () => {
@@ -298,18 +347,26 @@ describe("mcp.marketplace.install", () => {
     const opts = makeOpts("mcp.marketplace.install", { serverId: "filesystem" });
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(false, undefined, expect.objectContaining({
-      message: expect.stringContaining("npm install failed"),
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("npm install failed"),
+      }),
+    );
   });
 
   it("returns error for missing serverId param", async () => {
     const opts = makeOpts("mcp.marketplace.install", {});
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(false, undefined, expect.objectContaining({
-      message: expect.stringContaining("serverId required"),
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        message: expect.stringContaining("serverId required"),
+      }),
+    );
   });
 });
 
@@ -320,8 +377,11 @@ describe("mcp.marketplace.recommend", () => {
     const opts = makeOpts("mcp.marketplace.recommend");
     await handler(opts);
 
-    expect(opts.respond).toHaveBeenCalledWith(true, expect.objectContaining({
-      items: [],
-    }));
+    expect(opts.respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        items: [],
+      }),
+    );
   });
 });

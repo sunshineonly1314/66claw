@@ -27,7 +27,7 @@ export async function probeTwitch(
 ): Promise<ProbeTwitchResult> {
   const started = Date.now();
 
-  if (!account.token || !account.username) {
+  if (!account.accessToken || !account.username) {
     return {
       ok: false,
       error: "missing credentials (token, username)",
@@ -36,7 +36,7 @@ export async function probeTwitch(
     };
   }
 
-  const rawToken = normalizeToken(account.token.trim());
+  const rawToken = normalizeToken(account.accessToken.trim());
 
   let client: ChatClient | undefined;
 

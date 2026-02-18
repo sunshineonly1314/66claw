@@ -136,7 +136,6 @@ class TypewriterStreamDirective extends AsyncDirective {
 
       if (this.isConnected) {
         this.setValue(this.render());
-        this.commit();
       }
 
       if (this.revealedLength < this.fullText.length && this.isConnected) {

@@ -1354,11 +1354,17 @@ Session state is owned by the **gateway host**. If you're in remote mode, the se
 
 ### What format is the config Where is it
 
-OpenClawCN reads an optional **JSON5** config from `$OPENCLAWCN_CONFIG_PATH` (default: `~/.openclawcn/openclawcn.json`):
+OpenClawCN reads an optional **JSON5** config file. The location depends on your platform and installation method:
 
-```
-$OPENCLAWCN_CONFIG_PATH
-```
+| Platform | Path |
+|----------|------|
+| macOS / Linux | `~/.openclawcn/openclawcn.json` |
+| Windows（命令行安装） | `%USERPROFILE%\.openclawcn\openclawcn.json` |
+| Windows（安装包/服务模式） | `%APPDATA%\ClawdbotCN\openclawcn.json` |
+
+Override with `OPENCLAWCN_CONFIG_PATH` or `OPENCLAWCN_STATE_DIR` environment variables.
+
+**从旧版本升级？** 旧路径 `~/.clawdbot/clawdbot.json` 仍然兼容，程序会自动查找。详见 [Windows 配置文件位置指南](windows-config-paths.md)。
 
 If the file is missing, it uses safe-ish defaults (including a default workspace of `~/.openclawcn/workspace`).
 

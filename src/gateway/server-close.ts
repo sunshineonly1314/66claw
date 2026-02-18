@@ -31,101 +31,126 @@ export function createGatewayCloseHandler(params: {
   httpServer: HttpServer;
   httpServers?: HttpServer[];
 }) {
+  let closeInProgress: Promise<void> | null = null;
+
   return async (opts?: { reason?: string; restartExpectedMs?: number | null }) => {
-    const reasonRaw = typeof opts?.reason === "string" ? opts.reason.trim() : "";
-    const reason = reasonRaw || "gateway stopping";
-    const restartExpectedMs =
-      typeof opts?.restartExpectedMs === "number" && Number.isFinite(opts.restartExpectedMs)
-        ? Math.max(0, Math.floor(opts.restartExpectedMs))
-        : null;
-    if (params.bonjourStop) {
-      try {
-        await params.bonjourStop();
-      } catch {
-        /* ignore */
+    // Guard against concurrent or repeated close() calls (e.g. SIGTERM + user restart).
+    if (closeInProgress) {
+      return closeInProgress;
+    }
+    closeInProgress = (async () => {
+      const reasonRaw = typeof opts?.reason === "string" ? opts.reason.trim() : "";
+      const reason = reasonRaw || "gateway stopping";
+      const restartExpectedMs =
+        typeof opts?.restartExpectedMs === "number" && Number.isFinite(opts.restartExpectedMs)
+          ? Math.max(0, Math.floor(opts.restartExpectedMs))
+          : null;
+      if (params.bonjourStop) {
+        try {
+          await params.bonjourStop();
+        } catch {
+          /* ignore */
+        }
       }
-    }
-    if (params.tailscaleCleanup) {
-      await params.tailscaleCleanup();
-    }
-    if (params.canvasHost) {
-      try {
-        await params.canvasHost.close();
-      } catch {
-        /* ignore */
+      if (params.tailscaleCleanup) {
+        await params.tailscaleCleanup();
       }
-    }
-    if (params.canvasHostServer) {
-      try {
-        await params.canvasHostServer.close();
-      } catch {
-        /* ignore */
+      if (params.canvasHost) {
+        try {
+          await params.canvasHost.close();
+        } catch {
+          /* ignore */
+        }
       }
-    }
-    for (const plugin of listChannelPlugins()) {
-      await params.stopChannel(plugin.id);
-    }
-    if (params.pluginServices) {
-      await params.pluginServices.stop().catch(() => {});
-    }
-    await stopGmailWatcher();
-    params.cron.stop();
-    params.heartbeatRunner.stop();
-    for (const timer of params.nodePresenceTimers.values()) {
-      clearInterval(timer);
-    }
-    params.nodePresenceTimers.clear();
-    params.broadcast("shutdown", {
-      reason,
-      restartExpectedMs,
-    });
-    clearInterval(params.tickInterval);
-    clearInterval(params.healthInterval);
-    clearInterval(params.dedupeCleanup);
-    if (params.agentUnsub) {
-      try {
-        params.agentUnsub();
-      } catch {
-        /* ignore */
+      if (params.canvasHostServer) {
+        try {
+          await params.canvasHostServer.close();
+        } catch {
+          /* ignore */
+        }
       }
-    }
-    if (params.heartbeatUnsub) {
-      try {
-        params.heartbeatUnsub();
-      } catch {
-        /* ignore */
+      for (const plugin of listChannelPlugins()) {
+        await params.stopChannel(plugin.id);
       }
-    }
-    params.chatRunState.clear();
-    for (const c of params.clients) {
-      try {
-        c.socket.close(1012, "service restart");
-      } catch {
-        /* ignore */
+      if (params.pluginServices) {
+        await params.pluginServices.stop().catch(() => {});
       }
-    }
-    params.clients.clear();
-    await params.configReloader.stop().catch(() => {});
-    if (params.browserControl) {
-      await params.browserControl.stop().catch(() => {});
-    }
-    await new Promise<void>((resolve) => params.wss.close(() => resolve()));
-    const servers =
-      params.httpServers && params.httpServers.length > 0
-        ? params.httpServers
-        : [params.httpServer];
-    for (const server of servers) {
-      const httpServer = server as HttpServer & {
-        closeIdleConnections?: () => void;
-      };
-      if (typeof httpServer.closeIdleConnections === "function") {
-        httpServer.closeIdleConnections();
+      await stopGmailWatcher();
+      params.cron.stop();
+      params.heartbeatRunner.stop();
+      for (const timer of params.nodePresenceTimers.values()) {
+        clearInterval(timer);
       }
-      await new Promise<void>((resolve, reject) =>
-        httpServer.close((err) => (err ? reject(err) : resolve())),
-      );
-    }
-    // Shut down state store last (consumers may still need it during shutdown)
-    await closeStateStore().catch(() => {});
+      params.nodePresenceTimers.clear();
+      params.broadcast("shutdown", {
+        reason,
+        restartExpectedMs,
+      });
+      clearInterval(params.tickInterval);
+      clearInterval(params.healthInterval);
+      clearInterval(params.dedupeCleanup);
+      if (params.agentUnsub) {
+        try {
+          params.agentUnsub();
+        } catch {
+          /* ignore */
+        }
+      }
+      if (params.heartbeatUnsub) {
+        try {
+          params.heartbeatUnsub();
+        } catch {
+          /* ignore */
+        }
+      }
+      params.chatRunState.clear();
+      // Snapshot clients before closing to avoid concurrent modification during iteration
+      // (clients Set may be modified by close event handlers during loop)
+      const clientsSnapshot = Array.from(params.clients);
+      for (const c of clientsSnapshot) {
+        try {
+          c.socket.close(1012, "service restart");
+        } catch {
+          /* ignore */
+        }
+      }
+      params.clients.clear();
+      await params.configReloader.stop().catch(() => {});
+      if (params.browserControl) {
+        await params.browserControl.stop().catch(() => {});
+      }
+      await new Promise<void>((resolve) => params.wss.close(() => resolve()));
+      const servers =
+        params.httpServers && params.httpServers.length > 0
+          ? params.httpServers
+          : [params.httpServer];
+      const HTTP_CLOSE_TIMEOUT_MS = 10_000;
+      for (const server of servers) {
+        const httpServer = server as HttpServer & {
+          closeIdleConnections?: () => void;
+          closeAllConnections?: () => void;
+        };
+        if (typeof httpServer.closeIdleConnections === "function") {
+          httpServer.closeIdleConnections();
+        }
+        await Promise.race([
+          new Promise<void>((resolve, reject) =>
+            httpServer.close((err) => (err ? reject(err) : resolve())),
+          ),
+          new Promise<void>((resolve) =>
+            setTimeout(() => {
+              // Force-close remaining connections after timeout to prevent shutdown hang.
+              if (typeof httpServer.closeAllConnections === "function") {
+                httpServer.closeAllConnections();
+              }
+              resolve();
+            }, HTTP_CLOSE_TIMEOUT_MS),
+          ),
+        ]);
+      }
+      // Shut down state store last (consumers may still need it during shutdown)
+      await closeStateStore().catch(() => {});
+    })();
+    return closeInProgress;
   };
 }

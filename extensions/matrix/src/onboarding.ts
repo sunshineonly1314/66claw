@@ -4,6 +4,7 @@ import {
   promptChannelAccessConfig,
   type ChannelOnboardingAdapter,
   type ChannelOnboardingDmPolicy,
+  type OpenClawCNConfig,
   type WizardPrompter,
 } from "openclawcn/plugin-sdk";
 import { listMatrixDirectoryGroupsLive } from "./directory-live.js";
@@ -168,8 +169,11 @@ const dmPolicy: ChannelOnboardingDmPolicy = {
   policyKey: "channels.matrix.dm.policy",
   allowFromKey: "channels.matrix.dm.allowFrom",
   getCurrent: (cfg) => (cfg as CoreConfig).channels?.matrix?.dm?.policy ?? "pairing",
-  setPolicy: (cfg, policy) => setMatrixDmPolicy(cfg as CoreConfig, policy),
-  promptAllowFrom: promptMatrixAllowFrom,
+  setPolicy: (cfg, policy) => setMatrixDmPolicy(cfg as CoreConfig, policy) as unknown as OpenClawCNConfig,
+  promptAllowFrom: (params) => promptMatrixAllowFrom({
+    cfg: params.cfg as unknown as CoreConfig,
+    prompter: params.prompter,
+  }) as unknown as Promise<OpenClawCNConfig>,
 };
 
 export const matrixOnboardingAdapter: ChannelOnboardingAdapter = {
@@ -238,7 +242,7 @@ export const matrixOnboardingAdapter: ChannelOnboardingAdapter = {
         if (forceAllowFrom) {
           next = await promptMatrixAllowFrom({ cfg: next, prompter });
         }
-        return { cfg: next };
+        return { cfg: next as unknown as OpenClawCNConfig };
       }
     }
 
@@ -419,7 +423,7 @@ export const matrixOnboardingAdapter: ChannelOnboardingAdapter = {
       }
     }
 
-    return { cfg: next };
+    return { cfg: next as unknown as OpenClawCNConfig };
   },
   dmPolicy,
   disable: (cfg) => ({
@@ -428,5 +432,5 @@ export const matrixOnboardingAdapter: ChannelOnboardingAdapter = {
       ...(cfg as CoreConfig).channels,
       matrix: { ...(cfg as CoreConfig).channels?.matrix, enabled: false },
     },
-  }),
+  }) as unknown as OpenClawCNConfig,
 };

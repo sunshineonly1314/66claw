@@ -46,7 +46,7 @@ async function createDockerSetupSandbox(): Promise<DockerSetupSandbox> {
   const binDir = join(rootDir, "bin");
   const logPath = join(rootDir, "docker-stub.log");
 
-  await copyFile(join(repoRoot, "docker-setup.sh"), scriptPath);
+  await copyFile(join(repoRoot, "docker", "docker-setup.sh"), scriptPath);
   await chmod(scriptPath, 0o755);
   await writeFile(dockerfilePath, "FROM scratch\n");
   await writeFile(
@@ -138,7 +138,7 @@ describe("docker-setup.sh", () => {
   });
 
   it("avoids associative arrays so the script remains Bash 3.2-compatible", async () => {
-    const script = await readFile(join(repoRoot, "docker-setup.sh"), "utf8");
+    const script = await readFile(join(repoRoot, "docker", "docker-setup.sh"), "utf8");
     expect(script).not.toMatch(/^\s*declare -A\b/m);
 
     const systemBash = resolveBashForCompatCheck();
@@ -155,7 +155,7 @@ describe("docker-setup.sh", () => {
       return;
     }
 
-    const syntaxCheck = spawnSync(systemBash, ["-n", join(repoRoot, "docker-setup.sh")], {
+    const syntaxCheck = spawnSync(systemBash, ["-n", join(repoRoot, "docker", "docker-setup.sh")], {
       encoding: "utf8",
     });
 
@@ -164,7 +164,7 @@ describe("docker-setup.sh", () => {
   });
 
   it("keeps docker-compose gateway command in sync", async () => {
-    const compose = await readFile(join(repoRoot, "docker-compose.yml"), "utf8");
+    const compose = await readFile(join(repoRoot, "docker", "docker-compose.yml"), "utf8");
     expect(compose).not.toContain("gateway-daemon");
     expect(compose).toContain('"gateway"');
   });

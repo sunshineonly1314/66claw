@@ -501,14 +501,10 @@ export interface LicenseModuleConfig {
   apiBaseUrl: string;
   /** 备用 API Base URLs（主 URL 网络失败时依次尝试） */
   apiFallbackUrls?: string[];
-  /** 签名密钥 (HMAC，旧方式) */
-  signSecretKey: string;
   /** 离线宽限期(小时) */
   offlineGracePeriodHours: number;
   /** 心跳间隔(小时) */
   heartbeatIntervalHours: number;
-  /** 是否启用请求签名 (HMAC) */
-  enableSign: boolean;
   /** 是否开发模式(跳过验证) */
   devMode: boolean;
   /** 是否启用 RSA 响应签名验证 (服务端需要支持) */
@@ -520,10 +516,8 @@ export interface LicenseModuleConfig {
  */
 export const DEFAULT_LICENSE_CONFIG: LicenseModuleConfig = {
   apiBaseUrl: "https://www.obplugins.cn/api/api/v1/license",
-  signSecretKey: "Cb#2026$Tecbinai@Lic3nse!Hmac^Key&Secure",
   offlineGracePeriodHours: 24, // 从 72h 缩短到 24h，减少离线滥用风险
   heartbeatIntervalHours: 24,
-  enableSign: true,
   devMode: false,
   enableRsaVerify: true, // 2026-02-03: 服务端 RSA 签名已上线，启用验证
 };

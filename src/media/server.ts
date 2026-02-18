@@ -62,7 +62,7 @@ export function attachMediaRoutes(
       }
       res.send(data);
       // best-effort single-use cleanup after response ends
-      res.on("finish", () => {
+      res.once("finish", () => {
         const cleanup = () => {
           void fs.rm(realPath).catch(() => {});
         };

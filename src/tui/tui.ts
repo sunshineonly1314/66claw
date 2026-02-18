@@ -728,6 +728,13 @@ export async function runTui(opts: TuiOptions) {
       return;
     }
     if (now - lastCtrlCAt < 1000) {
+      // Clean up timers before exit
+      stopStatusTimer();
+      stopWaitingTimer();
+      if (statusTimeout) {
+        clearTimeout(statusTimeout);
+        statusTimeout = null;
+      }
       client.stop();
       tui.stop();
       process.exit(0);
@@ -737,6 +744,13 @@ export async function runTui(opts: TuiOptions) {
     tui.requestRender();
   };
   editor.onCtrlD = () => {
+    // Clean up timers before exit
+    stopStatusTimer();
+    stopWaitingTimer();
+    if (statusTimeout) {
+      clearTimeout(statusTimeout);
+      statusTimeout = null;
+    }
     client.stop();
     tui.stop();
     process.exit(0);

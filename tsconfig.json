@@ -24,6 +24,6 @@
       "openclawcn/plugin-sdk/account-id": ["./src/plugin-sdk/account-id.ts"]
     }
   },
-  "include": ["src/**/*", "ui/**/*", "extensions/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "extensions/**/*.test.ts"]
+  "include": ["src/**/*", "extensions/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "extensions/**/*.test.ts", "src/dingtalk-moltbot-connector-main/**/*"]
 }

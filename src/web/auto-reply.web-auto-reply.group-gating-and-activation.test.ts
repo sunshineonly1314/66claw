@@ -789,7 +789,7 @@ describe("web auto-reply", () => {
       },
       messages: {
         groupChat: {
-          mentionPatterns: ["\\bopenclaw\\b"],
+          mentionPatterns: ["\\bopenclawcn\\b"],
         },
       },
     }));

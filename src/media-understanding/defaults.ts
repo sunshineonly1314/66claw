@@ -35,6 +35,7 @@ export const DEFAULT_AUDIO_MODELS: Record<string, string> = {
 
 export const AUTO_AUDIO_KEY_PROVIDERS = ["openai", "groq", "deepgram", "google"] as const;
 export const AUTO_IMAGE_KEY_PROVIDERS = [
+  "qwen",
   "openai",
   "anthropic",
   "google",
@@ -43,6 +44,7 @@ export const AUTO_IMAGE_KEY_PROVIDERS = [
 ] as const;
 export const AUTO_VIDEO_KEY_PROVIDERS = ["google", "openai", "zai"] as const;
 export const DEFAULT_IMAGE_MODELS: Record<string, string> = {
+  qwen: "qwen-max",
   openai: "gpt-5-mini",
   anthropic: "claude-opus-4-6",
   google: "gemini-3-flash-preview",

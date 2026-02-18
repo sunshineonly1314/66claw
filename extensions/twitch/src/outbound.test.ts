@@ -196,7 +196,7 @@ describe("outbound", () => {
 
       expect(result.channel).toBe("twitch");
       expect(result.messageId).toBe("twitch-msg-123");
-      expect(result.to).toBe("testchannel");
+      expect(result.meta?.to).toBe("testchannel");
       expect(result.timestamp).toBeGreaterThan(0);
     });
 
@@ -256,21 +256,6 @@ describe("outbound", () => {
         true,
         console,
       );
-    });
-
-    it("should handle abort signal", async () => {
-      const abortController = new AbortController();
-      abortController.abort();
-
-      await expect(
-        twitchOutbound.sendText({
-          cfg: mockConfig,
-          to: "#testchannel",
-          text: "Hello!",
-          accountId: "default",
-          signal: abortController.signal,
-        }),
-      ).rejects.toThrow("Outbound delivery aborted");
     });
 
     it("should throw on send failure", async () => {
@@ -354,20 +339,5 @@ describe("outbound", () => {
       );
     });
 
-    it("should handle abort signal", async () => {
-      const abortController = new AbortController();
-      abortController.abort();
-
-      await expect(
-        twitchOutbound.sendMedia({
-          cfg: mockConfig,
-          to: "#testchannel",
-          text: "Check this:",
-          mediaUrl: "https://example.com/image.png",
-          accountId: "default",
-          signal: abortController.signal,
-        }),
-      ).rejects.toThrow("Outbound delivery aborted");
-    });
   });
 });

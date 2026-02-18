@@ -15,6 +15,7 @@ If you want a quick “get unstuck” flow, start here:
 - **Logs:** [Logging](/logging) and [Gateway logging](/gateway/logging)
 - **Repairs:** [Doctor](/gateway/doctor)
 
-If you’re looking for conceptual questions (not “something broke”):
+If you're looking for conceptual questions (not "something broke"):
 
 - [FAQ (concepts)](/help/faq)
+- [Windows 配置文件位置指南](/help/windows-config-paths) — 找不到配置文件？看这里

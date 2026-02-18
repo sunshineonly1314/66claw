@@ -70,7 +70,10 @@ export function createGatewayBroadcaster(params: { clients: Set<GatewayWsClient>
       }
       logWs("out", "event", logMeta);
     }
-    for (const c of params.clients) {
+    // Snapshot clients before iteration to avoid concurrent modification
+    // (slow consumer close may trigger delete from Set during iteration)
+    const clientsSnapshot = Array.from(params.clients);
+    for (const c of clientsSnapshot) {
       if (targetConnIds && !targetConnIds.has(c.connId)) {
         continue;
       }

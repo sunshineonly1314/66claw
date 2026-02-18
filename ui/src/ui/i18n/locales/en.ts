@@ -2679,6 +2679,22 @@ export const en = {
   "extensions.advanced.manualAdd.transport": "Transport",
   "extensions.advanced.manualAdd.submit": "Add",
 
+  // Extensions — Batch API Key configuration
+  "extensions.batchConfig.title": "Batch Configure API Keys",
+  "extensions.batchConfig.subtitle": "Configure API keys for all capabilities that need them at once",
+  "extensions.batchConfig.serverName": "Capability",
+  "extensions.batchConfig.apiKeyVar": "Key Variable",
+  "extensions.batchConfig.value": "API Key",
+  "extensions.batchConfig.guide": "Guide",
+  "extensions.batchConfig.status": "Status",
+  "extensions.batchConfig.configured": "Configured",
+  "extensions.batchConfig.unconfigured": "Not configured",
+  "extensions.batchConfig.empty": "No capabilities require API key configuration",
+  "extensions.batchConfig.saveAll": "Save All",
+  "extensions.batchConfig.saved": "keys saved successfully",
+  "extensions.batchConfig.failed": "keys failed to save",
+  "extensions.batchConfig.button": "Batch Configure Keys",
+
   // Extensions — Chat capability hint
   "extensions.chatHint.title": "Install \"{{name}}\" to let AI {{action}}",
   "extensions.chatHint.install": "Install",

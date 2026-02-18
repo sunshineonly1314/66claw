@@ -160,18 +160,23 @@ export function createReplyDispatcher(options: ReplyDispatcherOptions): ReplyDis
       })
       .finally(() => {
         pending -= 1;
-        // Clear reservation if:
-        // 1. pending is now 1 (just the reservation left)
-        // 2. markComplete has been called
-        // 3. No more replies will be enqueued
-        if (pending === 1 && completeCalled) {
-          pending -= 1; // Clear the reservation
-        }
-        if (pending === 0) {
-          // Unregister from global tracking when idle.
-          unregister();
-          options.onIdle?.();
-        }
+        // Use microtask to check idle state AFTER all synchronous decrements complete
+        // This prevents race where multiple concurrent .finally() blocks check pending
+        // before all decrements are applied
+        void Promise.resolve().then(() => {
+          // Clear reservation if:
+          // 1. pending is now 1 (just the reservation left)
+          // 2. markComplete has been called
+          // 3. No more replies will be enqueued
+          if (pending === 1 && completeCalled) {
+            pending -= 1; // Clear the reservation
+          }
+          if (pending === 0) {
+            // Unregister from global tracking when idle.
+            unregister();
+            options.onIdle?.();
+          }
+        });
       });
     return true;
   };

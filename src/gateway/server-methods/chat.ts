@@ -39,6 +39,11 @@ import {
 } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
 import { injectTimestamp, timestampOptsFromConfig } from "./agent-timestamp.js";
+import {
+  startPerfTrace,
+  recordPerfMeasurement,
+  completePerfTrace,
+} from "../../infra/perf-tracker.js";
 
 type TranscriptAppendResult = {
   ok: boolean;
@@ -488,6 +493,19 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
 
     try {
+      // 🔍 Performance Tracking 开始
+      startPerfTrace(clientRunId, {
+        sessionKey: rawSessionKey,
+        messageLength: parsedMessage.length,
+        attachmentsCount: normalizedAttachments.length,
+      });
+      recordPerfMeasurement(clientRunId, "request_received");
+
+      // 🔍 DEBUG: 日志1 - chat.send 请求开始
+      context.logGateway.info(
+        `[DEBUG-CHAT] chat.send START: runId=${clientRunId}, sessionKey=${rawSessionKey}, message="${parsedMessage.slice(0, 50)}${parsedMessage.length > 50 ? "..." : ""}", attachments=${normalizedAttachments.length}`,
+      );
+
       const abortController = new AbortController();
       context.chatAbortControllers.set(clientRunId, {
         controller: abortController,
@@ -500,7 +518,14 @@ export const chatHandlers: GatewayRequestHandlers = {
         runId: clientRunId,
         status: "started" as const,
       };
+
+      // 🔍 DEBUG: 日志2 - 发送 ACK 响应给前端
+      context.logGateway.info(
+        `[DEBUG-CHAT] Sending ACK to client: runId=${clientRunId}, status=started`,
+      );
       respond(true, ackPayload, undefined, { runId: clientRunId });
+
+      recordPerfMeasurement(clientRunId, "agent_session_load");
 
       const trimmedMessage = parsedMessage.trim();
       const injectThinking = Boolean(
@@ -560,6 +585,14 @@ export const chatHandlers: GatewayRequestHandlers = {
       });
 
       let agentRunStarted = false;
+
+      // 🔍 DEBUG: 日志3 - 开始调用 dispatchInboundMessage
+      context.logGateway.info(
+        `[DEBUG-CHAT] About to call dispatchInboundMessage: runId=${clientRunId}, sessionKey=${sessionKey}, agentId=${agentId}`,
+      );
+
+      recordPerfMeasurement(clientRunId, "dispatch_start", { agentId });
+
       void dispatchInboundMessage({
         ctx,
         cfg,
@@ -571,6 +604,19 @@ export const chatHandlers: GatewayRequestHandlers = {
           disableBlockStreaming: true,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
+            recordPerfMeasurement(clientRunId, "agent_run_start", { agentRunId: runId });
+            // 🔍 DEBUG: 日志4 - Agent 运行已启动
+            context.logGateway.info(
+              `[DEBUG-CHAT] Agent run started: agentRunId=${runId}, clientRunId=${clientRunId}`,
+            );
+            // Map agent-internal runId → UI clientRunId so createAgentEventHandler
+            // can broadcast chat deltas/finals with the correct runId that the UI
+            // is waiting for.  Without this mapping, the UI receives events with
+            // mismatched runId and ignores them, resulting in empty responses.
+            context.addChatRun(runId, {
+              sessionKey: rawSessionKey,
+              clientRunId,
+            });
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
             const wantsToolEvents = hasGatewayClientCap(
               client?.connect?.caps,
@@ -592,6 +638,12 @@ export const chatHandlers: GatewayRequestHandlers = {
         },
       })
         .then(() => {
+          recordPerfMeasurement(clientRunId, "agent_run_complete");
+          // 🔍 DEBUG: 日志5 - dispatchInboundMessage 执行完成
+          context.logGateway.info(
+            `[DEBUG-CHAT] dispatchInboundMessage COMPLETED: runId=${clientRunId}, agentRunStarted=${agentRunStarted}, finalReplyParts=${finalReplyParts.length}`,
+          );
+
           if (!agentRunStarted) {
             const combinedReply = finalReplyParts
               .map((part) => part.trim())
@@ -629,6 +681,12 @@ export const chatHandlers: GatewayRequestHandlers = {
                 };
               }
             }
+            // 🔍 DEBUG: 日志6 - 广播 final 消息
+            context.logGateway.info(
+              `[DEBUG-CHAT] Broadcasting chat FINAL: runId=${clientRunId}, hasMessage=${!!message}, combinedReplyLength=${combinedReply.length}`,
+            );
+
+            recordPerfMeasurement(clientRunId, "agent_response_process", { hasMessage: !!message });
             broadcastChatFinal({
               context,
               runId: clientRunId,
@@ -643,6 +701,11 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .catch((err) => {
+          // 🔍 DEBUG: 日志7 - dispatchInboundMessage 捕获到错误
+          context.logGateway.error(
+            `[DEBUG-CHAT] dispatchInboundMessage CATCH ERROR: runId=${clientRunId}, error=${String(err)}, stack=${err instanceof Error ? err.stack : "N/A"}`,
+          );
+
           const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
           context.dedupe.set(`chat:${clientRunId}`, {
             ts: Date.now(),
@@ -654,6 +717,12 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
             error,
           });
+
+          // 🔍 DEBUG: 日志8 - 广播错误消息
+          context.logGateway.info(
+            `[DEBUG-CHAT] Broadcasting chat ERROR: runId=${clientRunId}, errorMessage=${String(err).slice(0, 200)}`,
+          );
+
           broadcastChatError({
             context,
             runId: clientRunId,
@@ -662,9 +731,20 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .finally(() => {
+          // 🔍 完成性能追踪
+          completePerfTrace(clientRunId, { completed: true });
+          // 🔍 DEBUG: 日志9 - finally 块执行，清理资源
+          context.logGateway.info(
+            `[DEBUG-CHAT] dispatchInboundMessage FINALLY: runId=${clientRunId}, cleaning up abortController`,
+          );
           context.chatAbortControllers.delete(clientRunId);
         });
     } catch (err) {
+      // 🔍 DEBUG: 日志10 - 外层 try-catch 捕获到同步错误
+      context.logGateway.error(
+        `[DEBUG-CHAT] OUTER TRY-CATCH ERROR: runId=${clientRunId}, error=${String(err)}, stack=${err instanceof Error ? err.stack : "N/A"}`,
+      );
+
       const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
       const payload = {
         runId: clientRunId,
@@ -677,6 +757,12 @@ export const chatHandlers: GatewayRequestHandlers = {
         payload,
         error,
       });
+
+      // 🔍 DEBUG: 日志11 - 发送错误响应给前端
+      context.logGateway.info(
+        `[DEBUG-CHAT] Sending ERROR response to client: runId=${clientRunId}, error=${String(err).slice(0, 200)}`,
+      );
+
       respond(false, payload, error, {
         runId: clientRunId,
         error: formatForLog(err),

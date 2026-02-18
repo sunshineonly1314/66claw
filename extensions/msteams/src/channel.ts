@@ -46,6 +46,7 @@ export const msteamsPlugin: ChannelPlugin<ResolvedMSTeamsAccount> = {
   id: "msteams",
   meta: {
     ...meta,
+    aliases: [...meta.aliases] as string[],
   },
   onboarding: msteamsOnboardingAdapter,
   pairing: {
@@ -361,7 +362,8 @@ export const msteamsPlugin: ChannelPlugin<ResolvedMSTeamsAccount> = {
         if (!to) {
           return {
             isError: true,
-            content: [{ type: "text", text: "Card send requires a target (to)." }],
+            content: [{ type: "text" as const, text: "Card send requires a target (to)." }],
+            details: undefined,
           };
         }
         const result = await sendAdaptiveCardMSTeams({
@@ -372,7 +374,7 @@ export const msteamsPlugin: ChannelPlugin<ResolvedMSTeamsAccount> = {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: JSON.stringify({
                 ok: true,
                 channel: "msteams",
@@ -381,6 +383,7 @@ export const msteamsPlugin: ChannelPlugin<ResolvedMSTeamsAccount> = {
               }),
             },
           ],
+          details: undefined,
         };
       }
       // Return null to fall through to default handler

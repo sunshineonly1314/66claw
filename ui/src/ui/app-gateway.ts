@@ -5,7 +5,9 @@ import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
 import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types.ts";
+import type { LicenseDialogType, LicenseUiState } from "./license/types.ts";
 import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
+import { dismissRenewalReminderTemporarily } from "./storage.ts";
 import {
   applySettings,
   loadCron,
@@ -289,4 +291,24 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
   if (snapshot?.sessionDefaults) {
     applySessionDefaults(host, snapshot.sessionDefaults);
   }
+}
+
+// ============================================================================
+// License renewal reminder handling
+// ============================================================================
+
+type LicenseHost = {
+  licenseState: LicenseUiState;
+  showLicenseDialog: LicenseDialogType | null;
+};
+
+/**
+ * Handle the "Remind me later" action for renewal reminder dialog
+ */
+export function handleRenewalReminderDismiss(host: LicenseHost): void {
+  const urgency = host.licenseState.renewalReminder?.urgency;
+  if (urgency) {
+    dismissRenewalReminderTemporarily(urgency);
+  }
+  host.showLicenseDialog = null;
 }

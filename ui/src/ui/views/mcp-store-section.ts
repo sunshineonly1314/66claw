@@ -18,6 +18,8 @@ import type {
 import { renderMarketplaceCard } from "./mcp-marketplace-card.js";
 import { renderMcpDetailModal } from "./mcp-detail-modal.js";
 import { renderMcpConfigWizard } from "./mcp-config-wizard.js";
+import { renderMcpBatchConfig } from "./mcp-batch-config.js";
+import { MCP_CATEGORIES, MCP_MAX_RUNNING, filterMarketplaceItems } from "./mcp-shared.js";
 
 // ============================================================================
 // Props
@@ -36,27 +38,16 @@ export type McpStoreSectionProps = {
   onCloseConfigWizard: () => void;
   /** Current running process count for limit guard */
   runningCount: number;
+  // — Batch API Key configuration —
+  onOpenBatchConfig?: () => void;
+  onCloseBatchConfig?: () => void;
+  onSaveBatchConfig?: (updates: Array<{ serverId: string; env: Record<string, string> }>) => void;
+  batchConfigSaving?: boolean;
+  batchConfigResult?: { success: number; failed: number } | null;
+  serverEnvStatus?: Record<string, Record<string, boolean>>;
 };
 
-// ============================================================================
-// Categories
-// ============================================================================
-
-const CATEGORIES = [
-  { id: "all", emoji: "\u{1F4CB}" },
-  { id: "filesystem", emoji: "\u{1F4C1}" },
-  { id: "database", emoji: "\u{1F5C4}" },
-  { id: "search", emoji: "\u{1F50D}" },
-  { id: "productivity", emoji: "\u{1F4CA}" },
-  { id: "development", emoji: "\u{1F6E0}" },
-  { id: "network", emoji: "\u{1F310}" },
-  { id: "ai", emoji: "\u{1F916}" },
-  { id: "social", emoji: "\u{1F4AC}" },
-  { id: "smarthome", emoji: "\u{1F3E0}" },
-  { id: "other", emoji: "\u{1F4E6}" },
-] as const;
-
-const MCP_MAX_RUNNING = 8;
+// CATEGORIES, MCP_MAX_RUNNING, filterMarketplaceItems — imported from mcp-shared.ts
 
 // ============================================================================
 // Search debounce
@@ -79,7 +70,7 @@ function debouncedSearch(value: string, cb: (s: string) => void): void {
 export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResult {
   const { marketplace, onSearchChange, onCategoryChange, onSortChange, onOpenDetail, onInstall, onOpenConfigWizard, runningCount } = props;
 
-  const filtered = filterItems(marketplace);
+  const filtered = filterMarketplaceItems(marketplace);
 
   return html`
     <!-- Process limit warning -->
@@ -154,7 +145,7 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
         flex:1;
         align-items:center;
       ">
-        ${CATEGORIES.map((cat) => {
+        ${MCP_CATEGORIES.map((cat) => {
           const isActive = marketplace.activeCategory === cat.id;
           const count = cat.id === "all"
             ? marketplace.items.length
@@ -202,6 +193,31 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
         <option value="popular">${t("extensions.store.sort.popular")}</option>
         <option value="name">${t("extensions.store.sort.name")}</option>
       </select>
+
+      <!-- Batch API Key config button -->
+      ${props.onOpenBatchConfig && marketplace.items.some((i) => i.requiresApiKey)
+        ? html`<button
+            @click=${props.onOpenBatchConfig}
+            style="
+              all:unset; cursor:pointer;
+              padding:0 14px;
+              height:36px;
+              border:1px solid var(--accent-2, #20d5bc);
+              border-radius:var(--radius-md, 8px);
+              background:rgba(32,213,188,0.08);
+              color:var(--accent-2, #20d5bc);
+              font-size:12px;
+              font-weight:600;
+              white-space:nowrap;
+              flex-shrink:0;
+              display:flex;
+              align-items:center;
+              gap:6px;
+              transition:background 150ms, border-color 150ms;
+            "
+            class="mcp-store-batch-btn"
+          >\u{1F511} ${t("extensions.batchConfig.button" as never)}</button>`
+        : nothing}
     </div>
 
     <!-- Content: loading / empty / no results / cards grid -->
@@ -247,9 +263,9 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
       ? renderMcpConfigWizard({
           item: marketplace.configTarget,
           onClose: props.onCloseConfigWizard,
-          onSaveAndEnable: (_env: Record<string, string>) => {
+          onSaveAndEnable: (env: Record<string, string>) => {
             const target = marketplace.configTarget!;
-            onInstall({ ...target, installStatus: "installing" } as McpMarketplaceItem);
+            onInstall({ ...target, _env: env } as McpMarketplaceItem & { _env: Record<string, string> });
             props.onCloseConfigWizard();
           },
           onTestConnection: () => { /* not wired in shared context */ },
@@ -257,10 +273,25 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
         })
       : nothing}
 
+    <!-- Batch API Key config modal -->
+    ${marketplace.showBatchConfig && props.onCloseBatchConfig && props.onSaveBatchConfig
+      ? renderMcpBatchConfig({
+          items: marketplace.items,
+          serverEnvStatus: props.serverEnvStatus ?? {},
+          onClose: props.onCloseBatchConfig,
+          onSaveAll: props.onSaveBatchConfig,
+          saving: props.batchConfigSaving ?? false,
+          saveResult: props.batchConfigResult,
+        })
+      : nothing}
+
     <style>
       .mcp-store-search-box:focus-within {
         border-color:var(--accent, #6c8cff) !important;
         box-shadow:0 0 0 3px rgba(108,140,255,0.1);
+      }
+      .mcp-store-batch-btn:hover {
+        background:rgba(32,213,188,0.15) !important;
       }
       .mcp-store-grid {
         grid-template-columns: repeat(4, 1fr);
@@ -278,48 +309,7 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
   `;
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function filterItems(state: McpMarketplaceState): McpMarketplaceItem[] {
-  let items = state.items;
-
-  if (state.activeCategory !== "all") {
-    items = items.filter((i) => i.category === state.activeCategory);
-  }
-
-  if (state.search.trim()) {
-    const q = state.search.trim().toLowerCase();
-    items = items.filter(
-      (i) =>
-        i.friendlyName.toLowerCase().includes(q) ||
-        (i.friendlyNameEn ?? "").toLowerCase().includes(q) ||
-        i.description.toLowerCase().includes(q) ||
-        (i.descriptionEn ?? "").toLowerCase().includes(q) ||
-        i.tags.some((tag) => tag.toLowerCase().includes(q)),
-    );
-  }
-
-  switch (state.sort) {
-    case "newest":
-      items = [...items].sort((a, b) => (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0));
-      break;
-    case "name":
-      items = [...items].sort((a, b) => a.friendlyName.localeCompare(b.friendlyName));
-      break;
-    case "popular":
-      items = [...items].sort((a, b) => (b.securityScore ?? 0) - (a.securityScore ?? 0));
-      break;
-    default:
-      items = [...items].sort((a, b) => {
-        if (a.isOfficial !== b.isOfficial) return a.isOfficial ? -1 : 1;
-        return (b.securityScore ?? 0) - (a.securityScore ?? 0);
-      });
-  }
-
-  return items;
-}
+// filterItems — now using filterMarketplaceItems from mcp-shared.ts
 
 function renderStoreLoading(): TemplateResult {
   return html`

@@ -12,7 +12,12 @@ import JSZip from "jszip";
 import { CONFIG_DIR, ensureDir } from "../../utils.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { validateUrlForSsrf } from "../../infra/net/ssrf.js";
-import type { RemoteSkillMeta, RemoteSkillsIndex, FetchIndexResult, InstallSkillResult } from "./gitee-registry.js";
+import type {
+  RemoteSkillMeta,
+  RemoteSkillsIndex,
+  FetchIndexResult,
+  InstallSkillResult,
+} from "./gitee-registry.js";
 
 const logger = createSubsystemLogger("clawdskillsproxy-registry");
 
@@ -81,11 +86,55 @@ export interface ProxyRegistryConfig {
 
 /** 默认配置 */
 export const DEFAULT_PROXY_CONFIG: ProxyRegistryConfig = {
-  baseUrl: process.env.OPENCLAWCN_SKILLS_PROXY_URL?.trim() || "http://121.43.61.90/api",
-  token: process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim() || "clawdbotCN778",
+  baseUrl: getRequiredEnv("OPENCLAWCN_SKILLS_PROXY_URL"),
+  token: getRequiredEnv("OPENCLAWCN_SKILLS_PROXY_TOKEN"),
   timeoutMs: 30_000,
   batchSize: 200,
 };
+
+/**
+ * 获取必需的环境变量，如果未设置则抛出错误
+ * @param key 环境变量名
+ * @returns 环境变量值
+ * @throws Error 如果环境变量未设置或为空
+ */
+function getRequiredEnv(key: string): string {
+  const value = process.env[key]?.trim();
+
+  if (!value) {
+    throw new Error(
+      `SECURITY: Required environment variable ${key} is not set.\n` +
+        `Please configure it in your environment or .env file.\n` +
+        `See documentation: docs/configuration.md`,
+    );
+  }
+
+  // 安全检查: 生产环境阻止已知的不安全默认值
+  if (key === "OPENCLAWCN_SKILLS_PROXY_TOKEN" && value === "clawdbotCN778") {
+    const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
+    if (!isDev) {
+      throw new Error(
+        `SECURITY: Detected compromised default token "clawdbotCN778".\n` +
+          `This token has been publicly disclosed and must not be used.\n` +
+          `Please generate a new secure token (minimum 32 characters).`,
+      );
+    }
+  }
+
+  // 安全检查: 生产环境强制 HTTPS，开发环境允许 HTTP
+  if (key === "OPENCLAWCN_SKILLS_PROXY_URL") {
+    const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
+    if (!isDev && !value.startsWith("https://")) {
+      throw new Error(
+        `SECURITY: ${key} must use HTTPS protocol for secure communication.\n` +
+          `Provided: ${value}\n` +
+          `Expected: https://...`,
+      );
+    }
+  }
+
+  return value;
+}
 
 /** Managed skills directory */
 const MANAGED_SKILLS_DIR = path.join(CONFIG_DIR, "skills");
@@ -111,9 +160,9 @@ async function fetchWithAuth(
       ...options,
       signal: controller.signal,
       headers: {
-        "Authorization": `Bearer ${config.token}`,
+        Authorization: `Bearer ${config.token}`,
         "User-Agent": "OpenClawCN-Skills-Registry/1.0",
-        "Accept": "application/json, application/zip, */*",
+        Accept: "application/json, application/zip, */*",
         ...options.headers,
       },
     });
@@ -133,13 +182,13 @@ async function fetchWithAuth(
 function convertToRemoteSkillMeta(proxyMeta: ProxySkillMeta): RemoteSkillMeta {
   // 优先使用 name 字段，其次使用 skillId
   const name = proxyMeta.name?.trim() || proxyMeta.skillId;
-  
+
   // 优先使用中文描述，其次使用英文描述
   const description = proxyMeta.descriptionZh?.trim() || proxyMeta.description?.trim() || "";
-  
+
   // 优先使用中文名称
   const nameZh = proxyMeta.nameZh?.trim() || undefined;
-  
+
   return {
     name,
     nameZh,
@@ -189,7 +238,7 @@ export async function fetchProxySkillsIndex(
       return { ok: false, error: errorText };
     }
 
-    const json = await response.json() as ProxyIndexResponse;
+    const json = (await response.json()) as ProxyIndexResponse;
 
     if (json.code !== 200) {
       return { ok: false, error: `API error: ${json.message}` };
@@ -513,7 +562,7 @@ export async function checkProxyHealth(
       return { ok: false, error: `HTTP ${response.status}` };
     }
 
-    const json = await response.json() as { status?: string; globalVersion?: number };
+    const json = (await response.json()) as { status?: string; globalVersion?: number };
     if (json.status === "UP" && typeof json.globalVersion === "number") {
       return { ok: true, globalVersion: json.globalVersion };
     }

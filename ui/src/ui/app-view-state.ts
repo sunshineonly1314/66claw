@@ -4,6 +4,8 @@ import type { UiSettings } from "./storage";
 import type { ThemeMode } from "./theme";
 import type { ThemeTransitionContext } from "./theme-transition";
 import type {
+  AgentIdentityResult,
+  AgentsFilesListResult,
   AgentsListResult,
   ChannelsStatusSnapshot,
   ConfigSnapshot,
@@ -38,7 +40,7 @@ import type { DocsViewState } from "./views/docs";
 import type { FeedbackViewState } from "./views/feedback";
 import type { LicenseUiState, LicenseDialogType, BoundDevice } from "./license/types";
 import type { DiscoveryControllerState } from "./controllers/capability-detect";
-import type { CostUsageSummary } from "./types";
+import type { CostUsageSummary, SessionsUsageResult, SessionUsageTimeSeries } from "./types";
 
 export type AppViewState = {
   settings: UiSettings;
@@ -120,6 +122,7 @@ export type AppViewState = {
   // 性能档位 (Performance Profile)
   performanceProfile: "economy" | "balanced" | "power";
   performanceProfileSaving: boolean;
+  pendingGatewayUrl: string | null;
   configLoading: boolean;
   configRaw: string;
   configRawOriginal: string;
@@ -158,6 +161,22 @@ export type AppViewState = {
   agentsLoading: boolean;
   agentsList: AgentsListResult | null;
   agentsError: string | null;
+  agentsSelectedId: string | null;
+  agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+  agentFilesLoading: boolean;
+  agentFilesError: string | null;
+  agentFilesList: AgentsFilesListResult | null;
+  agentFileContents: Record<string, string>;
+  agentFileDrafts: Record<string, string>;
+  agentFileActive: string | null;
+  agentFileSaving: boolean;
+  agentIdentityLoading: boolean;
+  agentIdentityError: string | null;
+  agentIdentityById: Record<string, AgentIdentityResult>;
+  agentSkillsLoading: boolean;
+  agentSkillsError: string | null;
+  agentSkillsReport: SkillStatusReport | null;
+  agentSkillsAgentId: string | null;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
   sessionsError: string | null;
@@ -222,11 +241,43 @@ export type AppViewState = {
   docsViewState: DocsViewState;
   // 意见反馈状态
   feedbackState: FeedbackViewState;
-  // Token 使用量统计状态
-  usageLoading: boolean;
+  // Token 使用量统计状态 (简易视图，保留向后兼容)
   usageSummary: CostUsageSummary | null;
-  usageError: string | null;
   usageDays: number;
+  // 高级 Usage 分析系统
+  usageLoading: boolean;
+  usageResult: SessionsUsageResult | null;
+  usageCostSummary: CostUsageSummary | null;
+  usageError: string | null;
+  usageStartDate: string;
+  usageEndDate: string;
+  usageSelectedSessions: string[];
+  usageSelectedDays: string[];
+  usageSelectedHours: number[];
+  usageChartMode: "tokens" | "cost";
+  usageDailyChartMode: "total" | "by-type";
+  usageTimeSeriesMode: "cumulative" | "per-turn";
+  usageTimeSeriesBreakdownMode: "total" | "by-type";
+  usageTimeSeries: SessionUsageTimeSeries | null;
+  usageTimeSeriesLoading: boolean;
+  usageSessionLogs: import("./views/usage").SessionLogEntry[] | null;
+  usageSessionLogsLoading: boolean;
+  usageSessionLogsExpanded: boolean;
+  usageQuery: string;
+  usageQueryDraft: string;
+  usageQueryDebounceTimer: number | null;
+  usageSessionSort: "tokens" | "cost" | "recent" | "messages" | "errors";
+  usageSessionSortDir: "asc" | "desc";
+  usageRecentSessions: string[];
+  usageTimeZone: "local" | "utc";
+  usageContextExpanded: boolean;
+  usageHeaderPinned: boolean;
+  usageSessionsTab: "all" | "recent";
+  usageVisibleColumns: string[];
+  usageLogFilterRoles: import("./views/usage").SessionLogRole[];
+  usageLogFilterTools: string[];
+  usageLogFilterHasTools: boolean;
+  usageLogFilterQuery: string;
   // 模型选择状态
   modelsLoading: boolean;
   modelsProviders: import("./controllers/models").ProviderInfo[];
@@ -299,6 +350,8 @@ export type AppViewState = {
   handleNostrProfileImport: () => Promise<void>;
   handleNostrProfileToggleAdvanced: () => void;
   handleExecApprovalDecision: (decision: "allow-once" | "allow-always" | "deny") => Promise<void>;
+  handleGatewayUrlConfirm: () => void;
+  handleGatewayUrlCancel: () => void;
   handleConfigLoad: () => Promise<void>;
   handleConfigSave: () => Promise<void>;
   handleConfigApply: () => Promise<void>;
@@ -454,6 +507,8 @@ export type McpMarketplaceState = {
   configTarget: McpMarketplaceItem | null;
   /** Toast notification (auto-dismissed after 4s) */
   toast: McpToast | null;
+  /** Batch API key configuration modal open state */
+  showBatchConfig: boolean;
 };
 
 export type McpToast = {

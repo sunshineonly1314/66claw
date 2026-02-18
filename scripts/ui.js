@@ -50,11 +50,24 @@ function resolveRunner() {
   return null;
 }
 
+function wrapSpawnArgs(cmd, args) {
+  // On Windows, .CMD/.BAT files must be spawned through cmd.exe.
+  // The entire command string after /c must be wrapped in outer quotes
+  // when the executable path contains spaces (e.g. "D:\Program Files\...").
+  if (process.platform === "win32") {
+    const cmdLine = `"${cmd}" ${args.join(" ")}`;
+    return { cmd: process.env.COMSPEC || "cmd.exe", args: ["/d", "/s", "/c", `"${cmdLine}"`] };
+  }
+  return { cmd, args };
+}
+
 function run(cmd, args) {
-  const child = spawn(cmd, args, {
+  const wrapped = wrapSpawnArgs(cmd, args);
+  const child = spawn(wrapped.cmd, wrapped.args, {
     cwd: uiDir,
     stdio: "inherit",
     env: process.env,
+    windowsVerbatimArguments: process.platform === "win32",
   });
   child.on("exit", (code, signal) => {
     if (signal) {
@@ -65,10 +78,12 @@ function run(cmd, args) {
 }
 
 function runSync(cmd, args, envOverride) {
-  const result = spawnSync(cmd, args, {
+  const wrapped = wrapSpawnArgs(cmd, args);
+  const result = spawnSync(wrapped.cmd, wrapped.args, {
     cwd: uiDir,
     stdio: "inherit",
     env: envOverride ?? process.env,
+    windowsVerbatimArguments: process.platform === "win32",
   });
   if (result.signal) {
     process.exit(1);

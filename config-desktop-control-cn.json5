@@ -1,0 +1,164 @@
+/**
+ * OpenClawCN 桌面控制专用配置（国内用户优化版）
+ * Desktop Control Configuration for China Users with Qwen-VL-Max
+ *
+ * 功能特点:
+ *   - 文本任务使用 Qwen-Max（高性价比，5.6元/百万tokens）
+ *   - 图片任务自动切换 Qwen-VL-Max（视觉能力，12元/百万tokens）
+ *   - 启用 modalityRouter 自动模型切换
+ *   - 适用于桌面自动化（desktop_control）场景
+ *
+ * 配置文件位置: ~/.openclawcn/config.json5
+ *
+ * 使用步骤:
+ *   1. 复制此文件到 ~/.openclawcn/config.json5
+ *   2. 替换 YOUR_DASHSCOPE_API_KEY 为你的实际 API Key
+ *      申请地址: https://dashscope.console.aliyun.com/
+ *   3. 启动网关: openclawcn gateway run
+ *   4. 测试桌面控制:
+ *      desktop_control({action: "screenshot"})
+ *
+ * 成本估算 (1000次桌面控制流程):
+ *   - 纯文本任务（如列表窗口）: ~5.6元
+ *   - 图片分析任务（如点击按钮）: ~100元
+ *   - 混合使用: ~50-150元/月
+ */
+{
+  // ============================================================================
+  // 网关配置 (Gateway Configuration)
+  // ============================================================================
+  gateway: {
+    // 绑定地址: 仅本机访问，通过 Tailscale/SSH 远程连接
+    bind: "loopback",
+    port: 18789,
+  },
+
+  // ============================================================================
+  // 大模型配置 (LLM Models Configuration)
+  // ============================================================================
+  models: {
+    mode: "merge",
+
+    providers: {
+      // ----------------------------------------------------------------------
+      // 通义千问 Qwen (阿里云 DashScope)
+      // API 申请: https://dashscope.console.aliyun.com/
+      // 文档: https://help.aliyun.com/zh/dashscope/developer-reference/model-introduction
+      // ----------------------------------------------------------------------
+      "qwen-dashscope": {
+        baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+
+        // ⚠️ 重要: 填入你的 DashScope API Key
+        // 或设置环境变量: export DASHSCOPE_API_KEY="sk-..."
+        apiKey: "YOUR_DASHSCOPE_API_KEY",
+
+        api: "openai-completions",
+
+        models: [
+          // ── Qwen-Max (纯文本, 高性价比) ──
+          {
+            id: "qwen-max",
+            name: "通义千问 Max",
+            reasoning: false,
+            input: ["text"],  // ❌ 不支持图片
+            contextWindow: 32000,
+            maxTokens: 8192,
+            // 定价: 0.04元/千tokens (输入) + 0.12元/千tokens (输出)
+            // 平均: ~5.6元/百万tokens
+          },
+
+          // ── Qwen-VL-Max (多模态视觉, 支持图片分析) ──
+          {
+            id: "qwen-vl-max",
+            name: "通义千问 VL Max (视觉)",
+            reasoning: false,
+            input: ["text", "image"],  // ✅ 支持图片！
+            contextWindow: 32000,
+            maxTokens: 2000,
+            // 定价: 0.02元/千tokens (输入+输出)
+            // 平均: ~12元/百万tokens
+            // 图片: 每张约 2000 tokens
+          },
+
+          // ── Qwen-Plus (备用文本模型) ──
+          {
+            id: "qwen-plus",
+            name: "通义千问 Plus",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 131072,
+            maxTokens: 8192,
+            // 定价: 0.004元/千tokens (输入) + 0.02元/千tokens (输出)
+            // 平均: ~2元/百万tokens
+          },
+        ],
+      },
+    },
+  },
+
+  // ============================================================================
+  // 助手配置 (Agent Configuration)
+  // ============================================================================
+  agents: {
+    // 默认使用 Qwen-Max (纯文本任务，成本低)
+    defaultModel: "qwen-max",
+
+    // 认证配置列表 (modalityRouter 会自动选择)
+    authProfiles: [
+      {
+        provider: "qwen-dashscope",
+        model: "qwen-max",
+        apiKey: "YOUR_DASHSCOPE_API_KEY",  // ← 替换为实际 API Key
+      },
+      {
+        provider: "qwen-dashscope",
+        model: "qwen-vl-max",  // ← 图片任务会自动切换到这个
+        apiKey: "YOUR_DASHSCOPE_API_KEY",  // ← 同一个 API Key
+      },
+    ],
+  },
+
+  // ============================================================================
+  // 调度配置 (Dispatch Configuration)
+  // ============================================================================
+  dispatch: {
+    // ✅ 启用模态路由器 (自动模型切换)
+    modalityRouter: true,
+
+    // 模型能力配置 (可选，使用内置默认值)
+    // modelProfiles: [
+    //   {
+    //     provider: "qwen-dashscope",
+    //     model: "qwen-max",
+    //     capabilities: { text: 4, code: 4 },
+    //     costPer1M: 5.6,
+    //     region: "domestic",
+    //   },
+    //   {
+    //     provider: "qwen-dashscope",
+    //     model: "qwen-vl-max",
+    //     capabilities: { text: 4, vision: 4, code: 3 },
+    //     costPer1M: 12.0,
+    //     region: "domestic",
+    //   },
+    // ],
+  },
+
+  // ============================================================================
+  // 工具配置 (Tools Configuration)
+  // ============================================================================
+  tools: {
+    // desktop_control 工具会自动加载 (Windows only)
+    // 其他可用工具:
+    // - open_app: 启动应用程序
+    // - web_fetch: 网页抓取
+    // - bash: 命令行执行
+  },
+
+  // ============================================================================
+  // 日志配置 (Logging)
+  // ============================================================================
+  logging: {
+    level: "info",  // debug | info | warn | error
+  },
+}

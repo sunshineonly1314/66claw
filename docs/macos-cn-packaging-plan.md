@@ -336,7 +336,7 @@ jobs:
       - run: swift build -c release --product OpenClawCN --arch arm64
       # 下载 Node.js arm64
       - run: |
-          curl -fsSL https://nodejs.org/dist/v22.13.0/node-v22.13.0-darwin-arm64.tar.gz | tar xz
+          curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-darwin-arm64.tar.gz | tar xz
       # 准备 bundled-bins arm64
       - run: bash build/scripts/prepare-macos-bins.sh --arch arm64
       # 上传 artifacts
@@ -468,7 +468,7 @@ export HOMEBREW_PIP_INDEX_URL="https://pypi.mirrors.ustc.edu.cn/simple"
 # Node.js 二进制下载（用于构建时）
 # 优先级：淘宝NPM > 华为云 > 清华TUNA
 
-NODE_VERSION="22.13.0"
+NODE_VERSION="22.14.0"
 NODE_MIRRORS=(
   "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-${ARCH}.tar.gz"
   "https://mirrors.huaweicloud.com/nodejs/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-${ARCH}.tar.gz"

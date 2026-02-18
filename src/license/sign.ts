@@ -8,8 +8,6 @@
 
 import crypto from "node:crypto";
 
-import { DEFAULT_LICENSE_CONFIG } from "./types.js";
-
 /**
  * 生成 16 位随机 nonce
  */
@@ -31,7 +29,7 @@ export function getTimestamp(): number {
  * @param deviceId - 设备ID
  * @param timestamp - 毫秒时间戳
  * @param nonce - 随机字符串
- * @param secretKey - 签名密钥（默认使用配置中的密钥）
+ * @param secretKey - 签名密钥
  * @returns HMAC-SHA256 签名（hex 格式）
  */
 export function generateSign(
@@ -39,14 +37,11 @@ export function generateSign(
   deviceId: string,
   timestamp: number,
   nonce: string,
-  secretKey: string = DEFAULT_LICENSE_CONFIG.signSecretKey,
+  secretKey: string,
 ): string {
   const data = `${key}|${deviceId}|${timestamp}|${nonce}`;
 
-  const signature = crypto
-    .createHmac("sha256", secretKey)
-    .update(data, "utf8")
-    .digest("hex");
+  const signature = crypto.createHmac("sha256", secretKey).update(data, "utf8").digest("hex");
 
   return signature;
 }
@@ -62,7 +57,7 @@ export function generateSign(
 export function generateSignParams(
   key: string,
   deviceId: string,
-  secretKey?: string,
+  secretKey: string,
 ): { timestamp: number; nonce: string; sign: string } {
   const timestamp = getTimestamp();
   const nonce = generateNonce();
@@ -80,7 +75,7 @@ export function verifySign(
   timestamp: number,
   nonce: string,
   sign: string,
-  secretKey?: string,
+  secretKey: string,
 ): boolean {
   const expectedSign = generateSign(key, deviceId, timestamp, nonce, secretKey);
   return sign === expectedSign;

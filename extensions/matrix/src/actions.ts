@@ -12,10 +12,11 @@ import { handleMatrixAction } from "./tool-actions.js";
 import type { CoreConfig } from "./types.js";
 
 export const matrixMessageActions: ChannelMessageActionAdapter = {
-  listActions: ({ cfg }) => {
-    const account = resolveMatrixAccount({ cfg: cfg as CoreConfig });
+  listActions: ({ cfg: rawCfg }) => {
+    const cfg = rawCfg as unknown as CoreConfig;
+    const account = resolveMatrixAccount({ cfg });
     if (!account.enabled || !account.configured) return [];
-    const gate = createActionGate((cfg as CoreConfig).channels?.matrix?.actions);
+    const gate = createActionGate(cfg.channels?.matrix?.actions);
     const actions = new Set<ChannelMessageActionName>(["send", "poll"]);
     if (gate("reactions")) {
       actions.add("react");
@@ -44,7 +45,8 @@ export const matrixMessageActions: ChannelMessageActionAdapter = {
     return { to };
   },
   handleAction: async (ctx: ChannelMessageActionContext) => {
-    const { action, params, cfg } = ctx;
+    const { action, params, cfg: rawCfg } = ctx;
+    const cfg = rawCfg as unknown as CoreConfig;
     const resolveRoomId = () =>
       readStringParam(params, "roomId") ??
       readStringParam(params, "channelId") ??

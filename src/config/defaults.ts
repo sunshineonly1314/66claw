@@ -726,24 +726,10 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     mutated = true;
   }
 
-  // ── 12. agents.defaults.contextPruning: cache-ttl + 1h（自动清理过期 tool 结果，省 token）──
-  if (next.agents?.defaults?.contextPruning?.mode === undefined) {
-    next = {
-      ...next,
-      agents: {
-        ...next.agents,
-        defaults: {
-          ...next.agents?.defaults,
-          contextPruning: {
-            ...next.agents?.defaults?.contextPruning,
-            mode: "cache-ttl",
-            ttl: next.agents?.defaults?.contextPruning?.ttl ?? "5m",
-          },
-        },
-      },
-    };
-    mutated = true;
-  }
+  // ── 12. agents.defaults.contextPruning ──
+  //    上游 applyContextPruningDefaults 已在检测到 Anthropic auth 时注入 mode=cache-ttl + ttl=1h
+  //    CN 不再额外覆盖 — 上游的默认值已经合理，无需强制缩短 TTL
+  //    无 Anthropic auth 时也不应注入 contextPruning（cache-ttl 依赖 Anthropic prompt caching API）
 
   // ── 13. tools.web.search.provider: "bing"（中国区默认使用 Bing 搜索，香港/大陆均可访问，无需 API key）──
   if (next.tools?.web?.search?.provider === undefined) {
@@ -911,6 +897,100 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
         mutated = true;
       }
     }
+  }
+
+  // ── [CN-PATCH:memory-p0] 17. agents.defaults.memorySearch.sources: ["memory", "sessions"] ──
+  //    开启会话记忆搜索，让 AI 能搜索历史对话，不再"失忆"
+  //    上游默认 ["memory"]，CN 默认 ["memory", "sessions"]
+  {
+    const existingMemorySearch = next.agents?.defaults?.memorySearch;
+    if (existingMemorySearch?.sources === undefined) {
+      next = {
+        ...next,
+        agents: {
+          ...next.agents,
+          defaults: {
+            ...next.agents?.defaults,
+            memorySearch: {
+              ...existingMemorySearch,
+              sources: ["memory", "sessions"],
+            },
+          },
+        },
+      };
+      mutated = true;
+    }
+  }
+
+  // ── [CN-PATCH:memory-p0] 18. agents.defaults.memorySearch.experimental.sessionMemory: true ──
+  //    启用会话转录索引，normalizeSources() 才会接受 "sessions" 源
+  //    上游默认 false，CN 默认 true
+  {
+    const memSearch18 = next.agents?.defaults?.memorySearch;
+    if (memSearch18?.experimental?.sessionMemory === undefined) {
+      next = {
+        ...next,
+        agents: {
+          ...next.agents,
+          defaults: {
+            ...next.agents?.defaults,
+            memorySearch: {
+              ...memSearch18,
+              experimental: {
+                ...memSearch18?.experimental,
+                sessionMemory: true,
+              },
+            },
+          },
+        },
+      };
+      mutated = true;
+    }
+  }
+
+  // ── [CN-PATCH:memory-p0] 19. session.maintenance: 120天保留 + 5000条上限 ──
+  //    上游默认 30天/500条，CN 用户需要更长的记忆保留
+  //    不会触发全量 embedding — needsFullReindex 不检查 sources 和 maintenance 配置
+  //    pruneAfter 和 maxEntries 独立检查，避免用户只设其中一个时另一个无 CN 默认值
+  //    守卫：仅当 session 对象已存在时才注入，避免凭空创建 session 对象
+  if (next.session !== undefined) {
+    const existingMaintenance = next.session?.maintenance;
+    const needsPruneAfter = existingMaintenance?.pruneAfter === undefined;
+    const needsMaxEntries = existingMaintenance?.maxEntries === undefined;
+    if (needsPruneAfter || needsMaxEntries) {
+      next = {
+        ...next,
+        session: {
+          ...next.session,
+          maintenance: {
+            ...existingMaintenance,
+            ...(needsPruneAfter ? { pruneAfter: "120d" } : {}),
+            ...(needsMaxEntries ? { maxEntries: 5000 } : {}),
+          },
+        },
+      };
+      mutated = true;
+    }
+  }
+
+  // ── [CN-PATCH:tool-discovery] 20. toolDiscovery: 智能工具发现默认配置 ──
+  //    CN 区域默认启用 FTS5 BM25 搜索，配了 SiliconFlow key 后自动升级为混合搜索
+  //    embedding 与聊天 memorySearch 完全隔离，互不影响
+  if (next.toolDiscovery === undefined) {
+    next = {
+      ...next,
+      toolDiscovery: {
+        enabled: true,
+        embedding: {
+          model: "BAAI/bge-m3",
+          baseUrl: "https://api.siliconflow.cn/v1",
+          dimensions: 1024,
+        },
+        search: { maxResults: 50, minScore: 0.1 },
+        mcpOnDemand: { enabled: true, autoInstall: false },
+      },
+    };
+    mutated = true;
   }
 
   return mutated ? next : cfg;

@@ -6,6 +6,7 @@ import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import type { FollowupRun } from "./queue.js";
 import type { TypingSignaler } from "./typing-mode.js";
 import { resolveAgentModelFallbacksOverride } from "../../agents/agent-scope.js";
+import { recordPerfMeasurement, getPerfTrace } from "../../infra/perf-tracker.js";
 import { runCliAgent } from "../../agents/cli-runner.js";
 import { getCliSessionId } from "../../agents/cli-session.js";
 import { runWithModelFallback } from "../../agents/model-fallback.js";
@@ -87,6 +88,13 @@ export async function runAgentTurnWithFallback(params: {
 
   const runId = params.opts?.runId ?? crypto.randomUUID();
   params.opts?.onAgentRunStart?.(runId);
+
+  // 🔍 Performance Tracking: 记录 agent context build
+  const trace = getPerfTrace(runId);
+  if (trace) {
+    recordPerfMeasurement(runId, "agent_context_build");
+  }
+
   if (params.sessionKey) {
     registerAgentRunContext(runId, {
       sessionKey: params.sessionKey,
@@ -102,6 +110,13 @@ export async function runAgentTurnWithFallback(params: {
 
   while (true) {
     try {
+      // 🔍 Performance Tracking: 记录 API call 开始
+      if (trace) {
+        recordPerfMeasurement(runId, "agent_api_call_start", {
+          provider: fallbackProvider,
+          model: fallbackModel,
+        });
+      }
       const allowPartialStream = !(
         params.followupRun.run.reasoningLevel === "stream" && params.opts?.onReasoningStream
       );

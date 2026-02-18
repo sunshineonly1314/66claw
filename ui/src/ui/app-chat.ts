@@ -27,6 +27,8 @@ type ChatHost = {
   showLicenseDialog: LicenseDialogType | null;
 };
 
+export const CHAT_SESSIONS_ACTIVE_MINUTES = 10;
+
 export function isChatBusy(host: ChatHost) {
   return host.chatSending || Boolean(host.chatRunId);
 }
@@ -100,7 +102,7 @@ async function sendChatMessageNow(
     }
     return false;
   }
-  
+
   const ok = result === true;
   if (!ok && opts?.previousDraft != null) {
     host.chatMessage = opts.previousDraft;
@@ -110,6 +112,11 @@ async function sendChatMessageNow(
   }
   if (ok) {
     setLastActiveSessionKey(host as unknown as Parameters<typeof setLastActiveSessionKey>[0], host.sessionKey);
+    // 发送成功后立即清空附件，避免卡顿
+    // 只有在不需要恢复附件时才清空
+    if (!opts?.restoreAttachments) {
+      host.chatAttachments = [];
+    }
   }
   if (ok && opts?.restoreDraft && opts.previousDraft?.trim()) {
     host.chatMessage = opts.previousDraft;
@@ -159,14 +166,18 @@ export async function handleSendChat(
     return;
   }
 
+  // 优化：仅清空消息文本，暂不清空附件（避免卡顿）
+  // 附件将在发送成功后由 sendChatMessageNow 内部清空
   if (messageOverride == null) {
     host.chatMessage = "";
-    // Clear attachments when sending
-    host.chatAttachments = [];
   }
 
   if (isChatBusy(host)) {
     enqueueChatMessage(host, message, attachmentsToSend);
+    // 如果消息已入队，立即清空输入框和附件
+    if (messageOverride == null) {
+      host.chatAttachments = [];
+    }
     return;
   }
 

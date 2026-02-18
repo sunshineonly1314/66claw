@@ -24,6 +24,8 @@ import { renderExtensionsCard } from "./extensions-card.js";
 import { renderMarketplaceCard } from "./mcp-marketplace-card.js";
 import { renderMcpDetailModal } from "./mcp-detail-modal.js";
 import { renderMcpConfigWizard } from "./mcp-config-wizard.js";
+import { renderMcpBatchConfig } from "./mcp-batch-config.js";
+import { MCP_CATEGORIES, MCP_MAX_RUNNING, filterMarketplaceItems } from "./mcp-shared.js";
 
 // ============================================================================
 // Props
@@ -39,7 +41,7 @@ export type ExtensionsPageProps = {
   onRestart: (serverId: string) => void;
   onDisable: (serverId: string) => void;
   onEnable: (serverId: string) => void;
-  onTest: (serverId: string) => void;
+  onTest: (serverId: string, env?: Record<string, string>) => void;
   onCheckUpdate: () => void;
   onViewUpdate?: () => void;
   processes: McpProcessInfo[];
@@ -59,6 +61,7 @@ export type ExtensionsPageProps = {
   onCloseDetail: () => void;
   onInstall: (item: McpMarketplaceItem) => void;
   onUninstall: (serverId: string) => void;
+  onUpdate: (serverId: string) => void;
   onOpenConfigWizard: (item: McpMarketplaceItem) => void;
   onCloseConfigWizard: () => void;
   onDismissFirstVisit: () => void;
@@ -67,10 +70,19 @@ export type ExtensionsPageProps = {
   runningCount: number;
   /** Toast notification */
   toast: McpToast | null;
+  /** Retry marketplace data sync (shown when load fails or returns empty) */
+  onRetrySync?: () => void;
   /** Manual add MCP server (advanced users) */
   onManualAdd?: (config: { id: string; command: string; args: string[]; transport: "stdio" | "sse"; env?: Record<string, string> }) => void;
   /** Force re-render trigger for manual form */
   manualFormTrigger?: number;
+  // — Batch API Key configuration —
+  onOpenBatchConfig?: () => void;
+  onCloseBatchConfig?: () => void;
+  onSaveBatchConfig?: (updates: Array<{ serverId: string; env: Record<string, string> }>) => void;
+  batchConfigSaving?: boolean;
+  batchConfigResult?: { success: number; failed: number } | null;
+  serverEnvStatus?: Record<string, Record<string, boolean>>;
 };
 
 // ============================================================================
@@ -89,23 +101,7 @@ function debouncedSearch(value: string, onSearchChange: (s: string) => void): vo
   }, 300);
 }
 
-// ============================================================================
-// Category definitions
-// ============================================================================
-
-const CATEGORIES: Array<{ id: string; emoji: string }> = [
-  { id: "all",          emoji: "\u{1F31F}" },
-  { id: "filesystem",   emoji: "\u{1F4C1}" },
-  { id: "database",     emoji: "\u{1F5C3}\uFE0F" },
-  { id: "search",       emoji: "\u{1F50D}" },
-  { id: "productivity", emoji: "\u26A1" },
-  { id: "development",  emoji: "\u{1F6E0}\uFE0F" },
-  { id: "network",      emoji: "\u{1F310}" },
-  { id: "smarthome",    emoji: "\u{1F3E0}" },
-  { id: "ai",           emoji: "\u{1F916}" },
-  { id: "social",       emoji: "\u{1F4F1}" },
-  { id: "other",        emoji: "\u{1F527}" },
-];
+// CATEGORIES, MCP_MAX_RUNNING, filterMarketplaceItems — imported from mcp-shared.ts
 
 // ============================================================================
 // Main render
@@ -151,6 +147,7 @@ export function renderExtensions(props: ExtensionsPageProps): TemplateResult {
           onInstall: () => props.onInstall(marketplace.detailItem!),
           onConfigInstall: () => props.onOpenConfigWizard(marketplace.detailItem!),
           onUninstall: () => props.onUninstall(marketplace.detailItem!.serverId),
+          onUpdate: () => props.onUpdate(marketplace.detailItem!.serverId),
           onTrySay: props.onTrySay,
         })
       : nothing}
@@ -160,15 +157,32 @@ export function renderExtensions(props: ExtensionsPageProps): TemplateResult {
       ? renderMcpConfigWizard({
           item: marketplace.configTarget,
           onClose: props.onCloseConfigWizard,
-          onSaveAndEnable: (_env) => {
-            // TODO: Task 9 — call marketplace.install RPC with env
-            props.onInstall(marketplace.configTarget!);
+          onSaveAndEnable: (env) => {
+            props.onInstall({ ...marketplace.configTarget!, _env: env } as McpMarketplaceItem & { _env: Record<string, string> });
             props.onCloseConfigWizard();
           },
-          onTestConnection: (_env) => {
-            // TODO: Task 9 — call marketplace.testConnection RPC
+          onTestConnection: (env) => {
+            props.onTest(marketplace.configTarget!.serverId, env);
           },
-          testState: "idle",
+          testState: props.testingServerId === marketplace.configTarget?.serverId
+            ? "testing"
+            : props.testResults[marketplace.configTarget?.serverId ?? ""] === "success"
+              ? "success"
+              : props.testResults[marketplace.configTarget?.serverId ?? ""] === "failed"
+                ? "error"
+                : "idle",
+        })
+      : nothing}
+
+    <!-- Batch API Key config modal -->
+    ${marketplace.showBatchConfig && props.onCloseBatchConfig && props.onSaveBatchConfig
+      ? renderMcpBatchConfig({
+          items: marketplace.items,
+          serverEnvStatus: props.serverEnvStatus ?? {},
+          onClose: props.onCloseBatchConfig,
+          onSaveAll: props.onSaveBatchConfig,
+          saving: props.batchConfigSaving ?? false,
+          saveResult: props.batchConfigResult,
         })
       : nothing}
 
@@ -373,13 +387,11 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
 // Tab 2: Capability Store
 // ============================================================================
 
-const MCP_MAX_RUNNING = 8;
-
 function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
   const { marketplace, onSearchChange, onCategoryChange, onSortChange, onOpenDetail, onInstall, onOpenConfigWizard, onDismissRecommendation, runningCount } = props;
 
   // Filter items by search + category
-  const filtered = filterItems(marketplace);
+  const filtered = filterMarketplaceItems(marketplace);
 
   return html`
     <!-- Recommendation banner -->
@@ -428,12 +440,13 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
         transition:border-color 150ms, box-shadow 150ms;
         height:36px;
       " class="mcp-search-box">
-        <span style="font-size:13px; color:var(--muted-strong, #6b7d91); margin-right:8px;">\u{1F50D}</span>
+        <span style="font-size:13px; color:var(--muted-strong, #6b7d91); margin-right:8px;" aria-hidden="true">\u{1F50D}</span>
         <input
           type="text"
           .value=${marketplace.search}
           @input=${(e: Event) => debouncedSearch((e.target as HTMLInputElement).value, onSearchChange)}
           placeholder=${t("extensions.store.searchPlaceholder")}
+          aria-label=${t("extensions.store.searchPlaceholder")}
           style="
             all:unset;
             flex:1;
@@ -458,7 +471,7 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
         flex:1;
         align-items:center;
       ">
-        ${CATEGORIES.map((cat) => {
+        ${MCP_CATEGORIES.map((cat) => {
           const isActive = marketplace.activeCategory === cat.id;
           const count = cat.id === "all"
             ? marketplace.items.length
@@ -506,15 +519,40 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
         <option value="popular">${t("extensions.store.sort.popular")}</option>
         <option value="name">${t("extensions.store.sort.name")}</option>
       </select>
+
+      <!-- Batch API Key config button (only when items with requiresApiKey exist) -->
+      ${props.onOpenBatchConfig && marketplace.items.some((i) => i.requiresApiKey)
+        ? html`<button
+            @click=${props.onOpenBatchConfig}
+            style="
+              all:unset; cursor:pointer;
+              padding:0 14px;
+              height:36px;
+              border:1px solid var(--accent-2, #20d5bc);
+              border-radius:var(--radius-md, 8px);
+              background:rgba(32,213,188,0.08);
+              color:var(--accent-2, #20d5bc);
+              font-size:12px;
+              font-weight:600;
+              white-space:nowrap;
+              flex-shrink:0;
+              display:flex;
+              align-items:center;
+              gap:6px;
+              transition:background 150ms, border-color 150ms;
+            "
+            class="batch-config-btn"
+          >\u{1F511} ${t("extensions.batchConfig.button" as never)}</button>`
+        : nothing}
     </div>
 
     <!-- Content: loading / empty / no results / cards — Desktop: 3-4 column grid -->
     ${marketplace.loading
       ? renderStoreLoading()
       : marketplace.error
-        ? renderStoreEmpty(marketplace.error)
+        ? renderStoreEmpty(marketplace.error, props.onRetrySync)
         : marketplace.items.length === 0
-          ? renderStoreEmpty("")
+          ? renderStoreEmpty("", props.onRetrySync)
           : filtered.length === 0
             ? renderNoResults(marketplace.search, () => onSearchChange(""))
             : html`
@@ -538,6 +576,9 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
       .mcp-search-box:focus-within {
         border-color:var(--accent, #6c8cff) !important;
         box-shadow:0 0 0 3px rgba(108,140,255,0.1);
+      }
+      .batch-config-btn:hover {
+        background:rgba(32,213,188,0.15) !important;
       }
       /* Store grid: 4 cols on wide, 3 on medium, 2 on narrow, 1 on mobile */
       .ext-store-grid {
@@ -566,48 +607,7 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
 // Store sub-components
 // ============================================================================
 
-function filterItems(state: McpMarketplaceState): McpMarketplaceItem[] {
-  let items = state.items;
-
-  // Category filter
-  if (state.activeCategory !== "all") {
-    items = items.filter((i) => i.category === state.activeCategory);
-  }
-
-  // Search filter
-  if (state.search.trim()) {
-    const q = state.search.trim().toLowerCase();
-    items = items.filter(
-      (i) =>
-        i.friendlyName.toLowerCase().includes(q) ||
-        i.friendlyNameEn.toLowerCase().includes(q) ||
-        i.description.toLowerCase().includes(q) ||
-        i.descriptionEn.toLowerCase().includes(q) ||
-        i.tags.some((tag) => tag.toLowerCase().includes(q)),
-    );
-  }
-
-  // Sort
-  switch (state.sort) {
-    case "newest":
-      items = [...items].sort((a, b) => (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0));
-      break;
-    case "name":
-      items = [...items].sort((a, b) => a.friendlyName.localeCompare(b.friendlyName));
-      break;
-    case "popular":
-      items = [...items].sort((a, b) => b.securityScore - a.securityScore);
-      break;
-    default: // recommended
-      items = [...items].sort((a, b) => {
-        // Official first, then by security score
-        if (a.isOfficial !== b.isOfficial) return a.isOfficial ? -1 : 1;
-        return b.securityScore - a.securityScore;
-      });
-  }
-
-  return items;
-}
+// filterItems — now using filterMarketplaceItems from mcp-shared.ts
 
 function renderStoreLoading(): TemplateResult {
   return html`
@@ -633,19 +633,36 @@ function renderStoreLoading(): TemplateResult {
   `;
 }
 
-function renderStoreEmpty(error: string): TemplateResult {
+function renderStoreEmpty(error: string, onRetry?: () => void): TemplateResult {
   return html`
     <div style="
       text-align:center;
       padding:60px 20px;
       color:var(--muted-strong, #6b7d91);
     ">
-      <div style="font-size:28px; margin-bottom:12px;">\u{1F4E1}</div>
+      <div style="font-size:28px; margin-bottom:12px;">${error ? "\u26A0\uFE0F" : "\u{1F4E1}"}</div>
       <div style="font-size:14px; font-weight:600;">${t("extensions.store.empty")}</div>
       <div style="font-size:12px; margin-top:8px; max-width:300px; margin-left:auto; margin-right:auto;">
         ${t("extensions.store.emptyHint")}
       </div>
-      <div style="font-size:11px; margin-top:6px; opacity:0.5;">${error}</div>
+      ${error ? html`<div style="font-size:11px; margin-top:6px; opacity:0.5;">${error}</div>` : nothing}
+      ${onRetry ? html`
+        <button
+          @click=${onRetry}
+          style="
+            margin-top:16px;
+            padding:8px 20px;
+            border:1px solid var(--border);
+            border-radius:8px;
+            background:var(--bg-elevated, #fff);
+            color:var(--accent, #6c8cff);
+            font-size:13px;
+            font-weight:600;
+            cursor:pointer;
+            transition:background 150ms, border-color 150ms;
+          "
+        >${t("extensions.store.reload" as never)}</button>
+      ` : nothing}
     </div>
   `;
 }
@@ -968,7 +985,10 @@ function renderMcpToast(toast: McpToast): TemplateResult {
   const icon = toast.type === "success" ? "\u2705" : toast.type === "error" ? "\u274C" : "\u2139\uFE0F";
 
   return html`
-    <div style="
+    <div
+      role="alert"
+      aria-live="polite"
+      style="
       position:fixed;
       bottom:24px;
       left:50%;
@@ -989,7 +1009,7 @@ function renderMcpToast(toast: McpToast): TemplateResult {
       animation:mcpToastIn 300ms ease both;
       pointer-events:none;
     ">
-      <span style="font-size:14px;">${icon}</span>
+      <span style="font-size:14px;" aria-hidden="true">${icon}</span>
       ${toast.message}
     </div>
     <style>
@@ -1111,11 +1131,42 @@ function renderManualAddForm(
             ${t("extensions.advanced.manualAdd.transport" as never)}:
           </span>
           <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
-            <input type="radio" name="mcp-transport" value="stdio" checked /> stdio
+            <input type="radio" name="mcp-transport" value="stdio" checked
+              @change=${(e: Event) => {
+                const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
+                const urlRow = section?.querySelector("#mcp-form-url-row") as HTMLElement | null;
+                if (urlRow) urlRow.style.display = "none";
+              }}
+            /> stdio
           </label>
           <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
-            <input type="radio" name="mcp-transport" value="sse" /> sse
+            <input type="radio" name="mcp-transport" value="sse"
+              @change=${(e: Event) => {
+                const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
+                const urlRow = section?.querySelector("#mcp-form-url-row") as HTMLElement | null;
+                if (urlRow) urlRow.style.display = "block";
+              }}
+            /> sse
           </label>
+        </div>
+
+        <!-- SSE URL field (shown when transport=sse) -->
+        <div id="mcp-form-url-row" style="display:none;">
+          <input
+            type="text"
+            id="mcp-form-url"
+            placeholder="https://example.com/mcp/sse"
+            style="
+              width:100%; box-sizing:border-box;
+              padding:8px 12px;
+              border:1px solid var(--border);
+              border-radius:6px;
+              background:var(--bg);
+              color:var(--fg);
+              font-size:12px;
+              outline:none;
+            "
+          />
         </div>
 
         <div style="display:flex; gap:8px; justify-content:flex-end;">
@@ -1130,12 +1181,22 @@ function renderManualAddForm(
 
               const id = idEl?.value.trim() ?? "";
               const command = cmdEl?.value.trim() ?? "";
-              if (!id || !command) return;
-
-              const args = (argsEl?.value ?? "").split("\n").map((a) => a.trim()).filter(Boolean);
               const transport = (transportEl?.value === "sse" ? "sse" : "stdio") as "stdio" | "sse";
 
-              onManualAdd({ id, command, args, transport });
+              // For SSE transport, URL is required instead of command
+              const urlEl = section.querySelector("#mcp-form-url") as HTMLInputElement | null;
+              const url = urlEl?.value.trim() ?? "";
+
+              if (!id || (transport === "stdio" && !command) || (transport === "sse" && !url)) return;
+
+              const args = (argsEl?.value ?? "").split("\n").map((a) => a.trim()).filter(Boolean);
+
+              onManualAdd({
+                id,
+                command: transport === "sse" ? url : command,
+                args: transport === "sse" ? [] : args,
+                transport,
+              });
 
               // Reset form
               if (idEl) idEl.value = "";

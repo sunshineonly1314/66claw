@@ -113,8 +113,20 @@ export function registerBrowserServeCommands(
         await stopBrowserBridgeServer(bridge.server).catch(() => {});
         process.exit(0);
       };
-      process.once("SIGINT", () => void shutdown("SIGINT"));
-      process.once("SIGTERM", () => void shutdown("SIGTERM"));
+      const sigintHandler = () => {
+        shutdown("SIGINT").catch((err) => {
+          defaultRuntime.error(`Shutdown failed: ${String(err)}`);
+          process.exit(1);
+        });
+      };
+      const sigtermHandler = () => {
+        shutdown("SIGTERM").catch((err) => {
+          defaultRuntime.error(`Shutdown failed: ${String(err)}`);
+          process.exit(1);
+        });
+      };
+      process.once("SIGINT", sigintHandler);
+      process.once("SIGTERM", sigtermHandler);
 
       await new Promise(() => {});
     });

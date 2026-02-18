@@ -1,4 +1,4 @@
-# OpenClawCN Windows 原生打包
+# Clawdbot Windows 原生打包
 
 本目录包含 Windows 原生 EXE 安装程序的构建脚本。
 
@@ -8,7 +8,7 @@
 scripts/windows/
 ├── build-windows.ps1        # 主打包脚本（统一版）
 ├── setup.iss                # Inno Setup 配置
-├── openclawcn.bat             # 启动脚本
+├── clawdbot.bat             # 启动脚本
 ├── start-gateway.bat        # Gateway 启动脚本
 ├── verify-installation.ps1  # 安装验证脚本
 ├── package-bundled-skills.ps1  # Skills 打包脚本
@@ -42,7 +42,7 @@ cd scripts/windows
 ### 4. 输出
 
 ```
-installer/OpenClawCNSetup-{version}-x64.exe
+installer/ClawdbotSetup-{version}-x64.exe
 ```
 
 ## 打包参数
@@ -83,7 +83,7 @@ installer/OpenClawCNSetup-{version}-x64.exe
 ## 验证安装
 
 ```powershell
-.\verify-installation.ps1 -InstallDir "C:\Program Files\OpenClawCN"
+.\verify-installation.ps1 -InstallDir "C:\Program Files\Clawdbot"
 ```
 
 ## 故障排除
@@ -113,4 +113,4 @@ installer/OpenClawCNSetup-{version}-x64.exe
 
 - [Inno Setup 文档](https://jrsoftware.org/ishelp/)
 - [Node.js 下载](https://nodejs.org/)
-- [OpenClawCN 文档](https://docs.openclawcn.cn/)
+- [Clawdbot 文档](https://docs.clawdbot.cn/)

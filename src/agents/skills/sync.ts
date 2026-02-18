@@ -14,7 +14,7 @@ import {
   DEFAULT_GITEE_REGISTRY,
   type GiteeRegistryConfig,
 } from "./gitee-registry.js";
-import { DEFAULT_PROXY_CONFIG } from "./clawdskillsproxy-registry.js";
+import { fetchProxySkillsIndex, DEFAULT_PROXY_CONFIG } from "./clawdskillsproxy-registry.js";
 import {
   readLocalIndex,
   writeLocalIndex,
@@ -70,9 +70,7 @@ let syncPromise: Promise<SyncResult> | null = null;
  * 同步技能索引（带去重锁）
  * 如果已有同步任务在执行，返回相同的 Promise
  */
-export async function syncSkillsIndex(
-  options: SyncOptions = {},
-): Promise<SyncResult> {
+export async function syncSkillsIndex(options: SyncOptions = {}): Promise<SyncResult> {
   // 如果已有同步任务在执行，返回相同的 Promise
   if (syncPromise && !options.force) {
     logger.debug("Sync already in progress, waiting for existing sync");
@@ -109,9 +107,42 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
 
     logger.info("Starting skills index sync", { force });
 
-    // 拉取远程索引（根据 provider 自动选择数据源）
-    const config = registry ?? DEFAULT_GITEE_REGISTRY;
-    const result = await fetchRemoteSkillsIndex(config);
+    // 确保 QC 基线数据已导入（首次初始化时）
+    try {
+      const { ensureQcBaseline } = await import("./marketplace/db.js");
+      const { resolveOpenClawCNPackageRootSync } = await import("../../infra/openclaw-root.js");
+      const packageRoot = resolveOpenClawCNPackageRootSync();
+      if (packageRoot) {
+        const qcCount = ensureQcBaseline(packageRoot);
+        if (qcCount > 0) {
+          logger.info("QC baseline imported into SQLite", { count: qcCount });
+        }
+      }
+    } catch (err) {
+      logger.debug("Failed to import QC baseline (non-fatal)", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    // 尝试增量同步：先读取 SQLite 中的 lastGlobalVersion
+    let sinceVersion: number | undefined;
+    try {
+      const { getLastGlobalVersion } = await import("./marketplace/db.js");
+      const lastVer = getLastGlobalVersion();
+      if (lastVer > 0 && !force) {
+        sinceVersion = lastVer;
+        logger.debug("Attempting incremental sync", { sinceVersion });
+      }
+    } catch {
+      // SQLite 未初始化，跳过增量
+    }
+
+    // 拉取远程索引
+    // 优先使用增量（sinceVersion），回退全量
+    const result =
+      sinceVersion !== undefined
+        ? await fetchProxySkillsIndex(DEFAULT_PROXY_CONFIG, sinceVersion)
+        : await fetchRemoteSkillsIndex(registry ?? DEFAULT_GITEE_REGISTRY);
 
     if (!result.ok) {
       const error = `Failed to fetch remote index: ${result.error}`;
@@ -125,9 +156,29 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     // 获取本地已安装的技能列表
     const installed = getInstalledSkills();
 
-    // 保存到本地 - 使用 ClawdSkillsProxy 作为数据源（Gitee 已被封禁）
+    // 保存到本地 JSON - 使用 ClawdSkillsProxy 作为数据源（Gitee 已被封禁）
     const sourceUrl = DEFAULT_PROXY_CONFIG.baseUrl;
     await writeLocalIndex(result.index, installed, sourceUrl);
+
+    // 写入 SQLite（非阻塞，失败不影响主流程）
+    try {
+      const { populateFromRemoteIndex, updateInstalledStatus, setLastGlobalVersion } =
+        await import("./marketplace/db.js");
+      populateFromRemoteIndex(result.index.skills, installed);
+      updateInstalledStatus(installed);
+      if (result.index.version) {
+        setLastGlobalVersion(result.index.version);
+      }
+      logger.debug("Skills SQLite populated", {
+        count: result.index.skills.length,
+        globalVersion: result.index.version,
+        incremental: sinceVersion !== undefined,
+      });
+    } catch (err) {
+      logger.warn("Failed to populate skills SQLite (non-fatal)", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     logger.info("Skills index sync completed", {
       remoteCount: result.index.skills.length,
@@ -168,9 +219,9 @@ export function syncSkillsIndexBackground(options?: SyncOptions): void {
  * 获取技能市场列表
  * 优先读取本地缓存，后台检查是否需要刷新
  */
-export async function getSkillsMarket(
-  options?: { staleMs?: number },
-): Promise<SkillsMarketResponse> {
+export async function getSkillsMarket(options?: {
+  staleMs?: number;
+}): Promise<SkillsMarketResponse> {
   const localIndex = await readLocalIndex();
 
   // 检查是否需要后台刷新
@@ -189,6 +240,14 @@ export async function getSkillsMarket(
 export async function refreshInstalledList(): Promise<void> {
   const installed = getInstalledSkills();
   await updateInstalledList(installed);
+
+  // 同步更新 SQLite（非阻塞）
+  try {
+    const { updateInstalledStatus } = await import("./marketplace/db.js");
+    updateInstalledStatus(installed);
+  } catch {
+    // SQLite 未初始化，忽略
+  }
 }
 
 /**

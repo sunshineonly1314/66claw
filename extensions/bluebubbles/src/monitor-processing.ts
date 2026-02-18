@@ -147,7 +147,7 @@ export async function processMessage(
       messageId: cacheMessageId,
       chatGuid: message.chatGuid,
       chatIdentifier: message.chatIdentifier,
-      chatId: message.chatId,
+      chatId: message.chatId != null ? String(message.chatId) : undefined,
       senderLabel: message.fromMe ? "me" : message.senderId,
       body: rawBody,
       timestamp: message.timestamp ?? Date.now(),
@@ -471,7 +471,7 @@ export async function processMessage(
       replyToId,
       chatGuid: message.chatGuid,
       chatIdentifier: message.chatIdentifier,
-      chatId: message.chatId,
+      chatId: message.chatId != null ? String(message.chatId) : undefined,
     });
     if (cached) {
       if (!replyToBody && cached.body) {
@@ -640,7 +640,7 @@ export async function processMessage(
       messageId: trimmed,
       chatGuid: chatGuidForActions ?? chatGuid,
       chatIdentifier,
-      chatId,
+      chatId: chatId != null ? String(chatId) : undefined,
       senderLabel: "me",
       body: snippet ?? "",
       timestamp: Date.now(),

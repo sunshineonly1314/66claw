@@ -1,3 +1,4 @@
+import type { OpenClawCNPluginApi, ProviderAuthContext, ProviderAuthResult } from "openclawcn/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclawcn/plugin-sdk";
 
 const DEFAULT_BASE_URL = "http://localhost:3000/v1";
@@ -50,9 +51,9 @@ function buildModelDefinition(modelId: string) {
   return {
     id: modelId,
     name: modelId,
-    api: "openai-completions",
+    api: "openai-completions" as const,
     reasoning: false,
-    input: ["text", "image"],
+    input: ["text", "image"] as ("image" | "text" | "video")[],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
@@ -64,7 +65,7 @@ const copilotProxyPlugin = {
   name: "Copilot Proxy",
   description: "Local Copilot Proxy (VS Code LM) provider plugin",
   configSchema: emptyPluginConfigSchema(),
-  register(api) {
+  register(api: OpenClawCNPluginApi) {
     api.registerProvider({
       id: "copilot-proxy",
       label: "Copilot Proxy",
@@ -75,7 +76,7 @@ const copilotProxyPlugin = {
           label: "Local proxy",
           hint: "Configure base URL + models for the Copilot Proxy server",
           kind: "custom",
-          run: async (ctx) => {
+          run: async (ctx: ProviderAuthContext) => {
             const baseUrlInput = await ctx.prompter.text({
               message: "Copilot Proxy base URL",
               initialValue: DEFAULT_BASE_URL,
@@ -85,7 +86,7 @@ const copilotProxyPlugin = {
             const modelInput = await ctx.prompter.text({
               message: "Model IDs (comma-separated)",
               initialValue: DEFAULT_MODEL_IDS.join(", "),
-              validate: (value) =>
+              validate: (value: string) =>
                 parseModelIds(value).length > 0 ? undefined : "Enter at least one model id",
             });
 
@@ -94,7 +95,7 @@ const copilotProxyPlugin = {
             const defaultModelId = modelIds[0] ?? DEFAULT_MODEL_IDS[0];
             const defaultModelRef = `copilot-proxy/${defaultModelId}`;
 
-            return {
+            return ({
               profiles: [
                 {
                   profileId: "copilot-proxy:local",
@@ -131,7 +132,7 @@ const copilotProxyPlugin = {
                 "Copilot Proxy serves /v1/chat/completions; base URL must include /v1.",
                 "Model availability depends on your Copilot plan; edit models.providers.copilot-proxy if needed.",
               ],
-            };
+            }) as ProviderAuthResult;
           },
         },
       ],

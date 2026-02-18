@@ -49,7 +49,7 @@ const DEFAULT_CHUNK_TIMEOUT_MS = 60_000;
 async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number,
-): Promise<ReadableStreamReadResult<Uint8Array>> {
+) {
   return Promise.race([
     reader.read(),
     new Promise<never>((_, reject) =>
@@ -125,7 +125,7 @@ async function* streamFromGateway(options: GatewayOptions): AsyncGenerator<strin
     throw new Error(`Gateway error: ${response.status} - ${errText}`);
   }
 
-  const reader = response.body.getReader();
+  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
@@ -372,10 +372,14 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
 
   log?.info?.(`[${accountId}] 启动钉钉 Stream 客户端...`);
 
+  // dingtalk-stream SDK 已内置自动重连机制
+  // 文档: https://github.com/open-dingtalk/dingtalk-stream-sdk-nodejs
   const client = new DWClient({
     clientId: appKey,
     clientSecret: appSecret,
     debug: config.app?.debug || false,
+    // 注意: SDK 默认启用 autoReconnect，这里显式声明以提高可读性
+    // 内置重连策略: 指数退避 (1s, 2s, 4s, ... 最大 60s)
   });
 
   client.registerCallbackListener(TOPIC_ROBOT, async (res: { headers?: { messageId?: string }; data: string }) => {
@@ -407,6 +411,19 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
     }
   });
 
+  // 监听连接事件（用于观察重连行为）
+  client.on('connect', () => {
+    log?.info?.(`[${accountId}] 钉钉 Stream 连接已建立`);
+  });
+
+  client.on('disconnect', () => {
+    log?.warn?.(`[${accountId}] 钉钉 Stream 连接已断开，SDK 将自动重连...`);
+  });
+
+  client.on('error', (error: Error) => {
+    log?.error?.(`[${accountId}] 钉钉 Stream 错误: ${error.message}`);
+  });
+
   await client.connect();
   log?.info?.(`[${accountId}] 钉钉 Stream 客户端已连接`);
   ctx.onStart?.();
@@ -417,7 +434,16 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
     stop: () => {
       if (stopped) return;
       stopped = true;
-      log?.info?.(`[${accountId}] 钉钉 Stream 客户端已停止`);
+      log?.info?.(`[${accountId}] 钉钉 Stream 客户端正在停止...`);
+
+      try {
+        // 显式断开连接，防止 SDK 继续尝试重连
+        client.disconnect();
+        log?.info?.(`[${accountId}] 钉钉 Stream 客户端已停止`);
+      } catch (error) {
+        log?.error?.(`[${accountId}] 停止 Stream 客户端时出错: ${error}`);
+      }
+
       ctx.onStop?.();
     },
   };

@@ -1,0 +1,1081 @@
+{
+  "version": 3,
+  "generatedAt": "2026-02-17T05:59:25.309Z",
+  "itemCount": 50,
+  "enhancement": {
+    "model": "ep-m-20260203175045-ttqrg",
+    "enhancedCount": 0,
+    "version": 1
+  },
+  "items": [
+    {
+      "serverId": "@Joooook-12306-mcp",
+      "friendlyName": "12306-MCP车票查询工具",
+      "friendlyNameEn": "12306-MCP车票查询工具",
+      "description": "基于Model Context Protocol (MCP) 的12306购票搜索服务器。提供了简单的API接口，允许大模型利用接口搜索12306购票信息。",
+      "descriptionEn": "基于Model Context Protocol (MCP) 的12306购票搜索服务器。提供了简单的API接口，允许大模型利用接口搜索12306购票信息。",
+      "category": "search",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@Joooook-12306-mcp"
+    },
+    {
+      "serverId": "@PsychArch-Jina-AI-MCP-Tools",
+      "friendlyName": "Jina-AI-MCP-Tools",
+      "friendlyNameEn": "Jina-AI-MCP-Tools",
+      "description": "一个与Jina AI搜索基础API集成的模型上下文协议（MCP）服务器，提供网页阅读和搜索功能。",
+      "descriptionEn": "一个与Jina AI搜索基础API集成的模型上下文协议（MCP）服务器，提供网页阅读和搜索功能。",
+      "category": "search",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@PsychArch-Jina-AI-MCP-Tools"
+    },
+    {
+      "serverId": "@ChromeDevTools-chrome-devtools-mcp",
+      "friendlyName": "Chrome开发者工具MCP",
+      "friendlyNameEn": "Chrome开发者工具MCP",
+      "description": "chrome-devtools-mcp 是一个工具，允许编码代理控制和检查实时的 Chrome 浏览器。它作为一个 MCP 服务器运行，提供对 Chrome DevTools 的完全访问权限，以实现自动化、调试和性能分析。",
+      "descriptionEn": "chrome-devtools-mcp 是一个工具，允许编码代理控制和检查实时的 Chrome 浏览器。它作为一个 MCP 服务器运行，提供对 Chrome DevTools 的完全访问权限，以实现自动化、调试和性能分析。",
+      "category": "development",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@ChromeDevTools-chrome-devtools-mcp"
+    },
+    {
+      "serverId": "antvis-mcp-server-chart",
+      "friendlyName": "可视化图表-MCP-Server",
+      "friendlyNameEn": "可视化图表-MCP-Server",
+      "description": "这是一个基于AntV的模型上下文协议服务器，用于生成图表。它支持超过20种类型的图表，并且可以与多种桌面应用程序和平台一起使用。",
+      "descriptionEn": "这是一个基于AntV的模型上下文协议服务器，用于生成图表。它支持超过20种类型的图表，并且可以与多种桌面应用程序和平台一起使用。",
+      "category": "ai",
+      "tags": [
+        "antv",
+        "visualization"
+      ],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/antvis-mcp-server-chart"
+    },
+    {
+      "serverId": "MemTensor-MemoryOperatingSystem",
+      "friendlyName": "MemOS 记忆操作系统",
+      "friendlyNameEn": "MemOS 记忆操作系统",
+      "description": "",
+      "descriptionEn": "",
+      "category": "other",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/MemTensor-MemoryOperatingSystem"
+    },
+    {
+      "serverId": "@open-dingtalk-dingtalk-mcp",
+      "friendlyName": "钉钉MCP",
+      "friendlyNameEn": "钉钉MCP",
+      "description": "",
+      "descriptionEn": "",
+      "category": "other",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@open-dingtalk-dingtalk-mcp"
+    },
+    {
+      "serverId": "AgentBay-wuying-agentbay-mcp-server",
+      "friendlyName": "无影 Agent 开发套件 AgentBay",
+      "friendlyNameEn": "无影 Agent 开发套件 AgentBay",
+      "description": "无影AgentBay是AI 时代的Agent云基础设施， 面向企业、开发者、AI厂商，提供可一键配置的AI Agent任务执行工具和执行环境。您可以通过无影API或AgentBay MCP Server快速集成，并调用相关工具获取Serverless服务。",
+      "descriptionEn": "无影AgentBay是AI 时代的Agent云基础设施， 面向企业、开发者、AI厂商，提供可一键配置的AI Agent任务执行工具和执行环境。您可以通过无影API或AgentBay MCP Server快速集成，并调用相关工具获取Serverless服务。",
+      "category": "development",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/AgentBay-wuying-agentbay-mcp-server"
+    },
+    {
+      "serverId": "@UnionPay-unionpay-mcp-server",
+      "friendlyName": "银联MCP支付服务",
+      "friendlyNameEn": "银联MCP支付服务",
+      "description": "银联开放平台提供的MCP服务器，可以帮助您轻松地将银联开放平台的交易创建、查询、退款等能力集成到您的LLM应用中，让您进一步开发带有支付功能的智能工具。",
+      "descriptionEn": "银联开放平台提供的MCP服务器，可以帮助您轻松地将银联开放平台的交易创建、查询、退款等能力集成到您的LLM应用中，让您进一步开发带有支付功能的智能工具。",
+      "category": "development",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@UnionPay-unionpay-mcp-server"
+    },
+    {
+      "serverId": "@deckflow-gezhe-mcp-server",
+      "friendlyName": "歌者PPT",
+      "friendlyNameEn": "歌者PPT",
+      "description": "由人工智能驱动的演示文稿创建",
+      "descriptionEn": "由人工智能驱动的演示文稿创建",
+      "category": "other",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@deckflow-gezhe-mcp-server"
+    },
+    {
+      "serverId": "@regenrek-mcp-deepwiki",
+      "friendlyName": "Github的维基百科DeepWiKi",
+      "friendlyNameEn": "Github的维基百科DeepWiKi",
+      "description": "📖 MCP 服务器用于获取 deepwiki.com 的最新知识，并在 Cursor 和其他代码编辑器中使用",
+      "descriptionEn": "📖 MCP 服务器用于获取 deepwiki.com 的最新知识，并在 Cursor 和其他代码编辑器中使用",
+      "category": "development",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@regenrek-mcp-deepwiki"
+    },
+    {
+      "serverId": "modelscope-ModelScope-Image-Generation-MCP",
+      "friendlyName": "ModelScope-Image-Generation-MCP",
+      "friendlyNameEn": "ModelScope-Image-Generation-MCP",
+      "description": "支持使用ModelScope上的模型进行文本到图像的生成。",
+      "descriptionEn": "支持使用ModelScope上的模型进行文本到图像的生成。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/modelscope-ModelScope-Image-Generation-MCP"
+    },
+    {
+      "serverId": "ZhipuAI-Zhipu-Web-Search",
+      "friendlyName": "智谱联网搜索",
+      "friendlyNameEn": "智谱联网搜索",
+      "description": "智谱网络搜索MCP服务器是专为大模型设计的搜索引擎，整合了四种搜索引擎，可以让用户灵活对比和切换。在传统搜索引擎的网页爬取和排序能力基础上，增强意图识别能力，返回更适用于大模型处理的结果（如网页标题、网址、摘要、站点名称、站点图标等），帮助AI应用实现“动态知识获取”和“精准场景适配”的能力。",
+      "descriptionEn": "智谱网络搜索MCP服务器是专为大模型设计的搜索引擎，整合了四种搜索引擎，可以让用户灵活对比和切换。在传统搜索引擎的网页爬取和排序能力基础上，增强意图识别能力，返回更适用于大模型处理的结果（如网页标题、网址、摘要、站点名称、站点图标等），帮助AI应用实现“动态知识获取”和“精准场景适配”的能力。",
+      "category": "search",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/ZhipuAI-Zhipu-Web-Search"
+    },
+    {
+      "serverId": "@variflight-ai-variflight-mcp",
+      "friendlyName": "飞常准-Aviation",
+      "friendlyNameEn": "飞常准-Aviation",
+      "description": "VariFlight航班信息服务的模型上下文协议（MCP）服务器实现方案。该服务器提供了多种工具，支持查询航班信息、天气数据及航班舒适度指标。",
+      "descriptionEn": "VariFlight航班信息服务的模型上下文协议（MCP）服务器实现方案。该服务器提供了多种工具，支持查询航班信息、天气数据及航班舒适度指标。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@variflight-ai-variflight-mcp"
+    },
+    {
+      "serverId": "@mobvoi-mobvoi-mcp",
+      "friendlyName": "mobvoi-mcp",
+      "friendlyNameEn": "mobvoi-mcp",
+      "description": "官方的Mobvoi模型上下文协议（MCP）服务器，能够与Mobvoi强大的文本转语音、声音克隆、照片驱动虚拟形象、视频配音、视频翻译API进行交互。该服务器允许MCP客户端（如Cursor、Claude Desktop、Cline、Windsurf、OpenAI Agent及其他客户端）调用工具来生成语音、克隆声音、照片驱动虚拟形象、视频配音、视频翻译等更多功能。",
+      "descriptionEn": "官方的Mobvoi模型上下文协议（MCP）服务器，能够与Mobvoi强大的文本转语音、声音克隆、照片驱动虚拟形象、视频配音、视频翻译API进行交互。该服务器允许MCP客户端（如Cursor、Claude Desktop、Cline、Windsurf、OpenAI Agent及其他客户端）调用工具来生成语音、克隆声音、照片驱动虚拟形象、视频配音、视频翻译等更多功能。",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@mobvoi-mobvoi-mcp"
+    },
+    {
+      "serverId": "@mem0ai-OpenMemory",
+      "friendlyName": "OpenMemory",
+      "friendlyNameEn": "OpenMemory",
+      "description": "OpenMemory 是您的个人记忆层，适用于大型语言模型（LLM）——私有、便携且开源。您的记忆数据存储在本地，让您完全掌控自己的数据。在构建具有个性化记忆的AI应用程序的同时，确保您的数据安全。",
+      "descriptionEn": "OpenMemory 是您的个人记忆层，适用于大型语言模型（LLM）——私有、便携且开源。您的记忆数据存储在本地，让您完全掌控自己的数据。在构建具有个性化记忆的AI应用程序的同时，确保您的数据安全。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@mem0ai-OpenMemory"
+    },
+    {
+      "serverId": "@package-mcp-server-weread",
+      "friendlyName": "微信读书",
+      "friendlyNameEn": "微信读书",
+      "description": "一个为微信读书提供MCP（Model Context Protocol）服务的工具，支持将微信读书的书籍、笔记和划线数据提供给支持MCP的大语言模型客户端，如Claude Desktop。",
+      "descriptionEn": "一个为微信读书提供MCP（Model Context Protocol）服务的工具，支持将微信读书的书籍、笔记和划线数据提供给支持MCP的大语言模型客户端，如Claude Desktop。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@package-mcp-server-weread"
+    },
+    {
+      "serverId": "@cantian-ai-Bazi-MCP",
+      "friendlyName": "八字MCP",
+      "friendlyNameEn": "八字MCP",
+      "description": "为AI提供精准的八字排盘信息",
+      "descriptionEn": "为AI提供精准的八字排盘信息",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@cantian-ai-Bazi-MCP"
+    },
+    {
+      "serverId": "@baidu-maps-mcp",
+      "friendlyName": "百度地图",
+      "friendlyNameEn": "百度地图",
+      "description": "百度地图提供的MCP Server，包含10个符合MCP协议标准的API接口，涵盖逆地理编码、地点检索、路线规划等。  \n\n（正文语言为中文，无需翻译）",
+      "descriptionEn": "百度地图提供的MCP Server，包含10个符合MCP协议标准的API接口，涵盖逆地理编码、地点检索、路线规划等。  \n\n（正文语言为中文，无需翻译）",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@baidu-maps-mcp"
+    },
+    {
+      "serverId": "@allvoicelab-AllVoiceLab",
+      "friendlyName": "趣丸千音",
+      "friendlyNameEn": "趣丸千音",
+      "description": "官方 AllVoiceLab 模型上下文协议(MCP)服务器，支持与强大的文本转语音和视频翻译API交互。允许MCP客户端如Claude Desktop、Cursor、Windsurf、OpenAI Agents等生成语音、翻译视频、智能变声等功能。",
+      "descriptionEn": "官方 AllVoiceLab 模型上下文协议(MCP)服务器，支持与强大的文本转语音和视频翻译API交互。允许MCP客户端如Claude Desktop、Cursor、Windsurf、OpenAI Agents等生成语音、翻译视频、智能变声等功能。",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@allvoicelab-AllVoiceLab"
+    },
+    {
+      "serverId": "@worryzyy-howtocook-mcp",
+      "friendlyName": "今天吃什么",
+      "friendlyNameEn": "今天吃什么",
+      "description": "让 AI 助手变身私人大厨，为你的一日三餐出谋划策！",
+      "descriptionEn": "让 AI 助手变身私人大厨，为你的一日三餐出谋划策！",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@worryzyy-howtocook-mcp"
+    },
+    {
+      "serverId": "@tavily-ai-tavily-mcp",
+      "friendlyName": "Tavily智搜",
+      "friendlyNameEn": "Tavily智搜",
+      "description": "该服务器使AI系统能够与Tavily的搜索和数据提取工具集成，提供实时的网络信息访问和领域特定的搜索。",
+      "descriptionEn": "该服务器使AI系统能够与Tavily的搜索和数据提取工具集成，提供实时的网络信息访问和领域特定的搜索。",
+      "category": "search",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@tavily-ai-tavily-mcp"
+    },
+    {
+      "serverId": "@MiniMax-AI-MiniMax-MCP",
+      "friendlyName": "MiniMax",
+      "friendlyNameEn": "MiniMax",
+      "description": "官方 MiniMax 模型上下文协议 (MCP) 服务器，支持与强大的文本转语音和视频/图像生成 API 进行交互。该服务器允许Claude Desktop、Cursor、Windsurf、OpenAI Agents等 MCP 客户端生成语音、克隆声音、生成视频、生成图像等。",
+      "descriptionEn": "官方 MiniMax 模型上下文协议 (MCP) 服务器，支持与强大的文本转语音和视频/图像生成 API 进行交互。该服务器允许Claude Desktop、Cursor、Windsurf、OpenAI Agents等 MCP 客户端生成语音、克隆声音、生成视频、生成图像等。",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@MiniMax-AI-MiniMax-MCP"
+    },
+    {
+      "serverId": "@elastic-mcp-server-elasticsearch",
+      "friendlyName": "Elasticsearch",
+      "friendlyNameEn": "Elasticsearch",
+      "description": "将Claude和其他MCP客户端连接到Elasticsearch数据，允许用户通过自然语言对话与其Elasticsearch索引进行交互。",
+      "descriptionEn": "将Claude和其他MCP客户端连接到Elasticsearch数据，允许用户通过自然语言对话与其Elasticsearch索引进行交互。",
+      "category": "search",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@elastic-mcp-server-elasticsearch"
+    },
+    {
+      "serverId": "@TencentEdgeOne-edgeone-pages-mcp",
+      "friendlyName": "EdgeOne Pages",
+      "friendlyNameEn": "EdgeOne Pages",
+      "description": "基于 EdgeOne Pages 的 MCP 服务器，支持代码部署为在线页面。",
+      "descriptionEn": "基于 EdgeOne Pages 的 MCP 服务器，支持代码部署为在线页面。",
+      "category": "other",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@TencentEdgeOne-edgeone-pages-mcp"
+    },
+    {
+      "serverId": "@modelcontextprotocol-sequentialthinking",
+      "friendlyName": "Sequential Thinking",
+      "friendlyNameEn": "Sequential Thinking",
+      "description": "一种MCP服务器实现，它通过结构化的思维过程提供了一种动态且反射性的解决问题的工具。",
+      "descriptionEn": "一种MCP服务器实现，它通过结构化的思维过程提供了一种动态且反射性的解决问题的工具。",
+      "category": "other",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@modelcontextprotocol-sequentialthinking"
+    },
+    {
+      "serverId": "@modelcontextprotocol-time",
+      "friendlyName": "时间服务",
+      "friendlyNameEn": "时间服务",
+      "description": "一个提供时间和时区转换功能的模型上下文协议服务器。该服务器使大型语言模型能够获取当前时间信息，并使用IANA时区名称进行时区转换，同时具备自动检测系统时区的功能。",
+      "descriptionEn": "一个提供时间和时区转换功能的模型上下文协议服务器。该服务器使大型语言模型能够获取当前时间信息，并使用IANA时区名称进行时区转换，同时具备自动检测系统时区的功能。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@modelcontextprotocol-time"
+    },
+    {
+      "serverId": "@modelcontextprotocol-gitlab",
+      "friendlyName": "GitLab版本控制工具",
+      "friendlyNameEn": "GitLab版本控制工具",
+      "description": "GitLab API的MCP服务器，支持项目管理、文件操作等更多功能。",
+      "descriptionEn": "GitLab API的MCP服务器，支持项目管理、文件操作等更多功能。",
+      "category": "filesystem",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@modelcontextprotocol-gitlab"
+    },
+    {
+      "serverId": "@chatmcp-mcp-server-flomo",
+      "friendlyName": "MCP Flomo笔记助手",
+      "friendlyNameEn": "MCP Flomo笔记助手",
+      "description": "一个基于 TypeScript 的 MCP 服务器，帮助您将笔记写入 Flomo。",
+      "descriptionEn": "一个基于 TypeScript 的 MCP 服务器，帮助您将笔记写入 Flomo。",
+      "category": "other",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@chatmcp-mcp-server-flomo"
+    },
+    {
+      "serverId": "@mendableai-firecrawl-mcp-server",
+      "friendlyName": "FireCrawl网络抓取服务器",
+      "friendlyNameEn": "FireCrawl网络抓取服务器",
+      "description": "一个模型上下文协议（MCP）服务器实现，它与FireCrawl集成以实现高级网络爬取功能。",
+      "descriptionEn": "一个模型上下文协议（MCP）服务器实现，它与FireCrawl集成以实现高级网络爬取功能。",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@mendableai-firecrawl-mcp-server"
+    },
+    {
+      "serverId": "@ppl-ai-modelcontextprotocol",
+      "friendlyName": "Perplexity Ask",
+      "friendlyNameEn": "Perplexity Ask",
+      "description": "一种MCP服务器实现，它集成了Sonar API，为克劳德提供了无与伦比的实时、全网研究能力。",
+      "descriptionEn": "一种MCP服务器实现，它集成了Sonar API，为克劳德提供了无与伦比的实时、全网研究能力。",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@ppl-ai-modelcontextprotocol"
+    },
+    {
+      "serverId": "@exa-labs-exa-mcp-server",
+      "friendlyName": "Exa搜索",
+      "friendlyNameEn": "Exa搜索",
+      "description": "模型上下文协议（MCP）服务器让像克劳德这样的AI助手可以使用Exa AI搜索API进行网络搜索。这种设置使AI模型能够以安全和受控的方式获取实时网络信息。",
+      "descriptionEn": "模型上下文协议（MCP）服务器让像克劳德这样的AI助手可以使用Exa AI搜索API进行网络搜索。这种设置使AI模型能够以安全和受控的方式获取实时网络信息。",
+      "category": "search",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@exa-labs-exa-mcp-server"
+    },
+    {
+      "serverId": "@GLips-Figma-Context-MCP",
+      "friendlyName": "Figma",
+      "friendlyNameEn": "Figma",
+      "description": "通过模型上下文协议，使 AI 能够访问 Figma 文件，从而增强其准确解释和利用设计数据进行代码生成的能力。",
+      "descriptionEn": "通过模型上下文协议，使 AI 能够访问 Figma 文件，从而增强其准确解释和利用设计数据进行代码生成的能力。",
+      "category": "filesystem",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@GLips-Figma-Context-MCP"
+    },
+    {
+      "serverId": "@mastergo-design-mastergo-magic-mcp",
+      "friendlyName": "MasterGo设计协作工具",
+      "friendlyNameEn": "MasterGo设计协作工具",
+      "description": "MasterGo Magic MCP 是一个独立的 MCP（模型上下文协议）服务，旨在将 MasterGo 设计工具与 AI 模型连接起来。它使 AI 模型能够直接从 MasterGo 设计文件中检索 DSL 数据。",
+      "descriptionEn": "MasterGo Magic MCP 是一个独立的 MCP（模型上下文协议）服务，旨在将 MasterGo 设计工具与 AI 模型连接起来。它使 AI 模型能够直接从 MasterGo 设计文件中检索 DSL 数据。",
+      "category": "filesystem",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@mastergo-design-mastergo-magic-mcp"
+    },
+    {
+      "serverId": "@modelcontextprotocol-filesystem",
+      "friendlyName": "文件系统",
+      "friendlyNameEn": "文件系统",
+      "description": "实现用于文件系统操作的模型上下文协议（MCP）的 Node.js 服务器。",
+      "descriptionEn": "实现用于文件系统操作的模型上下文协议（MCP）的 Node.js 服务器。",
+      "category": "filesystem",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@modelcontextprotocol-filesystem"
+    },
+    {
+      "serverId": "@ahujasid-blender-mcp",
+      "friendlyName": "Blender",
+      "friendlyNameEn": "Blender",
+      "description": "通过模型上下文协议（MCP）将Blender连接到Claude AI，使Claude能够直接与Blender交互并对其进行控制，从而实现AI辅助的3D建模、场景操作和渲染。",
+      "descriptionEn": "通过模型上下文协议（MCP）将Blender连接到Claude AI，使Claude能够直接与Blender交互并对其进行控制，从而实现AI辅助的3D建模、场景操作和渲染。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@ahujasid-blender-mcp"
+    },
+    {
+      "serverId": "@modelcontextprotocol-slack",
+      "friendlyName": "Slack",
+      "friendlyNameEn": "Slack",
+      "description": "用于Slack API的MCP服务器，使Claude能够与Slack工作区进行交互。",
+      "descriptionEn": "用于Slack API的MCP服务器，使Claude能够与Slack工作区进行交互。",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@modelcontextprotocol-slack"
+    },
+    {
+      "serverId": "@ahujasid-ableton-mcp",
+      "friendlyName": "Ableton",
+      "friendlyNameEn": "Ableton",
+      "description": "通过模型上下文协议将Ableton Live与Claude AI连接起来，通过允许Claude直接与Ableton Live会话交互和控制，实现人工智能辅助的音乐制作。",
+      "descriptionEn": "通过模型上下文协议将Ableton Live与Claude AI连接起来，通过允许Claude直接与Ableton Live会话交互和控制，实现人工智能辅助的音乐制作。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@ahujasid-ableton-mcp"
+    },
+    {
+      "serverId": "@modelcontextprotocol-redis",
+      "friendlyName": "Redis数据库",
+      "friendlyNameEn": "Redis数据库",
+      "description": "一个提供访问Redis数据库的模型上下文协议服务器。该服务器通过一系列标准化工具使大语言模型能够与Redis键值存储进行交互。",
+      "descriptionEn": "一个提供访问Redis数据库的模型上下文协议服务器。该服务器通过一系列标准化工具使大语言模型能够与Redis键值存储进行交互。",
+      "category": "database",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@modelcontextprotocol-redis"
+    },
+    {
+      "serverId": "@neondatabase-labs-mcp-server-neon",
+      "friendlyName": "Neon数据库",
+      "friendlyNameEn": "Neon数据库",
+      "description": "让你能够使用 Claude Desktop 或任何 MCP 客户端，通过自然语言来使用 [Neon](https://neon.tech/) 完成任务。",
+      "descriptionEn": "让你能够使用 Claude Desktop 或任何 MCP 客户端，通过自然语言来使用 [Neon](https://neon.tech/) 完成任务。",
+      "category": "database",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@neondatabase-labs-mcp-server-neon"
+    },
+    {
+      "serverId": "@browserbase-mcp-server-browserbase",
+      "friendlyName": "BrowserBase云浏览器自动化",
+      "friendlyNameEn": "BrowserBase云浏览器自动化",
+      "description": "该服务器使用 Browserbase、Puppeteer 和 Stagehand 提供云浏览器自动化功能。此服务器使大型语言模型（LLMs）能够与网页交互、截屏以及在云浏览器环境中执行 JavaScript。",
+      "descriptionEn": "该服务器使用 Browserbase、Puppeteer 和 Stagehand 提供云浏览器自动化功能。此服务器使大型语言模型（LLMs）能够与网页交互、截屏以及在云浏览器环境中执行 JavaScript。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@browserbase-mcp-server-browserbase"
+    },
+    {
+      "serverId": "@modelcontextprotocol-fetch",
+      "friendlyName": "Fetch网页内容抓取",
+      "friendlyNameEn": "Fetch网页内容抓取",
+      "description": "该服务器使大型语言模型能够检索和处理网页内容，将HTML转换为markdown格式，以便于更轻松地使用。",
+      "descriptionEn": "该服务器使大型语言模型能够检索和处理网页内容，将HTML转换为markdown格式，以便于更轻松地使用。",
+      "category": "network",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@modelcontextprotocol-fetch"
+    },
+    {
+      "serverId": "@amap-amap-maps",
+      "friendlyName": "高德地图",
+      "friendlyNameEn": "高德地图",
+      "description": "高德地图是一个支持任何MCP协议客户端的服务器，允许用户轻松利用高德地图MCP服务器获取各种基于位置的服务。",
+      "descriptionEn": "高德地图是一个支持任何MCP协议客户端的服务器，允许用户轻松利用高德地图MCP服务器获取各种基于位置的服务。",
+      "category": "other",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@amap-amap-maps"
+    },
+    {
+      "serverId": "slcatwujian-bing-cn-mcp-server",
+      "friendlyName": "必应搜索中文",
+      "friendlyNameEn": "必应搜索中文",
+      "description": "让 AI 助手（如 Claude）能够使用必应搜索引擎实时获取网络信息的工具。提供了一个必应搜索工具和网页抓取功能，专为中文搜索优化，无需申请 API 密钥。",
+      "descriptionEn": "让 AI 助手（如 Claude）能够使用必应搜索引擎实时获取网络信息的工具。提供了一个必应搜索工具和网页抓取功能，专为中文搜索优化，无需申请 API 密钥。",
+      "category": "search",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/slcatwujian-bing-cn-mcp-server"
+    },
+    {
+      "serverId": "Alipay-alipay-subscription",
+      "friendlyName": "AI订阅付费组件",
+      "friendlyNameEn": "AI订阅付费组件",
+      "description": "",
+      "descriptionEn": "",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/Alipay-alipay-subscription"
+    },
+    {
+      "serverId": "dingtalk-DingTalk-Docs",
+      "friendlyName": "钉钉文档",
+      "friendlyNameEn": "钉钉文档",
+      "description": "轻松创建、编辑和管理钉钉文档，如同您的云端办公室。",
+      "descriptionEn": "轻松创建、编辑和管理钉钉文档，如同您的云端办公室。",
+      "category": "productivity",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/dingtalk-DingTalk-Docs"
+    },
+    {
+      "serverId": "@supabase-community-supabase-mcp",
+      "friendlyName": "@supabase-community-supabase-mcp",
+      "friendlyNameEn": "@supabase-community-supabase-mcp",
+      "description": "Supabase MCP（模型上下文协议）服务器将您的Supabase项目连接到AI助手，使它们能够管理表、获取配置和查询数据。它支持多种功能，如只读模式、项目范围限定和功能组。",
+      "descriptionEn": "Supabase MCP（模型上下文协议）服务器将您的Supabase项目连接到AI助手，使它们能够管理表、获取配置和查询数据。它支持多种功能，如只读模式、项目范围限定和功能组。",
+      "category": "ai",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/@supabase-community-supabase-mcp"
+    },
+    {
+      "serverId": "yorklu-AI_Go_Hotel_MCP",
+      "friendlyName": "AIGoHotel(全球酒店推荐&预订)",
+      "friendlyNameEn": "AIGoHotel(全球酒店推荐&预订)",
+      "description": "",
+      "descriptionEn": "",
+      "category": "ai",
+      "tags": [
+        "全球酒店预订",
+        "全球酒店查询",
+        "全球酒店比价",
+        "旅行规划",
+        "路线规划",
+        "酒店分佣",
+        "优惠订酒店"
+      ],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/yorklu-AI_Go_Hotel_MCP"
+    },
+    {
+      "serverId": "zephyr-douyin-mcp-server",
+      "friendlyName": "抖音小助手（by 云中江树）",
+      "friendlyNameEn": "抖音小助手（by 云中江树）",
+      "description": "抖音运营助手，用于提取抖音无水印视频链接、视频文案、IP文案、素材文案以及文案对标改写等功能。\n\n官方地址：https://github.com/yzfly/douyin-mcp-server",
+      "descriptionEn": "抖音运营助手，用于提取抖音无水印视频链接、视频文案、IP文案、素材文案以及文案对标改写等功能。\n\n官方地址：https://github.com/yzfly/douyin-mcp-server",
+      "category": "development",
+      "tags": [],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/zephyr-douyin-mcp-server"
+    },
+    {
+      "serverId": "Launini-ChatPPT-MCP",
+      "friendlyName": "ChatPPT-MCP",
+      "friendlyNameEn": "ChatPPT-MCP",
+      "description": "ChatPPT 是一个基于AI的演示文稿生成服务，允许用户根据主题或需求生成、上传和编辑PPT。它支持18种智能文档处理API，并可以通过Python、Node.js或可流式传输的HTTP来体验。",
+      "descriptionEn": "ChatPPT 是一个基于AI的演示文稿生成服务，允许用户根据主题或需求生成、上传和编辑PPT。它支持18种智能文档处理API，并可以通过Python、Node.js或可流式传输的HTTP来体验。",
+      "category": "network",
+      "tags": [
+        "智能演示文档",
+        "PPT"
+      ],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/Launini-ChatPPT-MCP"
+    },
+    {
+      "serverId": "MChina-mcd_mcp_server",
+      "friendlyName": "麦当劳MCP Server",
+      "friendlyNameEn": "麦当劳MCP Server",
+      "description": "",
+      "descriptionEn": "",
+      "category": "other",
+      "tags": [
+        "麦当劳",
+        "美食",
+        "餐饮",
+        "生活服务"
+      ],
+      "version": "0.0.0",
+      "requiresApiKey": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "isOfficial": false,
+      "isNew": false,
+      "toolCount": 0,
+      "source": "modelscope",
+      "sourceUrl": "https://modelscope.cn/mcp/servers/MChina-mcd_mcp_server"
+    }
+  ]
+}

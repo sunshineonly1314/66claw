@@ -139,6 +139,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
   id: DINGTALK_CHANNEL_ID,
   meta: {
     ...meta,
+    aliases: [...meta.aliases] as string[],
   },
   pairing: {
     idLabel: "dingtalkUserId",
@@ -209,7 +210,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
   messaging: {
     normalizeTarget: (raw) => {
       const trimmed = raw.trim();
-      if (!trimmed) return null;
+      if (!trimmed) return undefined;
       return trimmed;
     },
     targetResolver: {
@@ -262,7 +263,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
           msgtype: "text",
           text: { content: text },
         });
-        return { channel: DINGTALK_CHANNEL_ID };
+        return { channel: DINGTALK_CHANNEL_ID, messageId: "" };
       }
 
       // 降级使用批量发送 API
@@ -270,7 +271,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       const result = await sendDingtalkMessage(channelConfig, [to], text, {
         msgType: "text",
       });
-      return { channel: DINGTALK_CHANNEL_ID, ...result };
+      return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
     },
     sendMedia: async ({ to, text, cfg }) => {
       const cachedWebhook = getCachedSessionWebhook(to);
@@ -279,12 +280,12 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
           msgtype: "text",
           text: { content: text },
         });
-        return { channel: DINGTALK_CHANNEL_ID };
+        return { channel: DINGTALK_CHANNEL_ID, messageId: "" };
       }
 
       const channelConfig = cfg.channels?.dingtalk as DingtalkChannelConfig;
       const result = await sendDingtalkMessage(channelConfig, [to], text);
-      return { channel: DINGTALK_CHANNEL_ID, ...result };
+      return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
     },
   },
   status: {

@@ -111,6 +111,7 @@ export function createBlockReplyPipeline(params: {
     sendChain = sendChain
       .then(async () => {
         if (aborted) {
+          abortController.abort(); // Clean up if already aborted
           return false;
         }
         await withTimeout(
@@ -143,9 +144,17 @@ export function createBlockReplyPipeline(params: {
           return;
         }
         logVerbose(`block reply delivery failed: ${String(err)}`);
+        // Abort controller on any error to release resources
+        if (!abortController.signal.aborted) {
+          abortController.abort();
+        }
       })
       .finally(() => {
         pendingKeys.delete(payloadKey);
+        // Ensure controller is aborted if not already (defensive cleanup)
+        if (!abortController.signal.aborted) {
+          abortController.abort();
+        }
       });
   };
 

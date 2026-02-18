@@ -103,26 +103,23 @@ export async function initDistributedBroadcast(params: {
   }
 
   // ── Subscribe to remote broadcast events ──────────────────────────────
-  let sub: StateStoreSubscription | null = await store.subscribe(
-    BROADCAST_CHANNEL,
-    (message) => {
-      try {
-        const frame = message as DistributedBroadcastFrame;
-        // Echo suppression
-        if (frame.instanceId === instanceId) {
-          return;
-        }
-        if (frame.targetConnIds) {
-          const connIdSet = new Set(frame.targetConnIds);
-          params.localBroadcastToConnIds(frame.event, frame.payload, connIdSet, frame.opts);
-        } else {
-          params.localBroadcast(frame.event, frame.payload, frame.opts);
-        }
-      } catch (err) {
-        log.warn(`failed to handle remote broadcast: ${String(err)}`);
+  let sub: StateStoreSubscription | null = await store.subscribe(BROADCAST_CHANNEL, (message) => {
+    try {
+      const frame = message as DistributedBroadcastFrame;
+      // Echo suppression
+      if (frame.instanceId === instanceId) {
+        return;
       }
-    },
-  );
+      if (frame.targetConnIds) {
+        const connIdSet = new Set(frame.targetConnIds);
+        params.localBroadcastToConnIds(frame.event, frame.payload, connIdSet, frame.opts);
+      } else {
+        params.localBroadcast(frame.event, frame.payload, frame.opts);
+      }
+    } catch (err) {
+      log.warn(`failed to handle remote broadcast: ${String(err)}`);
+    }
+  });
 
   log.info(`distributed broadcast bridge active (instance=${instanceId.slice(0, 8)})`);
 
@@ -130,27 +127,54 @@ export async function initDistributedBroadcast(params: {
   const MAX_RETRY_BUFFER = 3;
   const retryBuffer: DistributedBroadcastFrame[] = [];
 
-  const publishWithRetry = async (frame: DistributedBroadcastFrame) => {
-    // Flush any previously failed frames first
-    while (retryBuffer.length > 0) {
-      const pending = retryBuffer[0]!;
-      try {
-        await store.publish(BROADCAST_CHANNEL, pending);
-        retryBuffer.shift();
-      } catch {
-        // Still failing — keep the buffer, skip flush, try current frame
-        break;
-      }
+  // ── Metrics tracking for event drops (critical for production monitoring) ──
+  let totalEventsPublished = 0;
+  let totalEventsDropped = 0;
+  let totalEventsBuffered = 0;
+  let lastMetricsLogTime = Date.now();
+  const METRICS_LOG_INTERVAL_MS = 60_000; // Log metrics every minute
+
+  const logMetricsIfNeeded = () => {
+    const now = Date.now();
+    if (now - lastMetricsLogTime >= METRICS_LOG_INTERVAL_MS) {
+      log.info(
+        `distributed-broadcast metrics: published=${totalEventsPublished}, buffered=${totalEventsBuffered}, dropped=${totalEventsDropped}, buffer_size=${retryBuffer.length}/${MAX_RETRY_BUFFER}`,
+      );
+      lastMetricsLogTime = now;
     }
+  };
+
+  const publishWithRetry = async (frame: DistributedBroadcastFrame) => {
     try {
+      // Flush any previously failed frames first
+      while (retryBuffer.length > 0) {
+        const pending = retryBuffer[0]!;
+        try {
+          await store.publish(BROADCAST_CHANNEL, pending);
+          retryBuffer.shift();
+        } catch {
+          // Still failing — keep the buffer, skip flush, try current frame
+          break;
+        }
+      }
       await store.publish(BROADCAST_CHANNEL, frame);
+      totalEventsPublished++;
+      logMetricsIfNeeded();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (retryBuffer.length < MAX_RETRY_BUFFER) {
         retryBuffer.push(frame);
-        log.warn(`publish failed, buffered for retry (${retryBuffer.length}/${MAX_RETRY_BUFFER}) event=${frame.event}: ${msg}`);
+        totalEventsBuffered++;
+        log.warn(
+          `publish failed, buffered for retry (${retryBuffer.length}/${MAX_RETRY_BUFFER}) event=${frame.event}: ${msg}`,
+        );
       } else {
-        log.error(`publish failed and retry buffer full, dropping event=${frame.event}: ${msg}`);
+        totalEventsDropped++;
+        // CRITICAL: Event dropped - this should trigger alerts in production monitoring
+        log.error(
+          `CRITICAL: publish failed and retry buffer full, DROPPING event=${frame.event} (total_dropped=${totalEventsDropped}): ${msg}`,
+        );
+        logMetricsIfNeeded(); // Force immediate metrics log on drop
       }
     }
   };

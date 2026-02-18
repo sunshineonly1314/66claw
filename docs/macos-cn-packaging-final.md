@@ -799,7 +799,7 @@ BUILD_DIR="$PROJECT_ROOT/build/output"
 STAGING_DIR="$BUILD_DIR/staging"
 VERSION="${VERSION:-$(node -p "require('$PROJECT_ROOT/package.json').version" 2>/dev/null || echo "2026.2.0")}"
 ARCH="${ARCH:-universal}"
-NODE_VERSION="22.13.0"
+NODE_VERSION="22.14.0"
 SKIP_BUILD="${SKIP_BUILD:-false}"
 USE_CN="${USE_CN:-auto}"
 

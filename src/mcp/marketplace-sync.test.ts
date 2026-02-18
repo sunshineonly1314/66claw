@@ -1,12 +1,13 @@
 /**
  * marketplace-sync.test.ts
- * Tests for the three-tier MCP marketplace index sync.
+ * Tests for the four-tier MCP marketplace index sync.
  *
- * Strategy: mock Tier 1 (ModelScope), Tier 2 (Official Registry),
- * Tier 3 (fetch for ClawdSkillsProxy), plus fs for disk writes.
+ * Strategy: mock Tier 0 (Cloud Index), Tier 1 (ModelScope),
+ * Tier 2 (Official Registry), Tier 3 (fetch for ClawdSkillsProxy),
+ * plus fs for disk writes.
  */
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mock fs at the top (hoisted) ────────────────────────────
 const mocks = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
   mkdir: vi.fn(),
   readFile: vi.fn(),
+  fetchFromCloudIndex: vi.fn(),
   fetchFromModelScope: vi.fn(),
   fetchFromOfficialRegistry: vi.fn(),
   readMarketplaceIndex: vi.fn(),
@@ -41,7 +43,11 @@ vi.mock("./marketplace-index.js", () => ({
   invalidateMarketplaceCache: mocks.invalidateMarketplaceCache,
 }));
 
-// Mock Tier 1 (ModelScope) and Tier 2 (Official Registry) data sources
+// Mock Tier 0 (Cloud Index), Tier 1 (ModelScope), and Tier 2 (Official Registry)
+vi.mock("./marketplace/cloud-index-source.js", () => ({
+  fetchFromCloudIndex: mocks.fetchFromCloudIndex,
+}));
+
 vi.mock("./marketplace/modelscope-source.js", () => ({
   fetchFromModelScope: mocks.fetchFromModelScope,
 }));
@@ -82,18 +88,57 @@ describe("marketplace-sync", () => {
     mocks.readFile.mockRejectedValue(new Error("ENOENT"));
     mocks.writeFile.mockResolvedValue(undefined);
     mocks.mkdir.mockResolvedValue(undefined);
-    // Default: Tier 1 and Tier 2 both return empty (simulate no token / network fail)
+    // Default: all tiers return empty (simulate no config / network fail)
+    mocks.fetchFromCloudIndex.mockResolvedValue([]);
     mocks.fetchFromModelScope.mockResolvedValue([]);
     mocks.fetchFromOfficialRegistry.mockResolvedValue([]);
   });
 
-  // ── Three-tier cascade ────────────────────────────────────
+  // ── Four-tier cascade ─────────────────────────────────────
 
-  describe("three-tier cascade", () => {
+  describe("four-tier cascade", () => {
+    it("uses Tier 0 (Cloud Index) when available", async () => {
+      const items = [{ serverId: "cloud-1", friendlyName: "Cloud Server", source: "cloud-index" }];
+      mocks.fetchFromCloudIndex.mockResolvedValue(items);
+
+      const result = await syncMcpIndex({ force: true });
+
+      expect(result.ok).toBe(true);
+      expect(result.synced).toBe(true);
+      expect(result.itemCount).toBe(1);
+      expect(result.source).toBe("cloud-index");
+      // Tier 1, 2, 3 should not be called
+      expect(mocks.fetchFromModelScope).not.toHaveBeenCalled();
+      expect(mocks.fetchFromOfficialRegistry).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("falls back to Tier 1 when Tier 0 returns empty", async () => {
+      mocks.fetchFromCloudIndex.mockResolvedValue([]);
+      const items = [{ serverId: "ms-1", friendlyName: "ModelScope Server", source: "modelscope" }];
+      mocks.fetchFromModelScope.mockResolvedValue(items);
+
+      const result = await syncMcpIndex({ force: true });
+
+      expect(result.ok).toBe(true);
+      expect(result.source).toBe("modelscope");
+      expect(mocks.fetchFromCloudIndex).toHaveBeenCalledOnce();
+      expect(mocks.fetchFromModelScope).toHaveBeenCalledOnce();
+    });
+
+    it("falls back to Tier 1 when Tier 0 fails", async () => {
+      mocks.fetchFromCloudIndex.mockRejectedValue(new Error("network error"));
+      const items = [{ serverId: "ms-1", friendlyName: "ModelScope Server", source: "modelscope" }];
+      mocks.fetchFromModelScope.mockResolvedValue(items);
+
+      const result = await syncMcpIndex({ force: true });
+
+      expect(result.ok).toBe(true);
+      expect(result.source).toBe("modelscope");
+    });
+
     it("uses Tier 1 (ModelScope) when available", async () => {
-      const items = [
-        { serverId: "ms-1", friendlyName: "ModelScope Server", source: "modelscope" },
-      ];
+      const items = [{ serverId: "ms-1", friendlyName: "ModelScope Server", source: "modelscope" }];
       mocks.fetchFromModelScope.mockResolvedValue(items);
 
       const result = await syncMcpIndex({ force: true });
@@ -125,6 +170,9 @@ describe("marketplace-sync", () => {
     });
 
     it("falls back to Tier 3 (ClawdSkillsProxy) when Tier 1 and 2 both fail", async () => {
+      // Set proxy env vars so getProxyConfig() returns config
+      process.env.OPENCLAWCN_SKILLS_PROXY_URL = "https://proxy.test/api";
+      process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN = "test-token-secure-123";
       mocks.fetchFromModelScope.mockRejectedValue(new Error("no token"));
       mocks.fetchFromOfficialRegistry.mockRejectedValue(new Error("network error"));
       const proxyItems = [{ serverId: "proxy-1", friendlyName: "Proxy Server" }];
@@ -137,9 +185,11 @@ describe("marketplace-sync", () => {
       expect(result.itemCount).toBe(1);
       expect(result.source).toBe("clawdskillsproxy");
       expect(mockFetch).toHaveBeenCalledOnce();
+      delete process.env.OPENCLAWCN_SKILLS_PROXY_URL;
+      delete process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN;
     });
 
-    it("returns synced=false when all three tiers fail", async () => {
+    it("returns synced=false when all tiers fail", async () => {
       mocks.fetchFromModelScope.mockRejectedValue(new Error("no token"));
       mocks.fetchFromOfficialRegistry.mockRejectedValue(new Error("network error"));
       mockFetch.mockResolvedValue(makeProxyResponse([]));
@@ -155,6 +205,15 @@ describe("marketplace-sync", () => {
 
   describe("Tier 3 (ClawdSkillsProxy)", () => {
     // All tests here let Tier 1/2 return [] so Tier 3 is reached.
+    // Proxy env vars must be set for getProxyConfig() to return config.
+    beforeEach(() => {
+      process.env.OPENCLAWCN_SKILLS_PROXY_URL = "https://proxy.test/api";
+      process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN = "test-token-secure-123";
+    });
+    afterEach(() => {
+      delete process.env.OPENCLAWCN_SKILLS_PROXY_URL;
+      delete process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN;
+    });
 
     it("handles {items: [...]} wrapper from proxy", async () => {
       const data = { items: [{ serverId: "test-1" }] };
@@ -251,12 +310,19 @@ describe("marketplace-sync", () => {
       // Use a slow-resolving Tier 1 to test dedup
       let resolveModelScope!: (value: unknown[]) => void;
       mocks.fetchFromModelScope.mockImplementation(
-        () => new Promise((resolve) => { resolveModelScope = resolve; }),
+        () =>
+          new Promise((resolve) => {
+            resolveModelScope = resolve;
+          }),
       );
 
       // Start two syncs concurrently
       const p1 = syncMcpIndex({ force: true });
       const p2 = syncMcpIndex(); // non-force should reuse p1
+
+      // Wait for microtasks so doSync proceeds past Tier 0 (Cloud Index)
+      // and reaches the Tier 1 fetchFromModelScope() call
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       // Resolve Tier 1
       resolveModelScope([{ serverId: "test", source: "modelscope" }]);

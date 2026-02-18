@@ -1,7 +1,7 @@
 /**
  * Session memory hook handler
  *
- * Saves session context to memory when /new command is triggered
+ * Saves session context to memory when /new or /reset command is triggered
  * Creates a new dated memory file with LLM-generated slug
  */
 
@@ -68,16 +68,20 @@ async function getRecentSessionContent(
 }
 
 /**
- * Save session context to memory when /new command is triggered
+ * Save session context to memory when session resets
  */
 const saveSessionToMemory: HookHandler = async (event) => {
-  // Only trigger on 'new' command
-  if (event.type !== "command" || event.action !== "new") {
+  // [CN-PATCH:memory-p0] 扩展触发条件：/new + /reset
+  // 上游原条件: event.type !== "command" || event.action !== "new"（仅 /new 触发）
+  // TODO: 待上游派发 session:end 事件后，增加空闲超时重置的触发支持
+  const isNewCommand = event.type === "command" && event.action === "new";
+  const isResetCommand = event.type === "command" && event.action === "reset";
+  if (!isNewCommand && !isResetCommand) {
     return;
   }
 
   try {
-    log.debug("Hook triggered for /new command");
+    log.debug("Hook triggered", { type: event.type, action: event.action });
 
     const context = event.context || {};
     const cfg = context.cfg as OpenClawCNConfig | undefined;

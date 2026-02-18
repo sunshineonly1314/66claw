@@ -986,6 +986,9 @@ class MemoryManagerSyncOps {
       try {
         this.db.close();
       } catch {}
+      try {
+        tempDb.close();
+      } catch {}
       await this.removeIndexFiles(tempDbPath);
       restoreOriginalState();
       throw err;

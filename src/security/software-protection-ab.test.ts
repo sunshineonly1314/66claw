@@ -188,7 +188,7 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
-        expect(hashes.length).toBe(22);
+        expect(hashes.length).toBe(24);
       }
     });
 
@@ -202,7 +202,7 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
         const securityFiles = paths.filter((p: string) => p.startsWith("security/"));
 
         expect(licenseFiles.length).toBe(12); // 12 个 license 文件
-        expect(securityFiles.length).toBe(10); // 10 个 security 文件
+        expect(securityFiles.length).toBe(12); // 12 个 security 文件
       }
     });
 
@@ -475,13 +475,22 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       if (fs.existsSync(rsaVerifyPath)) {
         const content = fs.readFileSync(rsaVerifyPath, "utf8");
 
-        // 混淆器会将公钥字符串拆分成多段拼接，完整指纹不会连续出现
-        // 检查公钥的关键片段仍然存在（混淆后字符串被拆分但内容保留）
-        const hasKeyFragment =
-          content.includes("DtHShdtj") ||
-          content.includes("CopovpCcIR") ||
-          content.includes("kDtHShdtjfCopovpCcIR");
-        expect(hasKeyFragment).toBe(true);
+        // When bytecode-compiled, the .js file is a thin loader stub (requires .jsc).
+        // Key fragments live in the binary .jsc, not the plain-text loader.
+        const isBytecodeLoader = content.includes("bytenode") || content.includes(".jsc");
+        if (isBytecodeLoader) {
+          // Verify the bytecode file exists instead
+          const jscPath = path.join(LICENSE_DIR, "rsa-verify.jsc");
+          expect(fs.existsSync(jscPath)).toBe(true);
+        } else {
+          // 混淆器会将公钥字符串拆分成多段拼接，完整指纹不会连续出现
+          // 检查公钥的关键片段仍然存在（混淆后字符串被拆分但内容保留）
+          const hasKeyFragment =
+            content.includes("DtHShdtj") ||
+            content.includes("CopovpCcIR") ||
+            content.includes("kDtHShdtjfCopovpCcIR");
+          expect(hasKeyFragment).toBe(true);
+        }
       }
     });
 

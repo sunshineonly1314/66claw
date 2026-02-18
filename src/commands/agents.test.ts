@@ -45,7 +45,9 @@ describe("agents helpers", () => {
     const work = summaries.find((summary) => summary.id === "work");
 
     expect(main).toBeTruthy();
-    expect(main?.workspace).toBe(path.join(os.homedir(), "clawd-main"));
+    // "main" is not the default agent ("work" has default: true), and has no explicit workspace.
+    // resolveAgentWorkspaceDir falls back to stateDir/workspace-main for non-default agents.
+    expect(main?.workspace).toMatch(/workspace-main$/);
     expect(main?.bindings).toBe(1);
     expect(main?.model).toBe("anthropic/claude");
     expect(main?.agentDir.endsWith(path.join("agents", "main", "agent"))).toBe(true);

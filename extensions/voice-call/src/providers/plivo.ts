@@ -24,6 +24,8 @@ export interface PlivoProviderOptions {
   skipVerification?: boolean;
   /** Outbound ring timeout in seconds */
   ringTimeoutSec?: number;
+  /** Webhook security configuration (proxy trust, allowed hosts) */
+  webhookSecurity?: import("../config.js").WebhookSecurityConfig;
 }
 
 type PendingSpeak = { text: string; locale?: string };
@@ -312,6 +314,9 @@ export class PlivoProvider implements VoiceCallProvider {
         endpoint: `/Call/${callUuid}/`,
         allowNotFound: true,
       });
+
+      // 清理所有相关映射，防止内存泄漏
+      this.cleanupCallState(input.providerCallId, callUuid);
       return;
     }
 
@@ -326,6 +331,34 @@ export class PlivoProvider implements VoiceCallProvider {
       endpoint: `/Request/${input.providerCallId}/`,
       allowNotFound: true,
     });
+
+    // 清理映射
+    this.cleanupCallState(input.providerCallId);
+  }
+
+  /**
+   * 清理通话相关的所有状态，防止内存泄漏
+   *
+   * @param requestUuid - 请求 UUID (providerCallId)
+   * @param callUuid - 通话 UUID (可选)
+   */
+  private cleanupCallState(requestUuid: string, callUuid?: string): void {
+    // 清理 request UUID 映射
+    this.requestUuidToCallUuid.delete(requestUuid);
+
+    // 查找并清理 callId
+    for (const [callId, webhookUrl] of this.callIdToWebhookUrl.entries()) {
+      if (webhookUrl.includes(requestUuid)) {
+        this.callIdToWebhookUrl.delete(callId);
+        this.pendingSpeakByCallId.delete(callId);
+        this.pendingListenByCallId.delete(callId);
+      }
+    }
+
+    // 清理 call UUID 映射（如果提供）
+    if (callUuid) {
+      this.callUuidToWebhookUrl.delete(callUuid);
+    }
   }
 
   async playTts(input: PlayTtsInput): Promise<void> {

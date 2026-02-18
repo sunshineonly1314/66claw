@@ -16,6 +16,26 @@
   box-shadow: none !important;
 }
 
+/* OpenClawCN: Drag-and-drop visual feedback */
+.chat--drag-over {
+  outline: 2px dashed var(--accent, #6366f1);
+  outline-offset: -4px;
+}
+
+.chat--drag-over::after {
+  content: "\677E\5F00\4EE5\6DFB\52A0\56FE\7247";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: var(--accent, #6366f1);
+  background: rgba(99, 102, 241, 0.06);
+  pointer-events: none;
+  z-index: 10;
+}
+
 /* Chat header - fixed at top, transparent */
 .chat-header {
   display: flex;
@@ -102,6 +122,44 @@
   stroke-linejoin: round;
 }
 
+/* New messages floating indicator */
+.chat-new-messages {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  margin: 8px auto;
+  font-size: 13px;
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  z-index: 10;
+  transition:
+    background 150ms ease-out,
+    border-color 150ms ease-out;
+}
+
+.chat-new-messages:hover {
+  background: var(--panel);
+  border-color: var(--accent);
+}
+
+.chat-new-messages svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
 /* Chat compose - sticky at bottom */
 .chat-compose {
   position: sticky;
@@ -128,6 +186,7 @@
   width: fit-content;
   max-width: 100%;
   align-self: flex-start; /* Don't stretch in flex column parent */
+  will-change: contents; /* GPU acceleration hint */
 }
 
 .chat-attachment {
@@ -138,12 +197,15 @@
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--bg);
+  will-change: transform; /* GPU acceleration for smoother removal animation */
 }
 
 .chat-attachment__img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transform: translateZ(0); /* Force GPU acceleration */
+  backface-visibility: hidden; /* Reduce flicker */
 }
 
 .chat-attachment__remove {
@@ -283,6 +345,32 @@
   gap: 10px;
 }
 
+/* Attach button */
+.chat-attach-btn {
+  padding: 0 14px !important;
+  min-width: 52px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+  transition: all 0.2s ease;
+}
+
+.chat-attach-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary) !important;
+  border-color: var(--brand-primary) !important;
+  color: var(--brand-primary) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.chat-attach-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+}
+
 /* 按钮增大，更易点击 */
 .chat-compose .chat-compose__actions .btn {
   padding: 0 20px;
@@ -319,6 +407,9 @@
 
 .chat-controls__session {
   min-width: 140px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-controls__thinking {

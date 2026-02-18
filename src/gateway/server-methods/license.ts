@@ -201,12 +201,14 @@ export const licenseHandlers: GatewayRequestHandlers = {
           deviceSwitchCooldown: response.deviceSwitchCooldown ?? null,
         });
 
-        // 启动短期令牌自动刷新（重要：确保后续请求的授权检查通过）
+        // 【临时禁用】Token 端点暂未在后端实现，暂时跳过令牌刷新
+        // 授权验证已通过 /verify 接口完成，无需额外的 token 端点
+        // TODO: 待后端添加 /token 端点后，再启用以下代码
+        /*
         startTokenAutoRefresh(sanitizedKey, {
           intervalMs: 30 * 60 * 1000, // 30 分钟检查一次
           onInvalid: () => {
             log.warn("Token became invalid, license features may be restricted");
-            // 更新全局状态
             const currentState = getGatewayLicenseState();
             if (currentState) {
               updateGatewayLicenseState({
@@ -217,6 +219,8 @@ export const licenseHandlers: GatewayRequestHandlers = {
             }
           },
         });
+        */
+        log.debug("License activated (token auto-refresh disabled temporarily)");
 
         // 注入技术支持二维码（本地静态图片）
         const activatedDeviceId = response.device?.deviceId || getDeviceId();

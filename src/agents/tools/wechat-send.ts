@@ -92,8 +92,8 @@ function sendKey(keys: string): void {
   runHelper(["-Action", "key", "-Keys", keys], 5000);
 }
 
-function typeText(text: string): boolean {
-  return runHelper(["-Action", "type", "-Text", text], 8000).startsWith("ok");
+function typeText(text: string, method: "sendinput" | "clipboard" = "clipboard"): boolean {
+  return runHelper(["-Action", "type", "-Text", text, "-Method", method], 8000).startsWith("ok");
 }
 
 function clickAt(x: number, y: number): void {
@@ -137,7 +137,7 @@ export function createWeChatSendTool(): AnyAgentTool | null {
 
       try {
         // 1. Detect and focus WeChat/WeCom
-        const win = getWeChatWindow();
+        let win = getWeChatWindow();
         if (!win) {
           return fail("微信/企业微信窗口未找到，请确认已启动。", log);
         }
@@ -145,8 +145,12 @@ export function createWeChatSendTool(): AnyAgentTool | null {
           return fail(`无法聚焦窗口: ${win.title}`, log);
         }
         log.push(`✓ Focus ${win.variant === "wecom" ? "WeCom" : "WeChat"} (${win.title})`);
+        await sleep(600);
+
+        // Re-query window rect after focus/restore — when WeChat is minimized to tray,
+        // the initial rect is (-32000, -32000). After SW_RESTORE it has real coordinates.
+        win = getWeChatWindow() ?? win;
         log.push(`✓ Window: (${win.x},${win.y}) ${win.w}×${win.h}`);
-        await sleep(400);
 
         const layout = getLayout(win);
 
@@ -169,21 +173,18 @@ export function createWeChatSendTool(): AnyAgentTool | null {
         // 5. Click first search result
         clickAt(layout.contactListCenterX, layout.firstResultY);
         log.push(`✓ Clicked search result (${layout.contactListCenterX}, ${layout.firstResultY})`);
-        await sleep(600);
+        await sleep(800);
 
-        // 6. Close search overlay with Escape — CRITICAL
-        sendKey("{ESC}");
-        log.push("✓ Escape (close search)");
-        await sleep(400);
-
-        // 7. Verify contact was selected
+        // 6. Verify contact was selected (search closes automatically after click)
+        // NOTE: Do NOT send Escape here — WeChat auto-closes the search panel
+        // after clicking a result. Sending ESC would minimize the entire window!
         const verifySs = await screenshot();
         log.push("✓ Screenshot after contact selection");
 
         // 8. Click message input box
         clickAt(layout.chatCenterX, layout.inputBoxY);
         log.push(`✓ Clicked input box (${layout.chatCenterX}, ${layout.inputBoxY})`);
-        await sleep(300);
+        await sleep(500);
 
         // 9. Type message
         if (!typeText(message)) {
@@ -197,7 +198,7 @@ export function createWeChatSendTool(): AnyAgentTool | null {
           };
         }
         log.push(`✓ Typed message (${message.length} chars)`);
-        await sleep(200);
+        await sleep(400);
 
         // 10. Send with Enter
         sendKey("{ENTER}");

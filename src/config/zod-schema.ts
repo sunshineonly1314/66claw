@@ -632,6 +632,56 @@ export const OpenClawCNSchema = z
       .strict()
       .optional(),
 
+    dispatch: z
+      .object({
+        enabled: z.boolean().optional(),
+        modalityRouter: z.boolean().optional(),
+        multiAgent: z.boolean().optional(),
+        toolSelector: z.boolean().optional(),
+        dagExecutor: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+
+    // ── [CN-PATCH:tool-discovery] 智能工具发现 schema ──
+    toolDiscovery: z
+      .object({
+        enabled: z.boolean().optional(),
+        embedding: z
+          .object({
+            model: z.string().optional(),
+            baseUrl: z.string().optional(),
+            apiKey: z.string().optional(),
+            dimensions: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
+        search: z
+          .object({
+            maxResults: z.number().int().positive().optional(),
+            minScore: z.number().min(0).max(1).optional(),
+            hybridWeight: z
+              .object({
+                fts: z.number().min(0).max(1).optional(),
+                vector: z.number().min(0).max(1).optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
+        mcpOnDemand: z
+          .object({
+            enabled: z.boolean().optional(),
+            autoInstall: z.boolean().optional(),
+            maxConcurrent: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+
     stateStore: z
       .object({
         backend: z.enum(["memory", "redis"]).default("memory").optional(),
@@ -644,6 +694,25 @@ export const OpenClawCNSchema = z
           })
           .strict()
           .optional(),
+      })
+      .strict()
+      .optional(),
+    license: z
+      .object({
+        key: z.string().optional(),
+        status: z.string().optional(),
+        expiresAt: z.string().optional(),
+        validatedAt: z.string().optional(),
+        tier: z.union([z.literal("basic"), z.literal("test")]).optional(),
+        tierName: z.string().optional(),
+        daysRemaining: z.number().optional(),
+        keyType: z.union([z.literal("test"), z.literal("trial"), z.literal("standard")]).optional(),
+        features: z.array(z.string()).optional(),
+        deviceId: z.string().optional(),
+        deviceLimit: z.number().optional(),
+        boundDevices: z.number().optional(),
+        offlineValidUntil: z.string().optional(),
+        shownNotificationIds: z.array(z.number()).optional(),
       })
       .strict()
       .optional(),

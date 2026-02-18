@@ -59,8 +59,12 @@ export function createInboundDebouncer<T>(params: {
     }
     try {
       await params.onFlush(buffer.items);
+      // Clear buffer and remove from map after successful flush
+      buffers.delete(key);
     } catch (err) {
       params.onError?.(err, buffer.items);
+      // Clear buffer even on error to prevent memory leak
+      buffers.delete(key);
     }
   };
 

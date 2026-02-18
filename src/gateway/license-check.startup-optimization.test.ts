@@ -17,9 +17,14 @@ vi.mock("../license/index.js", () => ({
   startTokenAutoRefresh: vi.fn(),
   stopTokenAutoRefresh: vi.fn(),
   hasValidToken: vi.fn().mockReturnValue(true),
-  getTokenStatusSummary: vi.fn().mockReturnValue({ hasToken: true, isValid: true, failureCount: 0 }),
+  getTokenStatusSummary: vi
+    .fn()
+    .mockReturnValue({ hasToken: true, isValid: true, failureCount: 0 }),
   refreshToken: vi.fn(),
   loadLicenseCache: vi.fn().mockReturnValue(null),
+  DEFAULT_LICENSE_CONFIG: {
+    apiBaseUrl: "https://www.obplugins.cn/api/api/v1/license",
+  },
   LicenseErrorCode: {
     ERROR_KEY_NOT_FOUND: 1001,
     ERROR_KEY_EXPIRED: 1002,
@@ -86,7 +91,12 @@ function resetToValidState() {
     offlineMode: false,
     error: null,
     errorCode: null,
-    license: { tier: "pro", daysRemaining: 30, expiresAt: new Date(Date.now() + 86400000 * 30).toISOString(), features: [] } as any,
+    license: {
+      tier: "pro",
+      daysRemaining: 30,
+      expiresAt: new Date(Date.now() + 86400000 * 30).toISOString(),
+      features: [],
+    } as any,
     device: null,
     renewalReminder: null,
     forceUpdate: null,
@@ -103,7 +113,6 @@ function resetToNullState() {
 }
 
 describe("Gateway 启动优化 — License 验证测试", () => {
-
   beforeEach(() => {
     vi.clearAllMocks();
     // Reset env vars
@@ -174,7 +183,12 @@ describe("Gateway 启动优化 — License 验证测试", () => {
           offlineMode: false,
           error: null,
           errorCode: null,
-          license: { tier: "pro", daysRemaining: 30, expiresAt: new Date(Date.now() + 86400000 * 30).toISOString(), features: [] },
+          license: {
+            tier: "pro",
+            daysRemaining: 30,
+            expiresAt: new Date(Date.now() + 86400000 * 30).toISOString(),
+            features: [],
+          },
           device: null,
           renewalReminder: null,
           forceUpdate: null,
@@ -250,7 +264,9 @@ describe("Gateway 启动优化 — License 验证测试", () => {
     it("合成状态包含所有必要字段（不会导致 UI 崩溃）", async () => {
       let resolveVerify!: (value: any) => void;
       vi.mocked(verifyLicenseOnStartup).mockReturnValue(
-        new Promise((resolve) => { resolveVerify = resolve; }) as any,
+        new Promise((resolve) => {
+          resolveVerify = resolve;
+        }) as any,
       );
 
       const licensePromise = checkLicenseOnGatewayStart(cnConfig(), { skipIntegrity: true });
@@ -273,12 +289,29 @@ describe("Gateway 启动优化 — License 验证测试", () => {
 
       // Cleanup
       resolveVerify({
-        canProceed: true, valid: true, offlineMode: false, deviceId: "d",
-        nextCheckAfterHours: 24, error: null, errorCode: null, response: null,
-        clientState: { checking: false, valid: true, offlineMode: false, error: null,
-          errorCode: null, license: null, device: null, renewalReminder: null,
-          forceUpdate: null, pendingNotifications: [], lastVerifiedAt: null,
-          deviceSwitchInfo: null, deviceSwitchCooldown: null },
+        canProceed: true,
+        valid: true,
+        offlineMode: false,
+        deviceId: "d",
+        nextCheckAfterHours: 24,
+        error: null,
+        errorCode: null,
+        response: null,
+        clientState: {
+          checking: false,
+          valid: true,
+          offlineMode: false,
+          error: null,
+          errorCode: null,
+          license: null,
+          device: null,
+          renewalReminder: null,
+          forceUpdate: null,
+          pendingNotifications: [],
+          lastVerifiedAt: null,
+          deviceSwitchInfo: null,
+          deviceSwitchCooldown: null,
+        },
       });
       await licensePromise;
     });
@@ -351,12 +384,29 @@ describe("Gateway 启动优化 — License 验证测试", () => {
     it("skipIntegrity=true 时不调用 checkIntegrityOnStartup", async () => {
       const { checkIntegrityOnStartup } = await import("../security/index.js");
       vi.mocked(verifyLicenseOnStartup).mockResolvedValue({
-        canProceed: true, valid: true, offlineMode: false, deviceId: "d",
-        nextCheckAfterHours: 24, error: null, errorCode: null, response: null,
-        clientState: { checking: false, valid: true, offlineMode: false, error: null,
-          errorCode: null, license: null, device: null, renewalReminder: null,
-          forceUpdate: null, pendingNotifications: [], lastVerifiedAt: null,
-          deviceSwitchInfo: null, deviceSwitchCooldown: null },
+        canProceed: true,
+        valid: true,
+        offlineMode: false,
+        deviceId: "d",
+        nextCheckAfterHours: 24,
+        error: null,
+        errorCode: null,
+        response: null,
+        clientState: {
+          checking: false,
+          valid: true,
+          offlineMode: false,
+          error: null,
+          errorCode: null,
+          license: null,
+          device: null,
+          renewalReminder: null,
+          forceUpdate: null,
+          pendingNotifications: [],
+          lastVerifiedAt: null,
+          deviceSwitchInfo: null,
+          deviceSwitchCooldown: null,
+        },
       } as any);
 
       vi.mocked(checkIntegrityOnStartup).mockClear();
@@ -368,18 +418,37 @@ describe("Gateway 启动优化 — License 验证测试", () => {
     it("skipIntegrity 未设置时调用 checkIntegrityOnStartup", async () => {
       const { checkIntegrityOnStartup } = await import("../security/index.js");
       vi.mocked(verifyLicenseOnStartup).mockResolvedValue({
-        canProceed: true, valid: true, offlineMode: false, deviceId: "d",
-        nextCheckAfterHours: 24, error: null, errorCode: null, response: null,
-        clientState: { checking: false, valid: true, offlineMode: false, error: null,
-          errorCode: null, license: null, device: null, renewalReminder: null,
-          forceUpdate: null, pendingNotifications: [], lastVerifiedAt: null,
-          deviceSwitchInfo: null, deviceSwitchCooldown: null },
+        canProceed: true,
+        valid: true,
+        offlineMode: false,
+        deviceId: "d",
+        nextCheckAfterHours: 24,
+        error: null,
+        errorCode: null,
+        response: null,
+        clientState: {
+          checking: false,
+          valid: true,
+          offlineMode: false,
+          error: null,
+          errorCode: null,
+          license: null,
+          device: null,
+          renewalReminder: null,
+          forceUpdate: null,
+          pendingNotifications: [],
+          lastVerifiedAt: null,
+          deviceSwitchInfo: null,
+          deviceSwitchCooldown: null,
+        },
       } as any);
 
       vi.mocked(checkIntegrityOnStartup).mockClear();
       await checkLicenseOnGatewayStart(cnConfig());
 
-      expect(checkIntegrityOnStartup).toHaveBeenCalledWith({ exitOnFailure: true });
+      expect(checkIntegrityOnStartup).toHaveBeenCalledWith(
+        expect.objectContaining({ exitOnFailure: true }),
+      );
     });
   });
 
@@ -390,7 +459,9 @@ describe("Gateway 启动优化 — License 验证测试", () => {
     it("pending 期间 getGatewayLicenseState().error 应显示验证中提示（非无效提示）", async () => {
       let resolveVerify!: (value: any) => void;
       vi.mocked(verifyLicenseOnStartup).mockReturnValue(
-        new Promise((resolve) => { resolveVerify = resolve; }) as any,
+        new Promise((resolve) => {
+          resolveVerify = resolve;
+        }) as any,
       );
 
       const licensePromise = checkLicenseOnGatewayStart(cnConfig(), { skipIntegrity: true });
@@ -408,12 +479,29 @@ describe("Gateway 启动优化 — License 验证测试", () => {
 
       // Cleanup
       resolveVerify({
-        canProceed: true, valid: true, offlineMode: false, deviceId: "d",
-        nextCheckAfterHours: 24, error: null, errorCode: null, response: null,
-        clientState: { checking: false, valid: true, offlineMode: false, error: null,
-          errorCode: null, license: null, device: null, renewalReminder: null,
-          forceUpdate: null, pendingNotifications: [], lastVerifiedAt: null,
-          deviceSwitchInfo: null, deviceSwitchCooldown: null },
+        canProceed: true,
+        valid: true,
+        offlineMode: false,
+        deviceId: "d",
+        nextCheckAfterHours: 24,
+        error: null,
+        errorCode: null,
+        response: null,
+        clientState: {
+          checking: false,
+          valid: true,
+          offlineMode: false,
+          error: null,
+          errorCode: null,
+          license: null,
+          device: null,
+          renewalReminder: null,
+          forceUpdate: null,
+          pendingNotifications: [],
+          lastVerifiedAt: null,
+          deviceSwitchInfo: null,
+          deviceSwitchCooldown: null,
+        },
       });
       await licensePromise;
     });

@@ -3,7 +3,8 @@
 > 本文档面向产品经理、运维人员、以及需要理解"每个参数干什么"的开发者。
 > 目标：让新装用户零配置（或最少配置）即可获得 OpenClawCN 最大能力。
 >
-> 配置文件位置：`~/.openclawcn/openclawcn.json`（Linux/Mac）或 `{安装目录}/data/openclawcn.json`（Windows）
+> 配置文件位置：`~/.openclawcn/openclawcn.json`（Linux/Mac）或 `%USERPROFILE%\.openclawcn\openclawcn.json`（Windows 命令行）或 `%APPDATA%\ClawdbotCN\openclawcn.json`（Windows 安装包）
+> 详见 [Windows 配置文件位置指南](help/windows-config-paths.md)
 > 文件格式：JSON5（支持注释、尾逗号）
 
 ---

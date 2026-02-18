@@ -315,12 +315,12 @@ describe("mention helpers", () => {
   });
 
   it("normalizes zero-width characters", () => {
-    expect(normalizeMentionText("open\u200bclaw")).toBe("openclawcn");
+    expect(normalizeMentionText("open\u200bclawcn")).toBe("openclawcn");
   });
 
   it("matches patterns case-insensitively", () => {
     const regexes = buildMentionRegexes({
-      messages: { groupChat: { mentionPatterns: ["\\bopenclaw\\b"] } },
+      messages: { groupChat: { mentionPatterns: ["\\bopenclawcn\\b"] } },
     });
     expect(matchesMentionPatterns("OPENCLAWCN: hi", regexes)).toBe(true);
   });

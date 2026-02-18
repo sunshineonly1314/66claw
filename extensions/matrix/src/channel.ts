@@ -113,7 +113,7 @@ export const matrixPlugin: ChannelPlugin<ResolvedMatrixAccount> = {
     defaultAccountId: (cfg) => resolveDefaultMatrixAccountId(cfg as CoreConfig),
     setAccountEnabled: ({ cfg, accountId, enabled }) =>
       setAccountEnabledInConfigSection({
-        cfg: cfg as CoreConfig,
+        cfg,
         sectionKey: "matrix",
         accountId,
         enabled,
@@ -121,7 +121,7 @@ export const matrixPlugin: ChannelPlugin<ResolvedMatrixAccount> = {
       }),
     deleteAccount: ({ cfg, accountId }) =>
       deleteAccountFromConfigSection({
-        cfg: cfg as CoreConfig,
+        cfg,
         sectionKey: "matrix",
         accountId,
         clearBaseFields: [
@@ -278,7 +278,7 @@ export const matrixPlugin: ChannelPlugin<ResolvedMatrixAccount> = {
     resolveAccountId: ({ accountId }) => normalizeAccountId(accountId),
     applyAccountName: ({ cfg, accountId, name }) =>
       applyAccountNameToChannelSection({
-        cfg: cfg as CoreConfig,
+        cfg,
         channelKey: "matrix",
         accountId,
         name,
@@ -300,7 +300,7 @@ export const matrixPlugin: ChannelPlugin<ResolvedMatrixAccount> = {
     },
     applyAccountConfig: ({ cfg, input }) => {
       const namedConfig = applyAccountNameToChannelSection({
-        cfg: cfg as CoreConfig,
+        cfg,
         channelKey: "matrix",
         accountId: DEFAULT_ACCOUNT_ID,
         name: input.name,
@@ -315,16 +315,16 @@ export const matrixPlugin: ChannelPlugin<ResolvedMatrixAccount> = {
               enabled: true,
             },
           },
-        } as CoreConfig;
+        };
       }
-      return buildMatrixConfigUpdate(namedConfig as CoreConfig, {
+      return buildMatrixConfigUpdate(namedConfig as unknown as CoreConfig, {
         homeserver: input.homeserver?.trim(),
         userId: input.userId?.trim(),
         accessToken: input.accessToken?.trim(),
         password: input.password?.trim(),
         deviceName: input.deviceName?.trim(),
         initialSyncLimit: input.initialSyncLimit,
-      });
+      }) as unknown as typeof namedConfig;
     },
   },
   outbound: matrixOutbound,

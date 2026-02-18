@@ -106,11 +106,7 @@ export const twitchOutbound: ChannelOutboundAdapter = {
    * });
    */
   sendText: async (params: ChannelOutboundContext): Promise<OutboundDeliveryResult> => {
-    const { cfg, to, text, accountId, signal } = params;
-
-    if (signal?.aborted) {
-      throw new Error("Outbound delivery aborted");
-    }
+    const { cfg, to, text, accountId } = params;
 
     const resolvedAccountId = accountId ?? DEFAULT_ACCOUNT_ID;
     const account = getAccountConfig(cfg, resolvedAccountId);
@@ -142,9 +138,9 @@ export const twitchOutbound: ChannelOutboundAdapter = {
 
     return {
       channel: "twitch",
-      messageId: result.messageId,
+      messageId: result.messageId ?? "",
       timestamp: Date.now(),
-      to: normalizeTwitchChannel(channel),
+      meta: { to: normalizeTwitchChannel(channel) },
     };
   },
 
@@ -167,11 +163,7 @@ export const twitchOutbound: ChannelOutboundAdapter = {
    * });
    */
   sendMedia: async (params: ChannelOutboundContext): Promise<OutboundDeliveryResult> => {
-    const { text, mediaUrl, signal } = params;
-
-    if (signal?.aborted) {
-      throw new Error("Outbound delivery aborted");
-    }
+    const { text, mediaUrl } = params;
 
     const message = mediaUrl ? `${text || ""} ${mediaUrl}`.trim() : text;
 

@@ -7,6 +7,8 @@ import { resolveConfigPath, resolveGatewayLockDir, resolveStateDir } from "../co
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_POLL_INTERVAL_MS = 100;
 const DEFAULT_STALE_MS = 30_000;
+/** Touch the heartbeat file every 10 seconds (must be well under DEFAULT_STALE_MS). */
+const HEARTBEAT_INTERVAL_MS = 10_000;
 
 type LockPayload = {
   pid: number;
@@ -125,6 +127,21 @@ function isHeartbeatStale(heartbeatPath: string, staleMs: number): boolean | nul
   }
 }
 
+/** Touch the heartbeat file to update its mtime, proving the owner is still alive. */
+function touchHeartbeatSync(heartbeatPath: string): void {
+  try {
+    const now = new Date();
+    fsSync.utimesSync(heartbeatPath, now, now);
+  } catch {
+    // If the file doesn't exist (e.g. removed externally), recreate it.
+    try {
+      fsSync.writeFileSync(heartbeatPath, "", "utf8");
+    } catch {
+      // Ignore — best effort.
+    }
+  }
+}
+
 function resolveGatewayOwnerStatus(
   pid: number,
   payload: LockPayload | null,
@@ -231,14 +248,28 @@ export async function acquireGatewayLock(
         payload.startTime = startTime;
       }
       await handle.writeFile(JSON.stringify(payload), "utf8");
+      // Close the file handle immediately — we don't need to hold it open.
+      // Holding it open on Windows prevents other processes from reading the
+      // lock payload and can cause EBUSY when trying to remove stale locks.
+      await handle.close();
       // Create heartbeat file alongside lock for non-Linux stale detection
       const hbPath = heartbeatPathForLock(lockPath);
       await fs.writeFile(hbPath, "", "utf8").catch(() => {});
+      // Start a periodic heartbeat timer so the heartbeat file mtime stays
+      // fresh.  Without this, the heartbeat goes stale after DEFAULT_STALE_MS
+      // and a competing instance incorrectly assumes the owner is dead.
+      const heartbeatTimer = setInterval(() => {
+        touchHeartbeatSync(hbPath);
+      }, HEARTBEAT_INTERVAL_MS);
+      // Don't let the heartbeat timer keep the process alive.
+      if (heartbeatTimer.unref) {
+        heartbeatTimer.unref();
+      }
       return {
         lockPath,
         configPath,
         release: async () => {
-          await handle.close().catch(() => undefined);
+          clearInterval(heartbeatTimer);
           await fs.rm(lockPath, { force: true });
           await fs.rm(hbPath, { force: true }).catch(() => {});
         },

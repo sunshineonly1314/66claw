@@ -1,4 +1,5 @@
 import { Type } from "@sinclair/typebox";
+import type { OpenClawCNPluginApi, GatewayRequestHandlerOptions } from "openclawcn/plugin-sdk";
 import type { CoreConfig } from "./src/core-bridge.js";
 import {
   VoiceCallConfigSchema,
@@ -144,7 +145,7 @@ const voiceCallPlugin = {
   name: "Voice Call",
   description: "Voice-call plugin with Telnyx/Twilio/Plivo providers",
   configSchema: voiceCallConfigSchema,
-  register(api) {
+  register(api: OpenClawCNPluginApi) {
     const config = resolveVoiceCallConfig(
       voiceCallConfigSchema.parse(api.pluginConfig),
     );
@@ -192,7 +193,7 @@ const voiceCallPlugin = {
       respond(false, { error: err instanceof Error ? err.message : String(err) });
     };
 
-    api.registerGatewayMethod("voicecall.initiate", async ({ params, respond }) => {
+    api.registerGatewayMethod("voicecall.initiate", async ({ params, respond }: GatewayRequestHandlerOptions) => {
       try {
         const message =
           typeof params?.message === "string" ? params.message.trim() : "";
@@ -227,7 +228,7 @@ const voiceCallPlugin = {
       }
     });
 
-    api.registerGatewayMethod("voicecall.continue", async ({ params, respond }) => {
+    api.registerGatewayMethod("voicecall.continue", async ({ params, respond }: GatewayRequestHandlerOptions) => {
       try {
         const callId =
           typeof params?.callId === "string" ? params.callId.trim() : "";
@@ -249,7 +250,7 @@ const voiceCallPlugin = {
       }
     });
 
-    api.registerGatewayMethod("voicecall.speak", async ({ params, respond }) => {
+    api.registerGatewayMethod("voicecall.speak", async ({ params, respond }: GatewayRequestHandlerOptions) => {
       try {
         const callId =
           typeof params?.callId === "string" ? params.callId.trim() : "";
@@ -271,7 +272,7 @@ const voiceCallPlugin = {
       }
     });
 
-    api.registerGatewayMethod("voicecall.end", async ({ params, respond }) => {
+    api.registerGatewayMethod("voicecall.end", async ({ params, respond }: GatewayRequestHandlerOptions) => {
       try {
         const callId =
           typeof params?.callId === "string" ? params.callId.trim() : "";
@@ -291,7 +292,7 @@ const voiceCallPlugin = {
       }
     });
 
-    api.registerGatewayMethod("voicecall.status", async ({ params, respond }) => {
+    api.registerGatewayMethod("voicecall.status", async ({ params, respond }: GatewayRequestHandlerOptions) => {
       try {
         const raw =
           typeof params?.callId === "string"
@@ -316,7 +317,7 @@ const voiceCallPlugin = {
       }
     });
 
-    api.registerGatewayMethod("voicecall.start", async ({ params, respond }) => {
+    api.registerGatewayMethod("voicecall.start", async ({ params, respond }: GatewayRequestHandlerOptions) => {
       try {
         const to = typeof params?.to === "string" ? params.to.trim() : "";
         const message =
@@ -345,10 +346,10 @@ const voiceCallPlugin = {
       description:
         "Make phone calls and have voice conversations via the voice-call plugin.",
       parameters: VoiceCallToolSchema,
-      async execute(_toolCallId, params) {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         const json = (payload: unknown) => ({
           content: [
-            { type: "text", text: JSON.stringify(payload, null, 2) },
+            { type: "text" as const, text: JSON.stringify(payload, null, 2) },
           ],
           details: payload,
         });

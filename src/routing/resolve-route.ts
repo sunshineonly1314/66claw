@@ -206,8 +206,18 @@ function getEvaluatedBindingsForChannelAccount(
 
   cache.byChannelAccount.set(cacheKey, evaluated);
   if (cache.byChannelAccount.size > MAX_EVALUATED_BINDINGS_CACHE_KEYS) {
-    cache.byChannelAccount.clear();
-    cache.byChannelAccount.set(cacheKey, evaluated);
+    // Implement LRU eviction: remove oldest entries instead of clearing entire cache
+    // This prevents cache thrashing and maintains recent entries
+    const entriesToRemove = cache.byChannelAccount.size - MAX_EVALUATED_BINDINGS_CACHE_KEYS + 1;
+    let removed = 0;
+    for (const key of cache.byChannelAccount.keys()) {
+      if (removed >= entriesToRemove) break;
+      // Don't remove the entry we just added
+      if (key !== cacheKey) {
+        cache.byChannelAccount.delete(key);
+        removed++;
+      }
+    }
   }
 
   return evaluated;

@@ -44,6 +44,13 @@ export type SkillsProps = {
   onMcpOpenConfigWizard?: (item: McpMarketplaceItem) => void;
   onMcpCloseConfigWizard?: () => void;
   mcpRunningCount?: number;
+  // Batch API Key configuration
+  onMcpOpenBatchConfig?: () => void;
+  onMcpCloseBatchConfig?: () => void;
+  onMcpSaveBatchConfig?: (updates: Array<{ serverId: string; env: Record<string, string> }>) => void;
+  mcpBatchConfigSaving?: boolean;
+  mcpBatchConfigResult?: { success: number; failed: number } | null;
+  mcpServerEnvStatus?: Record<string, Record<string, boolean>>;
 };
 
 export function renderSkills(props: SkillsProps) {
@@ -114,6 +121,12 @@ function renderMcpStoreTab(props: SkillsProps) {
     onOpenConfigWizard: props.onMcpOpenConfigWizard ?? (() => {}),
     onCloseConfigWizard: props.onMcpCloseConfigWizard ?? (() => {}),
     runningCount: props.mcpRunningCount ?? 0,
+    onOpenBatchConfig: props.onMcpOpenBatchConfig,
+    onCloseBatchConfig: props.onMcpCloseBatchConfig,
+    onSaveBatchConfig: props.onMcpSaveBatchConfig,
+    batchConfigSaving: props.mcpBatchConfigSaving,
+    batchConfigResult: props.mcpBatchConfigResult,
+    serverEnvStatus: props.mcpServerEnvStatus,
   });
 }
 

@@ -188,9 +188,20 @@ export async function runPreparedReply(
   const inboundMetaPrompt = buildInboundMetaSystemPrompt(
     isNewSession ? sessionCtx : { ...sessionCtx, ThreadStarterBody: undefined },
   );
-  const extraSystemPrompt = [inboundMetaPrompt, groupIntro, groupSystemPrompt]
+  let extraSystemPrompt = [inboundMetaPrompt, groupIntro, groupSystemPrompt]
     .filter(Boolean)
     .join("\n\n");
+  // ── [CN-PATCH:tool-discovery] 注入工具摘要到 system prompt ──
+  if (params.dispatchDecision?.toolSummaryPrompt) {
+    let summaryPrompt = params.dispatchDecision.toolSummaryPrompt;
+    // 限制长度，防止超过上下文窗口
+    const MAX_SUMMARY_LENGTH = 5000;
+    if (summaryPrompt.length > MAX_SUMMARY_LENGTH) {
+      summaryPrompt =
+        summaryPrompt.slice(0, MAX_SUMMARY_LENGTH) + "\n... (truncated due to length)";
+    }
+    extraSystemPrompt = [extraSystemPrompt, summaryPrompt].filter(Boolean).join("\n\n");
+  }
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
   // Use CommandBody/RawBody for bare reset detection (clean message without structural context).
   const rawBodyTrimmed = (ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? "").trim();
@@ -437,7 +448,13 @@ export async function runPreparedReply(
   };
 
   // ===== OpenClawCN: Multi-Agent Orchestration Branch =====
-  if (params.dispatchDecision?.strategy === "multi" && !params.dispatchDecision.strategyDegraded) {
+  // Guarded by cfg.dispatch — must be explicitly enabled (default off)
+  const multiAgentEnabled = cfg.dispatch?.enabled === true && cfg.dispatch?.multiAgent !== false;
+  if (
+    multiAgentEnabled &&
+    params.dispatchDecision?.strategy === "multi" &&
+    !params.dispatchDecision.strategyDegraded
+  ) {
     try {
       const orchestrationResult = await runMultiAgentOrchestration({
         task: prefixedCommandBody,
@@ -457,7 +474,9 @@ export async function runPreparedReply(
       logVerbose("[MultiAgent] Orchestration returned undefined, falling back to single agent");
     } catch (orchErr) {
       // Multi-agent failed — degrade gracefully to single agent
-      logVerbose(`[MultiAgent] Orchestration failed, degrading to single agent: ${String(orchErr)}`);
+      logVerbose(
+        `[MultiAgent] Orchestration failed, degrading to single agent: ${String(orchErr)}`,
+      );
     }
   }
   // ===== END OpenClawCN: Multi-Agent Orchestration Branch =====

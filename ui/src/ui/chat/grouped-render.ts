@@ -17,6 +17,7 @@ import {
 } from "./message-extract";
 import { extractToolCards, renderToolCardGroup } from "./tool-cards";
 import { formatErrorHintFull, type FormattedError } from "./error-hints";
+import { openImageLightbox } from "./image-lightbox";
 
 // 思考过程折叠阈值（字符数）
 const THINKING_COLLAPSE_THRESHOLD = 200;
@@ -45,11 +46,11 @@ function isSilentReplyText(text: string | null | undefined): boolean {
   return false;
 }
 
-// ============ ClawdbotCN 免费模型通知渲染 ============
+// ============ OpenClawCN 免费模型通知渲染 ============
 
 /**
  * 渲染免费模型通知卡片
- * ClawdbotCN 专属权益展示
+ * OpenClawCN 专属权益展示
  */
 function renderFreeModelNotificationCard(notification: FreeModelNotification) {
   const iconMap = {
@@ -65,7 +66,7 @@ function renderFreeModelNotificationCard(notification: FreeModelNotification) {
     <div class="free-model-notification free-model-notification--${colorClass}">
       <div class="free-model-notification__icon">${icon}</div>
       <div class="free-model-notification__content">
-        <div class="free-model-notification__badge">ClawdbotCN 专属权益</div>
+        <div class="free-model-notification__badge">OpenClawCN 专属权益</div>
         <div class="free-model-notification__message">${notification.message}</div>
       </div>
     </div>
@@ -188,8 +189,20 @@ function extractImages(message: unknown): ImageBlock[] {
         if (typeof imageUrl?.url === "string" && isValidImageUrl(imageUrl.url)) {
           images.push({ url: imageUrl.url });
         }
+      } else if (b.type === "tool_result" || b.type === "toolresult") {
+        // OpenClawCN: Extract images from tool results (e.g. image_gen tool)
+        const details = b.details as Record<string, unknown> | undefined;
+        if (typeof details?.imageUrl === "string" && isValidImageUrl(details.imageUrl)) {
+          images.push({ url: details.imageUrl });
+        }
       }
     }
+  }
+
+  // OpenClawCN: Also check top-level details for tool result messages
+  const topDetails = (m as Record<string, unknown>).details as Record<string, unknown> | undefined;
+  if (typeof topDetails?.imageUrl === "string" && isValidImageUrl(topDetails.imageUrl)) {
+    images.push({ url: topDetails.imageUrl });
   }
 
   return images;
@@ -198,7 +211,7 @@ function extractImages(message: unknown): ImageBlock[] {
 // ============ 等待指示器：分阶段渐进展示 + 打字机效果 ============
 
 // 超时阈值（毫秒）- 超过此时间显示错误排查卡片
-// ClawdbotCN: 设为 90s，部分模型（如 doubao）首次响应可达 60-70s
+// OpenClawCN: 设为 90s，部分模型（如 doubao）首次响应可达 60-70s
 const TIMEOUT_WARNING_MS = 90000;
 
 /**
@@ -549,10 +562,10 @@ function renderMessageImages(images: ImageBlock[]) {
           <img
             src=${img.url}
             alt=${img.alt ?? "Attached image"}
-            class="chat-message-image"
+            class="chat-message-image chat-message-image--clickable"
             loading="lazy"
             decoding="async"
-            @click=${() => window.open(img.url, "_blank")}
+            @click=${() => openImageLightbox(img.url)}
             @error=${handleImageError}
           />
         `,
@@ -674,7 +687,7 @@ function renderGroupedMessage(
   const images = extractImages(message);
   const hasImages = images.length > 0;
 
-  // ClawdbotCN 专属功能：提取免费模型通知
+  // OpenClawCN 专属功能：提取免费模型通知
   const freeModelNotification = isAssistant ? extractFreeModelNotification(message) : null;
 
   const extractedText = extractTextCached(message);

@@ -38,10 +38,16 @@ export function scheduleFollowupDrain(
     return;
   }
   queue.draining = true;
+
+  // Snapshot queue length to detect concurrent modifications
+  const initialItemsLength = queue.items.length;
+  const initialDroppedCount = queue.droppedCount;
+
   void (async () => {
     try {
       let forceIndividualCollect = false;
-      while (queue.items.length > 0 || queue.droppedCount > 0) {
+      // Re-check draining flag in case it was reset by concurrent operation
+      while ((queue.items.length > 0 || queue.droppedCount > 0) && queue.draining) {
         await waitForQueueDebounce(queue);
         if (queue.mode === "collect") {
           // Once the batch is mixed, never collect again within this drain.

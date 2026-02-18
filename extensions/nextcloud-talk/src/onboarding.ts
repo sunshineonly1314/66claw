@@ -6,6 +6,7 @@ import {
   normalizeAccountId,
   type ChannelOnboardingAdapter,
   type ChannelOnboardingDmPolicy,
+  type OpenClawCNConfig,
   type WizardPrompter,
 } from "openclawcn/plugin-sdk";
 
@@ -14,7 +15,8 @@ import {
   resolveDefaultNextcloudTalkAccountId,
   resolveNextcloudTalkAccount,
 } from "./accounts.js";
-import type { CoreConfig, DmPolicy } from "./types.js";
+import type { DmPolicy } from "openclawcn/plugin-sdk";
+import type { CoreConfig } from "./types.js";
 
 const channel = "nextcloud-talk" as const;
 
@@ -138,19 +140,19 @@ async function promptNextcloudTalkAllowFrom(params: {
 }
 
 async function promptNextcloudTalkAllowFromForAccount(params: {
-  cfg: CoreConfig;
+  cfg: OpenClawCNConfig;
   prompter: WizardPrompter;
   accountId?: string;
-}): Promise<CoreConfig> {
+}): Promise<OpenClawCNConfig> {
   const accountId =
     params.accountId && normalizeAccountId(params.accountId)
       ? (normalizeAccountId(params.accountId) ?? DEFAULT_ACCOUNT_ID)
-      : resolveDefaultNextcloudTalkAccountId(params.cfg);
+      : resolveDefaultNextcloudTalkAccountId(params.cfg as CoreConfig);
   return promptNextcloudTalkAllowFrom({
-    cfg: params.cfg,
+    cfg: params.cfg as CoreConfig,
     prompter: params.prompter,
     accountId,
-  });
+  }) as Promise<OpenClawCNConfig>;
 }
 
 const dmPolicy: ChannelOnboardingDmPolicy = {
@@ -197,7 +199,7 @@ export const nextcloudTalkOnboardingAdapter: ChannelOnboardingAdapter = {
         prompter,
         label: "Nextcloud Talk",
         currentId: accountId,
-        listAccountIds: listNextcloudTalkAccountIds,
+        listAccountIds: (c) => listNextcloudTalkAccountIds(c as CoreConfig),
         defaultAccountId,
       });
     }

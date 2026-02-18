@@ -588,6 +588,93 @@ jobs:
             sys.exit(1)
           PY
 
+  cn-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: CN critical files integrity
+        run: |
+          set -euo pipefail
+          echo "Checking CN critical files..."
+          MISSING=0
+          CRITICAL_FILES=(
+            "src/config/region-cn.ts"
+            "src/config/cn-mirrors.ts"
+            "src/config/defaults-cn.test.ts"
+            "src/i18n/locales/zh-CN.ts"
+            "ui/src/ui/i18n/locales/zh-CN.ts"
+            "ui/src/ui/views/channels.feishu.ts"
+            "config/dispatch.yaml"
+            "config/cn-protected-files.json"
+            ".github/workflows/build-macos-cn.yml"
+            "docs/china-localization.md"
+          )
+          for f in "${CRITICAL_FILES[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::MISSING CN critical file: $f"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::error::${MISSING} CN critical files missing!"
+            exit 1
+          fi
+          echo "All ${#CRITICAL_FILES[@]} CN critical files present."
+
+      - name: CN brand consistency
+        run: |
+          set -euo pipefail
+          echo "Checking brand consistency in CN files..."
+          ERRORS=0
+          CN_BRAND_FILES=(
+            "src/config/region-cn.ts"
+            "src/config/cn-mirrors.ts"
+          )
+          for f in "${CN_BRAND_FILES[@]}"; do
+            if [ -f "$f" ] && grep -q "OpenClawConfig" "$f"; then
+              if ! grep -q "OpenClawCNConfig\|OpenClawCN" "$f"; then
+                echo "::warning::Brand inconsistency in $f"
+                ERRORS=$((ERRORS + 1))
+              fi
+            fi
+          done
+          echo "Brand check complete. Issues: ${ERRORS}"
+
+      - name: CN API endpoints check
+        run: |
+          set -euo pipefail
+          echo "Checking CN API endpoints..."
+          ENDPOINTS=(
+            "api.siliconflow.cn"
+            "dashscope.aliyuncs.com"
+            "open.bigmodel.cn"
+            "api.moonshot.cn"
+          )
+          MISSING=0
+          for ep in "${ENDPOINTS[@]}"; do
+            if ! grep -r "$ep" src/ --include="*.ts" -q 2>/dev/null; then
+              echo "::warning::CN API endpoint not found: $ep"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          echo "Endpoint check complete. Missing: ${MISSING}"
+
+      - name: No merge conflict markers
+        run: |
+          set -euo pipefail
+          echo "Checking for unresolved merge conflict markers..."
+          CONFLICTS=$(grep -rl "^<<<<<<< " --include="*.ts" --include="*.json" --include="*.mjs" . 2>/dev/null || true)
+          if [ -n "$CONFLICTS" ]; then
+            echo "::error::Unresolved merge conflict markers found in:"
+            echo "$CONFLICTS"
+            exit 1
+          fi
+          echo "No merge conflict markers found."
+
   android:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:

@@ -24,6 +24,8 @@ import {
   type VoyageEmbeddingClient,
 } from "./embeddings.js";
 import { bm25RankToScore, buildFtsQuery, mergeHybridResults } from "./hybrid.js";
+// [CN-PATCH:memory-p0] 冷热分层搜索：优先返回近期记忆，节约 token
+import { applyTimeTiering } from "./search-tiering-cn.js";
 import { isMemoryPath, normalizeExtraMemoryPaths } from "./internal.js";
 import { memoryManagerEmbeddingOps } from "./manager-embedding-ops.js";
 import { searchKeyword, searchVector } from "./manager-search.js";
@@ -236,7 +238,9 @@ export class MemoryIndexManager implements MemorySearchManager {
       : [];
 
     if (!hybrid.enabled) {
-      return vectorResults.filter((entry) => entry.score >= minScore).slice(0, maxResults);
+      // [CN-PATCH:memory-p0] 冷热分层过滤：优先返回近期记忆，减少 token 消耗
+      const tiered = applyTimeTiering(vectorResults);
+      return tiered.filter((entry) => entry.score >= minScore).slice(0, maxResults);
     }
 
     const merged = this.mergeHybridResults({
@@ -246,7 +250,9 @@ export class MemoryIndexManager implements MemorySearchManager {
       textWeight: hybrid.textWeight,
     });
 
-    return merged.filter((entry) => entry.score >= minScore).slice(0, maxResults);
+    // [CN-PATCH:memory-p0] 冷热分层过滤：优先返回近期记忆，减少 token 消耗
+    const tiered = applyTimeTiering(merged);
+    return tiered.filter((entry) => entry.score >= minScore).slice(0, maxResults);
   }
 
   private async searchVector(
@@ -278,7 +284,9 @@ export class MemoryIndexManager implements MemorySearchManager {
     if (!this.fts.enabled || !this.fts.available) {
       return [];
     }
-    const sourceFilter = this.buildSourceFilter();
+    // [CN-PATCH:memory-p0] searchKeyword 现在 JOIN chunks 表获取 updated_at，
+    // FTS5 表别名 f 与 chunks 表别名 c 都有 source 列，需要传 "f" 前缀消除歧义
+    const sourceFilter = this.buildSourceFilter("f");
     const results = await searchKeyword({
       db: this.db,
       ftsTable: FTS_TABLE,
@@ -308,6 +316,7 @@ export class MemoryIndexManager implements MemorySearchManager {
         source: r.source,
         snippet: r.snippet,
         vectorScore: r.score,
+        updatedAt: r.updatedAt,
       })),
       keyword: params.keyword.map((r) => ({
         id: r.id,
@@ -317,6 +326,7 @@ export class MemoryIndexManager implements MemorySearchManager {
         source: r.source,
         snippet: r.snippet,
         textScore: r.textScore,
+        updatedAt: r.updatedAt,
       })),
       vectorWeight: params.vectorWeight,
       textWeight: params.textWeight,

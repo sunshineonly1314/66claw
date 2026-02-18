@@ -182,7 +182,7 @@ function psFile(script: string, timeoutMs = 10000): string {
 
 /** Bump this version whenever the helper script content changes.
  *  This ensures a stale cached .ps1 in %TEMP% is regenerated. */
-const HELPER_SCRIPT_VERSION = 4;
+const HELPER_SCRIPT_VERSION = 7;
 const HELPER_SCRIPT_NAME = `openclawcn-desktop-control-helper-v${HELPER_SCRIPT_VERSION}.ps1`;
 
 function getHelperScriptPath(): string {
@@ -205,7 +205,8 @@ param(
     [string]$Keys = "",
     [string]$Window = "",
     [string]$OutputPath = "",
-    [int]$Amount = -3
+    [int]$Amount = -3,
+    [string]$Method = "sendinput"
 )
 
 # UTF-8 output
@@ -448,17 +449,29 @@ switch ($Action) {
     }
 
     "type" {
-        # Use SendInput with KEYEVENTF_UNICODE for each character.
-        # This simulates real keyboard input per-character — more reliable
-        # than clipboard paste (Ctrl+V) which some apps block or ignore.
-        $chars = $Text.ToCharArray()
-        foreach ($c in $chars) {
-            [WinInput]::SendUnicodeChar($c)
-            # Small delay between characters to mimic human typing
-            Start-Sleep -Milliseconds 15
+        if ($Method -eq "clipboard") {
+            # Clipboard paste method: more reliable for CEF/Chromium-based apps
+            # (e.g. WeChat, WeCom) that ignore SendInput KEYEVENTF_UNICODE.
+            # CRITICAL: Clear() first to remove any image/rich data — otherwise
+            # apps like WeChat will paste the image instead of text.
+            [System.Windows.Forms.Clipboard]::Clear()
+            Start-Sleep -Milliseconds 30
+            [System.Windows.Forms.Clipboard]::SetText($Text)
+            Start-Sleep -Milliseconds 50
+            [System.Windows.Forms.SendKeys]::SendWait("^v")
+            Start-Sleep -Milliseconds 200
+            Write-Output "ok|typed|$($Text.Length) chars|clipboard"
+        } else {
+            # SendInput with KEYEVENTF_UNICODE for each character.
+            # Works for standard Windows edit controls.
+            $chars = $Text.ToCharArray()
+            foreach ($c in $chars) {
+                [WinInput]::SendUnicodeChar($c)
+                Start-Sleep -Milliseconds 15
+            }
+            Start-Sleep -Milliseconds 100
+            Write-Output "ok|typed|$($Text.Length) chars|sendinput"
         }
-        Start-Sleep -Milliseconds 100
-        Write-Output "ok|typed|$($Text.Length) chars|sendinput"
     }
 
     "key" {
@@ -503,9 +516,10 @@ switch ($Action) {
     }
 
     "focus" {
+        # First pass: try exact match
         $targetHwnd = [IntPtr]::Zero
         $targetTitle = ""
-        $callback = [WinInput+EnumWindowsProc]{
+        $callback1 = [WinInput+EnumWindowsProc]{
             param($hwnd, $lparam)
             if ([WinInput]::IsWindowVisible($hwnd)) {
                 $len = [WinInput]::GetWindowTextLength($hwnd)
@@ -513,7 +527,7 @@ switch ($Action) {
                     $sb = New-Object System.Text.StringBuilder($len + 1)
                     [WinInput]::GetWindowText($hwnd, $sb, $sb.Capacity) > $null
                     $title = $sb.ToString()
-                    if ($title -like "*$Window*") {
+                    if ($title -eq $Window) {
                         $script:targetHwnd = $hwnd
                         $script:targetTitle = $title
                         return $false
@@ -522,7 +536,29 @@ switch ($Action) {
             }
             return $true
         }
-        [WinInput]::EnumWindows($callback, [IntPtr]::Zero) > $null
+        [WinInput]::EnumWindows($callback1, [IntPtr]::Zero) > $null
+
+        # Second pass: fallback to substring match if no exact match
+        if ($targetHwnd -eq [IntPtr]::Zero) {
+            $callback2 = [WinInput+EnumWindowsProc]{
+                param($hwnd, $lparam)
+                if ([WinInput]::IsWindowVisible($hwnd)) {
+                    $len = [WinInput]::GetWindowTextLength($hwnd)
+                    if ($len -gt 0) {
+                        $sb = New-Object System.Text.StringBuilder($len + 1)
+                        [WinInput]::GetWindowText($hwnd, $sb, $sb.Capacity) > $null
+                        $title = $sb.ToString()
+                        if ($title -like "*$Window*") {
+                            $script:targetHwnd = $hwnd
+                            $script:targetTitle = $title
+                            return $false
+                        }
+                    }
+                }
+                return $true
+            }
+            [WinInput]::EnumWindows($callback2, [IntPtr]::Zero) > $null
+        }
 
         if ($targetHwnd -ne [IntPtr]::Zero) {
             [WinInput]::ShowWindow($targetHwnd, [WinInput]::SW_RESTORE) > $null

@@ -85,11 +85,30 @@ export type MatrixConfig = {
   rooms?: Record<string, MatrixRoomConfig>;
   /** Per-action tool gating (default: true for all). */
   actions?: MatrixActionConfig;
+  /** Multi-account configuration keyed by account ID. */
+  accounts?: Record<string, MatrixConfig>;
 };
 
 export type CoreConfig = {
   channels?: {
+    defaults?: {
+      groupPolicy?: GroupPolicy;
+    };
     matrix?: MatrixConfig;
+    [key: string]: unknown;
+  };
+  commands?: {
+    useAccessGroups?: boolean;
+    [key: string]: unknown;
+  };
+  session?: {
+    store?: unknown;
+    [key: string]: unknown;
+  };
+  messages?: {
+    ackReaction?: string;
+    ackReactionScope?: string;
+    [key: string]: unknown;
   };
   [key: string]: unknown;
 };

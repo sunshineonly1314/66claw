@@ -33,6 +33,12 @@ vi.mock("../../agents/skills-status.js", () => ({
   buildWorkspaceSkillStatus: vi.fn(() => ({ skills: [] })),
 }));
 
+vi.mock("../../config/cn-mirrors.js", () => ({
+  shouldUseCNMirror: () => false,
+  getNpmMirrorUrl: () => "https://registry.npmmirror.com/",
+  getPipMirrorUrl: () => "https://pypi.tuna.tsinghua.edu.cn/simple",
+}));
+
 import { mcpHandlers } from "./mcp-methods.js";
 import { getMCPManagerSafe } from "../../mcp/index.js";
 import { readMarketplaceIndex } from "../../mcp/marketplace-index.js";
@@ -209,9 +215,9 @@ describe("mcp.marketplace.install — SSRF prevention", () => {
     "ftp://evil.com/sse",
     "http://evil.local/sse",
     "http://evil.internal/sse",
-    "http://0x7f000001/sse",         // hex IP bypass
-    "http://[::1]/sse",               // IPv6 loopback
-    "http://[::ffff:127.0.0.1]/sse",  // IPv6-mapped IPv4
+    "http://0x7f000001/sse", // hex IP bypass
+    "http://[::1]/sse", // IPv6 loopback
+    "http://[::ffff:127.0.0.1]/sse", // IPv6-mapped IPv4
   ];
 
   for (const url of blockedUrls) {

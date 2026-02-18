@@ -1,0 +1,272 @@
+name: Quick Build (Dev/Test)
+
+# 🚀 快速构建流程：用于开发测试，不创建 Release
+# - 仅当 commit message 包含 [build] 时自动触发
+# - 支持手动触发单平台快速构建
+# - 使用快速压缩模式，构建时间减少 50%
+
+on:
+  # 当 commit message 包含 [build] 时自动触发
+  push:
+    branches:
+      - main
+      - master
+      - dev
+      - develop
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
+      - '!.github/workflows/quick-build.yml'
+
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: '构建平台'
+        required: true
+        default: 'windows'
+        type: choice
+        options:
+          - windows
+          - macos
+          - linux
+      fast_mode:
+        description: '快速模式 (跳过某些优化)'
+        required: false
+        default: true
+        type: boolean
+
+# 并发控制
+concurrency:
+  group: quick-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22.14.0'
+  PNPM_VERSION: '10.23.0'
+
+jobs:
+  # ============================================================================
+  # 检查是否需要构建
+  # ============================================================================
+  check:
+    runs-on: ubuntu-latest
+    name: Check Build Trigger
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      platform: ${{ steps.check.outputs.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check trigger
+        id: check
+        run: |
+          # 手动触发时总是构建
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "platform=${{ github.event.inputs.platform }}" >> "$GITHUB_OUTPUT"
+            echo "✅ Manual trigger - building ${{ github.event.inputs.platform }}"
+            exit 0
+          fi
+
+          # 检查 commit message
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$COMMIT_MSG" | grep -qE '\[build\]|\[ci\]'; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+
+            # 从 commit message 推断平台
+            if echo "$COMMIT_MSG" | grep -qi "windows"; then
+              echo "platform=windows" >> "$GITHUB_OUTPUT"
+            elif echo "$COMMIT_MSG" | grep -qi "macos\|mac"; then
+              echo "platform=macos" >> "$GITHUB_OUTPUT"
+            elif echo "$COMMIT_MSG" | grep -qi "linux"; then
+              echo "platform=linux" >> "$GITHUB_OUTPUT"
+            else
+              # 默认构建当前最常用的平台
+              echo "platform=windows" >> "$GITHUB_OUTPUT"
+            fi
+
+            echo "✅ Build trigger found: $COMMIT_MSG"
+          else
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping build (no [build] tag in commit message)"
+          fi
+
+  # ============================================================================
+  # Windows 快速构建
+  # ============================================================================
+  build-windows:
+    needs: check
+    if: needs.check.outputs.should_build == 'true' && needs.check.outputs.platform == 'windows'
+    runs-on: windows-latest
+    name: Quick Build Windows
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Install dependencies (with cache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install deps
+        run: pnpm install --prefer-offline
+
+      - name: Quick build
+        run: |
+          .\build\scripts\windows\build-windows.ps1 `
+            -Mode standard `
+            -FastCompress `
+            -SkipProxyTools `
+            -MaxThreads 6
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-quick-build
+          path: E:\clawdbuild\ClawdbotCN-Setup-*.exe
+          retention-days: 7
+
+  # ============================================================================
+  # macOS 快速构建
+  # ============================================================================
+  build-macos:
+    needs: check
+    if: needs.check.outputs.should_build == 'true' && needs.check.outputs.platform == 'macos'
+    runs-on: macos-14
+    name: Quick Build macOS
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Install dependencies
+        run: pnpm install --prefer-offline
+
+      - name: Quick build (current arch only)
+        env:
+          FAST_MODE: 'true'
+          SKIP_NOTARIZE: '1'
+        run: |
+          ARCH=$(uname -m)
+          chmod +x build/scripts/build-macos-cn.sh
+          bash build/scripts/build-macos-cn.sh --arch $ARCH --fast
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-quick-build
+          path: build/output/ClawdbotCN-macOS-*.dmg
+          retention-days: 7
+
+  # ============================================================================
+  # Linux 快速构建
+  # ============================================================================
+  build-linux:
+    needs: check
+    if: needs.check.outputs.should_build == 'true' && needs.check.outputs.platform == 'linux'
+    runs-on: ubuntu-latest
+    name: Quick Build Linux
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Install dependencies
+        run: pnpm install --prefer-offline
+
+      - name: Quick build (standalone x64 only)
+        run: |
+          chmod +x scripts/linux/build-all-parallel.sh
+          bash scripts/linux/build-all-parallel.sh \
+            --targets standalone-x64 \
+            --jobs 4
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-quick-build
+          path: build/linux-release/*.tar.gz
+          retention-days: 7
+
+  # ============================================================================
+  # 构建通知
+  # ============================================================================
+  notify:
+    needs: [check, build-windows, build-macos, build-linux]
+    if: always() && needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    name: Build Notification
+
+    steps:
+      - name: Summary
+        run: |
+          echo "# 🚀 Quick Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Platform:** ${{ needs.check.outputs.platform }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Trigger:** ${{ github.event_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Commit:** ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          STATUS="success"
+          if [ "${{ needs.check.outputs.platform }}" = "windows" ]; then
+            STATUS="${{ needs.build-windows.result }}"
+          elif [ "${{ needs.check.outputs.platform }}" = "macos" ]; then
+            STATUS="${{ needs.build-macos.result }}"
+          elif [ "${{ needs.check.outputs.platform }}" = "linux" ]; then
+            STATUS="${{ needs.build-linux.result }}"
+          fi
+
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ **Build completed successfully!**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ **Build failed!**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifacts are available for download (7 days retention)." >> "$GITHUB_STEP_SUMMARY"

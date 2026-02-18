@@ -63,17 +63,22 @@ describe("Nix integration (U3, U5, U9)", () => {
           vi.resetModules();
           const { CONFIG_PATH } = await import("./config.js");
           // Should resolve to openclawcn.json under .openclawcn or a legacy state dir
-          expect(CONFIG_PATH).toMatch(/\.(openclawcn|clawdbot|moldbot|moltbot)[/\\]openclawcn\.json$/);
+          expect(CONFIG_PATH).toMatch(
+            /\.(openclawcn|clawdbot|moldbot|moltbot)[/\\]openclawcn\.json$/,
+          );
         },
       );
     });
 
     it("CONFIG_PATH respects OPENCLAWCN_CONFIG_PATH override", async () => {
-      await withEnvOverride({ OPENCLAWCN_CONFIG_PATH: "/nix/store/abc/openclawcn.json" }, async () => {
-        vi.resetModules();
-        const { CONFIG_PATH } = await import("./config.js");
-        expect(CONFIG_PATH).toBe(path.resolve("/nix/store/abc/openclawcn.json"));
-      });
+      await withEnvOverride(
+        { OPENCLAWCN_CONFIG_PATH: "/nix/store/abc/openclawcn.json" },
+        async () => {
+          vi.resetModules();
+          const { CONFIG_PATH } = await import("./config.js");
+          expect(CONFIG_PATH).toBe(path.resolve("/nix/store/abc/openclawcn.json"));
+        },
+      );
     });
 
     it("CONFIG_PATH expands ~ in OPENCLAWCN_CONFIG_PATH override", async () => {
@@ -87,19 +92,21 @@ describe("Nix integration (U3, U5, U9)", () => {
     });
 
     it("CONFIG_PATH uses STATE_DIR when only state dir is overridden", async () => {
-      await withEnvOverride(
-        {
-          OPENCLAWCN_CONFIG_PATH: undefined,
-          OPENCLAWCN_STATE_DIR: "/custom/state",
-        },
-        async () => {
-          vi.resetModules();
-          const { CONFIG_PATH } = await import("./config.js");
-          expect(CONFIG_PATH).toBe(
-            path.join(path.resolve("/custom/state"), "openclawcn.json"),
-          );
-        },
-      );
+      // Isolate home dir so that an existing ~/.openclawcn/openclawcn.json on
+      // the developer's machine does not shadow the STATE_DIR candidate.
+      await withTempHome(async (home) => {
+        await withEnvOverride(
+          {
+            OPENCLAWCN_CONFIG_PATH: undefined,
+            OPENCLAWCN_STATE_DIR: "/custom/state",
+          },
+          async () => {
+            vi.resetModules();
+            const { CONFIG_PATH } = await import("./config.js");
+            expect(CONFIG_PATH).toBe(path.join(path.resolve("/custom/state"), "openclawcn.json"));
+          },
+        );
+      });
     });
   });
 

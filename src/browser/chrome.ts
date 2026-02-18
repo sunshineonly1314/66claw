@@ -59,7 +59,9 @@ function resolveBrowserExecutable(resolved: ResolvedBrowserConfig): BrowserExecu
   return resolveBrowserExecutableForPlatform(resolved, process.platform);
 }
 
-export function resolveOpenClawCNUserDataDir(profileName = DEFAULT_OPENCLAWCN_BROWSER_PROFILE_NAME) {
+export function resolveOpenClawCNUserDataDir(
+  profileName = DEFAULT_OPENCLAWCN_BROWSER_PROFILE_NAME,
+) {
   return path.join(CONFIG_DIR, "browser", profileName, "user-data");
 }
 
@@ -121,6 +123,12 @@ async function canOpenWebSocket(wsUrl: string, timeoutMs = 800): Promise<boolean
       handshakeTimeout: timeoutMs,
       ...(Object.keys(headers).length ? { headers } : {}),
     });
+    let settled = false;
+    const safeResolve = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     const timer = setTimeout(
       () => {
         try {
@@ -128,7 +136,7 @@ async function canOpenWebSocket(wsUrl: string, timeoutMs = 800): Promise<boolean
         } catch {
           // ignore
         }
-        resolve(false);
+        safeResolve(false);
       },
       Math.max(50, timeoutMs + 25),
     );
@@ -139,11 +147,11 @@ async function canOpenWebSocket(wsUrl: string, timeoutMs = 800): Promise<boolean
       } catch {
         // ignore
       }
-      resolve(true);
+      safeResolve(true);
     });
     ws.once("error", () => {
       clearTimeout(timer);
-      resolve(false);
+      safeResolve(false);
     });
   });
 }
@@ -258,6 +266,14 @@ export async function launchOpenClawCNChrome(
         break;
       }
       await new Promise((r) => setTimeout(r, 50));
+    }
+    // Force kill zombie bootstrap process if SIGTERM didn't work
+    if (bootstrap.exitCode == null) {
+      try {
+        bootstrap.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
     }
   }
 

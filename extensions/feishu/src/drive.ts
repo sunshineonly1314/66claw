@@ -47,13 +47,13 @@ async function listFolder(
   client: ReturnType<typeof createFeishuClient>,
   folderToken?: string,
 ) {
-  const res = await client.drive.file.listFolderFile({
+  const res = await client.drive.file.list({
     params: {
       folder_token: folderToken,
       page_size: 100,
     },
   });
-  
+
   if (res.code !== 0) {
     // 如果是权限问题，提供帮助提示
     if (res.code === 99991672 || res.msg?.includes("permission")) {
@@ -64,7 +64,7 @@ async function listFolder(
 
   const files = res.data?.files ?? [];
   return {
-    files: files.map((f) => ({
+    files: files.map((f: { token: string; name: string; type: string; created_time?: string; modified_time?: string; owner_id?: string; url?: string }) => ({
       token: f.token,
       name: f.name,
       type: f.type,
@@ -75,10 +75,13 @@ async function listFolder(
       url: f.url,
     })),
     has_more: res.data?.has_more ?? false,
-    page_token: res.data?.page_token,
+    page_token: res.data?.next_page_token,
     ...(files.length === 0 && !folderToken && { hint: DRIVE_ACCESS_HINT }),
   };
 }
+
+/** 文件类型字面量联合 */
+type DriveFileType = "doc" | "docx" | "sheet" | "bitable" | "mindnote" | "file" | "wiki" | "folder" | "slides" | "synced_block";
 
 /** 获取文件/文件夹元数据 */
 async function getFileMeta(
@@ -86,14 +89,13 @@ async function getFileMeta(
   fileToken: string,
   fileType: string,
 ) {
-  const res = await client.drive.meta.getMeta({
-    params: {
-      request: JSON.stringify({
-        request_docs: [{ doc_token: fileToken, doc_type: fileType }],
-      }),
+  const res = await client.drive.meta.batchQuery({
+    data: {
+      request_docs: [{ doc_token: fileToken, doc_type: fileType as DriveFileType }],
+      with_url: true,
     },
   });
-  
+
   if (res.code !== 0) throw new Error(res.msg);
 
   const doc = res.data?.metas?.[0];
@@ -121,7 +123,7 @@ async function createFolder(
   const res = await client.drive.file.createFolder({
     data: {
       name,
-      folder_token: parentFolderToken,
+      folder_token: parentFolderToken ?? "",
     },
   });
   
@@ -148,7 +150,7 @@ async function moveFile(
 ) {
   const res = await client.drive.file.move({
     data: {
-      type: fileType,
+      type: fileType as "file" | "doc" | "docx" | "sheet" | "bitable" | "mindnote" | "folder" | "slides",
       folder_token: targetFolderToken,
     },
     path: {
@@ -172,7 +174,7 @@ async function deleteFile(
 ) {
   const res = await client.drive.file.delete({
     path: { file_token: fileToken },
-    params: { type: fileType },
+    params: { type: fileType as "file" | "doc" | "docx" | "sheet" | "bitable" | "mindnote" | "folder" | "slides" | "shortcut" },
   });
   
   if (res.code !== 0) throw new Error(res.msg);

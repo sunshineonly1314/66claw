@@ -66,6 +66,10 @@ export type {
   ProviderAuthContext,
   ProviderAuthResult,
 } from "../plugins/types.js";
+/** @deprecated Use OpenClawCNPluginApi instead */
+export type { OpenClawCNPluginApi as ClawdbotPluginApi } from "../plugins/types.js";
+/** @deprecated Use OpenClawCNPluginService instead */
+export type { OpenClawCNPluginService as ClawdbotPluginService } from "../plugins/types.js";
 export type {
   GatewayRequestHandler,
   GatewayRequestHandlerOptions,

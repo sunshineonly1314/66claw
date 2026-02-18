@@ -15,11 +15,11 @@ function errorResponse(error: string) {
   return {
     content: [
       {
-        type: "text",
+        type: "text" as const,
         text: JSON.stringify({ ok: false, error }),
       },
     ],
-    details: { ok: false },
+    details: { ok: false, error },
   };
 }
 
@@ -122,9 +122,12 @@ export const twitchMessageActions: ChannelMessageActionAdapter = {
    */
   handleAction: async (
     ctx: ChannelMessageActionContext,
-  ): Promise<{ content: Array<{ type: string; text: string }> } | null> => {
+  ) => {
     if (ctx.action !== "send") {
-      return null;
+      return {
+        content: [{ type: "text" as const, text: `Unsupported action: ${ctx.action}` }],
+        details: { ok: false },
+      };
     }
 
     const message = readStringParam(ctx.params, "message", { required: true });
@@ -159,7 +162,7 @@ export const twitchMessageActions: ChannelMessageActionAdapter = {
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: JSON.stringify(result),
           },
         ],

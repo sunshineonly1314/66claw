@@ -99,6 +99,15 @@ export type OpenClawCNConfig = {
   gateway?: GatewayConfig;
   memory?: MemoryConfig;
   stateStore?: StateStoreConfig;
+  /** OpenClawCN 智能调度总开关。需显式设为 true 才启用，默认关闭。 */
+  dispatch?: {
+    /** 是否启用智能调度引擎（意图识别 + 复杂度评估 + 自动选模型）。默认 false。 */
+    enabled?: boolean;
+    /** 是否启用模态感知路由（根据图片/音频等附件自动选模型）。默认 true。 */
+    modalityRouter?: boolean;
+    /** 是否启用多 Agent 编排（复杂任务自动拆分并行执行）。默认 true。 */
+    multiAgent?: boolean;
+  };
 };
 
 export type ConfigValidationIssue = {

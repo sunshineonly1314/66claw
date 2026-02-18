@@ -1,0 +1,12 @@
+(node:65888) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Testing FTS5 3-gram query
+
+Query: "地图导航"
+FTS5 Query: "地图导" OR "图导航" OR "地图导航"
+
+FTS5 Results: 1
+  - charger
+    通过Google Places查询附近电动汽车充电桩可用状态，支持收藏夹管理和周边搜索功能。...
+
+LIKE Results: 0

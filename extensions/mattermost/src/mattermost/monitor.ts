@@ -250,8 +250,28 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
   const botUsername = botUser.username?.trim() || undefined;
   runtime.log?.(`mattermost connected as ${botUsername ? `@${botUsername}` : botUserId}`);
 
+  const MAX_CACHE_SIZE = 5000;
   const channelCache = new Map<string, { value: MattermostChannel | null; expiresAt: number }>();
   const userCache = new Map<string, { value: MattermostUser | null; expiresAt: number }>();
+
+  const evictOldestIfNeeded = (cache: Map<string, { expiresAt: number }>) => {
+    if (cache.size <= MAX_CACHE_SIZE) return;
+    const now = Date.now();
+    // First, remove expired entries
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt < now) {
+        cache.delete(key);
+      }
+    }
+    // If still over limit, remove oldest entries
+    if (cache.size > MAX_CACHE_SIZE) {
+      const sorted = Array.from(cache.entries()).sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      const toRemove = cache.size - MAX_CACHE_SIZE;
+      for (let i = 0; i < toRemove; i++) {
+        cache.delete(sorted[i][0]);
+      }
+    }
+  };
   const logger = core.logging.getChildLogger({ module: "mattermost" });
   const logVerboseMessage = (message: string) => {
     if (!core.logging.shouldLogVerbose()) return;
@@ -269,11 +289,11 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
   );
   const channelHistories = new Map<string, HistoryEntry[]>();
 
-  const fetchWithAuth: FetchLike = (input, init) => {
+  const fetchWithAuth = ((input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
     headers.set("Authorization", `Bearer ${client.token}`);
     return fetch(input, { ...init, headers });
-  };
+  }) as FetchLike;
 
   const resolveMattermostMedia = async (
     fileIds?: string[] | null,
@@ -317,6 +337,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     if (cached && cached.expiresAt > Date.now()) return cached.value;
     try {
       const info = await fetchMattermostChannel(client, channelId);
+      evictOldestIfNeeded(channelCache);
       channelCache.set(channelId, {
         value: info,
         expiresAt: Date.now() + CHANNEL_CACHE_TTL_MS,
@@ -324,6 +345,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       return info;
     } catch (err) {
       logger.debug?.(`mattermost: channel lookup failed: ${String(err)}`);
+      evictOldestIfNeeded(channelCache);
       channelCache.set(channelId, {
         value: null,
         expiresAt: Date.now() + CHANNEL_CACHE_TTL_MS,
@@ -337,6 +359,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     if (cached && cached.expiresAt > Date.now()) return cached.value;
     try {
       const info = await fetchMattermostUser(client, userId);
+      evictOldestIfNeeded(userCache);
       userCache.set(userId, {
         value: info,
         expiresAt: Date.now() + USER_CACHE_TTL_MS,
@@ -344,6 +367,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       return info;
     } catch (err) {
       logger.debug?.(`mattermost: user lookup failed: ${String(err)}`);
+      evictOldestIfNeeded(userCache);
       userCache.set(userId, {
         value: null,
         expiresAt: Date.now() + USER_CACHE_TTL_MS,
@@ -510,7 +534,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
       accountId: account.accountId,
       teamId,
       peer: {
-        kind,
+        kind: chatType,
         id: kind === "dm" ? senderId : channelId,
       },
     });
@@ -845,7 +869,14 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     const onAbort = () => ws.close();
     opts.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
-    return await new Promise((resolve) => {
+    return await new Promise((resolve, reject) => {
+      let cleanedUp = false;
+      const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        opts.abortSignal?.removeEventListener("abort", onAbort);
+      };
+
       ws.on("open", () => {
         opts.statusSink?.({
           connected: true,
@@ -900,7 +931,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
             error: message || undefined,
           },
         });
-        opts.abortSignal?.removeEventListener("abort", onAbort);
+        cleanup();
         resolve();
       });
 
@@ -909,6 +940,8 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
         opts.statusSink?.({
           lastError: String(err),
         });
+        cleanup();
+        // Don't reject here, let close event handle it
       });
     });
   };

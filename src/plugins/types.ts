@@ -206,7 +206,9 @@ export type OpenClawCNPluginCliContext = {
   logger: PluginLogger;
 };
 
-export type OpenClawCNPluginCliRegistrar = (ctx: OpenClawCNPluginCliContext) => void | Promise<void>;
+export type OpenClawCNPluginCliRegistrar = (
+  ctx: OpenClawCNPluginCliContext,
+) => void | Promise<void>;
 
 export type OpenClawCNPluginServiceContext = {
   config: OpenClawCNConfig;
@@ -560,3 +562,9 @@ export type PluginHookRegistration<K extends PluginHookName = PluginHookName> = 
   priority?: number;
   source: string;
 };
+
+// Deprecated aliases for backwards compatibility after brand rename
+/** @deprecated Use OpenClawCNPluginApi instead */
+export type ClawdbotPluginApi = OpenClawCNPluginApi;
+/** @deprecated Use OpenClawCNPluginService instead */
+export type ClawdbotPluginService = OpenClawCNPluginService;

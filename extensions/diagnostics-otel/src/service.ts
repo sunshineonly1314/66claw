@@ -62,7 +62,8 @@ export function createDiagnosticsOtelService(): ClawdbotPluginService {
       const logsEnabled = otel.logs === true;
       if (!tracesEnabled && !metricsEnabled && !logsEnabled) return;
 
-      const resource = new Resource({
+      // @ts-expect-error – tsgo resolves Resource as type-only; works at runtime
+      const resource = new (Resource as any)({
         [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
       });
 
@@ -200,7 +201,7 @@ export function createDiagnosticsOtelService(): ClawdbotPluginService {
           ...(headers ? { headers } : {}),
         });
         logProvider = new LoggerProvider({ resource });
-        logProvider.addLogRecordProcessor(
+        (logProvider as any).addLogRecordProcessor(
           new BatchLogRecordProcessor(logExporter, {
             ...(typeof otel.flushIntervalMs === "number"
               ? { scheduledDelayMillis: Math.max(1000, otel.flushIntervalMs) }

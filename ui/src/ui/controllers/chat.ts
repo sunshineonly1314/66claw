@@ -3,6 +3,7 @@ import { formatErrorHint } from "../chat/error-hints";
 import type { GatewayBrowserClient } from "../gateway";
 import { generateUUID } from "../uuid";
 import type { ChatAttachment } from "../ui-types";
+import { checkModalityBeforeSend } from "./modality-guard";
 
 // ClawdbotCN: Track runs that detected a free model switch notification.
 // Used to trigger auto new-session when the run completes.
@@ -43,6 +44,17 @@ export async function loadChatHistory(state: ChatState) {
     })) as { messages?: unknown[]; thinkingLevel?: string | null };
     state.chatMessages = Array.isArray(res.messages) ? res.messages : [];
     state.chatThinkingLevel = res.thinkingLevel ?? null;
+    // Delay clearing chatStream to allow typewriter animation to complete
+    // This prevents duplicate display while keeping smooth animation
+    const currentStream = state.chatStream;
+    if (currentStream) {
+      setTimeout(() => {
+        // Only clear if stream hasn't changed (no new message started)
+        if (state.chatStream === currentStream) {
+          state.chatStream = null;
+        }
+      }, 500); // 500ms delay allows typewriter to finish revealing
+    }
   } catch (err) {
     state.lastError = String(err);
   } finally {
@@ -67,6 +79,16 @@ export async function sendChatMessage(
   const msg = message.trim();
   const hasAttachments = attachments && attachments.length > 0;
   if (!msg && !hasAttachments) return false;
+
+  // OpenClawCN: 多模态能力检测 — 发送前检查是否配置了所需的模型
+  const guardResult = await checkModalityBeforeSend({
+    client: state.client,
+    message: msg,
+    attachments,
+  });
+  if (!guardResult.canProceed) {
+    return false;
+  }
 
   const now = Date.now();
 
@@ -124,9 +146,11 @@ export async function sendChatMessage(
       idempotencyKey: runId,
       attachments: apiAttachments,
     });
+
     return true;
   } catch (err) {
     const error = String(err);
+
     state.chatRunId = null;
     state.chatStream = null;
     state.chatStreamStartedAt = null;

@@ -16,6 +16,7 @@ const QqbotAppSchema = z
     appId: z.string().optional().describe("QQ 机器人 AppID"),
     appSecret: z.string().optional().describe("QQ 机器人 AppSecret (ClientSecret)"),
     token: z.string().optional().describe("QQ 机器人 Token (用于验证回调)"),
+    publicKey: z.string().optional().describe("QQ 机器人公钥 (用于 Ed25519 签名验证，hex 格式)"),
   })
   .strict();
 

@@ -2,25 +2,26 @@
  * marketplace-index.test.ts
  * Tests for the MCP marketplace index reader: parsing, caching, TTL, edge cases.
  *
- * Strategy: mock node:fs and node:fs/promises to fully control file existence
- * and content, avoiding interference from the real bundled data/mcp-index.json.
+ * Strategy: mock node:fs/promises and the package root resolver to fully control
+ * file reading and path resolution, avoiding interference from the real bundled
+ * data/mcp-index.json.
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-// ── Mock fs at the top (hoisted) ────────────────────────────
+// ── Mock fs and infra at the top (hoisted) ────────────────────────────
 
 const mocks = vi.hoisted(() => ({
-  existsSync: vi.fn(),
   readFile: vi.fn(),
-}));
-
-vi.mock("node:fs", () => ({
-  existsSync: mocks.existsSync,
+  resolveOpenClawCNPackageRootSync: vi.fn(() => "/fake/project-root"),
 }));
 
 vi.mock("node:fs/promises", () => ({
   readFile: mocks.readFile,
+}));
+
+vi.mock("../infra/openclaw-root.js", () => ({
+  resolveOpenClawCNPackageRootSync: mocks.resolveOpenClawCNPackageRootSync,
 }));
 
 import { readMarketplaceIndex, invalidateMarketplaceCache } from "./marketplace-index.js";
@@ -29,7 +30,8 @@ import { readMarketplaceIndex, invalidateMarketplaceCache } from "./marketplace-
 
 describe("marketplace-index", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    mocks.resolveOpenClawCNPackageRootSync.mockReturnValue("/fake/project-root");
     invalidateMarketplaceCache();
   });
 
@@ -37,7 +39,8 @@ describe("marketplace-index", () => {
 
   describe("readMarketplaceIndex", () => {
     it("returns empty array when no index file exists", async () => {
-      mocks.existsSync.mockReturnValue(false);
+      const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      mocks.readFile.mockRejectedValue(enoent);
       const items = await readMarketplaceIndex();
       expect(Array.isArray(items)).toBe(true);
       expect(items).toHaveLength(0);
@@ -48,7 +51,6 @@ describe("marketplace-index", () => {
         { serverId: "test-1", friendlyName: "Test One" },
         { serverId: "test-2", friendlyName: "Test Two" },
       ];
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue(JSON.stringify(data));
 
       const items = await readMarketplaceIndex();
@@ -59,7 +61,6 @@ describe("marketplace-index", () => {
 
     it("reads an {items: [...]} wrapper JSON index", async () => {
       const data = { items: [{ serverId: "wrapped-1" }], version: 2 };
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue(JSON.stringify(data));
 
       const items = await readMarketplaceIndex();
@@ -68,7 +69,6 @@ describe("marketplace-index", () => {
     });
 
     it("handles non-array non-items JSON gracefully", async () => {
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue(JSON.stringify({ version: 1 }));
 
       const items = await readMarketplaceIndex();
@@ -77,12 +77,6 @@ describe("marketplace-index", () => {
     });
 
     it("skips corrupted JSON and tries next candidate", async () => {
-      // First candidate exists but has invalid JSON
-      let callCount = 0;
-      mocks.existsSync.mockImplementation(() => {
-        callCount++;
-        return callCount === 1; // only first candidate exists
-      });
       mocks.readFile.mockRejectedValue(new Error("parse error"));
 
       const items = await readMarketplaceIndex();
@@ -90,17 +84,18 @@ describe("marketplace-index", () => {
     });
 
     it("returns data from first valid candidate found", async () => {
-      // First candidate doesn't exist, second does
+      // First candidate(s) fail with ENOENT, then one succeeds
+      const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
       let callCount = 0;
-      mocks.existsSync.mockImplementation(() => {
+      mocks.readFile.mockImplementation(() => {
         callCount++;
-        return callCount === 2; // second candidate exists
+        if (callCount <= 2) return Promise.reject(enoent);
+        return Promise.resolve(JSON.stringify([{ serverId: "from-later" }]));
       });
-      mocks.readFile.mockResolvedValue(JSON.stringify([{ serverId: "from-second" }]));
 
       const items = await readMarketplaceIndex();
       expect(items).toHaveLength(1);
-      expect(items[0].serverId).toBe("from-second");
+      expect(items[0].serverId).toBe("from-later");
     });
   });
 
@@ -108,7 +103,6 @@ describe("marketplace-index", () => {
 
   describe("cache", () => {
     it("returns cached result on second call within TTL", async () => {
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue(JSON.stringify([{ serverId: "cached-1" }]));
 
       const first = await readMarketplaceIndex();
@@ -123,7 +117,6 @@ describe("marketplace-index", () => {
     });
 
     it("invalidateMarketplaceCache forces re-read", async () => {
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue(JSON.stringify([{ serverId: "v1" }]));
 
       const first = await readMarketplaceIndex();
@@ -138,16 +131,17 @@ describe("marketplace-index", () => {
     });
 
     it("cache stores empty array too (avoids repeated disk reads)", async () => {
-      mocks.existsSync.mockReturnValue(false);
+      const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      mocks.readFile.mockRejectedValue(enoent);
 
       const first = await readMarketplaceIndex();
       expect(first).toHaveLength(0);
 
-      // Second call should not check fs again
-      mocks.existsSync.mockClear();
+      // Second call should not hit fs again (cached)
+      mocks.readFile.mockClear();
       const second = await readMarketplaceIndex();
       expect(second).toHaveLength(0);
-      expect(mocks.existsSync).not.toHaveBeenCalled();
+      expect(mocks.readFile).not.toHaveBeenCalled();
     });
   });
 
@@ -155,7 +149,6 @@ describe("marketplace-index", () => {
 
   describe("edge cases", () => {
     it("handles empty file gracefully", async () => {
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue("");
 
       // Empty string → JSON.parse throws → catches and continues
@@ -168,7 +161,6 @@ describe("marketplace-index", () => {
         serverId: `server-${i}`,
         friendlyName: `Server ${i}`,
       }));
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue(JSON.stringify(largeArray));
 
       const items = await readMarketplaceIndex();
@@ -183,11 +175,22 @@ describe("marketplace-index", () => {
         tags: ["a", "b"],
         extra: "should be preserved",
       };
-      mocks.existsSync.mockReturnValue(true);
       mocks.readFile.mockResolvedValue(JSON.stringify([item]));
 
       const items = await readMarketplaceIndex();
       expect(items[0]).toEqual(item);
+    });
+
+    it("works when package root resolver returns null", async () => {
+      mocks.resolveOpenClawCNPackageRootSync.mockReturnValue(null);
+      invalidateMarketplaceCache();
+
+      // All candidates fail → empty result
+      const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      mocks.readFile.mockRejectedValue(enoent);
+
+      const items = await readMarketplaceIndex();
+      expect(items).toHaveLength(0);
     });
   });
 });

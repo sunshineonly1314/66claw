@@ -3,6 +3,7 @@ import type { GatewayHelloOk } from "../gateway.ts";
 import type { UiSettings } from "../storage.ts";
 import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import { formatNextRun } from "../presenter.ts";
+import { t } from "../i18n/index.js";
 
 export type OverviewProps = {
   connected: boolean;
@@ -48,7 +49,7 @@ export function renderOverview(props: OverviewProps) {
     if (!hasToken && !hasPassword) {
       return html`
         <div class="muted" style="margin-top: 8px">
-          This gateway requires auth. Add a token or password, then click Connect.
+          ${t("overview.authRequiredHint")}
           <div style="margin-top: 6px">
             <span class="mono">openclawcn dashboard --no-open</span> → open the Control UI<br />
             <span class="mono">openclawcn doctor --generate-gateway-token</span> → set token
@@ -59,8 +60,8 @@ export function renderOverview(props: OverviewProps) {
               href="https://docs.openclawcn.com/web/dashboard"
               target="_blank"
               rel="noreferrer"
-              title="Control UI auth docs (opens in new tab)"
-              >Docs: Control UI auth</a
+              title="${t("overview.authDocs")}"
+              >${t("overview.authDocs")}</a
             >
           </div>
         </div>
@@ -68,15 +69,15 @@ export function renderOverview(props: OverviewProps) {
     }
     return html`
       <div class="muted" style="margin-top: 8px">
-        Auth failed. Update the token or password in Control UI settings, then click Connect.
+        ${t("overview.authFailedHint")}
         <div style="margin-top: 6px">
           <a
             class="session-link"
             href="https://docs.openclawcn.com/web/dashboard"
             target="_blank"
             rel="noreferrer"
-            title="Control UI auth docs (opens in new tab)"
-            >Docs: Control UI auth</a
+            title="${t("overview.authDocs")}"
+            >${t("overview.authDocs")}</a
           >
         </div>
       </div>
@@ -96,11 +97,10 @@ export function renderOverview(props: OverviewProps) {
     }
     return html`
       <div class="muted" style="margin-top: 8px">
-        This page is HTTP, so the browser blocks device identity. Use HTTPS (Tailscale Serve) or open
-        <span class="mono">http://127.0.0.1:18789</span> on the gateway host.
+        ${t("overview.insecureHint")}
         <div style="margin-top: 6px">
-          If you must stay on HTTP, set
-          <span class="mono">gateway.controlUi.allowInsecureAuth: true</span> (token-only).
+          ${t("overview.insecureAllowHttp")}
+          <span class="mono">gateway.controlUi.allowInsecureAuth: true</span> ${t("overview.insecureAllowHttpSuffix")}
         </div>
         <div style="margin-top: 6px">
           <a
@@ -108,8 +108,8 @@ export function renderOverview(props: OverviewProps) {
             href="https://docs.openclawcn.com/gateway/tailscale"
             target="_blank"
             rel="noreferrer"
-            title="Tailscale Serve docs (opens in new tab)"
-            >Docs: Tailscale Serve</a
+            title="${t("overview.docsTailscale")}"
+            >${t("overview.docsTailscale")}</a
           >
           <span class="muted"> · </span>
           <a
@@ -117,8 +117,8 @@ export function renderOverview(props: OverviewProps) {
             href="https://docs.openclawcn.com/web/control-ui#insecure-http"
             target="_blank"
             rel="noreferrer"
-            title="Insecure HTTP docs (opens in new tab)"
-            >Docs: Insecure HTTP</a
+            title="${t("overview.docsInsecureHttp")}"
+            >${t("overview.docsInsecureHttp")}</a
           >
         </div>
       </div>
@@ -128,11 +128,11 @@ export function renderOverview(props: OverviewProps) {
   return html`
     <section class="grid grid-cols-2">
       <div class="card">
-        <div class="card-title">Gateway Access</div>
-        <div class="card-sub">Where the dashboard connects and how it authenticates.</div>
+        <div class="card-title">${t("overview.gatewayAccessTitle")}</div>
+        <div class="card-sub">${t("overview.gatewayAccessSub")}</div>
         <div class="form-grid" style="margin-top: 16px;">
           <label class="field">
-            <span>WebSocket URL</span>
+            <span>${t("overview.websocketUrl")}</span>
             <input
               .value=${props.settings.gatewayUrl}
               @input=${(e: Event) => {
@@ -147,7 +147,7 @@ export function renderOverview(props: OverviewProps) {
               ? ""
               : html`
                 <label class="field">
-                  <span>Gateway Token</span>
+                  <span>${t("overview.gatewayToken")}</span>
                   <input
                     .value=${props.settings.token}
                     @input=${(e: Event) => {
@@ -158,7 +158,7 @@ export function renderOverview(props: OverviewProps) {
                   />
                 </label>
                 <label class="field">
-                  <span>Password (not stored)</span>
+                  <span>${t("overview.passwordNotStored")}</span>
                   <input
                     type="password"
                     .value=${props.password}
@@ -166,13 +166,13 @@ export function renderOverview(props: OverviewProps) {
                       const v = (e.target as HTMLInputElement).value;
                       props.onPasswordChange(v);
                     }}
-                    placeholder="system or shared password"
+                    placeholder="${t("overview.password")}"
                   />
                 </label>
               `
           }
           <label class="field">
-            <span>Default Session Key</span>
+            <span>${t("overview.defaultSessionKey")}</span>
             <input
               .value=${props.settings.sessionKey}
               @input=${(e: Event) => {
@@ -183,32 +183,32 @@ export function renderOverview(props: OverviewProps) {
           </label>
         </div>
         <div class="row" style="margin-top: 14px;">
-          <button class="btn" @click=${() => props.onConnect()}>Connect</button>
-          <button class="btn" @click=${() => props.onRefresh()}>Refresh</button>
-          <span class="muted">${isTrustedProxy ? "Authenticated via trusted proxy." : "Click Connect to apply connection changes."}</span>
+          <button class="btn" @click=${() => props.onConnect()}>${t("overview.connect")}</button>
+          <button class="btn" @click=${() => props.onRefresh()}>${t("overview.refresh")}</button>
+          <span class="muted">${isTrustedProxy ? t("overview.trustedProxy") : t("overview.clickConnect")}</span>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Snapshot</div>
-        <div class="card-sub">Latest gateway handshake information.</div>
+        <div class="card-title">${t("overview.snapshotTitle")}</div>
+        <div class="card-sub">${t("overview.snapshotSub")}</div>
         <div class="stat-grid" style="margin-top: 16px;">
           <div class="stat">
-            <div class="stat-label">Status</div>
+            <div class="stat-label">${t("overview.status")}</div>
             <div class="stat-value ${props.connected ? "ok" : "warn"}">
-              ${props.connected ? "Connected" : "Disconnected"}
+              ${props.connected ? t("overview.connected") : t("overview.disconnected")}
             </div>
           </div>
           <div class="stat">
-            <div class="stat-label">Uptime</div>
+            <div class="stat-label">${t("overview.uptime")}</div>
             <div class="stat-value">${uptime}</div>
           </div>
           <div class="stat">
-            <div class="stat-label">Tick Interval</div>
+            <div class="stat-label">${t("overview.tickInterval")}</div>
             <div class="stat-value">${tick}</div>
           </div>
           <div class="stat">
-            <div class="stat-label">Last Channels Refresh</div>
+            <div class="stat-label">${t("overview.lastChannelsRefresh")}</div>
             <div class="stat-value">
               ${props.lastChannelsRefresh ? formatRelativeTimestamp(props.lastChannelsRefresh) : "n/a"}
             </div>
@@ -223,7 +223,7 @@ export function renderOverview(props: OverviewProps) {
             </div>`
             : html`
                 <div class="callout" style="margin-top: 14px">
-                  Use Channels to link WhatsApp, Telegram, Discord, Signal, or iMessage.
+                  ${t("overview.channelsHint")}
                 </div>
               `
         }
@@ -232,41 +232,41 @@ export function renderOverview(props: OverviewProps) {
 
     <section class="grid grid-cols-3" style="margin-top: 18px;">
       <div class="card stat-card">
-        <div class="stat-label">Instances</div>
+        <div class="stat-label">${t("overview.instances")}</div>
         <div class="stat-value">${props.presenceCount}</div>
-        <div class="muted">Presence beacons in the last 5 minutes.</div>
+        <div class="muted">${t("overview.presenceDesc")}</div>
       </div>
       <div class="card stat-card">
-        <div class="stat-label">Sessions</div>
+        <div class="stat-label">${t("overview.sessions")}</div>
         <div class="stat-value">${props.sessionsCount ?? "n/a"}</div>
-        <div class="muted">Recent session keys tracked by the gateway.</div>
+        <div class="muted">${t("overview.sessionsDesc")}</div>
       </div>
       <div class="card stat-card">
-        <div class="stat-label">Cron</div>
+        <div class="stat-label">${t("overview.cronLabel")}</div>
         <div class="stat-value">
-          ${props.cronEnabled == null ? "n/a" : props.cronEnabled ? "Enabled" : "Disabled"}
+          ${props.cronEnabled == null ? "n/a" : props.cronEnabled ? t("overview.enabled") : t("overview.disabled")}
         </div>
-        <div class="muted">Next wake ${formatNextRun(props.cronNext)}</div>
+        <div class="muted">${t("overview.nextWake")} ${formatNextRun(props.cronNext)}</div>
       </div>
     </section>
 
     <section class="card" style="margin-top: 18px;">
-      <div class="card-title">Notes</div>
-      <div class="card-sub">Quick reminders for remote control setups.</div>
+      <div class="card-title">${t("overview.notesTitle")}</div>
+      <div class="card-sub">${t("overview.notesSub")}</div>
       <div class="note-grid" style="margin-top: 14px;">
         <div>
-          <div class="note-title">Tailscale serve</div>
+          <div class="note-title">${t("overview.noteTailscaleTitle")}</div>
           <div class="muted">
-            Prefer serve mode to keep the gateway on loopback with tailnet auth.
+            ${t("overview.noteTailscaleBody")}
           </div>
         </div>
         <div>
-          <div class="note-title">Session hygiene</div>
-          <div class="muted">Use /new or sessions.patch to reset context.</div>
+          <div class="note-title">${t("overview.noteSessionTitle")}</div>
+          <div class="muted">${t("overview.noteSessionBody")}</div>
         </div>
         <div>
-          <div class="note-title">Cron reminders</div>
-          <div class="muted">Use isolated sessions for recurring runs.</div>
+          <div class="note-title">${t("overview.noteCronTitle")}</div>
+          <div class="muted">${t("overview.noteCronBody")}</div>
         </div>
       </div>
     </section>

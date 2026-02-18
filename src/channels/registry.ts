@@ -17,9 +17,9 @@ export const CHAT_CHANNEL_ORDER = [
 
 export type ChatChannelId = (typeof CHAT_CHANNEL_ORDER)[number];
 
-// China region channels (飞书、钉钉、企业微信) - these are recognized even without
+// China region channels (飞书、钉钉、企业微信、微信小程序) - these are recognized even without
 // their extension plugins loaded, allowing config validation to pass.
-const CN_CHANNEL_IDS = ["feishu", "dingtalk", "wecom"] as const;
+const CN_CHANNEL_IDS = ["feishu", "dingtalk", "wecom", "openclawwechat"] as const;
 
 export const CHANNEL_IDS = [...CHAT_CHANNEL_ORDER, ...CN_CHANNEL_IDS] as const;
 

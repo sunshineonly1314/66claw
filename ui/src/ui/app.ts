@@ -224,6 +224,8 @@ export class ClawdbotApp extends LitElement {
   @state() performanceProfile: "economy" | "balanced" | "power" = "balanced";
   @state() performanceProfileSaving = false;
 
+  @state() pendingGatewayUrl: string | null = null;
+
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
   @state() configRawOriginal = "";
@@ -313,6 +315,22 @@ export class ClawdbotApp extends LitElement {
   @state() agentsLoading = false;
   @state() agentsList: AgentsListResult | null = null;
   @state() agentsError: string | null = null;
+  @state() agentsSelectedId: string | null = null;
+  @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" = "overview";
+  @state() agentFilesLoading = false;
+  @state() agentFilesError: string | null = null;
+  @state() agentFilesList: import("./types").AgentsFilesListResult | null = null;
+  @state() agentFileContents: Record<string, string> = {};
+  @state() agentFileDrafts: Record<string, string> = {};
+  @state() agentFileActive: string | null = null;
+  @state() agentFileSaving = false;
+  @state() agentIdentityLoading = false;
+  @state() agentIdentityError: string | null = null;
+  @state() agentIdentityById: Record<string, import("./types").AgentIdentityResult> = {};
+  @state() agentSkillsLoading = false;
+  @state() agentSkillsError: string | null = null;
+  @state() agentSkillsReport: SkillStatusReport | null = null;
+  @state() agentSkillsAgentId: string | null = null;
 
   @state() sessionsLoading = false;
   @state() sessionsResult: SessionsListResult | null = null;
@@ -321,6 +339,8 @@ export class ClawdbotApp extends LitElement {
   @state() sessionsFilterLimit = "120";
   @state() sessionsIncludeGlobal = true;
   @state() sessionsIncludeUnknown = false;
+  // Track chat runs that should trigger session refresh on completion
+  refreshSessionsAfterChat = new Set<string>();
 
   @state() cronLoading = false;
   @state() cronJobs: CronJob[] = [];
@@ -402,12 +422,17 @@ export class ClawdbotApp extends LitElement {
     detailItem: null,
     configTarget: null,
     toast: null,
+    showBatchConfig: false,
   };
   @state() mcpTestingServerId: string | null = null;
   @state() mcpTestResults: Record<string, "success" | "failed"> = {};
   @state() mcpManualFormTrigger = 0;
   /** Timer for auto-clearing MCP toast notifications */
   _mcpToastTimer: number | null = null;
+  /** Batch API key config state */
+  @state() _mcpBatchConfigSaving = false;
+  @state() _mcpBatchConfigResult: { success: number; failed: number } | null = null;
+  @state() _mcpServerEnvStatus: Record<string, Record<string, boolean>> = {};
 
   // 文档中心状态
   @state() docsViewState: import("./views/docs").DocsViewState = {
@@ -433,11 +458,52 @@ export class ClawdbotApp extends LitElement {
     error: null,
   };
 
-  // Token 使用量统计状态
-  @state() usageLoading = false;
+  // Token 使用量统计状态 (简易视图，保留向后兼容)
   @state() usageSummary: import("./types").CostUsageSummary | null = null;
-  @state() usageError: string | null = null;
   @state() usageDays = 30;
+  // 高级 Usage 分析系统
+  @state() usageLoading = false;
+  @state() usageResult: import("./types").SessionsUsageResult | null = null;
+  @state() usageCostSummary: import("./types").CostUsageSummary | null = null;
+  @state() usageError: string | null = null;
+  @state() usageStartDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  @state() usageEndDate = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  @state() usageSelectedSessions: string[] = [];
+  @state() usageSelectedDays: string[] = [];
+  @state() usageSelectedHours: number[] = [];
+  @state() usageChartMode: "tokens" | "cost" = "tokens";
+  @state() usageDailyChartMode: "total" | "by-type" = "by-type";
+  @state() usageTimeSeriesMode: "cumulative" | "per-turn" = "per-turn";
+  @state() usageTimeSeriesBreakdownMode: "total" | "by-type" = "by-type";
+  @state() usageTimeSeries: import("./types").SessionUsageTimeSeries | null = null;
+  @state() usageTimeSeriesLoading = false;
+  @state() usageSessionLogs: import("./views/usage").SessionLogEntry[] | null = null;
+  @state() usageSessionLogsLoading = false;
+  @state() usageSessionLogsExpanded = false;
+  @state() usageQuery = "";
+  @state() usageQueryDraft = "";
+  @state() usageSessionSort: "tokens" | "cost" | "recent" | "messages" | "errors" = "recent";
+  @state() usageSessionSortDir: "desc" | "asc" = "desc";
+  @state() usageRecentSessions: string[] = [];
+  @state() usageTimeZone: "local" | "utc" = "local";
+  @state() usageContextExpanded = false;
+  @state() usageHeaderPinned = false;
+  @state() usageSessionsTab: "all" | "recent" = "all";
+  @state() usageVisibleColumns: string[] = [
+    "channel", "agent", "provider", "model", "messages", "tools", "errors", "duration",
+  ];
+  @state() usageLogFilterRoles: import("./views/usage").SessionLogRole[] = [];
+  @state() usageLogFilterTools: string[] = [];
+  @state() usageLogFilterHasTools = false;
+  @state() usageLogFilterQuery = "";
+  usageQueryDebounceTimer: number | null = null;
 
   @state() debugLoading = false;
   @state() debugStatus: StatusSummary | null = null;
@@ -941,6 +1007,23 @@ export class ClawdbotApp extends LitElement {
     } finally {
       this.skillInstallBusy = false;
     }
+  }
+
+  handleGatewayUrlConfirm() {
+    const nextGatewayUrl = this.pendingGatewayUrl;
+    if (!nextGatewayUrl) {
+      return;
+    }
+    this.pendingGatewayUrl = null;
+    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+      ...this.settings,
+      gatewayUrl: nextGatewayUrl,
+    });
+    this.connect();
+  }
+
+  handleGatewayUrlCancel() {
+    this.pendingGatewayUrl = null;
   }
 
   // Sidebar handlers for tool output viewing

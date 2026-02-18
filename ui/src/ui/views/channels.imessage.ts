@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 
 import { formatAgo } from "../format";
+import { t } from "../i18n/index.js";
 import type { IMessageStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
@@ -17,16 +18,16 @@ export function renderIMessageCard(params: {
   const statusBadge = imessage?.running
     ? html`<span class="channel-card__badge channel-card__badge--ok">
         <span class="status-dot status-dot--running"></span>
-        Running
+        ${t("channel.running")}
       </span>`
     : imessage?.configured
       ? html`<span class="channel-card__badge channel-card__badge--warn">
           <span class="status-dot status-dot--configured"></span>
-          Stopped
+          ${t("channel.stopped")}
         </span>`
       : html`<span class="channel-card__badge">
           <span class="status-dot status-dot--unconfigured"></span>
-          Not configured
+          ${t("channel.notConfigured")}
         </span>`;
 
   // 箭头图标
@@ -56,26 +57,26 @@ export function renderIMessageCard(params: {
         ${chevronIcon}
       </summary>
       <div class="channel-card__body">
-        <div class="channel-card__desc">macOS bridge status and channel configuration.</div>
+        <div class="channel-card__desc">${t("channel.imessageDesc")}</div>
         ${accountCountLabel}
 
         ${(imessage?.configured || imessage?.running)
           ? html`
             <div class="status-list">
               <div>
-                <span class="label">Configured</span>
-                <span>${imessage?.configured ? "Yes" : "No"}</span>
+                <span class="label">${t("channel.configured")}</span>
+                <span>${imessage?.configured ? t("channel.yes") : t("channel.no")}</span>
               </div>
               <div>
-                <span class="label">Running</span>
-                <span>${imessage?.running ? "Yes" : "No"}</span>
+                <span class="label">${t("channel.running")}</span>
+                <span>${imessage?.running ? t("channel.yes") : t("channel.no")}</span>
               </div>
               <div>
-                <span class="label">Last start</span>
+                <span class="label">${t("channel.lastStart")}</span>
                 <span>${imessage?.lastStartAt ? formatAgo(imessage.lastStartAt) : "n/a"}</span>
               </div>
               <div>
-                <span class="label">Last probe</span>
+                <span class="label">${t("channel.lastProbe")}</span>
                 <span>${imessage?.lastProbeAt ? formatAgo(imessage.lastProbeAt) : "n/a"}</span>
               </div>
             </div>
@@ -99,7 +100,7 @@ export function renderIMessageCard(params: {
 
         <div class="row" style="margin-top: 12px;">
           <button class="btn" @click=${() => props.onRefresh(true)}>
-            Probe
+            ${t("channel.probe")}
           </button>
         </div>
       </div>

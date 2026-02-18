@@ -6,6 +6,7 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 
+import { t } from "../i18n/index.js";
 import type { NostrProfile as NostrProfileType } from "../types";
 
 // ============================================================================
@@ -165,8 +166,8 @@ export function renderNostrProfileForm(params: {
   return html`
     <div class="nostr-profile-form" style="padding: 16px; background: var(--bg-secondary); border-radius: 8px; margin-top: 12px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <div style="font-weight: 600; font-size: 16px;">Edit Profile</div>
-        <div style="font-size: 12px; color: var(--text-muted);">Account: ${accountId}</div>
+        <div style="font-weight: 600; font-size: 16px;">${t("nostr.editProfile")}</div>
+        <div style="font-size: 12px; color: var(--text-muted);">${t("nostr.account")} ${accountId}</div>
       </div>
 
       ${state.error
@@ -179,56 +180,56 @@ export function renderNostrProfileForm(params: {
 
       ${renderPicturePreview()}
 
-      ${renderField("name", "Username", {
-        placeholder: "satoshi",
+      ${renderField("name", t("nostr.username"), {
+        placeholder: t("nostr.usernamePlaceholder"),
         maxLength: 256,
-        help: "Short username (e.g., satoshi)",
+        help: t("nostr.usernameHelp"),
       })}
 
-      ${renderField("displayName", "Display Name", {
-        placeholder: "Satoshi Nakamoto",
+      ${renderField("displayName", t("nostr.displayName"), {
+        placeholder: t("nostr.displayNamePlaceholder"),
         maxLength: 256,
-        help: "Your full display name",
+        help: t("nostr.displayNameHelp"),
       })}
 
-      ${renderField("about", "Bio", {
+      ${renderField("about", t("nostr.bio"), {
         type: "textarea",
-        placeholder: "Tell people about yourself...",
+        placeholder: t("nostr.bioPlaceholder"),
         maxLength: 2000,
-        help: "A brief bio or description",
+        help: t("nostr.bioHelp"),
       })}
 
-      ${renderField("picture", "Avatar URL", {
+      ${renderField("picture", t("nostr.avatarUrl"), {
         type: "url",
         placeholder: "https://example.com/avatar.jpg",
-        help: "HTTPS URL to your profile picture",
+        help: t("nostr.avatarHelp"),
       })}
 
       ${state.showAdvanced
         ? html`
             <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 12px;">
-              <div style="font-weight: 500; margin-bottom: 12px; color: var(--text-muted);">Advanced</div>
+              <div style="font-weight: 500; margin-bottom: 12px; color: var(--text-muted);">${t("nostr.advanced")}</div>
 
-              ${renderField("banner", "Banner URL", {
+              ${renderField("banner", t("nostr.bannerUrl"), {
                 type: "url",
                 placeholder: "https://example.com/banner.jpg",
-                help: "HTTPS URL to a banner image",
+                help: t("nostr.bannerHelp"),
               })}
 
-              ${renderField("website", "Website", {
+              ${renderField("website", t("nostr.website"), {
                 type: "url",
                 placeholder: "https://example.com",
-                help: "Your personal website",
+                help: t("nostr.websiteHelp"),
               })}
 
-              ${renderField("nip05", "NIP-05 Identifier", {
-                placeholder: "you@example.com",
-                help: "Verifiable identifier (e.g., you@domain.com)",
+              ${renderField("nip05", t("nostr.nip05"), {
+                placeholder: t("nostr.nip05Placeholder"),
+                help: t("nostr.nip05Help"),
               })}
 
-              ${renderField("lud16", "Lightning Address", {
-                placeholder: "you@getalby.com",
-                help: "Lightning address for tips (LUD-16)",
+              ${renderField("lud16", t("nostr.lightning"), {
+                placeholder: t("nostr.lightningPlaceholder"),
+                help: t("nostr.lightningHelp"),
               })}
             </div>
           `
@@ -240,7 +241,7 @@ export function renderNostrProfileForm(params: {
           @click=${callbacks.onSave}
           ?disabled=${state.saving || !isDirty}
         >
-          ${state.saving ? "Saving..." : "Save & Publish"}
+          ${state.saving ? t("nostr.saving") : t("nostr.savePublish")}
         </button>
 
         <button
@@ -248,14 +249,14 @@ export function renderNostrProfileForm(params: {
           @click=${callbacks.onImport}
           ?disabled=${state.importing || state.saving}
         >
-          ${state.importing ? "Importing..." : "Import from Relays"}
+          ${state.importing ? t("nostr.importing") : t("nostr.importRelays")}
         </button>
 
         <button
           class="btn"
           @click=${callbacks.onToggleAdvanced}
         >
-          ${state.showAdvanced ? "Hide Advanced" : "Show Advanced"}
+          ${state.showAdvanced ? t("nostr.hideAdvanced") : t("nostr.showAdvanced")}
         </button>
 
         <button
@@ -263,13 +264,13 @@ export function renderNostrProfileForm(params: {
           @click=${callbacks.onCancel}
           ?disabled=${state.saving}
         >
-          Cancel
+          ${t("nostr.cancel")}
         </button>
       </div>
 
       ${isDirty
         ? html`<div style="font-size: 12px; color: var(--warning-color); margin-top: 8px;">
-            You have unsaved changes
+            ${t("nostr.unsavedChanges")}
           </div>`
         : nothing}
     </div>

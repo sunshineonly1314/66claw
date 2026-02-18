@@ -1,0 +1,71 @@
+# OpenClawCN Docker Compose 配置
+# 支持环境变量自动配置，无需手动编辑配置文件
+#
+# 使用方法:
+# 1. 复制 .env.example 为 .env
+# 2. 编辑 .env 填写配置
+# 3. docker-compose up -d
+
+version: "3.8"
+
+services:
+  openclawcn-gateway:
+    image: openclawcn/gateway:latest
+    container_name: openclawcn-gateway
+    restart: unless-stopped
+    command: "gateway"
+    ports:
+      - "${OPENCLAWCN_GATEWAY_PORT:-18789}:18789"
+    volumes:
+      - openclawcn-data:/home/node/.openclawcn
+      - openclawcn-workspace:/home/node/.openclawcn/workspace
+    environment:
+      # AI 模型配置
+      - OPENCLAWCN_MODEL_ID=${OPENCLAWCN_MODEL_ID:-}
+      - OPENCLAWCN_MODEL_PROVIDER=${OPENCLAWCN_MODEL_PROVIDER:-}
+      - OPENCLAWCN_BASE_URL=${OPENCLAWCN_BASE_URL:-}
+      - OPENCLAWCN_API_KEY=${OPENCLAWCN_API_KEY:-}
+
+      # Gateway 配置
+      - OPENCLAWCN_GATEWAY_TOKEN=${OPENCLAWCN_GATEWAY_TOKEN:-}
+      - OPENCLAWCN_GATEWAY_PASSWORD=${OPENCLAWCN_GATEWAY_PASSWORD:-}
+      - OPENCLAWCN_GATEWAY_BIND=${OPENCLAWCN_GATEWAY_BIND:-lan}
+      - OPENCLAWCN_GATEWAY_PORT=${OPENCLAWCN_GATEWAY_PORT:-18789}
+
+      # 飞书配置
+      - OPENCLAWCN_FEISHU_APP_ID=${OPENCLAWCN_FEISHU_APP_ID:-}
+      - OPENCLAWCN_FEISHU_APP_SECRET=${OPENCLAWCN_FEISHU_APP_SECRET:-}
+      - OPENCLAWCN_FEISHU_MODE=${OPENCLAWCN_FEISHU_MODE:-websocket}
+      - OPENCLAWCN_FEISHU_DOMAIN=${OPENCLAWCN_FEISHU_DOMAIN:-feishu}
+
+      # 钉钉配置
+      - OPENCLAWCN_DINGTALK_APP_KEY=${OPENCLAWCN_DINGTALK_APP_KEY:-}
+      - OPENCLAWCN_DINGTALK_APP_SECRET=${OPENCLAWCN_DINGTALK_APP_SECRET:-}
+      - OPENCLAWCN_DINGTALK_ROBOT_CODE=${OPENCLAWCN_DINGTALK_ROBOT_CODE:-}
+      - OPENCLAWCN_DINGTALK_MODE=${OPENCLAWCN_DINGTALK_MODE:-stream}
+
+      # 企业微信配置
+      - OPENCLAWCN_WECOM_CORP_ID=${OPENCLAWCN_WECOM_CORP_ID:-}
+      - OPENCLAWCN_WECOM_AGENT_ID=${OPENCLAWCN_WECOM_AGENT_ID:-}
+      - OPENCLAWCN_WECOM_AGENT_SECRET=${OPENCLAWCN_WECOM_AGENT_SECRET:-}
+      - OPENCLAWCN_WECOM_TOKEN=${OPENCLAWCN_WECOM_TOKEN:-}
+      - OPENCLAWCN_WECOM_ENCODING_AES_KEY=${OPENCLAWCN_WECOM_ENCODING_AES_KEY:-}
+
+      # QQ 机器人配置
+      - OPENCLAWCN_QQBOT_APP_ID=${OPENCLAWCN_QQBOT_APP_ID:-}
+      - OPENCLAWCN_QQBOT_APP_SECRET=${OPENCLAWCN_QQBOT_APP_SECRET:-}
+      - OPENCLAWCN_QQBOT_TOKEN=${OPENCLAWCN_QQBOT_TOKEN:-}
+      - OPENCLAWCN_QQBOT_SANDBOX=${OPENCLAWCN_QQBOT_SANDBOX:-false}
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  openclawcn-data:
+    name: openclawcn-data
+  openclawcn-workspace:
+    name: openclawcn-workspace

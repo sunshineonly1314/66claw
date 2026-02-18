@@ -68,6 +68,25 @@ ${formatHelpExamples([
   ],
 ])}
 
+${theme.heading("Tool Invocation Examples:")}
+${formatHelpExamples([
+  [
+    'openclawcn agent --message "用 desktop_control 截图"',
+    "Call desktop_control to take a screenshot",
+  ],
+  [
+    'openclawcn agent --message "用 desktop_control 列出所有打开的窗口"',
+    "List all open windows using desktop_control",
+  ],
+  [
+    'openclawcn agent --message "截图桌面并分析文件，给出整理建议"',
+    "Implicit tool call - AI will use desktop_control automatically",
+  ],
+])}
+
+${theme.muted("Available Tools:")} desktop_control (Windows), browser_control, file_operations
+${theme.muted("Tool Docs:")} skills/desktop-control/SKILL.md
+
 ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclawcn.ai/cli/agent")}`,
     )
     .action(async (opts) => {
@@ -155,8 +174,14 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclawcn.ai/cli/a
         `
 ${theme.heading("Examples:")}
 ${formatHelpExamples([
-  ['openclawcn agents set-identity --agent main --name "OpenClawCN" --emoji "🦞"', "Set name + emoji."],
-  ["openclawcn agents set-identity --agent main --avatar avatars/openclawcn.png", "Set avatar path."],
+  [
+    'openclawcn agents set-identity --agent main --name "OpenClawCN" --emoji "🦞"',
+    "Set name + emoji.",
+  ],
+  [
+    "openclawcn agents set-identity --agent main --avatar avatars/openclawcn.png",
+    "Set avatar path.",
+  ],
   [
     "openclawcn agents set-identity --workspace ~/.openclawcn/workspace --from-identity",
     "Load from IDENTITY.md.",

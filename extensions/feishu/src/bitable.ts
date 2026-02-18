@@ -218,7 +218,7 @@ async function createRecord(
 ) {
   const res = await client.bitable.appTableRecord.create({
     path: { app_token: appToken, table_id: tableId },
-    data: { fields },
+    data: { fields: fields as Record<string, string | number | boolean | Record<string, unknown>> },
   });
   if (res.code !== 0) throw new Error(res.msg);
 
@@ -237,7 +237,7 @@ async function updateRecord(
 ) {
   const res = await client.bitable.appTableRecord.update({
     path: { app_token: appToken, table_id: tableId, record_id: recordId },
-    data: { fields },
+    data: { fields: fields as Record<string, string | number | boolean | Record<string, unknown>> },
   });
   if (res.code !== 0) throw new Error(res.msg);
 

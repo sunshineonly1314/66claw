@@ -26,6 +26,7 @@ type PendingInvoke = {
   resolve: (value: NodeInvokeResult) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  settled: boolean; // Add settled flag to prevent race conditions
 };
 
 export type NodeInvokeResult = {
@@ -137,19 +138,31 @@ export class NodeRegistry {
     }
     const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 30_000;
     return await new Promise<NodeInvokeResult>((resolve, reject) => {
+      let settled = false;
+      const safeResolve = (value: NodeInvokeResult) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
       const timer = setTimeout(() => {
-        this.pendingInvokes.delete(requestId);
-        resolve({
-          ok: false,
-          error: { code: "TIMEOUT", message: "node invoke timed out" },
-        });
+        const pending = this.pendingInvokes.get(requestId);
+        // Race condition fix: check settled flag before deletion
+        if (pending && !pending.settled) {
+          pending.settled = true;
+          this.pendingInvokes.delete(requestId);
+          safeResolve({
+            ok: false,
+            error: { code: "TIMEOUT", message: "node invoke timed out" },
+          });
+        }
       }, timeoutMs);
       this.pendingInvokes.set(requestId, {
         nodeId: params.nodeId,
         command: params.command,
-        resolve,
+        resolve: safeResolve,
         reject,
         timer,
+        settled: false, // Initialize settled flag
       });
     });
   }
@@ -169,6 +182,11 @@ export class NodeRegistry {
     if (pending.nodeId !== params.nodeId) {
       return false;
     }
+    // Race condition fix: check and set settled atomically
+    if (pending.settled) {
+      return false; // Already settled by timeout
+    }
+    pending.settled = true;
     clearTimeout(pending.timer);
     this.pendingInvokes.delete(params.id);
     pending.resolve({

@@ -6,9 +6,10 @@ import type { RoutingDecision } from "./types.js";
 // Mocks — use vi.hoisted to ensure mock fns exist before module evaluation
 // ---------------------------------------------------------------------------
 
-const { classifyMock, mergeWorkerResultsMock } = vi.hoisted(() => ({
+const { classifyMock, mergeWorkerResultsMock, executeDagMock } = vi.hoisted(() => ({
   classifyMock: vi.fn<[params: Record<string, unknown>], Promise<string | null>>(),
   mergeWorkerResultsMock: vi.fn<[params: Record<string, unknown>], Promise<string>>(),
+  executeDagMock: vi.fn(),
 }));
 
 vi.mock("./llm-classify.js", () => ({
@@ -23,6 +24,19 @@ vi.mock("./config-loader.js", () => ({
   loadDispatchConfig: vi.fn(() => null),
   invalidateDispatchConfigCache: vi.fn(),
 }));
+
+// Mock DAG executor to bypass step-runner's retry/backoff logic in orchestrator tests.
+// The DAG executor is tested independently in dag-executor.test.ts.
+vi.mock("./dag-executor.js", () => ({
+  executeDag: executeDagMock,
+}));
+
+vi.mock("./execution-workspace.js", async () => {
+  const actual = await vi.importActual<typeof import("./execution-workspace.js")>(
+    "./execution-workspace.js",
+  );
+  return actual;
+});
 
 // Import AFTER mocks
 const { runMultiAgentOrchestration } = await import("./orchestrator.js");
@@ -87,7 +101,11 @@ function setupMockSequence(responses: Map<string, string | null>) {
       return responses.get("__decompose__") ?? null;
     }
     // Check if it's a merge call
-    if (userPrompt.includes("Worker outputs:") || systemPrompt?.includes("synthesis expert") || systemPrompt?.includes("quality evaluator")) {
+    if (
+      userPrompt.includes("Worker outputs:") ||
+      systemPrompt?.includes("synthesis expert") ||
+      systemPrompt?.includes("quality evaluator")
+    ) {
       return responses.get("__merge__") ?? null;
     }
     // Worker call — match by userPrompt (which is the subtask text)
@@ -101,12 +119,90 @@ function setupMockSequence(responses: Map<string, string | null>) {
 beforeEach(() => {
   classifyMock.mockReset();
   mergeWorkerResultsMock.mockReset();
-  mergeWorkerResultsMock.mockImplementation(
-    async (params: Record<string, unknown>) => {
-      const results = params.results as Array<{ status: string }>;
-      return `Merged ${results.filter((r) => r.status === "ok").length} results`;
+  executeDagMock.mockReset();
+
+  mergeWorkerResultsMock.mockImplementation(async (params: Record<string, unknown>) => {
+    const results = params.results as Array<{ status: string }>;
+    return `Merged ${results.filter((r) => r.status === "ok").length} results`;
+  });
+
+  // Default executeDag mock: calls classifyMock for each node (like the real step-runner),
+  // then returns results. This bridges the existing test mock infrastructure.
+  executeDagMock.mockImplementation(
+    async (
+      nodes: Array<{ id: string; task: string; role: string; dependsOn: string[] }>,
+      config: Record<string, unknown>,
+    ) => {
+      const { topologicalWaves } =
+        await vi.importActual<typeof import("./dag-executor.js")>("./dag-executor.js");
+      const waves = topologicalWaves(nodes);
+      const results = new Map<
+        string,
+        {
+          nodeId: string;
+          status: string;
+          output: string;
+          durationMs: number;
+          retryCount: number;
+          validationErrors: string[];
+        }
+      >();
+
+      for (const wave of waves) {
+        const waveResults = await Promise.all(
+          wave.map(async (node) => {
+            const systemPrompt = [
+              `You are a ${node.role}. Your job is to complete the specific subtask assigned to you.`,
+              "",
+              `Original user request (for context): ${config.originalTask}`,
+              "",
+              "Complete your assigned subtask thoroughly and provide a clear, well-structured response.",
+              "Focus only on your specific subtask — other parts of the request are handled by other workers.",
+            ].join("\n");
+            try {
+              const output = await classifyMock({
+                systemPrompt,
+                userPrompt: node.task,
+                model: config.workerModel,
+                maxTokens: 4096,
+                cfg: config.cfg,
+                agentDir: config.agentDir,
+                timeoutMs: 60000,
+              });
+              return {
+                nodeId: node.id,
+                status: output ? "ok" : "error",
+                output: output?.trim() ?? "",
+                durationMs: 10,
+                retryCount: 0,
+                validationErrors: [],
+              };
+            } catch (err) {
+              return {
+                nodeId: node.id,
+                status: "error" as const,
+                output: `Error: ${err instanceof Error ? err.message : String(err)}`,
+                durationMs: 10,
+                retryCount: 0,
+                validationErrors: [],
+              };
+            }
+          }),
+        );
+        for (const r of waveResults) {
+          results.set(r.nodeId, r);
+        }
+      }
+
+      return {
+        results,
+        skippedSteps: [],
+        totalDurationMs: 100,
+        timedOut: false,
+      };
     },
   );
+
   resetResourceGuard();
 });
 
@@ -445,5 +541,81 @@ describe("orchestrator — return shape", () => {
     const result = await runMultiAgentOrchestration(baseParams());
     expect(result).toHaveProperty("text");
     expect(typeof (result as { text: string }).text).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DAG executor config flag
+// ---------------------------------------------------------------------------
+
+describe("orchestrator — DAG executor config flag", () => {
+  it("falls back to legacy execution when dagExecutor is disabled", async () => {
+    setupMockSequence(
+      new Map([
+        ["__decompose__", DECOMPOSE_2_CONCAT],
+        ["Research framework A", "Legacy output A"],
+        ["Research framework B", "Legacy output B"],
+      ]),
+    );
+
+    // Disable DAG executor via config
+    const cfgWithDagDisabled = { dispatch: { dagExecutor: false } } as typeof fakeCfg;
+    const result = await runMultiAgentOrchestration(baseParams({ cfg: cfgWithDagDisabled }));
+
+    expect(result).toBeDefined();
+    // executeDag should NOT have been called
+    expect(executeDagMock).not.toHaveBeenCalled();
+    // But merger should still have been called (legacy path)
+    expect(mergeWorkerResultsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses DAG executor when dagExecutor is not set (default true)", async () => {
+    setupMockSequence(
+      new Map([
+        ["__decompose__", DECOMPOSE_2_CONCAT],
+        ["Research framework A", "DAG output A"],
+        ["Research framework B", "DAG output B"],
+      ]),
+    );
+
+    const result = await runMultiAgentOrchestration(baseParams());
+    expect(result).toBeDefined();
+    expect(executeDagMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Config-driven model overrides
+// ---------------------------------------------------------------------------
+
+describe("orchestrator — model resolution", () => {
+  it("passes worker model from config to DAG executor", async () => {
+    const { loadDispatchConfig } = await import("./config-loader.js");
+    const mockLoadConfig = vi.mocked(loadDispatchConfig);
+    mockLoadConfig.mockReturnValueOnce({
+      complexity: {
+        strategies: {
+          multi: {
+            workerModel: "custom/worker-model",
+            orchestratorModel: "custom/orchestrator-model",
+          },
+        },
+      },
+    } as ReturnType<typeof loadDispatchConfig>);
+
+    setupMockSequence(
+      new Map([
+        ["__decompose__", DECOMPOSE_2_CONCAT],
+        ["Research framework A", "Output A"],
+        ["Research framework B", "Output B"],
+      ]),
+    );
+
+    await runMultiAgentOrchestration(baseParams());
+    expect(executeDagMock).toHaveBeenCalledTimes(1);
+
+    // Check that the config passed to executeDag has the custom worker model
+    const dagConfig = executeDagMock.mock.calls[0]![1] as { workerModel: string };
+    expect(dagConfig.workerModel).toBe("custom/worker-model");
   });
 });

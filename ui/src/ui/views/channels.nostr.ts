@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 
 import { formatAgo } from "../format";
+import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot, NostrStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
@@ -65,19 +66,19 @@ export function renderNostrCard(params: {
         </div>
         <div class="status-list account-card-status">
           <div>
-            <span class="label">Running</span>
-            <span>${account.running ? "Yes" : "No"}</span>
+            <span class="label">${t("channel.running")}</span>
+            <span>${account.running ? t("channel.yes") : t("channel.no")}</span>
           </div>
           <div>
-            <span class="label">Configured</span>
-            <span>${account.configured ? "Yes" : "No"}</span>
+            <span class="label">${t("channel.configured")}</span>
+            <span>${account.configured ? t("channel.yes") : t("channel.no")}</span>
           </div>
           <div>
-            <span class="label">Public Key</span>
+            <span class="label">${t("channel.publicKey")}</span>
             <span class="monospace" title="${publicKey ?? ""}">${truncatePubkey(publicKey)}</span>
           </div>
           <div>
-            <span class="label">Last inbound</span>
+            <span class="label">${t("channel.lastInbound")}</span>
             <span>${account.lastInboundAt ? formatAgo(account.lastInboundAt) : "n/a"}</span>
           </div>
           ${account.lastError
@@ -118,7 +119,7 @@ export function renderNostrCard(params: {
     return html`
       <div style="margin-top: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 8px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <div style="font-weight: 500;">Profile</div>
+          <div style="font-weight: 500;">${t("nostr.profileLabel")}</div>
           ${summaryConfigured
             ? html`
                 <button
@@ -126,7 +127,7 @@ export function renderNostrCard(params: {
                   @click=${onEditProfile}
                   style="font-size: 12px; padding: 4px 8px;"
                 >
-                  Edit Profile
+                  ${t("nostr.editProfile")}
                 </button>
               `
             : nothing}
@@ -148,19 +149,19 @@ export function renderNostrCard(params: {
                       </div>
                     `
                   : nothing}
-                ${name ? html`<div><span class="label">Name</span><span>${name}</span></div>` : nothing}
+                ${name ? html`<div><span class="label">${t("nostr.name")}</span><span>${name}</span></div>` : nothing}
                 ${displayName
-                  ? html`<div><span class="label">Display Name</span><span>${displayName}</span></div>`
+                  ? html`<div><span class="label">${t("nostr.displayName")}</span><span>${displayName}</span></div>`
                   : nothing}
                 ${about
-                  ? html`<div><span class="label">About</span><span style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${about}</span></div>`
+                  ? html`<div><span class="label">${t("nostr.about")}</span><span style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${about}</span></div>`
                   : nothing}
-                ${nip05 ? html`<div><span class="label">NIP-05</span><span>${nip05}</span></div>` : nothing}
+                ${nip05 ? html`<div><span class="label">${t("nostr.nip05")}</span><span>${nip05}</span></div>` : nothing}
               </div>
             `
           : html`
               <div style="color: var(--text-muted); font-size: 13px;">
-                No profile set. Click "Edit Profile" to add your name, bio, and avatar.
+                ${t("nostr.noProfile")}
               </div>
             `}
       </div>
@@ -171,16 +172,16 @@ export function renderNostrCard(params: {
   const statusBadge = summaryRunning
     ? html`<span class="channel-card__badge channel-card__badge--ok">
         <span class="status-dot status-dot--running"></span>
-        Running
+        ${t("channel.running")}
       </span>`
     : summaryConfigured
       ? html`<span class="channel-card__badge channel-card__badge--warn">
           <span class="status-dot status-dot--configured"></span>
-          Stopped
+          ${t("channel.stopped")}
         </span>`
       : html`<span class="channel-card__badge">
           <span class="status-dot status-dot--unconfigured"></span>
-          Not configured
+          ${t("channel.notConfigured")}
         </span>`;
 
   // 箭头图标
@@ -210,7 +211,7 @@ export function renderNostrCard(params: {
         ${chevronIcon}
       </summary>
       <div class="channel-card__body">
-        <div class="channel-card__desc">Decentralized DMs via Nostr relays (NIP-04).</div>
+        <div class="channel-card__desc">${t("channel.nostrDesc")}</div>
         ${accountCountLabel}
 
         ${hasMultipleAccounts
@@ -223,21 +224,21 @@ export function renderNostrCard(params: {
             ? html`
               <div class="status-list">
                 <div>
-                  <span class="label">Configured</span>
-                  <span>${summaryConfigured ? "Yes" : "No"}</span>
+                  <span class="label">${t("channel.configured")}</span>
+                  <span>${summaryConfigured ? t("channel.yes") : t("channel.no")}</span>
                 </div>
                 <div>
-                  <span class="label">Running</span>
-                  <span>${summaryRunning ? "Yes" : "No"}</span>
+                  <span class="label">${t("channel.running")}</span>
+                  <span>${summaryRunning ? t("channel.yes") : t("channel.no")}</span>
                 </div>
                 <div>
-                  <span class="label">Public Key</span>
+                  <span class="label">${t("channel.publicKey")}</span>
                   <span class="monospace" title="${summaryPublicKey ?? ""}"
                     >${truncatePubkey(summaryPublicKey)}</span
                   >
                 </div>
                 <div>
-                  <span class="label">Last start</span>
+                  <span class="label">${t("channel.lastStart")}</span>
                   <span>${summaryLastStartAt ? formatAgo(summaryLastStartAt) : "n/a"}</span>
                 </div>
               </div>
@@ -253,7 +254,7 @@ export function renderNostrCard(params: {
         ${renderChannelConfigSection({ channelId: "nostr", props })}
 
         <div class="row" style="margin-top: 12px;">
-          <button class="btn" @click=${() => props.onRefresh(false)}>Refresh</button>
+          <button class="btn" @click=${() => props.onRefresh(false)}>${t("channel.refresh")}</button>
         </div>
       </div>
     </details>

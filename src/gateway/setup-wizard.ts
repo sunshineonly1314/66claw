@@ -66,8 +66,12 @@ export async function handleSetupWizardHttpRequest(
   if (pathname.startsWith(SETUP_API_PREFIX)) {
     const apiPath = pathname.slice(SETUP_API_PREFIX.length);
 
-    // 设置 CORS 头
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // 设置 CORS 头 - 限制为本地来源以避免安全风险
+    const origin = req.headers.origin;
+    const allowedOrigins = ["http://localhost", "http://127.0.0.1"];
+    if (origin && allowedOrigins.some((allowed) => origin.startsWith(allowed))) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+    }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 

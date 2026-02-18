@@ -9,21 +9,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../i18n/index.js";
 import type { McpMarketplaceItem } from "../app-view-state.js";
-
-/* ── Category emoji map ─────────────────────────────────── */
-
-const CATEGORY_EMOJI: Record<string, string> = {
-  filesystem: "\u{1F4C1}",
-  database: "\u{1F5C3}\uFE0F",
-  search: "\u{1F50D}",
-  productivity: "\u26A1",
-  development: "\u{1F6E0}\uFE0F",
-  network: "\u{1F310}",
-  smarthome: "\u{1F3E0}",
-  ai: "\u{1F916}",
-  social: "\u{1F4F1}",
-  other: "\u{1F527}",
-};
+import { CATEGORY_EMOJI } from "./mcp-shared.js";
 
 export type MarketplaceCardProps = {
   item: McpMarketplaceItem;
@@ -209,6 +195,10 @@ export function renderMarketplaceCard(props: MarketplaceCardProps): TemplateResu
   return html`
     <div
       @click=${onClick}
+      @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      role="article"
+      tabindex="0"
+      aria-label="${item.friendlyName} — ${item.description}"
       style="
         background:var(--card);
         border:1px solid var(--border);

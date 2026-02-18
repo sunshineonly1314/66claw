@@ -101,7 +101,6 @@ class TypewriterIndicatorDirective extends AsyncDirective {
 
       const count = this.getVisibleCount();
       this.setValue(this.buildOutput());
-      this.commit();
 
       // 还没显示完，继续下一帧
       if (count < this.text.length) {

@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for ClawdbotCN desktop",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open"
+  ]
+}

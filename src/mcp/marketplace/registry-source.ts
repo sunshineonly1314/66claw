@@ -8,58 +8,122 @@
  */
 
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { shouldUseCNMirror } from "../../config/cn-mirrors.js";
 import type { McpMarketplaceItem } from "./types.js";
 
 const logger = createSubsystemLogger("registry-source");
 
 const REGISTRY_CONFIG = {
   baseUrl: "https://registry.modelcontextprotocol.io/v0.1/servers",
+  /** GitHub-hosted mirror of registry data, accessible via CN proxies */
+  mirrorUrls: [
+    "https://gh-proxy.com/https://raw.githubusercontent.com/modelcontextprotocol/servers/main/registry/servers.json",
+    "https://ghfast.top/https://raw.githubusercontent.com/modelcontextprotocol/servers/main/registry/servers.json",
+  ],
   timeoutMs: 30_000,
-  maxItems: 200,
+  /** Per-page timeout for paginated requests */
+  pageTimeoutMs: 15_000,
+  /** Shorter timeout for CN users — fail fast and try mirror */
+  cnTimeoutMs: 8_000,
+  maxItems: 5000,
+  /** Max pages to fetch to avoid infinite loops */
+  maxPages: 200,
 };
 
 /**
  * Fetch MCP server listings from the Official MCP Registry.
+ * For CN users, tries GitHub proxy mirrors first with short timeout,
+ * then falls back to the official URL.
  * Returns empty array on failure (never throws).
  */
 export async function fetchFromOfficialRegistry(): Promise<McpMarketplaceItem[]> {
+  const useCN = shouldUseCNMirror();
+
+  if (useCN) {
+    // CN path: try mirrors first, then official as fallback
+    for (const mirrorUrl of REGISTRY_CONFIG.mirrorUrls) {
+      const items = await fetchRegistryUrl(mirrorUrl, REGISTRY_CONFIG.cnTimeoutMs);
+      if (items.length > 0) {
+        logger.info(`Official Registry (CN mirror): ${items.length} items fetched`);
+        return items;
+      }
+    }
+    // Fall through to official URL with shorter timeout
+    const items = await fetchRegistryUrl(REGISTRY_CONFIG.baseUrl, REGISTRY_CONFIG.cnTimeoutMs);
+    if (items.length > 0) return items;
+    return [];
+  }
+
+  // Non-CN path: direct fetch
+  return fetchRegistryUrl(REGISTRY_CONFIG.baseUrl, REGISTRY_CONFIG.timeoutMs);
+}
+
+/**
+ * Fetch and parse a registry URL with pagination support.
+ * The official registry returns paginated results with `metadata.nextCursor`.
+ * Returns empty array on failure.
+ */
+async function fetchRegistryUrl(url: string, timeoutMs: number): Promise<McpMarketplaceItem[]> {
   try {
-    logger.info("Fetching from Official MCP Registry...");
+    logger.info(`Fetching from ${url}...`);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REGISTRY_CONFIG.timeoutMs);
+    const allServers: RegistryServer[] = [];
+    let cursor: string | undefined;
+    let page = 0;
 
-    let response: Response;
-    try {
-      response = await fetch(REGISTRY_CONFIG.baseUrl, {
-        signal: controller.signal,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "OpenClawCN-MCP-Sync/1.0",
-        },
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
+    // Paginated fetch loop
+    do {
+      const pageUrl = cursor
+        ? `${url}${url.includes("?") ? "&" : "?"}cursor=${encodeURIComponent(cursor)}`
+        : url;
 
-    if (!response.ok) {
-      logger.warn(`Official Registry returned ${response.status}: ${response.statusText}`);
-      return [];
-    }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    const raw = await response.json();
-    const servers = extractServers(raw);
+      let response: Response;
+      try {
+        response = await fetch(pageUrl, {
+          signal: controller.signal,
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "OpenClawCN-MCP-Sync/1.0",
+          },
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
-    const items = servers
+      if (!response.ok) {
+        logger.warn(`Registry returned ${response.status}: ${response.statusText} from ${pageUrl}`);
+        break;
+      }
+
+      const raw = await response.json();
+      const { servers, nextCursor } = extractServersPage(raw);
+
+      allServers.push(...servers);
+      cursor = nextCursor;
+      page++;
+
+      if (page > 1 && page % 10 === 0) {
+        logger.debug(`Registry pagination: ${allServers.length} servers after ${page} pages`);
+      }
+    } while (
+      cursor &&
+      page < REGISTRY_CONFIG.maxPages &&
+      allServers.length < REGISTRY_CONFIG.maxItems
+    );
+
+    const items = allServers
       .slice(0, REGISTRY_CONFIG.maxItems)
       .map(normalizeRegistryServer)
       .filter((item): item is McpMarketplaceItem => item !== null);
 
-    logger.info(`Official Registry: ${items.length} items fetched`);
+    logger.info(`Official Registry: ${items.length} items fetched from ${url} (${page} page(s))`);
     return items;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`Official Registry fetch failed: ${msg}`);
+    logger.warn(`Registry fetch failed from ${url}: ${msg}`);
     return [];
   }
 }
@@ -70,28 +134,78 @@ export async function fetchFromOfficialRegistry(): Promise<McpMarketplaceItem[]>
 
 interface RegistryServer {
   name?: string;
+  title?: string;
   description?: string;
   version?: string;
   versions?: string[];
-  repository?: { url?: string };
+  repository?: { url?: string; source?: string };
   homepage?: string;
+  websiteUrl?: string;
   packages?: Array<{
+    /** Old format field name */
     registry_name?: string;
+    /** New format (v0.1) field name */
+    registryType?: string;
     name?: string;
+    /** New format: npm package identifier, e.g. "@scope/pkg" */
+    identifier?: string;
     version?: string;
+    transport?: { type?: string };
+  }>;
+  remotes?: Array<{
+    type?: string;
+    url?: string;
   }>;
   [key: string]: unknown;
 }
 
-function extractServers(raw: unknown): RegistryServer[] {
-  if (Array.isArray(raw)) return raw;
+interface ExtractedPage {
+  servers: RegistryServer[];
+  nextCursor?: string;
+}
+
+/**
+ * Extract servers from a paginated registry response.
+ *
+ * The official registry v0.1 returns:
+ *   { servers: [{ server: {...}, _meta: {...} }, ...], metadata: { nextCursor, count } }
+ *
+ * Legacy/mirror format:
+ *   [{ name, description, ... }, ...]    (flat array)
+ *   { servers: [{ name, ... }, ...] }    (simple wrapper)
+ *   { data: [...] } or { items: [...] }  (other wrappers)
+ */
+function extractServersPage(raw: unknown): ExtractedPage {
+  if (Array.isArray(raw)) {
+    return { servers: raw };
+  }
+
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
-    if (Array.isArray(obj.servers)) return obj.servers;
-    if (Array.isArray(obj.data)) return obj.data;
-    if (Array.isArray(obj.items)) return obj.items;
+
+    // Official v0.1 paginated format: { servers: [{ server: {...}, _meta }, ...], metadata: { nextCursor } }
+    if (Array.isArray(obj.servers)) {
+      const nextCursor = (obj.metadata as Record<string, unknown>)?.nextCursor as
+        | string
+        | undefined;
+
+      // Check if entries are nested { server: {...} } or flat { name: ... }
+      const entries = obj.servers as Record<string, unknown>[];
+      const servers: RegistryServer[] = entries.map((entry) => {
+        if (entry.server && typeof entry.server === "object") {
+          return entry.server as RegistryServer;
+        }
+        return entry as RegistryServer;
+      });
+
+      return { servers, nextCursor };
+    }
+
+    if (Array.isArray(obj.data)) return { servers: obj.data };
+    if (Array.isArray(obj.items)) return { servers: obj.items };
   }
-  return [];
+
+  return { servers: [] };
 }
 
 function normalizeRegistryServer(server: RegistryServer): McpMarketplaceItem | null {
@@ -100,19 +214,39 @@ function normalizeRegistryServer(server: RegistryServer): McpMarketplaceItem | n
 
   const serverId = name.replace(/\//g, "-").replace(/@/g, "");
   const description = String(server.description ?? "");
+  const displayName = server.title || name;
 
   // Try to find npm package from packages array
   let npmPackage: string | undefined;
+  let pypiPackage: string | undefined;
   if (Array.isArray(server.packages)) {
-    const npmPkg = server.packages.find((p) => p.registry_name === "npm");
-    npmPackage = npmPkg?.name;
+    // New format: registryType + identifier; Old format: registry_name + name
+    const npmPkg = server.packages.find(
+      (p) => p.registryType === "npm" || p.registry_name === "npm",
+    );
+    npmPackage = npmPkg?.identifier ?? npmPkg?.name;
+
+    const pypiPkg = server.packages.find(
+      (p) => p.registryType === "pypi" || p.registry_name === "pypi",
+    );
+    pypiPackage = pypiPkg?.identifier ?? pypiPkg?.name;
   }
-  if (!npmPackage && (name.startsWith("@") || name.includes("/"))) {
+  // Only infer npm package from name if it looks like an npm scope (e.g. @scope/pkg).
+  // Official registry names like "ai.exa/exa" are NOT npm packages.
+  if (!npmPackage && name.startsWith("@") && name.includes("/")) {
     npmPackage = name;
   }
 
-  const version = server.version
-    ?? (Array.isArray(server.versions) && server.versions.length > 0
+  // Extract SSE/streamable-http remote URL
+  let sseUrl: string | undefined;
+  if (Array.isArray(server.remotes)) {
+    const remote = server.remotes.find((r) => r.type === "sse" || r.type === "streamable-http");
+    sseUrl = remote?.url;
+  }
+
+  const version =
+    server.version ??
+    (Array.isArray(server.versions) && server.versions.length > 0
       ? server.versions[server.versions.length - 1]
       : "0.0.0");
 
@@ -120,21 +254,23 @@ function normalizeRegistryServer(server: RegistryServer): McpMarketplaceItem | n
 
   return {
     serverId,
-    friendlyName: name,
-    friendlyNameEn: name,
+    friendlyName: displayName,
+    friendlyNameEn: displayName,
     description,
     descriptionEn: description,
     category,
     tags: [],
     version: String(version),
     npmPackage,
+    pypiPackage,
+    sseUrl,
     requiresApiKey: false,
     platforms: ["linux", "macos", "windows"],
     isOfficial: true,
     isNew: false,
     toolCount: 0,
     source: "official-registry",
-    sourceUrl: server.homepage ?? server.repository?.url ?? undefined,
+    sourceUrl: server.websiteUrl ?? server.homepage ?? server.repository?.url ?? undefined,
   };
 }
 

@@ -73,7 +73,7 @@ export type PollSummary = {
 };
 
 export function isPollStartType(eventType: string): boolean {
-  return POLL_START_TYPES.includes(eventType);
+  return (POLL_START_TYPES as readonly string[]).includes(eventType);
 }
 
 export function getTextContent(text?: TextContent): string {
@@ -138,7 +138,8 @@ export function buildPollStartContent(poll: PollInput): PollStartContent {
       ...buildTextContent(option),
     }));
 
-  const maxSelections = poll.multiple ? Math.max(1, answers.length) : 1;
+  const isMultiple = (poll.maxSelections ?? 1) > 1;
+  const maxSelections = isMultiple ? Math.max(1, answers.length) : 1;
   const fallbackText = buildPollFallbackText(
     question,
     answers.map((answer) => getTextContent(answer)),
@@ -147,7 +148,7 @@ export function buildPollStartContent(poll: PollInput): PollStartContent {
   return {
     [M_POLL_START]: {
       question: buildTextContent(question),
-      kind: poll.multiple ? "m.poll.undisclosed" : "m.poll.disclosed",
+      kind: isMultiple ? "m.poll.undisclosed" : "m.poll.disclosed",
       max_selections: maxSelections,
       answers,
     },

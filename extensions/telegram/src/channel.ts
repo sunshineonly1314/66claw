@@ -377,7 +377,10 @@ export const telegramPlugin: ChannelPlugin<ResolvedTelegramAccount, TelegramProb
   gateway: {
     startAccount: async (ctx) => {
       const account = ctx.account;
-      const token = account.token.trim();
+      const token = account.token?.trim();
+      if (!token) {
+        throw new Error(`[${account.accountId}] token is required but missing or empty`);
+      }
       let telegramBotLabel = "";
       try {
         const probe = await getTelegramRuntime().channel.telegram.probeTelegram(

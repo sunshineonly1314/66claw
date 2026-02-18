@@ -1,5 +1,15 @@
 import { scot, da } from "@urbit/aura";
 
+/** Format a BigInt as @ud (dot-separated groups of 3 digits). */
+function formatUd(n: bigint): string {
+  const s = n.toString();
+  const parts: string[] = [];
+  for (let i = s.length; i > 0; i -= 3) {
+    parts.unshift(s.slice(Math.max(0, i - 3), i));
+  }
+  return parts.join(".");
+}
+
 export type TlonPokeApi = {
   poke: (params: { app: string; mark: string; json: unknown }) => Promise<unknown>;
 };

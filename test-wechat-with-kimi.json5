@@ -1,0 +1,150 @@
+/**
+ * 微信自动化客服配置 - 使用 Kimi AI
+ *
+ * 组件:
+ * - ClawChat: 微信消息收发桥接
+ * - Kimi: AI 模型 (智能回复)
+ */
+{
+  gateway: {
+    bind: "loopback",
+    port: 18789,
+  },
+
+  // ============================================================================
+  // 模型配置 - Kimi AI
+  // ============================================================================
+  models: {
+    mode: "merge",
+    providers: {
+      "kimi": {
+        baseUrl: "https://api.moonshot.cn/v1",
+        apiKey: "sk-kimi-GVA3cwHgmdtI9pCvaqkvhjw8laZZbeovAx9DgbNHLgB2qt6l836cHbzSRcsWSJgH",
+        api: "openai-completions",
+        models: [
+          {
+            id: "moonshot-v1-8k",
+            name: "Kimi 8K",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 8000,
+            maxTokens: 500,
+          },
+          {
+            id: "moonshot-v1-32k",
+            name: "Kimi 32K",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 32000,
+            maxTokens: 500,
+          },
+          {
+            id: "moonshot-v1-128k",
+            name: "Kimi 128K",
+            reasoning: false,
+            input: ["text"],
+            contextWindow: 128000,
+            maxTokens: 1000,
+          },
+        ],
+      },
+    },
+  },
+
+  // ============================================================================
+  // 插件配置 - 个人微信 (需要 ClawChat API Key)
+  // ============================================================================
+  plugins: {
+    enabled: ["openclawwechat"],
+    entries: {
+      openclawwechat: {
+        enabled: true,
+        config: {
+          // ⚠️ TODO: 替换为你的 ClawChat API Key
+          // 格式: cc_xxx:xxxxxxxxxxxxxxxx
+          // 获取: 微信搜索小程序 "ClawChat" -> 设置 -> API密钥
+          apiKey: "placeholder:placeholder",
+
+          // 轮询间隔：3秒
+          pollIntervalMs: 3000,
+
+          // 会话配置
+          sessionKey: "agent:wechat-kimi:main",
+
+          // 调试模式
+          debug: true,
+
+          // ===== 防检测配置 =====
+          antiDetection: {
+            // 随机延迟回复 (秒)
+            replyDelayMin: 2,
+            replyDelayMax: 8,
+
+            // 每小时最大回复数量
+            maxRepliesPerHour: 30,
+
+            // 24小时最大回复数量
+            maxRepliesPerDay: 100,
+
+            // 模拟打字延迟 (每100字符延迟秒数)
+            typingDelayPer100Chars: 2,
+
+            // 夜间静默时段 (不自动回复)
+            quietHours: {
+              start: "00:00",
+              end: "07:00"
+            },
+
+            // 黑名单关键词（包含这些词的消息不回复）
+            blacklistKeywords: [
+              "测试",
+              "test",
+              "机器人",
+              "bot",
+              "自动回复",
+            ],
+
+            // 白名单用户（只回复这些用户，留空则回复所有）
+            whitelistUsers: [],
+          }
+        },
+      },
+    },
+  },
+
+  // ============================================================================
+  // Agent 配置 - 使用 Kimi AI
+  // ============================================================================
+  agent: {
+    model: "moonshot-v1-8k",  // 使用 Kimi 8K 模型
+    temperature: 0.8,         // 较高随机性，回复更自然
+    maxTokens: 300,
+
+    systemPrompt: `你是一个友好的个人助手，名字叫"龙虾"。
+
+【身份设定】
+- 你是微信号主人"龙虾"的助手，帮忙回复消息
+- 不要说你是"机器人"、"AI助手"、"客服"
+- 语气要像真人聊天，自然、随意
+- 你可以说"我是龙虾的助手"，但不要说"我是AI"
+
+【回复风格】
+1. 简短有趣（20-50字）
+2. 使用口语化表达："哈哈"、"嗯嗯"、"好呀"
+3. 适当使用表情符号 😊 👍 🎉
+4. 语气活泼，像朋友聊天
+
+【场景处理】
+- 问"在吗"：回复"在呢！有什么事吗？😊"
+- 打招呼：回复"你好呀！我是龙虾 🦞"
+- 问私人问题：回复"这个我不太清楚哦，龙虾稍后会回复你的～"
+- 闲聊话题：可以轻松聊天，但不要太长篇大论
+
+【重要提醒】
+- 绝对不要说自己是AI或机器人
+- 遇到复杂问题，说"我让龙虾回头回你"
+- 保持轻松友好的语气
+
+记住：你是龙虾的朋友兼助手！🦞`,
+  },
+}

@@ -23,7 +23,14 @@ export type SsrFPolicy = {
   hostnameAllowlist?: string[];
 };
 
-const BLOCKED_HOSTNAMES = new Set(["localhost", "metadata.google.internal"]);
+const BLOCKED_HOSTNAMES = new Set([
+  "localhost",
+  "localhost.localdomain", // Common localhost variant
+  "metadata.google.internal",
+  "169.254.169.254", // AWS/GCP/Azure metadata service
+  "metadata", // Azure metadata shorthand
+  "0.0.0.0", // Unspecified address
+]);
 
 function normalizeHostname(hostname: string): string {
   const normalized = hostname.trim().toLowerCase().replace(/\.$/, "");
@@ -165,28 +172,83 @@ function extractIpv4FromEmbeddedIpv6(hextets: number[]): number[] | null {
 }
 
 function isPrivateIpv4(parts: number[]): boolean {
-  const [octet1, octet2] = parts;
+  const [octet1, octet2, octet3, octet4] = parts;
+
+  // 0.0.0.0/8 - "This" network (current network, unspecified)
   if (octet1 === 0) {
     return true;
   }
+
+  // 10.0.0.0/8 - Private network (Class A)
   if (octet1 === 10) {
     return true;
   }
+
+  // 127.0.0.0/8 - Loopback
   if (octet1 === 127) {
     return true;
   }
+
+  // 169.254.0.0/16 - Link-local (APIPA)
   if (octet1 === 169 && octet2 === 254) {
     return true;
   }
+
+  // 172.16.0.0/12 - Private network (Class B)
   if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) {
     return true;
   }
+
+  // 192.168.0.0/16 - Private network (Class C)
   if (octet1 === 192 && octet2 === 168) {
     return true;
   }
+
+  // 100.64.0.0/10 - Shared address space (CGN)
   if (octet1 === 100 && octet2 >= 64 && octet2 <= 127) {
     return true;
   }
+
+  // 192.0.0.0/24 - IETF Protocol Assignments
+  if (octet1 === 192 && octet2 === 0 && octet3 === 0) {
+    return true;
+  }
+
+  // 192.0.2.0/24 - TEST-NET-1 (Documentation)
+  if (octet1 === 192 && octet2 === 0 && octet3 === 2) {
+    return true;
+  }
+
+  // 198.18.0.0/15 - Benchmarking
+  if (octet1 === 198 && (octet2 === 18 || octet2 === 19)) {
+    return true;
+  }
+
+  // 198.51.100.0/24 - TEST-NET-2 (Documentation)
+  if (octet1 === 198 && octet2 === 51 && octet3 === 100) {
+    return true;
+  }
+
+  // 203.0.113.0/24 - TEST-NET-3 (Documentation)
+  if (octet1 === 203 && octet2 === 0 && octet3 === 113) {
+    return true;
+  }
+
+  // 224.0.0.0/4 - Multicast (Class D)
+  if (octet1 >= 224 && octet1 <= 239) {
+    return true;
+  }
+
+  // 240.0.0.0/4 - Reserved for future use (Class E)
+  if (octet1 >= 240 && octet1 <= 255) {
+    return true;
+  }
+
+  // 255.255.255.255/32 - Broadcast address
+  if (octet1 === 255 && octet2 === 255 && octet3 === 255 && octet4 === 255) {
+    return true;
+  }
+
   return false;
 }
 
@@ -264,11 +326,30 @@ export function isBlockedHostname(hostname: string): boolean {
   if (BLOCKED_HOSTNAMES.has(normalized)) {
     return true;
   }
-  return (
+  // Block common localhost/internal variants
+  if (
     normalized.endsWith(".localhost") ||
     normalized.endsWith(".local") ||
-    normalized.endsWith(".internal")
-  );
+    normalized.endsWith(".internal") ||
+    normalized.endsWith(".localdomain") // Additional variant
+  ) {
+    return true;
+  }
+
+  // Block DNS rebinding patterns like "127-0-0-1.com"
+  // These resolve to 127.0.0.1 but bypass simple blocklists
+  const dnsRebindingPattern = /^(\d+)-(\d+)-(\d+)-(\d+)\./;
+  if (dnsRebindingPattern.test(normalized)) {
+    const match = normalized.match(dnsRebindingPattern);
+    if (match) {
+      const testIp = `${match[1]}.${match[2]}.${match[3]}.${match[4]}`;
+      if (isPrivateIpAddress(testIp)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 export function createPinnedLookup(params: {

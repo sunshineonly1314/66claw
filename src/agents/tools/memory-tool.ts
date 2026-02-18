@@ -68,10 +68,12 @@ export function createMemorySearchTool(options: {
         const status = manager.status();
         const decorated = decorateCitations(rawResults, includeCitations);
         const resolved = resolveMemoryBackendConfig({ cfg, agentId });
+        // [CN-PATCH:memory-p0] Builtin 后端也添加 token 注入上限（4000 chars ≈ 1000 tokens）
+        // 上游原代码: Builtin 无上限（`: decorated`），开启 sessions 搜索后可能注入过多 context
         const results =
           status.backend === "qmd"
             ? clampResultsByInjectedChars(decorated, resolved.qmd?.limits.maxInjectedChars)
-            : decorated;
+            : clampResultsByInjectedChars(decorated, 4000);
         return jsonResult({
           results,
           provider: status.provider,

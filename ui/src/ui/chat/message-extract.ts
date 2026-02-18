@@ -3,6 +3,15 @@ import { stripThinkingTags } from "../format.ts";
 
 const textCache = new WeakMap<object, string | null>();
 const thinkingCache = new WeakMap<object, string | null>();
+const freeModelNotificationCache = new WeakMap<object, FreeModelNotification | null>();
+
+/** OpenClawCN 免费模型通知类型 */
+export type FreeModelNotification = {
+  type: "started" | "switched" | "exhausted" | "fallback";
+  providerName: string;
+  message: string;
+  showInChat: boolean;
+};
 
 export function extractText(message: unknown): string | null {
   const m = message as Record<string, unknown>;
@@ -129,4 +138,37 @@ export function formatReasoningMarkdown(text: string): string {
     .filter(Boolean)
     .map((line) => `_${line}_`);
   return lines.length ? ["_Reasoning:_", ...lines].join("\n") : "";
+}
+
+/**
+ * Extract OpenClawCN free model notification from message text
+ */
+export function extractFreeModelNotification(message: unknown): FreeModelNotification | null {
+  if (!message || typeof message !== "object") return null;
+
+  const obj = message as object;
+  if (freeModelNotificationCache.has(obj)) {
+    return freeModelNotificationCache.get(obj) ?? null;
+  }
+
+  const rawText = extractRawText(message);
+  if (!rawText) {
+    freeModelNotificationCache.set(obj, null);
+    return null;
+  }
+
+  const match = rawText.match(/<!--OPENCLAWCN_FREE_MODEL_NOTIFICATION:(.+?)-->/);
+  if (!match) {
+    freeModelNotificationCache.set(obj, null);
+    return null;
+  }
+
+  try {
+    const notification = JSON.parse(match[1]) as FreeModelNotification;
+    freeModelNotificationCache.set(obj, notification);
+    return notification;
+  } catch {
+    freeModelNotificationCache.set(obj, null);
+    return null;
+  }
 }

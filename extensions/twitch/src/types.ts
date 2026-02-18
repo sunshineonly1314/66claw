@@ -12,6 +12,7 @@ import type {
   ChannelMessageActionAdapter,
   ChannelMessageActionContext,
   ChannelMeta,
+  ChannelStatusIssue,
 } from "../../../src/channels/plugins/types.core.js";
 import type { ChannelPlugin } from "../../../src/channels/plugins/types.plugin.js";
 import type {
@@ -22,7 +23,7 @@ import type {
   ChannelResolveResult,
   ChannelStatusAdapter,
 } from "../../../src/channels/plugins/types.adapters.js";
-import type { ClawdbotConfig } from "../../../src/config/config.js";
+import type { OpenClawCNConfig } from "../../../src/config/config.js";
 import type { OutboundDeliveryResult } from "../../../src/infra/outbound/deliver.js";
 import type { RuntimeEnv } from "../../../src/runtime.js";
 
@@ -124,6 +125,7 @@ export type {
   ChannelMeta,
   ChannelOutboundAdapter,
   ChannelStatusAdapter,
+  ChannelStatusIssue,
   ChannelCapabilities,
   ChannelResolveKind,
   ChannelResolveResult,
@@ -137,5 +139,5 @@ import type { TwitchConfigSchema } from "./config-schema.js";
 import type { z } from "zod";
 export type TwitchConfig = z.infer<typeof TwitchConfigSchema>;
 
-export type { ClawdbotConfig };
+export type { OpenClawCNConfig as ClawdbotConfig };
 export type { RuntimeEnv };

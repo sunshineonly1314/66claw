@@ -151,10 +151,10 @@
 "docker":
   - changed-files:
       - any-glob-to-any-file:
-          - "Dockerfile"
-          - "Dockerfile.*"
-          - "docker-compose.yml"
-          - "docker-setup.sh"
+          - "docker/Dockerfile"
+          - "docker/Dockerfile.*"
+          - "docker/docker-compose.yml"
+          - "docker/docker-setup.sh"
           - ".dockerignore"
           - "scripts/**/*docker*"
           - "scripts/**/Dockerfile*"

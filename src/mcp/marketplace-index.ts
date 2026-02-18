@@ -12,16 +12,19 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { resolveOpenClawCNPackageRootSync } from "../infra/openclaw-root.js";
+import type { McpMarketplaceItem } from "./marketplace/types.js";
 
-// Resolve the bundled data directory relative to this module's location.
-// Layout: src/mcp/marketplace-index.ts → ../../data/mcp-index.json
-const __dirname_resolved = typeof __dirname !== "undefined"
-  ? __dirname
-  : dirname(fileURLToPath(import.meta.url));
-const BUNDLED_DATA_DIR = join(__dirname_resolved, "..", "..", "data");
+// Re-export the shared type for convenience
+export type { McpMarketplaceItem } from "./marketplace/types.js";
+
+// Resolve bundled data dir via package root (works in both src/ and dist/).
+// resolveOpenClawCNPackageRootSync walks up directories to find the project
+// root (with package.json name "openclawcn"), so the path is correct
+// regardless of Rollup flattening dist/ structure.
+const PACKAGE_ROOT = resolveOpenClawCNPackageRootSync({ cwd: process.cwd() });
+const BUNDLED_DATA_DIR = PACKAGE_ROOT ? join(PACKAGE_ROOT, "data") : undefined;
 
 // Default data directory candidates (user dirs first, bundled fallback last)
 const DATA_DIR_CANDIDATES = [
@@ -31,15 +34,15 @@ const DATA_DIR_CANDIDATES = [
   BUNDLED_DATA_DIR,
 ].filter(Boolean) as string[];
 
-let cachedIndex: Record<string, unknown>[] | null = null;
+let cachedIndex: McpMarketplaceItem[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Read and return the marketplace index as an array of item records.
+ * Read and return the marketplace index as a typed array.
  * Results are cached for 5 minutes to avoid repeated disk reads.
  */
-export async function readMarketplaceIndex(): Promise<Record<string, unknown>[]> {
+export async function readMarketplaceIndex(): Promise<McpMarketplaceItem[]> {
   const now = Date.now();
   if (cachedIndex && now - cacheTimestamp < CACHE_TTL_MS) {
     return cachedIndex;
@@ -47,18 +50,27 @@ export async function readMarketplaceIndex(): Promise<Record<string, unknown>[]>
 
   for (const dir of DATA_DIR_CANDIDATES) {
     const filePath = join(dir, "mcp-index.json");
-    if (existsSync(filePath)) {
-      try {
-        const raw = await readFile(filePath, "utf-8");
-        const parsed = JSON.parse(raw);
-        const items = Array.isArray(parsed) ? parsed : Array.isArray(parsed.items) ? parsed.items : [];
-        cachedIndex = items;
-        cacheTimestamp = now;
-        return items;
-      } catch {
-        // Corrupted file — try next candidate
-        continue;
+    try {
+      const raw = await readFile(filePath, "utf-8");
+      const parsed = JSON.parse(raw);
+      const items: McpMarketplaceItem[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.items)
+          ? parsed.items
+          : [];
+      cachedIndex = items;
+      cacheTimestamp = now;
+      return items;
+    } catch (err) {
+      // File not found or corrupted — try next candidate
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        console.warn(
+          `[mcp-marketplace-index] Failed to read/parse ${filePath}:`,
+          err instanceof Error ? err.message : String(err),
+        );
       }
+      continue;
     }
   }
 

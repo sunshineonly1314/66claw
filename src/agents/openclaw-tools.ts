@@ -21,6 +21,16 @@ import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
+// ── [CN-PATCH] CN-only tool imports ──
+import { createOpenAppTool } from "./tools/open-app.js";
+import { createDesktopControlTool } from "./tools/desktop-control.js";
+import { createWeChatSendTool } from "./tools/wechat-send.js";
+import { createWeChatReadTool } from "./tools/wechat-read.js";
+import { createWeChatCheckTool } from "./tools/wechat-check.js";
+import { createImageGenTool } from "./tools/image-gen-tool.js";
+import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
+import { getMCPManagerSafe } from "../mcp/index.js";
+import { applyToolHints } from "../dispatch/tool-hints.js";
 
 export function createOpenClawCNTools(options?: {
   sandboxBrowserBridgeUrl?: string;
@@ -61,6 +71,9 @@ export function createOpenClawCNTools(options?: {
   requireExplicitMessageTarget?: boolean;
   /** If true, omit the message tool from the tool list. */
   disableMessageTool?: boolean;
+  // ── [CN-PATCH] Tool hints from dispatch engine (auto-discovery) ──
+  /** Tool hints from dispatch engine for tool reordering. */
+  toolHints?: string[];
 }): AnyAgentTool[] {
   const workspaceDir = resolveWorkspaceRoot(options?.workspaceDir);
   const imageTool = options?.agentDir?.trim()
@@ -82,6 +95,16 @@ export function createOpenClawCNTools(options?: {
   const webFetchTool = createWebFetchTool({
     config: options?.config,
     sandboxed: options?.sandboxed,
+  });
+  // ── [CN-PATCH] CN-only tools ──
+  const openAppTool = createOpenAppTool();
+  const desktopControlTool = createDesktopControlTool();
+  const wechatSendTool = createWeChatSendTool();
+  const wechatReadTool = createWeChatReadTool();
+  const wechatCheckTool = createWeChatCheckTool();
+  const imageGenTool = createImageGenTool({
+    config: options?.config,
+    agentDir: options?.agentDir,
   });
   const messageTool = options?.disableMessageTool
     ? null
@@ -167,6 +190,16 @@ export function createOpenClawCNTools(options?: {
     ...(webSearchTool ? [webSearchTool] : []),
     ...(webFetchTool ? [webFetchTool] : []),
     ...(imageTool ? [imageTool] : []),
+    // ── [CN-PATCH] CN-only tools ──
+    ...(openAppTool ? [openAppTool] : []),
+    ...(desktopControlTool ? [desktopControlTool] : []),
+    ...(wechatSendTool ? [wechatSendTool] : []),
+    ...(wechatReadTool ? [wechatReadTool] : []),
+    ...(wechatCheckTool ? [wechatCheckTool] : []),
+    imageGenTool,
+    ...(options?.config?.toolDiscovery?.mcpOnDemand?.enabled !== false
+      ? [createMcpInstallTool()]
+      : []),
   ];
 
   const pluginTools = resolvePluginTools({
@@ -187,7 +220,22 @@ export function createOpenClawCNTools(options?: {
     toolAllowlist: options?.pluginToolAllowlist,
   });
 
-  return [...tools, ...pluginTools];
+  // ── [CN-PATCH] MCP tools: bridge all available MCP server tools into the Agent tool chain.
+  // Deduplicate: MCP tools must not shadow builtin or plugin tools.
+  const mcpToolsRaw = getMCPManagerSafe()?.getAvailableTools() ?? [];
+  const existingNames = new Set([...tools, ...pluginTools].map((t) => t.name));
+  const mcpTools = mcpToolsRaw.filter((t) => {
+    if (existingNames.has(t.name)) {
+      console.warn(`[mcp] Skipping MCP tool "${t.name}" — conflicts with existing tool`);
+      return false;
+    }
+    return true;
+  });
+
+  // ── [CN-PATCH] Apply tool hints (reorder tools based on dispatch auto-discovery)
+  const sortedTools = options?.toolHints ? applyToolHints(tools, options.toolHints) : tools;
+
+  return [...sortedTools, ...pluginTools, ...mcpTools];
 }
 
 /** @deprecated Use createOpenClawCNTools instead */

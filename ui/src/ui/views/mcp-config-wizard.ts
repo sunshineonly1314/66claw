@@ -42,6 +42,9 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
 
     <!-- Wizard panel -->
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="${t("extensions.config.title").replace("{{name}}", item.friendlyName)}"
       style="
         position:fixed;
         top:50%; left:50%;
@@ -138,24 +141,51 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
           <div style="font-size:13px; font-weight:600; color:var(--fg); margin-bottom:8px;">
             ${t("extensions.config.step3")}
           </div>
-          <input
-            id="mcp-api-key-input"
-            type="password"
-            placeholder="${keyFieldName}"
-            style="
-              width:100%;
-              box-sizing:border-box;
-              padding:10px 14px;
-              border:1px solid var(--border);
-              border-radius:8px;
-              background:var(--card);
-              color:var(--fg);
-              font-size:13px;
-              outline:none;
-              transition:border-color 150ms;
-            "
-            class="mcp-key-input"
-          />
+          <div style="position:relative;">
+            <input
+              id="mcp-api-key-input"
+              type="password"
+              placeholder="${keyFieldName}"
+              autocomplete="off"
+              style="
+                width:100%;
+                box-sizing:border-box;
+                padding:10px 40px 10px 14px;
+                border:1px solid var(--border);
+                border-radius:8px;
+                background:var(--card);
+                color:var(--fg);
+                font-size:13px;
+                outline:none;
+                transition:border-color 150ms;
+              "
+              class="mcp-key-input"
+            />
+            <button
+              type="button"
+              @click=${(e: Event) => {
+                const btn = e.target as HTMLElement;
+                const container = btn.closest("div");
+                const input = container?.querySelector("#mcp-api-key-input") as HTMLInputElement | null;
+                if (!input) return;
+                const isPassword = input.type === "password";
+                input.type = isPassword ? "text" : "password";
+                btn.textContent = isPassword ? "\u{1F441}" : "\u{1F441}\u200D\u{1F5E8}";
+              }}
+              style="
+                all:unset; cursor:pointer;
+                position:absolute;
+                right:10px;
+                top:50%;
+                transform:translateY(-50%);
+                font-size:14px;
+                color:var(--muted-strong, #6b7d91);
+                padding:2px;
+                line-height:1;
+              "
+              title="${t("extensions.config.toggleVisibility" as never)}"
+            >\u{1F441}\u200D\u{1F5E8}</button>
+          </div>
           <div style="
             font-size:11px;
             color:var(--muted-strong, #6b7d91);
@@ -236,7 +266,27 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
           @click=${() => {
             const input = document.getElementById("mcp-api-key-input") as HTMLInputElement | null;
             const val = input?.value?.trim() ?? "";
-            if (val) onSaveAndEnable({ [keyFieldName]: val });
+            if (!val) return;
+            // Collect extra env vars from advanced config
+            const env: Record<string, string> = { [keyFieldName]: val };
+            const extraContainer = document.getElementById("mcp-extra-env");
+            if (extraContainer) {
+              // Template row (always present)
+              const templateRow = extraContainer.querySelector(".mcp-env-row-template");
+              if (templateRow) {
+                const k = (templateRow.querySelector(".mcp-env-key") as HTMLInputElement)?.value?.trim();
+                const v = (templateRow.querySelector(".mcp-env-val") as HTMLInputElement)?.value?.trim();
+                if (k && v) env[k] = v;
+              }
+              // Dynamic rows
+              const dynamicRows = extraContainer.querySelectorAll("#mcp-env-rows > div");
+              dynamicRows.forEach((row) => {
+                const k = (row.querySelector(".mcp-env-key") as HTMLInputElement)?.value?.trim();
+                const v = (row.querySelector(".mcp-env-val") as HTMLInputElement)?.value?.trim();
+                if (k && v) env[k] = v;
+              });
+            }
+            onSaveAndEnable(env);
           }}
           style="
             all:unset; cursor:pointer;
@@ -270,9 +320,11 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
             font-size:12px;
             color:var(--fg-secondary, #a0aec0);
           ">
-            <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <div id="mcp-env-rows"></div>
+            <div style="display:flex; gap:8px; margin-bottom:8px;" class="mcp-env-row-template">
               <input
                 placeholder="KEY"
+                class="mcp-env-key"
                 style="
                   flex:1; padding:6px 10px;
                   border:1px solid var(--border); border-radius:6px;
@@ -282,6 +334,7 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
               />
               <input
                 placeholder="VALUE"
+                class="mcp-env-val"
                 style="
                   flex:1; padding:6px 10px;
                   border:1px solid var(--border); border-radius:6px;
@@ -290,10 +343,40 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
                 "
               />
             </div>
-            <button style="
-              all:unset; cursor:pointer;
-              font-size:11px; color:var(--accent-2, #20d5bc);
-            ">+ ${t("extensions.config.addEnvVar")}</button>
+            <button
+              @click=${(e: Event) => {
+                const container = (e.target as HTMLElement).closest("#mcp-extra-env");
+                const rows = container?.querySelector("#mcp-env-rows");
+                if (!rows) return;
+                const row = document.createElement("div");
+                row.style.cssText = "display:flex; gap:8px; margin-bottom:8px;";
+
+                // Create elements via DOM API instead of innerHTML (prevents XSS)
+                const keyInput = document.createElement("input");
+                keyInput.placeholder = "KEY";
+                keyInput.className = "mcp-env-key";
+                keyInput.style.cssText = "flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--fg); font-size:11px; outline:none;";
+
+                const valInput = document.createElement("input");
+                valInput.placeholder = "VALUE";
+                valInput.className = "mcp-env-val";
+                valInput.style.cssText = "flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--fg); font-size:11px; outline:none;";
+
+                const removeBtn = document.createElement("button");
+                removeBtn.style.cssText = "all:unset; cursor:pointer; font-size:14px; color:var(--muted-strong, #6b7d91); padding:0 4px;";
+                removeBtn.textContent = "\u00D7";
+                removeBtn.addEventListener("click", () => row.remove());
+
+                row.appendChild(keyInput);
+                row.appendChild(valInput);
+                row.appendChild(removeBtn);
+                rows.appendChild(row);
+              }}
+              style="
+                all:unset; cursor:pointer;
+                font-size:11px; color:var(--accent-2, #20d5bc);
+              "
+            >+ ${t("extensions.config.addEnvVar")}</button>
           </div>
 
           <!-- Timeout -->

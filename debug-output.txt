@@ -1,0 +1,37 @@
+(node:48696) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Testing LIKE query with ESCAPE syntax
+
+Query: "微信"
+  Pattern: "%微信%"
+  Without ESCAPE: 3 results
+    - wechat_send
+    - wechat_check
+    - 微信读书
+  With ESCAPE '\\': 3 results
+    - wechat_send
+    - wechat_check
+    - 微信读书
+
+Query: "地图"
+  Pattern: "%地图%"
+  Without ESCAPE: 3 results
+    - 高德地图
+    - 百度地图
+    - 谷歌地图
+  With ESCAPE '\\': 3 results
+    - 高德地图
+    - 百度地图
+    - 谷歌地图
+
+Query: "文件"
+  Pattern: "%文件%"
+  Without ESCAPE: 3 results
+    - read
+    - write
+    - edit
+  With ESCAPE '\\': 3 results
+    - read
+    - write
+    - edit
+

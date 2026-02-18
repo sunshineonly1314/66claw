@@ -109,14 +109,25 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
 
     await Promise.all(
       accountIds.map(async (id) => {
-        if (store.tasks.has(id)) {
+        // Guard: skip if already starting or running (abort controller is set
+        // synchronously before any async work, so checking both maps prevents
+        // a second startChannel() call from slipping through the gap between
+        // abort creation and task registration).
+        if (store.tasks.has(id) || store.aborts.has(id)) {
           return;
         }
+        // Create abort controller IMMEDIATELY to claim this accountId before any await
+        // This prevents TOCTOU race where two parallel starts pass the check above
+        const abort = new AbortController();
+        store.aborts.set(id, abort);
+
         const account = plugin.config.resolveAccount(cfg, id);
         const enabled = plugin.config.isEnabled
           ? plugin.config.isEnabled(account, cfg)
           : isAccountEnabled(account);
         if (!enabled) {
+          // Clean up abort controller since we're not actually starting
+          store.aborts.delete(id);
           setRuntime(channelId, id, {
             accountId: id,
             running: false,
@@ -130,6 +141,8 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
           configured = await plugin.config.isConfigured(account, cfg);
         }
         if (!configured) {
+          // Clean up abort controller since we're not actually starting
+          store.aborts.delete(id);
           setRuntime(channelId, id, {
             accountId: id,
             running: false,
@@ -138,8 +151,6 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
           return;
         }
 
-        const abort = new AbortController();
-        store.aborts.set(id, abort);
         setRuntime(channelId, id, {
           accountId: id,
           running: true,
@@ -234,9 +245,9 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
   };
 
   const startChannels = async () => {
-    for (const plugin of listChannelPlugins()) {
-      await startChannel(plugin.id);
-    }
+    // Performance optimization: start channels in parallel instead of sequential
+    const plugins = listChannelPlugins();
+    await Promise.all(plugins.map((plugin) => startChannel(plugin.id)));
   };
 
   const markChannelLoggedOut = (channelId: ChannelId, cleared: boolean, accountId?: string) => {

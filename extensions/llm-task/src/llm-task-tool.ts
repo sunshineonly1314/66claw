@@ -23,7 +23,8 @@ async function loadRunEmbeddedPiAgent(): Promise<RunEmbeddedPiAgentFn> {
     // ignore
   }
 
-  // Bundled install (built)
+  // Bundled install (built) - path only exists in dist/, not in source tree
+  // @ts-expect-error dynamic import resolved at runtime from built install
   const mod = await import("../../../agents/pi-embedded-runner.js");
   if (typeof (mod as any).runEmbeddedPiAgent !== "function") {
     throw new Error("Internal error: runEmbeddedPiAgent not available");
@@ -64,6 +65,7 @@ type PluginCfg = {
 export function createLlmTaskTool(api: ClawdbotPluginApi) {
   return {
     name: "llm-task",
+    label: "LLM Task",
     description:
       "Run a generic JSON-only LLM task and return schema-validated JSON. Designed for orchestration from Lobster workflows via clawd.invoke.",
     parameters: Type.Object({
@@ -189,19 +191,20 @@ export function createLlmTaskTool(api: ClawdbotPluginApi) {
 
         const schema = (params as any).schema as unknown;
         if (schema && typeof schema === "object" && !Array.isArray(schema)) {
-          const ajv = new Ajv({ allErrors: true, strict: false });
+          const AjvCtor = (Ajv as any).default ?? Ajv;
+          const ajv = new AjvCtor({ allErrors: true, strict: false });
           const validate = ajv.compile(schema as any);
           const ok = validate(parsed);
           if (!ok) {
             const msg =
-              validate.errors?.map((e) => `${e.instancePath || "<root>"} ${e.message || "invalid"}`).join("; ") ??
+              validate.errors?.map((e: { instancePath?: string; message?: string }) => `${e.instancePath || "<root>"} ${e.message || "invalid"}`).join("; ") ??
               "invalid";
             throw new Error(`LLM JSON did not match schema: ${msg}`);
           }
         }
 
         return {
-          content: [{ type: "text", text: JSON.stringify(parsed, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(parsed, null, 2) }],
           details: { json: parsed, provider, model },
         };
       } finally {

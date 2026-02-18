@@ -8,6 +8,8 @@ export type MemorySearchResult = {
   snippet: string;
   source: MemorySource;
   citation?: string;
+  // [CN-PATCH:memory-p0] 冷热分层搜索所需的时间戳字段，来自 chunks 表 updated_at 列
+  updatedAt?: number;
 };
 
 export type MemoryEmbeddingProbeResult = {

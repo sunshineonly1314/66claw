@@ -62,6 +62,7 @@ import { startGatewayDiscovery } from "./server-discovery-runtime.js";
 import { applyGatewayLaneConcurrency } from "./server-lanes.js";
 import { startGatewayMaintenanceTimers } from "./server-maintenance.js";
 import { GATEWAY_EVENTS, listGatewayMethods } from "./server-methods-list.js";
+import { cnGatewayHandlers } from "./cn-handlers.js";
 import { coreGatewayHandlers } from "./server-methods.js";
 import { createExecApprovalHandlers } from "./server-methods/exec-approval.js";
 import { safeParseJson } from "./server-methods/nodes.helpers.js";
@@ -69,6 +70,7 @@ import { hasConnectedMobileNode } from "./server-mobile-nodes.js";
 import { loadGatewayModelCatalog } from "./server-model-catalog.js";
 import { createNodeSubscriptionManager } from "./server-node-subscriptions.js";
 import { loadGatewayPlugins } from "./server-plugins.js";
+import { markGatewayReady, setGatewayShutdownCallback } from "./server-ready.js";
 import { createGatewayReloadHandlers } from "./server-reload-handlers.js";
 import { resolveGatewayRuntimeConfig } from "./server-runtime-config.js";
 import { createGatewayRuntimeState } from "./server-runtime-state.js";
@@ -552,16 +554,49 @@ export async function startGatewayServer(
 
   // Recover pending outbound deliveries from previous crash/restart.
   if (!minimalTestGateway) {
-    void (async () => {
-      const { recoverPendingDeliveries } = await import("../infra/outbound/delivery-queue.js");
-      const { deliverOutboundPayloads } = await import("../infra/outbound/deliver.js");
-      const logRecovery = log.child("delivery-recovery");
-      await recoverPendingDeliveries({
-        deliver: deliverOutboundPayloads,
-        log: logRecovery,
-        cfg: cfgAtStart,
-      });
-    })().catch((err) => log.error(`Delivery recovery failed: ${String(err)}`));
+    // Improved error handling with exponential backoff retry
+    const attemptDeliveryRecovery = async (attempt: number = 1): Promise<void> => {
+      const MAX_RECOVERY_ATTEMPTS = 3;
+      const RETRY_DELAYS = [0, 10_000, 60_000]; // 0s, 10s, 60s
+
+      try {
+        const { recoverPendingDeliveries } = await import("../infra/outbound/delivery-queue.js");
+        const { deliverOutboundPayloads } = await import("../infra/outbound/deliver.js");
+        const logRecovery = log.child("delivery-recovery");
+
+        logRecovery.info(
+          `Starting delivery recovery (attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS})`,
+        );
+        const result = await recoverPendingDeliveries({
+          deliver: deliverOutboundPayloads,
+          log: logRecovery,
+          cfg: cfgAtStart,
+        });
+        logRecovery.info(
+          `Delivery recovery completed: recovered=${result.recovered}, failed=${result.failed}, skipped=${result.skipped}`,
+        );
+      } catch (err) {
+        const errorMsg = String(err);
+        log.error(
+          `Delivery recovery failed (attempt ${attempt}/${MAX_RECOVERY_ATTEMPTS}): ${errorMsg}`,
+        );
+
+        if (attempt < MAX_RECOVERY_ATTEMPTS) {
+          const delay = RETRY_DELAYS[attempt] ?? 60_000;
+          log.info(`Retrying delivery recovery in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          await attemptDeliveryRecovery(attempt + 1);
+        } else {
+          log.error(
+            `CRITICAL: Delivery recovery failed after ${MAX_RECOVERY_ATTEMPTS} attempts. Pending messages may be lost. Manual intervention required.`,
+          );
+        }
+      }
+    };
+
+    void attemptDeliveryRecovery().catch((err) => {
+      log.error(`CRITICAL: Delivery recovery wrapper failed: ${String(err)}`);
+    });
   }
 
   const execApprovalManager = new ExecApprovalManager();
@@ -587,6 +622,7 @@ export async function startGatewayServer(
     logHealth,
     logWsControl,
     extraHandlers: {
+      ...cnGatewayHandlers,
       ...pluginRegistry.gatewayHandlers,
       ...execApprovalHandlers,
     },
@@ -750,6 +786,10 @@ export async function startGatewayServer(
     httpServer,
     httpServers,
   });
+
+  // Mark gateway as fully ready now that all subsystems are initialized
+  markGatewayReady();
+  log.info("gateway ready");
 
   return {
     close: async (opts) => {

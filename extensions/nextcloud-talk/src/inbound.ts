@@ -2,6 +2,7 @@ import {
   logInboundDrop,
   resolveControlCommandGate,
   type ClawdbotConfig,
+  type GroupPolicy,
   type RuntimeEnv,
 } from "openclawcn/plugin-sdk";
 
@@ -81,8 +82,8 @@ export async function handleNextcloudTalkInbound(params: {
   statusSink?.({ lastInboundAt: message.timestamp });
 
   const dmPolicy = account.config.dmPolicy ?? "pairing";
-  const defaultGroupPolicy = config.channels?.defaults?.groupPolicy;
-  const groupPolicy = account.config.groupPolicy ?? defaultGroupPolicy ?? "allowlist";
+  const defaultGroupPolicy = (config as { channels?: { defaults?: { groupPolicy?: GroupPolicy } } }).channels?.defaults?.groupPolicy;
+  const groupPolicy: GroupPolicy = account.config.groupPolicy ?? defaultGroupPolicy ?? "allowlist";
 
   const configAllowFrom = normalizeNextcloudTalkAllowlist(account.config.allowFrom);
   const configGroupAllowFrom = normalizeNextcloudTalkAllowlist(account.config.groupAllowFrom);
@@ -117,7 +118,7 @@ export async function handleNextcloudTalkInbound(params: {
     cfg: config as ClawdbotConfig,
     surface: CHANNEL_ID,
   });
-  const useAccessGroups = config.commands?.useAccessGroups !== false;
+  const useAccessGroups = (config as { commands?: { useAccessGroups?: boolean } }).commands?.useAccessGroups !== false;
   const senderAllowedForCommands = resolveNextcloudTalkAllowlistMatch({
     allowFrom: isGroup ? effectiveGroupAllowFrom : effectiveAllowFrom,
     senderId,
@@ -240,7 +241,7 @@ export async function handleNextcloudTalkInbound(params: {
     channel: CHANNEL_ID,
     accountId: account.accountId,
     peer: {
-      kind: isGroup ? "group" : "dm",
+      kind: isGroup ? "group" : "direct",
       id: isGroup ? roomToken : senderId,
     },
   });
@@ -248,7 +249,7 @@ export async function handleNextcloudTalkInbound(params: {
   const fromLabel = isGroup
     ? `room:${roomName || roomToken}`
     : senderName || `user:${senderId}`;
-  const storePath = core.channel.session.resolveStorePath(config.session?.store, {
+  const storePath = core.channel.session.resolveStorePath((config as { session?: { store?: string } }).session?.store, {
     agentId: route.agentId,
   });
   const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(

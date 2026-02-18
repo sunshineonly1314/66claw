@@ -28,6 +28,7 @@ export function isAddressInUseError(line: string): boolean {
 
 let watcherProcess: ChildProcess | null = null;
 let renewInterval: ReturnType<typeof setInterval> | null = null;
+let restartTimeout: ReturnType<typeof setTimeout> | null = null;
 let shuttingDown = false;
 let currentConfig: GmailHookRuntimeConfig | null = null;
 
@@ -109,7 +110,12 @@ function spawnGogServe(cfg: GmailHookRuntimeConfig): ChildProcess {
     }
     log.warn(`gog exited (code=${code}, signal=${signal}); restarting in 5s`);
     watcherProcess = null;
-    setTimeout(() => {
+    // Clear any existing restart timeout
+    if (restartTimeout) {
+      clearTimeout(restartTimeout);
+    }
+    restartTimeout = setTimeout(() => {
+      restartTimeout = null;
       if (shuttingDown || !currentConfig) {
         return;
       }
@@ -210,6 +216,12 @@ export async function stopGmailWatcher(): Promise<void> {
   if (renewInterval) {
     clearInterval(renewInterval);
     renewInterval = null;
+  }
+
+  // Clear any pending restart timeout
+  if (restartTimeout) {
+    clearTimeout(restartTimeout);
+    restartTimeout = null;
   }
 
   if (watcherProcess) {

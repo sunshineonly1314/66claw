@@ -450,13 +450,14 @@ export const googlechatPlugin: ChannelPlugin<ResolvedGoogleChatAccount> = {
           (cfg.channels?.["googlechat"] as { mediaMaxMb?: number } | undefined)?.mediaMaxMb,
         accountId,
       });
-      const loaded = await runtime.channel.media.fetchRemoteMedia(mediaUrl, {
+      const loaded = await runtime.channel.media.fetchRemoteMedia({
+        url: mediaUrl,
         maxBytes: maxBytes ?? (account.config.mediaMaxMb ?? 20) * 1024 * 1024,
       });
       const upload = await uploadGoogleChatAttachment({
         account,
         space,
-        filename: loaded.filename ?? "attachment",
+        filename: loaded.fileName ?? "attachment",
         buffer: loaded.buffer,
         contentType: loaded.contentType,
       });
@@ -466,7 +467,7 @@ export const googlechatPlugin: ChannelPlugin<ResolvedGoogleChatAccount> = {
         text,
         thread,
         attachments: upload.attachmentUploadToken
-          ? [{ attachmentUploadToken: upload.attachmentUploadToken, contentName: loaded.filename }]
+          ? [{ attachmentUploadToken: upload.attachmentUploadToken, contentName: loaded.fileName }]
           : undefined,
       });
       return {
@@ -490,12 +491,12 @@ export const googlechatPlugin: ChannelPlugin<ResolvedGoogleChatAccount> = {
         const enabled = entry.enabled !== false;
         const configured = entry.configured === true;
         if (!enabled || !configured) return [];
-        const issues = [];
+        const issues: Array<{ channel: string; accountId: string; kind: "intent" | "permissions" | "config" | "auth" | "runtime"; message: string; fix?: string }> = [];
         if (!entry.audience) {
           issues.push({
             channel: "googlechat",
             accountId,
-            kind: "config",
+            kind: "config" as const,
             message: "Google Chat audience is missing (set channels.googlechat.audience).",
             fix: "Set channels.googlechat.audienceType and channels.googlechat.audience.",
           });
@@ -504,7 +505,7 @@ export const googlechatPlugin: ChannelPlugin<ResolvedGoogleChatAccount> = {
           issues.push({
             channel: "googlechat",
             accountId,
-            kind: "config",
+            kind: "config" as const,
             message: "Google Chat audienceType is missing (app-url or project-number).",
             fix: "Set channels.googlechat.audienceType and channels.googlechat.audience.",
           });

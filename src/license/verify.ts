@@ -23,7 +23,7 @@ import {
   LICENSE_ERROR_MESSAGES,
 } from "./types.js";
 import { getDeviceId, getDeviceName, getOsInfo, getDeviceFingerprint } from "./device-id.js";
-import { generateSignParams } from "./sign.js";
+
 import { verifyLicenseResponseSignature, verifyHeartbeatResponseSignature } from "./rsa-verify.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { VERSION } from "../version.js";
@@ -172,7 +172,6 @@ export function buildVerifyRequest(
   key: string,
   options: {
     shownNotificationIds?: number[];
-    enableSign?: boolean;
   } = {},
 ): LicenseVerifyRequest {
   const deviceId = getDeviceId();
@@ -193,15 +192,6 @@ export function buildVerifyRequest(
     shownNotificationIds: options.shownNotificationIds || [],
   };
 
-  // 添加签名参数
-  const shouldSign = options.enableSign ?? moduleConfig.enableSign;
-  if (shouldSign) {
-    const signParams = generateSignParams(key, deviceId, moduleConfig.signSecretKey);
-    request.timestamp = signParams.timestamp;
-    request.nonce = signParams.nonce;
-    request.sign = signParams.sign;
-  }
-
   return request;
 }
 
@@ -216,15 +206,8 @@ export async function verifyLicense(
   key: string,
   options: {
     shownNotificationIds?: number[];
-    enableSign?: boolean;
   } = {},
 ): Promise<LicenseVerifyResponseData> {
-  // 开发模式跳过验证
-  if (moduleConfig.devMode) {
-    log.info("Dev mode: skipping license verification");
-    return createDevModeResponse();
-  }
-
   const request = buildVerifyRequest(key, options);
 
   try {
@@ -286,20 +269,9 @@ export async function verifyLicense(
  * 发送心跳
  */
 export async function sendHeartbeat(key: string): Promise<LicenseHeartbeatResponseData> {
-  if (moduleConfig.devMode) {
-    return { valid: true, daysRemaining: 999, serverTime: Date.now() };
-  }
-
   const deviceId = getDeviceId();
 
-  // 构建带签名的请求
   const request: LicenseHeartbeatRequest = { key, deviceId };
-  if (moduleConfig.enableSign) {
-    const signParams = generateSignParams(key, deviceId, moduleConfig.signSecretKey);
-    request.timestamp = signParams.timestamp;
-    request.nonce = signParams.nonce;
-    request.sign = signParams.sign;
-  }
 
   try {
     const response = await sendRequest<LicenseHeartbeatResponseData>("POST", "/heartbeat", request);
@@ -346,14 +318,7 @@ export async function sendHeartbeat(key: string): Promise<LicenseHeartbeatRespon
 export async function getDeviceList(key: string): Promise<DeviceListResponseData> {
   const deviceId = getDeviceId();
 
-  // 构建带签名的 POST 请求
   const request: DeviceListRequest = { key, deviceId };
-  if (moduleConfig.enableSign) {
-    const signParams = generateSignParams(key, deviceId, moduleConfig.signSecretKey);
-    request.timestamp = signParams.timestamp;
-    request.nonce = signParams.nonce;
-    request.sign = signParams.sign;
-  }
 
   const response = await sendRequest<DeviceListResponseData>("POST", "/devices", request);
 
@@ -400,13 +365,6 @@ export async function unbindDevice(
     key,
     deviceId: targetDeviceId,
   };
-
-  if (moduleConfig.enableSign) {
-    const signParams = generateSignParams(key, currentDeviceId, moduleConfig.signSecretKey);
-    request.timestamp = signParams.timestamp;
-    request.nonce = signParams.nonce;
-    request.sign = signParams.sign;
-  }
 
   const response = await sendRequest<DeviceUnbindResponseData>("POST", "/devices/unbind", request);
 
@@ -577,38 +535,6 @@ export async function checkHealth(): Promise<HealthCheckResponseData> {
 }
 
 /**
- * 创建开发模式的模拟响应
- */
-function createDevModeResponse(): LicenseVerifyResponseData {
-  return {
-    valid: true,
-    errorCode: null,
-    errorMessage: null,
-    serverTime: Date.now(),
-    nextCheckAfterHours: 24,
-    license: {
-      tier: "basic",
-      tierName: "开发模式",
-      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      daysRemaining: 365,
-      keyType: "test",
-      features: ["basic_chat", "basic_skills", "history_7days", "dev_mode"],
-      // Dev mode: supportQrcode 和 purchaseUrl 由 enrichLicenseWithSupport 注入
-      // 如果本地 ~/.openclawcn/qrcodes/ 目录有图片，会自动显示
-    },
-    device: {
-      deviceId: getDeviceId(),
-      deviceLimit: 999,
-      boundDevices: 1,
-      isCurrentBound: true,
-    },
-    notifications: null,
-    renewalReminder: null,
-    forceUpdate: null,
-  };
-}
-
-/**
  * 创建验证缓存数据
  */
 export function createLicenseCache(key: string, response: LicenseVerifyResponseData): LicenseCache {
@@ -641,7 +567,6 @@ export async function verifyLicenseWithRetry(
   key: string,
   options: {
     shownNotificationIds?: number[];
-    enableSign?: boolean;
     maxRetries?: number;
   } = {},
 ): Promise<LicenseVerifyResponseData> {

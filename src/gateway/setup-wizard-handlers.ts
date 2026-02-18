@@ -82,7 +82,10 @@ export async function handleGetState(_req: IncomingMessage, res: ServerResponse)
 /**
  * GET /api/setup/providers - 获取可用的 AI 提供商列表
  */
-export async function handleGetProviders(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleGetProviders(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const region = detectChinaRegion() ? "cn" : "global";
   const regionConfig = getCnRegionConfig();
 
@@ -105,7 +108,10 @@ export async function handleGetProviders(_req: IncomingMessage, res: ServerRespo
 /**
  * POST /api/setup/validate-api-key - 验证 API Key（基本格式检查）
  */
-export async function handleValidateApiKey(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleValidateApiKey(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<ValidateApiKeyRequest>(req);
   if (!body || !body.provider || !body.apiKey) {
     sendJson(res, 400, { ok: false, error: "缺少必要参数" });
@@ -226,8 +232,14 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
     // ---- OpenAI 兼容通用验证 ----
     // 大多数国产 provider 使用标准 OpenAI Chat Completions API
     const OPENAI_COMPAT_PROVIDERS = new Set([
-      "siliconflow", "aliyun-bailian", "deepseek", "glm",
-      "volcengine-ark", "moonshot", "openai", "nvidia",
+      "siliconflow",
+      "aliyun-bailian",
+      "deepseek",
+      "glm",
+      "volcengine-ark",
+      "moonshot",
+      "openai",
+      "nvidia",
     ]);
 
     // 构建测试请求
@@ -547,7 +559,10 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
 /**
  * POST /api/setup/configure-provider - 配置 AI 提供商
  */
-export async function handleConfigureProvider(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleConfigureProvider(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<ConfigureProviderRequest>(req);
   if (!body || !body.provider || !body.apiKey) {
     sendJson(res, 400, { ok: false, error: "缺少必要参数" });
@@ -796,7 +811,10 @@ export async function handleValidatePath(req: IncomingMessage, res: ServerRespon
  * GET /api/setup/browse-directory - 列出目录内容用于 Web 文件浏览器
  * 查询参数: path - 要列出的目录路径（可选，默认为用户主目录）
  */
-export async function handleBrowseDirectory(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleBrowseDirectory(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   try {
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
     const requestedPath = url.searchParams.get("path");
@@ -884,7 +902,10 @@ export async function handleBrowseDirectory(req: IncomingMessage, res: ServerRes
 /**
  * POST /api/setup/configure-workspace - 配置工作目录
  */
-export async function handleConfigureWorkspace(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleConfigureWorkspace(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<ConfigureWorkspaceRequest>(req);
   if (!body || !body.workspace) {
     sendJson(res, 400, { ok: false, error: "缺少工作目录" });
@@ -936,7 +957,10 @@ export async function handleConfigureWorkspace(req: IncomingMessage, res: Server
 /**
  * POST /api/setup/configure-security - 配置安全设置
  */
-export async function handleConfigureSecurity(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleConfigureSecurity(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<ConfigureSecurityRequest>(req);
   if (!body || !body.mode) {
     sendJson(res, 400, { ok: false, error: "缺少安全模式" });
@@ -1233,7 +1257,10 @@ async function verifyWecomCredentials(
 /**
  * POST /api/setup/verify-channel - 验证渠道凭证
  */
-export async function handleVerifyChannel(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleVerifyChannel(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<{ channel: string; credentials: Record<string, string> }>(req);
   if (!body || !body.channel || !body.credentials) {
     sendJson(res, 400, { ok: false, error: "缺少必要参数" });
@@ -1299,7 +1326,10 @@ export async function handleVerifyChannel(req: IncomingMessage, res: ServerRespo
 /**
  * POST /api/setup/configure-channels - 配置聊天渠道
  */
-export async function handleConfigureChannels(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleConfigureChannels(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<ConfigureChannelsRequest>(req);
 
   try {
@@ -1563,7 +1593,10 @@ function getErrorMessageForCode(errorCode: LicenseErrorCode | null): string {
  * 2. Token 能够正常获取
  * 3. 后续 Gateway 启动时验证通过
  */
-export async function handleValidateLicense(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleValidateLicense(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<{ token: string }>(req);
   if (!body || !body.token) {
     sendJson(res, 400, { ok: false, error: "缺少许可证 Key" });
@@ -1612,7 +1645,10 @@ export async function handleValidateLicense(req: IncomingMessage, res: ServerRes
         deviceSwitchCooldown: result.deviceSwitchCooldown ?? null,
       });
 
-      // 【修复核心】先同步获取一次 Token，确保激活后立即可用
+      // 【临时禁用】Token 端点暂未在后端实现，暂时跳过令牌刷新
+      // 授权验证已通过 /verify 接口完成，无需额外的 token 端点
+      // TODO: 待后端添加 /token 端点后，再启用以下代码
+      /*
       log.info("Fetching initial token...");
       const tokenSuccess = await refreshToken(key);
       if (tokenSuccess) {
@@ -1628,6 +1664,8 @@ export async function handleValidateLicense(req: IncomingMessage, res: ServerRes
           log.warn("Token became invalid after activation");
         },
       });
+      */
+      log.info("License activation completed (token refresh disabled temporarily)");
 
       sendJson(res, 200, {
         ok: true,
@@ -1946,7 +1984,10 @@ export async function handleRestart(_req: IncomingMessage, res: ServerResponse):
 /**
  * GET /api/setup/affiliate-links - 获取推广链接
  */
-export async function handleGetAffiliateLinks(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleGetAffiliateLinks(
+  _req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   sendJson(res, 200, {
     ok: true,
     data: Object.values(AFFILIATE_LINKS),
@@ -2024,7 +2065,10 @@ export async function handleGetFreeModelProviders(
 /**
  * POST /api/setup/free-models/test - 测试免费模型 API 密钥
  */
-export async function handleTestFreeModelApiKey(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleTestFreeModelApiKey(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<ConfigureFreeModelRequest>(req);
   if (!body || !body.providerId || !body.apiKey) {
     sendJson(res, 400, { ok: false, error: "缺少必要参数" });
@@ -2094,7 +2138,10 @@ export async function handleTestFreeModelApiKey(req: IncomingMessage, res: Serve
 /**
  * POST /api/setup/free-models/configure - 配置免费模型
  */
-export async function handleConfigureFreeModels(req: IncomingMessage, res: ServerResponse): Promise<void> {
+export async function handleConfigureFreeModels(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const body = await readJsonBody<{ accounts: Array<{ providerId: string; apiKey: string }> }>(req);
   if (!body || !body.accounts || !Array.isArray(body.accounts)) {
     sendJson(res, 400, { ok: false, error: "缺少必要参数" });

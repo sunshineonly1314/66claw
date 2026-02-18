@@ -14,11 +14,11 @@
  *   - Background fire-and-forget wrapper
  */
 
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { invalidateMarketplaceCache, readMarketplaceIndex } from "./marketplace-index.js";
+import { fetchFromCloudIndex } from "./marketplace/cloud-index-source.js";
 import { fetchFromModelScope } from "./marketplace/modelscope-source.js";
 import { fetchFromOfficialRegistry } from "./marketplace/registry-source.js";
 import type { McpMarketplaceItem, MarketplaceSourceName } from "./marketplace/types.js";
@@ -35,11 +35,39 @@ interface ProxySyncConfig {
   timeoutMs: number;
 }
 
-const DEFAULT_CONFIG: ProxySyncConfig = {
-  baseUrl: process.env.OPENCLAWCN_SKILLS_PROXY_URL?.trim() || "http://121.43.61.90/api",
-  token: process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim() || "clawdbotCN778",
-  timeoutMs: 30_000,
-};
+/**
+ * Lazily resolve proxy config from env vars.
+ * Returns null if the proxy env vars are not configured
+ * (Tier 3 is optional — Tier 1 & 2 must still work without it).
+ */
+function getProxyConfig(): ProxySyncConfig | null {
+  const baseUrl = process.env.OPENCLAWCN_SKILLS_PROXY_URL?.trim();
+  const token = process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim();
+
+  if (!baseUrl || !token) return null;
+
+  const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
+
+  // 安全检查: 生产环境阻止已知的不安全默认值
+  if (token === "clawdbotCN778" && !isDev) {
+    logger.warn(
+      "SECURITY: Detected compromised default proxy token. " +
+        "Tier 3 (ClawdSkillsProxy) disabled. Please generate a new secure token.",
+    );
+    return null;
+  }
+
+  // 安全检查: 生产环境强制 HTTPS
+  if (!isDev && !baseUrl.startsWith("https://")) {
+    logger.warn(
+      `SECURITY: Proxy URL must use HTTPS in production (got ${baseUrl}). ` +
+        "Tier 3 (ClawdSkillsProxy) disabled.",
+    );
+    return null;
+  }
+
+  return { baseUrl, token, timeoutMs: 30_000 };
+}
 
 // ============================================================================
 // Types
@@ -78,9 +106,7 @@ let dailySyncTimer: ReturnType<typeof setInterval> | null = null;
  * Sync the MCP marketplace index using three-tier cascade.
  * If a sync is already running, returns the same Promise (dedup).
  */
-export async function syncMcpIndex(
-  options: McpSyncOptions = {},
-): Promise<McpSyncResult> {
+export async function syncMcpIndex(options: McpSyncOptions = {}): Promise<McpSyncResult> {
   if (syncPromise && !options.force) {
     logger.debug("MCP sync already in progress, waiting for existing sync");
     return syncPromise;
@@ -94,36 +120,77 @@ export async function syncMcpIndex(
   }
 }
 
+/**
+ * Check the age of the most recent mcp-index.json file (in ms).
+ * Returns null if no index file exists.
+ */
+async function getIndexFileAge(): Promise<number | null> {
+  const candidates = [
+    process.env.OPENCLAWCN_DATA_DIR,
+    process.env.APPDATA ? join(process.env.APPDATA, "openclawcn") : undefined,
+    process.env.HOME ? join(process.env.HOME, ".openclawcn") : undefined,
+  ].filter(Boolean) as string[];
+
+  for (const dir of candidates) {
+    const filePath = join(dir, "mcp-index.json");
+    try {
+      const st = await stat(filePath);
+      return Date.now() - st.mtimeMs;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 async function doSync(options: McpSyncOptions): Promise<McpSyncResult> {
   const { force = false, silent = false } = options;
 
   try {
-    // Staleness check: if cache is fresh, skip
+    // Staleness check: if cache file is fresh (< staleMs), skip
+    const staleMs = options.staleMs ?? 5 * 60 * 1000; // default 5 min
     if (!force) {
-      const existing = await readMarketplaceIndex();
-      if (existing.length > 0) {
-        logger.debug("MCP marketplace index is fresh, skipping sync");
+      const indexAge = await getIndexFileAge();
+      if (indexAge !== null && indexAge < staleMs) {
+        logger.debug("MCP marketplace index is fresh, skipping sync", { ageMs: indexAge });
         return { ok: true, synced: false };
       }
     }
 
-    logger.info("Starting MCP marketplace index sync (three-tier cascade)", { force });
+    logger.info("Starting MCP marketplace index sync (four-tier cascade)", { force });
+
+    // ====================================================================
+    // Tier 0: Cloud Index (Alibaba Cloud pre-aggregated, fastest path)
+    // ====================================================================
+    let items: McpMarketplaceItem[] = [];
+    let source: MarketplaceSourceName = "cloud-index";
+
+    try {
+      items = await fetchFromCloudIndex();
+      if (items.length > 0) {
+        logger.info(`Tier 0 (Cloud Index) returned ${items.length} items`);
+      }
+    } catch (err) {
+      logger.warn("Tier 0 (Cloud Index) failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     // ====================================================================
     // Tier 1: ModelScope (魔搭)
     // ====================================================================
-    let items: McpMarketplaceItem[] = [];
-    let source: MarketplaceSourceName = "modelscope";
-
-    try {
-      items = await fetchFromModelScope();
-      if (items.length > 0) {
-        logger.info(`Tier 1 (ModelScope) returned ${items.length} items`);
+    if (items.length === 0) {
+      source = "modelscope";
+      try {
+        items = await fetchFromModelScope();
+        if (items.length > 0) {
+          logger.info(`Tier 1 (ModelScope) returned ${items.length} items`);
+        }
+      } catch (err) {
+        logger.warn("Tier 1 (ModelScope) failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-    } catch (err) {
-      logger.warn("Tier 1 (ModelScope) failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
 
     // ====================================================================
@@ -163,7 +230,7 @@ async function doSync(options: McpSyncOptions): Promise<McpSyncResult> {
     // Write results
     // ====================================================================
     if (items.length === 0) {
-      logger.warn("All three tiers returned 0 items, serving stale cache");
+      logger.warn("All tiers returned 0 items, serving stale cache");
       return { ok: true, synced: false, source };
     }
 
@@ -199,16 +266,22 @@ async function doSync(options: McpSyncOptions): Promise<McpSyncResult> {
 
 async function fetchFromProxy(): Promise<Record<string, unknown>[]> {
   try {
-    const url = `${DEFAULT_CONFIG.baseUrl}/mcp-index`;
+    const config = getProxyConfig();
+    if (!config) {
+      logger.debug("Proxy env vars not configured, skipping Tier 3");
+      return [];
+    }
+
+    const url = `${config.baseUrl}/mcp-index`;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DEFAULT_CONFIG.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
     let response: Response;
     try {
       response = await fetch(url, {
         signal: controller.signal,
         headers: {
-          Authorization: `Bearer ${DEFAULT_CONFIG.token}`,
+          Authorization: `Bearer ${config.token}`,
           "User-Agent": "OpenClawCN-MCP-Sync/1.0",
           Accept: "application/json",
         },
@@ -247,7 +320,7 @@ async function fetchFromProxy(): Promise<Record<string, unknown>[]> {
 // ============================================================================
 
 /** Deduplicate marketplace items by serverId (first occurrence wins). */
-function deduplicateItems(items: McpMarketplaceItem[]): McpMarketplaceItem[] {
+export function deduplicateItems(items: McpMarketplaceItem[]): McpMarketplaceItem[] {
   const seen = new Set<string>();
   const result: McpMarketplaceItem[] = [];
   for (const item of items) {
@@ -272,9 +345,8 @@ async function writeIndexToDataDir(items: unknown[]): Promise<boolean> {
 
   for (const dir of candidates) {
     try {
-      if (!existsSync(dir)) {
-        await mkdir(dir, { recursive: true });
-      }
+      // mkdir with recursive:true is safe even if dir already exists (no TOCTOU)
+      await mkdir(dir, { recursive: true });
       const filePath = join(dir, "mcp-index.json");
       await writeFile(filePath, JSON.stringify(items, null, 2), "utf-8");
       logger.debug("Wrote mcp-index.json", { path: filePath, count: items.length });

@@ -11,7 +11,7 @@ export const TAB_GROUPS = [
     label: "Control",
     tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"],
   },
-  { label: "Agent", tabs: ["playground", "skills", "extensions", "nodes"] },
+  { label: "Agent", tabs: ["agents", "playground", "skills", "extensions", "nodes"] },
   { label: "Settings", tabs: ["config", "debug", "logs"] },
 ] as const;
 
@@ -25,7 +25,7 @@ export function getTabGroups() {
       label: t("nav.control"),
       tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"] as const,
     },
-    { label: t("nav.agent"), tabs: ["playground", "skills", "extensions", "nodes"] as const },
+    { label: t("nav.agent"), tabs: ["agents", "playground", "skills", "extensions", "nodes"] as const },
     { label: t("nav.settings"), tabs: ["config", "debug", "logs"] as const },
   ];
 }
@@ -38,6 +38,7 @@ export type Tab =
   | "instances"
   | "sessions"
   | "cron"
+  | "agents"
   | "playground"
   | "skills"
   | "extensions"
@@ -56,6 +57,7 @@ const TAB_PATHS: Record<Tab, string> = {
   instances: "/instances",
   sessions: "/sessions",
   cron: "/cron",
+  agents: "/agents",
   playground: "/playground",
   skills: "/skills",
   extensions: "/extensions",
@@ -148,6 +150,8 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "cron":
       return "loader";
+    case "agents":
+      return "folder";
     case "playground":
       return "play";
     case "skills":
@@ -185,6 +189,8 @@ export function titleForTab(tab: Tab) {
       return t("nav.sessions");
     case "cron":
       return t("nav.cron");
+    case "agents":
+      return t("nav.agents");
     case "playground":
       return t("nav.playground");
     case "skills":
@@ -224,6 +230,8 @@ export function subtitleForTab(tab: Tab) {
       return t("subtitle.sessions");
     case "cron":
       return t("subtitle.cron");
+    case "agents":
+      return t("subtitle.agents");
     case "playground":
       return t("subtitle.playground");
     case "skills":

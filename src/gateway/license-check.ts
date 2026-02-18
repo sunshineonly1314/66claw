@@ -19,6 +19,7 @@ import {
   getTokenStatusSummary,
   refreshToken,
   loadLicenseCache,
+  DEFAULT_LICENSE_CONFIG,
 } from "../license/index.js";
 import { loadConfig } from "../config/config.js";
 import { detectChinaRegion } from "../config/region-cn.js";
@@ -118,6 +119,8 @@ export async function checkLicenseOnGatewayStart(
     try {
       const integrityPassed = await checkIntegrityOnStartup({
         exitOnFailure: true, // 检测到篡改时强制退出程序
+        useServerHashes: true, // 优先从服务端获取哈希（5秒超时，回退到本地）
+        apiBaseUrl: DEFAULT_LICENSE_CONFIG.apiBaseUrl,
       });
       if (!integrityPassed) {
         // 此处理论上不会执行，因为 exitOnFailure=true 时会直接 exit

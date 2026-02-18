@@ -67,6 +67,68 @@ export interface McpMarketplaceItem {
   source: MarketplaceSourceName;
   /** Link to the source detail page (e.g. ModelScope detail page). */
   sourceUrl?: string;
+
+  // ========== AI Enhancement Fields ==========
+
+  /** Chinese translation (优先显示) */
+  friendlyNameCn?: string;
+  /** Chinese description */
+  descriptionCn?: string;
+  /** AI-generated Chinese tags (5-8 tags for multi-dimensional search) */
+  tagsCn?: string[];
+
+  /** Availability for China users */
+  availability?: {
+    /** Requires VPN to access (depends on blocked APIs like OpenAI/GitHub) */
+    requiresVPN: boolean;
+    /** China-friendliness score: 0-100, higher = better for China users */
+    chinaFriendlyScore: number;
+    /** Reasons for low score (if <50) */
+    chinaBlockReasons?: string[];
+  };
+
+  /** Runtime and system requirements */
+  requirements?: {
+    /** Runtime dependencies, e.g. ["Node.js >=18", "Python 3.10+"] */
+    runtimeDeps?: string[];
+    /** Platform-specific notes */
+    platformNotes?: string;
+    /** System-level dependencies, e.g. ["Docker", "PostgreSQL"] */
+    systemDeps?: string[];
+  };
+
+  /** Multi-label category with confidence scores */
+  categoryEnhanced?: Array<{
+    category: string;
+    confidence: number; // 0-100
+  }>;
+
+  /** AI enhancement metadata */
+  aiEnhancement?: {
+    /** Enhancement timestamp */
+    enhancedAt: string;
+    /** Model used for enhancement */
+    model: string;
+    /** Enhancement version (for re-processing) */
+    version: number;
+
+    /** Recommendation scores for intelligent matching */
+    recommendationScore?: {
+      /** Beginner-friendly score 0-100 */
+      beginnerFriendly: number;
+      /** Enterprise readiness 0-100 */
+      enterpriseReady: number;
+      /** Community activity 0-100 */
+      communityActivity: number;
+    };
+
+    /** Use case keywords for semantic matching */
+    useCaseKeywords?: string[];
+    /** Alternative/similar service IDs */
+    alternatives?: string[];
+    /** Prerequisite MCPs (must install first) */
+    prerequisites?: string[];
+  };
 }
 
 // ============================================================================
@@ -74,6 +136,7 @@ export interface McpMarketplaceItem {
 // ============================================================================
 
 export type MarketplaceSourceName =
+  | "cloud-index"
   | "modelscope"
   | "official-registry"
   | "clawdskillsproxy";

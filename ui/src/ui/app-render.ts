@@ -1,7 +1,7 @@
 import { html, nothing } from "lit";
 
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
-import type { AppViewState } from "./app-view-state";
+import type { AppViewState, McpMarketplaceItem } from "./app-view-state";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 import {
   getTabGroups,
@@ -41,9 +41,10 @@ import { renderInstances } from "./views/instances";
 import { renderLogs } from "./views/logs";
 import { renderNodes } from "./views/nodes";
 import { renderOverview } from "./views/overview";
-import { renderUsage } from "./views/usage";
+import { renderUsageTab } from "./app-render-usage-tab";
 import { renderSessions } from "./views/sessions";
 import { renderExecApprovalPrompt } from "./views/exec-approval";
+import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation";
 import { renderSkillInstallApproval } from "./views/skill-install-approval";
 import { renderSkillInstallProgress } from "./views/skill-install-progress";
 import {
@@ -53,6 +54,7 @@ import {
   revokeDeviceToken,
   rotateDeviceToken,
 } from "./controllers/devices";
+import { renderAgents } from "./views/agents";
 import { renderSkills } from "./views/skills";
 import { renderPlayground } from "./views/playground";
 import { renderFreeModels } from "./views/free-models";
@@ -65,17 +67,31 @@ import {
   checkMcpUpdate,
   handleConfigClick as mcpConfigClick,
   installMarketplaceItem,
+  uninstallMarketplaceItem,
+  updateMarketplaceItem,
   loadMarketplaceItems,
   loadMarketplaceRecommendations,
+  batchUpdateMcpServerEnv,
+  fetchServerEnvStatus,
   type McpLifecycleState,
   type MarketplaceCallbacks,
 } from "./controllers/mcp-lifecycle.js";
-import { renderSkillsBatchBanner } from "./views/skills-batch-banner";
-import { renderSkillsBatchConfirm } from "./views/skills-batch-confirm";
-import { renderSkillsBatchProgress } from "./views/skills-batch-progress";
-import { renderSkillsBatchResult } from "./views/skills-batch-result";
-import { renderSkillsBatchComplete } from "./views/skills-batch-complete";
+// 官方原始组件（已禁用）
+// import { renderSkillsBatchBanner } from "./views/skills-batch-banner";
+// import { renderSkillsBatchConfirm } from "./views/skills-batch-confirm";
+// import { renderSkillsBatchProgress } from "./views/skills-batch-progress";
+// import { renderSkillsBatchResult } from "./views/skills-batch-result";
+// import { renderSkillsBatchComplete } from "./views/skills-batch-complete";
+
+// 🎨 增强版组件（基于您的精美设计）
+import { renderSkillsBatchBannerEnhanced as renderSkillsBatchBanner } from "./views/skills-batch-banner-enhanced";
+import { renderSkillsBatchConfirmEnhanced as renderSkillsBatchConfirm } from "./views/skills-batch-confirm-enhanced";
+import { renderSkillsBatchProgressEnhanced as renderSkillsBatchProgress } from "./views/skills-batch-progress-enhanced";
+import { renderSkillsBatchCompleteEnhanced as renderSkillsBatchComplete } from "./views/skills-batch-complete-enhanced";
+
+// 保留 Pill 和 Result（暂无增强版）
 import { renderSkillsBatchPill } from "./views/skills-batch-pill";
+import { renderSkillsBatchResult } from "./views/skills-batch-result";
 import {
   checkBatchSkills,
   startBatchInstall,
@@ -150,6 +166,10 @@ import {
   updateSkillEnabled,
   type SkillMessage,
 } from "./controllers/skills";
+import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files";
+import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity";
+import { loadAgentSkills } from "./controllers/agent-skills";
+import { loadAgents } from "./controllers/agents";
 import { loadNodes } from "./controllers/nodes";
 import { loadChatHistory } from "./controllers/chat";
 import {
@@ -169,7 +189,6 @@ import {
 import { loadCronRuns, toggleCronJob, runCronJob, removeCronJob, addCronJob } from "./controllers/cron";
 import { loadDebug, callDebugMethod } from "./controllers/debug";
 import { loadLogs } from "./controllers/logs";
-import { loadUsageSummary } from "./controllers/usage";
 import {
   buildDiscoveryProps,
   shouldShowDiscovery,
@@ -183,10 +202,11 @@ import {
 const AVATAR_DATA_RE = /^data:/i;
 const AVATAR_HTTP_RE = /^https?:\/\//i;
 const MCP_TOAST_DURATION_MS = 4000;
+const MCP_TOAST_ERROR_DURATION_MS = 8000;
 
 /**
  * Show a toast notification for MCP install/uninstall/error actions.
- * Auto-clears after 4 seconds following the CompactionStatus pattern.
+ * Auto-clears after 4s (success/info) or 8s (error) for readability.
  */
 function showMcpToast(state: AppViewState, message: string, type: "success" | "error" | "info"): void {
   if (state._mcpToastTimer) {
@@ -196,10 +216,11 @@ function showMcpToast(state: AppViewState, message: string, type: "success" | "e
     ...state.mcpMarketplace,
     toast: { message, type, timestamp: Date.now() },
   };
+  const duration = type === "error" ? MCP_TOAST_ERROR_DURATION_MS : MCP_TOAST_DURATION_MS;
   state._mcpToastTimer = window.setTimeout(() => {
     state.mcpMarketplace = { ...state.mcpMarketplace, toast: null };
     state._mcpToastTimer = null;
-  }, MCP_TOAST_DURATION_MS);
+  }, duration);
 }
 
 function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
@@ -399,6 +420,13 @@ export function renderApp(state: AppViewState) {
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
   const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
+  const configValue =
+    state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
+  const resolvedAgentId =
+    state.agentsSelectedId ??
+    state.agentsList?.defaultId ??
+    state.agentsList?.agents?.[0]?.id ??
+    null;
 
   return html`
     <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
@@ -573,17 +601,7 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
 
-        ${state.tab === "usage"
-          ? renderUsage({
-              connected: state.connected,
-              loading: state.usageLoading,
-              summary: state.usageSummary,
-              error: state.usageError,
-              days: state.usageDays,
-              onDaysChange: (days) => loadUsageSummary(state, days),
-              onRefresh: () => loadUsageSummary(state),
-            })
-          : nothing}
+        ${renderUsageTab(state)}
 
         ${state.tab === "channels"
           ? renderChannels({
@@ -707,6 +725,201 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
 
+        ${
+          state.tab === "agents"
+            ? renderAgents({
+                loading: state.agentsLoading,
+                error: state.agentsError,
+                agentsList: state.agentsList,
+                selectedAgentId: resolvedAgentId,
+                activePanel: state.agentsPanel,
+                configForm: configValue,
+                configLoading: state.configLoading,
+                configSaving: state.configSaving,
+                configDirty: state.configFormDirty,
+                channelsLoading: state.channelsLoading,
+                channelsError: state.channelsError,
+                channelsSnapshot: state.channelsSnapshot,
+                channelsLastSuccess: state.channelsLastSuccess,
+                cronLoading: state.cronLoading,
+                cronStatus: state.cronStatus,
+                cronJobs: state.cronJobs,
+                cronError: state.cronError,
+                agentFilesLoading: state.agentFilesLoading,
+                agentFilesError: state.agentFilesError,
+                agentFilesList: state.agentFilesList,
+                agentFileActive: state.agentFileActive,
+                agentFileContents: state.agentFileContents,
+                agentFileDrafts: state.agentFileDrafts,
+                agentFileSaving: state.agentFileSaving,
+                agentIdentityLoading: state.agentIdentityLoading,
+                agentIdentityError: state.agentIdentityError,
+                agentIdentityById: state.agentIdentityById,
+                agentSkillsLoading: state.agentSkillsLoading,
+                agentSkillsReport: state.agentSkillsReport,
+                agentSkillsError: state.agentSkillsError,
+                agentSkillsAgentId: state.agentSkillsAgentId,
+                skillsFilter: state.skillsFilter,
+                onRefresh: async () => {
+                  await loadAgents(state);
+                  const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
+                  if (agentIds.length > 0) void loadAgentIdentities(state, agentIds);
+                },
+                onSelectAgent: (agentId) => {
+                  if (state.agentsSelectedId === agentId) return;
+                  state.agentsSelectedId = agentId;
+                  state.agentFilesList = null;
+                  state.agentFilesError = null;
+                  state.agentFilesLoading = false;
+                  state.agentFileActive = null;
+                  state.agentFileContents = {};
+                  state.agentFileDrafts = {};
+                  state.agentSkillsReport = null;
+                  state.agentSkillsError = null;
+                  state.agentSkillsAgentId = null;
+                  void loadAgentIdentity(state, agentId);
+                  if (state.agentsPanel === "files") void loadAgentFiles(state, agentId);
+                  if (state.agentsPanel === "skills") void loadAgentSkills(state, agentId);
+                },
+                onSelectPanel: (panel) => {
+                  state.agentsPanel = panel;
+                  if (panel === "files" && resolvedAgentId) {
+                    if (state.agentFilesList?.agentId !== resolvedAgentId) {
+                      state.agentFilesList = null;
+                      state.agentFilesError = null;
+                      state.agentFileActive = null;
+                      state.agentFileContents = {};
+                      state.agentFileDrafts = {};
+                      void loadAgentFiles(state, resolvedAgentId);
+                    }
+                  }
+                  if (panel === "skills" && resolvedAgentId) void loadAgentSkills(state, resolvedAgentId);
+                  if (panel === "channels") void loadChannels(state, false);
+                  if (panel === "cron") void state.loadCron();
+                },
+                onLoadFiles: (agentId) => loadAgentFiles(state, agentId),
+                onSelectFile: (name) => {
+                  state.agentFileActive = name;
+                  if (resolvedAgentId) void loadAgentFileContent(state, resolvedAgentId, name);
+                },
+                onFileDraftChange: (name, content) => {
+                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: content };
+                },
+                onFileReset: (name) => {
+                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: state.agentFileContents[name] ?? "" };
+                },
+                onFileSave: (name) => {
+                  if (!resolvedAgentId) return;
+                  void saveAgentFile(state, resolvedAgentId, name, state.agentFileDrafts[name] ?? state.agentFileContents[name] ?? "");
+                },
+                onToolsProfileChange: (agentId, profile, clearAllow) => {
+                  if (!configValue) return;
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) return;
+                  const index = list.findIndex((e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId);
+                  if (index < 0) return;
+                  const bp = ["agents", "list", index, "tools"];
+                  if (profile) updateConfigFormValue(state, [...bp, "profile"], profile);
+                  else removeConfigFormValue(state, [...bp, "profile"]);
+                  if (clearAllow) removeConfigFormValue(state, [...bp, "allow"]);
+                },
+                onToolsOverridesChange: (agentId, alsoAllow, deny) => {
+                  if (!configValue) return;
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) return;
+                  const index = list.findIndex((e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId);
+                  if (index < 0) return;
+                  const bp = ["agents", "list", index, "tools"];
+                  if (alsoAllow.length > 0) updateConfigFormValue(state, [...bp, "alsoAllow"], alsoAllow);
+                  else removeConfigFormValue(state, [...bp, "alsoAllow"]);
+                  if (deny.length > 0) updateConfigFormValue(state, [...bp, "deny"], deny);
+                  else removeConfigFormValue(state, [...bp, "deny"]);
+                },
+                onConfigReload: () => loadConfig(state),
+                onConfigSave: () => saveConfig(state),
+                onChannelsRefresh: () => loadChannels(state, false),
+                onCronRefresh: () => state.loadCron(),
+                onSkillsFilterChange: (next) => { state.skillsFilter = next; },
+                onSkillsRefresh: () => { if (resolvedAgentId) void loadAgentSkills(state, resolvedAgentId); },
+                onAgentSkillToggle: (agentId, skillName, enabled) => {
+                  if (!configValue) return;
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) return;
+                  const index = list.findIndex((e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId);
+                  if (index < 0) return;
+                  const entry = list[index] as { skills?: unknown };
+                  const ns = skillName.trim();
+                  if (!ns) return;
+                  const allSkills = state.agentSkillsReport?.skills?.map((s) => s.name).filter(Boolean) ?? [];
+                  const existing = Array.isArray(entry.skills) ? entry.skills.map((n) => String(n).trim()).filter(Boolean) : undefined;
+                  const base = existing ?? allSkills;
+                  const next = new Set(base);
+                  if (enabled) next.add(ns); else next.delete(ns);
+                  updateConfigFormValue(state, ["agents", "list", index, "skills"], [...next]);
+                },
+                onAgentSkillsClear: (agentId) => {
+                  if (!configValue) return;
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) return;
+                  const index = list.findIndex((e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId);
+                  if (index < 0) return;
+                  removeConfigFormValue(state, ["agents", "list", index, "skills"]);
+                },
+                onAgentSkillsDisableAll: (agentId) => {
+                  if (!configValue) return;
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) return;
+                  const index = list.findIndex((e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId);
+                  if (index < 0) return;
+                  updateConfigFormValue(state, ["agents", "list", index, "skills"], []);
+                },
+                onModelChange: (agentId, modelId) => {
+                  if (!configValue) return;
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) return;
+                  const index = list.findIndex((e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId);
+                  if (index < 0) return;
+                  const bp = ["agents", "list", index, "model"];
+                  if (!modelId) { removeConfigFormValue(state, bp); return; }
+                  const entry = list[index] as { model?: unknown };
+                  const existing = entry?.model;
+                  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+                    const fb = (existing as { fallbacks?: unknown }).fallbacks;
+                    updateConfigFormValue(state, bp, { primary: modelId, ...(Array.isArray(fb) ? { fallbacks: fb } : {}) });
+                  } else {
+                    updateConfigFormValue(state, bp, modelId);
+                  }
+                },
+                onModelFallbacksChange: (agentId, fallbacks) => {
+                  if (!configValue) return;
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) return;
+                  const index = list.findIndex((e) => e && typeof e === "object" && "id" in e && (e as { id?: string }).id === agentId);
+                  if (index < 0) return;
+                  const bp = ["agents", "list", index, "model"];
+                  const entry = list[index] as { model?: unknown };
+                  const normalized = fallbacks.map((n) => n.trim()).filter(Boolean);
+                  const existing = entry.model;
+                  const resolvePrimary = () => {
+                    if (typeof existing === "string") return existing.trim() || null;
+                    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+                      const p = (existing as { primary?: unknown }).primary;
+                      return typeof p === "string" ? (p.trim() || null) : null;
+                    }
+                    return null;
+                  };
+                  const primary = resolvePrimary();
+                  if (normalized.length === 0) {
+                    if (primary) updateConfigFormValue(state, bp, primary);
+                    else removeConfigFormValue(state, bp);
+                    return;
+                  }
+                  updateConfigFormValue(state, bp, primary ? { primary, fallbacks: normalized } : { fallbacks: normalized });
+                },
+              })
+            : nothing
+        }
+
         ${state.tab === "skills"
           ? renderSkills({
               loading: state.skillsLoading,
@@ -776,12 +989,13 @@ export function renderApp(state: AppViewState) {
                   showMcpToast(state, t("extensions.store.limitReached").replace("{{count}}", "8").replace("{{max}}", "8"), "error");
                   return;
                 }
+                const env = (item as McpMarketplaceItem & { _env?: Record<string, string> })._env;
                 void installMarketplaceItem(
                   state.client,
                   item,
-                  undefined,
+                  env,
                   {
-                    currentItems: state.mcpMarketplace.items,
+                    currentItems: () => state.mcpMarketplace.items,
                     onStateChange: (patch) => {
                       state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
                       if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "installed")) {
@@ -831,6 +1045,51 @@ export function renderApp(state: AppViewState) {
                 state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: null };
               },
               mcpRunningCount: state.mcpProcesses.filter((p) => p.status === "running").length,
+              // Batch API Key configuration (Skills page)
+              onMcpOpenBatchConfig: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, showBatchConfig: true };
+                state._mcpBatchConfigResult = null;
+                void (async () => {
+                  try {
+                    state._mcpServerEnvStatus = await fetchServerEnvStatus(state.client);
+                  } catch { /* ignore */ }
+                })();
+              },
+              onMcpCloseBatchConfig: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, showBatchConfig: false };
+                state._mcpBatchConfigResult = null;
+              },
+              onMcpSaveBatchConfig: (updates) => {
+                state._mcpBatchConfigSaving = true;
+                state._mcpBatchConfigResult = null;
+                void (async () => {
+                  try {
+                    const { success, failed } = await batchUpdateMcpServerEnv(state.client, updates);
+                    state._mcpBatchConfigResult = { success, failed };
+                    if (success > 0) {
+                      showMcpToast(state, `${success} ${t("extensions.batchConfig.saved" as never)}`, "success");
+                      state._mcpServerEnvStatus = await fetchServerEnvStatus(state.client);
+                      void checkMcpUpdate(state.client, {
+                        onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                          if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                          if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                        },
+                      });
+                    }
+                    if (failed > 0) {
+                      showMcpToast(state, `${failed} ${t("extensions.batchConfig.failed" as never)}`, "error");
+                    }
+                  } catch (err) {
+                    console.error("[mcp] batch env update failed:", err);
+                    showMcpToast(state, t("extensions.toast.error" as never), "error");
+                  } finally {
+                    state._mcpBatchConfigSaving = false;
+                  }
+                })();
+              },
+              mcpBatchConfigSaving: state._mcpBatchConfigSaving,
+              mcpBatchConfigResult: state._mcpBatchConfigResult,
+              mcpServerEnvStatus: state._mcpServerEnvStatus,
             })
           : nothing}
 
@@ -875,7 +1134,7 @@ export function renderApp(state: AppViewState) {
                   },
                 });
               },
-              onTest: (id) => {
+              onTest: (id, env) => {
                 state.mcpTestingServerId = id;
                 // Clear previous result for this server
                 const results = { ...state.mcpTestResults };
@@ -883,12 +1142,14 @@ export function renderApp(state: AppViewState) {
                 state.mcpTestResults = results;
                 void (async () => {
                   try {
-                    const ok = await testMcpServer(state.client, id);
-                    state.mcpTestResults = { ...state.mcpTestResults, [id]: ok ? "success" : "failed" };
-                    if (ok) {
-                      showMcpToast(state, `${id} — ${t("extensions.advanced.testSuccess" as never)}`, "success");
+                    const result = await testMcpServer(state.client, id, env);
+                    state.mcpTestResults = { ...state.mcpTestResults, [id]: result.ok ? "success" : "failed" };
+                    if (result.ok) {
+                      const toolInfo = result.toolCount ? ` (${result.toolCount} tools)` : "";
+                      showMcpToast(state, `${id} — ${t("extensions.advanced.testSuccess" as never)}${toolInfo}`, "success");
                     } else {
-                      showMcpToast(state, `${id} — ${t("extensions.advanced.testFailed" as never)}`, "error");
+                      const errorInfo = result.error ? `: ${result.error}` : "";
+                      showMcpToast(state, `${id} — ${t("extensions.advanced.testFailed" as never)}${errorInfo}`, "error");
                     }
                     // Also refresh status after test
                     await checkMcpUpdate(state.client, {
@@ -963,13 +1224,15 @@ export function renderApp(state: AppViewState) {
                   showMcpToast(state, t("extensions.store.limitReached").replace("{{count}}", "8").replace("{{max}}", "8"), "error");
                   return;
                 }
+                // Extract env from config wizard (attached as _env on the item)
+                const env = (item as McpMarketplaceItem & { _env?: Record<string, string> })._env;
                 // Fix #1: Wire to real RPC via installMarketplaceItem
                 void installMarketplaceItem(
                   state.client,
                   item,
-                  undefined,
+                  env,
                   {
-                    currentItems: state.mcpMarketplace.items,
+                    currentItems: () => state.mcpMarketplace.items,
                     onStateChange: (patch) => {
                       state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
                       // Fix #7: After install completes, refresh "My Capabilities" tab + show toast
@@ -992,17 +1255,22 @@ export function renderApp(state: AppViewState) {
                 );
               },
               onUninstall: (serverId) => {
-                // Fix #3: Call mcp.servers.remove RPC and refresh
+                // Capture name BEFORE optimistic update
+                const itemName = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName ?? serverId;
+
                 void (async () => {
                   try {
-                    await state.client?.request("mcp.servers.remove", { id: serverId });
-                    // Update marketplace item status
-                    const items = state.mcpMarketplace.items.map((i) =>
-                      i.serverId === serverId ? { ...i, installStatus: "not_installed" as const } : i,
+                    await uninstallMarketplaceItem(
+                      state.client,
+                      serverId,
+                      {
+                        currentItems: () => state.mcpMarketplace.items,
+                        onStateChange: (patch) => {
+                          state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                        },
+                      },
                     );
-                    state.mcpMarketplace = { ...state.mcpMarketplace, items };
-                    const name = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName ?? serverId;
-                    showMcpToast(state, `${name} ${t("extensions.toast.uninstalled" as never)}`, "info");
+                    showMcpToast(state, `${itemName} ${t("extensions.toast.uninstalled" as never)}`, "info");
                     // Refresh My Capabilities
                     void checkMcpUpdate(state.client, {
                       onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
@@ -1013,7 +1281,35 @@ export function renderApp(state: AppViewState) {
                     });
                   } catch (err) {
                     console.error("[mcp] uninstall failed:", serverId, err);
-                    showMcpToast(state, `${t("extensions.toast.error" as never)}: ${serverId}`, "error");
+                    showMcpToast(state, `${itemName} ${t("extensions.toast.error" as never)}`, "error");
+                  }
+                })();
+              },
+              onUpdate: (serverId) => {
+                const itemName = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName ?? serverId;
+                void (async () => {
+                  try {
+                    await updateMarketplaceItem(
+                      state.client,
+                      serverId,
+                      {
+                        currentItems: () => state.mcpMarketplace.items,
+                        onStateChange: (patch) => {
+                          state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                        },
+                      },
+                    );
+                    showMcpToast(state, `${itemName} ${t("extensions.toast.updated" as never)}`, "success");
+                    void checkMcpUpdate(state.client, {
+                      onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                        if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                        if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                        if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                      },
+                    });
+                  } catch (err) {
+                    console.error("[mcp] update failed:", serverId, err);
+                    showMcpToast(state, `${itemName} ${t("extensions.toast.error" as never)}`, "error");
                   }
                 })();
               },
@@ -1059,6 +1355,62 @@ export function renderApp(state: AppViewState) {
                 })();
               },
               manualFormTrigger: state.mcpManualFormTrigger,
+              onRetrySync: () => {
+                const mcpCallbacks: MarketplaceCallbacks = {
+                  onStateChange: (patch) => {
+                    state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                  },
+                };
+                state.mcpMarketplace = { ...state.mcpMarketplace, loading: true, error: null };
+                void loadMarketplaceItems(state.client, mcpCallbacks);
+                void loadMarketplaceRecommendations(state.client, mcpCallbacks);
+              },
+              // Batch API Key configuration
+              onOpenBatchConfig: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, showBatchConfig: true };
+                state._mcpBatchConfigResult = null;
+                void (async () => {
+                  try {
+                    state._mcpServerEnvStatus = await fetchServerEnvStatus(state.client);
+                  } catch { /* ignore */ }
+                })();
+              },
+              onCloseBatchConfig: () => {
+                state.mcpMarketplace = { ...state.mcpMarketplace, showBatchConfig: false };
+                state._mcpBatchConfigResult = null;
+              },
+              onSaveBatchConfig: (updates) => {
+                state._mcpBatchConfigSaving = true;
+                state._mcpBatchConfigResult = null;
+                void (async () => {
+                  try {
+                    const { success, failed } = await batchUpdateMcpServerEnv(state.client, updates);
+                    state._mcpBatchConfigResult = { success, failed };
+                    if (success > 0) {
+                      showMcpToast(state, `${success} ${t("extensions.batchConfig.saved" as never)}`, "success");
+                      // Refresh env status + capabilities
+                      state._mcpServerEnvStatus = await fetchServerEnvStatus(state.client);
+                      void checkMcpUpdate(state.client, {
+                        onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                          if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                          if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                        },
+                      });
+                    }
+                    if (failed > 0) {
+                      showMcpToast(state, `${failed} ${t("extensions.batchConfig.failed" as never)}`, "error");
+                    }
+                  } catch (err) {
+                    console.error("[mcp] batch env update failed:", err);
+                    showMcpToast(state, t("extensions.toast.error" as never), "error");
+                  } finally {
+                    state._mcpBatchConfigSaving = false;
+                  }
+                })();
+              },
+              batchConfigSaving: state._mcpBatchConfigSaving,
+              batchConfigResult: state._mcpBatchConfigResult,
+              serverEnvStatus: state._mcpServerEnvStatus,
             })
           : nothing}
 
@@ -1444,6 +1796,7 @@ export function renderApp(state: AppViewState) {
           : nothing}
       </main>
       ${renderExecApprovalPrompt(state)}
+      ${renderGatewayUrlConfirmation(state)}
       ${renderSkillInstallApproval(state)}
       ${renderSkillInstallProgress(state)}
       ${renderLicenseDialogs(state)}
@@ -1845,8 +2198,7 @@ function renderSkillsBatchOverlays(state: AppViewState) {
   // Full modals (not minimized)
   if (phase === "downloading") {
     return renderSkillsBatchProgress({
-      skills: batch.batchSkills,
-      progress: batch.batchProgress,
+      batchState: batch,
       onCancel: () => { void cancelBatchInstall(withClient()); batch.batchPhase = "idle"; batch.batchId = null; sync(); },
       onMinimize,
     });
@@ -1871,11 +2223,9 @@ function renderSkillsBatchOverlays(state: AppViewState) {
 
   if (phase === "complete" && batch.batchResult) {
     return renderSkillsBatchComplete({
-      succeeded: batch.batchResult.succeeded,
-      totalSizeBytes: batch.batchCheckResult?.total_size_bytes ?? 0,
-      durationMs: batch.batchResult.durationMs,
-      categories: [],
+      batchState: batch,
       onStartChat: () => { batch.batchPhase = "idle"; sync(); state.tab = "chat" as Tab; },
+      onDismiss: () => { batch.batchPhase = "idle"; sync(); },
     });
   }
 

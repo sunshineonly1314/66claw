@@ -241,6 +241,7 @@ function parseEnvelope(stdout: string): LobsterEnvelope {
 export function createLobsterTool(api: ClawdbotPluginApi) {
   return {
     name: "lobster",
+    label: "Lobster",
     description:
       "Run Lobster pipelines as a local-first workflow runtime (typed JSON envelope + resumable approvals).",
     parameters: Type.Object({
@@ -321,7 +322,7 @@ export function createLobsterTool(api: ClawdbotPluginApi) {
       const envelope = parseEnvelope(stdout);
 
       return {
-        content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
+        content: [{ type: "text" as const, text: JSON.stringify(envelope, null, 2) }],
         details: envelope,
       };
     },

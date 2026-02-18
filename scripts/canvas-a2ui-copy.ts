@@ -3,14 +3,28 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const srcDir = path.join(repoRoot, "src", "canvas-host", "a2ui");
-const outDir = path.join(repoRoot, "dist", "canvas-host", "a2ui");
+const defaultSrcDir = path.join(repoRoot, "src", "canvas-host", "a2ui");
+const defaultOutDir = path.join(repoRoot, "dist", "canvas-host", "a2ui");
+
+export async function copyA2uiAssets(params?: { srcDir?: string; outDir?: string }) {
+  const src = params?.srcDir ?? defaultSrcDir;
+  const out = params?.outDir ?? defaultOutDir;
+  await fs.stat(path.join(src, "index.html")).catch(() => {
+    throw new Error(
+      `Missing a2ui assets in ${src}. Run "pnpm canvas:a2ui:bundle" first.`,
+    );
+  });
+  await fs.stat(path.join(src, "a2ui.bundle.js")).catch(() => {
+    throw new Error(
+      `Missing a2ui bundle in ${src}. Run "pnpm canvas:a2ui:bundle" first.`,
+    );
+  });
+  await fs.mkdir(path.dirname(out), { recursive: true });
+  await fs.cp(src, out, { recursive: true });
+}
 
 async function main() {
-  await fs.stat(path.join(srcDir, "index.html"));
-  await fs.stat(path.join(srcDir, "a2ui.bundle.js"));
-  await fs.mkdir(path.dirname(outDir), { recursive: true });
-  await fs.cp(srcDir, outDir, { recursive: true });
+  await copyA2uiAssets();
 }
 
 main().catch((err) => {

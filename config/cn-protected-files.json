@@ -80,10 +80,26 @@
       "src/agents/tools/image-gen-tool.ts",
       "ui/src/ui/chat/image-lightbox.ts",
       "ui/src/styles/chat/image-lightbox.css",
+      "ui/src/ui/views/mcp-batch-config.ts",
       "ui/src/ui/views/channels.openclawwechat.ts",
       "docs/channels/openclawwechat-setup.md",
       "versionrecord.md",
-      "skills/version-record/SKILL.md"
+      "skills/version-record/SKILL.md",
+      "src/mcp/marketplace/db-schema.ts",
+      "src/mcp/marketplace/db.ts",
+      "src/mcp/marketplace/db.test.ts",
+      "src/gateway/server-methods/mcp-marketplace-search.ts",
+      "scripts/mcp-sync-to-db.ts",
+      "src/config/types.tool-discovery.ts",
+      "src/mcp/on-demand-loader.ts",
+      "src/agents/tools/mcp-install-tool.ts",
+      "scripts/build-tool-index.ts",
+      "src/agents/skills/marketplace/types.ts",
+      "src/agents/skills/marketplace/db-schema.ts",
+      "src/agents/skills/marketplace/db.ts",
+      "src/agents/skills/marketplace/db.test.ts",
+      "src/gateway/server-methods/skills-marketplace-search.ts",
+      "src/gateway/server-methods/skills-marketplace-search.test.ts"
     ],
     "directories": [
       "src/dispatch/",
@@ -179,6 +195,31 @@
         "path": "src/gateway/server.impl.ts",
         "cn_injection": "Injects cnGatewayHandlers into extraHandlers for CN-only gateway methods",
         "marker": "cnGatewayHandlers"
+      },
+      {
+        "path": "src/auto-reply/reply/get-reply-run.ts",
+        "cn_injection": "Injects toolSummaryPrompt into extraSystemPrompt for tool discovery",
+        "marker": "CN-PATCH:tool-discovery"
+      },
+      {
+        "path": "src/config/types.clawdbot.ts",
+        "cn_injection": "Adds toolDiscovery config field to OpenClawCNConfig",
+        "marker": "CN-PATCH:tool-discovery"
+      },
+      {
+        "path": "src/config/zod-schema.ts",
+        "cn_injection": "Adds toolDiscovery zod schema validation",
+        "marker": "CN-PATCH:tool-discovery"
+      },
+      {
+        "path": "src/agents/clawdbot-tools.ts",
+        "cn_injection": "Registers MCP install tool for on-demand loading",
+        "marker": "CN-PATCH:tool-discovery"
+      },
+      {
+        "path": "src/agents/openclaw-tools.ts",
+        "cn_injection": "Registers CN-only tools (open_app, desktop_control, wechat, image_gen, mcp_install) into the runtime tool factory",
+        "marker": "CN-PATCH"
       }
     ]
   },
@@ -221,5 +262,60 @@
       ".github/workflows/build-macos-cn.yml",
       "docs/china-localization.md"
     ]
+  },
+
+  "cn_encryption": {
+    "$comment": "Encryption targets. obfuscate-dist.ts and compile-bytecode.ts read from here. Paths are src/ source paths, auto-mapped to dist/ at build time. Only CN-written files are listed — upstream code is never encrypted.",
+
+    "bytecode": {
+      "description": "Maximum protection: RC4 obfuscation + V8 bytecode compilation + integrity hashes. For core CN business logic.",
+      "directories": [
+        "src/dispatch/",
+        "src/license/",
+        "src/security/"
+      ],
+      "files": [
+        "src/gateway/cn-handlers.ts",
+        "src/gateway/server-methods/asr.ts",
+        "src/gateway/server-methods/tts.ts",
+        "src/gateway/server-methods/voicewake.ts",
+        "src/gateway/server-methods/modality-capability.ts",
+        "src/agents/modality-capability-checker.ts",
+        "src/agents/siliconflow-models.ts",
+        "src/agents/tools/wechat-send.ts",
+        "src/agents/tools/wechat-check.ts",
+        "src/agents/tools/asr-tool.ts",
+        "src/agents/tools/tts-tool.ts",
+        "src/agents/tools/image-gen-tool.ts",
+        "src/config/region-cn.ts",
+        "src/config/cn-mirrors.ts",
+        "src/config/cn-mirrors-data.ts",
+        "src/config/zod-schema.providers-cn.ts",
+        "src/commands/auth-choice.apply.cn-providers.ts",
+        "src/infra/voicewake.ts",
+        "src/mcp/marketplace/db-schema.ts",
+        "src/mcp/marketplace/db.ts",
+        "src/gateway/server-methods/mcp-marketplace-search.ts"
+      ]
+    },
+
+    "obfuscate": {
+      "description": "Standard protection: RC4 obfuscation only (no bytecode). For CN extensions and less-critical CN code.",
+      "directories": [
+        "extensions/feishu/",
+        "extensions/dingtalk/",
+        "extensions/wecom/",
+        "extensions/qqbot/",
+        "extensions/openclawwechat/"
+      ],
+      "files": [
+        "src/i18n/locales/zh-CN.ts",
+        "src/config/types.tool-discovery.ts",
+        "src/mcp/on-demand-loader.ts",
+        "src/agents/tools/mcp-install-tool.ts",
+        "src/agents/skills/marketplace/db.ts",
+        "src/agents/skills/marketplace/db-schema.ts"
+      ]
+    }
   }
 }

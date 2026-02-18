@@ -512,7 +512,7 @@ export async function startNostrBus(
 
   const sub = pool.subscribeMany(
     relays,
-    [{ kinds: [4], "#p": [pk], since }],
+    { kinds: [4], "#p": [pk], since },
     {
       onevent: handleEvent,
       oneose: () => {
@@ -718,10 +718,8 @@ export function normalizePubkey(input: string): string {
     if (decoded.type !== "npub") {
       throw new Error("Invalid npub key");
     }
-    // Convert Uint8Array to hex string
-    return Array.from(decoded.data)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    // decoded.data is already a hex string for npub type
+    return decoded.data;
   }
 
   // Already hex - validate and return lowercase

@@ -7,6 +7,11 @@ import { loadJsonFile, saveJsonFile } from "../../infra/json-file.js";
 import { AUTH_STORE_LOCK_OPTIONS, AUTH_STORE_VERSION, log } from "./constants.js";
 import { syncExternalCliCredentials } from "./external-cli-sync.js";
 import { ensureAuthStoreFile, resolveAuthStorePath, resolveLegacyAuthStorePath } from "./paths.js";
+import {
+  saveEncryptedAuthStore,
+  loadEncryptedAuthStore,
+  isAuthStoreEncrypted,
+} from "./migrate-encryption.js";
 
 type LegacyAuthStore = Record<string, AuthProfileCredential>;
 
@@ -333,6 +338,12 @@ export function ensureAuthProfileStore(
   return merged;
 }
 
+/**
+ * 保存认证存储
+ *
+ * 注意: 此函数保持同步以向后兼容
+ * 如果需要加密存储，请使用 saveAuthProfileStoreEncrypted()
+ */
 export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string): void {
   const authPath = resolveAuthStorePath(agentDir);
   const payload = {
@@ -342,5 +353,28 @@ export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string)
     lastGood: store.lastGood ?? undefined,
     usageStats: store.usageStats ?? undefined,
   } satisfies AuthProfileStore;
+
+  // 保持向后兼容，使用明文存储
+  // 用户需要显式调用迁移工具来启用加密
   saveJsonFile(authPath, payload);
+}
+
+/**
+ * 保存加密的认证存储（异步版本）
+ *
+ * 推荐用于新代码，提供更好的安全性
+ */
+export async function saveAuthProfileStoreEncrypted(
+  store: AuthProfileStore,
+  agentDir?: string,
+): Promise<void> {
+  const payload = {
+    version: AUTH_STORE_VERSION,
+    profiles: store.profiles,
+    order: store.order ?? undefined,
+    lastGood: store.lastGood ?? undefined,
+    usageStats: store.usageStats ?? undefined,
+  } satisfies AuthProfileStore;
+
+  await saveEncryptedAuthStore(payload, agentDir);
 }

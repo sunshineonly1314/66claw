@@ -23,6 +23,8 @@ export class MCPRuntimeManager {
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private healthFailures = new Map<string, number>();
   private circuitOpenAt = new Map<string, number>();
+  /** Tracks consecutive circuit opens for exponential backoff. */
+  private circuitOpenCount = new Map<string, number>();
   /** Pending auto-restart timers — tracked so we can cancel duplicates. */
   private pendingRestarts = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -72,6 +74,7 @@ export class MCPRuntimeManager {
       s.lastHealthCheck = Date.now();
       this.healthFailures.set(id, 0);
       this.circuitOpenAt.delete(id);
+      this.circuitOpenCount.delete(id);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.updateStatus(id, "error", message);
@@ -109,6 +112,7 @@ export class MCPRuntimeManager {
     // Reset circuit breaker on manual restart
     this.healthFailures.set(id, 0);
     this.circuitOpenAt.delete(id);
+    this.circuitOpenCount.delete(id);
     state.restartCount = 0;
 
     await this.startServer(id);
@@ -169,6 +173,7 @@ export class MCPRuntimeManager {
     this.states.delete(id);
     this.healthFailures.delete(id);
     this.circuitOpenAt.delete(id);
+    this.circuitOpenCount.delete(id);
     this.cancelPendingRestart(id);
   }
 
@@ -196,7 +201,9 @@ export class MCPRuntimeManager {
   startHealthMonitor(): void {
     if (this.healthTimer) return;
     this.healthTimer = setInterval(() => {
-      this.runHealthChecks().catch(() => {/* health check errors are handled internally */});
+      this.runHealthChecks().catch(() => {
+        /* health check errors are handled internally */
+      });
     }, MCP_HEALTH_INTERVAL_MS);
   }
 
@@ -228,9 +235,13 @@ export class MCPRuntimeManager {
       }
     }
 
-    // Check circuit breaker cooldowns
+    // Check circuit breaker cooldowns (with exponential backoff)
     for (const [id, openAt] of this.circuitOpenAt) {
-      if (Date.now() - openAt >= MCP_CIRCUIT_COOLDOWN_MS) {
+      const openCount = this.circuitOpenCount.get(id) ?? 1;
+      // Exponential backoff: cooldown * 2^(openCount-1), capped at 8x base cooldown
+      const backoffMultiplier = Math.min(Math.pow(2, openCount - 1), 8);
+      const effectiveCooldown = MCP_CIRCUIT_COOLDOWN_MS * backoffMultiplier;
+      if (Date.now() - openAt >= effectiveCooldown) {
         this.circuitOpenAt.delete(id);
         this.healthFailures.set(id, 0);
         const state = this.states.get(id);
@@ -251,6 +262,7 @@ export class MCPRuntimeManager {
     if (failures >= MCP_HEALTH_FAILURE_THRESHOLD) {
       this.updateStatus(id, "circuit_open", `${failures} consecutive health check failures`);
       this.circuitOpenAt.set(id, Date.now());
+      this.circuitOpenCount.set(id, (this.circuitOpenCount.get(id) ?? 0) + 1);
       // Stop the client
       const client = this.clients.get(id);
       if (client) {
@@ -308,15 +320,18 @@ export class MCPRuntimeManager {
     const client = this.clients.get(id);
     if (!client) return;
 
-    client.listTools().then((tools) => {
-      const s = this.states.get(id);
-      if (s && s.status === "running") {
-        s.tools = tools;
-      }
-    }).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[mcp] Failed to refresh tools for "${id}": ${msg}`);
-    });
+    client
+      .listTools()
+      .then((tools) => {
+        const s = this.states.get(id);
+        if (s && s.status === "running") {
+          s.tools = tools;
+        }
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[mcp] Failed to refresh tools for "${id}": ${msg}`);
+      });
   }
 
   /** Cancel a pending auto-restart timer for a server. */

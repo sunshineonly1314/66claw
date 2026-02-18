@@ -34,17 +34,70 @@ export interface QqbotWebhookHandlerParams {
 // ============================================================================
 
 /**
- * 验证回调签名
+ * 验证 Ed25519 签名 (QQ 机器人使用)
+ *
+ * QQ 开放平台使用 Ed25519 算法对 Webhook 请求进行签名
+ * 签名验证流程:
+ * 1. 将 timestamp + body 拼接作为消息
+ * 2. 使用公钥验证签名
+ *
+ * @param publicKey - Ed25519 公钥 (hex 格式)
+ * @param signature - 请求签名 (hex 格式)
+ * @param timestamp - 请求时间戳
+ * @param body - 请求体原始字符串
+ * @returns 签名是否有效
  */
-function verifySignature(
-  token: string,
+function verifyEd25519Signature(
+  publicKey: string,
+  signature: string,
   timestamp: string,
   body: string,
-  signature: string,
 ): boolean {
-  const toVerify = `${timestamp}${token}${body}`;
-  const computed = crypto.createHash("sha1").update(toVerify).digest("hex");
-  return computed === signature;
+  try {
+    // 构造待验证消息: timestamp + body
+    const message = timestamp + body;
+
+    // 使用 Node.js crypto 验证 Ed25519 签名
+    const isValid = crypto.verify(
+      null, // Ed25519 不需要 hash 算法
+      Buffer.from(message, 'utf8'),
+      {
+        key: Buffer.from(publicKey, 'hex'),
+        format: 'der',
+        type: 'spki',
+      },
+      Buffer.from(signature, 'hex'),
+    );
+
+    return isValid;
+  } catch (error) {
+    console.error('[qqbot] Ed25519 signature verification error:', error);
+    return false;
+  }
+}
+
+/**
+ * 验证请求时间戳是否在有效期内
+ * 防止重放攻击
+ *
+ * @param timestamp - 请求时间戳 (秒)
+ * @param maxAgeSeconds - 最大允许时间差 (默认 5 分钟)
+ * @returns 时间戳是否有效
+ */
+function verifyTimestamp(timestamp: string, maxAgeSeconds: number = 300): boolean {
+  try {
+    const requestTime = Number.parseInt(timestamp, 10);
+    if (Number.isNaN(requestTime)) {
+      return false;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const age = Math.abs(now - requestTime);
+
+    return age <= maxAgeSeconds;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -84,16 +137,44 @@ export function createQqbotWebhookHandler(params: QqbotWebhookHandlerParams) {
 
       // 解析请求体
       const rawBody = await parseRequestBody(req);
-      
+
       // 获取签名相关头部
       const signature = req.headers["x-signature-ed25519"] as string | undefined;
       const timestamp = req.headers["x-signature-timestamp"] as string | undefined;
 
-      // 如果配置了 token，验证签名
-      if (config.app?.token && signature && timestamp) {
-        // QQ 使用 Ed25519 签名，这里简化处理
-        // 实际生产环境需要使用 Ed25519 验证
-        log.info("[qqbot] Signature verification (Ed25519) - simplified");
+      // ===== 签名验证 (Security Critical) =====
+      const publicKey = config.app?.publicKey;
+
+      // 如果配置了公钥，强制验证签名
+      if (publicKey) {
+        if (!signature || !timestamp) {
+          log.warn("[qqbot] 拒绝请求: 缺少签名头部 (X-Signature-Ed25519 或 X-Signature-Timestamp)");
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Missing signature headers" }));
+          return;
+        }
+
+        // 验证时间戳 (防止重放攻击)
+        if (!verifyTimestamp(timestamp)) {
+          log.warn(`[qqbot] 拒绝请求: 时间戳无效或过期 (timestamp=${timestamp})`);
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid or expired timestamp" }));
+          return;
+        }
+
+        // 验证 Ed25519 签名
+        const isValid = verifyEd25519Signature(publicKey, signature, timestamp, rawBody);
+        if (!isValid) {
+          log.warn("[qqbot] 拒绝请求: Ed25519 签名验证失败");
+          res.writeHead(403, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid signature" }));
+          return;
+        }
+
+        log.info("[qqbot] ✅ Ed25519 签名验证通过");
+      } else {
+        // 未配置公钥时，记录警告（向后兼容）
+        log.warn("[qqbot] ⚠️ 警告: 未配置 publicKey，签名验证已跳过！建议配置以提高安全性");
       }
 
       // 解析事件

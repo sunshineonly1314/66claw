@@ -1,4 +1,5 @@
 import type {
+  ChannelAccountSnapshot,
   ChannelCapabilities,
   ChannelId,
   ChannelOutboundAdapter,
@@ -57,13 +58,18 @@ export const createIMessageTestPlugin = (): ChannelPlugin => ({
     },
   },
   status: {
-    collectStatusIssues: (accounts: Array<Record<string, unknown>>) =>
+    collectStatusIssues: (accounts: ChannelAccountSnapshot[]) =>
       accounts
-        .filter((account) => typeof account.lastError === "string" && account.lastError)
+        .filter(
+          (account) =>
+            typeof (account as Record<string, unknown>).lastError === "string" &&
+            (account as Record<string, unknown>).lastError,
+        )
         .map((account) => ({
-          channel: "imessage",
+          channel: "imessage" as ChannelId,
           accountId: typeof account.accountId === "string" ? account.accountId : "default",
-          message: `Channel error: ${String(account.lastError)}`,
+          kind: "runtime" as const,
+          message: `Channel error: ${String((account as Record<string, unknown>).lastError)}`,
         })),
   },
 });
