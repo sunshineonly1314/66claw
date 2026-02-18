@@ -75,48 +75,104 @@ if (Test-Path $distSource) {
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
 Write-Host "[3/7] Installing production node_modules/..." -ForegroundColor Green
 
-# Use pnpm deploy to create a clean production-only node_modules
-# This avoids pnpm hardlink expansion (18GB -> 1.5GB) from robocopy
-$deployDir = Join-Path $env:TEMP "clawdbot-prod-deploy"
-if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
+# CRITICAL: pnpm uses hardlinks to a global store. robocopy/Copy-Item expands
+# each hardlink into an independent file copy: 1.5GB real → 18GB copied.
+# Solution: use npm install --prod in a temp dir to get a flat, real node_modules.
+$tempInstallDir = Join-Path $env:TEMP "clawdbot-prod-nm-$(Get-Date -Format 'yyyyMMddHHmmss')"
+New-Item -ItemType Directory -Force -Path $tempInstallDir | Out-Null
 
-Write-Host "  Strategy: pnpm deploy --prod (avoids hardlink expansion)"
-Push-Location $ProjectRoot
+Write-Host "  Strategy: npm install --omit=dev in temp dir (avoids pnpm hardlink expansion)"
+Write-Host "  Temp dir: $tempInstallDir"
+
 try {
-    $deployOutput = pnpm deploy --prod "$deployDir" 2>&1
-    Write-Host "  pnpm deploy completed [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+    # Copy package.json (dependencies list) and .npmrc (registry) to temp dir
+    Copy-Item "$ProjectRoot\package.json" "$tempInstallDir\package.json" -Force
+    if (Test-Path "$ProjectRoot\.npmrc") {
+        Copy-Item "$ProjectRoot\.npmrc" "$tempInstallDir\.npmrc" -Force
+    }
 
-    if (Test-Path "$deployDir\node_modules") {
-        $srcNmSize = [math]::Round(((Get-ChildItem "$deployDir\node_modules" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
-        Write-Host "  Deployed node_modules size: $srcNmSize MB"
-        Write-Host "  Copying to resources..."
-        robocopy "$deployDir\node_modules" "$ResourcesDir\node_modules" /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
-        $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
-        Write-Host "  OK: node_modules/ ($nmSize MB) [production only] [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+    # Run npm install with production deps only
+    Write-Host "  Running npm install --omit=dev ..."
+    Push-Location $tempInstallDir
+    try {
+        # Use npm (bundled with node) to install — produces flat node_modules, no hardlinks
+        $npmOutput = npm install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1
+        $npmExitCode = $LASTEXITCODE
+        Write-Host "  npm install exit code: $npmExitCode [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+
+        if ($npmExitCode -ne 0) {
+            Write-Host "  npm install output:" -ForegroundColor Yellow
+            $npmOutput | ForEach-Object { Write-Host "    $_" }
+            throw "npm install failed with exit code $npmExitCode"
+        }
+    } finally {
+        Pop-Location
+    }
+
+    if (Test-Path "$tempInstallDir\node_modules") {
+        # Measure temp node_modules size (sample first 500 files for speed)
+        $sampleFiles = Get-ChildItem "$tempInstallDir\node_modules" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 500
+        $sampleSize = ($sampleFiles | Measure-Object -Property Length -Sum).Sum
+        $sampleCount = $sampleFiles.Count
+        Write-Host "  Sample: $sampleCount files, avg $([math]::Round($sampleSize / [math]::Max($sampleCount, 1) / 1KB, 1)) KB/file"
+
+        # Count total files
+        $totalFiles = (Get-ChildItem "$tempInstallDir\node_modules" -Recurse -File -ErrorAction SilentlyContinue).Count
+        Write-Host "  Total files in temp node_modules: $totalFiles"
+
+        if ($totalFiles -gt 500000) {
+            Write-Host "  WARNING: >500K files detected. This seems too large!" -ForegroundColor Red
+        }
+
+        # Copy to resources using robocopy (safe here — no hardlinks in npm's node_modules)
+        Write-Host "  Copying to resources dir..."
+        robocopy "$tempInstallDir\node_modules" "$ResourcesDir\node_modules" /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+
+        # Get final size
+        $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
+        $nmFiles = (Get-ChildItem "$ResourcesDir\node_modules" -Recurse -File).Count
+        Write-Host "  OK: node_modules/ ($nmSize MB, $nmFiles files) [npm prod] [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]" -ForegroundColor Green
+
+        if ($nmSize -gt 5000) {
+            Write-Host "  ALERT: node_modules > 5GB ($nmSize MB)! Aborting — likely hardlink expansion." -ForegroundColor Red
+            Remove-Item "$ResourcesDir\node_modules" -Recurse -Force
+            exit 1
+        }
     } else {
-        Write-Host "  WARNING: pnpm deploy produced no node_modules, falling back to direct copy..." -ForegroundColor Yellow
-        Write-Host "  Deploy output: $deployOutput" -ForegroundColor Yellow
-        robocopy "$ProjectRoot\node_modules" "$ResourcesDir\node_modules" /E /XD .cache .turbo /XF *.ts *.map /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
-        # Remove broken workspace symlinks/junctions
-        Write-Host "  Cleaning broken symlinks..."
-        $brokenLinks = 0
-        Get-ChildItem "$ResourcesDir\node_modules" -Recurse -Force -ErrorAction SilentlyContinue |
-            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint } |
-            Where-Object { -not (Test-Path $_.FullName) } |
-            ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue; $brokenLinks++ }
-        Write-Host "  Removed $brokenLinks broken symlinks"
-        $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
-        Write-Host "  OK: node_modules/ ($nmSize MB) [fallback copy] [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+        throw "npm install produced no node_modules directory"
     }
 } catch {
-    Write-Host "  ERROR: pnpm deploy failed: $_" -ForegroundColor Red
-    Write-Host "  Falling back to direct robocopy..." -ForegroundColor Yellow
-    robocopy "$ProjectRoot\node_modules" "$ResourcesDir\node_modules" /E /XD .cache .turbo /XF *.ts *.map /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
-    $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
-    Write-Host "  OK: node_modules/ ($nmSize MB) [error fallback] [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
-} finally {
-    Pop-Location
+    Write-Host "  ERROR: npm prod install failed: $_" -ForegroundColor Red
+    Write-Host "  Attempting pnpm deploy --filter openclawcn --prod fallback..." -ForegroundColor Yellow
+
+    # Fallback: try pnpm deploy with filter
+    $deployDir = Join-Path $env:TEMP "clawdbot-pnpm-deploy"
     if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force -ErrorAction SilentlyContinue }
+
+    Push-Location $ProjectRoot
+    try {
+        pnpm deploy --filter openclawcn --prod "$deployDir" 2>&1 | Out-Null
+        if (Test-Path "$deployDir\node_modules") {
+            robocopy "$deployDir\node_modules" "$ResourcesDir\node_modules" /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
+            Write-Host "  OK: node_modules/ ($nmSize MB) [pnpm deploy fallback] [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]" -ForegroundColor Green
+        } else {
+            throw "pnpm deploy also produced no node_modules"
+        }
+    } catch {
+        Write-Host "  ERROR: All strategies failed. Cannot create production node_modules." -ForegroundColor Red
+        Write-Host "  Last error: $_" -ForegroundColor Red
+        exit 1
+    } finally {
+        Pop-Location
+        if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+} finally {
+    # Clean up temp dir
+    if (Test-Path $tempInstallDir) {
+        Write-Host "  Cleaning temp dir..."
+        Remove-Item $tempInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # ── 4. Extensions ──

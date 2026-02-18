@@ -130,24 +130,63 @@ fi
 
 # ── 3. Production node_modules ──
 step_start=$SECONDS
-echo "[3/7] Copying production node_modules/..."
-if [ -d "$PROJECT_ROOT/node_modules" ]; then
-    echo "  Copying node_modules (rsync, this may take a few minutes)..."
-    rsync -a --exclude='.cache' --exclude='.turbo' \
-        "$PROJECT_ROOT/node_modules/" "$RESOURCES_DIR/node_modules/"
-    NM_SIZE=$(du -sh "$RESOURCES_DIR/node_modules" | cut -f1)
-    echo "  OK: node_modules/ ($NM_SIZE) [$(( SECONDS - step_start ))s]"
+echo "[3/7] Installing production node_modules/..."
 
-    # Clean broken symlinks (pnpm workspace links)
-    echo "  Cleaning broken symlinks..."
-    BROKEN_COUNT=0
-    while IFS= read -r -d '' link; do
-        rm -f "$link"
-        BROKEN_COUNT=$((BROKEN_COUNT + 1))
-    done < <(find "$RESOURCES_DIR/node_modules" -type l ! -exec test -e {} \; -print0 2>/dev/null)
-    echo "  Removed $BROKEN_COUNT broken symlinks"
+# Strategy: use npm install --omit=dev in a temp dir to get clean, flat node_modules
+# This avoids pnpm hardlink issues and broken workspace symlinks
+TEMP_INSTALL_DIR=$(mktemp -d)
+echo "  Strategy: npm install --omit=dev in temp dir"
+echo "  Temp dir: $TEMP_INSTALL_DIR"
+
+# Copy package.json and .npmrc to temp dir
+cp "$PROJECT_ROOT/package.json" "$TEMP_INSTALL_DIR/package.json"
+[ -f "$PROJECT_ROOT/.npmrc" ] && cp "$PROJECT_ROOT/.npmrc" "$TEMP_INSTALL_DIR/.npmrc"
+
+if (cd "$TEMP_INSTALL_DIR" && npm install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1); then
+    NM_FILES=$(find "$TEMP_INSTALL_DIR/node_modules" -type f 2>/dev/null | wc -l | tr -d ' ')
+    echo "  npm install OK: $NM_FILES files [$(( SECONDS - step_start ))s]"
+
+    if [ "$NM_FILES" -gt 500000 ]; then
+        echo "  WARNING: >500K files — seems too large!" >&2
+    fi
+
+    echo "  Copying to resources dir..."
+    cp -R "$TEMP_INSTALL_DIR/node_modules" "$RESOURCES_DIR/node_modules"
+
+    NM_SIZE=$(du -sh "$RESOURCES_DIR/node_modules" | cut -f1)
+    NM_SIZE_MB=$(du -sm "$RESOURCES_DIR/node_modules" | cut -f1)
+    echo "  OK: node_modules/ ($NM_SIZE, $NM_FILES files) [npm prod] [$(( SECONDS - step_start ))s]"
+
+    if [ "$NM_SIZE_MB" -gt 5000 ]; then
+        echo "  ALERT: node_modules > 5GB! Aborting." >&2
+        rm -rf "$RESOURCES_DIR/node_modules"
+        rm -rf "$TEMP_INSTALL_DIR"
+        exit 1
+    fi
+
+    rm -rf "$TEMP_INSTALL_DIR"
 else
-    echo "  WARNING: node_modules not found."
+    echo "  npm install failed, falling back to rsync from pnpm node_modules..."
+    rm -rf "$TEMP_INSTALL_DIR"
+
+    if [ -d "$PROJECT_ROOT/node_modules" ]; then
+        rsync -a --exclude='.cache' --exclude='.turbo' \
+            "$PROJECT_ROOT/node_modules/" "$RESOURCES_DIR/node_modules/"
+        NM_SIZE=$(du -sh "$RESOURCES_DIR/node_modules" | cut -f1)
+        echo "  rsync OK: node_modules/ ($NM_SIZE) [$(( SECONDS - step_start ))s]"
+
+        # Clean broken symlinks (pnpm workspace links)
+        echo "  Cleaning broken symlinks..."
+        BROKEN_COUNT=0
+        while IFS= read -r -d '' link; do
+            rm -f "$link"
+            BROKEN_COUNT=$((BROKEN_COUNT + 1))
+        done < <(find "$RESOURCES_DIR/node_modules" -type l ! -exec test -e {} \; -print0 2>/dev/null)
+        echo "  Removed $BROKEN_COUNT broken symlinks"
+    else
+        echo "  ERROR: node_modules not found." >&2
+        exit 1
+    fi
 fi
 
 # ── 4. Extensions ──
