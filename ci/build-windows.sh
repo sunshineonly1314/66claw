@@ -52,6 +52,11 @@ MODE="$4"
 
 echo "📂 Preparing workspace: $WORKSPACE"
 
+# 设置 PATH - 确保 node/npm/pnpm 可用
+export PATH="/c/Program Files/nodejs:/c/Users/$USER/AppData/Roaming/npm:/c/Users/$USER/AppData/Local/pnpm:$PATH"
+echo "✅ Node: $(node --version 2>/dev/null || echo 'not found')"
+echo "✅ npm: $(npm --version 2>/dev/null || echo 'not found')"
+
 # 创建工作目录
 mkdir -p "$WORKSPACE"
 cd "$WORKSPACE"

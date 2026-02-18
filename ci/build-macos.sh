@@ -52,6 +52,11 @@ ARCH="$4"
 
 echo "📂 Preparing workspace: $WORKSPACE"
 
+# 设置 PATH - 确保 node/npm/pnpm 可用
+export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+echo "✅ Node: $(node --version 2>/dev/null || echo 'not found')"
+echo "✅ pnpm: $(pnpm --version 2>/dev/null || echo 'not found')"
+
 # 创建工作目录
 mkdir -p "$WORKSPACE"
 cd "$WORKSPACE"
@@ -71,7 +76,6 @@ echo "✅ Current branch: $(git branch --show-current)"
 
 # 安装依赖
 echo "📦 Installing dependencies..."
-export PATH="/usr/local/bin:$PATH"
 if command -v pnpm &> /dev/null; then
   pnpm install --no-frozen-lockfile
 else
