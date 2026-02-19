@@ -156,6 +156,104 @@ function Get-DiskFreeGB {
 }
 
 # ============================================================================
+# Invoke-NativeCommand: safe wrapper for npm/pnpm/node calls
+# Temporarily sets ErrorActionPreference=Continue so stderr warnings from
+# native executables (node deprecation warnings, npm peer-dep messages)
+# don't get treated as terminating errors by PowerShell.
+# ============================================================================
+function Invoke-NativeCommand {
+    param(
+        [string]$Command,        # e.g. "pnpm build:secure"
+        [switch]$UseCmdWrapper,   # wrap with cmd /c (for npm install)
+        [switch]$Silent,          # suppress stdout display
+        [switch]$PassThru         # return output instead of displaying
+    )
+    $prevEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        if ($UseCmdWrapper) {
+            $output = & cmd /c $Command 2>&1
+        } else {
+            $output = Invoke-Expression "& $Command 2>&1"
+        }
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEA
+    }
+    if ($PassThru) {
+        return @{ ExitCode = $code; Output = $output }
+    }
+    if (-not $Silent) {
+        $output | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    }
+    return $code
+}
+
+# ============================================================================
+# Resolve-GitBash: find Git Bash dynamically (don't hardcode path)
+# ============================================================================
+function Resolve-GitBash {
+    # Method 1: Check common install paths
+    $candidates = @(
+        "C:\Program Files\Git\bin",
+        "C:\Program Files (x86)\Git\bin",
+        "$env:LOCALAPPDATA\Programs\Git\bin",
+        "$env:ProgramW6432\Git\bin"
+    )
+    foreach ($dir in $candidates) {
+        if (Test-Path "$dir\bash.exe") { return $dir }
+    }
+    # Method 2: Find git.exe and derive bin path
+    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitCmd) {
+        $gitBin = Join-Path (Split-Path (Split-Path $gitCmd.Source -Parent) -Parent) "bin"
+        if (Test-Path "$gitBin\bash.exe") { return $gitBin }
+    }
+    # Method 3: Check PATH for git and derive
+    $gitPath = & where.exe git 2>$null | Select-Object -First 1
+    if ($gitPath) {
+        $gitBin = Join-Path (Split-Path (Split-Path $gitPath -Parent) -Parent) "bin"
+        if (Test-Path "$gitBin\bash.exe") { return $gitBin }
+    }
+    return $null
+}
+
+# ============================================================================
+# Test-NpmRegistry: verify registry is reachable before long build
+# ============================================================================
+function Test-NpmRegistry {
+    param([string]$Registry = "https://registry.npmmirror.com")
+    try {
+        $response = Invoke-WebRequest -Uri "$Registry/npm/latest" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+        return $response.StatusCode -eq 200
+    } catch {
+        return $false
+    }
+}
+
+# ============================================================================
+# Get-NpmRegistry: return first reachable registry from fallback list
+# ============================================================================
+function Get-NpmRegistry {
+    $registries = @(
+        "https://registry.npmmirror.com",
+        "https://registry.npm.taobao.org",
+        "https://registry.npmjs.org"
+    )
+    foreach ($reg in $registries) {
+        Write-Host "  [i] Testing registry: $reg" -ForegroundColor DarkGray -NoNewline
+        if (Test-NpmRegistry $reg) {
+            Write-Host " OK" -ForegroundColor Green
+            return $reg
+        }
+        Write-Host " unreachable" -ForegroundColor Yellow
+    }
+    # Default fallback — will fail at npm install but with clear message
+    Write-Warn "All npm registries unreachable! Build may fail at npm install step."
+    return $registries[0]
+}
+
+# ============================================================================
 # Calculate total steps
 # ============================================================================
 $totalSteps = 6  # prerequisites, parallel-all, native-addon, tools-check, verify, compile
@@ -200,6 +298,51 @@ if ($diskFreeGB -gt 0) {
     }
     Write-Host "  Disk free:   ${diskFreeGB}GB"
 }
+Write-Host ""
+
+# ============================================================================
+# Preflight: Fast validation (<10s) — catch environment issues before long build
+# ============================================================================
+Write-Host "  Preflight checks..." -ForegroundColor DarkCyan
+
+# Validate Git Bash available (avoid WSL bash breaking pnpm shell scripts)
+$gitBashDir = Resolve-GitBash
+if ($gitBashDir) {
+    if ($env:PATH -notmatch [regex]::Escape($gitBashDir)) {
+        $env:PATH = "$gitBashDir;$env:PATH"
+    }
+    Write-Host "  [OK] Git Bash: $gitBashDir\bash.exe" -ForegroundColor Green
+} else {
+    $wslBash = & where.exe bash 2>$null | Select-Object -First 1
+    if ($wslBash -and $wslBash -match "WindowsApps") {
+        Write-Err "Only WSL bash found ($wslBash) — Git for Windows is required!"
+        Write-Host "  Install: https://git-scm.com/download/win" -ForegroundColor Gray
+        exit 1
+    }
+    Write-Warn "Git Bash not found. Shell scripts (.sh) in pnpm may fail."
+}
+
+# Validate npm registry reachable (avoid wasting hours on unreachable registry)
+$npmRegistry = Get-NpmRegistry
+
+# Validate key source files exist (avoid building for 30min then failing at ISS)
+$preflightFiles = @(
+    @{ Path = "$ProjectRoot\package.json"; Desc = "package.json" },
+    @{ Path = "$ProjectRoot\scripts\windows\setup.iss"; Desc = "Inno Setup script" },
+    @{ Path = "$ScriptsDir\node-portable"; Desc = "Portable Node.js" },
+    @{ Path = "$ScriptsDir\assets\clawdbot.ico"; Desc = "App icon" },
+    @{ Path = "$ScriptsDir\native\ClawdbotService.exe"; Desc = "Service executable" }
+)
+$preflightMissing = @()
+foreach ($f in $preflightFiles) {
+    if (-not (Test-Path $f.Path)) { $preflightMissing += $f.Desc }
+}
+if ($preflightMissing.Count -gt 0) {
+    Write-Err "Missing critical files (build will fail at ISS stage):"
+    $preflightMissing | ForEach-Object { Write-Host "    - $_" -ForegroundColor Red }
+    exit 1
+}
+Write-Host "  [OK] Critical files present" -ForegroundColor Green
 Write-Host ""
 
 # ============================================================================
@@ -545,41 +688,48 @@ if ($needNpmInstall) {
     ).Replace("-", "")
     Set-Content "$nodeModulesDir\.ext-deps-hash" $currentExtHash -Encoding UTF8
 
-    Write-Host "  -> Launching: npm install --omit=dev ($MaxThreads connections)" -ForegroundColor DarkCyan
+    Write-Host "  -> Launching: npm install --omit=dev ($MaxThreads connections, registry: $npmRegistry)" -ForegroundColor DarkCyan
     $parallelJobs += Start-Job -Name "NodeModules" -ScriptBlock {
-        param($dir, $maxThreads)
+        param($dir, $maxThreads, $registry)
         Set-Location $dir
 
         $maxRetries = 3
         $lastError = ""
+        $logFile = Join-Path $dir "npm-install.log"
 
         for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
             $prevEA = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
 
-            $output = & cmd /c "npm install --omit=dev --legacy-peer-deps --no-audit --no-fund --prefer-offline --maxsockets=$maxThreads --registry=https://registry.npmmirror.com" 2>&1
+            $output = & cmd /c "npm install --omit=dev --legacy-peer-deps --no-audit --no-fund --prefer-offline --maxsockets=$maxThreads --registry=$registry" 2>&1
             $code = $LASTEXITCODE
 
             $ErrorActionPreference = $prevEA
+
+            # Always save full output to log for diagnostics
+            $output | Out-File $logFile -Encoding UTF8
 
             if ($code -eq 0) {
                 $retryMsg = if ($attempt -gt 1) { " (succeeded on attempt $attempt)" } else { "" }
                 return @{ Success = $true; Retries = ($attempt - 1); Message = $retryMsg }
             }
 
-            $lastError = ($output | Select-Object -Last 10) -join "`n"
+            $lastError = ($output | Select-Object -Last 30) -join "`n"
             if ($attempt -lt $maxRetries) {
-                Start-Sleep -Seconds (3 * $attempt)
+                # Exponential backoff: 3s, 9s, 27s
+                Start-Sleep -Seconds ([Math]::Pow(3, $attempt))
                 # Clean node_modules on retry to avoid partial state
                 $nmPath = Join-Path $dir "node_modules"
                 if (Test-Path $nmPath) {
                     Remove-Item $nmPath -Recurse -Force -ErrorAction SilentlyContinue
                 }
+                # Clean npm cache on retry
+                & cmd /c "npm cache clean --force" 2>$null | Out-Null
             }
         }
 
-        return @{ Success = $false; Error = "npm install failed after $maxRetries attempts (exit $code)`n$lastError" }
-    } -ArgumentList $nodeModulesDir, $MaxThreads
+        return @{ Success = $false; Error = "npm install failed after $maxRetries attempts (exit $code)`nFull log: $logFile`n$lastError" }
+    } -ArgumentList $nodeModulesDir, $MaxThreads, $npmRegistry
 }
 else {
     if (-not $SkipNodeModules) {
@@ -838,11 +988,10 @@ if ($needMainBuild -or $needUiBuild) {
 
     Set-Location $ProjectRoot
 
-    # Ensure Git Bash is on PATH before WSL bash (pnpm scripts use "bash" to run .sh files)
-    $gitBashDir = "C:\Program Files\Git\bin"
-    if ((Test-Path "$gitBashDir\bash.exe") -and ($env:PATH -notmatch [regex]::Escape($gitBashDir))) {
+    # Git Bash PATH is set in preflight; verify it's still active
+    if ($gitBashDir -and (Test-Path "$gitBashDir\bash.exe") -and ($env:PATH -notmatch [regex]::Escape($gitBashDir))) {
         $env:PATH = "$gitBashDir;$env:PATH"
-        Write-Host "  [i] Prepended Git Bash to PATH (avoid WSL bash)" -ForegroundColor DarkGray
+        Write-Host "  [i] Re-applied Git Bash to PATH" -ForegroundColor DarkGray
     }
 
     if ($needMainBuild) {
@@ -1226,7 +1375,7 @@ if (Test-Path $nodeModulesPath) {
             if (-not $bytenodeVer) { $bytenodeVer = "1.5.7" }
             $prevLoc = Get-Location
             Set-Location $nodeModulesDir
-            & cmd /c "npm install bytenode@$bytenodeVer --no-save --legacy-peer-deps --no-audit --no-fund" 2>$null
+            & cmd /c "npm install bytenode@$bytenodeVer --no-save --legacy-peer-deps --no-audit --no-fund --registry=$npmRegistry" 2>$null
             Set-Location $prevLoc
             if (Test-Path $bytenodeProdPath) {
                 Write-OK "bytenode runtime installed in production node_modules"
