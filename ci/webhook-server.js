@@ -5,17 +5,23 @@
  */
 
 const express = require('express');
-const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const dns = require('dns');
 const fs = require('fs');
 const path = require('path');
 
 // 读取配置
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
+// 确保 logs 和 artifacts 目录存在
+for (const dir of ['logs', 'artifacts', 'artifacts/windows', 'artifacts/macos']) {
+  const p = path.join(__dirname, dir);
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
 // 日志函数
 const log = {
@@ -24,16 +30,55 @@ const log = {
   warn: (msg) => console.warn(`[WARN] ${new Date().toISOString()} ${msg}`),
 };
 
-// 验证 Gitee Webhook 签名
-function verifyGiteeSignature(body, signature) {
-  if (!signature) return false;
-
-  const hmac = crypto.createHmac('sha256', config.webhook.secret);
-  hmac.update(JSON.stringify(body));
-  const computed = hmac.digest('hex');
-
-  return computed === signature;
+// ── hostname 动态解析 ────────────────────────────────────────────────────────
+// 解决 Windows 重启后 DHCP 重新分配 IP 的问题
+// config.json 中 host 字段支持 hostname（如 KEVINSUN）或 IP
+function resolveHost(host) {
+  return new Promise((resolve) => {
+    // 如果已经是 IP 格式，直接返回
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host === 'localhost') {
+      return resolve(host);
+    }
+    // 尝试 DNS 解析 hostname → IP
+    dns.lookup(host, { family: 4 }, (err, address) => {
+      if (err) {
+        log.warn(`DNS lookup failed for ${host}: ${err.message}, using hostname directly`);
+        return resolve(host);
+      }
+      log.info(`Resolved ${host} → ${address}`);
+      resolve(address);
+    });
+  });
 }
+
+// ── Gitee Webhook 签名验证 ───────────────────────────────────────────────────
+// Gitee Webhook 密码模式：X-Gitee-Token header 直接等于配置的 secret
+// Gitee 签名模式：timestamp + "\n" + secret 做 HMAC-SHA256 Base64
+function verifyGiteeSignature(req) {
+  const token = req.headers['x-gitee-token'];
+  const timestamp = req.headers['x-gitee-timestamp'];
+
+  // 方式1：密码模式 — token 直接等于 secret
+  if (token === config.webhook.secret) {
+    return true;
+  }
+
+  // 方式2：签名模式 — HMAC-SHA256(timestamp + "\n" + secret)
+  if (token && timestamp) {
+    const stringToSign = `${timestamp}\n${config.webhook.secret}`;
+    const hmac = crypto.createHmac('sha256', config.webhook.secret);
+    hmac.update(stringToSign);
+    const computed = hmac.digest('base64');
+    if (computed === token) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// ── 构建并发锁 ──────────────────────────────────────────────────────────────
+const buildLock = { windows: false, macos: false };
 
 // 解析构建指令
 function parseBuildInstructions(payload) {
@@ -42,6 +87,7 @@ function parseBuildInstructions(payload) {
     platform: 'all',
     mode: 'standard',
     version: null,
+    validate: false,      // [validate] tag → 安装后验证
   };
 
   // Tag push
@@ -81,21 +127,21 @@ function parseBuildInstructions(payload) {
       const lastCommit = commits[commits.length - 1];
       const message = lastCommit.message || '';
 
-      // 检查是否包含 [build] 或 [ci]
-      if (!message.match(/\[build\]|\[ci\]/i)) {
+      // 检查是否包含 [build]、[build xxx]、[ci]
+      if (!message.match(/\[build[\s\]]/i) && !message.match(/\[ci\]/i)) {
         log.info(`No [build] tag in commit message, skipping`);
         return null;
       }
 
       // 从 commit message 推断平台
-      if (message.match(/windows/i)) {
+      // [build windows] = 只打 Windows, [build macos] = 只打 macOS
+      // [build] 或 [ci] 不指定平台 = 默认双平台并行
+      if (message.match(/\[build\s+windows\]/i) || message.match(/\bwindows\s+only\b/i)) {
         instructions.platform = 'windows';
-      } else if (message.match(/macos|mac/i)) {
+      } else if (message.match(/\[build\s+macos\]/i) || message.match(/\[build\s+mac\]/i) || message.match(/\bmacos\s+only\b/i)) {
         instructions.platform = 'macos';
-      } else if (message.match(/linux/i)) {
-        instructions.platform = 'linux';
       } else {
-        instructions.platform = 'windows'; // 默认
+        instructions.platform = 'all'; // 默认双平台并行
       }
 
       // 检查是否是 full 模式
@@ -103,8 +149,13 @@ function parseBuildInstructions(payload) {
         instructions.mode = 'full';
       }
 
+      // 检查是否需要安装后验证 [validate]
+      if (message.match(/\[validate\]/i)) {
+        instructions.validate = true;
+      }
+
       log.info(`Commit message: "${message}"`);
-      log.info(`Build instructions: platform=${instructions.platform}, mode=${instructions.mode}`);
+      log.info(`Build instructions: platform=${instructions.platform}, mode=${instructions.mode}, validate=${instructions.validate}`);
     }
 
     return instructions;
@@ -123,15 +174,23 @@ function executeBuild(platform, instructions) {
       return resolve({ success: false, reason: 'disabled' });
     }
 
+    // 检查并发锁
+    if (buildLock[platform]) {
+      log.warn(`Builder ${platform} is already running, skipping`);
+      return resolve({ success: false, reason: 'already_running' });
+    }
+    buildLock[platform] = true;
+
     log.info(`Starting build on ${platform} (${builderConfig.host})...`);
 
     const scriptPath = path.join(__dirname, `build-${platform}.sh`);
 
-    // 构建参数
-    const args = [
-      instructions.version || '',
-      instructions.mode || 'standard',
-    ];
+    // 构建参数 — Windows: (version, mode, validate), macOS: (version, arch, validate)
+    const args = platform === 'macos'
+      ? [instructions.version || '', 'universal',
+         instructions.validate ? '--validate-full' : '']
+      : [instructions.version || '', instructions.mode || 'standard',
+         instructions.validate ? '-TestInstall' : ''];
 
     const child = spawn('bash', [scriptPath, ...args], {
       cwd: __dirname,
@@ -140,11 +199,30 @@ function executeBuild(platform, instructions) {
 
     const logFile = path.join(__dirname, 'logs', `build-${platform}.log`);
     const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+    logStream.write(`\n\n=== Build started: ${new Date().toISOString()} ===\n`);
 
     child.stdout.pipe(logStream);
     child.stderr.pipe(logStream);
 
+    let settled = false;
+
+    // 超时控制 — 正常完成时清除定时器，避免 Promise 双重 settle
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        buildLock[platform] = false;
+        child.kill();
+        log.error(`Build ${platform} timeout after ${builderConfig.timeout}s`);
+        logStream.end();
+        reject({ success: false, platform, reason: 'timeout' });
+      }
+    }, builderConfig.timeout * 1000);
+
     child.on('exit', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      buildLock[platform] = false;
       logStream.end();
 
       if (code === 0) {
@@ -157,16 +235,14 @@ function executeBuild(platform, instructions) {
     });
 
     child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      buildLock[platform] = false;
+      logStream.end();
       log.error(`Build ${platform} error: ${err.message}`);
       reject({ success: false, platform, error: err.message });
     });
-
-    // 超时控制
-    setTimeout(() => {
-      child.kill('SIGTERM');
-      log.error(`Build ${platform} timeout`);
-      reject({ success: false, platform, reason: 'timeout' });
-    }, builderConfig.timeout * 1000);
   });
 }
 
@@ -175,8 +251,7 @@ app.post('/webhook', async (req, res) => {
   log.info('Received webhook request');
 
   // 验证签名
-  const signature = req.headers['x-gitee-token'];
-  if (!verifyGiteeSignature(req.body, signature)) {
+  if (!verifyGiteeSignature(req)) {
     log.warn('Invalid webhook signature');
     return res.status(403).json({ error: 'Invalid signature' });
   }
@@ -208,9 +283,9 @@ app.post('/webhook', async (req, res) => {
       results.forEach((result, i) => {
         const platform = platforms[i];
         if (result.status === 'fulfilled' && result.value.success) {
-          log.info(`✅ ${platform} build completed`);
+          log.info(`${platform} build completed`);
         } else {
-          log.error(`❌ ${platform} build failed`);
+          log.error(`${platform} build failed`);
         }
       });
 
@@ -220,22 +295,27 @@ app.post('/webhook', async (req, res) => {
       await executeBuild(instructions.platform, instructions);
     }
   } catch (err) {
-    log.error(`Build execution error: ${err.message}`);
+    log.error(`Build execution error: ${err.message || JSON.stringify(err)}`);
   }
 });
 
 // 健康检查端点
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  // 动态解析 builder host，展示实际可达 IP
+  const builders = {};
+  for (const [name, cfg] of Object.entries(config.builders)) {
+    const resolved = await resolveHost(cfg.host);
+    builders[name] = {
+      enabled: cfg.enabled,
+      host: cfg.host,
+      resolved_ip: resolved,
+      building: buildLock[name] || false,
+    };
+  }
   res.json({
     status: 'ok',
     uptime: process.uptime(),
-    builders: Object.keys(config.builders).reduce((acc, name) => {
-      acc[name] = {
-        enabled: config.builders[name].enabled,
-        host: config.builders[name].host,
-      };
-      return acc;
-    }, {}),
+    builders,
   });
 });
 
@@ -274,7 +354,7 @@ app.get('/status', (req, res) => {
         </style>
       </head>
       <body>
-        <h1>🚀 ClawdbotCN CI/CD Status</h1>
+        <h1>ClawdbotCN CI/CD Status</h1>
 
         <div class="section">
           <h2>Builders</h2>
@@ -282,9 +362,10 @@ app.get('/status', (req, res) => {
             <div class="builder">
               <strong>${name}</strong>:
               <span class="${cfg.enabled ? 'enabled' : 'disabled'}">
-                ${cfg.enabled ? '✅ Enabled' : '❌ Disabled'}
+                ${cfg.enabled ? 'Enabled' : 'Disabled'}
               </span>
               <br>Host: ${cfg.host}
+              <br>Building: ${buildLock[name] ? 'YES' : 'idle'}
             </div>
           `).join('')}
         </div>
@@ -292,7 +373,7 @@ app.get('/status', (req, res) => {
         <div class="section">
           <h2>Recent Logs</h2>
           <ul>
-            ${logs.map(log => `<li><a href="/logs/${log}">${log}</a></li>`).join('')}
+            ${logs.map(l => `<li><a href="/logs/${encodeURIComponent(l)}">${l}</a></li>`).join('')}
           </ul>
         </div>
 
@@ -310,9 +391,10 @@ app.get('/status', (req, res) => {
   `);
 });
 
-// 日志查看端点
+// 日志查看端点 — 防止路径遍历
 app.get('/logs/:filename', (req, res) => {
-  const logFile = path.join(__dirname, 'logs', req.params.filename);
+  const safeName = path.basename(req.params.filename);
+  const logFile = path.join(__dirname, 'logs', safeName);
 
   if (!fs.existsSync(logFile)) {
     return res.status(404).send('Log file not found');
@@ -327,11 +409,18 @@ const port = config.webhook.port;
 const host = config.webhook.host;
 
 app.listen(port, host, () => {
-  log.info(`✅ Webhook server started`);
+  log.info(`Webhook server started`);
   log.info(`   Listening on: http://${host}:${port}`);
   log.info(`   Health check: http://localhost:${port}/health`);
   log.info(`   Status page: http://localhost:${port}/status`);
   log.info(`   Webhook URL: http://YOUR_IP:${port}/webhook`);
+
+  // 启动时预解析所有 builder host
+  Object.entries(config.builders).forEach(([name, cfg]) => {
+    resolveHost(cfg.host).then(ip => {
+      log.info(`   Builder ${name}: ${cfg.host} → ${ip}`);
+    });
+  });
 });
 
 // 优雅退出

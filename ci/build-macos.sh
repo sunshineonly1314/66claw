@@ -36,6 +36,7 @@ MAC_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo")
 # 参数
 VERSION="${1:-}"
 ARCH="${2:-universal}"
+VALIDATE_FLAG="${3:-}"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "macOS 远程构建"
@@ -44,6 +45,7 @@ echo "Target: $MAC_USER@$MAC_HOST"
 echo "Workspace: $MAC_WORKSPACE"
 echo "Version: ${VERSION:-auto}"
 echo "Arch: $ARCH"
+echo "Validate: ${VALIDATE_FLAG:-basic}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # 创建临时构建脚本（与 Windows 一致的 SCP+SSH 方式）
@@ -56,6 +58,7 @@ WORKSPACE="$MAC_WORKSPACE"
 REPO="$MAC_REPO"
 VERSION="$VERSION"
 ARCH="$ARCH"
+VALIDATE_FLAG="$VALIDATE_FLAG"
 
 echo "Preparing workspace: \$WORKSPACE"
 
@@ -110,9 +113,10 @@ else
   exit 1
 fi
 
-# 如果指定了版本，添加到环境变量
+# 如果指定了版本，传入 VERSION 环境变量
+# 注意: build-macos-cn.sh 读取的是 VERSION（不是 BUILD_VERSION）
 if [ -n "\$VERSION" ]; then
-  export BUILD_VERSION="\$VERSION"
+  export VERSION="\$VERSION"
 fi
 
 # build-macos-cn.sh 已内置 SKIP_CODESIGN=1 默认值，无需 sed patch
@@ -125,6 +129,40 @@ if ls build/output/ClawdbotCN-macOS-*.dmg 1> /dev/null 2>&1; then
 else
   echo "Build failed - no DMG found"
   exit 1
+fi
+
+# ── Post-build validation ──
+VALIDATION_SCRIPT="scripts/macos/post-build-validation.sh"
+APP_BUNDLE="build/output/ClawdbotCN.app"
+VALIDATION_LOG_DIR="build/output/validation-logs"
+
+if [ -f "\$VALIDATION_SCRIPT" ] && [ -d "\$APP_BUNDLE" ]; then
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "Running post-build validation..."
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  chmod +x "\$VALIDATION_SCRIPT"
+  mkdir -p "\$VALIDATION_LOG_DIR"
+
+  VALIDATE_ARGS="--app-dir \$APP_BUNDLE --log-dir \$VALIDATION_LOG_DIR"
+  if [ "\$VALIDATE_FLAG" != "--validate-full" ]; then
+    VALIDATE_ARGS="\$VALIDATE_ARGS --skip-websocket"
+  fi
+
+  if bash "\$VALIDATION_SCRIPT" \$VALIDATE_ARGS; then
+    echo "Post-build validation: ALL PASSED"
+  else
+    echo "WARNING: Post-build validation had failures (build artifact still available)"
+    # Show the report if available
+    if [ -f "\$VALIDATION_LOG_DIR/validation-report.txt" ]; then
+      echo "--- Validation Report ---"
+      cat "\$VALIDATION_LOG_DIR/validation-report.txt"
+      echo "--- End Report ---"
+    fi
+    # Don't exit 1 — build succeeded, validation is advisory
+  fi
+else
+  echo "Skipping post-build validation (script or .app not found)"
 fi
 SHEOF
 
@@ -158,6 +196,17 @@ if [ $BUILD_EXIT -eq 0 ]; then
   echo "Downloading artifacts to $ARTIFACTS_DIR..."
   $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg" "$ARTIFACTS_DIR/" || echo "Download failed, but build succeeded"
   $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg.sha256" "$ARTIFACTS_DIR/" 2>/dev/null || true
+  $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/validation-logs/validation-report.txt" "$ARTIFACTS_DIR/" 2>/dev/null || true
+
+  # Show validation report if downloaded
+  REPORT_FILE="$ARTIFACTS_DIR/validation-report.txt"
+  if [ -f "$REPORT_FILE" ]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Validation Report:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    cat "$REPORT_FILE"
+  fi
 
   exit 0
 else
