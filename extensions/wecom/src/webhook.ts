@@ -76,7 +76,11 @@ function verifyWecomSignature(
  * EncodingAESKey 是 43 个字符，Base64 解码后为 32 字节 AES Key
  */
 function decodeAESKey(encodingAESKey: string): Buffer {
-  return Buffer.from(encodingAESKey + "=", "base64");
+  const key = Buffer.from(encodingAESKey + "=", "base64");
+  if (key.length !== 32) {
+    throw new Error(`Invalid EncodingAESKey: decoded key must be 32 bytes, got ${key.length}`);
+  }
+  return key;
 }
 
 /**
@@ -485,6 +489,15 @@ export function buildEncryptedReply(
 }
 
 /**
+ * 转义 CDATA 终止符，防止 XML 注入攻击。
+ * CDATA 中唯一的非法序列是 "]]>"，将其拆分为两个相邻的 CDATA 段。
+ * FIX BUG-R2-5
+ */
+function escapeCDATA(str: string): string {
+  return str.replace(/\]\]>/g, "]]]]><![CDATA[>");
+}
+
+/**
  * 构建文本回复消息的 XML
  */
 export function buildTextReplyXml(
@@ -494,10 +507,10 @@ export function buildTextReplyXml(
 ): string {
   const timestamp = Math.floor(Date.now() / 1000);
   return `<xml>
-<ToUserName><![CDATA[${toUser}]]></ToUserName>
-<FromUserName><![CDATA[${fromUser}]]></FromUserName>
+<ToUserName><![CDATA[${escapeCDATA(toUser)}]]></ToUserName>
+<FromUserName><![CDATA[${escapeCDATA(fromUser)}]]></FromUserName>
 <CreateTime>${timestamp}</CreateTime>
 <MsgType><![CDATA[text]]></MsgType>
-<Content><![CDATA[${content}]]></Content>
+<Content><![CDATA[${escapeCDATA(content)}]]></Content>
 </xml>`;
 }

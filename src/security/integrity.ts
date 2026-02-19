@@ -294,3 +294,92 @@ export async function checkIntegrityOnStartup(
 
   return true;
 }
+
+// ============================================================================
+// Runtime Integrity Patrol (Knife 5)
+// ============================================================================
+
+let patrolInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start periodic integrity patrol.
+ *
+ * Unlike the startup check that verifies ALL files once, the patrol randomly
+ * samples a small subset of files each cycle. This catches runtime file
+ * replacement attacks (e.g. hot-patching .jsc files after process start)
+ * without causing performance issues.
+ *
+ * @param intervalMs  - Patrol interval (default: 5 minutes)
+ * @param sampleSize  - Number of files to check per cycle (default: 3)
+ * @param onTamper    - Callback when tampering detected
+ */
+export function startIntegrityPatrol(
+  options: {
+    intervalMs?: number;
+    sampleSize?: number;
+    baseDir?: string;
+    onTamper?: (tamperedFiles: string[]) => void;
+  } = {},
+): void {
+  const { intervalMs = 5 * 60 * 1000, sampleSize = 3, onTamper } = options;
+
+  if (patrolInterval) {
+    return; // Already running
+  }
+
+  if (INTEGRITY_HASHES.length === 0) {
+    log.debug("Integrity patrol skipped: no hashes loaded");
+    return;
+  }
+
+  // Determine base directory
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const baseDir = options.baseDir || path.dirname(currentDir);
+
+  patrolInterval = setInterval(() => {
+    // Random sample without replacement
+    const indices = new Set<number>();
+    const maxSample = Math.min(sampleSize, INTEGRITY_HASHES.length);
+    while (indices.size < maxSample) {
+      indices.add(Math.floor(Math.random() * INTEGRITY_HASHES.length));
+    }
+
+    const tampered: string[] = [];
+    for (const idx of indices) {
+      const entry = INTEGRITY_HASHES[idx]!;
+      const fullPath = path.join(baseDir, entry.path);
+
+      try {
+        if (!fs.existsSync(fullPath)) continue; // Missing files handled at startup
+        const actualHash = computeFileHash(fullPath);
+        if (actualHash !== entry.hash) {
+          tampered.push(entry.path);
+          log.warn(`Integrity patrol: tampered file detected — ${entry.path}`);
+        }
+      } catch {
+        // Read errors on patrol are non-fatal (file may be locked during update)
+      }
+    }
+
+    if (tampered.length > 0) {
+      log.error(`Integrity patrol: ${tampered.length} file(s) tampered!`);
+      if (onTamper) {
+        onTamper(tampered);
+      }
+    }
+  }, intervalMs);
+
+  patrolInterval.unref();
+  log.debug(`Integrity patrol started (interval: ${intervalMs}ms, sample: ${sampleSize})`);
+}
+
+/**
+ * Stop the integrity patrol timer.
+ */
+export function stopIntegrityPatrol(): void {
+  if (patrolInterval) {
+    clearInterval(patrolInterval);
+    patrolInterval = null;
+    log.debug("Integrity patrol stopped");
+  }
+}

@@ -105,10 +105,10 @@ describe("applyCnDefaults — 填空（空 config）", () => {
     expect(result.agents?.defaults?.sandbox?.workspaceAccess).toBe("rw");
   });
 
-  it("agents.defaults.timeoutSeconds = 900", () => {
+  it("agents.defaults.timeoutSeconds = 1800（30 分钟，复杂任务不被截断）", () => {
     setCnRegion(true);
     const result = applyCnDefaults({});
-    expect(result.agents?.defaults?.timeoutSeconds).toBe(900);
+    expect(result.agents?.defaults?.timeoutSeconds).toBe(1800);
   });
 });
 
@@ -185,10 +185,10 @@ describe("applyCnDefaults — 不覆盖已有值", () => {
 describe("applyCnDefaults — 新增参数", () => {
   afterEach(() => restoreRegion());
 
-  it("agents.defaults.thinkingDefault = 'medium'（默认中等思考深度）", () => {
+  it("agents.defaults.thinkingDefault = 'high'（默认深度推理，最强思考质量）", () => {
     setCnRegion(true);
     const result = applyCnDefaults({});
-    expect(result.agents?.defaults?.thinkingDefault).toBe("medium");
+    expect(result.agents?.defaults?.thinkingDefault).toBe("high");
   });
 
   it("agents.defaults.blockStreamingDefault = 'on'（IM 分块输出）", () => {
@@ -220,6 +220,30 @@ describe("applyCnDefaults — 新增参数", () => {
     setCnRegion(true);
     const result = applyCnDefaults({});
     expect(result.agents?.defaults?.sandbox?.browser?.allowHostControl).toBe(true);
+  });
+
+  it("compaction.proactiveCompaction.enabled = true（主动压缩上下文）", () => {
+    setCnRegion(true);
+    const result = applyCnDefaults({});
+    expect(result.agents?.defaults?.compaction?.proactiveCompaction?.enabled).toBe(true);
+    expect(result.agents?.defaults?.compaction?.proactiveCompaction?.thresholdRatio).toBe(0.85);
+  });
+});
+
+// ============================================================================
+// 4b. 不覆盖 proactiveCompaction 测试
+// ============================================================================
+
+describe("applyCnDefaults — 不覆盖 proactiveCompaction", () => {
+  afterEach(() => restoreRegion());
+
+  it("不覆盖 compaction.proactiveCompaction.enabled = false", () => {
+    setCnRegion(true);
+    const cfg: OpenClawCNConfig = {
+      agents: { defaults: { compaction: { proactiveCompaction: { enabled: false } } } },
+    };
+    const result = applyCnDefaults(cfg);
+    expect(result.agents?.defaults?.compaction?.proactiveCompaction?.enabled).toBe(false);
   });
 });
 

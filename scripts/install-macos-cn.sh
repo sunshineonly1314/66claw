@@ -24,7 +24,7 @@ fail() { echo -e "  ${R}✗${NC} $*"; exit 1; }
 step() { echo -e "\n${C}[$1/$TOTAL]${NC} ${W}$2${NC}"; }
 
 TOTAL=6
-VERSION="2026.2.0"
+VERSION="1.1.6"
 INSTALL_DIR="/Applications/OpenClawCN.app"
 STATE_DIR="$HOME/Library/Application Support/OpenClawCN"
 LOG_DIR="$HOME/Library/Logs/OpenClawCN"

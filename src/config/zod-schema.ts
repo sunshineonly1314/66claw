@@ -723,19 +723,33 @@ export const OpenClawCNSchema = z
       })
       .strict()
       .optional(),
+    modelCapability: z
+      .object({
+        capabilities: z
+          .record(
+            z.string(),
+            z
+              .object({
+                providerId: z.string(),
+                modelId: z.string(),
+              })
+              .strict(),
+          )
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((cfg, ctx) => {
-    const agents = cfg.agents?.list ?? [];
-    if (agents.length === 0) {
-      return;
-    }
-    const agentIds = new Set(agents.map((agent) => agent.id));
-
     const broadcast = cfg.broadcast;
     if (!broadcast) {
       return;
     }
+
+    const agents = cfg.agents?.list ?? [];
+    // An empty agents.list means every agentId referenced in broadcast is invalid.
+    const agentIds = new Set(agents.map((agent) => agent.id));
 
     for (const [peerId, ids] of Object.entries(broadcast)) {
       if (peerId === "strategy") {

@@ -80,7 +80,9 @@ Write-Host "  UI build OK" -ForegroundColor Green
 Write-Host "[4/6] Preparing bundled resources..." -ForegroundColor Yellow
 $prepareScript = Join-Path $ScriptDir "prepare-resources.ps1"
 if (Test-Path $prepareScript) {
-    & $prepareScript
+    # Run as a child process so exit codes are captured correctly via $LASTEXITCODE
+    # (& operator for .ps1 scripts does not reliably set $LASTEXITCODE)
+    powershell -NoProfile -ExecutionPolicy Bypass -File $prepareScript
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: Resource preparation failed!" -ForegroundColor Red
         exit 1
@@ -94,18 +96,29 @@ Write-Host "[5/6] Installing Tauri CLI..." -ForegroundColor Yellow
 Push-Location $DesktopDir
 if (Test-Path "$DesktopDir\package.json") {
     pnpm install
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Tauri CLI install failed!" -ForegroundColor Red
+        Pop-Location
+        exit 1
+    }
 }
 Pop-Location
 
 # ── Step 6: Build Tauri (Rust + bundle) ──
+# NOTE: tauri.conf.json beforeBuildCommand is empty — UI is already built in Step 3
 Write-Host "[6/6] Building Tauri native app..." -ForegroundColor Yellow
 Write-Host "  (First build may take 5-10 minutes)" -ForegroundColor Gray
 
 # Create temp batch to run cargo inside MSVC environment
+# Quote $vcvarsPath inside the bat to handle paths with spaces/parens like "Program Files (x86)"
 $tempBat = Join-Path $env:TEMP "build-clawdbot-desktop.bat"
 @"
 @echo off
 call "$vcvarsPath"
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Failed to initialize MSVC environment
+    exit /b 1
+)
 set PATH=%USERPROFILE%\.cargo\bin;%PATH%
 cd /d "$DesktopDir"
 pnpm tauri build

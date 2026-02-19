@@ -124,6 +124,8 @@ export class MCPManager {
   /** Remove a server dynamically. */
   async removeServer(id: string): Promise<void> {
     await this.runtime.stopServer(id);
+    // FIX BUG-R2-7: 清理运行时状态（健康检查、熔断器、重启定时器），防止内存泄漏
+    this.runtime.unregister(id);
     this.registry.removeServer(id);
   }
 

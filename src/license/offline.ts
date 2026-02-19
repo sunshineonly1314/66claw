@@ -1,13 +1,19 @@
 /**
  * OpenClawCN License Module - Offline Mode
  * 离线模式判断和缓存管理
+ *
+ * Security: Cache files are encrypted with AES-256-GCM via secure-storage.
+ * This prevents trivial tampering (e.g. editing expiresAt to 2099).
+ * Legacy plaintext caches are auto-migrated on first read.
  */
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 import { resolveStateDir } from "../config/paths.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { saveSecureJson, loadSecureJson, isEncrypted } from "../infra/secure-storage.js";
 import {
   type LicenseCache,
   type LicenseVerifyResponseData,
@@ -20,6 +26,30 @@ const log = createSubsystemLogger("license:offline");
 const LICENSE_CACHE_FILENAME = "license_cache.json";
 
 /**
+ * Compute HMAC-SHA256 over critical cache fields to detect field-level tampering.
+ * Even though the file is AES-256-GCM encrypted, this provides defense-in-depth
+ * against memory-level attacks that modify decrypted data before validation.
+ */
+function computeCacheHmac(cache: LicenseCache): string {
+  // Derive HMAC key from machine-specific entropy (pid-independent, survives restart)
+  const hmacSeed = [process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown", cache.key].join(
+    "|",
+  );
+  const hmacKey = crypto.createHash("sha256").update(hmacSeed).digest();
+
+  const payload = [
+    cache.key,
+    String(cache.valid),
+    String(cache.verifyTime),
+    cache.expiresAt || "",
+    cache.tier || "",
+    cache.deviceId || "",
+  ].join("|");
+
+  return crypto.createHmac("sha256", hmacKey).update(payload).digest("hex");
+}
+
+/**
  * 获取缓存文件路径
  */
 function getCacheFilePath(): string {
@@ -28,18 +58,18 @@ function getCacheFilePath(): string {
 }
 
 /**
- * 保存验证结果到本地缓存
+ * 保存验证结果到本地缓存（AES-256-GCM 加密）
  *
  * 写入策略：先备份当前缓存文件，再写入新内容。
  * 这样即使写入过程中断电/崩溃导致文件损坏，备份仍然可用。
  */
-export function saveLicenseCache(
-  key: string,
-  response: LicenseVerifyResponseData,
-): void {
+export function saveLicenseCache(key: string, response: LicenseVerifyResponseData): void {
   const cache = createLicenseCache(key, response);
   const filePath = getCacheFilePath();
   const backupPath = `${filePath}.bak`;
+
+  // Stamp HMAC for tamper detection on critical fields
+  const cacheWithHmac = { ...cache, _hmac: computeCacheHmac(cache) };
 
   try {
     const dir = path.dirname(filePath);
@@ -56,8 +86,11 @@ export function saveLicenseCache(
       }
     }
 
-    fs.writeFileSync(filePath, JSON.stringify(cache, null, 2), "utf8");
-    log.debug("License cache saved");
+    // Use AES-256-GCM encrypted storage instead of plaintext JSON
+    void saveSecureJson(filePath, cacheWithHmac).then(
+      () => log.debug("License cache saved (encrypted)"),
+      (err) => log.warn(`Failed to save encrypted license cache: ${err}`),
+    );
   } catch (error) {
     log.warn(`Failed to save license cache: ${error}`);
   }
@@ -65,18 +98,40 @@ export function saveLicenseCache(
 
 /**
  * 从指定文件路径解析缓存内容（不含备份回退逻辑）
+ *
+ * Supports both encrypted (AES-256-GCM) and legacy plaintext formats.
+ * Legacy plaintext caches are auto-migrated to encrypted on next save.
  */
-function parseCacheFile(filePath: string): LicenseCache | null {
+async function parseCacheFile(filePath: string): Promise<LicenseCache | null> {
   if (!fs.existsSync(filePath)) {
     return null;
   }
 
-  const content = fs.readFileSync(filePath, "utf8");
-  const cache = JSON.parse(content) as LicenseCache;
+  let cache: LicenseCache & { _hmac?: string };
+
+  // Try encrypted format first (expected in production)
+  if (isEncrypted(filePath)) {
+    const decrypted = await loadSecureJson(filePath);
+    cache = decrypted as LicenseCache & { _hmac?: string };
+  } else {
+    // Legacy plaintext — read directly, will be re-encrypted on next save
+    log.debug("Legacy plaintext cache detected, will migrate on next save");
+    const content = fs.readFileSync(filePath, "utf8");
+    cache = JSON.parse(content) as LicenseCache & { _hmac?: string };
+  }
 
   // 基本验证
   if (!cache.key || typeof cache.valid !== "boolean" || !cache.verifyTime) {
     return null;
+  }
+
+  // HMAC tamper detection (only for caches that have been saved with HMAC)
+  if (cache._hmac) {
+    const expectedHmac = computeCacheHmac(cache);
+    if (cache._hmac !== expectedHmac) {
+      log.warn("License cache HMAC mismatch — possible tampering detected");
+      return null;
+    }
   }
 
   return cache;
@@ -88,13 +143,13 @@ function parseCacheFile(filePath: string): LicenseCache | null {
  * 读取策略：先尝试主文件，失败后尝试 .bak 备份文件。
  * 如果从备份恢复成功，同时修复主文件。
  */
-export function loadLicenseCache(): LicenseCache | null {
+export async function loadLicenseCache(): Promise<LicenseCache | null> {
   const filePath = getCacheFilePath();
   const backupPath = `${filePath}.bak`;
 
   // 1. 尝试主文件
   try {
-    const cache = parseCacheFile(filePath);
+    const cache = await parseCacheFile(filePath);
     if (cache) return cache;
   } catch (error) {
     log.warn(`License cache corrupted: ${error instanceof Error ? error.message : String(error)}`);
@@ -102,20 +157,23 @@ export function loadLicenseCache(): LicenseCache | null {
 
   // 2. 主文件失败，尝试备份
   try {
-    const backupCache = parseCacheFile(backupPath);
+    const backupCache = await parseCacheFile(backupPath);
     if (backupCache) {
       log.info("Recovered license cache from backup");
-      // 修复主文件
+      // 修复主文件 (re-encrypt)
       try {
-        fs.writeFileSync(filePath, JSON.stringify(backupCache, null, 2), "utf8");
-        log.debug("Restored main cache file from backup");
+        const cacheWithHmac = { ...backupCache, _hmac: computeCacheHmac(backupCache) };
+        await saveSecureJson(filePath, cacheWithHmac);
+        log.debug("Restored main cache file from backup (encrypted)");
       } catch {
         // 修复失败不影响返回
       }
       return backupCache;
     }
   } catch (backupError) {
-    log.debug(`Backup cache also unavailable: ${backupError instanceof Error ? backupError.message : String(backupError)}`);
+    log.debug(
+      `Backup cache also unavailable: ${backupError instanceof Error ? backupError.message : String(backupError)}`,
+    );
   }
 
   return null;
@@ -150,10 +208,10 @@ export function clearLicenseCache(): void {
  * 3. 离线时长未超过宽限期
  * 4. 授权未过期
  */
-export function canUseOffline(
+export async function canUseOffline(
   offlineGracePeriodHours: number = DEFAULT_LICENSE_CONFIG.offlineGracePeriodHours,
-): boolean {
-  const cache = loadLicenseCache();
+): Promise<boolean> {
+  const cache = await loadLicenseCache();
 
   if (!cache) {
     log.debug("Cannot use offline: no cache found");
@@ -169,10 +227,28 @@ export function canUseOffline(
   const now = Date.now();
   const hoursOffline = (now - cache.verifyTime) / (1000 * 60 * 60);
 
+  // Hard expiry: cache is absolutely unusable after 72h regardless of config.
+  // This is a defense-in-depth guard: even if someone patches offlineGracePeriodHours
+  // to 999999, the cache still expires. The 72h value is hardcoded in bytecode-protected
+  // code, so changing it requires cracking the V8 bytecode.
+  const HARD_EXPIRY_HOURS = 72;
+  if (hoursOffline > HARD_EXPIRY_HOURS) {
+    log.debug(
+      `Cannot use offline: hard expiry exceeded (${hoursOffline.toFixed(1)}h > ${HARD_EXPIRY_HOURS}h)`,
+    );
+    return false;
+  }
+
   if (hoursOffline > offlineGracePeriodHours) {
     log.debug(
       `Cannot use offline: exceeded grace period (${hoursOffline.toFixed(1)}h > ${offlineGracePeriodHours}h)`,
     );
+    return false;
+  }
+
+  // Sanity check: verifyTime in the future is suspicious (clock manipulation)
+  if (cache.verifyTime > now + 3600000) {
+    log.warn("Cannot use offline: verifyTime is in the future (clock manipulation?)");
     return false;
   }
 
@@ -185,17 +261,15 @@ export function canUseOffline(
     }
   }
 
-  log.debug(
-    `Offline mode available (${hoursOffline.toFixed(1)}h since last verification)`,
-  );
+  log.debug(`Offline mode available (${hoursOffline.toFixed(1)}h since last verification)`);
   return true;
 }
 
 /**
  * 获取离线模式的缓存数据
  */
-export function getOfflineCache(): LicenseCache | null {
-  if (!canUseOffline()) {
+export async function getOfflineCache(): Promise<LicenseCache | null> {
+  if (!(await canUseOffline())) {
     return null;
   }
   return loadLicenseCache();
@@ -204,10 +278,10 @@ export function getOfflineCache(): LicenseCache | null {
 /**
  * 获取离线剩余时间（小时）
  */
-export function getOfflineRemainingHours(
+export async function getOfflineRemainingHours(
   offlineGracePeriodHours: number = DEFAULT_LICENSE_CONFIG.offlineGracePeriodHours,
-): number {
-  const cache = loadLicenseCache();
+): Promise<number> {
+  const cache = await loadLicenseCache();
 
   if (!cache || !cache.valid) {
     return 0;
@@ -223,10 +297,8 @@ export function getOfflineRemainingHours(
 /**
  * 检查缓存是否需要刷新
  */
-export function shouldRefreshCache(
-  nextCheckAfterHours?: number,
-): boolean {
-  const cache = loadLicenseCache();
+export async function shouldRefreshCache(nextCheckAfterHours?: number): Promise<boolean> {
+  const cache = await loadLicenseCache();
 
   if (!cache) {
     return true;
@@ -242,9 +314,7 @@ export function shouldRefreshCache(
 /**
  * 从缓存创建模拟的验证响应（用于离线模式）
  */
-export function createOfflineResponse(
-  cache: LicenseCache,
-): LicenseVerifyResponseData {
+export function createOfflineResponse(cache: LicenseCache): LicenseVerifyResponseData {
   return {
     valid: cache.valid,
     errorCode: null,
@@ -260,8 +330,7 @@ export function createOfflineResponse(
             ? Math.max(
                 0,
                 Math.ceil(
-                  (new Date(cache.expiresAt).getTime() - Date.now()) /
-                    (1000 * 60 * 60 * 24),
+                  (new Date(cache.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
                 ),
               )
             : 0,

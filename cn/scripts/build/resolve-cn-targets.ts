@@ -64,6 +64,8 @@ function findJsFiles(dir: string): string[] {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      // Skip node_modules — third-party code should never be obfuscated
+      if (entry.name === "node_modules") continue;
       results.push(...findJsFiles(full));
     } else if (entry.isFile() && entry.name.endsWith(".js")) {
       const shouldSkip = SKIP_PATTERNS.some((p) => p.test(full));

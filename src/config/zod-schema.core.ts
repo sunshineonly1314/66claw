@@ -38,7 +38,9 @@ export const ModelDefinitionSchema = z
     name: z.string().min(1),
     api: ModelApiSchema.optional(),
     reasoning: z.boolean().optional(),
-    input: z.array(z.union([z.literal("text"), z.literal("image")])).optional(),
+    // FIX: 添加 "video" — model-config.ts 的 capabilitiesToInput() 会产生 "video" 值，
+    // 缺少此项导致含视频能力的模型配置被 Zod 拒绝
+    input: z.array(z.union([z.literal("text"), z.literal("image"), z.literal("video")])).optional(),
     cost: z
       .object({
         input: z.number().optional(),

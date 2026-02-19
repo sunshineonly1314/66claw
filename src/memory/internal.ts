@@ -276,17 +276,22 @@ export function parseEmbedding(raw: string): number[] {
   }
 }
 
+/**
+ * FIX BUG-R2-6: 维度不匹配时使用 max 长度计算，短向量缺失维度视为 0。
+ * 之前用 Math.min 截断导致范数偏小、分数虚高（例如 1536 维 vs 768 维）。
+ * 正确行为：超出部分对 dot product 贡献为 0，但仍计入范数。
+ */
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length === 0 || b.length === 0) {
     return 0;
   }
-  const len = Math.min(a.length, b.length);
+  const len = Math.max(a.length, b.length);
   let dot = 0;
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < len; i += 1) {
-    const av = a[i] ?? 0;
-    const bv = b[i] ?? 0;
+    const av = i < a.length ? (a[i] ?? 0) : 0;
+    const bv = i < b.length ? (b[i] ?? 0) : 0;
     dot += av * bv;
     normA += av * av;
     normB += bv * bv;

@@ -22,7 +22,7 @@ function renderAgentContextCard(context: AgentContext, subtitle: string) {
     <section class="card">
       <div class="card-title">${t("agents.contextTitle")}</div>
       <div class="card-sub">${subtitle}</div>
-      <div class="agents-overview-grid" style="margin-top: 16px;">
+      <div class="agents-overview-grid" style="margin-top: 14px;">
         <div class="agent-kv">
           <div class="label">${t("agents.workspace")}</div>
           <div class="mono">${context.workspace}</div>

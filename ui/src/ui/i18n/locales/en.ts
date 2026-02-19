@@ -97,7 +97,7 @@ export const en = {
   "nav.debug": "Debug",
   "nav.logs": "Logs",
   "nav.docs": "Docs",
-  "nav.freeModels": "Free Models",
+  "nav.modelConfig": "Features",
 
   // ============================================================================
   // 概览页 (Overview)
@@ -931,7 +931,7 @@ export const en = {
   // 页面副标题 (Page Subtitles)
   // ============================================================================
   "subtitle.overview": "Gateway status, entry points, and a fast health read.",
-  "subtitle.freeModels": "ClawdbotCN exclusive, daily free model seamless switching.",
+  "subtitle.modelConfig": "",
   "subtitle.usage": "Usage statistics, session logs, and data insights.",
   "subtitle.channels": "Manage channels and settings.",
   "subtitle.instances": "Presence beacons from connected clients and nodes.",

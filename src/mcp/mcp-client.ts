@@ -39,20 +39,72 @@ export function buildBridgedName(serverId: string, toolName: string): string {
  * Only include standard runtime vars, never secrets.
  */
 const SAFE_ENV_KEYS = new Set([
-  "PATH", "Path",
-  "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
-  "LANG", "LC_ALL", "LC_CTYPE",
-  "TERM", "SHELL", "COMSPEC",
-  "TMPDIR", "TMP", "TEMP",
+  "PATH",
+  "Path",
+  "HOME",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "SHELL",
+  "COMSPEC",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
   "NODE_ENV",
-  "SYSTEMROOT", "SystemRoot",
-  "APPDATA", "LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)",
-  "CommonProgramFiles", "windir",
-  "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "CommonProgramFiles",
+  "windir",
+  "XDG_DATA_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
   // npm/yarn mirror vars — needed so npx-based MCP servers use CN mirrors
-  "npm_config_registry", "YARN_REGISTRY", "NVM_NODEJS_ORG_MIRROR",
+  "npm_config_registry",
+  "YARN_REGISTRY",
+  "NVM_NODEJS_ORG_MIRROR",
   // Python/uv mirror vars — needed so uvx-based MCP servers use CN PyPI mirrors
-  "UV_INDEX_URL", "PIP_INDEX_URL",
+  "UV_INDEX_URL",
+  "PIP_INDEX_URL",
+]);
+
+// FIX BUG#10: 阻止通过 configEnv 注入危险环境变量（可导致代码执行）
+// FIX BUG-R2-1: 补充遗漏的危险变量 + Windows 大小写绕过
+const BLOCKED_ENV_KEYS = new Set([
+  "NODE_OPTIONS", // 可注入 --require 实现代码执行
+  "NODE_DEBUG",
+  "NODE_PATH", // 可劫持模块加载路径
+  "NODE_EXTRA_CA_CERTS", // 可注入恶意 CA 实现 MITM
+  "LD_PRELOAD", // Linux 共享库注入
+  "LD_LIBRARY_PATH",
+  "LD_AUDIT", // Linux 动态链接器审计钩子
+  "DYLD_INSERT_LIBRARIES", // macOS 动态库注入
+  "DYLD_LIBRARY_PATH",
+  "DYLD_FRAMEWORK_PATH",
+  "PYTHONPATH", // Python 模块路径篡改
+  "PYTHONSTARTUP", // Python 启动脚本注入
+  "RUBYOPT",
+  "PERL5OPT",
+  "ELECTRON_RUN_AS_NODE",
+  "BASH_ENV", // Bash 非交互式启动脚本
+  "ENV", // sh 非交互式启动脚本
+  // FIX R3-3: 补充遗漏的危险环境变量
+  "GIT_SSH_COMMAND", // Git SSH 操作时执行任意命令
+  "GIT_ASKPASS", // Git 凭证请求时执行程序
+  "GIT_TEMPLATE_DIR", // Git init 模板目录（可注入 hooks）
+  "SSH_ASKPASS", // SSH 密码请求时执行程序
+  "PROMPT_COMMAND", // Bash 每次提示符前执行命令
+  "ZDOTDIR", // Zsh 配置目录（可劫持 .zshrc）
+  "BROWSER", // open URL 时执行的程序
+  "EDITOR", // 编辑器相关命令执行
+  "VISUAL", // 编辑器相关命令执行
 ]);
 
 /** Build a safe environment for MCP child processes. */
@@ -61,8 +113,17 @@ function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string
   for (const key of SAFE_ENV_KEYS) {
     if (process.env[key]) env[key] = process.env[key]!;
   }
-  // Config-specified env vars override (these are intentional)
-  if (configEnv) Object.assign(env, configEnv);
+  // Config-specified env vars override (these are intentional), but block dangerous keys
+  // FIX BUG-R2-1: Windows 环境变量不区分大小写，用 toUpperCase 统一比较
+  if (configEnv) {
+    for (const [key, value] of Object.entries(configEnv)) {
+      if (BLOCKED_ENV_KEYS.has(key.toUpperCase())) {
+        console.warn(`[mcp] Blocked dangerous env var: ${key}`);
+        continue;
+      }
+      env[key] = value;
+    }
+  }
   return env;
 }
 
@@ -132,8 +193,12 @@ export class MCPClient {
     // (64KB Linux, ~4KB Windows) without being consumed, the child blocks.
     const stderrStream = stdioTransport.stderr;
     if (stderrStream) {
-      stderrStream.on("data", () => { /* drain — prevent buffer-full deadlock */ });
-      stderrStream.on("error", () => { /* ignore stderr errors */ });
+      stderrStream.on("data", () => {
+        /* drain — prevent buffer-full deadlock */
+      });
+      stderrStream.on("error", () => {
+        /* ignore stderr errors */
+      });
     }
 
     await this.connectWithTimeout(stdioTransport as unknown as AnyTransport, timeoutMs);
@@ -146,7 +211,9 @@ export class MCPClient {
   private async connectSSE(timeoutMs: number): Promise<void> {
     const url = this.config.url;
     if (!url) {
-      throw new Error(`MCP server "${this.config.id}": SSE transport requires a "url" field in config.`);
+      throw new Error(
+        `MCP server "${this.config.id}": SSE transport requires a "url" field in config.`,
+      );
     }
 
     // Build request options with optional custom headers
@@ -157,9 +224,8 @@ export class MCPClient {
     // Try StreamableHTTPClientTransport first (newer MCP protocol)
     let httpTransport: AnyTransport | null = null;
     try {
-      const { StreamableHTTPClientTransport } = await import(
-        "@modelcontextprotocol/sdk/client/streamableHttp.js"
-      );
+      const { StreamableHTTPClientTransport } =
+        await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
 
       httpTransport = new StreamableHTTPClientTransport(new URL(url), {
         requestInit,
@@ -172,24 +238,33 @@ export class MCPClient {
       await this.connectWithTimeout(httpTransport, timeoutMs);
       return; // Success with StreamableHTTP
     } catch (err) {
-      // Clean up failed StreamableHTTP transport before fallback
+      // FIX R3-4: 清理 failed StreamableHTTP transport 前先解绑事件回调，
+      // 防止 close() 触发 onclose 将 _connected 置 false 并通知上层 "已断开"
       if (httpTransport) {
-        try { await httpTransport.close(); } catch { /* ignore */ }
+        httpTransport.onclose = null;
+        httpTransport.onerror = null;
+        try {
+          await httpTransport.close();
+        } catch {
+          /* ignore */
+        }
         this.transport = null;
         this.client = null;
       }
 
       // If server returns 405 (Method Not Allowed), it only supports legacy SSE
       const errMsg = String(err);
-      if (!errMsg.includes("405") && !errMsg.includes("Not Allowed") && !errMsg.includes("Method")) {
+      if (
+        !errMsg.includes("405") &&
+        !errMsg.includes("Not Allowed") &&
+        !errMsg.includes("Method")
+      ) {
         throw err; // Not a 405 — actual error, re-throw
       }
     }
 
     // Fallback: SSEClientTransport (legacy protocol)
-    const { SSEClientTransport } = await import(
-      "@modelcontextprotocol/sdk/client/sse.js"
-    );
+    const { SSEClientTransport } = await import("@modelcontextprotocol/sdk/client/sse.js");
 
     const sseTransport = new SSEClientTransport(new URL(url), {
       requestInit,
@@ -207,18 +282,16 @@ export class MCPClient {
   // ====================================================================
 
   private createClient(): Client {
-    const client = new Client(
-      { name: "openclawcn", version: "1.0.0" },
-      { capabilities: {} },
-    );
+    const client = new Client({ name: "openclawcn", version: "1.0.0" }, { capabilities: {} });
 
     // Listen for tools/list_changed notifications from the server
-    client.setNotificationHandler(
-      ToolListChangedNotificationSchema,
-      async () => {
-        try { this.events.onToolsChanged?.(); } catch { /* ignore */ }
-      },
-    );
+    client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
+      try {
+        this.events.onToolsChanged?.();
+      } catch {
+        /* ignore */
+      }
+    });
 
     return client;
   }
@@ -226,10 +299,18 @@ export class MCPClient {
   private wireTransportEvents(transport: AnyTransport): void {
     transport.onclose = () => {
       this._connected = false;
-      try { this.events.onClose?.(); } catch { /* ignore callback error */ }
+      try {
+        this.events.onClose?.();
+      } catch {
+        /* ignore callback error */
+      }
     };
     transport.onerror = (error: Error) => {
-      try { this.events.onError?.(error); } catch { /* ignore callback error */ }
+      try {
+        this.events.onError?.(error);
+      } catch {
+        /* ignore callback error */
+      }
     };
   }
 
@@ -331,6 +412,10 @@ export class MCPClient {
       // Try graceful close with timeout
       const closePromise = this.client?.close();
       if (closePromise) {
+        // FIX R3-5: 防止超时后 closePromise reject 变成 unhandledRejection
+        closePromise.catch(() => {
+          /* swallow — shutdown best-effort */
+        });
         const timeoutPromise = new Promise<void>((resolve) => {
           shutdownTimer = setTimeout(resolve, MCP_SHUTDOWN_GRACE_MS);
         });

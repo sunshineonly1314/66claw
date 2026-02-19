@@ -42,16 +42,36 @@ function verifyDingtalkSignature(
   const hmac = crypto.createHmac("sha256", secret);
   hmac.update(stringToSign);
   const expectedSign = hmac.digest("base64");
-  return sign === expectedSign;
+  // FIX R3-2: 使用 timingSafeEqual 防止时序攻击（之前用 === 可被逐字节推断签名）
+  try {
+    const signBuf = Buffer.from(sign, "utf-8");
+    const expectedBuf = Buffer.from(expectedSign, "utf-8");
+    if (signBuf.length !== expectedBuf.length) return false;
+    return crypto.timingSafeEqual(signBuf, expectedBuf);
+  } catch {
+    return false;
+  }
 }
 
 /**
- * 读取请求体
+ * 读取请求体（带大小限制防止 DoS 攻击）
+ * FIX BUG-R2-4
  */
-async function readBody(req: IncomingMessage): Promise<string> {
+const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
+
+async function readBody(req: IncomingMessage, maxSize: number = MAX_BODY_SIZE): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk) => chunks.push(chunk));
+    let totalSize = 0;
+    req.on("data", (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > maxSize) {
+        req.destroy();
+        reject(new Error(`Request body exceeds maximum size limit (${maxSize} bytes)`));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });

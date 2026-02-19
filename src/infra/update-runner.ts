@@ -22,6 +22,14 @@ import {
   detectGlobalInstallManagerForRoot,
   globalInstallArgs,
 } from "./update-global.js";
+import {
+  checkInstallerUpdate,
+  detectInstallKind,
+  resolveUpdateServerUrl,
+  runInstallerUpdate,
+} from "./installer-updater.js";
+import { loadConfig } from "../config/config.js";
+import { getDeviceId } from "../license/device-id.js";
 
 export type UpdateStepResult = {
   name: string;
@@ -35,13 +43,15 @@ export type UpdateStepResult = {
 
 export type UpdateRunResult = {
   status: "ok" | "error" | "skipped";
-  mode: "git" | "pnpm" | "bun" | "npm" | "unknown";
+  mode: "git" | "pnpm" | "bun" | "npm" | "installer" | "unknown";
   root?: string;
   reason?: string;
   before?: { sha?: string | null; version?: string | null };
   after?: { sha?: string | null; version?: string | null };
   steps: UpdateStepResult[];
   durationMs: number;
+  /** installer 模式更新成功后携带的 changelog（用于 UI 展示"更新了什么"） */
+  changelog?: { "zh-CN": string; "en-US": string };
 };
 
 type CommandRunner = (
@@ -548,7 +558,9 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
       }
 
       const manager = await detectPackageManager(gitRoot);
-      const preflightRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclawcn-update-preflight-"));
+      const preflightRoot = await fs.mkdtemp(
+        path.join(os.tmpdir(), "openclawcn-update-preflight-"),
+      );
       const worktreeDir = path.join(preflightRoot, "worktree");
       const worktreeStep = await runStep(
         step(
@@ -559,6 +571,15 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
       );
       steps.push(worktreeStep);
       if (worktreeStep.exitCode !== 0) {
+        // FIX WORKTREE-LEAK-1: worktree add 失败时清理可能残留的 .git/worktrees/ 元数据
+        await runCommand(["git", "-C", gitRoot, "worktree", "remove", "--force", worktreeDir], {
+          cwd: gitRoot,
+          timeoutMs,
+        }).catch(() => null);
+        await runCommand(["git", "-C", gitRoot, "worktree", "prune"], {
+          cwd: gitRoot,
+          timeoutMs,
+        }).catch(() => null);
         await fs.rm(preflightRoot, { recursive: true, force: true }).catch(() => {});
         return {
           status: "error",
@@ -842,6 +863,137 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
       reason: `no root (${START_DIRS.join(",")})`,
       steps: [],
       durationMs: Date.now() - startedAt,
+    };
+  }
+
+  // ── installer mode: 桌面安装包用户（Windows NSIS / macOS DMG）──
+  const installKind = detectInstallKind(pkgRoot);
+  if (installKind === "installer") {
+    const beforeVersion = await readPackageVersion(pkgRoot);
+    const updateServerUrl = resolveUpdateServerUrl(pkgRoot);
+    if (!updateServerUrl) {
+      return {
+        status: "skipped",
+        mode: "installer",
+        root: pkgRoot,
+        reason: "installer-no-update-server",
+        before: { version: beforeVersion },
+        steps: [],
+        durationMs: Date.now() - startedAt,
+      };
+    }
+    // 读取 license key 和 deviceId 用于服务端 API 鉴权
+    let licenseKey: string | undefined;
+    let deviceId: string | undefined;
+    try {
+      const cfg = loadConfig();
+      licenseKey = cfg.license?.key;
+      deviceId = licenseKey ? getDeviceId() : undefined;
+    } catch {
+      // config 读取失败不阻塞更新
+    }
+
+    // 先检查更新，结果传入 runInstallerUpdate 避免重复请求
+    const preCheck = await checkInstallerUpdate({
+      updateServerUrl,
+      currentVersion: beforeVersion ?? "0.0.0",
+      licenseKey,
+      deviceId,
+    }).catch(() => null);
+
+    let stepStartedAt = 0;
+    let currentStepName = "";
+    const INSTALLER_TOTAL_STEPS = 2;
+    const result = await runInstallerUpdate({
+      root: pkgRoot,
+      updateServerUrl,
+      currentVersion: beforeVersion ?? "0.0.0",
+      licenseKey,
+      deviceId,
+      timeoutMs,
+      preCheckResult: preCheck ?? undefined,
+      progress: opts.progress
+        ? {
+            onDownloadStart: (mode, size) => {
+              stepStartedAt = Date.now();
+              currentStepName = `download ${mode}`;
+              opts.progress?.onStepStart?.({
+                name: currentStepName,
+                command: `download ${mode} package (${size} bytes)`,
+                index: 0,
+                total: INSTALLER_TOTAL_STEPS,
+              });
+            },
+            onDownloadComplete: () => {
+              opts.progress?.onStepComplete?.({
+                name: currentStepName,
+                command: currentStepName,
+                index: 0,
+                total: INSTALLER_TOTAL_STEPS,
+                durationMs: Date.now() - stepStartedAt,
+                exitCode: 0,
+              });
+            },
+            onApplyStart: (count) => {
+              stepStartedAt = Date.now();
+              currentStepName = "apply update";
+              opts.progress?.onStepStart?.({
+                name: currentStepName,
+                command: `apply ${count} files`,
+                index: 1,
+                total: INSTALLER_TOTAL_STEPS,
+              });
+            },
+            onApplyComplete: () => {
+              opts.progress?.onStepComplete?.({
+                name: currentStepName,
+                command: currentStepName,
+                index: 1,
+                total: INSTALLER_TOTAL_STEPS,
+                durationMs: Date.now() - stepStartedAt,
+                exitCode: 0,
+              });
+            },
+            onError: (msg) => {
+              // 关闭当前正在转的 spinner（无论是 download 还是 apply）
+              opts.progress?.onStepComplete?.({
+                name: currentStepName || "installer update",
+                command: msg,
+                index: currentStepName.startsWith("download") ? 0 : 1,
+                total: INSTALLER_TOTAL_STEPS,
+                durationMs: Date.now() - stepStartedAt,
+                exitCode: 1,
+                stderrTail: msg,
+              });
+            },
+          }
+        : undefined,
+    });
+
+    const afterVersion = await readPackageVersion(pkgRoot);
+    const mappedStatus =
+      result.status === "ok"
+        ? "ok"
+        : result.status === "up-to-date" || result.status === "skipped"
+          ? "skipped"
+          : "error"; // error 和 broken 都映射为 error
+    return {
+      status: mappedStatus,
+      mode: "installer",
+      root: pkgRoot,
+      reason:
+        result.status === "up-to-date"
+          ? "already-up-to-date"
+          : result.status === "skipped"
+            ? result.reason
+            : result.status === "error" || result.status === "broken"
+              ? result.reason
+              : undefined,
+      before: { version: beforeVersion },
+      after: { version: afterVersion },
+      steps: [],
+      durationMs: Date.now() - startedAt,
+      changelog: result.changelog,
     };
   }
 

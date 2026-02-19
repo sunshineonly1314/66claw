@@ -18,6 +18,8 @@ export {
   initIntegrityCheck,
   verifyIntegrity,
   checkIntegrityOnStartup,
+  startIntegrityPatrol,
+  stopIntegrityPatrol,
   type IntegrityCheckResult,
 } from "./integrity.js";
 
@@ -52,3 +54,12 @@ export {
   stopProcessIntegrityMonitor,
   type ProcessIntegrityResult,
 } from "./process-integrity.js";
+
+// 延迟惩罚系统 (Knife 7)
+export {
+  recordViolation,
+  getEnforcementDelay,
+  shouldBlockService,
+  applyEnforcementDelay,
+  getEnforcementStatus,
+} from "./delayed-enforcement.js";

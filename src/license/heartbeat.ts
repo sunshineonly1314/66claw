@@ -119,7 +119,7 @@ async function performHeartbeat(): Promise<void> {
       log.debug(`Heartbeat successful (days remaining: ${result.daysRemaining})`);
 
       // 更新缓存中的验证时间和过期时间
-      const cache = loadLicenseCache();
+      const cache = await loadLicenseCache();
       if (cache) {
         cache.verifyTime = Date.now();
         // 更新 daysRemaining 对应的过期时间
@@ -164,12 +164,10 @@ async function performHeartbeat(): Promise<void> {
   } catch (error) {
     heartbeatState.consecutiveFailures++;
     const errorMsg = error instanceof Error ? error.message : String(error);
-    log.warn(
-      `Heartbeat failed (attempt ${heartbeatState.consecutiveFailures}): ${errorMsg}`,
-    );
+    log.warn(`Heartbeat failed (attempt ${heartbeatState.consecutiveFailures}): ${errorMsg}`);
 
     // 心跳失败时，检查本地缓存是否已过期
-    const cache = loadLicenseCache();
+    const cache = await loadLicenseCache();
     if (cache && cache.expiresAt) {
       const expiresAt = new Date(cache.expiresAt).getTime();
       if (Date.now() > expiresAt) {
@@ -192,13 +190,13 @@ async function performHeartbeat(): Promise<void> {
     if (failures === 3) {
       log.warn(
         "Heartbeat failed 3 consecutive times. " +
-        "License will continue working from offline cache, but please check your network connection. " +
-        "If this persists, the license may become unavailable after the offline grace period expires."
+          "License will continue working from offline cache, but please check your network connection. " +
+          "If this persists, the license may become unavailable after the offline grace period expires.",
       );
     } else if (failures === 5) {
       log.error(
         "Heartbeat failed 5 consecutive times. Network appears unreachable. " +
-        "Offline grace period is limited — please restore connectivity to avoid license disruption."
+          "Offline grace period is limited — please restore connectivity to avoid license disruption.",
       );
     }
   }

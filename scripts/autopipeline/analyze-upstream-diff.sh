@@ -299,6 +299,131 @@ log "Step 10: Change heatmap..."
 echo "$ALL_CHANGED" | sed 's|/[^/]*$||' | sort | uniq -c | sort -rn | head -20 > "${OUTPUT_DIR}/dir-heatmap.txt"
 
 # ============================================================
+# Step 10.5: Import graph (for deep review)
+# ============================================================
+log "Step 10.5: Building import graph for changed files..."
+
+# Collect changed .ts source files (not tests)
+CHANGED_TS_SRC=$(echo "$ALL_CHANGED" | grep -E '\.ts$' | grep -v '\.test\.ts$' | grep -v '\.spec\.ts$' | grep -v '\.d\.ts$' | head -30)
+CHANGED_TS_COUNT=$(echo "$CHANGED_TS_SRC" | grep -c '.' || echo "0")
+
+if [ "$CHANGED_TS_COUNT" -gt 0 ] && command -v python3 &>/dev/null; then
+  python3 -c "
+import json, re, os
+
+repo_root = '${REPO_ROOT}'
+upstream_ref = '${UPSTREAM_REF}'
+changed_files = '''${CHANGED_TS_SRC}'''.strip().split('\n')
+changed_files = [f for f in changed_files if f.strip()]
+
+import_pattern = re.compile(r'''(?:import|export)\s+.*?\s+from\s+['\"]([^'\"]+)['\"]''')
+graph = {}
+
+for filepath in changed_files:
+    full_path = os.path.join(repo_root, filepath)
+    if not os.path.isfile(full_path):
+        continue
+    imports = []
+    try:
+        with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                m = import_pattern.search(line)
+                if m:
+                    imp = m.group(1)
+                    if imp.startswith('.'):
+                        base_dir = os.path.dirname(filepath)
+                        resolved = os.path.normpath(os.path.join(base_dir, imp)).replace('\\\\', '/')
+                        imports.append(resolved)
+                    else:
+                        imports.append(imp)
+    except Exception:
+        pass
+    graph[filepath] = {'imports': imports, 'importedBy': []}
+
+# Reverse lookup: find files that import the changed files
+for filepath in changed_files:
+    basename = os.path.splitext(os.path.basename(filepath))[0]
+    for root, dirs, files in os.walk(os.path.join(repo_root, 'src')):
+        for fname in files:
+            if not fname.endswith('.ts') or fname.endswith('.test.ts'):
+                continue
+            fpath = os.path.join(root, fname)
+            rel_path = os.path.relpath(fpath, repo_root).replace('\\\\', '/')
+            if rel_path in changed_files:
+                continue
+            try:
+                with open(fpath, 'r', encoding='utf-8', errors='replace') as f:
+                    content = f.read(10000)  # Read first 10KB only
+                if filepath in graph and basename in content:
+                    for m in import_pattern.finditer(content):
+                        if basename in m.group(1):
+                            graph[filepath]['importedBy'].append(rel_path)
+                            break
+            except Exception:
+                pass
+
+downstream = set()
+for data in graph.values():
+    for imp_by in data.get('importedBy', []):
+        if imp_by not in changed_files:
+            downstream.add(imp_by)
+
+result = {'nodes': graph, 'affectedDownstream': sorted(downstream)}
+print(json.dumps(result, indent=2))
+" > "${OUTPUT_DIR}/import-graph.json" 2>/dev/null || echo '{"nodes":{},"affectedDownstream":[]}' > "${OUTPUT_DIR}/import-graph.json"
+
+  DOWNSTREAM_COUNT=$(python3 -c "import json; print(len(json.load(open('${OUTPUT_DIR}/import-graph.json'))['affectedDownstream']))" 2>/dev/null || echo "0")
+  log "  Import graph: ${CHANGED_TS_COUNT} nodes, ${DOWNSTREAM_COUNT} downstream files"
+else
+  echo '{"nodes":{},"affectedDownstream":[]}' > "${OUTPUT_DIR}/import-graph.json"
+  log "  Import graph: skipped (no .ts files or python3 not available)"
+fi
+
+# ============================================================
+# Step 10.6: Exported symbol signature changes
+# ============================================================
+log "Step 10.6: Extracting signature changes..."
+
+SIG_CHANGES=()
+while IFS= read -r tsfile; do
+  [ -z "$tsfile" ] && continue
+  # Skip test files
+  [[ "$tsfile" == *.test.ts ]] && continue
+
+  BEFORE_SIGS=$(git show "${MERGE_BASE}:${tsfile}" 2>/dev/null | grep -E "^export (function|const|type|interface|class|enum|default)" 2>/dev/null | head -50 || echo "")
+  AFTER_SIGS=$(git show "${UPSTREAM_REF}:${tsfile}" 2>/dev/null | grep -E "^export (function|const|type|interface|class|enum|default)" 2>/dev/null | head -50 || echo "")
+
+  if [ "$BEFORE_SIGS" != "$AFTER_SIGS" ]; then
+    if command -v python3 &>/dev/null; then
+      BEFORE_JSON=$(echo "$BEFORE_SIGS" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo '""')
+      AFTER_JSON=$(echo "$AFTER_SIGS" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo '""')
+      SIG_CHANGES+=("{\"file\":\"${tsfile}\",\"before\":${BEFORE_JSON},\"after\":${AFTER_JSON}}")
+    fi
+  fi
+done <<< "$CHANGED_TS_SRC"
+
+# Write signature changes JSON
+if [ ${#SIG_CHANGES[@]} -gt 0 ]; then
+  {
+    echo "["
+    first=true
+    for entry in "${SIG_CHANGES[@]}"; do
+      if $first; then
+        first=false
+      else
+        echo ","
+      fi
+      echo "  $entry"
+    done
+    echo "]"
+  } > "${OUTPUT_DIR}/signature-changes.json"
+  log "  ${#SIG_CHANGES[@]} files with changed export signatures"
+else
+  echo "[]" > "${OUTPUT_DIR}/signature-changes.json"
+  log "  No export signature changes detected"
+fi
+
+# ============================================================
 # Step 11: Risk level calculation
 # ============================================================
 log "Step 11: Calculating risk level..."
@@ -366,8 +491,10 @@ cat > "${OUTPUT_DIR}/manifest.json" <<MANIFEST_EOF
   "status": "analyzed",
   "date": "${DATE}",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "merge_base": "${MERGE_BASE}",
-  "merge_base_short": "${MERGE_BASE_SHORT}",
+  "merge_base": {
+    "full": "${MERGE_BASE}",
+    "short": "${MERGE_BASE_SHORT}"
+  },
   "upstream_ref": "${UPSTREAM_REF}",
   "commit_count": ${COMMIT_COUNT},
   "files": {
@@ -414,7 +541,9 @@ cat > "${OUTPUT_DIR}/manifest.json" <<MANIFEST_EOF
     "dir-heatmap.txt",
     "section2-diffs/",
     "brand-scan.txt",
-    "package-diff.txt"
+    "package-diff.txt",
+    "import-graph.json",
+    "signature-changes.json"
   ]
 }
 MANIFEST_EOF

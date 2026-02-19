@@ -29,6 +29,9 @@ const STEP_LABELS: Record<string, string> = {
   "git rev-parse HEAD (after)": "Verifying update",
   "global update": "Updating via package manager",
   "global install": "Installing global package",
+  "download delta": "Downloading delta update",
+  "download full": "Downloading full update",
+  "apply update": "Applying update files",
 };
 
 function getStepLabel(step: UpdateStepInfo): string {

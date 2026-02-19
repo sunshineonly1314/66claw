@@ -32,8 +32,8 @@ vi.mock("../models-config.js", () => ({
 }));
 
 vi.mock("../pi-model-discovery.js", () => ({
-  discoverAuthStorage: vi.fn(),
-  discoverModels: vi.fn().mockReturnValue([]),
+  discoverAuthStorage: vi.fn().mockReturnValue({ dir: "/fake/auth" }),
+  discoverModels: vi.fn().mockReturnValue({ getAll: () => [] }),
 }));
 
 vi.mock("../model-selection.js", () => ({
@@ -51,15 +51,17 @@ vi.mock("../../logging/subsystem.js", () => ({
 
 const { createImageGenTool } = await import("./image-gen-tool.js");
 const { ensureOpenClawCNModelsJson } = await import("../models-config.js");
-const { discoverModels } = await import("../pi-model-discovery.js");
+const { discoverModels, discoverAuthStorage } = await import("../pi-model-discovery.js");
 
 const mockEnsureModels = vi.mocked(ensureOpenClawCNModelsJson);
 const mockDiscoverModels = vi.mocked(discoverModels);
+const mockDiscoverAuthStorage = vi.mocked(discoverAuthStorage);
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockEnsureModels.mockResolvedValue(null);
-  mockDiscoverModels.mockReturnValue([]);
+  mockDiscoverAuthStorage.mockReturnValue({ dir: "/fake/auth" });
+  mockDiscoverModels.mockReturnValue({ getAll: () => [] });
 });
 
 // ---------------------------------------------------------------------------
@@ -133,10 +135,13 @@ describe("image_gen execute", () => {
 
   it("returns error when no image gen model is configured", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "gpt-4", provider: "openai", name: "GPT-4" },
-      { id: "qwen-max", provider: "dashscope", name: "Qwen Max" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () =>
+        [
+          { id: "gpt-4", provider: "openai", name: "GPT-4" },
+          { id: "qwen-max", provider: "dashscope", name: "Qwen Max" },
+        ] as unknown[],
+    });
 
     const tool = createImageGenTool({ agentDir: "/fake/dir" });
     const result = await tool.execute("call-4", { prompt: "a cat" });
@@ -146,9 +151,17 @@ describe("image_gen execute", () => {
 
   it("recognizes dall-e model as image gen capable", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "dall-e-3", provider: "openai", name: "DALL-E 3", baseUrl: "https://api.openai.com" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () =>
+        [
+          {
+            id: "dall-e-3",
+            provider: "openai",
+            name: "DALL-E 3",
+            baseUrl: "https://api.openai.com",
+          },
+        ] as unknown[],
+    });
 
     // Mock fetch to prevent actual HTTP calls
     const mockFetch = vi.fn().mockResolvedValue({
@@ -173,9 +186,9 @@ describe("image_gen execute", () => {
 
   it("recognizes wanx model as image gen capable", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "wanx-v1", provider: "dashscope", name: "通义万相" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () => [{ id: "wanx-v1", provider: "dashscope", name: "通义万相" }] as unknown[],
+    });
 
     const tool = createImageGenTool({ agentDir: "/fake/dir" });
 
@@ -213,14 +226,17 @@ describe("image_gen execute", () => {
 
   it("recognizes flux model as image gen capable", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      {
-        id: "flux-1-schnell",
-        provider: "siliconflow",
-        name: "Flux",
-        baseUrl: "https://api.siliconflow.cn",
-      },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () =>
+        [
+          {
+            id: "flux-1-schnell",
+            provider: "siliconflow",
+            name: "Flux",
+            baseUrl: "https://api.siliconflow.cn",
+          },
+        ] as unknown[],
+    });
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -240,9 +256,17 @@ describe("image_gen execute", () => {
 
   it("handles API error gracefully", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "dall-e-3", provider: "openai", name: "DALL-E 3", baseUrl: "https://api.openai.com" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () =>
+        [
+          {
+            id: "dall-e-3",
+            provider: "openai",
+            name: "DALL-E 3",
+            baseUrl: "https://api.openai.com",
+          },
+        ] as unknown[],
+    });
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -263,9 +287,17 @@ describe("image_gen execute", () => {
 
   it("defaults size to 1024x1024 and style to vivid", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "dall-e-3", provider: "openai", name: "DALL-E 3", baseUrl: "https://api.openai.com" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () =>
+        [
+          {
+            id: "dall-e-3",
+            provider: "openai",
+            name: "DALL-E 3",
+            baseUrl: "https://api.openai.com",
+          },
+        ] as unknown[],
+    });
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -288,9 +320,17 @@ describe("image_gen execute", () => {
 
   it("uses custom size when provided", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "dall-e-3", provider: "openai", name: "DALL-E 3", baseUrl: "https://api.openai.com" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () =>
+        [
+          {
+            id: "dall-e-3",
+            provider: "openai",
+            name: "DALL-E 3",
+            baseUrl: "https://api.openai.com",
+          },
+        ] as unknown[],
+    });
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -314,9 +354,17 @@ describe("image_gen execute", () => {
 
   it("includes revised_prompt in response when available", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "dall-e-3", provider: "openai", name: "DALL-E 3", baseUrl: "https://api.openai.com" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () =>
+        [
+          {
+            id: "dall-e-3",
+            provider: "openai",
+            name: "DALL-E 3",
+            baseUrl: "https://api.openai.com",
+          },
+        ] as unknown[],
+    });
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -350,9 +398,9 @@ describe("image_gen execute", () => {
 describe("DashScope size conversion", () => {
   it("converts standard sizes to DashScope format", async () => {
     mockEnsureModels.mockResolvedValue({});
-    mockDiscoverModels.mockReturnValue([
-      { id: "wanx-v1", provider: "dashscope", name: "Wanx" },
-    ] as unknown[]);
+    mockDiscoverModels.mockReturnValue({
+      getAll: () => [{ id: "wanx-v1", provider: "dashscope", name: "Wanx" }] as unknown[],
+    });
 
     const mockFetch = vi
       .fn()
@@ -408,9 +456,10 @@ describe("model detection patterns", () => {
   for (const { id, expected } of modelPatterns) {
     it(`${expected ? "recognizes" : "skips"} model "${id}"`, async () => {
       mockEnsureModels.mockResolvedValue({});
-      mockDiscoverModels.mockReturnValue([
-        { id, provider: "test", name: id, baseUrl: "https://test.api.com" },
-      ] as unknown[]);
+      mockDiscoverModels.mockReturnValue({
+        getAll: () =>
+          [{ id, provider: "test", name: id, baseUrl: "https://test.api.com" }] as unknown[],
+      });
 
       if (expected) {
         // Mock successful generation for recognized models

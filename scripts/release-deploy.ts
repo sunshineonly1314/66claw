@@ -7,9 +7,9 @@
  * 在 Windows 或 macOS 构建机上，pnpm build:secure 之后运行。
  *
  * Usage:
- *   node --import tsx scripts/release-deploy.ts --version 2026.2.20 --server root@1.2.3.4
- *   node --import tsx scripts/release-deploy.ts --version 2026.2.20 --server root@1.2.3.4 --port 22
- *   node --import tsx scripts/release-deploy.ts --version 2026.2.20 --output-only   # 只生成不上传
+ *   node --import tsx scripts/release-deploy.ts --version 1.2.0 --server root@1.2.3.4
+ *   node --import tsx scripts/release-deploy.ts --version 1.2.0 --server root@1.2.3.4 --port 22
+ *   node --import tsx scripts/release-deploy.ts --version 1.2.0 --output-only   # 只生成不上传
  *
  * 前置条件:
  *   - pnpm build:secure 已执行 (dist/ 目录存在)
@@ -109,7 +109,7 @@ Usage:
   node --import tsx scripts/release-deploy.ts [options]
 
 Options:
-  -v, --version <ver>     版本号 (如: 2026.2.20)，默认读取 package.json
+  -v, --version <ver>     版本号 (如: 1.2.0)，默认读取 package.json
   -s, --server <user@ip>  服务器地址 (如: root@47.98.123.45)
   -p, --port <port>       SSH 端口 (默认: 22)
   --protocol <proto>      更新 URL 协议 (默认: http)
@@ -588,6 +588,20 @@ async function main() {
     }
   }
 
+  // ─── 生成更新日志文件 ───
+
+  const changelog = readChangelogLatest();
+  const changelogData = {
+    version,
+    platform: buildPlatform ?? "all",
+    buildTime: new Date().toISOString(),
+    gitCommit: getGitCommit(),
+    changelog,
+  };
+  const changelogJsonPath = path.join(DEPLOY_DIR, platformSubDir, "changelog.json");
+  writeJson(changelogJsonPath, changelogData);
+  info(`changelog.json 已生成 (${changelog["zh-CN"].length} 字符)`);
+
   // ─── 生成 manifest JSON ───
 
   if (buildPlatform) {
@@ -598,12 +612,13 @@ async function main() {
       buildTime: string;
       gitCommit: string;
       nodeVersion: string;
-      url: { full: string; manifest: string; checksums: string };
+      url: { full: string; manifest: string; checksums: string; buildLog: string };
       deltas: { from: string; url: string; size: number; sha256: string }[];
       fullSize: number;
       fullSha256: string;
       installers: Record<string, InstallerInfo>;
       changelog: { "zh-CN": string; "en-US": string };
+      buildLog: BuildLog;
     }
 
     const platformManifest: PlatformManifest = {
@@ -616,6 +631,7 @@ async function main() {
         full: `${urlBase}/${urlSubDir}/full.tar.gz`,
         manifest: `${urlBase}/${urlSubDir}/manifest.json`,
         checksums: `${urlBase}/${urlSubDir}/checksums.json`,
+        buildLog: `${urlBase}/${urlSubDir}/build-log.json`,
       },
       deltas: deltas.map((d) => ({
         from: d.fromVersion,
@@ -627,6 +643,7 @@ async function main() {
       fullSha256,
       installers,
       changelog: readChangelogLatest(),
+      buildLog,
     };
 
     const pmPath = path.join(DEPLOY_DIR, platformSubDir, "platform-manifest.json");
@@ -639,12 +656,13 @@ async function main() {
       buildTime: string;
       gitCommit: string;
       nodeVersion: string;
-      url: { full: string; manifest: string; checksums: string };
+      url: { full: string; manifest: string; checksums: string; buildLog: string };
       deltas: { from: string; url: string; size: number; sha256: string }[];
       fullSize: number;
       fullSha256: string;
       changelog: { "zh-CN": string; "en-US": string };
       installers?: Record<string, InstallerInfo>;
+      buildLog: BuildLog;
     }
 
     const latestJson: LatestJson = {
@@ -656,6 +674,7 @@ async function main() {
         full: `${urlBase}/${version}/full.tar.gz`,
         manifest: `${urlBase}/${version}/manifest.json`,
         checksums: `${urlBase}/${version}/checksums.json`,
+        buildLog: `${urlBase}/${version}/build-log.json`,
       },
       deltas: deltas.map((d) => ({
         from: d.fromVersion,
@@ -666,6 +685,7 @@ async function main() {
       fullSize: fullTarSize,
       fullSha256,
       changelog: readChangelogLatest(),
+      buildLog,
     };
 
     if (Object.keys(installers).length > 0) {
@@ -1073,6 +1093,110 @@ function readChangelogLatest(): { "zh-CN": string; "en-US": string } {
   } catch {
     return { "zh-CN": "", "en-US": "" };
   }
+}
+
+/** 构建日志：提取 git commits 生成 build-log.json */
+interface BuildLogEntry {
+  hash: string;
+  date: string;
+  author: string;
+  message: string;
+}
+
+interface BuildLog {
+  version: string;
+  previousVersion: string | null;
+  platform: string;
+  buildTime: string;
+  gitCommit: string;
+  commits: BuildLogEntry[];
+  summary: string;
+}
+
+function generateBuildLog(
+  version: string,
+  buildPlatform: string | undefined,
+  cacheDir: string,
+): BuildLog {
+  const previousVersions = getCachedVersions(cacheDir);
+  const previousVersion = previousVersions.length > 0 ? previousVersions[0] : null;
+
+  let commits: BuildLogEntry[] = [];
+
+  try {
+    // 如果有上一版本的 tag 或缓存，使用 git log 提取两个版本之间的 commits
+    // 先尝试 tag 方式（v{previousVersion}..HEAD），失败则用 commit 数量限制
+    let logOutput = "";
+
+    if (previousVersion) {
+      // 尝试用 tag 获取
+      try {
+        logOutput = execSync(
+          `git log v${previousVersion}..HEAD --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+          { encoding: "utf-8", cwd: ROOT_DIR },
+        ).trim();
+      } catch {
+        // tag 不存在，尝试 release- tag
+        try {
+          logOutput = execSync(
+            `git log release-${previousVersion}..HEAD --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+            { encoding: "utf-8", cwd: ROOT_DIR },
+          ).trim();
+        } catch {
+          // 没有 tag，使用最近 50 条 commits 并排除已知旧版本的 bump commit
+          logOutput = execSync(
+            `git log -50 --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+            { encoding: "utf-8", cwd: ROOT_DIR },
+          ).trim();
+        }
+      }
+    } else {
+      // 首次发布，取最近 30 条
+      logOutput = execSync(
+        `git log -30 --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+        { encoding: "utf-8", cwd: ROOT_DIR },
+      ).trim();
+    }
+
+    if (logOutput) {
+      commits = logOutput
+        .split("\n")
+        .filter((line) => line.includes("||"))
+        .map((line) => {
+          const [hash, date, author, ...msgParts] = line.split("||");
+          return {
+            hash: hash.substring(0, 8),
+            date,
+            author,
+            message: msgParts.join("||"),
+          };
+        })
+        // 排除版本 bump 自身的 commit
+        .filter((c) => !c.message.startsWith("chore: bump version to "));
+    }
+  } catch {
+    warn("git log 提取失败，build-log 将不包含 commit 列表");
+  }
+
+  // 生成摘要
+  const feats = commits.filter((c) => c.message.startsWith("feat")).length;
+  const fixes = commits.filter((c) => c.message.startsWith("fix")).length;
+  const others = commits.length - feats - fixes;
+  const parts: string[] = [];
+  if (feats > 0) parts.push(`${feats} features`);
+  if (fixes > 0) parts.push(`${fixes} fixes`);
+  if (others > 0) parts.push(`${others} other changes`);
+  const summary = parts.length > 0 ? parts.join(", ") : "No changes recorded";
+
+  return {
+    version,
+    previousVersion,
+    platform: buildPlatform ?? "all",
+    buildTime: new Date().toISOString(),
+    gitCommit: getGitCommit(),
+    commits,
+    summary,
+  };
 }
 
 function safeUnlink(p: string) {

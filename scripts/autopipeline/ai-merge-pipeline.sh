@@ -189,12 +189,35 @@ else
   RISK_LEVEL="unknown"
 fi
 
+# ============================================================
+# Phase 2.5: Deep Semantic Review
+# ============================================================
+phase "Phase 2.5: Deep Semantic Review"
+
+DEEP_REVIEW_TOTAL=0
+if [ -n "$ANALYSIS_DIR" ]; then
+  log "Running deep semantic code review (5 passes)..."
+  if bash scripts/autopipeline/ai-deep-review.sh --input-dir="${ANALYSIS_DIR}" 2>&1 | tee -a "$PIPELINE_LOG"; then
+    ok "Deep review: docs/upstream-reports/${DATE}-deep-review.md"
+    if [ -f "${ANALYSIS_DIR}/deep-review/summary.json" ]; then
+      DEEP_REVIEW_TOTAL=$(python3 -c "import json; print(json.load(open('${ANALYSIS_DIR}/deep-review/summary.json'))['total'])" 2>/dev/null || echo "0")
+      DEEP_REVIEW_CRITICAL=$(python3 -c "import json; print(json.load(open('${ANALYSIS_DIR}/deep-review/summary.json'))['critical'])" 2>/dev/null || echo "0")
+      log "Deep review: ${DEEP_REVIEW_TOTAL} findings (${DEEP_REVIEW_CRITICAL} critical)"
+    fi
+  else
+    warn "Deep review failed (non-fatal)"
+  fi
+else
+  warn "No analysis data for deep review"
+fi
+
 if $DRY_RUN; then
   echo ""
   echo "========================================="
   echo "  DRY RUN — would proceed with merge"
   echo "  Commits: ${COMMIT_COUNT}"
   echo "  Risk: ${RISK_LEVEL}"
+  echo "  Deep review findings: ${DEEP_REVIEW_TOTAL}"
   echo "========================================="
   PIPELINE_STATE="completed"
   exit 0
@@ -294,42 +317,76 @@ fi
 PIPELINE_STATE="brand_renamed"
 
 # ============================================================
-# Phase 5: Lint → Build → Test (with AI auto-fix loop)
+# Phase 5: Multi-Round Validate & Auto-Fix
 # ============================================================
-phase "Phase 5: Validate & Auto-Fix"
+TEST_RESULTS_DIR="${REPO_ROOT}/test-results"
+mkdir -p "$TEST_RESULTS_DIR"
 
-log "Running validation pipeline with auto-fix (max ${MAX_FIX_ROUNDS} rounds)..."
+# --- Phase 5a: Post-Merge Smoke Tests ---
+phase "Phase 5a: Post-Merge Smoke Tests (Round 1)"
 
+log "Running post-merge smoke tests to detect merge regressions..."
+if bash scripts/autopipeline/multi-round-test.sh \
+  --stage=post-merge \
+  --output-dir="$TEST_RESULTS_DIR" 2>&1 | tee -a "$PIPELINE_LOG"; then
+  ok "Post-merge smoke: all tests pass"
+else
+  warn "Post-merge smoke: some tests failing (will attempt auto-fix)"
+fi
+
+# --- Phase 5b: Auto-Fix with AI ---
+phase "Phase 5b: Auto-Fix (AI, max ${MAX_FIX_ROUNDS} rounds)"
+
+log "Running AI auto-fix pipeline..."
 if bash scripts/autopipeline/agent-fix-failures.sh --max-rounds="${MAX_FIX_ROUNDS}" 2>&1 | tee -a "$PIPELINE_LOG"; then
   LINT_PASSED=true
   BUILD_PASSED=true
-  TESTS_PASSED=true
-  ok "All validations passed!"
+  ok "Auto-fix: all checks passing"
+else
+  warn "Auto-fix: some checks still failing"
+fi
 
-  # Commit any fixes
-  if [ -n "$(git status --porcelain)" ]; then
-    git add -A
-    git commit -m "fix: auto-fix lint/build/test failures after upstream merge
+# Commit any fixes from auto-fix
+if [ -n "$(git status --porcelain)" ]; then
+  git add -A
+  git commit -m "fix: auto-fix lint/build/test failures after upstream merge
 
 Automated by ai-merge-pipeline agent."
-    FIXES_APPLIED=$((FIXES_APPLIED + 1))
-  fi
+  FIXES_APPLIED=$((FIXES_APPLIED + 1))
+fi
+
+# --- Phase 5c: Full Validation (Round 2) ---
+phase "Phase 5c: Full Validation (Round 2)"
+
+log "Running full validation with coverage..."
+if bash scripts/autopipeline/multi-round-test.sh \
+  --stage=post-fix \
+  --coverage \
+  --output-dir="$TEST_RESULTS_DIR" 2>&1 | tee -a "$PIPELINE_LOG"; then
+  LINT_PASSED=true
+  BUILD_PASSED=true
+  TESTS_PASSED=true
+  ok "Full validation: ALL PASSED"
 else
-  # Try to determine what passed
+  # Determine what passed
   if pnpm lint 2>&1 >/dev/null; then LINT_PASSED=true; fi
   if pnpm build 2>&1 >/dev/null; then BUILD_PASSED=true; fi
+  warn "Full validation: some checks still failing"
+fi
 
-  # Commit whatever fixes were applied
-  if [ -n "$(git status --porcelain)" ]; then
-    git add -A
-    git commit -m "fix: partial auto-fix after upstream merge (some failures remain)
+# --- Phase 5d: Final Regression Gate (Round 3) ---
+phase "Phase 5d: Final Regression Gate (Round 3)"
 
-Automated by ai-merge-pipeline agent.
-Note: Some lint/build/test failures still need manual attention."
-    FIXES_APPLIED=$((FIXES_APPLIED + 1))
-  fi
-
-  warn "Some validations still failing"
+log "Running final regression gate vs post-merge baseline..."
+if bash scripts/autopipeline/multi-round-test.sh \
+  --stage=final \
+  --output-dir="$TEST_RESULTS_DIR" \
+  --baseline="$TEST_RESULTS_DIR/post-merge.json" 2>&1 | tee -a "$PIPELINE_LOG"; then
+  TESTS_PASSED=true
+  ok "Final gate: NO REGRESSIONS"
+else
+  warn "Final gate: regressions detected or tests failing"
+  TESTS_PASSED=false
 fi
 
 PIPELINE_STATE="validated"
@@ -368,7 +425,13 @@ PIPELINE_STATE="verified"
 # ============================================================
 phase "Phase 7: Push & Report"
 
-ALL_PASSED=$($LINT_PASSED && $BUILD_PASSED && $TESTS_PASSED && echo true || echo false)
+# Bug fix: $LINT_PASSED is a string "true"/"false", not a command.
+# Use string comparison instead of executing the variable as a command.
+if [ "$LINT_PASSED" = "true" ] && [ "$BUILD_PASSED" = "true" ] && [ "$TESTS_PASSED" = "true" ]; then
+  ALL_PASSED=true
+else
+  ALL_PASSED=false
+fi
 
 if ! $NO_PUSH; then
   log "Pushing branch ${BRANCH}..."
@@ -388,13 +451,13 @@ cat > "$REPORT_FILE" <<REPORT_EOF
 | Phase | Status |
 |-------|--------|
 | Fetch & Detect | ✓ ${COMMIT_COUNT} commits |
-| AI Analysis | $(if $REPORT_GENERATED; then echo '✓ Report generated'; else echo '⚠ No report'; fi) |
-| Merge | $(if $MERGE_SUCCEEDED; then echo '✓ Success'; else echo '✗ Failed'; fi) |
-| Conflict Resolution | $(if $CONFLICTS_RESOLVED; then echo '✓ All resolved'; else echo '✗ Unresolved'; fi) |
-| Brand Rename | $(if $BRAND_RENAMED; then echo '✓ Applied'; else echo '⚠ Skipped'; fi) |
-| Lint | $(if $LINT_PASSED; then echo '✓ Passed'; else echo '✗ Failed'; fi) |
-| Build | $(if $BUILD_PASSED; then echo '✓ Passed'; else echo '✗ Failed'; fi) |
-| Tests | $(if $TESTS_PASSED; then echo '✓ Passed'; else echo '✗ Failed'; fi) |
+| AI Analysis | $([ "$REPORT_GENERATED" = "true" ] && echo '✓ Report generated' || echo '⚠ No report') |
+| Merge | $([ "$MERGE_SUCCEEDED" = "true" ] && echo '✓ Success' || echo '✗ Failed') |
+| Conflict Resolution | $([ "$CONFLICTS_RESOLVED" = "true" ] && echo '✓ All resolved' || echo '✗ Unresolved') |
+| Brand Rename | $([ "$BRAND_RENAMED" = "true" ] && echo '✓ Applied' || echo '⚠ Skipped') |
+| Lint | $([ "$LINT_PASSED" = "true" ] && echo '✓ Passed' || echo '✗ Failed') |
+| Build | $([ "$BUILD_PASSED" = "true" ] && echo '✓ Passed' || echo '✗ Failed') |
+| Tests | $([ "$TESTS_PASSED" = "true" ] && echo '✓ Passed' || echo '✗ Failed') |
 | CN Integrity | $(if [ "$MISSING" -eq 0 ]; then echo '✓ All files present'; else echo "✗ ${MISSING} files missing"; fi) |
 
 ## Details
@@ -408,16 +471,16 @@ cat > "$REPORT_FILE" <<REPORT_EOF
 
 ## Next Steps
 
-$(if $ALL_PASSED; then
+$(if [ "$ALL_PASSED" = "true" ]; then
   echo "All checks passed! Create a PR:"
   echo "\`\`\`bash"
   echo "gh pr create --base ${CURRENT_BRANCH} --head ${BRANCH} --title 'chore: merge upstream ${DATE} (${COMMIT_COUNT} commits)'"
   echo "\`\`\`"
 else
   echo "Some checks failed. Review and fix manually:"
-  if ! $LINT_PASSED; then echo "- [ ] Fix lint errors: \`pnpm lint\`"; fi
-  if ! $BUILD_PASSED; then echo "- [ ] Fix build errors: \`pnpm build\`"; fi
-  if ! $TESTS_PASSED; then echo "- [ ] Fix test failures: \`pnpm test\`"; fi
+  [ "$LINT_PASSED" != "true" ] && echo "- [ ] Fix lint errors: \`pnpm lint\`"
+  [ "$BUILD_PASSED" != "true" ] && echo "- [ ] Fix build errors: \`pnpm build\`"
+  [ "$TESTS_PASSED" != "true" ] && echo "- [ ] Fix test failures: \`pnpm test\`"
 fi)
 
 ---
@@ -448,18 +511,21 @@ echo ""
 echo "  Branch:          ${BRANCH}"
 echo "  Commits merged:  ${COMMIT_COUNT}"
 echo "  Risk level:      ${RISK_LEVEL}"
-echo "  Conflicts:       $(if $CONFLICTS_RESOLVED; then echo 'All resolved ✓'; else echo 'UNRESOLVED ✗'; fi)"
-echo "  Brand rename:    $(if $BRAND_RENAMED; then echo 'Applied ✓'; else echo 'Skipped'; fi)"
-echo "  Lint:            $(if $LINT_PASSED; then echo 'Passed ✓'; else echo 'FAILED ✗'; fi)"
-echo "  Build:           $(if $BUILD_PASSED; then echo 'Passed ✓'; else echo 'FAILED ✗'; fi)"
-echo "  Tests:           $(if $TESTS_PASSED; then echo 'Passed ✓'; else echo 'FAILED ✗'; fi)"
+echo "  Conflicts:       $([ "$CONFLICTS_RESOLVED" = "true" ] && echo 'All resolved ✓' || echo 'UNRESOLVED ✗')"
+echo "  Brand rename:    $([ "$BRAND_RENAMED" = "true" ] && echo 'Applied ✓' || echo 'Skipped')"
+echo "  Lint:            $([ "$LINT_PASSED" = "true" ] && echo 'Passed ✓' || echo 'FAILED ✗')"
+echo "  Build:           $([ "$BUILD_PASSED" = "true" ] && echo 'Passed ✓' || echo 'FAILED ✗')"
+echo "  Tests:           $([ "$TESTS_PASSED" = "true" ] && echo 'Passed ✓' || echo 'FAILED ✗')"
 echo "  Fixes applied:   ${FIXES_APPLIED}"
+echo "  Deep review:     ${DEEP_REVIEW_TOTAL} findings"
 echo "  AI report:       docs/upstream-reports/${DATE}.md"
+echo "  Deep review:     docs/upstream-reports/${DATE}-deep-review.md"
 echo "  Pipeline report: docs/upstream-reports/${DATE}-pipeline.md"
+echo "  Test results:    ${TEST_RESULTS_DIR}/"
 echo "  Pipeline log:    ${PIPELINE_LOG}"
 echo ""
 
-if $LINT_PASSED && $BUILD_PASSED && $TESTS_PASSED; then
+if [ "$ALL_PASSED" = "true" ]; then
   echo -e "${GREEN}  🎉 FULL SUCCESS — Ready to create PR${NC}"
   echo ""
   echo "  gh pr create --base ${CURRENT_BRANCH} --head ${BRANCH} \\"

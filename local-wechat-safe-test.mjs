@@ -330,8 +330,8 @@ async function runCompleteTest() {
 
     console.log(`   ✅ 允许回复`);
 
-    // 模拟 AI 生成回复
-    const aiReply = generateAIReply(msg.text);
+    // AI 生成回复 (Kimi Code API)
+    const aiReply = await generateAIReply(msg.text);
     console.log(`   💬 AI 回复: "${aiReply}"`);
 
     // 计算延迟
@@ -444,23 +444,51 @@ async function runCompleteTest() {
 }
 
 // ============================================================================
-// AI 回复生成器 (模拟)
+// AI 回复生成器 (通过 Kimi Code API)
 // ============================================================================
 
-function generateAIReply(userMessage) {
-  const responses = {
-    "你好": "你好呀！有什么可以帮到你的吗？😊",
-    "在吗": "在的，咋了？",
-    "价格": "具体价格要看你选哪款呢，稍等我问一下",
-  };
+const KIMI_API_BASE = process.env.KIMI_API_BASE || "https://api.kimi.com/coding/v1";
+const KIMI_API_KEY = process.env.KIMI_API_KEY || "";
+const KIMI_MODEL = process.env.KIMI_MODEL || "kimi-for-coding";
 
-  for (const [keyword, response] of Object.entries(responses)) {
-    if (userMessage.includes(keyword)) {
-      return response;
+const SYSTEM_PROMPT = `你是一个友好的微信客服助手。请用自然、口语化的中文回复用户消息。
+要求: 回复简短 (1-2句话)，语气像朋友聊天，不要使用 markdown。`;
+
+async function generateAIReply(userMessage) {
+  try {
+    if (!KIMI_API_KEY) throw new Error("KIMI_API_KEY 未设置");
+    const resp = await fetch(`${KIMI_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${KIMI_API_KEY}`,
+        "User-Agent": "KimiCLI/0.77",
+      },
+      body: JSON.stringify({
+        model: KIMI_MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userMessage },
+        ],
+        max_tokens: 1000,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`Kimi API ${resp.status}: ${errText}`);
     }
+    const data = await resp.json();
+    const msg = data.choices?.[0]?.message;
+    return msg?.content?.trim() || "嗯嗯，我看到了，稍等我回你哈";
+  } catch (err) {
+    console.warn(`   ⚠️ AI 生成失败 (${err.message}), 使用默认回复`);
+    const responses = { "你好": "你好呀！", "在吗": "在的，咋了？", "价格": "稍等我问一下" };
+    for (const [kw, r] of Object.entries(responses)) {
+      if (userMessage.includes(kw)) return r;
+    }
+    return "嗯嗯，我看到了，稍等我回你哈";
   }
-
-  return "嗯嗯，我看到了，稍等我回你哈";
 }
 
 // ============================================================================

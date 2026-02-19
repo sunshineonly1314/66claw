@@ -27,6 +27,8 @@ export class MCPRuntimeManager {
   private circuitOpenCount = new Map<string, number>();
   /** Pending auto-restart timers — tracked so we can cancel duplicates. */
   private pendingRestarts = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Per-server serialization lock: chains start/stop operations to prevent races. */
+  private serverLocks = new Map<string, Promise<void>>();
 
   /** Register a server config (does not start it). */
   register(config: MCPServerConfig): void {
@@ -41,63 +43,93 @@ export class MCPRuntimeManager {
 
   /** Start a single MCP server. */
   async startServer(id: string): Promise<void> {
-    const state = this.states.get(id);
-    if (!state) throw new Error(`Unknown MCP server: ${id}`);
-    if (state.status === "running") return;
-    if (!state.config.enabled) {
-      this.updateStatus(id, "stopped");
-      return;
-    }
-
-    this.updateStatus(id, "spawning");
-
-    const client = new MCPClient(state.config, {
-      onClose: () => this.handleServerClose(id),
-      onError: (err) => this.handleServerError(id, err),
-      onToolsChanged: () => this.handleToolsChanged(id),
+    // Serialize per-server: wait for any in-flight operation on this id to finish
+    const prevStart = this.serverLocks.get(id) ?? Promise.resolve();
+    let releaseStart!: () => void;
+    const nextStart = new Promise<void>((resolve) => {
+      releaseStart = resolve;
     });
-
+    this.serverLocks.set(
+      id,
+      prevStart.then(() => nextStart),
+    );
+    await prevStart;
     try {
-      this.updateStatus(id, "initializing");
-      await client.connect();
+      const state = this.states.get(id);
+      if (!state) throw new Error(`Unknown MCP server: ${id}`);
+      if (state.status === "running") return;
+      if (!state.config.enabled) {
+        this.updateStatus(id, "stopped");
+        return;
+      }
 
-      // Get tool list
-      const tools = await client.listTools();
+      this.updateStatus(id, "spawning");
 
-      this.clients.set(id, client);
-      const s = this.states.get(id)!;
-      s.status = "running";
-      s.pid = client.pid;
-      s.tools = tools;
-      s.error = undefined;
-      s.restartCount = 0;
-      s.lastHealthCheck = Date.now();
-      this.healthFailures.set(id, 0);
-      this.circuitOpenAt.delete(id);
-      this.circuitOpenCount.delete(id);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.updateStatus(id, "error", message);
-      await client.shutdown().catch(() => {});
-      this.clients.delete(id);
+      const client = new MCPClient(state.config, {
+        onClose: () => this.handleServerClose(id),
+        onError: (err) => this.handleServerError(id, err),
+        onToolsChanged: () => this.handleToolsChanged(id),
+      });
+
+      try {
+        this.updateStatus(id, "initializing");
+        await client.connect();
+
+        // Get tool list
+        const tools = await client.listTools();
+
+        this.clients.set(id, client);
+        const s = this.states.get(id)!;
+        s.status = "running";
+        s.pid = client.pid;
+        s.tools = tools;
+        s.error = undefined;
+        s.restartCount = 0;
+        s.lastHealthCheck = Date.now();
+        this.healthFailures.set(id, 0);
+        this.circuitOpenAt.delete(id);
+        this.circuitOpenCount.delete(id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.updateStatus(id, "error", message);
+        await client.shutdown().catch(() => {});
+        this.clients.delete(id);
+      }
+    } finally {
+      releaseStart!();
     }
   }
 
   /** Stop a single MCP server. */
   async stopServer(id: string): Promise<void> {
-    // Cancel any pending auto-restart before stopping
-    this.cancelPendingRestart(id);
+    // Serialize per-server: wait for any in-flight operation on this id to finish
+    const prevStop = this.serverLocks.get(id) ?? Promise.resolve();
+    let releaseStop!: () => void;
+    const nextStop = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    this.serverLocks.set(
+      id,
+      prevStop.then(() => nextStop),
+    );
+    await prevStop;
+    try {
+      // Cancel any pending auto-restart before stopping
+      this.cancelPendingRestart(id);
 
-    const client = this.clients.get(id);
-    if (client) {
-      await client.shutdown().catch(() => {});
-      this.clients.delete(id);
-    }
-    this.updateStatus(id, "stopped");
-    const state = this.states.get(id);
-    if (state) {
-      state.tools = [];
-      state.pid = undefined;
+      const client = this.clients.get(id);
+      if (client) {
+        await client.shutdown().catch(() => {});
+        this.clients.delete(id);
+      }
+      this.updateStatus(id, "stopped");
+      const state = this.states.get(id);
+      if (state) {
+        state.tools = [];
+        state.pid = undefined;
+      }
+    } finally {
+      releaseStop!();
     }
   }
 
@@ -175,6 +207,7 @@ export class MCPRuntimeManager {
     this.circuitOpenAt.delete(id);
     this.circuitOpenCount.delete(id);
     this.cancelPendingRestart(id);
+    this.serverLocks.delete(id);
   }
 
   /** Get client for a server (for tool calls). */
@@ -279,7 +312,12 @@ export class MCPRuntimeManager {
   private handleServerClose(id: string): void {
     const state = this.states.get(id);
     if (!state) return;
-    if (state.status === "stopped" || state.status === "restarting") return;
+    if (
+      state.status === "stopped" ||
+      state.status === "restarting" ||
+      state.status === "circuit_open"
+    )
+      return;
 
     // Unexpected close — attempt auto-restart
     this.clients.delete(id);

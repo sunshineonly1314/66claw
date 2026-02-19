@@ -119,6 +119,7 @@ export const updateHandlers: GatewayRequestHandlers = {
       {
         ok: true,
         result,
+        changelog: result.changelog ?? null,
         restart,
         sentinel: {
           path: sentinelPath,

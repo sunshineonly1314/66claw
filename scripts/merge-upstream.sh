@@ -33,15 +33,27 @@ DRY_RUN=false
 SKIP_TESTS=false
 AI_ANALYZE=false
 ANALYZE_ONLY=false
+DEEP_REVIEW=false
+PROGRESSIVE=false
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --skip-tests) SKIP_TESTS=true ;;
     --analyze) AI_ANALYZE=true ;;
     --analyze-only) AI_ANALYZE=true; ANALYZE_ONLY=true ;;
+    --deep-review) DEEP_REVIEW=true; AI_ANALYZE=true ;;
+    --progressive) PROGRESSIVE=true ;;
     *) echo "Unknown option: $arg"; exit 1 ;;
   esac
 done
+
+# If --progressive, delegate to progressive-merge.sh
+if $PROGRESSIVE; then
+  PROGRESSIVE_ARGS=""
+  $DRY_RUN && PROGRESSIVE_ARGS="$PROGRESSIVE_ARGS --dry-run"
+  $SKIP_TESTS && PROGRESSIVE_ARGS="$PROGRESSIVE_ARGS --skip-tests"
+  exec bash "$(dirname "$0")/autopipeline/progressive-merge.sh" $PROGRESSIVE_ARGS
+fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -88,6 +100,13 @@ ok "merge driver configured"
 if [ -n "$(git status --porcelain)" ]; then
   warn "Working tree has uncommitted changes."
   echo "  Consider: git stash push -m 'before-upstream-merge-${DATE}'"
+  # In CI environments (no TTY), auto-abort to avoid hanging the pipeline.
+  # Callers (ai-merge-pipeline.sh) should stash changes before invoking this script.
+  if [ -n "${CI:-}" ] || [ ! -t 0 ]; then
+    error "CI environment detected: refusing to proceed with dirty working tree."
+    echo "  Fix: stash or commit changes before running this script."
+    exit 1
+  fi
   read -p "  Continue anyway? [y/N] " -n 1 -r
   echo
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -99,10 +118,16 @@ fi
 if ! grep -q "merge=ours" .gitattributes 2>/dev/null; then
   warn ".gitattributes missing merge=ours rules."
   echo "  Run: bash scripts/generate-gitattributes-merge.sh"
-  read -p "  Generate now? [Y/n] " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+  # In CI, auto-generate without prompting
+  if [ -n "${CI:-}" ] || [ ! -t 0 ]; then
+    log "CI environment: auto-generating .gitattributes merge rules..."
     bash scripts/generate-gitattributes-merge.sh
+  else
+    read -p "  Generate now? [Y/n] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+      bash scripts/generate-gitattributes-merge.sh
+    fi
   fi
 fi
 MERGE_RULES=$(grep -c "merge=ours" .gitattributes 2>/dev/null || echo "0")
@@ -233,6 +258,16 @@ if $AI_ANALYZE; then
     fi
   fi
 
+  # Run deep semantic review if requested
+  if $DEEP_REVIEW && [ -n "$ANALYSIS_DIR" ]; then
+    log "Running deep semantic review..."
+    if bash "${REPO_ROOT}/scripts/autopipeline/ai-deep-review.sh" --input-dir="${ANALYSIS_DIR}"; then
+      ok "Deep review report saved to docs/upstream-reports/${DATE}-deep-review.md"
+    else
+      warn "Deep review failed (non-fatal). Continuing."
+    fi
+  fi
+
   if $ANALYZE_ONLY; then
     log "Analyze-only mode. Stopping before merge."
     echo ""
@@ -240,6 +275,9 @@ if $AI_ANALYZE; then
     echo "  ANALYSIS COMPLETE (no merge performed)"
     echo "========================================="
     echo "  Report: docs/upstream-reports/${DATE}.md"
+    if $DEEP_REVIEW; then
+      echo "  Deep review: docs/upstream-reports/${DATE}-deep-review.md"
+    fi
     echo "  Data:   ${ANALYSIS_DIR}"
     echo ""
     echo "  To proceed with merge:"
@@ -339,29 +377,42 @@ fi
 if $SKIP_TESTS; then
   warn "=== Step 5/8: Skipping tests (--skip-tests) ==="
 else
-  log "=== Step 5/8: Post-merge validation ==="
+  TEST_RESULTS_DIR="${REPO_ROOT}/test-results"
+  mkdir -p "$TEST_RESULTS_DIR"
 
-  log "Running lint..."
-  if pnpm lint 2>&1 | tail -5; then
-    ok "Lint passed"
+  # --- Round 1: Post-merge smoke test ---
+  log "=== Step 5a/8: Post-merge smoke tests (Round 1) ==="
+  if bash "${REPO_ROOT}/scripts/autopipeline/multi-round-test.sh" \
+    --stage=post-merge \
+    --output-dir="$TEST_RESULTS_DIR"; then
+    ok "Post-merge smoke tests passed"
   else
-    error "Lint failed. Fix lint errors before continuing."
+    warn "Post-merge smoke tests had failures (will attempt to fix)"
+  fi
+
+  # --- Round 2: Full validation (after brand rename) ---
+  log "=== Step 5b/8: Full validation (Round 2) ==="
+  if bash "${REPO_ROOT}/scripts/autopipeline/multi-round-test.sh" \
+    --stage=post-fix \
+    --coverage \
+    --output-dir="$TEST_RESULTS_DIR"; then
+    ok "Full validation passed"
+  else
+    error "Full validation failed. Fix errors before continuing."
+    echo "  Test results: $TEST_RESULTS_DIR/"
     exit 1
   fi
 
-  log "Running build..."
-  if pnpm build 2>&1 | tail -5; then
-    ok "Build passed"
+  # --- Round 3: Final regression gate ---
+  log "=== Step 5c/8: Final regression gate (Round 3) ==="
+  if bash "${REPO_ROOT}/scripts/autopipeline/multi-round-test.sh" \
+    --stage=final \
+    --output-dir="$TEST_RESULTS_DIR" \
+    --baseline="$TEST_RESULTS_DIR/post-merge.json"; then
+    ok "Final regression gate passed — no regressions"
   else
-    error "Build failed. Fix build errors before continuing."
-    exit 1
-  fi
-
-  log "Running tests..."
-  if pnpm test 2>&1 | tail -10; then
-    ok "Tests passed"
-  else
-    error "Tests failed. Fix test failures before continuing."
+    error "Final regression gate FAILED — regressions detected!"
+    echo "  Compare: $TEST_RESULTS_DIR/post-merge.json vs $TEST_RESULTS_DIR/final.json"
     exit 1
   fi
 fi

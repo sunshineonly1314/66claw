@@ -182,7 +182,7 @@ function psFile(script: string, timeoutMs = 10000): string {
 
 /** Bump this version whenever the helper script content changes.
  *  This ensures a stale cached .ps1 in %TEMP% is regenerated. */
-const HELPER_SCRIPT_VERSION = 7;
+const HELPER_SCRIPT_VERSION = 8;
 const HELPER_SCRIPT_NAME = `openclawcn-desktop-control-helper-v${HELPER_SCRIPT_VERSION}.ps1`;
 
 function getHelperScriptPath(): string {
@@ -246,6 +246,10 @@ public class WinInput {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
@@ -254,6 +258,12 @@ public class WinInput {
 
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    public static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_SHOWWINDOW = 0x0040;
 
     public const int SW_RESTORE = 9;
     public const int SW_SHOW = 5;
@@ -561,8 +571,44 @@ switch ($Action) {
         }
 
         if ($targetHwnd -ne [IntPtr]::Zero) {
-            [WinInput]::ShowWindow($targetHwnd, [WinInput]::SW_RESTORE) > $null
+            # Restore if minimized
+            if ([WinInput]::IsIconic($targetHwnd)) {
+                [WinInput]::ShowWindow($targetHwnd, [WinInput]::SW_RESTORE) > $null
+                Start-Sleep -Milliseconds 300
+            }
+            [WinInput]::ShowWindow($targetHwnd, [WinInput]::SW_SHOW) > $null
+            Start-Sleep -Milliseconds 200
+
+            # Temporarily set TOPMOST to force window above all others
+            [WinInput]::SetWindowPos($targetHwnd, [WinInput]::HWND_TOPMOST, 0, 0, 0, 0,
+                [WinInput]::SWP_NOMOVE -bor [WinInput]::SWP_NOSIZE -bor [WinInput]::SWP_SHOWWINDOW) > $null
+            Start-Sleep -Milliseconds 200
+
+            # Attach to foreground thread for SetForegroundWindow to succeed
+            $fgHwnd = [WinInput]::GetForegroundWindow()
+            $fgPid = [uint32]0
+            $fgTid = [WinInput]::GetWindowThreadProcessId($fgHwnd, [ref]$fgPid)
+            $tgtPid = [uint32]0
+            $tgtTid = [WinInput]::GetWindowThreadProcessId($targetHwnd, [ref]$tgtPid)
+
+            $attached = $false
+            if ($fgTid -ne $tgtTid) {
+                $attached = [WinInput]::AttachThreadInput($fgTid, $tgtTid, $true)
+            }
+
+            [WinInput]::BringWindowToTop($targetHwnd) > $null
             [WinInput]::SetForegroundWindow($targetHwnd) > $null
+
+            if ($attached) {
+                [WinInput]::AttachThreadInput($fgTid, $tgtTid, $false) > $null
+            }
+
+            Start-Sleep -Milliseconds 300
+
+            # Cancel TOPMOST
+            [WinInput]::SetWindowPos($targetHwnd, [WinInput]::HWND_NOTOPMOST, 0, 0, 0, 0,
+                [WinInput]::SWP_NOMOVE -bor [WinInput]::SWP_NOSIZE -bor [WinInput]::SWP_SHOWWINDOW) > $null
+
             Write-Output "ok|focused|$targetTitle"
         } else {
             Write-Output "error|Window not found matching: $Window"

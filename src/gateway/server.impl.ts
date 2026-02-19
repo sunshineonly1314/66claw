@@ -455,22 +455,24 @@ export async function startGatewayServer(
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
 
-  if (!minimalTestGateway) {
-    const machineDisplayName = await getMachineDisplayName();
-    const discovery = await startGatewayDiscovery({
-      machineDisplayName,
-      port,
-      gatewayTls: gatewayTls.enabled
-        ? { enabled: true, fingerprintSha256: gatewayTls.fingerprintSha256 }
-        : undefined,
-      wideAreaDiscoveryEnabled: cfgAtStart.discovery?.wideArea?.enabled === true,
-      wideAreaDiscoveryDomain: cfgAtStart.discovery?.wideArea?.domain,
-      tailscaleMode,
-      mdnsMode: cfgAtStart.discovery?.mdns?.mode,
-      logDiscovery,
-    });
-    bonjourStop = discovery.bonjourStop;
-  }
+  const discoveryPromise = !minimalTestGateway
+    ? (async () => {
+        const machineDisplayName = await getMachineDisplayName();
+        const discovery = await startGatewayDiscovery({
+          machineDisplayName,
+          port,
+          gatewayTls: gatewayTls.enabled
+            ? { enabled: true, fingerprintSha256: gatewayTls.fingerprintSha256 }
+            : undefined,
+          wideAreaDiscoveryEnabled: cfgAtStart.discovery?.wideArea?.enabled === true,
+          wideAreaDiscoveryDomain: cfgAtStart.discovery?.wideArea?.domain,
+          tailscaleMode,
+          mdnsMode: cfgAtStart.discovery?.mdns?.mode,
+          logDiscovery,
+        });
+        return discovery.bonjourStop;
+      })()
+    : Promise.resolve(null);
 
   if (!minimalTestGateway) {
     setSkillsRemoteRegistry(nodeRegistry);
@@ -680,9 +682,11 @@ export async function startGatewayServer(
   if (!minimalTestGateway) {
     scheduleGatewayUpdateCheck({ cfg: cfgAtStart, log, isNixMode });
   }
-  const tailscaleCleanup = minimalTestGateway
-    ? null
-    : await startGatewayTailscaleExposure({
+  // Run discovery, tailscale exposure, and sidecars in parallel — they have
+  // no cross-dependencies and each has its own error handling.
+  const tailscalePromise = minimalTestGateway
+    ? Promise.resolve(null)
+    : startGatewayTailscaleExposure({
         tailscaleMode,
         resetOnExit: tailscaleConfig.resetOnExit,
         port,
@@ -690,20 +694,32 @@ export async function startGatewayServer(
         logTailscale,
       });
 
-  let browserControl: Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>> = null;
-  if (!minimalTestGateway) {
-    ({ browserControl, pluginServices } = await startGatewaySidecars({
-      cfg: cfgAtStart,
-      pluginRegistry,
-      defaultWorkspaceDir,
-      deps,
-      startChannels,
-      log,
-      logHooks,
-      logChannels,
-      logBrowser,
-    }));
-  }
+  const sidecarsPromise = minimalTestGateway
+    ? Promise.resolve({
+        browserControl: null as Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>>,
+        pluginServices: null as PluginServicesHandle | null,
+      })
+    : startGatewaySidecars({
+        cfg: cfgAtStart,
+        pluginRegistry,
+        defaultWorkspaceDir,
+        deps,
+        startChannels,
+        log,
+        logHooks,
+        logChannels,
+        logBrowser,
+      });
+
+  const [tailscaleCleanup, sidecarsResult, discoveryBonjourStop] = await Promise.all([
+    tailscalePromise,
+    sidecarsPromise,
+    discoveryPromise,
+  ]);
+
+  bonjourStop = discoveryBonjourStop;
+  let browserControl = sidecarsResult.browserControl;
+  pluginServices = sidecarsResult.pluginServices;
 
   // Run gateway_start plugin hook (fire-and-forget)
   if (!minimalTestGateway) {

@@ -80,8 +80,34 @@ If creating the file for the first time:
 - **飞书消息回复去重** — 修复 reply-dispatcher 在高并发下重复发送回复的问题
 ```
 
+## Auto-Generated Changelog
+
+This file is the **source of truth** for `pnpm release:changelog`, which auto-generates `CHANGELOG.md` for end users.
+
+The generator will:
+- **Keep**: `New Feature`, `Enhancement`, `Bug Fix`, `UI/UX`, `Performance`, `Security`, `Config` categories
+- **Drop**: `Test`, `Docs`, `Architecture`, `Research`, `Files Changed`, `Files New` sections (not user-facing)
+- **Drop**: code blocks, tables, sub-bullets with file paths
+
+So when writing entries, keep in mind:
+- The **bold title** + **one-line description** in user-facing categories will appear in the changelog as-is
+- Write titles that make sense to end users, not just developers
+- Technical file lists and test counts are fine to include (they'll be auto-filtered out)
+
+### Version Markers
+
+When a release is cut, the deploy script (`pnpm release:deploy`) will automatically inject a version marker comment:
+
+```markdown
+## 2026-02-18 01:00
+<!-- version: 2026.2.18 -->
+```
+
+Agents do NOT need to add this marker manually. It is injected automatically during the release process.
+
 ## Important Notes
 
 - Always append, never overwrite or reorder existing entries.
 - One date-time block per session/batch; do not create multiple blocks for the same timestamp.
 - If you made no user-facing or meaningful changes, skip recording.
+- Do NOT manually add `<!-- version: -->` markers — those are injected by the release script.

@@ -36,6 +36,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { transformSync } from "esbuild";
 import { resolveEncryptionTargets, getExplicitBytecodeDirs, isInExplicitBytecodeDir } from "./resolve-cn-targets.js";
@@ -67,7 +68,13 @@ const DIST_DIR = path.join(ROOT_DIR, "dist");
  */
 function convertToCjs(filePath: string): string {
   const cjsPath = filePath.replace(/\.js$/, ".cjs");
-  const code = fs.readFileSync(filePath, "utf-8");
+  let code = fs.readFileSync(filePath, "utf-8");
+
+  // Problem 0: ESM import attributes (e.g. `import x from "./y.json" with { type: "json" }`)
+  //   esbuild cannot parse the `with { ... }` syntax. In CJS mode, `require("./y.json")`
+  //   natively loads JSON without any import attribute, so stripping them is safe.
+  //   Also handles the older `assert { ... }` syntax.
+  code = code.replace(/\s+(?:with|assert)\s*\{[^}]*\}\s*;/g, ";");
 
   const result = transformSync(code, {
     format: "cjs",
@@ -220,7 +227,7 @@ function extractExportNames(code: string, filePath?: string, visited?: Set<strin
  * ESM code outside these directories can still `import { x } from "./gateway/file.js"`
  * because Node.js v22 supports ESM importing CJS modules seamlessly.
  */
-function generateCjsLoader(originalJsPath: string, jscPath: string, exportNames: string[]): string {
+function generateCjsLoader(originalJsPath: string, jscPath: string, exportNames: string[], jscHash: string): string {
   const jscBasename = path.basename(jscPath);
 
   // Use `exports.X = _mod.X` pattern — this is the only pattern that Node.js's
@@ -232,6 +239,9 @@ function generateCjsLoader(originalJsPath: string, jscPath: string, exportNames:
 
   return `// V8 Bytecode Loader (CJS) — compiled from source, do not edit
 "use strict";
+const _p = require("path").join(__dirname, "./${jscBasename}");
+const _h = require("crypto").createHash("sha256").update(require("fs").readFileSync(_p)).digest("hex");
+if (_h !== "${jscHash}") { console.error("[integrity] bytecode tampered: " + _p); process.exit(1); }
 require("bytenode");
 const _mod = require("./${jscBasename}");
 
@@ -253,7 +263,7 @@ ${reExportLines}
  * ESM loaders support `import { X } from "./file.js"` natively since the
  * exports are declared with `export const`.
  */
-function generateEsmLoader(originalJsPath: string, jscPath: string, exportNames: string[]): string {
+function generateEsmLoader(originalJsPath: string, jscPath: string, exportNames: string[], jscHash: string): string {
   const jscBasename = path.basename(jscPath);
 
   const reExportLines = exportNames
@@ -262,6 +272,14 @@ function generateEsmLoader(originalJsPath: string, jscPath: string, exportNames:
 
   return `// V8 Bytecode Loader (ESM) — compiled from source, do not edit
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+const _d = dirname(fileURLToPath(import.meta.url));
+const _p = join(_d, "./${jscBasename}");
+const _h = createHash("sha256").update(readFileSync(_p)).digest("hex");
+if (_h !== "${jscHash}") { console.error("[integrity] bytecode tampered: " + _p); process.exit(1); }
 const _require = createRequire(import.meta.url);
 _require("bytenode");
 const _mod = _require("./${jscBasename}");
@@ -322,12 +340,15 @@ async function processFile(
     // Step 2: Compile CJS → bytecode (in-process, no subprocess)
     const jscPath = await compileToBytecode(cjsPath);
 
+    // Step 2.5: Compute SHA-256 hash of the .jsc for self-protection (Knife 6)
+    const jscHash = crypto.createHash("sha256").update(fs.readFileSync(jscPath)).digest("hex");
+
     // Step 3: Replace original .js with loader stub.
     // Files in explicit bytecode dirs → CJS loader (directory has {"type": "commonjs"})
     // Files in mixed ESM dirs → ESM loader (uses createRequire to load CJS bytecode)
     const loader = useCjsLoader
-      ? generateCjsLoader(filePath, jscPath, exportNames)
-      : generateEsmLoader(filePath, jscPath, exportNames);
+      ? generateCjsLoader(filePath, jscPath, exportNames, jscHash)
+      : generateEsmLoader(filePath, jscPath, exportNames, jscHash);
     fs.writeFileSync(filePath, loader, "utf-8");
 
     // Step 4: Clean up intermediate CJS file

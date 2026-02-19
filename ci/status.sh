@@ -9,7 +9,7 @@ CONFIG_FILE="$SCRIPT_DIR/config.json"
 
 # Convert path for Windows if needed
 if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-  CONFIG_FILE_WIN=$(cygpath -w "$CONFIG_FILE" 2>/dev/null || echo "$CONFIG_FILE")
+  CONFIG_FILE_WIN=$(cygpath -m "$CONFIG_FILE" 2>/dev/null || echo "$CONFIG_FILE")
 else
   CONFIG_FILE_WIN="$CONFIG_FILE"
 fi
@@ -38,10 +38,10 @@ echo ""
 # 显示配置
 if [ -f "$CONFIG_FILE" ]; then
   PORT=$(node -p "require('$CONFIG_FILE_WIN').webhook.port" 2>/dev/null || echo "8888")
-  WIN_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.host" 2>/dev/null || echo "192.168.0.103")
-  WIN_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.user" 2>/dev/null || echo "SunBin")
-  MAC_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.host" 2>/dev/null || echo "192.168.0.107")
-  MAC_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.user" 2>/dev/null || echo "kevinsun")
+  WIN_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.host")
+  WIN_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.user")
+  MAC_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.host")
+  MAC_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.user")
 
   echo "🔧 Configuration:"
   echo "   Webhook Port:  $PORT"

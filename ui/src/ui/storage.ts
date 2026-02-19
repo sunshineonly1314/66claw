@@ -1,4 +1,4 @@
-const KEY = "clawdbot.control.settings.v1";
+﻿const KEY = "clawdbot.control.settings.v1";
 const DOCS_KEY = "clawdbot.docs.v1";
 
 import type { ThemeMode } from "./theme";
@@ -130,6 +130,14 @@ function getInjectedGatewayToken(): string {
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get("token");
     if (urlToken && urlToken.trim()) {
+      // FIX BUG#6: 读取后从 URL 中清除 token，防止泄露到浏览器历史/Referer 头
+      try {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("token");
+        history.replaceState(null, "", cleanUrl.toString());
+      } catch {
+        // replaceState 失败不阻止正常流程
+      }
       return urlToken.trim();
     }
   } catch {
@@ -144,16 +152,26 @@ function isSameOrigin(wsUrl: string): boolean {
     // Convert ws(s):// to http(s):// so URL parsing works consistently
     const normalized = wsUrl.replace(/^ws(s?):\/\//, "http$1://");
     const url = new URL(normalized);
-    return url.hostname === location.hostname && (url.port || "80") === (location.port || "80");
+    // FIX BUG#5: 根据协议返回正确的默认端口（HTTPS=443, HTTP=80）
+    const defaultPort = (protocol: string) => protocol === "https:" ? "443" : "80";
+    return url.hostname === location.hostname &&
+      (url.port || defaultPort(url.protocol)) === (location.port || defaultPort(location.protocol));
   } catch {
-    return true; // Parse failure: assume same origin (safe default)
+    // FIX BUG#7: 解析失败应返回 false（拒绝注入 token），而非 true
+    return false;
   }
 }
 
 export function loadSettings(): UiSettings {
   const defaultUrl = (() => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${location.host}`;
+    const baseUrl = `${proto}://${location.host}`;
+    // Dev mode: Vite dev server runs on 5173 but Gateway runs on 18789
+    // When served by Vite (not Gateway), fall back to the default Gateway port
+    if (location.port === "5173") {
+      return `${proto}://${location.hostname}:18789`;
+    }
+    return baseUrl;
   })();
 
   // Get server-injected token for automatic authentication
@@ -202,11 +220,17 @@ export function loadSettings(): UiSettings {
         ? injectedToken
         : storedToken || injectedToken || defaults.token;
     
+    // Dev mode: if stored gatewayUrl still points at the Vite dev server port,
+    // it was never explicitly configured — use the dev-aware default instead
+    const storedGwUrl =
+      typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
+        ? parsed.gatewayUrl.trim()
+        : "";
+    const useStoredGwUrl =
+      storedGwUrl && !storedGwUrl.includes(`:${location.port}`);
+
     const settings: UiSettings = {
-      gatewayUrl:
-        typeof parsed.gatewayUrl === "string" && parsed.gatewayUrl.trim()
-          ? parsed.gatewayUrl.trim()
-          : defaults.gatewayUrl,
+      gatewayUrl: useStoredGwUrl ? storedGwUrl : defaults.gatewayUrl,
       token: resolvedToken,
       sessionKey:
         typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()
@@ -271,7 +295,11 @@ export function loadSettings(): UiSettings {
 }
 
 export function saveSettings(next: UiSettings) {
-  localStorage.setItem(KEY, JSON.stringify(next));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(next));
+  } catch (e) {
+    console.warn("[storage] localStorage.setItem failed:", e);
+  }
 }
 
 // ============================================================================
@@ -305,7 +333,11 @@ export function loadDocsStorage(): DocsStorage {
 }
 
 export function saveDocsStorage(next: DocsStorage) {
-  localStorage.setItem(DOCS_KEY, JSON.stringify(next));
+  try {
+    localStorage.setItem(DOCS_KEY, JSON.stringify(next));
+  } catch (e) {
+    console.warn("[storage] localStorage.setItem failed:", e);
+  }
 }
 
 /**

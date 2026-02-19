@@ -22,7 +22,7 @@ OpenClawCN 使用统一构建脚本 `build/scripts/windows/build-windows.ps1` �
 
 | 工具 | 版本要求 | 说明 |
 |------|----------|------|
-| Node.js | v22+ | 推荐 v24.x |
+| Node.js | v22 LTS | 推荐 v22.x 稳定版 |
 | pnpm | v10+ | 包管理器 |
 | Inno Setup 6 | 最新版 | [下载地址](https://jrsoftware.org/isinfo.php) |
 | 磁盘空间 | 至少 5GB | 构建输出目录 E:\clawdbuild |
@@ -248,7 +248,7 @@ macOS 有两个构建脚本:
 | 工具 | 版本要求 | 说明 |
 |------|----------|------|
 | macOS | 12+ Monterey | 构建环境 |
-| Node.js | v22+ | 推荐 v24.x |
+| Node.js | v22 LTS | 推荐 v22.x 稳定版 |
 | pnpm | v10+ | 包管理器 |
 | Xcode CLT | 最新 | `xcode-select --install` |
 | 磁盘空间 | 至少 2GB | 构建中间文件 |

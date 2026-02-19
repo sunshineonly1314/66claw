@@ -108,6 +108,18 @@ export type OpenClawCNConfig = {
     /** 是否启用多 Agent 编排（复杂任务自动拆分并行执行）。默认 true。 */
     multiAgent?: boolean;
   };
+  /** 模型能力配置：记录每个能力对应使用的模型 */
+  modelCapability?: {
+    capabilities?: Partial<
+      Record<
+        string,
+        {
+          providerId: string;
+          modelId: string;
+        }
+      >
+    >;
+  };
 };
 
 export type ConfigValidationIssue = {

@@ -90,8 +90,12 @@ const resolveGitHead = (deps) => {
 };
 
 const hasDirtySourceTree = (deps) => {
+  // Only check tracked files (--untracked-files=no).  Untracked .ts files are
+  // still caught by the hasSourceMtimeChanged() fallback which compares real
+  // file mtimes against the build stamp.  Using "no" prevents unrelated
+  // untracked files from forcing a rebuild every startup.
   const output = runGit(
-    ["status", "--porcelain", "--untracked-files=normal", "--", ...gitWatchedPaths],
+    ["status", "--porcelain", "--untracked-files=no", "--", ...gitWatchedPaths],
     deps,
   );
   if (output === null) {
@@ -158,9 +162,8 @@ const shouldBuild = (deps) => {
     if (dirty === true) {
       return true;
     }
-    if (dirty === false) {
-      return false;
-    }
+    // dirty === false or null: fall through to mtime check so that
+    // brand-new untracked source files (not yet git-added) are detected.
   }
 
   if (hasSourceMtimeChanged(stamp.mtime, deps)) {

@@ -6,7 +6,7 @@
   },
   "builders": {
     "windows": {
-      "host": "192.168.0.103",
+      "host": "KEVINSUN",
       "port": 22,
       "user": "SunBin",
       "workspace": "/mnt/d/cicd-workspace/openclawcn",
@@ -21,9 +21,9 @@
       "host": "192.168.0.107",
       "port": 22,
       "user": "kevinsun",
-      "workspace": "~/cicd-workspace/openclawcn",
+      "workspace": "/Users/kevinsun/cicd-workspace/openclawcn",
       "gitee_repo": "https://sunshine1314:7c15433c23160cdae4aea6fff0996543@gitee.com/sunshine1314/openclawcn.git",
-      "output": "~/cicd-workspace/clawdbot/build/output",
+      "output": "/Users/kevinsun/cicd-workspace/clawdbot/build/output",
       "node_version": "22.14.0",
       "build_script": "build/scripts/build-macos-cn.sh",
       "enabled": true,
@@ -39,6 +39,13 @@
       "on_tag": true,
       "branches": ["main", "master", "dev"]
     }
+  },
+  "release": {
+    "enabled": true,
+    "cache_dir": "E:\\clawdbuild\\.release-cache",
+    "upload_method": "oss",
+    "oss_domain": "dl.obplugins.cn",
+    "skip_upload": false
   },
   "artifacts": {
     "local_dir": "./artifacts",

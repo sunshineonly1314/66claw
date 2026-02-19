@@ -57,7 +57,7 @@ import {
 import { renderAgents } from "./views/agents";
 import { renderSkills } from "./views/skills";
 import { renderPlayground } from "./views/playground";
-import { renderFreeModels } from "./views/free-models";
+import "./views/model-config";
 import { renderExtensions } from "./views/extensions-page";
 import {
   restartMcpServer,
@@ -119,20 +119,6 @@ import {
   handleTrySkill,
   installSkillDeps,
 } from "./controllers/playground";
-import {
-  loadFreeModels,
-  toggleFreeModelsEnabled,
-  openConfigModal,
-  closeConfigModal,
-  updateApiKey,
-  testConnection,
-  saveConfig as saveFreeModelsConfig,
-  openDeleteModal,
-  closeDeleteModal,
-  confirmDelete,
-  setPreferred,
-  refreshFreeModels,
-} from "./controllers/free-models";
 import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers";
 import {
   renderActivationDialog,
@@ -1762,37 +1748,8 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
 
-        ${state.tab === "free-models"
-          ? renderFreeModels({
-              connected: state.connected,
-              loading: state.freeModelsLoading,
-              enabled: state.freeModelsEnabled,
-              providers: state.freeModelsProviders,
-              accounts: state.freeModelsAccounts,
-              stats: state.freeModelsStats,
-              switchHistory: state.freeModelsSwitchHistory,
-              error: state.freeModelsError,
-              configModalOpen: state.freeModelsConfigModalOpen,
-              configModalProvider: state.freeModelsConfigModalProvider,
-              configModalApiKey: state.freeModelsConfigModalApiKey,
-              configModalTesting: state.freeModelsConfigModalTesting,
-              configModalTestResult: state.freeModelsConfigModalTestResult,
-              configModalSaving: state.freeModelsConfigModalSaving,
-              deleteModalOpen: state.freeModelsDeleteModalOpen,
-              deleteModalProvider: state.freeModelsDeleteModalProvider,
-              deleteModalDeleting: state.freeModelsDeleteModalDeleting,
-              onToggleEnabled: (enabled) => toggleFreeModelsEnabled(state, enabled),
-              onOpenConfigModal: (provider) => openConfigModal(state, provider),
-              onCloseConfigModal: () => closeConfigModal(state),
-              onApiKeyChange: (apiKey) => updateApiKey(state, apiKey),
-              onTestConnection: () => testConnection(state),
-              onSaveConfig: () => saveFreeModelsConfig(state),
-              onOpenDeleteModal: (provider) => openDeleteModal(state, provider),
-              onCloseDeleteModal: () => closeDeleteModal(state),
-              onConfirmDelete: () => confirmDelete(state),
-              onSetPreferred: (providerId) => setPreferred(state, providerId),
-              onRefresh: () => refreshFreeModels(state),
-            })
+        ${state.tab === "model-config"
+          ? html`<model-config-view .client=${state.client} .connected=${state.connected}></model-config-view>`
           : nothing}
       </main>
       ${renderExecApprovalPrompt(state)}

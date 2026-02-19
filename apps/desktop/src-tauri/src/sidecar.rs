@@ -1,5 +1,7 @@
 use std::fs::OpenOptions;
 use std::net::TcpListener;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -10,7 +12,7 @@ use crate::platform;
 
 static SIDECAR_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 
-/// Runtime-generated token for Tauri ↔ Gateway auth.
+/// Runtime-generated token for Tauri <-> Gateway auth.
 /// Generated once per app launch; passed to both sidecar and WebView.
 static GATEWAY_TOKEN: Mutex<Option<String>> = Mutex::new(None);
 
@@ -20,7 +22,7 @@ fn is_dev_mode() -> bool {
     std::env::var("TAURI_DEV").is_ok() || cfg!(debug_assertions)
 }
 
-/// Generate a 48-char hex token for local Tauri ↔ Gateway auth.
+/// Generate a 48-char hex token for local Tauri <-> Gateway auth.
 ///
 /// NOTE: This is NOT a cryptographically secure random generator (CSPRNG).
 /// It uses `DefaultHasher` (SipHash) seeded with the current time and PID.
@@ -50,18 +52,106 @@ fn generate_token() -> String {
     format!("{:016x}{:016x}{:016x}", h1, h2, h3)
 }
 
-/// Check if the gateway port is available. Returns an error message if occupied.
-fn check_port_available() -> Result<(), String> {
+/// Try to kill any process occupying the gateway port.
+/// On Windows, uses `netstat` + `taskkill`. On Unix, uses `lsof` + `kill`.
+/// Returns true if a process was found and killed.
+fn try_kill_port_occupant() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // Use netstat to find PID occupying the port
+        let output = Command::new("cmd")
+            .args(["/C", &format!("netstat -ano | findstr :{} | findstr LISTENING", GATEWAY_PORT)])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .output();
+
+        if let Ok(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Parse PID from netstat output: "  TCP  127.0.0.1:18789  ...  LISTENING  12345"
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(pid_str) = parts.last() {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        if pid == 0 || pid == std::process::id() {
+                            continue;
+                        }
+                        println!("[Sidecar] Found process {} occupying port {}, killing...", pid, GATEWAY_PORT);
+                        let kill_result = Command::new("taskkill")
+                            .args(["/F", "/PID", &pid.to_string()])
+                            .creation_flags(0x08000000)
+                            .output();
+                        if let Ok(r) = kill_result {
+                            if r.status.success() {
+                                println!("[Sidecar] Killed process {}", pid);
+                                // Wait for port to be released
+                                std::thread::sleep(std::time::Duration::from_millis(1000));
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Use lsof to find PID
+        let output = Command::new("lsof")
+            .args(["-ti", &format!(":{}", GATEWAY_PORT)])
+            .output();
+
+        if let Ok(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for pid_str in stdout.lines() {
+                if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                    if pid == 0 || pid == std::process::id() {
+                        continue;
+                    }
+                    println!("[Sidecar] Found process {} occupying port {}, killing...", pid, GATEWAY_PORT);
+                    let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+                    std::thread::sleep(std::time::Duration::from_millis(1000));
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+/// Check if the gateway port is available. If occupied, try to kill the occupant.
+fn ensure_port_available() -> Result<(), String> {
     match TcpListener::bind(("127.0.0.1", GATEWAY_PORT)) {
         Ok(_listener) => Ok(()), // Port is free; listener drops immediately
-        Err(_) => Err(format!(
-            "端口 {} 已被其他程序占用。\n\n\
-             可能原因：\n\
-             • 已有一个 ClawdbotCN 实例在运行\n\
-             • 其他程序正在使用该端口\n\n\
-             请关闭占用该端口的程序后重试。",
-            GATEWAY_PORT
-        )),
+        Err(_) => {
+            println!(
+                "[Sidecar] Port {} is occupied, attempting to kill occupying process...",
+                GATEWAY_PORT
+            );
+
+            if try_kill_port_occupant() {
+                // Verify port is now free
+                match TcpListener::bind(("127.0.0.1", GATEWAY_PORT)) {
+                    Ok(_) => {
+                        println!("[Sidecar] Port {} is now available", GATEWAY_PORT);
+                        Ok(())
+                    }
+                    Err(_) => Err(format!(
+                        "端口 {} 仍被占用，无法自动释放。\n\n\
+                         请手动关闭占用该端口的程序后重试。",
+                        GATEWAY_PORT
+                    )),
+                }
+            } else {
+                Err(format!(
+                    "端口 {} 已被其他程序占用，且无法自动释放。\n\n\
+                     可能原因：\n\
+                     \u{2022} 已有一个 ClawdbotCN 实例在运行\n\
+                     \u{2022} 其他程序正在使用该端口\n\n\
+                     请关闭占用该端口的程序后重试。",
+                    GATEWAY_PORT
+                ))
+            }
+        }
     }
 }
 
@@ -108,26 +198,41 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     let extensions_dir = app_dir.join("extensions");
     let skills_dir = app_dir.join("skills");
 
-    // Graceful degradation: don't fail if sidecar resources are missing (dev mode).
+    // In dev mode, missing resources are expected — skip silently.
+    // In release mode, missing node binary or backend entry is a hard error.
     if !node_path.exists() {
-        println!(
-            "[Sidecar] WARNING: node binary not found at {:?}. \
-             Sidecar will not start. This is normal in dev mode.",
-            node_path
-        );
-        return Ok(());
+        if is_dev_mode() {
+            println!(
+                "[Sidecar] WARNING: node binary not found at {:?}. \
+                 Sidecar will not start. This is normal in dev mode.",
+                node_path
+            );
+            return Ok(());
+        }
+        return Err(format!(
+            "Node.js \u{8FD0}\u{884C}\u{65F6}\u{672A}\u{627E}\u{5230}\u{FF1A}{}\n\n\
+             \u{5B89}\u{88C5}\u{53EF}\u{80FD}\u{4E0D}\u{5B8C}\u{6574}\u{FF0C}\u{8BF7}\u{91CD}\u{65B0}\u{5B89}\u{88C5} ClawdbotCN\u{3002}",
+            node_path.display()
+        ).into());
     }
 
     if !backend_path.exists() {
-        println!(
-            "[Sidecar] WARNING: backend entry.js not found at {:?}.",
-            backend_path
-        );
-        return Ok(());
+        if is_dev_mode() {
+            println!(
+                "[Sidecar] WARNING: backend entry.js not found at {:?}.",
+                backend_path
+            );
+            return Ok(());
+        }
+        return Err(format!(
+            "\u{540E}\u{7AEF}\u{5165}\u{53E3}\u{6587}\u{4EF6}\u{672A}\u{627E}\u{5230}\u{FF1A}{}\n\n\
+             \u{5B89}\u{88C5}\u{53EF}\u{80FD}\u{4E0D}\u{5B8C}\u{6574}\u{FF0C}\u{8BF7}\u{91CD}\u{65B0}\u{5B89}\u{88C5} ClawdbotCN\u{3002}",
+            backend_path.display()
+        ).into());
     }
 
-    // Check port availability before spawning the sidecar.
-    check_port_available().map_err(|msg| -> Box<dyn std::error::Error> { msg.into() })?;
+    // Check port availability; auto-kill stale gateway if port is occupied.
+    ensure_port_available().map_err(|msg| -> Box<dyn std::error::Error> { msg.into() })?;
 
     // Generate a random token for this session.
     let token = generate_token();
@@ -179,7 +284,7 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
 
     let child = command.spawn().map_err(|e| -> Box<dyn std::error::Error> {
         format!(
-            "无法启动后台服务：{}\n\n请检查安装是否完整。",
+            "\u{65E0}\u{6CD5}\u{542F}\u{52A8}\u{540E}\u{53F0}\u{670D}\u{52A1}\u{FF1A}{}\n\n\u{8BF7}\u{68C0}\u{67E5}\u{5B89}\u{88C5}\u{662F}\u{5426}\u{5B8C}\u{6574}\u{3002}",
             e
         )
         .into()
@@ -196,6 +301,8 @@ pub fn stop_sidecar() -> Result<(), Box<dyn std::error::Error>> {
     let mut process = SIDECAR_PROCESS.lock().unwrap();
     if let Some(mut child) = process.take() {
         child.kill()?;
+        // Reap the child process to avoid zombie/handle leak.
+        let _ = child.wait();
         println!("[Sidecar] Node.js sidecar stopped");
     }
     Ok(())
@@ -246,8 +353,6 @@ fn read_config_token() -> Option<String> {
     let home = dirs::home_dir()?;
     let config_path = home.join(".openclawcn").join("openclawcn.json");
     let contents = std::fs::read_to_string(&config_path).ok()?;
-    // Simple JSON extraction without pulling in serde_json for a nested field.
-    // Look for "auth" object with "token" field inside "gateway".
     let parsed: serde_json::Value = serde_json::from_str(&contents).ok()?;
     parsed
         .get("gateway")?

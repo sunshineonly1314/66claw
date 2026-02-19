@@ -193,7 +193,7 @@ npx clawdbot exec approvals list
 2. **Node.js版本要求**
    - **要求**: Node.js >= 22.0.0
    - **原因**: 使用了新的并发API
-   - **注意**: 不兼容Node.js 20.x及以下版本
+   - **注意**: 不兼容Node.js 22以下版本，推荐使用 Node.js 22 LTS 稳定版
 
 3. **macOS Intel vs Apple Silicon**
    - **已知问题**: Intel Mac上语音唤醒延迟较高

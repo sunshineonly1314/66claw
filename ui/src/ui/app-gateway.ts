@@ -7,7 +7,12 @@ import type { UiSettings } from "./storage.ts";
 import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types.ts";
 import type { LicenseDialogType, LicenseUiState } from "./license/types.ts";
 import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
-import { dismissRenewalReminderTemporarily } from "./storage.ts";
+import {
+  dismissRenewalReminderTemporarily,
+  isTokenAuthError,
+  refreshGatewayTokenFromServer,
+  saveSettings,
+} from "./storage.ts";
 import {
   applySettings,
   loadCron,
@@ -123,6 +128,12 @@ export function connectGateway(host: GatewayHost) {
   host.connected = false;
   host.execApprovalQueue = [];
   host.execApprovalError = null;
+  // FIX R3-9: 重连时清理上一轮连接遗留的 approval 过期定时器，
+  // 防止旧定时器触发时错误操作新连接的 execApprovalQueue
+  for (const tid of _approvalTimers.values()) {
+    clearTimeout(tid);
+  }
+  _approvalTimers.clear();
 
   const previousClient = host.client;
   const client = new GatewayBrowserClient({
@@ -150,6 +161,8 @@ export function connectGateway(host: GatewayHost) {
       void loadNodes(host as unknown as OpenClawCNApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawCNApp, { quiet: true });
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
+      // Desktop first-run: auto-navigate to model-config if no providers configured
+      void detectFirstRunSetup(host);
     },
     onClose: ({ code, reason }) => {
       if (host.client !== client) {
@@ -159,6 +172,16 @@ export function connectGateway(host: GatewayHost) {
       // Code 1012 = Service Restart (expected during config saves, don't show as error)
       if (code !== 1012) {
         host.lastError = `disconnected (${code}): ${reason || "no reason"}`;
+      }
+      // Auto-refresh token on auth failure and reconnect
+      if (isTokenAuthError(reason)) {
+        void refreshGatewayTokenFromServer().then((newToken) => {
+          if (newToken && newToken !== host.settings.token) {
+            host.settings = { ...host.settings, token: newToken };
+            saveSettings(host.settings);
+            connectGateway(host);
+          }
+        });
       }
     },
     onEvent: (evt) => {
@@ -178,6 +201,9 @@ export function connectGateway(host: GatewayHost) {
   previousClient?.stop();
   client.start();
 }
+
+// FIX BUG-R2-9: 跟踪 exec approval 过期定时器，支持提前清理
+const _approvalTimers = new Map<string, number>();
 
 export function handleGatewayEvent(host: GatewayHost, evt: GatewayEventFrame) {
   try {
@@ -258,10 +284,13 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (entry) {
       host.execApprovalQueue = addExecApproval(host.execApprovalQueue, entry);
       host.execApprovalError = null;
+      // FIX BUG-R2-9: 存储定时器引用，在 resolved 或重连时可以清理
       const delay = Math.max(0, entry.expiresAtMs - Date.now() + 500);
-      window.setTimeout(() => {
+      const timerId = window.setTimeout(() => {
         host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, entry.id);
+        _approvalTimers.delete(entry.id);
       }, delay);
+      _approvalTimers.set(entry.id, timerId);
     }
     return;
   }
@@ -270,6 +299,12 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     const resolved = parseExecApprovalResolved(evt.payload);
     if (resolved) {
       host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
+      // FIX BUG-R2-9: 清理已解决审批的定时器
+      const tid = _approvalTimers.get(resolved.id);
+      if (tid != null) {
+        clearTimeout(tid);
+        _approvalTimers.delete(resolved.id);
+      }
     }
   }
 }
@@ -290,6 +325,65 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
   }
   if (snapshot?.sessionDefaults) {
     applySessionDefaults(host, snapshot.sessionDefaults);
+  }
+}
+
+// ============================================================================
+// Desktop first-run setup detection
+// ============================================================================
+
+const FIRST_RUN_CHECKED_KEY = "clawdbot-first-run-checked";
+
+/**
+ * After gateway connects, check if any model provider is configured.
+ * If not, automatically navigate to the model-config page so the user
+ * can set up their AI models on first launch.
+ * Only triggers once per installation (persisted via localStorage flag).
+ */
+async function detectFirstRunSetup(host: GatewayHost) {
+  try {
+    // Skip if already checked before
+    if (localStorage.getItem(FIRST_RUN_CHECKED_KEY)) return;
+    // Skip if user is already on model-config or config page
+    if (host.tab === "model-config" || host.tab === "config") return;
+
+    // FIX MC-3: 记录发起检测时的初始 tab，用于检测用户是否已手动导航
+    const initialTab = host.tab;
+
+    const gwUrl = host.settings.gatewayUrl;
+    if (!gwUrl) return;
+
+    // Derive HTTP URL from WebSocket URL
+    const httpBase = gwUrl.replace(/^ws/, "http").replace(/\/$/, "");
+    const token = host.settings.token;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const resp = await fetch(`${httpBase}/api/health`, { headers });
+    if (!resp.ok) return;
+
+    const health = await resp.json();
+    // Check if any provider has valid credentials configured
+    const providers = health?.providers;
+    const hasConfiguredProvider =
+      providers &&
+      typeof providers === "object" &&
+      Object.values(providers).some(
+        (p: unknown) => p && typeof p === "object" && (p as Record<string, unknown>).status === "ok",
+      );
+
+    if (!hasConfiguredProvider) {
+      // FIX MC-3: 只在用户未手动导航时才自动切换 tab，防止异步竞态覆盖用户操作
+      if (host.tab === initialTab) {
+        console.log("[FirstRun] No model providers configured, navigating to model-config");
+        host.tab = "model-config" as Tab;
+      }
+    }
+
+    // Mark as checked so we don't redirect on every reconnect
+    localStorage.setItem(FIRST_RUN_CHECKED_KEY, Date.now().toString());
+  } catch {
+    // Non-critical — don't block app startup
   }
 }
 

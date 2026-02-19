@@ -516,8 +516,8 @@ export interface LicenseModuleConfig {
  */
 export const DEFAULT_LICENSE_CONFIG: LicenseModuleConfig = {
   apiBaseUrl: "https://www.obplugins.cn/api/api/v1/license",
-  offlineGracePeriodHours: 24, // 从 72h 缩短到 24h，减少离线滥用风险
-  heartbeatIntervalHours: 24,
+  offlineGracePeriodHours: 8, // 从 24h 缩短到 8h，减少离线滥用窗口（盗版者修改此值需要破解 bytecode）
+  heartbeatIntervalHours: 4, // 从 24h 缩短到 4h，提高检测频率
   devMode: false,
   enableRsaVerify: true, // 2026-02-03: 服务端 RSA 签名已上线，启用验证
 };

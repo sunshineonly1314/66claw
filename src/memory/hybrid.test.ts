@@ -9,10 +9,18 @@ describe("memory hybrid helpers", () => {
   });
 
   it("bm25RankToScore is monotonic and clamped", () => {
-    expect(bm25RankToScore(0)).toBeCloseTo(1);
+    // Formula: abs(rank) / (1 + abs(rank))
+    // rank=0 → 0/1 = 0
+    expect(bm25RankToScore(0)).toBeCloseTo(0);
+    // rank=1 → 1/2 = 0.5
     expect(bm25RankToScore(1)).toBeCloseTo(0.5);
-    expect(bm25RankToScore(10)).toBeLessThan(bm25RankToScore(1));
-    expect(bm25RankToScore(-100)).toBeCloseTo(1);
+    // rank=10 → 10/11 ≈ 0.909 > rank=1 → 0.5 (larger abs → higher score)
+    expect(bm25RankToScore(10)).toBeGreaterThan(bm25RankToScore(1));
+    // rank=-100 → 100/101 ≈ 0.990 (close to 1 for very relevant results)
+    expect(bm25RankToScore(-100)).toBeCloseTo(100 / 101);
+    // SQLite bm25() returns negative ranks; more negative = more relevant = higher score
+    expect(bm25RankToScore(-2.5)).toBeCloseTo(2.5 / 3.5);
+    expect(bm25RankToScore(-0.5)).toBeCloseTo(0.5 / 1.5);
   });
 
   it("mergeHybridResults unions by id and combines weighted scores", () => {

@@ -71,7 +71,9 @@ vi.mock("./agent-runner.js", () => ({
 }));
 
 vi.mock("./body.js", () => ({
-  applySessionHints: vi.fn().mockImplementation(async ({ baseBody }: { baseBody: string }) => baseBody),
+  applySessionHints: vi
+    .fn()
+    .mockImplementation(async ({ baseBody }: { baseBody: string }) => baseBody),
 }));
 
 vi.mock("./groups.js", () => ({
@@ -92,12 +94,20 @@ vi.mock("./route-reply.js", () => ({
 }));
 
 vi.mock("./session-updates.js", () => ({
-  ensureSkillSnapshot: vi.fn().mockImplementation(async ({ sessionEntry, systemSent }: { sessionEntry: unknown; systemSent: boolean }) => ({
-    sessionEntry,
-    systemSent,
-    skillsSnapshot: undefined,
-  })),
-  prependSystemEvents: vi.fn().mockImplementation(async ({ prefixedBodyBase }: { prefixedBodyBase: string }) => prefixedBodyBase),
+  ensureSkillSnapshot: vi
+    .fn()
+    .mockImplementation(
+      async ({ sessionEntry, systemSent }: { sessionEntry: unknown; systemSent: boolean }) => ({
+        sessionEntry,
+        systemSent,
+        skillsSnapshot: undefined,
+      }),
+    ),
+  prependSystemEvents: vi
+    .fn()
+    .mockImplementation(
+      async ({ prefixedBodyBase }: { prefixedBodyBase: string }) => prefixedBodyBase,
+    ),
 }));
 
 vi.mock("./typing-mode.js", () => ({
@@ -136,7 +146,7 @@ function baseParams(
       Provider: "telegram",
       ChatType: "direct",
     },
-    cfg: { session: {}, channels: {}, agents: { defaults: {} } },
+    cfg: { session: {}, channels: {}, agents: { defaults: {} }, dispatch: { enabled: true } },
     agentId: "default",
     agentDir: "/tmp/agent",
     agentCfg: {},
@@ -198,9 +208,7 @@ describe("runPreparedReply — multi-agent orchestration bridge", () => {
   it("calls orchestrator when dispatchDecision.strategy is 'multi'", async () => {
     orchestratorMock.mockResolvedValue({ text: "multi-agent result" });
 
-    const result = await runPreparedReply(
-      baseParams({ dispatchDecision: makeMultiDecision() }),
-    );
+    const result = await runPreparedReply(baseParams({ dispatchDecision: makeMultiDecision() }));
 
     expect(orchestratorMock).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ text: "multi-agent result" });
@@ -234,9 +242,7 @@ describe("runPreparedReply — multi-agent orchestration bridge", () => {
   it("falls through to runReplyAgent when orchestration returns undefined", async () => {
     orchestratorMock.mockResolvedValue(undefined);
 
-    const result = await runPreparedReply(
-      baseParams({ dispatchDecision: makeMultiDecision() }),
-    );
+    const result = await runPreparedReply(baseParams({ dispatchDecision: makeMultiDecision() }));
 
     expect(orchestratorMock).toHaveBeenCalledTimes(1);
     expect(runReplyAgent).toHaveBeenCalledTimes(1);
@@ -246,9 +252,7 @@ describe("runPreparedReply — multi-agent orchestration bridge", () => {
   it("falls through to runReplyAgent when orchestration throws", async () => {
     orchestratorMock.mockRejectedValue(new Error("Orchestration crashed"));
 
-    const result = await runPreparedReply(
-      baseParams({ dispatchDecision: makeMultiDecision() }),
-    );
+    const result = await runPreparedReply(baseParams({ dispatchDecision: makeMultiDecision() }));
 
     expect(orchestratorMock).toHaveBeenCalledTimes(1);
     expect(runReplyAgent).toHaveBeenCalledTimes(1);
@@ -315,15 +319,10 @@ describe("runPreparedReply — multi-agent orchestration bridge", () => {
   });
 
   it("returns orchestration result array (multi-reply support)", async () => {
-    const multiReply = [
-      { text: "Part 1" },
-      { text: "Part 2" },
-    ];
+    const multiReply = [{ text: "Part 1" }, { text: "Part 2" }];
     orchestratorMock.mockResolvedValue(multiReply);
 
-    const result = await runPreparedReply(
-      baseParams({ dispatchDecision: makeMultiDecision() }),
-    );
+    const result = await runPreparedReply(baseParams({ dispatchDecision: makeMultiDecision() }));
 
     expect(result).toEqual(multiReply);
     expect(runReplyAgent).not.toHaveBeenCalled();

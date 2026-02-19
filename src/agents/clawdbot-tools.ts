@@ -23,6 +23,8 @@ import { createOpenAppTool } from "./tools/open-app.js";
 import { createDesktopControlTool } from "./tools/desktop-control.js";
 import { createWeChatSendTool } from "./tools/wechat-send.js";
 import { createWeChatCheckTool } from "./tools/wechat-check.js";
+import { createWeComSendTool } from "./tools/wecom-send.js";
+import { createWeComCheckTool } from "./tools/wecom-check.js";
 import { createImageGenTool } from "./tools/image-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
 import { applyToolHints } from "../dispatch/tool-hints.js";
@@ -86,6 +88,8 @@ export function createOpenClawCNTools(options?: {
   const desktopControlTool = createDesktopControlTool();
   const wechatSendTool = createWeChatSendTool();
   const wechatCheckTool = createWeChatCheckTool();
+  const wecomSendTool = createWeComSendTool();
+  const wecomCheckTool = createWeComCheckTool();
   const imageGenTool = createImageGenTool({
     config: options?.config,
     agentDir: options?.agentDir,
@@ -162,6 +166,8 @@ export function createOpenClawCNTools(options?: {
     ...(desktopControlTool ? [desktopControlTool] : []),
     ...(wechatSendTool ? [wechatSendTool] : []),
     ...(wechatCheckTool ? [wechatCheckTool] : []),
+    ...(wecomSendTool ? [wecomSendTool] : []),
+    ...(wecomCheckTool ? [wecomCheckTool] : []),
     imageGenTool,
     // ── [CN-PATCH:tool-discovery] MCP 按需安装工具 ──
     ...(options?.config?.toolDiscovery?.mcpOnDemand?.enabled !== false

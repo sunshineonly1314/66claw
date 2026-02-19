@@ -152,8 +152,9 @@ export async function startPollingService(ctx: any) {
         }
 
         if (maxUpdateId > 0) {
-          offset = maxUpdateId + 1;
-
+          // FIX R4-3: 先调用 markProcessed，成功后才更新 offset。
+          // 之前顺序反了：offset 先更新，markProcessed 失败后 offset 不回滚，
+          // 导致这批消息被永久跳过（never retried）。
           try {
             const messageIds = updates.map((u: any) => u.update_id);
             await fetch(`${BRIDGE_URL}/bot${encodedAPIKey}/markProcessed`, {
@@ -161,10 +162,13 @@ export async function startPollingService(ctx: any) {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ message_ids: messageIds }),
             });
+            // 仅在 markProcessed 成功后才推进 offset
+            offset = maxUpdateId + 1;
           } catch (error) {
             log?.warn?.(
-              `[${account.accountId}] Failed to mark messages as processed: ${error}`,
+              `[${account.accountId}] Failed to mark messages as processed, offset not advanced (will retry): ${error}`,
             );
+            // 保持 offset 不变，下次轮询会重新拉取这批消息
           }
         }
       }

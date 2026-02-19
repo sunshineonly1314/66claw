@@ -35,11 +35,12 @@ export type OnDemandLoadResult = {
 /**
  * 允许的 SSE 端点域名（官方 MCP server）
  */
+// FIX BUG#9: 移除 localhost/127.0.0.1，生产环境不应允许连接本地 SSE 端点（SSRF 风险）
+// 开发环境可通过 NODE_ENV=development 启用
 const ALLOWED_SSE_DOMAINS = [
   "mcp.anthropic.com",
   "api.anthropic.com",
-  "localhost", // 本地开发
-  "127.0.0.1",
+  ...(process.env.NODE_ENV === "development" ? ["localhost", "127.0.0.1"] : []),
 ] as const;
 
 /**
@@ -364,6 +365,19 @@ async function doLoadMCP(suggestion: McpSuggestion): Promise<OnDemandLoadResult>
 
     return { success: true, serverId, toolCount: serverTools.length };
   } catch (err) {
+    // FIX R3-8: addServer 失败时清理 registry/runtime 中的残留条目，
+    // 防止"幽灵"服务器阻止后续重试（alreadyLoaded 检测会误判为已加载）
+    try {
+      const { getMCPManagerSafe } = await import("./index.js");
+      const manager = getMCPManagerSafe();
+      if (manager) {
+        await manager.removeServer(serverId).catch(() => {
+          /* best-effort cleanup */
+        });
+      }
+    } catch {
+      /* ignore cleanup errors */
+    }
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, serverId, error: message };
   }

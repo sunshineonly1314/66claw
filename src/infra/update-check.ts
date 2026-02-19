@@ -5,6 +5,12 @@ import { fetchWithTimeout } from "../utils/fetch-timeout.js";
 import { detectPackageManager as detectPackageManagerImpl } from "./detect-package-manager.js";
 import { parseSemver } from "./runtime-guard.js";
 import { channelToNpmTag, type UpdateChannel } from "./update-channels.js";
+import {
+  checkInstallerUpdate,
+  detectInstallKind,
+  resolveUpdateServerUrl,
+  type UpdateServerLatest,
+} from "./installer-updater.js";
 
 export type PackageManager = "pnpm" | "bun" | "npm" | "unknown";
 
@@ -40,13 +46,20 @@ export type NpmTagStatus = {
   error?: string;
 };
 
+export type InstallerServerStatus = {
+  latestVersion: string | null;
+  updateServerUrl: string | null;
+  error?: string;
+};
+
 export type UpdateCheckResult = {
   root: string | null;
-  installKind: "git" | "package" | "unknown";
+  installKind: "git" | "package" | "installer" | "unknown";
   packageManager: PackageManager;
   git?: GitUpdateStatus;
   deps?: DepsStatus;
   registry?: RegistryStatus;
+  installerServer?: InstallerServerStatus;
 };
 
 export function formatGitInstallLabel(update: UpdateCheckResult): string | null {
@@ -377,6 +390,35 @@ export async function checkUpdateStatus(params: {
   }
 
   const pm = await detectPackageManager(root);
+
+  // 检测安装方式：installer > git > package
+  const detectedKind = detectInstallKind(root);
+  if (detectedKind === "installer") {
+    const updateServerUrl = resolveUpdateServerUrl(root);
+    let installerServer: InstallerServerStatus | undefined;
+    if (updateServerUrl && params.includeRegistry) {
+      const currentVersion = await readCurrentVersion(root);
+      const check = await checkInstallerUpdate({
+        updateServerUrl,
+        currentVersion: currentVersion ?? "0.0.0",
+        timeoutMs,
+      });
+      installerServer = {
+        latestVersion: check.version ?? check.latest?.version ?? null,
+        updateServerUrl,
+        error: check.error,
+      };
+    } else if (updateServerUrl) {
+      installerServer = { latestVersion: null, updateServerUrl };
+    }
+    return {
+      root,
+      installKind: "installer",
+      packageManager: pm,
+      installerServer,
+    };
+  }
+
   const gitRoot = await detectGitRoot(root);
   const isGit = gitRoot && path.resolve(gitRoot) === root;
 
@@ -399,4 +441,14 @@ export async function checkUpdateStatus(params: {
     deps,
     registry,
   };
+}
+
+async function readCurrentVersion(root: string): Promise<string | null> {
+  try {
+    const raw = await fs.readFile(path.join(root, "package.json"), "utf-8");
+    const parsed = JSON.parse(raw) as { version?: string };
+    return typeof parsed?.version === "string" ? parsed.version : null;
+  } catch {
+    return null;
+  }
 }

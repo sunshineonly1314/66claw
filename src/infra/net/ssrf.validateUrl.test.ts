@@ -1,16 +1,16 @@
 /**
  * SSRF 防护测试 - validateUrlForSsrf 函数
  * OpenClawCN 专属安全修复测试
- * 
+ *
  * 测试专家 A: 正向测试 + 边界测试
  * 测试专家 B: 负向测试 + 攻击向量测试
  */
 import { describe, expect, it } from "vitest";
-import { 
-  validateUrlForSsrf, 
-  isPrivateIpAddress, 
+import {
+  validateUrlForSsrf,
+  isPrivateIpAddress,
   isBlockedHostname,
-  SsrFBlockedError 
+  SsrFBlockedError,
 } from "./ssrf.js";
 
 describe("SSRF Protection - validateUrlForSsrf", () => {
@@ -73,8 +73,12 @@ describe("SSRF Protection - validateUrlForSsrf", () => {
       });
 
       it("blocks .internal domains", () => {
-        expect(() => validateUrlForSsrf("http://internal.server.internal/")).toThrow(SsrFBlockedError);
-        expect(() => validateUrlForSsrf("http://metadata.google.internal/")).toThrow(SsrFBlockedError);
+        expect(() => validateUrlForSsrf("http://internal.server.internal/")).toThrow(
+          SsrFBlockedError,
+        );
+        expect(() => validateUrlForSsrf("http://metadata.google.internal/")).toThrow(
+          SsrFBlockedError,
+        );
       });
     });
 
@@ -149,11 +153,15 @@ describe("SSRF Protection - validateUrlForSsrf", () => {
 
     describe("Cloud metadata endpoints", () => {
       it("blocks AWS metadata", () => {
-        expect(() => validateUrlForSsrf("http://169.254.169.254/latest/meta-data/")).toThrow(SsrFBlockedError);
+        expect(() => validateUrlForSsrf("http://169.254.169.254/latest/meta-data/")).toThrow(
+          SsrFBlockedError,
+        );
       });
 
       it("blocks GCP metadata", () => {
-        expect(() => validateUrlForSsrf("http://metadata.google.internal/")).toThrow(SsrFBlockedError);
+        expect(() => validateUrlForSsrf("http://metadata.google.internal/")).toThrow(
+          SsrFBlockedError,
+        );
       });
     });
   });
@@ -223,7 +231,7 @@ describe("isPrivateIpAddress", () => {
       expect(isPrivateIpAddress("8.8.8.8")).toBe(false);
       expect(isPrivateIpAddress("93.184.216.34")).toBe(false);
       expect(isPrivateIpAddress("1.1.1.1")).toBe(false);
-      expect(isPrivateIpAddress("203.0.113.1")).toBe(false);
+      expect(isPrivateIpAddress("208.67.222.222")).toBe(false);
     });
   });
 

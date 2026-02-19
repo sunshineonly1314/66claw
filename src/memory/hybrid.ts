@@ -1,4 +1,4 @@
-export type HybridSource = string;
+﻿export type HybridSource = string;
 
 export type HybridVectorResult = {
   id: string;
@@ -79,8 +79,12 @@ export function buildFtsQuery(raw: string): string | null {
 }
 
 export function bm25RankToScore(rank: number): number {
-  const normalized = Number.isFinite(rank) ? Math.max(0, rank) : 999;
-  return 1 / (1 + normalized);
+  // FIX: SQLite FTS5 bm25() 返回负值，越负 = 越相关。
+  // 之前用 Math.max(0, rank) 把所有负值截为 0，导致所有匹配项得分 = 1.0。
+  // 第二版用 1/(1+abs) 导致方向反转：越相关得分越低，与 vectorScore 方向冲突。
+  // 正确做法：abs/(1+abs) — 越相关(abs越大) → 分数越高(趋近1)，与 vectorScore 方向一致。
+  const absRank = Number.isFinite(rank) ? Math.abs(rank) : 0;
+  return absRank / (1 + absRank);
 }
 
 export function mergeHybridResults(params: {
@@ -154,7 +158,10 @@ export function mergeHybridResults(params: {
   }
 
   const merged = Array.from(byId.values()).map((entry) => {
-    const score = params.vectorWeight * entry.vectorScore + params.textWeight * entry.textScore;
+    const totalWeight = params.vectorWeight + params.textWeight;
+    const normVector = totalWeight > 0 ? params.vectorWeight / totalWeight : 0.5;
+    const normText = totalWeight > 0 ? params.textWeight / totalWeight : 0.5;
+    const score = normVector * entry.vectorScore + normText * entry.textScore;
     return {
       path: entry.path,
       startLine: entry.startLine,

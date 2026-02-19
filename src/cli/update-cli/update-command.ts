@@ -483,6 +483,57 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
   }
 
   const installKind = updateStatus.installKind;
+
+  // installer 模式（Windows NSIS / macOS DMG）：跳过 npm/git 逻辑，直接走 runGatewayUpdate
+  if (installKind === "installer") {
+    if (!opts.json) {
+      defaultRuntime.log(theme.heading("Updating OpenClawCN (installer mode)..."));
+      defaultRuntime.log("");
+    }
+
+    const showProgress = !opts.json && process.stdout.isTTY;
+    const { progress, stop } = createUpdateProgress(showProgress);
+    const startedAt = Date.now();
+
+    const result = await runGatewayUpdate({
+      cwd: root,
+      argv1: process.argv[1],
+      timeoutMs: timeoutMs ?? 20 * 60_000,
+      progress,
+    });
+
+    stop();
+    printResult(result, { ...opts, hideSteps: showProgress });
+
+    if (result.status === "error") {
+      defaultRuntime.exit(1);
+      return;
+    }
+
+    if (result.status === "ok") {
+      // installer 用户也需要更新插件和 shell completion
+      await updatePluginsAfterCoreUpdate({
+        root,
+        channel: storedChannel ?? "stable",
+        configSnapshot,
+        opts,
+      });
+
+      await tryWriteCompletionCache(root, Boolean(opts.json));
+      await tryInstallShellCompletion({
+        jsonMode: Boolean(opts.json),
+        skipPrompt: Boolean(opts.yes),
+      });
+
+      await maybeRestartService({ shouldRestart, result, opts });
+    }
+
+    if (!opts.json && result.status !== "error") {
+      defaultRuntime.log(theme.muted(pickUpdateQuip()));
+    }
+    return;
+  }
+
   const switchToGit = requestedChannel === "dev" && installKind !== "git";
   const switchToPackage =
     requestedChannel !== null && requestedChannel !== "dev" && installKind === "git";

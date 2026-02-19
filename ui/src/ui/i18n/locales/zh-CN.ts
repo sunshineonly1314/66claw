@@ -87,7 +87,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "nav.agent": "助手",
   "nav.settings": "设置",
   "nav.overview": "概览",
-  "nav.freeModels": "免费模型",
+  "nav.modelConfig": "模型设置",
   "nav.usage": "用量统计",
   "nav.channels": "指挥渠道",
   "nav.instances": "实例",
@@ -933,7 +933,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   // 页面副标题 (Page Subtitles)
   // ============================================================================
   "subtitle.overview": "网关状态、入口点和健康检查",
-  "subtitle.freeModels": "ClawdbotCN 独家福利，每日免费大模型平滑切换",
+  "subtitle.modelConfig": "",
   "subtitle.usage": "使用量统计、会话日志和数据洞察",
   "subtitle.channels": "管理指挥渠道，配置钉钉、飞书等聊天应用",
   "subtitle.instances": "已连接客户端和节点的在线信标",

@@ -315,19 +315,27 @@ async function executeWeChatRead(
     );
 
     if (!screenshotOut.startsWith("ok")) {
+      // Best-effort cleanup (file may not have been created)
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch (e) {
+        /* ignore */
+      }
       return fail("截图失败", log);
     }
 
-    // Read screenshot as base64
-    const screenshotBuf = fs.readFileSync(tmpPath);
-    const screenshotBase64 = screenshotBuf.toString("base64");
-    log.push(`✓ Screenshot saved: ${tmpPath} (${screenshotBuf.length} bytes)`);
+    let visionResult: string;
+    try {
+      // Read screenshot as base64
+      const screenshotBuf = fs.readFileSync(tmpPath);
+      const screenshotBase64 = screenshotBuf.toString("base64");
+      log.push(`✓ Screenshot saved: ${tmpPath} (${screenshotBuf.length} bytes)`);
 
-    // 6. Use qwen-max vision to analyze screenshot directly
-    log.push(`✓ Analyzing with qwen-max vision (requesting last ${count} messages)...`);
+      // 6. Use qwen-max vision to analyze screenshot directly
+      log.push(`✓ Analyzing with qwen-max vision (requesting last ${count} messages)...`);
 
-    // Construct vision prompt
-    const visionPrompt = `请分析这张微信聊天窗口截图，提取最近的 ${count} 条消息。
+      // Construct vision prompt
+      const visionPrompt = `请分析这张微信聊天窗口截图，提取最近的 ${count} 条消息。
 
 要求:
 1. 从最新的消息开始往前数 ${count} 条
@@ -350,17 +358,24 @@ async function executeWeChatRead(
 
 如果截图中没有消息或无法识别，返回空的 messages 数组。`;
 
-    // Call qwen-vl-max vision API (using proper auth system)
-    let visionResult: string;
-    try {
-      visionResult = await analyzeScreenshotWithQwen(screenshotBase64, visionPrompt, {
-        cfg: options?.config,
-        agentDir: options?.agentDir,
-      });
-      log.push(`✓ Vision analysis completed (${visionResult.length} chars)`);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      return fail(`Vision 分析失败: ${errMsg}`, log);
+      // Call qwen-vl-max vision API (using proper auth system)
+      try {
+        visionResult = await analyzeScreenshotWithQwen(screenshotBase64, visionPrompt, {
+          cfg: options?.config,
+          agentDir: options?.agentDir,
+        });
+        log.push(`✓ Vision analysis completed (${visionResult.length} chars)`);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        return fail(`Vision 分析失败: ${errMsg}`, log);
+      }
+    } finally {
+      // Always clean up the temporary screenshot file to prevent /tmp accumulation
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch (e) {
+        /* ignore if already deleted */
+      }
     }
 
     // Return the vision analysis result

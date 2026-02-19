@@ -27,10 +27,12 @@ import {
   startAntiDebug,
   stopAntiDebug,
   checkIntegrityOnStartup,
+  startIntegrityPatrol,
   initAiTamperProtection,
   verifyCheckpoint,
   registerProtectedFunction,
   reportSecurityViolation,
+  recordViolation,
 } from "../security/index.js";
 
 const log = createSubsystemLogger("gateway:license");
@@ -39,22 +41,34 @@ const log = createSubsystemLogger("gateway:license");
 let globalLicenseState: LicenseClientState | null = null;
 
 /**
- * 从本地缓存加载 license 信息（用于后备验证）
+ * In-memory snapshot of the encrypted license cache.
+ * Loaded asynchronously at startup, read synchronously by isLicenseValid().
+ * This avoids making the hot-path isLicenseValid() async while still
+ * supporting AES-256-GCM encrypted cache files.
+ */
+let _memoryCacheFallback: { valid: boolean; expiresAt: string | null } | null = null;
+
+/**
+ * Pre-load the license cache from encrypted storage into memory.
+ * Called once during gateway startup (async context).
+ */
+async function preloadLicenseCacheToMemory(): Promise<void> {
+  try {
+    const cache = await loadLicenseCache();
+    if (cache && cache.valid && cache.expiresAt) {
+      _memoryCacheFallback = { valid: cache.valid, expiresAt: cache.expiresAt };
+    }
+  } catch (e) {
+    log.debug(`Failed to preload license cache to memory: ${e}`);
+  }
+}
+
+/**
+ * 从内存缓存加载 license 信息（用于后备验证）
+ * Synchronous — reads from in-memory snapshot populated at startup.
  */
 function loadLicenseCacheForFallback(): { valid: boolean; expiresAt: string | null } | null {
-  try {
-    const cache = loadLicenseCache();
-    if (cache && cache.valid && cache.expiresAt) {
-      return {
-        valid: cache.valid,
-        expiresAt: cache.expiresAt,
-      };
-    }
-    return null;
-  } catch (e) {
-    log.debug(`Failed to load license cache for fallback: ${e}`);
-    return null;
-  }
+  return _memoryCacheFallback;
 }
 
 /**
@@ -112,6 +126,9 @@ export async function checkLicenseOnGatewayStart(
 
   log.info("Checking license on gateway start...");
   _licensePending = true;
+
+  // Pre-load encrypted license cache into memory (async → sync fallback)
+  await preloadLicenseCacheToMemory();
 
   // 步骤 1：文件完整性校验（可通过 skipIntegrity 跳过，用于测试/并行启动）
   if (!options?.skipIntegrity) {
@@ -187,6 +204,9 @@ export async function checkLicenseOnGatewayStart(
     // 保存全局状态
     globalLicenseState = result.clientState;
 
+    // Refresh in-memory cache from encrypted storage (async result now settled)
+    await preloadLicenseCacheToMemory();
+
     // 同步更新独立副本（用于分散验证）
     _licenseValidSnapshot = result.clientState.valid;
     if (result.clientState.license?.expiresAt) {
@@ -217,6 +237,21 @@ export async function checkLicenseOnGatewayStart(
       registerProtectedFunction("isLicenseValid", isLicenseValid);
       registerProtectedFunction("getGatewayLicenseState", getGatewayLicenseState);
       log.debug("AI tamper protection initialized");
+
+      // 步骤 5：启动运行时完整性巡检 + 延迟惩罚联动
+      startIntegrityPatrol({
+        intervalMs: 5 * 60 * 1000, // 5 分钟一次
+        sampleSize: 3, // 每次随机检查 3 个文件
+        onTamper: (tamperedFiles) => {
+          log.error(`Runtime integrity violation: ${tamperedFiles.join(", ")}`);
+          reportSecurityViolation("runtime_integrity_tamper", { tamperedFiles });
+          // Feed into delayed enforcement system (Knife 7)
+          for (const f of tamperedFiles) {
+            recordViolation(`integrity:${f}`);
+          }
+        },
+      });
+      log.debug("Runtime integrity patrol started");
 
       // 步骤 5：启动短期令牌自动刷新
       let cfg: ReturnType<typeof loadConfig>;

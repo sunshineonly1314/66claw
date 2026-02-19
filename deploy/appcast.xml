@@ -8,7 +8,7 @@
             <link>https://raw.githubusercontent.com/openclawcn/openclawcn/main/appcast.xml</link>
             <sparkle:version>202602140</sparkle:version>
             <sparkle:shortVersionString>2026.2.14</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <description><![CDATA[<h2>OpenClawCN 2026.2.14</h2>
 <h3>Changes</h3>
 <ul>
@@ -146,7 +146,7 @@
             <link>https://raw.githubusercontent.com/openclawcn/openclawcn/main/appcast.xml</link>
             <sparkle:version>9846</sparkle:version>
             <sparkle:shortVersionString>2026.2.13</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <description><![CDATA[<h2>OpenClawCN 2026.2.13</h2>
 <h3>Changes</h3>
 <ul>
@@ -247,7 +247,7 @@
             <link>https://raw.githubusercontent.com/openclawcn/openclawcn/main/appcast.xml</link>
             <sparkle:version>9500</sparkle:version>
             <sparkle:shortVersionString>2026.2.12</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <description><![CDATA[<h2>OpenClawCN 2026.2.12</h2>
 <h3>Changes</h3>
 <ul>

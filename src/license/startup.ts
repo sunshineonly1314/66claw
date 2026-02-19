@@ -13,11 +13,7 @@ import {
   LicenseErrorCode,
 } from "./types.js";
 import { getDeviceId } from "./device-id.js";
-import {
-  configureLicense,
-  verifyLicenseWithRetry,
-  getErrorMessage,
-} from "./verify.js";
+import { configureLicense, verifyLicenseWithRetry, getErrorMessage } from "./verify.js";
 import {
   saveLicenseCache,
   canUseOffline,
@@ -120,9 +116,7 @@ export async function verifyLicenseOnStartup(
   }
 
   // 初始化结果
-  const createResult = (
-    partial: Partial<StartupVerifyResult>,
-  ): StartupVerifyResult => ({
+  const createResult = (partial: Partial<StartupVerifyResult>): StartupVerifyResult => ({
     canProceed: false,
     valid: false,
     offlineMode: false,
@@ -188,9 +182,11 @@ export async function verifyLicenseOnStartup(
     log.warn("No license key found in config");
 
     // getOfflineCache() 内部已包含 canUseOffline() 检查
-    const offlineCache = getOfflineCache();
+    const offlineCache = await getOfflineCache();
     if (offlineCache) {
-      log.info("License key missing in config but valid offline cache found – using cached license");
+      log.info(
+        "License key missing in config but valid offline cache found – using cached license",
+      );
       const offlineResponse = createOfflineResponse(offlineCache);
       return createResult({
         canProceed: true,
@@ -331,8 +327,8 @@ export async function verifyLicenseOnStartup(
     const errorMsg = error instanceof Error ? error.message : String(error);
     log.warn(`Online verification failed: ${errorMsg}`);
 
-    if (canUseOffline(moduleConfig.offlineGracePeriodHours)) {
-      const cache = getOfflineCache();
+    if (await canUseOffline(moduleConfig.offlineGracePeriodHours)) {
+      const cache = await getOfflineCache();
       if (cache) {
         log.info("Using offline mode");
         const offlineResponse = createOfflineResponse(cache);

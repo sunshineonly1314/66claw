@@ -275,7 +275,7 @@ Write-Host ""
 Write-Host "  ============================================================" -ForegroundColor Magenta
 Write-Host "  ClawdbotCN Windows Unified Builder" -ForegroundColor Magenta
 Write-Host "  Mode: $modeLabel" -ForegroundColor Magenta
-Write-Host "  Protection: 5-Layer (obfuscate + bytecode + native + UPX)" -ForegroundColor Magenta
+Write-Host "  Protection: 7-Knife (obfuscate + bytecode + native + AES-cache + integrity-patrol + loader-hash + delayed-enforcement)" -ForegroundColor Magenta
 Write-Host "  ============================================================" -ForegroundColor Magenta
 Write-Host ""
 Write-Host "  Version:     $Version"
@@ -1708,6 +1708,57 @@ if ($missingFiles.Count -gt 0) {
 }
 Write-OK "All required files present"
 
+# --- Security layer verification ---
+Write-Host "  --- Security layers verification ---" -ForegroundColor White
+
+# Check 1: .jsc bytecode files exist in protected directories
+$jscCount = 0
+$bytecodeDirs = @("dispatch", "license", "security")
+foreach ($dir in $bytecodeDirs) {
+    $dirPath = "$ProjectRoot\dist\$dir"
+    if (Test-Path $dirPath) {
+        $dirJsc = (Get-ChildItem -Path $dirPath -Filter "*.jsc" -Recurse -File -ErrorAction SilentlyContinue).Count
+        $jscCount += $dirJsc
+    }
+}
+if ($jscCount -gt 0) {
+    Write-OK "Bytecode protection: $jscCount .jsc files in core directories"
+} else {
+    Write-Warn "Bytecode protection: NO .jsc files found (security degraded)"
+}
+
+# Check 2: Integrity hashes exist and are non-empty
+$hashesFile = "$ProjectRoot\dist\security\integrity-hashes.json"
+if (Test-Path $hashesFile) {
+    $hashesSize = (Get-Item $hashesFile).Length
+    if ($hashesSize -gt 100) {
+        Write-OK "Integrity hashes: present (${hashesSize} bytes)"
+    } else {
+        Write-Warn "Integrity hashes: file too small ($hashesSize bytes)"
+    }
+} else {
+    Write-Warn "Integrity hashes: missing"
+}
+
+# Check 3: No source maps in production UI build
+$uiMaps = Get-ChildItem -Path "$ProjectRoot\dist\control-ui" -Filter "*.map" -Recurse -File -ErrorAction SilentlyContinue
+if ($uiMaps -and $uiMaps.Count -gt 0) {
+    Write-Warn "Source maps found in UI build ($($uiMaps.Count) files) — removing for security"
+    foreach ($mapFile in $uiMaps) {
+        Remove-Item $mapFile.FullName -Force -ErrorAction SilentlyContinue
+    }
+    Write-OK "Source maps removed from production UI"
+} else {
+    Write-OK "No source maps in production UI (secure)"
+}
+
+# Check 4: Native addon present
+if (Test-Path $nativeAddonPath) {
+    Write-OK "Native addon: present (Layer 3 active)"
+} else {
+    Write-Warn "Native addon: missing (JS fallback — security reduced)"
+}
+
 # ============================================================================
 # Step N: Compile installer (Inno Setup)
 # ============================================================================
@@ -1849,6 +1900,18 @@ if ($TestInstall) {
     }
     else {
         Write-Warn "Test install may have issues, check $testDir"
+    }
+
+    # Post-build validation: Gateway startup, HTTP, WebSocket tests
+    $validationScript = Join-Path $ScriptsDir "post-build-validation.ps1"
+    if (Test-Path $validationScript) {
+        Write-Host "  Running post-build validation..." -ForegroundColor DarkCyan
+        & $validationScript -InstallDir $testDir -SkipInstall -LogDir "$OutputDir\logs"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err "Post-build validation FAILED ($LASTEXITCODE)"
+        } else {
+            Write-OK "Post-build validation passed"
+        }
     }
 }
 

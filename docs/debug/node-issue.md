@@ -39,7 +39,7 @@ node --import tsx scripts/repro/tsx-name-repro.ts
 ## Node version check
 - Node 25.3.0: fails
 - Node 22.22.0 (Homebrew `node@22`): fails
-- Node 24: not installed here yet; needs verification
+- Node 22 LTS: recommended stable version for this project
 
 ## Notes / hypothesis
 - `tsx` uses esbuild to transform TS/ESM. esbuild’s `keepNames` emits a `__name` helper and wraps function definitions with `__name(...)`.
@@ -59,7 +59,7 @@ node --import tsx scripts/repro/tsx-name-repro.ts
   ```
 - Confirmed locally: `pnpm exec tsc -p tsconfig.json` + `node dist/entry.js status` works on Node 25.
 - Disable esbuild keepNames in the TS loader if possible (prevents `__name` helper insertion); tsx does not currently expose this.
-- Test Node LTS (22/24) with `tsx` to see if the issue is Node 25–specific.
+- Test Node 22 LTS with `tsx` to see if the issue is Node 25–specific.
 
 ## References
 - https://opennext.js.org/cloudflare/howtos/keep_names

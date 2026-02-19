@@ -43,6 +43,8 @@ const DINGTALK_CHANNEL_ID = "dingtalk";
 const DEFAULT_WEBHOOK_PATH = "/dingtalk/webhook";
 
 // Session Webhook 缓存 (用于回复消息)
+// FIX R4-4: 设置最大容量，防止长期运行无限增长导致内存泄漏
+const SESSION_WEBHOOK_CACHE_MAX = 5000;
 const sessionWebhookCache = new Map<string, { webhook: string; expiresAt: number }>();
 
 // ============================================================================
@@ -126,8 +128,27 @@ function getCachedSessionWebhook(conversationId: string): string | null {
 
 /**
  * 缓存 Session Webhook
+ * FIX R4-4: 超出容量时，先清理所有已过期条目；若仍超限，删除最早到期的条目（LRU-by-expiry）
  */
 function cacheSessionWebhook(conversationId: string, webhook: string, expiresAt: number): void {
+  if (sessionWebhookCache.size >= SESSION_WEBHOOK_CACHE_MAX) {
+    const now = Date.now();
+    // 第一步：删除所有已过期的条目
+    for (const [id, entry] of sessionWebhookCache) {
+      if (entry.expiresAt <= now) {
+        sessionWebhookCache.delete(id);
+      }
+    }
+    // 若清理后仍超限，删除最早过期的 20% 条目
+    if (sessionWebhookCache.size >= SESSION_WEBHOOK_CACHE_MAX) {
+      const sorted = Array.from(sessionWebhookCache.entries())
+        .sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      const toRemove = Math.ceil(SESSION_WEBHOOK_CACHE_MAX * 0.2);
+      for (let i = 0; i < toRemove && i < sorted.length; i++) {
+        sessionWebhookCache.delete(sorted[i][0]);
+      }
+    }
+  }
   sessionWebhookCache.set(conversationId, { webhook, expiresAt });
 }
 

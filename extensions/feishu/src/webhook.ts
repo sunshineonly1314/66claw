@@ -41,6 +41,13 @@ export interface FeishuWebhookContext {
 function decryptFeishuMessage(encrypt: string, encryptKey: string): string {
   const key = crypto.createHash("sha256").update(encryptKey).digest();
   const encryptedBuffer = Buffer.from(encrypt, "base64");
+  // FIX R4-1: AES-256-CBC 需要 16 字节 IV + 至少 16 字节密文（1 个 AES 块）
+  // 未验证长度时，短 buffer 导致 IV 不足或密文为空，造成 createDecipheriv 抛错
+  if (encryptedBuffer.length < 32) {
+    throw new Error(
+      `[feishu] decryptFeishuMessage: encrypted payload too short (${encryptedBuffer.length} bytes, expected >= 32)`,
+    );
+  }
   const iv = encryptedBuffer.subarray(0, 16);
   const encrypted = encryptedBuffer.subarray(16);
   const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
@@ -62,12 +69,24 @@ function sendJsonResponse(res: ServerResponse, statusCode: number, data: unknown
 }
 
 /**
- * 读取请求体
+ * 读取请求体（带大小限制防止 DoS 攻击）
+ * FIX BUG-R2-4
  */
-async function readBody(req: IncomingMessage): Promise<string> {
+const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
+
+async function readBody(req: IncomingMessage, maxSize: number = MAX_BODY_SIZE): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk) => chunks.push(chunk));
+    let totalSize = 0;
+    req.on("data", (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > maxSize) {
+        req.destroy();
+        reject(new Error(`Request body exceeds maximum size limit (${maxSize} bytes)`));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });
@@ -228,9 +247,11 @@ async function handleMessageEvent(
   }));
 
   // 移除 @机器人 的占位符
+  // FIX R4-2: 使用 replaceAll 替换所有匹配，之前 replace() 只替换首个，
+  // 导致同一 mention key 多次出现时（如多次 @机器人）后续实例保留在文本中
   if (mentions) {
     for (const m of mentions) {
-      text = text.replace(m.key, "").trim();
+      text = text.replaceAll(m.key, "").trim();
     }
   }
 

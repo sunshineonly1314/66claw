@@ -64,6 +64,10 @@ echo "Preparing workspace: \$WORKSPACE"
 
 # 设置 PATH - 确保 node/npm/pnpm 可用
 export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
+# 加载环境变量（SSH 非交互式 session 不会自动 source profile）
+for f in ~/.bash_profile ~/.bashrc ~/.zprofile ~/.profile; do
+  [ -f "\$f" ] && source "\$f" 2>/dev/null || true
+done
 echo "Node: \$(node --version 2>/dev/null || echo 'not found')"
 echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'not found')"
 
@@ -102,6 +106,37 @@ else
   /usr/local/bin/npm install
 fi
 
+# ── Auto version bump ──
+if [ -z "\$VERSION" ]; then
+  # 检查最新 commit 是否已经是 version bump（避免多平台重复 bump）
+  LAST_MSG=\$(git log -1 --pretty=%s 2>/dev/null || echo "")
+  if echo "\$LAST_MSG" | grep -q "^chore: bump version to "; then
+    VERSION=\$(node -p "require('./package.json').version")
+    echo "Version already bumped by another builder: \$VERSION (skipping)"
+  else
+    echo ""
+    echo "========================================="
+    echo "  Auto Version Bump (patch +1)"
+    echo "========================================="
+    # 优先用 pnpm tsx
+    if command -v pnpm &> /dev/null; then
+      pnpm tsx scripts/version-bump.ts patch
+    else
+      npx tsx scripts/version-bump.ts patch
+    fi
+    VERSION=\$(node -p "require('./package.json').version")
+    echo "Auto-bumped version: \$VERSION"
+
+    # Commit version bump back to repo
+    git add package.json apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/macos/Sources/OpenClaw/Resources/Info.plist
+    git commit -m "chore: bump version to \$VERSION" || echo "No changes to commit"
+    git push origin master || echo "WARNING: push failed (version may already be pushed)"
+    echo "Version bump committed and pushed."
+  fi
+fi
+
+export VERSION="\$VERSION"
+
 # 执行构建
 echo "Starting macOS build..."
 
@@ -111,12 +146,6 @@ else
   echo "ERROR: Build script not found: build/scripts/build-macos-cn.sh"
   ls -la build/scripts/ 2>/dev/null || echo "build/scripts/ not found"
   exit 1
-fi
-
-# 如果指定了版本，传入 VERSION 环境变量
-# 注意: build-macos-cn.sh 读取的是 VERSION（不是 BUILD_VERSION）
-if [ -n "\$VERSION" ]; then
-  export VERSION="\$VERSION"
 fi
 
 # build-macos-cn.sh 已内置 SKIP_CODESIGN=1 默认值，无需 sed patch

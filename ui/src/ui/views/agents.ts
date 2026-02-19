@@ -106,7 +106,7 @@ export function renderAgents(props: AgentsProps) {
 
   return html`
     <div class="agents-layout">
-      <section class="card agents-sidebar">
+      <section class="agents-sidebar">
         <div class="row" style="justify-content: space-between;">
           <div>
             <div class="card-title">${t("agents.title")}</div>
@@ -118,10 +118,10 @@ export function renderAgents(props: AgentsProps) {
         </div>
         ${
           props.error
-            ? html`<div class="callout danger" style="margin-top: 12px;">${props.error}</div>`
+            ? html`<div class="callout danger">${props.error}</div>`
             : nothing
         }
-        <div class="agent-list" style="margin-top: 12px;">
+        <div class="agent-list">
           ${
             agents.length === 0
               ? html`
@@ -407,7 +407,7 @@ function renderAgentOverview(params: {
     <section class="card">
       <div class="card-title">${t("agents.overviewTitle")}</div>
       <div class="card-sub">${t("agents.overviewSub")}</div>
-      <div class="agents-overview-grid" style="margin-top: 16px;">
+      <div class="agents-overview-grid">
         <div class="agent-kv">
           <div class="label">${t("agents.workspace")}</div>
           <div class="mono">${workspace}</div>
@@ -435,7 +435,7 @@ function renderAgentOverview(params: {
         </div>
       </div>
 
-      <div class="agent-model-select" style="margin-top: 20px;">
+      <div class="agent-model-select" style="margin-top: 16px;">
         <div class="label">${t("agents.modelSelection")}</div>
         <div class="row" style="gap: 12px; flex-wrap: wrap;">
           <label class="field" style="min-width: 260px; flex: 1;">

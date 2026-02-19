@@ -629,7 +629,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     mutated = true;
   }
 
-  // ── 6. agents.defaults.timeoutSeconds: 900（15 分钟）──
+  // ── 6. agents.defaults.timeoutSeconds: 1800（30 分钟，复杂任务不被截断，国内网络容错）──
   if (next.agents?.defaults?.timeoutSeconds === undefined) {
     next = {
       ...next,
@@ -637,7 +637,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
         ...next.agents,
         defaults: {
           ...next.agents?.defaults,
-          timeoutSeconds: 900,
+          timeoutSeconds: 1800,
         },
       },
     };
@@ -666,7 +666,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     mutated = true;
   }
 
-  // ── 8. agents.defaults.thinkingDefault: "medium"（默认中等思考深度，平衡质量与 token）──
+  // ── 8. agents.defaults.thinkingDefault: "high"（默认深度推理，最强思考质量，不支持的模型自动忽略）──
   if (next.agents?.defaults?.thinkingDefault === undefined) {
     next = {
       ...next,
@@ -674,7 +674,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
         ...next.agents,
         defaults: {
           ...next.agents?.defaults,
-          thinkingDefault: "medium",
+          thinkingDefault: "high",
         },
       },
     };
@@ -991,6 +991,36 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
       },
     };
     mutated = true;
+  }
+
+  // ── [CN-PATCH:power] 21. compaction.proactiveCompaction: 主动压缩上下文 ──
+  //    对话过长时自动压缩，防止上下文溢出被截断
+  //    上游默认 enabled=true，但 thresholdRatio 未设；CN 设为 0.85（85% 即触发）
+  {
+    const existingCompaction = next.agents?.defaults?.compaction;
+    const existingProactive = existingCompaction?.proactiveCompaction;
+    if (existingProactive?.enabled === undefined) {
+      next = {
+        ...next,
+        agents: {
+          ...next.agents,
+          defaults: {
+            ...next.agents?.defaults,
+            compaction: {
+              ...existingCompaction,
+              proactiveCompaction: {
+                ...existingProactive,
+                enabled: true,
+                ...(existingProactive?.thresholdRatio === undefined
+                  ? { thresholdRatio: 0.85 }
+                  : {}),
+              },
+            },
+          },
+        },
+      };
+      mutated = true;
+    }
   }
 
   return mutated ? next : cfg;

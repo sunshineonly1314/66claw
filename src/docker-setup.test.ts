@@ -111,6 +111,11 @@ describe("docker-setup.sh", () => {
   });
 
   it("handles env defaults, home-volume mounts, and apt build args", async () => {
+    if (process.platform === "win32") {
+      // docker-setup.sh relies on Linux-native bash features; skip on Windows
+      expect(true).toBe(true);
+      return;
+    }
     if (!sandbox) {
       throw new Error("sandbox missing");
     }

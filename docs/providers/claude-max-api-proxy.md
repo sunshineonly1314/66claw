@@ -33,7 +33,7 @@ The proxy:
 ## Installation
 
 ```bash
-# Requires Node.js 20+ and Claude Code CLI
+# Requires Node.js 22+ and Claude Code CLI
 npm install -g claude-max-api-proxy
 
 # Verify Claude CLI is authenticated

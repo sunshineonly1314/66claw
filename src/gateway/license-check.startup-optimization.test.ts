@@ -21,7 +21,7 @@ vi.mock("../license/index.js", () => ({
     .fn()
     .mockReturnValue({ hasToken: true, isValid: true, failureCount: 0 }),
   refreshToken: vi.fn(),
-  loadLicenseCache: vi.fn().mockReturnValue(null),
+  loadLicenseCache: vi.fn().mockResolvedValue(null),
   DEFAULT_LICENSE_CONFIG: {
     apiBaseUrl: "https://www.obplugins.cn/api/api/v1/license",
   },
@@ -42,10 +42,13 @@ vi.mock("../security/index.js", () => ({
   startAntiDebug: vi.fn(),
   stopAntiDebug: vi.fn(),
   checkIntegrityOnStartup: vi.fn().mockResolvedValue(true),
+  startIntegrityPatrol: vi.fn(),
+  stopIntegrityPatrol: vi.fn(),
   initAiTamperProtection: vi.fn(),
   verifyCheckpoint: vi.fn().mockImplementation((_name: string, fn: () => boolean) => fn()),
   registerProtectedFunction: vi.fn(),
   reportSecurityViolation: vi.fn(),
+  recordViolation: vi.fn(),
 }));
 
 vi.mock("../logging/subsystem.js", () => ({

@@ -53,8 +53,7 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
   - No real keys required
   - Should be fast and stable
 - Pool note:
-  - OpenClawCN uses Vitest `vmForks` on Node 22/23 for faster unit shards.
-  - On Node 24+, OpenClawCN automatically falls back to regular `forks` to avoid Node VM linking errors (`ERR_VM_MODULE_LINK_FAILURE` / `module is already linked`).
+  - OpenClawCN uses Vitest `vmForks` on Node 22 for faster unit shards.
   - Override manually with `OPENCLAWCN_TEST_VM_FORKS=0` (force `forks`) or `OPENCLAWCN_TEST_VM_FORKS=1` (force `vmForks`).
 
 ### E2E (gateway smoke)

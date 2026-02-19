@@ -9,7 +9,7 @@ export const TAB_GROUPS = [
   { label: "Chat", tabs: ["chat"] },
   {
     label: "Control",
-    tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"],
+    tabs: ["overview", "model-config", "usage", "channels", "instances", "sessions", "cron"],
   },
   { label: "Agent", tabs: ["agents", "playground", "skills", "extensions", "nodes"] },
   { label: "Settings", tabs: ["config", "debug", "logs"] },
@@ -23,7 +23,7 @@ export function getTabGroups() {
     { label: t("nav.chat"), tabs: ["chat"] as const },
     {
       label: t("nav.control"),
-      tabs: ["overview", "free-models", "usage", "channels", "instances", "sessions", "cron"] as const,
+      tabs: ["overview", "model-config", "usage", "channels", "instances", "sessions", "cron"] as const,
     },
     { label: t("nav.agent"), tabs: ["agents", "playground", "skills", "extensions", "nodes"] as const },
     { label: t("nav.settings"), tabs: ["config", "debug", "logs"] as const },
@@ -32,7 +32,7 @@ export function getTabGroups() {
 
 export type Tab =
   | "overview"
-  | "free-models"
+  | "model-config"
   | "usage"
   | "channels"
   | "instances"
@@ -51,7 +51,7 @@ export type Tab =
 
 const TAB_PATHS: Record<Tab, string> = {
   overview: "/overview",
-  "free-models": "/free-models",
+  "model-config": "/model-config",
   usage: "/usage",
   channels: "/channels",
   instances: "/instances",
@@ -138,8 +138,8 @@ export function iconForTab(tab: Tab): IconName {
       return "messageSquare";
     case "overview":
       return "barChart";
-    case "free-models":
-      return "gift";
+    case "model-config":
+      return "cpu";
     case "usage":
       return "activity";
     case "channels":
@@ -177,8 +177,8 @@ export function titleForTab(tab: Tab) {
   switch (tab) {
     case "overview":
       return t("nav.overview");
-    case "free-models":
-      return t("nav.freeModels");
+    case "model-config":
+      return t("nav.modelConfig");
     case "usage":
       return t("nav.usage");
     case "channels":
@@ -218,8 +218,8 @@ export function subtitleForTab(tab: Tab) {
   switch (tab) {
     case "overview":
       return t("subtitle.overview");
-    case "free-models":
-      return t("subtitle.freeModels");
+    case "model-config":
+      return t("subtitle.modelConfig");
     case "usage":
       return t("subtitle.usage");
     case "channels":

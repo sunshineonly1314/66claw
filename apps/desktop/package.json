@@ -1,6 +1,6 @@
 {
   "name": "clawdbot-desktop",
-  "version": "2026.2.16",
+  "version": "1.1.6",
   "private": true,
   "scripts": {
     "tauri": "tauri",

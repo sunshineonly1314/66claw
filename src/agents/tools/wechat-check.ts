@@ -1,12 +1,12 @@
 /**
  * WeChat composite tool: `wechat_check`
  *
- * One-call automation for checking WeChat/WeCom unread messages:
+ * One-call automation for checking personal WeChat (微信) unread messages:
  *   focus → screenshot sidebar → (optionally scroll + screenshot) × N
  *   → optionally open a contact's chat → return all screenshots
  *
- * Supports both personal WeChat (微信) and WeCom (企业微信).
- * The agent uses vision to identify contacts with unread badges and decide next actions.
+ * This tool is for personal WeChat (微信) ONLY.
+ * For WeCom (企业微信), use `wecom_check` instead.
  */
 
 import { Type } from "@sinclair/typebox";
@@ -22,9 +22,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type WeChatVariant = "wechat" | "wecom";
 interface WeChatWindow {
-  variant: WeChatVariant;
   title: string;
   x: number;
   y: number;
@@ -35,33 +33,19 @@ interface WeChatWindow {
 function getWeChatWindow(): WeChatWindow | null {
   const out = runHelper(["-Action", "list_windows"], 8000);
   if (!out) return null;
-  let wecom: WeChatWindow | null = null;
   for (const line of out.split(/\r?\n/).filter(Boolean)) {
     const p = line.split("|||");
     const title = p[0] ?? "";
     const rect = { x: +p[2] || 0, y: +p[3] || 0, w: +p[4] || 0, h: +p[5] || 0 };
     if (title === "微信" || title === "WeChat") {
-      return { variant: "wechat", title, ...rect };
-    }
-    if (title === "企业微信" || title === "WeCom" || title.includes("企业微信")) {
-      wecom = { variant: "wecom", title, ...rect };
+      return { title, ...rect };
     }
   }
-  return wecom;
+  return null;
 }
 
+/** Personal WeChat layout: 70px icon bar + 250px contact list */
 function getLayout(win: WeChatWindow) {
-  if (win.variant === "wecom") {
-    // WeCom layout: 80px nav sidebar + 290px contact list + chat area
-    const navBarWidth = 80;
-    const contactListWidth = 290;
-    const contactListCenterX = win.x + navBarWidth + Math.floor(contactListWidth / 2);
-    const contactListCenterY = win.y + Math.floor(win.h / 2);
-    const chatTabX = win.x + 25; // "消息" icon in nav sidebar
-    const chatTabY = win.y + 120;
-    const firstResultY = win.y + 130;
-    return { contactListCenterX, contactListCenterY, chatTabX, chatTabY, firstResultY };
-  }
   const iconBarWidth = 70;
   const contactListWidth = 250;
   const contactListCenterX = win.x + iconBarWidth + Math.floor(contactListWidth / 2);
@@ -125,11 +109,12 @@ export function createWeChatCheckTool(): AnyAgentTool | null {
     name: "wechat_check",
     label: "WeChat Check",
     description: [
-      "Check WeChat or WeCom for unread messages (微信/企业微信查看未读消息).",
-      "Automatically detects personal WeChat or WeCom.",
+      "Check personal WeChat for unread messages (微信查看未读消息).",
       "Screenshots the contact sidebar to show who has unread badges.",
       "Optionally scrolls down to reveal more contacts.",
       "Optionally opens a contact's chat to read their messages.",
+      "",
+      "NOTE: This is for personal 微信 (WeChat) only. For 企业微信 (WeCom), use wecom_check.",
       "",
       "Examples:",
       "  wechat_check({})                        -- screenshot sidebar",
@@ -148,15 +133,15 @@ export function createWeChatCheckTool(): AnyAgentTool | null {
       > = [];
 
       try {
-        // 1. Detect and focus WeChat/WeCom
+        // 1. Detect and focus WeChat
         const win = getWeChatWindow();
         if (!win) {
-          return fail("微信/企业微信窗口未找到，请确认已启动。", log);
+          return fail("微信窗口未找到，请确认已启动。如需操作企业微信，请使用 wecom_check。", log);
         }
         if (!focus(win.title)) {
           return fail(`无法聚焦窗口: ${win.title}`, log);
         }
-        log.push(`✓ Focus ${win.variant === "wecom" ? "WeCom" : "WeChat"} (${win.title})`);
+        log.push(`✓ Focus WeChat (${win.title})`);
         log.push(`✓ Window: (${win.x},${win.y}) ${win.w}×${win.h}`);
         await sleep(400);
 
@@ -200,9 +185,8 @@ export function createWeChatCheckTool(): AnyAgentTool | null {
           log.push("✓ Clicked search result");
           await sleep(600);
 
-          sendKey("{ESC}");
-          log.push("✓ Escape (close search)");
-          await sleep(400);
+          // NOTE: Do NOT send Escape — WeChat auto-closes the search panel
+          // after clicking a result. Sending ESC would minimize the window!
 
           const chatSs = await screenshot();
           log.push(`✓ Screenshot of ${contact}'s chat`);
@@ -211,15 +195,14 @@ export function createWeChatCheckTool(): AnyAgentTool | null {
 
         // 6. Return all screenshots + log
         const imageCount = allScreenshots.filter((c) => c.type === "image").length;
-        const label = win.variant === "wecom" ? "企业微信" : "微信";
         return {
           content: [
             {
               type: "text" as const,
               text: [
                 contact
-                  ? `${label}消息检查完成 — 已打开 ${contact} 的对话`
-                  : `${label}消息检查完成 — 共截图 ${imageCount} 张`,
+                  ? `微信消息检查完成 — 已打开 ${contact} 的对话`
+                  : `微信消息检查完成 — 共截图 ${imageCount} 张`,
                 "请分析截图中联系人列表左侧的红色未读气泡/红点来识别新消息。",
                 "",
                 log.join("\n"),
@@ -229,7 +212,7 @@ export function createWeChatCheckTool(): AnyAgentTool | null {
           ],
           details: {
             status: "ok",
-            variant: win.variant,
+            variant: "wechat",
             scrollPages: pages,
             contact: contact ?? null,
             screenshotCount: imageCount,

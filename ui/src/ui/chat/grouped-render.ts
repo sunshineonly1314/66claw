@@ -461,7 +461,7 @@ export function renderMessageGroup(
         )}
         ${opts.justCompleted ? html`
           <div class="chat-reply-complete">
-            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
             <span>回复完成</span>
           </div>
         ` : nothing}

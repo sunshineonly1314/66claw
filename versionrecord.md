@@ -6,6 +6,7 @@
 ---
 
 ## 2026-02-18 01:00
+<!-- version: 2026.2.15 -->
 
 ### Research — Personal Knowledge Store (知识存储层设计调研)
 

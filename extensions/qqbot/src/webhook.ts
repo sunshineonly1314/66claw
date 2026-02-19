@@ -101,12 +101,24 @@ function verifyTimestamp(timestamp: string, maxAgeSeconds: number = 300): boolea
 }
 
 /**
- * 解析请求体
+ * 解析请求体（带大小限制防止 DoS 攻击）
+ * FIX BUG-R2-4
  */
+const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
+
 async function parseRequestBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let totalSize = 0;
+    req.on("data", (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error(`Request body exceeds maximum size limit (${MAX_BODY_SIZE} bytes)`));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });
@@ -197,12 +209,40 @@ export function createQqbotWebhookHandler(params: QqbotWebhookHandlerParams) {
 
         case QqbotOpCode.HTTP_CALLBACK_ACK: {
           // HTTP 回调确认 - URL 验证
+          // FIX BUG#3: 实现 Ed25519 签名，之前返回空字符串导致 webhook URL 验证无法通过
           const payload = event.d as { plain_token?: string; event_ts?: string };
           if (payload.plain_token) {
-            // 返回验证响应
+            const appSecret = config.app?.appSecret ?? "";
+            let callbackSignature = "";
+            if (appSecret) {
+              try {
+                // FIX SEC-1+SEC-3: 按照 QQ 官方文档修正签名消息和密钥派生
+                // 签名消息 = event_ts + plain_token（官方要求，非 plain_token + appSecret）
+                const eventTs = (payload as { event_ts?: string }).event_ts ?? "";
+                const msg = Buffer.from(eventTs + payload.plain_token, "utf-8");
+                // 构造 32 字节 seed：repeat 填充（官方 Go SDK 标准，非零填充）
+                // 零填充会导致密钥熵降低，且与平台验证不匹配
+                let seedStr = appSecret;
+                while (Buffer.byteLength(seedStr, "utf-8") < 32) {
+                  seedStr = seedStr + seedStr;
+                }
+                const seedBuffer = Buffer.from(seedStr, "utf-8").subarray(0, 32);
+                // DER 编码的 PKCS#8 Ed25519 私钥前缀
+                const derPrefix = Buffer.from("302e020100300506032b657004220420", "hex");
+                const privateKey = crypto.createPrivateKey({
+                  key: Buffer.concat([derPrefix, seedBuffer]),
+                  format: "der",
+                  type: "pkcs8",
+                });
+                const sig = crypto.sign(null, msg, privateKey);
+                callbackSignature = sig.toString("hex");
+              } catch (signErr) {
+                log.error(`[qqbot] Ed25519 callback signature failed: ${signErr}`);
+              }
+            }
             const responseBody = JSON.stringify({
               plain_token: payload.plain_token,
-              signature: "", // 需要使用 Ed25519 签名
+              signature: callbackSignature,
             });
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(responseBody);
