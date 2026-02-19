@@ -47,10 +47,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Validate ARCH early — reject invalid values before any build work starts.
+# Common mistake: CI passes "standard" (Windows build mode) instead of an arch.
+case "$ARCH" in
+  universal|arm64|x64) ;;
+  *)
+    echo "ERROR: Invalid architecture '$ARCH'. Must be one of: universal, arm64, x64" >&2
+    echo "  Hint: 'standard' is a Windows build mode, not a macOS architecture." >&2
+    exit 1
+    ;;
+esac
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 log_step() { echo ""; echo "═══════════════════════════════════════════════════════"; echo "  $*"; echo "═══════════════════════════════════════════════════════"; }
+warn() { echo "WARN: $*" >&2; }
 err() { echo "ERROR: $*" >&2; }
 
 elapsed_since() {
@@ -59,6 +71,22 @@ elapsed_since() {
   now=$(date +%s)
   local diff=$((now - start))
   echo "${diff}s"
+}
+
+# ── select_npm_registry: probe CN mirrors and pick the fastest reachable one ──
+select_npm_registry() {
+  local registries=(
+    "https://registry.npmmirror.com"
+    "https://registry.npm.taobao.org"
+    "https://registry.npmjs.org"
+  )
+  for reg in "${registries[@]}"; do
+    if curl -sf --connect-timeout 5 --max-time 8 "$reg/-/ping" >/dev/null 2>&1; then
+      echo "$reg"
+      return
+    fi
+  done
+  echo "https://registry.npmjs.org"
 }
 
 # ── Setup ────────────────────────────────────────────────────────────────────
@@ -70,6 +98,17 @@ VERSION="${VERSION:-$(node -p "require('./package.json').version" 2>/dev/null ||
 APP_NAME="ClawdbotCN"
 BUNDLE_ID="cn.openclawcn.mac"
 
+# ── Preflight: disk space check ──
+DISK_FREE_MB=$(df -m "$OUTPUT_DIR" 2>/dev/null | awk 'NR==2{print $4}')
+if [[ -n "$DISK_FREE_MB" ]] && [[ "$DISK_FREE_MB" -lt 3000 ]]; then
+  err "Insufficient disk space: ${DISK_FREE_MB}MB free (need >=3GB)"
+  err "Suggestion: rm -rf $OUTPUT_DIR/* build/download-output/*"
+  exit 1
+fi
+
+# ── Preflight: select npm registry ──
+NPM_REGISTRY=$(select_npm_registry)
+
 log "OpenClawCN macOS Build"
 log "  Version: $VERSION"
 log "  Arch: $ARCH"
@@ -77,6 +116,8 @@ log "  Jobs: $JOBS"
 log "  Fast mode: $FAST_MODE"
 log "  Node.js: v$NODE_VERSION"
 log "  Root: $ROOT_DIR"
+log "  Disk free: ${DISK_FREE_MB:-unknown}MB"
+log "  npm registry: $NPM_REGISTRY"
 log ""
 
 # ============================================================================
@@ -92,6 +133,33 @@ else
     pnpm install --ignore-scripts=false 2>&1
 fi
 log "Dependencies installed ($(elapsed_since $STEP_START))"
+
+# ============================================================================
+# Step 1.5: Pre-flight source file check
+# ============================================================================
+# Verify critical CN source files exist before starting the expensive build.
+# Catches common issues: incomplete git push to Gitee, missing new files.
+log "Pre-flight check: verifying critical source files..."
+PREFLIGHT_FAIL=0
+for src_check in \
+  src/agents/tools/wechat-send.ts \
+  src/agents/tools/wechat-check.ts \
+  src/config/cn-mirrors-data.ts \
+  src/config/region-cn.ts \
+  src/dispatch/engine.ts \
+  cn/scripts/build/compile-bytecode.ts \
+  cn/scripts/build/obfuscate.config.js \
+  config/cn-protected-files.json; do
+  if [[ ! -f "$ROOT_DIR/$src_check" ]]; then
+    err "Missing critical source file: $src_check"
+    PREFLIGHT_FAIL=1
+  fi
+done
+if [[ "$PREFLIGHT_FAIL" -eq 1 ]]; then
+  err "Pre-flight check failed. Ensure all CN source files are pushed to the repository."
+  exit 1
+fi
+log "Pre-flight check passed"
 
 # ============================================================================
 # Step 2: Build with CN-only encryption
@@ -134,8 +202,8 @@ mkdir -p "$NODE_DL_DIR"
 
 download_node() {
   local arch="$1"
-  local url="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-${arch}.tar.gz"
-  local tar_file="$NODE_DL_DIR/node-v${NODE_VERSION}-darwin-${arch}.tar.gz"
+  local filename="node-v${NODE_VERSION}-darwin-${arch}.tar.gz"
+  local tar_file="$NODE_DL_DIR/$filename"
   local extract_dir="$NODE_DL_DIR/node-${arch}"
 
   if [[ -f "$extract_dir/bin/node" ]]; then
@@ -143,28 +211,61 @@ download_node() {
     return
   fi
 
-  log "Downloading Node.js v${NODE_VERSION} for $arch..."
-  curl -fsSL "$url" -o "$tar_file"
+  # CN mirror first, then upstream — mirrors may be faster or the only route in CN network
+  local mirrors=(
+    "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/$filename"
+    "https://nodejs.org/dist/v${NODE_VERSION}/$filename"
+  )
+
+  local ok=false
+  for url in "${mirrors[@]}"; do
+    log "Downloading Node.js v${NODE_VERSION} for $arch from ${url%%/node*}..."
+    if curl -fSL --connect-timeout 15 --max-time 300 --retry 2 "$url" -o "$tar_file" 2>/dev/null; then
+      # Verify download is a valid gzip
+      if gzip -t "$tar_file" 2>/dev/null; then
+        ok=true
+        break
+      else
+        warn "Downloaded file is corrupt, trying next mirror..."
+        rm -f "$tar_file"
+      fi
+    else
+      warn "Download failed from ${url%%/v*}, trying next mirror..."
+      rm -f "$tar_file"
+    fi
+  done
+
+  if [[ "$ok" != "true" ]]; then
+    err "Failed to download Node.js v${NODE_VERSION} for $arch from all mirrors"
+    exit 1
+  fi
+
   mkdir -p "$extract_dir"
   tar -xzf "$tar_file" -C "$extract_dir" --strip-components=1
   rm -f "$tar_file"
-  log "Node.js $arch downloaded"
+  log "Node.js $arch downloaded and extracted"
 }
 
 case "$ARCH" in
   universal)
-    download_node "arm64"
-    download_node "x64"
+    # Download arm64 and x64 in parallel
+    download_node "arm64" &
+    PID_ARM64=$!
+    download_node "x64" &
+    PID_X64=$!
+    DOWNLOAD_FAIL=0
+    wait $PID_ARM64 || DOWNLOAD_FAIL=1
+    wait $PID_X64   || DOWNLOAD_FAIL=1
+    if [[ "$DOWNLOAD_FAIL" -eq 1 ]]; then
+      err "One or more Node.js downloads failed"
+      exit 1
+    fi
     ;;
   arm64)
     download_node "arm64"
     ;;
   x64)
     download_node "x64"
-    ;;
-  *)
-    err "Unknown architecture: $ARCH"
-    exit 1
     ;;
 esac
 
@@ -213,13 +314,30 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>LSMinimumSystemVersion</key>
-    <string>12.0</string>
+    <string>13.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>LSUIElement</key>
     <false/>
     <key>NSHumanReadableCopyright</key>
     <string>OpenClawCN ${VERSION}</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>ClawdbotCN needs Automation access to open browsers and interact with applications.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>ClawdbotCN uses the camera for visual recognition features.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>ClawdbotCN uses the microphone for voice input features.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>ClawdbotCN uses screen capture for desktop automation features.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>ClawdbotCN may use location for weather and region-aware features.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>
 PLIST
@@ -273,9 +391,33 @@ export OPENCLAWCN_BUNDLED_PLUGINS_DIR="$APP_DIR/extensions"
 export OPENCLAWCN_STATE_DIR="$STATE_DIR"
 export NODE_ENV=production
 
+# Read our own version
+OWN_VERSION=""
+if [ -f "$APP_DIR/package.json" ]; then
+    OWN_VERSION=$("$NODE_BIN" -pe "require('$APP_DIR/package.json').version" 2>/dev/null || echo "")
+fi
+
 if lsof -i ":$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-    open "http://localhost:$PORT/"
-    exit 0
+    # Check if running instance is same version — if so, just open browser
+    RUNNING_VERSION=$(curl -sf --connect-timeout 2 "http://localhost:$PORT/api/health" \
+        | "$NODE_BIN" -pe "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+    if [ -n "$RUNNING_VERSION" ] && [ "$RUNNING_VERSION" = "$OWN_VERSION" ]; then
+        open "http://localhost:$PORT/"
+        exit 0
+    fi
+    # Different version or cannot determine — stop old process for upgrade
+    echo "$(date) Stopping old instance (v${RUNNING_VERSION:-unknown}) for upgrade to v${OWN_VERSION}..." >> "$LOG_DIR/gateway.log"
+    OLD_PIDS=$(lsof -ti ":$PORT" 2>/dev/null || true)
+    if [ -n "$OLD_PIDS" ]; then
+        echo "$OLD_PIDS" | xargs kill -TERM 2>/dev/null || true
+        sleep 2
+        # Force-kill if still alive
+        REMAINING=$(lsof -ti ":$PORT" 2>/dev/null || true)
+        if [ -n "$REMAINING" ]; then
+            echo "$REMAINING" | xargs kill -9 2>/dev/null || true
+            sleep 1
+        fi
+    fi
 fi
 
 cd "$APP_DIR"
@@ -324,6 +466,36 @@ if [[ "$APP_JSC_COUNT" -lt 5 ]]; then
   err "Expected .jsc files in $APP_ROOT/dist/, found $APP_JSC_COUNT"
   err "Check that build:secure completed before this step."
   exit 1
+fi
+
+# ── V8 bytecode compatibility verification ──
+# Test-load a .jsc file with the bundled Node binary to catch V8 version mismatch early.
+# If system Node (used for compile-bytecode.ts) has a different V8 than bundled Node,
+# the .jsc files will fail to load at runtime with an unreadable error.
+TEST_JSC=$(find "$APP_ROOT/dist" -name "*.jsc" -print -quit 2>/dev/null)
+if [[ -n "$TEST_JSC" ]]; then
+  log "Verifying V8 bytecode compatibility with bundled Node..."
+  if "$RESOURCES/node/bin/node" -e "require('bytenode');require('$TEST_JSC')" 2>/dev/null; then
+    log "V8 bytecode compatibility OK"
+  else
+    # Try loading bytenode from project root (not yet installed in APP_ROOT)
+    if "$RESOURCES/node/bin/node" -e "
+      const Module = require('module');
+      const origResolve = Module._resolveFilename;
+      Module._resolveFilename = function(req, parent, isMain, opts) {
+        if (req === 'bytenode') return require.resolve('$ROOT_DIR/node_modules/bytenode');
+        return origResolve.call(this, req, parent, isMain, opts);
+      };
+      require('bytenode'); require('$TEST_JSC');
+    " 2>/dev/null; then
+      log "V8 bytecode compatibility OK (via project bytenode)"
+    else
+      err "V8 bytecode INCOMPATIBLE: bundled Node v${NODE_VERSION} cannot load .jsc files!"
+      err "The system Node that compiled bytecode may have a different V8 version."
+      err "Fix: ensure compile-bytecode.ts uses the same Node version as NODE_VERSION=${NODE_VERSION}"
+      exit 1
+    fi
+  fi
 fi
 
 # ── Copy package.json (simplified) ──
@@ -394,6 +566,21 @@ cat > "$RESOURCES/version.json" <<VINFO
 }
 VINFO
 
+# ── Build metadata (V8 version guard for delta updates) ──
+NODE_V8_VERSION=$("$RESOURCES/node/bin/node" -e "console.log(process.versions.v8)" 2>/dev/null || echo "unknown")
+GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+cat > "$APP_ROOT/build-meta.json" <<BMETA
+{
+  "nodeVersion": "${NODE_VERSION}",
+  "v8Version": "${NODE_V8_VERSION}",
+  "buildTime": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "appVersion": "${VERSION}",
+  "arch": "${ARCH}",
+  "gitCommit": "${GIT_COMMIT}"
+}
+BMETA
+log "build-meta.json: Node ${NODE_VERSION}, V8 ${NODE_V8_VERSION}, commit ${GIT_COMMIT}"
+
 # ── Install marker (for auto-update detection) ──
 UPDATE_SERVER="${OPENCLAWCN_UPDATE_SERVER:-http://47.98.123.45}"
 cat > "$APP_ROOT/install.json" <<INSTALL_MARKER
@@ -415,12 +602,17 @@ STEP_START=$(date +%s)
 
 cd "$APP_ROOT"
 
-# Exclude large optional packages
+# Exclude large optional packages not needed in macOS desktop bundle
 node -e "
   const pkg = require('./package.json');
   const excludeDeps = [
+    // Native modules not needed in desktop bundle
     'node-llama-cpp', '@napi-rs/canvas', 'playwright-core',
-    '@lydell/node-pty', 'sqlite-vec', 'sharp'
+    '@lydell/node-pty', 'sqlite-vec', 'sharp',
+    // Large SDK packages — desktop uses gateway mode, not direct cloud APIs
+    '@aws-sdk/client-bedrock',
+    // Dev/test tools that may leak into dependencies
+    'oxlint', 'oxfmt', 'oxlint-tsgolint',
   ];
   const deps = {...pkg.dependencies};
   excludeDeps.forEach(d => delete deps[d]);
@@ -447,10 +639,29 @@ if [[ -z "$NPM_CLI" ]]; then
 fi
 log "Using npm: $NPM_CLI"
 
-# Use bundled Node for npm install (matches runtime)
-if ! "$RESOURCES/node/bin/node" "$NPM_CLI" \
-  install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1; then
-  err "npm install --omit=dev failed"
+# Use bundled Node for npm install (matches runtime) — with retry + exponential backoff
+NPM_MAX_RETRIES=3
+NPM_INSTALL_OK=false
+for npm_attempt in $(seq 1 $NPM_MAX_RETRIES); do
+  log "npm install attempt $npm_attempt/$NPM_MAX_RETRIES (registry: $NPM_REGISTRY)..."
+  if "$RESOURCES/node/bin/node" "$NPM_CLI" \
+    install --omit=dev --ignore-scripts --no-audit --no-fund \
+    --registry "$NPM_REGISTRY" 2>&1; then
+    NPM_INSTALL_OK=true
+    break
+  fi
+  if [[ $npm_attempt -eq $NPM_MAX_RETRIES ]]; then
+    break
+  fi
+  sleep_time=$((3 ** npm_attempt))
+  warn "npm install attempt $npm_attempt failed, retrying in ${sleep_time}s..."
+  rm -rf node_modules 2>/dev/null || true
+  "$RESOURCES/node/bin/node" "$NPM_CLI" cache clean --force 2>/dev/null || true
+  sleep $sleep_time
+done
+if [[ "$NPM_INSTALL_OK" != "true" ]]; then
+  err "npm install --omit=dev failed after $NPM_MAX_RETRIES attempts"
+  err "Troubleshooting: curl -v $NPM_REGISTRY/-/ping"
   exit 1
 fi
 
@@ -506,8 +717,20 @@ if [[ "$FAST_MODE" != "true" ]]; then
     find node_modules -type d -name "$plat_arch" -exec rm -rf {} + 2>/dev/null || true
   done
 
+  # Remove .d.ts type declarations (not needed at runtime)
+  find node_modules -name "*.d.ts" -delete 2>/dev/null || true
+  find node_modules -name "*.d.ts.map" -delete 2>/dev/null || true
+  find node_modules -name "*.d.mts" -delete 2>/dev/null || true
+
   rm -rf node_modules/.bin 2>/dev/null || true
+  rm -rf node_modules/.package-lock.json 2>/dev/null || true
   find node_modules -type d -empty -delete 2>/dev/null || true
+
+  # Report top-20 largest packages for optimization tracking
+  log "Top 20 largest packages in node_modules:"
+  du -sh node_modules/*/ 2>/dev/null | sort -rh | head -20 | while read -r line; do
+    log "  $line"
+  done
 fi
 
 # Final .jsc integrity check after all cleanup

@@ -247,9 +247,21 @@ verify_team_ids() {
   fi
 }
 
-# Sign main binary
-if [ -f "$APP_BUNDLE/Contents/MacOS/OpenClawCN" ]; then
-  echo "Signing main binary"; sign_item "$APP_BUNDLE/Contents/MacOS/OpenClawCN" "$APP_ENTITLEMENTS"
+# Sign main binary — read executable name from Info.plist (supports both OpenClawCN and ClawdbotCN bundles)
+EXEC_NAME=$(/usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || echo "")
+if [ -z "$EXEC_NAME" ]; then
+  # Fallback: try common names
+  for try_name in OpenClawCN ClawdbotCN Clawdbot; do
+    if [ -f "$APP_BUNDLE/Contents/MacOS/$try_name" ]; then
+      EXEC_NAME="$try_name"
+      break
+    fi
+  done
+fi
+if [ -n "$EXEC_NAME" ] && [ -f "$APP_BUNDLE/Contents/MacOS/$EXEC_NAME" ]; then
+  echo "Signing main binary: $EXEC_NAME"; sign_item "$APP_BUNDLE/Contents/MacOS/$EXEC_NAME" "$APP_ENTITLEMENTS"
+else
+  echo "WARN: No main binary found in $APP_BUNDLE/Contents/MacOS/" >&2
 fi
 
 # Sign Sparkle deeply if present
