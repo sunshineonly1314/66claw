@@ -1094,6 +1094,32 @@ if ($needMainBuild -or $needUiBuild) {
     }
 }
 
+# ── Generate build-meta.json ──
+# Records the portable Node.js and V8 versions used at build time.
+# entry.js checks this on startup to detect node.exe / .jsc bytecode mismatch
+# (e.g. delta update replaced node.exe but not .jsc → V8 version crash).
+$portableNodeForMeta = Join-Path $ScriptsDir "node-portable\node.exe"
+if (Test-Path $portableNodeForMeta) {
+    $prevEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $metaNodeVer = & $portableNodeForMeta -e "process.stdout.write(process.version)" 2>$null
+    $metaV8Ver   = & $portableNodeForMeta -e "process.stdout.write(process.versions.v8)" 2>$null
+    $ErrorActionPreference = $prevEA
+} else {
+    $metaNodeVer = & node -e "process.stdout.write(process.version)" 2>$null
+    $metaV8Ver   = & node -e "process.stdout.write(process.versions.v8)" 2>$null
+}
+$buildMetaPath = Join-Path $ProjectRoot "dist\build-meta.json"
+$buildMetaObj = @{
+    nodeVersion = "$metaNodeVer"
+    v8Version   = "$metaV8Ver"
+    buildTime   = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
+    appVersion  = "$Version"
+}
+$buildMetaJson = $buildMetaObj | ConvertTo-Json -Compress
+[System.IO.File]::WriteAllText($buildMetaPath, $buildMetaJson, [System.Text.UTF8Encoding]::new($false))
+Write-OK "build-meta.json generated (node=$metaNodeVer, v8=$metaV8Ver)"
+
 # ============================================================================
 # Step 3 (DISABLED - moved to parallel phase above)
 # ============================================================================

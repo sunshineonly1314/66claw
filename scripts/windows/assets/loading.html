@@ -120,6 +120,8 @@
       border: 1px solid rgba(96, 165, 250, 0.2);
       border-radius: 8px;
       color: rgba(255, 255, 255, 0.7);
+      text-align: left;
+      max-width: 420px;
     }
 
     .action-area p {
@@ -130,6 +132,21 @@
     .action-area .sub {
       font-size: 12px;
       opacity: 0.6;
+    }
+
+    .action-area .av-hint {
+      font-size: 13px;
+      line-height: 1.7;
+      margin-top: 8px;
+      padding: 10px 12px;
+      background: rgba(251, 191, 36, 0.08);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.75);
+    }
+
+    .action-area .av-hint b {
+      color: #fbbf24;
     }
 
     .retry-btn {
@@ -164,7 +181,15 @@
     <div class="action-area" id="actionArea">
       <p id="actionMsg">正在初始化，请稍候...</p>
       <p class="sub" id="actionSub"></p>
-      <button class="retry-btn" onclick="location.reload()">刷新页面</button>
+      <div class="av-hint" id="avHint" style="display:none">
+        <b>可能是杀毒软件拦截了后台进程</b><br>
+        请将安装目录添加到杀毒软件的信任列表：<br>
+        • <b>360安全卫士</b>：设置 → 安全防护 → 信任列表<br>
+        • <b>火绒</b>：信任区 → 添加文件夹<br>
+        • <b>Windows Defender</b>：病毒防护设置 → 排除项<br>
+        • <b>腾讯电脑管家</b>：工具箱 → 信任管理
+      </div>
+      <button class="retry-btn" onclick="location.reload()">重试</button>
     </div>
 
     <div class="tips">
@@ -179,15 +204,14 @@
     let attempts = 0;
     let startTime = Date.now();
 
-    // Progressive status messages (friendly, no scary warnings)
+    // Progressive status messages with antivirus guidance at later stages
     const STATUS_STAGES = [
-      { after:  0, status: '正在启动服务...',                     progress: '请稍候' },
-      { after: 10, status: '正在加载核心组件...',                   progress: '正在初始化' },
-      { after: 20, status: '正在连接服务...',                       progress: '即将就绪' },
-      { after: 40, status: '正在完成初始化...',                     progress: '首次启动稍慢，请耐心等待' },
-      { after: 60, status: '还在努力启动中...',                     progress: '初始化环境可能需要一点时间' },
-      { after: 90, status: '快好了，再等一下...',                   progress: '后台服务正在准备就绪' },
-      { after:120, status: '启动时间较长，仍在连接...',              progress: '如长时间无变化，可尝试刷新页面' },
+      { after:  0, status: '正在启动服务...',                      progress: '请稍候' },
+      { after:  5, status: '正在加载后端服务...',                   progress: '正在初始化' },
+      { after: 15, status: '正在连接服务...',                       progress: '即将就绪' },
+      { after: 30, status: '启动时间较长，请耐心等待...',            progress: '首次启动可能需要较长时间', showAv: true },
+      { after: 45, status: '仍在启动中...',                         progress: '如杀毒软件弹窗，请选择"允许"', showAv: true },
+      { after: 60, status: '启动超时',                              progress: '请检查杀毒软件是否拦截了 node.exe', showAv: true },
     ];
 
     // From URL params
@@ -227,12 +251,13 @@
       updateStatus(stage.status);
       updateProgress(stage.progress + ' (' + elapsed + '秒)');
 
-      // After 90 seconds, show a friendly action area (NOT red, NOT scary)
-      if (elapsed >= 90) {
+      // After 30 seconds, show antivirus guidance
+      if (stage.showAv) {
         showActionArea(
           '启动时间较长，服务仍在后台加载中',
-          '您也可以稍后再试，或查看系统托盘图标状态'
+          '常见原因：杀毒软件拦截 / 端口 18789 被占用'
         );
+        document.getElementById('avHint').style.display = 'block';
       }
     }
 

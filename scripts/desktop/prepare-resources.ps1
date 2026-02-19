@@ -45,8 +45,12 @@ foreach ($src in $nodeSources) {
     }
 }
 if (-not $nodeFound) {
-    Write-Host "  WARNING: node.exe not found in known locations." -ForegroundColor Yellow
-    Write-Host "  You must manually place node.exe at: $nodeDir\node.exe" -ForegroundColor Yellow
+    Write-Host "  ERROR: node.exe not found in known locations:" -ForegroundColor Red
+    foreach ($src in $nodeSources) {
+        Write-Host "    - $src" -ForegroundColor Red
+    }
+    Write-Host "  Please download Node.js portable and place node.exe in one of the above paths." -ForegroundColor Red
+    exit 1
 }
 
 # ── 2. Backend dist ──
@@ -128,8 +132,12 @@ try {
         }
 
         # Copy to resources using robocopy (safe here — no hardlinks in npm's node_modules)
+        # robocopy exit codes: 0-7 = success (1=copied, 2=extras, 4=mismatches), >=8 = error
         Write-Host "  Copying to resources dir..."
         robocopy "$tempInstallDir\node_modules" "$ResourcesDir\node_modules" /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+        if ($LASTEXITCODE -ge 8) {
+            throw "robocopy failed with exit code $LASTEXITCODE"
+        }
 
         # Get final size
         $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
@@ -157,6 +165,7 @@ try {
         pnpm deploy --filter openclawcn --prod "$deployDir" 2>&1 | Out-Null
         if (Test-Path "$deployDir\node_modules") {
             robocopy "$deployDir\node_modules" "$ResourcesDir\node_modules" /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
             $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
             Write-Host "  OK: node_modules/ ($nmSize MB) [pnpm deploy fallback] [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]" -ForegroundColor Green
         } else {
@@ -184,6 +193,10 @@ Write-Host "[4/7] Copying extensions/..." -ForegroundColor Green
 $extSource = "$ProjectRoot\extensions"
 if (Test-Path $extSource) {
     robocopy "$extSource" "$ResourcesDir\extensions" /E /XD node_modules .turbo /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        Write-Host "  ERROR: robocopy extensions failed (exit code $LASTEXITCODE)" -ForegroundColor Red
+        exit 1
+    }
     $extCount = (Get-ChildItem "$ResourcesDir\extensions" -Directory -ErrorAction SilentlyContinue).Count
     Write-Host "  OK: extensions/ ($extCount extensions) [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
 } else {
@@ -229,6 +242,42 @@ Write-Host "  [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
 Write-Host "[7/7] Copying build metadata..." -ForegroundColor Green
 Copy-Item "$ProjectRoot\package.json" "$ResourcesDir\package.json" -Force
 Write-Host "  OK: package.json"
+
+# Generate install.json for auto-update system
+# - installer-updater.ts::detectInstallKind() checks for this file -> returns "installer"
+# - installer-updater.ts::resolveUpdateServerUrl() reads the updateServer field
+$appVersion = (Get-Content "$ProjectRoot\package.json" -Raw | ConvertFrom-Json).version
+$installJson = @{
+    installKind  = "installer"
+    updateServer = "https://dl.openclawcn.com"
+    version      = $appVersion
+} | ConvertTo-Json -Compress
+# Use .NET API to write UTF-8 without BOM (PowerShell 5.x -Encoding UTF8 adds BOM)
+[System.IO.File]::WriteAllText("$ResourcesDir\install.json", $installJson, [System.Text.UTF8Encoding]::new($false))
+Write-Host "  OK: install.json (version=$appVersion)"
+
+# Generate build-meta.json — records Node.js and V8 versions used during build.
+# At startup, entry.js checks this to detect node.exe / .jsc bytecode version mismatch
+# (e.g. delta update replaced node.exe but not .jsc, or vice versa → V8 crash).
+$nodeExe = "$ResourcesDir\node\node.exe"
+if (Test-Path $nodeExe) {
+    $prevEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $buildNodeVersion = (& $nodeExe -e "process.stdout.write(process.version)" 2>$null)
+    $buildV8Version   = (& $nodeExe -e "process.stdout.write(process.versions.v8)" 2>$null)
+    $ErrorActionPreference = $prevEA
+} else {
+    $buildNodeVersion = (& node -e "process.stdout.write(process.version)" 2>$null)
+    $buildV8Version   = (& node -e "process.stdout.write(process.versions.v8)" 2>$null)
+}
+$buildMeta = @{
+    nodeVersion = $buildNodeVersion
+    v8Version   = $buildV8Version
+    buildTime   = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
+    appVersion  = $appVersion
+} | ConvertTo-Json -Compress
+[System.IO.File]::WriteAllText("$ResourcesDir\dist\build-meta.json", $buildMeta, [System.Text.UTF8Encoding]::new($false))
+Write-Host "  OK: build-meta.json (node=$buildNodeVersion, v8=$buildV8Version)"
 
 # ── Summary ──
 $totalSize = [math]::Round(((Get-ChildItem $ResourcesDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)

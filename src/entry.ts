@@ -9,6 +9,31 @@ import { installProcessWarningFilter } from "./infra/warning-filter.js";
 import { attachChildProcessBridge } from "./process/child-process-bridge.js";
 
 process.title = "openclawcn";
+
+// ── Node.js / .jsc bytecode version compatibility check ──
+// Delta updates may replace node.exe without updating .jsc files (or vice versa).
+// V8 bytecode is version-specific: a mismatch causes silent crashes or white screens.
+// Exit with code 78 (EX_CONFIG) so the Tauri shell or service wrapper can show a
+// user-friendly "please reinstall" message instead of a cryptic stack trace.
+{
+  const buildMetaPath = new URL("./build-meta.json", import.meta.url);
+  try {
+    const { readFileSync } = await import("node:fs");
+    const raw = readFileSync(buildMetaPath, "utf-8");
+    const meta = JSON.parse(raw) as { nodeVersion?: string; v8Version?: string };
+    if (meta.v8Version && meta.v8Version !== process.versions.v8) {
+      console.error(`[openclawcn] V8 engine version mismatch!`);
+      console.error(`  Build V8:   ${meta.v8Version} (node ${meta.nodeVersion ?? "?"})`);
+      console.error(`  Running V8: ${process.versions.v8} (node ${process.version})`);
+      console.error(`  .jsc bytecode is incompatible with this Node.js version.`);
+      console.error(`  Please download the latest full installer to fix this.`);
+      process.exit(78);
+    }
+  } catch {
+    // build-meta.json missing (dev mode, git clone, etc.) — skip check
+  }
+}
+
 installProcessWarningFilter();
 normalizeEnv();
 
