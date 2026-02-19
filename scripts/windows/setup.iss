@@ -3,7 +3,7 @@
 
 #define MyAppName "ClawdbotCN"
 #define MyAppNameCN "ClawdbotCN AI"
-#define MyAppVersion "2026.2.0"
+#define MyAppVersion "1.1.6"
 #define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
 #define MyAppUpdateServer "https://dl.obplugins.cn"
@@ -16,7 +16,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppNameCN}
 OutputDir=E:\clawdbuild
-OutputBaseFilename=ClawdbotCN-Setup-2026.2.0-x64
+OutputBaseFilename=ClawdbotCN-Setup-1.1.6-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -31,7 +31,7 @@ UninstallDisplayIcon={app}\clawdbot.ico
 UninstallDisplayName={#MyAppNameCN}
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{code:GetDesktopIconDesc}"; GroupDescription: "{code:GetShortcutsGroup}"
