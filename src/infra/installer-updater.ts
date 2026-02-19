@@ -21,13 +21,9 @@ const execFileAsync = promisify(execFile);
 
 // ─── Types ─────────────────────────────────────────────
 
-export interface UpdateServerLatest {
-  version: string;
-  buildTime: string;
-  gitCommit: string;
-  nodeVersion: string;
+/** 单个平台的更新数据 */
+export interface PlatformUpdateData {
   url: {
-    /** @deprecated 全量包已移除，保留仅为兼容 OSS latest.json 格式 */
     full: string;
     manifest: string;
     checksums: string;
@@ -36,11 +32,37 @@ export interface UpdateServerLatest {
     from: string;
     url: string;
     size: number;
+    sha256?: string;
   }>;
-  /** @deprecated 全量包已移除，保留仅为兼容 OSS latest.json 格式 */
   fullSize: number;
-  /** @deprecated 全量包已移除，保留仅为兼容 OSS latest.json 格式 */
   fullSha256: string;
+}
+
+export interface UpdateServerLatest {
+  version: string;
+  buildTime: string;
+  gitCommit: string;
+  nodeVersion: string;
+  /** 旧格式（无平台区分）: 直接包含 url/deltas */
+  url?: {
+    /** @deprecated 全量包已移除，保留仅为兼容 OSS latest.json 格式 */
+    full: string;
+    manifest: string;
+    checksums: string;
+  };
+  /** 旧格式 deltas（无平台区分） */
+  deltas?: Array<{
+    from: string;
+    url: string;
+    size: number;
+    sha256?: string;
+  }>;
+  /** @deprecated */
+  fullSize?: number;
+  /** @deprecated */
+  fullSha256?: string;
+  /** 新格式（多平台）: 按平台 key 存储各自的 url/deltas */
+  platforms?: Record<string, PlatformUpdateData>;
   changelog: {
     "zh-CN": string;
     "en-US": string;
@@ -276,6 +298,7 @@ async function checkViaServerApi(
           from: params.currentVersion,
           url: d.download.url,
           size: d.download.size,
+          sha256: d.download.sha256,
         },
       ],
       fullSize: 0,
@@ -299,6 +322,39 @@ async function checkViaServerApi(
 }
 
 /**
+ * 将 process.platform 映射为 latest.json 中的 platforms key
+ */
+function getPlatformKey(): string {
+  if (process.platform === "win32") return "windows";
+  if (process.platform === "darwin") return "macos";
+  return process.platform; // linux 等
+}
+
+/**
+ * 从 latest.json 中提取当前平台的更新数据。
+ * 支持新格式（platforms 分平台）和旧格式（直接 url/deltas）。
+ * 返回归一化后的 UpdateServerLatest（url/deltas 填充为当前平台的数据）。
+ */
+function resolvePlatformData(latest: UpdateServerLatest): UpdateServerLatest {
+  const platformKey = getPlatformKey();
+
+  // 新格式：从 platforms[key] 取平台专属数据
+  if (latest.platforms && latest.platforms[platformKey]) {
+    const pd = latest.platforms[platformKey];
+    return {
+      ...latest,
+      url: pd.url,
+      deltas: pd.deltas,
+      fullSize: pd.fullSize,
+      fullSha256: pd.fullSha256,
+    };
+  }
+
+  // 旧格式或当前平台不在 platforms 中：保持原样
+  return latest;
+}
+
+/**
  * Fallback: 直接从 OSS 静态文件 latest.json 检查更新（原有逻辑）
  */
 async function checkViaStaticFile(
@@ -313,9 +369,17 @@ async function checkViaStaticFile(
       return { hasUpdate: false, latest: null, error: `HTTP ${res.status}` };
     }
 
-    const latest = (await res.json()) as UpdateServerLatest;
-    if (!latest.version) {
+    const rawLatest = (await res.json()) as UpdateServerLatest;
+    if (!rawLatest.version) {
       return { hasUpdate: false, latest: null, error: "invalid latest.json" };
+    }
+
+    // 解析平台数据（新格式自动映射，旧格式透传）
+    const latest = resolvePlatformData(rawLatest);
+
+    // 防御性：确保 deltas 为数组
+    if (!Array.isArray(latest.deltas)) {
+      latest.deltas = [];
     }
 
     const cmp = compareVersions(latest.version, currentVersion);
@@ -413,8 +477,8 @@ export async function runInstallerUpdate(params: {
     await rmrf(tempDir);
     await fs.mkdir(tempDir, { recursive: true });
 
-    // 2. 查找增量包
-    const delta = latest.deltas.find((d) => d.from === currentVersion);
+    // 2. 查找增量包（防御性：确保 deltas 为数组）
+    const delta = (latest.deltas ?? []).find((d) => d.from === currentVersion);
     if (!delta) {
       // 没有增量包，不应走到这里（调用方应先判断 updateType）
       const result: InstallerUpdateResult = {
@@ -438,6 +502,23 @@ export async function runInstallerUpdate(params: {
 
     progress?.onDownloadComplete?.();
 
+    // 3.5 校验增量包 SHA256（如果服务端提供了 sha256 字段）
+    if (delta.sha256) {
+      const actualHash = await sha256File(downloadPath);
+      if (actualHash !== delta.sha256) {
+        await rmrf(tempDir);
+        const result: InstallerUpdateResult = {
+          status: "error",
+          mode: "delta",
+          reason: `delta tarball SHA256 mismatch: expected ${delta.sha256}, got ${actualHash}`,
+          fromVersion: currentVersion,
+          toVersion,
+          durationMs: Date.now() - startedAt,
+        };
+        return result;
+      }
+    }
+
     // 4. 解压
     const extractDir = path.join(tempDir, "extracted");
     await fs.mkdir(extractDir, { recursive: true });
@@ -457,34 +538,29 @@ export async function runInstallerUpdate(params: {
       await fs.copyFile(pkgPath, path.join(backupDir, "package.json"));
     }
 
-    // 5.5 Node.exe / .jsc atomicity check
-    // If the delta updates node.exe without updating .jsc bytecode files (or vice versa),
-    // V8 bytecode version mismatch will cause silent crashes on restart.
-    // Reject the delta and force a full installer download instead.
-    {
-      const deltaFiles = [...delta.added.map((e) => e.path), ...delta.modified.map((e) => e.path)];
-      const hasNodeExe = deltaFiles.some((f) => f.endsWith("node.exe") || f.endsWith("node"));
-      const hasJsc = deltaFiles.some((f) => f.endsWith(".jsc"));
-      if (hasNodeExe && !hasJsc) {
-        // Node binary updated but bytecode not — V8 version will mismatch
-        await rmrf(tempDir);
-        const result: InstallerUpdateResult = {
-          status: "skipped",
-          mode: "delta",
-          reason: "node-jsc-mismatch: node.exe updated without .jsc files, requires full installer",
-          fromVersion: currentVersion,
-          toVersion,
-          durationMs: Date.now() - startedAt,
-        };
-        return result;
-      }
-    }
+    // 5.5 V8 atomicity check moved into applyDelta() where DeltaManifest is available.
 
-    // 6. 应用增量更新
-    const filesChanged = await applyDelta(root, extractDir, progress);
+    // 6. 应用增量更新（内含 V8 atomicity check）
+    const deltaApplyResult = await applyDeltaWithV8Check(root, extractDir, progress);
+    if (deltaApplyResult.v8Mismatch) {
+      await rmrf(tempDir);
+      await rmrf(backupDir);
+      const result: InstallerUpdateResult = {
+        status: "skipped",
+        mode: "delta",
+        reason: "node-jsc-mismatch: node.exe updated without .jsc files, requires full installer",
+        fromVersion: currentVersion,
+        toVersion,
+        durationMs: Date.now() - startedAt,
+      };
+      return result;
+    }
+    const filesChanged = deltaApplyResult.filesChanged;
 
     // 7. 下载并校验 checksums
-    const checksumsOk = await verifyChecksums(root, latest.url.checksums);
+    const checksumsOk = latest.url?.checksums
+      ? await verifyChecksums(root, latest.url.checksums)
+      : true; // 无 checksums URL 时跳过校验（不应发生）
     if (!checksumsOk) {
       // 回滚
       progress?.onError?.("校验失败，正在回滚...");
@@ -512,8 +588,9 @@ export async function runInstallerUpdate(params: {
     // 8. 检查 package.json 依赖是否变化
     const depsOk = await checkAndInstallDeps(root, backupDir);
 
-    // 9. 清理
+    // 9. 清理临时目录和备份目录
     await rmrf(tempDir);
+    await rmrf(backupDir);
 
     const result: InstallerUpdateResult = {
       status: "ok",
@@ -588,22 +665,47 @@ function assertWithinRoot(root: string, filePath: string, label: string): void {
 // ─── Apply Strategies ──────────────────────────────────
 
 /**
- * 应用增量更新
+ * V8 原子性检查 + 应用增量更新
+ * 解析 DeltaManifest 后检查 node.exe 与 .jsc 文件是否原子更新，
+ * 避免 V8 字节码版本不匹配导致静默崩溃。
  */
-async function applyDelta(
+async function applyDeltaWithV8Check(
   root: string,
   extractDir: string,
   progress?: InstallerUpdateProgress,
-): Promise<number> {
-  // 找到 delta.json（可能在子目录 delta-from-xxx/ 里）
+): Promise<{ filesChanged: number; v8Mismatch: boolean }> {
+  // 解析 delta.json（只解析一次，后续传递给 applyDelta）
   const deltaJsonPath = await findFile(extractDir, "delta.json");
   if (!deltaJsonPath) {
     throw new Error("delta.json not found in extracted archive");
   }
-
   const deltaDir = path.dirname(deltaJsonPath);
-  const delta: DeltaManifest = JSON.parse(await fs.readFile(deltaJsonPath, "utf-8"));
+  const deltaManifest: DeltaManifest = JSON.parse(await fs.readFile(deltaJsonPath, "utf-8"));
 
+  // V8 atomicity check: node.exe 和 .jsc 必须同时更新
+  const deltaFiles = [
+    ...deltaManifest.added.map((e) => e.path),
+    ...deltaManifest.modified.map((e) => e.path),
+  ];
+  const hasNodeExe = deltaFiles.some((f) => f.endsWith("node.exe") || f.endsWith("node"));
+  const hasJsc = deltaFiles.some((f) => f.endsWith(".jsc"));
+  if (hasNodeExe && !hasJsc) {
+    return { filesChanged: 0, v8Mismatch: true };
+  }
+
+  const filesChanged = await applyDelta(root, deltaDir, deltaManifest, progress);
+  return { filesChanged, v8Mismatch: false };
+}
+
+/**
+ * 应用增量更新（接收已解析的 DeltaManifest，避免重复解析）
+ */
+async function applyDelta(
+  root: string,
+  deltaDir: string,
+  delta: DeltaManifest,
+  progress?: InstallerUpdateProgress,
+): Promise<number> {
   const totalFiles = delta.added.length + delta.modified.length + delta.removed.length;
   progress?.onApplyStart?.(totalFiles);
 
@@ -734,8 +836,16 @@ async function verifyChecksums(root: string, checksumsUrl: string): Promise<bool
 
     let failed = 0;
 
-    for (const [relPath, expectedHash] of Object.entries(checksums)) {
-      const filePath = path.join(root, "dist", relPath);
+    // checksums key 格式:
+    //   - "skills/..." / "extensions/..." → 直接相对于 root
+    //   - 其余 → 相对于 root/dist/（兼容旧格式）
+    const ROOTED_PREFIXES = ["skills/", "extensions/"];
+
+    for (const [rawRelPath, expectedHash] of Object.entries(checksums)) {
+      // 归一化路径分隔符（防止 Windows 生成的 checksums 含反斜杠）
+      const relPath = rawRelPath.replace(/\\/g, "/");
+      const isRooted = ROOTED_PREFIXES.some((p) => relPath.startsWith(p));
+      const filePath = isRooted ? path.join(root, relPath) : path.join(root, "dist", relPath);
       // FIX BUG-R2-2: checksums 的 key 来自远程服务器，需要路径穿越检查
       assertWithinRoot(root, filePath, `checksums[${relPath}]`);
       try {
@@ -856,7 +966,7 @@ export function resolveUpdateServerUrl(root: string): string | null {
   }
 
   // 3. 默认值
-  return "https://www.obplugins.cn";
+  return "https://dl.obplugins.cn";
 }
 
 // ─── Update Report ────────────────────────────────────

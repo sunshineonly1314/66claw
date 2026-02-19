@@ -164,6 +164,53 @@ if [ -f "\$VALIDATION_SCRIPT" ] && [ -d "\$APP_BUNDLE" ]; then
 else
   echo "Skipping post-build validation (script or .app not found)"
 fi
+
+# ── Release Deploy: 生成增量包 + 上传（平台模式） ──
+# 使用 --platform macos 上传到平台子目录，避免与 Windows 互相覆盖。
+# 上传完成后通知服务端合并生成最终 latest.json。
+echo ""
+echo "========================================="
+echo "  Release Deploy (macOS - Delta + Upload)"
+echo "========================================="
+
+RELEASE_CACHE_DIR="\$WORKSPACE/.release-cache"
+mkdir -p "\$RELEASE_CACHE_DIR"
+
+# OSS 环境变量检查
+OSS_KEY_ID="\${OSS_ACCESS_KEY_ID:-}"
+OSS_KEY_SECRET="\${OSS_ACCESS_KEY_SECRET:-}"
+if [ -z "\$OSS_KEY_ID" ] || [ -z "\$OSS_KEY_SECRET" ]; then
+  echo "WARNING: OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET not set, using --output-only mode"
+  echo "Delta packages will be generated locally but NOT uploaded."
+fi
+
+RELEASE_ARGS=""
+if [ -n "\$VERSION" ]; then
+  RELEASE_ARGS="\$RELEASE_ARGS -v \$VERSION"
+fi
+RELEASE_ARGS="\$RELEASE_ARGS --cache-dir \$RELEASE_CACHE_DIR"
+RELEASE_ARGS="\$RELEASE_ARGS --platform macos"
+if [ -n "\$OSS_KEY_ID" ] && [ -n "\$OSS_KEY_SECRET" ]; then
+  RELEASE_ARGS="\$RELEASE_ARGS --oss --oss-domain dl.obplugins.cn"
+  RELEASE_ARGS="\$RELEASE_ARGS --notify-url https://dl.obplugins.cn/api/v1/release/notify"
+else
+  RELEASE_ARGS="\$RELEASE_ARGS --output-only"
+fi
+RELEASE_ARGS="\$RELEASE_ARGS --installers build/output"
+
+# 优先用 pnpm tsx（pnpm install 后 npx 可能找不到 tsx）
+if command -v pnpm &> /dev/null; then
+  TSX_CMD="pnpm tsx"
+else
+  TSX_CMD="npx tsx"
+fi
+echo "Running: \$TSX_CMD scripts/release-deploy.ts \$RELEASE_ARGS"
+if \$TSX_CMD scripts/release-deploy.ts \$RELEASE_ARGS; then
+  echo "Release deploy completed!"
+else
+  echo "WARNING: Release deploy failed (exit code \$?)"
+  echo "Build artifacts are still available, but delta packages may not have been published."
+fi
 SHEOF
 
 # 上传构建脚本到 Mac Mini

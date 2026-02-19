@@ -99,8 +99,22 @@ async function main() {
   console.log("");
 
   // 生成校验和
+  // NOTE: 目前只校验 dist/ 目录，因为 delta 增量包仅覆盖 dist/ 内容。
+  // 当增量包扩展覆盖 skills/extensions 时，应同步取消下面的注释。
   console.log("2️⃣  Generating checksums...");
   const checksums = await generateChecksums(distDir);
+
+  // TODO: 当 generate-delta-package 扩展支持 skills/extensions 后启用
+  // for (const extraDir of ["skills", "extensions"]) {
+  //   const extraPath = path.join(rootDir, extraDir);
+  //   if (fs.existsSync(extraPath)) {
+  //     const extraChecksums = await generateChecksums(extraPath);
+  //     for (const [relPath, hash] of Object.entries(extraChecksums)) {
+  //       checksums[`${extraDir}/${relPath}`] = hash;
+  //     }
+  //   }
+  // }
+
   await fs.promises.writeFile(
     path.join(rootDir, "checksums.json"),
     JSON.stringify(checksums, null, 2),
@@ -219,65 +233,171 @@ async function readChangelog(rootDir: string): Promise<{
   "zh-CN": string;
   "en-US": string;
 }> {
+  // Try CHANGELOG.md first, then fall back to generating from versionrecord.md
+  const changelogPath = path.join(rootDir, "CHANGELOG.md");
+  const versionRecordPath = path.join(rootDir, "versionrecord.md");
+
+  let content: string | null = null;
+
   try {
-    const changelogPath = path.join(rootDir, "CHANGELOG.md");
-    const content = await fs.promises.readFile(changelogPath, "utf-8");
-
-    // 提取最新版本的更新日志
-    const lines = content.split("\n");
-    const latest: string[] = [];
-    let inLatest = false;
-
-    for (const line of lines) {
-      if (line.startsWith("## ") && !inLatest) {
-        inLatest = true;
-        continue;
-      }
-
-      if (line.startsWith("## ") && inLatest) {
-        break;
-      }
-
-      if (inLatest) {
-        latest.push(line);
+    content = await fs.promises.readFile(changelogPath, "utf-8");
+  } catch {
+    // CHANGELOG.md doesn't exist — try auto-generating from versionrecord.md
+    if (fs.existsSync(versionRecordPath)) {
+      console.log("   CHANGELOG.md not found, generating from versionrecord.md...");
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync("node --import tsx scripts/generate-changelog.ts", {
+          cwd: rootDir,
+          encoding: "utf-8",
+          stdio: "pipe",
+        });
+        content = await fs.promises.readFile(changelogPath, "utf-8");
+      } catch (genError) {
+        console.log(`   Warning: auto-generate changelog failed: ${(genError as Error).message}`);
       }
     }
+  }
 
-    const changelogText = latest.join("\n").trim();
-
-    return {
-      "zh-CN": changelogText,
-      "en-US": changelogText,  // TODO: 支持多语言
-    };
-  } catch {
+  if (!content) {
     return {
       "zh-CN": "无更新日志",
       "en-US": "No changelog available",
     };
   }
+
+  // Extract latest version's changelog
+  const lines = content.split("\n");
+  const latest: string[] = [];
+  let inLatest = false;
+
+  for (const line of lines) {
+    if (line.startsWith("## ") && !inLatest) {
+      inLatest = true;
+      latest.push(line); // Include the version header
+      continue;
+    }
+
+    if (line.startsWith("## ") && inLatest) {
+      break;
+    }
+
+    if (inLatest) {
+      latest.push(line);
+    }
+  }
+
+  const changelogText = latest.join("\n").trim();
+
+  return {
+    "zh-CN": changelogText,
+    "en-US": changelogText,
+  };
 }
 
 async function computeDependencyChanges(rootDir: string): Promise<Manifest["dependencies"]> {
-  // TODO: 实现依赖变更检测
-  // 1. 比对上一个版本的 package.json
-  // 2. 检测 skills/ 目录的变化
-  // 3. 检测 MCP 二进制的变化
-
-  return {
-    npm: {
-      changed: [],
-      added: [],
-      removed: [],
-    },
-    skills: {
-      updated: [],
-      added: [],
-    },
-    mcp: {
-      updated: [],
-      added: [],
-    },
+  const result: Manifest["dependencies"] = {
+    npm: { changed: [], added: [], removed: [] },
+    skills: { updated: [], added: [] },
+    mcp: { updated: [], added: [] },
   };
+
+  // 1. Compare npm dependencies with previous release
+  const releaseCacheDir = path.join(rootDir, ".release-cache");
+  const prevVersionDir = await findPreviousVersion(releaseCacheDir);
+
+  if (prevVersionDir) {
+    try {
+      const prevPkgPath = path.join(prevVersionDir, "package.json");
+      const currPkg = JSON.parse(
+        await fs.promises.readFile(path.join(rootDir, "package.json"), "utf-8")
+      );
+      const prevPkg = JSON.parse(
+        await fs.promises.readFile(prevPkgPath, "utf-8")
+      );
+
+      const currDeps = currPkg.dependencies || {};
+      const prevDeps = prevPkg.dependencies || {};
+
+      // Find added and changed
+      for (const [name, version] of Object.entries(currDeps)) {
+        if (!(name in prevDeps)) {
+          result.npm.added.push(`${name}@${version}`);
+        } else if (prevDeps[name] !== version) {
+          result.npm.changed.push(`${name}: ${prevDeps[name]} -> ${version}`);
+        }
+      }
+
+      // Find removed
+      for (const name of Object.keys(prevDeps)) {
+        if (!(name in currDeps)) {
+          result.npm.removed.push(name);
+        }
+      }
+    } catch {
+      // Previous package.json not available, skip
+    }
+  }
+
+  // 2. Detect skills changes via git diff (if tags exist)
+  try {
+    const { execSync } = await import("node:child_process");
+    const latestTag = execSync("git describe --tags --abbrev=0", {
+      encoding: "utf-8",
+      cwd: rootDir,
+    }).trim();
+
+    if (latestTag) {
+      const skillsDiff = execSync(
+        `git diff ${latestTag} --name-only -- skills/`,
+        { encoding: "utf-8", cwd: rootDir }
+      ).trim();
+
+      if (skillsDiff) {
+        const changedSkills = new Set<string>();
+        for (const filePath of skillsDiff.split("\n").filter(Boolean)) {
+          const match = filePath.match(/^skills\/([^/]+)\//);
+          if (match) changedSkills.add(match[1]);
+        }
+
+        for (const skill of changedSkills) {
+          // Check if it's new (didn't exist in the previous tag)
+          try {
+            execSync(`git show ${latestTag}:skills/${skill}/SKILL.md`, {
+              encoding: "utf-8",
+              cwd: rootDir,
+              stdio: "pipe",
+            });
+            result.skills.updated.push(skill);
+          } catch {
+            result.skills.added.push(skill);
+          }
+        }
+      }
+    }
+  } catch {
+    // No tags or git not available, skip
+  }
+
+  return result;
+}
+
+async function findPreviousVersion(cacheDir: string): Promise<string | null> {
+  try {
+    const entries = await fs.promises.readdir(cacheDir, { withFileTypes: true });
+    const versions = entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+    // Return the most recent cached version directory
+    if (versions.length > 0) {
+      return path.join(cacheDir, versions[0]);
+    }
+  } catch {
+    // Cache dir doesn't exist yet
+  }
+  return null;
 }
 
 main().catch((error) => {

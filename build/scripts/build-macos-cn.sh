@@ -586,7 +586,7 @@ BMETA
 log "build-meta.json: Node ${NODE_VERSION}, V8 ${NODE_V8_VERSION}, commit ${GIT_COMMIT}"
 
 # ── Install marker (for auto-update detection) ──
-UPDATE_SERVER="${OPENCLAWCN_UPDATE_SERVER:-http://47.98.123.45}"
+UPDATE_SERVER="${OPENCLAWCN_UPDATE_SERVER:-https://dl.obplugins.cn}"
 cat > "$APP_ROOT/install.json" <<INSTALL_MARKER
 {
   "version": "${VERSION}",
@@ -811,6 +811,23 @@ if [[ "${SKIP_NOTARIZE:-1}" != "1" ]] && [[ -n "$SIGN_IDENTITY" ]]; then
   fi
 else
   log "Skipping notarization (SKIP_NOTARIZE=${SKIP_NOTARIZE:-1})"
+fi
+
+# ============================================================================
+# Step 10: Post-build validation (non-blocking)
+# ============================================================================
+VALIDATION_SCRIPT="$ROOT_DIR/scripts/macos/post-build-validation.sh"
+if [[ -f "$VALIDATION_SCRIPT" ]]; then
+  log_step "Step 10: Post-build validation"
+  STEP_START=$(date +%s)
+  chmod +x "$VALIDATION_SCRIPT"
+  if bash "$VALIDATION_SCRIPT" --app-dir "$APP_DIR" --log-dir "$OUTPUT_DIR/validation-logs"; then
+    log "Post-build validation passed ($(elapsed_since $STEP_START))"
+  else
+    warn "Post-build validation FAILED ($? tests failed) — build artifact still available"
+  fi
+else
+  log "Skipping post-build validation (script not found: $VALIDATION_SCRIPT)"
 fi
 
 # ============================================================================

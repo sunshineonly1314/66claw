@@ -6,7 +6,7 @@
 #define MyAppVersion "2026.2.0"
 #define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
-#define MyAppUpdateServer "http://47.98.123.45"
+#define MyAppUpdateServer "https://dl.obplugins.cn"
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -212,11 +212,12 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   if ResultCode = 0 then
   begin
-    if MsgBox(#$7AEF#$53E3 + ' 18789 ' + #$5DF2#$88AB#$5360#$7528#$FF01 + #13#10 + #13#10
+    // SuppressibleMsgBox: auto-selects IDYES under /SUPPRESSMSGBOXES (silent install)
+    if SuppressibleMsgBox(#$7AEF#$53E3 + ' 18789 ' + #$5DF2#$88AB#$5360#$7528#$FF01 + #13#10 + #13#10
       + 'ClawdbotCN ' + #$9700#$8981#$4F7F#$7528#$6B64#$7AEF#$53E3#$3002 + #13#10
       + #$5B89#$88C5#$7A0B#$5E8F#$5C06#$5728#$5B89#$88C5#$65F6#$81EA#$52A8#$5173#$95ED#$5360#$7528#$8FDB#$7A0B#$3002 + #13#10 + #13#10
       + #$662F#$5426#$7EE7#$7EED#$5B89#$88C5#$FF1F,
-      mbConfirmation, MB_YESNO) = IDNO then
+      mbConfirmation, MB_YESNO, IDYES) = IDNO then
     begin
       Result := False;
       Exit;
@@ -227,15 +228,15 @@ begin
   OldConfigDir := GetEnv('USERPROFILE') + '\.clawdbot';
   if DirExists(OldConfigDir) then
   begin
-    // Show info message - user can choose to continue or cancel
-    if MsgBox(
+    // SuppressibleMsgBox: auto-selects IDOK under /SUPPRESSMSGBOXES (silent install)
+    if SuppressibleMsgBox(
       'Detected previous Clawdbot installation.' + #13#10 + #13#10 +
       'ClawdbotCN will use an isolated config directory.' + #13#10 +
       'Your original data will not be affected.' + #13#10 + #13#10 +
       'Old config: ' + OldConfigDir + #13#10 +
       'New config: %APPDATA%\ClawdbotCN' + #13#10 + #13#10 +
       'Click OK to continue, Cancel to exit.',
-      mbInformation, MB_OKCANCEL) = IDCANCEL then
+      mbInformation, MB_OKCANCEL, IDOK) = IDCANCEL then
     begin
       Result := False;
     end;
