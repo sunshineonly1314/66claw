@@ -44,9 +44,14 @@ if (Test-Path $sqliteNode) {
 
 # Rebuild
 try {
+    $prevEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & pnpm rebuild better-sqlite3 2>&1 | ForEach-Object {
         Write-Host "  $_" -ForegroundColor DarkGray
     }
+    $rebuildCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEA
+    if ($rebuildCode -ne 0) { throw "pnpm rebuild exited with code $rebuildCode" }
     Write-Host "  OK: Native modules rebuilt" -ForegroundColor Green
 } catch {
     Write-Host "  ERROR: Failed to rebuild native modules" -ForegroundColor Red
@@ -59,6 +64,8 @@ Write-Host ""
 # Step 3: Build TypeScript
 Write-Host "[3/5] Building TypeScript..." -ForegroundColor Yellow
 try {
+    $prevEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & pnpm build 2>&1 | ForEach-Object {
         if ($_ -match "error|ERROR|✘") {
             Write-Host "  $_" -ForegroundColor Red
@@ -66,6 +73,9 @@ try {
             Write-Host "  $_" -ForegroundColor DarkGray
         }
     }
+    $tsBuildCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEA
+    if ($tsBuildCode -ne 0) { throw "pnpm build exited with code $tsBuildCode" }
 
     # Verify dist/entry.js exists
     $entryJs = Join-Path $ProjectRoot "dist\entry.js"
@@ -138,7 +148,7 @@ while ($waited -lt 10) {
         Write-Host ""
         Write-Host "  The gateway is still crashing. Possible causes:" -ForegroundColor Yellow
         Write-Host "  1. Missing node_modules - run 'pnpm install'" -ForegroundColor Gray
-        Write-Host "  2. Incompatible Node.js version - use Node.js 20.x" -ForegroundColor Gray
+        Write-Host "  2. Incompatible Node.js version - use Node.js 22.x LTS" -ForegroundColor Gray
         Write-Host "  3. Corrupted installation - delete node_modules and reinstall" -ForegroundColor Gray
         Pop-Location
         exit 1

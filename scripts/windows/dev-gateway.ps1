@@ -50,8 +50,11 @@ else {
     if ($env:CLAWDBOT_TS_COMPILER -eq "tsc") { $compiler = "tsc" }
     Write-Host "       compiler: $compiler" -ForegroundColor DarkGray
     Push-Location $ProjectRoot
+    $prevEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & pnpm exec $compiler --project tsconfig.json 2>&1 | ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
     $bc = $LASTEXITCODE
+    $ErrorActionPreference = $prevEA
     Pop-Location
     if ($bc -ne 0) {
         Write-Host "       [x] Build FAILED" -ForegroundColor Red
@@ -62,7 +65,10 @@ else {
     # Regenerate integrity hashes after build (prevents "File tampered" errors in dev)
     Write-Host "       Regenerating integrity hashes..." -ForegroundColor DarkGray
     Push-Location $ProjectRoot
+    $prevEA = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & node --import tsx scripts/generate-integrity-hashes.ts 2>&1 | ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
+    $ErrorActionPreference = $prevEA
     Pop-Location
     Write-Host "       [OK] Integrity hashes updated" -ForegroundColor Green
 }

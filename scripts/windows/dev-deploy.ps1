@@ -30,8 +30,12 @@ if (-not $SkipBuild) {
     Write-Host "[2/4] Building..." -ForegroundColor Cyan
     Push-Location $srcBase
     try {
-        & npm run build 2>&1
-        if ($LASTEXITCODE -ne 0) {
+        $prevEA = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & cmd /c "npm run build" 2>&1
+        $buildCode = $LASTEXITCODE
+        $ErrorActionPreference = $prevEA
+        if ($buildCode -ne 0) {
             Write-Host "ERROR: Build failed!" -ForegroundColor Red
             exit 1
         }

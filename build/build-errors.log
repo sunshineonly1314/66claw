@@ -39,8 +39,36 @@ Symptom: build-windows.ps1 step 5 "Verifying required files" fails because
 Fix: Created docs-cn/reference/templates/.gitkeep locally (matching remote builder)
 Note: This directory should be committed to the repo to prevent future issues
 
+=== Proactive Audit: Same-class bugs in other Windows scripts ===
+
+--- Bug #6: dev-gateway.ps1 unprotected pnpm/node stderr (2 calls) ---
+File: scripts/windows/dev-gateway.ps1:53,65
+Symptom: `& pnpm exec` and `& node --import tsx` calls run under
+         ErrorActionPreference=Stop. Any stderr output (deprecation
+         warnings, TS experimental features) can abort the script.
+Fix: Wrap both calls with ErrorActionPreference=Continue guard
+
+--- Bug #7: dev-deploy.ps1 unprotected npm call ---
+File: scripts/windows/dev-deploy.ps1:33
+Symptom: `& npm run build` under ErrorActionPreference=Stop. npm
+         stderr warnings abort before $LASTEXITCODE check.
+Fix: Wrap with cmd /c + ErrorActionPreference=Continue guard
+
+--- Bug #8: rebuild-and-fix.ps1 unprotected pnpm calls (2 calls) ---
+File: scripts/windows/rebuild-and-fix.ps1:47,62
+Symptom: `& pnpm rebuild` and `& pnpm build` under
+         ErrorActionPreference=Stop. Native module rebuild warnings
+         and TS build stderr can abort the script.
+Fix: Wrap both with ErrorActionPreference=Continue guard + explicit exit code check
+
+--- Bug #9: setup.iss patches without skipifsourcedoesntexist ---
+File: scripts/windows/setup.iss:86
+Symptom: `Source: "..\..\patches\*"` has no skipifsourcedoesntexist flag.
+         If patches directory is missing, Inno Setup compilation fails.
+Fix: Added skipifsourcedoesntexist flag for defensive build
+
 === Build Result ===
-After all 5 fixes: LOCAL BUILD SUCCEEDED
+After all 9 fixes: LOCAL BUILD SUCCEEDED
 Output: E:\clawdbuild\ClawdbotCN-Setup-2026.2.15-x64.exe (156.76 MB)
 Build time: 9m 15s
 Mode: standard, Compression: LZMA2/max

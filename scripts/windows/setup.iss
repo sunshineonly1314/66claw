@@ -6,6 +6,7 @@
 #define MyAppVersion "2026.2.0"
 #define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
+#define MyAppUpdateServer "http://47.98.123.45"
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -82,7 +83,7 @@ Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 ; pnpm patches (required by proper-lockfile@4.1.2)
-Source: "..\..\patches\*"; DestDir: "{app}\patches"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\patches\*"; DestDir: "{app}\patches"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; postinstall scripts (referenced by package.json)
 Source: "..\..\scripts\postinstall.js"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\..\scripts\format-staged.js"; DestDir: "{app}\scripts"; Flags: ignoreversion
@@ -277,7 +278,8 @@ begin
       MarkerContent := '{' + #13#10 +
         '  "version": "{#MyAppVersion}",' + #13#10 +
         '  "installTime": "' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '",' + #13#10 +
-        '  "firstLaunch": false' + #13#10 +
+        '  "firstLaunch": false,' + #13#10 +
+        '  "updateServer": "{#MyAppUpdateServer}"' + #13#10 +
         '}';
     end
     else
@@ -286,7 +288,8 @@ begin
       MarkerContent := '{' + #13#10 +
         '  "version": "{#MyAppVersion}",' + #13#10 +
         '  "installTime": "' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '",' + #13#10 +
-        '  "firstLaunch": true' + #13#10 +
+        '  "firstLaunch": true,' + #13#10 +
+        '  "updateServer": "{#MyAppUpdateServer}"' + #13#10 +
         '}';
     end;
     SaveStringToFile(InstallMarker, MarkerContent, False);
