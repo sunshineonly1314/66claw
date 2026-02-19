@@ -102,7 +102,16 @@
       "src/agents/skills/marketplace/db.ts",
       "src/agents/skills/marketplace/db.test.ts",
       "src/gateway/server-methods/skills-marketplace-search.ts",
-      "src/gateway/server-methods/skills-marketplace-search.test.ts"
+      "src/gateway/server-methods/skills-marketplace-search.test.ts",
+      "src/memory/search-tiering-cn.ts",
+      "src/memory/memory-schema.ts",
+      "src/security/delayed-enforcement.ts",
+      "src/gateway/server-methods/model-config.ts",
+      "src/mcp/marketplace-sync.ts",
+      "src/mcp/marketplace-index.ts",
+      "src/mcp/marketplace/modelscope-source.ts",
+      "src/mcp/marketplace/ai-enhancer.ts",
+      "src/config/provider-capability-mapping.ts"
     ],
     "directories": [
       "src/dispatch/",
@@ -223,6 +232,16 @@
         "path": "src/agents/openclaw-tools.ts",
         "cn_injection": "Registers CN-only tools (open_app, desktop_control, wechat, image_gen, mcp_install) into the runtime tool factory",
         "marker": "CN-PATCH"
+      },
+      {
+        "path": "src/gateway/server-methods/update.ts",
+        "cn_injection": "CN update handler with OpenClawCN package root resolution and restart sentinel",
+        "marker": "resolveOpenClawCNPackageRoot|runGatewayUpdate"
+      },
+      {
+        "path": "src/agents/skills-install.ts",
+        "cn_injection": "CN install progress callback, Windows Go paths, CN-specific build paths",
+        "marker": "OpenClawCN:"
       }
     ]
   },
@@ -298,12 +317,21 @@
         "src/infra/voicewake.ts",
         "src/mcp/marketplace/db-schema.ts",
         "src/mcp/marketplace/db.ts",
-        "src/gateway/server-methods/mcp-marketplace-search.ts"
+        "src/gateway/server-methods/mcp-marketplace-search.ts",
+        "src/gateway/server-methods/model-config.ts",
+        "src/gateway/server-methods/skills-marketplace-search.ts",
+        "src/mcp/marketplace-sync.ts",
+        "src/mcp/marketplace-index.ts",
+        "src/mcp/marketplace/modelscope-source.ts",
+        "src/mcp/marketplace/ai-enhancer.ts",
+        "src/config/provider-capability-mapping.ts",
+        "src/memory/search-tiering-cn.ts",
+        "src/memory/memory-schema.ts"
       ]
     },
 
     "obfuscate": {
-      "description": "Standard protection: RC4 obfuscation only (no bytecode). For CN extensions and less-critical CN code.",
+      "description": "Standard protection: RC4 obfuscation only (no bytecode). For CN extensions, UI views and less-critical CN code.",
       "directories": [
         "extensions/feishu/",
         "extensions/dingtalk/",
@@ -317,7 +345,27 @@
         "src/mcp/on-demand-loader.ts",
         "src/agents/tools/mcp-install-tool.ts",
         "src/agents/skills/marketplace/db.ts",
-        "src/agents/skills/marketplace/db-schema.ts"
+        "src/agents/skills/marketplace/db-schema.ts",
+        "src/agents/skills/marketplace/types.ts"
+      ]
+    },
+
+    "ui_obfuscate": {
+      "$comment": "UI files to obfuscate during UI build. These are CN-specific UI views/controllers that contain proprietary logic. Processed separately because UI builds via Vite, not the Node.js pipeline.",
+      "files": [
+        "ui/src/ui/license/license-dialogs.ts",
+        "ui/src/ui/license/license-controller.ts",
+        "ui/src/ui/license/types.ts",
+        "ui/src/ui/license/index.ts",
+        "ui/src/ui/views/model-config.ts",
+        "ui/src/ui/controllers/model-config.ts",
+        "ui/src/ui/views/playground.ts",
+        "ui/src/ui/controllers/playground.ts",
+        "ui/src/ui/views/welcome-discovery.ts",
+        "ui/src/ui/views/skill-install-progress.ts",
+        "ui/src/ui/views/skill-install-approval.ts",
+        "ui/src/ui/views/free-models.ts",
+        "ui/src/ui/views/mcp-batch-config.ts"
       ]
     }
   }
