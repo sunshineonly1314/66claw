@@ -40,6 +40,7 @@ param(
     [string]$OutputDir = "E:\clawdbuild",
     [string]$Version = "",
     [string]$BinariesDir = "",
+    [switch]$ForceBuild,
     [switch]$SkipBuild,
     [switch]$SkipNodeModules,
     [switch]$SkipExtensions,
@@ -477,34 +478,64 @@ $needMainBuild = $false
 $needUiBuild = $false
 
 if (-not $SkipBuild) {
-    $distEntry = "$ProjectRoot\dist\entry.js"
-    if (-not (Test-Path $distEntry)) {
-        Write-Warn "dist/entry.js not found, need to build"
+    # -ForceBuild: skip all incremental checks, always run build:secure from scratch
+    if ($ForceBuild) {
+        Write-Warn "ForceBuild: full build:secure will run (obfuscation + bytecode)"
         $needMainBuild = $true
-    }
-    else {
-        $distTime = (Get-Item $distEntry).LastWriteTime
-        $srcFiles = Get-ChildItem -Path "$ProjectRoot\src" -Filter "*.ts" -Recurse -File
-        $uiFiles = Get-ChildItem -Path "$ProjectRoot\ui\src" -Filter "*.ts" -Recurse -File -ErrorAction SilentlyContinue
-        $allFiles = @($srcFiles) + @($uiFiles) | Where-Object { $_ -and $_.LastWriteTime -gt $distTime }
-        if ($allFiles.Count -gt 0) {
-            Write-Warn "$($allFiles.Count) source files changed since last build"
-            $needMainBuild = $true
-        }
-    }
-
-    $controlUiIndex = "$ProjectRoot\dist\control-ui\index.html"
-    if (-not (Test-Path $controlUiIndex)) {
-        Write-Warn "dist/control-ui/index.html not found, need to build UI"
         $needUiBuild = $true
     }
     else {
-        $uiDistTime = (Get-Item $controlUiIndex).LastWriteTime
-        $uiSrcFiles = Get-ChildItem -Path "$ProjectRoot\ui\src" -Recurse -File -ErrorAction SilentlyContinue
-        $uiNewerFiles = $uiSrcFiles | Where-Object { $_.LastWriteTime -gt $uiDistTime }
-        if ($uiNewerFiles.Count -gt 0) {
-            Write-Warn "$($uiNewerFiles.Count) UI source files changed"
+        $distEntry = "$ProjectRoot\dist\entry.js"
+        if (-not (Test-Path $distEntry)) {
+            Write-Warn "dist/entry.js not found, need to build"
+            $needMainBuild = $true
+        }
+        else {
+            $distTime = (Get-Item $distEntry).LastWriteTime
+            $srcFiles = Get-ChildItem -Path "$ProjectRoot\src" -Filter "*.ts" -Recurse -File
+            $uiFiles = Get-ChildItem -Path "$ProjectRoot\ui\src" -Filter "*.ts" -Recurse -File -ErrorAction SilentlyContinue
+            $allFiles = @($srcFiles) + @($uiFiles) | Where-Object { $_ -and $_.LastWriteTime -gt $distTime }
+            if ($allFiles.Count -gt 0) {
+                Write-Warn "$($allFiles.Count) source files changed since last build"
+                $needMainBuild = $true
+            }
+        }
+
+        # .jsc sanity check: detect stale bytecode (loader-stub compiled into .jsc = "nesting doll")
+        # and missing obfuscation (readable function names in .jsc = obfuscation was skipped)
+        if (-not $needMainBuild) {
+            $sampleJsc = Get-ChildItem -Path "$ProjectRoot\dist\dispatch","$ProjectRoot\dist\license","$ProjectRoot\dist\security" -Filter "*.jsc" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($sampleJsc) {
+                $jscBytes = [System.IO.File]::ReadAllBytes($sampleJsc.FullName)
+                $jscAscii = [System.Text.Encoding]::ASCII.GetString($jscBytes)
+                # Check 1: loader stub compiled into .jsc (nesting doll — .jsc loads another .jsc)
+                if ($jscAscii -match 'bytenode' -and $jscAscii -match '\.jsc') {
+                    Write-Warn "Stale .jsc detected: bytecode contains loader stub (nesting doll)"
+                    Write-Warn "  -> Forcing full rebuild to fix obfuscation + bytecode pipeline"
+                    $needMainBuild = $true
+                }
+                # Check 2: obfuscation was skipped (readable export names in .jsc without _0x patterns)
+                elseif ($jscAscii -notmatch '_0x[a-f0-9]{4}' -and $jscAscii -match 'function|export|module') {
+                    Write-Warn "Obfuscation missing: .jsc contains readable code without obfuscation markers"
+                    Write-Warn "  -> Forcing full rebuild to apply obfuscation before bytecode"
+                    $needMainBuild = $true
+                }
+            }
+        }
+
+        $controlUiIndex = "$ProjectRoot\dist\control-ui\index.html"
+        if (-not (Test-Path $controlUiIndex)) {
+            Write-Warn "dist/control-ui/index.html not found, need to build UI"
             $needUiBuild = $true
+        }
+        else {
+            $uiDistTime = (Get-Item $controlUiIndex).LastWriteTime
+            $uiSrcFiles = Get-ChildItem -Path "$ProjectRoot\ui\src" -Recurse -File -ErrorAction SilentlyContinue
+            $uiNewerFiles = $uiSrcFiles | Where-Object { $_.LastWriteTime -gt $uiDistTime }
+            if ($uiNewerFiles.Count -gt 0) {
+                Write-Warn "$($uiNewerFiles.Count) UI source files changed"
+                $needUiBuild = $true
+            }
         }
     }
 }
@@ -980,7 +1011,10 @@ else {
 #   - No timeout — build runs to completion with real-time output
 #   - Bytecode compiled with portable Node v22 (matches installer runtime)
 #
-#   Pipeline: build:secure (system Node) → bytecode (portable Node) → integrity → ui:build
+#   Pipeline: build+obfuscate (system Node) → bytecode (portable Node) → integrity → ui:build
+#   IMPORTANT: We do NOT run build:secure (which includes bytecode). Instead, we run
+#   build → cn-compile → cn-extensions → obfuscate individually, then bytecode with
+#   portable Node. This prevents the "nesting doll" bug where bytecode runs twice.
 # ============================================================================
 if ($needMainBuild -or $needUiBuild) {
     Write-Host ""
@@ -995,23 +1029,42 @@ if ($needMainBuild -or $needUiBuild) {
     }
 
     if ($needMainBuild) {
-        # Step A: build:secure = build:prod + obfuscate + integrity:gen (system Node, any version OK)
-        Write-Host "  Running: build:secure (TypeScript + obfuscation)..." -ForegroundColor DarkCyan
+        # Step A: Build + obfuscate (everything EXCEPT bytecode compilation)
+        #   build:secure = build → cn-compile → cn-extensions → obfuscate → compile-bytecode → integrity → changelog
+        #   We skip compile-bytecode here because Step B recompiles with portable Node.
+        #   If we ran it here (system Node v24) AND in Step B (portable Node v22), the second pass
+        #   would compile the loader stubs into .jsc instead of the actual obfuscated code ("nesting doll" bug).
+        Write-Host "  Running: TypeScript build + obfuscation (no bytecode yet)..." -ForegroundColor DarkCyan
         $buildStart = Get-Date
         $prevEA = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        & pnpm build:secure 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-        $buildCode = $LASTEXITCODE
-        $ErrorActionPreference = $prevEA
 
-        if ($buildCode -ne 0) {
-            Write-Err "build:secure failed (exit $buildCode)"
-            exit 1
+        # Run each step individually, skipping compile-bytecode.ts
+        $stepCmds = @(
+            @{ Name = "build"; Cmd = "pnpm build" },
+            @{ Name = "build:cn-compile"; Cmd = "pnpm build:cn-compile" },
+            @{ Name = "build:cn-extensions"; Cmd = "pnpm build:cn-extensions" },
+            @{ Name = "obfuscate"; Cmd = "node --import tsx scripts/obfuscate-dist.ts" }
+            # compile-bytecode.ts is handled in Step B with portable Node
+            # integrity:gen is handled in Step C (after bytecode)
+        )
+
+        foreach ($step in $stepCmds) {
+            Write-Host "    [$($step.Name)]" -ForegroundColor DarkGray
+            & cmd /c $step.Cmd 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            if ($LASTEXITCODE -ne 0) {
+                $ErrorActionPreference = $prevEA
+                Write-Err "$($step.Name) failed (exit $LASTEXITCODE)"
+                exit 1
+            }
         }
-        Write-OK "build:secure completed ($(Get-ElapsedTime $buildStart))"
+
+        $ErrorActionPreference = $prevEA
+        Write-OK "Build + obfuscation completed ($(Get-ElapsedTime $buildStart))"
 
         # Step B: Bytecode compilation with PORTABLE Node (V8 bytecode is version-specific)
         # The installer bundles portable Node, so .jsc must be compiled by the same V8 engine.
+        # This runs ONCE — the only bytecode pass — on the freshly obfuscated .js files.
         $portableNodeExe = "$nodePortableDir\node.exe"
         if (Test-Path $portableNodeExe) {
             $portableNodeVer = (& $portableNodeExe --version 2>$null) -replace '^v', ''
@@ -1040,20 +1093,21 @@ if ($needMainBuild -or $needUiBuild) {
             Write-Warn "Portable Node not found, skipping bytecode compilation"
         }
 
-        # Step C: Regenerate integrity hashes (must be AFTER bytecode, since loader stubs changed)
+        # Step C: Regenerate integrity hashes + changelog (must be AFTER bytecode, since loader stubs changed)
         Write-Host "  Regenerating integrity hashes..." -ForegroundColor DarkCyan
         $integrityStart = Get-Date
         $prevEA = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         & pnpm integrity:gen 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
         $intCode = $LASTEXITCODE
-        $ErrorActionPreference = $prevEA
-
         if ($intCode -ne 0) {
+            $ErrorActionPreference = $prevEA
             Write-Err "Integrity hash generation failed (exit $intCode)"
             exit 1
         }
-        Write-OK "Integrity hashes regenerated ($(Get-ElapsedTime $integrityStart))"
+        & pnpm release:changelog 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        $ErrorActionPreference = $prevEA
+        Write-OK "Integrity hashes + changelog regenerated ($(Get-ElapsedTime $integrityStart))"
     }
 
     if ($needUiBuild) {
@@ -1477,23 +1531,36 @@ if (Test-Path $portableNodeExe) {
     if ($needBytecodeRecompile) {
         # IMPORTANT: Must rebuild dist/ from source first — existing .js files may be
         # bytecode loaders from a previous build, not the original obfuscated ESM code.
-        # Compiling loaders back to bytecode produces broken .jsc files.
-        Write-Host "  Rebuilding source (build:secure) before bytecode recompilation..." -ForegroundColor DarkCyan
+        # Compiling loaders back to bytecode produces broken .jsc files ("nesting doll" bug).
+        # We run build + obfuscate (NO bytecode), then compile bytecode once with portable Node.
+        Write-Host "  Rebuilding source (build + obfuscate) before bytecode recompilation..." -ForegroundColor DarkCyan
         $rebuildStart = Get-Date
         $prevEA = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         Set-Location $ProjectRoot
-        & pnpm build:secure 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-        $rebuildCode = $LASTEXITCODE
-        $ErrorActionPreference = $prevEA
 
-        if ($rebuildCode -ne 0) {
-            Write-Err "build:secure failed during bytecode recompilation (exit $rebuildCode)"
-            exit 1
+        # Run build pipeline WITHOUT compile-bytecode.ts (Step B handles that)
+        $rebuildSteps = @(
+            @{ Name = "build"; Cmd = "pnpm build" },
+            @{ Name = "build:cn-compile"; Cmd = "pnpm build:cn-compile" },
+            @{ Name = "build:cn-extensions"; Cmd = "pnpm build:cn-extensions" },
+            @{ Name = "obfuscate"; Cmd = "node --import tsx scripts/obfuscate-dist.ts" }
+        )
+
+        foreach ($step in $rebuildSteps) {
+            Write-Host "    [$($step.Name)]" -ForegroundColor DarkGray
+            & cmd /c $step.Cmd 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            if ($LASTEXITCODE -ne 0) {
+                $ErrorActionPreference = $prevEA
+                Write-Err "$($step.Name) failed during bytecode recompilation (exit $LASTEXITCODE)"
+                exit 1
+            }
         }
-        Write-OK "Source rebuilt ($(Get-ElapsedTime $rebuildStart))"
 
-        # Now compile bytecode with portable Node
+        $ErrorActionPreference = $prevEA
+        Write-OK "Source rebuilt + obfuscated ($(Get-ElapsedTime $rebuildStart))"
+
+        # Now compile bytecode with portable Node (ONCE — no double compilation)
         Write-Host "  Compiling bytecode with portable Node v$portableNodeVer..." -ForegroundColor DarkCyan
         $bytecodeStart = Get-Date
         $prevEA = $ErrorActionPreference
