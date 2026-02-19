@@ -363,7 +363,17 @@ fn read_config_token() -> Option<String> {
 }
 
 /// Returns the gateway port number.
+/// In dev mode, reads `GATEWAY_PORT` env var so Tauri connects to the
+/// externally-started gateway (e.g. on port 19001) instead of the
+/// production default (18789).
 pub fn gateway_port() -> u16 {
+    if is_dev_mode() {
+        if let Ok(val) = std::env::var("GATEWAY_PORT") {
+            if let Ok(port) = val.parse::<u16>() {
+                return port;
+            }
+        }
+    }
     GATEWAY_PORT
 }
 

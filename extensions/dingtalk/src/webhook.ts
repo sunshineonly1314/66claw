@@ -54,26 +54,49 @@ function verifyDingtalkSignature(
 }
 
 /**
- * 读取请求体（带大小限制防止 DoS 攻击）
+ * 读取请求体（带大小限制和总超时防止 DoS 攻击）
  * FIX BUG-R2-4
  */
 const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
+const READ_BODY_TIMEOUT_MS = 30_000; // 30 秒总超时
 
 async function readBody(req: IncomingMessage, maxSize: number = MAX_BODY_SIZE): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalSize = 0;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      req.destroy();
+      reject(new Error(`Request body read timeout after ${READ_BODY_TIMEOUT_MS}ms`));
+    }, READ_BODY_TIMEOUT_MS);
+
     req.on("data", (chunk: Buffer) => {
+      if (settled) return;
       totalSize += chunk.length;
       if (totalSize > maxSize) {
+        settled = true;
+        clearTimeout(timer);
         req.destroy();
         reject(new Error(`Request body exceeds maximum size limit (${maxSize} bytes)`));
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString("utf-8"));
+    });
+    req.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 

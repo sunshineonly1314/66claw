@@ -33,6 +33,15 @@ const LOCAL_IMAGE_RE =
 const BARE_IMAGE_PATH_RE =
   /`?((?:\/(?:tmp|var|private|Users|home|root)\/[^\s`'",)]+|[A-Za-z]:[\\/][^\s`'",)]+)\.(?:png|jpg|jpeg|gif|bmp|webp))`?/gi;
 
+/** OAPI Token 获取超时: 10 秒 */
+const TOKEN_TIMEOUT_MS = 10_000;
+
+/** 文件上传超时: 30 秒 */
+const UPLOAD_TIMEOUT_MS = 30_000;
+
+/** 最大上传文件大小: 10 MB */
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
 // ============================================================================
 // OAPI Token 获取
 // ============================================================================
@@ -58,6 +67,7 @@ export async function getOapiAccessToken(config: DingtalkChannelConfig): Promise
   try {
     const resp = await fetch(
       `https://oapi.dingtalk.com/gettoken?appkey=${encodeURIComponent(appKey)}&appsecret=${encodeURIComponent(appSecret)}`,
+      { signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS) },
     );
     const data = (await resp.json()) as { errcode?: number; access_token?: string; expires_in?: number };
 
@@ -111,18 +121,26 @@ export async function uploadToDingTalk(
       return null;
     }
 
+    // 检查文件大小
+    const stat = fs.statSync(absPath);
+    if (stat.size > MAX_UPLOAD_SIZE) {
+      log?.warn?.(`[DingTalk][Media] 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > ${MAX_UPLOAD_SIZE / 1024 / 1024}MB): ${absPath}`);
+      return null;
+    }
+
     // 使用 FormData 上传
     const fileBuffer = fs.readFileSync(absPath);
     const fileName = path.basename(absPath);
     const formData = new FormData();
     formData.append("media", new Blob([fileBuffer]), fileName);
 
-    log?.info?.(`[DingTalk][Media] 上传图片: ${absPath}`);
+    log?.info?.(`[DingTalk][Media] 上传图片: ${absPath} (${(stat.size / 1024).toFixed(1)}KB)`);
     const resp = await fetch(
       `https://oapi.dingtalk.com/media/upload?access_token=${oapiToken}&type=image`,
       {
         method: "POST",
         body: formData,
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
       },
     );
 

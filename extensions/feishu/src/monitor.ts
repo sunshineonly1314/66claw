@@ -54,12 +54,20 @@ const activeInstances = new Map<string, FeishuMonitorInstance>();
 
 /**
  * 获取机器人 open_id
+ * 失败时记录日志而非静默吞掉错误
  */
-async function fetchBotOpenId(cfg: FeishuChannelConfig): Promise<string | undefined> {
+async function fetchBotOpenId(
+  cfg: FeishuChannelConfig,
+  log?: (msg: string) => void,
+): Promise<string | undefined> {
   try {
     const result = await probeFeishuConnection(cfg);
+    if (!result.ok) {
+      log?.(`[feishu] 获取机器人信息失败: ${result.error}`);
+    }
     return result.ok ? result.botOpenId : undefined;
-  } catch {
+  } catch (err) {
+    log?.(`[feishu] 获取机器人信息异常: ${String(err)}`);
     return undefined;
   }
 }
@@ -124,10 +132,14 @@ export async function monitorFeishuProvider(opts: MonitorFeishuOpts = {}): Promi
   // 注册实例
   activeInstances.set(accountId, instance);
 
-  // 获取机器人 open_id
+  // 获取机器人 open_id（同时验证凭证有效性）
   if (feishuCfg) {
-    instance.botOpenId = await fetchBotOpenId(feishuCfg);
-    log(`[feishu][${accountId}] 机器人 open_id: ${instance.botOpenId ?? "未知"}`);
+    instance.botOpenId = await fetchBotOpenId(feishuCfg, log);
+    if (instance.botOpenId) {
+      log(`[feishu][${accountId}] 机器人 open_id: ${instance.botOpenId}`);
+    } else {
+      error(`[feishu][${accountId}] 无法获取机器人信息，请检查 appId/appSecret 是否正确。WebSocket 连接仍将尝试启动。`);
+    }
   }
 
   const connectionMode = feishuCfg?.connectionMode ?? "websocket";

@@ -1,10 +1,18 @@
 import type { ChannelAccountSnapshot } from "../channels/plugins/types.js";
+import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 import type { OpenClawCNConfig } from "../config/config.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { resolveChannelDefaultAccountId } from "../channels/plugins/helpers.js";
 import { type ChannelId, getChannelPlugin, listChannelPlugins } from "../channels/plugins/index.js";
+import {
+  type ChannelRetryPolicy,
+  DEFAULT_CHANNEL_RETRY_POLICY,
+  computeBackoff,
+  sleepWithAbort,
+} from "../infra/backoff.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { formatDurationSeconds } from "../infra/format-duration.js";
 import { resetDirectoryCache } from "../infra/outbound/target-resolver.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 
@@ -60,6 +68,17 @@ export type ChannelManager = {
   markChannelLoggedOut: (channelId: ChannelId, cleared: boolean, accountId?: string) => void;
 };
 
+function resolveChannelRetryPolicy(plugin: ChannelPlugin): ChannelRetryPolicy {
+  const override = plugin.defaults?.retry;
+  if (override === false) {
+    return { ...DEFAULT_CHANNEL_RETRY_POLICY, maxAttempts: 0 };
+  }
+  if (override && typeof override === "object") {
+    return { ...DEFAULT_CHANNEL_RETRY_POLICY, ...override };
+  }
+  return DEFAULT_CHANNEL_RETRY_POLICY;
+}
+
 // Channel docking: lifecycle hooks (`plugin.gateway`) flow through this manager.
 export function createChannelManager(opts: ChannelManagerOptions): ChannelManager {
   const { loadConfig, channelLogs, channelRuntimeEnvs } = opts;
@@ -97,6 +116,7 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
     const plugin = getChannelPlugin(channelId);
     const startAccount = plugin?.gateway?.startAccount;
     if (!startAccount) {
+      channelLogs[channelId]?.debug?.(`[${channelId}] no startAccount handler, skipping`);
       return;
     }
     const cfg = loadConfig();
@@ -128,10 +148,12 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
         if (!enabled) {
           // Clean up abort controller since we're not actually starting
           store.aborts.delete(id);
+          const reason = plugin.config.disabledReason?.(account, cfg) ?? "disabled";
+          channelLogs[channelId]?.info?.(`[${channelId}][${id}] skipped: ${reason}`);
           setRuntime(channelId, id, {
             accountId: id,
             running: false,
-            lastError: plugin.config.disabledReason?.(account, cfg) ?? "disabled",
+            lastError: reason,
           });
           return;
         }
@@ -143,47 +165,113 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
         if (!configured) {
           // Clean up abort controller since we're not actually starting
           store.aborts.delete(id);
+          const reason = plugin.config.unconfiguredReason?.(account, cfg) ?? "not configured";
+          channelLogs[channelId]?.info?.(`[${channelId}][${id}] skipped: ${reason}`);
           setRuntime(channelId, id, {
             accountId: id,
             running: false,
-            lastError: plugin.config.unconfiguredReason?.(account, cfg) ?? "not configured",
+            lastError: reason,
           });
           return;
         }
 
-        setRuntime(channelId, id, {
-          accountId: id,
-          running: true,
-          lastStartAt: Date.now(),
-          lastError: null,
-        });
-
         const log = channelLogs[channelId];
-        const task = startAccount({
-          cfg,
-          accountId: id,
-          account,
-          runtime: channelRuntimeEnvs[channelId],
-          abortSignal: abort.signal,
-          log,
-          getStatus: () => getRuntime(channelId, id),
-          setStatus: (next) => setRuntime(channelId, id, next),
-        });
-        const tracked = Promise.resolve(task)
-          .catch((err) => {
-            const message = formatErrorMessage(err);
-            setRuntime(channelId, id, { accountId: id, lastError: message });
-            log.error?.(`[${id}] channel exited: ${message}`);
-          })
-          .finally(() => {
-            store.aborts.delete(id);
-            store.tasks.delete(id);
+        const retryPolicy = resolveChannelRetryPolicy(plugin);
+
+        const task = (async () => {
+          let reconnectAttempts = 0;
+          let currentCfg = cfg;
+          let currentAccount = account;
+
+          while (!abort.signal.aborted) {
+            const attemptStartedAt = Date.now();
+
             setRuntime(channelId, id, {
               accountId: id,
-              running: false,
-              lastStopAt: Date.now(),
+              running: true,
+              lastStartAt: attemptStartedAt,
+              lastError: null,
+              reconnectAttempts,
             });
+
+            try {
+              await startAccount({
+                cfg: currentCfg,
+                accountId: id,
+                account: currentAccount,
+                runtime: channelRuntimeEnvs[channelId],
+                abortSignal: abort.signal,
+                log,
+                getStatus: () => getRuntime(channelId, id),
+                setStatus: (next) => setRuntime(channelId, id, next),
+              });
+              // startAccount resolved cleanly — no retry needed.
+              return;
+            } catch (err) {
+              if (abort.signal.aborted) {
+                return;
+              }
+
+              const message = formatErrorMessage(err);
+              const uptimeMs = Date.now() - attemptStartedAt;
+
+              // Reset backoff if channel ran for a healthy stretch.
+              if (uptimeMs >= retryPolicy.healthyUptimeMs) {
+                reconnectAttempts = 0;
+              }
+
+              reconnectAttempts += 1;
+
+              setRuntime(channelId, id, {
+                accountId: id,
+                lastError: message,
+                reconnectAttempts,
+              });
+
+              // Max attempts reached — give up.
+              if (retryPolicy.maxAttempts > 0 && reconnectAttempts >= retryPolicy.maxAttempts) {
+                log.error?.(
+                  `[${id}] channel failed after ${reconnectAttempts} attempt(s): ${message}; giving up`,
+                );
+                return;
+              }
+
+              // No retry when maxAttempts is 0 (opt-out).
+              if (retryPolicy.maxAttempts === 0) {
+                log.error?.(`[${id}] channel exited: ${message}`);
+                return;
+              }
+
+              const delayMs = computeBackoff(retryPolicy, reconnectAttempts);
+              const maxLabel =
+                retryPolicy.maxAttempts > 0 ? String(retryPolicy.maxAttempts) : "\u221e";
+              log.warn?.(
+                `[${id}] channel failed (attempt ${reconnectAttempts}/${maxLabel}): ${message}; retrying in ${formatDurationSeconds(delayMs)}`,
+              );
+
+              try {
+                await sleepWithAbort(delayMs, abort.signal);
+              } catch {
+                // Sleep interrupted by abort — stop retrying.
+                return;
+              }
+
+              // Re-read config before retrying (may have been hot-reloaded).
+              currentCfg = loadConfig();
+              currentAccount = plugin.config.resolveAccount(currentCfg, id);
+            }
+          }
+        })();
+
+        const tracked = task.finally(() => {
+          store.aborts.delete(id);
+          store.tasks.delete(id);
+          setRuntime(channelId, id, {
+            accountId: id,
+            running: false,
+            lastStopAt: Date.now(),
           });
+        });
         store.tasks.set(id, tracked);
       }),
     );

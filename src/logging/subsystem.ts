@@ -4,7 +4,7 @@ import { CHAT_CHANNEL_ORDER } from "../channels/registry.js";
 import { isVerbose } from "../globals.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { clearActiveProgressLine } from "../terminal/progress-line.js";
-import { getConsoleSettings, shouldLogSubsystemToConsole } from "./console.js";
+import { getConsoleSettings, shouldLogSubsystemToConsole, isEpipeError } from "./console.js";
 import { type LogLevel, levelToMinLevel } from "./levels.js";
 import { getChildLogger, isFileLogLevelEnabled } from "./logger.js";
 import { loggingState } from "./state.js";
@@ -189,18 +189,24 @@ function formatConsoleLine(opts: {
 }
 
 function writeConsoleLine(level: LogLevel, line: string) {
-  clearActiveProgressLine();
   const sanitized =
     process.platform === "win32" && process.env.GITHUB_ACTIONS === "true"
       ? line.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, "?").replace(/[\uD800-\uDFFF]/g, "?")
       : line;
   const sink = loggingState.rawConsole ?? console;
-  if (loggingState.forceConsoleToStderr || level === "error" || level === "fatal") {
-    (sink.error ?? console.error)(sanitized);
-  } else if (level === "warn") {
-    (sink.warn ?? console.warn)(sanitized);
-  } else {
-    (sink.log ?? console.log)(sanitized);
+  try {
+    clearActiveProgressLine();
+    if (loggingState.forceConsoleToStderr || level === "error" || level === "fatal") {
+      (sink.error ?? console.error)(sanitized);
+    } else if (level === "warn") {
+      (sink.warn ?? console.warn)(sanitized);
+    } else {
+      (sink.log ?? console.log)(sanitized);
+    }
+  } catch (err) {
+    if (!isEpipeError(err)) {
+      throw err;
+    }
   }
 }
 
@@ -220,10 +226,16 @@ function logToFile(
   if (typeof method !== "function") {
     return;
   }
-  if (meta && Object.keys(meta).length > 0) {
-    method.call(fileLogger, meta, message);
-  } else {
-    method.call(fileLogger, message);
+  try {
+    if (meta && Object.keys(meta).length > 0) {
+      method.call(fileLogger, meta, message);
+    } else {
+      method.call(fileLogger, message);
+    }
+  } catch (err) {
+    if (!isEpipeError(err)) {
+      throw err;
+    }
   }
 }
 

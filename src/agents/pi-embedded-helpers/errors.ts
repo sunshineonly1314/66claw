@@ -600,6 +600,8 @@ const ERROR_PATTERNS = {
     /daily[_ ]limit/,
     "billing",
     "quota exceeded",
+    // Volcengine/Doubao (火山引擎/豆包) 模型未开通
+    "does not exist",
   ],
   auth: [
     /invalid[_ ]?api[_ ]?key/,
@@ -617,6 +619,10 @@ const ERROR_PATTERNS = {
     /\b403\b/,
     "no credentials found",
     "no api key found",
+    // Volcengine/Doubao (火山引擎/豆包) 特有错误
+    "do not have access",
+    /\binvalid model\b/i,
+    /\bmodel\b.*\bnot\s+(?:enabled|activated)\b/i,
   ],
   format: [
     "string should match pattern",

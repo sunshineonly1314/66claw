@@ -561,11 +561,21 @@ export async function runAgentTurnWithFallback(params: {
         ? sanitizeUserFacingText(message, { errorContext: true })
         : message;
       const trimmedMessage = safeMessage.replace(/\.\s*$/, "");
+
+      // 检测 Volcengine/Doubao (火山引擎/豆包) 模型未开通或不可用
+      const isModelNotEnabledError =
+        message.includes("does not exist") ||
+        message.includes("do not have access") ||
+        /\binvalid model\b/i.test(message) ||
+        /\bmodel\b.*\bnot\s+(?:enabled|activated)\b/i.test(message);
+
       const fallbackText = isContextOverflow
         ? "⚠️ Context overflow — prompt too large for this model. Try a shorter message or a larger-context model."
         : isRoleOrderingError
           ? "⚠️ Message ordering conflict - please try again. If this persists, use /new to start a fresh session."
-          : `⚠️ Agent failed before reply: ${trimmedMessage}.\nLogs: openclawcn logs --follow`;
+          : isModelNotEnabledError
+            ? "⚠️ 模型未开通或不可用。如使用豆包(火山引擎)，请先在控制台「开通管理」页面开通对应模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement"
+            : `⚠️ Agent failed before reply: ${trimmedMessage}.\nLogs: openclawcn logs --follow`;
 
       return {
         kind: "final",

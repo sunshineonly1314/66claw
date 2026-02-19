@@ -1,3 +1,5 @@
+import { isEpipeError } from "../logging/console.js";
+
 export type SafeStreamWriterOptions = {
   beforeWrite?: () => void;
   onBrokenPipe?: (err: NodeJS.ErrnoException, stream: NodeJS.WriteStream) => void;
@@ -9,11 +11,6 @@ export type SafeStreamWriter = {
   reset: () => void;
   isClosed: () => boolean;
 };
-
-function isBrokenPipeError(err: unknown): err is NodeJS.ErrnoException {
-  const code = (err as NodeJS.ErrnoException)?.code;
-  return code === "EPIPE" || code === "EIO";
-}
 
 export function createSafeStreamWriter(options: SafeStreamWriterOptions = {}): SafeStreamWriter {
   let closed = false;
@@ -28,7 +25,7 @@ export function createSafeStreamWriter(options: SafeStreamWriterOptions = {}): S
   };
 
   const handleError = (err: unknown, stream: NodeJS.WriteStream): boolean => {
-    if (!isBrokenPipeError(err)) {
+    if (!isEpipeError(err)) {
       throw err;
     }
     closed = true;

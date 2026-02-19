@@ -529,15 +529,22 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
             "模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
         }
       } catch {
+        // JSON 解析失败，通过 HTTP 状态码判断错误类型
         if (response.status === 401) {
           errorMessage = "API Key 无效或已过期";
         } else if (response.status === 403) {
           errorMessage = "API Key 权限不足";
         } else if (response.status === 429) {
           errorMessage = "请求频率超限，请稍后重试";
-        } else if (response.status === 404 && provider === "volcengine-ark") {
+        } else if (
+          provider === "volcengine-ark" &&
+          (response.status === 404 || response.status === 400)
+        ) {
           errorMessage =
             "模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
+        } else if (errorText) {
+          // 即使 JSON 解析失败，也展示原始错误文本（截断到 200 字符）
+          errorMessage = `验证失败 (${response.status}): ${errorText.slice(0, 200)}`;
         }
       }
 

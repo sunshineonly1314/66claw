@@ -84,57 +84,77 @@ export interface ProxyRegistryConfig {
 // Constants
 // ============================================================================
 
-/** 默认配置 */
-export const DEFAULT_PROXY_CONFIG: ProxyRegistryConfig = {
-  baseUrl: getRequiredEnv("OPENCLAWCN_SKILLS_PROXY_URL"),
-  token: getRequiredEnv("OPENCLAWCN_SKILLS_PROXY_TOKEN"),
-  timeoutMs: 30_000,
-  batchSize: 200,
-};
+/** Cached config instance (lazy singleton). `undefined` = not yet resolved. */
+let _cachedProxyConfig: ProxyRegistryConfig | null | undefined;
 
 /**
- * 获取必需的环境变量，如果未设置则抛出错误
- * @param key 环境变量名
- * @returns 环境变量值
- * @throws Error 如果环境变量未设置或为空
+ * 延迟获取默认代理配置。
+ * 环境变量未设置时返回 null（而非立即抛出异常），
+ * 使模块可以被安全 import，即使代理服务未配置。
+ *
+ * 结果会被缓存（包括 null），避免重复的安全检查日志。
  */
-function getRequiredEnv(key: string): string {
-  const value = process.env[key]?.trim();
+export function getDefaultProxyConfig(): ProxyRegistryConfig | null {
+  if (_cachedProxyConfig !== undefined) return _cachedProxyConfig;
 
-  if (!value) {
-    throw new Error(
-      `SECURITY: Required environment variable ${key} is not set.\n` +
-        `Please configure it in your environment or .env file.\n` +
-        `See documentation: docs/configuration.md`,
+  const baseUrl = process.env.OPENCLAWCN_SKILLS_PROXY_URL?.trim();
+  const token = process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim();
+
+  if (!baseUrl || !token) {
+    logger.debug(
+      "Proxy env vars not configured (OPENCLAWCN_SKILLS_PROXY_URL / OPENCLAWCN_SKILLS_PROXY_TOKEN)",
     );
+    _cachedProxyConfig = null;
+    return null;
   }
+
+  const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
 
   // 安全检查: 生产环境阻止已知的不安全默认值
-  if (key === "OPENCLAWCN_SKILLS_PROXY_TOKEN" && value === "clawdbotCN778") {
-    const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
-    if (!isDev) {
-      throw new Error(
-        `SECURITY: Detected compromised default token "clawdbotCN778".\n` +
-          `This token has been publicly disclosed and must not be used.\n` +
-          `Please generate a new secure token (minimum 32 characters).`,
-      );
-    }
+  if (token === "clawdbotCN778" && !isDev) {
+    logger.warn(
+      "SECURITY: Detected compromised default proxy token. " +
+        "ClawdSkillsProxy disabled. Please generate a new secure token (minimum 32 characters).",
+    );
+    _cachedProxyConfig = null;
+    return null;
   }
 
-  // 安全检查: 生产环境强制 HTTPS，开发环境允许 HTTP
-  if (key === "OPENCLAWCN_SKILLS_PROXY_URL") {
-    const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
-    if (!isDev && !value.startsWith("https://")) {
-      throw new Error(
-        `SECURITY: ${key} must use HTTPS protocol for secure communication.\n` +
-          `Provided: ${value}\n` +
-          `Expected: https://...`,
-      );
-    }
+  // 安全检查: 生产环境强制 HTTPS
+  if (!isDev && !baseUrl.startsWith("https://")) {
+    logger.warn(
+      `SECURITY: Proxy URL must use HTTPS in production (got ${baseUrl}). ` +
+        "ClawdSkillsProxy disabled.",
+    );
+    _cachedProxyConfig = null;
+    return null;
   }
 
-  return value;
+  _cachedProxyConfig = {
+    baseUrl,
+    token,
+    timeoutMs: 30_000,
+    batchSize: 200,
+  };
+
+  return _cachedProxyConfig;
 }
+
+/**
+ * @deprecated Use getDefaultProxyConfig() instead. Retained for backward compatibility.
+ */
+export const DEFAULT_PROXY_CONFIG: ProxyRegistryConfig = new Proxy({} as ProxyRegistryConfig, {
+  get(_target, prop) {
+    const config = getDefaultProxyConfig();
+    if (!config) {
+      throw new Error(
+        `ClawdSkillsProxy is not configured. ` +
+          `Set OPENCLAWCN_SKILLS_PROXY_URL and OPENCLAWCN_SKILLS_PROXY_TOKEN environment variables.`,
+      );
+    }
+    return config[prop as keyof ProxyRegistryConfig];
+  },
+});
 
 /** Managed skills directory */
 const MANAGED_SKILLS_DIR = path.join(CONFIG_DIR, "skills");
@@ -207,10 +227,15 @@ function convertToRemoteSkillMeta(proxyMeta: ProxySkillMeta): RemoteSkillMeta {
  * @param sinceVersion 可选，增量拉取的起始版本号
  */
 export async function fetchProxySkillsIndex(
-  config: ProxyRegistryConfig = DEFAULT_PROXY_CONFIG,
+  config?: ProxyRegistryConfig,
   sinceVersion?: number,
 ): Promise<FetchIndexResult> {
-  let url = `${config.baseUrl}/skills/index`;
+  const resolvedConfig = config ?? getDefaultProxyConfig();
+  if (!resolvedConfig) {
+    return { ok: false, error: "ClawdSkillsProxy not configured (missing env vars)" };
+  }
+
+  let url = `${resolvedConfig.baseUrl}/skills/index`;
   if (sinceVersion !== undefined) {
     url += `?sinceVersion=${sinceVersion}`;
   }
@@ -218,7 +243,7 @@ export async function fetchProxySkillsIndex(
   logger.debug("Fetching skills index from proxy", { url, sinceVersion });
 
   try {
-    const response = await fetchWithAuth(url, config);
+    const response = await fetchWithAuth(url, resolvedConfig);
 
     if (!response.ok) {
       const errorText = `HTTP ${response.status}: ${response.statusText}`;
@@ -370,9 +395,13 @@ async function extractZipToDir(
  */
 export async function installProxySkill(
   skillMeta: RemoteSkillMeta,
-  config: ProxyRegistryConfig = DEFAULT_PROXY_CONFIG,
+  config?: ProxyRegistryConfig,
   targetDir?: string,
 ): Promise<InstallSkillResult> {
+  const resolvedConfig = config ?? getDefaultProxyConfig();
+  if (!resolvedConfig) {
+    return { ok: false, error: "ClawdSkillsProxy not configured (missing env vars)" };
+  }
   const skillName = skillMeta.name;
   const skillsDir = targetDir ?? MANAGED_SKILLS_DIR;
   const skillDir = path.join(skillsDir, skillName);
@@ -381,7 +410,7 @@ export async function installProxySkill(
 
   try {
     // 下载 zip
-    const downloadResult = await downloadSkillsZip([skillName], config);
+    const downloadResult = await downloadSkillsZip([skillName], resolvedConfig);
     if (!downloadResult.ok) {
       return { ok: false, error: downloadResult.error };
     }
@@ -445,19 +474,31 @@ export async function installProxySkill(
  */
 export async function installProxySkillsBatch(
   skillNames: string[],
-  config: ProxyRegistryConfig = DEFAULT_PROXY_CONFIG,
+  config?: ProxyRegistryConfig,
   targetDir?: string,
 ): Promise<{
   ok: boolean;
   installed: string[];
   failed: Array<{ name: string; error: string }>;
 }> {
+  const resolvedConfig = config ?? getDefaultProxyConfig();
+  if (!resolvedConfig) {
+    return {
+      ok: false,
+      installed: [],
+      failed: skillNames.map((name) => ({
+        name,
+        error: "ClawdSkillsProxy not configured (missing env vars)",
+      })),
+    };
+  }
+
   const skillsDir = targetDir ?? MANAGED_SKILLS_DIR;
   const installed: string[] = [];
   const failed: Array<{ name: string; error: string }> = [];
 
   // 分批处理
-  const batchSize = config.batchSize;
+  const batchSize = resolvedConfig.batchSize;
   for (let i = 0; i < skillNames.length; i += batchSize) {
     const batch = skillNames.slice(i, i + batchSize);
     logger.info("Installing skills batch", {
@@ -468,7 +509,7 @@ export async function installProxySkillsBatch(
 
     try {
       // 下载批次 zip
-      const downloadResult = await downloadSkillsZip(batch, config);
+      const downloadResult = await downloadSkillsZip(batch, resolvedConfig);
       if (!downloadResult.ok) {
         // 整批失败
         for (const name of batch) {
@@ -517,12 +558,17 @@ export async function installProxySkillsBatch(
  */
 export async function downloadSingleSkillFile(
   skillId: string,
-  config: ProxyRegistryConfig = DEFAULT_PROXY_CONFIG,
+  config?: ProxyRegistryConfig,
 ): Promise<{ ok: true; content: string } | { ok: false; error: string }> {
-  const url = `${config.baseUrl}/skills/file/${encodeURIComponent(skillId)}`;
+  const resolvedConfig = config ?? getDefaultProxyConfig();
+  if (!resolvedConfig) {
+    return { ok: false, error: "ClawdSkillsProxy not configured (missing env vars)" };
+  }
+
+  const url = `${resolvedConfig.baseUrl}/skills/file/${encodeURIComponent(skillId)}`;
 
   try {
-    const response = await fetchWithAuth(url, config);
+    const response = await fetchWithAuth(url, resolvedConfig);
 
     if (!response.ok) {
       return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
@@ -540,10 +586,15 @@ export async function downloadSingleSkillFile(
  * 健康检查
  */
 export async function checkProxyHealth(
-  config: ProxyRegistryConfig = DEFAULT_PROXY_CONFIG,
+  config?: ProxyRegistryConfig,
 ): Promise<{ ok: true; globalVersion: number } | { ok: false; error: string }> {
+  const resolvedConfig = config ?? getDefaultProxyConfig();
+  if (!resolvedConfig) {
+    return { ok: false, error: "ClawdSkillsProxy not configured (missing env vars)" };
+  }
+
   // 直连 Java 健康检查端点
-  const healthUrl = config.baseUrl.replace("/api", ":8080/health");
+  const healthUrl = resolvedConfig.baseUrl.replace("/api", ":8080/health");
 
   try {
     const controller = new AbortController();

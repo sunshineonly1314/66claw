@@ -1,3 +1,4 @@
+import type { ChannelRetryPolicy } from "../../infra/backoff.js";
 import type { ChannelOnboardingAdapter } from "./onboarding-types.js";
 import type {
   ChannelAuthAdapter,
@@ -53,6 +54,8 @@ export type ChannelPlugin<ResolvedAccount = any, Probe = unknown, Audit = unknow
     queue?: {
       debounceMs?: number;
     };
+    /** Auto-retry policy for startAccount failures. Set to `false` to disable. */
+    retry?: Partial<ChannelRetryPolicy> | false;
   };
   reload?: { configPrefixes: string[]; noopPrefixes?: string[] };
   // CLI onboarding wizard hooks for this channel.

@@ -19,11 +19,7 @@ import { pipeline } from "node:stream/promises";
 import { CONFIG_DIR, ensureDir } from "../../utils.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { validateUrlForSsrf } from "../../infra/net/ssrf.js";
-import {
-  fetchProxySkillsIndex,
-  installProxySkill,
-  DEFAULT_PROXY_CONFIG,
-} from "./clawdskillsproxy-registry.js";
+import { fetchProxySkillsIndex, installProxySkill } from "./clawdskillsproxy-registry.js";
 
 const logger = createSubsystemLogger("gitee-registry");
 
@@ -33,7 +29,7 @@ const logger = createSubsystemLogger("gitee-registry");
 
 /**
  * 获取当前使用的 skills provider
- * 
+ *
  * 注意：Gitee 已被封禁，现在总是返回 "clawdskillsproxy"
  * @returns "clawdskillsproxy"
  */
@@ -328,9 +324,7 @@ async function downloadFileToPath(
   await ensureDir(path.dirname(destPath));
   const file = fs.createWriteStream(destPath);
   const body = response.body as unknown;
-  const readable = isNodeReadableStream(body)
-    ? body
-    : Readable.fromWeb(body as NodeReadableStream);
+  const readable = isNodeReadableStream(body) ? body : Readable.fromWeb(body as NodeReadableStream);
   await pipeline(readable, file);
 }
 
@@ -380,7 +374,7 @@ function tryLoadLocalIndex(): FetchIndexResult {
 
 /**
  * Fetch the remote skills index
- * 
+ *
  * 注意：Gitee 已被封禁，现在只使用 ClawdSkillsProxy 服务
  */
 export async function fetchRemoteSkillsIndex(
@@ -388,7 +382,7 @@ export async function fetchRemoteSkillsIndex(
 ): Promise<FetchIndexResult> {
   // 直接使用 ClawdSkillsProxy（Gitee 已被封禁）
   logger.debug("Using ClawdSkillsProxy for skills index");
-  return fetchProxySkillsIndex(DEFAULT_PROXY_CONFIG);
+  return fetchProxySkillsIndex();
 }
 
 /**
@@ -397,7 +391,9 @@ export async function fetchRemoteSkillsIndex(
 async function listSkillFiles(
   config: GiteeRegistryConfig,
   skillPath: string,
-): Promise<{ ok: true; files: Array<{ path: string; type: string }> } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; files: Array<{ path: string; type: string }> } | { ok: false; error: string }
+> {
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const apiUrl = buildApiContentsUrl(config, skillPath);
 
@@ -408,7 +404,7 @@ async function listSkillFiles(
       return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
     }
 
-    const data = await response.json() as Array<{ path: string; type: string; name: string }>;
+    const data = (await response.json()) as Array<{ path: string; type: string; name: string }>;
 
     if (!Array.isArray(data)) {
       return { ok: false, error: "Invalid API response" };
@@ -488,11 +484,11 @@ async function downloadSkillDirectory(
 
 /**
  * Install a skill from remote repository to local managed skills directory
- * 
+ *
  * 安装优先级：
  * 1. bundled skills (本地预打包，秒级完成)
  * 2. ClawdSkillsProxy (阿里云代理服务)
- * 
+ *
  * 注意：Gitee 已被封禁，不再作为备选
  */
 export async function installRemoteSkill(
@@ -510,7 +506,7 @@ export async function installRemoteSkill(
 
   // 从 ClawdSkillsProxy 下载（Gitee 已被封禁，不再使用）
   logger.debug("Skill not in bundled, downloading from ClawdSkillsProxy", { name: skillMeta.name });
-  return installProxySkill(skillMeta, DEFAULT_PROXY_CONFIG, targetDir);
+  return installProxySkill(skillMeta, undefined, targetDir);
 }
 
 /**

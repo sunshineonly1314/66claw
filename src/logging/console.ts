@@ -144,7 +144,7 @@ function shouldSuppressConsoleMessage(message: string): boolean {
   return false;
 }
 
-function isEpipeError(err: unknown): boolean {
+export function isEpipeError(err: unknown): err is NodeJS.ErrnoException {
   const code = (err as { code?: string })?.code;
   return code === "EPIPE" || code === "EIO";
 }

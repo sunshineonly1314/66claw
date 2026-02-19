@@ -29,6 +29,9 @@ const DINGTALK_API = "https://api.dingtalk.com";
 /** AI Card 模板 ID - 钉钉官方提供的流式 AI 卡片模板 */
 const AI_CARD_TEMPLATE_ID = "382e4302-551d-4880-bf29-a30acfab2e71.schema";
 
+/** AI Card API 超时: 15 秒 */
+const AI_CARD_TIMEOUT_MS = 15_000;
+
 // ============================================================================
 // AI Card 操作
 // ============================================================================
@@ -76,6 +79,7 @@ export async function createAICard(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(createBody),
+      signal: AbortSignal.timeout(AI_CARD_TIMEOUT_MS),
     });
 
     if (!createResp.ok) {
@@ -111,6 +115,7 @@ export async function createAICard(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(deliverBody),
+      signal: AbortSignal.timeout(AI_CARD_TIMEOUT_MS),
     });
 
     if (!deliverResp.ok) {
@@ -161,6 +166,7 @@ export async function streamAICard(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(statusBody),
+      signal: AbortSignal.timeout(AI_CARD_TIMEOUT_MS),
     });
 
     if (!statusResp.ok) {
@@ -190,6 +196,7 @@ export async function streamAICard(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(AI_CARD_TIMEOUT_MS),
   });
 
   if (!streamResp.ok) {
@@ -236,6 +243,7 @@ export async function finishAICard(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(AI_CARD_TIMEOUT_MS),
   });
 
   if (!finishResp.ok) {

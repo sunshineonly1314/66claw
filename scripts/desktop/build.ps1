@@ -1,7 +1,10 @@
 # Build ClawdbotCN Desktop Application (Tauri) — Windows
 # Usage: powershell -File scripts/desktop/build.ps1
 
-$ErrorActionPreference = "Stop"
+# Use Continue so that stderr output from native commands (e.g. pnpm warnings)
+# does not trigger PowerShell's NativeCommandError termination.
+# We check $LASTEXITCODE explicitly after each step instead.
+$ErrorActionPreference = "Continue"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = (Resolve-Path "$ScriptDir\..\..").Path
 $DesktopDir = Join-Path $ProjectRoot "apps\desktop"

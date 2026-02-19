@@ -248,6 +248,7 @@ export async function probeFeishuConnection(
     const response = (await client.request({
       method: "GET",
       url: `${domain}/open-apis/bot/v3/info`,
+      timeout: 10_000, // 10 秒超时，防止请求挂起
     })) as {
       code?: number;
       msg?: string;

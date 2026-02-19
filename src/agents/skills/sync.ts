@@ -14,7 +14,7 @@ import {
   DEFAULT_GITEE_REGISTRY,
   type GiteeRegistryConfig,
 } from "./gitee-registry.js";
-import { fetchProxySkillsIndex, DEFAULT_PROXY_CONFIG } from "./clawdskillsproxy-registry.js";
+import { fetchProxySkillsIndex, getDefaultProxyConfig } from "./clawdskillsproxy-registry.js";
 import {
   readLocalIndex,
   writeLocalIndex,
@@ -138,10 +138,11 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     }
 
     // 拉取远程索引
-    // 优先使用增量（sinceVersion），回退全量
+    // 优先使用增量（sinceVersion + proxy），回退全量
+    const proxyConfig = getDefaultProxyConfig();
     const result =
-      sinceVersion !== undefined
-        ? await fetchProxySkillsIndex(DEFAULT_PROXY_CONFIG, sinceVersion)
+      sinceVersion !== undefined && proxyConfig
+        ? await fetchProxySkillsIndex(proxyConfig, sinceVersion)
         : await fetchRemoteSkillsIndex(registry ?? DEFAULT_GITEE_REGISTRY);
 
     if (!result.ok) {
@@ -157,7 +158,7 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     const installed = getInstalledSkills();
 
     // 保存到本地 JSON - 使用 ClawdSkillsProxy 作为数据源（Gitee 已被封禁）
-    const sourceUrl = DEFAULT_PROXY_CONFIG.baseUrl;
+    const sourceUrl = proxyConfig?.baseUrl ?? "clawdskillsproxy";
     await writeLocalIndex(result.index, installed, sourceUrl);
 
     // 写入 SQLite（非阻塞，失败不影响主流程）

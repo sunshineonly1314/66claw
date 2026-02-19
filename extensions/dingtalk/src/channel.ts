@@ -421,19 +421,34 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
               cfg: ctx.cfg,
               dispatcherOptions: {
                 deliver: async (payload) => {
-                  // 发送回复 - 优先使用 Session Webhook
+                  // 发送回复 - 优先 Session Webhook，失败降级批量 API
                   const text = payload.text ?? "";
-                  if (text) {
-                    const cachedWebhook = getCachedSessionWebhook(msg.conversationId);
-                    if (cachedWebhook) {
+                  if (!text) return;
+
+                  const cachedWebhook = getCachedSessionWebhook(msg.conversationId);
+                  if (cachedWebhook) {
+                    try {
                       await sendDingtalkMessageViaWebhook(cachedWebhook, {
                         msgtype: "text",
                         text: { content: text },
                       });
-                    } else if (channelConfig) {
-                      await sendDingtalkMessage(channelConfig, [msg.senderId], text);
+                      ctx.log?.info(`[dingtalk] 已回复消息到 ${msg.conversationId}`);
+                      return;
+                    } catch (webhookErr) {
+                      ctx.log?.warn?.(`[dingtalk] Session Webhook 发送失败，降级到批量 API: ${webhookErr}`);
                     }
-                    ctx.log?.info(`[dingtalk] 已回复消息到 ${msg.conversationId}`);
+                  }
+
+                  // 降级：通过批量发送 API
+                  if (channelConfig) {
+                    try {
+                      await sendDingtalkMessage(channelConfig, [msg.senderId], text);
+                      ctx.log?.info(`[dingtalk] 已通过批量 API 回复到 ${msg.senderId} (私聊降级)`);
+                    } catch (apiErr) {
+                      ctx.log?.error?.(`[dingtalk] 批量 API 也失败: ${apiErr}`);
+                    }
+                  } else {
+                    ctx.log?.error?.(`[dingtalk] 无法回复: 无可用发送通道 (conversation=${msg.conversationId})`);
                   }
                 },
                 onError: (err) => {

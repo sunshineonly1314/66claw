@@ -19,11 +19,14 @@ Each entry follows this template:
 
 ```markdown
 ## YYYY-MM-DD HH:mm
+<!-- version: X.Y.Z -->
 
 ### <Category>
 - **<short title>** — <one-line description of what changed and why>
 - **<short title>** — ...
 ```
+
+The version number MUST be read from `package.json` (`version` field) at the time of writing. This associates each entry with the correct release version.
 
 ### Categories (pick the most fitting)
 
@@ -44,15 +47,17 @@ Each entry follows this template:
 ## Workflow
 
 1. Read the existing `versionrecord.md` (last 30 lines) to understand the current state.
-2. Determine the current date and time (use ISO format `YYYY-MM-DD HH:mm`).
-3. Compose the entry using the format above. Rules:
+2. Read `package.json` to get the current version number (e.g. `1.1.6`).
+3. Determine the current date and time (use ISO format `YYYY-MM-DD HH:mm`).
+4. Compose the entry using the format above. Rules:
    - Use **Chinese** for descriptions (this is a CN project).
    - Each bullet is one logical change; group related sub-changes into a single bullet.
    - Keep descriptions concise: what changed + why, not how.
    - If multiple categories apply, use multiple `### Category` headings under the same date-time.
    - Do NOT duplicate entries that already exist in the file.
-4. Append the new entry to the **end** of `versionrecord.md`.
-5. If `versionrecord.md` does not exist, create it with the header shown below, then append.
+   - ALWAYS include `<!-- version: X.Y.Z -->` on the line immediately after the `## YYYY-MM-DD HH:mm` header, using the version from package.json.
+5. Append the new entry to the **end** of `versionrecord.md`.
+6. If `versionrecord.md` does not exist, create it with the header shown below, then append.
 
 ## Initial File Template
 
@@ -71,6 +76,7 @@ If creating the file for the first time:
 
 ```markdown
 ## 2026-02-17 14:30
+<!-- version: 1.1.6 -->
 
 ### New Feature
 - **多模态能力检测** — 新增 modality-capability-checker，自动检测模型是否支持图片分析/生成/视频分析
@@ -96,18 +102,18 @@ So when writing entries, keep in mind:
 
 ### Version Markers
 
-When a release is cut, the deploy script (`pnpm release:deploy`) will automatically inject a version marker comment:
+Every entry MUST include a `<!-- version: X.Y.Z -->` marker on the line immediately after the `## YYYY-MM-DD HH:mm` header. The version number comes from `package.json`.
+
+This marker is how `generate-changelog.ts` groups entries by version. Without it, entries cannot be correctly attributed to a release.
 
 ```markdown
-## 2026-02-18 01:00
-<!-- version: 2026.2.18 -->
+## 2026-02-19 10:00
+<!-- version: 1.1.7 -->
 ```
-
-Agents do NOT need to add this marker manually. It is injected automatically during the release process.
 
 ## Important Notes
 
 - Always append, never overwrite or reorder existing entries.
 - One date-time block per session/batch; do not create multiple blocks for the same timestamp.
 - If you made no user-facing or meaningful changes, skip recording.
-- Do NOT manually add `<!-- version: -->` markers — those are injected by the release script.
+- ALWAYS read `package.json` version and include `<!-- version: X.Y.Z -->` — this is mandatory, not optional.

@@ -50,12 +50,15 @@ async function readWithTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number,
 ) {
-  return Promise.race([
+  let timer: ReturnType<typeof setTimeout>;
+  const result = await Promise.race([
     reader.read(),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`SSE chunk read timeout after ${timeoutMs}ms`)), timeoutMs),
-    ),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`SSE chunk read timeout after ${timeoutMs}ms`)), timeoutMs);
+    }),
   ]);
+  clearTimeout(timer!);
+  return result;
 }
 
 /**
@@ -154,8 +157,17 @@ async function* streamFromGateway(options: GatewayOptions): AsyncGenerator<strin
       }
     }
   } finally {
-    // 确保释放 reader 资源
-    reader.releaseLock();
+    // 确保释放 reader 资源并关闭流
+    try {
+      reader.releaseLock();
+    } catch {
+      // reader 已释放
+    }
+    try {
+      await (response.body as ReadableStream<Uint8Array>).cancel();
+    } catch {
+      // 流已关闭
+    }
   }
 }
 
@@ -199,6 +211,10 @@ function extractMessageContent(data: DingtalkRobotMessageEvent): { text: string;
 export async function handleStreamMessage(params: StreamMessageParams): Promise<void> {
   const { data, sessionWebhook, log, dingtalkConfig, gatewayPort = 18789 } = params;
 
+  if (!sessionWebhook) {
+    log?.warn?.(`[DingTalk] 消息缺少 sessionWebhook，无法回复 (sender=${data.senderNick})`);
+  }
+
   const content = extractMessageContent(data);
   if (!content.text) return;
 
@@ -216,10 +232,12 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
   // 如果是新会话命令，直接回复确认消息
   if (forceNewSession) {
     const { sessionKey } = getSessionKey(senderId, true, sessionTimeout, log);
-    await sendDingtalkMessageViaWebhook(sessionWebhook, {
-      msgtype: "text",
-      text: { content: "✨ 已开启新会话，之前的对话已清空。" },
-    });
+    if (sessionWebhook) {
+      await sendDingtalkMessageViaWebhook(sessionWebhook, {
+        msgtype: "text",
+        text: { content: "✨ 已开启新会话，之前的对话已清空。" },
+      });
+    }
     log?.info?.(`[DingTalk] 用户请求新会话: ${senderId}, newKey=${sessionKey}`);
     return;
   }
@@ -323,17 +341,23 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
     // 后处理：上传本地图片
     fullResponse = await processLocalImages(fullResponse, oapiToken, log);
 
-    await sendDingtalkMessageViaWebhook(sessionWebhook, {
-      msgtype: "text",
-      text: { content: fullResponse || "（无响应）" },
-    });
-    log?.info?.(`[DingTalk] 普通消息回复完成，共 ${fullResponse.length} 字符`);
+    if (sessionWebhook) {
+      await sendDingtalkMessageViaWebhook(sessionWebhook, {
+        msgtype: "text",
+        text: { content: fullResponse || "（无响应）" },
+      });
+      log?.info?.(`[DingTalk] 普通消息回复完成，共 ${fullResponse.length} 字符`);
+    } else {
+      log?.warn?.(`[DingTalk] 无 sessionWebhook，无法发送普通消息回复 (${fullResponse.length} 字符)`);
+    }
   } catch (err) {
     log?.error?.(`[DingTalk] Gateway 调用失败: ${err}`);
-    await sendDingtalkMessageViaWebhook(sessionWebhook, {
-      msgtype: "text",
-      text: { content: `抱歉，处理请求时出错: ${err}` },
-    });
+    if (sessionWebhook) {
+      await sendDingtalkMessageViaWebhook(sessionWebhook, {
+        msgtype: "text",
+        text: { content: `抱歉，处理请求时出错: ${err}` },
+      });
+    }
   }
 }
 
@@ -387,7 +411,13 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
       const messageId = res.headers?.messageId;
       log?.info?.(`[DingTalk] 收到 Stream 回调, messageId=${messageId}`);
 
-      const data = JSON.parse(res.data) as DingtalkRobotMessageEvent & { sessionWebhook?: string };
+      let data: DingtalkRobotMessageEvent & { sessionWebhook?: string };
+      try {
+        data = JSON.parse(res.data);
+      } catch (parseErr) {
+        log?.error?.(`[DingTalk] Stream 回调数据解析失败: ${parseErr}, data=${res.data?.slice(0, 200)}`);
+        throw parseErr;
+      }
 
       await handleStreamMessage({
         cfg,
@@ -411,8 +441,19 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
     }
   });
 
+  // ===== 连接熔断器 =====
+  // 防止 SDK 无限重连（如 system busy 1000040345 错误导致 260+ 次重试）
+  let consecutiveErrors = 0;
+  const MAX_CONSECUTIVE_ERRORS = 20;
+  let circuitBreakerOpen = false;
+  let circuitBreakerResetTimer: ReturnType<typeof setTimeout> | undefined;
+  const CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟
+
   // 监听连接事件（用于观察重连行为）
   client.on('connect', () => {
+    // 连接成功，重置熔断状态
+    consecutiveErrors = 0;
+    circuitBreakerOpen = false;
     log?.info?.(`[${accountId}] 钉钉 Stream 连接已建立`);
   });
 
@@ -421,7 +462,41 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
   });
 
   client.on('error', (error: Error) => {
-    log?.error?.(`[${accountId}] 钉钉 Stream 错误: ${error.message}`);
+    consecutiveErrors++;
+    const errorMsg = error?.message ?? String(error);
+    log?.error?.(`[${accountId}] 钉钉 Stream 错误 (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${errorMsg}`);
+
+    // 识别服务端拒绝类错误
+    if (errorMsg.includes('1000040345') || errorMsg.includes('system busy')) {
+      log?.warn?.(`[${accountId}] 钉钉服务端繁忙，建议稍后重试`);
+    }
+
+    // PingInterval 未定义防护
+    if (errorMsg.includes('PingInterval') || errorMsg.includes("Cannot read properties of undefined")) {
+      log?.warn?.(`[${accountId}] SDK 内部状态异常，可能需要重启`);
+    }
+
+    // 熔断：连续错误过多时停止重连，避免无限刷日志
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS && !circuitBreakerOpen) {
+      circuitBreakerOpen = true;
+      log?.error?.(
+        `[${accountId}] 钉钉连接熔断：连续 ${consecutiveErrors} 次失败，暂停 ${CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s 后自动恢复`,
+      );
+      try {
+        client.disconnect();
+      } catch {
+        /* ignore disconnect errors during circuit break */
+      }
+
+      circuitBreakerResetTimer = setTimeout(() => {
+        circuitBreakerOpen = false;
+        consecutiveErrors = 0;
+        log?.info?.(`[${accountId}] 钉钉连接熔断恢复，尝试重新连接...`);
+        client.connect().catch((err: unknown) => {
+          log?.error?.(`[${accountId}] 熔断恢复后重连失败: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      }, CIRCUIT_BREAKER_COOLDOWN_MS);
+    }
   });
 
   await client.connect();
@@ -435,6 +510,12 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
       if (stopped) return;
       stopped = true;
       log?.info?.(`[${accountId}] 钉钉 Stream 客户端正在停止...`);
+
+      // 清理熔断定时器
+      if (circuitBreakerResetTimer) {
+        clearTimeout(circuitBreakerResetTimer);
+        circuitBreakerResetTimer = undefined;
+      }
 
       try {
         // 显式断开连接，防止 SDK 继续尝试重连

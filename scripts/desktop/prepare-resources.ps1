@@ -192,7 +192,7 @@ $stepTimer = [Diagnostics.Stopwatch]::StartNew()
 Write-Host "[4/7] Copying extensions/..." -ForegroundColor Green
 $extSource = "$ProjectRoot\extensions"
 if (Test-Path $extSource) {
-    robocopy "$extSource" "$ResourcesDir\extensions" /E /XD node_modules .turbo /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+    robocopy "$extSource" "$ResourcesDir\extensions" /E /XD node_modules .turbo .git /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
     if ($LASTEXITCODE -ge 8) {
         Write-Host "  ERROR: robocopy extensions failed (exit code $LASTEXITCODE)" -ForegroundColor Red
         exit 1

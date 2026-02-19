@@ -142,7 +142,11 @@ export async function checkLicenseOnGatewayStart(
       if (!integrityPassed) {
         // 此处理论上不会执行，因为 exitOnFailure=true 时会直接 exit
         log.error("SECURITY VIOLATION: File tampering detected, refusing to start");
-        console.error("[安全警告] 检测到文件被篡改，程序退出");
+        try {
+          console.error("[安全警告] 检测到文件被篡改，程序退出");
+        } catch {
+          /* EPIPE safe */
+        }
         process.exit(1);
       }
       log.debug("Integrity check passed");
@@ -151,7 +155,11 @@ export async function checkLicenseOnGatewayStart(
       log.error(
         `SECURITY VIOLATION: Integrity check error: ${error instanceof Error ? error.message : String(error)}`,
       );
-      console.error("[安全警告] 完整性校验失败，程序退出");
+      try {
+        console.error("[安全警告] 完整性校验失败，程序退出");
+      } catch {
+        /* EPIPE safe */
+      }
       process.exit(1);
     }
   }
