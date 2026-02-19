@@ -92,7 +92,7 @@ if (-not \$VERSION) {
         Write-Host "========================================="
         Write-Host "  Auto Version Bump (patch +1)"
         Write-Host "========================================="
-        & npx tsx scripts/version-bump.ts patch
+        & node --import tsx scripts/version-bump.ts patch
         \$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
         \$VERSION = \$pkgJson.version
         Write-Host "Auto-bumped version: \$VERSION"
@@ -105,26 +105,34 @@ if (-not \$VERSION) {
     }
 }
 
-Write-Host "Starting Windows build..."
-\$buildScript = Join-Path \$WORKSPACE 'build\scripts\windows\build-windows.ps1'
+# ── Rust 环境检查 ──
+if (-not (Get-Command "cargo" -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: Rust/Cargo not found. Install from https://rustup.rs"
+    exit 1
+}
+Write-Host "Cargo: \$(cargo --version)"
+
+Write-Host "Starting Windows build (Tauri)..."
+\$buildScript = Join-Path \$WORKSPACE 'scripts\desktop\build.ps1'
 if (-not (Test-Path \$buildScript)) {
     Write-Host "ERROR: Build script not found: \$buildScript"
-    Get-ChildItem 'build\scripts\' -ErrorAction SilentlyContinue
+    Get-ChildItem 'scripts\desktop\' -ErrorAction SilentlyContinue
     exit 1
 }
 
-\$buildArgs = @{Mode = \$MODE; MaxThreads = 6}
-if (\$VERSION) { \$buildArgs.Version = \$VERSION }
-if (\$VALIDATE -eq '-TestInstall') { \$buildArgs.TestInstall = \$true }
+& powershell -NoProfile -ExecutionPolicy Bypass -File \$buildScript
+if (\$LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Tauri build failed!"
+    exit 1
+}
 
-& \$buildScript @buildArgs
-
-\$artifacts = Get-ChildItem -Path 'E:\clawdbuild\ClawdbotCN-Setup-*.exe' -ErrorAction SilentlyContinue
+\$tauriOutput = Join-Path \$WORKSPACE 'apps\desktop\src-tauri\target\release\bundle\nsis'
+\$artifacts = Get-ChildItem -Path "\$tauriOutput\*.exe" -ErrorAction SilentlyContinue
 if (\$artifacts) {
     Write-Host "Build completed successfully!"
     \$artifacts | ForEach-Object { Write-Host ("  " + \$_.Name + " (" + [math]::Round(\$_.Length/1MB, 1) + " MB)") }
 } else {
-    Write-Host "Build failed - no installer found"
+    Write-Host "Build failed - no installer found in \$tauriOutput"
     exit 1
 }
 
@@ -159,10 +167,10 @@ if (\$ossKeyId -and \$ossKeySecret) {
 } else {
     \$releaseArgs += @('--output-only')
 }
-\$releaseArgs += @('--installers', 'E:\clawdbuild')
+\$releaseArgs += @('--installers', \$tauriOutput)
 
-Write-Host "Running: npx tsx scripts/release-deploy.ts \$(\$releaseArgs -join ' ')"
-& npx tsx scripts/release-deploy.ts @releaseArgs
+Write-Host "Running: node --import tsx scripts/release-deploy.ts \$(\$releaseArgs -join ' ')"
+& node --import tsx scripts/release-deploy.ts @releaseArgs
 if (\$LASTEXITCODE -ne 0) {
     Write-Host "WARNING: Release deploy exited with code \$LASTEXITCODE"
     Write-Host "Build artifacts are still available, but delta packages may not have been published."
@@ -192,17 +200,11 @@ if [ $BUILD_EXIT -eq 0 ]; then
   ARTIFACTS_DIR="$SCRIPT_DIR/artifacts/windows"
   mkdir -p "$ARTIFACTS_DIR"
 
-  echo "📥 Downloading artifacts to $ARTIFACTS_DIR..."
-  $SCP "$WIN_USER@$WIN_HOST:E:/clawdbuild/ClawdbotCN-Setup-*.exe" "$ARTIFACTS_DIR/" || echo "⚠️  Download failed, but build succeeded"
+  # Tauri NSIS output: D:\cicd-workspace\openclawcn\apps\desktop\src-tauri\target\release\bundle\nsis\
+  WIN_TAURI_OUTPUT="D:/cicd-workspace/openclawcn/apps/desktop/src-tauri/target/release/bundle/nsis"
 
-  # Download validation report if it exists
-  if [ -n "$VALIDATE" ]; then
-    echo "📥 Downloading validation report..."
-    $SCP "$WIN_USER@$WIN_HOST:E:/clawdbuild/logs/validation-report.txt" "$ARTIFACTS_DIR/" 2>/dev/null && {
-      echo "📋 Validation report:"
-      cat "$ARTIFACTS_DIR/validation-report.txt" 2>/dev/null || true
-    } || echo "⚠️  Validation report not found (may have been skipped)"
-  fi
+  echo "📥 Downloading artifacts to $ARTIFACTS_DIR..."
+  $SCP "$WIN_USER@$WIN_HOST:$WIN_TAURI_OUTPUT/*.exe" "$ARTIFACTS_DIR/" || echo "⚠️  Download failed, but build succeeded"
 
   exit 0
 else
