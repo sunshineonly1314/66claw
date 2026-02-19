@@ -526,11 +526,15 @@ if [[ -d "$ROOT_DIR/skills" ]]; then
   cp -R "$ROOT_DIR/skills" "$APP_ROOT/skills"
 fi
 
-# ── Copy UI dist ──
-if [[ -d "$ROOT_DIR/ui/dist" ]]; then
-  log "Copying UI dist..."
-  mkdir -p "$APP_ROOT/ui"
-  cp -R "$ROOT_DIR/ui/dist" "$APP_ROOT/ui/dist"
+# ── Verify UI dist (built by pnpm ui:build into dist/control-ui/, already copied with dist/) ──
+if [[ -f "$APP_ROOT/dist/control-ui/index.html" ]]; then
+  UI_SIZE=$(du -sh "$APP_ROOT/dist/control-ui/" 2>/dev/null | awk '{print $1}')
+  log "Web UI verified: dist/control-ui/index.html present ($UI_SIZE)"
+else
+  err "Web UI missing! dist/control-ui/index.html not found in .app bundle."
+  err "Check that 'pnpm ui:build' completed successfully in Step 3."
+  err "Expected output: $ROOT_DIR/dist/control-ui/index.html"
+  exit 1
 fi
 
 # ── Copy assets ──
@@ -555,16 +559,16 @@ echo "ClawdbotCN has been removed."
 UNINSTALL
 chmod +x "$RESOURCES/uninstall.sh"
 
-# ── Version info ──
-cat > "$RESOURCES/version.json" <<VINFO
-{
-  "version": "${VERSION}",
-  "arch": "${ARCH}",
-  "platform": "darwin",
-  "buildDate": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "nodeVersion": "${NODE_VERSION}"
-}
-VINFO
+# ── Version info (written to both Resources/ and app/ for broad compatibility) ──
+VERSION_JSON="{
+  \"version\": \"${VERSION}\",
+  \"arch\": \"${ARCH}\",
+  \"platform\": \"darwin\",
+  \"buildDate\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
+  \"nodeVersion\": \"${NODE_VERSION}\"
+}"
+echo "$VERSION_JSON" > "$RESOURCES/version.json"
+echo "$VERSION_JSON" > "$APP_ROOT/version.json"
 
 # ── Build metadata (V8 version guard for delta updates) ──
 NODE_V8_VERSION=$("$RESOURCES/node/bin/node" -e "console.log(process.versions.v8)" 2>/dev/null || echo "unknown")
@@ -823,6 +827,9 @@ echo ""
 echo "  Size breakdown:"
 du -sh "$APP_DIR/Contents/Resources/node" 2>/dev/null | awk '{print "    Node.js:      " $1}' || true
 du -sh "$APP_DIR/Contents/Resources/app/dist" 2>/dev/null | awk '{print "    dist/:        " $1}' || true
+du -sh "$APP_DIR/Contents/Resources/app/dist/control-ui" 2>/dev/null | awk '{print "    Web UI:       " $1}' || true
+du -sh "$APP_DIR/Contents/Resources/app/extensions" 2>/dev/null | awk '{print "    extensions/:  " $1}' || true
+du -sh "$APP_DIR/Contents/Resources/app/skills" 2>/dev/null | awk '{print "    skills/:      " $1}' || true
 du -sh "$APP_DIR/Contents/Resources/app/node_modules" 2>/dev/null | awk '{print "    node_modules: " $1}' || true
 du -sh "$APP_DIR" 2>/dev/null | awk '{print "    Total .app:   " $1}' || true
 du -sh "$DMG_OUTPUT" 2>/dev/null | awk '{print "    DMG:          " $1}' || true
