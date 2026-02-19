@@ -1283,7 +1283,10 @@ if (Test-Path $portableNodeExe) {
         # .jsc files exist but may have been compiled with wrong Node version.
         # Test-load one .jsc file with portable Node to verify V8 compatibility.
         $testJsc = $jscFiles[0].FullName
+        $prevEA = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         $testResult = & $portableNodeExe -e "try { require('bytenode'); require('$($testJsc.Replace('\','\\'))'); process.stdout.write('OK') } catch(e) { process.stdout.write('FAIL:' + e.message) }" 2>$null
+        $ErrorActionPreference = $prevEA
         if ($testResult -and $testResult.StartsWith("OK")) {
             Write-OK "Bytecode verified: .jsc files load correctly with portable Node v$portableNodeVer"
         } else {
