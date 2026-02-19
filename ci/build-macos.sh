@@ -64,6 +64,10 @@ export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/
 echo "Node: \$(node --version 2>/dev/null || echo 'not found')"
 echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'not found')"
 
+# 强制 git 用 HTTPS 而非 SSH 访问 GitHub（Mac Mini 没有配置 GitHub SSH key）
+git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
+git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+
 # 创建工作目录
 mkdir -p "\$WORKSPACE"
 cd "\$WORKSPACE"
