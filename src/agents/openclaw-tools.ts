@@ -27,6 +27,15 @@ import { createDesktopControlTool } from "./tools/desktop-control.js";
 import { createWeChatSendTool } from "./tools/wechat-send.js";
 import { createWeChatReadTool } from "./tools/wechat-read.js";
 import { createWeChatCheckTool } from "./tools/wechat-check.js";
+import { createWeComSendTool } from "./tools/wecom-send.js";
+import { createWeComReadTool } from "./tools/wecom-read.js";
+import { createWeComCheckTool } from "./tools/wecom-check.js";
+import { createWeComAutoReplyTool } from "./tools/wecom-auto-reply.js";
+import { createWeComPatrolTool } from "./tools/wecom-patrol.js";
+import { createWeComGroupSummaryTool } from "./tools/wecom-group-summary.js";
+import { createWeComBroadcastTool } from "./tools/wecom-broadcast.js";
+import { createWeComTicketTool } from "./tools/wecom-ticket.js";
+import { createWeComHandoffTool } from "./tools/wecom-handoff.js";
 import { createImageGenTool } from "./tools/image-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
 import { getMCPManagerSafe } from "../mcp/index.js";
@@ -102,6 +111,18 @@ export function createOpenClawCNTools(options?: {
   const wechatSendTool = createWeChatSendTool();
   const wechatReadTool = createWeChatReadTool();
   const wechatCheckTool = createWeChatCheckTool();
+  const wecomSendTool = createWeComSendTool();
+  const wecomReadTool = createWeComReadTool({
+    config: options?.config,
+    agentDir: options?.agentDir,
+  });
+  const wecomCheckTool = createWeComCheckTool();
+  const wecomAutoReplyTool = createWeComAutoReplyTool();
+  const wecomPatrolTool = createWeComPatrolTool();
+  const wecomGroupSummaryTool = createWeComGroupSummaryTool();
+  const wecomBroadcastTool = createWeComBroadcastTool();
+  const wecomTicketTool = createWeComTicketTool();
+  const wecomHandoffTool = createWeComHandoffTool();
   const imageGenTool = createImageGenTool({
     config: options?.config,
     agentDir: options?.agentDir,
@@ -196,6 +217,15 @@ export function createOpenClawCNTools(options?: {
     ...(wechatSendTool ? [wechatSendTool] : []),
     ...(wechatReadTool ? [wechatReadTool] : []),
     ...(wechatCheckTool ? [wechatCheckTool] : []),
+    ...(wecomSendTool ? [wecomSendTool] : []),
+    wecomReadTool,
+    ...(wecomCheckTool ? [wecomCheckTool] : []),
+    ...(wecomAutoReplyTool ? [wecomAutoReplyTool] : []),
+    ...(wecomPatrolTool ? [wecomPatrolTool] : []),
+    ...(wecomGroupSummaryTool ? [wecomGroupSummaryTool] : []),
+    ...(wecomBroadcastTool ? [wecomBroadcastTool] : []),
+    wecomTicketTool,
+    wecomHandoffTool,
     imageGenTool,
     ...(options?.config?.toolDiscovery?.mcpOnDemand?.enabled !== false
       ? [createMcpInstallTool()]
