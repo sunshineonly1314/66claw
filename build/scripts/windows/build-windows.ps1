@@ -838,6 +838,13 @@ if ($needMainBuild -or $needUiBuild) {
 
     Set-Location $ProjectRoot
 
+    # Ensure Git Bash is on PATH before WSL bash (pnpm scripts use "bash" to run .sh files)
+    $gitBashDir = "C:\Program Files\Git\bin"
+    if ((Test-Path "$gitBashDir\bash.exe") -and ($env:PATH -notmatch [regex]::Escape($gitBashDir))) {
+        $env:PATH = "$gitBashDir;$env:PATH"
+        Write-Host "  [i] Prepended Git Bash to PATH (avoid WSL bash)" -ForegroundColor DarkGray
+    }
+
     if ($needMainBuild) {
         # Step A: build:secure = build:prod + obfuscate + integrity:gen (system Node, any version OK)
         Write-Host "  Running: build:secure (TypeScript + obfuscation)..." -ForegroundColor DarkCyan
