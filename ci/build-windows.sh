@@ -34,16 +34,12 @@ WIN_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.gitee_repo")
 
 # 参数
 VERSION="${1:-}"
-MODE="${2:-standard}"
-VALIDATE="${3:-}"    # 传 "-TestInstall" 启用安装后验证
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🪟 Windows 远程构建"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Target: $WIN_USER@$WIN_HOST"
 echo "Version: ${VERSION:-auto}"
-echo "Mode: $MODE"
-echo "Validate: ${VALIDATE:-no}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # 创建临时 PS1 脚本
@@ -53,8 +49,6 @@ cat > "$TEMP_PS1" << PSEOF
 \$WORKSPACE = 'D:\cicd-workspace\openclawcn'
 \$REPO = '$WIN_REPO'
 \$VERSION = '$VERSION'
-\$MODE = '$MODE'
-\$VALIDATE = '$VALIDATE'
 
 Write-Host "Preparing workspace: \$WORKSPACE"
 Write-Host "Node: \$(node --version)"
@@ -147,7 +141,7 @@ Write-Host "========================================="
 Write-Host "Re-installing dev dependencies for release-deploy..."
 npm install --no-fund --no-audit 2>\$null
 
-\$releaseCacheDir = 'E:\clawdbuild\.release-cache'
+\$releaseCacheDir = 'E:\openclawcn\.release-cache'
 
 # OSS 环境变量检查（从系统环境变量读取）
 \$ossKeyId = \$env:OSS_ACCESS_KEY_ID
