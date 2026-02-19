@@ -79,6 +79,32 @@ Write-Host "Current branch: \$(git branch --show-current)"
 Write-Host "Installing dependencies..."
 npm install --no-fund --no-audit
 
+# ── Auto version bump ──
+if (-not \$VERSION) {
+    # 检查最新 commit 是否已经是 version bump（避免多平台重复 bump）
+    \$lastMsg = git log -1 --pretty=%s 2>\$null
+    if (\$lastMsg -and \$lastMsg.StartsWith("chore: bump version to ")) {
+        \$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
+        \$VERSION = \$pkgJson.version
+        Write-Host "Version already bumped by another builder: \$VERSION (skipping)"
+    } else {
+        Write-Host ""
+        Write-Host "========================================="
+        Write-Host "  Auto Version Bump (patch +1)"
+        Write-Host "========================================="
+        & npx tsx scripts/version-bump.ts patch
+        \$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
+        \$VERSION = \$pkgJson.version
+        Write-Host "Auto-bumped version: \$VERSION"
+
+        # Commit version bump back to repo
+        git add package.json apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/macos/Sources/OpenClaw/Resources/Info.plist
+        git commit -m "chore: bump version to \$VERSION"
+        try { git push origin master } catch { Write-Host "WARNING: push failed (version may already be pushed)" }
+        Write-Host "Version bump committed and pushed."
+    }
+}
+
 Write-Host "Starting Windows build..."
 \$buildScript = Join-Path \$WORKSPACE 'build\scripts\windows\build-windows.ps1'
 if (-not (Test-Path \$buildScript)) {
@@ -107,6 +133,11 @@ Write-Host ""
 Write-Host "========================================="
 Write-Host "  Release Deploy (Delta + Upload)"
 Write-Host "========================================="
+
+# 构建阶段会用 --omit=dev 重装 node_modules，tsx 被移除
+# 这里重新安装全部依赖以确保 tsx 可用
+Write-Host "Re-installing dev dependencies for release-deploy..."
+npm install --no-fund --no-audit 2>\$null
 
 \$releaseCacheDir = 'E:\clawdbuild\.release-cache'
 
