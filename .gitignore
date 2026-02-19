@@ -53,6 +53,12 @@ Microsoft/
 # Dev temp
 devTemp/
 
+# Release deploy cache and temp
+.release-cache/
+.release-deploy/
+manifest.json
+checksums.json
+
 # Upstream analysis working data (reports saved to docs/upstream-reports/)
 .upstream-analysis/
 merge-*.log
@@ -89,7 +95,7 @@ cn/skills-publish/output*/
 # Node portable and tools
 scripts/windows/node-portable/
 scripts/windows/tauri-src/target/
-tools/
+/tools/
 
 # TypeScript/Serena cache
 .serena/
