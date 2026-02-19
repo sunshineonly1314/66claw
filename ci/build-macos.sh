@@ -65,8 +65,12 @@ echo "Node: \$(node --version 2>/dev/null || echo 'not found')"
 echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'not found')"
 
 # 强制 git 用 HTTPS 而非 SSH 访问 GitHub（Mac Mini 没有配置 GitHub SSH key）
+# 需要同时覆盖 git:// 和 git+ssh:// 协议，pnpm 可能使用任一种
 git config --global url."https://github.com/".insteadOf "git+ssh://git@github.com/"
 git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+git config --global url."https://github.com/".insteadOf "git://github.com/"
+git config --global url."https://github.com/".insteadOf "git@github.com:"
+echo "Git insteadOf configured: SSH -> HTTPS for github.com"
 
 # 创建工作目录
 mkdir -p "\$WORKSPACE"
@@ -84,6 +88,11 @@ fi
 
 echo "Current commit: \$(git rev-parse HEAD)"
 echo "Current branch: \$(git branch --show-current)"
+
+# 升级 pnpm 到最新版（避免旧版本 git+ssh 解析问题）
+echo "Upgrading pnpm..."
+npm install -g pnpm@latest 2>/dev/null || true
+echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'upgrade failed')"
 
 # 安装依赖
 echo "Installing dependencies..."
