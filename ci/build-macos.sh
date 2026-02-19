@@ -89,15 +89,12 @@ fi
 echo "Current commit: \$(git rev-parse HEAD)"
 echo "Current branch: \$(git branch --show-current)"
 
-# 升级 pnpm 到最新版（避免旧版本 git+ssh 解析问题）
-echo "Upgrading pnpm..."
-npm install -g pnpm@latest 2>/dev/null || true
-echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'upgrade failed')"
-
 # 安装依赖
+# 优先使用 --frozen-lockfile 避免 pnpm 重新 resolve git+ssh 依赖（Mac Mini 没有 GitHub SSH key）
+# lockfile 中已有 HTTPS tarball URL，frozen 模式直接使用，不会触发 git ls-remote
 echo "Installing dependencies..."
 if command -v pnpm &> /dev/null; then
-  pnpm install --no-frozen-lockfile
+  pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
 else
   /usr/local/bin/npm install
 fi
