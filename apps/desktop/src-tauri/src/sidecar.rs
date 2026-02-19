@@ -162,13 +162,13 @@ fn resolve_app_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
         .ok_or("Failed to get app directory")?;
 
     // On macOS, the exe is at <app>/Contents/MacOS/<binary>.
-    // Tauri bundles resources into <app>/Contents/Resources/.
+    // Tauri bundles "resources/**/*" into <app>/Contents/Resources/resources/.
     // On Windows, resources are next to the exe.
     #[cfg(target_os = "macos")]
     {
         let resources_dir = exe_dir
             .parent() // Contents/
-            .map(|p| p.join("Resources"))
+            .map(|p| p.join("Resources").join("resources"))
             .unwrap_or_else(|| exe_dir.to_path_buf());
         Ok(resources_dir)
     }
