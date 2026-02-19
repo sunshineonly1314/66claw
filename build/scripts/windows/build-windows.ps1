@@ -557,7 +557,7 @@ if ($needNpmInstall) {
             $prevEA = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
 
-            $output = & npm install --omit=dev --legacy-peer-deps --no-audit --no-fund --prefer-offline --maxsockets=$maxThreads --registry=https://registry.npmmirror.com 2>&1
+            $output = & cmd /c "npm install --omit=dev --legacy-peer-deps --no-audit --no-fund --prefer-offline --maxsockets=$maxThreads --registry=https://registry.npmmirror.com" 2>&1
             $code = $LASTEXITCODE
 
             $ErrorActionPreference = $prevEA
@@ -1219,7 +1219,7 @@ if (Test-Path $nodeModulesPath) {
             if (-not $bytenodeVer) { $bytenodeVer = "1.5.7" }
             $prevLoc = Get-Location
             Set-Location $nodeModulesDir
-            & npm install "bytenode@$bytenodeVer" --no-save --legacy-peer-deps --no-audit --no-fund 2>$null
+            & cmd /c "npm install bytenode@$bytenodeVer --no-save --legacy-peer-deps --no-audit --no-fund" 2>$null
             Set-Location $prevLoc
             if (Test-Path $bytenodeProdPath) {
                 Write-OK "bytenode runtime installed in production node_modules"
