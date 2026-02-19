@@ -2,38 +2,43 @@
 ###############################################################################
 # macOS 远程构建脚本
 # 通过 SSH 连接到 Mac Mini 并执行构建
+# 修复：改用 SCP 上传脚本 + SSH 执行（避免 PowerShell 封装下 stdin 传参失效）
 ###############################################################################
 
 set -e
+
+# 用 PowerShell 封装 ssh/scp（Git bash 里 E: 盘路径不可访问）
+SSH="powershell -NoProfile -Command ssh"
+SCP="powershell -NoProfile -Command scp"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/config.json"
 
 # Convert path for Windows if needed
 if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-  CONFIG_FILE_WIN=$(cygpath -w "$CONFIG_FILE" 2>/dev/null || echo "$CONFIG_FILE")
+  CONFIG_FILE_WIN=$(cygpath -m "$CONFIG_FILE" 2>/dev/null || echo "$CONFIG_FILE")
 else
   CONFIG_FILE_WIN="$CONFIG_FILE"
 fi
 
 # 读取配置
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "❌ Config file not found: $CONFIG_FILE"
+  echo "Config file not found: $CONFIG_FILE"
   exit 1
 fi
 
-# 解析配置
-MAC_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.host" 2>/dev/null || echo "192.168.0.107")
-MAC_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.user" 2>/dev/null || echo "kevinsun")
-MAC_WORKSPACE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.workspace" 2>/dev/null || echo "~/cicd-workspace/openclawcn")
-MAC_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo" 2>/dev/null || echo "git@gitee.com:sunshine1314/openclawcn.git")
+# 解析配置（不使用 fallback 硬编码 IP，强制从 config.json 读取）
+MAC_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.host")
+MAC_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.user")
+MAC_WORKSPACE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.workspace")
+MAC_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo")
 
 # 参数
 VERSION="${1:-}"
 ARCH="${2:-universal}"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🍎 macOS 远程构建"
+echo "macOS 远程构建"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Target: $MAC_USER@$MAC_HOST"
 echo "Workspace: $MAC_WORKSPACE"
@@ -41,41 +46,43 @@ echo "Version: ${VERSION:-auto}"
 echo "Arch: $ARCH"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# 构建远程命令
-REMOTE_CMD=$(cat <<'EOF'
+# 创建临时构建脚本（与 Windows 一致的 SCP+SSH 方式）
+TEMP_SH=$(mktemp /tmp/mac-build-XXXXXX.sh)
+cat > "$TEMP_SH" << SHEOF
+#!/usr/bin/env bash
 set -e
 
-WORKSPACE="$1"
-REPO="$2"
-VERSION="$3"
-ARCH="$4"
+WORKSPACE="$MAC_WORKSPACE"
+REPO="$MAC_REPO"
+VERSION="$VERSION"
+ARCH="$ARCH"
 
-echo "📂 Preparing workspace: $WORKSPACE"
+echo "Preparing workspace: \$WORKSPACE"
 
 # 设置 PATH - 确保 node/npm/pnpm 可用
-export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-echo "✅ Node: $(node --version 2>/dev/null || echo 'not found')"
-echo "✅ pnpm: $(pnpm --version 2>/dev/null || echo 'not found')"
+export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
+echo "Node: \$(node --version 2>/dev/null || echo 'not found')"
+echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'not found')"
 
 # 创建工作目录
-mkdir -p "$WORKSPACE"
-cd "$WORKSPACE"
+mkdir -p "\$WORKSPACE"
+cd "\$WORKSPACE"
 
 # 克隆或更新仓库
 if [ -d ".git" ]; then
-  echo "📥 Updating existing repository..."
+  echo "Updating existing repository..."
   git fetch origin
   git reset --hard origin/master
 else
-  echo "📥 Cloning repository from Gitee..."
-  git clone "$REPO" .
+  echo "Cloning repository from Gitee..."
+  git clone "\$REPO" .
 fi
 
-echo "✅ Current commit: $(git rev-parse HEAD)"
-echo "✅ Current branch: $(git branch --show-current)"
+echo "Current commit: \$(git rev-parse HEAD)"
+echo "Current branch: \$(git branch --show-current)"
 
 # 安装依赖
-echo "📦 Installing dependencies..."
+echo "Installing dependencies..."
 if command -v pnpm &> /dev/null; then
   pnpm install --no-frozen-lockfile
 else
@@ -83,58 +90,69 @@ else
 fi
 
 # 执行构建
-echo "🔨 Starting macOS build..."
+echo "Starting macOS build..."
 
 if [ -f "build/scripts/build-macos-cn.sh" ]; then
   chmod +x build/scripts/build-macos-cn.sh
 else
-  echo "❌ Build script not found: build/scripts/build-macos-cn.sh"
+  echo "ERROR: Build script not found: build/scripts/build-macos-cn.sh"
   ls -la build/scripts/ 2>/dev/null || echo "build/scripts/ not found"
   exit 1
 fi
 
 # 如果指定了版本，添加到环境变量
-if [ -n "$VERSION" ]; then
-  export BUILD_VERSION="$VERSION"
+if [ -n "\$VERSION" ]; then
+  export BUILD_VERSION="\$VERSION"
 fi
 
-bash build/scripts/build-macos-cn.sh --arch "$ARCH"
+# build-macos-cn.sh 已内置 SKIP_CODESIGN=1 默认值，无需 sed patch
+SKIP_CODESIGN=1 bash build/scripts/build-macos-cn.sh --arch "\$ARCH"
 
 # 检查构建产物
 if ls build/output/ClawdbotCN-macOS-*.dmg 1> /dev/null 2>&1; then
-  echo "✅ Build completed successfully!"
+  echo "Build completed successfully!"
   ls -lh build/output/ClawdbotCN-macOS-*.dmg
 else
-  echo "❌ Build failed - no DMG found"
+  echo "Build failed - no DMG found"
   exit 1
 fi
-EOF
-)
+SHEOF
+
+# 上传构建脚本到 Mac Mini
+echo "Uploading build script..."
+TEMP_SH_POSIX=$(echo "$TEMP_SH" | sed 's|\\|/|g')
+$SCP -o StrictHostKeyChecking=no "$TEMP_SH_POSIX" "$MAC_USER@$MAC_HOST:cicd-build-mac.sh"
+if [ $? -ne 0 ]; then
+  echo "SCP upload failed"
+  rm -f "$TEMP_SH"
+  exit 1
+fi
 
 # 通过 SSH 执行远程构建
-echo "🚀 Executing remote build..."
-ssh -o StrictHostKeyChecking=no "$MAC_USER@$MAC_HOST" \
-  "bash -s" -- "$MAC_WORKSPACE" "$MAC_REPO" "$VERSION" "$ARCH" <<< "$REMOTE_CMD"
+echo "Executing remote build..."
+$SSH -o StrictHostKeyChecking=no "$MAC_USER@$MAC_HOST" \
+  "bash ~/cicd-build-mac.sh"
 
 BUILD_EXIT=$?
+rm -f "$TEMP_SH"
 
 if [ $BUILD_EXIT -eq 0 ]; then
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "✅ macOS build completed successfully!"
+  echo "macOS build completed successfully!"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # 下载构建产物 (可选)
+  # 下载构建产物
   ARTIFACTS_DIR="$SCRIPT_DIR/artifacts/macos"
   mkdir -p "$ARTIFACTS_DIR"
 
-  echo "📥 Downloading artifacts to $ARTIFACTS_DIR..."
-  scp "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg" "$ARTIFACTS_DIR/" || echo "⚠️  Download failed, but build succeeded"
-  scp "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg.sha256" "$ARTIFACTS_DIR/" 2>/dev/null || true
+  echo "Downloading artifacts to $ARTIFACTS_DIR..."
+  $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg" "$ARTIFACTS_DIR/" || echo "Download failed, but build succeeded"
+  $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg.sha256" "$ARTIFACTS_DIR/" 2>/dev/null || true
 
   exit 0
 else
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "❌ macOS build failed!"
+  echo "macOS build failed!"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   exit 1
 fi

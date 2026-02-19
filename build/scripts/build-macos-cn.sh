@@ -99,44 +99,34 @@ log "Dependencies installed ($(elapsed_since $STEP_START))"
 log_step "Step 2: build:secure (TypeScript + CN-only obfuscation + integrity)"
 STEP_START=$(date +%s)
 
-# build:secure = pnpm build + obfuscate-dist.ts (CN files only) + integrity:gen
+# build:secure = pnpm build + build:cn-compile + build:cn-extensions
+#              + obfuscate-dist.ts + compile-bytecode.ts + integrity:gen + release:changelog
+# 已经包含了 bytecode 编译和 integrity 生成，不需要再单独调用
 pnpm build:secure 2>&1
 log "build:secure completed ($(elapsed_since $STEP_START))"
 
-# ============================================================================
-# Step 3: V8 bytecode compilation
-# ============================================================================
-log_step "Step 3: V8 bytecode compilation (CN bytecode-tier files)"
-STEP_START=$(date +%s)
-
-# Bytecode is V8-version specific, but NOT architecture specific.
-# V8 bytecode compiled on arm64 works on x64 if they use the same V8 version.
-# Since we use setup-node with the same Node version, this is guaranteed.
-node --import tsx cn/scripts/build/compile-bytecode.ts 2>&1
-log "Bytecode compilation completed ($(elapsed_since $STEP_START))"
+# Verify .jsc bytecode files were produced
+JSC_COUNT=$(find "$ROOT_DIR/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
+log "Bytecode verification: found $JSC_COUNT .jsc files in dist/"
+if [[ "$JSC_COUNT" -lt 5 ]]; then
+  err "Expected at least 5 .jsc files in dist/, found $JSC_COUNT"
+  err "Bytecode compilation may have failed. Check build:secure output above."
+  exit 1
+fi
 
 # ============================================================================
-# Step 4: Regenerate integrity hashes (after bytecode changed files)
+# Step 3: Build UI
 # ============================================================================
-log_step "Step 4: Regenerate integrity hashes"
-STEP_START=$(date +%s)
-
-pnpm integrity:gen 2>&1
-log "Integrity hashes regenerated ($(elapsed_since $STEP_START))"
-
-# ============================================================================
-# Step 5: Build UI
-# ============================================================================
-log_step "Step 5: Build Web UI"
+log_step "Step 3: Build Web UI"
 STEP_START=$(date +%s)
 
 pnpm ui:build 2>&1
 log "UI build completed ($(elapsed_since $STEP_START))"
 
 # ============================================================================
-# Step 6: Download Node.js binaries
+# Step 4: Download Node.js binaries
 # ============================================================================
-log_step "Step 6: Download Node.js binaries"
+log_step "Step 4: Download Node.js binaries"
 STEP_START=$(date +%s)
 
 NODE_DL_DIR="$ROOT_DIR/build/download-output/node"
@@ -181,9 +171,9 @@ esac
 log "Node.js download completed ($(elapsed_since $STEP_START))"
 
 # ============================================================================
-# Step 7: Create .app bundle
+# Step 5: Create .app bundle
 # ============================================================================
-log_step "Step 7: Create $APP_NAME.app bundle"
+log_step "Step 5: Create $APP_NAME.app bundle"
 STEP_START=$(date +%s)
 
 APP_DIR="$OUTPUT_DIR/${APP_NAME}.app"
@@ -324,8 +314,17 @@ case "$ARCH" in
 esac
 chmod +x "$RESOURCES/node/bin/node"
 
-# ── Copy app dist ──
+# ── Copy app dist (includes .jsc bytecode files) ──
 cp -R "$ROOT_DIR/dist" "$APP_ROOT/dist"
+
+# Verify .jsc files were copied into the .app bundle
+APP_JSC_COUNT=$(find "$APP_ROOT/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
+log "Copied dist/ to .app: $APP_JSC_COUNT .jsc files present"
+if [[ "$APP_JSC_COUNT" -lt 5 ]]; then
+  err "Expected .jsc files in $APP_ROOT/dist/, found $APP_JSC_COUNT"
+  err "Check that build:secure completed before this step."
+  exit 1
+fi
 
 # ── Copy package.json (simplified) ──
 node -e "
@@ -395,12 +394,23 @@ cat > "$RESOURCES/version.json" <<VINFO
 }
 VINFO
 
+# ── Install marker (for auto-update detection) ──
+UPDATE_SERVER="${OPENCLAWCN_UPDATE_SERVER:-http://47.98.123.45}"
+cat > "$APP_ROOT/install.json" <<INSTALL_MARKER
+{
+  "version": "${VERSION}",
+  "installTime": "$(date -u +"%Y-%m-%d %H:%M:%S")",
+  "firstLaunch": true,
+  "updateServer": "${UPDATE_SERVER}"
+}
+INSTALL_MARKER
+
 log ".app bundle structure created ($(elapsed_since $STEP_START))"
 
 # ============================================================================
-# Step 8: Install production dependencies
+# Step 6: Install production dependencies
 # ============================================================================
-log_step "Step 8: Install production dependencies"
+log_step "Step 6: Install production dependencies"
 STEP_START=$(date +%s)
 
 cd "$APP_ROOT"
@@ -419,9 +429,30 @@ node -e "
   console.log(JSON.stringify(pkg, null, 2));
 " > package.json.tmp && mv package.json.tmp package.json
 
+# Find npm-cli.js from downloaded Node.js (not system npm, to avoid version mismatch)
+NPM_CLI=""
+for try_arch in arm64 x64; do
+  NPM_CANDIDATE="$NODE_DL_DIR/node-${try_arch}/lib/node_modules/npm/bin/npm-cli.js"
+  if [[ -f "$NPM_CANDIDATE" ]]; then
+    NPM_CLI="$NPM_CANDIDATE"
+    break
+  fi
+done
+if [[ -z "$NPM_CLI" ]]; then
+  NPM_CLI="$(which npm 2>/dev/null || true)"
+fi
+if [[ -z "$NPM_CLI" ]]; then
+  err "Cannot find npm binary for production install"
+  exit 1
+fi
+log "Using npm: $NPM_CLI"
+
 # Use bundled Node for npm install (matches runtime)
-"$RESOURCES/node/bin/node" "$(which npm 2>/dev/null || echo "$NODE_DL_DIR/node-arm64/lib/node_modules/npm/bin/npm-cli.js")" \
-  install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1 || true
+if ! "$RESOURCES/node/bin/node" "$NPM_CLI" \
+  install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1; then
+  err "npm install --omit=dev failed"
+  exit 1
+fi
 
 # Aggressive node_modules cleanup
 if [[ "$FAST_MODE" != "true" ]]; then
@@ -469,38 +500,64 @@ if [[ "$FAST_MODE" != "true" ]]; then
   fi
   # For universal, keep both architectures
 
-  find node_modules -type d -name "linux*" -exec rm -rf {} + 2>/dev/null || true
-  find node_modules -type d -name "win32*" -exec rm -rf {} + 2>/dev/null || true
+  # Remove other-platform native module prebuilds (exact platform-arch patterns)
+  for plat_arch in linux-x64 linux-arm64 linux-arm linux-s390x linux-ppc64 \
+                   win32-x64 win32-arm64 win32-ia32; do
+    find node_modules -type d -name "$plat_arch" -exec rm -rf {} + 2>/dev/null || true
+  done
 
   rm -rf node_modules/.bin 2>/dev/null || true
   find node_modules -type d -empty -delete 2>/dev/null || true
+fi
+
+# Final .jsc integrity check after all cleanup
+POST_CLEANUP_JSC=$(find "$APP_ROOT/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
+log "Post-cleanup .jsc count: $POST_CLEANUP_JSC"
+if [[ "$POST_CLEANUP_JSC" -lt 5 ]]; then
+  err ".jsc files were lost during cleanup! Expected >=5, found $POST_CLEANUP_JSC"
+  exit 1
+fi
+
+# Verify bytenode is present in production node_modules
+if [[ ! -d "node_modules/bytenode" ]]; then
+  err "bytenode missing from production node_modules!"
+  err "bytecode loader stubs require bytenode at runtime."
+  err "Check that bytenode is in dependencies (not devDependencies) in package.json."
+  exit 1
 fi
 
 cd "$ROOT_DIR"
 log "Production dependencies installed ($(elapsed_since $STEP_START))"
 
 # ============================================================================
-# Step 9: Code signing
+# Step 7: Code signing
+# NOTE: 我们没有购买 Apple Developer 证书（$99/年），所以默认跳过签名。
+#       未签名的 app 用户首次运行需要：右键 → 打开，或到系统设置 → 安全性 → 允许。
+#       如果将来购买了证书，设置 SKIP_CODESIGN=0 SIGN_IDENTITY="Developer ID Application: xxx"
 # ============================================================================
-log_step "Step 9: Code signing"
+log_step "Step 7: Code signing"
 STEP_START=$(date +%s)
 
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+# 默认跳过签名 — 我们没有 Apple Developer 签名证书
+SKIP_CODESIGN="${SKIP_CODESIGN:-1}"
 
-if [[ -n "$SIGN_IDENTITY" ]]; then
+if [[ "$SKIP_CODESIGN" == "1" ]]; then
+  log "Skipping code signing (no Apple Developer certificate). Users need to right-click → Open on first launch."
+elif [[ -n "$SIGN_IDENTITY" ]]; then
   log "Signing with identity: $SIGN_IDENTITY"
   ALLOW_ADHOC_SIGNING=0 bash "$ROOT_DIR/scripts/codesign-mac-app.sh" "$APP_DIR"
 else
   log "Ad-hoc signing (no developer certificate)"
-  ALLOW_ADHOC_SIGNING=1 bash "$ROOT_DIR/scripts/codesign-mac-app.sh" "$APP_DIR"
+  ALLOW_ADHOC_SIGNING=1 SKIP_TEAM_ID_CHECK=1 DISABLE_LIBRARY_VALIDATION=1 bash "$ROOT_DIR/scripts/codesign-mac-app.sh" "$APP_DIR"
 fi
 
 log "Code signing completed ($(elapsed_since $STEP_START))"
 
 # ============================================================================
-# Step 10: Create DMG
+# Step 8: Create DMG
 # ============================================================================
-log_step "Step 10: Create DMG"
+log_step "Step 8: Create DMG"
 STEP_START=$(date +%s)
 
 DMG_OUTPUT="$OUTPUT_DIR/${APP_NAME}-macOS-v${VERSION}-${ARCH}.dmg"
@@ -513,10 +570,10 @@ shasum -a 256 "$DMG_OUTPUT" | awk '{print $1}' > "${DMG_OUTPUT}.sha256"
 log "DMG created ($(elapsed_since $STEP_START))"
 
 # ============================================================================
-# Step 11: Notarization (optional)
+# Step 9: Notarization (optional)
 # ============================================================================
 if [[ "${SKIP_NOTARIZE:-1}" != "1" ]] && [[ -n "$SIGN_IDENTITY" ]]; then
-  log_step "Step 11: Apple notarization"
+  log_step "Step 9: Apple notarization"
   STEP_START=$(date +%s)
 
   if [[ -f "$ROOT_DIR/scripts/notarize-mac-artifact.sh" ]]; then
