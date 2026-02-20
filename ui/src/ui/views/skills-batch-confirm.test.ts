@@ -36,9 +36,9 @@ describe("skills-batch-confirm", () => {
       onCancel: vi.fn(),
     }), container);
 
-    expect(container.textContent).toContain("必备功能");
-    expect(container.textContent).toContain("推荐安装");
-    expect(container.textContent).toContain("更多可选");
+    expect(container.textContent).toContain("核心");
+    expect(container.textContent).toContain("推荐");
+    expect(container.textContent).toContain("更多选择");
   });
 
   it("core skills have disabled checkboxes that are checked", () => {

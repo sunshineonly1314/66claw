@@ -159,6 +159,8 @@ export class ClawdbotApp extends LitElement {
   @state() chatThinkingLevel: string | null = null;
   @state() chatQueue: ChatQueueItem[] = [];
   @state() chatAttachments: ChatAttachment[] = [];
+  // OpenClawCN: auto-failover notification banner
+  @state() failoverBanner: import("./app-view-state").AppViewState["failoverBanner"] = null;
   // Voice mascot state
   @state() voiceAsrAvailable: boolean | null = null;
   @state() voiceMascotDismissed = isMascotDismissed();
@@ -216,10 +218,15 @@ export class ClawdbotApp extends LitElement {
   @state() qrcodePreloading = false;
   @state() qrcodePreloaded = false;
   @state() qrcodeExpiresAt: number | null = null;
+  // HTTP fallback QR 码（断连时通过 /api/support/qrcode 获取）
+  @state() fallbackQrcode: { base64: string; groupName: string } | null = null;
 
   // 能力发现状态 (Capability Discovery)
   @state() discoveryState: import("./controllers/capability-detect").DiscoveryControllerState = createInitialDiscoveryState();
 
+  // 智能推荐开关 (Smart Dispatch Toggle)
+  @state() smartDispatchEnabled = true;
+  @state() smartDispatchSaving = false;
   // 性能档位 (Performance Profile)
   @state() performanceProfile: "economy" | "balanced" | "power" = "balanced";
   @state() performanceProfileSaving = false;
@@ -355,11 +362,12 @@ export class ClawdbotApp extends LitElement {
   @state() skillsReport: SkillStatusReport | null = null;
   @state() skillsError: string | null = null;
   @state() skillsFilter = "";
+  @state() skillsTierRenderKey = 0;
   @state() skillEdits: Record<string, string> = {};
   @state() skillsBusyKey: string | null = null;
   @state() skillMessages: Record<string, SkillMessage> = {};
   @state() skillsInstallProgress: Record<string, import("./controllers/skills").InstallProgress> = {};
-  @state() skillsActiveTab: "active" | "library" | "blocked" = "active";
+  @state() skillsActiveTab: "active" | "library" | "blocked" | "mcp-store" | "market" = "active";
   @state() skillsRemoteLoading = false;
   @state() skillsRemoteIndex: RemoteSkillsIndex | null = null;
   @state() skillsRemoteError: string | null = null;
@@ -371,8 +379,20 @@ export class ClawdbotApp extends LitElement {
   @state() skillsMarketError: string | null = null;
   // 技能分类筛选
   @state() skillsActiveCategory = "all";
+  // 技能市场搜索结果（SQLite FTS5 分页）
+  @state() skillsMarketSearchResult: import("./controllers/skills").SkillsMarketSearchResult | null = null;
+  @state() skillsMarketPage = 1;
   // 技能列表分页
   @state() skillsVisibleCount = 50;
+  // 统一视图层级筛选
+  @state() skillsTierGroupFilter: "all" | "core" | "ready" | "needs-config" | "disabled" | "catalog" = "all";
+  // 导入本地技能
+  @state() skillsImportOpen = false;
+  @state() skillsImportPath = "";
+  @state() skillsImportBrowseResult: import("./controllers/skills").BrowseResult | null = null;
+  @state() skillsImportLoading = false;
+  @state() skillsImportError: string | null = null;
+  @state() skillsImportSuccess: string | null = null;
 
   // Playground 状态（技能玩法推荐）
   @state() playgroundLoading = false;
@@ -423,6 +443,11 @@ export class ClawdbotApp extends LitElement {
     configTarget: null,
     toast: null,
     showBatchConfig: false,
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 0,
+    loadingMore: false,
   };
   @state() mcpTestingServerId: string | null = null;
   @state() mcpTestResults: Record<string, "success" | "failed"> = {};
@@ -557,6 +582,8 @@ export class ClawdbotApp extends LitElement {
     return this;
   }
 
+  private _silentNewHandler: (() => void) | null = null;
+
   private handleDocsKeydown = (e: KeyboardEvent) => {
     // ⌘K or Ctrl+K to open docs search
     if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -584,6 +611,26 @@ export class ClawdbotApp extends LitElement {
     initCodeBlockCopyHandlers();
     // 初始化 QR 码截屏保护
     initQrGuard();
+    // 模型切换后静默清空聊天 UI（服务端 session 不动，modelOverride 已由 updateSessionModelOverrides 更新）
+    this._silentNewHandler = () => {
+      this.chatMessages = [];
+      this.chatStream = null;
+      this.chatRunId = null;
+    };
+    globalThis.addEventListener("openclawcn:silent-new", this._silentNewHandler);
+    // HTTP fallback: 立即获取运维二维码（不依赖 WebSocket 连接）
+    this._fetchFallbackQrcode();
+  }
+
+  private async _fetchFallbackQrcode() {
+    try {
+      const resp = await fetch("/api/support/qrcode");
+      if (!resp.ok) return;
+      const json = (await resp.json()) as { ok?: boolean; qrcode?: { base64: string; groupName: string } | null };
+      if (json?.ok && json.qrcode) {
+        this.fallbackQrcode = json.qrcode;
+      }
+    } catch { /* silent — gateway may not be up yet */ }
   }
 
   protected firstUpdated() {
@@ -593,6 +640,9 @@ export class ClawdbotApp extends LitElement {
   disconnectedCallback() {
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     document.removeEventListener("keydown", this.handleDocsKeydown);
+    if (this._silentNewHandler) {
+      globalThis.removeEventListener("openclawcn:silent-new", this._silentNewHandler);
+    }
     if (this.batchPillAutoDismissTimer != null) {
       window.clearTimeout(this.batchPillAutoDismissTimer);
       this.batchPillAutoDismissTimer = null;

@@ -274,17 +274,32 @@ function renderQrcodePopover(
  * 顶栏技术支持按钮（根据用户类型显示不同内容）
  * - 正式用户：⭐ 专属技术支持 (hover 弹出二维码)
  * - 试用用户：💬 技术支持 + 🛒 升级正式版
+ * - 无 license（断连）：使用 HTTP fallback 二维码仍然显示运维入口
  *
  * 交互：鼠标悬浮显示二维码，移走消失
  * 预加载：进入 chat 页面时已主动拉取，hover 时立即显示
  */
 function renderTopbarSupportButtons(state: AppViewState) {
   const license = state.licenseState?.license;
-  if (!license) return nothing;
+  const isLoading = state.qrcodePreloading ?? false;
+
+  // 无 license 时（断连 / gateway 未就绪），用 HTTP fallback 二维码显示运维支持入口
+  if (!license) {
+    const fallbackQr = state.fallbackQrcode;
+    if (!fallbackQr) return nothing;
+    return html`
+      <div class="topbar-support topbar-support--test">
+        <div class="topbar-support__btn topbar-support__btn--support">
+          <span class="topbar-support__icon">💬</span>
+          <span class="topbar-support__text">${t("support.getExclusiveSupport")}</span>
+          ${renderQrcodePopover(fallbackQr, false, "support.scanForSupport")}
+        </div>
+      </div>
+    `;
+  }
 
   const isTestUser = license.keyType === "test" || license.keyType === "trial";
   const qrcode = license.supportQrcode;
-  const isLoading = state.qrcodePreloading ?? false;
 
   if (isTestUser) {
     // 试用用户：获取专属技术支持 + 升级按钮
@@ -984,6 +999,7 @@ export function renderApp(state: AppViewState) {
               importBrowseResult: state.skillsImportBrowseResult,
               importLoading: state.skillsImportLoading,
               importError: state.skillsImportError,
+              importSuccess: state.skillsImportSuccess,
               onImportOpen: () => void openSkillImport(state),
               onImportClose: () => closeSkillImport(state),
               onImportBrowse: (path?: string) => void browseSkillDir(state, path),
@@ -998,8 +1014,51 @@ export function renderApp(state: AppViewState) {
               advancedOpen: state.mcpAdvancedOpen,
               onToggleAdvanced: () => { state.mcpAdvancedOpen = !state.mcpAdvancedOpen; },
               onConfigClick: (id) => {
-                mcpConfigClick(id, (tab) => state.setTab(tab as Tab), (section) => {
-                  state.configActiveSection = section;
+                const cap = state.mcpCapabilities.find((c) => c.id === id);
+                if (cap?.configNeeded) {
+                  // Has unconfigured env keys — open config wizard so the user
+                  // can fill in API keys.  Build a synthetic marketplace item
+                  // with just enough data for the wizard.
+                  const firstKey = cap.configNeeded.split(",")[0]?.trim() ?? "API_KEY";
+                  state.mcpMarketplace = {
+                    ...state.mcpMarketplace,
+                    configTarget: {
+                      serverId: id,
+                      friendlyName: cap.friendlyName,
+                      friendlyNameEn: cap.friendlyName,
+                      description: "",
+                      descriptionEn: "",
+                      category: "other",
+                      tags: [],
+                      version: "",
+                      npmPackage: "",
+                      securityScore: 0,
+                      requiresApiKey: true,
+                      apiKeyName: firstKey,
+                      platforms: [],
+                      isOfficial: false,
+                      isNew: false,
+                      toolCount: 0,
+                      installStatus: "installed",
+                    },
+                  };
+                  // Switch to extensions tab (stay on it) to show the wizard modal
+                  return;
+                }
+                // No config needed — enable/restart the server directly.
+                const name = cap?.friendlyName ?? id;
+                showMcpToast(state, `${name} — ${t("extensions.advanced.restarting" as never)}`, "info");
+                void enableMcpServer(state.client, id, {
+                  onStateChange: (patch: Partial<McpLifecycleState>) => {
+                    if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                    if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                    if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                  },
+                }).then(() => {
+                  const updated = state.mcpCapabilities.find((c) => c.id === id);
+                  if (updated?.status === "ready") {
+                    showMcpToast(state, `${name} — ${t("extensions.status.ready")}`, "success");
+                  }
                 });
               },
               onTrySay: (prompt) => {
@@ -1270,6 +1329,30 @@ export function renderApp(state: AppViewState) {
               },
               onCloseConfigWizard: () => {
                 state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: null };
+              },
+              onUpdateServerEnv: (serverId, env) => {
+                const name = state.mcpCapabilities.find((c) => c.id === serverId)?.friendlyName ?? serverId;
+                showMcpToast(state, `${name} — ${t("extensions.advanced.restarting" as never)}`, "info");
+                void (async () => {
+                  try {
+                    await state.client?.request("mcp.servers.updateEnv", { id: serverId, env });
+                    await restartMcpServer(state.client, serverId, {
+                      onStateChange: (patch: Partial<McpLifecycleState>) => {
+                        if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                        if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                        if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                      },
+                    });
+                    const updated = state.mcpCapabilities.find((c) => c.id === serverId);
+                    if (updated?.status === "ready") {
+                      showMcpToast(state, `${name} — ${t("extensions.status.ready")}`, "success");
+                    } else {
+                      showMcpToast(state, `${name} — ${t("extensions.advanced.restartFailed" as never)}`, "error");
+                    }
+                  } catch {
+                    showMcpToast(state, `${name} — ${t("extensions.advanced.restartFailed" as never)}`, "error");
+                  }
+                })();
               },
               onLoadMore: () => {
                 void loadMoreMarketplaceItems(state.client, {

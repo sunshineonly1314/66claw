@@ -106,7 +106,7 @@ const SKILL_FRIENDLY_NAMES: Record<string, string> = {
   "china-market-gateway": "中国市场数据", "ai-ppt-generate": "AI PPT 生成",
   "local-rag-search": "本地 RAG 搜索",
   packaging: "打包工具", "build-packaging": "构建打包",
-  "skills-troubleshoot": "技能诊断", "software-protection": "软件保护",
+  "skills-troubleshoot": "技能诊断", "self-troubleshoot": "自我排障", "software-protection": "软件保护",
   // Additional optional skills
   roku: "Roku 遥控", salesforce: "Salesforce CRM",
   slopesniper: "Solana 交易", sog: "SOG 邮件工具",

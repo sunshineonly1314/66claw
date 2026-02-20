@@ -1,7 +1,24 @@
 import type { GatewayBrowserClient } from "../gateway";
 import type { RemoteSkillsIndex, SkillStatusReport, SkillsMarketResponse } from "../types";
+import { markInstallFinished } from "../app-gateway";
+import { t } from "../i18n/index.js";
 
-export type SkillsTab = "active" | "library" | "blocked";
+export type SkillsTab = "active" | "library" | "blocked" | "market";
+
+/** 目录浏览结果（skills.browse RPC） */
+export type BrowseResult = {
+  currentPath: string;
+  parentPath: string | null;
+  directories: Array<{ name: string; path: string; hasSkillMd: boolean }>;
+  files: Array<{ name: string; path: string }>;
+  drives: string[];
+  separator: string;
+  isSkillDir: boolean;
+  skillSubdirCount: number;
+};
+
+/** 统一视图层级筛选 */
+export type SkillsTierGroup = "all" | "core" | "ready" | "needs-config" | "disabled" | "catalog";
 
 /** 安装进度阶段 */
 export type InstallProgressStage = "downloading" | "installing" | "verifying" | "done";
@@ -67,6 +84,15 @@ export type SkillsState = {
   skillsFilter: string;
   // Pagination — 每次显示多少条，点「加载更多」递增
   skillsVisibleCount: number;
+  // 统一视图层级筛选
+  skillsTierGroupFilter: SkillsTierGroup;
+  // 导入本地技能
+  skillsImportOpen: boolean;
+  skillsImportPath: string;
+  skillsImportBrowseResult: BrowseResult | null;
+  skillsImportLoading: boolean;
+  skillsImportError: string | null;
+  skillsImportSuccess: string | null;
 };
 
 export type SkillMessage = {
@@ -93,12 +119,19 @@ function getErrorMessage(err: unknown) {
   return String(err);
 }
 
+/** Pending reload requested while a loadSkills was already in flight */
+let _pendingReload = false;
+
 export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions) {
   if (options?.clearMessages && Object.keys(state.skillMessages).length > 0) {
     state.skillMessages = {};
   }
   if (!state.client || !state.connected) return;
-  if (state.skillsLoading) return;
+  if (state.skillsLoading) {
+    // Another load is in flight — schedule a reload after it finishes
+    _pendingReload = true;
+    return;
+  }
   state.skillsLoading = true;
   state.skillsError = null;
   try {
@@ -110,6 +143,11 @@ export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions
     state.skillsError = getErrorMessage(err);
   } finally {
     state.skillsLoading = false;
+  }
+  // If someone requested a reload while we were busy, do it now
+  if (_pendingReload) {
+    _pendingReload = false;
+    await loadSkills(state);
   }
 }
 
@@ -181,24 +219,52 @@ export async function installSkill(
   if (!state.client || !state.connected) return;
   state.skillsBusyKey = skillKey;
   state.skillsError = null;
+
+  // Show initial progress (real-time updates arrive via WS "skill.install.progress")
+  setInstallProgress(state, name, {
+    stage: "downloading",
+    message: "正在准备安装...",
+    percent: 5,
+  });
+
   try {
     const result = (await state.client.request("skills.install", {
       name,
       installId,
       timeoutMs: 120000,
     })) as { ok?: boolean; message?: string };
+
+    // Show completion progress
+    setInstallProgress(state, name, {
+      stage: "done",
+      message: result?.message ?? "安装成功！",
+      percent: 100,
+    });
+
+    // Refresh skills list — skill should move from needs-config to ready
     await loadSkills(state);
     setSkillMessage(state, skillKey, {
       kind: "success",
       message: result?.message ?? "已安装",
     });
+
+    // Clear progress after brief delay
+    setTimeout(() => {
+      setInstallProgress(state, name, null);
+    }, 1500);
   } catch (err) {
     const message = getErrorMessage(err);
     state.skillsError = message;
+    // Mark as "done" first to block late-arriving WS progress events
+    setInstallProgress(state, name, { stage: "done", message, percent: 0 });
     setSkillMessage(state, skillKey, {
       kind: "error",
       message,
     });
+    // Then clear after a brief delay
+    setTimeout(() => {
+      setInstallProgress(state, name, null);
+    }, 1500);
   } finally {
     state.skillsBusyKey = null;
   }
@@ -231,6 +297,36 @@ export async function toggleSkillPinned(
   }
 }
 
+// ============================================================================
+// Core Skills — promote / demote / limit
+// ============================================================================
+
+/** Maximum number of core skills (always + pinned) */
+export const CORE_SKILLS_MAX = 50;
+
+export function countCoreSkills(report: SkillStatusReport | null): number {
+  if (!report) return 0;
+  return report.skills.filter(
+    (s) => !s.disabled && s.missing.os.length === 0 && (s.always || s.pinned),
+  ).length;
+}
+
+export async function promoteSkillToCore(state: SkillsState, skillKey: string) {
+  const coreCount = countCoreSkills(state.skillsReport);
+  if (coreCount >= CORE_SKILLS_MAX) {
+    setSkillMessage(state, skillKey, {
+      kind: "error",
+      message: `核心技能已达上限 (${CORE_SKILLS_MAX})，请先移除其他核心技能`,
+    });
+    return;
+  }
+  await toggleSkillPinned(state, skillKey, true);
+}
+
+export async function demoteSkillFromCore(state: SkillsState, skillKey: string) {
+  await toggleSkillPinned(state, skillKey, false);
+}
+
 /** 每页显示数量 */
 export const SKILLS_PAGE_SIZE = 50;
 
@@ -242,6 +338,11 @@ export function setActiveTab(state: SkillsState, tab: SkillsTab) {
 export function setActiveCategory(state: SkillsState, category: string) {
   state.skillsActiveCategory = category;
   state.skillsVisibleCount = SKILLS_PAGE_SIZE; // 切分类重置分页
+}
+
+export function setTierGroupFilter(state: SkillsState, tier: SkillsTierGroup) {
+  state.skillsTierGroupFilter = tier;
+  state.skillsVisibleCount = SKILLS_PAGE_SIZE;
 }
 
 export function loadMoreSkills(state: SkillsState) {
@@ -275,6 +376,8 @@ function setInstallProgress(state: SkillsState, skillName: string, progress: Ins
     next[skillName] = progress;
   } else {
     delete next[skillName];
+    // Block late WS events from re-injecting stale progress after clear
+    markInstallFinished(skillName);
   }
   state.skillsInstallProgress = next;
 }
@@ -307,8 +410,14 @@ export async function installRemoteSkill(
   
   // 模拟下载进度（因为后端是一次性返回结果）
   const progressTimer = setInterval(() => {
+    // Stop phantom updates if disconnected or install already finished
+    if (!state.connected) { clearInterval(progressTimer); return; }
     const current = state.skillsInstallProgress[skillName];
-    if (current && current.stage === "downloading" && (current.percent ?? 0) < 80) {
+    if (!current || current.stage === "done" || current.stage === "verifying") {
+      clearInterval(progressTimer);
+      return;
+    }
+    if (current.stage === "downloading" && (current.percent ?? 0) < 80) {
       setInstallProgress(state, skillName, {
         stage: "downloading",
         message: "正在从云端下载技能包...",
@@ -358,11 +467,15 @@ export async function installRemoteSkill(
     const message = getErrorMessage(err);
     state.skillsRemoteError = message;
     state.skillsMarketError = message;
-    setInstallProgress(state, skillName, null);
+    // Mark as "done" first to block late WS events, then clear after delay
+    setInstallProgress(state, skillName, { stage: "done", message, percent: 0 });
     setSkillMessage(state, skillName, {
       kind: "error",
       message,
     });
+    setTimeout(() => {
+      setInstallProgress(state, skillName, null);
+    }, 1500);
   } finally {
     state.skillsBusyKey = null;
   }
@@ -468,7 +581,9 @@ export async function searchMarketSkills(
   try {
     const result = (await state.client.request("skills_marketplace.search", {
       keyword: options?.keyword || state.skillsFilter || undefined,
-      category: options?.category || state.skillsActiveCategory || undefined,
+      category: (options?.category || state.skillsActiveCategory || "all") === "all"
+        ? undefined
+        : (options?.category || state.skillsActiveCategory),
       page: options?.page ?? state.skillsMarketPage ?? 1,
       pageSize: options?.pageSize ?? 20,
       orderBy: "overall_score",
@@ -501,4 +616,108 @@ export async function searchMarketSkillsPrevPage(state: SkillsState) {
   const current = state.skillsMarketSearchResult;
   if (!current || current.page <= 1) return;
   await searchMarketSkills(state, { page: current.page - 1 });
+}
+
+/**
+ * 无限滚动：加载下一页并追加到已有结果
+ */
+export async function loadMoreMarketSkills(state: SkillsState) {
+  const current = state.skillsMarketSearchResult;
+  if (!current || current.page >= current.totalPages) return;
+  if (state.skillsMarketLoading) return;
+
+  state.skillsMarketLoading = true;
+  state.skillsMarketError = null;
+  try {
+    const nextPage = current.page + 1;
+    const result = (await state.client?.request("skills_marketplace.search", {
+      keyword: state.skillsFilter || undefined,
+      category: (state.skillsActiveCategory || "all") === "all"
+        ? undefined
+        : state.skillsActiveCategory,
+      page: nextPage,
+      pageSize: 20,
+      orderBy: "overall_score",
+      orderDirection: "DESC",
+    })) as SkillsMarketSearchResult | undefined;
+    if (result) {
+      state.skillsMarketSearchResult = {
+        ...result,
+        items: [...current.items, ...result.items],
+      };
+      state.skillsMarketPage = result.page;
+    }
+  } catch (err) {
+    state.skillsMarketError = getErrorMessage(err);
+  } finally {
+    state.skillsMarketLoading = false;
+  }
+}
+
+// ============================================================================
+// Skills Import — 本地技能导入
+// ============================================================================
+
+export async function openSkillImport(state: SkillsState) {
+  state.skillsImportOpen = true;
+  state.skillsImportPath = "";
+  state.skillsImportBrowseResult = null;
+  state.skillsImportError = null;
+  state.skillsImportSuccess = null;
+  state.skillsImportLoading = false;
+  await browseSkillDir(state);
+}
+
+export function closeSkillImport(state: SkillsState) {
+  state.skillsImportOpen = false;
+  state.skillsImportPath = "";
+  state.skillsImportBrowseResult = null;
+  state.skillsImportError = null;
+  state.skillsImportSuccess = null;
+  state.skillsImportLoading = false;
+}
+
+export async function browseSkillDir(state: SkillsState, path?: string) {
+  if (!state.client || !state.connected) return;
+  state.skillsImportLoading = true;
+  state.skillsImportError = null;
+  try {
+    const params: { path?: string } = {};
+    if (path) params.path = path;
+    const result = (await state.client.request("skills.browse", params)) as BrowseResult | undefined;
+    if (result) {
+      state.skillsImportBrowseResult = result;
+      state.skillsImportPath = result.currentPath;
+    }
+  } catch (err) {
+    state.skillsImportError = getErrorMessage(err);
+  } finally {
+    state.skillsImportLoading = false;
+  }
+}
+
+export async function importSkill(state: SkillsState, path: string, mode: "copy" | "reference") {
+  if (!state.client || !state.connected) return;
+  state.skillsImportLoading = true;
+  state.skillsImportError = null;
+  state.skillsImportSuccess = null;
+  try {
+    const result = (await state.client.request("skills.import", { path, mode })) as
+      | { ok: boolean; imported: string[]; mode: string }
+      | undefined;
+    if (result?.ok) {
+      await loadSkills(state, { clearMessages: true });
+      // 显示成功提示，1.5 秒后自动关闭弹窗
+      state.skillsImportLoading = false;
+      const names = result.imported?.join(", ") || "";
+      state.skillsImportSuccess = names
+        ? `${t("skills.import.success" as never)}：${names}`
+        : (t("skills.import.success" as never) as string);
+      setTimeout(() => closeSkillImport(state), 1500);
+    }
+  } catch (err) {
+    state.skillsImportError = getErrorMessage(err);
+  } finally {
+    state.skillsImportLoading = false;
+  }
 }

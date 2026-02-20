@@ -71,6 +71,14 @@ export type AppViewState = {
   chatThinkingLevel: string | null;
   chatQueue: ChatQueueItem[];
   compactionStatus: import("./app-tool-stream").CompactionStatus | null;
+  /** OpenClawCN: auto-failover notification banner */
+  failoverBanner: {
+    fromProvider: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+    reasonText: string;
+  } | null;
   // API Response Monitor state
   apiMonitorElapsedMs: number;
   apiMonitorDismissed: boolean;
@@ -119,6 +127,11 @@ export type AppViewState = {
   qrcodePreloading: boolean;
   qrcodePreloaded: boolean;
   qrcodeExpiresAt: number | null;
+  // HTTP fallback QR 码（断连时通过 /api/support/qrcode 获取）
+  fallbackQrcode: { base64: string; groupName: string } | null;
+  // 智能推荐开关 (Smart Dispatch Toggle)
+  smartDispatchEnabled: boolean;
+  smartDispatchSaving: boolean;
   // 性能档位 (Performance Profile)
   performanceProfile: "economy" | "balanced" | "power";
   performanceProfileSaving: boolean;
@@ -199,7 +212,7 @@ export type AppViewState = {
   skillEdits: Record<string, string>;
   skillMessages: Record<string, SkillMessage>;
   skillsBusyKey: string | null;
-  skillsActiveTab: "active" | "library" | "blocked" | "mcp-store";
+  skillsActiveTab: "active" | "library" | "blocked" | "mcp-store" | "market";
   skillsRemoteLoading: boolean;
   skillsRemoteIndex: RemoteSkillsIndex | null;
   skillsRemoteError: string | null;
@@ -211,8 +224,20 @@ export type AppViewState = {
   skillsMarketError: string | null;
   // 技能分类筛选
   skillsActiveCategory: string;
+  // 技能市场搜索结果（SQLite FTS5 分页）
+  skillsMarketSearchResult: import("./controllers/skills").SkillsMarketSearchResult | null;
+  skillsMarketPage: number;
   // 技能列表分页
   skillsVisibleCount: number;
+  // 统一视图层级筛选
+  skillsTierGroupFilter: "all" | "core" | "ready" | "needs-config" | "disabled" | "catalog";
+  // 导入本地技能
+  skillsImportOpen: boolean;
+  skillsImportPath: string;
+  skillsImportBrowseResult: import("./controllers/skills").BrowseResult | null;
+  skillsImportLoading: boolean;
+  skillsImportError: string | null;
+  skillsImportSuccess: string | null;
   // Playground 状态（技能玩法推荐）
   playgroundLoading: boolean;
   playgroundReport: SkillStatusReport | null;
@@ -447,6 +472,8 @@ export type McpCapability = {
   examplePrompt: string;
   configNeeded?: string;
   isNew?: boolean;
+  /** true for the 5 hardcoded built-in capabilities; false/undefined for user-installed MCP */
+  isBuiltin?: boolean;
 };
 
 export type McpProcessInfo = {
@@ -455,6 +482,7 @@ export type McpProcessInfo = {
   status: "running" | "stopped" | "error";
   memoryMB: number;
   toolCount: number;
+  error?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -490,6 +518,14 @@ export type McpMarketplaceItem = {
   installedVersion?: string;
   /** True when marketplace version > installed version */
   hasUpdate?: boolean;
+  /** Whether this item has a working install method (npm/pypi/SSE) */
+  installable?: boolean;
+  /** Install method type for UI labeling */
+  installMethod?: "npm" | "pypi" | "sse" | "none";
+  /** Link to source detail page (for items without install method) */
+  sourceUrl?: string;
+  /** Data source identifier */
+  source?: string;
 };
 
 export type McpMarketplaceState = {
@@ -509,6 +545,16 @@ export type McpMarketplaceState = {
   toast: McpToast | null;
   /** Batch API key configuration modal open state */
   showBatchConfig: boolean;
+  /** Pagination: current page (1-based) */
+  page: number;
+  /** Pagination: items per page */
+  pageSize: number;
+  /** Pagination: total items across all pages */
+  total: number;
+  /** Pagination: total pages */
+  totalPages: number;
+  /** True when loading more items (infinite scroll) */
+  loadingMore: boolean;
 };
 
 export type McpToast = {
