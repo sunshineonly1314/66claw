@@ -26,7 +26,7 @@ New-Item -ItemType Directory -Force -Path $ResourcesDir | Out-Null
 
 # ── 1. Node.js runtime ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
-Write-Host "[1/7] Copying Node.js runtime..." -ForegroundColor Green
+Write-Host "[1/9] Copying Node.js runtime..." -ForegroundColor Green
 $nodeDir = Join-Path $ResourcesDir "node"
 New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
 
@@ -55,7 +55,7 @@ if (-not $nodeFound) {
 
 # ── 2. Backend dist ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
-Write-Host "[2/7] Copying backend dist/..." -ForegroundColor Green
+Write-Host "[2/9] Copying backend dist/..." -ForegroundColor Green
 $distSource = "$ProjectRoot\dist"
 if (Test-Path $distSource) {
     Copy-Item $distSource "$ResourcesDir\dist" -Recurse -Force
@@ -77,7 +77,7 @@ if (Test-Path $distSource) {
 
 # ── 3. Production node_modules ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
-Write-Host "[3/7] Installing production node_modules/..." -ForegroundColor Green
+Write-Host "[3/9] Installing production node_modules/..." -ForegroundColor Green
 
 # CRITICAL: pnpm uses hardlinks to a global store. robocopy/Copy-Item expands
 # each hardlink into an independent file copy: 1.5GB real → 18GB copied.
@@ -189,7 +189,7 @@ try {
 
 # ── 4. Extensions ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
-Write-Host "[4/7] Copying extensions/..." -ForegroundColor Green
+Write-Host "[4/9] Copying extensions/..." -ForegroundColor Green
 $extSource = "$ProjectRoot\extensions"
 if (Test-Path $extSource) {
     robocopy "$extSource" "$ResourcesDir\extensions" /E /XD node_modules .turbo .git /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
@@ -205,7 +205,7 @@ if (Test-Path $extSource) {
 
 # ── 5. Skills ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
-Write-Host "[5/7] Copying skills/..." -ForegroundColor Green
+Write-Host "[5/9] Copying skills/..." -ForegroundColor Green
 $skillsSources = @(
     "$ProjectRoot\skills-merged",
     "$ProjectRoot\skills"
@@ -224,12 +224,68 @@ if (-not $skillsFound) {
     Write-Host "  WARNING: skills not found. Skills will be unavailable." -ForegroundColor Yellow
 }
 
-# ── 6. Data & docs ──
+# ── 6. Bundled tool binaries (CN users cannot access GitHub to download) ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
-Write-Host "[6/7] Copying data and docs..." -ForegroundColor Green
+Write-Host "[6/9] Copying bundled tool binaries..." -ForegroundColor Green
+$bundledBinsSources = @(
+    "$ProjectRoot\scripts\windows\bundled-bins",
+    "E:\openclawcn\bundled-bins"
+)
+$toolsDir = Join-Path $ResourcesDir "tools"
+New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+$binsCopied = 0
+foreach ($src in $bundledBinsSources) {
+    if (Test-Path $src) {
+        Get-ChildItem "$src\*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "$toolsDir\$($_.Name)" -Force
+            $binsCopied++
+        }
+        $binsSize = [math]::Round(((Get-ChildItem "$toolsDir\*.exe" -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
+        Write-Host "  OK: tools/ ($binsCopied binaries, $binsSize MB) from $src [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+        break
+    }
+}
+if ($binsCopied -eq 0) {
+    Write-Host "  WARNING: No bundled-bins found. Tool binaries will not be pre-installed." -ForegroundColor Yellow
+    Write-Host "  Looked in:" -ForegroundColor Yellow
+    foreach ($src in $bundledBinsSources) { Write-Host "    - $src" -ForegroundColor Yellow }
+}
+
+# ── 7. Data & docs ──
+$stepTimer = [Diagnostics.Stopwatch]::StartNew()
+Write-Host "[7/9] Copying data and docs..." -ForegroundColor Green
+$dataResDir = Join-Path $ResourcesDir "data"
+New-Item -ItemType Directory -Force -Path $dataResDir | Out-Null
 if (Test-Path "$ProjectRoot\data") {
-    Copy-Item "$ProjectRoot\data" "$ResourcesDir\data" -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "  OK: data/"
+    # Copy selective seed data (not user runtime data like sessions, logs)
+    $seedFiles = @(
+        "mcp-index.db",
+        "mcp-index.json",
+        "mcp-index-enhanced.json",
+        "tool-index.sqlite",
+        "skill-availability-dictionary.json",
+        "skills-availability-dictionary.json",
+        "skills-availability-dictionary-enriched.json",
+        "clawdbot.json"
+    )
+    $seedDirs = @("agents", "identity")
+    foreach ($f in $seedFiles) {
+        $src = Join-Path "$ProjectRoot\data" $f
+        if (Test-Path $src) {
+            Copy-Item $src "$dataResDir\$f" -Force
+        }
+    }
+    foreach ($d in $seedDirs) {
+        $src = Join-Path "$ProjectRoot\data" $d
+        if (Test-Path $src) {
+            Copy-Item $src "$dataResDir\$d" -Recurse -Force
+        }
+    }
+    $dataSize = [math]::Round(((Get-ChildItem $dataResDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
+    Write-Host "  OK: data/ ($dataSize MB, seed data only)"
+} else {
+    Write-Host "  WARNING: data/ not found at $ProjectRoot\data" -ForegroundColor Yellow
+    Write-Host "  The installer will start without pre-loaded index data." -ForegroundColor Yellow
 }
 if (Test-Path "$ProjectRoot\docs-cn\reference\templates") {
     New-Item -ItemType Directory -Force -Path "$ResourcesDir\docs\reference" | Out-Null
@@ -238,8 +294,8 @@ if (Test-Path "$ProjectRoot\docs-cn\reference\templates") {
 }
 Write-Host "  [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
 
-# ── 7. Build metadata ──
-Write-Host "[7/7] Copying build metadata..." -ForegroundColor Green
+# ── 8. Build metadata ──
+Write-Host "[8/9] Copying build metadata..." -ForegroundColor Green
 Copy-Item "$ProjectRoot\package.json" "$ResourcesDir\package.json" -Force
 Write-Host "  OK: package.json"
 
@@ -278,6 +334,32 @@ $buildMeta = @{
 } | ConvertTo-Json -Compress
 [System.IO.File]::WriteAllText("$ResourcesDir\dist\build-meta.json", $buildMeta, [System.Text.UTF8Encoding]::new($false))
 Write-Host "  OK: build-meta.json (node=$buildNodeVersion, v8=$buildV8Version)"
+
+# ── 9. Launch scripts and service binary ──
+$stepTimer = [Diagnostics.Stopwatch]::StartNew()
+Write-Host "[9/9] Copying launch scripts and assets..." -ForegroundColor Green
+$winScriptsDir = "$ProjectRoot\scripts\windows"
+$launchFiles = @("start-gateway.bat", "clawdbot.bat", "diagnose.bat", "view-logs.bat")
+foreach ($f in $launchFiles) {
+    $src = Join-Path $winScriptsDir $f
+    if (Test-Path $src) {
+        Copy-Item $src "$ResourcesDir\$f" -Force
+        Write-Host "  OK: $f"
+    }
+}
+# ClawdbotService.exe (native tray service)
+$svcExe = Join-Path $winScriptsDir "native\ClawdbotService.exe"
+if (Test-Path $svcExe) {
+    Copy-Item $svcExe "$ResourcesDir\ClawdbotService.exe" -Force
+    Write-Host "  OK: ClawdbotService.exe"
+}
+# Assets (icon, loading page)
+$assetsDir = "$ProjectRoot\assets"
+if (Test-Path $assetsDir) {
+    Copy-Item $assetsDir "$ResourcesDir\assets" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "  OK: assets/"
+}
+Write-Host "  [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
 
 # ── Summary ──
 $totalSize = [math]::Round(((Get-ChildItem $ResourcesDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
