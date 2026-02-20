@@ -122,6 +122,15 @@ export type ChatProps = {
   onChatScroll?: (event: Event) => void;
   // Voice mascot
   voiceMascot?: VoiceMascotProps | null;
+  // OpenClawCN: auto-failover notification banner
+  failoverBanner?: {
+    fromProvider: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+    reasonText: string;
+  } | null;
+  onDismissFailoverBanner?: () => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -137,11 +146,14 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
         ? ` (${status.contextPercent}%)`
         : "";
     const message = isProactive
-      ? html`<strong>正在优化对话记忆${pctLabel}</strong><br /><span style="opacity:0.85;font-size:12px">对话内容较多，正在自动整理压缩，请稍候...</span>`
-      : html`Compacting context...`;
+      ? html`<span class="compaction-toast__title">正在优化对话记忆${pctLabel}</span><span class="compaction-toast__sub">对话内容较多，正在自动整理压缩...</span>`
+      : html`<span>Compacting context...</span>`;
     return html`
-      <div class="callout info compaction-indicator compaction-indicator--active">
-        ${icons.loader} ${message}
+      <div class="compaction-indicator compaction-indicator--active compaction-toast compaction-toast--loading">
+        <span class="compaction-toast__icon compaction-toast__icon--spin">
+          ${icons.loader}
+        </span>
+        <span class="compaction-toast__text">${message}</span>
       </div>
     `;
   }
@@ -155,8 +167,11 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
         ? html`对话记忆优化完成，继续为你服务`
         : html`Context compacted`;
       return html`
-        <div class="callout success compaction-indicator compaction-indicator--complete">
-          ${icons.check} ${message}
+        <div class="compaction-indicator compaction-indicator--complete compaction-toast">
+          <span class="compaction-toast__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </span>
+          <span class="compaction-toast__text">${message}</span>
         </div>
       `;
     }
@@ -643,6 +658,16 @@ export function renderChat(props: ChatProps) {
 
       ${renderCompactionIndicator(props.compactionStatus)}
 
+      ${props.failoverBanner ? html`
+        <div class="callout info failover-banner">
+          <span class="failover-banner__icon">&#x26A1;</span>
+          <span class="failover-banner__text">
+            已自动切换到 <strong>${props.failoverBanner.toProvider}</strong> / ${props.failoverBanner.toModel}，原服务商 ${props.failoverBanner.fromProvider} ${props.failoverBanner.reasonText}
+          </span>
+          <button class="failover-banner__close" type="button" @click=${props.onDismissFailoverBanner}>&times;</button>
+        </div>
+      ` : nothing}
+
       ${
         props.showNewMessages
           ? html`
@@ -932,6 +957,23 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       },
     });
   }
+  // Pre-scan: collect indices of history messages that are tool results,
+  // so we can mark preceding tool-call messages as resolved (not pending).
+  const resolvedToolCallIndices = new Set<number>();
+  for (let i = historyStart; i < history.length; i++) {
+    const n = normalizeMessage(history[i]);
+    if (n.role.toLowerCase() === "toolresult") {
+      // Walk backwards to find the assistant message whose tool calls are now resolved
+      for (let j = i - 1; j >= historyStart; j--) {
+        const prev = normalizeMessage(history[j]);
+        if (prev.role.toLowerCase() === "assistant") {
+          resolvedToolCallIndices.add(j);
+          break;
+        }
+      }
+    }
+  }
+
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
     const normalized = normalizeMessage(msg);
@@ -954,10 +996,16 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       continue;
     }
 
+    // If this assistant message's tool calls have a matching tool result in
+    // history, tag it so extractToolCards won't mark them as pending/spinning.
+    const message = resolvedToolCallIndices.has(i)
+      ? Object.assign({}, msg as Record<string, unknown>, { __toolsResolved: true })
+      : msg;
+
     items.push({
       kind: "message",
       key: messageKey(msg, i),
-      message: msg,
+      message,
     });
   }
   if (props.showThinking) {
