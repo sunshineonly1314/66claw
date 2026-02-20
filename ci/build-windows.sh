@@ -80,7 +80,7 @@ Write-Host "Current commit: \$(git rev-parse HEAD)"
 Write-Host "Current branch: \$(git branch --show-current)"
 
 Write-Host "Installing dependencies..."
-npm install --no-fund --no-audit
+pnpm install --no-frozen-lockfile
 
 # ── Auto version bump ──
 if (-not \$VERSION) {
@@ -152,7 +152,7 @@ Write-Host "CWD: \$(Get-Location)"
 # 构建阶段会用 --omit=dev 重装 node_modules，tsx 被移除
 # 这里重新安装全部依赖以确保 tsx 可用
 Write-Host "Re-installing dev dependencies for release-deploy..."
-npm install --no-fund --no-audit 2>\$null
+pnpm install --no-frozen-lockfile 2>\$null
 
 \$releaseCacheDir = 'E:\openclawcn\.release-cache'
 if (-not (Test-Path \$releaseCacheDir)) {
@@ -174,7 +174,6 @@ if (\$VERSION) { \$releaseArgs += @('-v', \$VERSION) }
 \$releaseArgs += @('--platform', 'windows')
 if (\$ossKeyId -and \$ossKeySecret) {
     \$releaseArgs += @('--oss', '--oss-domain', 'dl.obplugins.cn')
-    \$releaseArgs += @('--notify-url', 'https://dl.obplugins.cn/api/v1/release/notify')
 } else {
     \$releaseArgs += @('--output-only')
 }

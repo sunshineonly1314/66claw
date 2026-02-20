@@ -305,7 +305,7 @@ Write-Host "  OK: package.json"
 $appVersion = (Get-Content "$ProjectRoot\package.json" -Raw | ConvertFrom-Json).version
 $installJson = @{
     installKind  = "installer"
-    updateServer = "https://dl.openclawcn.com"
+    updateServer = "https://dl.obplugins.cn"
     version      = $appVersion
 } | ConvertTo-Json -Compress
 # Use .NET API to write UTF-8 without BOM (PowerShell 5.x -Encoding UTF8 adds BOM)
