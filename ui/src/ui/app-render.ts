@@ -59,17 +59,20 @@ import { renderSkills } from "./views/skills";
 import { renderPlayground } from "./views/playground";
 import "./views/model-config";
 import { renderExtensions } from "./views/extensions-page";
+import { MCP_MAX_RUNNING } from "./views/mcp-shared.js";
 import {
   restartMcpServer,
   disableMcpServer,
   enableMcpServer,
   testMcpServer,
   checkMcpUpdate,
+  initMcpCapabilities,
   handleConfigClick as mcpConfigClick,
   installMarketplaceItem,
   uninstallMarketplaceItem,
   updateMarketplaceItem,
   loadMarketplaceItems,
+  loadMoreMarketplaceItems,
   loadMarketplaceRecommendations,
   batchUpdateMcpServerEnv,
   fetchServerEnvStatus,
@@ -137,19 +140,24 @@ import { loadChannels } from "./controllers/channels";
 import { loadPresence } from "./controllers/presence";
 import { deleteSession, loadSessions, patchSession } from "./controllers/sessions";
 import {
-  installRemoteSkill,
   installSkill,
-  loadMarketSkills,
-  loadMoreSkills,
-  loadRemoteSkills,
+  installRemoteSkill,
   loadSkills,
   refreshMarketSkills,
   saveSkillApiKey,
-  setActiveTab,
-  SKILLS_PAGE_SIZE,
-  toggleSkillPinned,
+  searchMarketSkills,
+  loadMoreMarketSkills,
+  setActiveCategory,
   updateSkillEdit,
   updateSkillEnabled,
+  promoteSkillToCore,
+  demoteSkillFromCore,
+  countCoreSkills,
+  CORE_SKILLS_MAX,
+  openSkillImport,
+  closeSkillImport,
+  browseSkillDir,
+  importSkill,
   type SkillMessage,
 } from "./controllers/skills";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files";
@@ -400,7 +408,12 @@ export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
-  const chatDisabledReason = state.connected ? null : t("connection.disconnectedFromGateway");
+  // First startup (hello===null): suppress error/disconnect messages — show loading instead.
+  // Only show disconnected message after a successful connection was later lost.
+  const isFirstStartup = !state.connected && !state.hello;
+  const chatDisabledReason = state.connected ? null
+    : isFirstStartup ? null
+    : t("connection.disconnectedFromGateway");
   const isChat = state.tab === "chat";
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
@@ -450,9 +463,9 @@ export function renderApp(state: AppViewState) {
           </a>
           ${renderApiMonitor(state)}
           <div class="pill">
-            <span class="statusDot ${state.connected ? "ok" : ""}"></span>
+            <span class="statusDot ${state.connected ? "ok" : isFirstStartup ? "" : ""}"></span>
             <span>Health</span>
-            <span class="mono">${state.connected ? "OK" : "Offline"}</span>
+            <span class="mono">${state.connected ? "OK" : isFirstStartup ? "..." : "Offline"}</span>
           </div>
           ${renderThemeToggle(state)}
         </div>
@@ -915,167 +928,67 @@ export function renderApp(state: AppViewState) {
               edits: state.skillEdits,
               messages: state.skillMessages,
               busyKey: state.skillsBusyKey,
-              connected: state.connected ?? false,
-              installProgress: state.skillsInstallProgress ?? {},
-              activeTab: state.skillsActiveTab ?? "active",
-              remoteLoading: false,
-              remoteIndex: null,
-              remoteError: null,
-              marketLoading: state.skillsMarketLoading ?? false,
-              marketResponse: state.skillsMarketResponse ?? null,
-              marketSyncing: state.skillsMarketSyncing ?? false,
-              marketLastSyncedAt: state.skillsMarketLastSyncedAt ?? null,
-              marketError: state.skillsMarketError ?? null,
-              activeCategory: state.skillsActiveCategory ?? "all",
-              visibleCount: state.skillsVisibleCount ?? SKILLS_PAGE_SIZE,
-              onFilterChange: (next) => { state.skillsFilter = next; state.skillsVisibleCount = SKILLS_PAGE_SIZE; },
-              onLoadMore: () => loadMoreSkills(state),
+              tierRenderKey: state.skillsTierRenderKey,
+              onTierRenderBump: () => { state.skillsTierRenderKey++; },
+              onFilterChange: (next) => { state.skillsFilter = next; },
               onRefresh: () => loadSkills(state, { clearMessages: true }),
               onToggle: (key, enabled) => updateSkillEnabled(state, key, enabled),
               onEdit: (key, value) => updateSkillEdit(state, key, value),
               onSaveKey: (key) => saveSkillApiKey(state, key),
               onInstall: (skillKey, name, installId) =>
                 installSkill(state, skillKey, name, installId),
+              // core skills drag-and-drop
+              onPromoteToCore: (skillKey) => void promoteSkillToCore(state, skillKey),
+              onDemoteFromCore: (skillKey) => void demoteSkillFromCore(state, skillKey),
+              coreCount: countCoreSkills(state.skillsReport),
+              coreMax: CORE_SKILLS_MAX,
+              // marketplace props
+              activeTab: state.skillsActiveTab === "market" ? "market" : "local",
               onTabChange: (tab) => {
-                setActiveTab(state, tab);
-                // Lazy-load MCP marketplace when switching to mcp-store tab
-                if (tab === "mcp-store" && state.mcpMarketplace.items.length === 0 && !state.mcpMarketplace.loading) {
-                  const mcpCallbacks: MarketplaceCallbacks = {
-                    onStateChange: (patch) => {
-                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
-                    },
-                  };
-                  void loadMarketplaceItems(state.client, mcpCallbacks);
+                state.skillsActiveTab = tab === "market" ? "market" : "active";
+                if (tab === "market" && !state.skillsMarketSearchResult) {
+                  const cat = state.skillsActiveCategory;
+                  void searchMarketSkills(state, {
+                    category: cat === "all" ? undefined : cat,
+                    page: 1,
+                  });
                 }
               },
-              onRefreshRemote: () => refreshMarketSkills(state),
-              onInstallRemote: (skillName) => installRemoteSkill(state, skillName),
-              onCategoryChange: (category) => { state.skillsActiveCategory = category; state.skillsVisibleCount = SKILLS_PAGE_SIZE; },
-              onPinToggle: (skillKey, pinned) => toggleSkillPinned(state, skillKey, pinned),
-              // MCP marketplace props for "MCP 市场" tab
-              mcpMarketplace: state.mcpMarketplace,
-              onMcpSearchChange: (search) => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, search };
+              marketLoading: state.skillsMarketLoading,
+              marketError: state.skillsMarketError,
+              marketSearchResult: state.skillsMarketSearchResult ?? null,
+              marketCategory: state.skillsActiveCategory,
+              installProgress: state.skillsInstallProgress,
+              onMarketSearch: (keyword) => {
+                state.skillsFilter = keyword;
+                state.skillsMarketPage = 1;
+                void searchMarketSkills(state, { keyword: keyword || undefined, page: 1 });
               },
-              onMcpCategoryChange: (category) => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, activeCategory: category };
+              onMarketCategoryChange: (category) => {
+                setActiveCategory(state, category);
+                void searchMarketSkills(state, {
+                  category: category === "all" ? undefined : category,
+                  page: 1,
+                });
               },
-              onMcpSortChange: (sort) => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, sort };
+              onMarketLoadMore: () => void loadMoreMarketSkills(state),
+              hasMorePages: (state.skillsMarketSearchResult?.page ?? 0) < (state.skillsMarketSearchResult?.totalPages ?? 0),
+              onMarketInstall: (skillName) => void installRemoteSkill(state, skillName),
+              onMarketRefresh: () => {
+                void refreshMarketSkills(state);
+                void searchMarketSkills(state, { page: 1 });
               },
-              onMcpOpenDetail: (item) => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: item };
-              },
-              onMcpCloseDetail: () => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: null };
-              },
-              onMcpInstall: (item) => {
-                const runningCount = state.mcpProcesses.filter((p) => p.status === "running").length;
-                if (runningCount >= 8) {
-                  showMcpToast(state, t("extensions.store.limitReached").replace("{{count}}", "8").replace("{{max}}", "8"), "error");
-                  return;
-                }
-                const env = (item as McpMarketplaceItem & { _env?: Record<string, string> })._env;
-                void installMarketplaceItem(
-                  state.client,
-                  item,
-                  env,
-                  {
-                    currentItems: () => state.mcpMarketplace.items,
-                    onStateChange: (patch) => {
-                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
-                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "installed")) {
-                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.installed" as never)}`, "success");
-                        void checkMcpUpdate(state.client, {
-                          onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
-                            if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
-                            if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
-                            if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
-                          },
-                        });
-                      }
-                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "error")) {
-                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.error" as never)}`, "error");
-                      }
-                    },
-                  },
-                );
-              },
-              onMcpUninstall: (serverId) => {
-                void (async () => {
-                  try {
-                    await state.client?.request("mcp.servers.remove", { id: serverId });
-                    const items = state.mcpMarketplace.items.map((i) =>
-                      i.serverId === serverId ? { ...i, installStatus: "not_installed" as const } : i,
-                    );
-                    state.mcpMarketplace = { ...state.mcpMarketplace, items };
-                    const name = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName ?? serverId;
-                    showMcpToast(state, `${name} ${t("extensions.toast.uninstalled" as never)}`, "info");
-                    void checkMcpUpdate(state.client, {
-                      onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
-                        if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
-                        if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
-                        if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
-                      },
-                    });
-                  } catch (err) {
-                    console.error("[mcp] uninstall failed:", serverId, err);
-                    showMcpToast(state, `${t("extensions.toast.error" as never)}: ${serverId}`, "error");
-                  }
-                })();
-              },
-              onMcpOpenConfigWizard: (item) => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: item };
-              },
-              onMcpCloseConfigWizard: () => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: null };
-              },
-              mcpRunningCount: state.mcpProcesses.filter((p) => p.status === "running").length,
-              // Batch API Key configuration (Skills page)
-              onMcpOpenBatchConfig: () => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, showBatchConfig: true };
-                state._mcpBatchConfigResult = null;
-                void (async () => {
-                  try {
-                    state._mcpServerEnvStatus = await fetchServerEnvStatus(state.client);
-                  } catch { /* ignore */ }
-                })();
-              },
-              onMcpCloseBatchConfig: () => {
-                state.mcpMarketplace = { ...state.mcpMarketplace, showBatchConfig: false };
-                state._mcpBatchConfigResult = null;
-              },
-              onMcpSaveBatchConfig: (updates) => {
-                state._mcpBatchConfigSaving = true;
-                state._mcpBatchConfigResult = null;
-                void (async () => {
-                  try {
-                    const { success, failed } = await batchUpdateMcpServerEnv(state.client, updates);
-                    state._mcpBatchConfigResult = { success, failed };
-                    if (success > 0) {
-                      showMcpToast(state, `${success} ${t("extensions.batchConfig.saved" as never)}`, "success");
-                      state._mcpServerEnvStatus = await fetchServerEnvStatus(state.client);
-                      void checkMcpUpdate(state.client, {
-                        onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
-                          if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
-                          if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
-                        },
-                      });
-                    }
-                    if (failed > 0) {
-                      showMcpToast(state, `${failed} ${t("extensions.batchConfig.failed" as never)}`, "error");
-                    }
-                  } catch (err) {
-                    console.error("[mcp] batch env update failed:", err);
-                    showMcpToast(state, t("extensions.toast.error" as never), "error");
-                  } finally {
-                    state._mcpBatchConfigSaving = false;
-                  }
-                })();
-              },
-              mcpBatchConfigSaving: state._mcpBatchConfigSaving,
-              mcpBatchConfigResult: state._mcpBatchConfigResult,
-              mcpServerEnvStatus: state._mcpServerEnvStatus,
+              // import modal
+              importOpen: state.skillsImportOpen,
+              importPath: state.skillsImportPath,
+              importBrowseResult: state.skillsImportBrowseResult,
+              importLoading: state.skillsImportLoading,
+              importError: state.skillsImportError,
+              onImportOpen: () => void openSkillImport(state),
+              onImportClose: () => closeSkillImport(state),
+              onImportBrowse: (path?: string) => void browseSkillDir(state, path),
+              onImportPathChange: (path: string) => { state.skillsImportPath = path; },
+              onImportExecute: (path: string, mode: "copy" | "reference") => void importSkill(state, path, mode),
             })
           : nothing}
 
@@ -1085,7 +998,7 @@ export function renderApp(state: AppViewState) {
               advancedOpen: state.mcpAdvancedOpen,
               onToggleAdvanced: () => { state.mcpAdvancedOpen = !state.mcpAdvancedOpen; },
               onConfigClick: (id) => {
-                mcpConfigClick(id, state.setTab as (tab: string) => void, (section) => {
+                mcpConfigClick(id, (tab) => state.setTab(tab as Tab), (section) => {
                   state.configActiveSection = section;
                 });
               },
@@ -1094,13 +1007,28 @@ export function renderApp(state: AppViewState) {
                 state.setTab("chat");
               },
               onRestart: (id) => {
-                void restartMcpServer(state.client, id, {
-                  onStateChange: (patch: Partial<McpLifecycleState>) => {
-                    if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
-                    if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
-                    if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
-                  },
-                });
+                showMcpToast(state, `${id} — ${t("extensions.advanced.restarting" as never)}`, "info");
+                void (async () => {
+                  try {
+                    await restartMcpServer(state.client, id, {
+                      onStateChange: (patch: Partial<McpLifecycleState>) => {
+                        if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
+                        if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
+                        if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
+                      },
+                    });
+                    // Check the resulting status
+                    const proc = state.mcpProcesses.find((p) => p.id === id);
+                    if (proc?.status === "running") {
+                      showMcpToast(state, `${id} — ${t("extensions.advanced.restartSuccess" as never)}`, "success");
+                    } else {
+                      const errInfo = proc?.error ? `: ${proc.error}` : "";
+                      showMcpToast(state, `${id} — ${t("extensions.advanced.restartFailed" as never)}${errInfo}`, "error");
+                    }
+                  } catch {
+                    showMcpToast(state, `${id} — ${t("extensions.advanced.restartFailed" as never)}`, "error");
+                  }
+                })();
               },
               onDisable: (id) => {
                 void disableMcpServer(state.client, id, {
@@ -1186,13 +1114,34 @@ export function renderApp(state: AppViewState) {
               },
               marketplace: state.mcpMarketplace,
               onSearchChange: (search) => {
-                // Fix #8: Debounce search — update input immediately for responsive typing,
-                // but the filterItems() in extensions-page already works on the reactive state,
-                // so the 300ms debounce is applied via a pending timer for expensive re-filters.
+                // Update input immediately for responsive typing
                 state.mcpMarketplace = { ...state.mcpMarketplace, search };
+                // Debounce server-side search query (300ms)
+                clearTimeout((state as any)._mcpSearchTimer);
+                (state as any)._mcpSearchTimer = setTimeout(() => {
+                  const cb: MarketplaceCallbacks = {
+                    onStateChange: (patch) => {
+                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                    },
+                  };
+                  void loadMarketplaceItems(state.client, cb, {
+                    search,
+                    category: state.mcpMarketplace.activeCategory,
+                  });
+                }, 300);
               },
               onCategoryChange: (category) => {
                 state.mcpMarketplace = { ...state.mcpMarketplace, activeCategory: category };
+                // Trigger server-side filtered query immediately
+                const cb: MarketplaceCallbacks = {
+                  onStateChange: (patch) => {
+                    state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                  },
+                };
+                void loadMarketplaceItems(state.client, cb, {
+                  search: state.mcpMarketplace.search,
+                  category,
+                });
               },
               onSortChange: (sort) => {
                 state.mcpMarketplace = { ...state.mcpMarketplace, sort };
@@ -1204,41 +1153,58 @@ export function renderApp(state: AppViewState) {
                 state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: null };
               },
               onInstall: (item) => {
-                // Fix #6: Process limit guard (max 8 running)
-                const runningCount = state.mcpProcesses.filter((p) => p.status === "running").length;
-                if (runningCount >= 8) {
-                  showMcpToast(state, t("extensions.store.limitReached").replace("{{count}}", "8").replace("{{max}}", "8"), "error");
+                // Process limit guard
+                const installedCount = state.mcpProcesses.length;
+                if (installedCount >= MCP_MAX_RUNNING) {
+                  showMcpToast(
+                    state,
+                    t("extensions.store.limitReached")
+                      .replace("{{count}}", String(installedCount))
+                      .replace("{{max}}", String(MCP_MAX_RUNNING)),
+                    "error",
+                  );
                   return;
                 }
+                // Token consumption warning — always show before install
+                const afterCount = installedCount + 1;
+                showMcpToast(
+                  state,
+                  (t("extensions.toast.tokenWarning" as never) as string)
+                    .replace("{{current}}", String(afterCount))
+                    .replace("{{max}}", String(MCP_MAX_RUNNING)),
+                  "info",
+                );
                 // Extract env from config wizard (attached as _env on the item)
                 const env = (item as McpMarketplaceItem & { _env?: Record<string, string> })._env;
-                // Fix #1: Wire to real RPC via installMarketplaceItem
-                void installMarketplaceItem(
-                  state.client,
-                  item,
-                  env,
-                  {
-                    currentItems: () => state.mcpMarketplace.items,
-                    onStateChange: (patch) => {
-                      state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
-                      // Fix #7: After install completes, refresh "My Capabilities" tab + show toast
-                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "installed")) {
-                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.installed" as never)}`, "success");
-                        void checkMcpUpdate(state.client, {
-                          onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
-                            if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
-                            if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
-                            if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
-                          },
-                        });
-                      }
-                      // Show error toast on failure
-                      if (patch.items?.some((i) => i.serverId === item.serverId && i.installStatus === "error")) {
-                        showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.error" as never)}`, "error");
-                      }
+                void (async () => {
+                  const result = await installMarketplaceItem(
+                    state.client,
+                    item,
+                    env,
+                    {
+                      currentItems: () => state.mcpMarketplace.items,
+                      onStateChange: (patch) => {
+                        state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                      },
                     },
-                  },
-                );
+                  );
+
+                  if (result?.ok) {
+                    showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.installed" as never)}`, "success");
+                    // Refresh "My Capabilities" tab
+                    const refreshCaps = () => initMcpCapabilities(state.client, {
+                      onStateChange: (lcPatch) => {
+                        if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                        if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                        if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                      },
+                    });
+                    void refreshCaps();
+                    setTimeout(() => void refreshCaps(), 3000);
+                  } else {
+                    showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.error" as never)}`, "error");
+                  }
+                })();
               },
               onUninstall: (serverId) => {
                 // Capture name BEFORE optimistic update
@@ -1304,6 +1270,14 @@ export function renderApp(state: AppViewState) {
               },
               onCloseConfigWizard: () => {
                 state.mcpMarketplace = { ...state.mcpMarketplace, configTarget: null };
+              },
+              onLoadMore: () => {
+                void loadMoreMarketplaceItems(state.client, {
+                  onStateChange: (patch) => {
+                    state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
+                  },
+                  currentState: () => state.mcpMarketplace,
+                });
               },
               onDismissFirstVisit: () => {
                 localStorage.setItem("clawdbot.mcp.firstVisitSeen", "1");
@@ -1525,7 +1499,7 @@ export function renderApp(state: AppViewState) {
               connected: state.connected,
               canSend: state.connected,
               disabledReason: chatDisabledReason,
-              error: state.lastError,
+              error: isFirstStartup ? null : state.lastError,
               sessions: state.sessionsResult,
               focusMode: chatFocus,
               onRefresh: () => {
@@ -1641,6 +1615,9 @@ export function renderApp(state: AppViewState) {
                 onStopRecording: () => state.handleVoiceStopRecording(),
                 onDismiss: () => state.handleVoiceMascotDismiss(),
               } : null,
+              // OpenClawCN: auto-failover banner
+              failoverBanner: state.failoverBanner ?? null,
+              onDismissFailoverBanner: () => { state.failoverBanner = null; },
             })
           : nothing}
 
@@ -1664,6 +1641,10 @@ export function renderApp(state: AppViewState) {
               searchQuery: state.configSearchQuery,
               activeSection: state.configActiveSection,
               activeSubsection: state.configActiveSubsection,
+              configFilePath: state.configSnapshot?.path ?? null,
+              onRevealConfigFile: state.client ? () => {
+                void state.client!.request("config.reveal", {});
+              } : null,
               onRawChange: (next) => {
                 state.configRaw = next;
               },
