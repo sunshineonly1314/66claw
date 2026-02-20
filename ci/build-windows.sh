@@ -50,8 +50,17 @@ cat > "$TEMP_PS1" << PSEOF
 \$REPO = '$WIN_REPO'
 \$VERSION = '$VERSION'
 
+# Fix PATH: ensure Git Bash comes before WSL bash, and pnpm/node are available
+\$gitBashDir = 'C:\Program Files\Git\bin'
+\$gitUsrBin = 'C:\Program Files\Git\usr\bin'
+if (Test-Path \$gitBashDir) {
+    \$env:PATH = "\$gitBashDir;\$gitUsrBin;" + \$env:PATH
+    Write-Host "PATH fix: Git Bash prepended (avoids WSL bash)"
+}
+
 Write-Host "Preparing workspace: \$WORKSPACE"
 Write-Host "Node: \$(node --version)"
+Write-Host "bash: \$(where.exe bash 2>\$null | Select-Object -First 1)"
 
 if (-not (Test-Path \$WORKSPACE)) {
     New-Item -ItemType Directory -Path \$WORKSPACE -Force | Out-Null
@@ -136,12 +145,20 @@ Write-Host "========================================="
 Write-Host "  Release Deploy (Delta + Upload)"
 Write-Host "========================================="
 
+# 确保 CWD 回到 workspace（build.ps1 子进程可能改变了上下文）
+Set-Location \$WORKSPACE
+Write-Host "CWD: \$(Get-Location)"
+
 # 构建阶段会用 --omit=dev 重装 node_modules，tsx 被移除
 # 这里重新安装全部依赖以确保 tsx 可用
 Write-Host "Re-installing dev dependencies for release-deploy..."
 npm install --no-fund --no-audit 2>\$null
 
 \$releaseCacheDir = 'E:\openclawcn\.release-cache'
+if (-not (Test-Path \$releaseCacheDir)) {
+    New-Item -ItemType Directory -Path \$releaseCacheDir -Force | Out-Null
+    Write-Host "Created release cache dir: \$releaseCacheDir"
+}
 
 # OSS 环境变量检查（从系统环境变量读取）
 \$ossKeyId = \$env:OSS_ACCESS_KEY_ID
@@ -163,6 +180,8 @@ if (\$ossKeyId -and \$ossKeySecret) {
 }
 \$releaseArgs += @('--installers', \$tauriOutput)
 
+# Switch to Continue so stderr from node/tsx doesn't trigger PS termination
+\$ErrorActionPreference = 'Continue'
 Write-Host "Running: node --import tsx scripts/release-deploy.ts \$(\$releaseArgs -join ' ')"
 & node --import tsx scripts/release-deploy.ts @releaseArgs
 if (\$LASTEXITCODE -ne 0) {
@@ -176,14 +195,16 @@ PSEOF
 # 上传 PS1 脚本到 Windows
 echo "📤 Uploading build script..."
 REMOTE_PS1="C:\\Users\\$WIN_USER\\cicd-build.ps1"
-$SCP -o StrictHostKeyChecking=no "$TEMP_PS1" "$WIN_USER@$WIN_HOST:cicd-build.ps1"
+scp -o StrictHostKeyChecking=no "$TEMP_PS1" "$WIN_USER@$WIN_HOST:cicd-build.ps1"
 
 # 执行远程构建
 echo "🚀 Executing remote build..."
-$SSH -o StrictHostKeyChecking=no "$WIN_USER@$WIN_HOST" \
+# 直接用 ssh 而非 PowerShell 包装，确保退出码正确传递
+ssh -o StrictHostKeyChecking=no "$WIN_USER@$WIN_HOST" \
   "powershell -ExecutionPolicy Bypass -File C:\\Users\\$WIN_USER\\cicd-build.ps1"
 
 BUILD_EXIT=$?
+echo "[build-windows.sh] Remote SSH exit code: $BUILD_EXIT"
 rm -f "$TEMP_PS1"
 
 if [ $BUILD_EXIT -eq 0 ]; then
@@ -198,7 +219,7 @@ if [ $BUILD_EXIT -eq 0 ]; then
   WIN_TAURI_OUTPUT="D:/cicd-workspace/openclawcn/apps/desktop/src-tauri/target/release/bundle/nsis"
 
   echo "📥 Downloading artifacts to $ARTIFACTS_DIR..."
-  $SCP "$WIN_USER@$WIN_HOST:$WIN_TAURI_OUTPUT/*.exe" "$ARTIFACTS_DIR/" || echo "⚠️  Download failed, but build succeeded"
+  scp "$WIN_USER@$WIN_HOST:$WIN_TAURI_OUTPUT/*.exe" "$ARTIFACTS_DIR/" || echo "⚠️  Download failed, but build succeeded"
 
   exit 0
 else
