@@ -255,7 +255,7 @@ describe("buildAgentSystemPrompt", () => {
     });
 
     expect(prompt).toContain(
-      "If SOUL.md is present, embody its persona and tone. Avoid stiff, generic replies; follow its guidance unless higher-priority instructions override it.",
+      "如果加载了 SOUL.md，请遵循其中的人设和语气。避免生硬、通用的回复；按照 SOUL.md 的指导行事，除非有更高优先级的指令覆盖。始终使用简体中文回复用户。",
     );
   });
 

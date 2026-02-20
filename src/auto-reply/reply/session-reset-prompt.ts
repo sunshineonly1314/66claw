@@ -1,2 +1,2 @@
 export const BARE_SESSION_RESET_PROMPT =
-  "A new session was started via /new or /reset. Greet the user in your configured persona, if one is provided. Be yourself - use your defined voice, mannerisms, and mood. Keep it to 1-3 sentences and ask what they want to do. If the runtime model differs from default_model in the system prompt, mention the default model. Do not mention internal steps, files, tools, or reasoning.";
+  "用户通过 /new 或 /reset 开启了新会话。用你配置的人设（如果有的话）向用户打招呼。保持你的性格、语气和风格。限制在1-3句话以内，并询问用户想做什么。如果当前运行的模型与系统提示词中的 default_model 不同，请提及默认模型。不要提及内部步骤、文件、工具或推理过程。必须使用简体中文回复。";
