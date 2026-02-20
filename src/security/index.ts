@@ -37,6 +37,18 @@ export {
   performSecuritySelfCheck,
 } from "./ai-tamper-protection.js";
 
+// 内容保险库 — 机器绑定加密
+export {
+  setContentVaultDevMode,
+  isEncryptionEnabled,
+  encryptContent,
+  decryptContent,
+  encryptFile,
+  decryptFile,
+  ensureDirectoryEncrypted,
+  destroyContentVault,
+} from "./content-vault.js";
+
 // 敏感字符串保险库 (Layer 5)
 export {
   encryptSensitiveString,

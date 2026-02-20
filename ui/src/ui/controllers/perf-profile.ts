@@ -86,55 +86,69 @@ export async function applyPerformanceProfile(
   state.performanceProfileSaving = true;
 
   try {
-    // 2. 如果还没有 config snapshot，先加载
-    if (!state.configSnapshot?.hash) {
-      await loadConfig(state as never);
+    // 内部构建并发送 config.apply 的逻辑（可重试）
+    const buildAndApply = async () => {
+      if (!state.configSnapshot?.hash) {
+        await loadConfig(state as never);
+      }
+      const snapshot = state.configSnapshot;
+      const baseHash = snapshot?.hash;
+      if (!baseHash) {
+        throw new Error("Config hash not available");
+      }
+
+      const config = cloneConfigObject(snapshot?.config ?? {});
+
+      // meta.performanceProfile
+      if (!config.meta || typeof config.meta !== "object") config.meta = {};
+      (config.meta as Record<string, unknown>).performanceProfile = profile;
+
+      // agents.defaults 各字段
+      if (!config.agents || typeof config.agents !== "object") config.agents = {};
+      const agents = config.agents as Record<string, unknown>;
+      if (!agents.defaults || typeof agents.defaults !== "object") agents.defaults = {};
+      const defaults = agents.defaults as Record<string, unknown>;
+
+      defaults.thinkingDefault = preset.thinkingDefault;
+      defaults.maxConcurrent = preset.maxConcurrent;
+
+      // contextPruning.ttl
+      if (!defaults.contextPruning || typeof defaults.contextPruning !== "object") {
+        defaults.contextPruning = {};
+      }
+      (defaults.contextPruning as Record<string, unknown>).ttl = preset.contextPruningTtl;
+
+      // heartbeat.every
+      if (!defaults.heartbeat || typeof defaults.heartbeat !== "object") {
+        defaults.heartbeat = {};
+      }
+      (defaults.heartbeat as Record<string, unknown>).every = preset.heartbeatEvery;
+
+      const raw = serializeConfigForm(config);
+      await state.client!.request("config.apply", {
+        raw,
+        baseHash,
+        sessionKey: state.sessionKey,
+      });
+    };
+
+    // 2. 首次尝试
+    try {
+      await buildAndApply();
+    } catch (firstErr) {
+      // config changed since last load → 自动重新加载最新 config 再重试一次
+      if (String(firstErr).includes("config changed since last load")) {
+        await loadConfig(state as never);
+        await buildAndApply();
+      } else {
+        throw firstErr;
+      }
     }
-    const snapshot = state.configSnapshot;
-    const baseHash = snapshot?.hash;
-    if (!baseHash) {
-      throw new Error("Config hash not available");
-    }
 
-    const config = cloneConfigObject(snapshot?.config ?? {});
-
-    // meta.performanceProfile
-    if (!config.meta || typeof config.meta !== "object") config.meta = {};
-    (config.meta as Record<string, unknown>).performanceProfile = profile;
-
-    // agents.defaults 各字段
-    if (!config.agents || typeof config.agents !== "object") config.agents = {};
-    const agents = config.agents as Record<string, unknown>;
-    if (!agents.defaults || typeof agents.defaults !== "object") agents.defaults = {};
-    const defaults = agents.defaults as Record<string, unknown>;
-
-    defaults.thinkingDefault = preset.thinkingDefault;
-    defaults.maxConcurrent = preset.maxConcurrent;
-
-    // contextPruning.ttl
-    if (!defaults.contextPruning || typeof defaults.contextPruning !== "object") {
-      defaults.contextPruning = {};
-    }
-    (defaults.contextPruning as Record<string, unknown>).ttl = preset.contextPruningTtl;
-
-    // heartbeat.every
-    if (!defaults.heartbeat || typeof defaults.heartbeat !== "object") {
-      defaults.heartbeat = {};
-    }
-    (defaults.heartbeat as Record<string, unknown>).every = preset.heartbeatEvery;
-
-    // 3. 序列化并发送
-    const raw = serializeConfigForm(config);
-    await state.client.request("config.apply", {
-      raw,
-      baseHash,
-      sessionKey: state.sessionKey,
-    });
-
-    // 4. 重置 configForm 脏标记，确保 loadConfig → applyConfigSnapshot 能刷新表单基线
+    // 3. 重置 configForm 脏标记，确保 loadConfig → applyConfigSnapshot 能刷新表单基线
     state.configFormDirty = false;
 
-    // 5. 重新加载 config snapshot（config.apply 响应不含 hash，需要重新 get）
+    // 4. 重新加载 config snapshot（config.apply 响应不含 hash，需要重新 get）
     await loadConfig(state as never);
   } catch (err) {
     // 回滚

@@ -60,40 +60,45 @@ export function renderGoogleChatCard(params: {
         <div class="channel-card__desc">${t("channels.googlechat.description")}</div>
         ${accountCountLabel}
 
-        ${(googlechat?.configured || googlechat?.running)
-          ? html`
-            <div class="status-list">
-              <div>
-                <span class="label">${t("channels.configured")}</span>
-                <span>${googlechat ? (googlechat.configured ? t("common.yes") : t("common.no")) : t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("common.running")}</span>
-                <span>${googlechat ? (googlechat.running ? t("common.yes") : t("common.no")) : t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.googlechat.credential")}</span>
-                <span>${googlechat?.credentialSource ?? t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.googlechat.audience")}</span>
-                <span>
-                  ${googlechat?.audienceType
-                    ? `${googlechat.audienceType}${googlechat.audience ? ` · ${googlechat.audience}` : ""}`
-                    : t("common.na")}
-                </span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastStart")}</span>
-                <span>${googlechat?.lastStartAt ? formatAgo(googlechat.lastStartAt) : t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastProbe")}</span>
-                <span>${googlechat?.lastProbeAt ? formatAgo(googlechat.lastProbeAt) : t("common.na")}</span>
-              </div>
-            </div>
-          `
-          : nothing}
+        <div class="status-list">
+          <div>
+            <span class="label">${t("channels.configured")}</span>
+            <span>${googlechat ? (googlechat.configured ? t("common.yes") : t("common.no")) : t("common.no")}</span>
+          </div>
+          <div>
+            <span class="label">${t("common.running")}</span>
+            <span>${googlechat ? (googlechat.running ? t("common.yes") : t("common.no")) : t("common.no")}</span>
+          </div>
+          ${(googlechat?.configured || googlechat?.running) ? html`
+          <div>
+            <span class="label">${t("channels.googlechat.credential")}</span>
+            <span>${googlechat?.credentialSource ?? t("common.na")}</span>
+          </div>
+          <div>
+            <span class="label">${t("channels.googlechat.audience")}</span>
+            <span>
+              ${googlechat?.audienceType
+                ? `${googlechat.audienceType}${googlechat.audience ? ` · ${googlechat.audience}` : ""}`
+                : t("common.na")}
+            </span>
+          </div>
+          <div>
+            <span class="label">${t("channels.lastStart")}</span>
+            <span>${googlechat?.lastStartAt ? formatAgo(googlechat.lastStartAt) : t("common.na")}</span>
+          </div>
+          <div>
+            <span class="label">${t("channels.lastProbe")}</span>
+            <span>${googlechat?.lastProbeAt ? formatAgo(googlechat.lastProbeAt) : t("common.na")}</span>
+          </div>
+          ` : nothing}
+        </div>
+
+        ${!(googlechat?.configured || googlechat?.running) ? html`
+          <div class="connection-hint">
+            <div class="connection-hint__title">💡 配置指引</div>
+            <div class="connection-hint__desc">在下方配置表单中填写 Google Chat API 凭证即可启用。需要在 Google Cloud Console 创建服务账号。</div>
+          </div>
+        ` : nothing}
 
         ${googlechat?.lastError
           ? html`<div class="${errorCalloutClass(googlechat.lastError)}" style="margin-top: 12px;">

@@ -95,6 +95,11 @@ export function shouldIncludeSkill(params: {
   if (entry.metadata?.always === true) {
     return true;
   }
+  // Pinned skills bypass bins/env/config checks, same as always
+  const pinnedSkills = config?.skills?.pinnedSkills ?? [];
+  if (pinnedSkills.includes(skillKey) || pinnedSkills.includes(entry.skill.name)) {
+    return true;
+  }
 
   const requiredBins = entry.metadata?.requires?.bins ?? [];
   if (requiredBins.length > 0) {

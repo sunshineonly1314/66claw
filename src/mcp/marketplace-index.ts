@@ -12,9 +12,11 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveOpenClawCNPackageRootSync } from "../infra/openclaw-root.js";
 import type { McpMarketplaceItem } from "./marketplace/types.js";
+import { decryptContent, isEncryptionEnabled } from "../security/content-vault.js";
 
 // Re-export the shared type for convenience
 export type { McpMarketplaceItem } from "./marketplace/types.js";
@@ -41,6 +43,10 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 /**
  * Read and return the marketplace index as a typed array.
  * Results are cached for 5 minutes to avoid repeated disk reads.
+ *
+ * Scans ALL candidate directories and returns the largest index found,
+ * so that a stale user-cache (e.g. 1854 items) never shadows the
+ * bundled full index (9535 items).
  */
 export async function readMarketplaceIndex(): Promise<McpMarketplaceItem[]> {
   const now = Date.now();
@@ -48,21 +54,33 @@ export async function readMarketplaceIndex(): Promise<McpMarketplaceItem[]> {
     return cachedIndex;
   }
 
+  let best: McpMarketplaceItem[] = [];
+
   for (const dir of DATA_DIR_CANDIDATES) {
+    // Try enhanced (AI-translated) file first, then encrypted, then plain JSON
+    const enhancedPath = join(dir, "mcp-index-enhanced.json");
+    const encPath = join(dir, "mcp-index.json.enc");
     const filePath = join(dir, "mcp-index.json");
     try {
-      const raw = await readFile(filePath, "utf-8");
+      let raw: string;
+      if (existsSync(enhancedPath)) {
+        raw = await readFile(enhancedPath, "utf-8");
+      } else if (isEncryptionEnabled() && existsSync(encPath)) {
+        const encrypted = await readFile(encPath);
+        raw = decryptContent(encrypted);
+      } else {
+        raw = await readFile(filePath, "utf-8");
+      }
       const parsed = JSON.parse(raw);
       const items: McpMarketplaceItem[] = Array.isArray(parsed)
         ? parsed
         : Array.isArray(parsed.items)
           ? parsed.items
           : [];
-      cachedIndex = items;
-      cacheTimestamp = now;
-      return items;
+      if (items.length > best.length) {
+        best = items;
+      }
     } catch (err) {
-      // File not found or corrupted — try next candidate
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
         console.warn(
@@ -74,10 +92,9 @@ export async function readMarketplaceIndex(): Promise<McpMarketplaceItem[]> {
     }
   }
 
-  // No index file found — return empty
-  cachedIndex = [];
+  cachedIndex = best;
   cacheTimestamp = now;
-  return [];
+  return best;
 }
 
 /**

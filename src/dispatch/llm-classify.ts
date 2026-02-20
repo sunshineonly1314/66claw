@@ -21,7 +21,18 @@ export async function classifyWithLightweightModel(params: {
   /** External abort signal (e.g. from dispatch timeout). */
   signal?: AbortSignal;
 }): Promise<string | null> {
-  const { systemPrompt, userPrompt, model, maxTokens, cfg, agentDir, timeoutMs } = params;
+  const { systemPrompt, userPrompt, maxTokens, cfg, agentDir, timeoutMs } = params;
+  // "auto" → 动态读取用户配置的 text 能力模型
+  let model = params.model;
+  if (model === "auto") {
+    const cap = (cfg as Record<string, unknown>).modelCapability as
+      | { capabilities?: Record<string, { providerId?: string; modelId?: string }> }
+      | undefined;
+    const textCap = cap?.capabilities?.["text"];
+    if (textCap?.providerId && textCap?.modelId) {
+      model = `${textCap.providerId}/${textCap.modelId}`;
+    }
+  }
 
   // Early exit if already aborted
   if (params.signal?.aborted) return null;

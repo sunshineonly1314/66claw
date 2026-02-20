@@ -20,6 +20,7 @@ import path from "node:path";
 import type { OpenClawCNConfig } from "../../config/config.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { CONFIG_DIR, resolveUserPath } from "../../utils.js";
+import { decryptFile } from "../../security/content-vault.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
 import {
   parseFrontmatter,
@@ -134,7 +135,12 @@ function scanDirChildSkills(dir: string): string[] {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     return entries
-      .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "SKILL.md")))
+      .filter(
+        (e) =>
+          e.isDirectory() &&
+          (fs.existsSync(path.join(dir, e.name, "SKILL.md")) ||
+            fs.existsSync(path.join(dir, e.name, "SKILL.md.enc"))),
+      )
       .map((e) => e.name)
       .sort();
   } catch {
@@ -156,7 +162,7 @@ function isFileFresh(record: SkillFileRecord): boolean {
   }
 }
 
-/** Read + parse a single SKILL.md file, producing a SkillFileRecord. */
+/** Read + parse a single SKILL.md (or SKILL.md.enc) file, producing a SkillFileRecord. */
 function parseSkillFile(
   skillMdPath: string,
   parentDir: string,
@@ -165,7 +171,17 @@ function parseSkillFile(
 ): SkillFileRecord | null {
   try {
     const stat = fs.statSync(skillMdPath);
-    const raw = fs.readFileSync(skillMdPath, "utf-8");
+    let raw: string;
+    if (skillMdPath.endsWith(".enc")) {
+      try {
+        raw = decryptFile(skillMdPath);
+      } catch {
+        // 安全策略: 解密失败时返回 null，与 workspace.ts 一致——不暴露受保护内容
+        return null;
+      }
+    } else {
+      raw = fs.readFileSync(skillMdPath, "utf-8");
+    }
     const frontmatter = parseFrontmatter(raw);
     const metadata = resolveOpenClawCNMetadata(frontmatter);
     const invocation = resolveSkillInvocationPolicy(frontmatter);
@@ -279,7 +295,10 @@ export function loadSkillEntriesFromFileIndex(
     if (dirChanged) indexDirty = true;
 
     for (const childName of currentChildren) {
-      const skillMdPath = path.join(dir, childName, "SKILL.md");
+      // 支持 SKILL.md 和 SKILL.md.enc（加密模式）
+      const plainPath = path.join(dir, childName, "SKILL.md");
+      const encPath = path.join(dir, childName, "SKILL.md.enc");
+      const skillMdPath = fs.existsSync(plainPath) ? plainPath : encPath;
       const cachedFile = existingIndex?.files[skillMdPath];
 
       if (!dirChanged && cachedFile && isFileFresh(cachedFile)) {
@@ -305,7 +324,9 @@ export function loadSkillEntriesFromFileIndex(
     const dirRecord = newDirs[dir];
     if (!dirRecord) continue;
     for (const childName of dirRecord.childDirs) {
-      const skillMdPath = path.join(dir, childName, "SKILL.md");
+      const plainPath = path.join(dir, childName, "SKILL.md");
+      const encPath = path.join(dir, childName, "SKILL.md.enc");
+      const skillMdPath = fs.existsSync(plainPath) ? plainPath : encPath;
       const record = newFiles[skillMdPath];
       if (record) {
         merged.set(record.name, record);

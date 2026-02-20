@@ -89,6 +89,10 @@ export async function runMemoryFlushIfNeeded(params: {
     });
   }
   let memoryCompactionCompleted = false;
+  // If memoryFlush has its own provider/model, use it instead of the main agent model.
+  // This allows using a cheaper/faster model (e.g. SiliconFlow Qwen3-8B) for flush.
+  const flushProvider = memoryFlushSettings.provider || params.followupRun.run.provider;
+  const flushModel = memoryFlushSettings.model || params.followupRun.run.model;
   const flushSystemPrompt = [
     params.followupRun.run.extraSystemPrompt,
     memoryFlushSettings.systemPrompt,
@@ -98,8 +102,8 @@ export async function runMemoryFlushIfNeeded(params: {
   try {
     await runWithModelFallback({
       cfg: params.followupRun.run.config,
-      provider: params.followupRun.run.provider,
-      model: params.followupRun.run.model,
+      provider: flushProvider,
+      model: flushModel,
       agentDir: params.followupRun.run.agentDir,
       fallbacksOverride: resolveAgentModelFallbacksOverride(
         params.followupRun.run.config,

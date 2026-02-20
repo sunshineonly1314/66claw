@@ -166,9 +166,9 @@ export function loadSettings(): UiSettings {
   const defaultUrl = (() => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const baseUrl = `${proto}://${location.host}`;
-    // Dev mode: Vite dev server runs on 5173 but Gateway runs on 18789
+    // Dev mode: Vite dev server runs on 5173/5174 but Gateway runs on 18789
     // When served by Vite (not Gateway), fall back to the default Gateway port
-    if (location.port === "5173") {
+    if (location.port === "5173" || location.port === "5174") {
       return `${proto}://${location.hostname}:18789`;
     }
     return baseUrl;

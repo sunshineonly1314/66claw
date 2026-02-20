@@ -101,7 +101,7 @@ try {
     try {
         # Use cmd /c to avoid PowerShell $ErrorActionPreference="Stop" catching npm's
         # stderr warnings (deprecated packages) as terminating errors
-        $npmLog = cmd /c "npm install --omit=dev --ignore-scripts --no-audit --no-fund 2>&1"
+        $npmLog = cmd /c "npm install --omit=dev --ignore-scripts --no-audit --no-fund --legacy-peer-deps 2>&1"
         $npmExitCode = $LASTEXITCODE
         Write-Host "  npm install exit code: $npmExitCode [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
         # Show last few lines of output

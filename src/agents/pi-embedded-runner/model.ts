@@ -32,7 +32,7 @@ export function buildInlineProviderModels(
       ...model,
       provider: trimmed,
       baseUrl: entry?.baseUrl,
-      api: model.api ?? entry?.api,
+      api: model.api ?? entry?.api ?? "openai-completions",
     }));
   });
 }
@@ -80,6 +80,10 @@ export function resolveModel(
     );
     if (inlineMatch) {
       const normalized = normalizeModelCompat(inlineMatch as Model<Api>);
+      // [CN-PATCH:api-guard] Defensive: ensure api is never undefined after resolution
+      if (!normalized.api) {
+        (normalized as { api: unknown }).api = inlineMatch.api ?? "openai-completions";
+      }
       return {
         model: normalized,
         authStorage,
@@ -90,14 +94,22 @@ export function resolveModel(
     // Otherwise, configured providers can default to a generic API and break specific transports.
     const forwardCompat = resolveForwardCompatModel(provider, modelId, modelRegistry);
     if (forwardCompat) {
+      // [CN-PATCH:api-guard] Defensive: future forwardCompat functions may omit api
+      if (!forwardCompat.api) {
+        (forwardCompat as { api: unknown }).api = "openai-completions";
+      }
       return { model: forwardCompat, authStorage, modelRegistry };
     }
     const providerCfg = providers[provider];
     if (providerCfg || modelId.startsWith("mock-")) {
+      // [CN-PATCH:api-guard] providerCfg.api can be undefined when config only has baseUrl
+      // (e.g. qwen-dashscope). Default to "openai-completions" — the /chat/completions
+      // endpoint is universally supported; "openai-responses" (/responses) is OpenAI-only.
+      const resolvedApi = providerCfg?.api ?? "openai-completions";
       const fallbackModel: Model<Api> = normalizeModelCompat({
         id: modelId,
         name: modelId,
-        api: providerCfg?.api ?? "openai-responses",
+        api: resolvedApi,
         provider,
         baseUrl: providerCfg?.baseUrl,
         reasoning: false,
@@ -106,6 +118,10 @@ export function resolveModel(
         contextWindow: providerCfg?.models?.[0]?.contextWindow ?? DEFAULT_CONTEXT_TOKENS,
         maxTokens: providerCfg?.models?.[0]?.maxTokens ?? DEFAULT_CONTEXT_TOKENS,
       } as Model<Api>);
+      // [CN-PATCH:api-guard] Defensive: ensure api is never undefined after resolution
+      if (!fallbackModel.api) {
+        (fallbackModel as { api: unknown }).api = resolvedApi;
+      }
       return { model: fallbackModel, authStorage, modelRegistry };
     }
     return {

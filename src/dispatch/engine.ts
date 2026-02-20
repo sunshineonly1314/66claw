@@ -189,7 +189,13 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
       | import("../config/types.tool-discovery.js").ToolSearchResult[]
       | undefined;
 
+    // [CN-OPT] general intent（普通聊天/问候）跳过 tool-discovery，节省 ~7s
+    const skipToolDiscovery = finalIntent.intentDef.id === "general" &&
+      finalIntent.confidence >= 0.5 &&
+      !hasManualSkillHints && !hasManualMcpHints;
+
     if (
+      !skipToolDiscovery &&
       (!hasManualSkillHints || !hasManualMcpHints) &&
       params.openclawcnConfig?.toolDiscovery?.enabled !== false
     ) {
@@ -223,10 +229,12 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
       }
     }
 
-    // Fallback: 旧版 auto-discovery（当 tool-discovery 没有结果时）
+    // Fallback: 旧版 auto-discovery（当 tool-discovery 没有任何结果时）
+    // FIX P1#5: 也检查 toolHints，防止新版的 toolHints 被旧版覆盖
     if (
       !autoDiscoveryHints.skillHints &&
       !autoDiscoveryHints.mcpToolHints &&
+      !autoDiscoveryHints.toolHints &&
       (!hasManualSkillHints || !hasManualMcpHints)
     ) {
       try {
@@ -241,7 +249,8 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
         if (!hasManualMcpHints && discovered.mcpToolHints.length > 0) {
           autoDiscoveryHints.mcpToolHints = discovered.mcpToolHints;
         }
-        if (discovered.toolHints.length > 0) {
+        // FIX P1#5: 只在新版 tool-discovery 没有设置 toolHints 时才用旧版的
+        if (!autoDiscoveryHints.toolHints && discovered.toolHints.length > 0) {
           autoDiscoveryHints.toolHints = discovered.toolHints;
         }
       } catch {
@@ -266,6 +275,7 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
           complexity: "medium", // preliminary — actual complexity assessed in step 9
           cfg: params.openclawcnConfig,
           agentDir: params.agentDir,
+          signal: params.signal,
         });
         filteredToolIds = selection.selectedToolIds;
         toolSelectionReasoning = selection.reasoning;
@@ -450,6 +460,23 @@ export async function dispatchRequest(params: DispatchRequestParams): Promise<Ro
       sessionSignals,
       toolBinding: finalIntent.intentDef.toolBinding,
     };
+
+    // 14b. Build tool filter policy (dynamic tool injection)
+    // Resolve toolFilterMode: dispatch.yaml takes precedence, fall back to OpenClawCNConfig.dispatch
+    const toolFilterMode =
+      dispatchConfig.settings.toolFilterMode ??
+      params.openclawcnConfig?.dispatch?.toolFilterMode ??
+      "off";
+    if (toolFilterMode !== "off") {
+      const { buildToolFilterPolicy } = await import("./tool-filter.js");
+      decision.toolFilterPolicy = buildToolFilterPolicy(decision, toolFilterMode);
+      if (decision.toolFilterPolicy && dispatchConfig.settings.debug) {
+        log.debug(
+          `[tool-filter] mode=${toolFilterMode} intent=${decision.intent} ` +
+            `allow=${decision.toolFilterPolicy.allow.size} prefixes=${decision.toolFilterPolicy.allowPrefixes.length}`,
+        );
+      }
+    }
 
     // 15. Record telemetry event
     const durationMs = performance.now() - startTime;

@@ -19,13 +19,16 @@ import { loadDevices } from "./controllers/devices.ts";
 import { loadExecApprovals } from "./controllers/exec-approvals.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import {
+  initMcpCapabilities,
   loadMarketplaceItems,
   loadMarketplaceRecommendations,
+  type McpLifecycleCallbacks,
 } from "./controllers/mcp-lifecycle.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { loadSkills } from "./controllers/skills.ts";
+import { loadUsage } from "./controllers/usage.ts";
 import {
   inferBasePathFromPathname,
   normalizeBasePath,
@@ -131,7 +134,13 @@ export function applySettingsFromUrl(host: SettingsHost) {
   if (gatewayUrlRaw != null) {
     const gatewayUrl = gatewayUrlRaw.trim();
     if (gatewayUrl && gatewayUrl !== host.settings.gatewayUrl) {
-      host.pendingGatewayUrl = gatewayUrl;
+      // Desktop mode (Tauri): localhost gateway is always trusted, skip confirmation
+      const isLocalhost = /^wss?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(gatewayUrl);
+      if (isLocalhost) {
+        applySettings(host, { ...host.settings, gatewayUrl });
+      } else {
+        host.pendingGatewayUrl = gatewayUrl;
+      }
     }
     params.delete("gatewayUrl");
     hashParams.delete("gatewayUrl");
@@ -237,8 +246,17 @@ export async function refreshActiveTab(host: SettingsHost) {
     );
   }
   if (host.tab === "extensions") {
-    // Preload marketplace data so the store tab is ready when opened
     const app = host as unknown as OpenClawCNApp;
+    // Eagerly load "My Capabilities" so cards appear immediately
+    const mcpCallbacks: McpLifecycleCallbacks = {
+      onStateChange: (patch) => {
+        if (patch.capabilities !== undefined) app.mcpCapabilities = patch.capabilities;
+        if (patch.processes !== undefined) app.mcpProcesses = patch.processes;
+        if (patch.updateNotice !== undefined) app.mcpUpdateNotice = patch.updateNotice;
+      },
+    };
+    void initMcpCapabilities(app.client, mcpCallbacks);
+    // Preload marketplace data so the store tab is ready when opened
     if (app.mcpMarketplace && app.mcpMarketplace.items.length === 0 && !app.mcpMarketplace.loading) {
       const callbacks = {
         onStateChange: (patch: Record<string, unknown>) => {
@@ -261,6 +279,9 @@ export async function refreshActiveTab(host: SettingsHost) {
     host.logsAtBottom = true;
     await loadLogs(host as unknown as OpenClawCNApp, { reset: true });
     scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
+  }
+  if (host.tab === "usage") {
+    await loadUsage(host as unknown as OpenClawCNApp);
   }
 }
 

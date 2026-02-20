@@ -51,9 +51,11 @@ export function extractToolCards(message: unknown): ToolCard[] {
     cards.push({ kind: "result", name, text });
   }
 
-  // Mark call cards as pending when no matching result exists yet (tool still executing)
+  // Mark call cards as pending when no matching result exists yet (tool still executing).
+  // Skip if the message is tagged as resolved (tool result exists in a separate history message).
   const hasResult = cards.some((card) => card.kind === "result");
-  if (!hasResult) {
+  const isResolved = Boolean((m as Record<string, unknown>).__toolsResolved);
+  if (!hasResult && !isResolved) {
     for (const card of cards) {
       if (card.kind === "call") card.pending = true;
     }

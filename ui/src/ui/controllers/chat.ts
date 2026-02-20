@@ -1,4 +1,4 @@
-import { extractText, extractRawText } from "../chat/message-extract";
+import { extractText, extractRawText, type FailoverNotificationPayload } from "../chat/message-extract";
 import { formatErrorHint } from "../chat/error-hints";
 import type { GatewayBrowserClient } from "../gateway";
 import { generateUUID } from "../uuid";
@@ -8,6 +8,19 @@ import { checkModalityBeforeSend } from "./modality-guard";
 // ClawdbotCN: Track runs that detected a free model switch notification.
 // Used to trigger auto new-session when the run completes.
 const freeModelSwitchRuns = new Set<string>();
+
+// OpenClawCN: Track runs that detected a failover notification.
+const failoverNotificationRuns = new Map<string, FailoverNotificationPayload>();
+
+/** Failover reason → Chinese display text */
+const FAILOVER_REASON_MAP: Record<string, string> = {
+  billing: "余额不足",
+  auth: "密钥无效",
+  rate_limit: "频率限制",
+  timeout: "请求超时",
+  format: "格式错误",
+  unknown: "请求失败",
+};
 
 export type ChatState = {
   client: GatewayBrowserClient | null;
@@ -23,6 +36,14 @@ export type ChatState = {
   chatStream: string | null;
   chatStreamStartedAt: number | null;
   lastError: string | null;
+  /** OpenClawCN: auto-failover notification banner */
+  failoverBanner: {
+    fromProvider: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+    reasonText: string;
+  } | null;
 };
 
 export type ChatEventPayload = {
@@ -44,16 +65,11 @@ export async function loadChatHistory(state: ChatState) {
     })) as { messages?: unknown[]; thinkingLevel?: string | null };
     state.chatMessages = Array.isArray(res.messages) ? res.messages : [];
     state.chatThinkingLevel = res.thinkingLevel ?? null;
-    // Delay clearing chatStream to allow typewriter animation to complete
-    // This prevents duplicate display while keeping smooth animation
-    const currentStream = state.chatStream;
-    if (currentStream) {
-      setTimeout(() => {
-        // Only clear if stream hasn't changed (no new message started)
-        if (state.chatStream === currentStream) {
-          state.chatStream = null;
-        }
-      }, 500); // 500ms delay allows typewriter to finish revealing
+    // [CN-PATCH:dedup] Safety-net: clear chatStream if no active run.
+    // Primary dedup happens in handleChatEvent("final") which clears chatStream
+    // synchronously. This catch-all handles edge cases (e.g. reconnect mid-stream).
+    if (state.chatStream && !state.chatRunId) {
+      state.chatStream = null;
     }
   } catch (err) {
     state.lastError = String(err);
@@ -236,15 +252,46 @@ export function handleChatEvent(
     if (rawText && /<!--CLAWDBOT_FREE_MODEL_NOTIFICATION:/.test(rawText)) {
       freeModelSwitchRuns.add(payload.runId);
     }
+    // OpenClawCN: detect failover notification in raw stream text
+    if (rawText && /<!--CLAWDBOT_FAILOVER_NOTIFICATION:/.test(rawText)) {
+      const match = rawText.match(/<!--CLAWDBOT_FAILOVER_NOTIFICATION:(.+?)-->/);
+      if (match) {
+        try {
+          const notification = JSON.parse(match[1]) as FailoverNotificationPayload;
+          failoverNotificationRuns.set(payload.runId, notification);
+        } catch { /* ignore parse error */ }
+      }
+    }
   } else if (payload.state === "final") {
     const hadModelSwitch = freeModelSwitchRuns.delete(payload.runId);
-    // Don't clear chatStream here — let app-gateway clear it after loadChatHistory
-    // completes. This keeps the typewriter animation alive during the transition
-    // so the user sees smooth text reveal instead of a sudden flash.
+    // OpenClawCN: consume failover notification and set banner
+    const failoverInfo = failoverNotificationRuns.get(payload.runId);
+    failoverNotificationRuns.delete(payload.runId);
+    if (failoverInfo) {
+      state.failoverBanner = {
+        fromProvider: failoverInfo.fromProvider,
+        toProvider: failoverInfo.toProvider,
+        toModel: failoverInfo.toModel,
+        reason: failoverInfo.reason,
+        reasonText: FAILOVER_REASON_MAP[failoverInfo.reason] ?? failoverInfo.reason,
+      };
+      // Auto-dismiss after 15 seconds
+      setTimeout(() => {
+        state.failoverBanner = null;
+      }, 15_000);
+    }
+    // [CN-PATCH:dedup] Optimistically add the final message to chatMessages BEFORE
+    // clearing chatStream. This prevents the "reply disappears" gap between clearing
+    // the stream and the async loadChatHistory RPC completing.
+    if (payload.message) {
+      state.chatMessages = [...state.chatMessages, payload.message];
+    }
+    state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     // Return special indicator so gateway can auto-create new session
     if (hadModelSwitch) return "final_model_switch";
+    if (failoverInfo) return "final_failover";
   } else if (payload.state === "aborted") {
     state.chatStream = null;
     state.chatRunId = null;

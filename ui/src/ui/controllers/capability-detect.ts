@@ -322,24 +322,11 @@ export function buildDiscoveryProps(options: DiscoveryPropsOptions): WelcomeDisc
  * 判断是否应该显示发现界面
  */
 export function shouldShowDiscovery(
-  state: DiscoveryControllerState,
-  hasMessages: boolean,
-  connected: boolean,
+  _state: DiscoveryControllerState,
+  _hasMessages: boolean,
+  _connected: boolean,
 ): boolean {
-  // 有消息则不显示
-  if (hasMessages) return false;
-
-  // 未连接则不显示
-  if (!connected) return false;
-
-  // 已完成首次访问引导则不显示
-  if (state.hasCompletedFirstVisit) return false;
-
-  // 首次访问且正在检测或已完成检测
-  if (state.isFirstVisit) {
-    return state.state === "idle" || state.state === "scanning" || state.state === "done" || state.state === "error";
-  }
-
+  // OpenClawCN: 禁用设备检测/发现流程，桌面模式下不需要
   return false;
 }
 

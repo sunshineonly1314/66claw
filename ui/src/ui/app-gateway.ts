@@ -1,6 +1,7 @@
 import type { EventLogEntry } from "./app-events.ts";
 import type { OpenClawCNApp } from "./app.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
+import type { InstallProgress } from "./controllers/skills.ts";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
@@ -61,6 +62,7 @@ type GatewayHost = {
   refreshSessionsAfterChat: Set<string>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
+  skillsInstallProgress: Record<string, InstallProgress>;
 };
 
 type SessionDefaultsSnapshot = {
@@ -242,7 +244,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       );
     }
     const state = handleChatEvent(host as unknown as OpenClawCNApp, payload);
-    if (state === "final" || state === "error" || state === "aborted") {
+    if (state === "final" || state === "final_failover" || state === "error" || state === "aborted") {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       const runId = payload?.runId;
@@ -255,7 +257,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         }
       }
     }
-    if (state === "final") {
+    if (state === "final" || state === "final_failover") {
       void loadChatHistory(host as unknown as OpenClawCNApp);
     }
     return;
@@ -307,6 +309,45 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       }
     }
   }
+
+  // Skill install progress broadcast from backend
+  if (evt.event === "skill.install.progress") {
+    const payload = evt.payload as {
+      skillName?: string;
+      stage?: string;
+      message?: string;
+      percent?: number;
+      downloadInfo?: { speed?: string; eta?: string; downloaded?: string; total?: string };
+    } | undefined;
+    if (payload?.skillName) {
+      const key = payload.skillName;
+      const existing = host.skillsInstallProgress[key];
+      // Don't overwrite "done" or cleared progress — prevents WS race after RPC completes
+      if (existing?.stage === "done") return;
+      if (_finishedInstalls.has(key)) return;
+      const stage = (payload.stage ?? "downloading") as "downloading" | "installing" | "verifying" | "done";
+      const msg = payload.message ?? "";
+      const pct = payload.percent;
+      const dl = payload.downloadInfo;
+      const progressMsg = dl?.speed
+        ? `${msg} (${dl.downloaded ?? ""}/${dl.total ?? ""} · ${dl.speed})`
+        : msg;
+      host.skillsInstallProgress = {
+        ...host.skillsInstallProgress,
+        [key]: { stage, message: progressMsg, percent: pct },
+      };
+    }
+  }
+}
+
+/**
+ * Track finished installs to prevent late WS events from re-injecting stale progress
+ * after the controller has cleared progress to null.
+ */
+const _finishedInstalls = new Set<string>();
+export function markInstallFinished(skillName: string): void {
+  _finishedInstalls.add(skillName);
+  setTimeout(() => _finishedInstalls.delete(skillName), 10_000);
 }
 
 export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
@@ -336,8 +377,10 @@ const FIRST_RUN_CHECKED_KEY = "clawdbot-first-run-checked";
 
 /**
  * After gateway connects, check if any model provider is configured.
- * If not, automatically navigate to the model-config page so the user
- * can set up their AI models on first launch.
+ * If not:
+ *   - Desktop mode: redirect WebView to gateway's /setup wizard page
+ *   - Browser mode: navigate to model-config tab
+ * If providers are already configured (reinstall / normal startup), skip.
  * Only triggers once per installation (persisted via localStorage flag).
  */
 async function detectFirstRunSetup(host: GatewayHost) {
@@ -355,24 +398,43 @@ async function detectFirstRunSetup(host: GatewayHost) {
 
     // Derive HTTP URL from WebSocket URL
     const httpBase = gwUrl.replace(/^ws/, "http").replace(/\/$/, "");
-    const token = host.settings.token;
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
 
-    const resp = await fetch(`${httpBase}/api/health`, { headers });
+    // Use a simple GET without custom headers to avoid CORS preflight
+    const resp = await fetch(`${httpBase}/api/health`);
     if (!resp.ok) return;
 
     const health = await resp.json();
-    // Check if any provider has valid credentials configured
-    const providers = health?.providers;
-    const hasConfiguredProvider =
-      providers &&
-      typeof providers === "object" &&
-      Object.values(providers).some(
-        (p: unknown) => p && typeof p === "object" && (p as Record<string, unknown>).status === "ok",
-      );
 
-    if (!hasConfiguredProvider) {
+    // Use the gateway's authoritative needsSetup flag (single source of truth).
+    // Fallback to provider check for older gateways that don't have needsSetup.
+    let needsSetup: boolean;
+    if (typeof health?.needsSetup === "boolean") {
+      needsSetup = health.needsSetup;
+    } else {
+      const providers = health?.providers;
+      needsSetup = !(
+        providers &&
+        typeof providers === "object" &&
+        Object.values(providers).some(
+          (p: unknown) => p && typeof p === "object" && (p as Record<string, unknown>).status === "ok",
+        )
+      );
+    }
+
+    if (needsSetup) {
+      // Desktop mode (Tauri): redirect to gateway's built-in setup wizard
+      // The setup wizard is a server-rendered page at /setup that guides through
+      // API key, model, workspace, and license configuration.
+      const isDesktop = Boolean(
+        (window as Record<string, unknown>).__TAURI__ ||
+        (window as Record<string, unknown>).__TAURI_INTERNALS__,
+      );
+      if (isDesktop) {
+        console.log("[FirstRun] Desktop mode: redirecting to gateway setup wizard");
+        window.location.href = `${httpBase}/setup`;
+        return; // Don't set checked flag — setup wizard will handle completion
+      }
+      // Browser mode: just switch to model-config tab
       // FIX MC-3: 只在用户未手动导航时才自动切换 tab，防止异步竞态覆盖用户操作
       if (host.tab === initialTab) {
         console.log("[FirstRun] No model providers configured, navigating to model-config");

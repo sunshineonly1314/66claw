@@ -9,7 +9,7 @@ import { resolveAgentModelFallbacksOverride } from "../../agents/agent-scope.js"
 import { recordPerfMeasurement, getPerfTrace } from "../../infra/perf-tracker.js";
 import { runCliAgent } from "../../agents/cli-runner.js";
 import { getCliSessionId } from "../../agents/cli-session.js";
-import { runWithModelFallback } from "../../agents/model-fallback.js";
+import { runWithModelFallback, formatFailoverNotification } from "../../agents/model-fallback.js";
 import { isCliProvider } from "../../agents/model-selection.js";
 import {
   isCompactionFailureError,
@@ -79,6 +79,18 @@ export async function runAgentTurnWithFallback(params: {
   activeSessionStore?: Record<string, SessionEntry>;
   storePath?: string;
   resolvedVerboseLevel: VerboseLevel;
+  // ── [CN-PATCH:tool-discovery] Tool hints from dispatch engine ──
+  toolHints?: string[];
+  // ── [CN-PATCH:tool-filter] Tool filter policy from dispatch engine ──
+  toolFilterPolicy?: import("../../dispatch/tool-filter.js").ToolFilterPolicy;
+  mcpSuggestions?: Array<{
+    serverId: string;
+    friendlyName: string;
+    description: string;
+    npmPackage?: string;
+    sseUrl?: string;
+    score: number;
+  }>;
 }): Promise<AgentRunLoopResult> {
   const TRANSIENT_HTTP_RETRY_DELAY_MS = 2_500;
   let didLogHeartbeatStrip = false;
@@ -175,6 +187,8 @@ export async function runAgentTurnWithFallback(params: {
           params.followupRun.run.config,
           resolveAgentIdFromSessionKey(params.followupRun.run.sessionKey),
         ),
+        // OpenClawCN: include all configured providers for auto-failover
+        includeConfiguredProviders: true,
         run: (provider, model) => {
           // Notify that model selection is complete (including after fallback).
           // This allows responsePrefix template interpolation with the actual model.
@@ -307,6 +321,10 @@ export async function runAgentTurnWithFallback(params: {
             extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
             ownerNumbers: params.followupRun.run.ownerNumbers,
             enforceFinalTag: resolveEnforceFinalTag(params.followupRun.run, provider),
+            // ── [CN-PATCH:tool-discovery] Forward tool hints and MCP suggestions ──
+            toolHints: params.toolHints,
+            toolFilterPolicy: params.toolFilterPolicy,
+            mcpSuggestions: params.mcpSuggestions,
             provider,
             model,
             authProfileId,
@@ -433,6 +451,16 @@ export async function runAgentTurnWithFallback(params: {
       fallbackProvider = fallbackResult.provider;
       fallbackModel = fallbackResult.model;
 
+      // ===== OpenClawCN: emit failover notification into assistant stream =====
+      if (fallbackResult.failoverNotification) {
+        emitAgentEvent({
+          runId,
+          stream: "assistant",
+          data: { text: formatFailoverNotification(fallbackResult.failoverNotification) },
+        });
+      }
+      // ===== END =====
+
       // Some embedded runs surface context overflow as an error payload instead of throwing.
       // Treat those as a session-level failure and auto-recover by starting a fresh session.
       const embeddedError = runResult.meta?.error;
@@ -443,12 +471,8 @@ export async function runAgentTurnWithFallback(params: {
         (await params.resetSessionAfterCompactionFailure(embeddedError.message))
       ) {
         didResetAfterCompactionFailure = true;
-        return {
-          kind: "final",
-          payload: {
-            text: "⚠️ Context limit exceeded. I've reset our conversation to start fresh - please try again.\n\nTo prevent this, increase your compaction buffer by setting `agents.defaults.compaction.reserveTokensFloor` to 4000 or higher in your config.",
-          },
-        };
+        // Silent reset — retry the current message instead of asking user to resend
+        continue;
       }
       if (embeddedError?.kind === "role_ordering") {
         const didReset = await params.resetSessionAfterRoleOrderingConflict(embeddedError.message);
@@ -477,12 +501,8 @@ export async function runAgentTurnWithFallback(params: {
         (await params.resetSessionAfterCompactionFailure(message))
       ) {
         didResetAfterCompactionFailure = true;
-        return {
-          kind: "final",
-          payload: {
-            text: "⚠️ Context limit exceeded during compaction. I've reset our conversation to start fresh - please try again.\n\nTo prevent this, increase your compaction buffer by setting `agents.defaults.compaction.reserveTokensFloor` to 4000 or higher in your config.",
-          },
-        };
+        // Silent reset — retry the current message instead of asking user to resend
+        continue;
       }
       if (isRoleOrderingError) {
         const didReset = await params.resetSessionAfterRoleOrderingConflict(message);

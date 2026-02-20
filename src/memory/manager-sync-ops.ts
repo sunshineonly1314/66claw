@@ -175,7 +175,18 @@ class MemoryManagerSyncOps {
     const dir = path.dirname(dbPath);
     ensureDir(dir);
     const { DatabaseSync } = requireNodeSqlite();
-    return new DatabaseSync(dbPath, { allowExtension: this.settings.store.vector.enabled });
+    const db = new DatabaseSync(dbPath, { allowExtension: this.settings.store.vector.enabled });
+    // [CN-PATCH:perf] 启用 WAL 模式：写入性能提升 5-10x，读写并发不阻塞
+    // WAL (Write-Ahead Logging) 将写操作追加到 WAL 文件而非直接改主库文件，
+    // 避免每次 INSERT 都触发 journal 文件创建/删除的 I/O 开销。
+    // 同时允许读操作在写入期间继续进行，不阻塞搜索查询。
+    try {
+      db.exec("PRAGMA journal_mode=WAL");
+      db.exec("PRAGMA synchronous=NORMAL");
+    } catch {
+      // 部分 SQLite 构建可能不支持 WAL（如只读文件系统），静默回退到默认模式
+    }
+    return db;
   }
 
   private seedEmbeddingCache(sourceDb: DatabaseSync): void {
@@ -537,7 +548,11 @@ class MemoryManagerSyncOps {
     if (needsFullReindex) {
       return true;
     }
-    return this.sessionsDirty && this.sessionsDirtyFiles.size > 0;
+    // [CN-PATCH:reliability] 启动后首次 sync 需要扫描 sessions（即使 dirtyFiles 为空）。
+    // 场景：进程崩溃时 session transcript 已写入但索引 debounce 未触发 → 重启后
+    // sessionsDirty=true 但 sessionsDirtyFiles 为空 → 原逻辑返回 false → sessions 永远不同步。
+    // 修复：sessionsDirty 为 true 时允许同步，syncSessionFiles 内部通过 hash 对比跳过未变化的文件。
+    return this.sessionsDirty;
   }
 
   private async syncMemoryFiles(params: {
@@ -970,7 +985,18 @@ class MemoryManagerSyncOps {
       this.writeMeta(nextMeta);
       this.pruneEmbeddingCacheIfNeeded();
 
+      // [CN-PATCH:reliability] WAL 模式下关闭前必须 checkpoint，确保所有数据写入主数据库文件。
+      // 否则 swapIndexFiles 移动的主文件可能不包含 WAL 中的最新数据，导致索引丢失。
+      // TRUNCATE 模式会将 WAL 内容写回主文件并清空 WAL 文件，使文件可安全移动。
+      try {
+        this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      } catch {
+        // checkpoint 失败不致命：close() 仍会尝试 checkpoint
+      }
       this.db.close();
+      try {
+        originalDb.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      } catch {}
       originalDb.close();
       originalDbClosed = true;
 

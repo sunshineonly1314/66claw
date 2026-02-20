@@ -61,6 +61,7 @@ const CORE_SKILLS = new Set([
   "nano-pdf", // local PDF tool
   "obsidian", // local Obsidian notes
   "openai-whisper", // LOCAL speech-to-text (not an API call!)
+  "self-troubleshoot", // 自我排障: 读取日志 + AI 分析定位问题
 ]);
 const RECOMMENDED_SKILLS = new Set([
   // ── 本地/离线工具 ──

@@ -111,7 +111,7 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     try {
       const { ensureQcBaseline } = await import("./marketplace/db.js");
       const { resolveOpenClawCNPackageRootSync } = await import("../../infra/openclaw-root.js");
-      const packageRoot = resolveOpenClawCNPackageRootSync();
+      const packageRoot = resolveOpenClawCNPackageRootSync({ argv1: process.argv[1] });
       if (packageRoot) {
         const qcCount = ensureQcBaseline(packageRoot);
         if (qcCount > 0) {
@@ -162,18 +162,34 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     await writeLocalIndex(result.index, installed, sourceUrl);
 
     // 写入 SQLite（非阻塞，失败不影响主流程）
+    const isProxyPath = sinceVersion !== undefined && proxyConfig;
     try {
-      const { populateFromRemoteIndex, updateInstalledStatus, setLastGlobalVersion } =
-        await import("./marketplace/db.js");
-      populateFromRemoteIndex(result.index.skills, installed);
-      updateInstalledStatus(installed);
+      const {
+        populateFromRemoteIndex,
+        populateFromProxyIndex,
+        setLastGlobalVersion,
+      } = await import("./marketplace/db.js");
+
+      if (isProxyPath && result.index.version) {
+        // 增量 proxy 路径: 使用 populateFromProxyIndex 以保留 proxyVersion/sha256/size
+        populateFromProxyIndex(
+          result.index.skills as any[],
+          installed,
+          result.index.version,
+        );
+      } else {
+        populateFromRemoteIndex(result.index.skills, installed);
+      }
+      // 注意：不再调用 updateInstalledStatus() 做全量 reset+rescan。
+      // populateFromRemoteIndex/populateFromProxyIndex 在 insertItems() 内部已保留
+      // 数据库中已有的 installed=1 状态，避免后台 sync 覆盖用户刚安装的技能。
       if (result.index.version) {
         setLastGlobalVersion(result.index.version);
       }
       logger.debug("Skills SQLite populated", {
         count: result.index.skills.length,
         globalVersion: result.index.version,
-        incremental: sinceVersion !== undefined,
+        incremental: isProxyPath,
       });
     } catch (err) {
       logger.warn("Failed to populate skills SQLite (non-fatal)", {

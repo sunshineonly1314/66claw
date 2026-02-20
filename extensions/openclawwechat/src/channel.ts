@@ -5,8 +5,9 @@
  * 通过 ClawChat 桥接服务与个人微信号通信
  */
 
-import type { ChannelPlugin } from "openclawcn/plugin-sdk";
+import { buildChannelConfigSchema, type ChannelPlugin } from "openclawcn/plugin-sdk";
 import { resolveMediaPath } from "./media-handler.js";
+import { WechatMiniprogramConfigSchema } from "./config-schema.js";
 import { getWechatMiniprogramRuntime } from "./runtime.js";
 import { startPollingService } from "./polling.js";
 import { CHANNEL_ID, BRIDGE_URL } from "./constants.js";
@@ -467,6 +468,8 @@ export const wechatMiniprogramPlugin: ChannelPlugin<WeChatMiniprogramAccount> = 
   meta: { ...meta, aliases: [...meta.aliases] },
   capabilities,
   onboarding: wechatMiniprogramOnboardingAdapter,
+  reload: { configPrefixes: ["channels.openclawwechat"] },
+  configSchema: buildChannelConfigSchema(WechatMiniprogramConfigSchema),
   config,
   outbound,
   status,

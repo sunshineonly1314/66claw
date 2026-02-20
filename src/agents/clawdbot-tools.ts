@@ -27,7 +27,7 @@ import { createWeComSendTool } from "./tools/wecom-send.js";
 import { createWeComCheckTool } from "./tools/wecom-check.js";
 import { createImageGenTool } from "./tools/image-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
-import { applyToolHints } from "../dispatch/tool-hints.js";
+// applyToolHints removed — reordering is now done at the outer level in pi-tools.ts
 
 export function createOpenClawCNTools(options?: {
   browserControlUrl?: string;
@@ -66,8 +66,7 @@ export function createOpenClawCNTools(options?: {
   modelHasVision?: boolean;
   /** Explicit agent ID override for cron/hook sessions. */
   requesterAgentIdOverride?: string;
-  /** Tool hints from dispatch engine (auto-discovery). */
-  toolHints?: string[];
+  // toolHints removed — reordering is now done at the outer level in pi-tools.ts
 }): AnyAgentTool[] {
   const imageTool = options?.agentDir?.trim()
     ? createImageTool({
@@ -205,8 +204,5 @@ export function createOpenClawCNTools(options?: {
     return true;
   });
 
-  // Apply tool hints (reorder tools based on dispatch auto-discovery)
-  const sortedTools = options?.toolHints ? applyToolHints(tools, options.toolHints) : tools;
-
-  return [...sortedTools, ...pluginTools, ...mcpTools];
+  return [...tools, ...pluginTools, ...mcpTools];
 }

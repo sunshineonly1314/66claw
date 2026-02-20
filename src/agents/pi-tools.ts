@@ -23,6 +23,8 @@ import {
 } from "./bash-tools.js";
 import { listChannelAgentTools } from "./channel-tools.js";
 import { createOpenClawCNTools } from "./openclaw-tools.js";
+import { applyToolHints } from "../dispatch/tool-hints.js";
+import { safeFilterTools } from "../dispatch/tool-filter.js";
 import { wrapToolWithAbortSignal } from "./pi-tools.abort.js";
 import { wrapToolWithBeforeToolCallHook } from "./pi-tools.before-tool-call.js";
 import {
@@ -182,6 +184,12 @@ export function createOpenClawCNCodingTools(options?: {
   disableMessageTool?: boolean;
   /** Whether the sender is an owner (required for owner-only tools). */
   senderIsOwner?: boolean;
+  // ── [CN-PATCH:tool-discovery] Tool hints from dispatch engine ──
+  /** Tool hints for reordering tools by relevance (auto-discovery). */
+  toolHints?: string[];
+  // ── [CN-PATCH:tool-filter] Tool filter policy from dispatch engine ──
+  /** Tool filter policy for dynamic tool injection (only inject intent-relevant tools). */
+  toolFilterPolicy?: import("../dispatch/tool-filter.js").ToolFilterPolicy;
 }): AnyAgentTool[] {
   const execToolName = "exec";
   const sandbox = options?.sandbox?.enabled ? options.sandbox : undefined;
@@ -420,6 +428,7 @@ export function createOpenClawCNCodingTools(options?: {
       requireExplicitMessageTarget: options?.requireExplicitMessageTarget,
       disableMessageTool: options?.disableMessageTool,
       requesterAgentIdOverride: agentId,
+      // toolHints removed — reordering is now done at the outer level
     }),
   ];
   // Security: treat unknown/undefined as unauthorized (opt-in, not opt-out)
@@ -462,5 +471,16 @@ export function createOpenClawCNCodingTools(options?: {
   // NOTE: Keep canonical (lowercase) tool names here.
   // pi-ai's Anthropic OAuth transport remaps tool names to Claude Code-style names
   // on the wire and maps them back for tool dispatch.
-  return withAbort;
+
+  // ── [CN-PATCH:tool-filter] Apply tool filtering + reordering ──
+  // Step 1: Filter tools by dispatch policy (if present) — reduces 40+ tools to ~10-15
+  let finalTools = withAbort;
+  if (options?.toolFilterPolicy) {
+    finalTools = safeFilterTools(finalTools, options.toolFilterPolicy);
+  }
+  // Step 2: Reorder remaining tools by hints (hinted tools first)
+  if (options?.toolHints?.length) {
+    finalTools = applyToolHints(finalTools, options.toolHints);
+  }
+  return finalTools;
 }

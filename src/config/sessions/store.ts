@@ -473,6 +473,24 @@ type SaveSessionStoreOptions = {
   onWarn?: (warning: SessionMaintenanceWarning) => void | Promise<void>;
 };
 
+// [CN-PATCH:reliability] 清理崩溃后残留的临时文件，防止磁盘泄露。
+// 只清理当前 storePath 同目录下匹配 `${basename}.*.tmp` 的文件。
+// 轻量操作：readdir + 筛选 + unlink，不影响性能。
+async function cleanupStaleTmpFiles(storePath: string): Promise<void> {
+  try {
+    const dir = path.dirname(storePath);
+    const base = path.basename(storePath);
+    const files = await fs.promises.readdir(dir);
+    for (const f of files) {
+      if (f.startsWith(base) && f.endsWith(".tmp")) {
+        await fs.promises.rm(path.join(dir, f), { force: true }).catch(() => {});
+      }
+    }
+  } catch {
+    // 目录不存在或无权限，忽略
+  }
+}
+
 async function saveSessionStoreUnlocked(
   storePath: string,
   store: Record<string, SessionEntry>,
@@ -521,20 +539,44 @@ async function saveSessionStoreUnlocked(
   await fs.promises.mkdir(path.dirname(storePath), { recursive: true });
   const json = JSON.stringify(store, null, 2);
 
-  // Windows: avoid atomic rename swaps (can be flaky under concurrent access).
-  // We serialize writers via the session-store lock instead.
+  // 清理上一次崩溃可能残留的临时文件（轻量操作，不影响写入性能）
+  await cleanupStaleTmpFiles(storePath);
+
+  // [CN-PATCH:reliability] Windows 原子写入：先写临时文件再 rename，防止崩溃时损坏主文件。
+  // Windows 上 rename 在目标文件已存在时会失败（EPERM），需要先删旧文件再 rename。
+  // 如果 rename 链路失败（杀毒软件文件锁、权限问题等），回退到直接写入（保持现有行为）。
   if (process.platform === "win32") {
+    const tmp = `${storePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
     try {
-      await fs.promises.writeFile(storePath, json, "utf-8");
-    } catch (err) {
-      const code =
-        err && typeof err === "object" && "code" in err
-          ? String((err as { code?: unknown }).code)
-          : null;
-      if (code === "ENOENT") {
-        return;
+      await fs.promises.writeFile(tmp, json, "utf-8");
+      // Windows rename 不支持覆盖，需要先移除目标文件
+      try {
+        await fs.promises.unlink(storePath);
+      } catch {
+        // 目标文件不存在时忽略（首次写入场景）
       }
-      throw err;
+      await fs.promises.rename(tmp, storePath);
+    } catch {
+      // rename 失败（杀毒软件锁、权限等 Windows 特有问题），回退到直接写入
+      try {
+        await fs.promises.rm(tmp, { force: true });
+      } catch {
+        // 清理临时文件失败，忽略
+      }
+      try {
+        // 确保父目录存在（对齐 Unix 路径行为），防止目录被外部清理后写入 ENOENT
+        await fs.promises.mkdir(path.dirname(storePath), { recursive: true });
+        await fs.promises.writeFile(storePath, json, "utf-8");
+      } catch (err2) {
+        const code =
+          err2 && typeof err2 === "object" && "code" in err2
+            ? String((err2 as { code?: unknown }).code)
+            : null;
+        if (code === "ENOENT") {
+          return;
+        }
+        throw err2;
+      }
     }
     return;
   }

@@ -11,7 +11,7 @@ export const TAB_GROUPS = [
     label: "Control",
     tabs: ["overview", "model-config", "usage", "channels", "instances", "sessions", "cron"],
   },
-  { label: "Agent", tabs: ["agents", "playground", "skills", "extensions", "nodes"] },
+  { label: "Agent", tabs: ["agents", "skills", "extensions", "nodes"] },
   { label: "Settings", tabs: ["config", "debug", "logs"] },
 ] as const;
 
@@ -25,7 +25,7 @@ export function getTabGroups() {
       label: t("nav.control"),
       tabs: ["overview", "model-config", "usage", "channels", "instances", "sessions", "cron"] as const,
     },
-    { label: t("nav.agent"), tabs: ["agents", "playground", "skills", "extensions", "nodes"] as const },
+    { label: t("nav.agent"), tabs: ["agents", "skills", "extensions", "nodes"] as const },
     { label: t("nav.settings"), tabs: ["config", "debug", "logs"] as const },
   ];
 }

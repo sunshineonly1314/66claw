@@ -8,6 +8,7 @@
  *   - Status: ready (green), needs_config (yellow), paused/fixing (muted)
  *   - "needs_config" cards show a [Configure & Enable] button
  *   - "ready" cards show no action — capability just works
+ *   - Whole card is clickable for better UX
  */
 
 import { html, nothing, type TemplateResult } from "lit";
@@ -18,6 +19,7 @@ export type ExtensionsCardProps = {
   capability: McpCapability;
   onConfigClick: (id: string) => void;
   onTrySay: (prompt: string) => void;
+  onUninstall?: (id: string) => void;
 };
 
 /* ── status visual helpers ───────────────────────────────────── */
@@ -56,19 +58,32 @@ function statusLabel(status: McpCapabilityStatus): string {
 /* ── main render ─────────────────────────────────────────────── */
 
 export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult {
-  const { capability: cap, onConfigClick, onTrySay } = props;
+  const { capability: cap, onConfigClick, onTrySay, onUninstall } = props;
   const dotColor = STATUS_DOT_COLORS[cap.status];
   const bgColor = STATUS_BG[cap.status];
+
+  // Whole-card click: needs_config → config wizard, otherwise → try saying
+  const handleCardClick = (e: Event) => {
+    // Don't trigger if user clicked an actual button inside the card
+    if ((e.target as HTMLElement).closest("button")) return;
+    if (cap.status === "needs_config") {
+      onConfigClick(cap.id);
+    } else if (cap.examplePrompt) {
+      onTrySay(cap.examplePrompt);
+    }
+  };
 
   return html`
     <div
       class="ext-cap-card"
+      @click=${handleCardClick}
       style="
         background: var(--card);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg, 12px);
         padding: 16px 18px;
         position: relative;
+        cursor: pointer;
         transition: border-color var(--duration-normal, 200ms) var(--ease-out, ease),
                     box-shadow var(--duration-normal, 200ms) var(--ease-out, ease),
                     transform var(--duration-normal, 200ms) var(--ease-out, ease);
@@ -128,7 +143,7 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
       </div>
 
       <!-- Config needed hint — compact -->
-      ${cap.status === "needs_config" && cap.configNeeded
+      ${(cap.status === "needs_config" || cap.status === "unavailable") && cap.configNeeded
         ? html`
             <div
               style="
@@ -147,41 +162,61 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
           `
         : nothing}
 
-      <!-- Footer: config button + "try saying" — compact -->
+      <!-- Footer: config button + uninstall + "try saying" — compact -->
       <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:auto; padding-top:2px;">
-        ${cap.status === "needs_config"
-          ? html`
-              <button
-                @click=${() => onConfigClick(cap.id)}
-                style="
-                  all:unset;
-                  cursor:pointer;
-                  font-size:11px;
-                  font-weight:600;
-                  padding:5px 14px;
-                  border-radius:var(--radius-sm, 6px);
-                  background:linear-gradient(135deg, #fbbf24, #f59e0b);
-                  color:#000;
-                  transition: opacity 150ms;
-                "
-              >
-                ${t("extensions.configAndEnable")}
-              </button>
-            `
-          : nothing}
+        <div style="display:flex; align-items:center; gap:6px;">
+          ${cap.status === "needs_config"
+            ? html`
+                <button
+                  @click=${() => onConfigClick(cap.id)}
+                  style="
+                    all:unset;
+                    cursor:pointer;
+                    font-size:12px;
+                    font-weight:600;
+                    padding:7px 18px;
+                    border-radius:var(--radius-sm, 6px);
+                    background:linear-gradient(135deg, #fbbf24, #f59e0b);
+                    color:#000;
+                    transition: opacity 150ms, transform 100ms;
+                  "
+                >
+                  ${t("extensions.configAndEnable")}
+                </button>
+              `
+            : nothing}
+          ${!cap.isBuiltin && onUninstall
+            ? html`
+                <button
+                  @click=${() => onUninstall(cap.id)}
+                  style="
+                    all:unset;
+                    cursor:pointer;
+                    font-size:11px;
+                    padding:5px 12px;
+                    border-radius:var(--radius-sm, 6px);
+                    border:1px solid rgba(248,113,113,0.3);
+                    color:#f87171;
+                    transition: opacity 150ms, background 150ms;
+                  "
+                >${t("extensions.uninstall" as never)}</button>
+              `
+            : nothing}
+        </div>
 
         <button
           @click=${() => onTrySay(cap.examplePrompt)}
           style="
             all:unset;
             cursor:pointer;
-            font-size:11px;
+            font-size:12px;
             color:var(--accent-2, #20d5bc);
             display:flex;
             align-items:center;
             gap:4px;
             transition: opacity 150ms, color 150ms;
-            padding:2px 0;
+            padding:4px 8px;
+            border-radius:var(--radius-sm, 6px);
             overflow:hidden;
             text-overflow:ellipsis;
             white-space:nowrap;
@@ -189,7 +224,7 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
           "
           title="${cap.examplePrompt}"
         >
-          <span style="font-size:10px; color:var(--muted-strong, #6b7d91); flex-shrink:0;">${t("extensions.trySay")}</span>
+          <span style="font-size:11px; color:var(--muted-strong, #6b7d91); flex-shrink:0;">${t("extensions.trySay")}</span>
           <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${cap.examplePrompt}"</span>
         </button>
       </div>
@@ -200,6 +235,17 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
         border-color: var(--border-strong, #4a5a70) !important;
         box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.25)), inset 0 1px 0 var(--card-highlight, rgba(255,255,255,0.08)) !important;
         transform: translateY(-1px);
+      }
+      .ext-cap-card:active {
+        transform: translateY(0) !important;
+        box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.2)) !important;
+      }
+      .ext-cap-card button:hover {
+        opacity: 0.85;
+      }
+      .ext-cap-card button:active {
+        opacity: 0.65;
+        transform: scale(0.97);
       }
     </style>
   `;

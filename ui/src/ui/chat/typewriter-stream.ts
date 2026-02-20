@@ -1,12 +1,14 @@
 /**
- * 千问风格：流式回复匀速揭示
- * 将完整流式文本以恒定速度逐字显示，避免一口气全部出现
+ * Gemini/豆包风格：流式回复匀速揭示
+ * 将完整流式文本以自然速度逐字显示，模拟真人打字的节奏感
  *
  * 优化特性：
- * - 自适应速度：根据待显示文本量动态调整速度
- * - 追赶机制：当积压文本过多时加速追赶
- * - 完成检测：当文本停止增长时加速揭示剩余内容
- * - 最大延迟限制：确保新文本在合理时间内显示完毕
+ * - 慢速基础节奏：35字/秒，人眼可感知的逐字效果
+ * - 智能断词：不在 markdown 语法标记中间截断，避免渲染抖动
+ * - 标点停顿：遇到句号、逗号等自动微停，模拟自然输入节奏
+ * - 渲染节流：相同截断位置不重复解析 markdown，降低 CPU 开销
+ * - 平滑追赶：积压过多时缓慢加速，而非瞬间跳跃
+ * - 完成检测：文本停止增长后适度加速揭示剩余内容
  */
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
@@ -16,29 +18,45 @@ import { toSanitizedMarkdownHtml } from "../markdown";
 
 // ============ 打字机配置参数 ============
 
-/** 基础速度：每秒揭示的字符数 */
-const BASE_CHARS_PER_SECOND = 120;
+/** 基础速度：每秒揭示的字符数（对标 Gemini/豆包的视觉节奏） */
+const BASE_CHARS_PER_SECOND = 35;
 
 /** 最大速度：追赶模式下的最高速度 */
-const MAX_CHARS_PER_SECOND = 600;
+const MAX_CHARS_PER_SECOND = 180;
 
-/** 触发追赶的积压阈值（字符数） */
-const CATCHUP_THRESHOLD = 50;
+/** 触发追赶的积压阈值（字符数）- 容忍较大缓冲再加速 */
+const CATCHUP_THRESHOLD = 200;
 
 /** 最大允许的积压量（超过此值直接跳到较近位置） */
-const MAX_BACKLOG = 400;
+const MAX_BACKLOG = 1500;
 
 /** 积压处理的目标时间（秒）- 积压的文本应在此时间内追上 */
-const TARGET_CATCHUP_TIME = 1.0;
+const TARGET_CATCHUP_TIME = 3.0;
 
-/** 速度平滑因子（0-1，越小越平滑） */
-const SPEED_SMOOTHING = 0.2;
+/** 速度平滑因子（0-1，越小越平滑，避免突然加速） */
+const SPEED_SMOOTHING = 0.08;
 
 /** 完成检测：文本停止增长后的等待时间（毫秒） */
-const COMPLETION_DETECT_MS = 200;
+const COMPLETION_DETECT_MS = 500;
 
 /** 完成模式下的速度倍率 */
-const COMPLETION_SPEED_MULTIPLIER = 3;
+const COMPLETION_SPEED_MULTIPLIER = 2;
+
+// ============ 标点停顿配置 ============
+
+/** 需要额外停顿的标点符号集合 */
+const PAUSE_CHARS_SHORT = new Set("，、,;；");
+/** 较长停顿的标点（句末） */
+const PAUSE_CHARS_LONG = new Set("。！？…!?");
+/** 换行停顿 */
+const PAUSE_CHAR_NEWLINE = "\n";
+
+/** 短停顿时间（毫秒）- 逗号等 */
+const SHORT_PAUSE_MS = 50;
+/** 长停顿时间（毫秒）- 句号等 */
+const LONG_PAUSE_MS = 100;
+/** 换行停顿时间（毫秒） */
+const NEWLINE_PAUSE_MS = 100;
 
 class TypewriterStreamDirective extends AsyncDirective {
   private rafId = 0;
@@ -54,6 +72,12 @@ class TypewriterStreamDirective extends AsyncDirective {
   private lastGrowthTime = 0;
   /** 是否进入完成模式（文本停止增长，加速揭示剩余内容） */
   private isCompleting = false;
+  /** 标点停顿：停顿到此时间戳 */
+  private pauseUntil = 0;
+  /** 渲染缓存：上次渲染的截断位置 */
+  private lastRenderedLength = -1;
+  /** 渲染缓存：上次渲染的 HTML */
+  private lastRenderedHtml = "";
 
   override update(
     _part: import("lit/directive").Part,
@@ -69,10 +93,13 @@ class TypewriterStreamDirective extends AsyncDirective {
       this.lastTextLength = 0;
       this.lastGrowthTime = performance.now();
       this.isCompleting = false;
+      this.pauseUntil = 0;
+      this.lastRenderedLength = -1;
+      this.lastRenderedHtml = "";
     }
 
     if (this.fullText.length === 0) {
-      return this.render();
+      return this.buildHtml();
     }
 
     // 检测新增文本
@@ -85,13 +112,13 @@ class TypewriterStreamDirective extends AsyncDirective {
     // 计算当前积压量
     const backlog = this.fullText.length - this.revealedLength;
 
-    // 如果积压量过大，直接跳到较近位置（保持一定的打字效果）
+    // 如果积压量过大，跳到较近位置（保持打字效果的尾巴）
     if (backlog > MAX_BACKLOG) {
       this.revealedLength = this.fullText.length - CATCHUP_THRESHOLD;
     }
 
     this.ensureAnimating();
-    return this.render();
+    return this.buildHtml();
   }
 
   /** 确保 RAF 动画正在运行 */
@@ -104,6 +131,16 @@ class TypewriterStreamDirective extends AsyncDirective {
       const delta = this.lastTime ? now - this.lastTime : 0;
       this.lastTime = now;
 
+      // 标点停顿：如果在停顿中，跳过推进但继续帧循环
+      if (now < this.pauseUntil) {
+        if (this.isConnected) {
+          this.rafId = requestAnimationFrame(run);
+        } else {
+          this.rafId = 0;
+        }
+        return;
+      }
+
       // 检测完成模式：文本停止增长超过阈值
       if (
         !this.isCompleting &&
@@ -112,10 +149,13 @@ class TypewriterStreamDirective extends AsyncDirective {
         this.isCompleting = true;
       }
 
+      // 记录推进前的位置（用于标点停顿检测）
+      const prevLen = Math.floor(this.revealedLength);
+
       // 计算目标速度
       let targetSpeed = this.calculateTargetSpeed();
 
-      // 完成模式：大幅提速以快速显示剩余文本
+      // 完成模式：适度提速以显示剩余文本
       if (this.isCompleting) {
         targetSpeed = Math.max(
           targetSpeed,
@@ -134,8 +174,22 @@ class TypewriterStreamDirective extends AsyncDirective {
         this.revealedLength + (this.currentSpeed * delta) / 1000,
       );
 
+      // 标点停顿检测：检查新揭示的字符中是否有标点
+      const newLen = Math.floor(this.revealedLength);
+      if (newLen > prevLen && newLen <= this.fullText.length) {
+        // 检查新揭示区间内的最后一个字符
+        const lastChar = this.fullText[newLen - 1];
+        if (lastChar === PAUSE_CHAR_NEWLINE) {
+          this.pauseUntil = now + NEWLINE_PAUSE_MS;
+        } else if (PAUSE_CHARS_LONG.has(lastChar)) {
+          this.pauseUntil = now + LONG_PAUSE_MS;
+        } else if (PAUSE_CHARS_SHORT.has(lastChar)) {
+          this.pauseUntil = now + SHORT_PAUSE_MS;
+        }
+      }
+
       if (this.isConnected) {
-        this.setValue(this.render());
+        this.setValue(this.buildHtml());
       }
 
       if (this.revealedLength < this.fullText.length && this.isConnected) {
@@ -183,12 +237,74 @@ class TypewriterStreamDirective extends AsyncDirective {
     return Math.min(Math.max(speed, requiredSpeed), MAX_CHARS_PER_SECOND);
   }
 
-  private render() {
-    const len = Math.floor(this.revealedLength);
+  /**
+   * 找到安全的截断位置，避免在 markdown 语法标记中间断开
+   * 回退到最近的：空格、换行、CJK 字符、标点符号
+   */
+  private findSafeBreakpoint(pos: number): number {
+    const text = this.fullText;
+    if (pos >= text.length) return text.length;
+    if (pos <= 0) return 0;
+
+    let safe = pos;
+
+    // 向前回退找最近的安全断点（最多回退 20 字符）
+    const lookback = Math.min(20, pos);
+    for (let i = 0; i < lookback; i++) {
+      const idx = pos - i;
+      if (idx < 0) break;
+      const ch = text[idx];
+      // 安全断点：空白、换行、CJK 字符、标点
+      if (
+        ch === " " || ch === "\t" || ch === "\n" ||
+        /[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch) ||
+        /[，。！？、；：,.!?;:\-）)》」】\]>]/.test(ch)
+      ) {
+        safe = idx + 1; // 包含这个字符
+        break;
+      }
+    }
+
+    // 额外检查：不要在 ``` 这三个字符中间截断
+    if (safe >= 1 && safe <= text.length) {
+      // 检查 safe 位置前后是否是 ``` 的一部分
+      for (let offset = -2; offset <= 0; offset++) {
+        const start = safe + offset;
+        if (start >= 0 && start + 3 <= text.length) {
+          const tri = text.slice(start, start + 3);
+          if (tri === "```" && safe > start && safe < start + 3) {
+            // 在 ``` 中间，回退到 ``` 之前
+            safe = start;
+            break;
+          }
+        }
+      }
+    }
+
+    return safe;
+  }
+
+  private buildHtml() {
+    const rawPos = Math.floor(this.revealedLength);
+    const len = this.findSafeBreakpoint(rawPos);
+
+    // 渲染节流：如果截断位置没变化，复用上次的 HTML
+    if (len === this.lastRenderedLength && this.lastRenderedHtml) {
+      return html`${unsafeHTML(this.lastRenderedHtml)}`;
+    }
+
     const slice = this.fullText.slice(0, len);
     const raw = slice || "\u00A0"; /* non-breaking space so cursor has height */
     const sanitized = toSanitizedMarkdownHtml(raw);
+
+    this.lastRenderedLength = len;
+    this.lastRenderedHtml = sanitized;
+
     return html`${unsafeHTML(sanitized)}`;
+  }
+
+  override render(_fullText: string, _streamKey: string) {
+    return this.buildHtml();
   }
 
   override disconnected() {

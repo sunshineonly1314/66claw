@@ -461,25 +461,25 @@ describe("防 Token 浪费 — 冷热分层精准过滤", () => {
 });
 
 describe("防 Token 浪费 — BM25 评分精度", () => {
-  it("BM25 rank 0（最佳匹配）转换为 score=1.0", () => {
-    // bm25RankToScore: 1 / (1 + max(0, rank)) = 1 / (1 + 0) = 1
-    expect(bm25RankToScore(0)).toBe(1);
+  it("BM25 rank 0 转换为 score=0（无相关性）", () => {
+    // bm25RankToScore: abs(rank) / (1 + abs(rank)) = 0 / 1 = 0
+    expect(bm25RankToScore(0)).toBe(0);
   });
 
-  it("BM25 rank 越大，score 越小（反比关系）", () => {
-    const score1 = bm25RankToScore(1);
-    const score10 = bm25RankToScore(10);
-    const score100 = bm25RankToScore(100);
-    expect(score1).toBeGreaterThan(score10);
-    expect(score10).toBeGreaterThan(score100);
+  it("BM25 负 rank（SQLite FTS5 越负越相关），abs 越大 score 越高", () => {
+    const score1 = bm25RankToScore(-1);
+    const score10 = bm25RankToScore(-10);
+    const score100 = bm25RankToScore(-100);
+    expect(score10).toBeGreaterThan(score1);
+    expect(score100).toBeGreaterThan(score10);
     // 所有 score 都在 (0, 1) 范围内
-    expect(score1).toBeLessThan(1);
-    expect(score100).toBeGreaterThan(0);
+    expect(score1).toBeGreaterThan(0);
+    expect(score100).toBeLessThan(1);
   });
 
-  it("负 rank 值被 clamp 到 0（防止异常 score）", () => {
-    // max(0, -5) = 0, 1 / (1 + 0) = 1
-    expect(bm25RankToScore(-5)).toBe(1);
+  it("负 rank 值 abs 映射为正分数", () => {
+    // abs(-5) / (1 + abs(-5)) = 5/6 ≈ 0.833
+    expect(bm25RankToScore(-5)).toBeCloseTo(5 / 6);
   });
 
   it("NaN rank 不产生 NaN score", () => {
@@ -490,7 +490,7 @@ describe("防 Token 浪费 — BM25 评分精度", () => {
   it("Infinity rank 不产生 NaN score", () => {
     const score = bm25RankToScore(Infinity);
     expect(Number.isFinite(score)).toBe(true);
-    expect(score).toBeGreaterThan(0);
+    expect(score).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -1012,20 +1012,15 @@ describe("数据流断点检测 — updatedAt 传递链路", () => {
     expect(tiered).toHaveLength(10);
   });
 
-  it("[关键检测] SearchRowResult 类型不包含 updatedAt（管道断点）", () => {
-    // 这是一个类型层面的检测：SearchRowResult 的定义不包含 updatedAt
-    // 导致 searchVector() 和 searchKeyword() 返回的结果没有 updatedAt
-    // 这意味着即使 chunks 表有 updated_at 列，搜索结果也没有这个字段
+  it("[已修复] updatedAt 管道完整性验证（管道已贯通）", () => {
+    // 管道状态（2026-02-20）：所有 4 个步骤均已集成完毕
+    // 1. SQL SELECT 包含 c.updated_at                    ✅ manager-search.ts:40,173
+    // 2. SearchRowResult 包含 updatedAt 字段             ✅ manager-search.ts:19
+    // 3. mergeHybridResults 保留 updatedAt               ✅ hybrid.ts:130,142-144,155,172
+    // 4. manager.ts search() 调用 applyTimeTiering()     ✅ manager.ts:242,254
     //
-    // 当前状态（2026-02-17）：这是已知的未集成问题
-    // applyTimeTiering 的冷热分层在搜索管道中形同虚设
-    // 因为所有搜索结果的 updatedAt 都是 undefined
-    //
-    // 修复需要：
-    // 1. SQL SELECT 增加 c.updated_at
-    // 2. SearchRowResult 增加 updatedAt 字段
-    // 3. mergeHybridResults 保留 updatedAt
-    // 4. manager.ts search() 末尾调用 applyTimeTiering()
+    // applyTimeTiering 的冷热分层在搜索管道中已正常工作
+    // 此测试验证：即使 updatedAt 缺失（如静态 memory/*.md 文件），分层安全降级不会丢数据
 
     // 验证当前行为：没有 updatedAt 时分层等同于无操作（安全降级）
     const resultsWithoutTimestamp: MemorySearchResult[] = [

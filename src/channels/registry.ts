@@ -169,6 +169,13 @@ export function normalizeAnyChannelId(raw?: string | null): ChannelId | null {
   // Check static chat channel aliases first (e.g. imsg -> imessage)
   const aliasResolved = CHAT_CHANNEL_ALIASES[key] ?? key;
 
+  // Fallback to static channel list before checking dynamic plugin registry.
+  // This ensures built-in channels (telegram, slack, discord, etc.) are always recognized
+  // even when the plugin registry has not been fully initialized.
+  if (CHANNEL_IDS.includes(aliasResolved as (typeof CHANNEL_IDS)[number])) {
+    return aliasResolved as ChannelId;
+  }
+
   const registry = requireActivePluginRegistry();
   const hit = registry.channels.find((entry) => {
     const id = String(entry.plugin.id ?? "")

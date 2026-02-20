@@ -93,8 +93,8 @@ export function renderSkillsBatchComplete(props: {
                   ${cat.skills.map(
                     (skill, idx) => html`
                       <div style="padding:12px 18px;display:flex;align-items:center;justify-content:space-between;${idx < cat.skills.length - 1 ? "border-bottom:1px solid var(--border);" : ""}animation:fadeSlideUp 0.3s ${1.5 + catIdx * 0.1 + idx * 0.055}s both;">
-                        <span style="font-size:15px;font-weight:600;color:var(--text-strong, var(--text));">${skill.name}</span>
-                        <span style="font-size:13px;color:var(--muted);max-width:55%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${skill.description}</span>
+                        <span style="font-size:15px;font-weight:600;color:var(--text-strong, var(--text));">${skill.nameZh || skill.name}</span>
+                        <span style="font-size:13px;color:var(--muted);max-width:55%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${skill.descriptionZh || skill.description}</span>
                       </div>
                     `,
                   )}

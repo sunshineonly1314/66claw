@@ -407,7 +407,7 @@
   letter-spacing: 0.3px;
 }
 
-/* Popover: 悬停弹出二维码 — 金光透明高级风格 */
+/* Popover: 悬停弹出二维码 — 金光高级风格 */
 .topbar-support__popover {
   display: none;
   position: absolute;
@@ -415,22 +415,22 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 200;
-  width: 220px;
-  padding: 16px;
+  width: 260px;
+  padding: 20px 20px 16px;
   background: linear-gradient(
     160deg,
-    rgba(255, 255, 255, 0.92),
-    rgba(255, 248, 230, 0.88),
-    rgba(255, 255, 255, 0.92)
+    #1a1814 0%,
+    #25201a 40%,
+    #1e1b15 100%
   );
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border: 1.5px solid rgba(251, 191, 36, 0.35);
-  border-radius: 14px;
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border: 1.5px solid rgba(251, 191, 36, 0.4);
+  border-radius: 16px;
   box-shadow:
-    0 0 20px rgba(251, 191, 36, 0.12),
-    0 0 40px rgba(245, 158, 11, 0.06),
-    0 8px 32px rgba(0, 0, 0, 0.08);
+    0 0 24px rgba(251, 191, 36, 0.15),
+    0 0 48px rgba(245, 158, 11, 0.08),
+    0 12px 40px rgba(0, 0, 0, 0.35);
   text-align: center;
   pointer-events: auto;
   animation: qr-golden-pulse 3s ease-in-out infinite;
@@ -440,15 +440,17 @@
 @keyframes qr-golden-pulse {
   0%, 100% {
     box-shadow:
-      0 0 20px rgba(251, 191, 36, 0.12),
-      0 0 40px rgba(245, 158, 11, 0.06),
-      0 8px 32px rgba(0, 0, 0, 0.08);
+      0 0 24px rgba(251, 191, 36, 0.15),
+      0 0 48px rgba(245, 158, 11, 0.08),
+      0 12px 40px rgba(0, 0, 0, 0.35);
+    border-color: rgba(251, 191, 36, 0.4);
   }
   50% {
     box-shadow:
-      0 0 28px rgba(251, 191, 36, 0.22),
-      0 0 56px rgba(245, 158, 11, 0.1),
-      0 8px 32px rgba(0, 0, 0, 0.08);
+      0 0 36px rgba(251, 191, 36, 0.3),
+      0 0 64px rgba(245, 158, 11, 0.15),
+      0 12px 40px rgba(0, 0, 0, 0.35);
+    border-color: rgba(251, 191, 36, 0.6);
   }
 }
 
@@ -469,38 +471,51 @@
   transform: translateX(-50%) rotate(45deg);
   width: 12px;
   height: 12px;
-  background: rgba(255, 252, 242, 0.94);
-  border-left: 1.5px solid rgba(251, 191, 36, 0.35);
-  border-top: 1.5px solid rgba(251, 191, 36, 0.35);
+  background: #1e1b15;
+  border-left: 1.5px solid rgba(251, 191, 36, 0.4);
+  border-top: 1.5px solid rgba(251, 191, 36, 0.4);
 }
 
 .topbar-support__popover-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--text-strong);
-  margin-bottom: 12px;
+  color: #fbbf24;
+  margin-bottom: 14px;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
 }
 
 .topbar-support__qrcode {
-  width: 160px;
-  height: 160px;
-  border-radius: 10px;
-  border: 1.5px solid rgba(251, 191, 36, 0.3);
-  object-fit: contain;
-  margin-bottom: 10px;
-  filter: sepia(1) hue-rotate(-5deg) saturate(2.8) brightness(0.68);
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.1);
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  border: 2px solid rgba(251, 191, 36, 0.35);
+  object-fit: cover;
+  margin-bottom: 12px;
+  filter: sepia(0.15) saturate(1.1) brightness(1.05);
+  box-shadow:
+    0 0 16px rgba(251, 191, 36, 0.12),
+    inset 0 0 0 1px rgba(251, 191, 36, 0.08);
+  transition: filter 0.3s ease, box-shadow 0.3s ease;
+}
+
+.topbar-support__btn:hover .topbar-support__qrcode {
+  filter: sepia(0.1) saturate(1.15) brightness(1.08);
+  box-shadow:
+    0 0 24px rgba(251, 191, 36, 0.2),
+    inset 0 0 0 1px rgba(251, 191, 36, 0.15);
 }
 
 .topbar-support__popover-desc {
   font-size: 12px;
-  color: var(--muted);
+  color: rgba(251, 191, 36, 0.7);
   margin-bottom: 4px;
+  letter-spacing: 0.3px;
 }
 
 .topbar-support__popover-sub {
   font-size: 11px;
-  color: var(--accent);
+  color: rgba(251, 191, 36, 0.55);
   font-weight: 500;
 }
 
@@ -560,23 +575,17 @@
   box-shadow: 0 4px 16px rgba(255, 185, 0, 0.25);
 }
 
+/* Dark mode: popover 已是深色金色主题，仅微调阴影深度 */
 :root[data-theme="dark"] .topbar-support__popover {
-  background: linear-gradient(
-    160deg,
-    rgba(30, 28, 22, 0.94),
-    rgba(40, 35, 20, 0.9),
-    rgba(30, 28, 22, 0.94)
-  );
-  border-color: rgba(251, 191, 36, 0.3);
   box-shadow:
-    0 0 24px rgba(251, 191, 36, 0.1),
-    0 0 48px rgba(245, 158, 11, 0.05),
-    0 8px 32px rgba(0, 0, 0, 0.4);
+    0 0 28px rgba(251, 191, 36, 0.18),
+    0 0 56px rgba(245, 158, 11, 0.1),
+    0 12px 48px rgba(0, 0, 0, 0.5);
 }
 
 :root[data-theme="dark"] .topbar-support__popover-arrow {
-  background: rgba(35, 32, 22, 0.94);
-  border-color: rgba(251, 191, 36, 0.3);
+  background: #1e1b15;
+  border-color: rgba(251, 191, 36, 0.4);
 }
 
 /* Responsive */

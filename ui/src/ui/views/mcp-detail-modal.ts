@@ -121,9 +121,11 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
             ${item.isOfficial
               ? badgePill("rgba(99,102,241,0.12)", "#818cf8", `\u{1F4E6} ${t("extensions.store.official")}`)
               : nothing}
-            ${!item.requiresApiKey
+            ${!item.requiresApiKey && item.installable !== false && item.installMethod !== "none"
               ? badgePill("rgba(52,211,153,0.12)", "#34d399", `\u26A1 ${t("extensions.store.zeroConfig")}`)
-              : badgePill("rgba(251,191,36,0.12)", "#fbbf24", `\u{1F511} ${t("extensions.store.needsKey")}`)}
+              : item.requiresApiKey
+                ? badgePill("rgba(251,191,36,0.12)", "#fbbf24", `\u{1F511} ${t("extensions.store.needsKey")}`)
+                : nothing}
             ${item.securityScore >= 60
               ? badgePill("rgba(52,211,153,0.08)", scoreColor, `\u{1F6E1}\uFE0F ${item.securityScore}`)
               : nothing}
@@ -171,6 +173,11 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
               <div style="font-weight:600; color:#fbbf24; margin-bottom:6px;">
                 \u26A0\uFE0F ${t("extensions.detail.needsKeyWarning")}
               </div>
+              ${item.configHint
+                ? html`<div style="font-size:11px; line-height:1.5; color:var(--muted-strong, #6b7d91); margin-bottom:6px;">
+                    ${item.configHint}
+                  </div>`
+                : nothing}
               <details style="cursor:pointer;">
                 <summary style="font-size:11px; color:var(--accent-2, #20d5bc); margin-bottom:6px;">
                   ${t("extensions.detail.whatIsApiKey")}
@@ -236,7 +243,7 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
           cursor:pointer; user-select:none;
         ">${t("extensions.detail.info")}</summary>
         <div style="margin-top:10px; font-size:12px; color:var(--fg-secondary, #a0aec0); line-height:2;">
-          <div>${t("extensions.detail.source")}: <span style="color:var(--fg);">npm &middot; ${item.npmPackage}</span></div>
+          <div>${t("extensions.detail.source")}: <span style="color:var(--fg);">${item.installMethod ?? (item.npmPackage ? "npm" : item.sourceUrl ? "source" : "—")} &middot; ${item.npmPackage || item.sourceUrl || item.serverId}</span></div>
           <div>${t("extensions.detail.category")}: <span style="color:var(--fg);">${t(`extensions.category.${item.category}` as never)}</span></div>
           <div>${t("extensions.detail.platform")}: <span style="color:var(--fg);">${item.platforms.join(" / ")}</span></div>
           <div>${t("extensions.detail.transport")}: <span style="color:var(--fg);">stdio</span></div>
@@ -341,35 +348,53 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
                   ${t("extensions.store.installing")}
                 </span>
               `
-            : item.requiresApiKey
+            : item.installable === false
               ? html`
-                  <button
-                    @click=${() => { onConfigInstall(); }}
+                  <a
+                    href=${item.sourceUrl || ""}
+                    target="_blank"
+                    rel="noopener"
                     style="
                       all:unset; cursor:pointer;
                       font-size:13px; font-weight:600;
                       padding:10px 32px;
                       border-radius:8px;
-                      background:linear-gradient(135deg, #fbbf24, #f59e0b);
-                      color:#000;
+                      background:rgba(148,163,184,0.12);
+                      color:var(--muted-strong, #6b7d91);
+                      text-decoration:none;
                       transition:opacity 150ms;
                     "
-                  >${t("extensions.store.configAndInstall")}</button>
+                  >${t("extensions.store.viewSource" as never)} \u2197</a>
                 `
-              : html`
-                  <button
-                    @click=${onInstall}
-                    style="
-                      all:unset; cursor:pointer;
-                      font-size:13px; font-weight:600;
-                      padding:10px 32px;
-                      border-radius:8px;
-                      background:var(--accent, #6366f1);
-                      color:#fff;
-                      transition:opacity 150ms;
-                    "
-                  >${t("extensions.detail.installThis")}</button>
-                `}
+              : item.requiresApiKey
+                ? html`
+                    <button
+                      @click=${() => { onConfigInstall(); }}
+                      style="
+                        all:unset; cursor:pointer;
+                        font-size:13px; font-weight:600;
+                        padding:10px 32px;
+                        border-radius:8px;
+                        background:linear-gradient(135deg, #fbbf24, #f59e0b);
+                        color:#000;
+                        transition:opacity 150ms;
+                      "
+                    >${t("extensions.store.configAndInstall")}</button>
+                  `
+                : html`
+                    <button
+                      @click=${onInstall}
+                      style="
+                        all:unset; cursor:pointer;
+                        font-size:13px; font-weight:600;
+                        padding:10px 32px;
+                        border-radius:8px;
+                        background:var(--accent, #6366f1);
+                        color:#fff;
+                        transition:opacity 150ms;
+                      "
+                    >${t("extensions.detail.installThis")}</button>
+                  `}
       </div>
     </div>
 

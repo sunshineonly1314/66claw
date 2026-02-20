@@ -60,32 +60,37 @@ export function renderSignalCard(params: {
         <div class="channel-card__desc">${t("channels.signal.description")}</div>
         ${accountCountLabel}
 
-        ${(signal?.configured || signal?.running)
-          ? html`
-            <div class="status-list">
-              <div>
-                <span class="label">${t("channels.configured")}</span>
-                <span>${signal?.configured ? t("common.yes") : t("common.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("common.running")}</span>
-                <span>${signal?.running ? t("common.yes") : t("common.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.signal.baseUrl")}</span>
-                <span>${signal?.baseUrl ?? t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastStart")}</span>
-                <span>${signal?.lastStartAt ? formatAgo(signal.lastStartAt) : t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastProbe")}</span>
-                <span>${signal?.lastProbeAt ? formatAgo(signal.lastProbeAt) : t("common.na")}</span>
-              </div>
-            </div>
-          `
-          : nothing}
+        <div class="status-list">
+          <div>
+            <span class="label">${t("channels.configured")}</span>
+            <span>${signal?.configured ? t("common.yes") : t("common.no")}</span>
+          </div>
+          <div>
+            <span class="label">${t("common.running")}</span>
+            <span>${signal?.running ? t("common.yes") : t("common.no")}</span>
+          </div>
+          ${(signal?.configured || signal?.running) ? html`
+          <div>
+            <span class="label">${t("channels.signal.baseUrl")}</span>
+            <span>${signal?.baseUrl ?? t("common.na")}</span>
+          </div>
+          <div>
+            <span class="label">${t("channels.lastStart")}</span>
+            <span>${signal?.lastStartAt ? formatAgo(signal.lastStartAt) : t("common.na")}</span>
+          </div>
+          <div>
+            <span class="label">${t("channels.lastProbe")}</span>
+            <span>${signal?.lastProbeAt ? formatAgo(signal.lastProbeAt) : t("common.na")}</span>
+          </div>
+          ` : nothing}
+        </div>
+
+        ${!(signal?.configured || signal?.running) ? html`
+          <div class="connection-hint">
+            <div class="connection-hint__title">💡 配置指引</div>
+            <div class="connection-hint__desc">在下方配置表单中填写 Signal CLI REST API 地址即可启用。需要先部署 signal-cli-rest-api 服务。</div>
+          </div>
+        ` : nothing}
 
         ${signal?.lastError
           ? html`<div class="${errorCalloutClass(signal.lastError)}" style="margin-top: 12px;">

@@ -36,7 +36,7 @@ export function isStableTag(tag: string): boolean {
 
 export function resolveEffectiveUpdateChannel(params: {
   configChannel?: UpdateChannel | null;
-  installKind: "git" | "package" | "unknown";
+  installKind: "git" | "package" | "installer" | "unknown";
   git?: { tag?: string | null; branch?: string | null };
 }): { channel: UpdateChannel; source: UpdateChannelSource } {
   if (params.configChannel) {

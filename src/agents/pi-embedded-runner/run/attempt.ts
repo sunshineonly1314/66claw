@@ -1,6 +1,6 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import { streamSimple } from "@mariozechner/pi-ai";
+import { streamSimple, createAssistantMessageEventStream } from "@mariozechner/pi-ai";
 import { createAgentSession, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -275,6 +275,35 @@ export async function runEmbeddedAttempt(
 
     const agentDir = params.agentDir ?? resolveOpenClawCNAgentDir();
 
+    // ── [CN-PATCH:tool-discovery] Trigger MCP on-demand loading BEFORE tool construction ──
+    // This ensures newly loaded MCP tools are available when createOpenClawCNCodingTools
+    // calls getMCPManagerSafe().getAvailableTools().
+    if (
+      params.mcpSuggestions &&
+      params.mcpSuggestions.length > 0 &&
+      params.config?.toolDiscovery?.mcpOnDemand?.enabled !== false
+    ) {
+      try {
+        const { loadMCPOnDemand } = await import("../../../mcp/on-demand-loader.js");
+        const onDemandConfig = params.config?.toolDiscovery?.mcpOnDemand;
+        // Load up to maxConcurrent MCP servers.
+        // Failures are silent — the model can still use existing tools.
+        const loadPromises = params.mcpSuggestions.slice(0, onDemandConfig?.maxConcurrent ?? 3).map(
+          (suggestion) =>
+            loadMCPOnDemand(suggestion, onDemandConfig).catch((err) => {
+              log.debug(`[tool-discovery] MCP on-demand load failed for ${suggestion.serverId}: ${String(err)}`);
+            }),
+        );
+        // Wait briefly (max 3s) for fast SSE connections; don't block on slow npm installs
+        await Promise.race([
+          Promise.allSettled(loadPromises),
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+      } catch {
+        /* on-demand loader unavailable — continue without */
+      }
+    }
+
     // Check if the model supports native image input
     const modelHasVision = params.model.input?.includes("image") ?? false;
     const toolsRaw = params.disableTools
@@ -314,6 +343,10 @@ export async function runEmbeddedAttempt(
           requireExplicitMessageTarget:
             params.requireExplicitMessageTarget ?? isSubagentSessionKey(params.sessionKey),
           disableMessageTool: params.disableMessageTool,
+          // ── [CN-PATCH:tool-discovery] Pass tool hints for reordering ──
+          toolHints: params.toolHints,
+          // ── [CN-PATCH:tool-filter] Pass tool filter policy for dynamic injection ──
+          toolFilterPolicy: params.toolFilterPolicy,
         });
     const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider: params.provider });
     logToolSchemasForGoogle({ tools, provider: params.provider });
@@ -589,6 +622,19 @@ export async function runEmbeddedAttempt(
         workspaceDir: params.workspaceDir,
       });
 
+      // ── [CN-PATCH:api-guard] Validate model.api before assigning streamFn ──
+      // When an API provider returns 403/401 and fallback model resolution produces
+      // a model with undefined `api`, streamSimple → resolveApiProvider(undefined)
+      // throws an unhandled "No API provider registered" error that crashes the process.
+      // Default to "openai-completions" — the /chat/completions endpoint is universally
+      // supported; "openai-responses" (/responses) is OpenAI-only and 404s on CN providers.
+      if (!params.model.api) {
+        log.warn(
+          `model.api is undefined for ${params.provider}/${params.modelId}, defaulting to "openai-completions"`,
+        );
+        (params.model as { api: unknown }).api = "openai-completions";
+      }
+
       // Ollama native API: bypass SDK's streamSimple and use direct /api/chat calls
       // for reliable streaming + tool calling support (#11828).
       if ((params.model.api as string) === "ollama") {
@@ -601,8 +647,51 @@ export async function runEmbeddedAttempt(
         const ollamaBaseUrl = modelBaseUrl || providerBaseUrl || OLLAMA_NATIVE_BASE_URL;
         activeSession.agent.streamFn = createOllamaStreamFn(ollamaBaseUrl);
       } else {
-        // Force a stable streamFn reference so vitest can reliably mock @mariozechner/pi-ai.
-        activeSession.agent.streamFn = streamSimple;
+        // [CN-PATCH:safe-stream] Wrap streamSimple to catch both synchronous throws
+        // and asynchronous errors. The upstream agent-loop uses a fire-and-forget async
+        // IIFE (no .catch()), so any throw/rejection inside streamFn becomes an
+        // unhandled rejection that kills the Node.js process.
+        // This wrapper converts errors into an error-event stream that the
+        // agent-loop handles gracefully (stopReason="error").
+        activeSession.agent.streamFn = (model, context, options) => {
+          const buildErrorStream = (err: unknown) => {
+            log.error(
+              `streamSimple failed for ${model?.provider}/${model?.id} api=${String(model?.api)}: ${err}`,
+            );
+            const errorStream = createAssistantMessageEventStream();
+            const errorText = err instanceof Error ? err.message : String(err);
+            const errorMsg = {
+              role: "assistant" as const,
+              model: model?.id ?? params.modelId,
+              api: model?.api ?? ("openai-completions" as const),
+              provider: model?.provider ?? params.provider ?? "unknown",
+              timestamp: Date.now(),
+              content: [{ type: "text" as const, text: `API provider error: ${errorText}` }],
+              stopReason: "error" as const,
+              errorMessage: errorText,
+              usage: {
+                input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
+                totalTokens: 0,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              },
+            };
+            errorStream.push({ type: "error", reason: "error", error: errorMsg });
+            return errorStream;
+          };
+
+          try {
+            const stream = streamSimple(model, context, options);
+            // Attach a no-op .catch on the stream's internal promise (if any)
+            // to prevent unhandled rejections from async errors during streaming.
+            // The agent-loop will still see the error via the stream's error event.
+            if (stream && typeof (stream as unknown as { catch?: Function }).catch === "function") {
+              (stream as unknown as { catch: Function }).catch(() => {/* swallowed – error propagates via stream events */});
+            }
+            return stream;
+          } catch (err) {
+            return buildErrorStream(err);
+          }
+        };
       }
 
       applyExtraParamsToAgent(

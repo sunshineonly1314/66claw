@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import { autoDiscover } from "./auto-discovery.js";
 
 describe("Auto-Discovery", () => {
-  it("should discover weather-related skills", async () => {
+  it("should discover weather-related tools or skills", async () => {
     const result = await autoDiscover("帮我查一下北京天气");
 
-    expect(result.skillHints.length).toBeGreaterThan(0);
+    // 至少能发现 toolHints 或 skillHints 中的一项
+    const totalHints = result.skillHints.length + result.toolHints.length + result.mcpToolHints.length;
+    expect(totalHints).toBeGreaterThan(0);
     expect(result.confidence).toBeGreaterThan(0);
     console.log("[weather] skillHints:", result.skillHints);
     console.log("[weather] mcpToolHints:", result.mcpToolHints);

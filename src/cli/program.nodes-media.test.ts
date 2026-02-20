@@ -1,5 +1,15 @@
 import * as fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/** Expand leading `~` back to the real home directory (reverses shortenHomePath). */
+function expandHome(p: string): string {
+  if (p.startsWith("~")) {
+    return path.join(os.homedir(), p.slice(1));
+  }
+  return p;
+}
 
 const messageCommand = vi.fn();
 const statusCommand = vi.fn();
@@ -103,7 +113,7 @@ describe("cli program (nodes media)", () => {
     const mediaPaths = out
       .split("\n")
       .filter((l) => l.startsWith("MEDIA:"))
-      .map((l) => l.replace(/^MEDIA:/, ""))
+      .map((l) => expandHome(l.replace(/^MEDIA:/, "").trim()))
       .filter(Boolean);
     expect(mediaPaths).toHaveLength(2);
 
@@ -173,7 +183,7 @@ describe("cli program (nodes media)", () => {
     );
 
     const out = String(runtime.log.mock.calls[0]?.[0] ?? "");
-    const mediaPath = out.replace(/^MEDIA:/, "").trim();
+    const mediaPath = expandHome(out.replace(/^MEDIA:/, "").trim());
     expect(mediaPath).toMatch(/openclawcn-camera-clip-front-.*\.mp4$/);
 
     try {
@@ -252,7 +262,7 @@ describe("cli program (nodes media)", () => {
     );
 
     const out = String(runtime.log.mock.calls[0]?.[0] ?? "");
-    const mediaPath = out.replace(/^MEDIA:/, "").trim();
+    const mediaPath = expandHome(out.replace(/^MEDIA:/, "").trim());
 
     try {
       await expect(fs.readFile(mediaPath, "utf8")).resolves.toBe("hi");
@@ -327,7 +337,7 @@ describe("cli program (nodes media)", () => {
     );
 
     const out = String(runtime.log.mock.calls[0]?.[0] ?? "");
-    const mediaPath = out.replace(/^MEDIA:/, "").trim();
+    const mediaPath = expandHome(out.replace(/^MEDIA:/, "").trim());
 
     try {
       await expect(fs.readFile(mediaPath, "utf8")).resolves.toBe("hi");
@@ -420,7 +430,7 @@ describe("cli program (nodes media)", () => {
     );
 
     const out = String(runtime.log.mock.calls[0]?.[0] ?? "");
-    const mediaPath = out.replace(/^MEDIA:/, "").trim();
+    const mediaPath = expandHome(out.replace(/^MEDIA:/, "").trim());
     expect(mediaPath).toMatch(/openclawcn-canvas-snapshot-.*\.png$/);
 
     try {

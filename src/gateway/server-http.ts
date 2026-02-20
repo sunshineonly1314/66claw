@@ -490,15 +490,80 @@ export function createGatewayHttpServer(opts: {
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache");
+        // Allow Tauri WebView (tauri://localhost) and local origins to fetch health
+        const origin = req.headers.origin ?? "";
+        if (origin === "tauri://localhost" || origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1")) {
+          res.setHeader("Access-Control-Allow-Origin", origin);
+        }
+        // Always include provider config status so the desktop client can
+        // decide whether to show setup wizard without waiting for ready=true.
+        const healthConfig = loadConfig();
+        const providers: Record<string, { status: string }> = {};
+        if (healthConfig.models?.providers) {
+          for (const [id, prov] of Object.entries(healthConfig.models.providers)) {
+            // Providers using non-apiKey auth (aws-sdk, oauth, token) are "ok" even without an apiKey
+            const hasAuth = prov.apiKey || (prov.auth && prov.auth !== "api-key");
+            providers[id] = { status: hasAuth ? "ok" : "unconfigured" };
+          }
+        }
+        const freeModels = (healthConfig as { freeModels?: { accounts?: Array<{ providerId: string; enabled: boolean }> } }).freeModels;
+        if (freeModels?.accounts) {
+          for (const account of freeModels.accounts) {
+            if (account.enabled) {
+              providers[account.providerId] = { status: "ok" };
+            }
+          }
+        }
         res.end(
           JSON.stringify({
             ok: true,
             ready,
+            needsSetup: shouldShowSetupWizard(),
             phase: getGatewayPhase(),
             pid: process.pid,
             uptime: process.uptime(),
+            providers,
           }),
         );
+        return;
+      }
+
+      // OpenClawCN: Support QR code endpoint -- no auth, returns QR code base64 for topbar.
+      // Used as HTTP fallback when WebSocket is disconnected so the support button always shows.
+      if (healthPath === "/api/support/qrcode") {
+        try {
+          const qrcodeConfig = loadConfig();
+          const keyType = (qrcodeConfig.license?.keyType ?? "test") as "test" | "trial" | "standard";
+          const qrMap: Record<string, { file: string; groupName: string }> = {
+            test: { file: "test.jpg", groupName: "测试体验群" },
+            trial: { file: "test.jpg", groupName: "测试体验群" },
+            standard: { file: "zhengshi.jpg", groupName: "正式用户群" },
+          };
+          const entry = qrMap[keyType] ?? qrMap.test;
+          const { default: _fs } = await import("node:fs");
+          const { default: _path } = await import("node:path");
+          // Try multiple paths: import.meta.dirname relative, then one level up from dist/, then cwd
+          const candidates = [
+            _path.resolve(import.meta.dirname, "../../data/qrcodes"),
+            _path.resolve(import.meta.dirname, "../data/qrcodes"),
+            _path.resolve(process.cwd(), "data/qrcodes"),
+          ];
+          const qrDir = candidates.find((d) => _fs.existsSync(d)) ?? candidates[2];
+          const filePath = _path.join(qrDir, entry.file);
+          let qrcode: { base64: string; groupName: string } | null = null;
+          if (_fs.existsSync(filePath)) {
+            const buf = _fs.readFileSync(filePath);
+            qrcode = { base64: `data:image/jpeg;base64,${buf.toString("base64")}`, groupName: entry.groupName };
+          }
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.setHeader("Cache-Control", "public, max-age=3600");
+          res.end(JSON.stringify({ ok: true, qrcode, keyType }));
+        } catch {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: false }));
+        }
         return;
       }
 

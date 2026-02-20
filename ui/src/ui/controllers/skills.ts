@@ -434,16 +434,30 @@ export async function installRemoteSkill(
     })) as { ok?: boolean; message?: string };
 
     clearInterval(progressTimer);
-    
+
     // 阶段2: 安装验证
     setInstallProgress(state, skillName, {
       stage: "verifying",
       message: "正在验证安装...",
       percent: 90,
     });
-    
-    // Refresh both lists (local skills + market)
-    await Promise.all([loadSkills(state), loadMarketSkills(state)]);
+
+    // 立即在内存中标记为已安装（乐观更新，避免等待服务端 re-search 的延迟）
+    if (state.skillsMarketSearchResult) {
+      const item = state.skillsMarketSearchResult.items.find(
+        (i) => i.skillId === skillName || i.name === skillName,
+      );
+      if (item) item.installed = true;
+    }
+
+    // Refresh both lists (local skills + market) and re-search SQLite
+    // loadMarketSkills 更新 JSON 索引缓存，searchMarketSkills 刷新 SQLite 搜索结果
+    // 两者都需要，否则 UI 显示的 installed 状态不会更新
+    await Promise.all([
+      loadSkills(state),
+      loadMarketSkills(state),
+      searchMarketSkills(state),
+    ]);
     
     // 阶段3: 完成
     setInstallProgress(state, skillName, {
@@ -457,9 +471,14 @@ export async function installRemoteSkill(
       message: result?.message ?? "已安装",
     });
     
-    // 延迟清除进度状态
+    // 延迟清除进度状态，然后跳转到「我的技能」页面
     setTimeout(() => {
       setInstallProgress(state, skillName, null);
+      // 安装完成后自动跳转到「技能管理」tab，并用技能名搜索让用户立即看到
+      state.skillsActiveTab = "active";
+      state.skillsFilter = skillName;
+      // 确保切 tab 后拿到最新的 skills 列表
+      void loadSkills(state);
     }, 1500);
     
   } catch (err) {

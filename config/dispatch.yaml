@@ -12,14 +12,15 @@ settings:
   # Maximum latency budget for dispatch (ms) — if exceeded, use default routing
   timeoutMs: 3000
   # Log dispatch decisions for debugging
-  debug: false
+  debug: true
+  # Tool filter mode: "off" = inject all tools, "intent" = filter by intent map only,
+  # "discovery" = filter by intent map + tool-discovery results (recommended)
+  toolFilterMode: "discovery"
 
 # LLM classifier configuration (used when rules produce low confidence)
 classifier:
-  # Model to use for classification (should be fast and cheap)
-  model: "anthropic/claude-haiku-3"
-  # Alternative: domestic model for lower latency in China
-  # model: "aliyun-bailian/qwen-turbo"
+  # "auto" = 自动使用用户配置的 text 能力模型
+  model: "auto"
   maxTokens: 100
   systemPrompt: |
     You are an intent classifier. Given a user message, classify it into exactly one intent.
@@ -97,8 +98,8 @@ intents:
         - "建表"
         - "表结构"
       regex:
-        # Require SQL-like structure: SELECT <columns> FROM <table>, not bare "select"
-        - "SELECT\\s+(?:\\*|[\\w.]+(?:\\s*,\\s*[\\w.]+)*)\\s+FROM\\s"
+        # Simplified SQL detection — safe for ReDoS (no nested quantifiers)
+        - "SELECT\\s+\\S+\\s+FROM\\s"
         - "INSERT\\s+INTO"
         - "UPDATE\\s+\\w+\\s+SET"
         - "DELETE\\s+FROM"
@@ -236,10 +237,13 @@ intents:
         - "操作桌面"
         - "操作电脑"
         - "桌面操作"
+        - "启动"
+        - "打开"
       regex:
-        - "(打开|启动|运行|open|launch|start).*(应用|app|软件|program)"
+        - "(打开|启动|运行|open|launch|start).*(应用|app|软件|program|音乐|浏览器|记事本|计算器|终端|播放器)"
         - "(截图|screenshot|截屏)"
         - "(帮我|help me).*(操作|use|control)"
+        - "(启动|打开|运行).*(网易云|QQ|微信|钉钉|飞书|Chrome|Firefox|Edge|Word|Excel|PPT|Photoshop|VSCode|Terminal)"
       semanticTags: ["desktop", "gui", "application", "window"]
       # Screenshots sent → likely desktop control context
       mediaTypes: ["image"]

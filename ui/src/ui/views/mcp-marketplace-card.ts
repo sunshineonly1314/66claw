@@ -110,6 +110,28 @@ function renderInstallButton(
         >${t("extensions.store.installFailed")}</button>
       `;
     default: // not_installed
+      // Items without any install method → show "View Source" link
+      if (item.installable === false) {
+        const url = item.sourceUrl || "";
+        return html`
+          <a
+            href=${url}
+            target="_blank"
+            rel="noopener"
+            @click=${(e: Event) => { e.stopPropagation(); }}
+            style="
+              all:unset; cursor:pointer;
+              font-size:11px; font-weight:600;
+              padding:5px 14px;
+              border-radius:6px;
+              background:rgba(148,163,184,0.12);
+              color:var(--muted-strong, #6b7d91);
+              transition: opacity 150ms;
+              text-decoration:none;
+            "
+          >${t("extensions.store.viewSource" as never)}</a>
+        `;
+      }
       if (item.requiresApiKey) {
         return html`
           <button
@@ -145,24 +167,53 @@ function renderInstallButton(
 
 /* ── Badge pills ───────────────────────────────────────── */
 
+/* ── Install method badge ──────────────────────────────── */
+
+function renderInstallMethodBadge(item: McpMarketplaceItem): TemplateResult {
+  const method = item.installMethod ?? "none";
+  const pillStyle = (bg: string, fg: string) =>
+    `font-size:10px; padding:2px 8px; border-radius:4px; background:${bg}; color:${fg}; white-space:nowrap;`;
+
+  switch (method) {
+    case "npm":
+      return html`<span style="${pillStyle("rgba(203,92,88,0.12)", "#cb5c58")}"
+        title="${t("extensions.store.installMethodNpmTip" as never)}"
+        >${t("extensions.store.installMethodNpm" as never)}</span>`;
+    case "pypi":
+      return html`<span style="${pillStyle("rgba(53,114,165,0.12)", "#3572a5")}"
+        title="${t("extensions.store.installMethodPypiTip" as never)}"
+        >${t("extensions.store.installMethodPypi" as never)}</span>`;
+    case "sse":
+      return html`<span style="${pillStyle("rgba(52,211,153,0.12)", "#34d399")}"
+        title="${t("extensions.store.installMethodSseTip" as never)}"
+        >${t("extensions.store.installMethodSse" as never)}</span>`;
+    default:
+      return html`<span style="${pillStyle("rgba(148,163,184,0.08)", "#6b7d91")}"
+        >${t("extensions.store.installMethodNone" as never)}</span>`;
+  }
+}
+
 function renderBadges(item: McpMarketplaceItem): TemplateResult {
   const badges: TemplateResult[] = [];
   const pillStyle = (bg: string, fg: string) =>
     `font-size:10px; padding:2px 8px; border-radius:4px; background:${bg}; color:${fg}; white-space:nowrap;`;
 
+  // Install method badge — always first so users immediately see how it works
+  badges.push(renderInstallMethodBadge(item));
+
   if (item.isOfficial) {
-    badges.push(html`<span style="${pillStyle("rgba(99,102,241,0.12)", "#818cf8")}">\u{1F4E6} ${t("extensions.store.official")}</span>`);
+    badges.push(html`<span style="${pillStyle("rgba(99,102,241,0.12)", "#818cf8")}">${t("extensions.store.official")}</span>`);
   }
-  if (!item.requiresApiKey) {
-    badges.push(html`<span style="${pillStyle("rgba(52,211,153,0.12)", "#34d399")}">\u26A1 ${t("extensions.store.zeroConfig")}</span>`);
-  } else {
-    badges.push(html`<span style="${pillStyle("rgba(251,191,36,0.12)", "#fbbf24")}">\u{1F511} ${t("extensions.store.needsKey")}</span>`);
+  if (!item.requiresApiKey && item.installable !== false && item.installMethod !== "none") {
+    badges.push(html`<span style="${pillStyle("rgba(52,211,153,0.12)", "#34d399")}">${t("extensions.store.zeroConfig")}</span>`);
+  } else if (item.requiresApiKey) {
+    badges.push(html`<span style="${pillStyle("rgba(251,191,36,0.12)", "#fbbf24")}">${t("extensions.store.needsKey")}</span>`);
   }
   if (item.isNew) {
-    badges.push(html`<span style="${pillStyle("rgba(96,165,250,0.12)", "#60a5fa")}">\u{1F195} ${t("extensions.store.newBadge")}</span>`);
+    badges.push(html`<span style="${pillStyle("rgba(96,165,250,0.12)", "#60a5fa")}">${t("extensions.store.newBadge")}</span>`);
   }
   if (item.hasUpdate) {
-    badges.push(html`<span style="${pillStyle("rgba(251,191,36,0.12)", "#fbbf24")}">\u2B06\uFE0F ${t("extensions.store.hasUpdate" as never)}</span>`);
+    badges.push(html`<span style="${pillStyle("rgba(251,191,36,0.12)", "#fbbf24")}">${t("extensions.store.hasUpdate" as never)}</span>`);
   }
 
   return html`<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:8px;">${badges}</div>`;
@@ -191,6 +242,7 @@ export function renderMarketplaceCard(props: MarketplaceCardProps): TemplateResu
   const { item, onClick, onInstall, onConfigInstall } = props;
   const emoji = CATEGORY_EMOJI[item.category] ?? "\u{1F527}";
   const isInstalled = item.installStatus === "installed";
+  const notInstallable = item.installable === false || item.installMethod === "none";
 
   return html`
     <div
@@ -203,34 +255,37 @@ export function renderMarketplaceCard(props: MarketplaceCardProps): TemplateResu
         background:var(--card);
         border:1px solid var(--border);
         border-radius:var(--radius-lg, 12px);
-        padding:20px;
+        padding:14px;
         cursor:pointer;
         transition:box-shadow 200ms ease, border-color 200ms ease, transform 200ms ease;
         position:relative;
         display:flex;
         flex-direction:column;
         box-shadow:var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.2)), inset 0 1px 0 var(--card-highlight, rgba(255,255,255,0.08));
+        min-width:0;
+        overflow:hidden;
+        ${notInstallable ? "opacity:0.5; filter:grayscale(0.3);" : ""}
       "
       class="mcp-store-card"
     >
       <!-- Top row: icon + name + version + security -->
-      <div style="display:flex; align-items:flex-start; gap:14px; margin-bottom:12px;">
+      <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:10px;">
         <!-- Category icon -->
         <div style="
-          width:48px; height:48px;
+          width:36px; height:36px;
           border-radius:var(--radius-md, 8px);
           background:${isInstalled ? "rgba(52,211,153,0.1)" : "rgba(108,140,255,0.08)"};
           display:flex;
           align-items:center;
           justify-content:center;
-          font-size:22px;
+          font-size:18px;
           flex-shrink:0;
         ">${emoji}</div>
 
         <!-- Name + package -->
         <div style="flex:1; min-width:0;">
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span style="font-size:15px; font-weight:600; color:var(--fg); letter-spacing:-0.01em;">${item.friendlyName}</span>
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <span style="font-size:13px; font-weight:600; color:var(--fg); letter-spacing:-0.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px; display:inline-block; vertical-align:middle;">${item.friendlyName}</span>
             <span style="
               font-size:10px;
               padding:2px 8px;
@@ -249,29 +304,29 @@ export function renderMarketplaceCard(props: MarketplaceCardProps): TemplateResu
               : nothing}
             ${renderSecurityScore(item.securityScore)}
           </div>
-          <div style="font-size:11px; color:var(--muted-strong, #6b7d91); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-            ${item.npmPackage}
+          <div style="font-size:10px; color:var(--muted-strong, #6b7d91); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            ${item.npmPackage || item.serverId}
           </div>
         </div>
       </div>
 
       <!-- Description (2-line clamp) -->
       <div style="
-        font-size:13px;
+        font-size:12px;
         color:var(--fg-secondary, #a0aec0);
-        line-height:1.6;
+        line-height:1.5;
         display:-webkit-box;
         -webkit-line-clamp:2;
         -webkit-box-orient:vertical;
         overflow:hidden;
-        margin-bottom:10px;
+        margin-bottom:8px;
         flex:1;
       ">${item.description}</div>
 
       <!-- Tags -->
       ${item.tags.length > 0
         ? html`
-            <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;">
+            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px;">
               ${item.tags.slice(0, 3).map(
                 (tag) => html`<span style="
                   font-size:10px;
@@ -285,8 +340,20 @@ export function renderMarketplaceCard(props: MarketplaceCardProps): TemplateResu
           `
         : nothing}
 
+      <!-- Config hint (for items that need API key) -->
+      ${item.configHint
+        ? html`<div style="
+            font-size:10px; color:var(--muted-strong, #6b7d91);
+            line-height:1.4; margin-bottom:6px;
+            padding:3px 6px;
+            background:rgba(251,191,36,0.06);
+            border-radius:4px;
+            display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
+          ">${item.configHint}</div>`
+        : nothing}
+
       <!-- Badges + install button row -->
-      <div style="display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-top:auto;">
+      <div style="display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:6px; margin-top:auto;">
         ${renderBadges(item)}
         ${renderInstallButton(item, onInstall, onConfigInstall)}
       </div>

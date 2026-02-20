@@ -609,6 +609,8 @@ function normalizeFromBasicInfo(basic: ModelScopeServerBasic): McpMarketplaceIte
     category,
     tags: basic.tags ?? [],
     version: "0.0.0",
+    // Generate SSE URL so the item is installable via ModelScope hosted endpoint
+    sseUrl: MODELSCOPE_CONFIG.sseUrlPattern.replace("{name}", serverId),
     requiresApiKey: false,
     platforms: ["linux", "macos", "windows"],
     isOfficial: false,

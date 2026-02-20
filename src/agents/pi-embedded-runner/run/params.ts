@@ -104,4 +104,19 @@ export type RunEmbeddedPiAgentParams = {
   streamParams?: AgentStreamParams;
   ownerNumbers?: string[];
   enforceFinalTag?: boolean;
+  // ── [CN-PATCH:tool-discovery] Tool hints from dispatch engine (auto-discovery) ──
+  /** Tool hints for reordering tools by relevance. */
+  toolHints?: string[];
+  // ── [CN-PATCH:tool-filter] Tool filter policy from dispatch engine ──
+  /** Tool filter policy for dynamic tool injection (only inject intent-relevant tools). */
+  toolFilterPolicy?: import("../../../dispatch/tool-filter.js").ToolFilterPolicy;
+  /** MCP suggestions for on-demand loading. */
+  mcpSuggestions?: Array<{
+    serverId: string;
+    friendlyName: string;
+    description: string;
+    npmPackage?: string;
+    sseUrl?: string;
+    score: number;
+  }>;
 };

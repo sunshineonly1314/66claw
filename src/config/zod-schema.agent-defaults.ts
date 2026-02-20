@@ -100,6 +100,15 @@ export const AgentDefaultsSchema = z
             softThresholdTokens: z.number().int().nonnegative().optional(),
             prompt: z.string().optional(),
             systemPrompt: z.string().optional(),
+            provider: z.string().optional(),
+            model: z.string().optional(),
+          })
+          .strict()
+          .optional(),
+        proactiveCompaction: z
+          .object({
+            enabled: z.boolean().optional(),
+            thresholdRatio: z.number().min(0).max(1).optional(),
           })
           .strict()
           .optional(),

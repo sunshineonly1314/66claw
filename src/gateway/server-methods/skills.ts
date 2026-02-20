@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { OpenClawCNConfig } from "../../config/config.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import {
@@ -9,6 +12,8 @@ import { installSkill } from "../../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
 import { loadWorkspaceSkillEntries, invalidateSkillEntriesCache, type SkillEntry } from "../../agents/skills.js";
 import { clearBinaryCache } from "../../agents/skills/config.js";
+import { registerToolsRoot } from "../../shared/config-eval.js";
+import { CONFIG_DIR } from "../../utils.js";
 import {
   fetchRemoteSkillsIndex,
   getInstalledSkills,
@@ -20,6 +25,7 @@ import {
   forceRefreshMarket,
   refreshInstalledList,
 } from "../../agents/skills/sync.js";
+import { parseFrontmatter } from "../../agents/skills/frontmatter.js";
 import { bumpSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
@@ -110,6 +116,8 @@ export const skillsHandlers: GatewayRequestHandlers = {
       }
     }
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    // Ensure hasBinary() can find tools installed via download to CONFIG_DIR/tools/*
+    registerToolsRoot(path.join(CONFIG_DIR, "tools"));
     const report = buildWorkspaceSkillStatus(workspaceDir, {
       config: cfg,
       eligibility: { remote: getRemoteSkillEligibility() },
@@ -139,7 +147,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
     }
     respond(true, { bins: [...bins].toSorted() }, undefined);
   },
-  "skills.install": async ({ params, respond }) => {
+  "skills.install": async ({ params, respond, context }) => {
     if (!validateSkillsInstallParams(params)) {
       respond(
         false,
@@ -157,6 +165,21 @@ export const skillsHandlers: GatewayRequestHandlers = {
       timeoutMs?: number;
     };
     const cfg = loadConfig();
+
+    // Broadcast install progress to UI via WebSocket
+    const onProgress = (progress: {
+      stage: string;
+      message: string;
+      percent?: number;
+      downloadInfo?: { speed?: string; eta?: string; downloaded?: string; total?: string };
+      usingCNMirror?: boolean;
+    }) => {
+      context.broadcast(
+        "skill.install.progress",
+        { skillName: p.name, installId: p.installId, ...progress },
+        { dropIfSlow: true },
+      );
+    };
 
     // 如果 installId 是 "gitee"，说明是从技能市场安装远程技能
     // 需要先从远程下载技能到本地托管目录
@@ -219,6 +242,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
           installId,
           timeoutMs: p.timeoutMs ?? 180_000,
           config: cfg,
+          onProgress,
         });
 
         if (!depResult.ok) {
@@ -236,11 +260,20 @@ export const skillsHandlers: GatewayRequestHandlers = {
       // 0. 清除二进制缓存，确保下次 skills.status 能检测到新安装的工具
       clearBinaryCache();
       invalidateSkillEntriesCache();
-      // 1. 刷新已安装列表
-      refreshInstalledList().catch(() => {
-        // 静默失败，不影响响应
-      });
-      // 2. 更新技能快照版本，让当前对话的下一条消息能立即使用新技能
+      // 1. 立即标记 SQLite 中此技能为已安装（不依赖全量 refresh 的异步过程）
+      try {
+        const { markSkillInstalled } = await import("../../agents/skills/marketplace/db.js");
+        markSkillInstalled(p.name);
+      } catch {
+        // SQLite 不可用，忽略
+      }
+      // 2. 全量刷新已安装列表（await，确保 JSON 索引也同步更新后再响应 UI）
+      try {
+        await refreshInstalledList();
+      } catch {
+        // 刷新失败不影响响应
+      }
+      // 3. 更新技能快照版本，让当前对话的下一条消息能立即使用新技能
       bumpSkillsSnapshotVersion({ reason: "manual" });
 
       respond(
@@ -259,6 +292,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       installId: p.installId,
       timeoutMs: p.timeoutMs,
       config: cfg,
+      onProgress,
     });
 
     // 安装后：
@@ -266,11 +300,20 @@ export const skillsHandlers: GatewayRequestHandlers = {
       // 0. 清除二进制缓存，确保下次 skills.status 能检测到新安装的工具
       clearBinaryCache();
       invalidateSkillEntriesCache();
-      // 1. 刷新本地索引中的已安装列表
-      refreshInstalledList().catch(() => {
-        // 静默失败，不影响响应
-      });
-      // 2. 更新技能快照版本，让当前对话的下一条消息能立即使用新技能
+      // 1. 立即标记 SQLite 中此技能为已安装
+      try {
+        const { markSkillInstalled } = await import("../../agents/skills/marketplace/db.js");
+        markSkillInstalled(p.name);
+      } catch {
+        // SQLite 不可用，忽略
+      }
+      // 2. 全量刷新本地索引中的已安装列表（await 确保完成后再响应）
+      try {
+        await refreshInstalledList();
+      } catch {
+        // 刷新失败不影响响应
+      }
+      // 3. 更新技能快照版本，让当前对话的下一条消息能立即使用新技能
       bumpSkillsSnapshotVersion({ reason: "manual" });
     }
 
@@ -383,4 +426,199 @@ export const skillsHandlers: GatewayRequestHandlers = {
     const result = await forceRefreshMarket();
     respond(true, result, undefined);
   },
+
+  // ---------------------------------------------------------------------------
+  // 本地技能导入 — 浏览目录
+  // ---------------------------------------------------------------------------
+  "skills.browse": ({ params, respond }) => {
+    const p = params as { path?: string };
+    const targetPath = p.path ? path.resolve(p.path) : os.homedir();
+
+    try {
+      const stat = fs.statSync(targetPath);
+      if (!stat.isDirectory()) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "路径不是目录"));
+        return;
+      }
+    } catch {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "路径不存在或无法访问"));
+      return;
+    }
+
+    const entries = fs.readdirSync(targetPath, { withFileTypes: true });
+    const directories: Array<{ name: string; path: string; hasSkillMd: boolean }> = [];
+    const files: Array<{ name: string; path: string }> = [];
+
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = path.join(targetPath, entry.name);
+      if (entry.isDirectory()) {
+        const hasSkillMd = fs.existsSync(path.join(fullPath, "SKILL.md"));
+        directories.push({ name: entry.name, path: fullPath, hasSkillMd });
+      } else if (entry.isFile() && entry.name.toUpperCase() === "SKILL.MD") {
+        files.push({ name: entry.name, path: fullPath });
+      }
+    }
+
+    directories.sort((a, b) => a.name.localeCompare(b.name));
+
+    const parentPath = path.dirname(targetPath);
+    const hasParent = parentPath !== targetPath;
+
+    let drives: string[] = [];
+    if (os.platform() === "win32") {
+      for (const letter of "CDEFGHIJKLMNOPQRSTUVWXYZ") {
+        try {
+          fs.accessSync(`${letter}:\\`);
+          drives.push(`${letter}:\\`);
+        } catch { /* skip */ }
+      }
+    }
+
+    respond(true, {
+      currentPath: targetPath,
+      parentPath: hasParent ? parentPath : null,
+      directories,
+      files,
+      drives,
+      separator: path.sep,
+      isSkillDir: fs.existsSync(path.join(targetPath, "SKILL.md")),
+      skillSubdirCount: directories.filter((d) => d.hasSkillMd).length,
+    }, undefined);
+  },
+
+  // ---------------------------------------------------------------------------
+  // 本地技能导入 — 执行导入
+  // ---------------------------------------------------------------------------
+  "skills.import": async ({ params, respond }) => {
+    const p = params as { path: string; mode?: "copy" | "reference" };
+    if (!p.path || typeof p.path !== "string") {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "缺少 path 参数"));
+      return;
+    }
+    const targetPath = path.resolve(p.path);
+    const mode = p.mode ?? "copy";
+
+    if (!fs.existsSync(targetPath)) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "路径不存在"));
+      return;
+    }
+
+    const stat = fs.statSync(targetPath);
+
+    // --- 导入单个 SKILL.md 文件 ---
+    if (stat.isFile()) {
+      if (!path.basename(targetPath).toUpperCase().endsWith("SKILL.MD")) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "文件不是 SKILL.md"));
+        return;
+      }
+      const content = fs.readFileSync(targetPath, "utf-8");
+      const fm = parseFrontmatter(content);
+      const skillName = fm.name?.trim();
+      if (!skillName) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "SKILL.md 缺少 name 字段"));
+        return;
+      }
+      const managedDir = getManagedSkillsDir();
+      const destDir = path.join(managedDir, skillName);
+      fs.mkdirSync(destDir, { recursive: true });
+      fs.copyFileSync(targetPath, path.join(destDir, "SKILL.md"));
+      // 同时复制同级的 references/ 目录（如果存在）
+      const refsDir = path.join(path.dirname(targetPath), "references");
+      if (fs.existsSync(refsDir) && fs.statSync(refsDir).isDirectory()) {
+        fs.cpSync(refsDir, path.join(destDir, "references"), { recursive: true });
+      }
+      clearBinaryCache();
+      invalidateSkillEntriesCache();
+      bumpSkillsSnapshotVersion({ reason: "manual" });
+      respond(true, { ok: true, imported: [skillName], mode: "copy" }, undefined);
+      return;
+    }
+
+    // --- 导入目录 ---
+    if (!stat.isDirectory()) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "路径类型无效"));
+      return;
+    }
+
+    const foundSkills = scanDirForSkills(targetPath);
+    if (foundSkills.length === 0) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "目录中未找到 SKILL.md 文件"));
+      return;
+    }
+
+    if (mode === "reference") {
+      // 引用模式: 添加到 extraDirs
+      const cfg = loadConfig();
+      const skills = cfg.skills ? { ...cfg.skills } : {};
+      const load = skills.load ? { ...skills.load } : {};
+      const extraDirs = load.extraDirs ? [...load.extraDirs] : [];
+
+      // 如果目录本身是一个技能（包含 SKILL.md），则添加其父目录
+      // 因为 loadSkillsFromDir 扫描的是子目录
+      const dirToAdd =
+        foundSkills.length === 1 && foundSkills[0].dir === targetPath
+          ? path.dirname(targetPath)
+          : targetPath;
+
+      if (!extraDirs.includes(dirToAdd)) {
+        extraDirs.push(dirToAdd);
+        load.extraDirs = extraDirs;
+        skills.load = load;
+        await writeConfigFile({ ...cfg, skills });
+      }
+      clearBinaryCache();
+      invalidateSkillEntriesCache();
+      bumpSkillsSnapshotVersion({ reason: "manual" });
+      respond(true, { ok: true, imported: foundSkills.map((s) => s.name), mode: "reference" }, undefined);
+    } else {
+      // 复制模式: 逐个复制到 managed dir
+      const managedDir = getManagedSkillsDir();
+      const imported: string[] = [];
+      for (const skill of foundSkills) {
+        const destDir = path.join(managedDir, skill.name);
+        fs.cpSync(skill.dir, destDir, { recursive: true, force: true });
+        imported.push(skill.name);
+      }
+      clearBinaryCache();
+      invalidateSkillEntriesCache();
+      bumpSkillsSnapshotVersion({ reason: "manual" });
+      respond(true, { ok: true, imported, mode: "copy" }, undefined);
+    }
+  },
 };
+
+// ---------------------------------------------------------------------------
+// 辅助: 扫描目录中的技能（SKILL.md）
+// ---------------------------------------------------------------------------
+function scanDirForSkills(dir: string): Array<{ name: string; dir: string }> {
+  const results: Array<{ name: string; dir: string }> = [];
+
+  // 检查目录本身是否包含 SKILL.md
+  const directSkillMd = path.join(dir, "SKILL.md");
+  if (fs.existsSync(directSkillMd)) {
+    try {
+      const fm = parseFrontmatter(fs.readFileSync(directSkillMd, "utf-8"));
+      const name = fm.name?.trim();
+      if (name) results.push({ name, dir });
+    } catch { /* skip invalid */ }
+    return results; // 如果目录本身是技能，不递归子目录
+  }
+
+  // 扫描直接子目录
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const subSkillMd = path.join(dir, entry.name, "SKILL.md");
+      if (fs.existsSync(subSkillMd)) {
+        try {
+          const fm = parseFrontmatter(fs.readFileSync(subSkillMd, "utf-8"));
+          const name = fm.name?.trim();
+          if (name) results.push({ name, dir: path.join(dir, entry.name) });
+        } catch { /* skip invalid */ }
+      }
+    }
+  } catch { /* ignore access errors */ }
+  return results;
+}

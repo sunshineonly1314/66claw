@@ -1,5 +1,5 @@
 import type { OpenClawCNConfig } from "../config/config.js";
-import type { ModelDefinitionConfig } from "../config/types.models.js";
+import type { ModelApi, ModelDefinitionConfig } from "../config/types.models.js";
 import {
   DEFAULT_COPILOT_API_BASE_URL,
   resolveCopilotApiToken,
@@ -81,6 +81,26 @@ const KIMI_CODE_MAX_TOKENS = 32768;
 const KIMI_CODE_HEADERS = { "User-Agent": "KimiCLI/0.77" } as const;
 const KIMI_CODE_COMPAT = { supportsDeveloperRole: false } as const;
 const KIMI_CODE_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+const ANT_LING_BASE_URL = "https://api.tbox.cn/api/llm/v1";
+const ANT_LING_DEFAULT_MODEL_ID = "ling-1t";
+const ANT_LING_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+const MEITUAN_LONGCAT_BASE_URL = "https://api.longcat.chat/openai/v1";
+const MEITUAN_LONGCAT_DEFAULT_MODEL_ID = "longcat-flash-chat";
+const MEITUAN_LONGCAT_DEFAULT_CONTEXT_WINDOW = 131072;
+const MEITUAN_LONGCAT_DEFAULT_MAX_TOKENS = 8192;
+const MEITUAN_LONGCAT_DEFAULT_COST = {
   input: 0,
   output: 0,
   cacheRead: 0,
@@ -386,6 +406,42 @@ function normalizeGoogleProvider(provider: ProviderConfig): ProviderConfig {
   return mutated ? { ...provider, models } : provider;
 }
 
+/**
+ * Normalize provider key to match runtime normalizeProviderId() mapping.
+ * Duplicated here to avoid circular dependency on model-selection.ts.
+ */
+function normalizeProviderKey(key: string): string {
+  const k = key.toLowerCase();
+  if (k === "kimi-code") return "kimi-coding";
+  if (k === "z.ai" || k === "z-ai") return "zai";
+  if (k === "opencode-zen") return "opencode";
+  if (k === "qwen") return "qwen-portal";
+  return key;
+}
+
+/**
+ * Infer the `api` type for a provider when the config file omits it.
+ * Returns the most likely API type based on provider key / baseUrl,
+ * or "openai-completions" as a safe default for unknown providers.
+ */
+function inferApiType(providerKey: string, baseUrl?: string): ModelApi {
+  const key = providerKey.toLowerCase();
+  if (key === "anthropic" || key === "minimax" || key === "minimax-portal") {
+    return "anthropic-messages";
+  }
+  if (key === "ollama") {
+    return "ollama";
+  }
+  if (key === "amazon-bedrock") {
+    return "bedrock-converse-stream";
+  }
+  if (baseUrl && /anthropic\.com/i.test(baseUrl)) {
+    return "anthropic-messages";
+  }
+  // Default: most providers (OpenAI-compatible, kimi-code, moonshot, etc.)
+  return "openai-completions";
+}
+
 export function normalizeProviders(params: {
   providers: ModelsConfig["providers"];
   agentDir: string;
@@ -401,7 +457,14 @@ export function normalizeProviders(params: {
   const next: Record<string, ProviderConfig> = {};
 
   for (const [key, provider] of Object.entries(providers)) {
-    const normalizedKey = key.trim();
+    // Normalize provider key to match runtime normalizeProviderId() mapping.
+    // Without this, config "kimi-code" stays as-is in models.json but runtime
+    // resolves it to "kimi-coding", causing "No API provider registered" crash.
+    const trimmedKey = key.trim();
+    const normalizedKey = normalizeProviderKey(trimmedKey);
+    if (normalizedKey !== trimmedKey) {
+      mutated = true;
+    }
     let normalizedProvider = provider;
 
     // Fix common misconfig: apiKey set to "${ENV_VAR}" instead of "ENV_VAR".
@@ -449,7 +512,17 @@ export function normalizeProviders(params: {
       normalizedProvider = googleNormalized;
     }
 
-    next[key] = normalizedProvider;
+    // Ensure `api` field is set — config files may omit it, causing
+    // "No API provider registered for api: undefined" at runtime.
+    if (!normalizedProvider.api) {
+      const inferredApi = inferApiType(normalizedKey, normalizedProvider.baseUrl);
+      if (inferredApi) {
+        mutated = true;
+        normalizedProvider = { ...normalizedProvider, api: inferredApi };
+      }
+    }
+
+    next[normalizedKey] = normalizedProvider;
   }
 
   return mutated ? next : providers;
@@ -500,6 +573,33 @@ function buildMinimaxProvider(): ProviderConfig {
         id: "MiniMax-M2.5-Lightning",
         name: "MiniMax M2.5 Lightning",
         reasoning: true,
+        input: ["text"],
+        cost: MINIMAX_API_COST,
+        contextWindow: MINIMAX_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: MINIMAX_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "MiniMax-M2.5-highspeed",
+        name: "MiniMax M2.5 Highspeed",
+        reasoning: true,
+        input: ["text"],
+        cost: MINIMAX_API_COST,
+        contextWindow: MINIMAX_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: MINIMAX_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "MiniMax-M2.1-highspeed",
+        name: "MiniMax M2.1 Highspeed",
+        reasoning: false,
+        input: ["text"],
+        cost: MINIMAX_API_COST,
+        contextWindow: MINIMAX_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: MINIMAX_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "MiniMax-M2",
+        name: "MiniMax M2",
+        reasoning: false,
         input: ["text"],
         cost: MINIMAX_API_COST,
         contextWindow: MINIMAX_DEFAULT_CONTEXT_WINDOW,
@@ -622,6 +722,42 @@ export function buildXiaomiProvider(): ProviderConfig {
         cost: XIAOMI_DEFAULT_COST,
         contextWindow: XIAOMI_DEFAULT_CONTEXT_WINDOW,
         maxTokens: XIAOMI_DEFAULT_MAX_TOKENS,
+      },
+    ],
+  };
+}
+
+function buildAntLingProvider(): ProviderConfig {
+  return {
+    baseUrl: ANT_LING_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: ANT_LING_DEFAULT_MODEL_ID,
+        name: "蚂蚁百灵 Ling-1T",
+        reasoning: false,
+        input: ["text"],
+        cost: ANT_LING_DEFAULT_COST,
+        contextWindow: 128000,
+        maxTokens: 8192,
+      },
+    ],
+  };
+}
+
+function buildMeituanLongcatProvider(): ProviderConfig {
+  return {
+    baseUrl: MEITUAN_LONGCAT_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: MEITUAN_LONGCAT_DEFAULT_MODEL_ID,
+        name: "LongCat Flash",
+        reasoning: false,
+        input: ["text"],
+        cost: MEITUAN_LONGCAT_DEFAULT_COST,
+        contextWindow: MEITUAN_LONGCAT_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: MEITUAN_LONGCAT_DEFAULT_MAX_TOKENS,
       },
     ],
   };
@@ -855,6 +991,24 @@ function buildDoubaoProvider(): ProviderConfig {
         contextWindow: 256000,
         maxTokens: 32768,
       },
+      {
+        id: "doubao-seed-1-6-lite-251015",
+        name: "豆包 1.6 Lite",
+        reasoning: false,
+        input: ["text"],
+        cost: DOUBAO_DEFAULT_COST,
+        contextWindow: DOUBAO_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "doubao-seed-1-6-flash-250828",
+        name: "豆包 1.6 Flash",
+        reasoning: false,
+        input: ["text", "image"],
+        cost: DOUBAO_DEFAULT_COST,
+        contextWindow: DOUBAO_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: DOUBAO_DEFAULT_MAX_TOKENS,
+      },
     ],
   };
 }
@@ -909,6 +1063,101 @@ function buildGLMProvider(): ProviderConfig {
     baseUrl: GLM_BASE_URL,
     api: "openai-completions",
     models: [
+      // GLM-5 系列
+      {
+        id: "glm-5",
+        name: "GLM-5",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "glm-5-code",
+        name: "GLM-5-Code",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      // GLM-4.7 系列
+      {
+        id: "glm-4.7",
+        name: "GLM-4.7",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "glm-4.7-flash",
+        name: "GLM-4.7-Flash",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      // GLM-4.6 系列
+      {
+        id: "glm-4.6",
+        name: "GLM-4.6",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "glm-4.6v",
+        name: "GLM-4.6V (视觉)",
+        reasoning: false,
+        input: ["text", "image"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      // GLM-4.5 系列
+      {
+        id: "glm-4.5",
+        name: "GLM-4.5",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "glm-4.5-flash",
+        name: "GLM-4.5-Flash",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "glm-4.5-air",
+        name: "GLM-4.5-Air",
+        reasoning: false,
+        input: ["text"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      {
+        id: "glm-4.5v",
+        name: "GLM-4.5V (视觉)",
+        reasoning: false,
+        input: ["text", "image"],
+        cost: GLM_DEFAULT_COST,
+        contextWindow: GLM_DEFAULT_CONTEXT_WINDOW,
+        maxTokens: GLM_DEFAULT_MAX_TOKENS,
+      },
+      // GLM-4 系列
       {
         id: "glm-4-plus",
         name: "GLM-4 Plus",
@@ -1140,6 +1389,20 @@ export async function resolveImplicitProviders(params: {
     resolveApiKeyFromProfiles({ provider: "xiaomi", store: authStore });
   if (xiaomiKey) {
     providers.xiaomi = { ...buildXiaomiProvider(), apiKey: xiaomiKey };
+  }
+
+  const antLingKey =
+    resolveEnvApiKeyVarName("ant-ling") ??
+    resolveApiKeyFromProfiles({ provider: "ant-ling", store: authStore });
+  if (antLingKey) {
+    providers["ant-ling"] = { ...buildAntLingProvider(), apiKey: antLingKey };
+  }
+
+  const longcatKey =
+    resolveEnvApiKeyVarName("meituan-longcat") ??
+    resolveApiKeyFromProfiles({ provider: "meituan-longcat", store: authStore });
+  if (longcatKey) {
+    providers["meituan-longcat"] = { ...buildMeituanLongcatProvider(), apiKey: longcatKey };
   }
 
   const cloudflareProfiles = listProfilesForProvider(authStore, "cloudflare-ai-gateway");

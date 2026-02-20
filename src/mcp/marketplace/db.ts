@@ -4,6 +4,7 @@
  */
 
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import { initializeSchema } from "./db-schema.js";
@@ -152,6 +153,11 @@ function itemToRow(item: McpMarketplaceItem): Record<string, any> {
     source: item.source || null,
     source_url: item.sourceUrl || null,
 
+    // 安装方式字段
+    npm_package: item.npmPackage || null,
+    pypi_package: item.pypiPackage || null,
+    sse_url: item.sseUrl || null,
+
     // AI 增强字段
     china_friendly_score: item.availability?.chinaFriendlyScore ?? null,
     requires_vpn: item.availability?.requiresVPN ? 1 : 0,
@@ -183,11 +189,13 @@ function itemToRow(item: McpMarketplaceItem): Record<string, any> {
  * 数据库行 → McpMarketplaceItem
  */
 function rowToItem(row: Record<string, any>): McpMarketplaceItem {
-  // 必填字段
+  // 必填字段 — prefer CN name/description for display
   const item: McpMarketplaceItem = {
     serverId: row.server_id,
-    friendlyName: row.friendly_name,
-    description: row.description || "",
+    friendlyName: row.friendly_name_cn || row.friendly_name,
+    friendlyNameEn: row.friendly_name,
+    description: row.description_cn || row.description || "",
+    descriptionEn: row.description || "",
     tags: parseJsonSafe(row.tags, []),
     version: row.version || "0.0.0",
     requiresApiKey: Boolean(row.requires_api_key),
@@ -204,6 +212,11 @@ function rowToItem(row: Record<string, any>): McpMarketplaceItem {
   if (row.description_cn) item.descriptionCn = row.description_cn;
   if (row.tags_cn) item.tagsCn = parseJsonSafe(row.tags_cn, undefined);
   if (row.source_url) item.sourceUrl = row.source_url;
+
+  // 安装方式字段
+  if (row.npm_package) item.npmPackage = row.npm_package;
+  if (row.pypi_package) item.pypiPackage = row.pypi_package;
+  if (row.sse_url) item.sseUrl = row.sse_url;
 
   // AI 增强字段
   if (row.china_friendly_score !== null || row.requires_vpn !== null) {
@@ -309,6 +322,70 @@ export function getItemById(serverId: string): McpMarketplaceItem | null {
   const row = stmt.get(serverId) as Record<string, any> | undefined;
 
   return row ? rowToItem(row) : null;
+}
+
+/**
+ * 按指定 serverId 列表批量查询，保持传入顺序。
+ *
+ * 供 hybridSearch → gateway handler 链路使用：
+ *   dispatch 侧 hybridSearch() 返回排好序的 serverId[]，
+ *   此函数按该顺序返回完整 McpMarketplaceItem[]。
+ *
+ * @param serverIds 按优先级排列的 serverId 列表
+ * @param options   分页参数（对已排序的结果列表切片）
+ */
+export function getItemsByServerIds(
+  serverIds: string[],
+  options?: { page?: number; pageSize?: number },
+): SearchResult {
+  if (serverIds.length === 0) {
+    return { items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 };
+  }
+
+  const db = getDatabase();
+  const page = Math.max(1, options?.page ?? 1);
+  // 上限放宽到 1000：此函数由 gateway handler 调用，
+  // 调用方已通过 searchToolIndex 的 maxResults 控制总量（通常 200），
+  // 不应在此二次截断导致排名靠后的结果被静默丢弃
+  const pageSize = Math.max(1, Math.min(options?.pageSize ?? 50, 1000));
+
+  // 批量查询，分批处理避免超过 SQLite SQLITE_MAX_VARIABLE_NUMBER (999)
+  const BATCH_SIZE = 500;
+  const rowMap = new Map<string, Record<string, any>>();
+  const uniqueIds = [...new Set(serverIds)];
+
+  for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+    const batch = uniqueIds.slice(i, i + BATCH_SIZE);
+    const placeholders = batch.map(() => "?").join(",");
+    const rows = db
+      .prepare(`SELECT * FROM mcp_items WHERE server_id IN (${placeholders})`)
+      .all(...batch) as Record<string, any>[];
+    for (const row of rows) {
+      rowMap.set(row.server_id, row);
+    }
+  }
+
+  // 按传入 serverIds 顺序组装结果（保留重复项，跳过不存在的 ID）
+  const ordered: McpMarketplaceItem[] = [];
+  for (const id of serverIds) {
+    const row = rowMap.get(id);
+    if (row) {
+      ordered.push(rowToItem(row));
+    }
+  }
+
+  // 分页切片
+  const total = ordered.length;
+  const offset = (page - 1) * pageSize;
+  const items = ordered.slice(offset, offset + pageSize);
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
 }
 
 /**
@@ -495,10 +572,15 @@ export function searchItems(options: SearchOptions = {}): SearchResult {
 
   // 分页查询（使用验证后的值）
   const offset = (validPage - 1) * validPageSize;
+  // Default sort: prioritize ModelScope items (which have Chinese names)
+  // by putting source='modelscope' first, then sub-sort by the requested field.
+  const orderClause = orderBy === "updated_at"
+    ? `ORDER BY (CASE WHEN source = 'modelscope' THEN 0 ELSE 1 END), ${orderBy} ${orderDirection}`
+    : `ORDER BY ${orderBy} ${orderDirection}`;
   const queryStmt = db.prepare(`
     SELECT * FROM mcp_items
     ${whereClause}
-    ORDER BY ${orderBy} ${orderDirection}
+    ${orderClause}
     LIMIT ? OFFSET ?
   `);
 
@@ -557,4 +639,249 @@ export function getStats() {
     official,
     categories: getCategoryStats(),
   };
+}
+
+// ========== 基线数据导入 & 增量同步 ==========
+
+/**
+ * 获取 item 总数（快速检查）
+ */
+export function getItemCount(): number {
+  const db = getDatabase();
+  const stmt = db.prepare("SELECT COUNT(*) as count FROM mcp_items");
+  return (stmt.get() as { count: number }).count;
+}
+
+/**
+ * 获取所有 MCP items（供桥接同步使用）。
+ * 内部使用 rowToItem() 确保字段格式与 McpMarketplaceItem 一致。
+ */
+export function getAllItems(): McpMarketplaceItem[] {
+  const db = getDatabase();
+  const rows = db.prepare("SELECT * FROM mcp_items").all() as Array<Record<string, any>>;
+  return rows.map(rowToItem);
+}
+
+/**
+ * 获取 sync_meta 中的值
+ */
+function getSyncMeta(key: string): string | null {
+  const db = getDatabase();
+  try {
+    const stmt = db.prepare("SELECT value FROM sync_meta WHERE key = ?");
+    const row = stmt.get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 设置 sync_meta 中的值
+ */
+function setSyncMeta(key: string, value: string): void {
+  const db = getDatabase();
+  db.prepare("INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)").run(key, value);
+}
+
+/**
+ * 检查基线数据是否已导入
+ */
+export function isBaselinePopulated(): boolean {
+  return getSyncMeta("baseline_populated") === "1";
+}
+
+/**
+ * 计算内容的 SHA-256 哈希（用于变更检测）
+ */
+function computeContentHash(content: string | Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/**
+ * 删除不在给定 serverId 集合中的所有 items（清理已移除的 MCP）
+ *
+ * @returns 删除的数量
+ */
+function deleteItemsNotIn(serverIds: Set<string>): number {
+  if (serverIds.size === 0) return 0;
+
+  const db = getDatabase();
+
+  // 查出所有当前 SQLite 中的 serverId
+  const allRows = db.prepare("SELECT server_id FROM mcp_items").all() as Array<{
+    server_id: string;
+  }>;
+
+  const toDelete: string[] = [];
+  for (const row of allRows) {
+    if (!serverIds.has(row.server_id)) {
+      toDelete.push(row.server_id);
+    }
+  }
+
+  if (toDelete.length === 0) return 0;
+
+  // 批量删除（事务）
+  const stmt = db.prepare("DELETE FROM mcp_items WHERE server_id = ?");
+  db.exec("BEGIN TRANSACTION");
+  try {
+    for (const id of toDelete) {
+      stmt.run(id);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return toDelete.length;
+}
+
+/**
+ * 更新 sync_meta 中的基线同步状态
+ */
+function updateBaselineMeta(count: number, hash: string): void {
+  setSyncMeta("baseline_populated", "1");
+  setSyncMeta("baseline_count", String(count));
+  setSyncMeta("baseline_hash", hash);
+  setSyncMeta("baseline_at", new Date().toISOString());
+}
+
+/**
+ * 从打包的 mcp-index.json 读取 items
+ *
+ * @param packageRoot 项目根目录（包含 data/mcp-index.json）
+ * @returns items 数组 + 原始文件内容（用于哈希计算，避免二次读取）
+ */
+function readBundledItems(packageRoot: string): {
+  items: McpMarketplaceItem[];
+  rawContent: string;
+} {
+  // Prefer enhanced (AI-translated) file which has Chinese names/descriptions
+  const enhancedPath = path.join(packageRoot, "data", "mcp-index-enhanced.json");
+  const indexPath = path.join(packageRoot, "data", "mcp-index.json");
+  const filePath = fs.existsSync(enhancedPath) ? enhancedPath : indexPath;
+
+  if (!fs.existsSync(filePath)) {
+    console.warn("[MCP DB] Bundled mcp-index.json not found:", filePath);
+    return { items: [], rawContent: "" };
+  }
+
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    const items: McpMarketplaceItem[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed.items)
+        ? parsed.items
+        : [];
+
+    if (items.length === 0) {
+      console.warn("[MCP DB] Bundled mcp-index.json is empty");
+    }
+
+    return { items, rawContent: raw };
+  } catch (err) {
+    console.error("[MCP DB] Failed to read bundled mcp-index.json:", err);
+    return { items: [], rawContent: "" };
+  }
+}
+
+/**
+ * 从打包的 mcp-index.json 导入基线数据到 SQLite（全量导入）
+ *
+ * @param packageRoot 项目根目录（包含 data/mcp-index.json）
+ * @returns 导入的 MCP 数量，0 表示无数据
+ */
+export function populateFromBundledIndex(packageRoot: string): number {
+  const { items } = readBundledItems(packageRoot);
+  if (items.length === 0) return 0;
+
+  insertItems(items);
+  return items.length;
+}
+
+/**
+ * 批量删除指定 serverId 列表的 items
+ * @returns 实际删除的数量
+ */
+export function deleteItemsByIds(serverIds: string[]): number {
+  if (serverIds.length === 0) return 0;
+
+  const db = getDatabase();
+  const stmt = db.prepare("DELETE FROM mcp_items WHERE server_id = ?");
+  let deleted = 0;
+  db.exec("BEGIN TRANSACTION");
+  try {
+    for (const id of serverIds) {
+      const result = stmt.run(id) as { changes: number };
+      deleted += result.changes;
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+
+  return deleted;
+}
+
+/**
+ * 确保 MCP 基线数据已导入，并支持增量同步（增删改）。
+ *
+ * 工作原理:
+ * 1. 首次启动: 全量导入 bundled mcp-index.json → SQLite
+ * 2. 后续启动: 比较文件 SHA-256 哈希，如果 JSON 文件内容变化则:
+ *    - INSERT OR REPLACE: 新增和更新的 MCP（由 SQLite UPSERT 语义处理）
+ *    - DELETE: 从 JSON 中移除的 MCP（SQLite 中有但 JSON 中没有的）
+ * 3. 如果哈希未变: 跳过，避免重复工作
+ *
+ * @param packageRoot 项目根目录
+ * @returns 变更的 MCP 数量（新增+更新+删除），0 表示无变化
+ */
+export function ensureMcpBaseline(packageRoot: string): number {
+  const { items, rawContent } = readBundledItems(packageRoot);
+
+  if (items.length === 0) {
+    return 0;
+  }
+
+  // 计算当前文件内容哈希（复用已读取的 rawContent，无需二次 I/O）
+  const currentHash = computeContentHash(rawContent);
+
+  // 与上次同步的哈希比较
+  const storedHash = getSyncMeta("baseline_hash");
+
+  if (storedHash === currentHash && isBaselinePopulated() && getItemCount() > 0) {
+    // 文件未变化，跳过
+    return 0;
+  }
+
+  // 文件变化（或首次导入），执行增量同步
+  console.log(
+    `[MCP DB] Baseline sync: hash changed (${storedHash?.slice(0, 8) ?? "none"} → ${currentHash.slice(0, 8)}), ` +
+      `syncing ${items.length} items...`,
+  );
+
+  // 步骤 1: INSERT OR REPLACE 所有 bundled items（处理新增+更新）
+  insertItems(items);
+
+  // 步骤 2: 删除 JSON 中不存在但 SQLite 中仍存在的 items（处理删除）
+  const bundledIds = new Set(items.map((item) => item.serverId));
+  const deletedCount = deleteItemsNotIn(bundledIds);
+
+  if (deletedCount > 0) {
+    console.log(`[MCP DB] Removed ${deletedCount} stale items not in bundled index`);
+  }
+
+  // 步骤 3: 更新元数据
+  updateBaselineMeta(items.length, currentHash);
+
+  const totalChanges = items.length + deletedCount;
+  console.log(
+    `[MCP DB] Baseline sync complete: ${items.length} upserted, ${deletedCount} deleted`,
+  );
+
+  return totalChanges;
 }

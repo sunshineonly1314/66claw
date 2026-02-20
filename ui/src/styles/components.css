@@ -99,7 +99,7 @@
   display: grid;
   gap: 0;
   background: var(--bg-elevated);
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   overflow: hidden;
 }
@@ -108,10 +108,10 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 12px;
   transition: background 0.15s ease;
 }
 
@@ -138,15 +138,15 @@
 }
 
 .account-card-list {
-  margin-top: 16px;
+  margin-top: 10px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .account-card {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px 16px;
+  border-radius: 8px;
+  padding: 10px 12px;
   background: var(--bg-elevated);
   transition: all 0.2s ease;
 }
@@ -160,12 +160,12 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .account-card-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-strong);
 }
 
@@ -179,16 +179,16 @@
 }
 
 .account-card-status {
-  margin-top: 12px;
-  font-size: 13px;
+  margin-top: 8px;
+  font-size: 12px;
   background: var(--bg);
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   overflow: hidden;
 }
 
 .account-card-status div {
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
@@ -200,26 +200,26 @@
 }
 
 .account-card-error {
-  margin-top: 10px;
-  padding: 10px 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.15);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--danger);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* 未配置状态 - 灰色 */
 .account-card-muted {
-  margin-top: 10px;
-  padding: 10px 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
   background: rgba(156, 163, 175, 0.08);
   border: 1px solid rgba(156, 163, 175, 0.15);
-  border-radius: 8px;
+  border-radius: 6px;
   color: #6b7280;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* ===========================================
@@ -1701,7 +1701,7 @@
   position: relative;
   border: 1px solid var(--border);
   background: var(--card);
-  border-radius: 14px;
+  border-radius: 10px;
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1726,10 +1726,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: 10px 14px;
   cursor: pointer;
   user-select: none;
-  gap: 14px;
+  gap: 10px;
   transition: background 0.2s ease;
 }
 
@@ -1745,18 +1745,18 @@
 .channel-card__left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
 .channel-card__icon {
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
   flex-shrink: 0;
 }
 
 .channel-card__title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-strong);
   letter-spacing: -0.01em;
@@ -1771,10 +1771,10 @@
 .channel-card__badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 4px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 2px 8px;
   border-radius: 20px;
   background: var(--secondary);
   color: var(--muted);
@@ -1801,8 +1801,8 @@
 }
 
 .channel-card__chevron {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   color: var(--muted);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
@@ -1818,7 +1818,7 @@
 }
 
 .channel-card__body {
-  padding: 0 18px 18px;
+  padding: 0 14px 14px;
   display: none;
   border-top: 1px solid var(--border);
   margin-top: -1px;
@@ -1838,7 +1838,7 @@
 
 .channel-card[open] .channel-card__body {
   display: block;
-  padding-top: 16px;
+  padding-top: 12px;
 }
 
 /* Channel Card - Configured (Stopped) State */
@@ -1908,50 +1908,51 @@
 }
 
 .channel-card__desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
-  margin-bottom: 14px;
-  line-height: 1.5;
+  margin-bottom: 10px;
+  line-height: 1.4;
 }
 
 /* Channel Features Grid */
 .channel-card__features {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
   background: var(--bg-secondary, #f5f5f5);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .channel-card__features-title {
   font-weight: 600;
-  margin-bottom: 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
   color: var(--text-primary);
 }
 
 .channel-card__features-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 6px;
-  font-size: 13px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 4px;
+  font-size: 12px;
 }
 
 /* Channel Help - Detailed Configuration Guide */
 .channel-card__help {
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 .channel-card__help-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--accent);
-  padding: 10px 14px;
+  padding: 7px 12px;
   background: linear-gradient(135deg, var(--accent-subtle) 0%, transparent 100%);
   border: 1px solid var(--accent-muted);
-  border-radius: 10px;
+  border-radius: 8px;
   transition: all 0.2s ease;
 }
 
@@ -1972,23 +1973,23 @@
 }
 
 .channel-card__help-content {
-  margin-top: 14px;
-  padding: 18px;
+  margin-top: 10px;
+  padding: 14px;
   background: var(--panel);
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid var(--border);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .channel-card__help-content p {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   color: var(--text);
 }
 
 /* Configuration Steps - Modern Timeline Style */
 .config-steps {
-  margin-top: 18px;
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -2008,30 +2009,30 @@
 
 .config-step {
   display: flex;
-  gap: 14px;
+  gap: 10px;
   position: relative;
-  padding: 10px 0;
+  padding: 6px 0;
 }
 
 .config-step .step-number {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   background: linear-gradient(135deg, var(--accent) 0%, #7c3aed 100%);
   color: white;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.25);
   z-index: 1;
 }
 
 .config-step .step-content {
   flex: 1;
-  padding: 4px 0 8px;
+  padding: 2px 0 6px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -2041,29 +2042,29 @@
 
 .config-step .step-content strong {
   display: block;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-strong);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .config-step .step-content p {
-  margin: 0 0 10px;
-  font-size: 13px;
+  margin: 0 0 6px;
+  font-size: 12px;
   color: var(--text);
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .config-step .step-content ul {
-  margin: 10px 0;
-  padding-left: 20px;
+  margin: 6px 0;
+  padding-left: 18px;
 }
 
 .config-step .step-content ul li {
-  margin-bottom: 6px;
-  font-size: 13px;
+  margin-bottom: 4px;
+  font-size: 12px;
   color: var(--text);
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .config-step .step-content code {
@@ -2106,10 +2107,10 @@
 /* Status Dot Indicators - Refined */
 .status-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  margin-right: 8px;
+  margin-right: 4px;
   position: relative;
 }
 
@@ -2154,13 +2155,13 @@
 .config-hint {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 8px;
+  padding: 10px 12px;
   background: linear-gradient(135deg, var(--panel) 0%, transparent 100%);
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent-muted);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -2198,25 +2199,25 @@
    =========================================== */
 
 .channel-overview {
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .channel-overview__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .overview-card {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: 10px;
+  padding: 12px 14px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 10px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
@@ -2292,7 +2293,7 @@
 }
 
 .overview-card__icon {
-  font-size: 28px;
+  font-size: 22px;
   flex-shrink: 0;
   filter: grayscale(0.1);
 }
@@ -2303,11 +2304,11 @@
 }
 
 .overview-card__value {
-  font-size: 32px;
-  font-weight: 800;
+  font-size: 22px;
+  font-weight: 700;
   color: var(--text-strong);
   line-height: 1;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2320,20 +2321,20 @@
 }
 
 .overview-card__label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 2px;
   text-transform: uppercase;
   letter-spacing: 0.02em;
 }
 
 .overview-card__indicator {
   position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 10px;
-  height: 10px;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 
@@ -2361,22 +2362,22 @@
 
 /* Channel Overview Guide */
 .channel-overview__guide {
-  padding: 18px 22px;
+  padding: 12px 16px;
   background: linear-gradient(135deg, var(--accent-subtle) 0%, transparent 100%);
   border: 1px solid var(--accent-muted);
-  border-radius: 14px;
-  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  border-left: 3px solid var(--accent);
   backdrop-filter: blur(4px);
 }
 
 .guide-content {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 10px;
 }
 
 .guide-icon {
-  font-size: 28px;
+  font-size: 22px;
   flex-shrink: 0;
   animation: guide-bounce 2s ease-in-out infinite;
 }
@@ -2392,17 +2393,17 @@
 
 .guide-text strong {
   display: block;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-strong);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .guide-text p {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 /* ===========================================
@@ -2410,33 +2411,33 @@
    =========================================== */
 
 .channel-group {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .channel-group__header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
 
 .channel-group__icon {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .channel-group__title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-strong);
   letter-spacing: -0.01em;
 }
 
 .channel-group__badge {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  padding: 4px 10px;
+  padding: 2px 8px;
   background: linear-gradient(135deg, var(--accent-subtle) 0%, transparent 100%);
   border: 1px solid var(--accent-muted);
   color: var(--accent);
@@ -2449,13 +2450,13 @@
 .channel-group__tip {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
   background: linear-gradient(90deg, var(--panel) 0%, transparent 100%);
-  border-radius: 10px;
+  border-radius: 8px;
   border-left: 3px solid var(--accent-muted);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -2467,22 +2468,22 @@
 @media (max-width: 720px) {
   .channel-overview__cards {
     grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-  }
-  
-  .overview-card {
-    padding: 14px 16px;
-    flex-direction: column;
-    align-items: flex-start;
     gap: 8px;
   }
-  
-  .overview-card__icon {
-    font-size: 24px;
+
+  .overview-card {
+    padding: 10px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
-  
+
+  .overview-card__icon {
+    font-size: 18px;
+  }
+
   .overview-card__value {
-    font-size: 26px;
+    font-size: 18px;
   }
   
   .channel-group__header {
@@ -2499,14 +2500,19 @@
 /* Grid layout for channel cards - 现代化网格布局 */
 .channels-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1000px) {
+  .channels-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
   .channels-grid {
     grid-template-columns: 1fr;
-    gap: 12px;
   }
 }
 

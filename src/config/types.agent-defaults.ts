@@ -285,4 +285,8 @@ export type AgentCompactionMemoryFlushConfig = {
   prompt?: string;
   /** System prompt appended for the memory flush turn. */
   systemPrompt?: string;
+  /** Override provider for the flush turn (e.g. use a cheaper/faster model). */
+  provider?: string;
+  /** Override model for the flush turn. */
+  model?: string;
 };

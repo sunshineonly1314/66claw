@@ -28,6 +28,8 @@ export type ConfigProps = {
   searchQuery: string;
   activeSection: string | null;
   activeSubsection: string | null;
+  configFilePath: string | null;
+  onRevealConfigFile: (() => void) | null;
   onRawChange: (next: string) => void;
   onFormModeChange: (mode: "form" | "raw") => void;
   onFormPatch: (path: Array<string | number>, value: unknown) => void;
@@ -324,6 +326,30 @@ export function renderConfig(props: ConfigProps) {
           <div class="config-sidebar__title">${t("config.settings")}</div>
           <span class="pill pill--sm ${validity === t("config.valid") ? "pill--ok" : validity === t("config.invalid") ? "pill--danger" : ""}">${validity}</span>
         </div>
+        ${props.configFilePath ? html`
+          <div class="config-filepath-hint" title=${props.configFilePath}>
+            <span class="config-filepath-hint__label">${t("config.filePathHint")}</span>
+            <div class="config-filepath-hint__row">
+              <code class="config-filepath-hint__path" @click=${(e: Event) => {
+                const el = e.currentTarget as HTMLElement;
+                void navigator.clipboard.writeText(props.configFilePath!);
+                el.classList.add("copied");
+                setTimeout(() => el.classList.remove("copied"), 1500);
+              }}>${props.configFilePath}</code>
+              ${props.onRevealConfigFile ? html`
+                <button
+                  class="config-filepath-hint__open-btn"
+                  title=${t("config.openFolder")}
+                  @click=${props.onRevealConfigFile}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
+              ` : nothing}
+            </div>
+          </div>
+        ` : nothing}
 
         <!-- Search -->
         <div class="config-search">

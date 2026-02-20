@@ -122,7 +122,14 @@ async function sendRequest<T>(
       const response = await fetch(url, options);
 
       if (!response.ok) {
-        // HTTP 业务错误不降级（服务端能响应说明网络通了）
+        // 502/503/504 属于网关/服务不可用，应触发降级
+        const isServerUnavailable = response.status >= 502 && response.status <= 504;
+        if (isServerUnavailable && i < baseUrls.length - 1) {
+          log.warn(`Server unavailable (${response.status}) on ${url}, trying fallback...`);
+          lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+          continue;
+        }
+        // 其他 HTTP 业务错误不降级（服务端能响应说明网络通了）
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 

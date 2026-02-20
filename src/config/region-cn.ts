@@ -230,36 +230,70 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
       },
       // 🧠 最强模型
       {
-        id: "glm-4.7",
-        name: "🧠 GLM-4.7 (最强)",
-        description: "最新旗舰，Agent/代码增强",
-        pricing: "¥15/百万tokens",
+        id: "glm-5",
+        name: "🧠 GLM-5 (最强)",
+        description: "最新旗舰模型",
       },
-      // 💰 免费模型
       {
-        id: "glm-4-flash-250414",
-        name: "💰 GLM-4.5 Flash (永久免费)",
+        id: "glm-5-code",
+        name: "GLM-5-Code",
+        description: "GLM-5 代码专用版",
+      },
+      {
+        id: "glm-4.7",
+        name: "GLM-4.7",
+        description: "Agent/代码增强",
+      },
+      {
+        id: "glm-4.7-flash",
+        name: "💰 GLM-4.7-Flash (免费)",
+        description: "4.7系列免费版，速度快",
+      },
+      {
+        id: "glm-4.6",
+        name: "GLM-4.6",
+        description: "稳定版本",
+      },
+      {
+        id: "glm-4.6v",
+        name: "GLM-4.6V (视觉)",
+        description: "支持图像理解",
+      },
+      {
+        id: "glm-4.5",
+        name: "GLM-4.5",
+        description: "均衡性能",
+      },
+      {
+        id: "glm-4.5-flash",
+        name: "💰 GLM-4.5-Flash (免费)",
         description: "免费！速度快",
-        pricing: "免费",
+      },
+      {
+        id: "glm-4.5-air",
+        name: "GLM-4.5-Air",
+        description: "轻量快速",
+      },
+      {
+        id: "glm-4.5v",
+        name: "GLM-4.5V (视觉)",
+        description: "支持图像理解",
       },
       // 其他模型
       {
-        id: "glm-4-flashx-250414",
-        name: "GLM-4.5 FlashX",
-        description: "极速推理，低延迟",
-        pricing: "¥0.1/百万tokens",
+        id: "glm-4-plus",
+        name: "GLM-4 Plus",
+        description: "复杂任务",
       },
       {
-        id: "glm-4-plus",
-        name: "GLM-4.5 Plus",
-        description: "最强性能，复杂任务",
-        pricing: "¥5/百万tokens",
+        id: "glm-4-flash-250414",
+        name: "💰 GLM-4 Flash (免费)",
+        description: "免费！速度快",
       },
       {
         id: "glm-4v-plus",
         name: "GLM-4V Plus (视觉)",
         description: "支持图像理解",
-        pricing: "¥5/百万tokens",
       },
       {
         id: "codegeex-4",
@@ -372,7 +406,16 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
         id: "doubao-seed-1-6-251015",
         name: "豆包 1.6",
         description: "稳定版本",
-        pricing: "¥0.8/百万tokens(输入) ¥2/百万tokens(输出)",
+      },
+      {
+        id: "doubao-seed-1-6-lite-251015",
+        name: "豆包 1.6 Lite",
+        description: "轻量版本",
+      },
+      {
+        id: "doubao-seed-1-6-flash-250828",
+        name: "豆包 1.6 Flash",
+        description: "极速版本",
       },
     ],
     envVar: "ARK_API_KEY",
@@ -498,12 +541,31 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
         recommended: true,
         pricing: "¥2.1/百万tokens(输入) ¥8.4/百万tokens(输出)",
       },
+      {
+        id: "MiniMax-M2.5",
+        name: "🧠 MiniMax M2.5 (最新)",
+        description: "最新旗舰模型",
+      },
+      {
+        id: "MiniMax-M2.5-highspeed",
+        name: "MiniMax M2.5 Highspeed",
+        description: "M2.5 高速版",
+      },
+      {
+        id: "MiniMax-M2",
+        name: "MiniMax M2",
+        description: "稳定版本",
+      },
       // 💰 低延迟
       {
         id: "MiniMax-M2.1-lightning",
         name: "💰 M2.1 Lightning (低延迟)",
         description: "极速版，响应更快",
-        pricing: "¥2.1/百万tokens(输入) ¥16.8/百万tokens(输出)",
+      },
+      {
+        id: "MiniMax-M2.1-highspeed",
+        name: "M2.1 Highspeed",
+        description: "M2.1 高速版",
       },
     ],
     envVar: "MINIMAX_API_KEY",
@@ -848,6 +910,64 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
     envVar: "NVIDIA_API_KEY",
     docsUrl: "https://build.nvidia.com/docs",
   },
+
+  // ============================================================================
+  // 蚂蚁百灵 - 每日免费 50 万 tokens
+  // ============================================================================
+  "ant-ling": {
+    id: "ant-ling",
+    name: "蚂蚁百灵",
+    description: "蚂蚁集团旗下大模型，每日免费 50 万 tokens",
+    apiEndpoint: "https://api.tbox.cn/api/llm/v1",
+    authField: "apiKey",
+    authHint: "格式: sk-studio-... (在 ling.tbox.cn/open 获取)",
+    models: [
+      {
+        id: "ling-1t",
+        name: "🐜 Ling-1T (推荐)",
+        description: "多模态 · 联网搜索 · 复杂推理",
+        recommended: true,
+        pricing: "每日免费50万Token",
+      },
+      {
+        id: "ring-1t",
+        name: "Ring-1T",
+        description: "通用对话模型",
+        pricing: "每日免费50万Token",
+      },
+      {
+        id: "ming-flash-omni",
+        name: "Ming-Flash-Omni",
+        description: "多模态快速模型",
+        pricing: "每日免费50万Token",
+      },
+    ],
+    envVar: "ANT_LING_API_KEY",
+    docsUrl: "https://alipaytbox.yuque.com/sxs0ba/ling/intro",
+  },
+
+  // ============================================================================
+  // 美团 LongCat - 每日免费 50 万 tokens
+  // ============================================================================
+  "meituan-longcat": {
+    id: "meituan-longcat",
+    name: "美团LongCat",
+    description: "美团旗下大模型，128K 上下文，每日免费 50 万 tokens",
+    apiEndpoint: "https://api.longcat.chat/openai/v1",
+    authField: "apiKey",
+    authHint: "格式: ak_... (在 longcat.chat 获取)",
+    models: [
+      {
+        id: "longcat-flash-chat",
+        name: "🐱 LongCat Flash (推荐)",
+        description: "128K 上下文 · OpenAI 兼容",
+        recommended: true,
+        pricing: "每日免费50万Token",
+      },
+    ],
+    envVar: "LONGCAT_API_KEY",
+    docsUrl: "https://longcat.chat/platform/docs/zh/",
+  },
 };
 
 // ============================================================================
@@ -869,6 +989,8 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
     "moonshot",
     "minimax",
     "tencent-hunyuan",
+    "ant-ling",
+    "meituan-longcat",
     // 国际服务（折叠，需要科学上网）
     "google",
     "openai",
@@ -942,7 +1064,7 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
   ],
 
   // Skills 镜像源 (ClawdSkillsProxy 服务)
-  skillsRegistry: "http://121.43.61.90/api",
+  skillsRegistry: "https://www.obplugins.cn",
 
   // 推广链接
   affiliateLinks: AFFILIATE_LINKS,

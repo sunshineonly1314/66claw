@@ -4,6 +4,7 @@ import { stripThinkingTags } from "../format.ts";
 const textCache = new WeakMap<object, string | null>();
 const thinkingCache = new WeakMap<object, string | null>();
 const freeModelNotificationCache = new WeakMap<object, FreeModelNotification | null>();
+const failoverNotificationCache = new WeakMap<object, FailoverNotificationPayload | null>();
 
 /** OpenClawCN 免费模型通知类型 */
 export type FreeModelNotification = {
@@ -13,13 +14,32 @@ export type FreeModelNotification = {
   showInChat: boolean;
 };
 
+/** OpenClawCN Provider 自动切换通知类型 */
+export type FailoverNotificationPayload = {
+  type: "auto_failover";
+  fromProvider: string;
+  fromModel: string;
+  toProvider: string;
+  toModel: string;
+  reason: string;
+  attemptCount: number;
+};
+
+/** Strip internal notification markers from text before display */
+function stripNotificationMarkers(text: string): string {
+  return text
+    .replace(/<!--CLAWDBOT_FAILOVER_NOTIFICATION:.+?-->/g, "")
+    .replace(/<!--(?:CLAWDBOT|OPENCLAWCN)_FREE_MODEL_NOTIFICATION:.+?-->/g, "")
+    .trim();
+}
+
 export function extractText(message: unknown): string | null {
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "";
   const content = m.content;
   if (typeof content === "string") {
     const processed = role === "assistant" ? stripThinkingTags(content) : stripEnvelope(content);
-    return processed;
+    return stripNotificationMarkers(processed);
   }
   if (Array.isArray(content)) {
     const parts = content
@@ -34,12 +54,12 @@ export function extractText(message: unknown): string | null {
     if (parts.length > 0) {
       const joined = parts.join("\n");
       const processed = role === "assistant" ? stripThinkingTags(joined) : stripEnvelope(joined);
-      return processed;
+      return stripNotificationMarkers(processed);
     }
   }
   if (typeof m.text === "string") {
     const processed = role === "assistant" ? stripThinkingTags(m.text) : stripEnvelope(m.text);
-    return processed;
+    return stripNotificationMarkers(processed);
   }
   return null;
 }
@@ -171,4 +191,44 @@ export function extractFreeModelNotification(message: unknown): FreeModelNotific
     freeModelNotificationCache.set(obj, null);
     return null;
   }
+}
+
+/**
+ * Extract OpenClawCN failover notification from message text
+ */
+export function extractFailoverNotification(message: unknown): FailoverNotificationPayload | null {
+  if (!message || typeof message !== "object") return null;
+
+  const obj = message as object;
+  if (failoverNotificationCache.has(obj)) {
+    return failoverNotificationCache.get(obj) ?? null;
+  }
+
+  const rawText = extractRawText(message);
+  if (!rawText) {
+    failoverNotificationCache.set(obj, null);
+    return null;
+  }
+
+  const match = rawText.match(/<!--CLAWDBOT_FAILOVER_NOTIFICATION:(.+?)-->/);
+  if (!match) {
+    failoverNotificationCache.set(obj, null);
+    return null;
+  }
+
+  try {
+    const notification = JSON.parse(match[1]) as FailoverNotificationPayload;
+    failoverNotificationCache.set(obj, notification);
+    return notification;
+  } catch {
+    failoverNotificationCache.set(obj, null);
+    return null;
+  }
+}
+
+/**
+ * Strip failover notification markers from displayed text
+ */
+export function stripFailoverNotification(text: string): string {
+  return text.replace(/<!--CLAWDBOT_FAILOVER_NOTIFICATION:.+?-->/g, "").trim();
 }

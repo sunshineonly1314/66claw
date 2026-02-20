@@ -948,6 +948,39 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     }
   }
 
+  // ── [CN-PATCH:memory-p0] 18.5. agents.defaults.memorySearch: SiliconFlow embedding ──
+  //    CN 区域默认用硅基流动做 embedding（BAAI/bge-m3, 免费额度）
+  //    provider 设为 "openai"（SiliconFlow 兼容 OpenAI /v1/embeddings API）
+  //    remote.baseUrl + remote.apiKey 直接指向 SiliconFlow，不依赖 auth store
+  //    fallback 设为 "none"，避免无 key 时依次尝试 openai/gemini/voyage 报错
+  {
+    const memSearch185 = next.agents?.defaults?.memorySearch;
+    if (memSearch185?.provider === undefined) {
+      next = {
+        ...next,
+        agents: {
+          ...next.agents,
+          defaults: {
+            ...next.agents?.defaults,
+            memorySearch: {
+              ...memSearch185,
+              provider: "openai",
+              model: "BAAI/bge-m3",
+              remote: {
+                ...memSearch185?.remote,
+                baseUrl: "https://api.siliconflow.cn/v1",
+                apiKey: "sk-bdlrjsxfgryopcpjvqbuyygzchkisgzwqucnbdkzurzueukv",
+                batch: { enabled: false },
+              },
+              fallback: "none",
+            },
+          },
+        },
+      };
+      mutated = true;
+    }
+  }
+
   // ── [CN-PATCH:memory-p0] 19. session.maintenance: 120天保留 + 5000条上限 ──
   //    上游默认 30天/500条，CN 用户需要更长的记忆保留
   //    不会触发全量 embedding — needsFullReindex 不检查 sources 和 maintenance 配置
@@ -984,10 +1017,27 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
         embedding: {
           model: "BAAI/bge-m3",
           baseUrl: "https://api.siliconflow.cn/v1",
+          apiKey: "sk-bdlrjsxfgryopcpjvqbuyygzchkisgzwqucnbdkzurzueukv",
           dimensions: 1024,
         },
-        search: { maxResults: 50, minScore: 0.1 },
+        search: { maxResults: 8, minScore: 0.2 },
         mcpOnDemand: { enabled: true, autoInstall: false },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── [CN-PATCH:dispatch] 20.5. dispatch: 智能调度引擎默认启用 ──
+  //    CN 区域默认启用 dispatch（意图识别 + 工具推荐 + 复杂度评估）
+  //    toolDiscovery 需要 dispatch.enabled=true 才能在聊天流程中被调用
+  if (next.dispatch === undefined) {
+    next = {
+      ...next,
+      dispatch: {
+        enabled: true,
+        modalityRouter: true,
+        toolSelector: true,
+        toolFilterMode: "discovery" as const,
       },
     };
     mutated = true;
@@ -1014,6 +1064,105 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
                 ...(existingProactive?.thresholdRatio === undefined
                   ? { thresholdRatio: 0.85 }
                   : {}),
+              },
+            },
+          },
+        },
+      };
+      mutated = true;
+    }
+  }
+
+  // ── [CN-PATCH:skills] 21.5. skills.allowBundled: 只加载核心技能，省 token ──
+  //    70+ 技能全量注入 system prompt 会消耗数千 token，
+  //    对 32K/64K 上下文窗口的模型极易触发每条消息都 compact。
+  //    仅保留上游核心 + CN 高价值技能（~30 个），其余不加载。
+  if (next.skills?.allowBundled === undefined) {
+    next = {
+      ...next,
+      skills: {
+        ...next.skills,
+        allowBundled: [
+          // ── 上游核心技能 ──
+          "coding-agent",
+          "canvas",
+          "github",
+          "summarize",
+          "weather",
+          "skill-creator",
+          "session-logs",
+          "model-usage",
+          "oracle",
+          "nano-pdf",
+          "nano-banana-pro",
+          "tmux",
+          "slack",
+          "discord",
+          "notion",
+          "obsidian",
+          "trello",
+          "himalaya",
+          "video-frames",
+          "voice-call",
+          "gemini",
+          "openai-image-gen",
+          "openai-whisper-api",
+          // ── CN 高价值技能 ──
+          // wechat-desktop / wecom-desktop 已移入 skills-private/，不走 bundled 分发
+          "wechat-cs",
+          "xiaohongshu",
+          "desktop-control",
+          "open-app",
+          "software-protection",
+          "build-packaging",
+          "packaging",
+          "skills-troubleshoot",
+          "self-troubleshoot",
+        ],
+      },
+    };
+    mutated = true;
+  }
+
+  // ── [CN-PATCH:memory-p1] 22. compaction.memoryFlush: SiliconFlow Qwen3-8B + V3 prompt ──
+  //    CN 区域 memory flush 使用免费小模型（Qwen3-8B），不走主模型
+  //    避免 flush 卡住拖垮 gateway（qwen-plus 曾超时 231 秒导致崩溃）
+  //    V3 BALANCED prompt：提取事实/决策/偏好/结果，禁止猜测，信噪比高
+  //    守卫：仅当 memoryFlush.provider 未设置时注入
+  {
+    const existingFlush = next.agents?.defaults?.compaction?.memoryFlush;
+    if (existingFlush?.provider === undefined) {
+      next = {
+        ...next,
+        agents: {
+          ...next.agents,
+          defaults: {
+            ...next.agents?.defaults,
+            compaction: {
+              ...next.agents?.defaults?.compaction,
+              memoryFlush: {
+                ...existingFlush,
+                provider: "siliconflow",
+                model: "Qwen/Qwen3-8B",
+                systemPrompt: [
+                  "你是一个记忆提取器。从对话中提取值得长期保存的信息。",
+                  "",
+                  "提取目标：",
+                  "- 用户明确做出的决策和选择",
+                  "- 操作的关键结果（成功/失败及原因）",
+                  "- 用户明确表达的偏好，或通过重复行为（≥2次）体现的偏好",
+                  "- 重要的技术细节（配置、路径、参数等）",
+                  "- 未完成的待办事项",
+                  "",
+                  "禁止：",
+                  '- 凭单次行为猜测意图（不写"用户可能..."、"似乎..."、"看起来..."）',
+                  "- 记录寒暄、问候、闲聊",
+                  '- 记录显而易见的事情（如"用户发送了消息"）',
+                  "",
+                  "格式：每行 `- [类别] 内容`",
+                  "类别：[fact] [decision] [preference] [todo] [outcome]",
+                  "最多12条，宁缺毋滥。无内容则回复 NO_REPLY",
+                ].join("\n"),
               },
             },
           },

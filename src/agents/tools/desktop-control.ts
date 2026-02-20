@@ -20,13 +20,15 @@ const DESKTOP_CONTROL_ACTIONS = [
   "scroll",
   "list_windows",
   "focus",
+  "app_search",
 ] as const;
 
 const MOUSE_BUTTONS = ["left", "right", "middle"] as const;
 
 const DesktopControlSchema = Type.Object({
   action: stringEnum(DESKTOP_CONTROL_ACTIONS, {
-    description: "Action to perform: screenshot, click, type, key, scroll, list_windows, focus",
+    description:
+      "Action to perform: screenshot, click, type, key, scroll, list_windows, focus, app_search",
   }),
   x: Type.Optional(
     Type.Number({ description: "Screen X coordinate for click (physical pixels)." }),
@@ -182,7 +184,7 @@ function psFile(script: string, timeoutMs = 10000): string {
 
 /** Bump this version whenever the helper script content changes.
  *  This ensures a stale cached .ps1 in %TEMP% is regenerated. */
-const HELPER_SCRIPT_VERSION = 8;
+const HELPER_SCRIPT_VERSION = 9;
 const HELPER_SCRIPT_NAME = `openclawcn-desktop-control-helper-v${HELPER_SCRIPT_VERSION}.ps1`;
 
 function getHelperScriptPath(): string {
@@ -342,6 +344,39 @@ public class WinInput {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+function DrawCoordinateGrid($graphics, $imgWidth, $imgHeight) {
+    # Draw semi-transparent coordinate grid to help AI locate positions
+    # Grid spacing: every 200px, with labels at intersections
+    $gridSpacing = 200
+    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(80, 255, 0, 0), 1)
+    $font = New-Object System.Drawing.Font("Arial", 10)
+    $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(180, 255, 0, 0))
+    $bgBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(140, 255, 255, 255))
+
+    # Vertical lines + X labels along top
+    for ($x = $gridSpacing; $x -lt $imgWidth; $x += $gridSpacing) {
+        $graphics.DrawLine($pen, $x, 0, $x, $imgHeight)
+        $label = "$x"
+        $sz = $graphics.MeasureString($label, $font)
+        $graphics.FillRectangle($bgBrush, $x + 2, 2, $sz.Width, $sz.Height)
+        $graphics.DrawString($label, $font, $brush, ($x + 2), 2)
+    }
+
+    # Horizontal lines + Y labels along left
+    for ($y = $gridSpacing; $y -lt $imgHeight; $y += $gridSpacing) {
+        $graphics.DrawLine($pen, 0, $y, $imgWidth, $y)
+        $label = "$y"
+        $sz = $graphics.MeasureString($label, $font)
+        $graphics.FillRectangle($bgBrush, 2, $y + 2, $sz.Width, $sz.Height)
+        $graphics.DrawString($label, $font, $brush, 2, ($y + 2))
+    }
+
+    $pen.Dispose()
+    $font.Dispose()
+    $brush.Dispose()
+    $bgBrush.Dispose()
+}
+
 switch ($Action) {
     "screenshot" {
         if ($Window) {
@@ -375,10 +410,11 @@ switch ($Action) {
                     $bitmap = New-Object System.Drawing.Bitmap($w, $h)
                     $g = [System.Drawing.Graphics]::FromImage($bitmap)
                     $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+                    DrawCoordinateGrid $g $w $h
                     $g.Dispose()
                     $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
                     $bitmap.Dispose()
-                    Write-Output "ok|$w|$h|window"
+                    Write-Output "ok|$w|$h|window|winpos:$($rect.Left),$($rect.Top)"
                 } else {
                     Write-Output "error|Window has zero size"
                 }
@@ -391,6 +427,7 @@ switch ($Action) {
                 $bitmap = New-Object System.Drawing.Bitmap($vw, $vh)
                 $g = [System.Drawing.Graphics]::FromImage($bitmap)
                 $g.CopyFromScreen($vx, $vy, 0, 0, (New-Object System.Drawing.Size($vw, $vh)))
+                DrawCoordinateGrid $g $vw $vh
                 $g.Dispose()
                 $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
                 $bitmap.Dispose()
@@ -405,6 +442,7 @@ switch ($Action) {
             $bitmap = New-Object System.Drawing.Bitmap($vw, $vh)
             $g = [System.Drawing.Graphics]::FromImage($bitmap)
             $g.CopyFromScreen($vx, $vy, 0, 0, (New-Object System.Drawing.Size($vw, $vh)))
+            DrawCoordinateGrid $g $vw $vh
             $g.Dispose()
             $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
@@ -662,27 +700,92 @@ export async function handleScreenshot(
     const width = parseInt(parts[1] || "0", 10);
     const height = parseInt(parts[2] || "0", 10);
     const mode = parts[3] || "fullscreen";
-    const note = parts[4] || "";
+    const note = parts.find((p) => p && !p.startsWith("monitors:") && !p.startsWith("offset:") && !p.startsWith("winpos:") && p !== "ok" && p !== String(width) && p !== String(height) && p !== mode) || "";
 
     const monitorInfo = parts.find((p) => p?.startsWith("monitors:")) ?? "";
     const offsetInfo = parts.find((p) => p?.startsWith("offset:")) ?? "";
+    const winposInfo = parts.find((p) => p?.startsWith("winpos:")) ?? "";
     const monitorCount = monitorInfo ? parseInt(monitorInfo.split(":")[1] || "1", 10) : 1;
 
-    const extraText = [
-      `屏幕截图 (${width}x${height}, ${mode}${monitorCount > 1 ? `, ${monitorCount}个显示器` : ""})`,
-      note === "window_not_found" ? `注意: 未找到窗口 '${window}'，已截取全屏` : "",
-      offsetInfo && offsetInfo !== "offset:0,0"
-        ? `多显示器偏移: ${offsetInfo.split(":")[1]} — click 坐标需加上此偏移`
-        : "提示: 图片中的坐标即为 click 操作的物理像素坐标",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    // Parse window position for window-mode screenshots
+    let winLeft = 0;
+    let winTop = 0;
+    if (winposInfo) {
+      const [l, t] = winposInfo.split(":")[1]?.split(",") ?? [];
+      winLeft = parseInt(l || "0", 10);
+      winTop = parseInt(t || "0", 10);
+    }
+
+    // Calculate scale factor: image may be resized by sanitizeToolResultImages (max 2000px)
+    // The model sees the resized image but needs to output physical screen coordinates
+    const MAX_SANITIZE_DIM = 2000;
+    const maxDim = Math.max(width, height);
+    const willBeResized = maxDim > MAX_SANITIZE_DIM;
+    const scaleFactor = willBeResized ? maxDim / MAX_SANITIZE_DIM : 1;
+    const displayWidth = willBeResized ? Math.round(width / scaleFactor) : width;
+    const displayHeight = willBeResized ? Math.round(height / scaleFactor) : height;
+
+    // Build coordinate instruction for the model
+    const extraTextLines: string[] = [];
+
+    if (mode === "window" && winposInfo) {
+      extraTextLines.push(
+        `窗口截图 (原始 ${width}x${height}, 窗口位置: 左上角在屏幕 (${winLeft}, ${winTop}))`,
+      );
+      if (willBeResized) {
+        extraTextLines.push(
+          `⚠ 图片已缩放至 ${displayWidth}x${displayHeight} 显示。`,
+          `坐标换算公式: screen_x = ${winLeft} + image_x * ${scaleFactor.toFixed(2)}, screen_y = ${winTop} + image_y * ${scaleFactor.toFixed(2)}`,
+          `例：图片中 (100, 50) → click(${winLeft + Math.round(100 * scaleFactor)}, ${winTop + Math.round(50 * scaleFactor)})`,
+        );
+      } else {
+        extraTextLines.push(
+          `坐标换算: screen_x = ${winLeft} + image_x, screen_y = ${winTop} + image_y`,
+          `例：图片中 (100, 50) → click(${winLeft + 100}, ${winTop + 50})`,
+        );
+      }
+    } else {
+      // Fullscreen mode
+      extraTextLines.push(
+        `屏幕截图 (${width}x${height}${monitorCount > 1 ? `, ${monitorCount}个显示器` : ""})`,
+      );
+
+      if (note === "window_not_found") {
+        extraTextLines.push(`注意: 未找到窗口 '${window}'，已截取全屏`);
+      }
+
+      if (willBeResized) {
+        const screenOffsetX = offsetInfo ? parseInt((offsetInfo.split(":")[1] ?? "0").split(",")[0] || "0", 10) : 0;
+        const screenOffsetY = offsetInfo ? parseInt((offsetInfo.split(":")[1] ?? "0").split(",")[1] || "0", 10) : 0;
+        extraTextLines.push(
+          `⚠ 图片已缩放至 ${displayWidth}x${displayHeight} 显示。`,
+          `坐标换算公式: screen_x = ${screenOffsetX} + image_x * ${scaleFactor.toFixed(2)}, screen_y = ${screenOffsetY} + image_y * ${scaleFactor.toFixed(2)}`,
+        );
+      } else if (offsetInfo && offsetInfo !== "offset:0,0") {
+        extraTextLines.push(
+          `多显示器偏移: ${offsetInfo.split(":")[1]} — click 坐标需加上此偏移`,
+        );
+      } else {
+        extraTextLines.push("提示: 图片中的坐标即为 click 操作的物理像素坐标");
+      }
+    }
+
+    const extraText = extraTextLines.filter(Boolean).join("\n");
 
     return await imageResultFromFile({
       label: "desktop_control:screenshot",
       path: tmpPath,
       extraText,
-      details: { status: "ok", action: "screenshot", width, height, mode, monitors: monitorCount },
+      details: {
+        status: "ok",
+        action: "screenshot",
+        width,
+        height,
+        mode,
+        monitors: monitorCount,
+        ...(mode === "window" ? { winLeft, winTop } : {}),
+        ...(willBeResized ? { scaleFactor: +scaleFactor.toFixed(2), displayWidth, displayHeight } : {}),
+      },
     });
   } finally {
     try {
@@ -930,6 +1033,220 @@ function handleFocus(params: Record<string, unknown>): AgentToolResult<unknown> 
   };
 }
 
+// ─── App search box profiles ────────────────────────────────────────
+
+/**
+ * Known app search box positions (relative to window rect).
+ * processName → { xRatio, yOffset } where:
+ *   searchBox_screen_x = windowRect.Left + windowWidth * xRatio
+ *   searchBox_screen_y = windowRect.Top + yOffset
+ */
+const APP_SEARCH_PROFILES: Record<
+  string,
+  { xRatio: number; yOffset: number; displayName: string }
+> = {
+  cloudmusic: { xRatio: 0.39, yOffset: 45, displayName: "网易云音乐" },
+};
+
+/**
+ * app_search action: Find an app window by process name, focus it,
+ * click the search box at a known position, type the query, and press Enter.
+ * This avoids the model needing to guess coordinates from screenshots.
+ */
+function handleAppSearch(params: Record<string, unknown>): AgentToolResult<unknown> {
+  const text = readStringParam(params, "text", { required: true });
+  const window = readStringParam(params, "window") ?? "";
+
+  // Step 1: Find matching process → window rect
+  const findScript = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class AppSearch {
+    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+    public static extern int GetWindowText(IntPtr h, StringBuilder s, int c);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(int f, int dx, int dy, int d, int e);
+    [DllImport("user32.dll")] public static extern uint SendInput(uint n, INPUT[] p, int s);
+    public const int MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const int MOUSEEVENTF_LEFTUP = 0x0004;
+    public const int INPUT_KEYBOARD = 1;
+    public const uint KEYEVENTF_UNICODE = 0x0004;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+    [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public KEYBDINPUT ki; }
+    [StructLayout(LayoutKind.Sequential)] public struct INPUT { public int type; public INPUTUNION u; }
+    public delegate bool EP(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EP p, IntPtr l);
+    public static void SendUnicodeChar(char c) {
+        var inputs = new INPUT[2];
+        inputs[0].type = INPUT_KEYBOARD; inputs[0].u.ki.wScan = (ushort)c; inputs[0].u.ki.dwFlags = KEYEVENTF_UNICODE;
+        inputs[1].type = INPUT_KEYBOARD; inputs[1].u.ki.wScan = (ushort)c; inputs[1].u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+        SendInput(2, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+}
+"@
+Add-Type -AssemblyName System.Windows.Forms
+[AppSearch]::SetProcessDPIAware() > $null
+
+$processFilter = '${psEscape(window)}'
+$searchText = '${psEscape(text)}'
+
+# Find window by process name
+$targetHwnd = [IntPtr]::Zero
+$targetTitle = ""
+$targetRect = $null
+
+$callback = [AppSearch+EP]{
+    param($hwnd, $lparam)
+    if ([AppSearch]::IsWindowVisible($hwnd)) {
+        $len = [AppSearch]::GetWindowTextLength($hwnd)
+        if ($len -gt 0) {
+            $winPid = [uint32]0
+            [AppSearch]::GetWindowThreadProcessId($hwnd, [ref]$winPid) > $null
+            $procName = ""
+            try { $procName = (Get-Process -Id $winPid -ErrorAction SilentlyContinue).ProcessName } catch {}
+            if ($procName -and $procName -match $processFilter) {
+                $sb = New-Object System.Text.StringBuilder($len + 1)
+                [AppSearch]::GetWindowText($hwnd, $sb, $sb.Capacity) > $null
+                $r = New-Object AppSearch+RECT
+                [AppSearch]::GetWindowRect($hwnd, [ref]$r) > $null
+                $w = $r.Right - $r.Left
+                $h = $r.Bottom - $r.Top
+                if ($w -gt 200 -and $h -gt 200) {
+                    $script:targetHwnd = $hwnd
+                    $script:targetTitle = $sb.ToString()
+                    $script:targetRect = $r
+                    return $false
+                }
+            }
+        }
+    }
+    return $true
+}
+[AppSearch]::EnumWindows($callback, [IntPtr]::Zero) > $null
+
+if ($targetHwnd -eq [IntPtr]::Zero) {
+    Write-Output "error|process_not_found|$processFilter"
+    exit
+}
+
+$wLeft = $targetRect.Left
+$wTop = $targetRect.Top
+$wWidth = $targetRect.Right - $targetRect.Left
+
+# Restore if minimized
+if ([AppSearch]::IsIconic($targetHwnd)) {
+    [AppSearch]::ShowWindow($targetHwnd, 9) > $null
+    Start-Sleep -Milliseconds 300
+}
+[AppSearch]::ShowWindow($targetHwnd, 5) > $null
+[AppSearch]::SetForegroundWindow($targetHwnd) > $null
+Start-Sleep -Milliseconds 500
+
+Write-Output "ok|found|$targetTitle|x=$wLeft|y=$wTop|w=$wWidth"
+`;
+
+  try {
+    const findResult = psFile(findScript, 10000);
+    const findParts = findResult.split("|");
+
+    if (findParts[0] === "error") {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `未找到进程 '${window}' 的窗口。请确认应用已打开。`,
+          },
+        ],
+        details: { status: "error", action: "app_search", error: "process_not_found" },
+      };
+    }
+
+    const winTitle = findParts[2] || "";
+    const winLeft = parseInt((findParts[3] || "x=0").split("=")[1] || "0", 10);
+    const winTop = parseInt((findParts[4] || "y=0").split("=")[1] || "0", 10);
+    const winWidth = parseInt((findParts[5] || "w=0").split("=")[1] || "0", 10);
+
+    // Step 2: Determine search box position from profile
+    const profile = APP_SEARCH_PROFILES[window.toLowerCase()];
+    if (!profile) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `未配置 '${window}' 的搜索框位置。已知应用: ${Object.entries(APP_SEARCH_PROFILES)
+              .map(([k, v]) => `${k}(${v.displayName})`)
+              .join(", ")}`,
+          },
+        ],
+        details: { status: "error", action: "app_search", error: "no_profile" },
+      };
+    }
+
+    const searchX = Math.round(winLeft + winWidth * profile.xRatio);
+    const searchY = winTop + profile.yOffset;
+
+    // Step 3: Click search box → Ctrl+A → type → Enter
+    const searchScript = `
+[AppSearch2_Padding]::SetProcessDPIAware() > $null
+`;
+    // Use the helper for click, then key, then type, then key
+    // Click the search box
+    runHelper(["-Action", "click", "-X", String(searchX), "-Y", String(searchY)], 5000);
+
+    // Wait a bit for focus
+    const sleepScript = "Start-Sleep -Milliseconds 300";
+    psFile(sleepScript, 2000);
+
+    // Select all existing text
+    runHelper(["-Action", "key", "-Keys", "^a"], 3000);
+    psFile("Start-Sleep -Milliseconds 100", 2000);
+
+    // Type the search text
+    runHelper(["-Action", "type", "-Text", text], 5000);
+    psFile("Start-Sleep -Milliseconds 200", 2000);
+
+    // Press Enter
+    runHelper(["-Action", "key", "-Keys", "{ENTER}"], 3000);
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `已在 ${profile.displayName} 中搜索: "${text}"\n窗口: ${winTitle} (${winLeft},${winTop} ${winWidth}px宽)\n搜索框坐标: (${searchX}, ${searchY})`,
+        },
+      ],
+      details: {
+        status: "ok",
+        action: "app_search",
+        app: window,
+        query: text,
+        windowTitle: winTitle,
+        searchBoxX: searchX,
+        searchBoxY: searchY,
+      },
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      content: [{ type: "text", text: `应用内搜索失败: ${msg}` }],
+      details: { status: "error", action: "app_search", error: msg },
+    };
+  }
+}
+
 // ─── Tool factory ───────────────────────────────────────────────────
 
 export function createDesktopControlTool(): AnyAgentTool | null {
@@ -939,17 +1256,19 @@ export function createDesktopControlTool(): AnyAgentTool | null {
     name: "desktop_control",
     label: "Desktop Control",
     description: [
-      "Control Windows desktop GUI via screenshot, click, type, key, scroll, list/focus windows.",
+      "Control Windows desktop GUI via screenshot, click, type, key, scroll, list/focus windows, app_search.",
       "Use this to interact with apps that cannot be controlled via CLI.",
       "Workflow: screenshot → analyze UI → click/type/key/scroll → screenshot to verify.",
       "",
-      "Actions: screenshot, click, type, key, scroll, list_windows, focus",
+      "Actions: screenshot, click, type, key, scroll, list_windows, focus, app_search",
+      "app_search: Search within a known app by process name. Automatically finds the window, clicks the search box, types the query, and presses Enter.",
+      '  Supported apps: cloudmusic (网易云音乐)',
       "Examples:",
       '  desktop_control({action:"screenshot"})',
       '  desktop_control({action:"click", x:400, y:300})',
       '  desktop_control({action:"type", text:"Hello 你好"})',
       '  desktop_control({action:"key", keys:"ctrl+c"})',
-      '  desktop_control({action:"scroll", x:200, y:400, amount:-5})',
+      '  desktop_control({action:"app_search", window:"cloudmusic", text:"Starlight"})',
       '  desktop_control({action:"list_windows"})',
       '  desktop_control({action:"focus", window:"ToDesk"})',
     ].join("\n"),
@@ -974,6 +1293,8 @@ export function createDesktopControlTool(): AnyAgentTool | null {
             return handleListWindows();
           case "focus":
             return handleFocus(params);
+          case "app_search":
+            return handleAppSearch(params);
           default:
             return {
               content: [{ type: "text", text: `未知操作: ${action}` }],

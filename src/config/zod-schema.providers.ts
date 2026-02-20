@@ -17,6 +17,8 @@ import {
   FeishuConfigSchema,
   DingtalkConfigSchema,
   WecomConfigSchema,
+  QqbotConfigSchema,
+  OpenclawwechatConfigSchema,
 } from "./zod-schema.providers-cn.js";
 
 export * from "./zod-schema.providers-core.js";
@@ -47,6 +49,8 @@ export const ChannelsSchema = z
     feishu: FeishuConfigSchema.optional(),
     dingtalk: DingtalkConfigSchema.optional(),
     wecom: WecomConfigSchema.optional(),
+    qqbot: QqbotConfigSchema.optional(),
+    openclawwechat: OpenclawwechatConfigSchema.optional(),
   })
   .passthrough() // Allow extension channel configs (nostr, matrix, zalo, etc.)
   .optional();

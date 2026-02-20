@@ -301,6 +301,12 @@ export async function ensureAgentWorkspace(params?: {
   await writeFileIfMissing(userPath, userTemplate);
   await writeFileIfMissing(heartbeatPath, heartbeatTemplate);
 
+  // ── MEMORY.md + memory/ directory ──
+  const memoryPath = path.join(dir, DEFAULT_MEMORY_FILENAME);
+  const memoryTemplate = await loadTemplate(DEFAULT_MEMORY_FILENAME);
+  await writeFileIfMissing(memoryPath, memoryTemplate);
+  await fs.mkdir(path.join(dir, "memory"), { recursive: true });
+
   let state = await readWorkspaceOnboardingState(statePath);
   let stateDirty = false;
   const markState = (next: Partial<WorkspaceOnboardingState>) => {

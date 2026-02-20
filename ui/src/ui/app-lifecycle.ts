@@ -57,7 +57,40 @@ export function handleConnected(host: LifecycleHost) {
   applySettingsFromUrl(
     host as unknown as Parameters<typeof applySettingsFromUrl>[0],
   );
-  connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+
+  const settingsHost = host as unknown as Parameters<typeof connectGateway>[0];
+  // Detect desktop mode: Tauri on Windows uses http://tauri.localhost
+  const isDesktop =
+    window.location.hostname === "tauri.localhost" ||
+    Boolean(
+      (window as Record<string, unknown>).__TAURI__ ||
+      (window as Record<string, unknown>).__TAURI_INTERNALS__,
+    );
+
+  if (isDesktop) {
+    // Desktop mode (Tauri): Rust injects a fresh token via hash on every launch.
+    // Old cached tokens are invalid after gateway restart, so always wait for
+    // the new one. Clear any stale token to avoid a failed connection attempt.
+    settingsHost.settings = { ...settingsHost.settings, token: "", gatewayUrl: "" };
+    const onHash = () => {
+      applySettingsFromUrl(
+        host as unknown as Parameters<typeof applySettingsFromUrl>[0],
+      );
+      if (settingsHost.settings.token && settingsHost.settings.token.trim()) {
+        window.removeEventListener("hashchange", onHash);
+        connectGateway(settingsHost);
+      }
+    };
+    window.addEventListener("hashchange", onHash);
+    // If hash already has token (e.g. Rust already injected), fire immediately
+    if (window.location.hash.includes("token=")) {
+      onHash();
+    }
+  } else {
+    // Browser mode: connect immediately with whatever token is available
+    connectGateway(settingsHost);
+  }
+
   startNodesPolling(host as unknown as Parameters<typeof startNodesPolling>[0]);
   startMcpPolling(host as unknown as Parameters<typeof startMcpPolling>[0]);
   if (host.tab === "logs") {

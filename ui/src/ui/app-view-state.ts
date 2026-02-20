@@ -526,6 +526,8 @@ export type McpMarketplaceItem = {
   sourceUrl?: string;
   /** Data source identifier */
   source?: string;
+  /** Setup hint from platformNotes (shown when requiresApiKey is inferred) */
+  configHint?: string;
 };
 
 export type McpMarketplaceState = {

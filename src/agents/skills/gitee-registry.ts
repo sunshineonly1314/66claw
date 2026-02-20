@@ -127,8 +127,9 @@ function getBundledSkillPath(skillName: string): string | null {
 
   const skillPath = path.join(bundledDir, skillName);
   const skillMdPath = path.join(skillPath, "SKILL.md");
+  const skillMdEncPath = path.join(skillPath, "SKILL.md.enc");
 
-  if (fs.existsSync(skillMdPath)) {
+  if (fs.existsSync(skillMdPath) || fs.existsSync(skillMdEncPath)) {
     return skillPath;
   }
 
@@ -203,9 +204,10 @@ async function installFromBundled(
     // 复制整个目录
     await copyDirRecursive(bundledPath, destPath);
 
-    // 验证 SKILL.md 存在
+    // 验证 SKILL.md 或 SKILL.md.enc 存在
     const skillMdPath = path.join(destPath, "SKILL.md");
-    if (!fs.existsSync(skillMdPath)) {
+    const skillMdEncPath = path.join(destPath, "SKILL.md.enc");
+    if (!fs.existsSync(skillMdPath) && !fs.existsSync(skillMdEncPath)) {
       await fs.promises.rm(destPath, { recursive: true, force: true });
       return { ok: false, error: "SKILL.md not found after copy" };
     }
@@ -255,7 +257,8 @@ export function getBundledSkillNames(): string[] {
       .filter((entry) => entry.isDirectory())
       .filter((entry) => {
         const skillMd = path.join(bundledDir, entry.name, "SKILL.md");
-        return fs.existsSync(skillMd);
+        const skillMdEnc = path.join(bundledDir, entry.name, "SKILL.md.enc");
+        return fs.existsSync(skillMd) || fs.existsSync(skillMdEnc);
       })
       .map((entry) => entry.name);
   } catch {
@@ -525,7 +528,8 @@ export function getInstalledSkills(targetDir?: string): string[] {
       .filter((entry) => entry.isDirectory())
       .filter((entry) => {
         const skillMd = path.join(skillsDir, entry.name, "SKILL.md");
-        return fs.existsSync(skillMd);
+        const skillMdEnc = path.join(skillsDir, entry.name, "SKILL.md.enc");
+        return fs.existsSync(skillMd) || fs.existsSync(skillMdEnc);
       })
       .map((entry) => entry.name);
   } catch {
@@ -540,7 +544,8 @@ export function isSkillInstalled(skillName: string, targetDir?: string): boolean
   const skillsDir = targetDir ?? MANAGED_SKILLS_DIR;
   const skillDir = path.join(skillsDir, skillName);
   const skillMd = path.join(skillDir, "SKILL.md");
-  return fs.existsSync(skillMd);
+  const skillMdEnc = path.join(skillDir, "SKILL.md.enc");
+  return fs.existsSync(skillMd) || fs.existsSync(skillMdEnc);
 }
 
 /**

@@ -33,6 +33,8 @@ export interface ModelDef {
   contextWindow?: number;
   /** 最大输出 tokens (可选) */
   maxTokens?: number;
+  /** 仅限 Coding Agent 使用，不可作为通用聊天模型自动分配 */
+  agentOnly?: boolean;
 }
 
 /** Provider 分组 */
@@ -134,7 +136,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelId: "kimi-for-coding",
         modelName: "Kimi for Coding",
         capabilities: ["text"],
-        pricing: { type: "free", details: "代码专用,262K 超长上下文" },
+        pricing: { type: "paid", details: "代码+文字,262K 超长上下文" },
         contextWindow: 262144,
         maxTokens: 8192,
       },
@@ -155,7 +157,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelId: "qwen-plus",
         modelName: "Qwen-Plus",
         capabilities: ["text"],
-        pricing: { type: "free", details: "送100万Token" },
+        pricing: { type: "paid", details: "送100万Token" },
         contextWindow: 32768,
         maxTokens: 8192,
       },
@@ -172,7 +174,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelId: "qwen-vl-plus",
         modelName: "Qwen-VL-Plus",
         capabilities: ["image-understanding"],
-        pricing: { type: "free" },
+        pricing: { type: "paid" },
       },
       {
         modelId: "qwen-vl-max",
@@ -185,7 +187,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelId: "text-embedding-v3",
         modelName: "Text-Embedding-V3",
         capabilities: ["embedding"],
-        pricing: { type: "free" },
+        pricing: { type: "paid" },
         testEndpoint: "/embeddings",
       },
     ],
@@ -209,6 +211,18 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         contextWindow: 32768,
         maxTokens: 4096,
       },
+      {
+        modelId: "doubao-seed-1-6-lite-251015",
+        modelName: "Doubao-Seed-1.6-Lite",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "doubao-seed-1-6-flash-250828",
+        modelName: "Doubao-Seed-1.6-Flash",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+      },
       // 图片理解模型
       {
         modelId: "doubao-vision-pro",
@@ -227,8 +241,8 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     providerId: "siliconflow",
     name: "硅基流动",
     icon: "🔮",
-    group: "cn-more",
-    tagline: "模型聚合平台 · 免费模型多 · 智能推荐必需",
+    group: "cn-recommended",
+    tagline: "记忆与推荐必需 · 免费模型多 · 需实名注册",
     apiKeyUrl: "https://cloud.siliconflow.cn/account/ak",
     apiKeyGuide: [
       "访问 siliconflow.cn 注册",
@@ -237,20 +251,12 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       "创建新密钥并复制",
     ],
     models: [
-      // 文字对话模型 (优先免费)
+      // 文字对话模型 (Kimi-K2.5 Pro 首选)
       {
-        modelId: "Qwen/Qwen2.5-7B-Instruct",
-        modelName: "Qwen2.5-7B-Instruct",
+        modelId: "Pro/moonshotai/Kimi-K2.5",
+        modelName: "Kimi-K2.5 (Pro)",
         capabilities: ["text"],
-        pricing: { type: "free" },
-        contextWindow: 32768,
-        maxTokens: 8192,
-      },
-      {
-        modelId: "meta-llama/Llama-3.3-70B-Instruct",
-        modelName: "Llama-3.3-70B-Instruct",
-        capabilities: ["text"],
-        pricing: { type: "free" },
+        pricing: { type: "paid" },
         contextWindow: 131072,
         maxTokens: 8192,
       },
@@ -262,12 +268,20 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         contextWindow: 65536,
         maxTokens: 8192,
       },
+      {
+        modelId: "Qwen/Qwen2.5-7B-Instruct",
+        modelName: "Qwen2.5-7B-Instruct (免费)",
+        capabilities: ["text"],
+        pricing: { type: "free" },
+        contextWindow: 32768,
+        maxTokens: 8192,
+      },
       // 图片理解模型
       {
         modelId: "Qwen/Qwen-VL-Plus",
         modelName: "Qwen-VL-Plus",
         capabilities: ["image-understanding"],
-        pricing: { type: "free" },
+        pricing: { type: "paid" },
       },
       {
         modelId: "Qwen/Qwen2-VL-72B-Instruct",
@@ -345,12 +359,52 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     models: [
       // 文字对话模型
       {
-        modelId: "glm-4-flash",
-        modelName: "GLM-4-Flash",
+        modelId: "glm-5",
+        modelName: "GLM-5",
         capabilities: ["text"],
-        pricing: { type: "free", details: "永久免费" },
-        contextWindow: 128000,
-        maxTokens: 4096,
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "glm-5-code",
+        modelName: "GLM-5-Code",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "glm-4.7-flash",
+        modelName: "GLM-4.7-Flash",
+        capabilities: ["text"],
+        pricing: { type: "free", details: "完全免费" },
+      },
+      {
+        modelId: "glm-4.7",
+        modelName: "GLM-4.7",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "glm-4.6",
+        modelName: "GLM-4.6",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "glm-4.5",
+        modelName: "GLM-4.5",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "glm-4.5-flash",
+        modelName: "GLM-4.5-Flash",
+        capabilities: ["text"],
+        pricing: { type: "free", details: "免费" },
+      },
+      {
+        modelId: "glm-4.5-air",
+        modelName: "GLM-4.5-Air",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
       },
       {
         modelId: "glm-4-plus",
@@ -360,7 +414,27 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         contextWindow: 128000,
         maxTokens: 4096,
       },
+      {
+        modelId: "glm-4-flash",
+        modelName: "GLM-4-Flash",
+        capabilities: ["text"],
+        pricing: { type: "free", details: "免费" },
+        contextWindow: 128000,
+        maxTokens: 4096,
+      },
       // 图片理解模型
+      {
+        modelId: "glm-4.6v",
+        modelName: "GLM-4.6V",
+        capabilities: ["image-understanding"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "glm-4.5v",
+        modelName: "GLM-4.5V",
+        capabilities: ["image-understanding"],
+        pricing: { type: "paid" },
+      },
       {
         modelId: "glm-4v-plus",
         modelName: "GLM-4V-Plus",
@@ -425,10 +499,42 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     models: [
       // 文字对话模型
       {
+        modelId: "MiniMax-M2.5",
+        modelName: "MiniMax-M2.5",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+      {
+        modelId: "MiniMax-M2.5-highspeed",
+        modelName: "MiniMax-M2.5-Highspeed",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+      {
         modelId: "MiniMax-M2.1",
         modelName: "MiniMax-M2.1",
         capabilities: ["text"],
         pricing: { type: "paid", details: "Agent/代码专家" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+      {
+        modelId: "MiniMax-M2.1-highspeed",
+        modelName: "MiniMax-M2.1-Highspeed",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+      {
+        modelId: "MiniMax-M2",
+        modelName: "MiniMax-M2",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
         contextWindow: 200000,
         maxTokens: 8192,
       },
@@ -489,6 +595,64 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelName: "Hunyuan-Vision",
         capabilities: ["image-understanding"],
         pricing: { type: "paid" },
+      },
+    ],
+  },
+
+  "ant-ling": {
+    providerId: "ant-ling",
+    name: "蚂蚁百灵",
+    icon: "🐜",
+    group: "cn-more",
+    tagline: "每日免费50万Token · 多模态 · 联网搜索",
+    apiKeyUrl: "https://ling.tbox.cn/open",
+    apiKeyGuide: [
+      "访问 ling.tbox.cn/open 注册账号",
+      "进入开放平台获取 API Key",
+      "每日免费 50 万 tokens",
+    ],
+    models: [
+      {
+        modelId: "ling-1t",
+        modelName: "Ling-1T",
+        capabilities: ["text"],
+        pricing: { type: "free", details: "每日免费50万Token" },
+      },
+      {
+        modelId: "ring-1t",
+        modelName: "Ring-1T",
+        capabilities: ["text"],
+        pricing: { type: "free", details: "每日免费50万Token" },
+      },
+      {
+        modelId: "ming-flash-omni",
+        modelName: "Ming-Flash-Omni",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "free", details: "多模态 · 每日免费50万Token" },
+      },
+    ],
+  },
+
+  "meituan-longcat": {
+    providerId: "meituan-longcat",
+    name: "美团LongCat",
+    icon: "🐱",
+    group: "cn-more",
+    tagline: "每日免费50万Token · 128K上下文 · OpenAI兼容",
+    apiKeyUrl: "https://longcat.chat/login?countrycode=86&countryname=China&callback=https%3A%2F%2Flongcat.chat%2Fplatform",
+    apiKeyGuide: [
+      "访问 longcat.chat 注册账号",
+      "进入平台获取 API Key",
+      "每日免费 50 万 tokens",
+    ],
+    models: [
+      {
+        modelId: "longcat-flash-chat",
+        modelName: "LongCat Flash",
+        capabilities: ["text"],
+        pricing: { type: "free", details: "每日免费50万Token" },
+        contextWindow: 131072,
+        maxTokens: 8192,
       },
     ],
   },
@@ -627,7 +791,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelId: "nvidia/llama-3.1-nemotron-70b-instruct",
         modelName: "Llama 3.1 Nemotron 70B",
         capabilities: ["text"],
-        pricing: { type: "free", details: "有免费额度" },
+        pricing: { type: "paid", details: "有免费额度" },
         contextWindow: 128000,
         maxTokens: 4096,
       },

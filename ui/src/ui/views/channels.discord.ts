@@ -60,28 +60,33 @@ export function renderDiscordCard(params: {
         <div class="channel-card__desc">${t("channels.discord.description")}</div>
         ${accountCountLabel}
 
-        ${(discord?.configured || discord?.running)
-          ? html`
-            <div class="status-list">
-              <div>
-                <span class="label">${t("channels.configured")}</span>
-                <span>${discord?.configured ? t("common.yes") : t("common.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("common.running")}</span>
-                <span>${discord?.running ? t("common.yes") : t("common.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastStart")}</span>
-                <span>${discord?.lastStartAt ? formatAgo(discord.lastStartAt) : t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastProbe")}</span>
-                <span>${discord?.lastProbeAt ? formatAgo(discord.lastProbeAt) : t("common.na")}</span>
-              </div>
-            </div>
-          `
-          : nothing}
+        <div class="status-list">
+          <div>
+            <span class="label">${t("channels.configured")}</span>
+            <span>${discord?.configured ? t("common.yes") : t("common.no")}</span>
+          </div>
+          <div>
+            <span class="label">${t("common.running")}</span>
+            <span>${discord?.running ? t("common.yes") : t("common.no")}</span>
+          </div>
+          ${(discord?.configured || discord?.running) ? html`
+          <div>
+            <span class="label">${t("channels.lastStart")}</span>
+            <span>${discord?.lastStartAt ? formatAgo(discord.lastStartAt) : t("common.na")}</span>
+          </div>
+          <div>
+            <span class="label">${t("channels.lastProbe")}</span>
+            <span>${discord?.lastProbeAt ? formatAgo(discord.lastProbeAt) : t("common.na")}</span>
+          </div>
+          ` : nothing}
+        </div>
+
+        ${!(discord?.configured || discord?.running) ? html`
+          <div class="connection-hint">
+            <div class="connection-hint__title">💡 配置指引</div>
+            <div class="connection-hint__desc">在下方配置表单中填写 Discord Bot Token 即可启用。需要先在 Discord Developer Portal 创建 Bot。</div>
+          </div>
+        ` : nothing}
 
         ${discord?.lastError
           ? html`<div class="${errorCalloutClass(discord.lastError)}" style="margin-top: 12px;">

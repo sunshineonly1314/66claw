@@ -46,6 +46,12 @@ function makeState(overrides: Partial<McpMarketplaceState> = {}): McpMarketplace
     detailItem: null,
     configTarget: null,
     toast: null,
+    showBatchConfig: false,
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 0,
+    loadingMore: false,
     ...overrides,
   };
 }

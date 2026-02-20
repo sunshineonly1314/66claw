@@ -31,7 +31,8 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   // 将 token 注入到页面中，供 JavaScript 使用
   // 防止 </script> 注入：将 </ 转义为 <\/ 避免提前关闭 script 标签
   const safeToken = gatewayToken ? JSON.stringify(gatewayToken).replace(/<\//g, "<\\/") : "null";
-  const tokenScript = `<script>window.__GATEWAY_TOKEN__ = ${safeToken};</script>`;
+  const isDesktopMode = process.env.OPENCLAWCN_DESKTOP_MODE === "1";
+  const tokenScript = `<script>window.__GATEWAY_TOKEN__ = ${safeToken};window.__DESKTOP_MODE__ = ${isDesktopMode ? "true" : "false"};</script>`;
 
   const ctx: SetupPageContext = {
     logoBase64,
@@ -3478,17 +3479,29 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
 
     /* 微信技术支持二维码卡片 */
     .wechat-support-card {
-      background: linear-gradient(160deg, rgba(7, 193, 96, 0.06) 0%, rgba(7, 193, 96, 0.02) 100%);
-      border: 1.5px solid rgba(7, 193, 96, 0.25);
+      background: linear-gradient(160deg, #1a1814 0%, #25201a 40%, #1e1b15 100%);
+      border: 2px solid rgba(251, 191, 36, 0.4);
       border-radius: var(--radius-xl);
       display: flex;
       flex-direction: column;
       overflow: hidden;
       transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      animation: wechatCardBreathe 3s ease-in-out infinite;
+    }
+    @keyframes wechatCardBreathe {
+      0%, 100% {
+        border-color: rgba(251, 191, 36, 0.4);
+        box-shadow: 0 0 20px rgba(251, 191, 36, 0.1), 0 4px 16px rgba(0, 0, 0, 0.2);
+      }
+      50% {
+        border-color: rgba(251, 191, 36, 0.65);
+        box-shadow: 0 0 32px rgba(251, 191, 36, 0.2), 0 4px 16px rgba(0, 0, 0, 0.2);
+      }
     }
     .wechat-support-card:hover {
-      border-color: rgba(7, 193, 96, 0.45);
-      box-shadow: 0 4px 20px rgba(7, 193, 96, 0.1);
+      border-color: rgba(251, 191, 36, 0.7);
+      box-shadow: 0 4px 24px rgba(251, 191, 36, 0.2), 0 8px 32px rgba(0, 0, 0, 0.3);
+      animation: none;
     }
     .wechat-support-header {
       display: flex;
@@ -3498,8 +3511,9 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       padding: 14px 16px 10px;
       font-weight: 700;
       font-size: 0.95em;
-      color: #07C160;
-      letter-spacing: 0.3px;
+      color: #fbbf24;
+      letter-spacing: 0.5px;
+      text-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
     }
     .wechat-support-header .material-icons {
       font-size: 1.2em;
@@ -3521,13 +3535,16 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       overflow: hidden;
       margin-bottom: 16px;
       position: relative;
+      border-radius: 12px;
+      border: 2px solid rgba(251, 191, 36, 0.3);
     }
     .wechat-qr-wrapper img {
       width: 100%;
       height: auto;
       object-fit: cover;
       border-radius: 10px;
-      transform: scale(1.25);
+      transform: scale(1.15);
+      filter: sepia(0.15) saturate(1.1) brightness(1.05);
     }
     .wechat-qr-wrapper .qrcode-loading {
       font-size: 0.85em;
@@ -3539,19 +3556,19 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     .wechat-support-title {
       font-size: 1em;
       font-weight: 600;
-      color: var(--text-primary);
+      color: rgba(255, 255, 255, 0.9);
       margin-bottom: 4px;
       line-height: 1.4;
     }
     .wechat-support-group {
       font-size: 0.9em;
       font-weight: 600;
-      color: #07C160;
+      color: #fbbf24;
       margin-bottom: 6px;
     }
     .wechat-support-hint {
       font-size: 0.82em;
-      color: var(--text-muted);
+      color: rgba(251, 191, 36, 0.55);
       display: flex;
       align-items: center;
       gap: 6px;

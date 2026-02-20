@@ -29,10 +29,29 @@ function mergeProviderModels(implicit: ProviderConfig, explicit: ProviderConfig)
     const id = (model as { id?: unknown }).id;
     return typeof id === "string" ? id.trim() : "";
   };
+
+  // Build implicit model lookup for carrying over critical fields (headers, compat)
+  const implicitById = new Map(
+    implicitModels.map((m) => [getId(m), m] as const).filter(([id]) => Boolean(id)),
+  );
   const seen = new Set(explicitModels.map(getId).filter(Boolean));
 
+  // When explicit model matches implicit by ID, carry over headers/compat if missing
+  const patchedExplicit = explicitModels.map((model) => {
+    const id = getId(model);
+    const implicitMatch = id ? implicitById.get(id) : undefined;
+    if (!implicitMatch) return model;
+    const rec = model as Record<string, unknown>;
+    const impRec = implicitMatch as Record<string, unknown>;
+    let patched = false;
+    const patch: Record<string, unknown> = {};
+    if (!rec.headers && impRec.headers) { patch.headers = impRec.headers; patched = true; }
+    if (!rec.compat && impRec.compat) { patch.compat = impRec.compat; patched = true; }
+    return patched ? { ...model, ...patch } : model;
+  });
+
   const mergedModels = [
-    ...explicitModels,
+    ...patchedExplicit,
     ...implicitModels.filter((model) => {
       const id = getId(model);
       if (!id) {

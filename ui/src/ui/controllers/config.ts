@@ -118,7 +118,22 @@ export async function saveConfig(state: ConfigState) {
       state.lastError = t("config.error.hashMissing");
       return;
     }
-    await state.client.request("config.set", { raw, baseHash });
+    try {
+      await state.client.request("config.set", { raw, baseHash });
+    } catch (firstErr) {
+      // config hash 不匹配 → 自动重新加载最新 config 再重试
+      if (String(firstErr).includes("config changed since last load")) {
+        await loadConfig(state);
+        const retryHash = state.configSnapshot?.hash;
+        if (retryHash) {
+          await state.client.request("config.set", { raw, baseHash: retryHash });
+        } else {
+          throw firstErr;
+        }
+      } else {
+        throw firstErr;
+      }
+    }
     state.configFormDirty = false;
     await loadConfig(state);
   } catch (err) {
@@ -142,11 +157,30 @@ export async function applyConfig(state: ConfigState) {
       state.lastError = t("config.error.hashMissing");
       return;
     }
-    await state.client.request("config.apply", {
-      raw,
-      baseHash,
-      sessionKey: state.applySessionKey,
-    });
+    try {
+      await state.client.request("config.apply", {
+        raw,
+        baseHash,
+        sessionKey: state.applySessionKey,
+      });
+    } catch (firstErr) {
+      // config hash 不匹配 → 自动重新加载最新 config 再重试
+      if (String(firstErr).includes("config changed since last load")) {
+        await loadConfig(state);
+        const retryHash = state.configSnapshot?.hash;
+        if (retryHash) {
+          await state.client.request("config.apply", {
+            raw,
+            baseHash: retryHash,
+            sessionKey: state.applySessionKey,
+          });
+        } else {
+          throw firstErr;
+        }
+      } else {
+        throw firstErr;
+      }
+    }
     state.configFormDirty = false;
     await loadConfig(state);
   } catch (err) {

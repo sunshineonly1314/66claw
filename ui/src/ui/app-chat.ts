@@ -1,6 +1,7 @@
 import { abortChatRun, loadChatHistory, sendChatMessage, type ChatSendResult } from "./controllers/chat";
 import { loadSessions } from "./controllers/sessions";
 import { syncPerformanceProfile } from "./controllers/perf-profile";
+import { syncSmartDispatch } from "./controllers/smart-dispatch";
 import { generateUUID } from "./uuid";
 import { resetToolStream } from "./app-tool-stream";
 import { scheduleChatScroll } from "./app-scroll";
@@ -197,6 +198,7 @@ export async function refreshChat(host: ChatHost) {
     loadSessions(host as unknown as ClawdbotApp),
     refreshChatAvatar(host),
     syncPerformanceProfile(host as unknown as ClawdbotApp),
+    syncSmartDispatch(host as unknown as ClawdbotApp),
   ]);
   scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], true);
 }

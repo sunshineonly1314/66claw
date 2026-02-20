@@ -59,20 +59,20 @@ export function renderWhatsAppCard(params: {
       <div class="channel-card__body">
         <div class="channel-card__desc">${t("channels.whatsapp.description")}</div>
 
-        ${(whatsapp?.configured || whatsapp?.running || whatsapp?.linked)
-          ? html`
-            <div class="status-list">
-              <div>
-                <span class="label">${t("channels.configured")}</span>
-                <span>${whatsapp?.configured ? t("common.yes") : t("common.no")}</span>
-              </div>
+        <div class="status-list">
+          <div>
+            <span class="label">${t("channels.configured")}</span>
+            <span>${whatsapp?.configured ? t("common.yes") : t("common.no")}</span>
+          </div>
+          <div>
+            <span class="label">${t("common.running")}</span>
+            <span>${whatsapp?.running ? t("common.yes") : t("common.no")}</span>
+          </div>
+          ${(whatsapp?.configured || whatsapp?.running || whatsapp?.linked)
+            ? html`
               <div>
                 <span class="label">${t("channels.whatsapp.linked")}</span>
                 <span>${whatsapp?.linked ? t("common.yes") : t("common.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("common.running")}</span>
-                <span>${whatsapp?.running ? t("common.yes") : t("common.no")}</span>
               </div>
               <div>
                 <span class="label">${t("common.connected")}</span>
@@ -100,9 +100,16 @@ export function renderWhatsAppCard(params: {
                     : t("common.na")}
                 </span>
               </div>
-            </div>
-          `
-          : nothing}
+            `
+            : nothing}
+        </div>
+
+        ${!(whatsapp?.configured || whatsapp?.running || whatsapp?.linked) ? html`
+          <div class="connection-hint">
+            <div class="connection-hint__title">💡 配置指引</div>
+            <div class="connection-hint__desc">点击下方「显示二维码」扫码绑定 WhatsApp Web 即可启用。</div>
+          </div>
+        ` : nothing}
 
         ${whatsapp?.lastError
           ? html`<div class="${errorCalloutClass(whatsapp.lastError)}" style="margin-top: 12px;">

@@ -528,7 +528,7 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
       await maybeRestartService({ shouldRestart, result, opts });
     }
 
-    if (!opts.json && result.status !== "error") {
+    if (!opts.json) {
       defaultRuntime.log(theme.muted(pickUpdateQuip()));
     }
     return;

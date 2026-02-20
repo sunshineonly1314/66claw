@@ -1,3 +1,5 @@
+import { exec } from "node:child_process";
+import path from "node:path";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { listChannelPlugins } from "../../channels/plugins/index.js";
@@ -97,6 +99,7 @@ function resolveConfigRestartRequest(params: unknown): {
   sessionKey: string | undefined;
   note: string | undefined;
   restartDelayMs: number | undefined;
+  noRestart: boolean;
   deliveryContext: ReturnType<typeof extractDeliveryInfo>["deliveryContext"];
   threadId: ReturnType<typeof extractDeliveryInfo>["threadId"];
 } {
@@ -114,6 +117,10 @@ function resolveConfigRestartRequest(params: unknown): {
       ? Math.max(0, Math.floor(restartDelayMsRaw))
       : undefined;
 
+  // [CN-PATCH] noRestart: 允许调用方声明"此次配置变更不需要重启"
+  // 适用于 dispatch.enabled 等写入后即刻通过 loadConfig() 热生效的字段
+  const noRestart = (params as { noRestart?: unknown }).noRestart === true;
+
   // Extract deliveryContext + threadId for routing after restart
   // Supports both :thread: (most channels) and :topic: (Telegram)
   const { deliveryContext, threadId } = extractDeliveryInfo(sessionKey);
@@ -122,6 +129,7 @@ function resolveConfigRestartRequest(params: unknown): {
     sessionKey,
     note,
     restartDelayMs,
+    noRestart,
     deliveryContext,
     threadId,
   };
@@ -373,21 +381,27 @@ export const configHandlers: GatewayRequestHandlers = {
     }
     await writeConfigFile(validated.config, writeOptions);
 
-    const { sessionKey, note, restartDelayMs, deliveryContext, threadId } =
+    const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
-    const payload = buildConfigRestartSentinelPayload({
-      kind: "config-patch",
-      mode: "config.patch",
-      sessionKey,
-      deliveryContext,
-      threadId,
-      note,
-    });
-    const sentinelPath = await tryWriteRestartSentinelPayload(payload);
-    const restart = scheduleGatewaySigusr1Restart({
-      delayMs: restartDelayMs,
-      reason: "config.patch",
-    });
+
+    // [CN-PATCH] noRestart: 对于 dispatch 等热生效字段，跳过 SIGUSR1 重启
+    let restart: ReturnType<typeof scheduleGatewaySigusr1Restart> | undefined;
+    let sentinelPath: string | null = null;
+    if (!noRestart) {
+      const payload = buildConfigRestartSentinelPayload({
+        kind: "config-patch",
+        mode: "config.patch",
+        sessionKey,
+        deliveryContext,
+        threadId,
+        note,
+      });
+      sentinelPath = await tryWriteRestartSentinelPayload(payload);
+      restart = scheduleGatewaySigusr1Restart({
+        delayMs: restartDelayMs,
+        reason: "config.patch",
+      });
+    }
     respond(
       true,
       {
@@ -395,10 +409,7 @@ export const configHandlers: GatewayRequestHandlers = {
         path: CONFIG_PATH,
         config: redactConfigObject(validated.config, schemaPatch.uiHints),
         restart,
-        sentinel: {
-          path: sentinelPath,
-          payload,
-        },
+        sentinel: sentinelPath ? { path: sentinelPath } : undefined,
       },
       undefined,
     );
@@ -459,21 +470,27 @@ export const configHandlers: GatewayRequestHandlers = {
     }
     await writeConfigFile(validated.config, writeOptions);
 
-    const { sessionKey, note, restartDelayMs, deliveryContext, threadId } =
+    const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
-    const payload = buildConfigRestartSentinelPayload({
-      kind: "config-apply",
-      mode: "config.apply",
-      sessionKey,
-      deliveryContext,
-      threadId,
-      note,
-    });
-    const sentinelPath = await tryWriteRestartSentinelPayload(payload);
-    const restart = scheduleGatewaySigusr1Restart({
-      delayMs: restartDelayMs,
-      reason: "config.apply",
-    });
+
+    // [CN-PATCH] noRestart: 对于 dispatch 等热生效字段，跳过 SIGUSR1 重启
+    let restart: ReturnType<typeof scheduleGatewaySigusr1Restart> | undefined;
+    let sentinelPath: string | null = null;
+    if (!noRestart) {
+      const payload = buildConfigRestartSentinelPayload({
+        kind: "config-apply",
+        mode: "config.apply",
+        sessionKey,
+        deliveryContext,
+        threadId,
+        note,
+      });
+      sentinelPath = await tryWriteRestartSentinelPayload(payload);
+      restart = scheduleGatewaySigusr1Restart({
+        delayMs: restartDelayMs,
+        reason: "config.apply",
+      });
+    }
     respond(
       true,
       {
@@ -481,12 +498,28 @@ export const configHandlers: GatewayRequestHandlers = {
         path: CONFIG_PATH,
         config: redactConfigObject(validated.config, schemaApply.uiHints),
         restart,
-        sentinel: {
-          path: sentinelPath,
-          payload,
-        },
+        sentinel: sentinelPath ? { path: sentinelPath } : undefined,
       },
       undefined,
     );
+  },
+  "config.reveal": ({ respond }) => {
+    const dir = path.dirname(CONFIG_PATH);
+    const platform = process.platform;
+    let cmd: string;
+    if (platform === "win32") {
+      cmd = `explorer "${dir}"`;
+    } else if (platform === "darwin") {
+      cmd = `open "${dir}"`;
+    } else {
+      cmd = `xdg-open "${dir}"`;
+    }
+    exec(cmd, (err) => {
+      if (err) {
+        respond(false, undefined, errorShape(ErrorCodes.INTERNAL_ERROR, `Failed to open folder: ${err.message}`));
+        return;
+      }
+      respond(true, { ok: true, path: dir }, undefined);
+    });
   },
 };

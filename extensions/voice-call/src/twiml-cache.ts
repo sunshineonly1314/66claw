@@ -67,7 +67,7 @@ export const twimlCache = new LRUCache<string, string>({
  * 泛型参数:
  * - TCallState: 通话状态类型
  */
-export function createCallStateCache<TCallState>(): LRUCache<string, TCallState> {
+export function createCallStateCache<TCallState extends NonNullable<unknown>>(): LRUCache<string, TCallState> {
   return new LRUCache<string, TCallState>({
     max: CALL_STATE_CACHE_MAX_SIZE,
     ttl: CALL_STATE_CACHE_TTL_MS,

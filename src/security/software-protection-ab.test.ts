@@ -166,9 +166,9 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
   });
 
   describe("A3: 离线宽限期正向测试", () => {
-    it("A3.1: 默认配置应该是 24 小时", async () => {
+    it("A3.1: 默认配置应该是 8 小时", async () => {
       const typesModule = await import("../../src/license/types.js");
-      expect(typesModule.DEFAULT_LICENSE_CONFIG.offlineGracePeriodHours).toBe(24);
+      expect(typesModule.DEFAULT_LICENSE_CONFIG.offlineGracePeriodHours).toBe(8);
     });
 
     it("A3.2: RSA 验证应该默认启用", async () => {
@@ -184,11 +184,11 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
       expect(fs.existsSync(hashFilePath)).toBe(true);
     });
 
-    it("A4.2: 哈希文件应该包含 22 个核心文件", () => {
+    it("A4.2: 哈希文件应该包含所有核心文件", () => {
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
-        expect(hashes.length).toBe(24);
+        expect(hashes.length).toBe(177);
       }
     });
 
@@ -201,8 +201,8 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
         const licenseFiles = paths.filter((p: string) => p.startsWith("license/"));
         const securityFiles = paths.filter((p: string) => p.startsWith("security/"));
 
-        expect(licenseFiles.length).toBe(12); // 12 个 license 文件
-        expect(securityFiles.length).toBe(12); // 12 个 security 文件
+        expect(licenseFiles.length).toBe(25); // license 目录文件
+        expect(securityFiles.length).toBe(43); // security 目录文件
       }
     });
 

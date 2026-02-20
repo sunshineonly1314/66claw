@@ -171,10 +171,14 @@ export async function runWithSmoothFallback<T>(
       };
     } catch (err) {
       lastError = err;
+      // ===== OpenClawCN: pass reason to provider-health =====
+      const errReason = err && typeof err === "object" && "reason" in err ? String((err as { reason?: string }).reason) : undefined;
       recordProviderFailure(
         candidate.provider,
         err instanceof Error ? err.message : String(err),
+        errReason,
       );
+      // ===== END =====
       onError?.({
         provider: candidate.provider,
         model: candidate.model,
@@ -238,9 +242,11 @@ async function raceModels<T>(
       .catch((err) => {
         primaryDone = true;
         primaryError = err;
+        const reason = err && typeof err === "object" && "reason" in err ? String((err as { reason?: string }).reason) : undefined;
         recordProviderFailure(
           primary.provider,
           err instanceof Error ? err.message : String(err),
+          reason,
         );
         checkAllFailed();
       });
@@ -263,9 +269,11 @@ async function raceModels<T>(
         .catch((err) => {
           backupDone = true;
           backupError = err;
+          const reason = err && typeof err === "object" && "reason" in err ? String((err as { reason?: string }).reason) : undefined;
           recordProviderFailure(
             backup.provider,
             err instanceof Error ? err.message : String(err),
+            reason,
           );
           checkAllFailed();
         });

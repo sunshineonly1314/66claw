@@ -35,6 +35,7 @@ import {
 } from "./env-substitution.js";
 import { applyConfigEnvVars } from "./env-vars.js";
 import { ConfigIncludeError, resolveConfigIncludes } from "./includes.js";
+import { applyProfileOverlay } from "./profile-overlay.js";
 import { findLegacyConfigIssues } from "./legacy.js";
 import { applyMergePatch } from "./merge-patch.js";
 import { normalizeConfigPaths } from "./normalize-paths.js";
@@ -45,6 +46,7 @@ import {
   validateConfigObjectWithPlugins,
 } from "./validation.js";
 import { compareOpenClawCNVersions } from "./version.js";
+import { decryptConfigFields, encryptConfigFields } from "./field-encrypt.js";
 
 // Re-export for backwards compatibility
 export { CircularIncludeError, ConfigIncludeError } from "./includes.js";
@@ -544,8 +546,11 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       }
       const raw = deps.fs.readFileSync(configPath, "utf-8");
       const parsed = deps.json5.parse(raw);
+      const withIncludes = resolveConfigIncludesForRead(parsed, configPath, deps);
+      const withOverlay = applyProfileOverlay(withIncludes, configPath, deps);
+      const decrypted = decryptConfigFields(withOverlay);
       const { resolvedConfigRaw: resolvedConfig } = resolveConfigForRead(
-        resolveConfigIncludesForRead(parsed, configPath, deps),
+        decrypted,
         deps.env,
       );
       warnOnConfigMiskeys(resolvedConfig, deps.logger);
@@ -687,10 +692,12 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         };
       }
 
-      // Resolve $include directives
+      // Resolve $include directives and profile overlay
       let resolved: unknown;
       try {
         resolved = resolveConfigIncludesForRead(parsedRes.parsed, configPath, deps);
+        resolved = applyProfileOverlay(resolved, configPath, deps);
+        resolved = decryptConfigFields(resolved);
       } catch (err) {
         const message =
           err instanceof ConfigIncludeError
@@ -902,9 +909,16 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       envRefMap && changedPaths
         ? (restoreEnvRefsFromMap(cfgToWrite, "", envRefMap, changedPaths) as OpenClawCNConfig)
         : cfgToWrite;
+    // Encrypt sensitive fields before writing to disk.
+    // Pass the on-disk parsed config (snapshot.parsed) so unchanged values
+    // reuse their existing ciphertext (avoids churn from random IVs).
+    const encryptedOutputConfig = encryptConfigFields(
+      outputConfig,
+      snapshot.parsed,
+    ) as OpenClawCNConfig;
     // Do NOT apply runtime defaults when writing — user config should only contain
     // explicitly set values. Runtime defaults are applied when loading (issue #6070).
-    const stampedOutputConfig = stampConfigVersion(outputConfig);
+    const stampedOutputConfig = stampConfigVersion(encryptedOutputConfig);
     const json = JSON.stringify(stampedOutputConfig, null, 2).trimEnd().concat("\n");
     const nextHash = hashConfigRaw(json);
     const previousHash = resolveConfigSnapshotHash(snapshot);

@@ -33,11 +33,15 @@ export default defineConfig(({ command }) => {
       port: 5173,
       strictPort: true,
       proxy: {
-        // Dev mode: proxy /api/ requests to Gateway so token auto-discovery works
-        // Use GATEWAY_PORT env var (set by dev-tauri.ps1) or default to 18789
+        // Dev mode: proxy API + WebSocket to Gateway
+        // Use GATEWAY_PORT env var (set by dev-tauri.ps1) or default to dev port 19002
         "/api": {
-          target: `http://127.0.0.1:${process.env.GATEWAY_PORT || "18789"}`,
+          target: `http://127.0.0.1:${process.env.GATEWAY_PORT || "19002"}`,
           changeOrigin: true,
+        },
+        "/ws": {
+          target: `ws://127.0.0.1:${process.env.GATEWAY_PORT || "19002"}`,
+          ws: true,
         },
       },
     },

@@ -156,6 +156,18 @@ export function getUvInstallScripts(platform: "sh" | "ps1"): string[] {
 }
 
 /**
+ * 获取 Go 代理 URL 列表（仅国内源）
+ * 七牛云 → 阿里云 → goproxy.io
+ */
+export function getGoProxies(): string[] {
+  return [
+    PACKAGE_MANAGER_MIRRORS.go.primary,
+    PACKAGE_MANAGER_MIRRORS.go.fallback,
+    PACKAGE_MANAGER_MIRRORS.go.tertiary,
+  ].filter(Boolean);
+}
+
+/**
  * 获取 pip 镜像 URL 列表（仅国内源）
  * 清华 → 阿里云 → 中科大
  */
@@ -382,15 +394,14 @@ export function getSignalCliDownloadUrls(version: string, _platform: "linux" | "
   const urls: string[] = [];
 
   if (useCN) {
-    // 1. ClawdSkillsProxy 托管 (最可靠)
-    // 格式: /api/binaries/signal-cli/{version}/{filename}
+    // 1. GitHub 代理（国内公共镜像优先，不消耗服务器带宽）
+    const githubUrl = `https://github.com/AsamK/signal-cli/releases/download/v${version}/${fileName}`;
+    urls.push(...getGitHubProxyUrls(githubUrl));
+
+    // 2. ClawdSkillsProxy 托管（服务器兜底）
     urls.push(
       `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${CLAWDSKILLSPROXY_CONFIG.endpoints.signalCliDownload}/${version}/${fileName}`,
     );
-
-    // 2. GitHub 代理 (备用，可能 404)
-    const githubUrl = `https://github.com/AsamK/signal-cli/releases/download/v${version}/${fileName}`;
-    urls.push(...getGitHubProxyUrls(githubUrl));
   }
 
   // 3. GitHub 原始地址 (国外)
@@ -427,45 +438,50 @@ export function getSignalCliApiUrls(): string[] {
 export function getClawdSkillsProxyHeaders(): Record<string, string> {
   return {
     Authorization: `Bearer ${CLAWDSKILLSPROXY_CONFIG.token}`,
-    "User-Agent": "openclawcn",
+    "User-Agent": "OpenClawCN/1.0",
   };
 }
 
 // ============================================================================
-// 香港二进制托管服务器
+// SkillsProxy 二进制托管（原 HK 服务器，已迁移到 obplugins.cn）
 // ============================================================================
 
 /**
- * 检查工具是否在香港服务器托管
+ * 检查工具是否在 SkillsProxy 托管
  */
 export function isToolHostedOnHK(toolName: string): boolean {
   return BINARY_DOWNLOAD_MIRRORS.hkBinaries.tools.includes(toolName);
 }
 
 /**
- * 获取香港服务器上工具的版本信息 URL
- * @param toolName 工具名 (如 "ordercli")
- * @returns 版本信息 URL
+ * 获取 SkillsProxy 上工具的最新版本信息 URL
+ * GET /api/binaries/{toolName}/latest → JSON { data: { version, assets[] } }
  */
 export function getHKBinaryVersionUrl(toolName: string): string {
-  return `${BINARY_DOWNLOAD_MIRRORS.hkBinaries.baseUrl}/${toolName}/version.txt`;
+  return `${BINARY_DOWNLOAD_MIRRORS.hkBinaries.baseUrl}/${toolName}/latest`;
 }
 
 /**
- * 获取香港服务器上工具的元信息 URL
- * @param toolName 工具名 (如 "ordercli")
- * @returns 元信息 URL
+ * 获取 SkillsProxy 认证头（所有二进制接口通用）
  */
-export function getHKBinaryMetadataUrl(toolName: string): string {
-  return `${BINARY_DOWNLOAD_MIRRORS.hkBinaries.baseUrl}/${toolName}/metadata.json`;
+export function getHKBinaryAuthHeaders(): Record<string, string> {
+  return {
+    Authorization: `Bearer ${CLAWDSKILLSPROXY_CONFIG.token}`,
+    "User-Agent": "OpenClawCN/1.0",
+  };
 }
 
 /**
- * 获取香港服务器上工具的下载 URL
- * @param toolName 工具名 (如 "ordercli")
- * @param version 版本号 (如 "0.1.0")
- * @param platform 平台标识 (如 "darwin-arm64", "darwin-amd64", "linux-amd64", "windows-amd64")
- * @returns 下载 URL
+ * 构建 SkillsProxy 二进制下载 URL
+ * @param downloadPath 从 /latest 返回的 asset.downloadUrl (如 "/api/binaries/ordercli/1.2.3/ordercli-darwin-arm64.tar.gz")
+ * @returns 完整下载 URL
+ */
+export function buildHKBinaryDownloadUrl(downloadPath: string): string {
+  return `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${downloadPath}`;
+}
+
+/**
+ * 获取 SkillsProxy 上工具的下载 URL（旧格式兼容，用于 getHKBinaryDownloadUrls）
  */
 export function getHKBinaryDownloadUrl(
   toolName: string,
@@ -509,33 +525,30 @@ export function getHKBinaryDownloadUrls(
   const urls: string[] = [];
   const useCN = shouldUseCNMirror();
 
-  if (useCN && isToolHostedOnHK(toolName)) {
-    // 1. 香港服务器 (国内最快)
-    urls.push(getHKBinaryDownloadUrl(toolName, version, platform));
-  }
-
-  // 2. GitHub 代理 (备用)
+  // 1. GitHub 代理（国内公共镜像优先，不消耗服务器带宽）
   if (githubRepo && useCN) {
-    // 尝试常见的 Release 文件名格式
     const patterns = [
       `${toolName}_${version}_${platform.replace("-", "_")}.tar.gz`,
       `${toolName}-${version}-${platform}.tar.gz`,
       `${toolName}_${platform}.tar.gz`,
     ];
-
     for (const pattern of patterns) {
       const githubUrl = `https://github.com/${githubRepo}/releases/download/v${version}/${pattern}`;
       urls.push(...getGitHubProxyUrls(githubUrl));
     }
   }
 
-  // 3. GitHub 原始地址 (国外)
+  // 2. SkillsProxy（服务器兜底）
+  if (useCN && isToolHostedOnHK(toolName)) {
+    urls.push(getHKBinaryDownloadUrl(toolName, version, platform));
+  }
+
+  // 3. GitHub 原始地址 (国外最后)
   if (githubRepo) {
     const patterns = [
       `${toolName}_${version}_${platform.replace("-", "_")}.tar.gz`,
       `${toolName}-${version}-${platform}.tar.gz`,
     ];
-
     for (const pattern of patterns) {
       urls.push(`https://github.com/${githubRepo}/releases/download/v${version}/${pattern}`);
     }

@@ -3828,9 +3828,18 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       // 获取当前的 gateway token（从页面注入的变量）- 必须带上否则用户无法访问！
       const gatewayToken = window.__GATEWAY_TOKEN__ || 'openclawcn2026';
       // 构建带 token 的跳转 URL - 必须带 token！
-      // 直接跳转到 /chat 页面，带上 token 和 session 参数
       const buildRedirectUrl = () => {
-        return window.location.origin + '/chat?session=main&token=' + encodeURIComponent(gatewayToken);
+        var port = window.location.port || '19002';
+        var gwUrl = 'ws://127.0.0.1:' + port;
+        var hash = '#token=' + encodeURIComponent(gatewayToken) + '&gatewayUrl=' + encodeURIComponent(gwUrl);
+        // 桌面端（Tauri）：必须跳回 http://tauri.localhost（Windows Tauri 2 的 origin）
+        // setup 页面在 gateway HTTP (127.0.0.1:19002) 上，没有 __TAURI__ 全局变量，
+        // 但 gateway 注入了 __DESKTOP_MODE__ = true 来标识桌面环境
+        if (window.__DESKTOP_MODE__) {
+          return 'http://tauri.localhost/' + hash;
+        }
+        // 浏览器模式：gateway serve control-ui 在同一 origin
+        return window.location.origin + '/' + hash;
       };
       
       // 保存配置（无需重启 Gateway）
@@ -3874,9 +3883,15 @@ export function renderScriptContent(ctx: SetupPageContext): string {
 
     // ==================== 跳过配置直接进入 ====================
     function skipToChat() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token') || '';
-      window.location.href = '/?token=' + token;
+      var token = window.__GATEWAY_TOKEN__ || new URLSearchParams(window.location.search).get('token') || '';
+      var port = window.location.port || '19002';
+      var gwUrl = 'ws://127.0.0.1:' + port;
+      var hash = '#token=' + encodeURIComponent(token) + '&gatewayUrl=' + encodeURIComponent(gwUrl);
+      if (window.__DESKTOP_MODE__) {
+        window.location.href = 'http://tauri.localhost/' + hash;
+      } else {
+        window.location.href = window.location.origin + '/' + hash;
+      }
     }
 
     // ==================== 初始化 ====================

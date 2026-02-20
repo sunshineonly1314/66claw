@@ -306,7 +306,10 @@ export function attachGatewayWsMessageHandler(params: {
 
         const isControlUi = connectParams.client.id === GATEWAY_CLIENT_IDS.CONTROL_UI;
         const isWebchat = isWebchatConnect(connectParams);
-        if (isControlUi || isWebchat) {
+        const isDesktopMode = process.env.OPENCLAWCN_DESKTOP_MODE === "1";
+        // In desktop mode (Tauri), skip origin check because tauri://localhost
+        // is not a standard HTTP origin and fails URL parsing (origin becomes "null").
+        if ((isControlUi || isWebchat) && !isDesktopMode) {
           const originCheck = checkBrowserOrigin({
             requestHost,
             origin: requestOrigin,
@@ -344,7 +347,7 @@ export function attachGatewayWsMessageHandler(params: {
         const allowInsecureControlUi =
           isControlUi && configSnapshot.gateway?.controlUi?.allowInsecureAuth === true;
         const disableControlUiDeviceAuth =
-          isControlUi && configSnapshot.gateway?.controlUi?.dangerouslyDisableDeviceAuth === true;
+          isControlUi && (configSnapshot.gateway?.controlUi?.dangerouslyDisableDeviceAuth === true || isDesktopMode);
         const allowControlUiBypass = allowInsecureControlUi || disableControlUiDeviceAuth;
         const device = disableControlUiDeviceAuth ? null : deviceRaw;
 
@@ -430,11 +433,15 @@ export function attachGatewayWsMessageHandler(params: {
           close(1008, truncateCloseReason(authMessage));
         };
         if (!device) {
-          if (scopes.length > 0) {
+          if (disableControlUiDeviceAuth) {
+            // Desktop mode: auto-grant full operator scopes since device auth is bypassed
+            scopes = ["operator.read", "operator.write", "operator.admin"];
+            connectParams.scopes = scopes;
+          } else if (scopes.length > 0) {
             scopes = [];
             connectParams.scopes = scopes;
           }
-          const canSkipDevice = sharedAuthOk;
+          const canSkipDevice = sharedAuthOk || disableControlUiDeviceAuth;
 
           if (isControlUi && !allowControlUiBypass) {
             const errorMessage = "control ui requires HTTPS or localhost (secure context)";

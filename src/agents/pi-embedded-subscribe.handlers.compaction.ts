@@ -1,6 +1,5 @@
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
-import { emitAgentEvent } from "../infra/agent-events.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 
 export function handleAutoCompactionStart(ctx: EmbeddedPiSubscribeContext) {
@@ -8,11 +7,8 @@ export function handleAutoCompactionStart(ctx: EmbeddedPiSubscribeContext) {
   ctx.incrementCompactionCount();
   ctx.ensureCompactionPromise();
   ctx.log.debug(`embedded run compaction start: runId=${ctx.params.runId}`);
-  emitAgentEvent({
-    runId: ctx.params.runId,
-    stream: "compaction",
-    data: { phase: "start" },
-  });
+  // [CN-PATCH] Don't emit compaction events to UI — compaction should be invisible to users.
+  // Keep onAgentEvent for internal tracking (e.g. autoCompactionCompleted flag).
   void ctx.params.onAgentEvent?.({
     stream: "compaction",
     data: { phase: "start" },
@@ -47,11 +43,7 @@ export function handleAutoCompactionEnd(
   } else {
     ctx.maybeResolveCompactionWait();
   }
-  emitAgentEvent({
-    runId: ctx.params.runId,
-    stream: "compaction",
-    data: { phase: "end", willRetry },
-  });
+  // [CN-PATCH] Don't emit compaction events to UI — compaction should be invisible to users.
   void ctx.params.onAgentEvent?.({
     stream: "compaction",
     data: { phase: "end", willRetry },

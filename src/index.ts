@@ -37,6 +37,12 @@ loadDotEnv({ quiet: true });
 normalizeEnv();
 ensureOpenClawCNCliOnPath();
 
+// 在最早期锁定 content-vault 的开发模式标志，防止运行时环境变量注入绕过加密。
+import { setContentVaultDevMode } from "./security/content-vault.js";
+setContentVaultDevMode(
+  process.env.NODE_ENV === "development" || process.env.CLAWDBOT_PROFILE === "dev",
+);
+
 // Capture all console output into structured logs while keeping stdout/stderr behavior.
 enableConsoleCapture();
 

@@ -110,13 +110,13 @@
       "description": "fnm 安装脚本（通过 gh-proxy.com 代理）"
     },
     "signalCli": {
-      "baseUrl": "http://121.43.61.90/api/binaries/signal-cli",
+      "baseUrl": "https://www.obplugins.cn/api/binaries/signal-cli",
       "token": "clawdbotCN778",
       "description": "Signal CLI 二进制（ClawdSkillsProxy 托管）"
     },
     "hkBinaries": {
-      "baseUrl": "http://43.129.194.117:8888",
-      "description": "香港二进制托管服务器（直连 GitHub 同步）",
+      "baseUrl": "https://www.obplugins.cn/api/binaries",
+      "description": "SkillsProxy 二进制托管（国内阿里云，原 HK 服务器已迁移）",
       "tools": [
         "ordercli",
         "peekaboo",
@@ -135,7 +135,7 @@
   },
 
   "clawdSkillsProxyConfig": {
-    "baseUrl": "http://121.43.61.90",
+    "baseUrl": "https://www.obplugins.cn",
     "token": "clawdbotCN778",
     "endpoints": {
       "skills": "/api/skills/index",

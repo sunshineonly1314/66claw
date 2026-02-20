@@ -1101,16 +1101,17 @@ async function downloadFile(
           STALL_TIMEOUT_MS,
         );
       });
-      let result: ReadableStreamReadResult<Uint8Array>;
+      let chunk: Uint8Array | undefined;
       try {
-        result = await Promise.race([readPromise, stallPromise]);
+        const readResult = await Promise.race([readPromise, stallPromise]);
+        if (readResult.done) break;
+        chunk = readResult.value;
       } finally {
         if (stallTimer != null) clearTimeout(stallTimer);
       }
-      const { done, value } = result;
-      if (done) break;
-      const canContinue = fileStream.write(value);
-      downloaded += value.byteLength;
+      if (!chunk) break;
+      const canContinue = fileStream.write(chunk);
+      downloaded += chunk.byteLength;
       onProgress?.(downloaded, contentLength);
       // Wait for drain if the internal buffer is full (backpressure)
       if (!canContinue) {

@@ -131,10 +131,14 @@ export type OpenClawCNConfig = {
     toolSelector?: boolean;
     /** 是否启用 DAG 拓扑执行器（替代旧版并行/顺序编排）。默认 true。 */
     dagExecutor?: boolean;
+    /** 工具过滤模式："off"=全量注入, "intent"=仅按意图过滤, "discovery"=意图+工具发现结果。默认 "off"。 */
+    toolFilterMode?: "off" | "intent" | "discovery";
   };
   // ── [CN-PATCH:tool-discovery] 智能工具发现配置 ──
   /** 智能工具发现配置（FTS5 + 向量混合搜索，CN 区域默认启用）。 */
   toolDiscovery?: ToolDiscoveryConfig;
+  /** Provider 优先级排序（用于 fallback 顺序控制） */
+  providerPriority?: string[];
 };
 
 export type ConfigValidationIssue = {

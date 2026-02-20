@@ -266,7 +266,7 @@ export async function monitorMSTeamsProvider(
     log.error("msteams server error", { error: String(err) });
   });
 
-  const shutdown = async () => {
+  let shutdown = async () => {
     log.info("shutting down msteams provider");
     return new Promise<void>((resolve) => {
       httpServer.close((err) => {

@@ -1,6 +1,6 @@
 /**
- * 中国区渠道配置 Schema (飞书、钉钉、企业微信)
- * China Region Channel Config Schemas (Feishu, DingTalk, WeCom)
+ * 中国区渠道配置 Schema (飞书、钉钉、企业微信、QQ 机器人、个人微信)
+ * China Region Channel Config Schemas (Feishu, DingTalk, WeCom, QQ Bot, WeChat Personal)
  */
 
 import { z } from "zod";
@@ -109,5 +109,52 @@ export const WecomConfigSchema = z
     dmPolicy: z.enum(["open", "allowlist", "pairing"]).optional().default("pairing").describe("私聊策略"),
     groupPolicy: z.enum(["open", "allowlist"]).optional().default("allowlist").describe("群聊策略"),
     groups: z.record(z.string(), WecomGroupSchema.optional()).optional().describe("群聊配置"),
+  })
+  .passthrough();
+
+// ============================================================================
+// QQ 机器人 (QQ Bot)
+// ============================================================================
+
+const QqbotAppSchema = z
+  .object({
+    appId: z.string().optional().describe("QQ 机器人 AppID"),
+    appSecret: z.string().optional().describe("QQ 机器人 AppSecret (ClientSecret)"),
+    token: z.string().optional().describe("QQ 机器人 Token (用于验证回调)"),
+    publicKey: z.string().optional().describe("QQ 机器人公钥 (用于 Ed25519 签名验证，hex 格式)"),
+  })
+  .strict();
+
+const QqbotGroupSchema = z
+  .object({
+    requireMention: z.boolean().optional().describe("是否需要 @机器人 才响应"),
+    allowFrom: z.array(z.string()).optional().describe("允许的发送者"),
+  })
+  .strict();
+
+export const QqbotConfigSchema = z
+  .object({
+    enabled: z.boolean().optional().default(true).describe("是否启用"),
+    sandbox: z.boolean().optional().default(false).describe("是否使用沙箱环境"),
+    app: QqbotAppSchema.optional().describe("应用配置"),
+    webhookPath: z.string().optional().default("/qqbot/webhook").describe("Webhook 路径"),
+    allowFrom: z.array(z.string()).optional().describe("允许的用户 ID 列表"),
+    dmPolicy: z.enum(["open", "allowlist", "pairing"]).optional().default("pairing").describe("私聊策略"),
+    groupPolicy: z.enum(["open", "allowlist"]).optional().default("allowlist").describe("群聊策略"),
+    groups: z.record(z.string(), QqbotGroupSchema.optional()).optional().describe("群聊配置"),
+  })
+  .passthrough();
+
+// ============================================================================
+// 个人微信 (WeChat Personal via ClawChat)
+// ============================================================================
+
+export const OpenclawwechatConfigSchema = z
+  .object({
+    enabled: z.boolean().optional().default(true).describe("是否启用个人微信渠道"),
+    apiKey: z.string().optional().describe("ClawChat API Key (格式: bot_id:secret，在 ClawChat 中获取)"),
+    pollIntervalMs: z.number().int().positive().optional().default(2000).describe("轮询间隔 (毫秒)，默认 2000ms"),
+    sessionKey: z.string().optional().default("agent:main:main").describe("会话标识 (格式: agent:<agentId>:<rest>)"),
+    debug: z.boolean().optional().default(false).describe("调试模式，启用详细日志"),
   })
   .passthrough();

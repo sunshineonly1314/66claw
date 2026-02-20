@@ -7,6 +7,7 @@ import {
   readConfigFileSnapshotForWrite,
   writeConfigFile as writeConfigFileViaWrapper,
 } from "./io.js";
+import { isEncryptedValue } from "./field-encrypt.js";
 
 async function withTempConfig(
   configContent: string,
@@ -107,8 +108,9 @@ describe("env snapshot TOCTOU via createConfigIO", () => {
       const written = await fs.readFile(configPath, "utf-8");
       const parsed = JSON.parse(written);
       // Without snapshot, the resolved value "original-key-123" doesn't match
-      // live env "mutated-key-456", so restoration fails — value is written as-is
-      expect(parsed.gateway.remote.token).toBe("original-key-123");
+      // live env "mutated-key-456", so restoration fails — value is written as-is.
+      // Field encryption then encrypts the sensitive value on disk.
+      expect(isEncryptedValue(parsed.gateway.remote.token)).toBe(true);
     });
   });
 });

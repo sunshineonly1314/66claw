@@ -10,10 +10,13 @@ import { ErrorCodes, errorShape } from "../protocol/index.js";
 import {
   searchItems,
   getItemById,
+  getItemsByServerIds,
   getStats,
   getCategoryStats,
   type SearchOptions,
+  type SearchResult,
 } from "../../mcp/marketplace/db.js";
+import { loadConfig } from "../../config/config.js";
 
 // ========== mcp_marketplace.search ==========
 
@@ -129,19 +132,88 @@ export const mcpMarketplaceSearch: GatewayRequestHandler = async ({ params, resp
       }
     }
 
-    const options: SearchOptions = {
-      keyword: params.keyword as string | undefined,
-      category: params.category as string | undefined,
-      minChinaScore: rawMinChinaScore,
-      requiresVPN: params.requiresVPN as boolean | undefined,
-      isOfficial: params.isOfficial as boolean | undefined,
-      orderBy: (params.orderBy as any) || "updated_at",
-      orderDirection: (params.orderDirection as any) || "DESC",
-      page: validPage,
-      pageSize: validPageSize,
-    };
+    const keyword = typeof params.keyword === "string" ? params.keyword.trim() : undefined;
+    const category = params.category as string | undefined;
+    const requiresVPN = params.requiresVPN as boolean | undefined;
+    const isOfficial = params.isOfficial as boolean | undefined;
 
-    const result = searchItems(options);
+    // FTS5 fallback — 原始 mcp-index.db 搜索
+    const fts5Search = (): SearchResult =>
+      searchItems({
+        keyword: keyword || undefined,
+        category,
+        minChinaScore: rawMinChinaScore,
+        requiresVPN,
+        isOfficial,
+        orderBy: (params.orderBy as any) || "updated_at",
+        orderDirection: (params.orderDirection as any) || "DESC",
+        page: validPage,
+        pageSize: validPageSize,
+      });
+
+    // 当有关键词且长度 >= 2 时，优先走 tool-index.sqlite 的混合搜索
+    // （FTS5 trigram + bge-m3 向量 + RRF 融合），获取语义排序的 serverId[]，
+    // 再从 mcp-index.db 拉完整数据。失败时降级回 mcp-index.db 自身的 FTS5 搜索。
+    let result: SearchResult;
+
+    if (keyword && keyword.length >= 2) {
+      try {
+        const { searchToolIndex } = await import("../../dispatch/tool-discovery.js");
+        const embedding = loadConfig().toolDiscovery?.embedding;
+        const { ids } = await searchToolIndex(keyword, {
+          type: "mcp",
+          maxResults: 200,
+          embedding,
+        });
+
+        if (ids.length > 0) {
+          // 拉取全部匹配结果，保持 hybridSearch 的排序
+          const fullResult = getItemsByServerIds(ids, { page: 1, pageSize: ids.length });
+
+          // 在已排序的结果上应用过滤条件
+          let filtered = fullResult.items;
+          if (category) {
+            filtered = filtered.filter((item) => item.category === category);
+          }
+          if (rawMinChinaScore !== undefined) {
+            filtered = filtered.filter((item) =>
+              (item.availability?.chinaFriendlyScore ?? 0) >= rawMinChinaScore,
+            );
+          }
+          if (requiresVPN !== undefined) {
+            filtered = filtered.filter((item) =>
+              Boolean(item.availability?.requiresVPN) === requiresVPN,
+            );
+          }
+          if (isOfficial !== undefined) {
+            filtered = filtered.filter((item) => Boolean(item.isOfficial) === isOfficial);
+          }
+
+          // 手动分页
+          const total = filtered.length;
+          const offset = (validPage - 1) * validPageSize;
+          const paged = filtered.slice(offset, offset + validPageSize);
+
+          result = {
+            items: paged,
+            total,
+            page: validPage,
+            pageSize: validPageSize,
+            totalPages: Math.ceil(total / validPageSize),
+          };
+        } else {
+          // hybridSearch 无结果，回退 FTS5
+          result = fts5Search();
+        }
+      } catch {
+        // hybridSearch 不可用（索引未建、模块未加载等），回退 FTS5
+        result = fts5Search();
+      }
+    } else {
+      // 无关键词或关键词太短，走 FTS5
+      result = fts5Search();
+    }
+
     respond(true, result);
   } catch (error: any) {
     console.error("[MCP Marketplace] Search error:", error);

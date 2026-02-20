@@ -70,6 +70,40 @@ pub async fn get_service_status() -> Result<ServiceStatus, String> {
     })
 }
 
+/// Check if gateway needs first-run setup.
+/// Uses the gateway's own `needsSetup` field from /api/health, which calls
+/// shouldShowSetupWizard() — the single source of truth for setup state.
+#[tauri::command]
+pub async fn check_needs_setup() -> Result<bool, String> {
+    let port = sidecar::gateway_port();
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("health check failed: {}", e))?;
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("parse health failed: {}", e))?;
+
+    // Use the gateway's authoritative needsSetup field
+    if let Some(needs) = body.get("needsSetup").and_then(|v| v.as_bool()) {
+        return Ok(needs);
+    }
+
+    // Fallback: if needsSetup field is missing (older gateway), check providers
+    if let Some(providers) = body.get("providers").and_then(|p| p.as_object()) {
+        for (_name, provider) in providers {
+            if provider.get("status").and_then(|s| s.as_str()) == Some("ok") {
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
+}
+
 /// Open the logs directory in the system file explorer.
 #[tauri::command]
 pub async fn open_logs_directory() -> Result<String, String> {

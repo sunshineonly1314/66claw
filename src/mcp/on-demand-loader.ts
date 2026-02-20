@@ -284,7 +284,7 @@ export async function loadMCPOnDemand(
   suggestion: McpSuggestion,
   onDemandConfig?: ToolDiscoveryMcpOnDemandConfig,
 ): Promise<OnDemandLoadResult> {
-  const maxConcurrent = onDemandConfig?.maxConcurrent ?? 3;
+  const maxConcurrent = onDemandConfig?.maxConcurrent ?? 2;
 
   // 并发控制
   if (_activeLoads >= maxConcurrent) {
@@ -391,7 +391,7 @@ export async function loadMCPBatch(
   suggestions: McpSuggestion[],
   onDemandConfig?: ToolDiscoveryMcpOnDemandConfig,
 ): Promise<OnDemandLoadResult[]> {
-  const limit = onDemandConfig?.maxConcurrent ?? 3;
+  const limit = onDemandConfig?.maxConcurrent ?? 2;
   const results: OnDemandLoadResult[] = [];
   for (let i = 0; i < suggestions.length; i += limit) {
     const batch = suggestions.slice(i, i + limit);

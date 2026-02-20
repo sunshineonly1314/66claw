@@ -52,7 +52,13 @@ export function getCustomProviderApiKey(
   provider: string,
 ): string | undefined {
   const entry = resolveProviderConfig(cfg, provider);
-  return normalizeOptionalSecretInput(entry?.apiKey);
+  const key = normalizeOptionalSecretInput(entry?.apiKey);
+  if (key && !/^[\x20-\x7E]+$/.test(key)) {
+    // API keys must be ASCII-only; non-ASCII values (e.g. Chinese placeholder
+    // text from setup wizard) would cause a ByteString error in HTTP headers.
+    return undefined;
+  }
+  return key;
 }
 
 function resolveProviderAuthOverride(
@@ -327,6 +333,8 @@ export function resolveEnvApiKey(provider: string): EnvApiKeyResult | null {
     "aliyun-bailian": "DASHSCOPE_API_KEY",
     "volcengine-ark": "ARK_API_KEY",
     "tencent-hunyuan": "HUNYUAN_API_KEY",
+    "ant-ling": "ANT_LING_API_KEY",
+    "meituan-longcat": "LONGCAT_API_KEY",
   };
   const envVar = envMap[normalized];
   if (!envVar) {
@@ -389,6 +397,52 @@ export function resolveModelAuthMode(
   }
 
   return "unknown";
+}
+
+/**
+ * Lightweight synchronous check: does a provider have *any* credential source
+ * (auth profile, env var, config apiKey, or aws-sdk)?
+ *
+ * Used by runWithModelFallback to skip candidates that will inevitably fail
+ * with "No API key found", avoiding wasted time on doomed API calls.
+ */
+export function hasProviderCredentials(
+  provider: string,
+  cfg: OpenClawCNConfig | undefined,
+  store?: AuthProfileStore,
+): boolean {
+  const normalized = normalizeProviderId(provider);
+
+  // 1. Auth override to aws-sdk → always has credentials (sdk chain)
+  const authOverride = resolveProviderAuthOverride(cfg, provider);
+  if (authOverride === "aws-sdk") {
+    return true;
+  }
+
+  // 2. Auth profiles exist for this provider
+  if (store) {
+    const profiles = listProfilesForProvider(store, provider);
+    if (profiles.length > 0) {
+      return true;
+    }
+  }
+
+  // 3. Environment variable
+  if (resolveEnvApiKey(provider)) {
+    return true;
+  }
+
+  // 4. Config apiKey
+  if (getCustomProviderApiKey(cfg, provider)) {
+    return true;
+  }
+
+  // 5. amazon-bedrock implicit aws-sdk fallback
+  if (authOverride === undefined && normalized === "amazon-bedrock") {
+    return true;
+  }
+
+  return false;
 }
 
 export async function getApiKeyForModel(params: {

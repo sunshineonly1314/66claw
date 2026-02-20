@@ -70,6 +70,8 @@ export type ExtensionsPageProps = {
   runningCount: number;
   /** Toast notification */
   toast: McpToast | null;
+  /** Load next page of marketplace items */
+  onLoadMore?: () => void;
   /** Retry marketplace data sync (shown when load fails or returns empty) */
   onRetrySync?: () => void;
   /** Manual add MCP server (advanced users) */
@@ -83,6 +85,8 @@ export type ExtensionsPageProps = {
   batchConfigSaving?: boolean;
   batchConfigResult?: { success: number; failed: number } | null;
   serverEnvStatus?: Record<string, Record<string, boolean>>;
+  /** Update env vars for an already-installed server and restart it */
+  onUpdateServerEnv?: (serverId: string, env: Record<string, string>) => void;
 };
 
 // ============================================================================
@@ -111,7 +115,7 @@ export function renderExtensions(props: ExtensionsPageProps): TemplateResult {
   const { activeTab, onTabChange, marketplace, toast } = props;
 
   return html`
-    <div style="padding:0 clamp(16px, 2vw, 40px);">
+    <div style="padding:0 clamp(12px, 2vw, 32px); max-width:100%; overflow-x:hidden; overflow-y:auto; min-height:0; flex:1 1 0; box-sizing:border-box;">
 
       <!-- First visit guide overlay -->
       ${marketplace.showFirstVisit ? renderFirstVisitGuide(props) : nothing}
@@ -158,7 +162,13 @@ export function renderExtensions(props: ExtensionsPageProps): TemplateResult {
           item: marketplace.configTarget,
           onClose: props.onCloseConfigWizard,
           onSaveAndEnable: (env) => {
-            props.onInstall({ ...marketplace.configTarget!, _env: env } as McpMarketplaceItem & { _env: Record<string, string> });
+            const target = marketplace.configTarget!;
+            if (target.installStatus === "installed" && props.onUpdateServerEnv) {
+              // Already installed — update env vars and restart
+              props.onUpdateServerEnv(target.serverId, env);
+            } else {
+              props.onInstall({ ...target, _env: env } as McpMarketplaceItem & { _env: Record<string, string> });
+            }
             props.onCloseConfigWizard();
           },
           onTestConnection: (env) => {
@@ -337,7 +347,12 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
       : html`
           <div class="ext-cards-grid" style="display:grid; gap:16px; margin-bottom:28px;">
             ${capabilities.map(
-              (cap) => renderExtensionsCard({ capability: cap, onConfigClick, onTrySay }),
+              (cap) => renderExtensionsCard({
+                capability: cap,
+                onConfigClick,
+                onTrySay,
+                onUninstall: !cap.isBuiltin ? (id) => props.onUninstall(id) : undefined,
+              }),
             )}
           </div>
         `}
@@ -365,16 +380,12 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
         from { opacity:0; transform:translateY(-8px); }
         to   { opacity:1; transform:translateY(0); }
       }
-      /* Desktop: 3 columns. Tablet: 2 columns. Mobile: 1 column */
+      /* Desktop: auto-fill responsive. Mobile: 1 column */
       .ext-cards-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        max-width:100%;
       }
-      @media (max-width: 1200px) {
-        .ext-cards-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-      }
-      @media (max-width: 700px) {
+      @media (max-width: 600px) {
         .ext-cards-grid {
           grid-template-columns: 1fr;
         }
@@ -474,7 +485,7 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
         ${MCP_CATEGORIES.map((cat) => {
           const isActive = marketplace.activeCategory === cat.id;
           const count = cat.id === "all"
-            ? marketplace.items.length
+            ? marketplace.total
             : marketplace.items.filter((i) => i.category === cat.id).length;
 
           return html`
@@ -558,8 +569,8 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
             : html`
                 <div class="ext-store-grid" style="
                   display:grid;
-                  gap:16px;
-                  margin-bottom:28px;
+                  gap:12px;
+                  margin-bottom:16px;
                 ">
                   ${filtered.map(
                     (item) => renderMarketplaceCard({
@@ -570,6 +581,35 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
                     }),
                   )}
                 </div>
+                ${marketplace.page < marketplace.totalPages
+                  ? html`
+                    <div style="display:flex; justify-content:center; margin-bottom:28px;">
+                      <button
+                        @click=${props.onLoadMore}
+                        ?disabled=${marketplace.loadingMore}
+                        style="
+                          all:unset; cursor:pointer;
+                          padding:10px 32px;
+                          border-radius:var(--radius-md, 8px);
+                          border:1px solid var(--border);
+                          background:var(--card);
+                          color:var(--fg);
+                          font-size:13px;
+                          font-weight:500;
+                          transition:all 150ms;
+                          opacity:${marketplace.loadingMore ? "0.6" : "1"};
+                        "
+                        class="ext-load-more-btn"
+                      >${marketplace.loadingMore
+                          ? t("extensions.store.loadingMore" as never)
+                          : `${t("extensions.store.loadMore" as never)} (${marketplace.items.length}/${marketplace.total})`
+                      }</button>
+                    </div>`
+                  : marketplace.total > 0
+                    ? html`<div style="text-align:center; margin-bottom:28px; font-size:12px; color:var(--muted-strong, #6b7d91);">
+                        ${t("extensions.store.showingAll" as never).replace("{{count}}", String(marketplace.total))}
+                      </div>`
+                    : nothing}
               `}
 
     <style>
@@ -580,19 +620,10 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
       .batch-config-btn:hover {
         background:rgba(32,213,188,0.15) !important;
       }
-      /* Store grid: 4 cols on wide, 3 on medium, 2 on narrow, 1 on mobile */
+      /* Store grid: auto-fill responsive, max 3 cols, cards min 240px */
       .ext-store-grid {
-        grid-template-columns: repeat(4, 1fr);
-      }
-      @media (max-width: 1400px) {
-        .ext-store-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
-      }
-      @media (max-width: 1000px) {
-        .ext-store-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        max-width:100%;
       }
       @media (max-width: 600px) {
         .ext-store-grid {
@@ -729,6 +760,10 @@ function renderRecommendationBanner(
                 border:1px solid var(--border);
                 color:var(--fg);
                 white-space:nowrap;
+                max-width:180px;
+                overflow:hidden;
+                text-overflow:ellipsis;
+                display:inline-block;
               ">${r.friendlyName}</span>
             `,
           )}
@@ -736,7 +771,7 @@ function renderRecommendationBanner(
       </div>
       <div style="display:flex; gap:10px; align-items:center; flex-shrink:0;">
         <button
-          @click=${() => recommendations.forEach((r) => onInstall(r))}
+          @click=${() => recommendations.filter((r) => r.installable !== false && r.installMethod !== "none").forEach((r) => onInstall(r))}
           style="
             all:unset; cursor:pointer;
             font-size:12px; font-weight:600;
@@ -873,6 +908,7 @@ function renderAdvancedSection(
               ${t("extensions.noCapabilities")}
             </div>`
           : html`
+            <div style="max-height:400px; overflow-y:auto;">
               <table style="width:100%; border-collapse:collapse; font-size:13px;">
                 <thead>
                   <tr style="color:var(--muted-strong, #6b7d91); text-align:left; background:var(--bg-elevated, #1c242e);">
@@ -917,6 +953,16 @@ function renderAdvancedSection(
                                 color:${testResult === "success" ? "#34d399" : "#f87171"};
                               ">${testResult === "success" ? t("extensions.advanced.testSuccess" as never) : t("extensions.advanced.testFailed" as never)}</span>`
                             : nothing}
+                          ${p.status === "error" && p.error
+                            ? html`<div style="
+                                margin-top:4px;
+                                font-size:11px;
+                                color:#f87171;
+                                max-width:320px;
+                                word-break:break-word;
+                                line-height:1.4;
+                              ">${p.error}</div>`
+                            : nothing}
                         </td>
                         <td style="padding:12px 16px; color:var(--fg-secondary, #a0aec0); font-family:var(--mono);">${p.memoryMB}MB</td>
                         <td style="padding:12px 16px; color:var(--fg-secondary, #a0aec0);">${p.toolCount}</td>
@@ -947,6 +993,7 @@ function renderAdvancedSection(
                   )}
                 </tbody>
               </table>
+            </div>
             `}
       </div>
 

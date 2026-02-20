@@ -89,8 +89,10 @@ function resolveWatchTargets(workspaceDir: string, config?: OpenClawCNConfig): s
     const globRoot = toWatchGlobRoot(root);
     // Some configs point directly at a skill folder.
     targets.add(`${globRoot}/SKILL.md`);
+    targets.add(`${globRoot}/SKILL.md.enc`);
     // Standard layout: <skillsRoot>/<skillName>/SKILL.md
     targets.add(`${globRoot}/*/SKILL.md`);
+    targets.add(`${globRoot}/*/SKILL.md.enc`);
   }
   return Array.from(targets).toSorted();
 }

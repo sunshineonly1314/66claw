@@ -145,6 +145,80 @@ const APP_ALIASES: Record<string, string[]> = {
   wegame: ["WeGame", "TencentWeGame"],
 };
 
+// ─── Well-known UWP apps (instant launch, skip slow manifest scan) ──
+// Maps lowercase alias keys → { packageFamily, appId, displayName }.
+// These are verified Store app identifiers that bypass the slow
+// Get-AppxPackageManifest scan entirely.
+
+interface WellKnownUwp {
+  packageFamily: string;
+  appId: string;
+  displayName: string;
+}
+
+const WELL_KNOWN_UWP: Record<string, WellKnownUwp> = (() => {
+  const entries: Array<{ keys: string[]; info: WellKnownUwp }> = [
+    {
+      keys: ["网易云", "网易云音乐", "cloudmusic", "netease"],
+      info: {
+        packageFamily: "1F8B0F94.122165AE053F_j2p0p5q0044a6",
+        appId: "CLOUDMUSIC",
+        displayName: "网易云音乐",
+      },
+    },
+    {
+      keys: ["qq音乐", "qqmusic"],
+      info: {
+        packageFamily: "903DB504.QQYY_a99ra4d2cbcxa",
+        appId: "App",
+        displayName: "QQ音乐",
+      },
+    },
+    {
+      keys: ["bilibili", "b站", "哔哩哔哩"],
+      info: {
+        packageFamily: "7DE2E963.biliUWP_c88gfk3p7ej36",
+        appId: "App",
+        displayName: "哔哩哔哩",
+      },
+    },
+  ];
+  const map: Record<string, WellKnownUwp> = {};
+  for (const { keys, info } of entries) {
+    for (const key of keys) {
+      map[key] = info;
+    }
+  }
+  return map;
+})();
+
+/**
+ * Layer -0.5: Instant UWP launch for well-known Store apps.
+ * Checks if the package is actually installed before returning a match.
+ */
+function searchWellKnownUwp(keyword: string): AppMatch | null {
+  const lower = keyword.toLowerCase().trim();
+  const known = WELL_KNOWN_UWP[lower];
+  if (!known) return null;
+
+  // Verify the package is actually installed (fast — no manifest scan)
+  try {
+    const script = `Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq '${known.packageFamily}' } | Select-Object -First 1 -ExpandProperty PackageFamilyName`;
+    const out = ps(script, 5000);
+    if (!out || !out.includes(known.packageFamily)) return null;
+  } catch {
+    return null;
+  }
+
+  const uwpUri = `shell:appsFolder\\${known.packageFamily}!${known.appId}`;
+  return {
+    appName: known.displayName,
+    exePath: uwpUri,
+    source: "uwp",
+    uwpUri,
+  };
+}
+
 // ─── Browser detection (for URL passthrough) ─────────────────────
 
 const BROWSER_ALIAS_KEYS = new Set([
@@ -698,6 +772,12 @@ function searchUwpApps(keyword: string): AppMatch | null {
  */
 function findApp(input: string): AppMatch | null {
   const keywords = expandKeywords(input);
+
+  // Fast path: check well-known UWP apps first (instant, no manifest scan)
+  for (const keyword of keywords) {
+    const uwpFast = searchWellKnownUwp(keyword);
+    if (uwpFast) return uwpFast;
+  }
 
   for (const keyword of keywords) {
     const match =

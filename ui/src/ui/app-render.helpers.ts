@@ -7,6 +7,7 @@ import { icons } from "./icons";
 import { loadChatHistory } from "./controllers/chat";
 import { syncUrlWithSessionKey } from "./app-settings";
 import { applyPerformanceProfile } from "./controllers/perf-profile";
+import { toggleSmartDispatch } from "./controllers/smart-dispatch";
 import type { SessionsListResult } from "./types";
 import type { ThemeMode } from "./theme";
 import type { ThemeTransitionContext } from "./theme-transition";
@@ -131,6 +132,7 @@ export function renderChatControls(state: AppViewState) {
         ${focusIcon}
       </button>
       <span class="chat-controls__separator">|</span>
+      ${renderSmartDispatchToggle(state)}
       ${renderPerfToggle(state)}
     </div>
   `;
@@ -266,6 +268,34 @@ function showPerfConfirmModal(targetProfile: PerfProfile, state: AppViewState) {
   });
 
   document.body.appendChild(overlay);
+}
+
+function renderSmartDispatchToggle(state: AppViewState) {
+  const disabled = state.onboarding || state.smartDispatchSaving || !state.connected;
+  const active = state.smartDispatchEnabled;
+
+  const handleClick = () => {
+    if (disabled) return;
+    void toggleSmartDispatch(state, !active);
+    forceUpdate(state);
+  };
+
+  return html`
+    <button
+      class="smart-dispatch-toggle ${active ? "smart-dispatch-toggle--active" : ""} ${disabled ? "smart-dispatch-toggle--disabled" : ""}"
+      ?disabled=${disabled}
+      @click=${handleClick}
+      aria-pressed=${active}
+      title=${t("chat.smartDispatch.desc")}
+    >
+      <svg class="smart-dispatch-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+        <path d="M2 17l10 5 10-5"></path>
+        <path d="M2 12l10 5 10-5"></path>
+      </svg>
+      <span class="smart-dispatch-label">${t("chat.smartDispatch")}</span>
+    </button>
+  `;
 }
 
 function renderPerfToggle(state: AppViewState) {

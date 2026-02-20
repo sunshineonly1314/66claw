@@ -56,6 +56,7 @@ const ADMIN_METHOD_PREFIXES = ["exec.approvals."];
 const READ_METHODS = new Set([
   "health",
   "logs.tail",
+  "diagnose.logs",
   "channels.status",
   "status",
   "usage.status",
@@ -156,6 +157,8 @@ function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["c
     method === "agents.delete" ||
     method === "skills.install" ||
     method === "skills.update" ||
+    method === "skills.import" ||
+    method === "skills.browse" ||
     method === "cron.add" ||
     method === "cron.update" ||
     method === "cron.remove" ||

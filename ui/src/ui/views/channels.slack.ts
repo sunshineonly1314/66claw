@@ -60,28 +60,33 @@ export function renderSlackCard(params: {
         <div class="channel-card__desc">${t("channels.slack.description")}</div>
         ${accountCountLabel}
 
-        ${(slack?.configured || slack?.running)
-          ? html`
-            <div class="status-list">
-              <div>
-                <span class="label">${t("channels.configured")}</span>
-                <span>${slack?.configured ? t("common.yes") : t("common.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("common.running")}</span>
-                <span>${slack?.running ? t("common.yes") : t("common.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastStart")}</span>
-                <span>${slack?.lastStartAt ? formatAgo(slack.lastStartAt) : t("common.na")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channels.lastProbe")}</span>
-                <span>${slack?.lastProbeAt ? formatAgo(slack.lastProbeAt) : t("common.na")}</span>
-              </div>
-            </div>
-          `
-          : nothing}
+        <div class="status-list">
+          <div>
+            <span class="label">${t("channels.configured")}</span>
+            <span>${slack?.configured ? t("common.yes") : t("common.no")}</span>
+          </div>
+          <div>
+            <span class="label">${t("common.running")}</span>
+            <span>${slack?.running ? t("common.yes") : t("common.no")}</span>
+          </div>
+          ${(slack?.configured || slack?.running) ? html`
+          <div>
+            <span class="label">${t("channels.lastStart")}</span>
+            <span>${slack?.lastStartAt ? formatAgo(slack.lastStartAt) : t("common.na")}</span>
+          </div>
+          <div>
+            <span class="label">${t("channels.lastProbe")}</span>
+            <span>${slack?.lastProbeAt ? formatAgo(slack.lastProbeAt) : t("common.na")}</span>
+          </div>
+          ` : nothing}
+        </div>
+
+        ${!(slack?.configured || slack?.running) ? html`
+          <div class="connection-hint">
+            <div class="connection-hint__title">💡 配置指引</div>
+            <div class="connection-hint__desc">在下方配置表单中填写 Slack Bot Token 和 App Token 即可启用。需要先在 Slack API 创建应用。</div>
+          </div>
+        ` : nothing}
 
         ${slack?.lastError
           ? html`<div class="${errorCalloutClass(slack.lastError)}" style="margin-top: 12px;">

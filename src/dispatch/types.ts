@@ -68,6 +68,13 @@ export type DispatchSettings = {
   timeoutMs: number;
   /** Log dispatch decisions for debugging. */
   debug: boolean;
+  /**
+   * Tool filtering mode. Controls whether dispatch filters tools by intent.
+   * - "off": no filtering (backward compatible, default)
+   * - "intent": filter to core + intent-specific tools
+   * - "discovery": filter to core + intent tools + discovery-recommended tools
+   */
+  toolFilterMode?: import("./tool-filter.js").ToolFilterMode;
 };
 
 export type DispatchDefaults = {
@@ -202,6 +209,8 @@ export type RoutingDecision = {
   };
   /** Tool binding strength for the matched intent (forwarded from config). */
   toolBinding?: "hint" | "strong" | "required";
+  /** Tool filter policy built from intent + discovery results. undefined = no filtering. */
+  toolFilterPolicy?: import("./tool-filter.js").ToolFilterPolicy;
 };
 
 // ---------------------------------------------------------------------------

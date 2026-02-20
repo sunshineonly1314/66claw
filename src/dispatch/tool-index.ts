@@ -391,31 +391,44 @@ function searchFts(
   }
 
   // 2) LIKE fallback — 对 FTS5 trigram 无法命中的短关键词（<3 CJK 字符）做模糊补全
+  // FIX P1#7: 当 FTS 完全无结果时（常见于 2 字 CJK 查询如"天气"），
+  // LIKE 结果需要有区分度的 rank（name 匹配 > description 匹配），
+  // 否则 RRF 融合无法区分它们。
   if (results.length < limit) {
     const likeTerms = extractLikeTerms(query);
     if (likeTerms.length > 0) {
       const esc = "ESCAPE '\\'";
+      // 构建带优先级的查询：name 匹配排在前面
       const conditions = likeTerms
         .map(
           () =>
             `(name LIKE ? ${esc} OR description LIKE ? ${esc} OR description_cn LIKE ? ${esc} OR tags LIKE ? ${esc})`,
         )
         .join(" OR ");
+      // name 匹配优先级列：匹配 name 的排前面
+      const nameConditions = likeTerms.map(() => `(name LIKE ? ${esc})`).join(" OR ");
       const params: string[] = [];
+      const nameParams: string[] = [];
       for (const term of likeTerms) {
         // 显式转义 LIKE 通配符（防御性编程，extractLikeTerms 已清理但不依赖该假设）
         const safeTerm = term.replace(/[%_\\]/g, "\\$&");
         const pattern = `%${safeTerm}%`;
         params.push(pattern, pattern, pattern, pattern);
+        nameParams.push(pattern);
       }
       try {
         const likeRows = db
           .prepare(
-            `SELECT id, -1.0 AS rank FROM ${TOOLS_TABLE}
+            `SELECT id, -(CASE WHEN (${nameConditions}) THEN 2.0 ELSE 1.0 END) AS rank
+             FROM ${TOOLS_TABLE}
              WHERE ${conditions}
+             ORDER BY rank ASC
              LIMIT ?`,
           )
-          .all(...params, limit - results.length) as Array<{ id: string; rank: number }>;
+          .all(...nameParams, ...params, limit - results.length) as Array<{
+          id: string;
+          rank: number;
+        }>;
         for (const r of likeRows) {
           if (!seen.has(r.id)) {
             seen.add(r.id);
@@ -609,20 +622,33 @@ export async function hybridSearch(
 
   // 计算 RRF score
   const scored: Array<{ id: string; score: number; source: "fts" | "vector" | "both" }> = [];
-  // 理论最大 RRF 分根据实际启用的搜索路径计算（纯 FTS 时不含 vecWeight）
-  const hasFts = ftsResults.length > 0;
-  const hasVec = vecResults.length > 0;
-  const theoreticalMax =
-    (hasFts ? ftsWeight / (RRF_K + 1) : 0) + (hasVec ? vecWeight / (RRF_K + 1) : 0);
+  // FIX P1#4: 按每个条目实际参与的搜索路径归一化，而非全局固定值。
+  // 这确保了纯 FTS 命中的条目在有/无向量时 score 含义一致。
+  // 全局 theoreticalMax 仅作为没有向量搜索路径时的 fallback。
+  const hasBothPaths = ftsResults.length > 0 && vecResults.length > 0;
+  const ftsOnlyMax = ftsWeight / (RRF_K + 1);
+  const vecOnlyMax = vecWeight / (RRF_K + 1);
+  const bothMax = ftsOnlyMax + vecOnlyMax;
 
-  // 此时 theoreticalMax > 0 (因为 scoreMap 非空)
   for (const [id, ranks] of scoreMap) {
-    let score = 0;
-    if (ranks.ftsRank > 0) score += ftsWeight / (RRF_K + ranks.ftsRank);
-    if (ranks.vecRank > 0) score += vecWeight / (RRF_K + ranks.vecRank);
+    let rawScore = 0;
+    if (ranks.ftsRank > 0) rawScore += ftsWeight / (RRF_K + ranks.ftsRank);
+    if (ranks.vecRank > 0) rawScore += vecWeight / (RRF_K + ranks.vecRank);
+
+    // 归一化：根据该条目实际能达到的最大分来归一化
+    let entryMax: number;
+    if (hasBothPaths) {
+      // 两条路径都有结果时，对同时命中的条目用 bothMax，
+      // 对只命中单路径的条目也用 bothMax（保留跨路径加分优势）
+      entryMax = bothMax;
+    } else {
+      // 只有一条路径有结果时，用该路径的 max
+      entryMax = ranks.ftsRank > 0 ? ftsOnlyMax : vecOnlyMax;
+    }
+
     scored.push({
       id,
-      score: theoreticalMax > 0 ? score / theoreticalMax : 0,
+      score: entryMax > 0 ? rawScore / entryMax : 0,
       source: ranks.source,
     });
   }
@@ -687,9 +713,50 @@ function loadEntries(db: DatabaseSync, ids: string[]): Map<string, ToolIndexEntr
 // Vectorization (独立 embedding client，不复用 Memory)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Query Embedding LRU Cache
+// ---------------------------------------------------------------------------
+
+/** 查询向量 LRU 缓存 — 相同查询文本 + 相同模型 = 相同向量，无需重复调 API */
+const QUERY_VEC_CACHE_MAX = 256;
+const _queryVecCache = new Map<string, { vec: number[]; ts: number }>();
+
+function getCachedQueryVec(text: string, model: string): number[] | undefined {
+  const key = `${model}\0${text}`;
+  const entry = _queryVecCache.get(key);
+  if (entry) {
+    // LRU: 刷新时间戳
+    entry.ts = Date.now();
+    return entry.vec;
+  }
+  return undefined;
+}
+
+function setCachedQueryVec(text: string, model: string, vec: number[]): void {
+  const key = `${model}\0${text}`;
+  _queryVecCache.set(key, { vec, ts: Date.now() });
+  // LRU 淘汰：超过上限时删除最旧的
+  if (_queryVecCache.size > QUERY_VEC_CACHE_MAX) {
+    let oldestKey: string | null = null;
+    let oldestTs = Infinity;
+    for (const [k, v] of _queryVecCache) {
+      if (v.ts < oldestTs) {
+        oldestTs = v.ts;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) _queryVecCache.delete(oldestKey);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Embedding Client
+// ---------------------------------------------------------------------------
+
 /**
  * 创建独立的 embedding client（OpenAI 兼容协议）。
- * 约 30 行 fetch，与 Memory 的 EmbeddingProvider 完全隔离。
+ * 内置查询向量 LRU 缓存 — 相同文本不会重复调 API。
+ * 与 Memory 的 EmbeddingProvider 完全隔离。
  */
 export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig): {
   embed: (texts: string[]) => Promise<number[][]>;
@@ -700,12 +767,32 @@ export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig):
   const baseUrl = (config.baseUrl ?? "https://api.siliconflow.cn/v1").replace(/\/$/, "");
   const apiKey = config.apiKey ?? "";
   const dims = config.dimensions ?? 1024;
-  const timeout = config.timeout ?? 15000; // FIX: 默认 15s 超时
+  const timeout = config.timeout ?? 15000;
 
   async function embed(texts: string[]): Promise<number[][]> {
     if (!apiKey) throw new Error("Tool discovery embedding apiKey not configured");
 
-    // FIX: 添加超时控制
+    // 查缓存：分离已缓存和需要调 API 的文本
+    const results: (number[] | null)[] = texts.map(() => null);
+    const uncachedIndices: number[] = [];
+    const uncachedTexts: string[] = [];
+
+    for (let i = 0; i < texts.length; i++) {
+      const cached = getCachedQueryVec(texts[i], model);
+      if (cached) {
+        results[i] = cached;
+      } else {
+        uncachedIndices.push(i);
+        uncachedTexts.push(texts[i]);
+      }
+    }
+
+    // 全部命中缓存 → 直接返回
+    if (uncachedTexts.length === 0) {
+      return results as number[][];
+    }
+
+    // 调 API 获取未缓存的向量
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -716,11 +803,11 @@ export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig):
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ model, input: texts }),
-        signal: controller.signal, // FIX: 绑定 abort 信号
+        body: JSON.stringify({ model, input: uncachedTexts }),
+        signal: controller.signal,
       });
 
-      clearTimeout(timeoutId); // FIX: 清除定时器
+      clearTimeout(timeoutId);
 
       if (!resp.ok) {
         const text = await resp.text().catch(() => "");
@@ -728,10 +815,21 @@ export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig):
       }
 
       const json = (await resp.json()) as { data: Array<{ embedding: number[] }> };
-      return json.data.map((d) => d.embedding);
+      const embeddings = json.data.map((d) => d.embedding);
+
+      // 写入缓存 + 填充结果
+      for (let i = 0; i < uncachedIndices.length; i++) {
+        const vec = embeddings[i];
+        if (vec) {
+          const origIdx = uncachedIndices[i];
+          results[origIdx] = vec;
+          setCachedQueryVec(uncachedTexts[i], model, vec);
+        }
+      }
+
+      return results as number[][];
     } catch (err) {
       clearTimeout(timeoutId);
-      // FIX: 区分超时错误
       if (err instanceof Error && err.name === "AbortError") {
         throw new Error(`Embedding API timeout after ${timeout}ms`);
       }

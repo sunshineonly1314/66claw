@@ -204,6 +204,7 @@ export const SkillsUpdateParamsSchema = Type.Object(
     enabled: Type.Optional(Type.Boolean()),
     apiKey: Type.Optional(Type.String()),
     env: Type.Optional(Type.Record(NonEmptyString, Type.String())),
+    pinned: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

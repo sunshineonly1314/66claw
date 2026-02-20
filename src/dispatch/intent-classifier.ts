@@ -296,11 +296,23 @@ export async function classifyByLLM(params: {
 
     // Try to use the lightweight model via the provider infrastructure.
     // We dynamically import to avoid hard circular dependencies.
+    // "auto" → 动态读取用户配置的 text 能力模型，避免硬编码 provider
+    let classifierModel = params.classifierConfig.model;
+    if (classifierModel === "auto") {
+      const cap = (params.cfg as Record<string, unknown>).modelCapability as
+        | { capabilities?: Record<string, { providerId?: string; modelId?: string }> }
+        | undefined;
+      const textCap = cap?.capabilities?.["text"];
+      if (textCap?.providerId && textCap?.modelId) {
+        classifierModel = `${textCap.providerId}/${textCap.modelId}`;
+      }
+    }
+
     const { classifyWithLightweightModel } = await import("./llm-classify.js");
     const result = await classifyWithLightweightModel({
       systemPrompt,
       userPrompt,
-      model: params.classifierConfig.model,
+      model: classifierModel,
       maxTokens: params.classifierConfig.maxTokens,
       cfg: params.cfg,
       agentDir: params.agentDir,

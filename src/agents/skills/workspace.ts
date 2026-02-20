@@ -17,7 +17,7 @@ import type {
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { CONFIG_DIR, resolveUserPath } from "../../utils.js";
 import { resolveSandboxPath } from "../sandbox-paths.js";
-import { resolveBundledSkillsDir } from "./bundled-dir.js";
+import { resolveBundledSkillsDir, resolvePrivateSkillsDir } from "./bundled-dir.js";
 import { shouldIncludeSkill } from "./config.js";
 import {
   parseFrontmatter,
@@ -27,10 +27,119 @@ import {
 import { invalidateAllFileIndices } from "./file-index.js";
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
+import {
+  decryptFile,
+  ensureDirectoryEncrypted,
+  isEncryptionEnabled,
+} from "../../security/content-vault.js";
 
 const fsp = fs.promises;
 const skillsLogger = createSubsystemLogger("skills");
 const skillCommandDebugOnce = new Set<string>();
+
+/**
+ * Load skills from a directory, handling encrypted (.md.enc) files.
+ *
+ * When encryption is enabled and .enc files exist, creates a temporary
+ * decrypted copy for loadSkillsFromDir (which only reads plain .md files),
+ * then cleans up immediately.
+ */
+function loadSkillsWithEncryption(params: {
+  dir: string;
+  source: string;
+  loadSkills: (p: { dir: string; source: string }) => Skill[];
+}): Skill[] {
+  if (!isEncryptionEnabled() || !fs.existsSync(params.dir)) {
+    return params.loadSkills({ dir: params.dir, source: params.source });
+  }
+
+  // Check if directory has any .enc files
+  const hasEncFiles = hasEncryptedFiles(params.dir);
+  if (!hasEncFiles) {
+    return params.loadSkills({ dir: params.dir, source: params.source });
+  }
+
+  // Create temp dir, decrypt .enc files into it, load, then cleanup
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawdbot-skills-"));
+  try {
+    decryptDirectoryTo(params.dir, tmpDir);
+    const skills = params.loadSkills({ dir: tmpDir, source: params.source });
+
+    // Rewrite filePath to point back to original .enc paths so the model
+    // uses the real path (decryption happens again at read time via attempt.ts)
+    for (const skill of skills) {
+      const relPath = path.relative(tmpDir, skill.filePath);
+      const originalEnc = path.join(params.dir, relPath + ".enc");
+      const originalPlain = path.join(params.dir, relPath);
+      if (fs.existsSync(originalEnc)) {
+        skill.filePath = originalEnc;
+        skill.baseDir = path.dirname(originalEnc);
+      } else if (fs.existsSync(originalPlain)) {
+        skill.filePath = originalPlain;
+        skill.baseDir = path.dirname(originalPlain);
+      }
+    }
+
+    return skills;
+  } catch (err) {
+    skillsLogger.warn(`Failed to load encrypted skills from ${params.dir}: ${err}`);
+    // 安全策略: 解密失败时不 fallback 到明文加载，防止跨机器绕过
+    // 仅返回空数组，拒绝暴露受保护内容
+    return [];
+  } finally {
+    // Cleanup temp directory
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // Best effort cleanup
+    }
+  }
+}
+
+/** Check recursively if a directory has any .enc files */
+function hasEncryptedFiles(dir: string): boolean {
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith(".md.enc")) return true;
+      if (entry.isDirectory()) {
+        if (hasEncryptedFiles(path.join(dir, entry.name))) return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+/** Decrypt .enc files from srcDir into destDir, preserving directory structure */
+function decryptDirectoryTo(srcDir: string, destDir: string): void {
+  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(srcDir, entry.name);
+    if (entry.isDirectory()) {
+      const subDest = path.join(destDir, entry.name);
+      fs.mkdirSync(subDest, { recursive: true });
+      decryptDirectoryTo(srcPath, subDest);
+    } else if (entry.isFile()) {
+      if (entry.name.endsWith(".md.enc")) {
+        // Decrypt to .md in temp dir
+        const destName = entry.name.slice(0, -4); // remove .enc
+        const destPath = path.join(destDir, destName);
+        try {
+          const plaintext = decryptFile(srcPath);
+          fs.writeFileSync(destPath, plaintext, "utf-8");
+        } catch (err) {
+          skillsLogger.warn(`Failed to decrypt ${srcPath}: ${err}`);
+        }
+      } else {
+        // Copy non-.enc files as-is (e.g. images, etc.)
+        const destPath = path.join(destDir, entry.name);
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+}
 
 function debugSkillCommandOnce(
   messageKey: string,
@@ -105,6 +214,7 @@ function loadSkillEntries(
     config?: OpenClawCNConfig;
     managedSkillsDir?: string;
     bundledSkillsDir?: string;
+    privateSkillsDir?: string;
   },
 ): SkillEntry[] {
   const loadSkills = (params: { dir: string; source: string }): Skill[] => {
@@ -136,44 +246,76 @@ function loadSkillEntries(
   });
   const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
 
+  // 首次启动时加密受保护的 skills（非开发模式）
+  // bundled = 内置 skill（我们的 IP）
+  // managed = 商店下载的 skill（官方/付费资产）
+  // 用户自己写的 skill（extra/personal/project/workspace）不加密
+  if (bundledSkillsDir) {
+    ensureDirectoryEncrypted(bundledSkillsDir);
+  }
+  ensureDirectoryEncrypted(managedSkillsDir);
+
   const bundledSkills = bundledSkillsDir
-    ? loadSkills({
+    ? loadSkillsWithEncryption({
         dir: bundledSkillsDir,
         source: "openclawcn-bundled",
+        loadSkills,
       })
     : [];
+
+  // ── Private (owner-only) skills: not packaged, not distributed ──
+  const privateSkillsDir = opts?.privateSkillsDir ?? resolvePrivateSkillsDir();
+  if (privateSkillsDir) {
+    ensureDirectoryEncrypted(privateSkillsDir);
+  }
+  const privateSkills = privateSkillsDir
+    ? loadSkillsWithEncryption({
+        dir: privateSkillsDir,
+        source: "openclawcn-private",
+        loadSkills,
+      })
+    : [];
+
   const extraSkills = mergedExtraDirs.flatMap((dir) => {
     const resolved = resolveUserPath(dir);
-    return loadSkills({
+    return loadSkillsWithEncryption({
       dir: resolved,
       source: "openclawcn-extra",
+      loadSkills,
     });
   });
-  const managedSkills = loadSkills({
+  const managedSkills = loadSkillsWithEncryption({
     dir: managedSkillsDir,
     source: "openclawcn-managed",
+    loadSkills,
   });
   const personalAgentsSkillsDir = path.resolve(os.homedir(), ".agents", "skills");
-  const personalAgentsSkills = loadSkills({
+  const personalAgentsSkills = loadSkillsWithEncryption({
     dir: personalAgentsSkillsDir,
     source: "agents-skills-personal",
+    loadSkills,
   });
   const projectAgentsSkillsDir = path.resolve(workspaceDir, ".agents", "skills");
-  const projectAgentsSkills = loadSkills({
+  const projectAgentsSkills = loadSkillsWithEncryption({
     dir: projectAgentsSkillsDir,
     source: "agents-skills-project",
+    loadSkills,
   });
-  const workspaceSkills = loadSkills({
+  const workspaceSkills = loadSkillsWithEncryption({
     dir: workspaceSkillsDir,
     source: "openclawcn-workspace",
+    loadSkills,
   });
 
   const merged = new Map<string, Skill>();
-  // Precedence: extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
+  // Precedence: extra < bundled < private < managed < agents-skills-personal < agents-skills-project < workspace
   for (const skill of extraSkills) {
     merged.set(skill.name, skill);
   }
   for (const skill of bundledSkills) {
+    merged.set(skill.name, skill);
+  }
+  for (const skill of privateSkills) {
     merged.set(skill.name, skill);
   }
   for (const skill of managedSkills) {
@@ -192,7 +334,12 @@ function loadSkillEntries(
   const skillEntries: SkillEntry[] = Array.from(merged.values()).map((skill) => {
     let frontmatter: ParsedSkillFrontmatter = {};
     try {
-      const raw = fs.readFileSync(skill.filePath, "utf-8");
+      let raw: string;
+      if (skill.filePath.endsWith(".md.enc")) {
+        raw = decryptFile(skill.filePath);
+      } else {
+        raw = fs.readFileSync(skill.filePath, "utf-8");
+      }
       frontmatter = parseFrontmatter(raw);
     } catch {
       // ignore malformed skills

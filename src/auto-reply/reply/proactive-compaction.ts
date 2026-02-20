@@ -1,5 +1,3 @@
-import crypto from "node:crypto";
-import { lookupContextTokens } from "../../agents/context.js";
 import { isCliProvider } from "../../agents/model-selection.js";
 import { compactEmbeddedPiSession } from "../../agents/pi-embedded.js";
 import type { OpenClawCNConfig } from "../../config/config.js";
@@ -9,9 +7,7 @@ import {
   updateSessionStoreEntry,
 } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
-import { emitAgentEvent, registerAgentRunContext } from "../../infra/agent-events.js";
 import { defaultRuntime } from "../../runtime.js";
-import { enqueueSystemEvent } from "../../infra/system-events.js";
 import { formatContextUsageShort, formatTokenCount } from "../status.js";
 import type { FollowupRun } from "./queue.js";
 import { incrementCompactionCount } from "./session-updates.js";
@@ -110,22 +106,6 @@ export async function runProactiveCompactionIfNeeded(params: {
     `[ProactiveCompaction] Context at ${pctBefore}% (threshold ${Math.round(settings.thresholdRatio * 100)}%), compacting before agent turn...`,
   );
 
-  // Emit compaction start event so UI can show indicator
-  const proactiveRunId = crypto.randomUUID();
-  if (params.sessionKey) {
-    registerAgentRunContext(proactiveRunId, { sessionKey: params.sessionKey });
-  }
-  emitAgentEvent({
-    runId: proactiveRunId,
-    stream: "compaction",
-    sessionKey: params.sessionKey,
-    data: {
-      phase: "start",
-      source: "proactive",
-      contextPercent: pctBefore,
-    },
-  });
-
   let activeSessionEntry = params.sessionEntry;
   try {
     const result = await compactEmbeddedPiSession({
@@ -190,46 +170,15 @@ export async function runProactiveCompactionIfNeeded(params: {
         contextWindowTokens,
       );
       const line = `${compactLabel} • ${contextSummary}`;
-      if (params.sessionKey) {
-        enqueueSystemEvent(line, { sessionKey: params.sessionKey });
-      }
-
       defaultRuntime.log(`[ProactiveCompaction] ${line}`);
-
-      // Emit compaction end event (success)
-      emitAgentEvent({
-        runId: proactiveRunId,
-        stream: "compaction",
-        sessionKey: params.sessionKey,
-        data: {
-          phase: "end",
-          source: "proactive",
-          tokensBefore: tokensBefore,
-          tokensAfter: tokensAfter,
-        },
-      });
     } else {
       logVerbose(
         `[ProactiveCompaction] Compaction skipped or failed: ${result.reason ?? "unknown"}`,
       );
-      // Emit compaction end event (skipped/failed)
-      emitAgentEvent({
-        runId: proactiveRunId,
-        stream: "compaction",
-        sessionKey: params.sessionKey,
-        data: { phase: "end", source: "proactive" },
-      });
     }
   } catch (err) {
     // Proactive compaction failure should NOT block the agent turn
     defaultRuntime.error(`[ProactiveCompaction] Failed (non-blocking): ${String(err)}`);
-    // Emit compaction end event (error)
-    emitAgentEvent({
-      runId: proactiveRunId,
-      stream: "compaction",
-      sessionKey: params.sessionKey,
-      data: { phase: "end", source: "proactive" },
-    });
   }
 
   return activeSessionEntry;

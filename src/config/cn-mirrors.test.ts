@@ -35,7 +35,7 @@ describe("token consistency", () => {
   it("getClawdSkillsProxyHeaders uses Bearer token", () => {
     const headers = getClawdSkillsProxyHeaders();
     expect(headers.Authorization).toBe("Bearer clawdbotCN778");
-    expect(headers["User-Agent"]).toBe("openclawcn");
+    expect(headers["User-Agent"]).toBe("OpenClawCN/1.0");
   });
 });
 

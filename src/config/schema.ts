@@ -298,7 +298,7 @@ function applyChannelSchemas(schema: ConfigSchema, channels: ChannelUiMetadata[]
 let cachedBase: ConfigSchemaResponse | null = null;
 
 // China region channels that have schemas defined in ChannelsSchema (not as plugins)
-const BUILTIN_CHANNEL_IDS = new Set(["feishu", "dingtalk", "wecom"]);
+const BUILTIN_CHANNEL_IDS = new Set(["feishu", "dingtalk", "wecom", "qqbot", "openclawwechat"]);
 
 function stripChannelSchema(schema: ConfigSchema): ConfigSchema {
   const next = cloneSchema(schema);

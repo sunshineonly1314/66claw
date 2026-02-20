@@ -46,10 +46,11 @@ const DEFAULT_SETTINGS: DispatchSettings = {
   ruleConfidenceThreshold: 0.7,
   timeoutMs: 3000,
   debug: false,
+  toolFilterMode: "off",
 };
 
 const DEFAULT_CLASSIFIER: ClassifierConfig = {
-  model: "anthropic/claude-haiku-3",
+  model: "auto",
   maxTokens: 100,
   systemPrompt: [
     "You are an intent classifier. Given a user message, classify it into exactly one intent.",
@@ -143,12 +144,17 @@ export function validateDispatchConfig(raw: unknown): DispatchConfig {
 
   // Settings (merge with defaults)
   const rawSettings = (obj.settings ?? {}) as Partial<DispatchSettings>;
+  const VALID_FILTER_MODES = new Set(["off", "intent", "discovery"]);
+  const rawFilterMode = typeof rawSettings.toolFilterMode === "string" ? rawSettings.toolFilterMode : undefined;
   const settings: DispatchSettings = {
     enabled: rawSettings.enabled ?? DEFAULT_SETTINGS.enabled,
     ruleConfidenceThreshold:
       rawSettings.ruleConfidenceThreshold ?? DEFAULT_SETTINGS.ruleConfidenceThreshold,
     timeoutMs: rawSettings.timeoutMs ?? DEFAULT_SETTINGS.timeoutMs,
     debug: rawSettings.debug ?? DEFAULT_SETTINGS.debug,
+    toolFilterMode: rawFilterMode && VALID_FILTER_MODES.has(rawFilterMode)
+      ? (rawFilterMode as DispatchSettings["toolFilterMode"])
+      : DEFAULT_SETTINGS.toolFilterMode,
   };
 
   // Classifier (merge with defaults)

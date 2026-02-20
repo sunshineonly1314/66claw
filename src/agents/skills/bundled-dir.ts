@@ -11,11 +11,14 @@ function looksLikeSkillsDir(dir: string): boolean {
         continue;
       }
       const fullPath = path.join(dir, entry.name);
-      if (entry.isFile() && entry.name.endsWith(".md")) {
+      if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".md.enc"))) {
         return true;
       }
       if (entry.isDirectory()) {
-        if (fs.existsSync(path.join(fullPath, "SKILL.md"))) {
+        if (
+          fs.existsSync(path.join(fullPath, "SKILL.md")) ||
+          fs.existsSync(path.join(fullPath, "SKILL.md.enc"))
+        ) {
           return true;
         }
       }
@@ -32,6 +35,56 @@ export type BundledSkillsResolveOptions = {
   cwd?: string;
   execPath?: string;
 };
+
+/**
+ * Resolve the private (owner-only) skills directory.
+ *
+ * Private skills live in `skills-private/` next to the bundled `skills/` dir.
+ * They are loaded at runtime but excluded from npm packaging and installer
+ * bundling — intended for the project owner's personal automation skills
+ * (e.g. wechat-desktop, wecom-desktop) that should NOT ship to end users.
+ */
+export function resolvePrivateSkillsDir(
+  opts: BundledSkillsResolveOptions = {},
+): string | undefined {
+  const override = process.env.OPENCLAWCN_PRIVATE_SKILLS_DIR?.trim();
+  if (override) {
+    return override;
+  }
+
+  // Reuse the same resolution logic as bundled dir, but look for `skills-private/`
+  try {
+    const execPath = opts.execPath ?? process.execPath;
+    const execDir = path.dirname(execPath);
+    const sibling = path.join(execDir, "skills-private");
+    if (fs.existsSync(sibling) && looksLikeSkillsDir(sibling)) {
+      return sibling;
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const moduleUrl = opts.moduleUrl ?? import.meta.url;
+    const argv1 = opts.argv1 ?? process.argv[1];
+    const cwd = opts.cwd ?? process.cwd();
+    const packageRoot = resolveOpenClawCNPackageRootSync({
+      argv1,
+      moduleUrl,
+      cwd,
+    });
+    if (packageRoot) {
+      const candidate = path.join(packageRoot, "skills-private");
+      if (looksLikeSkillsDir(candidate)) {
+        return candidate;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return undefined;
+}
 
 export function resolveBundledSkillsDir(
   opts: BundledSkillsResolveOptions = {},

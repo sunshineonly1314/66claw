@@ -39,7 +39,7 @@ import { createWeComHandoffTool } from "./tools/wecom-handoff.js";
 import { createImageGenTool } from "./tools/image-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
 import { getMCPManagerSafe } from "../mcp/index.js";
-import { applyToolHints } from "../dispatch/tool-hints.js";
+// applyToolHints removed — reordering is now done at the outer level in pi-tools.ts
 
 export function createOpenClawCNTools(options?: {
   sandboxBrowserBridgeUrl?: string;
@@ -80,9 +80,7 @@ export function createOpenClawCNTools(options?: {
   requireExplicitMessageTarget?: boolean;
   /** If true, omit the message tool from the tool list. */
   disableMessageTool?: boolean;
-  // ── [CN-PATCH] Tool hints from dispatch engine (auto-discovery) ──
-  /** Tool hints from dispatch engine for tool reordering. */
-  toolHints?: string[];
+  // toolHints removed — reordering is now done at the outer level in pi-tools.ts
 }): AnyAgentTool[] {
   const workspaceDir = resolveWorkspaceRoot(options?.workspaceDir);
   const imageTool = options?.agentDir?.trim()
@@ -262,10 +260,7 @@ export function createOpenClawCNTools(options?: {
     return true;
   });
 
-  // ── [CN-PATCH] Apply tool hints (reorder tools based on dispatch auto-discovery)
-  const sortedTools = options?.toolHints ? applyToolHints(tools, options.toolHints) : tools;
-
-  return [...sortedTools, ...pluginTools, ...mcpTools];
+  return [...tools, ...pluginTools, ...mcpTools];
 }
 
 /** @deprecated Use createOpenClawCNTools instead */

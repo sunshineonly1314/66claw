@@ -182,6 +182,11 @@ export class MemoryIndexManager implements MemorySearchManager {
     this.ensureIntervalSync();
     const statusOnly = params.purpose === "status";
     this.dirty = this.sources.has("memory") && (statusOnly ? !meta : true);
+    // [CN-PATCH:reliability] 启动时标记 sessions 为 dirty，确保首次搜索触发增量同步。
+    // 防止崩溃场景：进程异常退出时 session transcript 已写入但 5s debounce 内索引未更新，
+    // 重启后 sessionsDirty 默认 false → 首次搜索跳过 session 同步 → 最近对话搜索不到。
+    // hash 对比机制保证只有真正变化的文件才会重新索引，不会浪费性能。
+    this.sessionsDirty = this.sources.has("sessions") && (statusOnly ? !meta : true);
     this.batch = this.resolveBatchConfig();
   }
 

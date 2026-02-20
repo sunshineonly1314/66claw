@@ -75,6 +75,18 @@ export async function runReplyAgent(params: {
   sessionCtx: TemplateContext;
   shouldInjectGroupIntro: boolean;
   typingMode: TypingMode;
+  // ── [CN-PATCH:tool-discovery] Tool hints from dispatch engine ──
+  toolHints?: string[];
+  // ── [CN-PATCH:tool-filter] Tool filter policy from dispatch engine ──
+  toolFilterPolicy?: import("../../dispatch/tool-filter.js").ToolFilterPolicy;
+  mcpSuggestions?: Array<{
+    serverId: string;
+    friendlyName: string;
+    description: string;
+    npmPackage?: string;
+    sseUrl?: string;
+    score: number;
+  }>;
 }): Promise<ReplyPayload | ReplyPayload[] | undefined> {
   const {
     commandBody,
@@ -200,7 +212,10 @@ export async function runReplyAgent(params: {
 
   await typingSignals.signalRunStart();
 
-  activeSessionEntry = await runMemoryFlushIfNeeded({
+  // Memory flush: run in background (fire-and-forget) so it never blocks the user's chat.
+  // The flush uses a separate cheap/fast model (e.g. SiliconFlow Qwen3-8B) and writes
+  // memory files independently. Errors are caught inside runMemoryFlushIfNeeded.
+  void runMemoryFlushIfNeeded({
     cfg,
     followupRun,
     sessionCtx,
@@ -215,9 +230,10 @@ export async function runReplyAgent(params: {
     isHeartbeat,
   });
 
-  // Proactive compaction: auto-compact before agent turn when context exceeds threshold.
-  // Runs AFTER memory flush (which saves durable memories) and BEFORE the agent turn.
-  activeSessionEntry = await runProactiveCompactionIfNeeded({
+  // Proactive compaction: run in background (fire-and-forget) so it never blocks the user's chat.
+  // If context is near threshold, compaction runs alongside the agent turn.
+  // The next turn will naturally use the compacted session.
+  void runProactiveCompactionIfNeeded({
     cfg,
     followupRun,
     defaultModel,
@@ -338,6 +354,10 @@ export async function runReplyAgent(params: {
       activeSessionStore,
       storePath,
       resolvedVerboseLevel,
+      // ── [CN-PATCH:tool-discovery] Forward tool hints and MCP suggestions ──
+      toolHints: params.toolHints,
+      toolFilterPolicy: params.toolFilterPolicy,
+      mcpSuggestions: params.mcpSuggestions,
     });
 
     if (runOutcome.kind === "final") {

@@ -77,6 +77,8 @@ export interface SkillSearchOptions {
   cnBlocked?: boolean;
   /** 是否已安装 */
   installed?: boolean;
+  /** 数据来源过滤（proxy = 可下载, qc = 仅评测数据） */
+  source?: "proxy" | "qc";
   /** 排序字段 */
   orderBy?: "updated_at" | "overall_score" | "name";
   /** 排序方向 */

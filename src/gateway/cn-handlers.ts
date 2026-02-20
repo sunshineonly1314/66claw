@@ -22,6 +22,7 @@ import {
   skillsMarketplaceGetStats,
   skillsMarketplaceGetCategories,
 } from "./server-methods/skills-marketplace-search.js";
+import { diagnoseHandlers } from "./server-methods/diagnose.js";
 
 export const cnGatewayHandlers: GatewayRequestHandlers = {
   ...modalityCapabilityHandlers,
@@ -38,4 +39,7 @@ export const cnGatewayHandlers: GatewayRequestHandlers = {
   "skills_marketplace.get_by_id": skillsMarketplaceGetById,
   "skills_marketplace.get_stats": skillsMarketplaceGetStats,
   "skills_marketplace.get_categories": skillsMarketplaceGetCategories,
+
+  // Self-Troubleshoot Diagnostics API
+  ...diagnoseHandlers,
 };

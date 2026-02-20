@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ClawdbotCN</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f1a;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;overflow:hidden}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.spinner{width:48px;height:48px;border:3px solid rgba(74,108,247,0.2);border-top-color:#4a6cf7;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:24px}
+h2{font-size:18px;font-weight:600;color:#fff;margin-bottom:8px}
+p{font-size:13px;color:#888}
+.warn{color:#fbbf24}
+.err{color:#f87171}
+#debug{position:fixed;bottom:0;left:0;right:0;max-height:120px;overflow-y:auto;background:rgba(0,0,0,0.8);font-size:11px;color:#0f0;padding:4px 8px;font-family:monospace;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div class="spinner"></div>
+<h2>正在启动 ClawdbotCN...</h2>
+<p id="status">后台服务正在初始化，请稍候</p>
+<div id="debug"></div>
+<script>
+(function() {
+    var port = __GATEWAY_PORT__;
+    var statusEl = document.getElementById("status");
+    var debugEl = document.getElementById("debug");
+    var decided = false;
+    var startTime = Date.now();
+    var FAST_INTERVAL = 300;
+    var SLOW_INTERVAL = 1000;
+    var MAX_WAIT = 60000;
+
+    function log(msg) {
+        var t = ((Date.now() - startTime) / 1000).toFixed(1);
+        var line = "[" + t + "s] " + msg;
+        console.log("[loading] " + line);
+        if (debugEl) {
+            debugEl.textContent += line + "\n";
+            debugEl.scrollTop = debugEl.scrollHeight;
+        }
+    }
+
+    log("loading.html started, port=" + port);
+    log("__TAURI_INTERNALS__=" + (typeof window.__TAURI_INTERNALS__));
+    log("__TAURI__=" + (typeof window.__TAURI__));
+
+    function getInvoke() {
+        return (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) ||
+               (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
+    }
+
+    function goSetup() {
+        log("-> goSetup()");
+        window.location.href = "http://127.0.0.1:" + port + "/setup";
+    }
+
+    function goControlUi(info) {
+        var hash = "";
+        if (info && info.token) {
+            hash = "#token=" + info.token + "&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A" + info.port;
+        }
+        log("-> goControlUi() hash=" + (hash ? "yes" : "no"));
+        // Must use assign + reload because current origin is already tauri://localhost
+        // (from document.open/write/close). Just changing hash won't trigger a page load.
+        window.location.href = "tauri://localhost/" + hash;
+        window.location.reload();
+    }
+
+    function poll() {
+        if (decided) return;
+        var elapsed = Date.now() - startTime;
+
+        if (elapsed >= 30000 && elapsed < 45000 && statusEl) {
+            statusEl.textContent = "启动时间较长，请耐心等待…";
+            statusEl.className = "warn";
+        } else if (elapsed >= 45000 && statusEl) {
+            statusEl.innerHTML = "如长时间无响应，可能是杀毒软件拦截了 node.exe";
+            statusEl.className = "err";
+        }
+
+        if (elapsed > MAX_WAIT) {
+            log("TIMEOUT after 60s");
+            return;
+        }
+
+        var invoke = getInvoke();
+        if (!invoke) {
+            log("no invoke, retry");
+            schedule();
+            return;
+        }
+
+        invoke("check_needs_setup")
+            .then(function(needsSetup) {
+                if (decided) return;
+                log("check_needs_setup returned: " + needsSetup);
+                decided = true;
+                if (needsSetup) {
+                    goSetup();
+                } else {
+                    invoke("get_gateway_info").then(function(info) {
+                        log("get_gateway_info: port=" + info.port + " token=" + (info.token ? "yes" : "no"));
+                        goControlUi(info);
+                    }).catch(function(e) {
+                        log("get_gateway_info error: " + e);
+                        goControlUi();
+                    });
+                }
+            })
+            .catch(function(e) {
+                log("check_needs_setup error: " + e);
+                schedule();
+            });
+    }
+
+    function schedule() {
+        var elapsed = Date.now() - startTime;
+        var delay = elapsed < 10000 ? FAST_INTERVAL : SLOW_INTERVAL;
+        setTimeout(poll, delay);
+    }
+
+    setTimeout(poll, 500);
+})();
+</script>
+</body>
+</html>

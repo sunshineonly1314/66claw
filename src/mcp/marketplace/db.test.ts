@@ -12,6 +12,7 @@ import {
   insertItem,
   insertItems,
   getItemById,
+  getItemsByServerIds,
   updateItem,
   deleteItem,
   clearAllItems,
@@ -375,5 +376,77 @@ describe("Transaction Support", () => {
 
     const stats = getStats();
     expect(stats.total).toBe(3);
+  });
+});
+
+// ========== 批量 ID 查询 ==========
+
+describe("getItemsByServerIds", () => {
+  beforeEach(() => {
+    insertItems([mockItem1, mockItem2, mockItem3]);
+  });
+
+  it("should return items preserving input order", () => {
+    // Reverse order from insertion
+    const ids = [mockItem3.serverId, mockItem1.serverId, mockItem2.serverId];
+    const result = getItemsByServerIds(ids);
+
+    expect(result.items.length).toBe(3);
+    expect(result.items[0].serverId).toBe(mockItem3.serverId);
+    expect(result.items[1].serverId).toBe(mockItem1.serverId);
+    expect(result.items[2].serverId).toBe(mockItem2.serverId);
+    expect(result.total).toBe(3);
+  });
+
+  it("should skip non-existent ids without error", () => {
+    const ids = [mockItem1.serverId, "@nonexistent/mcp", mockItem2.serverId];
+    const result = getItemsByServerIds(ids);
+
+    expect(result.items.length).toBe(2);
+    expect(result.items[0].serverId).toBe(mockItem1.serverId);
+    expect(result.items[1].serverId).toBe(mockItem2.serverId);
+    expect(result.total).toBe(2);
+  });
+
+  it("should return empty for empty input", () => {
+    const result = getItemsByServerIds([]);
+    expect(result.items.length).toBe(0);
+    expect(result.total).toBe(0);
+    expect(result.totalPages).toBe(0);
+  });
+
+  it("should support pagination on ordered results", () => {
+    const ids = [mockItem3.serverId, mockItem1.serverId, mockItem2.serverId];
+
+    const page1 = getItemsByServerIds(ids, { page: 1, pageSize: 2 });
+    expect(page1.items.length).toBe(2);
+    expect(page1.items[0].serverId).toBe(mockItem3.serverId);
+    expect(page1.items[1].serverId).toBe(mockItem1.serverId);
+    expect(page1.total).toBe(3);
+    expect(page1.totalPages).toBe(2);
+
+    const page2 = getItemsByServerIds(ids, { page: 2, pageSize: 2 });
+    expect(page2.items.length).toBe(1);
+    expect(page2.items[0].serverId).toBe(mockItem2.serverId);
+  });
+
+  it("should handle duplicate ids in input", () => {
+    const ids = [mockItem1.serverId, mockItem1.serverId, mockItem2.serverId];
+    const result = getItemsByServerIds(ids);
+
+    // Duplicate ids produce duplicate entries in output (preserves caller's intent)
+    expect(result.total).toBe(3);
+    expect(result.items[0].serverId).toBe(mockItem1.serverId);
+    expect(result.items[1].serverId).toBe(mockItem1.serverId);
+    expect(result.items[2].serverId).toBe(mockItem2.serverId);
+  });
+
+  it("should preserve full item data", () => {
+    const result = getItemsByServerIds([mockItem1.serverId]);
+    const item = result.items[0];
+
+    expect(item.friendlyNameCn).toBe(mockItem1.friendlyNameCn);
+    expect(item.availability?.chinaFriendlyScore).toBe(90);
+    expect(item.tags).toEqual(mockItem1.tags);
   });
 });

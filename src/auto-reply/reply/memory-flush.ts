@@ -26,6 +26,10 @@ export type MemoryFlushSettings = {
   prompt: string;
   systemPrompt: string;
   reserveTokensFloor: number;
+  /** Override provider for the flush turn (e.g. use a cheaper/faster model). */
+  provider?: string;
+  /** Override model for the flush turn. */
+  model?: string;
 };
 
 const normalizeNonNegativeInt = (value: unknown): number | null => {
@@ -56,6 +60,8 @@ export function resolveMemoryFlushSettings(cfg?: OpenClawCNConfig): MemoryFlushS
     prompt: ensureNoReplyHint(prompt),
     systemPrompt: ensureNoReplyHint(systemPrompt),
     reserveTokensFloor,
+    provider: defaults?.provider?.trim() || undefined,
+    model: defaults?.model?.trim() || undefined,
   };
 }
 

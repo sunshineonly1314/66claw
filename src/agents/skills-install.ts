@@ -22,6 +22,15 @@ import {
 } from "./skills.js";
 import { resolveSkillKey } from "./skills/frontmatter.js";
 
+/** Append a directory to process.env.PATH if not already present. */
+function appendToProcessPath(dir: string): void {
+  const pathEnv = process.env.PATH ?? "";
+  const parts = pathEnv.split(path.delimiter);
+  if (!parts.includes(dir)) {
+    process.env.PATH = pathEnv + path.delimiter + dir;
+  }
+}
+
 /**
  * OpenClawCN: Install progress callback for real-time progress display
  */
@@ -439,9 +448,12 @@ import {
   getPipMirrors,
   getNpmMirrors,
   getGitHubProxies,
+  getGitHubProxyUrls,
+  getGoProxies,
   isToolHostedOnHK,
   getHKBinaryVersionUrl,
-  getHKBinaryDownloadUrl,
+  getHKBinaryAuthHeaders,
+  buildHKBinaryDownloadUrl,
   getCurrentPlatformForHKBinary,
   CLI_TOOL_MIRRORS,
   CLAWDSKILLSPROXY_CONFIG,
@@ -468,20 +480,22 @@ const CN_MIRRORS = {
  */
 async function runCommandWithMirrorFallback(params: {
   buildCommand: (mirror: string) => string[];
+  buildEnv?: (mirror: string) => NodeJS.ProcessEnv | undefined;
   mirrors: string[];
   timeoutMs: number;
   env?: NodeJS.ProcessEnv;
   onMirrorSwitch?: (from: string, to: string, error: string) => void;
 }): Promise<{ code: number | null; stdout: string; stderr: string; usedMirror?: string }> {
-  const { buildCommand, mirrors, timeoutMs, env, onMirrorSwitch } = params;
+  const { buildCommand, buildEnv, mirrors, timeoutMs, env, onMirrorSwitch } = params;
 
   let lastError = "";
   for (let i = 0; i < mirrors.length; i++) {
     const mirror = mirrors[i]!;
     const argv = buildCommand(mirror);
+    const mirrorEnv = buildEnv ? { ...env, ...buildEnv(mirror) } : env;
 
     try {
-      const result = await runCommandWithTimeout(argv, { timeoutMs, env });
+      const result = await runCommandWithTimeout(argv, { timeoutMs, env: mirrorEnv });
 
       if (result.code === 0) {
         return { ...result, usedMirror: mirror };
@@ -632,6 +646,71 @@ function getGoProxyEnv(): Record<string, string> | undefined {
     return { GOPROXY: CN_MIRRORS.go };
   }
   return undefined;
+}
+
+/**
+ * OpenClawCN: Install Go package with 3-mirror fallback
+ * 七牛云 → 阿里云 → goproxy.io
+ */
+async function installGoPackageWithFallback(params: {
+  argv: string[];
+  timeoutMs: number;
+  baseEnv?: NodeJS.ProcessEnv;
+  onProgress?: SkillInstallProgressCallback;
+}): Promise<{ code: number | null; stdout: string; stderr: string; usedMirror?: string }> {
+  const { argv, timeoutMs, baseEnv, onProgress } = params;
+  const mirrors = getGoProxies();
+
+  return runCommandWithMirrorFallback({
+    buildCommand: () => argv,
+    buildEnv: (mirror) => ({ ...baseEnv, GOPROXY: `${mirror},direct` }),
+    mirrors,
+    timeoutMs,
+    onMirrorSwitch: (from, to, _error) => {
+      onProgress?.({
+        stage: "installing",
+        message: `Go 代理 ${safeHostname(from)} 不可用，切换到 ${safeHostname(to)}...`,
+        usingCNMirror: true,
+        percent: 55,
+      });
+    },
+  });
+}
+
+/**
+ * OpenClawCN: Install uv/pip package with 3-mirror fallback
+ * 清华 → 阿里云 → 中科大
+ */
+async function installUvPackageWithFallback(params: {
+  packageName: string;
+  isUv: boolean;
+  timeoutMs: number;
+  onProgress?: SkillInstallProgressCallback;
+}): Promise<{ code: number | null; stdout: string; stderr: string; usedMirror?: string }> {
+  const { packageName, isUv, timeoutMs, onProgress } = params;
+  const mirrors = getPipMirrors();
+
+  return runCommandWithMirrorFallback({
+    buildCommand: (mirror) =>
+      isUv
+        ? ["uv", "tool", "install", packageName, "--index-url", mirror]
+        : ["pip", "install", packageName, "-i", mirror],
+    mirrors,
+    timeoutMs,
+    onMirrorSwitch: (from, to, _error) => {
+      onProgress?.({
+        stage: "installing",
+        message: `PyPI 镜像 ${safeHostname(from)} 不可用，切换到 ${safeHostname(to)}...`,
+        usingCNMirror: true,
+        percent: 55,
+      });
+    },
+  });
+}
+
+/** Safely extract hostname from a URL string, fallback to raw string */
+function safeHostname(url: string): string {
+  try { return new URL(url).hostname; } catch { return url; }
 }
 
 function buildInstallCommand(
@@ -845,10 +924,6 @@ async function downloadFile(
   }
 
   // Direct fetch path (ClawdSkillsProxy or explicit skip)
-  if (!skipSsrfCheck && !isClawdProxy) {
-    validateUrlForSsrf(url);
-  }
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1_000, timeoutMs));
   try {
@@ -904,9 +979,46 @@ async function downloadFile(
 
     const stat = await fs.promises.stat(destPath);
     return { bytes: stat.size };
+  } catch (err) {
+    // Clean up partial file on download failure
+    try { fs.unlinkSync(destPath); } catch { /* ignore cleanup */ }
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * OpenClawCN: Download file with multi-mirror fallback.
+ * Tries each URL in order; on network failure, cleans up and moves to next.
+ */
+async function downloadFileWithMirrorFallback(params: {
+  urls: string[];
+  destPath: string;
+  timeoutMs: number;
+  onProgress?: DownloadProgressCallback;
+  onMirrorSwitch?: (from: string, to: string, error: string) => void;
+  skipSsrfCheck?: boolean;
+}): Promise<{ bytes: number; usedUrl: string }> {
+  const { urls, destPath, timeoutMs, onProgress, onMirrorSwitch, skipSsrfCheck } = params;
+  let lastError = "";
+
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i]!;
+    try {
+      const result = await downloadFile(url, destPath, timeoutMs, onProgress, skipSsrfCheck);
+      return { bytes: result.bytes, usedUrl: url };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      // Clean up partial file before trying next mirror
+      try { fs.unlinkSync(destPath); } catch { /* ignore cleanup */ }
+      if (i + 1 < urls.length) {
+        onMirrorSwitch?.(url, urls[i + 1]!, lastError.slice(0, 100));
+      }
+    }
+  }
+
+  throw new Error(`所有镜像源均下载失败: ${lastError}`);
 }
 
 /**
@@ -1033,49 +1145,8 @@ async function installDownloadSpec(params: {
     };
   }
 
-  // OpenClawCN: GitHub Release URL routing through HK binary server
   const useCN = shouldUseCNMirror();
-  if (useCN && url.includes("github.com") && url.includes("/releases/")) {
-    const toolName = (spec.bins?.[0] ?? "").trim();
-    if (toolName && isToolHostedOnHK(toolName)) {
-      const hkResult = await installFromHKBinaryServer({ toolName, timeoutMs, onProgress });
-      if (hkResult.ok) return hkResult;
-    }
-  }
-
-  // OpenClawCN: Large GitHub packages via ClawdSkillsProxy
-  let effectiveUrl = url;
-  if (useCN && url.includes("github.com")) {
-    for (const [repoKey, mapping] of Object.entries(LARGE_PACKAGE_PROXY_MAP)) {
-      if (url.includes(repoKey)) {
-        let fname = "";
-        try {
-          fname = path.basename(new URL(url).pathname);
-        } catch {
-          /* ignore */
-        }
-        if (fname) {
-          const platform =
-            process.platform === "win32"
-              ? "windows-x64"
-              : process.platform === "darwin"
-                ? "darwin-universal"
-                : "linux-x64";
-          effectiveUrl = `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${mapping.endpoint}/${platform}/${fname}`;
-          break;
-        }
-      }
-    }
-  }
-
-  // OpenClawCN: GitHub proxy acceleration
   const isGitHubUrl = url.includes("github.com") || url.includes("githubusercontent.com");
-  if (useCN && effectiveUrl === url && isGitHubUrl) {
-    const githubProxy = process.env.GITHUB_PROXY;
-    if (githubProxy) {
-      effectiveUrl = `${githubProxy}/${url}`;
-    }
-  }
 
   let filename = "";
   try {
@@ -1092,60 +1163,112 @@ async function installDownloadSpec(params: {
   const archivePath = path.join(targetDir, filename);
   let downloaded = 0;
 
-  // OpenClawCN: GitHub URL multi-proxy fallback download
-  if (useCN && isGitHubUrl && effectiveUrl !== url) {
+  const downloadProgressCb: DownloadProgressCallback = (progress) => {
+    onProgress?.({
+      stage: "downloading",
+      message: `正在下载 ${filename}...`,
+      percent: progress.percent,
+      usingCNMirror: useCN,
+      downloadInfo: {
+        speed: progress.speed,
+        eta: progress.eta,
+        downloaded: formatBytes(progress.downloaded),
+        total: formatBytes(progress.total),
+      },
+    });
+  };
+
+  // OpenClawCN: Download strategy — local CN mirrors first, server fallback last
+  if (useCN && isGitHubUrl) {
+    // Step 1: Try 3 local CN GitHub proxies (free, no server bandwidth cost)
     const ghProxies = getGitHubProxies();
-    let lastErr = "";
-    let downloadOk = false;
-    for (const proxy of ghProxies) {
-      const proxyUrl = `${proxy}/${url}`;
+    let mirrorOk = false;
+    let lastMirrorErr = "";
+
+    for (let i = 0; i < ghProxies.length; i++) {
+      const proxyUrl = `${ghProxies[i]}/${url}`;
       try {
-        const result = await downloadFile(proxyUrl, archivePath, timeoutMs, (progress) => {
-          onProgress?.({
-            stage: "downloading",
-            message: `正在下载 ${filename}...`,
-            percent: progress.percent,
-            usingCNMirror: useCN,
-            downloadInfo: {
-              speed: progress.speed,
-              eta: progress.eta,
-              downloaded: formatBytes(progress.downloaded),
-              total: formatBytes(progress.total),
-            },
-          });
-        });
-        downloaded = result.bytes;
-        downloadOk = true;
-        break;
-      } catch (err) {
-        lastErr = err instanceof Error ? err.message : String(err);
-      }
-    }
-    if (!downloadOk) {
-      return {
-        ok: false,
-        message: `所有代理均下载失败: ${lastErr}`,
-        stdout: "",
-        stderr: lastErr,
-        code: null,
-      };
-    }
-  } else {
-    try {
-      const result = await downloadFile(effectiveUrl, archivePath, timeoutMs, (progress) => {
         onProgress?.({
           stage: "downloading",
-          message: `正在下载 ${filename}...`,
-          percent: progress.percent,
-          usingCNMirror: useCN,
-          downloadInfo: {
-            speed: progress.speed,
-            eta: progress.eta,
-            downloaded: formatBytes(progress.downloaded),
-            total: formatBytes(progress.total),
-          },
+          message: i === 0
+            ? `正在通过国内镜像下载 ${filename}...`
+            : `切换到镜像 ${safeHostname(ghProxies[i]!)}...`,
+          usingCNMirror: true,
+          percent: 5,
         });
-      });
+        const result = await downloadFile(proxyUrl, archivePath, timeoutMs, downloadProgressCb);
+        downloaded = result.bytes;
+        mirrorOk = true;
+        break;
+      } catch (err) {
+        lastMirrorErr = err instanceof Error ? err.message : String(err);
+        // Clean up partial file before trying next mirror
+        try { fs.unlinkSync(archivePath); } catch { /* ignore cleanup */ }
+      }
+    }
+
+    // Step 2: If all mirrors failed, try SkillsProxy server as fallback
+    if (!mirrorOk) {
+      const toolName = (spec.bins?.[0] ?? "").trim();
+
+      // 2a: Large packages — try SkillsProxy endpoint mapping
+      let largePackageUrl = "";
+      for (const [repoKey, mapping] of Object.entries(LARGE_PACKAGE_PROXY_MAP)) {
+        if (url.includes(repoKey)) {
+          let fname = "";
+          try { fname = path.basename(new URL(url).pathname); } catch { /* ignore */ }
+          if (fname) {
+            const platform = process.platform === "win32" ? "windows-x64"
+              : process.platform === "darwin" ? "darwin-universal" : "linux-x64";
+            largePackageUrl = `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${mapping.endpoint}/${platform}/${fname}`;
+            break;
+          }
+        }
+      }
+
+      if (largePackageUrl) {
+        onProgress?.({
+          stage: "downloading",
+          message: `国内镜像不可用，切换到 SkillsProxy 服务器...`,
+          usingCNMirror: true,
+          percent: 5,
+        });
+        try {
+          const result = await downloadFile(largePackageUrl, archivePath, timeoutMs, downloadProgressCb, true);
+          downloaded = result.bytes;
+          mirrorOk = true;
+        } catch (err) {
+          lastMirrorErr = err instanceof Error ? err.message : String(err);
+        }
+      }
+
+      // 2b: HK-hosted tool binary — try installFromHKBinaryServer
+      if (!mirrorOk && toolName && isToolHostedOnHK(toolName)) {
+        onProgress?.({
+          stage: "downloading",
+          message: `国内镜像不可用，切换到 SkillsProxy 二进制托管...`,
+          usingCNMirror: true,
+          percent: 5,
+        });
+        const hkResult = await installFromHKBinaryServer({ toolName, timeoutMs, onProgress });
+        if (hkResult.ok) return hkResult;
+        lastMirrorErr = hkResult.message;
+      }
+
+      if (!mirrorOk) {
+        return {
+          ok: false,
+          message: `所有国内镜像及服务器均下载失败: ${lastMirrorErr}`,
+          stdout: "",
+          stderr: lastMirrorErr,
+          code: null,
+        };
+      }
+    }
+  } else {
+    // Non-CN or non-GitHub: direct download
+    try {
+      const result = await downloadFile(url, archivePath, timeoutMs, downloadProgressCb);
       downloaded = result.bytes;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1156,6 +1279,8 @@ async function installDownloadSpec(params: {
   const archiveType = resolveArchiveType(spec, filename);
   const shouldExtract = spec.extract ?? Boolean(archiveType);
   if (!shouldExtract) {
+    // Add tools dir to PATH so hasBinary() finds it after install
+    appendToProcessPath(targetDir);
     return {
       ok: true,
       message: `Downloaded to ${archivePath}`,
@@ -1183,6 +1308,10 @@ async function installDownloadSpec(params: {
     timeoutMs,
   });
   const success = extractResult.code === 0;
+  if (success) {
+    // Add tools dir to PATH so hasBinary() finds the extracted binary
+    appendToProcessPath(targetDir);
+  }
   return {
     ok: success,
     message: success
@@ -1198,23 +1327,44 @@ async function installDownloadSpec(params: {
 // OpenClawCN: HK binary server download
 // ============================================================================
 
+/** Asset info returned by SkillsProxy /latest API */
+interface SkillsProxyAsset {
+  name: string;
+  size: number;
+  downloadUrl: string;
+}
+
+/** Parsed /latest response */
+interface SkillsProxyLatestInfo {
+  version: string;
+  assets: SkillsProxyAsset[];
+}
+
 async function getHKBinaryLatestVersion(
   toolName: string,
   timeoutMs: number,
-): Promise<string | null> {
-  const versionUrl = getHKBinaryVersionUrl(toolName);
+): Promise<SkillsProxyLatestInfo | null> {
+  const latestUrl = getHKBinaryVersionUrl(toolName);
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const response = await fetch(versionUrl, {
+    const response = await fetch(latestUrl, {
       signal: controller.signal,
-      headers: { "User-Agent": "OpenClawCN/1.0" },
+      headers: getHKBinaryAuthHeaders(),
     });
     clearTimeout(timeout);
-    if (!response.ok) return null;
-    const version = (await response.text()).trim();
-    if (!/^\d+\.\d+(\.\d+)?(-\w+)?$/.test(version)) return null;
-    return version;
+    if (!response.ok) {
+      try { await response.body?.cancel(); } catch { /* ignore */ }
+      return null;
+    }
+    const json = (await response.json()) as {
+      code?: number;
+      data?: { version?: string; tagName?: string; assets?: SkillsProxyAsset[] };
+    };
+    if (!json.data) return null;
+    const version = json.data.version || json.data.tagName?.replace(/^v/, "") || "";
+    if (!version) return null;
+    return { version, assets: json.data.assets ?? [] };
   } catch {
     return null;
   }
@@ -1231,7 +1381,7 @@ async function installFromHKBinaryServer(params: {
   if (!isToolHostedOnHK(toolName)) {
     return {
       ok: false,
-      message: `Tool ${toolName} is not hosted on HK binary server`,
+      message: `Tool ${toolName} is not hosted on SkillsProxy`,
       stdout: "",
       stderr: "",
       code: null,
@@ -1253,47 +1403,66 @@ async function installFromHKBinaryServer(params: {
 
   onProgress?.({
     stage: "downloading",
-    message: `连接香港镜像服务器...`,
+    message: `查询最新版本...`,
     usingCNMirror: useCN,
     percent: 2,
   });
 
-  const version = await getHKBinaryLatestVersion(toolName, Math.min(timeoutMs, 10000));
-  if (!version) {
+  // Step 1: Query /latest to get version + assets
+  const latestInfo = await getHKBinaryLatestVersion(toolName, Math.min(timeoutMs, 15000));
+  if (!latestInfo) {
     return {
       ok: false,
-      message: `Failed to get latest version for ${toolName} from HK server`,
+      message: `Failed to get latest version for ${toolName}`,
       stdout: "",
-      stderr: "版本信息获取失败，服务器可能暂时不可用",
+      stderr: "版本信息获取失败，SkillsProxy 可能暂时不可用",
+      code: null,
+    };
+  }
+
+  const { version, assets } = latestInfo;
+
+  // Step 2: Match platform asset from assets list
+  const asset = matchPlatformAsset(assets, toolName, platform);
+  if (!asset) {
+    return {
+      ok: false,
+      message: `No binary found for ${toolName} on ${platform}`,
+      stdout: "",
+      stderr: `可用文件: ${assets.map((a) => a.name).join(", ") || "无"}`,
       code: null,
     };
   }
 
   onProgress?.({
     stage: "downloading",
-    message: `发现 ${toolName} v${version}，准备下载...`,
+    message: `发现 ${toolName} v${version}，准备下载 ${asset.name}...`,
     usingCNMirror: useCN,
     percent: 5,
   });
 
-  const downloadUrl = getHKBinaryDownloadUrl(toolName, version, platform);
-
+  // Step 3: Build download URL from asset.downloadUrl + SSRF validation
+  const downloadUrl = buildHKBinaryDownloadUrl(asset.downloadUrl);
   try {
     validateUrlForSsrf(downloadUrl);
-  } catch (ssrfError) {
-    const reason = ssrfError instanceof Error ? ssrfError.message : "URL validation failed";
+  } catch (ssrfErr) {
     return {
       ok: false,
-      message: `Invalid download URL: ${reason}`,
+      message: `Invalid download URL: ${ssrfErr instanceof Error ? ssrfErr.message : "SSRF check failed"}`,
       stdout: "",
-      stderr: reason,
+      stderr: "",
       code: null,
     };
   }
+  const authHeaders = getHKBinaryAuthHeaders();
 
   const installDir = path.join(CONFIG_DIR, "tools", toolName);
   await ensureDir(installDir);
 
+  // Determine if the asset is an archive (tar.gz, zip) or a raw binary
+  const assetName = asset.name;
+  const isArchive = /\.(tar\.gz|tgz|zip)$/i.test(assetName);
+  const savePath = path.join(installDir, assetName);
   const binaryName = platform.startsWith("windows") ? `${toolName}.exe` : toolName;
   const binaryPath = path.join(installDir, binaryName);
 
@@ -1301,6 +1470,7 @@ async function installFromHKBinaryServer(params: {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     try {
       if (attempt > 1) {
         onProgress?.({
@@ -1313,26 +1483,33 @@ async function installFromHKBinaryServer(params: {
       }
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(downloadUrl, {
         signal: controller.signal,
-        headers: { "User-Agent": "OpenClawCN/1.0" },
+        headers: authHeaders,
       });
-      clearTimeout(timeout);
+      clearTimeout(timeoutHandle);
+      timeoutHandle = null;
 
+      // Retry on server errors (5xx) — drain body to release socket
+      if (response.status >= 500 && attempt < MAX_RETRIES) {
+        try { await response.body?.cancel(); } catch { /* ignore */ }
+        lastError = new Error(`HTTP ${response.status} ${response.statusText}`);
+        continue;
+      }
       if (!response.ok) {
         return {
           ok: false,
-          message: `Download failed: HTTP ${response.status} ${response.statusText}`,
+          message: `下载失败: HTTP ${response.status} ${response.statusText}`,
           stdout: "",
-          stderr: `URL: ${downloadUrl}`,
+          stderr: "",
           code: null,
         };
       }
 
       const contentLength = response.headers.get("content-length");
-      const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
-      const MAX_SIZE = 100 * 1024 * 1024;
+      const totalSize = contentLength ? parseInt(contentLength, 10) : (asset.size || 0);
+      const MAX_SIZE = 200 * 1024 * 1024;
       if (totalSize > MAX_SIZE) {
         return {
           ok: false,
@@ -1343,136 +1520,129 @@ async function installFromHKBinaryServer(params: {
         };
       }
 
-      const body = response.body;
+      const body = response.body as unknown;
       if (!body) {
         return { ok: false, message: "Empty response body", stdout: "", stderr: "", code: null };
       }
 
-      const writeStream = fs.createWriteStream(binaryPath);
+      // Use pipeline() for proper backpressure handling and clean error propagation
+      const writeStream = fs.createWriteStream(savePath);
       let downloaded = 0;
       const startTime = Date.now();
-      const reader = body.getReader();
+      let lastProgressTime = startTime;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        writeStream.write(Buffer.from(value));
-        downloaded += value.length;
-
-        const percent = totalSize > 0 ? Math.round((downloaded / totalSize) * 85) + 5 : 50;
-        const elapsed = (Date.now() - startTime) / 1000;
-        const speed = elapsed > 0 ? formatBytes(downloaded / elapsed) + "/s" : "计算中...";
-        const eta =
-          totalSize > 0 && elapsed > 0
-            ? Math.round((totalSize - downloaded) / (downloaded / elapsed)) + "s"
-            : "计算中...";
-
-        onProgress?.({
-          stage: "downloading",
-          message: `下载 ${toolName} v${version}...`,
-          percent,
-          usingCNMirror: useCN,
-          downloadInfo: {
-            speed,
-            eta,
-            downloaded: formatBytes(downloaded),
-            total: formatBytes(totalSize),
-          },
-        });
-      }
-
-      writeStream.end();
-      await new Promise<void>((resolve, reject) => {
-        writeStream.on("finish", resolve);
-        writeStream.on("error", reject);
+      const { Transform } = await import("node:stream");
+      const progressTransform = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          downloaded += chunk.length;
+          const now = Date.now();
+          // Throttle progress to every 100ms to avoid flooding the UI
+          if (now - lastProgressTime >= 100) {
+            lastProgressTime = now;
+            const percent = totalSize > 0 ? Math.round((downloaded / totalSize) * 85) + 5 : 50;
+            const elapsed = (now - startTime) / 1000;
+            const speed = elapsed > 0 ? formatBytes(downloaded / elapsed) + "/s" : "计算中...";
+            const eta =
+              totalSize > 0 && elapsed > 0
+                ? Math.round((totalSize - downloaded) / (downloaded / elapsed)) + "s"
+                : "计算中...";
+            onProgress?.({
+              stage: "downloading",
+              message: `下载 ${toolName} v${version}...`,
+              percent,
+              usingCNMirror: useCN,
+              downloadInfo: {
+                speed,
+                eta,
+                downloaded: formatBytes(downloaded),
+                total: formatBytes(totalSize),
+              },
+            });
+          }
+          callback(null, chunk);
+        },
       });
 
-      const stats = fs.statSync(binaryPath);
+      const readable = isNodeReadableStream(body)
+        ? body
+        : Readable.fromWeb(body as NodeReadableStream);
+      await pipeline(readable, progressTransform, writeStream);
+
+      const stats = fs.statSync(savePath);
       if (stats.size === 0) {
-        fs.unlinkSync(binaryPath);
-        return {
-          ok: false,
-          message: "Downloaded file is empty",
-          stdout: "",
-          stderr: "",
-          code: null,
-        };
+        fs.unlinkSync(savePath);
+        return { ok: false, message: "Downloaded file is empty", stdout: "", stderr: "", code: null };
       }
       if (stats.size < 1024) {
-        fs.unlinkSync(binaryPath);
-        return {
-          ok: false,
-          message: `Downloaded file too small: ${stats.size} bytes`,
-          stdout: "",
-          stderr: "",
-          code: null,
-        };
+        fs.unlinkSync(savePath);
+        return { ok: false, message: `Downloaded file too small: ${stats.size} bytes`, stdout: "", stderr: "", code: null };
       }
 
-      // SHA256 verification (optional, non-blocking)
-      onProgress?.({
-        stage: "verifying",
-        message: `校验文件完整性...`,
-        percent: 92,
-        usingCNMirror: useCN,
-      });
-      let sha256Verified = false;
-      try {
-        const sha256Url = `${downloadUrl}.sha256`;
-        const sha256Response = await fetch(sha256Url, {
-          headers: { "User-Agent": "OpenClawCN/1.0" },
-          signal: AbortSignal.timeout(5000),
+      // Step 4: Extract archive or move raw binary
+      if (isArchive) {
+        onProgress?.({
+          stage: "installing",
+          message: `解压 ${assetName}...`,
+          percent: 90,
+          usingCNMirror: useCN,
         });
-        if (sha256Response.ok) {
-          const expectedHash = (await sha256Response.text()).trim().split(/\s+/)[0]?.toLowerCase();
-          if (expectedHash && expectedHash.length === 64) {
-            const { createHash } = await import("node:crypto");
-            const fileBuffer = fs.readFileSync(binaryPath);
-            const actualHash = createHash("sha256").update(fileBuffer).digest("hex");
-            if (actualHash === expectedHash) {
-              sha256Verified = true;
-            } else {
-              fs.unlinkSync(binaryPath);
-              return {
-                ok: false,
-                message: `SHA256 mismatch for ${toolName}`,
-                stdout: "",
-                stderr: `Expected: ${expectedHash}\nActual: ${actualHash}`,
-                code: null,
-              };
-            }
-          }
+        const archiveExt = assetName.toLowerCase();
+        const isTarGz = archiveExt.endsWith(".tar.gz") || archiveExt.endsWith(".tgz");
+        try {
+          await extractArchiveSafe({
+            archivePath: savePath,
+            destDir: installDir,
+            timeoutMs: Math.min(timeoutMs, 60_000),
+            kind: isTarGz ? "tar" : "zip",
+            tarGzip: isTarGz,
+          });
+        } catch (extractErr) {
+          // Clean up archive on failure
+          try { fs.unlinkSync(savePath); } catch { /* ignore */ }
+          const errMsg = extractErr instanceof Error ? extractErr.message : String(extractErr);
+          return {
+            ok: false,
+            message: `Extract failed: ${errMsg}`,
+            stdout: "",
+            stderr: errMsg,
+            code: null,
+          };
         }
-      } catch {
-        /* SHA256 check failure is non-blocking */
+        // Clean up archive after successful extraction
+        try { fs.unlinkSync(savePath); } catch { /* ignore */ }
+      } else if (savePath !== binaryPath) {
+        // Raw binary — rename to expected name
+        fs.renameSync(savePath, binaryPath);
       }
 
+      // chmod: scan installDir for the binary after extraction (may be in subdir)
       if (process.platform !== "win32") {
-        fs.chmodSync(binaryPath, 0o755);
+        const binTarget = findBinaryInDir(installDir, toolName);
+        if (binTarget) fs.chmodSync(binTarget, 0o755);
       }
 
-      const verifyNote = sha256Verified ? " (SHA256 verified)" : "";
+      // Add install dir to PATH so hasBinary() finds it immediately
+      appendToProcessPath(installDir);
+
       onProgress?.({
         stage: "verifying",
-        message: `${toolName} v${version} 安装成功！${verifyNote}`,
+        message: `${toolName} v${version} 安装成功！`,
         percent: 100,
         usingCNMirror: useCN,
       });
 
       return {
         ok: true,
-        message: `Installed ${toolName} v${version} to ${binaryPath}${verifyNote}`,
-        stdout: `Downloaded ${formatBytes(stats.size)} from HK server`,
+        message: `Installed ${toolName} v${version} to ${installDir}`,
+        stdout: `Downloaded ${formatBytes(stats.size)} from SkillsProxy`,
         stderr: "",
         code: 0,
       };
     } catch (err) {
-      if (fs.existsSync(binaryPath)) {
-        try {
-          fs.unlinkSync(binaryPath);
-        } catch {
-          /* ignore */
-        }
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      // Clean up partial downloads
+      for (const p of [savePath, binaryPath]) {
+        try { fs.unlinkSync(p); } catch { /* ignore cleanup */ }
       }
       lastError = err instanceof Error ? err : new Error(String(err));
       const message = lastError.message;
@@ -1495,9 +1665,9 @@ async function installFromHKBinaryServer(params: {
         if (message.includes("ENOTFOUND") || message.includes("ECONNREFUSED")) {
           return {
             ok: false,
-            message: `Cannot connect to HK binary server`,
+            message: `Cannot connect to SkillsProxy`,
             stdout: "",
-            stderr: "无法连接香港服务器，请检查网络连接",
+            stderr: "无法连接 SkillsProxy 服务器，请检查网络连接",
             code: null,
           };
         }
@@ -1519,6 +1689,69 @@ async function installFromHKBinaryServer(params: {
     stderr: lastError?.message ?? "Unknown error",
     code: null,
   };
+}
+
+/** Find a binary by name inside a directory (including one level of subdirs). */
+function findBinaryInDir(dir: string, toolName: string): string | null {
+  const names = [toolName, `${toolName}.exe`];
+  for (const name of names) {
+    const direct = path.join(dir, name);
+    if (fs.existsSync(direct)) return direct;
+  }
+  // Check one level of subdirectories (common for tar.gz extractions)
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      for (const name of names) {
+        const sub = path.join(dir, entry.name, name);
+        if (fs.existsSync(sub)) return sub;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Match platform asset from SkillsProxy /latest assets list.
+ * Looks for asset name containing the platform string (e.g. "darwin-arm64", "windows-amd64").
+ */
+function matchPlatformAsset(
+  assets: SkillsProxyAsset[],
+  _toolName: string,
+  platform: string,
+): SkillsProxyAsset | null {
+  if (assets.length === 0) return null;
+  const platformLower = platform.toLowerCase();
+  const underscoredLower = platformLower.replace(/-/g, "_");
+
+  // Case-insensitive platform match in filename
+  const exact = assets.find((a) => a.name.toLowerCase().includes(platformLower));
+  if (exact) return exact;
+  // Try underscore variant (e.g. "windows_amd64" instead of "windows-amd64")
+  const alt = assets.find((a) => a.name.toLowerCase().includes(underscoredLower));
+  if (alt) return alt;
+
+  // Partial OS + arch matching
+  const [os = "", arch = ""] = platformLower.split("-");
+  const osMatch = assets.filter((a) => a.name.toLowerCase().includes(os));
+  // If single OS match, still verify arch compatibility before returning
+  if (osMatch.length === 1) {
+    const name = osMatch[0].name.toLowerCase();
+    // Only return if the asset doesn't contain a known incompatible arch
+    const knownArchs = ["amd64", "x86_64", "arm64", "aarch64", "386", "armv7"];
+    const containsArch = knownArchs.some((a) => name.includes(a));
+    if (!containsArch || name.includes(arch)) return osMatch[0];
+  }
+  const archMatch = osMatch.filter((a) => a.name.toLowerCase().includes(arch));
+  if (archMatch.length > 0) return archMatch[0];
+
+  // Single-asset fallback — only if it doesn't contain an incompatible platform name
+  if (assets.length === 1) {
+    const name = assets[0].name.toLowerCase();
+    const incompatible = ["darwin", "linux", "windows"].filter((p) => p !== os && name.includes(p));
+    if (incompatible.length === 0) return assets[0];
+  }
+  return null;
 }
 
 function canInstallFromHKServer(toolName: string): boolean {
@@ -2239,8 +2472,8 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
       params.onProgress?.({
         stage: "installing",
         message: useCN
-          ? `brew 未安装，尝试从香港服务器下载 ${toolName}...`
-          : `brew not installed, trying HK binary server for ${toolName}...`,
+          ? `brew 未安装，尝试从 SkillsProxy 下载 ${toolName}...`
+          : `brew not installed, trying SkillsProxy for ${toolName}...`,
         usingCNMirror: useCN,
         percent: 10,
       });
@@ -2389,6 +2622,28 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
       });
     }
 
+    // OpenClawCN: Use multi-mirror fallback for Go packages
+    // 七牛云 → 阿里云 → goproxy.io (3 mirrors before giving up)
+    if (spec.kind === "go" && useCN) {
+      return await installGoPackageWithFallback({
+        argv,
+        timeoutMs,
+        baseEnv: env,
+        onProgress: params.onProgress,
+      });
+    }
+
+    // OpenClawCN: Use multi-mirror fallback for uv/pip packages
+    // 清华 → 阿里云 → 中科大 (3 PyPI mirrors before giving up)
+    if (spec.kind === "uv" && spec.package && useCN) {
+      return await installUvPackageWithFallback({
+        packageName: spec.package,
+        isUv: true,
+        timeoutMs,
+        onProgress: params.onProgress,
+      });
+    }
+
     try {
       return await runCommandWithTimeout(argv, { timeoutMs, env });
     } catch (err) {
@@ -2414,7 +2669,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     if (canInstallFromHKServer(toolName)) {
       params.onProgress?.({
         stage: "installing",
-        message: `brew 安装失败，尝试从香港服务器下载 ${toolName}...`,
+        message: `brew 安装失败，尝试从 SkillsProxy 下载 ${toolName}...`,
         usingCNMirror: useCN,
         percent: 60,
       });

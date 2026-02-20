@@ -15,9 +15,11 @@
  */
 
 import { writeFile, mkdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { invalidateMarketplaceCache, readMarketplaceIndex } from "./marketplace-index.js";
+import { encryptContent, isEncryptionEnabled } from "../security/content-vault.js";
 import { fetchFromCloudIndex } from "./marketplace/cloud-index-source.js";
 import { fetchFromModelScope } from "./marketplace/modelscope-source.js";
 import { fetchFromOfficialRegistry } from "./marketplace/registry-source.js";
@@ -132,9 +134,12 @@ async function getIndexFileAge(): Promise<number | null> {
   ].filter(Boolean) as string[];
 
   for (const dir of candidates) {
+    // Check encrypted file first, then plain
+    const encPath = join(dir, "mcp-index.json.enc");
     const filePath = join(dir, "mcp-index.json");
     try {
-      const st = await stat(filePath);
+      const target = existsSync(encPath) ? encPath : filePath;
+      const st = await stat(target);
       return Date.now() - st.mtimeMs;
     } catch {
       continue;
@@ -247,6 +252,62 @@ async function doSync(options: McpSyncOptions): Promise<McpSyncResult> {
 
     invalidateMarketplaceCache();
 
+    // Also update SQLite DB for server-side pagination/search
+    try {
+      const mcpDb = await import("./marketplace/db.js");
+      const existingCount = mcpDb.getItemCount();
+
+      // Upsert all items from remote
+      mcpDb.insertItems(deduped);
+
+      // Safety guard: only remove stale items if remote returned a substantial dataset.
+      // If remote returns far fewer items than the local baseline (e.g., Tier 3 proxy
+      // returning ~1854 vs baseline 9535), the remote is likely a partial dataset — do
+      // NOT delete baseline items in that case.
+      const MINIMUM_RATIO = 0.5; // remote must have ≥50% of existing items to allow deletions
+      const remoteIds = new Set(deduped.map((item) => item.serverId));
+
+      if (existingCount === 0 || deduped.length >= existingCount * MINIMUM_RATIO) {
+        const db = mcpDb.getDatabase();
+        const allRows = db.prepare("SELECT server_id FROM mcp_items").all() as Array<{
+          server_id: string;
+        }>;
+        const staleIds = allRows
+          .map((r) => r.server_id)
+          .filter((id) => !remoteIds.has(id));
+        if (staleIds.length > 0) {
+          mcpDb.deleteItemsByIds(staleIds);
+          logger.info(`Removed ${staleIds.length} stale items from SQLite (no longer in remote)`);
+        }
+      } else {
+        logger.warn(
+          `Skipping stale-item cleanup: remote (${deduped.length}) < 50% of existing (${existingCount}). ` +
+            `Remote source likely returned partial data.`,
+        );
+      }
+
+      logger.info("MCP marketplace SQLite DB updated", { itemCount: mcpDb.getItemCount() });
+    } catch (dbErr) {
+      logger.warn("Failed to update SQLite DB (non-fatal, JSON file still written)", {
+        error: dbErr instanceof Error ? dbErr.message : String(dbErr),
+      });
+    }
+
+    // Bridge: sync MCP items → tool-index.sqlite for hybridSearch (non-blocking)
+    import("../dispatch/tool-discovery.js")
+      .then(async ({ syncMcpToToolIndex }) => {
+        const { loadConfig } = await import("../config/config.js");
+        const cfg = loadConfig();
+        await syncMcpToToolIndex(deduped, {
+          embedding: cfg.toolDiscovery?.embedding,
+        });
+      })
+      .catch((err) => {
+        logger.warn("Failed to sync MCP→tool-index (non-fatal)", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
     logger.info("MCP marketplace index sync completed", {
       itemCount: deduped.length,
       source,
@@ -347,9 +408,22 @@ async function writeIndexToDataDir(items: unknown[]): Promise<boolean> {
     try {
       // mkdir with recursive:true is safe even if dir already exists (no TOCTOU)
       await mkdir(dir, { recursive: true });
-      const filePath = join(dir, "mcp-index.json");
-      await writeFile(filePath, JSON.stringify(items, null, 2), "utf-8");
-      logger.debug("Wrote mcp-index.json", { path: filePath, count: items.length });
+
+      const jsonContent = JSON.stringify(items, null, 2);
+
+      if (isEncryptionEnabled()) {
+        // Write encrypted version
+        const encPath = join(dir, "mcp-index.json.enc");
+        const encrypted = encryptContent(jsonContent);
+        await writeFile(encPath, encrypted);
+        logger.debug("Wrote mcp-index.json.enc (encrypted)", { path: encPath, count: items.length });
+      } else {
+        // Write plain JSON in dev mode
+        const filePath = join(dir, "mcp-index.json");
+        await writeFile(filePath, jsonContent, "utf-8");
+        logger.debug("Wrote mcp-index.json", { path: filePath, count: items.length });
+      }
+
       return true;
     } catch {
       continue;

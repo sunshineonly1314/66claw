@@ -506,5 +506,15 @@ export async function runPreparedReply(
     sessionCtx,
     shouldInjectGroupIntro,
     typingMode,
+    // ── [CN-PATCH:tool-discovery] Extract and forward tool hints from dispatch decision ──
+    // FIX P1#6: Merge mcpToolHints (wildcard format) with toolHints so applyToolHints
+    // can reorder MCP tools too. mcpToolHints use "mcp_{id}_*" format which
+    // applyToolHints now supports via prefix matching.
+    toolHints: [
+      ...(params.dispatchDecision?.toolHints ?? []),
+      ...(params.dispatchDecision?.mcpToolHints ?? []),
+    ],
+    toolFilterPolicy: params.dispatchDecision?.toolFilterPolicy,
+    mcpSuggestions: params.dispatchDecision?.mcpSuggestions,
   });
 }

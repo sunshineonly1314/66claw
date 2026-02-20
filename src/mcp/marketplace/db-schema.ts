@@ -24,6 +24,11 @@ export const MCP_DB_SCHEMA = {
       source TEXT,
       source_url TEXT,
 
+      -- 安装方式字段
+      npm_package TEXT,
+      pypi_package TEXT,
+      sse_url TEXT,
+
       -- AI 增强字段
       china_friendly_score INTEGER,  -- 0-100
       requires_vpn INTEGER DEFAULT 0,
@@ -69,14 +74,14 @@ export const MCP_DB_SCHEMA = {
       VALUES (new.rowid, new.server_id, new.friendly_name_cn, new.description_cn, new.tags_cn);
     END
     `,
-    // UPDATE 触发器
+    // UPDATE 触发器（FTS5 external content 表必须用 delete+insert 而非直接 SET，
+    // 否则 token 索引不会更新，导致搜索结果错误）
     `
     CREATE TRIGGER IF NOT EXISTS mcp_search_update AFTER UPDATE ON mcp_items BEGIN
-      UPDATE mcp_search
-      SET friendly_name_cn = new.friendly_name_cn,
-          description_cn = new.description_cn,
-          tags_cn = new.tags_cn
-      WHERE rowid = new.rowid;
+      INSERT INTO mcp_search(mcp_search, rowid, server_id, friendly_name_cn, description_cn, tags_cn)
+      VALUES ('delete', old.rowid, old.server_id, old.friendly_name_cn, old.description_cn, old.tags_cn);
+      INSERT INTO mcp_search(rowid, server_id, friendly_name_cn, description_cn, tags_cn)
+      VALUES (new.rowid, new.server_id, new.friendly_name_cn, new.description_cn, new.tags_cn);
     END
     `,
     // DELETE 触发器
@@ -86,6 +91,14 @@ export const MCP_DB_SCHEMA = {
     END
     `,
   ],
+
+  // 同步元数据表（记录导入状态，防止重复导入）
+  syncMeta: `
+    CREATE TABLE IF NOT EXISTS sync_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `,
 
   // 索引优化
   indexes: [
@@ -113,8 +126,29 @@ export function initializeSchema(db: any) {
     db.prepare(trigger).run();
   }
 
-  // 4. 创建索引
+  // 4. 创建同步元数据表
+  db.prepare(MCP_DB_SCHEMA.syncMeta).run();
+
+  // 5. 创建索引
   for (const index of MCP_DB_SCHEMA.indexes) {
     db.prepare(index).run();
+  }
+
+  // 6. 迁移：为已有数据库添加安装方式字段
+  migrateInstallColumns(db);
+}
+
+/**
+ * Add npm_package, pypi_package, sse_url columns to existing databases.
+ * Uses ALTER TABLE ADD COLUMN which is idempotent-safe (ignores if exists).
+ */
+function migrateInstallColumns(db: any) {
+  const newColumns = ["npm_package TEXT", "pypi_package TEXT", "sse_url TEXT"];
+  for (const colDef of newColumns) {
+    try {
+      db.prepare(`ALTER TABLE mcp_items ADD COLUMN ${colDef}`).run();
+    } catch {
+      // Column already exists — ignore
+    }
   }
 }

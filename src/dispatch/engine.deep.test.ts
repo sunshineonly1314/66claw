@@ -100,7 +100,7 @@ function makeConfig(overrides?: Partial<CompiledDispatchConfig>): CompiledDispat
 function makeParams(overrides?: Partial<DispatchRequestParams>): DispatchRequestParams {
   return {
     prompt: "研究一下这个问题",
-    openclawcnConfig: {} as any,
+    openclawcnConfig: { toolDiscovery: { enabled: false } } as any,
     agentDir: "/tmp/agent",
     workspaceDir: "/tmp/workspace",
     ...overrides,

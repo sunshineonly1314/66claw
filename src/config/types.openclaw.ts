@@ -116,10 +116,14 @@ export type OpenClawCNConfig = {
         {
           providerId: string;
           modelId: string;
+          /** true = 由 providerPriority 同步自动分配，拖拽时会覆盖；false/undefined = 用户手动选择，拖拽不覆盖 */
+          auto?: boolean;
         }
       >
     >;
   };
+  /** Provider 优先级排序（用于 fallback 顺序控制） */
+  providerPriority?: string[];
 };
 
 export type ConfigValidationIssue = {

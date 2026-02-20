@@ -19,7 +19,10 @@ import { buildWorkspaceSkillStatus, type SkillStatusEntry } from "../../agents/s
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 import type { MCPServerConfig } from "../../mcp/types.js";
-import { shouldUseCNMirror, getNpmMirrorUrl, getPipMirrorUrl } from "../../config/cn-mirrors.js";
+import {
+  shouldUseCNMirror, getNpmMirrorUrl, getPipMirrorUrl,
+  getNpmMirrors, getPipMirrors,
+} from "../../config/cn-mirrors.js";
 
 function mcpError(message: string) {
   return errorShape(ErrorCodes.INVALID_REQUEST, message);
@@ -40,19 +43,158 @@ function mcpError(message: string) {
 function buildCNMirrorEnv(
   type: "npm" | "pypi",
   existingEnv?: Record<string, string>,
+  mirrorUrl?: string,
 ): Record<string, string> | undefined {
   if (!shouldUseCNMirror()) return existingEnv;
 
   const mirrorEnv: Record<string, string> = {};
   if (type === "npm") {
-    mirrorEnv.npm_config_registry = getNpmMirrorUrl();
+    mirrorEnv.npm_config_registry = mirrorUrl || getNpmMirrorUrl();
   } else {
-    mirrorEnv.UV_INDEX_URL = getPipMirrorUrl();
-    mirrorEnv.PIP_INDEX_URL = getPipMirrorUrl();
+    const pipUrl = mirrorUrl || getPipMirrorUrl();
+    mirrorEnv.UV_INDEX_URL = pipUrl;
+    mirrorEnv.PIP_INDEX_URL = pipUrl;
   }
 
   // Merge: existing env vars take precedence (user explicitly set them)
   return existingEnv ? { ...mirrorEnv, ...existingEnv } : mirrorEnv;
+}
+
+// ── Network error detection (same as skills-install.ts) ─────────────────
+function isNetworkError(errorStr: string): boolean {
+  const s = errorStr.toLowerCase();
+  return (
+    s.includes("enotfound") ||
+    s.includes("etimedout") ||
+    s.includes("econnrefused") ||
+    s.includes("econnreset") ||
+    s.includes("socket hang up") ||
+    s.includes("network") ||
+    s.includes("fetch failed") ||
+    s.includes("certificate") ||
+    s.includes("ssl") ||
+    s.includes("403") ||
+    s.includes("404") ||
+    s.includes("502") ||
+    s.includes("503") ||
+    s.includes("timeout") ||
+    s.includes("could not determine executable") ||
+    s.includes("not found in registry")
+  );
+}
+
+// ── Friendly CN error messages ──────────────────────────────────────────
+function friendlyInstallError(serverId: string, lastError: string): string {
+  if (lastError.includes("could not determine executable")) {
+    return `${serverId} 安装失败：npm 包不存在或无法执行，该包可能已下架`;
+  }
+  if (lastError.includes("not found in registry") || lastError.includes("404")) {
+    return `${serverId} 安装失败：包在镜像源中找不到`;
+  }
+  if (lastError.includes("enotfound") || lastError.includes("etimedout")) {
+    return `${serverId} 安装失败：所有国内镜像源均无法连接，请检查网络`;
+  }
+  if (lastError.includes("connection closed") || lastError.includes("Connection closed")) {
+    return `${serverId} 安装失败：服务启动后连接中断，可能需要额外配置`;
+  }
+  return `${serverId} 安装失败：${lastError.slice(0, 120)}`;
+}
+
+/**
+ * Try installing an MCP server with multi-mirror fallback.
+ * For npm: tries 3 CN mirrors (Taobao → Tencent → Huawei).
+ * For pypi: tries 3 CN mirrors (Tsinghua → Alibaba → USTC).
+ * Each attempt: addServer → wait → check status → rollback if failed → try next mirror.
+ */
+async function tryInstallWithMirrorFallback(params: {
+  manager: ReturnType<typeof getMCPManagerSafe> & {};
+  serverId: string;
+  type: "npm" | "pypi";
+  packageStr: string;
+  version: string;
+  userEnv?: Record<string, string>;
+  waitMs?: number;
+}): Promise<{ ok: boolean; error?: string; usedMirror?: string }> {
+  const { manager, serverId, type, packageStr, version, userEnv, waitMs = 4000 } = params;
+  const useCN = shouldUseCNMirror();
+  const mirrors = useCN
+    ? (type === "npm" ? getNpmMirrors() : getPipMirrors())
+    : [type === "npm" ? "https://registry.npmjs.org" : "https://pypi.org/simple"];
+
+  let lastError = "";
+
+  for (let i = 0; i < mirrors.length; i++) {
+    const mirror = mirrors[i]!;
+    const mirrorHost = (() => { try { return new URL(mirror).hostname; } catch { return mirror; } })();
+
+    // Build server config with this mirror's env
+    let serverConfig: MCPServerConfig;
+    if (type === "npm") {
+      const versionedPkg = version ? `${packageStr}@${version}` : packageStr;
+      serverConfig = {
+        id: serverId,
+        command: "npx",
+        args: ["-y", versionedPkg],
+        env: buildCNMirrorEnv("npm", userEnv, mirror),
+        transport: "stdio",
+        version: version || undefined,
+        enabled: true,
+        autoStart: true,
+      };
+    } else {
+      const versionedPkg = version ? `${packageStr}==${version}` : packageStr;
+      serverConfig = {
+        id: serverId,
+        command: "uvx",
+        args: [versionedPkg],
+        env: buildCNMirrorEnv("pypi", userEnv, mirror),
+        transport: "stdio",
+        version: version || undefined,
+        enabled: true,
+        autoStart: true,
+      };
+    }
+
+    console.log(`[mcp] Install attempt ${i + 1}/${mirrors.length} via ${mirrorHost}: ${serverId}`);
+
+    try {
+      await manager.addServer(serverConfig);
+      await new Promise((r) => setTimeout(r, waitMs));
+
+      const postStatus = manager.getStatus();
+      const serverStatus = postStatus.servers.find((s) => s.config.id === serverId);
+      const isRunning = serverStatus?.status === "running";
+
+      if (isRunning) {
+        console.log(`[mcp] Install success via ${mirrorHost}: ${serverId}`);
+        return { ok: true, usedMirror: mirrorHost };
+      }
+
+      // Failed — record error and rollback
+      lastError = serverStatus?.error ?? "Connection failed after install";
+      console.warn(`[mcp] Mirror ${mirrorHost} failed for ${serverId}: ${lastError}`);
+
+      try {
+        await manager.removeServer(serverId);
+        persistMcpServerRemove(serverId).catch(() => {});
+      } catch { /* best-effort rollback */ }
+
+      // If not a network error, don't bother trying other mirrors
+      if (!isNetworkError(lastError)) {
+        break;
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      console.warn(`[mcp] Mirror ${mirrorHost} threw for ${serverId}: ${lastError}`);
+      try {
+        await manager.removeServer(serverId);
+        persistMcpServerRemove(serverId).catch(() => {});
+      } catch { /* best-effort */ }
+      if (!isNetworkError(lastError)) break;
+    }
+  }
+
+  return { ok: false, error: friendlyInstallError(serverId, lastError) };
 }
 
 // ============================================================================
@@ -166,23 +308,88 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
     return;
   }
   const status = manager.getStatus();
+
+  // Helper: find unconfigured (empty-value) env keys for a server config.
+  // If the server declares env vars but some are empty, it likely needs
+  // the user to fill in API keys before it can start successfully.
+  function getUnconfiguredEnvKeys(cfg: { env?: Record<string, string> }): string[] {
+    if (!cfg.env) return [];
+    return Object.entries(cfg.env)
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+  }
+
+  // Load marketplace index to enrich installed servers with CN names + descriptions
+  let marketplaceItems: Record<string, unknown>[] = [];
+  try {
+    const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
+    marketplaceItems = await readMarketplaceIndex();
+  } catch { /* non-critical */ }
+
   // Map to UI-friendly capability status
-  const capabilities = status.servers.map((s) => ({
-    id: s.config.id,
-    status:
-      s.status === "running"
-        ? ("ready" as const)
-        : s.status === "error" || s.status === "circuit_open"
-          ? ("unavailable" as const)
-          : !s.config.enabled
-            ? ("paused" as const)
-            : ("needs_config" as const),
-    isNew: false,
-  }));
+  const capabilities = status.servers.map((s) => {
+    const missingKeys = getUnconfiguredEnvKeys(s.config);
+    const hasMissingEnv = missingKeys.length > 0;
+
+    let uiStatus: "ready" | "unavailable" | "paused" | "needs_config";
+    if (s.status === "running") {
+      uiStatus = "ready";
+    } else if (!s.config.enabled) {
+      uiStatus = "paused";
+    } else if (hasMissingEnv) {
+      uiStatus = "needs_config";
+    } else if (s.status === "error" || s.status === "circuit_open") {
+      uiStatus = "unavailable";
+    } else {
+      uiStatus = "needs_config";
+    }
+
+    // Enrich with marketplace data: CN name, description, example prompt
+    const marketItem = marketplaceItems.find(
+      (i: Record<string, unknown>) => i.serverId === s.config.id,
+    ) as Record<string, unknown> | undefined;
+
+    // Build friendly name: marketplace CN name → marketplace EN name → serverId
+    const friendlyName = String(
+      marketItem?.friendlyNameCn || marketItem?.friendlyName || s.config.id,
+    );
+
+    // Build description from tools (what it actually provides) or marketplace
+    const toolDescriptions = s.tools.slice(0, 3).map((tool) => tool.description || tool.name);
+    const marketDesc = marketItem?.descriptionCn || marketItem?.description;
+    const description: string[] =
+      toolDescriptions.length > 0
+        ? toolDescriptions
+        : marketDesc
+          ? [String(marketDesc)]
+          : [];
+
+    // Build example prompt from marketplace or first tool
+    const examplePrompt = marketItem?.examplePrompts
+      ? String((marketItem.examplePrompts as string[])[0] ?? "")
+      : s.tools.length > 0
+        ? s.tools[0]!.name
+        : "";
+
+    return {
+      id: s.config.id,
+      friendlyName,
+      description,
+      examplePrompt,
+      status: uiStatus,
+      isNew: false,
+      configNeeded: hasMissingEnv ? missingKeys.join(", ") : undefined,
+    };
+  });
   // Process info for the advanced settings UI panel
   const processes = status.servers.map((s) => ({
     id: s.config.id,
-    friendlyName: s.config.id,
+    friendlyName: (() => {
+      const m = marketplaceItems.find(
+        (i: Record<string, unknown>) => i.serverId === s.config.id,
+      ) as Record<string, unknown> | undefined;
+      return String(m?.friendlyNameCn || m?.friendlyName || s.config.id);
+    })(),
     status:
       s.status === "running"
         ? ("running" as const)
@@ -191,6 +398,7 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
           : ("stopped" as const),
     memoryMB: 0,
     toolCount: s.tools.length,
+    error: s.error ?? undefined,
   }));
   respond(true, {
     servers: status.servers.map((s) => ({
@@ -608,6 +816,29 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
 
       const annotated = items.map((i) => {
         const id = i.serverId ?? "";
+        // Prefer Chinese names/descriptions for CN users
+        const friendlyName = i.friendlyNameCn || i.friendlyName;
+        const description = i.descriptionCn || i.description;
+        const tags = i.tagsCn?.length ? i.tagsCn : i.tags;
+        const installable = !!(i.npmPackage || i.pypiPackage || i.sseUrl);
+        // SSE first — most reliable in China (no npm/pip dependency issues)
+        const installMethod: "npm" | "pypi" | "sse" | "none" = i.sseUrl
+          ? "sse"
+          : i.npmPackage
+            ? "npm"
+            : i.pypiPackage
+              ? "pypi"
+              : "none";
+
+        // Auto-detect requiresApiKey from platformNotes when data source doesn't provide it
+        const platformNotes = String((i.requirements as Record<string, unknown>)?.platformNotes ?? "");
+        const inferredNeedsKey = !i.requiresApiKey && platformNotes
+          ? /[Kk]ey|密钥|[Tt]oken|[Ss]ecret|申请|授权|API_|api_key|APIKEY|access.?key|认证|凭[据证]/.test(platformNotes)
+          : false;
+        const requiresApiKey = !!(i.requiresApiKey || inferredNeedsKey);
+        // Pass platformNotes as configHint so UI can show setup instructions
+        const configHint = requiresApiKey && platformNotes ? platformNotes : undefined;
+
         if (installedIds.has(id)) {
           const serverConfig = manager?.registry.getServer(id);
           const installedVersion = serverConfig?.version ?? "";
@@ -617,9 +848,23 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
             marketVersion &&
             semverLessThan(installedVersion, marketVersion)
           );
-          return { ...i, installStatus: "installed" as const, installedVersion, hasUpdate };
+          return { ...i, friendlyName, description, tags, installStatus: "installed" as const, installedVersion, hasUpdate, installable, installMethod, requiresApiKey, configHint };
         }
-        return { ...i, installStatus: "not_installed" as const };
+        return { ...i, friendlyName, description, tags, installStatus: "not_installed" as const, installable, installMethod, requiresApiKey, configHint };
+      });
+
+      // Sort: installed first, then SSE (most reliable), then other installable, then non-installable last
+      annotated.sort((a, b) => {
+        // Installed items always first
+        const aInst = a.installStatus === "installed" ? 0 : 1;
+        const bInst = b.installStatus === "installed" ? 0 : 1;
+        if (aInst !== bInst) return aInst - bInst;
+        // SSE items next (work best in China), then npm/pypi, then non-installable
+        const methodRank = (m: string | undefined) => m === "sse" ? 0 : m === "npm" || m === "pypi" ? 1 : 2;
+        const am = methodRank(a.installMethod);
+        const bm = methodRank(b.installMethod);
+        if (am !== bm) return am - bm;
+        return 0;
       });
 
       // Pagination
@@ -629,7 +874,8 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
       const start = (page - 1) * pageSize;
       const paged = annotated.slice(start, start + pageSize);
 
-      respond(true, { items: paged, total: annotated.length, page, pageSize });
+      const totalPages = Math.ceil(annotated.length / pageSize);
+      respond(true, { items: paged, total: annotated.length, page, pageSize, totalPages });
     } catch {
       // Index not available yet — return empty
       respond(true, { items: [], total: 0 });
@@ -726,34 +972,12 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
         return;
       }
 
-      // Determine install method: npm (npx), Python (uvx), or SSE
-      let serverConfig: MCPServerConfig;
-      if (npmPackage) {
-        const versionedPkg = version ? `${npmPackage}@${version}` : npmPackage;
-        serverConfig = {
-          id: serverId,
-          command: "npx",
-          args: ["-y", versionedPkg],
-          env: buildCNMirrorEnv("npm", env),
-          transport: "stdio",
-          version: version || undefined,
-          enabled: true,
-          autoStart: true,
-        };
-      } else if (pypiPackage) {
-        const versionedPkg = version ? `${pypiPackage}==${version}` : pypiPackage;
-        serverConfig = {
-          id: serverId,
-          command: "uvx",
-          args: [versionedPkg],
-          env: buildCNMirrorEnv("pypi", env),
-          transport: "stdio",
-          version: version || undefined,
-          enabled: true,
-          autoStart: true,
-        };
-      } else if (sseUrl) {
-        serverConfig = {
+      // ── Determine install method ───────────────────────────────────
+      // SSE first (most reliable in China — just connect to URL, no npm/pip)
+      // npm/pypi: multi-mirror fallback (Taobao → Tencent → Huawei for npm)
+      if (sseUrl) {
+        // SSE: direct connection, no mirrors needed
+        const serverConfig: MCPServerConfig = {
           id: serverId,
           command: "",
           transport: "sse",
@@ -763,19 +987,77 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
           enabled: true,
           autoStart: true,
         };
+
+        await manager.addServer(serverConfig);
+        await new Promise((r) => setTimeout(r, 3000));
+        const postStatus = manager.getStatus();
+        const serverStatus = postStatus.servers.find((s) => s.config.id === serverId);
+
+        if (serverStatus?.status !== "running") {
+          const errorMsg = serverStatus?.error ?? "SSE 连接失败";
+          try {
+            await manager.removeServer(serverId);
+            persistMcpServerRemove(serverId).catch(() => {});
+          } catch { /* rollback */ }
+          respond(false, undefined, mcpError(friendlyInstallError(serverId, errorMsg)));
+          return;
+        }
+
+        persistMcpServerAdd(serverConfig).catch((err) => {
+          console.error("[mcp] Failed to persist server config (non-fatal):", err);
+        });
+        respond(true, { ok: true, serverId });
+      } else if (npmPackage) {
+        // npm: multi-mirror fallback (3 CN mirrors auto-switch)
+        const result = await tryInstallWithMirrorFallback({
+          manager, serverId,
+          type: "npm",
+          packageStr: npmPackage,
+          version,
+          userEnv: env,
+        });
+
+        if (!result.ok) {
+          respond(false, undefined, mcpError(result.error!));
+          return;
+        }
+
+        // Persist the successful config (with the working mirror baked in)
+        const postStatus = manager.getStatus();
+        const runningServer = postStatus.servers.find((s) => s.config.id === serverId);
+        if (runningServer) {
+          persistMcpServerAdd(runningServer.config).catch((err) => {
+            console.error("[mcp] Failed to persist server config (non-fatal):", err);
+          });
+        }
+        respond(true, { ok: true, serverId, mirror: result.usedMirror });
+      } else if (pypiPackage) {
+        // pypi: multi-mirror fallback (3 CN mirrors auto-switch)
+        const result = await tryInstallWithMirrorFallback({
+          manager, serverId,
+          type: "pypi",
+          packageStr: pypiPackage,
+          version,
+          userEnv: env,
+        });
+
+        if (!result.ok) {
+          respond(false, undefined, mcpError(result.error!));
+          return;
+        }
+
+        const postStatus = manager.getStatus();
+        const runningServer = postStatus.servers.find((s) => s.config.id === serverId);
+        if (runningServer) {
+          persistMcpServerAdd(runningServer.config).catch((err) => {
+            console.error("[mcp] Failed to persist server config (non-fatal):", err);
+          });
+        }
+        respond(true, { ok: true, serverId, mirror: result.usedMirror });
       } else {
-        respond(false, undefined, mcpError("Item has no installable package or SSE URL"));
+        respond(false, undefined, mcpError("该能力没有可安装的包或 SSE 地址"));
         return;
       }
-
-      await manager.addServer(serverConfig);
-
-      // Persist to config file
-      persistMcpServerAdd(serverConfig).catch((err) => {
-        console.error("[mcp] Failed to persist server config (non-fatal):", err);
-      });
-
-      respond(true, { ok: true, serverId });
     } catch (err) {
       respond(false, undefined, mcpError(String(err)));
     }
@@ -895,6 +1177,11 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
         if (installedMcp.has(String(item.serverId ?? ""))) return false;
         // Skip items requiring external API keys (most are foreign services)
         if (item.requiresApiKey === true) return false;
+        // Only recommend items that can actually be installed
+        if (!(item.npmPackage || item.pypiPackage || item.sseUrl)) return false;
+        // Skip items that need API keys (inferred from platformNotes)
+        const notes = String((item.requirements as Record<string, unknown>)?.platformNotes ?? "");
+        if (/[Kk]ey|密钥|[Tt]oken|[Ss]ecret|申请|授权|API_|api_key|APIKEY|access.?key|认证|凭[据证]/.test(notes)) return false;
         return true;
       })
       .map((item: Record<string, unknown>) => ({
@@ -905,10 +1192,23 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
       .sort((a, b) => b.score - a.score);
 
     // 6. Return top 5
-    const items = scored.slice(0, 5).map(({ item }) => ({
-      ...item,
-      installStatus: (item.installStatus as string) ?? "not_installed",
-    }));
+    const items = scored.slice(0, 5).map(({ item }) => {
+      const installable = !!(item.npmPackage || item.pypiPackage || item.sseUrl);
+      const installMethod = item.npmPackage ? "npm" : item.pypiPackage ? "pypi" : item.sseUrl ? "sse" : "none";
+      // Prefer Chinese names for CN users
+      const friendlyName = (item.friendlyNameCn as string) || (item.friendlyName as string);
+      const description = (item.descriptionCn as string) || (item.description as string);
+      const tags = (item.tagsCn as string[])?.length ? item.tagsCn : item.tags;
+      return {
+        ...item,
+        friendlyName,
+        description,
+        tags,
+        installStatus: (item.installStatus as string) ?? "not_installed",
+        installable,
+        installMethod,
+      };
+    });
 
     respond(true, { items });
   } catch {
@@ -1006,34 +1306,41 @@ const mcpMarketplaceUpdateHandler: GatewayRequestHandler = safeHandler(
       // Stop and remove old server
       await manager.removeServer(serverId);
 
-      // Build updated config
-      let serverConfig: MCPServerConfig;
+      // Use multi-mirror fallback for npm/pypi updates
       if (npmPackage) {
-        const versionedPkg = version ? `${npmPackage}@${version}` : npmPackage;
-        serverConfig = {
-          id: serverId,
-          command: "npx",
-          args: ["-y", versionedPkg],
-          env: buildCNMirrorEnv("npm", existingEnv),
-          transport: "stdio",
-          version: version || undefined,
-          enabled: true,
-          autoStart: true,
-        };
+        const result = await tryInstallWithMirrorFallback({
+          manager, serverId,
+          type: "npm",
+          packageStr: npmPackage,
+          version,
+          userEnv: existingEnv,
+        });
+        if (!result.ok) {
+          respond(false, undefined, mcpError(result.error!));
+          return;
+        }
+        const postStatus = manager.getStatus();
+        const running = postStatus.servers.find((s) => s.config.id === serverId);
+        if (running) persistMcpServerAdd(running.config).catch(() => {});
+        respond(true, { ok: true, serverId, version, mirror: result.usedMirror });
       } else if (pypiPackage) {
-        const versionedPkg = version ? `${pypiPackage}==${version}` : pypiPackage;
-        serverConfig = {
-          id: serverId,
-          command: "uvx",
-          args: [versionedPkg],
-          env: buildCNMirrorEnv("pypi", existingEnv),
-          transport: "stdio",
-          version: version || undefined,
-          enabled: true,
-          autoStart: true,
-        };
+        const result = await tryInstallWithMirrorFallback({
+          manager, serverId,
+          type: "pypi",
+          packageStr: pypiPackage,
+          version,
+          userEnv: existingEnv,
+        });
+        if (!result.ok) {
+          respond(false, undefined, mcpError(result.error!));
+          return;
+        }
+        const postStatus = manager.getStatus();
+        const running = postStatus.servers.find((s) => s.config.id === serverId);
+        if (running) persistMcpServerAdd(running.config).catch(() => {});
+        respond(true, { ok: true, serverId, version, mirror: result.usedMirror });
       } else if (sseUrl) {
-        serverConfig = {
+        const serverConfig: MCPServerConfig = {
           id: serverId,
           command: "",
           transport: "sse",
@@ -1043,16 +1350,13 @@ const mcpMarketplaceUpdateHandler: GatewayRequestHandler = safeHandler(
           enabled: true,
           autoStart: true,
         };
+        await manager.addServer(serverConfig);
+        persistMcpServerAdd(serverConfig).catch(() => {});
+        respond(true, { ok: true, serverId, version });
       } else {
-        respond(false, undefined, mcpError("Item has no installable package or SSE URL"));
+        respond(false, undefined, mcpError("该能力没有可安装的包或 SSE 地址"));
         return;
       }
-
-      await manager.addServer(serverConfig);
-      persistMcpServerAdd(serverConfig).catch((err) => {
-        console.error("[mcp] Failed to persist server config (non-fatal):", err);
-      });
-      respond(true, { ok: true, serverId, version });
     } catch (err) {
       respond(false, undefined, mcpError(String(err)));
     }

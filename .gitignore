@@ -53,6 +53,9 @@ Microsoft/
 # Dev temp
 devTemp/
 
+# Private skills (owner-only, not for distribution)
+skills-private/
+
 # Release deploy cache and temp
 .release-cache/
 .release-deploy/

@@ -455,7 +455,9 @@ export async function startGatewayServer(
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
 
-  const discoveryPromise = !minimalTestGateway
+  // Desktop mode: skip Bonjour/mDNS discovery (not needed for local-only desktop use)
+  const isDesktopModeEarly = process.env.OPENCLAWCN_DESKTOP_MODE === "1";
+  const discoveryPromise = !minimalTestGateway && !isDesktopModeEarly
     ? (async () => {
         const machineDisplayName = await getMachineDisplayName();
         const discovery = await startGatewayDiscovery({
@@ -555,6 +557,8 @@ export async function startGatewayServer(
   }
 
   // Recover pending outbound deliveries from previous crash/restart.
+  // NOTE: do NOT skip in desktop mode — user may have configured channels
+  // in a previous session, and pending deliveries must be recovered.
   if (!minimalTestGateway) {
     // Improved error handling with exponential backoff retry
     const attemptDeliveryRecovery = async (attempt: number = 1): Promise<void> => {
@@ -682,55 +686,24 @@ export async function startGatewayServer(
   if (!minimalTestGateway) {
     scheduleGatewayUpdateCheck({ cfg: cfgAtStart, log, isNixMode });
   }
-  // Run discovery, tailscale exposure, and sidecars in parallel — they have
-  // no cross-dependencies and each has its own error handling.
-  const tailscalePromise = minimalTestGateway
-    ? Promise.resolve(null)
-    : startGatewayTailscaleExposure({
-        tailscaleMode,
-        resetOnExit: tailscaleConfig.resetOnExit,
-        port,
-        controlUiBasePath,
-        logTailscale,
-      });
+  // ── Late-binding cleanup refs for close handler ────────────────────
+  // These are populated asynchronously after markGatewayReady() so that
+  // the gateway can accept requests while subsystems finish initialising.
+  // Declared BEFORE configReloader so setState can sync into them.
+  let browserControl: Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>> = null;
+  let tailscaleCleanup: (() => Promise<void>) | null = null;
 
-  const sidecarsPromise = minimalTestGateway
-    ? Promise.resolve({
-        browserControl: null as Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>>,
-        pluginServices: null as PluginServicesHandle | null,
-      })
-    : startGatewaySidecars({
-        cfg: cfgAtStart,
-        pluginRegistry,
-        defaultWorkspaceDir,
-        deps,
-        startChannels,
-        log,
-        logHooks,
-        logChannels,
-        logBrowser,
-      });
+  // Mutable container — the close handler reads the latest refs at shutdown
+  // time via getters, even if subsystems are still initialising when the
+  // close handler object is created.
+  const lateBindingRefs = {
+    bonjourStop: null as (() => Promise<void>) | null,
+    tailscaleCleanup: null as (() => Promise<void>) | null,
+    pluginServices: null as PluginServicesHandle | null,
+    browserControl: null as { stop: () => Promise<void> } | null,
+  };
 
-  const [tailscaleCleanup, sidecarsResult, discoveryBonjourStop] = await Promise.all([
-    tailscalePromise,
-    sidecarsPromise,
-    discoveryPromise,
-  ]);
-
-  bonjourStop = discoveryBonjourStop;
-  let browserControl = sidecarsResult.browserControl;
-  pluginServices = sidecarsResult.pluginServices;
-
-  // Run gateway_start plugin hook (fire-and-forget)
-  if (!minimalTestGateway) {
-    const hookRunner = getGlobalHookRunner();
-    if (hookRunner?.hasHooks("gateway_start")) {
-      void hookRunner.runGatewayStart({ port }, { port }).catch((err) => {
-        log.warn(`gateway_start hook failed: ${String(err)}`);
-      });
-    }
-  }
-
+  // ── Config reloader ────────────────────────────────────────────────
   const configReloader = minimalTestGateway
     ? { stop: async () => {} }
     : (() => {
@@ -752,6 +725,10 @@ export async function startGatewayServer(
             cronStorePath = cronState.storePath;
             browserControl = nextState.browserControl;
             pluginServices = nextState.pluginServices;
+            // Keep lateBindingRefs in sync so the close handler always
+            // cleans up the LATEST instances after a hot reload.
+            lateBindingRefs.browserControl = nextState.browserControl;
+            lateBindingRefs.pluginServices = nextState.pluginServices;
           },
           startChannel,
           stopChannel,
@@ -779,12 +756,12 @@ export async function startGatewayServer(
       })();
 
   const close = createGatewayCloseHandler({
-    bonjourStop,
-    tailscaleCleanup,
+    get bonjourStop() { return lateBindingRefs.bonjourStop; },
+    get tailscaleCleanup() { return lateBindingRefs.tailscaleCleanup; },
     canvasHost,
     canvasHostServer,
     stopChannel,
-    pluginServices,
+    get pluginServices() { return lateBindingRefs.pluginServices; },
     cron,
     heartbeatRunner,
     nodePresenceTimers,
@@ -797,18 +774,122 @@ export async function startGatewayServer(
     chatRunState,
     clients,
     configReloader,
-    browserControl,
+    get browserControl() { return lateBindingRefs.browserControl; },
     wss,
     httpServer,
     httpServers,
   });
 
-  // Mark gateway as fully ready now that all subsystems are initialized
+  // ── Register shutdown callback so /api/shutdown endpoint works ────
+  setGatewayShutdownCallback(async () => {
+    await close({ reason: "api-shutdown" });
+  });
+
+  // ── Mark gateway ready early ───────────────────────────────────────
+  // HTTP server is listening + WS handlers are attached — the gateway can
+  // serve /api/health, setup wizard, and control-ui requests.  Remaining
+  // subsystems (discovery, tailscale, channels, MCP) initialise in the
+  // background and are NOT needed for desktop-mode first-run experience.
   markGatewayReady();
   log.info("gateway ready");
 
+  // ── Background subsystem initialisation ────────────────────────────
+  // Run discovery, tailscale exposure, and sidecars in parallel — they have
+  // no cross-dependencies and each has its own error handling.
+
+  // In desktop mode, skip subsystems that are not needed for local-only use.
+  const skipTailscale = isDesktopModeEarly || minimalTestGateway;
+
+  const tailscalePromise = skipTailscale
+    ? Promise.resolve(null)
+    : startGatewayTailscaleExposure({
+        tailscaleMode,
+        resetOnExit: tailscaleConfig.resetOnExit,
+        port,
+        controlUiBasePath,
+        logTailscale,
+      });
+
+  const sidecarsPromise = minimalTestGateway
+    ? Promise.resolve({
+        browserControl: null as Awaited<ReturnType<typeof startBrowserControlServerIfEnabled>>,
+        pluginServices: null as PluginServicesHandle | null,
+      })
+    : startGatewaySidecars({
+        cfg: cfgAtStart,
+        pluginRegistry,
+        defaultWorkspaceDir,
+        deps,
+        startChannels,
+        log,
+        logHooks,
+        logChannels,
+        logBrowser,
+      });
+
+  // Await background subsystems and populate late-binding refs for close handler.
+  // Use allSettled so a single failure does not prevent other refs from populating.
+  // Keep the promise reference so `close()` can wait for subsystems to finish
+  // before attempting cleanup — prevents orphaned background tasks on early shutdown.
+  const subsystemsSettled = Promise.allSettled([tailscalePromise, sidecarsPromise, discoveryPromise])
+    .then(([tsResult, sidecarsResult, discoveryResult]) => {
+      // Populate late-binding refs from settled results
+      if (tsResult.status === "fulfilled") {
+        lateBindingRefs.tailscaleCleanup = tsResult.value;
+      } else {
+        log.error(`tailscale subsystem failed: ${String(tsResult.reason)}`);
+      }
+
+      if (sidecarsResult.status === "fulfilled") {
+        browserControl = sidecarsResult.value.browserControl;
+        pluginServices = sidecarsResult.value.pluginServices;
+        lateBindingRefs.browserControl = browserControl;
+        lateBindingRefs.pluginServices = pluginServices;
+      } else {
+        log.error(`sidecars subsystem failed: ${String(sidecarsResult.reason)}`);
+      }
+
+      if (discoveryResult.status === "fulfilled") {
+        lateBindingRefs.bonjourStop = discoveryResult.value;
+      } else {
+        log.error(`discovery subsystem failed: ${String(discoveryResult.reason)}`);
+      }
+
+      const failedCount = [tsResult, sidecarsResult, discoveryResult].filter(
+        (r) => r.status === "rejected",
+      ).length;
+      if (failedCount === 0) {
+        log.info("gateway subsystems ready");
+      } else {
+        log.warn(`gateway subsystems partially ready (${failedCount}/3 failed)`);
+      }
+
+      // Run gateway_start plugin hook (fire-and-forget)
+      if (!minimalTestGateway) {
+        const hookRunner = getGlobalHookRunner();
+        if (hookRunner?.hasHooks("gateway_start")) {
+          void hookRunner.runGatewayStart({ port }, { port }).catch((err) => {
+            log.warn(`gateway_start hook failed: ${String(err)}`);
+          });
+        }
+      }
+    });
+
   return {
     close: async (opts) => {
+      // Wait for background subsystems to finish initialising so the close
+      // handler can properly clean them up.  Without this, an early shutdown
+      // could leave orphaned tailscale/discovery/channel processes.
+      // Timeout prevents shutdown from hanging indefinitely if a subsystem stalls.
+      const SUBSYSTEM_WAIT_TIMEOUT_MS = 15_000;
+      await Promise.race([
+        subsystemsSettled,
+        new Promise<void>((resolve) => setTimeout(() => {
+          log.warn(`subsystem init still pending after ${SUBSYSTEM_WAIT_TIMEOUT_MS}ms, proceeding with shutdown`);
+          resolve();
+        }, SUBSYSTEM_WAIT_TIMEOUT_MS)),
+      ]);
+
       // Run gateway_stop plugin hook before shutdown
       await runGlobalGatewayStopSafely({
         event: { reason: opts?.reason ?? "gateway stopping" },

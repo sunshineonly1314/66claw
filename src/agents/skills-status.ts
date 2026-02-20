@@ -31,7 +31,9 @@ export type SkillInstallOption = {
 
 export type SkillStatusEntry = {
   name: string;
+  nameZh?: string;
   description: string;
+  descriptionZh?: string;
   source: string;
   bundled: boolean;
   filePath: string;
@@ -41,6 +43,7 @@ export type SkillStatusEntry = {
   emoji?: string;
   homepage?: string;
   always: boolean;
+  pinned: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
   eligible: boolean;
@@ -124,6 +127,10 @@ function normalizeInstallOptions(
 
   const platform = process.platform;
   const filtered = install.filter((spec) => {
+    // brew is only available on macOS and Linux — skip on Windows
+    if (spec.kind === "brew" && platform === "win32") {
+      return false;
+    }
     const osList = spec.os ?? [];
     return osList.length === 0 || osList.includes(platform);
   });
@@ -183,6 +190,8 @@ function buildSkillStatus(
   const allowBundled = resolveBundledAllowlist(config);
   const blockedByAllowlist = !isBundledSkillAllowed(entry, allowBundled);
   const always = entry.metadata?.always === true;
+  const pinnedSkills = config?.skills?.pinnedSkills ?? [];
+  const pinned = pinnedSkills.includes(skillKey) || pinnedSkills.includes(entry.skill.name);
   const emoji = entry.metadata?.emoji ?? entry.frontmatter.emoji;
   const homepageRaw =
     entry.metadata?.homepage ??
@@ -220,7 +229,9 @@ function buildSkillStatus(
 
   return {
     name: entry.skill.name,
+    nameZh: entry.frontmatter.nameZh || undefined,
     description: entry.skill.description,
+    descriptionZh: entry.frontmatter.descriptionZh || undefined,
     source: entry.skill.source,
     bundled,
     filePath: entry.skill.filePath,
@@ -230,6 +241,7 @@ function buildSkillStatus(
     emoji,
     homepage,
     always,
+    pinned,
     disabled,
     blockedByAllowlist,
     eligible,

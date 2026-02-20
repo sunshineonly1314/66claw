@@ -124,13 +124,89 @@ export async function startGatewaySidecars(params: {
     } catch (err) {
       params.log.warn(`MCP manager initialization failed: ${String(err)}`);
     }
+
+    // MCP marketplace: ensure bundled index is loaded into SQLite
     try {
-      const { syncMcpIndexBackground, startDailySyncScheduler } =
-        await import("../mcp/marketplace-sync.js");
-      syncMcpIndexBackground({ force: false });
-      startDailySyncScheduler();
+      const { ensureMcpBaseline } = await import("../mcp/marketplace/db.js");
+      const { resolveOpenClawCNPackageRootSync } = await import("../infra/openclaw-root.js");
+      const packageRoot = resolveOpenClawCNPackageRootSync({ argv1: process.argv[1] });
+      if (packageRoot) {
+        const mcpCount = ensureMcpBaseline(packageRoot);
+        if (mcpCount > 0) {
+          params.log.warn(`MCP marketplace baseline synced: ${mcpCount} changes`);
+        }
+      }
     } catch (err) {
-      params.log.warn(`MCP marketplace sync startup failed: ${String(err)}`);
+      params.log.warn(`MCP marketplace baseline import failed: ${String(err)}`);
+    }
+
+    // Bridge: sync baseline MCP items → tool-index.sqlite (non-blocking)
+    // getAllItems() 使用 rowToItem() 将 snake_case 列正确转回 McpMarketplaceItem
+    import("../mcp/marketplace/db.js")
+      .then(async (mcpDb) => {
+        const items = mcpDb.getAllItems();
+        if (items.length === 0) return;
+        const { syncMcpToToolIndex } = await import("../dispatch/tool-discovery.js");
+        await syncMcpToToolIndex(items, {
+          embedding: params.cfg.toolDiscovery?.embedding,
+        });
+      })
+      .catch((err) => {
+        params.log.warn(`MCP baseline→tool-index bridge failed (non-fatal): ${String(err)}`);
+      });
+
+    // Desktop mode: skip marketplace sync on startup (no external MCP sources needed).
+    // MCP manager is still initialized above so on-demand loading works when configured.
+    if (!isTruthyEnvValue(process.env.OPENCLAWCN_DESKTOP_MODE)) {
+      try {
+        const { syncMcpIndexBackground, startDailySyncScheduler } =
+          await import("../mcp/marketplace-sync.js");
+        syncMcpIndexBackground({ force: false });
+        startDailySyncScheduler();
+      } catch (err) {
+        params.log.warn(`MCP marketplace sync startup failed: ${String(err)}`);
+      }
+    }
+  })();
+
+  // ── Skills marketplace: ensure QC baseline + background sync ─────────
+  const skillsPromise = (async () => {
+    try {
+      const { ensureQcBaseline } = await import("../agents/skills/marketplace/db.js");
+      const { resolveOpenClawCNPackageRootSync } = await import("../infra/openclaw-root.js");
+      const packageRoot = resolveOpenClawCNPackageRootSync({ argv1: process.argv[1] });
+      if (packageRoot) {
+        const qcCount = ensureQcBaseline(packageRoot);
+        if (qcCount > 0) {
+          params.log.warn(`skills QC baseline imported: ${qcCount} skills`);
+        }
+      }
+    } catch (err) {
+      params.log.warn(`skills QC baseline import failed: ${String(err)}`);
+    }
+    // Background sync (non-blocking, fetches remote updates)
+    try {
+      const { syncSkillsIndexBackground } = await import("../agents/skills/sync.js");
+      syncSkillsIndexBackground();
+    } catch (err) {
+      params.log.warn(`skills index background sync failed: ${String(err)}`);
+    }
+  })();
+
+  // ── Tool-index: ensure bundled tool-index.sqlite is synced to user dir ──
+  const toolIndexPromise = (async () => {
+    try {
+      const { ensureToolIndexBootstrap } = await import("../dispatch/tool-discovery.js");
+      const { resolveOpenClawCNPackageRootSync } = await import("../infra/openclaw-root.js");
+      const packageRoot = resolveOpenClawCNPackageRootSync({ argv1: process.argv[1] });
+      if (packageRoot) {
+        const result = ensureToolIndexBootstrap(packageRoot);
+        if (result.copied) {
+          params.log.warn(`tool-index bootstrap: ${result.message}`);
+        }
+      }
+    } catch (err) {
+      params.log.warn(`tool-index bootstrap failed: ${String(err)}`);
     }
   })();
 
@@ -151,9 +227,11 @@ export async function startGatewaySidecars(params: {
       params.logHooks.error(`failed to load hooks: ${String(err)}`);
     }
 
+    const isDesktopMode = isTruthyEnvValue(process.env.OPENCLAWCN_DESKTOP_MODE);
     const skipChannels =
       isTruthyEnvValue(process.env.OPENCLAWCN_SKIP_CHANNELS) ||
-      isTruthyEnvValue(process.env.OPENCLAWCN_SKIP_PROVIDERS);
+      isTruthyEnvValue(process.env.OPENCLAWCN_SKIP_PROVIDERS) ||
+      isDesktopMode;
     if (!skipChannels) {
       try {
         await params.startChannels();
@@ -161,9 +239,10 @@ export async function startGatewaySidecars(params: {
         params.logChannels.error(`channel startup failed: ${String(err)}`);
       }
     } else {
-      params.logChannels.info(
-        "skipping channel start (OPENCLAWCN_SKIP_CHANNELS=1 or OPENCLAWCN_SKIP_PROVIDERS=1)",
-      );
+      const reason = isDesktopMode
+        ? "OPENCLAWCN_DESKTOP_MODE=1 (channels start on-demand via config reload)"
+        : "OPENCLAWCN_SKIP_CHANNELS=1 or OPENCLAWCN_SKIP_PROVIDERS=1";
+      params.logChannels.info(`skipping channel start (${reason})`);
     }
   })();
 
@@ -172,7 +251,7 @@ export async function startGatewaySidecars(params: {
     browserControlPromise,
     pluginServicesPromise,
   ]);
-  await Promise.all([gmailPromise, mcpPromise, hooksAndChannelsPromise]);
+  await Promise.all([gmailPromise, mcpPromise, skillsPromise, toolIndexPromise, hooksAndChannelsPromise]);
 
   // ── Post-parallel (order-independent fire-and-forget tasks) ─────────
   if (params.cfg.hooks?.internal?.enabled) {

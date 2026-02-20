@@ -36,6 +36,8 @@ export type McpStoreSectionProps = {
   onUninstall: (serverId: string) => void;
   onOpenConfigWizard: (item: McpMarketplaceItem) => void;
   onCloseConfigWizard: () => void;
+  /** Load next page of marketplace items */
+  onLoadMore?: () => void;
   /** Current running process count for limit guard */
   runningCount: number;
   // — Batch API Key configuration —
@@ -72,29 +74,45 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
 
   const filtered = filterMarketplaceItems(marketplace);
 
+  const atLimit = runningCount >= MCP_MAX_RUNNING;
+  const nearLimit = runningCount >= MCP_MAX_RUNNING - 2; // 5+
+
   return html`
-    <!-- Process limit warning -->
-    ${runningCount >= MCP_MAX_RUNNING
-      ? html`
-          <div style="
-            padding:12px 20px;
-            margin-bottom:20px;
-            border-radius:var(--radius-lg, 12px);
-            background:rgba(251,191,36,0.08);
-            border:1px solid rgba(251,191,36,0.2);
-            font-size:13px;
-            color:#fbbf24;
-            display:flex;
-            align-items:center;
-            gap:10px;
-          ">
-            <span style="font-size:16px;">\u26A0\uFE0F</span>
-            ${(t("extensions.store.limitReached") as string)
+    <!-- Token consumption info bar — always visible -->
+    <div style="
+      padding:10px 20px;
+      margin-bottom:16px;
+      border-radius:var(--radius-lg, 12px);
+      background:${atLimit ? "rgba(248,113,113,0.08)" : nearLimit ? "rgba(251,191,36,0.06)" : "rgba(99,102,241,0.05)"};
+      border:1px solid ${atLimit ? "rgba(248,113,113,0.2)" : nearLimit ? "rgba(251,191,36,0.15)" : "rgba(99,102,241,0.1)"};
+      font-size:12px;
+      color:${atLimit ? "#f87171" : "var(--fg-secondary, #a0aec0)"};
+      display:flex;
+      align-items:center;
+      gap:10px;
+    ">
+      <!-- Counter badge -->
+      <span style="
+        display:inline-flex;
+        align-items:center;
+        gap:4px;
+        padding:3px 10px;
+        border-radius:var(--radius-full, 9999px);
+        background:${atLimit ? "rgba(248,113,113,0.15)" : "rgba(99,102,241,0.1)"};
+        color:${atLimit ? "#f87171" : "var(--accent, #6366f1)"};
+        font-weight:600;
+        font-size:12px;
+        white-space:nowrap;
+        flex-shrink:0;
+      ">${runningCount} / ${MCP_MAX_RUNNING}</span>
+      <span>
+        ${atLimit
+          ? t("extensions.store.limitReached")
               .replace("{{count}}", String(runningCount))
-              .replace("{{max}}", String(MCP_MAX_RUNNING))}
-          </div>
-        `
-      : nothing}
+              .replace("{{max}}", String(MCP_MAX_RUNNING))
+          : t("extensions.store.tokenTip" as never)}
+      </span>
+    </div>
 
     <!-- Toolbar: search + categories + sort -->
     <div style="
@@ -148,7 +166,7 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
         ${MCP_CATEGORIES.map((cat) => {
           const isActive = marketplace.activeCategory === cat.id;
           const count = cat.id === "all"
-            ? marketplace.items.length
+            ? marketplace.total
             : marketplace.items.filter((i) => i.category === cat.id).length;
 
           return html`
@@ -233,7 +251,7 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
                 <div class="mcp-store-grid" style="
                   display:grid;
                   gap:16px;
-                  margin-bottom:28px;
+                  margin-bottom:16px;
                 ">
                   ${filtered.map(
                     (item) => renderMarketplaceCard({
@@ -244,6 +262,35 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
                     }),
                   )}
                 </div>
+                ${marketplace.page < marketplace.totalPages
+                  ? html`
+                    <div style="display:flex; justify-content:center; margin-bottom:28px;">
+                      <button
+                        @click=${props.onLoadMore}
+                        ?disabled=${marketplace.loadingMore}
+                        style="
+                          all:unset; cursor:pointer;
+                          padding:10px 32px;
+                          border-radius:var(--radius-md, 8px);
+                          border:1px solid var(--border);
+                          background:var(--card);
+                          color:var(--fg);
+                          font-size:13px;
+                          font-weight:500;
+                          transition:all 150ms;
+                          opacity:${marketplace.loadingMore ? "0.6" : "1"};
+                        "
+                        class="mcp-store-load-more"
+                      >${marketplace.loadingMore
+                          ? t("extensions.store.loadingMore" as never)
+                          : `${t("extensions.store.loadMore" as never)} (${marketplace.items.length}/${marketplace.total})`
+                      }</button>
+                    </div>`
+                  : marketplace.total > 0
+                    ? html`<div style="text-align:center; margin-bottom:28px; font-size:12px; color:var(--muted-strong, #6b7d91);">
+                        ${t("extensions.store.showingAll" as never).replace("{{count}}", String(marketplace.total))}
+                      </div>`
+                    : nothing}
               `}
 
     <!-- Detail modal overlay -->

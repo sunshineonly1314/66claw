@@ -58,6 +58,13 @@ export interface ProviderGroupInfo {
 
 export type ProviderConfigStep = "guide" | "apikey" | "detecting" | "result";
 
+/** Provider 健康状态信息 */
+export interface ProviderHealthInfo {
+  status: "normal" | "billing_error" | "auth_invalid" | "rate_limited" | "degraded" | "down" | "unknown";
+  message?: string;
+  lastCheckedAt: number;
+}
+
 export interface ModelConfigState {
   // 数据加载状态
   modelConfigLoading: boolean;
@@ -88,6 +95,25 @@ export interface ModelConfigState {
 
   // Provider 分组
   providerGroups: ProviderGroupInfo[];
+
+  // Provider 管理弹窗状态
+  providerManageOpen: boolean;
+  providerManageTarget: ProviderInfo | null;
+  providerManageApiKey: string;
+  providerManageDeleting: boolean;
+  providerManageError: string | null;
+
+  // OpenClawCN: Provider 健康状态
+  providerHealthMap: Record<string, ProviderHealthInfo>;
+  providerHealthLoading: boolean;
+
+  // OpenClawCN: Provider 优先级排序
+  providerPriority: string[];
+  providerPrioritySaving: boolean;
+
+  // OpenClawCN: 测试连接
+  providerTestingId: string | null;
+  providerTestResult: { providerId: string; success: boolean; status: string; message: string } | null;
 }
 
 type ModelConfigHost = ModelConfigState & {
@@ -118,6 +144,20 @@ export function createInitialModelConfigState(): ModelConfigState {
     providerConfigAutoEnabled: null,
     providers: [],
     providerGroups: [],
+    providerManageOpen: false,
+    providerManageTarget: null,
+    providerManageApiKey: "",
+    providerManageDeleting: false,
+    providerManageError: null,
+    // OpenClawCN: Provider 健康状态
+    providerHealthMap: {},
+    providerHealthLoading: false,
+    // OpenClawCN: Provider 优先级排序
+    providerPriority: [],
+    providerPrioritySaving: false,
+    // OpenClawCN: 测试连接
+    providerTestingId: null,
+    providerTestResult: null,
   };
 }
 
@@ -234,8 +274,13 @@ export async function switchModel(
     const data = result as { success: boolean; error?: string };
 
     if (data.success) {
+      // text 能力切换后静默 /new，让新模型立即生效
+      const isText = host.modelSelectorCapability?.capability === "text";
       closeModelSelector(host);
       await loadCapabilities(host);
+      if (isText) {
+        globalThis.dispatchEvent?.(new CustomEvent("openclawcn:silent-new"));
+      }
     } else {
       host.modelConfigError = data.error ?? "切换失败";
     }
@@ -330,6 +375,9 @@ export function navigateToProviderConfig(host: ModelConfigHost, providerId: stri
 /**
  * 自动检测并配置 Provider
  */
+/** 检测超时时间 (30秒) */
+const DETECT_TIMEOUT_MS = 30_000;
+
 export async function detectAndConfigureProvider(host: ModelConfigHost): Promise<void> {
   if (!host.client || !host.connected) return;
   if (!host.providerConfigProvider) return;
@@ -339,10 +387,17 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
   host.providerConfigStep = "detecting";
 
   try {
-    const result = await host.client.request("modelConfig.provider.detect", {
+    const rpcPromise = host.client.request("modelConfig.provider.detect", {
       providerId: host.providerConfigProvider.providerId,
       apiKey: host.providerConfigApiKey,
     });
+
+    // 超时保护：防止 Gateway 挂起导致弹窗永远卡在 detecting
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("DETECT_TIMEOUT")), DETECT_TIMEOUT_MS)
+    );
+
+    const result = await Promise.race([rpcPromise, timeoutPromise]);
 
     const data = result as {
       success: boolean;
@@ -364,13 +419,7 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
       };
       host.providerConfigAutoEnabled = (data.autoEnabled as Record<string, string>) ?? null;
       host.providerConfigStep = "result";
-
-      // 延迟关闭弹窗,让用户看到成功提示
-      setTimeout(() => {
-        closeProviderConfig(host);
-        loadCapabilities(host);
-        loadProviders(host);
-      }, 2000);
+      // 不再自动关闭，由用户点击"完成"按钮手动关闭
     } else {
       host.providerConfigTestResult = {
         success: false,
@@ -379,13 +428,71 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
       host.providerConfigStep = "apikey";
     }
   } catch (err) {
+    const errStr = String(err);
+    const isTimeout = errStr.includes("DETECT_TIMEOUT");
     host.providerConfigTestResult = {
       success: false,
-      message: `配置失败: ${String(err)}`,
+      message: isTimeout ? "检测超时，请检查网络后重试" : `配置失败: ${errStr}`,
     };
     host.providerConfigStep = "apikey";
   } finally {
     host.providerConfigDetecting = false;
+  }
+}
+
+/**
+ * 打开 Provider 管理弹窗
+ */
+export async function openProviderManage(host: ModelConfigHost, provider: ProviderInfo): Promise<void> {
+  host.providerManageOpen = true;
+  host.providerManageTarget = provider;
+  host.providerManageApiKey = "";
+  host.providerManageDeleting = false;
+  host.providerManageError = null;
+
+  // 加载脱敏 Key
+  if (host.client && host.connected) {
+    try {
+      const result = await host.client.request("modelConfig.provider.getConfig", {
+        providerId: provider.providerId,
+      });
+      // stale check: 弹窗可能已被关闭或切换到其他 provider
+      if (host.providerManageTarget?.providerId !== provider.providerId) return;
+      const data = result as { configured: boolean; maskedApiKey: string };
+      host.providerManageApiKey = data.maskedApiKey ?? "";
+    } catch {
+      if (host.providerManageTarget?.providerId !== provider.providerId) return;
+      host.providerManageApiKey = "(加载失败)";
+    }
+  }
+}
+
+/**
+ * 关闭 Provider 管理弹窗
+ */
+export function closeProviderManage(host: ModelConfigHost): void {
+  host.providerManageOpen = false;
+  host.providerManageTarget = null;
+  host.providerManageApiKey = "";
+  host.providerManageDeleting = false;
+  host.providerManageError = null;
+}
+
+/**
+ * 删除 Provider 配置
+ */
+export async function deleteProviderConfig(host: ModelConfigHost, providerId: string): Promise<void> {
+  if (!host.client || !host.connected) return;
+
+  host.providerManageDeleting = true;
+  try {
+    await host.client.request("modelConfig.provider.delete", { providerId });
+    closeProviderManage(host);
+    // 刷新数据
+    await Promise.all([loadCapabilities(host), loadProviders(host)]);
+  } catch (err) {
+    host.providerManageDeleting = false;
+    host.providerManageError = `删除失败: ${String(err)}`;
   }
 }
 
@@ -411,4 +518,169 @@ function translateProviderError(error: string): string {
   }
 
   return `配置失败: ${error}`;
+}
+
+// ============================================================================
+// OpenClawCN: Provider 健康状态
+// ============================================================================
+
+const HEALTH_STATUS_MAP: Record<string, string> = {
+  normal: "正常",
+  billing_error: "余额不足",
+  auth_invalid: "密钥无效",
+  rate_limited: "频率限制",
+  degraded: "不稳定",
+  down: "不可用",
+  unknown: "未知",
+};
+
+export function getHealthStatusText(status: string): string {
+  return HEALTH_STATUS_MAP[status] ?? status;
+}
+
+export function getHealthStatusColor(status: string): string {
+  switch (status) {
+    case "normal": return "#22c55e";
+    case "degraded": return "#f59e0b";
+    case "billing_error":
+    case "auth_invalid":
+    case "rate_limited":
+    case "down": return "#ef4444";
+    default: return "#9ca3af";
+  }
+}
+
+/**
+ * 加载所有已配置 Provider 的健康状态
+ */
+export async function loadProviderHealth(host: ModelConfigHost): Promise<void> {
+  if (!host.client || !host.connected) return;
+
+  host.providerHealthLoading = true;
+  try {
+    const result = await host.client.request("modelConfig.providers.health");
+    const data = result as { health: Record<string, ProviderHealthInfo> };
+    host.providerHealthMap = data.health ?? {};
+  } catch {
+    // 非关键功能，静默失败
+  } finally {
+    host.providerHealthLoading = false;
+  }
+}
+
+/**
+ * 测试单个 Provider 的连接状态
+ */
+export async function testProviderConnection(host: ModelConfigHost, providerId: string): Promise<void> {
+  if (!host.client || !host.connected) return;
+
+  host.providerTestingId = providerId;
+  host.providerTestResult = null;
+
+  try {
+    const result = await host.client.request("modelConfig.provider.testConnection", { providerId });
+    const data = result as { success: boolean; status: string; message: string };
+    host.providerTestResult = {
+      providerId,
+      success: data.success,
+      status: data.status,
+      message: data.message,
+    };
+    // 更新健康状态 map
+    if (data.status) {
+      host.providerHealthMap = {
+        ...host.providerHealthMap,
+        [providerId]: {
+          status: data.status as ProviderHealthInfo["status"],
+          message: data.message,
+          lastCheckedAt: Date.now(),
+        },
+      };
+    }
+  } catch (err) {
+    host.providerTestResult = {
+      providerId,
+      success: false,
+      status: "unknown",
+      message: `测试失败: ${String(err)}`,
+    };
+  } finally {
+    host.providerTestingId = null;
+  }
+}
+
+// ============================================================================
+// OpenClawCN: Provider 优先级排序
+// ============================================================================
+
+/**
+ * 加载 Provider 优先级排序
+ */
+export async function loadProviderPriority(host: ModelConfigHost): Promise<void> {
+  if (!host.client || !host.connected) return;
+
+  try {
+    const result = await host.client.request("modelConfig.providers.getPriority");
+    const data = result as { priority: string[] };
+    host.providerPriority = data.priority ?? [];
+  } catch {
+    // 非关键功能，静默失败
+  }
+}
+
+/**
+ * 保存 Provider 优先级排序
+ */
+export async function saveProviderPriority(host: ModelConfigHost, priority: string[]): Promise<void> {
+  if (!host.client || !host.connected) return;
+
+  // 记住当前 text 模型，用于判断是否需要 /new
+  const oldTextModel = host.capabilities.find((c) => c.capability === "text")?.currentModel;
+  const oldTextKey = oldTextModel ? `${oldTextModel.providerId}/${oldTextModel.modelId}` : "";
+
+  host.providerPrioritySaving = true;
+  try {
+    await host.client.request("modelConfig.providers.savePriority", { priority });
+    host.providerPriority = priority;
+    // 优先级变更会联动 modelCapability，刷新 UI 显示（失败不影响主流程）
+    try { await loadCapabilities(host); } catch { /* UI 刷新失败非关键 */ }
+
+    // text 模型变了则静默 /new
+    const newTextModel = host.capabilities.find((c) => c.capability === "text")?.currentModel;
+    const newTextKey = newTextModel ? `${newTextModel.providerId}/${newTextModel.modelId}` : "";
+    if (newTextKey && newTextKey !== oldTextKey) {
+      globalThis.dispatchEvent?.(new CustomEvent("openclawcn:silent-new"));
+    }
+  } catch (err) {
+    host.modelConfigError = `保存优先级失败: ${String(err)}`;
+  } finally {
+    host.providerPrioritySaving = false;
+  }
+}
+
+/**
+ * 重新排序 Providers（拖拽后调用）
+ */
+export async function reorderProviders(
+  host: ModelConfigHost,
+  fromIndex: number,
+  toIndex: number,
+): Promise<void> {
+  const configured = host.providers
+    .filter(p => p.configured)
+    .sort((a, b) => {
+      const ai = host.providerPriority.indexOf(a.providerId);
+      const bi = host.providerPriority.indexOf(b.providerId);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+
+  if (fromIndex < 0 || fromIndex >= configured.length) return;
+  if (toIndex < 0 || toIndex >= configured.length) return;
+
+  const newOrder = [...configured];
+  const [moved] = newOrder.splice(fromIndex, 1);
+  newOrder.splice(toIndex, 0, moved);
+
+  const priority = newOrder.map(p => p.providerId);
+  await saveProviderPriority(host, priority);
 }

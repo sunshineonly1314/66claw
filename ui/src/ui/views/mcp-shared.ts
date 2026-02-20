@@ -25,7 +25,7 @@ export const MCP_CATEGORIES: ReadonlyArray<{ id: string; emoji: string }> = [
   { id: "other",        emoji: "\u{1F527}" },
 ] as const;
 
-export const MCP_MAX_RUNNING = 8;
+export const MCP_MAX_RUNNING = 7;
 
 // ============================================================================
 // Category emoji map (for cards)
@@ -42,37 +42,39 @@ export const CATEGORY_EMOJI: Record<string, string> = Object.fromEntries(
 export function filterMarketplaceItems(state: McpMarketplaceState): McpMarketplaceItem[] {
   let items = state.items;
 
-  // Category filter
-  if (state.activeCategory !== "all") {
-    items = items.filter((i) => i.category === state.activeCategory);
-  }
+  // NOTE: search and category filtering is now handled server-side (SQLite).
+  // Only client-side sort is applied here.
 
-  // Search filter
-  if (state.search.trim()) {
-    const q = state.search.trim().toLowerCase();
-    items = items.filter(
-      (i) =>
-        i.friendlyName.toLowerCase().includes(q) ||
-        (i.friendlyNameEn ?? "").toLowerCase().includes(q) ||
-        i.description.toLowerCase().includes(q) ||
-        (i.descriptionEn ?? "").toLowerCase().includes(q) ||
-        i.tags.some((tag) => tag.toLowerCase().includes(q)),
-    );
-  }
+  // Helper: installable items always sort before non-installable
+  const canInstall = (i: McpMarketplaceItem) => i.installable !== false && i.installMethod !== "none";
 
   // Sort
   switch (state.sort) {
     case "newest":
-      items = [...items].sort((a, b) => (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0));
+      items = [...items].sort((a, b) => {
+        const ia = canInstall(a) ? 0 : 1, ib = canInstall(b) ? 0 : 1;
+        if (ia !== ib) return ia - ib;
+        return (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0);
+      });
       break;
     case "name":
-      items = [...items].sort((a, b) => a.friendlyName.localeCompare(b.friendlyName));
+      items = [...items].sort((a, b) => {
+        const ia = canInstall(a) ? 0 : 1, ib = canInstall(b) ? 0 : 1;
+        if (ia !== ib) return ia - ib;
+        return a.friendlyName.localeCompare(b.friendlyName);
+      });
       break;
     case "popular":
-      items = [...items].sort((a, b) => (b.toolCount ?? 0) - (a.toolCount ?? 0));
+      items = [...items].sort((a, b) => {
+        const ia = canInstall(a) ? 0 : 1, ib = canInstall(b) ? 0 : 1;
+        if (ia !== ib) return ia - ib;
+        return (b.toolCount ?? 0) - (a.toolCount ?? 0);
+      });
       break;
     default: // recommended
       items = [...items].sort((a, b) => {
+        const ia = canInstall(a) ? 0 : 1, ib = canInstall(b) ? 0 : 1;
+        if (ia !== ib) return ia - ib;
         // Official first, then by security score
         if (a.isOfficial !== b.isOfficial) return a.isOfficial ? -1 : 1;
         return (b.securityScore ?? 0) - (a.securityScore ?? 0);

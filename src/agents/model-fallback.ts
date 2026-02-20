@@ -25,6 +25,15 @@ import {
   recordProviderFailure,
 } from "../dispatch/provider-health.js";
 // ===== END =====
+// ===== OpenClawCN: Provider 能力映射（用于筛选 text 模型）=====
+import { PROVIDER_CAPABILITY_MAPPINGS } from "../config/provider-capability-mapping.js";
+// ===== END =====
+// ===== OpenClawCN: 凭据预检，跳过无 API key 的 provider =====
+import { hasProviderCredentials } from "./model-auth.js";
+// ===== END =====
+import { createSubsystemLogger } from "../logging/subsystem.js";
+
+const log = createSubsystemLogger("agents/model-fallback");
 
 type ModelCandidate = {
   provider: string;
@@ -39,6 +48,22 @@ type FallbackAttempt = {
   status?: number;
   code?: string;
 };
+
+// ===== OpenClawCN: Failover Notification =====
+export type FailoverNotification = {
+  type: "auto_failover";
+  fromProvider: string;
+  fromModel: string;
+  toProvider: string;
+  toModel: string;
+  reason: string;
+  attemptCount: number;
+};
+
+export function formatFailoverNotification(notification: FailoverNotification): string {
+  return `<!--CLAWDBOT_FAILOVER_NOTIFICATION:${JSON.stringify(notification)}-->`;
+}
+// ===== END =====
 
 /**
  * Fallback abort check. Only treats explicit AbortError names as user aborts.
@@ -139,6 +164,8 @@ function resolveFallbackCandidates(params: {
   model: string;
   /** Optional explicit fallbacks list; when provided (even empty), replaces agents.defaults.model.fallbacks. */
   fallbacksOverride?: string[];
+  /** When true, add all configured providers as fallback candidates (for auto-failover). */
+  includeConfiguredProviders?: boolean;
 }): ModelCandidate[] {
   const primary = params.cfg
     ? resolveConfiguredModelRef({
@@ -209,6 +236,50 @@ function resolveFallbackCandidates(params: {
     addCandidate({ provider: primary.provider, model: primary.model }, false);
   }
 
+  // ===== OpenClawCN: include all configured providers as fallback candidates =====
+  // Use PROVIDER_CAPABILITY_MAPPINGS to select the first text-capable model per provider.
+  // Falls back to models[0] for custom/unknown providers without a mapping.
+  if (params.includeConfiguredProviders && params.cfg?.models?.providers) {
+    const providers = params.cfg.models.providers as Record<string, {
+      apiKey?: string;
+      models?: Array<{ id?: string }>;
+    }>;
+    for (const [pid, pCfg] of Object.entries(providers)) {
+      if (!pCfg.apiKey) continue;
+
+      // Prefer a text-capable model from the static capability mapping
+      const mapping = PROVIDER_CAPABILITY_MAPPINGS[pid];
+      const textModel = mapping?.models?.find(
+        (m) => m.capabilities.includes("text"),
+      );
+      if (textModel) {
+        addCandidate({ provider: pid, model: textModel.modelId }, false);
+        continue;
+      }
+
+      // No mapping found — use first runtime-configured model (custom providers)
+      const firstModel = pCfg.models?.[0];
+      if (firstModel?.id) {
+        addCandidate({ provider: pid, model: firstModel.id }, false);
+      }
+    }
+  }
+
+  // ===== OpenClawCN: apply providerPriority ordering =====
+  const priorityOrder = params.cfg?.providerPriority;
+  if (priorityOrder && priorityOrder.length > 0 && candidates.length > 1) {
+    const primaryCandidate = candidates[0];
+    const rest = candidates.slice(1);
+    const priorityMap = new Map(priorityOrder.map((id, i) => [id, i]));
+    rest.sort((a, b) => {
+      const aIdx = priorityMap.get(a.provider) ?? Infinity;
+      const bIdx = priorityMap.get(b.provider) ?? Infinity;
+      return aIdx - bIdx;
+    });
+    return [primaryCandidate, ...rest];
+  }
+  // ===== END =====
+
   return candidates;
 }
 
@@ -219,6 +290,8 @@ export async function runWithModelFallback<T>(params: {
   agentDir?: string;
   /** Optional explicit fallbacks list; when provided (even empty), replaces agents.defaults.model.fallbacks. */
   fallbacksOverride?: string[];
+  /** When true, include all configured providers as fallback candidates. */
+  includeConfiguredProviders?: boolean;
   run: (provider: string, model: string) => Promise<T>;
   onError?: (attempt: {
     provider: string;
@@ -232,13 +305,19 @@ export async function runWithModelFallback<T>(params: {
   provider: string;
   model: string;
   attempts: FallbackAttempt[];
+  /** Set when a failover occurred (attempts > 0 and run succeeded). */
+  failoverNotification?: FailoverNotification;
 }> {
   const candidates = resolveFallbackCandidates({
     cfg: params.cfg,
     provider: params.provider,
     model: params.model,
     fallbacksOverride: params.fallbacksOverride,
+    includeConfiguredProviders: params.includeConfiguredProviders,
   });
+  log.debug(
+    `fallback candidates: ${candidates.map((c, i) => `[${i}] ${c.provider}/${c.model}`).join(", ")}`,
+  );
   const authStore = params.cfg
     ? ensureAuthProfileStore(params.agentDir, { allowKeychainPrompt: false })
     : null;
@@ -266,16 +345,51 @@ export async function runWithModelFallback<T>(params: {
         continue;
       }
     }
+    // ===== OpenClawCN: 凭据预检 — 跳过没有任何 API key 的 provider =====
+    if (!hasProviderCredentials(candidate.provider, params.cfg, authStore ?? undefined)) {
+      log.debug(
+        `[${i + 1}/${candidates.length}] skipping ${candidate.provider}/${candidate.model} — no credentials`,
+      );
+      attempts.push({
+        provider: candidate.provider,
+        model: candidate.model,
+        error: `No credentials for provider "${candidate.provider}" (skipped)`,
+        reason: "auth",
+      });
+      continue;
+    }
+    // ===== END =====
     try {
+      const t0 = Date.now();
+      log.debug(`[${i + 1}/${candidates.length}] trying ${candidate.provider}/${candidate.model}`);
       const result = await params.run(candidate.provider, candidate.model);
+      log.debug(
+        `[${i + 1}/${candidates.length}] ${candidate.provider}/${candidate.model} succeeded in ${Date.now() - t0}ms`,
+      );
       // ===== OpenClawCN: 记录成功 =====
       recordProviderSuccess(candidate.provider);
+      // ===== END =====
+      // ===== OpenClawCN: build failover notification if we fell back =====
+      let failoverNotification: FailoverNotification | undefined;
+      if (attempts.length > 0) {
+        const primaryAttempt = attempts[0];
+        failoverNotification = {
+          type: "auto_failover",
+          fromProvider: primaryAttempt.provider,
+          fromModel: primaryAttempt.model,
+          toProvider: candidate.provider,
+          toModel: candidate.model,
+          reason: primaryAttempt.reason ?? "unknown",
+          attemptCount: attempts.length,
+        };
+      }
       // ===== END =====
       return {
         result,
         provider: candidate.provider,
         model: candidate.model,
         attempts,
+        failoverNotification,
       };
     } catch (err) {
       if (shouldRethrowAbort(err)) {
@@ -292,8 +406,11 @@ export async function runWithModelFallback<T>(params: {
 
       lastError = normalized;
       const described = describeFailoverError(normalized);
+      log.debug(
+        `[${i + 1}/${candidates.length}] ${candidate.provider}/${candidate.model} failed: ${described.message} (reason=${described.reason ?? "unknown"})`,
+      );
       // ===== OpenClawCN: 记录失败，供模态路由和丝滑切换参考 =====
-      recordProviderFailure(candidate.provider, described.message);
+      recordProviderFailure(candidate.provider, described.message, described.reason);
       // ===== END =====
       attempts.push({
         provider: candidate.provider,

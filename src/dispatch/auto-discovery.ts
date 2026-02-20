@@ -247,7 +247,7 @@ async function discoverMCP(prompt: string, topN = 5): Promise<ScoredItem<McpMark
 const CORE_TOOLS_METADATA = [
   {
     name: "web_search",
-    keywords: ["搜索", "查询", "search", "google", "bing"],
+    keywords: ["搜索", "查询", "查", "search", "google", "bing"],
     description: "网页搜索",
   },
   {
@@ -257,7 +257,7 @@ const CORE_TOOLS_METADATA = [
   },
   {
     name: "image_gen",
-    keywords: ["画图", "生成图", "image", "draw", "dall-e"],
+    keywords: ["画图", "画", "生成图", "image", "draw", "dall-e"],
     description: "图像生成",
   },
   { name: "wechat_send", keywords: ["微信", "wechat", "发消息", "send"], description: "微信发送" },
@@ -267,7 +267,7 @@ const CORE_TOOLS_METADATA = [
     keywords: ["桌面", "操作", "desktop", "gui", "click"],
     description: "桌面控制",
   },
-  { name: "open_app", keywords: ["打开应用", "启动", "launch", "open"], description: "打开应用" },
+  { name: "open_app", keywords: ["打开", "打开应用", "启动", "launch", "open"], description: "打开应用" },
   {
     name: "bash",
     keywords: ["命令", "执行", "bash", "shell", "terminal"],
@@ -289,13 +289,27 @@ function discoverTools(prompt: string, topN = 3): ScoredItem<{ name: string }>[]
   const keywords = extractKeywords(prompt);
   if (keywords.length === 0) return [];
 
+  const lowerPrompt = prompt.toLowerCase();
   const scored: ScoredItem<{ name: string }>[] = [];
 
   for (const tool of CORE_TOOLS_METADATA) {
     const searchText = [tool.name, tool.description, ...tool.keywords].join(" ");
-    const { score, matchedTerms } = calculateTextScore(keywords, searchText);
+    const { score: fwdScore, matchedTerms } = calculateTextScore(keywords, searchText);
 
-    if (score > 0.15) {
+    // 反向匹配：工具关键词是否出现在 prompt 中
+    let reverseMatched = 0;
+    for (const kw of tool.keywords) {
+      if (lowerPrompt.includes(kw.toLowerCase())) {
+        reverseMatched++;
+        if (!matchedTerms.includes(`rev:${kw}`)) matchedTerms.push(`rev:${kw}`);
+      }
+    }
+    const reverseScore = tool.keywords.length > 0 ? reverseMatched / tool.keywords.length : 0;
+
+    // 取正向和反向的最大值
+    const score = Math.max(fwdScore, reverseScore);
+
+    if (score > 0.08) {
       scored.push({ item: { name: tool.name }, score, matchedTerms });
     }
   }
@@ -323,9 +337,9 @@ export async function autoDiscover(
 
   // 并行搜索三个系统
   const [skills, mcps, tools] = await Promise.all([
-    discoverSkills(prompt, config, 5),
-    discoverMCP(prompt, 5),
-    discoverTools(prompt, 3),
+    discoverSkills(prompt, config, 3),
+    discoverMCP(prompt, 3),
+    discoverTools(prompt, 2),
   ]);
 
   const latencyMs = performance.now() - startTime;

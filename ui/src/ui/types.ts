@@ -515,7 +515,9 @@ export type SkillInstallOption = {
 
 export type SkillStatusEntry = {
   name: string;
+  nameZh?: string;
   description: string;
+  descriptionZh?: string;
   source: string;
   filePath: string;
   baseDir: string;
@@ -525,6 +527,7 @@ export type SkillStatusEntry = {
   emoji?: string;
   homepage?: string;
   always: boolean;
+  pinned: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
   eligible: boolean;

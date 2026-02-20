@@ -350,7 +350,7 @@ function parseCategoryEnhanced(raw: unknown): McpMarketplaceItem["categoryEnhanc
 
 function parseRecommendationScore(
   raw: unknown,
-): McpMarketplaceItem["aiEnhancement"]["recommendationScore"] {
+): NonNullable<McpMarketplaceItem["aiEnhancement"]>["recommendationScore"] {
   if (!raw || typeof raw !== "object") return undefined;
   const obj = raw as Record<string, unknown>;
   return {

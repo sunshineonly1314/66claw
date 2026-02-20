@@ -100,6 +100,7 @@ export const OpenClawCNSchema = z
       .object({
         lastTouchedVersion: z.string().optional(),
         lastTouchedAt: z.string().optional(),
+        performanceProfile: z.enum(["economy", "balanced", "power"]).optional(),
       })
       .strict()
       .optional(),
@@ -552,6 +553,7 @@ export const OpenClawCNSchema = z
     skills: z
       .object({
         allowBundled: z.array(z.string()).optional(),
+        pinnedSkills: z.array(z.string()).optional(),
         load: z
           .object({
             extraDirs: z.array(z.string()).optional(),
@@ -639,6 +641,7 @@ export const OpenClawCNSchema = z
         multiAgent: z.boolean().optional(),
         toolSelector: z.boolean().optional(),
         dagExecutor: z.boolean().optional(),
+        toolFilterMode: z.enum(["off", "intent", "discovery"]).optional(),
       })
       .strict()
       .optional(),
@@ -653,6 +656,7 @@ export const OpenClawCNSchema = z
             baseUrl: z.string().optional(),
             apiKey: z.string().optional(),
             dimensions: z.number().int().positive().optional(),
+            timeout: z.number().int().positive().optional(),
           })
           .strict()
           .optional(),
@@ -699,7 +703,7 @@ export const OpenClawCNSchema = z
       .optional(),
     license: z
       .object({
-        key: z.string().optional(),
+        key: z.string().optional().register(sensitive),
         status: z.string().optional(),
         expiresAt: z.string().optional(),
         validatedAt: z.string().optional(),
@@ -732,6 +736,33 @@ export const OpenClawCNSchema = z
               .object({
                 providerId: z.string(),
                 modelId: z.string(),
+                auto: z.boolean().optional(),
+              })
+              .strict(),
+          )
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    providerPriority: z.array(z.string()).optional(),
+    mcp: z
+      .object({
+        servers: z
+          .array(
+            z
+              .object({
+                id: z.string(),
+                command: z.string(),
+                args: z.array(z.string()).optional(),
+                env: z.record(z.string(), z.string()).optional(),
+                cwd: z.string().optional(),
+                transport: z.enum(["stdio", "sse"]),
+                url: z.string().optional(),
+                headers: z.record(z.string(), z.string()).optional(),
+                version: z.string().optional(),
+                enabled: z.boolean(),
+                autoStart: z.boolean(),
+                timeout: z.number().int().positive().optional(),
               })
               .strict(),
           )

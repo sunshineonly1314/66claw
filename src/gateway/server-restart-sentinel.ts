@@ -19,6 +19,14 @@ export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
     return;
   }
   const payload = sentinel.payload;
+
+  // Config-apply / config-patch restarts are routine operations triggered by
+  // the user changing settings in the UI.  Injecting a "Gateway restart …"
+  // system message into the chat is confusing — silently consume the sentinel.
+  if (payload.kind === "config-apply" || payload.kind === "config-patch") {
+    return;
+  }
+
   const sessionKey = payload.sessionKey?.trim();
   const message = formatRestartSentinelMessage(payload);
   const summary = summarizeRestartSentinel(payload);

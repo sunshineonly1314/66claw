@@ -68,9 +68,17 @@ export async function handleSetupWizardHttpRequest(
 
     // 设置 CORS 头 - 限制为本地来源以避免安全风险
     const origin = req.headers.origin;
-    const allowedOrigins = ["http://localhost", "http://127.0.0.1"];
-    if (origin && allowedOrigins.some((allowed) => origin.startsWith(allowed))) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
+    if (origin) {
+      try {
+        const parsed = new URL(origin);
+        const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+        const isTauri = origin === "tauri://localhost";
+        if (isLocal || isTauri) {
+          res.setHeader("Access-Control-Allow-Origin", origin);
+        }
+      } catch {
+        // invalid origin, skip CORS header
+      }
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");

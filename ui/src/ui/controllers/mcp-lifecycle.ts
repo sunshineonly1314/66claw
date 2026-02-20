@@ -175,6 +175,9 @@ export async function initMcpCapabilities(
           id: string;
           status: McpCapabilityStatus;
           isNew?: boolean;
+          friendlyName?: string;
+          toolCount?: number;
+          configNeeded?: string;
         }>;
         processes?: McpProcessInfo[];
       };
@@ -207,19 +210,40 @@ export async function initMcpCapabilities(
 
 function mergeCapabilities(
   defaults: McpCapability[],
-  live: Array<{ id: string; status: McpCapabilityStatus; isNew?: boolean }>,
+  live: Array<{ id: string; status: McpCapabilityStatus; isNew?: boolean; friendlyName?: string; toolCount?: number; configNeeded?: string }>,
 ): McpCapability[] {
   const liveMap = new Map(live.map((c) => [c.id, c]));
+  const builtinIds = new Set(defaults.map((d) => d.id));
 
-  return defaults.map((def) => {
+  // 1. Update built-in capabilities with live status
+  const merged: McpCapability[] = defaults.map((def) => {
     const override = liveMap.get(def.id);
-    if (!override) return def;
+    if (!override) return { ...def, isBuiltin: true };
     return {
       ...def,
       status: override.status,
       isNew: override.isNew ?? def.isNew,
+      isBuiltin: true,
+      configNeeded: override.configNeeded ?? def.configNeeded,
     };
   });
+
+  // 2. Append user-installed MCP servers not in the built-in list
+  for (const entry of live) {
+    if (builtinIds.has(entry.id)) continue;
+    merged.push({
+      id: entry.id,
+      friendlyName: entry.friendlyName || entry.id,
+      status: entry.status,
+      description: [],
+      examplePrompt: "",
+      isNew: entry.isNew ?? true,
+      isBuiltin: false,
+      configNeeded: entry.configNeeded,
+    });
+  }
+
+  return merged;
 }
 
 // ============================================================================
@@ -234,14 +258,10 @@ export async function restartMcpServer(
   serverId: string,
   callbacks: McpLifecycleCallbacks,
 ): Promise<void> {
-  if (!client) return;
-  try {
-    await client.request("mcp.restart", { id: serverId });
-    // Re-fetch status after restart
-    await initMcpCapabilities(client, callbacks);
-  } catch (err) {
-    console.error("[mcp-lifecycle] restart failed:", serverId, err);
-  }
+  if (!client) throw new Error("No gateway connection");
+  await client.request("mcp.restart", { id: serverId });
+  // Re-fetch status after restart
+  await initMcpCapabilities(client, callbacks);
 }
 
 /**
@@ -345,12 +365,13 @@ export type MarketplaceCallbacks = {
 };
 
 /**
- * Fetch the marketplace item list from Gateway.
+ * Fetch the marketplace item list from Gateway (page 1).
  * Falls back gracefully if RPC is not yet implemented.
  */
 export async function loadMarketplaceItems(
   client: GatewayClient | null,
   callbacks: MarketplaceCallbacks,
+  options?: { search?: string; category?: string; pageSize?: number },
 ): Promise<void> {
   if (!client) {
     callbacks.onStateChange({ loading: false, error: "No gateway connection" });
@@ -360,21 +381,85 @@ export async function loadMarketplaceItems(
   callbacks.onStateChange({ loading: true, error: null });
 
   try {
-    const response = await client.request("mcp.marketplace.list");
+    const pageSize = options?.pageSize ?? 50;
+    const response = await client.request("mcp.marketplace.list", {
+      page: 1,
+      pageSize,
+      ...(options?.search ? { search: options.search } : {}),
+      ...(options?.category && options.category !== "all" ? { category: options.category } : {}),
+    });
 
     if (response && typeof response === "object") {
-      const data = response as { items?: McpMarketplaceItem[] };
+      const data = response as {
+        items?: McpMarketplaceItem[];
+        total?: number;
+        page?: number;
+        pageSize?: number;
+        totalPages?: number;
+      };
       callbacks.onStateChange({
         items: data.items ?? [],
         loading: false,
         error: null,
+        total: data.total ?? 0,
+        page: data.page ?? 1,
+        pageSize: data.pageSize ?? pageSize,
+        totalPages: data.totalPages ?? 0,
+        loadingMore: false,
       });
     } else {
-      callbacks.onStateChange({ items: [], loading: false });
+      callbacks.onStateChange({ items: [], loading: false, total: 0, page: 1, totalPages: 0 });
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    callbacks.onStateChange({ items: [], loading: false, error: msg });
+    callbacks.onStateChange({ items: [], loading: false, error: msg, total: 0, page: 1, totalPages: 0 });
+  }
+}
+
+/**
+ * Load the next page of marketplace items (append to existing).
+ * Used for infinite scroll / "Load More" button.
+ */
+export async function loadMoreMarketplaceItems(
+  client: GatewayClient | null,
+  callbacks: MarketplaceCallbacks & { currentState: () => McpMarketplaceState },
+): Promise<void> {
+  if (!client) return;
+
+  const state = callbacks.currentState();
+  if (state.loadingMore || state.page >= state.totalPages) return;
+
+  const nextPage = state.page + 1;
+  callbacks.onStateChange({ loadingMore: true });
+
+  try {
+    const response = await client.request("mcp.marketplace.list", {
+      page: nextPage,
+      pageSize: state.pageSize,
+      ...(state.search ? { search: state.search } : {}),
+      ...(state.activeCategory && state.activeCategory !== "all" ? { category: state.activeCategory } : {}),
+    });
+
+    if (response && typeof response === "object") {
+      const data = response as {
+        items?: McpMarketplaceItem[];
+        total?: number;
+        page?: number;
+        totalPages?: number;
+      };
+      const newItems = data.items ?? [];
+      callbacks.onStateChange({
+        items: [...state.items, ...newItems],
+        page: data.page ?? nextPage,
+        total: data.total ?? state.total,
+        totalPages: data.totalPages ?? state.totalPages,
+        loadingMore: false,
+      });
+    } else {
+      callbacks.onStateChange({ loadingMore: false });
+    }
+  } catch {
+    callbacks.onStateChange({ loadingMore: false });
   }
 }
 
@@ -403,13 +488,19 @@ export async function loadMarketplaceRecommendations(
  * Install a marketplace item via Gateway RPC.
  * Updates the item's installStatus optimistically, then calls the RPC.
  */
+export type InstallResult = {
+  ok: boolean;
+  connected?: boolean;
+  connectError?: string;
+};
+
 export async function installMarketplaceItem(
   client: GatewayClient | null,
   item: McpMarketplaceItem,
   env: Record<string, string> | undefined,
   callbacks: MarketplaceCallbacks & { currentItems: McpMarketplaceItem[] | (() => McpMarketplaceItem[]) },
-): Promise<void> {
-  if (!client) return;
+): Promise<InstallResult | undefined> {
+  if (!client) return undefined;
 
   const getItems = typeof callbacks.currentItems === "function" ? callbacks.currentItems : () => callbacks.currentItems as McpMarketplaceItem[];
 
@@ -422,10 +513,10 @@ export async function installMarketplaceItem(
   callbacks.onStateChange({ items: optimisticItems });
 
   try {
-    await client.request("mcp.marketplace.install", {
+    const result = await client.request("mcp.marketplace.install", {
       serverId: item.serverId,
       ...(env ? { env } : {}),
-    });
+    }) as InstallResult | null;
 
     // Success: mark installed (re-read to avoid overwriting concurrent changes)
     const successItems = getItems().map((i) =>
@@ -434,6 +525,12 @@ export async function installMarketplaceItem(
         : i,
     );
     callbacks.onStateChange({ items: successItems });
+
+    return {
+      ok: true,
+      connected: result?.connected,
+      connectError: result?.connectError,
+    };
   } catch (err) {
     console.error("[mcp-lifecycle] marketplace install failed:", item.serverId, err);
 
@@ -444,6 +541,7 @@ export async function installMarketplaceItem(
         : i,
     );
     callbacks.onStateChange({ items: errorItems });
+    return { ok: false, connectError: err instanceof Error ? err.message : String(err) };
   }
 }
 

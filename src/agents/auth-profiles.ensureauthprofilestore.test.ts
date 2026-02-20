@@ -7,8 +7,20 @@ import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
 
 describe("ensureAuthProfileStore", () => {
   it("migrates legacy auth.json and deletes it (PR #368)", () => {
-    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclawcn-auth-profiles-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclawcn-auth-profiles-"));
+    const previousAgentDir = process.env.OPENCLAWCN_AGENT_DIR;
+    const previousPiAgentDir = process.env.PI_CODING_AGENT_DIR;
     try {
+      // Isolate from real main agent store so the inherit-from-main path
+      // does not short-circuit legacy migration.
+      const emptyMainDir = path.join(root, "empty-main");
+      const agentDir = path.join(root, "agent");
+      fs.mkdirSync(emptyMainDir, { recursive: true });
+      fs.mkdirSync(agentDir, { recursive: true });
+
+      process.env.OPENCLAWCN_AGENT_DIR = emptyMainDir;
+      process.env.PI_CODING_AGENT_DIR = emptyMainDir;
+
       const legacyPath = path.join(agentDir, "auth.json");
       fs.writeFileSync(
         legacyPath,
@@ -43,7 +55,17 @@ describe("ensureAuthProfileStore", () => {
       expect(store2.profiles["anthropic:default"]).toBeDefined();
       expect(fs.existsSync(legacyPath)).toBe(false);
     } finally {
-      fs.rmSync(agentDir, { recursive: true, force: true });
+      if (previousAgentDir === undefined) {
+        delete process.env.OPENCLAWCN_AGENT_DIR;
+      } else {
+        process.env.OPENCLAWCN_AGENT_DIR = previousAgentDir;
+      }
+      if (previousPiAgentDir === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
+      }
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 

@@ -260,7 +260,7 @@ describe("canvas host", () => {
     try {
       await fs.stat(bundlePath);
     } catch {
-      await fs.writeFile(bundlePath, "window.openclawcnA2UI = {};", "utf8");
+      await fs.writeFile(bundlePath, "globalThis.clawdbotA2UI = {};", "utf8");
       createdBundle = true;
     }
 
@@ -287,7 +287,7 @@ describe("canvas host", () => {
       );
       const js = await bundleRes.text();
       expect(bundleRes.status).toBe(200);
-      expect(js).toContain("openclawcnA2UI");
+      expect(js).toContain("clawdbotA2UI");
       const traversalRes = await fetch(
         `http://127.0.0.1:${server.port}${A2UI_PATH}/%2e%2e%2fpackage.json`,
       );

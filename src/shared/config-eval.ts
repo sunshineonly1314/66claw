@@ -56,10 +56,32 @@ let cachedHasBinaryPath: string | undefined;
 let cachedHasBinaryPathExt: string | undefined;
 const hasBinaryCache = new Map<string, boolean>();
 
+/** Extra directories to scan for binaries (e.g. CONFIG_DIR/tools/* subdirs). */
+let extraBinaryDirs: string[] | undefined;
+
+/**
+ * Register the managed tools root directory so `hasBinary` can find
+ * binaries installed via `kind: "download"` to `CONFIG_DIR/tools/{name}/`.
+ */
+export function registerToolsRoot(toolsRoot: string): void {
+  try {
+    const entries = fs.readdirSync(toolsRoot, { withFileTypes: true });
+    extraBinaryDirs = entries
+      .filter((e) => e.isDirectory())
+      .map((e) => path.join(toolsRoot, e.name));
+  } catch {
+    extraBinaryDirs = [];
+  }
+  // Invalidate cache so next hasBinary call re-scans with the new dirs.
+  hasBinaryCache.clear();
+  cachedHasBinaryPath = undefined;
+}
+
 export function clearBinaryCache(): void {
   hasBinaryCache.clear();
   cachedHasBinaryPath = undefined;
   cachedHasBinaryPathExt = undefined;
+  extraBinaryDirs = undefined;
 }
 
 export function hasBinary(bin: string): boolean {
@@ -75,6 +97,14 @@ export function hasBinary(bin: string): boolean {
   }
 
   const parts = pathEnv.split(path.delimiter).filter(Boolean);
+  // Also scan CONFIG_DIR/tools/* subdirectories where download installs live.
+  if (extraBinaryDirs && extraBinaryDirs.length > 0) {
+    for (const dir of extraBinaryDirs) {
+      if (!parts.includes(dir)) {
+        parts.push(dir);
+      }
+    }
+  }
   const extensions = process.platform === "win32" ? windowsPathExtensions() : [""];
   for (const part of parts) {
     for (const ext of extensions) {

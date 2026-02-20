@@ -104,8 +104,7 @@ export function renderTelegramCard(params: {
                 ${telegramAccounts.map((account) => renderAccountCard(account))}
               </div>
             `
-          : (telegram?.configured || telegram?.running)
-            ? html`
+          : html`
               <div class="status-list">
                 <div>
                   <span class="label">${t("channels.configured")}</span>
@@ -115,21 +114,31 @@ export function renderTelegramCard(params: {
                   <span class="label">${t("common.running")}</span>
                   <span>${telegram?.running ? t("common.yes") : t("common.no")}</span>
                 </div>
-                <div>
-                  <span class="label">${t("channels.telegram.mode")}</span>
-                  <span>${telegram?.mode ?? t("common.na")}</span>
-                </div>
-                <div>
-                  <span class="label">${t("channels.lastStart")}</span>
-                  <span>${telegram?.lastStartAt ? formatAgo(telegram.lastStartAt) : t("common.na")}</span>
-                </div>
-                <div>
-                  <span class="label">${t("channels.lastProbe")}</span>
-                  <span>${telegram?.lastProbeAt ? formatAgo(telegram.lastProbeAt) : t("common.na")}</span>
-                </div>
+                ${(telegram?.configured || telegram?.running)
+                  ? html`
+                    <div>
+                      <span class="label">${t("channels.telegram.mode")}</span>
+                      <span>${telegram?.mode ?? t("common.na")}</span>
+                    </div>
+                    <div>
+                      <span class="label">${t("channels.lastStart")}</span>
+                      <span>${telegram?.lastStartAt ? formatAgo(telegram.lastStartAt) : t("common.na")}</span>
+                    </div>
+                    <div>
+                      <span class="label">${t("channels.lastProbe")}</span>
+                      <span>${telegram?.lastProbeAt ? formatAgo(telegram.lastProbeAt) : t("common.na")}</span>
+                    </div>
+                  `
+                  : nothing}
               </div>
-            `
-            : nothing}
+            `}
+
+        ${!(hasMultipleAccounts || telegram?.configured || telegram?.running) ? html`
+          <div class="connection-hint">
+            <div class="connection-hint__title">💡 配置指引</div>
+            <div class="connection-hint__desc">在下方配置表单中填写 Telegram Bot Token 即可启用。需要先通过 @BotFather 创建 Bot。</div>
+          </div>
+        ` : nothing}
 
         ${telegram?.lastError
           ? html`<div class="${errorCalloutClass(telegram.lastError)}" style="margin-top: 12px;">

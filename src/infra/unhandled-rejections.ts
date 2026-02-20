@@ -81,6 +81,41 @@ function isConfigError(err: unknown): boolean {
 }
 
 /**
+ * Checks if an error is an API response error (401/403/429/5xx etc.) that
+ * should NOT crash the gateway.  These indicate provider-side problems (bad key,
+ * quota exceeded, model restricted) – the user should see an error message, but
+ * the gateway must keep running for other users / other providers.
+ */
+export function isApiResponseError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+
+  // Most SDK errors carry a numeric `status` property
+  const status = (err as { status?: unknown }).status;
+  if (typeof status === "number" && status >= 400) return true;
+
+  // Or a `statusCode` property
+  const statusCode = (err as { statusCode?: unknown }).statusCode;
+  if (typeof statusCode === "number" && statusCode >= 400) return true;
+
+  // Match common API error messages (English & Chinese)
+  const msg = (err as { message?: string }).message ?? "";
+  if (
+    /\b(401|402|403|429)\b/.test(msg) ||
+    /unauthorized|forbidden|rate.?limit|quota|too many requests|权限|鉴权|认证失败|限流/i.test(msg) ||
+    /no api key found|no credentials found|api key not configured|missing.api.key|apikey.*not/i.test(msg) ||
+    /Embedding API error/i.test(msg)
+  ) {
+    return true;
+  }
+
+  // Check cause chain
+  const cause = getErrorCause(err);
+  if (cause && cause !== err) return isApiResponseError(cause);
+
+  return false;
+}
+
+/**
  * Checks if an error is a transient network error that shouldn't crash the gateway.
  * These are typically temporary connectivity issues that will resolve on their own.
  */
@@ -168,6 +203,16 @@ export function installUnhandledRejectionHandler(): void {
     if (isTransientNetworkError(reason)) {
       console.warn(
         "[openclawcn] Non-fatal unhandled rejection (continuing):",
+        formatUncaughtError(reason),
+      );
+      return;
+    }
+
+    // API response errors (401/403/429/5xx) should never crash the gateway –
+    // log prominently but keep the process alive for other users / providers.
+    if (isApiResponseError(reason)) {
+      console.error(
+        "[openclawcn] API error (non-fatal, gateway continues):",
         formatUncaughtError(reason),
       );
       return;

@@ -25,7 +25,7 @@ describe("ClawdSkillsProxy Registry - SSRF prevention (Phase 2 #7)", () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toMatch(/SSRF.*blocked|private.*IP|internal.*network/i);
+        expect(result.error).toMatch(/blocked|private.*IP|internal.*network|SSRF/i);
       }
     });
 

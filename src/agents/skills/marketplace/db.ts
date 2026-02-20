@@ -15,6 +15,8 @@ import type {
   QcSkillsIndex,
 } from "./types.js";
 
+export type { SkillSearchOptions } from "./types.js";
+
 // ========== 配置 ==========
 
 const DEFAULT_DB_DIR = (() => {
@@ -204,11 +206,30 @@ export function insertItem(item: SkillMarketplaceItem): void {
 
 /**
  * 批量插入 skills（事务 + 复用 prepared statement）
+ *
+ * 关键修复：INSERT OR REPLACE 会覆盖 installed 状态，
+ * 所以在 upsert 时保留数据库中已有的 installed=1 状态。
+ * 只有当调用方显式传入 installed=true 时才设置 installed=1。
  */
 export function insertItems(items: SkillMarketplaceItem[]): void {
   if (items.length === 0) return;
 
   const db = getDatabase();
+
+  // 先查询已有的 installed 状态，以便在 INSERT OR REPLACE 时保留
+  const existingInstalled = new Set<string>();
+  const BATCH = 500;
+  const allIds = items.map((i) => i.skillId);
+  for (let i = 0; i < allIds.length; i += BATCH) {
+    const batch = allIds.slice(i, i + BATCH);
+    const placeholders = batch.map(() => "?").join(",");
+    const rows = db
+      .prepare(`SELECT skill_id FROM skills WHERE skill_id IN (${placeholders}) AND installed = 1`)
+      .all(...batch) as Array<{ skill_id: string }>;
+    for (const row of rows) {
+      existingInstalled.add(row.skill_id);
+    }
+  }
 
   const sampleRow = itemToRow(items[0]);
   const columns = Object.keys(sampleRow).join(", ");
@@ -221,7 +242,12 @@ export function insertItems(items: SkillMarketplaceItem[]): void {
   db.exec("BEGIN TRANSACTION");
   try {
     for (const item of items) {
-      const row = itemToRow(item);
+      // 保留已有的 installed 状态
+      const preserveInstalled = existingInstalled.has(item.skillId);
+      const effectiveItem = preserveInstalled && !item.installed
+        ? { ...item, installed: true }
+        : item;
+      const row = itemToRow(effectiveItem);
       stmt.run(...Object.values(row));
     }
     db.exec("COMMIT");
@@ -293,6 +319,7 @@ export function searchItems(options: SkillSearchOptions = {}): SkillSearchResult
     tier,
     cnBlocked,
     installed,
+    source,
     orderBy = "updated_at",
     orderDirection = "DESC",
     page = 1,
@@ -360,6 +387,12 @@ export function searchItems(options: SkillSearchOptions = {}): SkillSearchResult
     params.push(installed ? 1 : 0);
   }
 
+  // 数据来源过滤（proxy = 远端可下载, qc = 仅评测数据）
+  if (source) {
+    conditions.push("source = ?");
+    params.push(source);
+  }
+
   // WHERE 子句
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -386,6 +419,69 @@ export function searchItems(options: SkillSearchOptions = {}): SkillSearchResult
     page: validPage,
     pageSize: validPageSize,
     totalPages: Math.ceil(total / validPageSize),
+  };
+}
+
+/**
+ * 按指定 ID 列表批量查询 skills，保持传入顺序。
+ *
+ * 用于 hybridSearch 路径：dispatch 侧返回排好序的 skillId[]，
+ * 此函数按该顺序返回完整 SkillMarketplaceItem[]。
+ *
+ * @param skillIds 按优先级排列的 skillId 列表
+ * @param options  分页参数（对已排序的结果列表切片）
+ */
+export function getItemsByIds(
+  skillIds: string[],
+  options?: { page?: number; pageSize?: number },
+): SkillSearchResult {
+  if (skillIds.length === 0) {
+    return { items: [], total: 0, page: 1, pageSize: 20, totalPages: 0 };
+  }
+
+  const db = getDatabase();
+  const page = Math.max(1, options?.page ?? 1);
+  // 上限放宽到 1000：此函数由 gateway handler 调用，
+  // 调用方已通过 searchToolIndex 的 maxResults 控制总量（通常 200），
+  // 不应在此二次截断导致排名靠后的结果被静默丢弃
+  const pageSize = Math.max(1, Math.min(options?.pageSize ?? 20, 1000));
+
+  // 批量查询，分批处理避免超过 SQLite SQLITE_MAX_VARIABLE_NUMBER (999)
+  const BATCH_SIZE = 500;
+  const rowMap = new Map<string, Record<string, any>>();
+  const uniqueIds = [...new Set(skillIds)];
+
+  for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+    const batch = uniqueIds.slice(i, i + BATCH_SIZE);
+    const placeholders = batch.map(() => "?").join(",");
+    const rows = db
+      .prepare(`SELECT * FROM skills WHERE skill_id IN (${placeholders})`)
+      .all(...batch) as Record<string, any>[];
+    for (const row of rows) {
+      rowMap.set(row.skill_id, row);
+    }
+  }
+
+  // 按传入 skillIds 顺序组装结果（保留重复项，跳过不存在的 ID）
+  const ordered: SkillMarketplaceItem[] = [];
+  for (const id of skillIds) {
+    const row = rowMap.get(id);
+    if (row) {
+      ordered.push(rowToItem(row));
+    }
+  }
+
+  // 分页切片
+  const total = ordered.length;
+  const offset = (page - 1) * pageSize;
+  const items = ordered.slice(offset, offset + pageSize);
+
+  return {
+    items,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
   };
 }
 
@@ -517,6 +613,23 @@ export function updateInstalledStatus(installedNames: string[]): void {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+/**
+ * 标记单个 skill 为已安装（立即生效，不做全量 reset）
+ * 安装完成后直接调用，确保 UI 下次查询就能看到 installed=1
+ */
+export function markSkillInstalled(skillId: string): void {
+  const db = getDatabase();
+  db.prepare("UPDATE skills SET installed = 1 WHERE skill_id = ?").run(skillId);
+}
+
+/**
+ * 标记单个 skill 为未安装
+ */
+export function markSkillUninstalled(skillId: string): void {
+  const db = getDatabase();
+  db.prepare("UPDATE skills SET installed = 0 WHERE skill_id = ?").run(skillId);
 }
 
 // ========== QC 数据合并 ==========
@@ -692,16 +805,55 @@ function findQcIndexPaths(packageRoot: string): string[] {
  * 这是 SQLite 的基线数据源。所有 QC accepted 的 skills 都会被导入，
  * source 标记为 "qc"。后续 proxy/remote 同步会用 INSERT OR REPLACE 叠加更新。
  *
+ * 加载顺序（后面的 INSERT OR REPLACE 会叠加覆盖前面的）：
+ *   1. data/skills-availability-dictionary.json  (2696 个，最全的可用性数据)
+ *   2. cn/skills-qc/output-all/skills-index.json (1190 个，有 QC 评分)
+ *   3. cn/skills-qc/output/skills-index.json     (27 个精选，最高优先级)
+ *
  * @param packageRoot 项目根目录
  * @returns 导入的 skill 数量
  */
 export function populateFromQcIndex(packageRoot: string): number {
-  const paths = findQcIndexPaths(packageRoot);
-  if (paths.length === 0) return 0;
-
   let totalImported = 0;
 
-  for (const indexPath of paths) {
+  // Step 1: 导入 skills-availability-dictionary (2696 个基础数据)
+  const dictPath = path.join(packageRoot, "data", "skills-availability-dictionary.json");
+  if (fs.existsSync(dictPath)) {
+    try {
+      const content = fs.readFileSync(dictPath, "utf-8");
+      const dict = JSON.parse(content) as {
+        skills?: Array<{
+          id?: string;
+          name: string;
+          description?: string;
+          category?: string;
+          availability?: {
+            china?: { status?: string };
+          };
+        }>;
+      };
+      const skills = dict.skills;
+      if (Array.isArray(skills) && skills.length > 0) {
+        const items: SkillMarketplaceItem[] = skills.map((skill) => ({
+          skillId: skill.id || skill.name,
+          name: skill.name,
+          description: skill.description || "",
+          path: skill.name,
+          category: skill.category,
+          cnBlocked: skill.availability?.china?.status === "blocked",
+          source: "availability-dict",
+        }));
+        insertItems(items);
+        totalImported += items.length;
+      }
+    } catch {
+      // 解析失败，继续执行 QC 导入
+    }
+  }
+
+  // Step 2: 导入 QC 索引 (1190 + 27 个，有评分数据，会覆盖 Step 1 的同名条目)
+  const qcPaths = findQcIndexPaths(packageRoot);
+  for (const indexPath of qcPaths) {
     const qcIndex = parseQcIndexFile(indexPath);
     if (!qcIndex || qcIndex.skills.length === 0) continue;
 

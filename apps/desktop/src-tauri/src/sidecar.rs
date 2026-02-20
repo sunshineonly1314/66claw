@@ -16,7 +16,7 @@ static SIDECAR_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 /// Generated once per app launch; passed to both sidecar and WebView.
 static GATEWAY_TOKEN: Mutex<Option<String>> = Mutex::new(None);
 
-const GATEWAY_PORT: u16 = 18789;
+const GATEWAY_PORT: u16 = 19002;
 
 fn is_dev_mode() -> bool {
     std::env::var("TAURI_DEV").is_ok() || cfg!(debug_assertions)
@@ -52,21 +52,20 @@ fn generate_token() -> String {
     format!("{:016x}{:016x}{:016x}", h1, h2, h3)
 }
 
-/// Try to kill any process occupying the gateway port.
-/// On Windows, uses `netstat` + `taskkill`. On Unix, uses `lsof` + `kill`.
+/// Try to kill any process occupying the gateway port, including its entire
+/// process tree (child node.exe workers from the previous gateway instance).
+/// On Windows, uses `netstat` + `taskkill /T /F`. On Unix, uses `lsof` + `kill`.
 /// Returns true if a process was found and killed.
 fn try_kill_port_occupant() -> bool {
     #[cfg(target_os = "windows")]
     {
-        // Use netstat to find PID occupying the port
         let output = Command::new("cmd")
             .args(["/C", &format!("netstat -ano | findstr :{} | findstr LISTENING", GATEWAY_PORT)])
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .creation_flags(0x08000000)
             .output();
 
         if let Ok(output) = output {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            // Parse PID from netstat output: "  TCP  127.0.0.1:18789  ...  LISTENING  12345"
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if let Some(pid_str) = parts.last() {
@@ -74,18 +73,19 @@ fn try_kill_port_occupant() -> bool {
                         if pid == 0 || pid == std::process::id() {
                             continue;
                         }
-                        println!("[Sidecar] Found process {} occupying port {}, killing...", pid, GATEWAY_PORT);
+                        println!("[Sidecar] Found process {} occupying port {}, killing tree...", pid, GATEWAY_PORT);
+                        // /T = kill entire process tree (parent + children)
+                        // /F = force kill
                         let kill_result = Command::new("taskkill")
-                            .args(["/F", "/PID", &pid.to_string()])
+                            .args(["/F", "/T", "/PID", &pid.to_string()])
                             .creation_flags(0x08000000)
                             .output();
                         if let Ok(r) = kill_result {
-                            if r.status.success() {
-                                println!("[Sidecar] Killed process {}", pid);
-                                // Wait for port to be released
-                                std::thread::sleep(std::time::Duration::from_millis(1000));
-                                return true;
-                            }
+                            println!("[Sidecar] taskkill /T result: {} {}",
+                                r.status,
+                                String::from_utf8_lossy(&r.stdout).trim());
+                            std::thread::sleep(std::time::Duration::from_millis(1500));
+                            return true;
                         }
                     }
                 }
@@ -95,7 +95,6 @@ fn try_kill_port_occupant() -> bool {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        // Use lsof to find PID
         let output = Command::new("lsof")
             .args(["-ti", &format!(":{}", GATEWAY_PORT)])
             .output();
@@ -108,8 +107,10 @@ fn try_kill_port_occupant() -> bool {
                         continue;
                     }
                     println!("[Sidecar] Found process {} occupying port {}, killing...", pid, GATEWAY_PORT);
+                    // Kill the process group to get children too
+                    let _ = Command::new("kill").args(["-9", &format!("-{}", pid)]).output();
                     let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
-                    std::thread::sleep(std::time::Duration::from_millis(1000));
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
                     return true;
                 }
             }
@@ -174,7 +175,14 @@ fn resolve_app_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        Ok(exe_dir.to_path_buf())
+        // Tauri NSIS bundles "resources/**/*" into <exe_dir>/resources/
+        let resources_dir = exe_dir.join("resources");
+        if resources_dir.exists() {
+            Ok(resources_dir)
+        } else {
+            // Fallback for dev mode or non-standard layout
+            Ok(exe_dir.to_path_buf())
+        }
     }
 }
 
@@ -231,8 +239,20 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         ).into());
     }
 
-    // Check port availability; auto-kill stale gateway if port is occupied.
-    ensure_port_available().map_err(|msg| -> Box<dyn std::error::Error> { msg.into() })?;
+    // In dev mode, if the port is already occupied, assume dev gateway is running
+    // externally (via dev-tauri.ps1) and skip sidecar startup to avoid conflict.
+    if is_dev_mode() {
+        if TcpListener::bind(("127.0.0.1", GATEWAY_PORT)).is_err() {
+            println!(
+                "[Sidecar] Dev mode: port {} already in use (external dev gateway). Skipping sidecar.",
+                GATEWAY_PORT
+            );
+            return Ok(());
+        }
+    } else {
+        // Check port availability; auto-kill stale gateway if port is occupied.
+        ensure_port_available().map_err(|msg| -> Box<dyn std::error::Error> { msg.into() })?;
+    }
 
     // Generate a random token for this session.
     let token = generate_token();
@@ -255,7 +275,6 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     command
         .arg(&backend_path)
         .arg("gateway")
-        .arg("run")
         .arg("--port")
         .arg(GATEWAY_PORT.to_string())
         .arg("--allow-unconfigured")
@@ -300,10 +319,25 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
 pub fn stop_sidecar() -> Result<(), Box<dyn std::error::Error>> {
     let mut process = SIDECAR_PROCESS.lock().unwrap();
     if let Some(mut child) = process.take() {
-        child.kill()?;
-        // Reap the child process to avoid zombie/handle leak.
+        let pid = child.id();
+        // On Windows, kill the entire process tree (node.exe spawns workers).
+        // child.kill() only kills the parent, leaving orphaned children.
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .creation_flags(0x08000000)
+                .output();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = Command::new("kill")
+                .args(["-9", &format!("-{}", pid)])
+                .output();
+            let _ = child.kill();
+        }
         let _ = child.wait();
-        println!("[Sidecar] Node.js sidecar stopped");
+        println!("[Sidecar] Node.js sidecar stopped (pid={}, tree killed)", pid);
     }
     Ok(())
 }
@@ -348,11 +382,25 @@ pub fn gateway_token() -> String {
     "openclawcn-desktop-local".to_string()
 }
 
-/// Try to read gateway.auth.token from the default config file.
+/// Try to read gateway.auth.token from the config file.
+/// In dev mode, also checks ~/.openclawcn-dev/ config.
 fn read_config_token() -> Option<String> {
     let home = dirs::home_dir()?;
+
+    // Try dev config first in dev mode
+    if is_dev_mode() {
+        let dev_path = home.join(".openclawcn-dev").join("openclawcn.json");
+        if let Some(token) = read_token_from_file(&dev_path) {
+            return Some(token);
+        }
+    }
+
     let config_path = home.join(".openclawcn").join("openclawcn.json");
-    let contents = std::fs::read_to_string(&config_path).ok()?;
+    read_token_from_file(&config_path)
+}
+
+fn read_token_from_file(path: &Path) -> Option<String> {
+    let contents = std::fs::read_to_string(path).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&contents).ok()?;
     parsed
         .get("gateway")?

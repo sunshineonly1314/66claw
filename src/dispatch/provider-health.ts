@@ -36,6 +36,8 @@ type ProviderHealthRecord = {
   lastSuccessAt: number;
   /** Cooldown end timestamp (provider is "down" until this time). */
   downUntil: number;
+  /** Reason for the most recent failure (billing, auth, rate_limit, etc.). */
+  lastFailureReason?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -127,6 +129,7 @@ export function recordProviderSuccess(provider: string): void {
 export function recordProviderFailure(
   provider: string,
   error?: string,
+  reason?: string,
 ): void {
   const now = Date.now();
   let record = healthMap.get(provider);
@@ -143,6 +146,9 @@ export function recordProviderFailure(
 
   record.failureCount += 1;
   record.lastFailureAt = now;
+  if (reason) {
+    record.lastFailureReason = reason;
+  }
 
   // Calculate cooldown with exponential backoff
   if (record.failureCount >= DOWN_THRESHOLD) {
@@ -172,6 +178,7 @@ export function getHealthSnapshot(): Record<string, {
   lastFailureAt: number;
   lastSuccessAt: number;
   downUntil: number;
+  lastFailureReason?: string;
 }> {
   const snapshot: Record<string, {
     status: ProviderHealthStatus;
@@ -179,6 +186,7 @@ export function getHealthSnapshot(): Record<string, {
     lastFailureAt: number;
     lastSuccessAt: number;
     downUntil: number;
+    lastFailureReason?: string;
   }> = {};
 
   for (const [provider, record] of healthMap) {
@@ -188,6 +196,7 @@ export function getHealthSnapshot(): Record<string, {
       lastFailureAt: record.lastFailureAt,
       lastSuccessAt: record.lastSuccessAt,
       downUntil: record.downUntil,
+      lastFailureReason: record.lastFailureReason,
     };
   }
 

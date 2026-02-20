@@ -279,7 +279,7 @@ export function renderAgentSkills(params: {
   const filter = params.filter.trim().toLowerCase();
   const filtered = filter
     ? rawSkills.filter((skill) =>
-        [skill.name, skill.description, skill.source].join(" ").toLowerCase().includes(filter),
+        [skill.name, skill.nameZh, skill.description, skill.descriptionZh, skill.source].filter(Boolean).join(" ").toLowerCase().includes(filter),
       )
     : rawSkills;
   const groups = groupSkills(filtered);
@@ -447,8 +447,8 @@ function renderAgentSkillRow(
   return html`
     <div class="list-item agent-skill-row">
       <div class="list-main">
-        <div class="list-title">${skill.emoji ? `${skill.emoji} ` : ""}${skill.name}</div>
-        <div class="list-sub">${skill.description}</div>
+        <div class="list-title">${skill.emoji ? `${skill.emoji} ` : ""}${skill.nameZh || skill.name}</div>
+        <div class="list-sub">${skill.descriptionZh || skill.description}</div>
         ${renderSkillStatusChips({ skill })}
         ${
           missing.length > 0

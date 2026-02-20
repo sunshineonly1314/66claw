@@ -94,7 +94,7 @@ const SKILL_FRIENDLY_NAMES: Record<string, string> = {
   "china-market-gateway": "中国市场数据", "ai-ppt-generate": "AI PPT 生成",
   "local-rag-search": "本地 RAG 搜索",
   packaging: "打包工具", "build-packaging": "构建打包",
-  "skills-troubleshoot": "技能诊断", "software-protection": "软件保护",
+  "skills-troubleshoot": "技能诊断", "self-troubleshoot": "自我排障", "software-protection": "软件保护",
 };
 
 const STATUS_STYLES: Record<string, { color: string; icon: string; border: string }> = {

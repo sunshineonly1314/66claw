@@ -20,6 +20,8 @@ import type { OpenClawCNConfig } from "../../config/types.js";
 import { CN_PROVIDERS } from "../../config/region-cn.js";
 import type { ModelDefinitionConfig } from "../../config/types.models.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { resolveStorePath } from "../../config/sessions/paths.js";
+import { updateSessionStore } from "../../config/sessions/store.js";
 
 const log = createSubsystemLogger("gateway/model-config");
 
@@ -29,6 +31,7 @@ const log = createSubsystemLogger("gateway/model-config");
 interface CapabilityModelConfig {
   providerId: string;
   modelId: string;
+  auto?: boolean;
 }
 
 /**
@@ -262,10 +265,50 @@ export async function switchCapabilityModel(params: {
     };
   }
 
-  // 更新配置
-  const capabilityConfig = await getModelCapabilityConfig();
-  capabilityConfig.capabilities[capability] = { providerId, modelId };
-  await saveModelCapabilityConfig(capabilityConfig);
+  // agentOnly 模型不能用于普通 chat（会 403）
+  if (capability === "text" && targetModel.model.agentOnly) {
+    return {
+      success: false,
+      error: `${targetModel.model.modelName} 是代码代理专用模型，不支持普通聊天`,
+    };
+  }
+
+  // 更新配置（使用写锁保证原子性）
+  const prev = _modelConfigWriteLock;
+  let release: () => void;
+  _modelConfigWriteLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await prev;
+    const config = structuredClone(await loadConfig());
+    const configWithCap = config as { modelCapability?: ModelCapabilityConfig };
+    if (!configWithCap.modelCapability) configWithCap.modelCapability = { capabilities: {} };
+    // 用户主动选择：标记 auto: false，防止后续优先级同步覆盖
+    configWithCap.modelCapability.capabilities[capability] = { providerId, modelId, auto: false };
+
+    // 如果是 text 能力，同步更新 agents.defaults.model.primary
+    if (capability === "text") {
+      if (!config.agents) config.agents = {};
+      if (!config.agents.defaults) config.agents.defaults = {};
+      const modelField = config.agents.defaults.model;
+      const newPrimary = `${providerId}/${modelId}`;
+      if (typeof modelField === "object" && modelField !== null) {
+        modelField.primary = newPrimary;
+      } else {
+        config.agents.defaults.model = { primary: newPrimary };
+      }
+    }
+
+    await writeConfigFile(config);
+  } finally {
+    release!();
+  }
+
+  // 切换 text 能力时，更新所有 session 的模型覆盖，使当前会话立即生效
+  if (capability === "text") {
+    await updateSessionModelOverrides(providerId, modelId);
+  }
 
   // ===== OpenClawCN: 切换模型后预热连接（消除首次请求冷启动延迟） =====
   prewarmProviderConnection(providerId);
@@ -580,6 +623,7 @@ export async function detectProviderModels(params: { providerId: string; apiKey:
         configWithCapability.modelCapability.capabilities[cap] = {
           providerId,
           modelId: modelId as string,
+          auto: true, // 自动分配，后续优先级同步可覆盖
         };
       }
     }
@@ -750,6 +794,11 @@ export async function deleteProviderConfig(params: { providerId: string }) {
           delete configWithCapability.modelCapability.capabilities[cap as Capability];
         }
       }
+    }
+
+    // 3. 如果有 providerPriority，重新按优先级分配被清除的能力
+    if (config.providerPriority?.length) {
+      syncModelSelectionsFromPriority(config, config.providerPriority);
     }
 
     await writeConfigFile(config);
@@ -968,6 +1017,40 @@ async function testProviderConnection(params: { providerId: string }): Promise<{
     return { success: true, status: "normal", message: "认证方式特殊，跳过验证" };
   }
 
+  // 蚂蚁百灵 / 美团 LongCat: 不支持 GET /models，用最小 chat completions 验证
+  const chatOnlyProviders: Record<string, { model: string }> = {
+    "ant-ling": { model: "ling-1t" },
+    "meituan-longcat": { model: "longcat-flash-chat" },
+  };
+  if (chatOnlyProviders[providerId]) {
+    try {
+      const resp = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: chatOnlyProviders[providerId].model,
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 1,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (resp.ok) {
+        return { success: true, status: "normal", message: "连接正常" };
+      }
+      const errText = await resp.text().catch(() => "");
+      if (resp.status === 401 || resp.status === 403) {
+        return { success: false, status: "auth_invalid", message: "API Key 无效" };
+      }
+      return { success: false, status: "down", message: `验证失败 (HTTP ${resp.status}): ${errText.substring(0, 200)}` };
+    } catch (err) {
+      return {
+        success: false,
+        status: "down",
+        message: `连接失败: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
   // 使用 GET /models 端点（零消耗验证）
   let testUrl: string;
   let testHeaders: Record<string, string>;
@@ -1086,6 +1169,126 @@ function prewarmProviderConnection(providerId: string): void {
 // ===== END =====
 
 /**
+ * 根据 providerPriority 顺序，自动同步 modelCapability 和 agents.defaults.model.primary。
+ *
+ * 规则：
+ * - 对每个能力，遍历 priority 找到第一个已配置且有该能力模型的 provider
+ * - 如果该能力当前绑定标记了 auto === false（用户手动选择），跳过不覆盖
+ * - 如果是 text 能力，同步设置 agents.defaults.model.primary
+ *
+ * 注意: 此函数直接修改传入的 config 对象（caller 负责 structuredClone + writeConfigFile）。
+ */
+function syncModelSelectionsFromPriority(
+  config: OpenClawCNConfig,
+  priority: string[],
+): void {
+  const ALL_CAPABILITIES: Capability[] = [
+    "text",
+    "image-understanding",
+    "image-generation",
+    "video",
+    "embedding",
+  ];
+
+  const configWithCap = config as { modelCapability?: ModelCapabilityConfig };
+  if (!configWithCap.modelCapability) {
+    configWithCap.modelCapability = { capabilities: {} };
+  }
+  const caps = configWithCap.modelCapability.capabilities;
+
+  // 收集已配置（有 apiKey）的 provider 集合
+  const configuredProviders = new Set<string>();
+  if (config.models?.providers) {
+    for (const [pid, pCfg] of Object.entries(config.models.providers)) {
+      if (pCfg.apiKey) configuredProviders.add(pid);
+    }
+  }
+
+  for (const capability of ALL_CAPABILITIES) {
+    const existing = caps[capability];
+
+    // 只有用户明确手动选择（auto === false）的才不覆盖
+    // 旧数据无 auto 字段（undefined）视为可覆盖，否则旧配置永远不会被联动
+    if (existing && existing.auto === false) {
+      // 但要检查该 provider 是否还存在，不存在则清除
+      if (!configuredProviders.has(existing.providerId)) {
+        log.debug(`syncPriority: ${capability} 绑定的 ${existing.providerId} 已不存在，清除`);
+        delete caps[capability];
+        // 继续往下走自动分配逻辑
+      } else {
+        continue; // 手动选择且 provider 仍存在，保留
+      }
+    }
+
+    // 按 priority 顺序找第一个已配置且有该能力模型的 provider
+    const models = getModelsByCapability(capability);
+    let assigned = false;
+    for (const providerId of priority) {
+      if (!configuredProviders.has(providerId)) continue;
+
+      const match = models.find((m) => m.providerId === providerId && !m.model.agentOnly);
+      if (match) {
+        caps[capability] = {
+          providerId,
+          modelId: match.model.modelId,
+          auto: true,
+        };
+        log.debug(
+          `syncPriority: ${capability} → ${providerId}/${match.model.modelId} (auto)`,
+        );
+        assigned = true;
+        break;
+      }
+    }
+
+    if (!assigned && existing) {
+      // priority 中没有任何 provider 能提供该能力 — 清除旧的 auto 绑定
+      delete caps[capability];
+    }
+  }
+
+  // 同步 text 能力到 agents.defaults.model.primary
+  const textBinding = caps["text"];
+  if (textBinding) {
+    if (!config.agents) config.agents = {};
+    if (!config.agents.defaults) config.agents.defaults = {};
+    const modelField = config.agents.defaults.model;
+    const newPrimary = `${textBinding.providerId}/${textBinding.modelId}`;
+    if (typeof modelField === "object" && modelField !== null) {
+      modelField.primary = newPrimary;
+    } else {
+      config.agents.defaults.model = { primary: newPrimary };
+    }
+    log.debug(`syncPriority: agents.defaults.model.primary → ${newPrimary}`);
+  }
+}
+
+/**
+ * 将所有 session 的 modelOverride / providerOverride 更新为新模型。
+ *
+ * 当全局模型配置变更（拖拽优先级 / 手动切换能力模型）时调用，
+ * 使得当前会话下一条消息立即使用新模型，无需用户手动 /new。
+ */
+async function updateSessionModelOverrides(providerId: string, modelId: string): Promise<void> {
+  try {
+    const storePath = resolveStorePath();
+    await updateSessionStore(storePath, (store) => {
+      for (const entry of Object.values(store)) {
+        if (entry.providerOverride !== providerId || entry.modelOverride !== modelId) {
+          entry.providerOverride = providerId;
+          entry.modelOverride = modelId;
+          entry.updatedAt = Date.now();
+        }
+      }
+    });
+    log.debug(`updateSessionModelOverrides: all sessions → ${providerId}/${modelId}`);
+  } catch (err) {
+    // 非关键操作，不影响主流程
+    log.debug(`updateSessionModelOverrides: failed (non-fatal): ${err}`);
+  }
+}
+
+/**
  * 保存 Provider 优先级排序
  */
 async function saveProviderPriority(params: { priority: string[] }): Promise<{ success: boolean }> {
@@ -1107,7 +1310,23 @@ async function saveProviderPriority(params: { priority: string[] }): Promise<{ s
     await prev;
     const config = structuredClone(await loadConfig());
     config.providerPriority = priority;
+    // 拖拽优先级 = 用户要求重新自动分配，清除所有手动选择标记
+    const capsObj = (config as { modelCapability?: ModelCapabilityConfig }).modelCapability?.capabilities;
+    if (capsObj) {
+      for (const cap of Object.values(capsObj)) {
+        if (cap && cap.auto === false) cap.auto = true;
+      }
+    }
+    // 同步 modelCapability 和 agents.defaults.model.primary
+    syncModelSelectionsFromPriority(config, priority);
     await writeConfigFile(config);
+
+    // 读取同步后的 text 能力绑定，更新所有 session 的模型覆盖
+    const configWithCap = config as { modelCapability?: ModelCapabilityConfig };
+    const textBinding = configWithCap.modelCapability?.capabilities?.["text"];
+    if (textBinding) {
+      await updateSessionModelOverrides(textBinding.providerId, textBinding.modelId);
+    }
   } finally {
     release!();
   }

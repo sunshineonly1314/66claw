@@ -17,7 +17,8 @@ describe("cloud-index-source", () => {
   const ORIGINAL_ENV = { ...process.env };
 
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mocks.fetch);
     process.env.OPENCLAWCN_MCP_INDEX_URL = "https://cdn.example.com/mcp-index.json";
   });
 

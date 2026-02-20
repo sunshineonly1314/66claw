@@ -44,7 +44,7 @@ export async function fetchFromCloudIndex(): Promise<McpMarketplaceItem[]> {
 
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await globalThis.fetch(url, {
         signal: controller.signal,
         headers: {
           Accept: "application/json",

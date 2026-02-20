@@ -26,6 +26,8 @@ describe("config view", () => {
     searchQuery: "",
     activeSection: null,
     activeSubsection: null,
+    configFilePath: null,
+    onRevealConfigFile: null,
     onRawChange: vi.fn(),
     onFormModeChange: vi.fn(),
     onFormPatch: vi.fn(),

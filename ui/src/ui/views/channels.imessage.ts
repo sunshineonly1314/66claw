@@ -60,28 +60,33 @@ export function renderIMessageCard(params: {
         <div class="channel-card__desc">${t("channel.imessageDesc")}</div>
         ${accountCountLabel}
 
-        ${(imessage?.configured || imessage?.running)
-          ? html`
-            <div class="status-list">
-              <div>
-                <span class="label">${t("channel.configured")}</span>
-                <span>${imessage?.configured ? t("channel.yes") : t("channel.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channel.running")}</span>
-                <span>${imessage?.running ? t("channel.yes") : t("channel.no")}</span>
-              </div>
-              <div>
-                <span class="label">${t("channel.lastStart")}</span>
-                <span>${imessage?.lastStartAt ? formatAgo(imessage.lastStartAt) : "n/a"}</span>
-              </div>
-              <div>
-                <span class="label">${t("channel.lastProbe")}</span>
-                <span>${imessage?.lastProbeAt ? formatAgo(imessage.lastProbeAt) : "n/a"}</span>
-              </div>
-            </div>
-          `
-          : nothing}
+        <div class="status-list">
+          <div>
+            <span class="label">${t("channel.configured")}</span>
+            <span>${imessage?.configured ? t("channel.yes") : t("channel.no")}</span>
+          </div>
+          <div>
+            <span class="label">${t("channel.running")}</span>
+            <span>${imessage?.running ? t("channel.yes") : t("channel.no")}</span>
+          </div>
+          ${(imessage?.configured || imessage?.running) ? html`
+          <div>
+            <span class="label">${t("channel.lastStart")}</span>
+            <span>${imessage?.lastStartAt ? formatAgo(imessage.lastStartAt) : "n/a"}</span>
+          </div>
+          <div>
+            <span class="label">${t("channel.lastProbe")}</span>
+            <span>${imessage?.lastProbeAt ? formatAgo(imessage.lastProbeAt) : "n/a"}</span>
+          </div>
+          ` : nothing}
+        </div>
+
+        ${!(imessage?.configured || imessage?.running) ? html`
+          <div class="connection-hint">
+            <div class="connection-hint__title">💡 配置指引</div>
+            <div class="connection-hint__desc">仅支持 macOS。在下方配置表单中启用即可。需要 macOS 登录 iMessage 账号。</div>
+          </div>
+        ` : nothing}
 
         ${imessage?.lastError
           ? html`<div class="${errorCalloutClass(imessage.lastError)}" style="margin-top: 12px;">

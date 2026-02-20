@@ -173,7 +173,7 @@ export const ToolPolicySchema = ToolPolicyBaseSchema.superRefine((value, ctx) =>
 export const ToolsWebSearchSchema = z
   .object({
     enabled: z.boolean().optional(),
-    provider: z.union([z.literal("brave"), z.literal("perplexity"), z.literal("grok")]).optional(),
+    provider: z.union([z.literal("brave"), z.literal("perplexity"), z.literal("grok"), z.literal("bing")]).optional(),
     apiKey: z.string().optional().register(sensitive),
     maxResults: z.number().int().positive().optional(),
     timeoutSeconds: z.number().int().positive().optional(),
@@ -207,6 +207,14 @@ export const ToolsWebFetchSchema = z
     cacheTtlMinutes: z.number().nonnegative().optional(),
     maxRedirects: z.number().int().nonnegative().optional(),
     userAgent: z.string().optional(),
+    firecrawl: z
+      .object({
+        enabled: z.boolean().optional(),
+        baseUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .optional();
@@ -575,6 +583,19 @@ export const ToolsSchema = z
     sandbox: z
       .object({
         tools: ToolPolicySchema,
+      })
+      .strict()
+      .optional(),
+    write: z
+      .object({
+        allowDelete: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    browser: z
+      .object({
+        profile: z.string().optional(),
+        allowHostBrowser: z.boolean().optional(),
       })
       .strict()
       .optional(),

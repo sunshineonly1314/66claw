@@ -122,6 +122,6 @@ export function applyCliProfileEnv(params: {
   }
 
   if (profile === "dev" && !env.OPENCLAWCN_GATEWAY_PORT?.trim()) {
-    env.OPENCLAWCN_GATEWAY_PORT = "19001";
+    env.OPENCLAWCN_GATEWAY_PORT = "19002";
   }
 }

@@ -18,6 +18,7 @@ export const ConfigApplyParamsSchema = Type.Object(
     sessionKey: Type.Optional(Type.String()),
     note: Type.Optional(Type.String()),
     restartDelayMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    noRestart: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -29,6 +30,7 @@ export const ConfigPatchParamsSchema = Type.Object(
     sessionKey: Type.Optional(Type.String()),
     note: Type.Optional(Type.String()),
     restartDelayMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    noRestart: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

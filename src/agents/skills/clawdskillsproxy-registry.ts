@@ -8,10 +8,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
+import { Agent as UndiciAgent, fetch as undiciFetch } from "undici";
 
 import { CONFIG_DIR, ensureDir } from "../../utils.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { validateUrlForSsrf } from "../../infra/net/ssrf.js";
+import { encryptContent, isEncryptionEnabled } from "../../security/content-vault.js";
+import { CLAWDSKILLSPROXY_CONFIG } from "../../config/cn-mirrors.js";
 import type {
   RemoteSkillMeta,
   RemoteSkillsIndex,
@@ -97,30 +100,20 @@ let _cachedProxyConfig: ProxyRegistryConfig | null | undefined;
 export function getDefaultProxyConfig(): ProxyRegistryConfig | null {
   if (_cachedProxyConfig !== undefined) return _cachedProxyConfig;
 
-  const baseUrl = process.env.OPENCLAWCN_SKILLS_PROXY_URL?.trim();
-  const token = process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim();
+  // 优先使用环境变量覆盖，否则回退到 cn-mirrors-data.json 中的内置配置
+  const baseUrl =
+    process.env.OPENCLAWCN_SKILLS_PROXY_URL?.trim() || CLAWDSKILLSPROXY_CONFIG.baseUrl;
+  const token =
+    process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim() || CLAWDSKILLSPROXY_CONFIG.token;
 
   if (!baseUrl || !token) {
-    logger.debug(
-      "Proxy env vars not configured (OPENCLAWCN_SKILLS_PROXY_URL / OPENCLAWCN_SKILLS_PROXY_TOKEN)",
-    );
-    _cachedProxyConfig = null;
-    return null;
-  }
-
-  const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
-
-  // 安全检查: 生产环境阻止已知的不安全默认值
-  if (token === "clawdbotCN778" && !isDev) {
-    logger.warn(
-      "SECURITY: Detected compromised default proxy token. " +
-        "ClawdSkillsProxy disabled. Please generate a new secure token (minimum 32 characters).",
-    );
+    logger.debug("ClawdSkillsProxy config not available (no env vars and no built-in config)");
     _cachedProxyConfig = null;
     return null;
   }
 
   // 安全检查: 生产环境强制 HTTPS
+  const isDev = process.env.CLAWDBOT_PROFILE === "dev" || process.env.NODE_ENV === "development";
   if (!isDev && !baseUrl.startsWith("https://")) {
     logger.warn(
       `SECURITY: Proxy URL must use HTTPS in production (got ${baseUrl}). ` +
@@ -163,6 +156,11 @@ const MANAGED_SKILLS_DIR = path.join(CONFIG_DIR, "skills");
 // Fetch Utilities
 // ============================================================================
 
+// 直连 Agent（绕过系统 HTTP_PROXY / HTTPS_PROXY）
+// Node 22+ 的 fetch 会自动走系统代理，但 skillsproxy 是阿里云国内服务，
+// 走本地 VPN/proxy 反而会超时或被拦截
+const directAgent = new UndiciAgent();
+
 async function fetchWithAuth(
   url: string,
   config: ProxyRegistryConfig,
@@ -176,17 +174,20 @@ async function fetchWithAuth(
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      ...options,
+    // 使用 undici.fetch + directAgent 绕过系统代理，直连阿里云 skillsproxy
+    const response = await undiciFetch(url, {
+      ...options as any,
       signal: controller.signal,
+      dispatcher: directAgent,
       headers: {
         Authorization: `Bearer ${config.token}`,
         "User-Agent": "OpenClawCN-Skills-Registry/1.0",
         Accept: "application/json, application/zip, */*",
-        ...options.headers,
+        ...(options.headers as Record<string, string>),
       },
     });
-    return response;
+    // undici 的 Response 与 global Response 类型运行时兼容
+    return response as unknown as Response;
   } finally {
     clearTimeout(timeout);
   }
@@ -235,7 +236,7 @@ export async function fetchProxySkillsIndex(
     return { ok: false, error: "ClawdSkillsProxy not configured (missing env vars)" };
   }
 
-  let url = `${resolvedConfig.baseUrl}/skills/index`;
+  let url = `${resolvedConfig.baseUrl}/api/skills/index`;
   if (sinceVersion !== undefined) {
     url += `?sinceVersion=${sinceVersion}`;
   }
@@ -286,7 +287,8 @@ export async function fetchProxySkillsIndex(
     return { ok: true, index };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("Failed to fetch proxy skills index", { error: message });
+    const cause = err instanceof Error && err.cause ? String(err.cause) : undefined;
+    logger.error("Failed to fetch proxy skills index", { error: message, cause, url });
     return { ok: false, error: message };
   }
 }
@@ -302,7 +304,7 @@ async function downloadSkillsZip(
   skillIds: string[],
   config: ProxyRegistryConfig,
 ): Promise<{ ok: true; buffer: Buffer } | { ok: false; error: string }> {
-  const url = `${config.baseUrl}/skills/download`;
+  const url = `${config.baseUrl}/api/skills/download`;
 
   logger.debug("Downloading skills zip", { url, count: skillIds.length });
 
@@ -340,7 +342,8 @@ async function downloadSkillsZip(
     return { ok: true, buffer };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("Failed to download skills zip", { error: message });
+    const cause = err instanceof Error && err.cause ? String(err.cause) : undefined;
+    logger.error("Failed to download skills zip", { error: message, cause });
     return { ok: false, error: message };
   }
 }
@@ -375,7 +378,15 @@ async function extractZipToDir(
       } else {
         await ensureDir(path.dirname(outPath));
         const content = await zipEntry.async("nodebuffer");
-        await fs.promises.writeFile(outPath, content);
+
+        // 加密 .md 文件（非开发模式）
+        if (isEncryptionEnabled() && outPath.endsWith(".md")) {
+          const plaintext = content.toString("utf-8");
+          const encrypted = encryptContent(plaintext);
+          await fs.promises.writeFile(outPath + ".enc", encrypted);
+        } else {
+          await fs.promises.writeFile(outPath, content);
+        }
 
         // 记录顶层目录
         const topDir = normalizedPath.split("/")[0];
@@ -427,9 +438,10 @@ export async function installProxySkill(
       return { ok: false, error: extractResult.error };
     }
 
-    // 验证 SKILL.md 存在
+    // 验证 SKILL.md 或 SKILL.md.enc 存在
     const skillMdPath = path.join(skillDir, "SKILL.md");
-    if (!fs.existsSync(skillMdPath)) {
+    const skillEncPath = path.join(skillDir, "SKILL.md.enc");
+    if (!fs.existsSync(skillMdPath) && !fs.existsSync(skillEncPath)) {
       // 清理
       if (fs.existsSync(skillDir)) {
         await fs.promises.rm(skillDir, { recursive: true, force: true });
@@ -528,11 +540,12 @@ export async function installProxySkillsBatch(
         continue;
       }
 
-      // 验证每个 skill
+      // 验证每个 skill（支持 .md 和 .md.enc）
       for (const name of batch) {
         const skillDir = path.join(skillsDir, name);
         const skillMdPath = path.join(skillDir, "SKILL.md");
-        if (fs.existsSync(skillMdPath)) {
+        const skillEncPath = path.join(skillDir, "SKILL.md.enc");
+        if (fs.existsSync(skillMdPath) || fs.existsSync(skillEncPath)) {
           installed.push(name);
         } else {
           failed.push({ name, error: "SKILL.md not found after extraction" });
@@ -565,7 +578,7 @@ export async function downloadSingleSkillFile(
     return { ok: false, error: "ClawdSkillsProxy not configured (missing env vars)" };
   }
 
-  const url = `${resolvedConfig.baseUrl}/skills/file/${encodeURIComponent(skillId)}`;
+  const url = `${resolvedConfig.baseUrl}/api/skills/file/${encodeURIComponent(skillId)}`;
 
   try {
     const response = await fetchWithAuth(url, resolvedConfig);

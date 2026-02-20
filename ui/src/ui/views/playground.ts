@@ -189,7 +189,7 @@ const SKILL_CATEGORY_RULES: Array<{ keywords: string[]; category: string }> = [
   // 💻 开发工具 — GitHub、代码、调试、搜索引擎、Agent、数据库 (~200+ skills)
   {
     keywords: [
-      "github", "coding", "tmux", "skill-creator", "skills-troubleshoot",
+      "github", "coding", "tmux", "skill-creator", "skills-troubleshoot", "self-troubleshoot",
       "mcporter", "context7", "clawddocs", "git", "npm", "code",
       "debug", "lint", "docker", "deploy",
       "brave-search", "web-search", "search-x", "x-trends",

@@ -478,6 +478,9 @@ export async function runEmbeddedPiAgent(
             streamParams: params.streamParams,
             ownerNumbers: params.ownerNumbers,
             enforceFinalTag: params.enforceFinalTag,
+            // ── [CN-PATCH:tool-discovery] Forward tool hints and MCP suggestions ──
+            toolHints: params.toolHints,
+            mcpSuggestions: params.mcpSuggestions,
           });
 
           const {

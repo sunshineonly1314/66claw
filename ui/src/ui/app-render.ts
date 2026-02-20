@@ -1212,6 +1212,11 @@ export function renderApp(state: AppViewState) {
                 state.mcpMarketplace = { ...state.mcpMarketplace, detailItem: null };
               },
               onInstall: (item) => {
+                // Non-installable guard — items without npm/pypi/sse cannot be installed
+                if (item.installable === false || item.installMethod === "none") {
+                  showMcpToast(state, `${item.friendlyName} — ${t("extensions.store.notInstallable" as never) || "暂不支持一键安装"}`, "error");
+                  return;
+                }
                 // Process limit guard
                 const installedCount = state.mcpProcesses.length;
                 if (installedCount >= MCP_MAX_RUNNING) {

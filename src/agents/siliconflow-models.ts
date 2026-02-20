@@ -42,6 +42,16 @@ interface SiliconFlowModelsResponse {
 
 // 推荐的模型列表 (用于在无法获取在线列表时的默认值)
 export const SILICONFLOW_RECOMMENDED_MODELS: ModelDefinitionConfig[] = [
+  // Kimi-K2.5 Pro (硅基流动首选)
+  {
+    id: "Pro/moonshotai/Kimi-K2.5",
+    name: "Kimi-K2.5 (Pro)",
+    reasoning: false,
+    input: ["text"],
+    cost: SILICONFLOW_DEFAULT_COST,
+    contextWindow: 131072,
+    maxTokens: 8192,
+  },
   // DeepSeek 系列
   {
     id: "deepseek-ai/DeepSeek-V3",

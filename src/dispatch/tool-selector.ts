@@ -52,16 +52,18 @@ export type ToolSelectionParams = {
   maxTools?: number;
   /** Timeout for the LLM call (ms). Default: 1500. */
   timeoutMs?: number;
+  /** External abort signal (e.g. from dispatch timeout). */
+  signal?: AbortSignal;
 };
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MAX_TOOLS = 8;
+const DEFAULT_MAX_TOOLS = 5;
 const DEFAULT_TIMEOUT_MS = 1500;
-/** Falls back to the same model used by the dispatch classifier (config-loader default). */
-const DEFAULT_SELECTOR_MODEL = "anthropic/claude-haiku-3";
+/** Falls back to user's text capability model when "auto", otherwise dispatch classifier default. */
+const DEFAULT_SELECTOR_MODEL = "auto";
 
 const SELECTOR_SYSTEM_PROMPT = `You select the most relevant tools for a user task.
 
@@ -70,11 +72,11 @@ Return ONLY valid JSON (no markdown fences, no explanation):
 {"selected": [1, 3, 7], "reasoning": "brief one-line explanation"}
 
 Rules:
-- Select 3-8 tools maximum
-- Prefer tools that directly solve the user's core task
-- Include supporting tools when clearly needed (e.g., web_fetch for research)
+- Select 1-3 tools maximum — less is better
+- ONLY pick tools that directly solve the user's core task
+- Do NOT include "nice to have" or tangentially related tools
 - Numbers reference the candidate list indices (1-based)
-- When in doubt, include rather than exclude`;
+- When in doubt, EXCLUDE rather than include`;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -115,15 +117,28 @@ export async function selectTools(params: ToolSelectionParams): Promise<ToolSele
     .join("\n");
 
   try {
+    // "auto" → 动态读取用户配置的 text 能力模型
+    let selectorModel = DEFAULT_SELECTOR_MODEL;
+    if (selectorModel === "auto") {
+      const cap = (params.cfg as Record<string, unknown>).modelCapability as
+        | { capabilities?: Record<string, { providerId?: string; modelId?: string }> }
+        | undefined;
+      const textCap = cap?.capabilities?.["text"];
+      if (textCap?.providerId && textCap?.modelId) {
+        selectorModel = `${textCap.providerId}/${textCap.modelId}`;
+      }
+    }
+
     const { classifyWithLightweightModel } = await import("./llm-classify.js");
     const result = await classifyWithLightweightModel({
       systemPrompt: SELECTOR_SYSTEM_PROMPT,
       userPrompt,
-      model: DEFAULT_SELECTOR_MODEL,
+      model: selectorModel,
       maxTokens: 200,
       cfg: params.cfg,
       agentDir: params.agentDir,
       timeoutMs,
+      signal: params.signal,
     });
 
     if (!result) throw new Error("LLM returned null");
@@ -159,7 +174,8 @@ export async function selectTools(params: ToolSelectionParams): Promise<ToolSele
 
     return {
       selectedToolIds: selectedIds,
-      reasoning: parsed.reasoning ?? "",
+      // FIX P0#2: Truncate LLM reasoning to prevent log/propagation abuse
+      reasoning: (parsed.reasoning ?? "").slice(0, 200),
       confidence: 0.85,
       latencyMs,
       isFallback: false,
