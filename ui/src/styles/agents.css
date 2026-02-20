@@ -125,6 +125,7 @@
   color: var(--text-strong);
   flex-shrink: 0;
   line-height: 1;
+  overflow: hidden;
 }
 
 .agent-avatar--lg {

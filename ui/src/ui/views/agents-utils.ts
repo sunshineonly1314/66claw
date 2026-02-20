@@ -143,17 +143,29 @@ function isLikelyEmoji(value: string) {
   if (!trimmed) {
     return false;
   }
-  if (trimmed.length > 16) {
+  // Real emoji are at most ~8 UTF-16 code units (ZWJ sequences).
+  // 16 was too generous and let short CJK text / prompt fragments through.
+  if (trimmed.length > 8) {
     return false;
   }
   let hasNonAscii = false;
+  let asciiLetterCount = 0;
   for (let i = 0; i < trimmed.length; i += 1) {
-    if (trimmed.charCodeAt(i) > 127) {
+    const code = trimmed.charCodeAt(i);
+    if (code > 127) {
       hasNonAscii = true;
-      break;
+    } else if (
+      (code >= 65 && code <= 90) ||
+      (code >= 97 && code <= 122)
+    ) {
+      asciiLetterCount += 1;
     }
   }
   if (!hasNonAscii) {
+    return false;
+  }
+  // If more than half the string is ASCII letters it's probably text, not emoji
+  if (asciiLetterCount > trimmed.length / 2) {
     return false;
   }
   if (trimmed.includes("://") || trimmed.includes("/") || trimmed.includes(".")) {
