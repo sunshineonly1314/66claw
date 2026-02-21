@@ -63,7 +63,7 @@ VALIDATE_FLAG="$VALIDATE_FLAG"
 echo "Preparing workspace: \$WORKSPACE"
 
 # 设置 PATH - 确保 node/npm/pnpm 可用
-export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
+export PATH="/usr/local/lib/nodejs/node-v22.16.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
 # 加载环境变量（SSH 非交互式 session 不会自动 source profile）
 # NOTE: Must disable set -e before sourcing — .bashrc may contain commands
 # that return non-zero (e.g. cargo env), which would abort our script.
@@ -72,6 +72,9 @@ for f in ~/.bash_profile ~/.bashrc ~/.zprofile ~/.profile; do
   [ -f "\$f" ] && source "\$f" 2>/dev/null
 done
 set -e
+# Re-prepend Node v22.16.0 to PATH AFTER profile sourcing, so it takes priority
+# over homebrew's Node (which may be a different major version like v25.x)
+export PATH="/usr/local/lib/nodejs/node-v22.16.0-darwin-arm64/bin:\$PATH"
 echo "Node: \$(node --version 2>/dev/null || echo 'not found')"
 echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'not found')"
 

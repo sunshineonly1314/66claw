@@ -196,6 +196,23 @@ echo "📤 Uploading build script..."
 REMOTE_PS1="C:\\Users\\$WIN_USER\\cicd-build.ps1"
 scp -o StrictHostKeyChecking=no "$TEMP_PS1" "$WIN_USER@$WIN_HOST:cicd-build.ps1"
 
+# 上传 data/ 目录中的 MCP index 文件（.gitignore 排除了 data/，CI 需要手动传）
+DATA_DIR="$SCRIPT_DIR/../data"
+if [ -d "$DATA_DIR" ]; then
+  echo "📦 Uploading data/ seed files to Windows builder..."
+  ssh -o StrictHostKeyChecking=no "$WIN_USER@$WIN_HOST" \
+    "if not exist D:\\cicd-workspace\\openclawcn\\data mkdir D:\\cicd-workspace\\openclawcn\\data"
+  for df in mcp-index.json mcp-index-enhanced.json mcp-index.db tool-index.sqlite; do
+    if [ -f "$DATA_DIR/$df" ]; then
+      scp -o StrictHostKeyChecking=no "$DATA_DIR/$df" \
+        "$WIN_USER@$WIN_HOST:D:/cicd-workspace/openclawcn/data/$df" && \
+        echo "  Uploaded $df" || echo "  Failed to upload $df (non-fatal)"
+    fi
+  done
+else
+  echo "⚠️  WARNING: local data/ not found, MCP index will not be bundled"
+fi
+
 # 执行远程构建
 echo "🚀 Executing remote build..."
 # 直接用 ssh 而非 PowerShell 包装，确保退出码正确传递
