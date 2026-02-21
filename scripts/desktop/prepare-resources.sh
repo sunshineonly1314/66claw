@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-NODE_VERSION="${NODE_VERSION:-22.14.0}"
+NODE_VERSION="${NODE_VERSION:-22.16.0}"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 warn() { echo "WARN: $*" >&2; }
@@ -398,10 +398,18 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
   DATA_SIZE=$(du -sh "$RESOURCES_DIR/data" 2>/dev/null | cut -f1)
   log "  OK: data/ ($DATA_SIZE, seed data only)"
 fi
-if [[ -d "$PROJECT_ROOT/docs-cn/reference/templates" ]]; then
+# 🔥 P0 修复: 先复制 docs/reference/templates/ 作为 base，再用 CN 版本覆盖
+# 之前只从 docs-cn/ 复制（目录只有 .gitkeep），导致模板缺失，chat 无法使用
+if [[ -d "$PROJECT_ROOT/docs/reference/templates" ]]; then
   mkdir -p "$RESOURCES_DIR/docs/reference"
-  cp -R "$PROJECT_ROOT/docs-cn/reference/templates" "$RESOURCES_DIR/docs/reference/templates"
-  log "  OK: docs/reference/templates/"
+  cp -R "$PROJECT_ROOT/docs/reference/templates" "$RESOURCES_DIR/docs/reference/templates"
+  log "  OK: docs/reference/templates/ (base)"
+fi
+# CN overlay: 覆盖上游模板（如果有 CN 本地化版本）
+if [[ -d "$PROJECT_ROOT/cn/docs-cn/reference/templates" ]]; then
+  mkdir -p "$RESOURCES_DIR/docs/reference/templates"
+  cp -f "$PROJECT_ROOT/cn/docs-cn/reference/templates/"* "$RESOURCES_DIR/docs/reference/templates/" 2>/dev/null || true
+  log "  OK: docs/reference/templates/ (CN overlay)"
 fi
 log "  [$(( $(date +%s) - STEP_START ))s]"
 

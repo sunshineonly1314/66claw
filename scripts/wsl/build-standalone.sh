@@ -19,7 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/build/wsl-standalone}"
-NODE_VERSION="${NODE_VERSION:-22.14.0}"
+NODE_VERSION="${NODE_VERSION:-22.16.0}"
 ARCH="${ARCH:-$(uname -m)}"
 
 # 架构映射

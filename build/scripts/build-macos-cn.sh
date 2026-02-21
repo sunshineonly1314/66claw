@@ -30,7 +30,7 @@ OUTPUT_DIR="$ROOT_DIR/build/output"
 BUILD_LOG="$OUTPUT_DIR/build.log"
 
 # Node.js version (must match the version used in CI and Windows builds)
-NODE_VERSION="${NODE_VERSION:-22.14.0}"
+NODE_VERSION="${NODE_VERSION:-22.16.0}"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -190,6 +190,11 @@ STEP_START=$(date +%s)
 
 pnpm ui:build 2>&1
 log "UI build completed ($(elapsed_since $STEP_START))"
+
+# ── Step 3b: Obfuscate UI bundles ──
+log "Obfuscating UI bundles..."
+node --import tsx cn/scripts/build/obfuscate-ui.ts 2>&1
+log "UI obfuscation completed"
 
 # ============================================================================
 # Step 4: Download Node.js binaries

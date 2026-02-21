@@ -51,7 +51,7 @@ SKIP_BUILD=false
 MIRROR=""
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/build/linux-release}"
 CLEAN=false
-NODE_VERSION="22.14.0"
+NODE_VERSION="22.16.0"
 START_TIME=$(date +%s)
 
 # ─── 所有可用构建目标 ──────────────────────────────────────────

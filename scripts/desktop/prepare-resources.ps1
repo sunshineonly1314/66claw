@@ -383,10 +383,18 @@ if (Test-Path "$ProjectRoot\data") {
     Write-Host "  WARNING: data/ not found at $ProjectRoot\data" -ForegroundColor Yellow
     Write-Host "  The installer will start without pre-loaded index data." -ForegroundColor Yellow
 }
-if (Test-Path "$ProjectRoot\docs-cn\reference\templates") {
+# 🔥 P0 修复: 先复制 docs/reference/templates/ 作为 base，再用 CN 版本覆盖
+# 之前只从 docs-cn/ 复制（目录只有 .gitkeep），导致模板缺失，chat 无法使用
+if (Test-Path "$ProjectRoot\docs\reference\templates") {
     New-Item -ItemType Directory -Force -Path "$ResourcesDir\docs\reference" | Out-Null
-    Copy-Item "$ProjectRoot\docs-cn\reference\templates" "$ResourcesDir\docs\reference\templates" -Recurse -Force
-    Write-Host "  OK: docs/reference/templates/"
+    Copy-Item "$ProjectRoot\docs\reference\templates" "$ResourcesDir\docs\reference\templates" -Recurse -Force
+    Write-Host "  OK: docs/reference/templates/ (base)"
+}
+# CN overlay: 覆盖上游模板（如果有 CN 本地化版本）
+if (Test-Path "$ProjectRoot\cn\docs-cn\reference\templates") {
+    New-Item -ItemType Directory -Force -Path "$ResourcesDir\docs\reference\templates" | Out-Null
+    Copy-Item "$ProjectRoot\cn\docs-cn\reference\templates\*" "$ResourcesDir\docs\reference\templates\" -Force
+    Write-Host "  OK: docs/reference/templates/ (CN overlay)"
 }
 Write-Host "  [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
 

@@ -710,7 +710,11 @@ async function installUvPackageWithFallback(params: {
 
 /** Safely extract hostname from a URL string, fallback to raw string */
 function safeHostname(url: string): string {
-  try { return new URL(url).hostname; } catch { return url; }
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 function buildInstallCommand(
@@ -981,7 +985,11 @@ async function downloadFile(
     return { bytes: stat.size };
   } catch (err) {
     // Clean up partial file on download failure
-    try { fs.unlinkSync(destPath); } catch { /* ignore cleanup */ }
+    try {
+      fs.unlinkSync(destPath);
+    } catch {
+      /* ignore cleanup */
+    }
     throw err;
   } finally {
     clearTimeout(timeout);
@@ -1011,7 +1019,11 @@ async function downloadFileWithMirrorFallback(params: {
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       // Clean up partial file before trying next mirror
-      try { fs.unlinkSync(destPath); } catch { /* ignore cleanup */ }
+      try {
+        fs.unlinkSync(destPath);
+      } catch {
+        /* ignore cleanup */
+      }
       if (i + 1 < urls.length) {
         onMirrorSwitch?.(url, urls[i + 1]!, lastError.slice(0, 100));
       }
@@ -1190,9 +1202,10 @@ async function installDownloadSpec(params: {
       try {
         onProgress?.({
           stage: "downloading",
-          message: i === 0
-            ? `正在通过国内镜像下载 ${filename}...`
-            : `切换到镜像 ${safeHostname(ghProxies[i]!)}...`,
+          message:
+            i === 0
+              ? `正在通过国内镜像下载 ${filename}...`
+              : `切换到镜像 ${safeHostname(ghProxies[i]!)}...`,
           usingCNMirror: true,
           percent: 5,
         });
@@ -1203,7 +1216,11 @@ async function installDownloadSpec(params: {
       } catch (err) {
         lastMirrorErr = err instanceof Error ? err.message : String(err);
         // Clean up partial file before trying next mirror
-        try { fs.unlinkSync(archivePath); } catch { /* ignore cleanup */ }
+        try {
+          fs.unlinkSync(archivePath);
+        } catch {
+          /* ignore cleanup */
+        }
       }
     }
 
@@ -1216,10 +1233,18 @@ async function installDownloadSpec(params: {
       for (const [repoKey, mapping] of Object.entries(LARGE_PACKAGE_PROXY_MAP)) {
         if (url.includes(repoKey)) {
           let fname = "";
-          try { fname = path.basename(new URL(url).pathname); } catch { /* ignore */ }
+          try {
+            fname = path.basename(new URL(url).pathname);
+          } catch {
+            /* ignore */
+          }
           if (fname) {
-            const platform = process.platform === "win32" ? "windows-x64"
-              : process.platform === "darwin" ? "darwin-universal" : "linux-x64";
+            const platform =
+              process.platform === "win32"
+                ? "windows-x64"
+                : process.platform === "darwin"
+                  ? "darwin-universal"
+                  : "linux-x64";
             largePackageUrl = `${CLAWDSKILLSPROXY_CONFIG.baseUrl}${mapping.endpoint}/${platform}/${fname}`;
             break;
           }
@@ -1234,7 +1259,13 @@ async function installDownloadSpec(params: {
           percent: 5,
         });
         try {
-          const result = await downloadFile(largePackageUrl, archivePath, timeoutMs, downloadProgressCb, true);
+          const result = await downloadFile(
+            largePackageUrl,
+            archivePath,
+            timeoutMs,
+            downloadProgressCb,
+            true,
+          );
           downloaded = result.bytes;
           mirrorOk = true;
         } catch (err) {
@@ -1354,7 +1385,11 @@ async function getHKBinaryLatestVersion(
     });
     clearTimeout(timeout);
     if (!response.ok) {
-      try { await response.body?.cancel(); } catch { /* ignore */ }
+      try {
+        await response.body?.cancel();
+      } catch {
+        /* ignore */
+      }
       return null;
     }
     const json = (await response.json()) as {
@@ -1493,7 +1528,11 @@ async function installFromHKBinaryServer(params: {
 
       // Retry on server errors (5xx) — drain body to release socket
       if (response.status >= 500 && attempt < MAX_RETRIES) {
-        try { await response.body?.cancel(); } catch { /* ignore */ }
+        try {
+          await response.body?.cancel();
+        } catch {
+          /* ignore */
+        }
         lastError = new Error(`HTTP ${response.status} ${response.statusText}`);
         continue;
       }
@@ -1508,7 +1547,7 @@ async function installFromHKBinaryServer(params: {
       }
 
       const contentLength = response.headers.get("content-length");
-      const totalSize = contentLength ? parseInt(contentLength, 10) : (asset.size || 0);
+      const totalSize = contentLength ? parseInt(contentLength, 10) : asset.size || 0;
       const MAX_SIZE = 200 * 1024 * 1024;
       if (totalSize > MAX_SIZE) {
         return {
@@ -1571,11 +1610,23 @@ async function installFromHKBinaryServer(params: {
       const stats = fs.statSync(savePath);
       if (stats.size === 0) {
         fs.unlinkSync(savePath);
-        return { ok: false, message: "Downloaded file is empty", stdout: "", stderr: "", code: null };
+        return {
+          ok: false,
+          message: "Downloaded file is empty",
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
       }
       if (stats.size < 1024) {
         fs.unlinkSync(savePath);
-        return { ok: false, message: `Downloaded file too small: ${stats.size} bytes`, stdout: "", stderr: "", code: null };
+        return {
+          ok: false,
+          message: `Downloaded file too small: ${stats.size} bytes`,
+          stdout: "",
+          stderr: "",
+          code: null,
+        };
       }
 
       // Step 4: Extract archive or move raw binary
@@ -1598,7 +1649,11 @@ async function installFromHKBinaryServer(params: {
           });
         } catch (extractErr) {
           // Clean up archive on failure
-          try { fs.unlinkSync(savePath); } catch { /* ignore */ }
+          try {
+            fs.unlinkSync(savePath);
+          } catch {
+            /* ignore */
+          }
           const errMsg = extractErr instanceof Error ? extractErr.message : String(extractErr);
           return {
             ok: false,
@@ -1609,7 +1664,11 @@ async function installFromHKBinaryServer(params: {
           };
         }
         // Clean up archive after successful extraction
-        try { fs.unlinkSync(savePath); } catch { /* ignore */ }
+        try {
+          fs.unlinkSync(savePath);
+        } catch {
+          /* ignore */
+        }
       } else if (savePath !== binaryPath) {
         // Raw binary — rename to expected name
         fs.renameSync(savePath, binaryPath);
@@ -1642,7 +1701,11 @@ async function installFromHKBinaryServer(params: {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       // Clean up partial downloads
       for (const p of [savePath, binaryPath]) {
-        try { fs.unlinkSync(p); } catch { /* ignore cleanup */ }
+        try {
+          fs.unlinkSync(p);
+        } catch {
+          /* ignore cleanup */
+        }
       }
       lastError = err instanceof Error ? err : new Error(String(err));
       const message = lastError.message;
@@ -1707,7 +1770,9 @@ function findBinaryInDir(dir: string, toolName: string): string | null {
         if (fs.existsSync(sub)) return sub;
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 
@@ -2193,7 +2258,7 @@ async function installNodeDependency(
       }
     }
 
-    const nodeVersion = "22.13.1";
+    const nodeVersion = "22.16.0";
     const arch = process.arch === "arm64" ? "arm64" : "x64";
     const msiName = `node-v${nodeVersion}-${arch}.msi`;
     const tempDir = process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp";
