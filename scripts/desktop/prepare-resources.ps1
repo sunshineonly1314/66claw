@@ -121,7 +121,10 @@ if (Test-Path $preSeededTarball) {
     New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
 
     # Use tar to extract (available on Windows 10+)
-    tar xzf "$preSeededTarball" -C "$extractDir" 2>&1
+    # Windows tar treats "D:" as a remote host; convert backslash paths to forward slashes
+    $tarFile = $preSeededTarball.Replace('\', '/')
+    $tarDest = $extractDir.Replace('\', '/')
+    tar xzf "$tarFile" -C "$tarDest" 2>&1
     if ($LASTEXITCODE -eq 0 -and (Test-Path "$extractDir\node_modules")) {
         robocopy "$extractDir\node_modules" "$ResourcesDir\node_modules" /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
         if ($LASTEXITCODE -ge 8) {
