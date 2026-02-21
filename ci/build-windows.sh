@@ -87,6 +87,9 @@ if (Test-Path '.git') {
     git fetch origin
     git reset --hard origin/master
 } else {
+    # Directory exists but is not a git repo (e.g. data/ was uploaded before clone)
+    # Clean non-git contents before cloning
+    Get-ChildItem -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "Cloning repository from Gitee..."
     git clone \$REPO .
 }
