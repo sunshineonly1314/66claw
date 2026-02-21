@@ -229,7 +229,7 @@ fi
 # --omit=optional skips optional peerDependencies (node-llama-cpp, @napi-rs/canvas)
 log "  Running npm install --omit=dev --omit=optional (registry: $NPM_REGISTRY)..."
 if ! (cd "$TEMP_INSTALL_DIR" && npm install --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund \
-    --registry "$NPM_REGISTRY" 2>&1 | tail -5); then
+    --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tail -5); then
   err "npm install --omit=dev failed"
   rm -rf "$TEMP_INSTALL_DIR"
   exit 1
