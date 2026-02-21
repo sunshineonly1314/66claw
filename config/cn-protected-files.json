@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$comment": "Machine-readable CN protection list. Source of truth for .gitattributes merge rules, CI validation, and merge scripts. Regenerate .gitattributes via: bash scripts/generate-gitattributes-merge.sh",
-  "lastUpdated": "2026-02-17",
+  "lastUpdated": "2026-02-21",
 
   "section1_cn_only": {
     "description": "CN-only files. Upstream does not have these. Strategy: merge=ours (always keep CN version).",
@@ -17,8 +17,6 @@
       "src/agents/siliconflow-models.ts",
       "src/agents/cn-brand-consistency.test.ts",
       "src/agents/model-auth.cn-providers.test.ts",
-      "src/agents/tools/wechat-send.ts",
-      "src/agents/tools/wechat-check.ts",
       "src/agents/tools/asr-tool.ts",
       "src/agents/tools/tts-tool.ts",
       "src/gateway/server-methods/asr.ts",
@@ -96,6 +94,8 @@
       "src/config/types.tool-discovery.ts",
       "src/mcp/on-demand-loader.ts",
       "src/agents/tools/mcp-install-tool.ts",
+      "src/agents/tools/desktop-control.ts",
+      "src/agents/tools/open-app.ts",
       "scripts/build-tool-index.ts",
       "src/agents/skills/marketplace/types.ts",
       "src/agents/skills/marketplace/db-schema.ts",
@@ -111,7 +111,34 @@
       "src/mcp/marketplace-index.ts",
       "src/mcp/marketplace/modelscope-source.ts",
       "src/mcp/marketplace/ai-enhancer.ts",
-      "src/config/provider-capability-mapping.ts"
+      "src/config/provider-capability-mapping.ts",
+      "src/gateway/license-check.ts",
+      "src/agents/skills/gitee-registry.ts",
+      "src/agents/skills/clawdskillsproxy-registry.ts",
+      "src/agents/skills/mirror-download-engine.ts",
+      "src/agents/skills/install-state.ts",
+      "src/agents/skills/sync.ts",
+      "src/agents/skills/local-index.ts",
+      "src/agents/skills/file-index.ts",
+      "src/agents/skills/bundled-dir.ts",
+      "src/gateway/server-methods/log-report.ts",
+      "src/gateway/server-methods/feedback.ts",
+      "src/gateway/server-methods/skills-batch.ts",
+      "src/mcp/marketplace/cloud-index-source.ts",
+      "src/mcp/marketplace/registry-source.ts",
+      "src/config/free-model-providers.ts",
+      "src/config/types.free-models.ts",
+      "src/config/free-models-time.ts",
+      "src/agents/free-model-scheduler.ts",
+      "src/auto-reply/reply/free-model-priority.ts",
+      "src/auto-reply/reply/free-model-usage.ts",
+      "src/gateway/server-methods/free-models.ts",
+      "src/infra/capability-detect.ts",
+      "src/gateway/server-methods/capability-detect.ts",
+      "src/gateway/server-methods/support-qrcode.ts",
+      "src/gateway/skill-install-approval-manager.ts",
+      "src/gateway/skill-install-callbacks.ts",
+      "src/infra/installer-updater.ts"
     ],
     "directories": [
       "src/dispatch/",
@@ -304,9 +331,7 @@
         "src/gateway/server-methods/modality-capability.ts",
         "src/agents/modality-capability-checker.ts",
         "src/agents/siliconflow-models.ts",
-        "src/agents/tools/wechat-send.ts",
-        "src/agents/tools/wechat-check.ts",
-        "src/agents/tools/asr-tool.ts",
+          "src/agents/tools/asr-tool.ts",
         "src/agents/tools/tts-tool.ts",
         "src/agents/tools/image-gen-tool.ts",
         "src/config/region-cn.ts",
@@ -326,46 +351,62 @@
         "src/mcp/marketplace/ai-enhancer.ts",
         "src/config/provider-capability-mapping.ts",
         "src/memory/search-tiering-cn.ts",
-        "src/memory/memory-schema.ts"
+        "src/memory/memory-schema.ts",
+        "src/gateway/license-check.ts",
+
+        "src/agents/skills/gitee-registry.ts",
+        "src/agents/skills/clawdskillsproxy-registry.ts",
+        "src/agents/skills/mirror-download-engine.ts",
+        "src/agents/skills/install-state.ts",
+        "src/agents/skills/sync.ts",
+        "src/agents/skills/local-index.ts",
+        "src/agents/skills/file-index.ts",
+        "src/agents/skills/bundled-dir.ts",
+        "src/gateway/server-methods/log-report.ts",
+        "src/gateway/server-methods/feedback.ts",
+        "src/gateway/server-methods/skills-batch.ts",
+        "src/mcp/marketplace/cloud-index-source.ts",
+        "src/mcp/marketplace/registry-source.ts",
+
+        "src/mcp/on-demand-loader.ts",
+        "src/agents/tools/mcp-install-tool.ts",
+        "src/agents/tools/desktop-control.ts",
+        "src/agents/tools/open-app.ts",
+        "src/agents/skills/marketplace/db.ts",
+        "src/agents/skills/marketplace/db-schema.ts",
+        "src/agents/skills/marketplace/types.ts",
+
+        "src/config/free-model-providers.ts",
+        "src/config/types.free-models.ts",
+        "src/config/free-models-time.ts",
+        "src/agents/free-model-scheduler.ts",
+        "src/auto-reply/reply/free-model-priority.ts",
+        "src/auto-reply/reply/free-model-usage.ts",
+        "src/gateway/server-methods/free-models.ts",
+        "src/infra/capability-detect.ts",
+        "src/gateway/server-methods/capability-detect.ts",
+        "src/gateway/server-methods/support-qrcode.ts",
+        "src/gateway/skill-install-approval-manager.ts",
+        "src/gateway/skill-install-callbacks.ts",
+        "src/infra/installer-updater.ts"
       ]
     },
 
     "obfuscate": {
-      "description": "Standard protection: RC4 obfuscation only (no bytecode). For CN extensions, UI views and less-critical CN code.",
-      "directories": [
-        "extensions/feishu/",
-        "extensions/dingtalk/",
-        "extensions/wecom/",
-        "extensions/qqbot/",
-        "extensions/openclawwechat/"
-      ],
+      "description": "Standard protection: RC4 obfuscation only (no bytecode). For less-critical CN code. Channel extensions (feishu/dingtalk/wecom/qqbot/openclawwechat) are intentionally NOT encrypted.",
+      "directories": [],
       "files": [
-        "src/i18n/locales/zh-CN.ts",
-        "src/config/types.tool-discovery.ts",
-        "src/mcp/on-demand-loader.ts",
-        "src/agents/tools/mcp-install-tool.ts",
-        "src/agents/skills/marketplace/db.ts",
-        "src/agents/skills/marketplace/db-schema.ts",
-        "src/agents/skills/marketplace/types.ts"
+        "src/config/types.tool-discovery.ts"
       ]
     },
 
     "ui_obfuscate": {
-      "$comment": "UI files to obfuscate during UI build. These are CN-specific UI views/controllers that contain proprietary logic. Processed separately because UI builds via Vite, not the Node.js pipeline.",
+      "$comment": "UI obfuscation targets. All UI pages are CN-original. Processed separately because UI builds via Vite, not the Node.js pipeline. Uses directory-level coverage since virtually all UI code is proprietary.",
+      "directories": [
+        "ui/src/ui/"
+      ],
       "files": [
-        "ui/src/ui/license/license-dialogs.ts",
-        "ui/src/ui/license/license-controller.ts",
-        "ui/src/ui/license/types.ts",
-        "ui/src/ui/license/index.ts",
-        "ui/src/ui/views/model-config.ts",
-        "ui/src/ui/controllers/model-config.ts",
-        "ui/src/ui/views/playground.ts",
-        "ui/src/ui/controllers/playground.ts",
-        "ui/src/ui/views/welcome-discovery.ts",
-        "ui/src/ui/views/skill-install-progress.ts",
-        "ui/src/ui/views/skill-install-approval.ts",
-        "ui/src/ui/views/free-models.ts",
-        "ui/src/ui/views/mcp-batch-config.ts"
+        "ui/src/main.ts"
       ]
     }
   }

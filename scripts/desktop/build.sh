@@ -73,6 +73,16 @@ if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
 fi
 echo "  UI build OK"
 
+# ── Step 3b: Obfuscate UI bundles ──
+echo "[3b/6] Obfuscating UI bundles..."
+(cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts)
+OBFUSCATE_EXIT=$?
+if [[ $OBFUSCATE_EXIT -ne 0 ]]; then
+  echo "ERROR: UI obfuscation failed!" >&2
+  exit 1
+fi
+echo "  UI obfuscation OK"
+
 # ── Step 4: Prepare bundled resources ──
 echo "[4/6] Preparing bundled resources..."
 PREPARE_SCRIPT="$SCRIPT_DIR/prepare-resources.sh"

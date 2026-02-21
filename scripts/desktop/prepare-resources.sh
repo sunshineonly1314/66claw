@@ -153,6 +153,37 @@ if [[ -d "$DIST_SOURCE" ]]; then
   else
     warn "  No .jsc bytecode files found! Run 'pnpm build:secure' first."
   fi
+
+  # Remove private GUI automation tools from dist (must NOT ship in installer)
+  GUI_TOOL_FILES=(
+    "agents/tools/wechat-send.js"
+    "agents/tools/wechat-check.js"
+    "agents/tools/wechat-read.js"
+    "agents/tools/wecom-send.js"
+    "agents/tools/wecom-check.js"
+    "agents/tools/wecom-read.js"
+    "agents/tools/wecom-auto-reply.js"
+    "agents/tools/wecom-broadcast.js"
+    "agents/tools/wecom-patrol.js"
+    "agents/tools/wecom-group-summary.js"
+    "agents/tools/wecom-helpers.js"
+    "agents/tools/wecom-cs-config.js"
+    "agents/tools/wecom-handoff.js"
+    "agents/tools/wecom-ticket.js"
+  )
+  GUI_REMOVED=0
+  for f in "${GUI_TOOL_FILES[@]}"; do
+    for ext in "" ".map"; do
+      target="$RESOURCES_DIR/dist/${f}${ext}"
+      [[ -f "$target" ]] && rm -f "$target" && GUI_REMOVED=$((GUI_REMOVED + 1))
+    done
+    # Also remove .jsc and .d.ts variants
+    jsc_target="$RESOURCES_DIR/dist/${f%.js}.jsc"
+    [[ -f "$jsc_target" ]] && rm -f "$jsc_target" && GUI_REMOVED=$((GUI_REMOVED + 1))
+    dts_target="$RESOURCES_DIR/dist/${f%.js}.d.ts"
+    [[ -f "$dts_target" ]] && rm -f "$dts_target"
+  done
+  log "  Removed $GUI_REMOVED private GUI automation files from dist/"
 else
   err "dist/ not found. Run 'pnpm build' first."
   exit 1
@@ -244,6 +275,59 @@ if [[ -d "$EXT_SOURCE" ]]; then
   EXT_COUNT=$(find "$RESOURCES_DIR/extensions" -maxdepth 1 -type d | wc -l | tr -d ' ')
   EXT_COUNT=$((EXT_COUNT - 1))  # subtract the directory itself
   log "  OK: extensions/ ($EXT_COUNT extensions) [$(( $(date +%s) - STEP_START ))s]"
+
+  # ── 4b. Install extension-specific dependencies into bundled node_modules ──
+  # Extensions have their own package.json with deps (e.g. dingtalk-stream,
+  # qq-bot-sdk) not in the main package.json. Install them into the shared
+  # resources/node_modules so extensions can require() them at runtime.
+  log "  Installing extension dependencies..."
+  EXT_DEPS_MISSING=()
+  for ext_dir in "$EXT_SOURCE"/*/; do
+    ext_pkg="$ext_dir/package.json"
+    if [[ -f "$ext_pkg" ]]; then
+      # Extract dependency names and versions from package.json
+      deps=$(node -e "
+        const p = require('$ext_pkg');
+        const deps = p.dependencies || {};
+        for (const [name, ver] of Object.entries(deps)) {
+          console.log(name + '@' + ver);
+        }
+      " 2>/dev/null || true)
+      while IFS= read -r dep; do
+        [[ -z "$dep" ]] && continue
+        dep_name="${dep%%@*}"
+        # Handle scoped packages (@scope/name@version)
+        if [[ "$dep" == @* ]]; then
+          dep_name="@${dep#@}"
+          dep_name="${dep_name%@*}"
+        fi
+        if [[ ! -d "$RESOURCES_DIR/node_modules/$dep_name" ]]; then
+          EXT_DEPS_MISSING+=("$dep")
+        fi
+      done <<< "$deps"
+    fi
+  done
+
+  if [[ ${#EXT_DEPS_MISSING[@]} -gt 0 ]]; then
+    # Deduplicate
+    UNIQUE_DEPS=($(printf '%s\n' "${EXT_DEPS_MISSING[@]}" | sort -u))
+    log "  Missing extension deps: ${UNIQUE_DEPS[*]}"
+    (
+      cd "$RESOURCES_DIR"
+      if [[ ! -f "package.json" ]]; then
+        echo '{"private":true}' > package.json
+      fi
+      npm install "${UNIQUE_DEPS[@]}" --no-save --ignore-scripts --no-audit --no-fund \
+          --registry "$NPM_REGISTRY" 2>&1 | tail -5
+      if [[ $? -eq 0 ]]; then
+        log "  OK: installed ${#UNIQUE_DEPS[@]} extension deps"
+      else
+        warn "npm install for extension deps failed"
+      fi
+    )
+  else
+    log "  All extension deps already present in node_modules"
+  fi
 else
   warn "extensions/ not found."
 fi
@@ -286,8 +370,34 @@ STEP_START=$(date +%s)
 log "[6/7] Copying data and docs..."
 
 if [[ -d "$PROJECT_ROOT/data" ]]; then
-  cp -R "$PROJECT_ROOT/data" "$RESOURCES_DIR/data"
-  log "  OK: data/"
+  mkdir -p "$RESOURCES_DIR/data"
+  # Copy selective seed data (not user runtime data like sessions, logs)
+  SEED_FILES=(
+    "mcp-index.db"
+    "mcp-index.json"
+    "mcp-index-enhanced.json"
+    "tool-index.sqlite"
+    "skill-availability-dictionary.json"
+    "skill-availability-schema.json"
+    "skill-verification-needed.json"
+    "skills-availability-dictionary.json"
+    "skills-availability-dictionary-enriched.json"
+    "clawdbot.json"
+    "README-skill-availability.md"
+  )
+  SEED_DIRS=("agents" "identity" "subagents" "qrcodes")
+  for f in "${SEED_FILES[@]}"; do
+    if [[ -f "$PROJECT_ROOT/data/$f" ]]; then
+      cp "$PROJECT_ROOT/data/$f" "$RESOURCES_DIR/data/$f"
+    fi
+  done
+  for d in "${SEED_DIRS[@]}"; do
+    if [[ -d "$PROJECT_ROOT/data/$d" ]]; then
+      cp -R "$PROJECT_ROOT/data/$d" "$RESOURCES_DIR/data/$d"
+    fi
+  done
+  DATA_SIZE=$(du -sh "$RESOURCES_DIR/data" 2>/dev/null | cut -f1)
+  log "  OK: data/ ($DATA_SIZE, seed data only)"
 fi
 if [[ -d "$PROJECT_ROOT/docs-cn/reference/templates" ]]; then
   mkdir -p "$RESOURCES_DIR/docs/reference"

@@ -33,6 +33,7 @@ import {
   registerProtectedFunction,
   reportSecurityViolation,
   recordViolation,
+  isNativeAddonAvailable,
 } from "../security/index.js";
 
 const log = createSubsystemLogger("gateway:license");
@@ -161,6 +162,19 @@ export async function checkLicenseOnGatewayStart(
         /* EPIPE safe */
       }
       process.exit(1);
+    }
+  }
+
+  // 步骤 1.5：检查 native addon 可用性
+  // 生产构建中 addon 缺失意味着安全保护降级为可篡改的 JS 实现
+  if (!isNativeAddonAvailable()) {
+    const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+    if (!isDevBuild) {
+      log.warn(
+        "SECURITY: Native addon not available — security protections degraded to JS fallbacks",
+      );
+      reportSecurityViolation("native_addon_missing", {});
+      recordViolation("native_addon:missing");
     }
   }
 

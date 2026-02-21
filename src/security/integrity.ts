@@ -188,11 +188,23 @@ export function verifyIntegrity(baseDir: string): IntegrityCheckResult {
   const missingFiles: string[] = [];
 
   if (INTEGRITY_HASHES.length === 0) {
-    log.debug("No hashes to verify, skipping integrity check");
+    // 安全策略：生产构建中，空哈希列表视为异常（integrity-hashes.json 被删除或篡改）。
+    // 开发环境中不存在哈希文件是正常的，跳过检查。
+    const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+    if (isDevBuild) {
+      log.debug("No hashes to verify (dev build), skipping integrity check");
+      return {
+        valid: true,
+        tamperedFiles: [],
+        missingFiles: [],
+        totalChecked: 0,
+      };
+    }
+    log.error("SECURITY: No integrity hashes loaded — hash file may have been deleted or tampered");
     return {
-      valid: true,
+      valid: false,
       tamperedFiles: [],
-      missingFiles: [],
+      missingFiles: ["integrity-hashes.json"],
       totalChecked: 0,
     };
   }
@@ -328,7 +340,14 @@ export function startIntegrityPatrol(
   }
 
   if (INTEGRITY_HASHES.length === 0) {
-    log.debug("Integrity patrol skipped: no hashes loaded");
+    // 生产环境中无哈希 = 异常，记录违规
+    const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+    if (!isDevBuild && onTamper) {
+      log.error("Integrity patrol: no hashes loaded — possible hash file deletion");
+      onTamper(["integrity-hashes.json:deleted"]);
+    } else {
+      log.debug("Integrity patrol skipped: no hashes loaded (dev build)");
+    }
     return;
   }
 
@@ -382,4 +401,22 @@ export function stopIntegrityPatrol(): void {
     patrolInterval = null;
     log.debug("Integrity patrol stopped");
   }
+}
+
+// ============================================================================
+// Native Addon Health Check
+// ============================================================================
+
+/**
+ * 检查 native addon 是否可用。
+ *
+ * 在生产构建中，native addon 缺失意味着：
+ * - 完整性校验降级为可篡改的 JS 实现
+ * - 反调试检测降级为 JS 层面检测
+ * - RSA 签名验证降级为 JS 实现
+ *
+ * 调用方（license-check.ts）应将缺失事件喂入延迟惩罚系统。
+ */
+export function isNativeAddonAvailable(): boolean {
+  return nativeIntegrity !== null;
 }

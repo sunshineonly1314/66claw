@@ -70,6 +70,37 @@ if (Test-Path $distSource) {
     if ($jscCount -eq 0) {
         Write-Host "  WARNING: No .jsc bytecode files found! Run 'pnpm build:secure' first." -ForegroundColor Red
     }
+
+    # Remove private GUI automation tools from dist (must NOT ship in installer)
+    $guiToolFiles = @(
+        "agents\tools\wechat-send.js",
+        "agents\tools\wechat-check.js",
+        "agents\tools\wechat-read.js",
+        "agents\tools\wecom-send.js",
+        "agents\tools\wecom-check.js",
+        "agents\tools\wecom-read.js",
+        "agents\tools\wecom-auto-reply.js",
+        "agents\tools\wecom-broadcast.js",
+        "agents\tools\wecom-patrol.js",
+        "agents\tools\wecom-group-summary.js",
+        "agents\tools\wecom-helpers.js",
+        "agents\tools\wecom-cs-config.js",
+        "agents\tools\wecom-handoff.js",
+        "agents\tools\wecom-ticket.js"
+    )
+    $guiRemoved = 0
+    foreach ($f in $guiToolFiles) {
+        $target = Join-Path "$ResourcesDir\dist" $f
+        if (Test-Path $target) { Remove-Item $target -Force; $guiRemoved++ }
+        # Also remove .jsc and .d.ts variants
+        $jscTarget = $target -replace '\.js$', '.jsc'
+        if (Test-Path $jscTarget) { Remove-Item $jscTarget -Force; $guiRemoved++ }
+        $dtsTarget = $target -replace '\.js$', '.d.ts'
+        if (Test-Path $dtsTarget) { Remove-Item $dtsTarget -Force }
+        $mapTarget = "$target.map"
+        if (Test-Path $mapTarget) { Remove-Item $mapTarget -Force }
+    }
+    Write-Host "  Removed $guiRemoved private GUI automation files from dist/" -ForegroundColor Yellow
 } else {
     Write-Host "  ERROR: dist/ not found. Run 'pnpm build' first." -ForegroundColor Red
     exit 1
@@ -199,6 +230,55 @@ if (Test-Path $extSource) {
     }
     $extCount = (Get-ChildItem "$ResourcesDir\extensions" -Directory -ErrorAction SilentlyContinue).Count
     Write-Host "  OK: extensions/ ($extCount extensions) [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+
+    # ── 4b. Install extension-specific dependencies into bundled node_modules ──
+    # Extensions have their own package.json with dependencies (e.g. dingtalk-stream,
+    # qq-bot-sdk) that are NOT in the main package.json. We must install them into
+    # the shared resources/node_modules so extensions can require() them at runtime.
+    Write-Host "  Installing extension dependencies..." -ForegroundColor Green
+    $extDepsMissing = @()
+    $extDepsInstalled = @()
+    Get-ChildItem "$extSource" -Directory | ForEach-Object {
+        $extPkgJson = Join-Path $_.FullName "package.json"
+        if (Test-Path $extPkgJson) {
+            $extPkg = Get-Content $extPkgJson -Raw -Encoding UTF8 | ConvertFrom-Json
+            $deps = $extPkg.dependencies
+            if ($deps) {
+                $deps.PSObject.Properties | ForEach-Object {
+                    $depName = $_.Name
+                    $depVersion = $_.Value
+                    $depDir = Join-Path "$ResourcesDir\node_modules" $depName
+                    if (-not (Test-Path $depDir)) {
+                        $extDepsMissing += "$depName@$depVersion"
+                    }
+                }
+            }
+        }
+    }
+    if ($extDepsMissing.Count -gt 0) {
+        $uniqueDeps = $extDepsMissing | Select-Object -Unique
+        Write-Host "  Missing extension deps: $($uniqueDeps -join ', ')" -ForegroundColor Yellow
+        Push-Location "$ResourcesDir"
+        try {
+            # Create a minimal package.json if not present (npm needs it)
+            if (-not (Test-Path "$ResourcesDir\package.json")) {
+                '{"private":true}' | Out-File -FilePath "$ResourcesDir\package.json" -Encoding UTF8
+            }
+            $npmArgs = @("install") + $uniqueDeps + @("--no-save", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps")
+            $npmLog = cmd /c "npm $($npmArgs -join ' ') 2>&1"
+            $npmExitCode = $LASTEXITCODE
+            if ($npmExitCode -eq 0) {
+                Write-Host "  OK: installed $($uniqueDeps.Count) extension deps" -ForegroundColor Green
+            } else {
+                Write-Host "  WARNING: npm install for extension deps failed (exit $npmExitCode)" -ForegroundColor Red
+                $npmLog -split "`n" | Select-Object -Last 5 | ForEach-Object { Write-Host "    $_" }
+            }
+        } finally {
+            Pop-Location
+        }
+    } else {
+        Write-Host "  All extension deps already present in node_modules"
+    }
 } else {
     Write-Host "  WARNING: extensions/ not found." -ForegroundColor Yellow
 }
@@ -286,7 +366,7 @@ if (Test-Path "$ProjectRoot\data") {
         "clawdbot.json",
         "README-skill-availability.md"
     )
-    $seedDirs = @("agents", "identity", "subagents")
+    $seedDirs = @("agents", "identity", "subagents", "qrcodes")
     foreach ($f in $seedFiles) {
         $src = Join-Path "$ProjectRoot\data" $f
         if (Test-Path $src) {

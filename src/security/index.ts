@@ -20,6 +20,7 @@ export {
   checkIntegrityOnStartup,
   startIntegrityPatrol,
   stopIntegrityPatrol,
+  isNativeAddonAvailable,
   type IntegrityCheckResult,
 } from "./integrity.js";
 
