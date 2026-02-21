@@ -260,10 +260,8 @@ if (Test-Path $extSource) {
         Write-Host "  Missing extension deps: $($uniqueDeps -join ', ')" -ForegroundColor Yellow
         Push-Location "$ResourcesDir"
         try {
-            # Create a minimal package.json if not present (npm needs it)
-            if (-not (Test-Path "$ResourcesDir\package.json")) {
-                '{"private":true}' | Out-File -FilePath "$ResourcesDir\package.json" -Encoding UTF8
-            }
+            # Use the real package.json so npm doesn't prune existing production deps
+            Copy-Item "$ProjectRoot\package.json" "$ResourcesDir\package.json" -Force
             $npmArgs = @("install") + $uniqueDeps + @("--no-save", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps")
             $npmLog = cmd /c "npm $($npmArgs -join ' ') 2>&1"
             $npmExitCode = $LASTEXITCODE

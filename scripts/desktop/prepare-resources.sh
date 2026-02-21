@@ -314,11 +314,10 @@ if [[ -d "$EXT_SOURCE" ]]; then
     log "  Missing extension deps: ${UNIQUE_DEPS[*]}"
     (
       cd "$RESOURCES_DIR"
-      if [[ ! -f "package.json" ]]; then
-        echo '{"private":true}' > package.json
-      fi
+      # Use the real package.json so npm doesn't prune existing production deps
+      cp "$PROJECT_ROOT/package.json" "$RESOURCES_DIR/package.json"
       npm install "${UNIQUE_DEPS[@]}" --no-save --ignore-scripts --no-audit --no-fund \
-          --registry "$NPM_REGISTRY" 2>&1 | tail -5
+          --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tail -5
       if [[ $? -eq 0 ]]; then
         log "  OK: installed ${#UNIQUE_DEPS[@]} extension deps"
       else
