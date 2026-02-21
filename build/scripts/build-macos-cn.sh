@@ -343,6 +343,11 @@ cat > "$CONTENTS/Info.plist" <<PLIST
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <key>LSArchitecturePriority</key>
+    <array>
+        <string>arm64</string>
+        <string>x86_64</string>
+    </array>
 </dict>
 </plist>
 PLIST
@@ -807,7 +812,9 @@ SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 SKIP_CODESIGN="${SKIP_CODESIGN:-1}"
 
 if [[ "$SKIP_CODESIGN" == "1" ]]; then
-  log "Skipping code signing (no Apple Developer certificate). Users need to right-click → Open on first launch."
+  log "No Apple Developer certificate — applying ad-hoc signature..."
+  codesign --force --deep --sign - "$APP_DIR" 2>&1 || warn "Ad-hoc signing failed (non-fatal)"
+  log "Ad-hoc signature applied (users still need right-click → Open on first launch)"
 elif [[ -n "$SIGN_IDENTITY" ]]; then
   log "Signing with identity: $SIGN_IDENTITY"
   ALLOW_ADHOC_SIGNING=0 bash "$ROOT_DIR/scripts/codesign-mac-app.sh" "$APP_DIR"
