@@ -23,11 +23,11 @@
       "user": "kevinsun",
       "workspace": "/Users/kevinsun/cicd-workspace/openclawcn",
       "gitee_repo": "https://sunshine1314:7c15433c23160cdae4aea6fff0996543@gitee.com/sunshine1314/openclawcn.git",
-      "output": "/Users/kevinsun/cicd-workspace/clawdbot/build/output",
+      "output": "/Users/kevinsun/cicd-workspace/openclawcn/apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg",
       "node_version": "22.16.0",
-      "build_script": "build/scripts/build-macos-cn.sh",
+      "build_script": "scripts/desktop/build.sh",
       "enabled": true,
-      "timeout": 3600
+      "timeout": 5400
     }
   },
   "webhook": {

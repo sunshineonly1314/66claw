@@ -144,32 +144,59 @@ fi
 
 export VERSION="\$VERSION"
 
-# 执行构建
-echo "Starting macOS build..."
-
-if [ -f "build/scripts/build-macos-cn.sh" ]; then
-  chmod +x build/scripts/build-macos-cn.sh
+# 确保 Rust/Cargo 可用
+source "\$HOME/.cargo/env" 2>/dev/null || true
+if command -v cargo &> /dev/null; then
+  echo "Cargo: \$(cargo --version)"
 else
-  echo "ERROR: Build script not found: build/scripts/build-macos-cn.sh"
-  ls -la build/scripts/ 2>/dev/null || echo "build/scripts/ not found"
+  echo "ERROR: Rust/Cargo not found. Install from https://rustup.rs"
   exit 1
 fi
 
-# build-macos-cn.sh 已内置 SKIP_CODESIGN=1 默认值，无需 sed patch
-SKIP_CODESIGN=1 bash build/scripts/build-macos-cn.sh --arch "\$ARCH"
+# 执行构建（Tauri，与 Windows 一致）
+echo "Starting macOS build (Tauri)..."
+
+BUILD_SCRIPT="scripts/desktop/build.sh"
+if [ -f "\$BUILD_SCRIPT" ]; then
+  chmod +x "\$BUILD_SCRIPT"
+else
+  echo "ERROR: Build script not found: \$BUILD_SCRIPT"
+  ls -la scripts/desktop/ 2>/dev/null || echo "scripts/desktop/ not found"
+  exit 1
+fi
+
+bash "\$BUILD_SCRIPT" --arch "\$ARCH"
+
+# Tauri 输出路径（根据 target 不同而不同）
+case "\$ARCH" in
+  arm64)     TAURI_TARGET="aarch64-apple-darwin" ;;
+  x64)       TAURI_TARGET="x86_64-apple-darwin" ;;
+  universal) TAURI_TARGET="universal-apple-darwin" ;;
+  *)         TAURI_TARGET="" ;;
+esac
+
+if [ -n "\$TAURI_TARGET" ]; then
+  TAURI_BUNDLE_DIR="apps/desktop/src-tauri/target/\$TAURI_TARGET/release/bundle"
+else
+  TAURI_BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle"
+fi
+
+DMG_DIR="\$TAURI_BUNDLE_DIR/dmg"
+APP_DIR="\$TAURI_BUNDLE_DIR/macos"
 
 # 检查构建产物
-if ls build/output/ClawdbotCN-macOS-*.dmg 1> /dev/null 2>&1; then
+if ls "\$DMG_DIR"/*.dmg 1> /dev/null 2>&1; then
   echo "Build completed successfully!"
-  ls -lh build/output/ClawdbotCN-macOS-*.dmg
+  ls -lh "\$DMG_DIR"/*.dmg
 else
-  echo "Build failed - no DMG found"
+  echo "Build failed - no DMG found in \$DMG_DIR"
+  ls -la "\$TAURI_BUNDLE_DIR/" 2>/dev/null || echo "bundle dir not found"
   exit 1
 fi
 
 # ── Post-build validation ──
 VALIDATION_SCRIPT="scripts/macos/post-build-validation.sh"
-APP_BUNDLE="build/output/ClawdbotCN.app"
+APP_BUNDLE="\$(find \$APP_DIR -name '*.app' -maxdepth 1 2>/dev/null | head -1)"
 VALIDATION_LOG_DIR="build/output/validation-logs"
 
 if [ -f "\$VALIDATION_SCRIPT" ] && [ -d "\$APP_BUNDLE" ]; then
@@ -232,7 +259,7 @@ if [ -n "\$OSS_KEY_ID" ] && [ -n "\$OSS_KEY_SECRET" ]; then
 else
   RELEASE_ARGS="\$RELEASE_ARGS --output-only"
 fi
-RELEASE_ARGS="\$RELEASE_ARGS --installers build/output"
+RELEASE_ARGS="\$RELEASE_ARGS --installers \$DMG_DIR"
 
 # 优先用 pnpm tsx（pnpm install 后 npx 可能找不到 tsx）
 if command -v pnpm &> /dev/null; then
@@ -293,9 +320,21 @@ if [ $BUILD_EXIT -eq 0 ]; then
   ARTIFACTS_DIR="$SCRIPT_DIR/artifacts/macos"
   mkdir -p "$ARTIFACTS_DIR"
 
+  # Tauri 输出路径（与 ARCH 相关）
+  case "$ARCH" in
+    arm64)     TAURI_TARGET_LOCAL="aarch64-apple-darwin" ;;
+    x64)       TAURI_TARGET_LOCAL="x86_64-apple-darwin" ;;
+    universal) TAURI_TARGET_LOCAL="universal-apple-darwin" ;;
+    *)         TAURI_TARGET_LOCAL="" ;;
+  esac
+  if [ -n "$TAURI_TARGET_LOCAL" ]; then
+    REMOTE_DMG_DIR="$MAC_WORKSPACE/apps/desktop/src-tauri/target/$TAURI_TARGET_LOCAL/release/bundle/dmg"
+  else
+    REMOTE_DMG_DIR="$MAC_WORKSPACE/apps/desktop/src-tauri/target/release/bundle/dmg"
+  fi
+
   echo "Downloading artifacts to $ARTIFACTS_DIR..."
-  $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg" "$ARTIFACTS_DIR/" || echo "Download failed, but build succeeded"
-  $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/ClawdbotCN-macOS-*.dmg.sha256" "$ARTIFACTS_DIR/" 2>/dev/null || true
+  $SCP "$MAC_USER@$MAC_HOST:$REMOTE_DMG_DIR/*.dmg" "$ARTIFACTS_DIR/" || echo "Download failed, but build succeeded"
   $SCP "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/build/output/validation-logs/validation-report.txt" "$ARTIFACTS_DIR/" 2>/dev/null || true
 
   # Show validation report if downloaded

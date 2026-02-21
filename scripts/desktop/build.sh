@@ -107,7 +107,20 @@ fi
 echo "[6/6] Building Tauri native app..."
 echo "  (First build may take 5-10 minutes)"
 
-(cd "$DESKTOP_DIR" && pnpm tauri build)
+# Map ARCH to Rust target triple for cross-compilation / universal binary
+TAURI_TARGET=""
+case "$ARCH" in
+  arm64)     TAURI_TARGET="aarch64-apple-darwin" ;;
+  x64)       TAURI_TARGET="x86_64-apple-darwin" ;;
+  universal) TAURI_TARGET="universal-apple-darwin" ;;
+esac
+
+if [[ -n "$TAURI_TARGET" ]]; then
+  echo "  Rust target: $TAURI_TARGET"
+  (cd "$DESKTOP_DIR" && pnpm tauri build --target "$TAURI_TARGET")
+else
+  (cd "$DESKTOP_DIR" && pnpm tauri build)
+fi
 BUILD_EXIT=$?
 
 if [[ $BUILD_EXIT -ne 0 ]]; then
@@ -116,26 +129,77 @@ if [[ $BUILD_EXIT -ne 0 ]]; then
   exit 1
 fi
 
+# ── Step 7: Post-build fixups (macOS) ──
+echo ""
+echo "[7/7] Post-build: ad-hoc signing + LSArchitecturePriority..."
+
+# Find the .app bundle
+if [[ -n "$TAURI_TARGET" ]]; then
+  APP_FILE=$(find "$TAURI_DIR/target/$TAURI_TARGET/release/bundle/macos" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
+  DMG_DIR="$TAURI_DIR/target/$TAURI_TARGET/release/bundle/dmg"
+else
+  APP_FILE=$(find "$TAURI_DIR/target/release/bundle/macos" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
+  DMG_DIR="$TAURI_DIR/target/release/bundle/dmg"
+fi
+
+if [[ -n "$APP_FILE" ]]; then
+  # Inject LSArchitecturePriority into Info.plist (arm64 preferred over x86_64)
+  PLIST="$APP_FILE/Contents/Info.plist"
+  if [[ -f "$PLIST" ]]; then
+    /usr/libexec/PlistBuddy -c "Add :LSArchitecturePriority array" "$PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :LSArchitecturePriority:0 string arm64" "$PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :LSArchitecturePriority:1 string x86_64" "$PLIST" 2>/dev/null || true
+    echo "  LSArchitecturePriority: arm64, x86_64"
+  fi
+
+  # Apply ad-hoc code signing (no Apple Developer cert, but Gatekeeper needs at least this)
+  echo "  Applying ad-hoc code signature..."
+  codesign --force --deep --sign - "$APP_FILE" 2>&1 || echo "  WARNING: ad-hoc signing failed (non-fatal)"
+  echo "  Ad-hoc signature applied"
+
+  # Remove quarantine attribute
+  xattr -cr "$APP_FILE" 2>/dev/null || true
+fi
+
+# Rebuild DMG after signing changes (Tauri's DMG may have the unsigned .app)
+if [[ -n "$APP_FILE" ]] && [[ -d "$DMG_DIR" ]]; then
+  echo "  Rebuilding DMG with signed .app..."
+  OLD_DMG=$(find "$DMG_DIR" -name "*.dmg" 2>/dev/null | head -1)
+  if [[ -n "$OLD_DMG" ]]; then
+    DMG_NAME=$(basename "$OLD_DMG")
+    TEMP_DMG_DIR=$(mktemp -d)
+    # Create new DMG with the signed .app
+    hdiutil create -volname "ClawdbotCN" -srcfolder "$APP_FILE" \
+      -ov -format UDZO "$TEMP_DMG_DIR/$DMG_NAME" 2>&1
+    if [[ -f "$TEMP_DMG_DIR/$DMG_NAME" ]]; then
+      mv "$TEMP_DMG_DIR/$DMG_NAME" "$OLD_DMG"
+      echo "  DMG rebuilt with signed .app"
+    fi
+    rm -rf "$TEMP_DMG_DIR"
+  fi
+fi
+
 # ── Done ──
 echo ""
 echo "========================================"
 echo " Build Successful!"
 echo "========================================"
 
-# Check for DMG output
-DMG_FILE=$(find "$TAURI_DIR/target/release/bundle/dmg" -name "*.dmg" 2>/dev/null | head -1)
+# Show output info
+DMG_FILE=$(find "$DMG_DIR" -name "*.dmg" 2>/dev/null | head -1)
 if [[ -n "$DMG_FILE" ]]; then
   DMG_SIZE=$(du -m "$DMG_FILE" | cut -f1)
   echo "  DMG      : $DMG_FILE"
   echo "  Size     : ${DMG_SIZE} MB"
+  echo "  SHA256   : $(shasum -a 256 "$DMG_FILE" | cut -d' ' -f1)"
 fi
 
-# Check for .app output
-APP_FILE=$(find "$TAURI_DIR/target/release/bundle/macos" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
 if [[ -n "$APP_FILE" ]]; then
   echo "  App      : $APP_FILE"
+  # Verify signature
+  codesign -dvv "$APP_FILE" 2>&1 | grep -E "Signature=|Authority=" | head -3 || true
 fi
 
-if [[ -z "$DMG_FILE" ]] && [[ -z "$APP_FILE" ]]; then
+if [[ -z "${DMG_FILE:-}" ]] && [[ -z "${APP_FILE:-}" ]]; then
   echo "  Check: $TAURI_DIR/target/release/bundle/"
 fi
