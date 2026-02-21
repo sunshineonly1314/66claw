@@ -609,8 +609,9 @@ function normalizeFromBasicInfo(basic: ModelScopeServerBasic): McpMarketplaceIte
     category,
     tags: basic.tags ?? [],
     version: "0.0.0",
-    // Generate SSE URL so the item is installable via ModelScope hosted endpoint
-    sseUrl: MODELSCOPE_CONFIG.sseUrlPattern.replace("{name}", serverId),
+    // Don't generate synthetic SSE URL — most ModelScope servers are NOT hosted,
+    // so the synthetic URL is a dead endpoint that causes install failures.
+    // Items without install info will show "manual config" in the UI.
     requiresApiKey: false,
     platforms: ["linux", "macos", "windows"],
     isOfficial: false,

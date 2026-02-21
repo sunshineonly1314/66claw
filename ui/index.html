@@ -21,7 +21,7 @@
       var _lo=document.getElementById('__loading__');
       if(_lo){
         var _removed=false;
-        var _isDesktop=window.location.hostname==='tauri.localhost'||!!window.__TAURI__||!!window.__TAURI_INTERNALS__;
+        var _isDesktop=window.location.hostname==='tauri.localhost';
         var _startTime=Date.now();
         var _ob=null;
         var _statusTimer=0;
@@ -38,20 +38,38 @@
         }
 
         if(_isDesktop){
-          // Desktop mode: keep loading until gateway is ready (token injected via hash)
-          // or WebSocket connects. This prevents showing an empty shell UI.
-          window.addEventListener('hashchange',function _onHash(){
-            if(window.location.hash.indexOf('token=')!==-1){
-              window.removeEventListener('hashchange',_onHash);
-              // Token injected — wait a moment for WS to connect, then fade out
-              var _txt=document.getElementById('__loading_text__');
-              if(_txt)_txt.textContent='正在连接...';
-              setTimeout(_fadeOutLoading,600);
-            }
-          });
-          // If token is already in hash on load
+          // Desktop mode: poll gateway health and redirect to gateway HTTP URL.
+          // This handles both initial load and F5 refresh — the embedded
+          // tauri.localhost UI is just a loading screen that auto-redirects.
+          var _gwPort=19002;
+          function _pollGateway(){
+            fetch('http://127.0.0.1:'+_gwPort+'/api/health',{signal:AbortSignal.timeout(3000)})
+              .then(function(r){return r.json()})
+              .then(function(d){
+                if(!d.ready){setTimeout(_pollGateway,500);return}
+                // Gateway ready — get token from Tauri IPC or fall back to config
+                var invoke=(window.__TAURI_INTERNALS__&&window.__TAURI_INTERNALS__.invoke)||(window.__TAURI__&&window.__TAURI__.core&&window.__TAURI__.core.invoke);
+                if(invoke){
+                  invoke('get_gateway_info').then(function(info){
+                    var hash=info.token?'#token='+info.token+'&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A'+info.port:'';
+                    window.location.href='http://127.0.0.1:'+info.port+'/'+hash;
+                  }).catch(function(){
+                    window.location.href='http://127.0.0.1:'+_gwPort+'/';
+                  });
+                }else{
+                  window.location.href='http://127.0.0.1:'+_gwPort+'/';
+                }
+              })
+              .catch(function(){setTimeout(_pollGateway,500)});
+          }
+          // If hash already has token (Rust already injected), redirect immediately
           if(window.location.hash.indexOf('token=')!==-1){
-            setTimeout(_fadeOutLoading,300);
+            var _hp=new URLSearchParams(window.location.hash.slice(1));
+            var _tk=_hp.get('token');
+            var _gu=_hp.get('gatewayUrl');
+            window.location.href='http://127.0.0.1:'+_gwPort+'/#token='+_tk+(_gu?'&gatewayUrl='+encodeURIComponent(_gu):'');
+          }else{
+            setTimeout(_pollGateway,300);
           }
           // Update status text based on elapsed time
           var _statusTimer=setInterval(function(){

@@ -34,18 +34,18 @@ const log = createSubsystemLogger("dispatch/modality-router");
 
 /** Detected modality of the user's request. */
 export type ModalityIntent =
-  | "text"              // Pure text conversation
-  | "code"              // Code generation / debugging
-  | "image_understand"  // User sent an image, wants it analyzed
-  | "image_generate"    // User wants an image created
-  | "audio_understand"  // User sent audio/voice
-  | "video_understand"  // User sent a video
-  | "video_generate"    // User wants a video created (future)
+  | "text" // Pure text conversation
+  | "code" // Code generation / debugging
+  | "image_understand" // User sent an image, wants it analyzed
+  | "image_generate" // User wants an image created
+  | "audio_understand" // User sent audio/voice
+  | "video_understand" // User sent a video
+  | "video_generate" // User wants a video created (future)
   | "document_understand"; // User sent PDF/doc
 
 /** A model's capability declaration. */
 export type ModelCapability = {
-  text?: number;    // 1-5 quality score
+  text?: number; // 1-5 quality score
   vision?: number;
   audio?: number;
   video?: number;
@@ -97,9 +97,13 @@ export type ModalityRouterOptions = {
 
 // Chinese patterns for image generation requests
 const IMAGE_GEN_PATTERNS: RegExp[] = [
-  /画[一个两三张幅]/, /生成.{0,6}(?:图|图片|图像|照片|壁纸|头像|海报|logo)/,
-  /做[一个张].{0,4}(?:图|海报|封面)/, /帮我画/, /设计[一个张幅]/,
-  /创作.{0,4}(?:图片|插画|漫画)/, /P[一个张].*图/,
+  /画[一个两三张幅]/,
+  /生成.{0,6}(?:图|图片|图像|照片|壁纸|头像|海报|logo)/,
+  /做[一个张].{0,4}(?:图|海报|封面)/,
+  /帮我画/,
+  /设计[一个张幅]/,
+  /创作.{0,4}(?:图片|插画|漫画)/,
+  /P[一个张].*图/,
   /(?:制作|创建).{0,4}(?:图片|图像|头像|表情包)/,
 ];
 
@@ -111,7 +115,8 @@ const IMAGE_GEN_PATTERNS_EN: RegExp[] = [
 
 // Chinese patterns for video generation requests
 const VIDEO_GEN_PATTERNS: RegExp[] = [
-  /生成.{0,6}(?:视频|动画|短片)/, /制作.{0,4}(?:视频|动画)/,
+  /生成.{0,6}(?:视频|动画|短片)/,
+  /制作.{0,4}(?:视频|动画)/,
   /做[一个].{0,4}(?:视频|动画)/,
 ];
 
@@ -135,10 +140,7 @@ const CODE_WEAK_INDICATORS: RegExp[] = [
  * Detect the modality intent from message content and attachments.
  * Priority: attachments > text patterns > default.
  */
-export function detectModalityIntent(
-  body: string,
-  attachments: MediaAttachment[],
-): ModalityIntent {
+export function detectModalityIntent(body: string, attachments: MediaAttachment[]): ModalityIntent {
   // 1. Check attachments first — they are unambiguous signals
   const kinds = attachments.map((a) => resolveAttachmentKind(a));
   const hasVideo = kinds.includes("video");
@@ -252,9 +254,9 @@ const BUILTIN_PROFILES: ModelProfile[] = [
   },
   {
     provider: "doubao",
-    model: "doubao-1.5-pro-256k",
+    model: "doubao-seed-1-8-251228",
     capabilities: { text: 4, code: 3 },
-    costPer1M: 2.8,
+    costPer1M: 0.4,
     region: "domestic",
   },
   {
@@ -458,8 +460,7 @@ export async function routeByModality(
 
   // 4. Find candidates that support the required capability
   const preferDomestic = cfg.agents?.defaults?.preferDomestic === true;
-  const budgetMode =
-    (cfg.meta?.performanceProfile ?? "balanced") === "economy";
+  const budgetMode = (cfg.meta?.performanceProfile ?? "balanced") === "economy";
 
   const candidates: Array<{ profile: ModelProfile; score: number }> = [];
   for (const profile of matrix) {

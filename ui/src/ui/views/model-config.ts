@@ -27,6 +27,7 @@ import {
   openProviderConfig,
   closeProviderConfig,
   updateProviderApiKey,
+  updateProviderCustomModel,
   detectAndConfigureProvider,
   providerConfigNextStep,
   providerConfigPrevStep,
@@ -103,10 +104,12 @@ export class ModelConfigView extends LitElement {
   /** 模型切换成功提示 */
   @state() private _switchToast: { model: string; provider: string } | null = null;
   private _switchToastTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 拖拽排序：当前拖拽的 provider index */
+  /** 指针拖拽排序状态 */
   private _dragFromIndex: number | null = null;
-  /** 拖拽排序：当前悬停的目标 index */
   @state() private _dragOverIndex: number | null = null;
+  private _dragClone: HTMLElement | null = null;
+  private _dragOffsetY = 0;
+  private _dragRows: HTMLElement[] = [];
 
   /* ═══════════════════════════════════════════════════════════════
      STYLES
@@ -334,7 +337,8 @@ export class ModelConfigView extends LitElement {
     }
     .prov-row:hover { border-color: var(--border-strong, #4a5a70); box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,.12)); }
     .prov-row:focus-visible { outline: 2px solid var(--accent, #6c8cff); outline-offset: 2px; }
-    .prov-row.configured { border-left: 3px solid var(--ok, #34d399); }
+    .prov-row.configured { border-left: 3px solid var(--ok, #34d399); cursor: grab; touch-action: none; }
+    .prov-row.configured:active { cursor: grabbing; }
 
     .prov-row__icon {
       font-size: 20px; width: 32px; height: 32px;
@@ -576,7 +580,7 @@ export class ModelConfigView extends LitElement {
     .drag-handle {
       cursor: grab; font-size: 14px; color: var(--muted, #8b9caf);
       padding: 4px; user-select: none; flex-shrink: 0;
-      transition: color 0.12s;
+      transition: color 0.12s; touch-action: none;
     }
     .drag-handle:hover { color: var(--text, #e8ecf1); }
     .drag-handle:active { cursor: grabbing; }
@@ -802,16 +806,30 @@ export class ModelConfigView extends LitElement {
     this._sync(h);
   }
 
-  private _closeProviderConfig() {
+  private async _closeProviderConfig() {
     const h = this._host();
+    const wasResult = h.providerConfigStep === "result";
     closeProviderConfig(h);
     this._sync(h);
+    // 配置成功后关闭弹窗 → 刷新列表
+    if (wasResult) {
+      const h2 = this._host();
+      await Promise.all([loadCapabilities(h2), loadProviders(h2), loadProviderPriority(h2), loadProviderHealth(h2)]).catch(() => {});
+      this._sync(h2);
+    }
   }
 
   private _onApiKeyInput(e: Event) {
     const input = e.target as HTMLInputElement;
     const h = this._host();
     updateProviderApiKey(h, input.value);
+    this._sync(h);
+  }
+
+  private _onCustomModelInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const h = this._host();
+    updateProviderCustomModel(h, input.value);
     this._sync(h);
   }
 
@@ -979,56 +997,96 @@ export class ModelConfigView extends LitElement {
     }
   }
 
-  /** 拖拽排序 handlers */
-  private _onDragStart(e: DragEvent, index: number) {
-    this._dragFromIndex = index;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", String(index));
-    }
-    // 延迟设置 dragging 样式，避免拖拽图像也被半透明化
+  /**
+   * 指针拖拽排序 — pointerdown/move/up（WebView2 兼容）
+   * 整行可拖，但点击按钮不会触发拖拽（移动阈值 5px）
+   */
+  private _onPointerDragStart(e: PointerEvent, index: number) {
+    if (e.button !== 0) return;
+    // 如果点击的是按钮/链接等交互元素，不触发拖拽
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, input, select, textarea")) return;
+
     const row = e.currentTarget as HTMLElement;
-    requestAnimationFrame(() => row.classList.add("dragging"));
-  }
+    if (!row) return;
 
-  private _onDragOver(e: DragEvent, index: number) {
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-    if (this._dragOverIndex !== index) {
-      this._dragOverIndex = index;
-    }
-  }
+    const startY = e.clientY;
+    const startX = e.clientX;
+    const rect = row.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    let dragging = false;
 
-  private _onDragLeave(_e: DragEvent, index: number) {
-    if (this._dragOverIndex === index) {
+    // 收集所有行
+    const list = row.parentElement;
+    const rows = list ? Array.from(list.querySelectorAll<HTMLElement>(".prov-row")) : [];
+
+    const onMove = (ev: PointerEvent) => {
+      const dy = Math.abs(ev.clientY - startY);
+      const dx = Math.abs(ev.clientX - startX);
+
+      // 移动阈值：超过 5px 才开始拖拽，避免点击误触
+      if (!dragging && dy < 5 && dx < 5) return;
+
+      if (!dragging) {
+        // 首次超过阈值 → 开始拖拽
+        dragging = true;
+        this._dragFromIndex = index;
+        this._dragRows = rows;
+        this._dragOffsetY = offsetY;
+
+        // 创建浮动克隆
+        const clone = row.cloneNode(true) as HTMLElement;
+        clone.style.cssText = `position:fixed;left:${rect.left}px;top:${ev.clientY - offsetY}px;width:${rect.width}px;z-index:10000;pointer-events:none;opacity:0.85;box-shadow:0 8px 24px rgba(0,0,0,.3);transition:none;`;
+        (this.shadowRoot ?? this).appendChild(clone);
+        this._dragClone = clone;
+        row.classList.add("dragging");
+      }
+
+      // 移动克隆
+      if (this._dragClone) {
+        this._dragClone.style.top = `${ev.clientY - offsetY}px`;
+      }
+      // 命中检测
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i].getBoundingClientRect();
+        if (ev.clientY >= r.top && ev.clientY <= r.bottom) {
+          if (this._dragOverIndex !== i) this._dragOverIndex = i;
+          break;
+        }
+      }
+    };
+
+    const onUp = async (_ev: PointerEvent) => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+
+      if (!dragging) return; // 没超过阈值 = 普通点击，不处理
+
+      // 清理
+      if (this._dragClone) { this._dragClone.remove(); this._dragClone = null; }
+      for (const r of rows) r.classList.remove("dragging");
+
+      const fromIdx = this._dragFromIndex;
+      const toIdx = this._dragOverIndex;
+      this._dragFromIndex = null;
       this._dragOverIndex = null;
-    }
-  }
+      this._dragRows = [];
 
-  private async _onDrop(e: DragEvent, toIndex: number) {
-    e.preventDefault();
-    this._dragOverIndex = null;
-    const fromIndex = this._dragFromIndex;
-    this._dragFromIndex = null;
+      if (fromIdx === null || toIdx === null || fromIdx === toIdx) return;
 
-    if (fromIndex === null || fromIndex === toIndex) return;
+      const configured = this._getConfiguredSorted();
+      const newOrder = [...configured];
+      const [moved] = newOrder.splice(fromIdx, 1);
+      newOrder.splice(toIdx, 0, moved);
 
-    // 重新排序并保存
-    const configured = this._getConfiguredSorted();
-    const newOrder = [...configured];
-    const [moved] = newOrder.splice(fromIndex, 1);
-    newOrder.splice(toIndex, 0, moved);
+      const priority = newOrder.map(p => p.providerId);
+      const h = this._host();
+      await saveProviderPriority(h, priority);
+      this._sync(h);
+    };
 
-    const priority = newOrder.map(p => p.providerId);
-    const h = this._host();
-    await saveProviderPriority(h, priority);
-    this._sync(h);
-  }
-
-  private _onDragEnd(e: DragEvent) {
-    (e.currentTarget as HTMLElement).classList.remove("dragging");
-    this._dragFromIndex = null;
-    this._dragOverIndex = null;
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
   }
 
   /** 测试连接 */
@@ -1335,12 +1393,8 @@ export class ModelConfigView extends LitElement {
               <div
                 class="prov-row configured ${isDragOver ? 'drag-over' : ''}"
                 tabindex="0"
-                draggable="true"
-                @dragstart=${(e: DragEvent) => this._onDragStart(e, idx)}
-                @dragover=${(e: DragEvent) => this._onDragOver(e, idx)}
-                @dragleave=${(e: DragEvent) => this._onDragLeave(e, idx)}
-                @drop=${(e: DragEvent) => this._onDrop(e, idx)}
-                @dragend=${(e: DragEvent) => this._onDragEnd(e)}
+                data-idx="${idx}"
+                @pointerdown=${(e: PointerEvent) => this._onPointerDragStart(e, idx)}
               >
                 <span class="drag-handle" title="拖拽排序">⠿</span>
                 <span class="prov-row__rank">${idx + 1}</span>
@@ -1557,13 +1611,19 @@ export class ModelConfigView extends LitElement {
   }
 
   private _renderApiKeyStep(prov: ProviderInfo) {
-    const { providerConfigApiKey: apiKey, providerConfigTestResult: result, providerConfigDetecting: detecting } = this._s;
+    const { providerConfigApiKey: apiKey, providerConfigCustomModel: customModel, providerConfigTestResult: result, providerConfigDetecting: detecting } = this._s;
     return html`
       <div class="form-group">
         <label class="form-label">${prov.name} API Key</label>
         <input type="password" class="form-input" placeholder="粘贴你的 API Key" .value=${apiKey} @input=${this._onApiKeyInput} @blur=${this._onApiKeyBlur} autocomplete="off" />
         <div class="form-hint">配置后会自动检测并开通所有可用功能</div>
       </div>
+      ${prov.providerId === "volcengine-ark" ? html`
+      <div class="form-group">
+        <label class="form-label">推理接入点 ID <span style="color:var(--text-muted);font-weight:normal;font-size:12px">(可选)</span></label>
+        <input type="text" class="form-input" placeholder="留空使用默认模型，或输入你的接入点 ID（ep-xxx）" .value=${customModel ?? ""} @input=${this._onCustomModelInput} autocomplete="off" />
+        <div class="form-hint">在火山方舟控制台「在线推理」创建的接入点 ID</div>
+      </div>` : nothing}
       ${result && !result.success ? html`<div class="alert alert--err">${result.message}</div>` : nothing}
       <div class="btn-row">
         ${prov.apiKeyGuide?.length > 0

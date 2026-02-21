@@ -98,15 +98,18 @@ fn poll_and_navigate(handle: tauri::AppHandle) {
                                 );
                                 let _ = window.eval(&js);
                             } else {
-                                // Inject token via hash change — no page reload needed.
-                                // Control-ui listens for hashchange and connects when token arrives.
-                                log("-> injecting token via hash");
+                                // Navigate to the gateway-served UI instead of staying on
+                                // the embedded tauri.localhost. Tauri 2.x bakes frontendDist
+                                // into the exe binary at build time, so the embedded copy can
+                                // be stale. The gateway always serves the latest control-ui
+                                // from disk (resources/dist/control-ui/).
+                                log("-> navigating to gateway UI");
                                 let js = format!(
-                                    "window.location.hash='token={}&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A{}';",
-                                    token, port,
+                                    "window.location.href='http://127.0.0.1:{}/#token={}&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A{}';",
+                                    port, token, port,
                                 );
                                 let _ = window.eval(&js);
-                                log("Token injected");
+                                log("Navigated to gateway UI");
                             }
                         }
                         return;

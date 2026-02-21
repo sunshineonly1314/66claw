@@ -22,6 +22,7 @@ import type { ModelDefinitionConfig } from "../../config/types.models.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveStorePath } from "../../config/sessions/paths.js";
 import { updateSessionStore } from "../../config/sessions/store.js";
+import { loadAuthProfileStore } from "../../agents/auth-profiles/store.js";
 
 const log = createSubsystemLogger("gateway/model-config");
 
@@ -112,6 +113,22 @@ async function getProviderConfigStatus(): Promise<Map<string, boolean>> {
     for (const account of freeModels.accounts) {
       providers.set(account.providerId, account.enabled);
     }
+  }
+
+  // 检查 auth-profiles.json 中的凭据（setup wizard 通过 upsertAuthProfile 存储 API key）
+  // 这是 Kimi Code 等 provider 的 key 实际存储位置
+  try {
+    const authStore = loadAuthProfileStore();
+    if (authStore.profiles) {
+      for (const [, profile] of Object.entries(authStore.profiles)) {
+        const p = profile as { provider?: string; key?: string; type?: string };
+        if (p.provider && p.key) {
+          providers.set(p.provider, true);
+        }
+      }
+    }
+  } catch {
+    // auth-profiles.json may not exist — ignore
   }
 
   return providers;
@@ -335,8 +352,12 @@ function capabilitiesToInput(capabilities: Capability[]): Array<"text" | "image"
 /**
  * API: 自动检测 Provider 的所有模型
  */
-export async function detectProviderModels(params: { providerId: string; apiKey: string }) {
-  const { providerId, apiKey } = params;
+export async function detectProviderModels(params: {
+  providerId: string;
+  apiKey: string;
+  customModel?: string;
+}) {
+  const { providerId, apiKey, customModel } = params;
 
   // 获取该 Provider 的映射配置
   const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
@@ -384,7 +405,7 @@ export async function detectProviderModels(params: { providerId: string; apiKey:
     let testUrl: string;
     let testHeaders: Record<string, string>;
     let testBody: string;
-    const testModel = firstModel.modelId;
+    const testModel = customModel || firstModel.modelId;
 
     if (providerId === "kimi-code") {
       testUrl = `${baseUrl}/chat/completions`;
@@ -540,7 +561,17 @@ export async function detectProviderModels(params: { providerId: string; apiKey:
     available: true,
   }));
 
-  // 自动选择默认模型（优先免费）
+  // 如果用户提供了自定义模型名，添加到返回的模型列表中
+  if (customModel && !models.some((m) => m.modelId === customModel)) {
+    models.unshift({
+      modelId: customModel,
+      modelName: customModel,
+      capabilities: ["text"] as Capability[],
+      available: true,
+    });
+  }
+
+  // 自动选择默认模型（自定义模型优先，否则优先免费）
   const autoEnabled: Partial<Record<Capability, string>> = {};
 
   for (const capability of [
@@ -550,6 +581,11 @@ export async function detectProviderModels(params: { providerId: string; apiKey:
     "video",
     "embedding",
   ] as Capability[]) {
+    // 如果有自定义模型且该能力是 text，优先使用自定义模型
+    if (customModel && capability === "text") {
+      autoEnabled[capability] = customModel;
+      continue;
+    }
     const capabilityModels = mapping.models.filter((m) => m.capabilities.includes(capability));
     if (capabilityModels.length > 0) {
       const freeModel = capabilityModels.find((m) => m.pricing.type === "free");
@@ -601,6 +637,22 @@ export async function detectProviderModels(params: { providerId: string; apiKey:
       input: capabilitiesToInput(m.capabilities),
       reasoning: false,
     }));
+
+    // 如果用户提供了自定义模型名（如火山引擎的 endpoint ID），将其添加到模型列表
+    if (customModel) {
+      const alreadyExists = modelDefinitions.some((m) => m.id === customModel);
+      if (!alreadyExists) {
+        modelDefinitions.unshift({
+          id: customModel,
+          name: customModel,
+          contextWindow: 32768,
+          maxTokens: 4096,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          input: ["text"],
+          reasoning: false,
+        });
+      }
+    }
 
     config.models.providers[providerId] = {
       ...config.models.providers[providerId],
@@ -1041,7 +1093,11 @@ async function testProviderConnection(params: { providerId: string }): Promise<{
       if (resp.status === 401 || resp.status === 403) {
         return { success: false, status: "auth_invalid", message: "API Key 无效" };
       }
-      return { success: false, status: "down", message: `验证失败 (HTTP ${resp.status}): ${errText.substring(0, 200)}` };
+      return {
+        success: false,
+        status: "down",
+        message: `验证失败 (HTTP ${resp.status}): ${errText.substring(0, 200)}`,
+      };
     } catch (err) {
       return {
         success: false,
@@ -1178,10 +1234,7 @@ function prewarmProviderConnection(providerId: string): void {
  *
  * 注意: 此函数直接修改传入的 config 对象（caller 负责 structuredClone + writeConfigFile）。
  */
-function syncModelSelectionsFromPriority(
-  config: OpenClawCNConfig,
-  priority: string[],
-): void {
+function syncModelSelectionsFromPriority(config: OpenClawCNConfig, priority: string[]): void {
   const ALL_CAPABILITIES: Capability[] = [
     "text",
     "image-understanding",
@@ -1233,9 +1286,7 @@ function syncModelSelectionsFromPriority(
           modelId: match.model.modelId,
           auto: true,
         };
-        log.debug(
-          `syncPriority: ${capability} → ${providerId}/${match.model.modelId} (auto)`,
-        );
+        log.debug(`syncPriority: ${capability} → ${providerId}/${match.model.modelId} (auto)`);
         assigned = true;
         break;
       }
@@ -1311,7 +1362,8 @@ async function saveProviderPriority(params: { priority: string[] }): Promise<{ s
     const config = structuredClone(await loadConfig());
     config.providerPriority = priority;
     // 拖拽优先级 = 用户要求重新自动分配，清除所有手动选择标记
-    const capsObj = (config as { modelCapability?: ModelCapabilityConfig }).modelCapability?.capabilities;
+    const capsObj = (config as { modelCapability?: ModelCapabilityConfig }).modelCapability
+      ?.capabilities;
     if (capsObj) {
       for (const cap of Object.values(capsObj)) {
         if (cap && cap.auto === false) cap.auto = true;
@@ -1380,7 +1432,9 @@ export const MODEL_CONFIG_HANDLERS: Record<string, import("./types.js").GatewayR
   },
   "modelConfig.provider.detect": async ({ params, respond }) => {
     try {
-      const result = await detectProviderModels(params as { providerId: string; apiKey: string });
+      const result = await detectProviderModels(
+        params as { providerId: string; apiKey: string; customModel?: string },
+      );
       respond(true, result, undefined);
     } catch (err) {
       respond(false, undefined, { code: "INTERNAL_ERROR", message: String(err) });

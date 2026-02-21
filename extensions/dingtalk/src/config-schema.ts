@@ -52,7 +52,7 @@ const DingtalkGroupSchema = z
 export const DingtalkConfigSchema = z
   .object({
     enabled: z.boolean().optional().default(true).describe("是否启用"),
-    mode: z.enum(["webhook", "stream"]).optional().default("webhook").describe("接入模式: webhook 或 stream"),
+    mode: z.enum(["webhook", "stream"]).optional().default("stream").describe("接入模式: webhook 或 stream"),
     app: DingtalkAppSchema.optional().describe("应用配置"),
     webhookPath: z.string().optional().default("/dingtalk/webhook").describe("Webhook 路径 (Webhook 模式专用)"),
     stream: DingtalkStreamSchema.optional().describe("Stream 模式配置"),

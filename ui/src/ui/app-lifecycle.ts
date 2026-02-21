@@ -59,13 +59,11 @@ export function handleConnected(host: LifecycleHost) {
   );
 
   const settingsHost = host as unknown as Parameters<typeof connectGateway>[0];
-  // Detect desktop mode: Tauri on Windows uses http://tauri.localhost
-  const isDesktop =
-    window.location.hostname === "tauri.localhost" ||
-    Boolean(
-      (window as Record<string, unknown>).__TAURI__ ||
-      (window as Record<string, unknown>).__TAURI_INTERNALS__,
-    );
+  // Detect desktop mode: only when served from tauri.localhost (embedded UI).
+  // When the Tauri WebView navigates to the gateway HTTP URL (127.0.0.1:PORT),
+  // it should use browser mode — the hash token is consumed normally by
+  // applySettingsFromUrl and connectGateway runs immediately.
+  const isDesktop = window.location.hostname === "tauri.localhost";
 
   if (isDesktop) {
     // Desktop mode (Tauri): Rust injects a fresh token via hash on every launch.

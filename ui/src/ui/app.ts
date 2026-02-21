@@ -161,6 +161,8 @@ export class ClawdbotApp extends LitElement {
   @state() chatAttachments: ChatAttachment[] = [];
   // OpenClawCN: auto-failover notification banner
   @state() failoverBanner: import("./app-view-state").AppViewState["failoverBanner"] = null;
+  // OpenClawCN: 聊天模型是否已配置（text capability active）
+  @state() chatModelConfigured: boolean | null = null;
   // Voice mascot state
   @state() voiceAsrAvailable: boolean | null = null;
   @state() voiceMascotDismissed = isMascotDismissed();

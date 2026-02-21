@@ -125,7 +125,10 @@ export function exportLogs(lines: string[], label: string) {
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   anchor.href = url;
   anchor.download = `clawdbot-logs-${label}-${stamp}.log`;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
   anchor.click();
+  anchor.remove();
   URL.revokeObjectURL(url);
 }
 

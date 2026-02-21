@@ -79,6 +79,8 @@ export type AppViewState = {
     reason: string;
     reasonText: string;
   } | null;
+  // OpenClawCN: 聊天模型是否已配置
+  chatModelConfigured: boolean | null;
   // API Response Monitor state
   apiMonitorElapsedMs: number;
   apiMonitorDismissed: boolean;

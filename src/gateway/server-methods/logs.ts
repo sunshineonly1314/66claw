@@ -1,3 +1,4 @@
+import { exec } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { GatewayRequestHandlers } from "./types.js";
@@ -145,6 +146,30 @@ async function readLogSlice(params: {
 }
 
 export const logsHandlers: GatewayRequestHandlers = {
+  "logs.reveal": ({ respond }) => {
+    const logFile = getResolvedLoggerSettings().file;
+    const dir = path.dirname(logFile);
+    const platform = process.platform;
+    let cmd: string;
+    if (platform === "win32") {
+      cmd = `explorer "${dir}"`;
+    } else if (platform === "darwin") {
+      cmd = `open "${dir}"`;
+    } else {
+      cmd = `xdg-open "${dir}"`;
+    }
+    exec(cmd, (err) => {
+      if (err) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INTERNAL_ERROR, `Failed to open folder: ${err.message}`),
+        );
+        return;
+      }
+      respond(true, { ok: true, path: dir }, undefined);
+    });
+  },
   "logs.tail": async ({ params, respond }) => {
     if (!validateLogsTailParams(params)) {
       respond(

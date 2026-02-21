@@ -20,8 +20,11 @@ import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 import type { MCPServerConfig } from "../../mcp/types.js";
 import {
-  shouldUseCNMirror, getNpmMirrorUrl, getPipMirrorUrl,
-  getNpmMirrors, getPipMirrors,
+  shouldUseCNMirror,
+  getNpmMirrorUrl,
+  getPipMirrorUrl,
+  getNpmMirrors,
+  getPipMirrors,
 } from "../../config/cn-mirrors.js";
 
 function mcpError(message: string) {
@@ -100,6 +103,15 @@ function friendlyInstallError(serverId: string, lastError: string): string {
   return `${serverId} 安装失败：${lastError.slice(0, 120)}`;
 }
 
+// ── Synthetic SSE URL detection ──────────────────────────────────────────
+/** ModelScope's normalizeFromBasicInfo used to generate fake SSE URLs like
+ *  https://{serverId}.api-inference.modelscope.net/sse for all servers,
+ *  even those not actually hosted. Detect and exclude them. */
+function isSyntheticSseUrl(url: string): boolean {
+  if (!url) return false;
+  return /\.api-inference\.modelscope\.net\/sse$/.test(url);
+}
+
 /**
  * Try installing an MCP server with multi-mirror fallback.
  * For npm: tries 3 CN mirrors (Taobao → Tencent → Huawei).
@@ -118,14 +130,22 @@ async function tryInstallWithMirrorFallback(params: {
   const { manager, serverId, type, packageStr, version, userEnv, waitMs = 4000 } = params;
   const useCN = shouldUseCNMirror();
   const mirrors = useCN
-    ? (type === "npm" ? getNpmMirrors() : getPipMirrors())
+    ? type === "npm"
+      ? getNpmMirrors()
+      : getPipMirrors()
     : [type === "npm" ? "https://registry.npmjs.org" : "https://pypi.org/simple"];
 
   let lastError = "";
 
   for (let i = 0; i < mirrors.length; i++) {
     const mirror = mirrors[i]!;
-    const mirrorHost = (() => { try { return new URL(mirror).hostname; } catch { return mirror; } })();
+    const mirrorHost = (() => {
+      try {
+        return new URL(mirror).hostname;
+      } catch {
+        return mirror;
+      }
+    })();
 
     // Build server config with this mirror's env
     let serverConfig: MCPServerConfig;
@@ -177,7 +197,9 @@ async function tryInstallWithMirrorFallback(params: {
       try {
         await manager.removeServer(serverId);
         persistMcpServerRemove(serverId).catch(() => {});
-      } catch { /* best-effort rollback */ }
+      } catch {
+        /* best-effort rollback */
+      }
 
       // If not a network error, don't bother trying other mirrors
       if (!isNetworkError(lastError)) {
@@ -189,7 +211,9 @@ async function tryInstallWithMirrorFallback(params: {
       try {
         await manager.removeServer(serverId);
         persistMcpServerRemove(serverId).catch(() => {});
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
       if (!isNetworkError(lastError)) break;
     }
   }
@@ -324,7 +348,9 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
   try {
     const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
     marketplaceItems = await readMarketplaceIndex();
-  } catch { /* non-critical */ }
+  } catch {
+    /* non-critical */
+  }
 
   // Map to UI-friendly capability status
   const capabilities = status.servers.map((s) => {
@@ -358,11 +384,7 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
     const toolDescriptions = s.tools.slice(0, 3).map((tool) => tool.description || tool.name);
     const marketDesc = marketItem?.descriptionCn || marketItem?.description;
     const description: string[] =
-      toolDescriptions.length > 0
-        ? toolDescriptions
-        : marketDesc
-          ? [String(marketDesc)]
-          : [];
+      toolDescriptions.length > 0 ? toolDescriptions : marketDesc ? [String(marketDesc)] : [];
 
     // Build example prompt from marketplace or first tool
     const examplePrompt = marketItem?.examplePrompts
@@ -385,9 +407,9 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
   const processes = status.servers.map((s) => ({
     id: s.config.id,
     friendlyName: (() => {
-      const m = marketplaceItems.find(
-        (i: Record<string, unknown>) => i.serverId === s.config.id,
-      ) as Record<string, unknown> | undefined;
+      const m = marketplaceItems.find((i: Record<string, unknown>) => i.serverId === s.config.id) as
+        | Record<string, unknown>
+        | undefined;
       return String(m?.friendlyNameCn || m?.friendlyName || s.config.id);
     })(),
     status:
@@ -820,9 +842,11 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
         const friendlyName = i.friendlyNameCn || i.friendlyName;
         const description = i.descriptionCn || i.description;
         const tags = i.tagsCn?.length ? i.tagsCn : i.tags;
-        const installable = !!(i.npmPackage || i.pypiPackage || i.sseUrl);
+        // Exclude synthetic ModelScope SSE URLs that don't actually work
+        const realSseUrl = i.sseUrl && !isSyntheticSseUrl(i.sseUrl) ? i.sseUrl : "";
+        const installable = !!(i.npmPackage || i.pypiPackage || realSseUrl);
         // SSE first — most reliable in China (no npm/pip dependency issues)
-        const installMethod: "npm" | "pypi" | "sse" | "none" = i.sseUrl
+        const installMethod: "npm" | "pypi" | "sse" | "none" = realSseUrl
           ? "sse"
           : i.npmPackage
             ? "npm"
@@ -831,10 +855,15 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
               : "none";
 
         // Auto-detect requiresApiKey from platformNotes when data source doesn't provide it
-        const platformNotes = String((i.requirements as Record<string, unknown>)?.platformNotes ?? "");
-        const inferredNeedsKey = !i.requiresApiKey && platformNotes
-          ? /[Kk]ey|密钥|[Tt]oken|[Ss]ecret|申请|授权|API_|api_key|APIKEY|access.?key|认证|凭[据证]/.test(platformNotes)
-          : false;
+        const platformNotes = String(
+          (i.requirements as Record<string, unknown>)?.platformNotes ?? "",
+        );
+        const inferredNeedsKey =
+          !i.requiresApiKey && platformNotes
+            ? /[Kk]ey|密钥|[Tt]oken|[Ss]ecret|申请|授权|API_|api_key|APIKEY|access.?key|认证|凭[据证]/.test(
+                platformNotes,
+              )
+            : false;
         const requiresApiKey = !!(i.requiresApiKey || inferredNeedsKey);
         // Pass platformNotes as configHint so UI can show setup instructions
         const configHint = requiresApiKey && platformNotes ? platformNotes : undefined;
@@ -848,9 +877,31 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
             marketVersion &&
             semverLessThan(installedVersion, marketVersion)
           );
-          return { ...i, friendlyName, description, tags, installStatus: "installed" as const, installedVersion, hasUpdate, installable, installMethod, requiresApiKey, configHint };
+          return {
+            ...i,
+            friendlyName,
+            description,
+            tags,
+            installStatus: "installed" as const,
+            installedVersion,
+            hasUpdate,
+            installable,
+            installMethod,
+            requiresApiKey,
+            configHint,
+          };
         }
-        return { ...i, friendlyName, description, tags, installStatus: "not_installed" as const, installable, installMethod, requiresApiKey, configHint };
+        return {
+          ...i,
+          friendlyName,
+          description,
+          tags,
+          installStatus: "not_installed" as const,
+          installable,
+          installMethod,
+          requiresApiKey,
+          configHint,
+        };
       });
 
       // Sort: installed first, then SSE (most reliable), then other installable, then non-installable last
@@ -860,7 +911,8 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
         const bInst = b.installStatus === "installed" ? 0 : 1;
         if (aInst !== bInst) return aInst - bInst;
         // SSE items next (work best in China), then npm/pypi, then non-installable
-        const methodRank = (m: string | undefined) => m === "sse" ? 0 : m === "npm" || m === "pypi" ? 1 : 2;
+        const methodRank = (m: string | undefined) =>
+          m === "sse" ? 0 : m === "npm" || m === "pypi" ? 1 : 2;
         const am = methodRank(a.installMethod);
         const bm = methodRank(b.installMethod);
         if (am !== bm) return am - bm;
@@ -943,11 +995,22 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
         return;
       }
 
-      // Build server config from marketplace item
-      const npmPackage = String(item.npmPackage ?? "");
-      const pypiPackage = String(item.pypiPackage ?? "");
+      // Build server config from marketplace item, with user override support
+      const overrideSseUrl =
+        typeof params.overrideSseUrl === "string" ? params.overrideSseUrl.trim() : "";
+      const overrideNpmPkg =
+        typeof params.overrideNpmPackage === "string" ? params.overrideNpmPackage.trim() : "";
+      const overridePypiPkg =
+        typeof params.overridePypiPackage === "string" ? params.overridePypiPackage.trim() : "";
+
+      const itemSseUrl = String(item.sseUrl ?? "");
+      const realItemSseUrl = isSyntheticSseUrl(itemSseUrl) ? "" : itemSseUrl;
+
+      // User overrides take precedence over marketplace data
+      const npmPackage = overrideNpmPkg || String(item.npmPackage ?? "");
+      const pypiPackage = overridePypiPkg || String(item.pypiPackage ?? "");
       const version = String(item.version ?? "");
-      const sseUrl = String(item.sseUrl ?? "");
+      const sseUrl = overrideSseUrl || realItemSseUrl;
       const env =
         params.env && typeof params.env === "object"
           ? (params.env as Record<string, string>)
@@ -998,8 +1061,21 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
           try {
             await manager.removeServer(serverId);
             persistMcpServerRemove(serverId).catch(() => {});
-          } catch { /* rollback */ }
-          respond(false, undefined, mcpError(friendlyInstallError(serverId, errorMsg)));
+          } catch {
+            /* rollback */
+          }
+
+          // Detect auth errors and provide specific guidance
+          const isAuthError = /401|403|unauthorized|forbidden/i.test(errorMsg);
+          if (isAuthError) {
+            respond(
+              false,
+              undefined,
+              mcpError(`${serverId} 需要认证才能连接。请使用「配置并安装」填写 API Key 后重试。`),
+            );
+          } else {
+            respond(false, undefined, mcpError(friendlyInstallError(serverId, errorMsg)));
+          }
           return;
         }
 
@@ -1010,7 +1086,8 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
       } else if (npmPackage) {
         // npm: multi-mirror fallback (3 CN mirrors auto-switch)
         const result = await tryInstallWithMirrorFallback({
-          manager, serverId,
+          manager,
+          serverId,
           type: "npm",
           packageStr: npmPackage,
           version,
@@ -1034,7 +1111,8 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
       } else if (pypiPackage) {
         // pypi: multi-mirror fallback (3 CN mirrors auto-switch)
         const result = await tryInstallWithMirrorFallback({
-          manager, serverId,
+          manager,
+          serverId,
           type: "pypi",
           packageStr: pypiPackage,
           version,
@@ -1055,7 +1133,11 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
         }
         respond(true, { ok: true, serverId, mirror: result.usedMirror });
       } else {
-        respond(false, undefined, mcpError("该能力没有可安装的包或 SSE 地址"));
+        respond(
+          false,
+          undefined,
+          mcpError("该能力没有可安装的包或 SSE 地址，请使用「手动配置」输入安装信息"),
+        );
         return;
       }
     } catch (err) {
@@ -1181,7 +1263,12 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
         if (!(item.npmPackage || item.pypiPackage || item.sseUrl)) return false;
         // Skip items that need API keys (inferred from platformNotes)
         const notes = String((item.requirements as Record<string, unknown>)?.platformNotes ?? "");
-        if (/[Kk]ey|密钥|[Tt]oken|[Ss]ecret|申请|授权|API_|api_key|APIKEY|access.?key|认证|凭[据证]/.test(notes)) return false;
+        if (
+          /[Kk]ey|密钥|[Tt]oken|[Ss]ecret|申请|授权|API_|api_key|APIKEY|access.?key|认证|凭[据证]/.test(
+            notes,
+          )
+        )
+          return false;
         return true;
       })
       .map((item: Record<string, unknown>) => ({
@@ -1194,7 +1281,13 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
     // 6. Return top 5
     const items = scored.slice(0, 5).map(({ item }) => {
       const installable = !!(item.npmPackage || item.pypiPackage || item.sseUrl);
-      const installMethod = item.npmPackage ? "npm" : item.pypiPackage ? "pypi" : item.sseUrl ? "sse" : "none";
+      const installMethod = item.npmPackage
+        ? "npm"
+        : item.pypiPackage
+          ? "pypi"
+          : item.sseUrl
+            ? "sse"
+            : "none";
       // Prefer Chinese names for CN users
       const friendlyName = (item.friendlyNameCn as string) || (item.friendlyName as string);
       const description = (item.descriptionCn as string) || (item.description as string);
@@ -1309,7 +1402,8 @@ const mcpMarketplaceUpdateHandler: GatewayRequestHandler = safeHandler(
       // Use multi-mirror fallback for npm/pypi updates
       if (npmPackage) {
         const result = await tryInstallWithMirrorFallback({
-          manager, serverId,
+          manager,
+          serverId,
           type: "npm",
           packageStr: npmPackage,
           version,
@@ -1325,7 +1419,8 @@ const mcpMarketplaceUpdateHandler: GatewayRequestHandler = safeHandler(
         respond(true, { ok: true, serverId, version, mirror: result.usedMirror });
       } else if (pypiPackage) {
         const result = await tryInstallWithMirrorFallback({
-          manager, serverId,
+          manager,
+          serverId,
           type: "pypi",
           packageStr: pypiPackage,
           version,
@@ -1354,7 +1449,11 @@ const mcpMarketplaceUpdateHandler: GatewayRequestHandler = safeHandler(
         persistMcpServerAdd(serverConfig).catch(() => {});
         respond(true, { ok: true, serverId, version });
       } else {
-        respond(false, undefined, mcpError("该能力没有可安装的包或 SSE 地址"));
+        respond(
+          false,
+          undefined,
+          mcpError("该能力没有可安装的包或 SSE 地址，请使用「手动配置」输入安装信息"),
+        );
         return;
       }
     } catch (err) {

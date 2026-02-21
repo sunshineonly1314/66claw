@@ -66,7 +66,7 @@ const meta = {
  * 获取当前配置的接入模式
  */
 function getConnectionMode(config?: DingtalkChannelConfig): DingtalkMode {
-  return config?.mode || "webhook";
+  return config?.mode || "stream";
 }
 
 // ============================================================================
@@ -347,6 +347,9 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       const channelConfig = ctx.cfg.channels?.dingtalk as DingtalkChannelConfig | undefined;
       const mode = getConnectionMode(channelConfig);
 
+      // 消息去重缓存
+      const recentDingtalkMsgIds = new Set<string>();
+
       ctx.log?.info(`[dingtalk] 启动钉钉渠道 (账户: ${ctx.accountId}, 模式: ${mode})`);
 
       // ===== Stream 模式 =====
@@ -356,7 +359,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         const streamClient = await createStreamClient({
           config: channelConfig ?? {},
           accountId: ctx.accountId,
-          gatewayPort: runtime.gateway?.port || 18789,
+          gatewayPort: runtime.gateway?.port || Number(process.env.OPENCLAWCN_GATEWAY_PORT) || 18789,
           cfg: ctx.cfg,
           log: ctx.log,
           onStart: () => {
@@ -389,6 +392,14 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         config: channelConfig ?? {},
         log: ctx.log,
         onMessage: async (msg) => {
+          // 扩展层去重：相同 msgId 在 5 分钟内只处理一次
+          if (recentDingtalkMsgIds.has(msg.msgId)) {
+            ctx.log?.info(`[dingtalk] 跳过重复消息: msgId=${msg.msgId}`);
+            return;
+          }
+          recentDingtalkMsgIds.add(msg.msgId);
+          setTimeout(() => recentDingtalkMsgIds.delete(msg.msgId), 5 * 60_000);
+
           ctx.log?.info(`[dingtalk] 收到消息: type=${msg.conversationType === "1" ? "单聊" : "群聊"}, from=${msg.senderNick}`);
 
           // 缓存 Session Webhook (用于回复)
@@ -404,7 +415,8 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
           const inboundCtx = {
             Channel: DINGTALK_CHANNEL_ID,
             AccountId: ctx.accountId,
-            MessageId: msg.msgId,
+            MessageSid: msg.msgId,
+            Provider: DINGTALK_CHANNEL_ID,
             From: msg.conversationId, // 用于路由和回复
             SenderId: msg.senderId,
             SenderName: msg.senderNick,

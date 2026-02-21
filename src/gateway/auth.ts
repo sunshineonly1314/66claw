@@ -197,7 +197,13 @@ export function resolveGatewayAuth(params: {
 }): ResolvedGatewayAuth {
   const authConfig = params.authConfig ?? {};
   const env = params.env ?? process.env;
-  const token = authConfig.token ?? env.OPENCLAWCN_GATEWAY_TOKEN ?? undefined;
+  // In desktop mode (OPENCLAWCN_DESKTOP_MODE=1), the Rust sidecar generates a
+  // fresh random token each launch and injects it into the WebView.  The env
+  // token MUST take precedence over the persisted config token, otherwise the
+  // WebView's token won't match and the WS handshake will fail with 1008.
+  const envToken = env.OPENCLAWCN_GATEWAY_TOKEN ?? undefined;
+  const isDesktopMode = env.OPENCLAWCN_DESKTOP_MODE === "1";
+  const token = isDesktopMode && envToken ? envToken : (authConfig.token ?? envToken);
   const password = authConfig.password ?? env.OPENCLAWCN_GATEWAY_PASSWORD ?? undefined;
   const trustedProxy = authConfig.trustedProxy;
 

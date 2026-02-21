@@ -19,6 +19,7 @@ export type LogsProps = {
   onToggleAutoFollow: (next: boolean) => void;
   onRefresh: () => void;
   onExport: (lines: string[], label: string) => void;
+  onRevealLogDir: (() => void) | null;
   onScroll: (event: Event) => void;
 };
 
@@ -118,7 +119,17 @@ export function renderLogs(props: LogsProps) {
       </div>
 
       ${props.file
-        ? html`<div class="muted" style="margin-top: 10px;">${t("logs.file")}: ${props.file}</div>`
+        ? html`<div class="muted" style="margin-top: 10px; display: flex; align-items: center; gap: 6px;">
+            <span>${t("logs.file")}: ${props.file}</span>
+            ${props.onRevealLogDir ? html`
+              <button
+                class="btn btn-xs"
+                title=${t("logs.openDir")}
+                @click=${props.onRevealLogDir}
+                style="padding: 2px 8px; font-size: 12px;"
+              >${t("logs.openDir")}</button>
+            ` : nothing}
+          </div>`
         : nothing}
       ${props.truncated
         ? html`<div class="callout" style="margin-top: 10px;">

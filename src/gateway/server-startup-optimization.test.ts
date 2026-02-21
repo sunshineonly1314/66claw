@@ -24,7 +24,9 @@ describe("createGatewayCloseHandler with getter-based late-binding refs", () => 
     const lateRef = { bonjourStop: null as (() => Promise<void>) | null };
 
     const close = createGatewayCloseHandler({
-      get bonjourStop() { return lateRef.bonjourStop; },
+      get bonjourStop() {
+        return lateRef.bonjourStop;
+      },
       tailscaleCleanup: null,
       canvasHost: null,
       canvasHostServer: null,
@@ -48,7 +50,9 @@ describe("createGatewayCloseHandler with getter-based late-binding refs", () => 
     });
 
     // bonjourStop is still null at construction — set it AFTER
-    lateRef.bonjourStop = async () => { stopped.push("bonjour"); };
+    lateRef.bonjourStop = async () => {
+      stopped.push("bonjour");
+    };
 
     await close();
 
@@ -80,13 +84,19 @@ describe("createGatewayCloseHandler with getter-based late-binding refs", () => 
       chatRunState: { clear: () => {} },
       clients: new Set(),
       configReloader: { stop: async () => {} },
-      get browserControl() { return lateRef.browserControl; },
+      get browserControl() {
+        return lateRef.browserControl;
+      },
       wss: { close: (cb: () => void) => cb() } as any,
       httpServer: { close: (cb: (err?: Error) => void) => cb() } as any,
     });
 
     // Set browserControl AFTER close handler is created
-    lateRef.browserControl = { stop: async () => { stopped.push("browser"); } };
+    lateRef.browserControl = {
+      stop: async () => {
+        stopped.push("browser");
+      },
+    };
 
     await close();
 
@@ -105,7 +115,9 @@ describe("createGatewayCloseHandler with getter-based late-binding refs", () => 
       canvasHost: null,
       canvasHostServer: null,
       stopChannel: async () => {},
-      get pluginServices() { return lateRef.pluginServices; },
+      get pluginServices() {
+        return lateRef.pluginServices;
+      },
       cron: { stop: () => {} },
       heartbeatRunner: { stop: () => {} } as any,
       nodePresenceTimers: new Map(),
@@ -123,7 +135,11 @@ describe("createGatewayCloseHandler with getter-based late-binding refs", () => 
       httpServer: { close: (cb: (err?: Error) => void) => cb() } as any,
     });
 
-    lateRef.pluginServices = { stop: async () => { stopped.push("plugins"); } };
+    lateRef.pluginServices = {
+      stop: async () => {
+        stopped.push("plugins");
+      },
+    };
 
     await close();
 
@@ -138,7 +154,9 @@ describe("createGatewayCloseHandler with getter-based late-binding refs", () => 
 
     const close = createGatewayCloseHandler({
       bonjourStop: null,
-      get tailscaleCleanup() { return lateRef.tailscaleCleanup; },
+      get tailscaleCleanup() {
+        return lateRef.tailscaleCleanup;
+      },
       canvasHost: null,
       canvasHostServer: null,
       stopChannel: async () => {},
@@ -160,7 +178,9 @@ describe("createGatewayCloseHandler with getter-based late-binding refs", () => 
       httpServer: { close: (cb: (err?: Error) => void) => cb() } as any,
     });
 
-    lateRef.tailscaleCleanup = async () => { stopped.push("tailscale"); };
+    lateRef.tailscaleCleanup = async () => {
+      stopped.push("tailscale");
+    };
 
     await close();
 
@@ -299,11 +319,7 @@ describe("subsystemsSettled timeout on shutdown", () => {
     const sidecarsPromise = Promise.reject(new Error("MCP init failed"));
     const discoveryPromise = Promise.resolve(async () => {});
 
-    const results = await Promise.allSettled([
-      tailscalePromise,
-      sidecarsPromise,
-      discoveryPromise,
-    ]);
+    const results = await Promise.allSettled([tailscalePromise, sidecarsPromise, discoveryPromise]);
 
     const [tsResult, sidecarsResult, discoveryResult] = results;
 
@@ -334,10 +350,7 @@ describe("health endpoint providers status logic", () => {
   // Tests the provider status determination logic used in server-http.ts
   // health endpoint.  Extracted to pure functions for fast unit testing.
 
-  function determineProviderStatus(prov: {
-    apiKey?: string;
-    auth?: string;
-  }): string {
+  function determineProviderStatus(prov: { apiKey?: string; auth?: string }): string {
     const hasAuth = prov.apiKey || (prov.auth && prov.auth !== "api-key");
     return hasAuth ? "ok" : "unconfigured";
   }
@@ -416,10 +429,12 @@ describe("health endpoint providers status logic", () => {
     expect(checkNeedsSetup(undefined)).toBe(true);
     expect(checkNeedsSetup({ openai: { status: "unconfigured" } })).toBe(true);
     expect(checkNeedsSetup({ openai: { status: "ok" } })).toBe(false);
-    expect(checkNeedsSetup({
-      openai: { status: "unconfigured" },
-      bedrock: { status: "ok" },
-    })).toBe(false);
+    expect(
+      checkNeedsSetup({
+        openai: { status: "unconfigured" },
+        bedrock: { status: "ok" },
+      }),
+    ).toBe(false);
   });
 });
 
@@ -493,15 +508,13 @@ describe("desktop mode environment variable logic", () => {
     expect(skipTailscale).toBe(false);
   });
 
-  it("channels are skipped in desktop mode (via isTruthyEnvValue)", () => {
+  it("channels are NOT skipped in desktop mode (channels must auto-start for configured providers)", () => {
     process.env.OPENCLAWCN_DESKTOP_MODE = "1";
-    // server-startup.ts uses isTruthyEnvValue — any truthy string
-    const isDesktopMode = ["1", "true", "yes"].includes(
-      (process.env.OPENCLAWCN_DESKTOP_MODE ?? "").toLowerCase(),
-    );
-
-    const skipChannels = isDesktopMode; // simplified from full condition
-    expect(skipChannels).toBe(true);
+    // Desktop mode no longer skips channel startup — configured channels
+    // (e.g. feishu, dingtalk) must auto-connect when the gateway starts.
+    // Only OPENCLAWCN_SKIP_CHANNELS or OPENCLAWCN_SKIP_PROVIDERS skip channels.
+    const skipChannels = false; // desktop mode alone does NOT skip
+    expect(skipChannels).toBe(false);
   });
 
   it("delivery recovery is NOT skipped in desktop mode", () => {
@@ -554,7 +567,9 @@ describe("setGatewayShutdownCallback wiring", () => {
 
     expect(requestShutdown()).toBe(false);
 
-    setCallback(async () => { cbCalled = true; });
+    setCallback(async () => {
+      cbCalled = true;
+    });
     expect(requestShutdown()).toBe(true);
 
     // Give the async callback time to run
@@ -563,7 +578,8 @@ describe("setGatewayShutdownCallback wiring", () => {
   });
 
   it("setGatewayShutdownCallback + requestGatewayShutdown integration", async () => {
-    const { setGatewayShutdownCallback, requestGatewayShutdown } = await import("./server-ready.js");
+    const { setGatewayShutdownCallback, requestGatewayShutdown } =
+      await import("./server-ready.js");
 
     let shutdownCalled = false;
     setGatewayShutdownCallback(async () => {

@@ -350,21 +350,32 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
               `
             : item.installable === false
               ? html`
-                  <a
-                    href=${item.sourceUrl || ""}
-                    target="_blank"
-                    rel="noopener"
-                    style="
-                      all:unset; cursor:pointer;
-                      font-size:13px; font-weight:600;
-                      padding:10px 32px;
-                      border-radius:8px;
-                      background:rgba(148,163,184,0.12);
-                      color:var(--muted-strong, #6b7d91);
-                      text-decoration:none;
-                      transition:opacity 150ms;
-                    "
-                  >${t("extensions.store.viewSource" as never)} \u2197</a>
+                  <div style="display:flex; gap:10px; align-items:center;">
+                    <button
+                      @click=${() => { onConfigInstall(); }}
+                      style="
+                        all:unset; cursor:pointer;
+                        font-size:13px; font-weight:600;
+                        padding:10px 32px;
+                        border-radius:8px;
+                        background:linear-gradient(135deg, #fbbf24, #f59e0b);
+                        color:#000;
+                        transition:opacity 150ms;
+                      "
+                    >${t("extensions.store.manualConfig" as never)}</button>
+                    ${item.sourceUrl ? html`
+                      <a
+                        href=${item.sourceUrl}
+                        target="_blank"
+                        rel="noopener"
+                        style="
+                          font-size:12px;
+                          color:var(--muted-strong, #6b7d91);
+                          text-decoration:underline;
+                        "
+                      >${t("extensions.store.viewSource" as never)} \u2197</a>
+                    ` : nothing}
+                  </div>
                 `
               : item.requiresApiKey
                 ? html`

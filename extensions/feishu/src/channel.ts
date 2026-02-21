@@ -330,6 +330,10 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       ctx.setStatus({ accountId: ctx.accountId, running: true, lastStartAt: Date.now(), port });
 
       // 消息处理函数 (WebSocket 和 Webhook 共用)
+      // 消息去重缓存：防止飞书 WebSocket/Webhook 超时重试导致重复处理
+      const recentMessageIds = new Set<string>();
+      const DEDUPE_TTL_MS = 5 * 60_000; // 5 分钟过期
+
       const handleMessage = async (msg: {
         messageId: string;
         chatId: string;
@@ -339,12 +343,21 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         senderName?: string;
         text: string;
       }) => {
+        // 扩展层去重：相同 messageId 在 5 分钟内只处理一次
+        if (recentMessageIds.has(msg.messageId)) {
+          ctx.log?.info(`[feishu] 跳过重复消息: messageId=${msg.messageId}`);
+          return;
+        }
+        recentMessageIds.add(msg.messageId);
+        setTimeout(() => recentMessageIds.delete(msg.messageId), DEDUPE_TTL_MS);
+
         ctx.log?.info(`[feishu] 收到消息: chatType=${msg.chatType}, from=${msg.senderId}`);
 
         const inboundCtx = {
           Channel: FEISHU_CHANNEL_ID,
           AccountId: ctx.accountId,
-          MessageId: msg.messageId,
+          MessageSid: msg.messageId,
+          Provider: FEISHU_CHANNEL_ID,
           From: msg.chatId,
           SenderId: msg.senderId,
           SenderName: msg.senderName ?? msg.senderId,

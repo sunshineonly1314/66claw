@@ -272,9 +272,7 @@ async function doSync(options: McpSyncOptions): Promise<McpSyncResult> {
         const allRows = db.prepare("SELECT server_id FROM mcp_items").all() as Array<{
           server_id: string;
         }>;
-        const staleIds = allRows
-          .map((r) => r.server_id)
-          .filter((id) => !remoteIds.has(id));
+        const staleIds = allRows.map((r) => r.server_id).filter((id) => !remoteIds.has(id));
         if (staleIds.length > 0) {
           mcpDb.deleteItemsByIds(staleIds);
           logger.info(`Removed ${staleIds.length} stale items from SQLite (no longer in remote)`);
@@ -380,18 +378,45 @@ async function fetchFromProxy(): Promise<Record<string, unknown>[]> {
 // Helpers
 // ============================================================================
 
-/** Deduplicate marketplace items by serverId (first occurrence wins). */
+/**
+ * Score an item by how much real install info it carries.
+ * Higher score = more useful for one-click install.
+ */
+function installInfoScore(item: McpMarketplaceItem): number {
+  let score = 0;
+  if (item.npmPackage) score += 3;
+  if (item.pypiPackage) score += 2;
+  // Real SSE URL (not the synthetic ModelScope pattern) is valuable
+  if (item.sseUrl && !/\.api-inference\.modelscope\.net\/sse$/.test(item.sseUrl)) score += 2;
+  if (item.isOfficial) score += 1;
+  return score;
+}
+
+/**
+ * Deduplicate marketplace items by serverId.
+ * When two items share the same serverId, the one with better install info wins.
+ * On tie, the first occurrence wins (preserves CN metadata from ModelScope).
+ */
 export function deduplicateItems(items: McpMarketplaceItem[]): McpMarketplaceItem[] {
-  const seen = new Set<string>();
-  const result: McpMarketplaceItem[] = [];
+  const map = new Map<string, McpMarketplaceItem>();
+  const scoreCache = new Map<string, number>();
   for (const item of items) {
-    const key = item.serverId ?? (item as unknown as Record<string, unknown>).id;
-    if (key && !seen.has(String(key))) {
-      seen.add(String(key));
-      result.push(item);
+    const key = String(item.serverId ?? (item as unknown as Record<string, unknown>).id ?? "");
+    if (!key) continue;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, item);
+      scoreCache.set(key, installInfoScore(item));
+    } else {
+      const newScore = installInfoScore(item);
+      const oldScore = scoreCache.get(key) ?? 0;
+      if (newScore > oldScore) {
+        map.set(key, item);
+        scoreCache.set(key, newScore);
+      }
     }
   }
-  return result;
+  return Array.from(map.values());
 }
 
 /**
@@ -416,7 +441,10 @@ async function writeIndexToDataDir(items: unknown[]): Promise<boolean> {
         const encPath = join(dir, "mcp-index.json.enc");
         const encrypted = encryptContent(jsonContent);
         await writeFile(encPath, encrypted);
-        logger.debug("Wrote mcp-index.json.enc (encrypted)", { path: encPath, count: items.length });
+        logger.debug("Wrote mcp-index.json.enc (encrypted)", {
+          path: encPath,
+          count: items.length,
+        });
       } else {
         // Write plain JSON in dev mode
         const filePath = join(dir, "mcp-index.json");

@@ -84,6 +84,7 @@ export interface ModelConfigState {
   providerConfigOpen: boolean;
   providerConfigProvider: ProviderInfo | null;
   providerConfigApiKey: string;
+  providerConfigCustomModel: string;
   providerConfigTesting: boolean;
   providerConfigTestResult: { success: boolean; message: string } | null;
   providerConfigDetecting: boolean;
@@ -137,6 +138,7 @@ export function createInitialModelConfigState(): ModelConfigState {
     providerConfigOpen: false,
     providerConfigProvider: null,
     providerConfigApiKey: "",
+    providerConfigCustomModel: "",
     providerConfigTesting: false,
     providerConfigTestResult: null,
     providerConfigDetecting: false,
@@ -328,6 +330,7 @@ export function closeProviderConfig(host: ModelConfigHost): void {
   host.providerConfigOpen = false;
   host.providerConfigProvider = null;
   host.providerConfigApiKey = "";
+  host.providerConfigCustomModel = "";
   host.providerConfigTesting = false;
   host.providerConfigTestResult = null;
   host.providerConfigDetecting = false;
@@ -340,6 +343,14 @@ export function closeProviderConfig(host: ModelConfigHost): void {
  */
 export function updateProviderApiKey(host: ModelConfigHost, apiKey: string): void {
   host.providerConfigApiKey = apiKey;
+  host.providerConfigTestResult = null;
+}
+
+/**
+ * 更新自定义模型名
+ */
+export function updateProviderCustomModel(host: ModelConfigHost, customModel: string): void {
+  host.providerConfigCustomModel = customModel;
   host.providerConfigTestResult = null;
 }
 
@@ -390,6 +401,7 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
     const rpcPromise = host.client.request("modelConfig.provider.detect", {
       providerId: host.providerConfigProvider.providerId,
       apiKey: host.providerConfigApiKey,
+      ...(host.providerConfigCustomModel ? { customModel: host.providerConfigCustomModel.trim() } : {}),
     });
 
     // 超时保护：防止 Gateway 挂起导致弹窗永远卡在 detecting
@@ -419,7 +431,6 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
       };
       host.providerConfigAutoEnabled = (data.autoEnabled as Record<string, string>) ?? null;
       host.providerConfigStep = "result";
-      // 不再自动关闭，由用户点击"完成"按钮手动关闭
     } else {
       host.providerConfigTestResult = {
         success: false,

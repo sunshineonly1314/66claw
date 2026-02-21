@@ -494,11 +494,18 @@ export type InstallResult = {
   connectError?: string;
 };
 
+export type InstallOverrides = {
+  sseUrl?: string;
+  npmPackage?: string;
+  pypiPackage?: string;
+};
+
 export async function installMarketplaceItem(
   client: GatewayClient | null,
   item: McpMarketplaceItem,
   env: Record<string, string> | undefined,
   callbacks: MarketplaceCallbacks & { currentItems: McpMarketplaceItem[] | (() => McpMarketplaceItem[]) },
+  overrides?: InstallOverrides,
 ): Promise<InstallResult | undefined> {
   if (!client) return undefined;
 
@@ -516,6 +523,9 @@ export async function installMarketplaceItem(
     const result = await client.request("mcp.marketplace.install", {
       serverId: item.serverId,
       ...(env ? { env } : {}),
+      ...(overrides?.sseUrl ? { overrideSseUrl: overrides.sseUrl } : {}),
+      ...(overrides?.npmPackage ? { overrideNpmPackage: overrides.npmPackage } : {}),
+      ...(overrides?.pypiPackage ? { overridePypiPackage: overrides.pypiPackage } : {}),
     }) as InstallResult | null;
 
     // Success: mark installed (re-read to avoid overwriting concurrent changes)

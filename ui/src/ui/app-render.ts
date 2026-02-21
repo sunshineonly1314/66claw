@@ -1238,8 +1238,10 @@ export function renderApp(state: AppViewState) {
                     .replace("{{max}}", String(MCP_MAX_RUNNING)),
                   "info",
                 );
-                // Extract env from config wizard (attached as _env on the item)
-                const env = (item as McpMarketplaceItem & { _env?: Record<string, string> })._env;
+                // Extract env and overrides from config wizard (attached as _env / _overrides on the item)
+                const itemWithExtras = item as McpMarketplaceItem & { _env?: Record<string, string>; _overrides?: { sseUrl?: string; npmPackage?: string; pypiPackage?: string } };
+                const env = itemWithExtras._env;
+                const overrides = itemWithExtras._overrides;
                 void (async () => {
                   const result = await installMarketplaceItem(
                     state.client,
@@ -1251,6 +1253,7 @@ export function renderApp(state: AppViewState) {
                         state.mcpMarketplace = { ...state.mcpMarketplace, ...patch };
                       },
                     },
+                    overrides,
                   );
 
                   if (result?.ok) {
@@ -1706,6 +1709,9 @@ export function renderApp(state: AppViewState) {
               // OpenClawCN: auto-failover banner
               failoverBanner: state.failoverBanner ?? null,
               onDismissFailoverBanner: () => { state.failoverBanner = null; },
+              // OpenClawCN: 聊天模型配置状态
+              chatModelConfigured: state.chatModelConfigured,
+              onNavigateToModelConfig: () => { state.setTab("model-config" as Tab); },
             })
           : nothing}
 
@@ -1787,6 +1793,9 @@ export function renderApp(state: AppViewState) {
               onToggleAutoFollow: (next) => (state.logsAutoFollow = next),
               onRefresh: () => loadLogs(state, { reset: true }),
               onExport: (lines, label) => state.exportLogs(lines, label),
+              onRevealLogDir: state.client ? () => {
+                void state.client!.request("logs.reveal", {});
+              } : null,
               onScroll: (event) => state.handleLogsScroll(event),
             })
           : nothing}

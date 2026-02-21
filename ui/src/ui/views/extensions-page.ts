@@ -11,6 +11,7 @@
  */
 
 import { html, nothing, type TemplateResult } from "lit";
+import { ref, type RefOrCallback } from "lit/directives/ref.js";
 import { t } from "../i18n/index.js";
 import type {
   McpCapability,
@@ -26,6 +27,26 @@ import { renderMcpDetailModal } from "./mcp-detail-modal.js";
 import { renderMcpConfigWizard } from "./mcp-config-wizard.js";
 import { renderMcpBatchConfig } from "./mcp-batch-config.js";
 import { MCP_CATEGORIES, MCP_MAX_RUNNING, filterMarketplaceItems } from "./mcp-shared.js";
+
+// ---------------------------------------------------------------------------
+// IntersectionObserver-based infinite scroll sentinel
+// ---------------------------------------------------------------------------
+const _sentinelObservers = new WeakMap<Element, IntersectionObserver>();
+
+function scrollSentinelRef(onLoad?: () => void, loading?: boolean): RefOrCallback {
+  return (el: Element | undefined) => {
+    if (!el) return;
+    const prev = _sentinelObservers.get(el);
+    if (prev) { prev.disconnect(); _sentinelObservers.delete(el); }
+    if (!onLoad || loading) return;
+    const obs = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) onLoad(); },
+      { rootMargin: "200px" },
+    );
+    obs.observe(el);
+    _sentinelObservers.set(el, obs);
+  };
+}
 
 // ============================================================================
 // Props
@@ -161,13 +182,13 @@ export function renderExtensions(props: ExtensionsPageProps): TemplateResult {
       ? renderMcpConfigWizard({
           item: marketplace.configTarget,
           onClose: props.onCloseConfigWizard,
-          onSaveAndEnable: (env) => {
+          onSaveAndEnable: (env, overrides) => {
             const target = marketplace.configTarget!;
             if (target.installStatus === "installed" && props.onUpdateServerEnv) {
               // Already installed — update env vars and restart
               props.onUpdateServerEnv(target.serverId, env);
             } else {
-              props.onInstall({ ...target, _env: env } as McpMarketplaceItem & { _env: Record<string, string> });
+              props.onInstall({ ...target, _env: env, _overrides: overrides } as McpMarketplaceItem & { _env: Record<string, string>; _overrides?: typeof overrides });
             }
             props.onCloseConfigWizard();
           },
@@ -583,27 +604,11 @@ function renderCapabilityStore(props: ExtensionsPageProps): TemplateResult {
                 </div>
                 ${marketplace.page < marketplace.totalPages
                   ? html`
-                    <div style="display:flex; justify-content:center; margin-bottom:28px;">
-                      <button
-                        @click=${props.onLoadMore}
-                        ?disabled=${marketplace.loadingMore}
-                        style="
-                          all:unset; cursor:pointer;
-                          padding:10px 32px;
-                          border-radius:var(--radius-md, 8px);
-                          border:1px solid var(--border);
-                          background:var(--card);
-                          color:var(--fg);
-                          font-size:13px;
-                          font-weight:500;
-                          transition:all 150ms;
-                          opacity:${marketplace.loadingMore ? "0.6" : "1"};
-                        "
-                        class="ext-load-more-btn"
-                      >${marketplace.loadingMore
-                          ? t("extensions.store.loadingMore" as never)
-                          : `${t("extensions.store.loadMore" as never)} (${marketplace.items.length}/${marketplace.total})`
-                      }</button>
+                    <div ${ref(scrollSentinelRef(props.onLoadMore, marketplace.loadingMore))}
+                      style="display:flex; justify-content:center; align-items:center; padding:20px 0 28px; min-height:48px;">
+                      ${marketplace.loadingMore
+                        ? html`<span style="font-size:13px; color:var(--muted-strong, #6b7d91);">${t("extensions.store.loadingMore" as never)}</span>`
+                        : html`<span style="font-size:12px; color:var(--muted-strong, #6b7d91);">${marketplace.items.length} / ${marketplace.total}</span>`}
                     </div>`
                   : marketplace.total > 0
                     ? html`<div style="text-align:center; margin-bottom:28px; font-size:12px; color:var(--muted-strong, #6b7d91);">

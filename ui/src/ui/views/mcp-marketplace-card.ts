@@ -110,26 +110,38 @@ function renderInstallButton(
         >${t("extensions.store.installFailed")}</button>
       `;
     default: // not_installed
-      // Items without any install method → show "View Source" link
+      // Items without any install method → show "Manual Config" button + optional "View Source" link
       if (item.installable === false) {
         const url = item.sourceUrl || "";
         return html`
-          <a
-            href=${url}
-            target="_blank"
-            rel="noopener"
-            @click=${(e: Event) => { e.stopPropagation(); }}
-            style="
-              all:unset; cursor:pointer;
-              font-size:11px; font-weight:600;
-              padding:5px 14px;
-              border-radius:6px;
-              background:rgba(148,163,184,0.12);
-              color:var(--muted-strong, #6b7d91);
-              transition: opacity 150ms;
-              text-decoration:none;
-            "
-          >${t("extensions.store.viewSource" as never)}</a>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button
+              @click=${(e: Event) => { e.stopPropagation(); onConfigInstall(); }}
+              style="
+                all:unset; cursor:pointer;
+                font-size:11px; font-weight:600;
+                padding:5px 14px;
+                border-radius:6px;
+                background:linear-gradient(135deg, #fbbf24, #f59e0b);
+                color:#000;
+                transition: opacity 150ms;
+              "
+            >${t("extensions.store.manualConfig" as never)}</button>
+            ${url ? html`
+              <a
+                href=${url}
+                target="_blank"
+                rel="noopener"
+                @click=${(e: Event) => { e.stopPropagation(); }}
+                style="
+                  all:unset; cursor:pointer;
+                  font-size:10px;
+                  color:var(--muted-strong, #6b7d91);
+                  text-decoration:underline;
+                "
+              >${t("extensions.store.viewSource" as never)}</a>
+            ` : nothing}
+          </div>
         `;
       }
       if (item.requiresApiKey) {

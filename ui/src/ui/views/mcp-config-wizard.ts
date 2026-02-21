@@ -10,10 +10,16 @@ import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../i18n/index.js";
 import type { McpMarketplaceItem } from "../app-view-state.js";
 
+export type McpInstallOverrides = {
+  sseUrl?: string;
+  npmPackage?: string;
+  pypiPackage?: string;
+};
+
 export type McpConfigWizardProps = {
   item: McpMarketplaceItem;
   onClose: () => void;
-  onSaveAndEnable: (env: Record<string, string>) => void;
+  onSaveAndEnable: (env: Record<string, string>, overrides?: McpInstallOverrides) => void;
   onTestConnection: (env: Record<string, string>) => void;
   /** Test state managed by parent */
   testState: "idle" | "testing" | "success" | "error";
@@ -82,6 +88,94 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
       <div style="font-size:12px; color:var(--muted-strong, #6b7d91); margin-bottom:24px;">
         ${t("extensions.config.steps").replace("{{name}}", item.friendlyName).replace("{{action}}", "")}
       </div>
+
+      <!-- Install method override (shown only for items without install info) -->
+      ${item.installable === false ? html`
+        <div style="
+          background:var(--card, #1a1a2e);
+          border:1px solid var(--border);
+          border-radius:8px;
+          padding:16px;
+          margin-bottom:20px;
+        ">
+          <div style="font-size:13px; font-weight:600; color:var(--fg); margin-bottom:10px;">
+            ${t("extensions.config.installMethod" as never)}
+          </div>
+          <div style="font-size:11px; color:var(--muted-strong, #6b7d91); margin-bottom:12px;">
+            ${t("extensions.config.installMethodHint" as never)}
+          </div>
+          <div style="display:flex; gap:8px; margin-bottom:12px;">
+            ${["sse", "npm", "pypi"].map((m) => html`
+              <label style="
+                display:flex; align-items:center; gap:4px;
+                font-size:12px; color:var(--fg-secondary, #a0aec0);
+                cursor:pointer;
+              ">
+                <input
+                  type="radio"
+                  name="mcp-install-method"
+                  value=${m}
+                  ?checked=${m === "sse"}
+                  @change=${(e: Event) => {
+                    const radio = e.target as HTMLInputElement;
+                    const container = radio.closest("[role=dialog]");
+                    const sseInput = container?.querySelector("#mcp-override-sse") as HTMLElement | null;
+                    const npmInput = container?.querySelector("#mcp-override-npm") as HTMLElement | null;
+                    const pypiInput = container?.querySelector("#mcp-override-pypi") as HTMLElement | null;
+                    if (sseInput) sseInput.style.display = radio.value === "sse" ? "block" : "none";
+                    if (npmInput) npmInput.style.display = radio.value === "npm" ? "block" : "none";
+                    if (pypiInput) pypiInput.style.display = radio.value === "pypi" ? "block" : "none";
+                  }}
+                  style="accent-color:var(--accent, #6366f1);"
+                />
+                ${m === "sse" ? "SSE" : m === "npm" ? "npm" : "PyPI"}
+              </label>
+            `)}
+          </div>
+          <div id="mcp-override-sse" style="display:block;">
+            <input
+              id="mcp-override-sse-input"
+              type="text"
+              placeholder="https://example.com/mcp/sse"
+              style="
+                width:100%; box-sizing:border-box;
+                padding:8px 12px;
+                border:1px solid var(--border); border-radius:6px;
+                background:transparent; color:var(--fg); font-size:12px;
+                outline:none;
+              "
+            />
+          </div>
+          <div id="mcp-override-npm" style="display:none;">
+            <input
+              id="mcp-override-npm-input"
+              type="text"
+              placeholder="@scope/package-name"
+              style="
+                width:100%; box-sizing:border-box;
+                padding:8px 12px;
+                border:1px solid var(--border); border-radius:6px;
+                background:transparent; color:var(--fg); font-size:12px;
+                outline:none;
+              "
+            />
+          </div>
+          <div id="mcp-override-pypi" style="display:none;">
+            <input
+              id="mcp-override-pypi-input"
+              type="text"
+              placeholder="package-name"
+              style="
+                width:100%; box-sizing:border-box;
+                padding:8px 12px;
+                border:1px solid var(--border); border-radius:6px;
+                background:transparent; color:var(--fg); font-size:12px;
+                outline:none;
+              "
+            />
+          </div>
+        </div>
+      ` : nothing}
 
       <!-- Step 1 -->
       <div style="display:flex; gap:12px; margin-bottom:18px;">
@@ -266,9 +360,11 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
           @click=${() => {
             const input = document.getElementById("mcp-api-key-input") as HTMLInputElement | null;
             const val = input?.value?.trim() ?? "";
-            if (!val) return;
+            // API key is optional for manual-config items (installable === false)
+            if (!val && item.installable !== false) return;
             // Collect extra env vars from advanced config
-            const env: Record<string, string> = { [keyFieldName]: val };
+            const env: Record<string, string> = {};
+            if (val) env[keyFieldName] = val;
             const extraContainer = document.getElementById("mcp-extra-env");
             if (extraContainer) {
               // Template row (always present)
@@ -286,7 +382,20 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
                 if (k && v) env[k] = v;
               });
             }
-            onSaveAndEnable(env);
+            // Collect install method overrides (for manual-config items)
+            const overrides: McpInstallOverrides = {};
+            const sseInput = document.getElementById("mcp-override-sse-input") as HTMLInputElement | null;
+            const npmInput = document.getElementById("mcp-override-npm-input") as HTMLInputElement | null;
+            const pypiInput = document.getElementById("mcp-override-pypi-input") as HTMLInputElement | null;
+            const selectedMethod = (document.querySelector('input[name="mcp-install-method"]:checked') as HTMLInputElement)?.value;
+            if (selectedMethod === "sse" && sseInput?.value?.trim()) {
+              overrides.sseUrl = sseInput.value.trim();
+            } else if (selectedMethod === "npm" && npmInput?.value?.trim()) {
+              overrides.npmPackage = npmInput.value.trim();
+            } else if (selectedMethod === "pypi" && pypiInput?.value?.trim()) {
+              overrides.pypiPackage = pypiInput.value.trim();
+            }
+            onSaveAndEnable(env, Object.keys(overrides).length > 0 ? overrides : undefined);
           }}
           style="
             all:unset; cursor:pointer;

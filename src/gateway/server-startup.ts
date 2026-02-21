@@ -227,11 +227,9 @@ export async function startGatewaySidecars(params: {
       params.logHooks.error(`failed to load hooks: ${String(err)}`);
     }
 
-    const isDesktopMode = isTruthyEnvValue(process.env.OPENCLAWCN_DESKTOP_MODE);
     const skipChannels =
       isTruthyEnvValue(process.env.OPENCLAWCN_SKIP_CHANNELS) ||
-      isTruthyEnvValue(process.env.OPENCLAWCN_SKIP_PROVIDERS) ||
-      isDesktopMode;
+      isTruthyEnvValue(process.env.OPENCLAWCN_SKIP_PROVIDERS);
     if (!skipChannels) {
       try {
         await params.startChannels();
@@ -239,10 +237,9 @@ export async function startGatewaySidecars(params: {
         params.logChannels.error(`channel startup failed: ${String(err)}`);
       }
     } else {
-      const reason = isDesktopMode
-        ? "OPENCLAWCN_DESKTOP_MODE=1 (channels start on-demand via config reload)"
-        : "OPENCLAWCN_SKIP_CHANNELS=1 or OPENCLAWCN_SKIP_PROVIDERS=1";
-      params.logChannels.info(`skipping channel start (${reason})`);
+      params.logChannels.info(
+        `skipping channel start (OPENCLAWCN_SKIP_CHANNELS=1 or OPENCLAWCN_SKIP_PROVIDERS=1)`,
+      );
     }
   })();
 
@@ -251,7 +248,13 @@ export async function startGatewaySidecars(params: {
     browserControlPromise,
     pluginServicesPromise,
   ]);
-  await Promise.all([gmailPromise, mcpPromise, skillsPromise, toolIndexPromise, hooksAndChannelsPromise]);
+  await Promise.all([
+    gmailPromise,
+    mcpPromise,
+    skillsPromise,
+    toolIndexPromise,
+    hooksAndChannelsPromise,
+  ]);
 
   // ── Post-parallel (order-independent fire-and-forget tasks) ─────────
   if (params.cfg.hooks?.internal?.enabled) {

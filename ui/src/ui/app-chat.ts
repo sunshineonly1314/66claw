@@ -26,6 +26,8 @@ type ChatHost = {
   chatAvatarUrl: string | null;
   // License activation support
   showLicenseDialog: LicenseDialogType | null;
+  // OpenClawCN: 聊天模型是否已配置
+  chatModelConfigured: boolean | null;
 };
 
 export const CHAT_SESSIONS_ACTIVE_MINUTES = 10;
@@ -199,8 +201,28 @@ export async function refreshChat(host: ChatHost) {
     refreshChatAvatar(host),
     syncPerformanceProfile(host as unknown as ClawdbotApp),
     syncSmartDispatch(host as unknown as ClawdbotApp),
+    checkChatModelConfigured(host),
   ]);
   scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], true);
+}
+
+/**
+ * OpenClawCN: 检查聊天(text)能力是否已配置
+ * 用于在聊天页面显示配置提示
+ */
+async function checkChatModelConfigured(host: ChatHost): Promise<void> {
+  const app = host as unknown as ClawdbotApp;
+  if (!app.client || !app.connected) return;
+  try {
+    const result = await app.client.request("modelConfig.capabilities.list") as {
+      capabilities?: Array<{ capability: string; status: string }>;
+    };
+    const textCap = result.capabilities?.find((c) => c.capability === "text");
+    host.chatModelConfigured = textCap?.status === "active";
+  } catch {
+    // 降级：查询失败时不显示提示
+    host.chatModelConfigured = null;
+  }
 }
 
 export const flushChatQueueForEvent = flushChatQueue;

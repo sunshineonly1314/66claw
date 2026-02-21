@@ -202,32 +202,33 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     apiKeyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
     apiKeyGuide: ["访问火山引擎控制台注册", "开通 Ark 模型服务", "创建 API Key 并复制"],
     models: [
-      // 文字对话模型
+      // 文字对话 + 图片理解模型（豆包 1.8 支持 text/image/video）
       {
-        modelId: "doubao-pro-32k",
-        modelName: "Doubao-Pro-32K",
-        capabilities: ["text"],
-        pricing: { type: "paid", details: "响应极快" },
-        contextWindow: 32768,
-        maxTokens: 4096,
+        modelId: "doubao-seed-1-8-251228",
+        modelName: "豆包 1.8",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "最新旗舰 · 响应极快" },
+        contextWindow: 256000,
+        maxTokens: 32768,
+      },
+      {
+        modelId: "doubao-seed-1-6-251015",
+        modelName: "豆包 1.6",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid" },
+        contextWindow: 256000,
+        maxTokens: 32768,
       },
       {
         modelId: "doubao-seed-1-6-lite-251015",
-        modelName: "Doubao-Seed-1.6-Lite",
+        modelName: "豆包 1.6 Lite",
         capabilities: ["text"],
         pricing: { type: "paid" },
       },
       {
         modelId: "doubao-seed-1-6-flash-250828",
-        modelName: "Doubao-Seed-1.6-Flash",
+        modelName: "豆包 1.6 Flash",
         capabilities: ["text"],
-        pricing: { type: "paid" },
-      },
-      // 图片理解模型
-      {
-        modelId: "doubao-vision-pro",
-        modelName: "Doubao-Vision-Pro",
-        capabilities: ["image-understanding"],
         pricing: { type: "paid" },
       },
     ],
@@ -639,12 +640,9 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "🐱",
     group: "cn-more",
     tagline: "每日免费50万Token · 128K上下文 · OpenAI兼容",
-    apiKeyUrl: "https://longcat.chat/login?countrycode=86&countryname=China&callback=https%3A%2F%2Flongcat.chat%2Fplatform",
-    apiKeyGuide: [
-      "访问 longcat.chat 注册账号",
-      "进入平台获取 API Key",
-      "每日免费 50 万 tokens",
-    ],
+    apiKeyUrl:
+      "https://longcat.chat/login?countrycode=86&countryname=China&callback=https%3A%2F%2Flongcat.chat%2Fplatform",
+    apiKeyGuide: ["访问 longcat.chat 注册账号", "进入平台获取 API Key", "每日免费 50 万 tokens"],
     models: [
       {
         modelId: "longcat-flash-chat",

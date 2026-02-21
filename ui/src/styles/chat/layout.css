@@ -1851,3 +1851,50 @@
 .chat-trial-bar__qrcode {
   transition: filter 0.3s ease, opacity 0.3s ease;
 }
+
+/* =============================================
+   CHAT MODEL NOT-CONFIGURED BANNER
+   ============================================= */
+.chat-model-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 0 16px 8px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.chat-model-banner__icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.chat-model-banner__text {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.chat-model-banner__btn {
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.chat-model-banner__btn:hover {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.chat-model-banner__btn:active {
+  transform: translateY(0);
+}

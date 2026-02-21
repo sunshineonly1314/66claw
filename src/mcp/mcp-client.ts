@@ -252,14 +252,23 @@ export class MCPClient {
         this.client = null;
       }
 
-      // If server returns 405 (Method Not Allowed), it only supports legacy SSE
+      // If server doesn't support StreamableHTTP, fall back to legacy SSE.
+      // 405 = Method Not Allowed (most common), 406 = Not Acceptable,
+      // 415 = Unsupported Media Type, 501 = Not Implemented.
+      // Do NOT fallback on 401/403 — those are auth errors that the user needs to resolve.
       const errMsg = String(err);
-      if (
-        !errMsg.includes("405") &&
-        !errMsg.includes("Not Allowed") &&
-        !errMsg.includes("Method")
-      ) {
-        throw err; // Not a 405 — actual error, re-throw
+      const shouldFallback =
+        errMsg.includes("405") ||
+        errMsg.includes("Not Allowed") ||
+        errMsg.includes("Method") ||
+        errMsg.includes("406") ||
+        errMsg.includes("Not Acceptable") ||
+        errMsg.includes("415") ||
+        errMsg.includes("Unsupported Media Type") ||
+        errMsg.includes("501") ||
+        errMsg.includes("Not Implemented");
+      if (!shouldFallback) {
+        throw err; // Actual error (auth, network, etc.) — re-throw
       }
     }
 

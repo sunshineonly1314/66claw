@@ -131,6 +131,9 @@ export type ChatProps = {
     reasonText: string;
   } | null;
   onDismissFailoverBanner?: () => void;
+  // OpenClawCN: 聊天模型是否已配置
+  chatModelConfigured?: boolean | null;
+  onNavigateToModelConfig?: () => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -665,6 +668,22 @@ export function renderChat(props: ChatProps) {
             已自动切换到 <strong>${props.failoverBanner.toProvider}</strong> / ${props.failoverBanner.toModel}，原服务商 ${props.failoverBanner.fromProvider} ${props.failoverBanner.reasonText}
           </span>
           <button class="failover-banner__close" type="button" @click=${props.onDismissFailoverBanner}>&times;</button>
+        </div>
+      ` : nothing}
+
+      ${props.chatModelConfigured === false ? html`
+        <div class="callout warning chat-model-banner">
+          <span class="chat-model-banner__icon">🔑</span>
+          <span class="chat-model-banner__text">
+            聊天功能需要配置 <strong>硅基流动 API Key</strong>，请先前往模型设置完成配置
+          </span>
+          <button
+            class="chat-model-banner__btn"
+            type="button"
+            @click=${props.onNavigateToModelConfig}
+          >
+            前往配置
+          </button>
         </div>
       ` : nothing}
 

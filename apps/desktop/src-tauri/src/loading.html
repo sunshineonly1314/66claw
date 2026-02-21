@@ -56,15 +56,16 @@ p{font-size:13px;color:#888}
     }
 
     function goControlUi(info) {
+        var p = (info && info.port) || port;
         var hash = "";
         if (info && info.token) {
-            hash = "#token=" + info.token + "&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A" + info.port;
+            hash = "#token=" + info.token + "&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A" + p;
         }
         log("-> goControlUi() hash=" + (hash ? "yes" : "no"));
-        // Must use assign + reload because current origin is already tauri://localhost
-        // (from document.open/write/close). Just changing hash won't trigger a page load.
-        window.location.href = "tauri://localhost/" + hash;
-        window.location.reload();
+        // Navigate to gateway HTTP URL so the UI is served from disk (always fresh).
+        // Tauri 2.x embeds frontendDist into the exe at build time, so tauri://localhost
+        // serves a potentially stale copy. The gateway serves the latest control-ui.
+        window.location.href = "http://127.0.0.1:" + p + "/" + hash;
     }
 
     function poll() {

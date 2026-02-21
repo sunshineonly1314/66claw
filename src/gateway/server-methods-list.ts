@@ -3,6 +3,7 @@ import { listChannelPlugins } from "../channels/plugins/index.js";
 const BASE_METHODS = [
   "health",
   "logs.tail",
+  "logs.reveal",
   "diagnose.logs",
   "channels.status",
   "channels.logout",

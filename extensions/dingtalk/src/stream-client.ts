@@ -247,7 +247,7 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
   log?.info?.(`[DingTalk][Session] key=${sessionKey}, isNew=${isNew}`);
 
   // Gateway 认证
-  const gatewayAuth = streamConfig.gatewayToken || streamConfig.gatewayPassword || "";
+  const gatewayAuth = streamConfig.gatewayToken || streamConfig.gatewayPassword || process.env.OPENCLAWCN_GATEWAY_TOKEN || process.env.OPENCLAWCN_GATEWAY_PASSWORD || "";
 
   // 构建 system prompts & 获取 oapi token
   const systemPrompts: string[] = [];
