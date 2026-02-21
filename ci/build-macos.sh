@@ -33,10 +33,26 @@ MAC_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.user")
 MAC_WORKSPACE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.workspace")
 MAC_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo")
 
-# 参数
-VERSION="${1:-}"
-ARCH="${2:-universal}"
-VALIDATE_FLAG="${3:-}"
+# 参数解析（支持命名参数和位置参数）
+VERSION=""
+ARCH="universal"
+VALIDATE_FLAG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --arch)    ARCH="$2"; shift 2 ;;
+    --version) VERSION="$2"; shift 2 ;;
+    --validate|--validate-full) VALIDATE_FLAG="$1"; shift ;;
+    -*)        echo "Unknown option: $1" >&2; exit 1 ;;
+    *)
+      # Legacy positional args: VERSION ARCH VALIDATE
+      if [ -z "$VERSION" ]; then VERSION="$1"
+      elif [ "$ARCH" = "universal" ]; then ARCH="$1"
+      else VALIDATE_FLAG="$1"
+      fi
+      shift ;;
+  esac
+done
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "macOS 远程构建"
