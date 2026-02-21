@@ -110,6 +110,36 @@ if (Test-Path $distSource) {
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
 Write-Host "[3/9] Installing production node_modules/..." -ForegroundColor Green
 
+# ── Pre-seeded node_modules: 如果 CI 预先上传了 prod-node-modules.tar.gz，直接解压使用 ──
+# 这避免了 npm install 从 github.com 下载 @whiskeysockets/libsignal-node 等依赖（国内网络不可达）
+$preSeededTarball = "D:\cicd-workspace\prod-node-modules.tar.gz"
+if (Test-Path $preSeededTarball) {
+    Write-Host "  Found pre-seeded node_modules tarball: $preSeededTarball" -ForegroundColor Cyan
+    Write-Host "  Extracting (skipping npm install)..."
+    $extractDir = Join-Path $env:TEMP "clawdbot-prod-nm-preseed"
+    if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+
+    # Use tar to extract (available on Windows 10+)
+    tar xzf "$preSeededTarball" -C "$extractDir" 2>&1
+    if ($LASTEXITCODE -eq 0 -and (Test-Path "$extractDir\node_modules")) {
+        robocopy "$extractDir\node_modules" "$ResourcesDir\node_modules" /E /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+        if ($LASTEXITCODE -ge 8) {
+            Write-Host "  WARNING: robocopy failed, falling back to npm install" -ForegroundColor Yellow
+        } else {
+            $nmSize = [math]::Round(((Get-ChildItem "$ResourcesDir\node_modules" -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB), 2)
+            Write-Host "  OK: node_modules/ ($nmSize MB) [pre-seeded tarball] [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]" -ForegroundColor Green
+            Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+            # Skip the rest of step 3 — jump to step 4 (use goto-like flag)
+            $skipNpmInstall = $true
+        }
+    } else {
+        Write-Host "  WARNING: tarball extraction failed, falling back to npm install" -ForegroundColor Yellow
+    }
+    if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+if (-not $skipNpmInstall) {
 # CRITICAL: pnpm uses hardlinks to a global store. robocopy/Copy-Item expands
 # each hardlink into an independent file copy: 1.5GB real → 18GB copied.
 # Solution: use npm install --prod in a temp dir to get a flat, real node_modules.
@@ -217,6 +247,7 @@ try {
         Remove-Item $tempInstallDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+} # end if (-not $skipNpmInstall)
 
 # ── 4. Extensions ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
@@ -380,11 +411,25 @@ if (Test-Path "$ProjectRoot\data") {
             Copy-Item $src "$dataResDir\$d" -Recurse -Force
         }
     }
+    # Ensure mcp-index.json exists (Gateway warns if missing).
+    # A minimal seed is enough - runtime sync will fetch the full index.
+    $mcpIndexPath = Join-Path $dataResDir "mcp-index.json"
+    if (-not (Test-Path $mcpIndexPath)) {
+        Write-Host "  Creating minimal mcp-index.json seed (full index synced at runtime)"
+        $seedJson = '{"items":[],"generated":"' + (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ") + '","seed":true}'
+        Set-Content -Path $mcpIndexPath -Value $seedJson -Encoding UTF8
+    }
     $dataSize = [math]::Round(((Get-ChildItem $dataResDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
     Write-Host "  OK: data/ ($dataSize MB, seed data only)"
 } else {
     Write-Host "  WARNING: data/ not found at $ProjectRoot\data" -ForegroundColor Yellow
     Write-Host "  The installer will start without pre-loaded index data." -ForegroundColor Yellow
+    # Still create minimal seed even when data/ directory is missing
+    New-Item -ItemType Directory -Force -Path $dataResDir | Out-Null
+    $mcpIndexPath = Join-Path $dataResDir "mcp-index.json"
+    $seedJson = '{"items":[],"generated":"' + (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ") + '","seed":true}'
+    Set-Content -Path $mcpIndexPath -Value $seedJson -Encoding UTF8
+    Write-Host "  Created minimal mcp-index.json seed"
 }
 # 🔥 P0 修复: 先复制 docs/reference/templates/ 作为 base，再用 CN 版本覆盖
 # 之前只从 docs-cn/ 复制（目录只有 .gitkeep），导致模板缺失，chat 无法使用
