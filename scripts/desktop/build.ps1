@@ -169,8 +169,9 @@ if (`$LASTEXITCODE -ne 0) { exit 1 }
 
 if ($prepProc) {
     $prepProc.WaitForExit()
-    if ($prepProc.ExitCode -ne 0) {
-        Write-Host "ERROR: Resource preparation failed!" -ForegroundColor Red
+    $prepExit = if ($prepProc.HasExited -and $null -ne $prepProc.ExitCode) { $prepProc.ExitCode } else { 0 }
+    if ($prepExit -ne 0) {
+        Write-Host "ERROR: Resource preparation failed (exit $prepExit)!" -ForegroundColor Red
         if ($tauriProc -and -not $tauriProc.HasExited) { $tauriProc.Kill() }
         exit 1
     }
@@ -182,8 +183,9 @@ if ($prepProc) {
 if ($tauriProc) {
     $tauriProc.WaitForExit()
     Remove-Item $tauriInstallScript -Force -ErrorAction SilentlyContinue
-    if ($tauriProc.ExitCode -ne 0) {
-        Write-Host "ERROR: Tauri CLI install failed!" -ForegroundColor Red
+    $tauriInstallExit = if ($tauriProc.HasExited -and $null -ne $tauriProc.ExitCode) { $tauriProc.ExitCode } else { 0 }
+    if ($tauriInstallExit -ne 0) {
+        Write-Host "ERROR: Tauri CLI install failed (exit $tauriInstallExit)!" -ForegroundColor Red
         exit 1
     }
     Write-Host "  Tauri CLI install OK" -ForegroundColor Green
