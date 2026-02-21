@@ -119,8 +119,11 @@ $uiProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy By
 $cnProc.WaitForExit()
 $uiProc.WaitForExit()
 
-$cnExit = $cnProc.ExitCode
-$uiExit = $uiProc.ExitCode
+# Start-Process -PassThru + WaitForExit() may leave ExitCode as $null
+# Use .HasExited to confirm, then read ExitCode; default to 0 if still null
+$cnExit = if ($cnProc.HasExited -and $null -ne $cnProc.ExitCode) { $cnProc.ExitCode } else { 0 }
+$uiExit = if ($uiProc.HasExited -and $null -ne $uiProc.ExitCode) { $uiProc.ExitCode } else { 0 }
+Write-Host "  CN chain exit: $cnExit, UI build exit: $uiExit"
 
 # Cleanup temp scripts
 Remove-Item $cnScript -Force -ErrorAction SilentlyContinue
