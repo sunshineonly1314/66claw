@@ -51,7 +51,10 @@ export function abortEmbeddedPiRun(sessionId: string): boolean {
 export function isEmbeddedPiRunActive(sessionId: string): boolean {
   const active = ACTIVE_EMBEDDED_RUNS.has(sessionId);
   if (active) {
-    diag.debug(`run active check: sessionId=${sessionId} active=true`);
+    const handle = ACTIVE_EMBEDDED_RUNS.get(sessionId);
+    diag.warn(
+      `run active check: sessionId=${sessionId} active=true streaming=${handle?.isStreaming() ?? "?"} compacting=${handle?.isCompacting() ?? "?"} totalActive=${ACTIVE_EMBEDDED_RUNS.size}`,
+    );
   }
   return active;
 }
@@ -144,7 +147,10 @@ export function clearActiveEmbeddedRun(sessionId: string, handle: EmbeddedPiQueu
     }
     notifyEmbeddedRunEnded(sessionId);
   } else {
-    diag.debug(`run clear skipped: sessionId=${sessionId} reason=handle_mismatch`);
+    const currentHandle = ACTIVE_EMBEDDED_RUNS.get(sessionId);
+    diag.warn(
+      `ZOMBIE_RISK run clear skipped: sessionId=${sessionId} reason=handle_mismatch hasEntry=${!!currentHandle} totalActive=${ACTIVE_EMBEDDED_RUNS.size}`,
+    );
   }
 }
 

@@ -21,6 +21,7 @@ export type LogsProps = {
   onExport: (lines: string[], label: string) => void;
   onRevealLogDir: (() => void) | null;
   onScroll: (event: Event) => void;
+  onReportIssue: (() => void) | null;
 };
 
 function formatTime(value?: string | null) {
@@ -78,6 +79,17 @@ export function renderLogs(props: LogsProps) {
           >
             ${t("logs.export", { label: exportLabel })}
           </button>
+          ${props.onReportIssue
+            ? html`
+              <button
+                class="btn btn-danger"
+                @click=${props.onReportIssue}
+                style="background: var(--danger, #e53935); color: #fff; border-color: var(--danger, #e53935);"
+              >
+                ${t("logReport.triggerBtn")}
+              </button>
+            `
+            : nothing}
         </div>
       </div>
 

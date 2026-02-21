@@ -175,6 +175,9 @@ export async function runReplyAgent(params: {
   if (shouldSteer && isStreaming) {
     const steered = queueEmbeddedPiMessage(followupRun.run.sessionId, followupRun.prompt);
     if (steered && !shouldFollowup) {
+      defaultRuntime.log(
+        `[AgentRunner] SILENT_DROP steer: sessionId=${followupRun.run.sessionId} sessionKey=${sessionKey ?? "?"} mode=${resolvedQueue.mode}`,
+      );
       if (activeSessionEntry && activeSessionStore && sessionKey) {
         const updatedAt = Date.now();
         activeSessionEntry.updatedAt = updatedAt;
@@ -193,6 +196,9 @@ export async function runReplyAgent(params: {
   }
 
   if (isActive && (shouldFollowup || resolvedQueue.mode === "steer")) {
+    defaultRuntime.log(
+      `[AgentRunner] SILENT_DROP followup: isActive=true sessionId=${followupRun.run.sessionId} sessionKey=${sessionKey ?? "?"} mode=${resolvedQueue.mode} shouldFollowup=${shouldFollowup} prompt="${followupRun.prompt.slice(0, 80)}"`,
+    );
     enqueueFollowupRun(queueKey, followupRun, resolvedQueue);
     if (activeSessionEntry && activeSessionStore && sessionKey) {
       const updatedAt = Date.now();
@@ -433,7 +439,9 @@ export async function runReplyAgent(params: {
       try {
         await recordFreeModelUsage({ providerUsed, usage });
       } catch (err) {
-        defaultRuntime.error(`[FreeModel] Failed to record usage for ${providerUsed}: ${String(err)}`);
+        defaultRuntime.error(
+          `[FreeModel] Failed to record usage for ${providerUsed}: ${String(err)}`,
+        );
       }
     }
 

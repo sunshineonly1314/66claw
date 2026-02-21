@@ -7,7 +7,7 @@ import { loadConfig } from "./config";
 
 /**
  * 从 configSnapshot 中读取 dispatch.enabled 的值。
- * 默认 true（CN 默认开启智能调度）。
+ * 出厂默认 false（关闭），用户通过 UI 开关控制。
  */
 export function resolveSmartDispatch(state: AppViewState): boolean {
   const config = state.configSnapshot?.config as Record<string, unknown> | null;
@@ -15,7 +15,7 @@ export function resolveSmartDispatch(state: AppViewState): boolean {
   if (dispatch && typeof dispatch.enabled === "boolean") {
     return dispatch.enabled;
   }
-  return true;
+  return false;
 }
 
 /**

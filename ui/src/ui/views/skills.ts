@@ -938,7 +938,7 @@ function renderSkillImportModal(props: SkillsProps) {
 
             ${dirs.length === 0 && parentPath != null ? html`
               <div style="text-align:center; padding:20px; font-size:12px; color:var(--muted-strong, #6b7d91);">
-                (empty)
+                （空目录）
               </div>
             ` : nothing}
           `}

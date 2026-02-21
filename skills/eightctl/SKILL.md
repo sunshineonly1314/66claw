@@ -4,7 +4,7 @@ description: Control Eight Sleep pods (status, temperature, alarms, schedules).
 nameZh: "8x控制"
 descriptionZh: "控制Eight Sleep智能床垫"
 homepage: https://eightctl.sh
-metadata: {"openclawcn":{"emoji":"🎛️","requires":{"bins":["eightctl"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/eightctl/cmd/eightctl@latest","bins":["eightctl"],"label":"Install eightctl (go)"}]}}
+metadata: {"openclawcn":{"emoji":"🎛️","requires":{"bins":["eightctl"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/eightctl/cmd/eightctl@latest","bins":["eightctl"],"label":"安装 eightctl (go)"}]}}
 ---
 
 # eightctl

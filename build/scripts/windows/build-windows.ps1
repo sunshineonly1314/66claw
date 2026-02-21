@@ -1671,8 +1671,9 @@ $requiredFiles = @(
     "$ScriptsDir\native\ClawdbotService.exe",
     "$ScriptsDir\assets\clawdbot.ico",
     # setup.iss hard dependencies (no skipifsourcedoesntexist — Inno Setup will fail if missing)
-    # CN build uses Chinese templates from docs-cn/
-    "$ProjectRoot\docs-cn\reference\templates",
+    # Templates: upstream base + CN overlay (both have skipifsourcedoesntexist, but at least one must exist)
+    "$ProjectRoot\docs\reference\templates",
+    "$ProjectRoot\cn\docs-cn\reference\templates",
     "$ScriptsDir\start-gateway.bat",
     "$ScriptsDir\clawdbot.bat",
     "$ScriptsDir\diagnose.bat",

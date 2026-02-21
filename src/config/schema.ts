@@ -297,8 +297,28 @@ function applyChannelSchemas(schema: ConfigSchema, channels: ChannelUiMetadata[]
 
 let cachedBase: ConfigSchemaResponse | null = null;
 
-// China region channels that have schemas defined in ChannelsSchema (not as plugins)
-const BUILTIN_CHANNEL_IDS = new Set(["feishu", "dingtalk", "wecom", "qqbot", "openclawwechat"]);
+// Channels with schemas defined in ChannelsSchema (not only via plugins).
+// CN channels + core international channels that have Zod schemas in zod-schema.providers-core.ts.
+// Plugin-provided schemas will merge on top if available.
+const BUILTIN_CHANNEL_IDS = new Set([
+  // China region channels
+  "feishu",
+  "dingtalk",
+  "wecom",
+  "qqbot",
+  "openclawwechat",
+  // Core international channels (schemas defined in zod-schema.providers-core.ts / providers-whatsapp.ts)
+  "telegram",
+  "whatsapp",
+  "discord",
+  "slack",
+  "signal",
+  "irc",
+  "googlechat",
+  "imessage",
+  "bluebubbles",
+  "msteams",
+]);
 
 function stripChannelSchema(schema: ConfigSchema): ConfigSchema {
   const next = cloneSchema(schema);

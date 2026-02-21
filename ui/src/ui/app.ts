@@ -226,8 +226,8 @@ export class ClawdbotApp extends LitElement {
   // 能力发现状态 (Capability Discovery)
   @state() discoveryState: import("./controllers/capability-detect").DiscoveryControllerState = createInitialDiscoveryState();
 
-  // 智能推荐开关 (Smart Dispatch Toggle)
-  @state() smartDispatchEnabled = true;
+  // 智能推荐开关 (Smart Dispatch Toggle) - 出厂默认关闭，用户通过 UI 开关控制
+  @state() smartDispatchEnabled = false;
   @state() smartDispatchSaving = false;
   // 性能档位 (Performance Profile)
   @state() performanceProfile: "economy" | "balanced" | "power" = "balanced";
@@ -325,6 +325,11 @@ export class ClawdbotApp extends LitElement {
   @state() agentsList: AgentsListResult | null = null;
   @state() agentsError: string | null = null;
   @state() agentsSelectedId: string | null = null;
+  @state() agentCreating = false;
+  @state() agentCreateError: string | null = null;
+  @state() agentDeleting = false;
+  @state() agentDeleteError: string | null = null;
+  @state() agentAddFormOpen = false;
   @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" = "overview";
   @state() agentFilesLoading = false;
   @state() agentFilesError: string | null = null;
@@ -472,6 +477,23 @@ export class ClawdbotApp extends LitElement {
 
   // 适配公告弹框（仅显示一次）
   @state() showAdaptationNotice = !localStorage.getItem("clawdbot.chat.adaptationNoticeSeen");
+
+  // 日志上报运维中心状态
+  @state() logReportState: import("./views/log-report").LogReportViewState = {
+    showModal: false,
+    description: "",
+    attachments: [],
+    submitting: false,
+    submitted: false,
+    error: null,
+    ticketCode: null,
+    remaining: null,
+    queryMode: false,
+    queryCode: "",
+    querying: false,
+    queryResult: null,
+    queryError: null,
+  };
 
   // 意见反馈状态
   @state() feedbackState: import("./views/feedback").FeedbackViewState = {
@@ -1256,6 +1278,161 @@ export class ClawdbotApp extends LitElement {
         ...this.feedbackState,
         submitting: false,
         error: "提交失败，请稍后重试",
+      };
+    }
+  }
+
+  // 日志上报运维中心处理函数
+  handleLogReportOpen() {
+    this.logReportState = { ...this.logReportState, showModal: true };
+  }
+
+  handleLogReportClose() {
+    const reset = this.logReportState.submitted;
+    this.logReportState = {
+      ...this.logReportState,
+      showModal: false,
+      ...(reset
+        ? {
+            description: "",
+            attachments: [],
+            submitting: false,
+            submitted: false,
+            error: null,
+            ticketCode: null,
+            remaining: null,
+            queryMode: false,
+            queryCode: "",
+            querying: false,
+            queryResult: null,
+            queryError: null,
+          }
+        : {}),
+    };
+  }
+
+  async handleLogReportSubmit() {
+    const { description, attachments } = this.logReportState;
+
+    if (!description.trim()) {
+      this.logReportState = { ...this.logReportState, error: "请填写问题描述" };
+      return;
+    }
+    if (description.trim().length < 5) {
+      this.logReportState = { ...this.logReportState, error: "问题描述至少需要5个字符" };
+      return;
+    }
+
+    this.logReportState = { ...this.logReportState, submitting: true, error: null };
+
+    try {
+      // 提交前先刷新日志，确保拿到最新数据
+      if (this.client && this.connected) {
+        try {
+          const { loadLogs } = await import("./controllers/logs.js");
+          await loadLogs(this as Parameters<typeof loadLogs>[0], { reset: true });
+        } catch { /* 刷新失败不阻塞提交 */ }
+      }
+
+      // 收集最近日志条目的原始行
+      const logEntries = this.logsEntries.slice(-500).map((entry) => entry.raw);
+
+      const payload = {
+        description: description.trim(),
+        attachments: attachments.length > 0
+          ? attachments.map((a) => a.dataUrl)
+          : undefined,
+        logEntries,
+        context: {
+          version: this.hello?.version ?? "unknown",
+          platform: navigator.platform,
+          hostname: (this.hello as Record<string, unknown>)?.hostname as string | undefined,
+          timestamp: new Date().toISOString(),
+        },
+      };
+
+      if (this.client) {
+        const result = (await this.client.request("log_report.submit", payload)) as {
+          id?: string;
+          synced?: boolean;
+          ticketCode?: string | null;
+          remaining?: number;
+          message?: string;
+        };
+
+        this.logReportState = {
+          ...this.logReportState,
+          submitting: false,
+          submitted: true,
+          ticketCode: result.ticketCode ?? null,
+          remaining: result.remaining ?? null,
+        };
+      } else {
+        // 没有网关连接时保存摘要到本地（不存 base64 图片和日志原文，防止 localStorage 溢出）
+        const summary = {
+          id: Date.now().toString(),
+          description: payload.description,
+          attachmentCount: payload.attachments?.length ?? 0,
+          logEntryCount: payload.logEntries?.length ?? 0,
+          context: payload.context,
+          createdAt: new Date().toISOString(),
+        };
+        try {
+          const reports = JSON.parse(localStorage.getItem("clawdbot-log-reports") || "[]");
+          reports.push(summary);
+          localStorage.setItem("clawdbot-log-reports", JSON.stringify(reports));
+        } catch { /* localStorage quota exceeded, ignore */ }
+
+        this.logReportState = {
+          ...this.logReportState,
+          submitting: false,
+          submitted: true,
+          ticketCode: null,
+          remaining: null,
+        };
+      }
+    } catch (err) {
+      console.error("Log report submit error:", err);
+      this.logReportState = {
+        ...this.logReportState,
+        submitting: false,
+        error: err instanceof Error ? err.message : "提交失败，请稍后重试",
+      };
+    }
+  }
+
+  async handleLogReportQuery() {
+    const { queryCode } = this.logReportState;
+    if (!queryCode || queryCode.length !== 6) {
+      this.logReportState = { ...this.logReportState, queryError: "请输入6位工单号" };
+      return;
+    }
+
+    this.logReportState = { ...this.logReportState, querying: true, queryError: null, queryResult: null };
+
+    try {
+      if (this.client) {
+        const result = (await this.client.request("log_report.status", {
+          ticketCode: queryCode.toUpperCase(),
+        })) as import("./views/log-report").LogReportQueryResult;
+
+        this.logReportState = {
+          ...this.logReportState,
+          querying: false,
+          queryResult: result,
+        };
+      } else {
+        this.logReportState = {
+          ...this.logReportState,
+          querying: false,
+          queryError: "未连接到网关",
+        };
+      }
+    } catch (err) {
+      this.logReportState = {
+        ...this.logReportState,
+        querying: false,
+        queryError: err instanceof Error ? err.message : "查询失败",
       };
     }
   }

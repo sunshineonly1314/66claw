@@ -32,3 +32,21 @@ pub fn open_directory(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .spawn()?;
     Ok(())
 }
+
+/// Windows: open Explorer with the specified file selected.
+/// Uses `explorer /select,"path"` to highlight the file.
+/// Falls back to opening the parent directory if the file doesn't exist.
+pub fn open_file_in_explorer(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if path.exists() {
+        Command::new("explorer")
+            .arg("/select,")
+            .arg(path)
+            .spawn()?;
+    } else if let Some(parent) = path.parent() {
+        // File doesn't exist yet — open the parent directory
+        Command::new("explorer")
+            .arg(parent)
+            .spawn()?;
+    }
+    Ok(())
+}

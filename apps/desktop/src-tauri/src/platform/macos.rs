@@ -38,3 +38,19 @@ pub fn open_directory(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .spawn()?;
     Ok(())
 }
+
+/// macOS: open Finder with the specified file selected.
+/// Uses `open -R` to reveal the file in Finder.
+pub fn open_file_in_explorer(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if path.exists() {
+        Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()?;
+    } else if let Some(parent) = path.parent() {
+        Command::new("open")
+            .arg(parent)
+            .spawn()?;
+    }
+    Ok(())
+}

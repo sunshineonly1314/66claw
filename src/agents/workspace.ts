@@ -63,19 +63,17 @@ async function loadTemplate(name: string): Promise<string> {
       const content = await fs.readFile(templatePath, "utf-8");
       return stripFrontMatter(content);
     } catch {
-      throw new Error(
-        `Missing workspace template: ${name} (${templatePath}). Ensure docs/reference/templates are packaged.`,
+      // 🔥 P0 修复: 模板缺失时不要抛异常崩溃整个 chat 管道
+      // 返回空字符串让 writeFileIfMissing 写入空文件，chat 仍然可用
+      console.error(
+        `[workspace] Missing workspace template: ${name} (${templatePath}). Ensure docs/reference/templates are packaged.`,
       );
+      return "";
     }
   })();
 
   workspaceTemplateCache.set(name, pending);
-  try {
-    return await pending;
-  } catch (error) {
-    workspaceTemplateCache.delete(name);
-    throw error;
-  }
+  return pending;
 }
 
 export type WorkspaceBootstrapFileName =

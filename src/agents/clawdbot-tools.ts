@@ -21,10 +21,7 @@ import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createOpenAppTool } from "./tools/open-app.js";
 import { createDesktopControlTool } from "./tools/desktop-control.js";
-import { createWeChatSendTool } from "./tools/wechat-send.js";
-import { createWeChatCheckTool } from "./tools/wechat-check.js";
-import { createWeComSendTool } from "./tools/wecom-send.js";
-import { createWeComCheckTool } from "./tools/wecom-check.js";
+// GUI automation tools removed from distribution (wechat-send, wechat-check, wecom-send, wecom-check)
 import { createImageGenTool } from "./tools/image-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
 // applyToolHints removed — reordering is now done at the outer level in pi-tools.ts
@@ -85,10 +82,7 @@ export function createOpenClawCNTools(options?: {
   });
   const openAppTool = createOpenAppTool();
   const desktopControlTool = createDesktopControlTool();
-  const wechatSendTool = createWeChatSendTool();
-  const wechatCheckTool = createWeChatCheckTool();
-  const wecomSendTool = createWeComSendTool();
-  const wecomCheckTool = createWeComCheckTool();
+  // GUI automation tools removed from distribution
   const imageGenTool = createImageGenTool({
     config: options?.config,
     agentDir: options?.agentDir,
@@ -163,10 +157,7 @@ export function createOpenClawCNTools(options?: {
     ...(imageTool ? [imageTool] : []),
     ...(openAppTool ? [openAppTool] : []),
     ...(desktopControlTool ? [desktopControlTool] : []),
-    ...(wechatSendTool ? [wechatSendTool] : []),
-    ...(wechatCheckTool ? [wechatCheckTool] : []),
-    ...(wecomSendTool ? [wecomSendTool] : []),
-    ...(wecomCheckTool ? [wecomCheckTool] : []),
+    // GUI automation tools removed from distribution
     imageGenTool,
     // ── [CN-PATCH:tool-discovery] MCP 按需安装工具 ──
     ...(options?.config?.toolDiscovery?.mcpOnDemand?.enabled !== false

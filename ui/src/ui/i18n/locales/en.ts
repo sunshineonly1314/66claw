@@ -208,9 +208,12 @@ export const en = {
 
   // Agent Create / Delete
   "agents.addAgent": "Add Agent",
-  "agents.addAgentName": "Name",
+  "agents.addAgentId": "ID (alphanumeric, for routing & directories)",
+  "agents.addAgentIdPlaceholder": "e.g. work, family, coding",
+  "agents.addAgentIdHint": "Only letters, digits, underscores, and hyphens",
+  "agents.addAgentName": "Display Name",
   "agents.addAgentWorkspace": "Workspace Path",
-  "agents.addAgentNamePlaceholder": "e.g. work, family",
+  "agents.addAgentNamePlaceholder": "e.g. Work Assistant, Family Bot",
   "agents.addAgentWorkspacePlaceholder": "e.g. ~/clawd-work",
   "agents.createBtn": "Create",
   "agents.creating": "Creating…",
@@ -683,6 +686,18 @@ export const en = {
   "sessions.subtitle": "View active users and manage per-session AI behavior",
   // Placeholder
   "sessions.namePlaceholder": "(optional)",
+  // Tooltip help text
+  "sessions.help.title": "Each session is a separate conversation between a user and the AI.",
+  "sessions.help.activeMinutes": "Only show sessions active within the last N minutes. Leave empty to show all.",
+  "sessions.help.limit": "Maximum number of sessions to display.",
+  "sessions.help.includeGlobal": "Include sessions not tied to a specific user.",
+  "sessions.help.includeUnknown": "Include sessions from unrecognized sources.",
+  "sessions.help.sessionKey": "Unique session identifier. Click to view the chat.",
+  "sessions.help.tokens": "Used / limit tokens. When approaching the limit, AI quality degrades. Delete to reset.",
+  "sessions.help.thinkingLevel": "How deeply the AI thinks before responding. Higher = more careful but slower.",
+  "sessions.help.verbose": "How detailed the AI responses are.",
+  "sessions.help.reasoning": "Whether to show the AI's reasoning process. Stream = show in real-time.",
+  "sessions.help.deleteConfirm": "The AI will forget all conversations with this user. A new session starts on next message.",
 
   // ============================================================================
   // 技能页 (Skills)
@@ -3010,6 +3025,37 @@ export const en = {
   "feedback.error.empty": "Please enter feedback",
   "feedback.error.tooShort": "At least 5 characters required",
   "feedback.error.submitFailed": "Submit failed, please retry",
+
+  // ============================================================================
+  // Log Report to Ops Center (日志上报运维中心)
+  // ============================================================================
+  "logReport.title": "Report to Ops Center",
+  "logReport.triggerBtn": "Report Issue",
+  "logReport.optional": "Optional",
+  "logReport.description.label": "Problem Description",
+  "logReport.description.placeholder": "Describe the issue you encountered...",
+  "logReport.images.label": "Screenshots",
+  "logReport.images.hint": "Paste or click to upload, max 3 (each ≤1MB)",
+  "logReport.autoLogsHint": "The last 500 log entries will be attached automatically.",
+  "logReport.submit": "Submit Report",
+  "logReport.submitting": "Submitting...",
+  "logReport.success.title": "Report Submitted",
+  "logReport.success.message": "Our ops team will analyze your issue and respond.",
+  "logReport.success.ticketLabel": "Ticket Code",
+  "logReport.success.ticketHint": "Save this code to check report status later.",
+  "logReport.remaining": "{{count}} report(s) remaining today",
+  "logReport.queryTicket": "Check Ticket",
+  "logReport.backToReport": "Back to Report",
+  "logReport.query.title": "Check Ticket Status",
+  "logReport.query.placeholder": "Enter 6-digit ticket code",
+  "logReport.query.search": "Search",
+  "logReport.query.replyTitle": "Ops Reply",
+  "logReport.query.noReply": "No reply yet, please check back later.",
+  "logReport.query.notFound": "Ticket not found.",
+  "logReport.status.pending": "Pending",
+  "logReport.status.analyzing": "Analyzing",
+  "logReport.status.replied": "Replied",
+  "logReport.status.closed": "Closed",
 
   // ============================================================================
   // Batch Install (Skills Batch Onboarding)

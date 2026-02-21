@@ -15,7 +15,9 @@ export const MOONSHOT_DEFAULT_MODEL_ID = "kimi-k2.5";
 export const MOONSHOT_DEFAULT_MODEL_REF = `moonshot/${MOONSHOT_DEFAULT_MODEL_ID}`;
 export const MOONSHOT_DEFAULT_CONTEXT_WINDOW = 256000;
 export const MOONSHOT_DEFAULT_MAX_TOKENS = 8192;
-export const KIMI_CODING_MODEL_ID = "k2p5";
+// 🔥 P0 修复: 必须与 buildKimiCodeProvider() 注册的 model ID 一致 (models-config.providers.ts)
+// 之前是 "k2p5"，但 runtime 只注册了 "kimi-for-coding"，导致 setup 后 chat 找不到模型
+export const KIMI_CODING_MODEL_ID = "kimi-for-coding";
 export const KIMI_CODING_MODEL_REF = `kimi-coding/${KIMI_CODING_MODEL_ID}`;
 
 export { QIANFAN_BASE_URL, QIANFAN_DEFAULT_MODEL_ID };

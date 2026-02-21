@@ -12,7 +12,7 @@
 
 ## 🪟 Windows 构建机 SSH 公钥
 
-**标题**: `ClawdbotCN-Windows-CI (192.168.0.103)`
+**标题**: `ClawdbotCN-Windows-CI (KEVINSUN)`
 
 **公钥内容**:
 ```
@@ -65,5 +65,5 @@ Hi <username>! You've successfully authenticated, but Gitee.com does not provide
 
 **生成时间**: 2026-02-18
 **有效机器**:
-- Windows: SunBin@192.168.0.103
+- Windows: SunBin@KEVINSUN (192.168.0.102)
 - macOS: kevinsun@192.168.0.107

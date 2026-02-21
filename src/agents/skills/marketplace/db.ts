@@ -6,7 +6,7 @@
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import fs from "node:fs";
-import { initializeSchema } from "./db-schema.js";
+import { initializeSchema, skillsFtsAvailable } from "./db-schema.js";
 import type {
   SkillMarketplaceItem,
   SkillSearchOptions,
@@ -244,9 +244,8 @@ export function insertItems(items: SkillMarketplaceItem[]): void {
     for (const item of items) {
       // 保留已有的 installed 状态
       const preserveInstalled = existingInstalled.has(item.skillId);
-      const effectiveItem = preserveInstalled && !item.installed
-        ? { ...item, installed: true }
-        : item;
+      const effectiveItem =
+        preserveInstalled && !item.installed ? { ...item, installed: true } : item;
       const row = itemToRow(effectiveItem);
       stmt.run(...Object.values(row));
     }
@@ -352,14 +351,19 @@ export function searchItems(options: SkillSearchOptions = {}): SkillSearchResult
       .replace(/\s+/g, " ")
       .trim();
 
-    if (sanitized && sanitized.length <= 500) {
+    if (sanitized && sanitized.length > 500) {
+      throw new Error("Keyword too long after sanitization (max 500 chars)");
+    } else if (sanitized && skillsFtsAvailable) {
       conditions.push(`skill_id IN (
         SELECT skill_id FROM skills_search
         WHERE skills_search MATCH ?
       )`);
       params.push(sanitized);
-    } else if (sanitized && sanitized.length > 500) {
-      throw new Error("Keyword too long after sanitization (max 500 chars)");
+    } else if (sanitized) {
+      // FTS5 不可用，降级到 LIKE 搜索
+      const likeTerm = `%${sanitized}%`;
+      conditions.push(`(name_cn LIKE ? OR description_cn LIKE ? OR tags LIKE ?)`);
+      params.push(likeTerm, likeTerm, likeTerm);
     }
   }
 

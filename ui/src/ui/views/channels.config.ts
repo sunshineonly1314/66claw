@@ -68,6 +68,40 @@ function resolveChannelValue(
   return resolved ?? {};
 }
 
+const EXTRA_CHANNEL_FIELDS = ["groupPolicy", "streamMode", "dmPolicy"] as const;
+
+function formatExtraValue(raw: unknown): string {
+  if (raw == null) return t("common.na");
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+    return String(raw);
+  }
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return t("common.na");
+  }
+}
+
+function renderExtraChannelFields(value: Record<string, unknown>) {
+  const entries = EXTRA_CHANNEL_FIELDS.flatMap((field) => {
+    if (!(field in value)) return [];
+    return [[field, value[field]]] as Array<[string, unknown]>;
+  });
+  if (entries.length === 0) return null;
+  return html`
+    <div class="status-list" style="margin-top: 12px;">
+      ${entries.map(
+        ([field, raw]) => html`
+          <div>
+            <span class="label">${field}</span>
+            <span>${formatExtraValue(raw)}</span>
+          </div>
+        `,
+      )}
+    </div>
+  `;
+}
+
 export function renderChannelConfigForm(props: ChannelConfigFormProps) {
   const analysis = analyzeConfigSchema(props.schema);
   const normalized = analysis.schema;
@@ -96,6 +130,7 @@ export function renderChannelConfigForm(props: ChannelConfigFormProps) {
         onPatch: props.onPatch,
       })}
     </div>
+    ${renderExtraChannelFields(value)}
   `;
 }
 

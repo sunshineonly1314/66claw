@@ -137,6 +137,41 @@ export function installSessionToolResultGuard(
     let nextMessage = message;
     const role = (message as { role?: unknown }).role;
     if (role === "assistant") {
+      // [CN-PATCH] 过滤空内容的 error/aborted assistant 消息，防止 session 污染。
+      // 当 API 返回 200 但内容为空时，agent-core 会创建 stopReason="error" 的空 assistant，
+      // 如果写入 session，后续所有请求都会因为历史中包含空 assistant 而失败。
+      const stopReason = (message as { stopReason?: string }).stopReason;
+      if (stopReason === "error" || stopReason === "aborted") {
+        const content = (message as { content?: unknown[] }).content;
+        const hasRealContent =
+          Array.isArray(content) &&
+          content.some((block) => {
+            if (!block || typeof block !== "object") return false;
+            const rec = block as { type?: string; text?: string; thinking?: string; name?: string };
+            if (rec.type === "text" && typeof rec.text === "string" && rec.text.trim().length > 0)
+              return true;
+            if (
+              rec.type === "thinking" &&
+              typeof rec.thinking === "string" &&
+              rec.thinking.trim().length > 0
+            )
+              return true;
+            if (
+              rec.type === "toolCall" &&
+              typeof rec.name === "string" &&
+              rec.name.trim().length > 0
+            )
+              return true;
+            return false;
+          });
+        if (!hasRealContent) {
+          // 空内容的 error assistant — 不写入 session，防止污染
+          if (allowSyntheticToolResults && pending.size > 0) {
+            flushPendingToolResults();
+          }
+          return undefined;
+        }
+      }
       const sanitized = sanitizeToolCallInputs([message]);
       if (sanitized.length === 0) {
         if (allowSyntheticToolResults && pending.size > 0) {

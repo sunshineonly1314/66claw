@@ -260,14 +260,17 @@ const CORE_TOOLS_METADATA = [
     keywords: ["画图", "画", "生成图", "image", "draw", "dall-e"],
     description: "图像生成",
   },
-  { name: "wechat_send", keywords: ["微信", "wechat", "发消息", "send"], description: "微信发送" },
-  { name: "wechat_check", keywords: ["微信", "wechat", "未读", "check"], description: "微信检查" },
+  // GUI automation tools removed from distribution
   {
     name: "desktop_control",
     keywords: ["桌面", "操作", "desktop", "gui", "click"],
     description: "桌面控制",
   },
-  { name: "open_app", keywords: ["打开", "打开应用", "启动", "launch", "open"], description: "打开应用" },
+  {
+    name: "open_app",
+    keywords: ["打开", "打开应用", "启动", "launch", "open"],
+    description: "打开应用",
+  },
   {
     name: "bash",
     keywords: ["命令", "执行", "bash", "shell", "terminal"],

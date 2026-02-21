@@ -162,6 +162,7 @@ export function connectGateway(host: GatewayHost) {
       void loadAgents(host as unknown as OpenClawCNApp);
       void loadNodes(host as unknown as OpenClawCNApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawCNApp, { quiet: true });
+      void loadLicenseStatus(host as unknown as LicenseLoadHost);
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
       // Desktop first-run: auto-navigate to model-config if no providers configured
       void detectFirstRunSetup(host);
@@ -446,6 +447,49 @@ async function detectFirstRunSetup(host: GatewayHost) {
     localStorage.setItem(FIRST_RUN_CHECKED_KEY, Date.now().toString());
   } catch {
     // Non-critical — don't block app startup
+  }
+}
+
+// ============================================================================
+// License status loading (on WS connect)
+// ============================================================================
+
+type LicenseLoadHost = {
+  client: GatewayBrowserClient | null;
+  connected: boolean;
+  licenseState: LicenseUiState;
+  showLicenseDialog: LicenseDialogType | null;
+};
+
+/**
+ * 连接建立后加载 License 状态（包含 keyType 和 supportQrcode）。
+ * 解决 setup 向导激活后跳转到 chat 页面时 licenseState.license 为 null 的问题。
+ */
+async function loadLicenseStatus(host: LicenseLoadHost) {
+  if (!host.client || !host.connected) return;
+  try {
+    const result = await host.client.request("license.status", {});
+    if (result && typeof result === "object") {
+      const data = result as Record<string, unknown>;
+      host.licenseState = {
+        ...host.licenseState,
+        checking: false,
+        valid: (data.valid as boolean) ?? true,
+        offlineMode: (data.offlineMode as boolean) ?? false,
+        error: (data.error as string | null) ?? null,
+        errorCode: (data.errorCode as number | null) ?? null,
+        license: (data.license as LicenseUiState["license"]) ?? null,
+        device: (data.device as LicenseUiState["device"]) ?? null,
+        renewalReminder: (data.renewalReminder as LicenseUiState["renewalReminder"]) ?? null,
+        forceUpdate: (data.forceUpdate as LicenseUiState["forceUpdate"]) ?? null,
+        pendingNotifications: (data.pendingNotifications as LicenseUiState["pendingNotifications"]) ?? [],
+        lastVerifiedAt: Date.now(),
+        deviceSwitchInfo: (data.deviceSwitchInfo as LicenseUiState["deviceSwitchInfo"]) ?? null,
+        deviceSwitchCooldown: (data.deviceSwitchCooldown as LicenseUiState["deviceSwitchCooldown"]) ?? null,
+      };
+    }
+  } catch {
+    // Non-critical — fallback QR code via HTTP will still work
   }
 }
 

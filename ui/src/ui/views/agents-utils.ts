@@ -9,92 +9,92 @@ import {
 export const TOOL_SECTIONS = [
   {
     id: "fs",
-    label: "Files",
+    label: "文件",
     tools: [
-      { id: "read", label: "read", description: "Read file contents" },
-      { id: "write", label: "write", description: "Create or overwrite files" },
-      { id: "edit", label: "edit", description: "Make precise edits" },
-      { id: "apply_patch", label: "apply_patch", description: "Patch files (OpenAI)" },
+      { id: "read", label: "read", description: "读取文件内容" },
+      { id: "write", label: "write", description: "创建或覆盖文件" },
+      { id: "edit", label: "edit", description: "精确编辑文件" },
+      { id: "apply_patch", label: "apply_patch", description: "补丁修改文件" },
     ],
   },
   {
     id: "runtime",
-    label: "Runtime",
+    label: "运行时",
     tools: [
-      { id: "exec", label: "exec", description: "Run shell commands" },
-      { id: "process", label: "process", description: "Manage background processes" },
+      { id: "exec", label: "exec", description: "执行 Shell 命令" },
+      { id: "process", label: "process", description: "管理后台进程" },
     ],
   },
   {
     id: "web",
-    label: "Web",
+    label: "网络",
     tools: [
-      { id: "web_search", label: "web_search", description: "Search the web" },
-      { id: "web_fetch", label: "web_fetch", description: "Fetch web content" },
+      { id: "web_search", label: "web_search", description: "搜索网页" },
+      { id: "web_fetch", label: "web_fetch", description: "抓取网页内容" },
     ],
   },
   {
     id: "memory",
-    label: "Memory",
+    label: "记忆",
     tools: [
-      { id: "memory_search", label: "memory_search", description: "Semantic search" },
-      { id: "memory_get", label: "memory_get", description: "Read memory files" },
+      { id: "memory_search", label: "memory_search", description: "语义搜索" },
+      { id: "memory_get", label: "memory_get", description: "读取记忆文件" },
     ],
   },
   {
     id: "sessions",
-    label: "Sessions",
+    label: "会话",
     tools: [
-      { id: "sessions_list", label: "sessions_list", description: "List sessions" },
-      { id: "sessions_history", label: "sessions_history", description: "Session history" },
-      { id: "sessions_send", label: "sessions_send", description: "Send to session" },
-      { id: "sessions_spawn", label: "sessions_spawn", description: "Spawn sub-agent" },
-      { id: "session_status", label: "session_status", description: "Session status" },
+      { id: "sessions_list", label: "sessions_list", description: "列出会话" },
+      { id: "sessions_history", label: "sessions_history", description: "会话历史" },
+      { id: "sessions_send", label: "sessions_send", description: "发送到会话" },
+      { id: "sessions_spawn", label: "sessions_spawn", description: "派生子代理" },
+      { id: "session_status", label: "session_status", description: "会话状态" },
     ],
   },
   {
     id: "ui",
-    label: "UI",
+    label: "界面",
     tools: [
-      { id: "browser", label: "browser", description: "Control web browser" },
-      { id: "canvas", label: "canvas", description: "Control canvases" },
+      { id: "browser", label: "browser", description: "控制浏览器" },
+      { id: "canvas", label: "canvas", description: "控制画布" },
     ],
   },
   {
     id: "messaging",
-    label: "Messaging",
-    tools: [{ id: "message", label: "message", description: "Send messages" }],
+    label: "消息",
+    tools: [{ id: "message", label: "message", description: "发送消息" }],
   },
   {
     id: "automation",
-    label: "Automation",
+    label: "自动化",
     tools: [
-      { id: "cron", label: "cron", description: "Schedule tasks" },
-      { id: "gateway", label: "gateway", description: "Gateway control" },
+      { id: "cron", label: "cron", description: "定时任务" },
+      { id: "gateway", label: "gateway", description: "网关控制" },
     ],
   },
   {
     id: "nodes",
-    label: "Nodes",
-    tools: [{ id: "nodes", label: "nodes", description: "Nodes + devices" }],
+    label: "节点",
+    tools: [{ id: "nodes", label: "nodes", description: "节点与设备" }],
   },
   {
     id: "agents",
-    label: "Agents",
-    tools: [{ id: "agents_list", label: "agents_list", description: "List agents" }],
+    label: "智能体",
+    tools: [{ id: "agents_list", label: "agents_list", description: "列出智能体" }],
   },
   {
     id: "media",
-    label: "Media",
-    tools: [{ id: "image", label: "image", description: "Image understanding" }],
+    label: "媒体",
+    tools: [{ id: "image", label: "image", description: "图片理解" }],
   },
 ];
 
 export const PROFILE_OPTIONS = [
-  { id: "minimal", label: "Minimal" },
-  { id: "coding", label: "Coding" },
-  { id: "messaging", label: "Messaging" },
-  { id: "full", label: "Full" },
+  { id: "minimal", label: "精简" },
+  { id: "coding", label: "编程" },
+  { id: "messaging", label: "消息" },
+  { id: "full", label: "完整" },
 ] as const;
 
 type ToolPolicy = {
@@ -198,7 +198,7 @@ export function resolveAgentEmoji(
 }
 
 export function agentBadgeText(agentId: string, defaultId: string | null) {
-  return defaultId && agentId === defaultId ? "default" : null;
+  return defaultId && agentId === defaultId ? "默认" : null;
 }
 
 export function formatBytes(bytes?: number) {
@@ -267,7 +267,7 @@ export function buildAgentContext(
     model: modelLabel,
     identityName,
     identityEmoji,
-    skillsLabel: skillFilter ? `${skillCount} selected` : "all skills",
+    skillsLabel: skillFilter ? `已选 ${skillCount} 个` : "全部技能",
     isDefault: Boolean(defaultId && agent.id === defaultId),
   };
 }
@@ -284,14 +284,14 @@ export function resolveModelLabel(model?: unknown): string {
     const primary = record.primary?.trim();
     if (primary) {
       const fallbackCount = Array.isArray(record.fallbacks) ? record.fallbacks.length : 0;
-      return fallbackCount > 0 ? `${primary} (+${fallbackCount} fallback)` : primary;
+      return fallbackCount > 0 ? `${primary} (+${fallbackCount} 备选)` : primary;
     }
   }
   return "-";
 }
 
 export function normalizeModelValue(label: string): string {
-  const match = label.match(/^(.+) \(\+\d+ fallback\)$/);
+  const match = label.match(/^(.+) \(\+\d+ (?:fallback|备选)\)$/);
   return match ? match[1] : label;
 }
 
@@ -384,11 +384,11 @@ export function buildModelOptions(
   const options = resolveConfiguredModels(configForm);
   const hasCurrent = current ? options.some((option) => option.value === current) : false;
   if (current && !hasCurrent) {
-    options.unshift({ value: current, label: `Current (${current})` });
+    options.unshift({ value: current, label: `当前 (${current})` });
   }
   if (options.length === 0) {
     return html`
-      <option value="" disabled>No configured models</option>
+      <option value="" disabled>暂无已配置的模型</option>
     `;
   }
   return options.map((option) => html`<option value=${option.value}>${option.label}</option>`);

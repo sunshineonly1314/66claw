@@ -24,6 +24,7 @@ import {
 } from "./server-methods/skills-marketplace-search.js";
 import { diagnoseHandlers } from "./server-methods/diagnose.js";
 import { feedbackHandlers } from "./server-methods/feedback.js";
+import { logReportHandlers } from "./server-methods/log-report.js";
 
 export const cnGatewayHandlers: GatewayRequestHandlers = {
   ...modalityCapabilityHandlers,
@@ -46,4 +47,7 @@ export const cnGatewayHandlers: GatewayRequestHandlers = {
 
   // User Feedback API
   ...feedbackHandlers,
+
+  // Log Report to Ops Center API
+  ...logReportHandlers,
 };

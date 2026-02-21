@@ -1,5 +1,6 @@
 import { exec } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { GatewayRequestHandlers } from "./types.js";
 import { getResolvedLoggerSettings } from "../../logging.js";
@@ -16,6 +17,23 @@ const DEFAULT_MAX_BYTES = 250_000;
 const MAX_LIMIT = 5000;
 const MAX_BYTES = 1_000_000;
 const ROLLING_LOG_RE = /^openclawcn-\d{4}-\d{2}-\d{2}\.log$/;
+
+function isDesktopMode(): boolean {
+  return process.env.OPENCLAWCN_DESKTOP_MODE === "1";
+}
+
+/**
+ * Resolve the sidecar.log path for Tauri desktop mode.
+ * Windows: <app_dir>/sidecar.log  (app_dir = process.cwd() set by Tauri)
+ * macOS:   ~/Library/Logs/ClawdbotCN/sidecar.log
+ */
+function resolveSidecarLogPath(): string {
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Logs", "ClawdbotCN", "sidecar.log");
+  }
+  // Windows (and fallback for other platforms): cwd is set to app_dir by Tauri
+  return path.join(process.cwd(), "sidecar.log");
+}
 
 function isRollingLogFile(file: string): boolean {
   return ROLLING_LOG_RE.test(path.basename(file));
@@ -48,7 +66,20 @@ async function resolveLogFile(file: string): Promise<string> {
   const sorted = candidates
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
     .toSorted((a, b) => b.mtimeMs - a.mtimeMs);
-  return sorted[0]?.path ?? file;
+  if (sorted[0]?.path) {
+    return sorted[0].path;
+  }
+
+  // In desktop mode, rolling log files may not exist — fall back to sidecar.log
+  if (isDesktopMode()) {
+    const sidecar = resolveSidecarLogPath();
+    const sidecarStat = await fs.stat(sidecar).catch(() => null);
+    if (sidecarStat) {
+      return sidecar;
+    }
+  }
+
+  return file;
 }
 
 async function readLogSlice(params: {
@@ -146,9 +177,15 @@ async function readLogSlice(params: {
 }
 
 export const logsHandlers: GatewayRequestHandlers = {
-  "logs.reveal": ({ respond }) => {
-    const logFile = getResolvedLoggerSettings().file;
-    const dir = path.dirname(logFile);
+  "logs.reveal": async ({ respond }) => {
+    let dir: string;
+    if (isDesktopMode()) {
+      const sidecar = resolveSidecarLogPath();
+      const sidecarStat = await fs.stat(sidecar).catch(() => null);
+      dir = sidecarStat ? path.dirname(sidecar) : path.dirname(getResolvedLoggerSettings().file);
+    } else {
+      dir = path.dirname(getResolvedLoggerSettings().file);
+    }
     const platform = process.platform;
     let cmd: string;
     if (platform === "win32") {

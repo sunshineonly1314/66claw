@@ -154,7 +154,7 @@ bash trigger-build.sh --platform windows --yes
 
 🪟 Starting Windows build...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Target: SunBin@192.168.0.103
+Target: SunBin@KEVINSUN
 Workspace: D:\cicd-workspace\openclawcn
 ...
 ```
@@ -205,7 +205,7 @@ bash trigger-build.sh --platform all --version 2026.2.18 --yes
 
 3. 验证 Gitee
    ```bash
-   ssh SunBin@192.168.0.103 "ssh -T git@gitee.com"
+   ssh SunBin@KEVINSUN "ssh -T git@gitee.com"
    ssh kevinsun@192.168.0.107 "ssh -T git@gitee.com"
    ```
 

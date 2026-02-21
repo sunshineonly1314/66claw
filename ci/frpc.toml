@@ -1,0 +1,22 @@
+serverAddr = "106.15.198.253"
+serverPort = 7000
+auth.token = "clawbot-frp-2026"
+
+# 本地webhook server → 阿里云9999（Gitee webhook入口）
+[[proxies]]
+name = "webhook"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8888
+remotePort = 9999
+
+# 本地Windows SSH → 阿里云6022（阿里云build server通过此连Windows）
+[[proxies]]
+name = "windows-ssh"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 22
+remotePort = 6022
+
+# Mac mini SSH → 阿里云6023（需要在Mac mini上也跑frpc）
+# 此条在Mac mini上的frpc配置里，这里先不加

@@ -305,11 +305,39 @@ export function applyKimiCodeProviderConfig(cfg: OpenClawCNConfig): OpenClawCNCo
   const models = { ...cfg.agents?.defaults?.models };
   models[KIMI_CODING_MODEL_REF] = {
     ...models[KIMI_CODING_MODEL_REF],
-    alias: models[KIMI_CODING_MODEL_REF]?.alias ?? "Kimi K2.5",
+    alias: models[KIMI_CODING_MODEL_REF]?.alias ?? "Kimi For Coding",
+  };
+
+  // 🔥 P0 修复: 必须写入 models.providers，否则 model-config UI 看不到已配置的 Kimi Code
+  // 其他 provider（ZAI、Moonshot 等）都在此处写入，Kimi Code 之前是遗漏
+  // apiKey 不写入此处（存在 auth-profiles.json 中），runtime 通过 resolveImplicitProviders 合并
+  const providers = { ...cfg.models?.providers };
+  const existingKimi = providers["kimi-code"];
+  providers["kimi-code"] = {
+    ...existingKimi,
+    baseUrl: "https://api.kimi.com/coding/v1",
+    api: "openai-completions" as const,
+    models: [
+      {
+        id: "kimi-for-coding",
+        name: "Kimi For Coding",
+        reasoning: true,
+        input: ["text"] as const,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 262144,
+        maxTokens: 32768,
+        headers: { "User-Agent": "KimiCLI/0.77" },
+        compat: { supportsDeveloperRole: false },
+      },
+    ],
   };
 
   return {
     ...cfg,
+    models: {
+      ...cfg.models,
+      providers,
+    },
     agents: {
       ...cfg.agents,
       defaults: {

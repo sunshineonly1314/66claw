@@ -223,7 +223,7 @@ bash stop.sh && bash start.sh
 
 2. **检查 Gitee 认证**
    ```bash
-   ssh SunBin@192.168.0.103 "ssh -T git@gitee.com"
+   ssh SunBin@KEVINSUN "ssh -T git@gitee.com"
    ssh kevinsun@192.168.0.107 "ssh -T git@gitee.com"
    ```
    都应该显示 "successfully authenticated"

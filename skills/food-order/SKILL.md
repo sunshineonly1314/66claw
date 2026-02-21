@@ -4,7 +4,7 @@ description: Reorder Foodora orders + track ETA/status with ordercli. Never conf
 nameZh: "外卖点餐"
 descriptionZh: "使用ordercli重新下单和追踪外卖订单状态"
 homepage: https://ordercli.sh
-metadata: {"openclawcn":{"emoji":"🥡","requires":{"bins":["ordercli"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/ordercli/cmd/ordercli@latest","bins":["ordercli"],"label":"Install ordercli (go)"}]}}
+metadata: {"openclawcn":{"emoji":"🥡","requires":{"bins":["ordercli"]},"install":[{"id":"go","kind":"go","module":"github.com/steipete/ordercli/cmd/ordercli@latest","bins":["ordercli"],"label":"安装 ordercli (go)"}]}}
 ---
 
 # Food order (Foodora via ordercli)

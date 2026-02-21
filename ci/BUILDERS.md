@@ -9,7 +9,7 @@ ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDC+OZaZicEQDQVKGGY6XVvagneMtBFM8ZKSKFr6t7K
 
 SSH 连接方式：
 - macOS: `ssh kevinsun@192.168.0.107`
-- Windows: `ssh SunBin@192.168.0.103`（默认 shell 是 cmd.exe，不是 bash）
+- Windows: `ssh SunBin@KEVINSUN`（或 `ssh SunBin@192.168.0.102`，默认 shell 是 cmd.exe，不是 bash）
 
 ---
 
@@ -44,7 +44,7 @@ export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/
 
 | 项目 | 信息 |
 |------|------|
-| **主机名/IP** | 192.168.0.103 (KEVINSUN) |
+| **主机名/IP** | 192.168.0.102 (KEVINSUN)，推荐用主机名 KEVINSUN 连接（DHCP IP 可能变化） |
 | **SSH 用户** | SunBin |
 | **SSH 端口** | 22 |
 | **SSH Shell** | cmd.exe（不是 bash！） |

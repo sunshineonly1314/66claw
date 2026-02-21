@@ -371,6 +371,10 @@ log "[6/7] Copying data and docs..."
 if [[ -d "$PROJECT_ROOT/data" ]]; then
   mkdir -p "$RESOURCES_DIR/data"
   # Copy selective seed data (not user runtime data like sessions, logs)
+  # SECURITY: Never include clawdbot.json (contains channel secrets, API keys),
+  #           agents/ (contains auth-profiles with API keys, session logs),
+  #           identity/ (contains device-auth tokens).
+  #           These are user-specific runtime data, not distributable seed data.
   SEED_FILES=(
     "mcp-index.db"
     "mcp-index.json"
@@ -381,10 +385,9 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
     "skill-verification-needed.json"
     "skills-availability-dictionary.json"
     "skills-availability-dictionary-enriched.json"
-    "clawdbot.json"
     "README-skill-availability.md"
   )
-  SEED_DIRS=("agents" "identity" "subagents" "qrcodes")
+  SEED_DIRS=("subagents" "qrcodes")
   for f in "${SEED_FILES[@]}"; do
     if [[ -f "$PROJECT_ROOT/data/$f" ]]; then
       cp "$PROJECT_ROOT/data/$f" "$RESOURCES_DIR/data/$f"

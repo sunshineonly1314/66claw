@@ -49,8 +49,7 @@ const CORE_TOOLS: ToolIndexEntry[] = [
   { id: "core:sessions_spawn", type: "core", name: "sessions_spawn", description: "Create agent sessions", descriptionCn: "创建会话", tags: ["session", "spawn", "会话"] },
   { id: "core:desktop_control", type: "core", name: "desktop_control", description: "Control desktop GUI (click, type, screenshot)", descriptionCn: "控制桌面GUI操作", tags: ["desktop", "gui", "桌面", "控制"] },
   { id: "core:open_app", type: "core", name: "open_app", description: "Open and launch desktop applications by name", descriptionCn: "打开启动运行桌面应用程序", tags: ["open", "app", "launch", "start", "run", "打开", "启动", "运行", "应用", "程序", "软件", "微信", "WeChat", "QQ", "Chrome", "浏览器", "钉钉", "飞书"] },
-  { id: "core:wechat_send", type: "core", name: "wechat_send", description: "Send WeChat messages via desktop automation", descriptionCn: "通过桌面自动化发送微信消息", tags: ["wechat", "send", "微信", "发送", "消息", "聊天"] },
-  { id: "core:wechat_check", type: "core", name: "wechat_check", description: "Check WeChat unread messages", descriptionCn: "检查微信未读消息", tags: ["wechat", "check", "微信", "未读", "消息", "查看"] },
+  // GUI automation tools removed from distribution
 ];
 
 // ---------------------------------------------------------------------------

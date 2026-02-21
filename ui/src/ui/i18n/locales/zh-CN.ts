@@ -211,9 +211,12 @@ export const zhCN: Record<keyof typeof en, string> = {
 
   // 智能体创建与删除 (Agent Create / Delete)
   "agents.addAgent": "添加智能体",
-  "agents.addAgentName": "名称",
+  "agents.addAgentId": "ID（英文，用于路由和目录）",
+  "agents.addAgentIdPlaceholder": "如: work, family, coding",
+  "agents.addAgentIdHint": "仅支持英文字母、数字、下划线和连字符",
+  "agents.addAgentName": "显示名称",
   "agents.addAgentWorkspace": "工作区路径",
-  "agents.addAgentNamePlaceholder": "如: work, family",
+  "agents.addAgentNamePlaceholder": "如: 工作助手, 家庭机器人",
   "agents.addAgentWorkspacePlaceholder": "如: ~/clawd-work",
   "agents.createBtn": "创建",
   "agents.creating": "创建中…",
@@ -1378,6 +1381,37 @@ export const zhCN: Record<keyof typeof en, string> = {
   "logs.noEntries": "暂无日志条目。",
   "logs.level.trace": "跟踪",
   "logs.level.fatal": "致命",
+
+  // ============================================================================
+  // 日志上报运维中心 (Log Report to Ops Center)
+  // ============================================================================
+  "logReport.title": "发送日志给运维中心",
+  "logReport.triggerBtn": "报告问题",
+  "logReport.optional": "选填",
+  "logReport.description.label": "问题现象",
+  "logReport.description.placeholder": "请描述您遇到的问题，越详细越好...",
+  "logReport.images.label": "问题截图",
+  "logReport.images.hint": "粘贴或点击上传，最多3张（每张≤1MB）",
+  "logReport.autoLogsHint": "将自动附带最近500条网关日志，帮助运维人员快速定位问题。",
+  "logReport.submit": "提交报告",
+  "logReport.submitting": "提交中...",
+  "logReport.success.title": "报告已提交",
+  "logReport.success.message": "运维人员将尽快分析您的问题并回复。",
+  "logReport.success.ticketLabel": "工单号",
+  "logReport.success.ticketHint": "请保存此工单号，后续可查询处理进度。",
+  "logReport.remaining": "今天还剩 {{count}} 次提交机会",
+  "logReport.queryTicket": "查询工单",
+  "logReport.backToReport": "返回报告",
+  "logReport.query.title": "查询工单状态",
+  "logReport.query.placeholder": "输入6位工单号",
+  "logReport.query.search": "查询",
+  "logReport.query.replyTitle": "运维回复",
+  "logReport.query.noReply": "暂无回复，请稍后再来查看。",
+  "logReport.query.notFound": "未找到该工单。",
+  "logReport.status.pending": "待处理",
+  "logReport.status.analyzing": "分析中",
+  "logReport.status.replied": "已回复",
+  "logReport.status.closed": "已关闭",
 
   // ============================================================================
   // 玩法推荐 (Playground)

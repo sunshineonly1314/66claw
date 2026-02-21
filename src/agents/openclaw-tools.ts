@@ -24,16 +24,7 @@ import { resolveWorkspaceRoot } from "./workspace-dir.js";
 // ── [CN-PATCH] CN-only tool imports ──
 import { createOpenAppTool } from "./tools/open-app.js";
 import { createDesktopControlTool } from "./tools/desktop-control.js";
-import { createWeChatSendTool } from "./tools/wechat-send.js";
-import { createWeChatReadTool } from "./tools/wechat-read.js";
-import { createWeChatCheckTool } from "./tools/wechat-check.js";
-import { createWeComSendTool } from "./tools/wecom-send.js";
-import { createWeComReadTool } from "./tools/wecom-read.js";
-import { createWeComCheckTool } from "./tools/wecom-check.js";
-import { createWeComAutoReplyTool } from "./tools/wecom-auto-reply.js";
-import { createWeComPatrolTool } from "./tools/wecom-patrol.js";
-import { createWeComGroupSummaryTool } from "./tools/wecom-group-summary.js";
-import { createWeComBroadcastTool } from "./tools/wecom-broadcast.js";
+// GUI automation tools removed from distribution (wechat-send/check/read, wecom-send/check/read/auto-reply/patrol/group-summary/broadcast)
 import { createWeComTicketTool } from "./tools/wecom-ticket.js";
 import { createWeComHandoffTool } from "./tools/wecom-handoff.js";
 import { createImageGenTool } from "./tools/image-gen-tool.js";
@@ -106,19 +97,7 @@ export function createOpenClawCNTools(options?: {
   // ── [CN-PATCH] CN-only tools ──
   const openAppTool = createOpenAppTool();
   const desktopControlTool = createDesktopControlTool();
-  const wechatSendTool = createWeChatSendTool();
-  const wechatReadTool = createWeChatReadTool();
-  const wechatCheckTool = createWeChatCheckTool();
-  const wecomSendTool = createWeComSendTool();
-  const wecomReadTool = createWeComReadTool({
-    config: options?.config,
-    agentDir: options?.agentDir,
-  });
-  const wecomCheckTool = createWeComCheckTool();
-  const wecomAutoReplyTool = createWeComAutoReplyTool();
-  const wecomPatrolTool = createWeComPatrolTool();
-  const wecomGroupSummaryTool = createWeComGroupSummaryTool();
-  const wecomBroadcastTool = createWeComBroadcastTool();
+  // GUI automation tools removed from distribution
   const wecomTicketTool = createWeComTicketTool();
   const wecomHandoffTool = createWeComHandoffTool();
   const imageGenTool = createImageGenTool({
@@ -212,16 +191,7 @@ export function createOpenClawCNTools(options?: {
     // ── [CN-PATCH] CN-only tools ──
     ...(openAppTool ? [openAppTool] : []),
     ...(desktopControlTool ? [desktopControlTool] : []),
-    ...(wechatSendTool ? [wechatSendTool] : []),
-    ...(wechatReadTool ? [wechatReadTool] : []),
-    ...(wechatCheckTool ? [wechatCheckTool] : []),
-    ...(wecomSendTool ? [wecomSendTool] : []),
-    wecomReadTool,
-    ...(wecomCheckTool ? [wecomCheckTool] : []),
-    ...(wecomAutoReplyTool ? [wecomAutoReplyTool] : []),
-    ...(wecomPatrolTool ? [wecomPatrolTool] : []),
-    ...(wecomGroupSummaryTool ? [wecomGroupSummaryTool] : []),
-    ...(wecomBroadcastTool ? [wecomBroadcastTool] : []),
+    // GUI automation tools removed from distribution
     wecomTicketTool,
     wecomHandoffTool,
     imageGenTool,

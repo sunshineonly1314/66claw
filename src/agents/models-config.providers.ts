@@ -512,6 +512,33 @@ export function normalizeProviders(params: {
       normalizedProvider = googleNormalized;
     }
 
+    // Kimi Coding requires User-Agent header and supportsDeveloperRole: false.
+    // User config may override implicit provider and lose these critical fields.
+    if (normalizedKey === "kimi-coding" && Array.isArray(normalizedProvider.models)) {
+      const patchedModels = normalizedProvider.models.map((model: unknown) => {
+        if (!model || typeof model !== "object") return model;
+        const rec = model as Record<string, unknown>;
+        let patched = false;
+        const patch: Record<string, unknown> = {};
+        if (!rec.headers) {
+          patch.headers = KIMI_CODE_HEADERS;
+          patched = true;
+        }
+        if (!rec.compat) {
+          patch.compat = KIMI_CODE_COMPAT;
+          patched = true;
+        }
+        return patched ? { ...rec, ...patch } : model;
+      });
+      if (patchedModels !== normalizedProvider.models) {
+        mutated = true;
+        normalizedProvider = {
+          ...normalizedProvider,
+          models: patchedModels as typeof normalizedProvider.models,
+        };
+      }
+    }
+
     // Ensure `api` field is set — config files may omit it, causing
     // "No API provider registered for api: undefined" at runtime.
     if (!normalizedProvider.api) {
@@ -662,6 +689,18 @@ function buildKimiCodeProvider(): ProviderConfig {
       {
         id: KIMI_CODE_MODEL_ID,
         name: "Kimi For Coding",
+        reasoning: true,
+        input: ["text"],
+        cost: KIMI_CODE_DEFAULT_COST,
+        contextWindow: KIMI_CODE_CONTEXT_WINDOW,
+        maxTokens: KIMI_CODE_MAX_TOKENS,
+        headers: KIMI_CODE_HEADERS,
+        compat: KIMI_CODE_COMPAT,
+      },
+      // 🔥 兼容旧 setup wizard 配置的 "k2p5" model ID
+      {
+        id: "k2p5",
+        name: "Kimi K2.5",
         reasoning: true,
         input: ["text"],
         cost: KIMI_CODE_DEFAULT_COST,
@@ -1549,7 +1588,10 @@ export async function resolveImplicitProviders(params: {
     resolveEnvApiKeyVarName("siliconflow") ??
     resolveApiKeyFromProfiles({ provider: "siliconflow", store: authStore });
   if (siliconflowKey) {
-    providers.siliconflow = { ...(await buildSiliconFlowProvider(siliconflowKey)), apiKey: siliconflowKey };
+    providers.siliconflow = {
+      ...(await buildSiliconFlowProvider(siliconflowKey)),
+      apiKey: siliconflowKey,
+    };
   }
 
   // 腾讯混元 Tencent Hunyuan

@@ -123,7 +123,13 @@ async function getProviderConfigStatus(): Promise<Map<string, boolean>> {
       for (const [, profile] of Object.entries(authStore.profiles)) {
         const p = profile as { provider?: string; key?: string; type?: string };
         if (p.provider && p.key) {
+          // 🔥 P0 修复: auth-profiles 存的是 "kimi-coding"，但 PROVIDER_CAPABILITY_MAPPINGS
+          // 用 "kimi-code"。同时设置原始 ID 和反向映射，确保两边都能查到。
           providers.set(p.provider, true);
+          // 反向映射: "kimi-coding" -> 也设置 "kimi-code"
+          if (p.provider === "kimi-coding") {
+            providers.set("kimi-code", true);
+          }
         }
       }
     }
@@ -680,6 +686,33 @@ export async function detectProviderModels(params: {
       }
     }
 
+    // 🔥 P0 修复: 当 text 能力被自动启用时，同步 agents.defaults.model.primary
+    // 但仅在 primary 尚未设置或仍为默认的 anthropic 时才覆盖，
+    // 避免用户在 setup wizard 中选择的 provider 被后续 auto-enable 覆盖
+    if (autoEnabled.text) {
+      if (!config.agents) config.agents = {};
+      if (!config.agents.defaults) config.agents.defaults = {};
+      const newPrimary = `${providerId}/${autoEnabled.text}`;
+      const modelField = config.agents.defaults.model;
+      const existingPrimary =
+        typeof modelField === "object" && modelField !== null
+          ? (modelField as Record<string, unknown>).primary
+          : undefined;
+      // 仅在以下情况覆盖 primary:
+      // 1. 尚未设置 primary
+      // 2. primary 仍为默认的 anthropic（未经用户选择）
+      const shouldOverwrite =
+        !existingPrimary ||
+        (typeof existingPrimary === "string" && existingPrimary.startsWith("anthropic/"));
+      if (shouldOverwrite) {
+        if (typeof modelField === "object" && modelField !== null) {
+          (modelField as Record<string, unknown>).primary = newPrimary;
+        } else {
+          config.agents.defaults.model = { primary: newPrimary };
+        }
+      }
+    }
+
     // 一次性写入,避免两次写入导致的竞争
     try {
       await writeConfigFile(config);
@@ -866,6 +899,123 @@ export async function deleteProviderConfig(params: { providerId: string }) {
  *
  * 用于添加枚举库中没有的新模型（如服务商新上线的模型）。
  */
+/**
+ * 探测模型是否可用（轻量级 chat completions 请求，max_tokens=1）
+ * 返回: { ok: true } 或 { ok: false, fatal: boolean, message: string }
+ *  - fatal=true: 模型确定不存在（404 / model_not_found），应拒绝添加
+ *  - fatal=false: 临时性错误（超时、限流等），允许添加但警告
+ */
+async function probeModel(
+  providerId: string,
+  modelId: string,
+  apiKey: string,
+): Promise<{ ok: true } | { ok: false; fatal: boolean; message: string }> {
+  const cnProvider = CN_PROVIDERS[providerId];
+  const baseUrl = cnProvider?.apiEndpoint;
+  if (!baseUrl) {
+    // 无端点信息，跳过探测
+    return { ok: true };
+  }
+
+  // 跳过不支持标准 chat completions 探测的厂商
+  const skipProbeProviders = new Set(["ollama", "tencent-hunyuan", "google", "anthropic"]);
+  if (skipProbeProviders.has(providerId)) {
+    return { ok: true };
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  // Kimi 需要 User-Agent
+  if (providerId === "kimi-code") {
+    headers["User-Agent"] = "KimiCLI/0.77";
+  }
+
+  try {
+    const resp = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: "user", content: "hi" }],
+        max_tokens: 1,
+      }),
+      signal: AbortSignal.timeout(12000),
+    });
+
+    const respText = await resp.text().catch(() => "");
+    let respMsg = "";
+    let respJson: Record<string, unknown> | null = null;
+    try {
+      respJson = JSON.parse(respText);
+      respMsg = (respJson as any).error?.message ?? (respJson as any).message ?? "";
+    } catch {
+      respMsg = respText.substring(0, 200);
+    }
+
+    // 模型不存在的错误模式（无论 HTTP 状态码）
+    const notFoundPatterns = [
+      /model.*not\s*found/i,
+      /does\s*not\s*exist/i,
+      /invalid.*model/i,
+      /unknown.*model/i,
+      /不存在/,
+      /无效.*模型/,
+      /未找到.*模型/,
+      /No available model/i,
+    ];
+
+    // 即使 HTTP 200，也要检查响应体是否有错误
+    if (resp.ok) {
+      // 某些 API 返回 200 但 body 里有 error
+      if (respJson && (respJson as any).error) {
+        if (notFoundPatterns.some((p) => p.test(respMsg))) {
+          return { ok: false, fatal: true, message: `模型 "${modelId}" 不存在或该 Key 无权访问` };
+        }
+        return { ok: false, fatal: true, message: `模型验证失败: ${respMsg.substring(0, 100)}` };
+      }
+      // 检查是否有正常的 choices 响应
+      if (respJson && (respJson as any).choices) {
+        return { ok: true };
+      }
+      // 200 但没有 choices 也没有 error，可能有问题，但不阻止
+      return { ok: true };
+    }
+
+    if (resp.status === 404 || notFoundPatterns.some((p) => p.test(respMsg))) {
+      return { ok: false, fatal: true, message: `模型 "${modelId}" 不存在或该 Key 无权访问` };
+    }
+
+    // 认证失败
+    if (resp.status === 401 || resp.status === 403) {
+      return { ok: false, fatal: true, message: "API Key 无效或已过期，请先更换 Key" };
+    }
+
+    // 限流/余额不足等临时问题 — 允许添加但警告
+    if (resp.status === 429) {
+      return { ok: false, fatal: false, message: "请求频率受限，无法验证模型可用性" };
+    }
+    if (resp.status === 402) {
+      return { ok: false, fatal: false, message: "账户余额不足，无法验证模型可用性" };
+    }
+
+    return {
+      ok: false,
+      fatal: true,
+      message: `验证未通过 (HTTP ${resp.status})，模型不可用或不存在`,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // 超时或网络问题 — 拒绝添加，避免添加无效模型
+    return {
+      ok: false,
+      fatal: true,
+      message: `连接验证失败（${msg.includes("timed out") || msg.includes("timeout") ? "超时" : "网络异常"}），请检查网络后重试`,
+    };
+  }
+}
+
 export async function addCustomModel(params: {
   providerId: string;
   modelId: string;
@@ -879,6 +1029,10 @@ export async function addCustomModel(params: {
   }
   if (modelId.length > 200) {
     throw new Error("modelId 过长");
+  }
+  // 格式校验：只允许字母、数字、-_./: @
+  if (!/^[a-zA-Z0-9\-_.\/:@]+$/.test(modelId)) {
+    throw new Error("模型 ID 格式不合法，只能包含字母、数字、-_./: 等字符");
   }
   if (modelName && modelName.length > 100) {
     throw new Error("modelName 过长（最多 100 字符）");
@@ -897,6 +1051,7 @@ export async function addCustomModel(params: {
   _modelConfigWriteLock = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let probeWarning: string | undefined;
   try {
     await prev;
     const config = structuredClone(await loadConfig());
@@ -911,6 +1066,15 @@ export async function addCustomModel(params: {
     const existing = providerConfig.models.find((m: { id?: string }) => m.id === modelId);
     if (existing) {
       throw new Error(`模型 "${modelId}" 已存在`);
+    }
+
+    // 探测模型可用性
+    const probe = await probeModel(providerId, modelId, providerConfig.apiKey);
+    if (!probe.ok && probe.fatal) {
+      throw new Error(probe.message);
+    }
+    if (!probe.ok && !probe.fatal) {
+      probeWarning = probe.message;
     }
 
     // 添加模型
@@ -930,7 +1094,7 @@ export async function addCustomModel(params: {
     release!();
   }
 
-  return { success: true, modelId };
+  return { success: true, modelId, probeWarning };
 }
 
 // ===== OpenClawCN: Provider 健康状态 & 优先级 =====

@@ -22,6 +22,23 @@ export function computeSkillReasons(skill: SkillStatusEntry): string[] {
   return reasons;
 }
 
+function localizeSource(source: string): string {
+  switch (source) {
+    case "openclawcn-bundled": return "内置";
+    case "openclawcn-managed": return "已安装";
+    case "openclawcn-workspace": return "工作区";
+    case "openclawcn-extra": return "扩展";
+    case "openclawcn-private": return "私有";
+    case "clawdbot-bundled": return "内置";
+    case "clawdbot-managed": return "已安装";
+    case "clawdbot-workspace": return "工作区";
+    case "clawdbot-extra": return "扩展";
+    case "agents-skills-personal": return "个人";
+    case "agents-skills-project": return "项目";
+    default: return source;
+  }
+}
+
 export function renderSkillStatusChips(params: {
   skill: SkillStatusEntry;
   showBundledBadge?: boolean;
@@ -30,7 +47,7 @@ export function renderSkillStatusChips(params: {
   const showBundledBadge = Boolean(params.showBundledBadge);
   return html`
     <div class="chip-row" style="margin-top: 6px;">
-      <span class="chip">${skill.source}</span>
+      <span class="chip">${localizeSource(skill.source)}</span>
       ${
         showBundledBadge
           ? html`

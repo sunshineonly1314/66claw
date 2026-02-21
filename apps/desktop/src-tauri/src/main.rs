@@ -189,6 +189,7 @@ pub fn run() {
             match sidecar::start_sidecar(handle.clone()) {
                 Ok(()) => {
                     log("Sidecar started, beginning health poll...");
+                    tray::update_tray_menu_state(&handle);
                     poll_and_navigate(handle);
                 }
                 Err(e) => {
@@ -214,9 +215,18 @@ pub fn run() {
             commands::check_needs_setup,
             commands::open_logs_directory,
         ])
-        .on_window_event(|_window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                sidecar::cleanup_on_exit();
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    // Hide to tray instead of closing — service keeps running.
+                    // Only "退出" in the tray menu actually exits the app.
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+                tauri::WindowEvent::Destroyed => {
+                    sidecar::cleanup_on_exit();
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())

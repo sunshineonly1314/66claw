@@ -129,6 +129,7 @@ export async function applyPerformanceProfile(
         raw,
         baseHash,
         sessionKey: state.sessionKey,
+        noRestart: true,
       });
     };
 

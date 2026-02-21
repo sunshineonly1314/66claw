@@ -143,23 +143,23 @@ function normalizeInstallOptions(
     const bins = spec.bins ?? [];
     let label = (spec.label ?? "").trim();
     if (spec.kind === "node" && spec.package) {
-      label = `Install ${spec.package} (${prefs.nodeManager})`;
+      label = `安装 ${spec.package} (${prefs.nodeManager})`;
     }
     if (!label) {
       if (spec.kind === "brew" && spec.formula) {
-        label = `Install ${spec.formula} (brew)`;
+        label = `安装 ${spec.formula} (brew)`;
       } else if (spec.kind === "node" && spec.package) {
-        label = `Install ${spec.package} (${prefs.nodeManager})`;
+        label = `安装 ${spec.package} (${prefs.nodeManager})`;
       } else if (spec.kind === "go" && spec.module) {
-        label = `Install ${spec.module} (go)`;
+        label = `安装 ${spec.module} (go)`;
       } else if (spec.kind === "uv" && spec.package) {
-        label = `Install ${spec.package} (uv)`;
+        label = `安装 ${spec.package} (uv)`;
       } else if (spec.kind === "download" && spec.url) {
         const url = spec.url.trim();
         const last = url.split("/").pop();
-        label = `Download ${last && last.length > 0 ? last : url}`;
+        label = `下载 ${last && last.length > 0 ? last : url}`;
       } else {
-        label = "Run installer";
+        label = "执行安装";
       }
     }
     return { id, kind: spec.kind, label, bins };

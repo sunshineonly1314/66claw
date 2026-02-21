@@ -9,7 +9,7 @@
 ## ✅ 已完成的配置
 
 ### 1️⃣ SSH 免密登录
-- ✅ 控制机 → Windows 笔记本 (192.168.0.103)
+- ✅ 控制机 → Windows 笔记本 (KEVINSUN)
 - ✅ 控制机 → Mac Mini (192.168.0.107)
 
 ### 2️⃣ Gitee SSH 认证
@@ -160,7 +160,7 @@ bash status.sh
 - Windows: `ci/artifacts/windows/`
 - macOS: `ci/artifacts/macos/`
 
-### Windows 构建机 (192.168.0.103)
+### Windows 构建机 (KEVINSUN)
 - 位置: `E:\clawdbuild\`
 - 文件: `ClawdbotCN-Setup-*.exe`
 
@@ -209,7 +209,7 @@ bash status.sh
 bash status.sh
 
 # 重新配置 SSH（如需要）
-ssh-copy-id SunBin@192.168.0.103
+ssh-copy-id SunBin@KEVINSUN
 ssh-copy-id kevinsun@192.168.0.107
 ```
 
@@ -220,7 +220,7 @@ ssh-copy-id kevinsun@192.168.0.107
 **解决**:
 ```bash
 # 在构建机器上测试
-ssh SunBin@192.168.0.103 "ssh -T git@gitee.com"
+ssh SunBin@KEVINSUN "ssh -T git@gitee.com"
 ssh kevinsun@192.168.0.107 "ssh -T git@gitee.com"
 
 # 应该显示: "successfully authenticated"
@@ -232,7 +232,7 @@ ssh kevinsun@192.168.0.107 "ssh -T git@gitee.com"
 1. 查看构建日志: `tail -f ci/logs/build-*.log`
 2. 检查 SSH 连接: `bash status.sh`
 3. 验证 Gitee 连接（见上）
-4. 检查磁盘空间: `ssh SunBin@192.168.0.103 "dir E:\"`
+4. 检查磁盘空间: `ssh SunBin@KEVINSUN "dir E:\"`
 
 ---
 

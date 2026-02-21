@@ -79,6 +79,18 @@ if (Test-Path "$ProjectRoot\ui\package.json") {
 }
 Write-Host "  UI build OK" -ForegroundColor Green
 
+# ── Step 3b: Obfuscate UI bundles ──
+Write-Host "[3b/6] Obfuscating UI bundles..." -ForegroundColor Yellow
+Push-Location $ProjectRoot
+node --import tsx cn/scripts/build/obfuscate-ui.ts
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: UI obfuscation failed!" -ForegroundColor Red
+    Pop-Location
+    exit 1
+}
+Pop-Location
+Write-Host "  UI obfuscation OK" -ForegroundColor Green
+
 # ── Step 4: Prepare bundled resources ──
 Write-Host "[4/6] Preparing bundled resources..." -ForegroundColor Yellow
 $prepareScript = Join-Path $ScriptDir "prepare-resources.ps1"

@@ -4,7 +4,7 @@ description: Work with Obsidian vaults (plain Markdown notes) and automate via o
 nameZh: "Obsidian笔记"
 descriptionZh: "管理Obsidian知识库"
 homepage: https://help.obsidian.md
-metadata: {"openclawcn":{"emoji":"💎","requires":{"bins":["obsidian-cli"]},"install":[{"id":"brew","kind":"brew","formula":"yakitrak/yakitrak/obsidian-cli","bins":["obsidian-cli"],"label":"Install obsidian-cli (brew)"},{"id":"go","kind":"go","module":"github.com/yakitrak/obsidian-cli@latest","bins":["obsidian-cli"],"label":"Install obsidian-cli (go)"}]}}
+metadata: {"openclawcn":{"emoji":"💎","requires":{"bins":["obsidian-cli"]},"install":[{"id":"brew","kind":"brew","formula":"yakitrak/yakitrak/obsidian-cli","bins":["obsidian-cli"],"label":"安装 obsidian-cli (brew)"},{"id":"go","kind":"go","module":"github.com/yakitrak/obsidian-cli@latest","bins":["obsidian-cli"],"label":"安装 obsidian-cli (go)"}]}}
 ---
 
 # Obsidian

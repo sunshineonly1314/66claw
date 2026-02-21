@@ -46,7 +46,7 @@ https://gitee.com/profile/sshkeys
 
    **标题：**
    ```
-   ClawdbotCN-Windows-CI (192.168.0.103)
+   ClawdbotCN-Windows-CI (KEVINSUN)
    ```
 
    **公钥：**
@@ -91,7 +91,7 @@ https://gitee.com/profile/sshkeys
 添加完成后，您应该能在 "SSH 公钥" 列表中看到两个密钥：
 
 ```
-✓ ClawdbotCN-Windows-CI (192.168.0.103)
+✓ ClawdbotCN-Windows-CI (KEVINSUN)
   公钥指纹: SHA256:xxxxxxxx
   添加时间: 2026-02-18
 

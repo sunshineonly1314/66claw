@@ -14,6 +14,16 @@ export type InstancesProps = {
 
 export function renderInstances(props: InstancesProps) {
   return html`
+    <section class="card" style="margin-bottom: 16px;">
+      <div class="card-title">${t("instances.whatIsInstance")}</div>
+      <div class="card-sub" style="margin-bottom: 10px;">${t("instances.description")}</div>
+      <div style="font-size: 0.88em; color: var(--text-muted, #888); line-height: 1.7;">
+        <div>&bull; ${t("instances.descGateway")}</div>
+        <div>&bull; ${t("instances.descUI")}</div>
+        <div>&bull; ${t("instances.descNode")}</div>
+        <div>&bull; ${t("instances.descChips")}</div>
+      </div>
+    </section>
     <section class="card">
       <div class="row" style="justify-content: space-between;">
         <div>

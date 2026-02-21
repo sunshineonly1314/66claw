@@ -175,12 +175,15 @@ fn resolve_app_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        // Tauri NSIS bundles "resources/**/*" into <exe_dir>/resources/
+        // Tauri NSIS bundles "resources/**/*" into <exe_dir>/resources/.
+        // Check for the actual backend entry file, not just the directory —
+        // a stale/partial `resources/` folder without `dist/entry.js` means
+        // the real resources are at exe_dir level (manual deployment).
         let resources_dir = exe_dir.join("resources");
-        if resources_dir.exists() {
+        if resources_dir.join("dist").join("entry.js").exists() {
             Ok(resources_dir)
         } else {
-            // Fallback for dev mode or non-standard layout
+            // Fallback: resources directly alongside the exe
             Ok(exe_dir.to_path_buf())
         }
     }
@@ -349,9 +352,31 @@ pub fn cleanup_on_exit() {
 }
 
 /// Returns true if the sidecar is currently running.
+/// Uses `try_wait()` to detect crashed/exited processes and clean up the handle.
 pub fn is_sidecar_running() -> bool {
-    let process = SIDECAR_PROCESS.lock().unwrap();
-    process.is_some()
+    let mut process = SIDECAR_PROCESS.lock().unwrap();
+    if let Some(ref mut child) = *process {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                // Process has exited — clean up the stale handle
+                println!("[Sidecar] Process exited (detected via try_wait), cleaning up handle");
+                *process = None;
+                false
+            }
+            Ok(None) => {
+                // Still running
+                true
+            }
+            Err(e) => {
+                // Error checking status — assume dead
+                eprintln!("[Sidecar] Error checking process status: {}, assuming dead", e);
+                *process = None;
+                false
+            }
+        }
+    } else {
+        false
+    }
 }
 
 /// Restart the sidecar process.
@@ -425,15 +450,8 @@ pub fn gateway_port() -> u16 {
     GATEWAY_PORT
 }
 
-/// Returns the path to the logs directory.
-pub fn logs_directory() -> Result<PathBuf, Box<dyn std::error::Error>> {
+/// Returns the full path to the sidecar log file (e.g. `resources/sidecar.log`).
+pub fn log_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let app_dir = resolve_app_dir()?;
-    let logs_dir = app_dir.join("logs");
-
-    // Create logs directory if it doesn't exist
-    if !logs_dir.exists() {
-        std::fs::create_dir_all(&logs_dir)?;
-    }
-
-    Ok(logs_dir)
+    Ok(platform::resolve_log_path(&app_dir))
 }

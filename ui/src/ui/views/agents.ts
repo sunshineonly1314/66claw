@@ -64,6 +64,10 @@ export type AgentsProps = {
   agentSkillsError: string | null;
   agentSkillsAgentId: string | null;
   skillsFilter: string;
+  agentCreating: boolean;
+  agentCreateError: string | null;
+  agentDeleting: boolean;
+  agentDeleteError: string | null;
   onRefresh: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
@@ -85,6 +89,10 @@ export type AgentsProps = {
   onAgentSkillToggle: (agentId: string, skillName: string, enabled: boolean) => void;
   onAgentSkillsClear: (agentId: string) => void;
   onAgentSkillsDisableAll: (agentId: string) => void;
+  addFormOpen: boolean;
+  onToggleAddForm: (open: boolean) => void;
+  onCreateAgent: (id: string, name: string, workspace: string) => Promise<boolean>;
+  onDeleteAgent: (agentId: string) => Promise<void>;
 };
 
 export type AgentContext = {
@@ -96,6 +104,9 @@ export type AgentContext = {
   isDefault: boolean;
 };
 
+/* ── Add-agent form field values (module-scoped, non-reactive) ── */
+const addFormFields = { id: "", name: "", workspace: "" };
+
 export function renderAgents(props: AgentsProps) {
   const agents = props.agentsList?.agents ?? [];
   const defaultId = props.agentsList?.defaultId ?? null;
@@ -103,13 +114,14 @@ export function renderAgents(props: AgentsProps) {
   const selectedAgent = selectedId
     ? (agents.find((agent) => agent.id === selectedId) ?? null)
     : null;
+  const isOnlyDefault = agents.length <= 1;
 
   return html`
     <div class="agents-layout">
       <section class="agents-sidebar">
         <div class="row" style="justify-content: space-between;">
           <div>
-            <div class="card-title">${t("agents.title")}</div>
+            <div class="card-title">${t("agents.title")} <span style="color:#e53935;font-size:12px;font-weight:normal;margin-left:6px;">试运行</span></div>
             <div class="card-sub">${agents.length} ${t("agents.configured")}</div>
           </div>
           <button class="btn btn--sm" ?disabled=${props.loading} @click=${props.onRefresh}>
@@ -147,8 +159,10 @@ export function renderAgents(props: AgentsProps) {
                 })
           }
         </div>
+        ${renderAddAgentForm(props)}
       </section>
       <section class="agents-main">
+        ${isOnlyDefault ? renderMultiAgentGuide() : nothing}
         ${
           !selectedAgent
             ? html`
@@ -162,6 +176,7 @@ export function renderAgents(props: AgentsProps) {
                   selectedAgent,
                   defaultId,
                   props.agentIdentityById[selectedAgent.id] ?? null,
+                  props,
                 )}
                 ${renderAgentTabs(props.activePanel, (panel) => props.onSelectPanel(panel))}
                 ${
@@ -290,11 +305,13 @@ function renderAgentHeader(
   agent: AgentsListResult["agents"][number],
   defaultId: string | null,
   agentIdentity: AgentIdentityResult | null,
+  props: AgentsProps,
 ) {
   const badge = agentBadgeText(agent.id, defaultId);
   const displayName = normalizeAgentLabel(agent);
   const subtitle = agent.identity?.theme?.trim() || t("agents.defaultSubtitle");
   const emoji = resolveAgentEmoji(agent, agentIdentity);
+  const isDefault = agent.id === defaultId;
   return html`
     <section class="card agent-header">
       <div class="agent-header-main">
@@ -307,7 +324,25 @@ function renderAgentHeader(
       <div class="agent-header-meta">
         <div class="mono">${agent.id}</div>
         ${badge ? html`<span class="agent-pill">${badge}</span>` : nothing}
+        ${!isDefault
+          ? html`
+            <button
+              class="btn btn--sm"
+              style="margin-left: 8px; color: var(--danger, #d33);"
+              ?disabled=${props.agentDeleting}
+              @click=${() => {
+                const msg = t("agents.deleteConfirm", { name: displayName });
+                if (confirm(msg)) void props.onDeleteAgent(agent.id);
+              }}
+            >
+              ${t("agents.deleteAgent")}
+            </button>
+          `
+          : nothing}
       </div>
+      ${props.agentDeleteError
+        ? html`<div class="callout danger" style="margin-top: 8px;">${props.agentDeleteError}</div>`
+        : nothing}
     </section>
   `;
 }
@@ -486,5 +521,122 @@ function renderAgentOverview(params: {
         </div>
       </div>
     </section>
+  `;
+}
+
+/* ── ID format regex (must contain at least one alphanumeric) ── */
+const AGENT_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+
+/* ── Add-agent sidebar form ── */
+function renderAddAgentForm(props: AgentsProps) {
+  const toggle = () => {
+    const next = !props.addFormOpen;
+    if (!next) {
+      addFormFields.id = "";
+      addFormFields.name = "";
+      addFormFields.workspace = "";
+    }
+    props.onToggleAddForm(next);
+  };
+  const idValid = AGENT_ID_RE.test(addFormFields.id.trim());
+  const canSubmit =
+    idValid &&
+    addFormFields.name.trim().length > 0 &&
+    addFormFields.workspace.trim().length > 0 &&
+    !props.agentCreating;
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    const ok = await props.onCreateAgent(
+      addFormFields.id.trim(),
+      addFormFields.name.trim(),
+      addFormFields.workspace.trim(),
+    );
+    if (ok) {
+      addFormFields.id = "";
+      addFormFields.name = "";
+      addFormFields.workspace = "";
+    }
+  };
+  const showIdHint =
+    addFormFields.id.trim().length > 0 && !idValid;
+
+  return html`
+    <div style="margin-top: 12px;">
+      <button
+        class="btn btn--sm"
+        style="width: 100%;"
+        @click=${toggle}
+      >
+        ${props.addFormOpen ? "−" : "+"} ${t("agents.addAgent")}
+      </button>
+      ${props.addFormOpen
+        ? html`
+          <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+            <label class="field">
+              <span>${t("agents.addAgentId")}</span>
+              <input
+                type="text"
+                .value=${addFormFields.id}
+                placeholder=${t("agents.addAgentIdPlaceholder")}
+                ?disabled=${props.agentCreating}
+                @input=${(e: Event) => {
+                  addFormFields.id = (e.target as HTMLInputElement).value;
+                  props.onToggleAddForm(true);
+                }}
+              />
+              ${showIdHint
+                ? html`<div class="muted" style="font-size: 11px; margin-top: 2px;">${t("agents.addAgentIdHint")}</div>`
+                : nothing}
+            </label>
+            <label class="field">
+              <span>${t("agents.addAgentName")}</span>
+              <input
+                type="text"
+                .value=${addFormFields.name}
+                placeholder=${t("agents.addAgentNamePlaceholder")}
+                ?disabled=${props.agentCreating}
+                @input=${(e: Event) => { addFormFields.name = (e.target as HTMLInputElement).value; }}
+              />
+            </label>
+            <label class="field">
+              <span>${t("agents.addAgentWorkspace")}</span>
+              <input
+                type="text"
+                .value=${addFormFields.workspace}
+                placeholder=${t("agents.addAgentWorkspacePlaceholder")}
+                ?disabled=${props.agentCreating}
+                @input=${(e: Event) => { addFormFields.workspace = (e.target as HTMLInputElement).value; }}
+              />
+            </label>
+            ${props.agentCreateError
+              ? html`<div class="callout danger">${props.agentCreateError}</div>`
+              : nothing}
+            <button
+              class="btn primary"
+              ?disabled=${!canSubmit}
+              @click=${handleSubmit}
+            >
+              ${props.agentCreating ? t("agents.creating") : t("agents.createBtn")}
+            </button>
+          </div>
+        `
+        : nothing}
+    </div>
+  `;
+}
+
+/* ── Multi-agent onboarding guide ── */
+function renderMultiAgentGuide() {
+  return html`
+    <div class="callout info" style="margin-bottom: 16px;">
+      <div style="font-weight: 600; margin-bottom: 6px;">${t("agents.guideTitle")}</div>
+      <div style="margin-bottom: 8px;">${t("agents.guideIntro")}</div>
+      <div style="margin-bottom: 4px;">1. ${t("agents.guideStep1")}</div>
+      <div style="margin-bottom: 4px;">2. ${t("agents.guideStep2")}</div>
+      <div style="margin-bottom: 8px;">3. ${t("agents.guideStep3")}</div>
+      <div style="font-weight: 600; margin-bottom: 4px;">${t("agents.guideRoutingTitle")}</div>
+      <div style="margin-bottom: 8px;">${t("agents.guideRoutingBody")}</div>
+      <div class="muted mono" style="font-size: 12px;">${t("agents.guideCli")}</div>
+    </div>
   `;
 }

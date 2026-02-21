@@ -1013,7 +1013,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     next = {
       ...next,
       toolDiscovery: {
-        enabled: true,
+        enabled: false,
         embedding: {
           model: "BAAI/bge-m3",
           baseUrl: "https://api.siliconflow.cn/v1",
@@ -1027,17 +1027,17 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     mutated = true;
   }
 
-  // ── [CN-PATCH:dispatch] 20.5. dispatch: 智能调度引擎默认启用 ──
-  //    CN 区域默认启用 dispatch（意图识别 + 工具推荐 + 复杂度评估）
+  // ── [CN-PATCH:dispatch] 20.5. dispatch: 智能调度引擎默认关闭 ──
+  //    出厂默认关闭，用户通过 UI 智能推荐开关手动开启
   //    toolDiscovery 需要 dispatch.enabled=true 才能在聊天流程中被调用
   if (next.dispatch === undefined) {
     next = {
       ...next,
       dispatch: {
-        enabled: true,
+        enabled: false,
         modalityRouter: true,
         toolSelector: true,
-        toolFilterMode: "discovery" as const,
+        toolFilterMode: "off" as const,
       },
     };
     mutated = true;

@@ -38,6 +38,7 @@ import type { SkillInstallDecision } from "./controllers/skill-install";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
 import type { DocsViewState } from "./views/docs";
 import type { FeedbackViewState } from "./views/feedback";
+import type { LogReportViewState } from "./views/log-report";
 import type { LicenseUiState, LicenseDialogType, BoundDevice } from "./license/types";
 import type { DiscoveryControllerState } from "./controllers/capability-detect";
 import type { CostUsageSummary, SessionsUsageResult, SessionUsageTimeSeries } from "./types";
@@ -177,6 +178,11 @@ export type AppViewState = {
   agentsList: AgentsListResult | null;
   agentsError: string | null;
   agentsSelectedId: string | null;
+  agentCreating: boolean;
+  agentCreateError: string | null;
+  agentDeleting: boolean;
+  agentDeleteError: string | null;
+  agentAddFormOpen: boolean;
   agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
   agentFilesLoading: boolean;
   agentFilesError: string | null;
@@ -266,6 +272,12 @@ export type AppViewState = {
   mcpMarketplace: McpMarketplaceState;
   // 文档中心状态
   docsViewState: DocsViewState;
+  // 日志上报运维中心状态
+  logReportState: LogReportViewState;
+  handleLogReportOpen: () => void;
+  handleLogReportClose: () => void;
+  handleLogReportSubmit: () => Promise<void>;
+  handleLogReportQuery: () => Promise<void>;
   // 意见反馈状态
   feedbackState: FeedbackViewState;
   // Token 使用量统计状态 (简易视图，保留向后兼容)

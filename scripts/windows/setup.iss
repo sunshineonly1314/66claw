@@ -58,8 +58,11 @@ Source: "..\..\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdi
 ; Extensions with deps (feishu, dingtalk, etc.) install them on first run via postinstall
 ; Exclude .turbo (dev-only build cache)
 Source: "..\..\extensions\*"; DestDir: "{app}\extensions"; Excludes: "node_modules\*,.turbo\*"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-; Templates - bot default role config (CN build uses Chinese templates)
-Source: "..\..\docs-cn\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Templates - bot default role config
+; Step 1: copy upstream base templates (AGENTS.md, SOUL.md, etc.)
+Source: "..\..\docs\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; Step 2: overlay CN-localized templates (overrides upstream where present)
+Source: "..\..\cn\docs-cn\reference\templates\*"; DestDir: "{app}\docs\reference\templates"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "start-gateway.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "clawdbot.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "diagnose.bat"; DestDir: "{app}"; Flags: ignoreversion

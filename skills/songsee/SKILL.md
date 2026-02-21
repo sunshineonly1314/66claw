@@ -4,7 +4,7 @@ description: Generate spectrograms and feature-panel visualizations from audio w
 nameZh: "音乐识别"
 descriptionZh: "从音频生成频谱图和特征面板可视化"
 homepage: https://github.com/steipete/songsee
-metadata: {"openclawcn":{"emoji":"🌊","requires":{"bins":["songsee"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/songsee","bins":["songsee"],"label":"Install songsee (brew)"},{"id":"download-mac","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"Download songsee (macOS)","os":["darwin"]},{"id":"download-win","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"Download songsee (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"Download songsee (Linux)","os":["linux"]}]}}
+metadata: {"openclawcn":{"emoji":"🌊","requires":{"bins":["songsee"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/songsee","bins":["songsee"],"label":"安装 songsee (brew)"},{"id":"download-mac","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"下载 songsee (macOS)","os":["darwin"]},{"id":"download-win","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"下载 songsee (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://github.com/steipete/songsee/releases/latest","bins":["songsee"],"label":"下载 songsee (Linux)","os":["linux"]}]}}
 ---
 
 # songsee

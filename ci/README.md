@@ -26,7 +26,7 @@
            ▼                          ▼
 ┌──────────────────────┐    ┌────────────────────────┐
 │  Windows 笔记本       │    │  Mac Mini              │
-│  192.168.0.103       │    │  192.168.0.107         │
+│  KEVINSUN       │    │  192.168.0.107         │
 │  - 拉取代码           │    │  - 拉取代码             │
 │  - 执行 Windows 构建  │    │  - 执行 macOS 构建      │
 │  - 上传制品           │    │  - 上传制品             │
@@ -40,7 +40,7 @@
 | 设备 | IP | 用途 | 配置 |
 |------|-----|------|------|
 | **控制服务器** | 当前电脑 | Webhook 接收 + 任务分发 | - |
-| **Windows 构建机** | 192.168.0.103 | Windows 打包 | - |
+| **Windows 构建机** | KEVINSUN | Windows 打包 | - |
 | **Mac Mini** | 192.168.0.107 | macOS 打包 | 4C8G Apple Silicon |
 
 ---
@@ -57,7 +57,7 @@ ssh-keygen -t ed25519 -C "cicd@clawdbot"
 
 # 将公钥复制到 Windows 笔记本
 # 方法 1: 使用 ssh-copy-id (如果 Windows 支持)
-ssh-copy-id username@192.168.0.103
+ssh-copy-id username@KEVINSUN
 
 # 方法 2: 手动复制（Windows）
 # 1. 查看公钥
@@ -69,7 +69,7 @@ cat ~/.ssh/id_ed25519.pub
 ssh-copy-id username@192.168.0.107
 
 # 测试免密登录
-ssh username@192.168.0.103 "echo Windows OK"
+ssh username@KEVINSUN "echo Windows OK"
 ssh username@192.168.0.107 "echo Mac OK"
 ```
 
@@ -188,7 +188,7 @@ ci/artifacts/
   },
   "builders": {
     "windows": {
-      "host": "192.168.0.103",
+      "host": "KEVINSUN",
       "user": "username",
       "workspace": "D:\\cicd-workspace\\clawdbot",
       "output": "E:\\clawdbuild",
@@ -283,7 +283,7 @@ curl -X POST http://localhost:8888/webhook \
 
 ```bash
 # 测试连接
-ssh -v username@192.168.0.103
+ssh -v username@KEVINSUN
 
 # 检查 authorized_keys 权限
 # 必须是 600 或 400
@@ -298,7 +298,7 @@ cat ci/logs/build-windows.log
 cat ci/logs/build-macos.log
 
 # 手动登录构建机检查
-ssh username@192.168.0.103
+ssh username@KEVINSUN
 ssh username@192.168.0.107
 ```
 

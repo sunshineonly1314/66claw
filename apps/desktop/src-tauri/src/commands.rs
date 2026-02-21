@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::AppHandle;
 
-use crate::{platform, sidecar};
+use crate::{platform, sidecar, tray};
 
 #[derive(Debug, Serialize)]
 pub struct GatewayInfo {
@@ -33,15 +33,16 @@ pub async fn start_service(app: AppHandle) -> Result<String, String> {
         return Err("服务已在运行中".to_string());
     }
 
-    sidecar::start_sidecar(app)
+    sidecar::start_sidecar(app.clone())
         .map_err(|e| format!("启动服务失败: {}", e))?;
 
+    tray::update_tray_menu_state(&app);
     Ok("服务启动成功".to_string())
 }
 
 /// Stop the gateway sidecar service.
 #[tauri::command]
-pub async fn stop_service() -> Result<String, String> {
+pub async fn stop_service(app: AppHandle) -> Result<String, String> {
     if !sidecar::is_sidecar_running() {
         return Err("服务未在运行".to_string());
     }
@@ -49,15 +50,17 @@ pub async fn stop_service() -> Result<String, String> {
     sidecar::stop_sidecar()
         .map_err(|e| format!("停止服务失败: {}", e))?;
 
+    tray::update_tray_menu_state(&app);
     Ok("服务已停止".to_string())
 }
 
 /// Restart the gateway sidecar service.
 #[tauri::command]
 pub async fn restart_service(app: AppHandle) -> Result<String, String> {
-    sidecar::restart_sidecar(app)
+    sidecar::restart_sidecar(app.clone())
         .map_err(|e| format!("重启服务失败: {}", e))?;
 
+    tray::update_tray_menu_state(&app);
     Ok("服务重启成功".to_string())
 }
 
@@ -104,14 +107,14 @@ pub async fn check_needs_setup() -> Result<bool, String> {
     Ok(true)
 }
 
-/// Open the logs directory in the system file explorer.
+/// Open the sidecar log file in the system file explorer (with file selected).
 #[tauri::command]
 pub async fn open_logs_directory() -> Result<String, String> {
-    let logs_dir = sidecar::logs_directory()
-        .map_err(|e| format!("获取日志目录失败: {}", e))?;
+    let log_path = sidecar::log_file_path()
+        .map_err(|e| format!("获取日志路径失败: {}", e))?;
 
-    platform::open_directory(&logs_dir)
-        .map_err(|e| format!("打开日志目录失败: {}", e))?;
+    platform::open_file_in_explorer(&log_path)
+        .map_err(|e| format!("打开日志文件失败: {}", e))?;
 
-    Ok(format!("已打开日志目录: {}", logs_dir.display()))
+    Ok(format!("已打开日志: {}", log_path.display()))
 }

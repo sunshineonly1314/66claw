@@ -88,9 +88,34 @@ export async function sanitizeSessionMessagesImages(
 
     if (role === "assistant") {
       const assistantMsg = msg as Extract<AgentMessage, { role: "assistant" }>;
-      if (assistantMsg.stopReason === "error") {
+      if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
         const content = assistantMsg.content;
+        // [CN-PATCH] 跳过空内容的 error/aborted assistant 消息，防止 session 污染
+        // 传播到后续 API 调用。空 assistant 会导致部分 provider 拒绝整个对话历史。
         if (Array.isArray(content)) {
+          const hasRealContent = content.some((block) => {
+            if (!block || typeof block !== "object") return false;
+            const rec = block as { type?: string; text?: string; thinking?: string; name?: string };
+            if (rec.type === "text" && typeof rec.text === "string" && rec.text.trim().length > 0)
+              return true;
+            if (
+              rec.type === "thinking" &&
+              typeof rec.thinking === "string" &&
+              rec.thinking.trim().length > 0
+            )
+              return true;
+            if (
+              rec.type === "toolCall" &&
+              typeof rec.name === "string" &&
+              rec.name.trim().length > 0
+            )
+              return true;
+            return false;
+          });
+          if (!hasRealContent) {
+            // 空内容 error assistant — 从历史中移除
+            continue;
+          }
           const nextContent = (await sanitizeContentBlocksImages(
             content as unknown as ContentBlock[],
             label,

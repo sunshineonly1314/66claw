@@ -100,7 +100,7 @@ export class ModelConfigView extends LitElement {
   /** 手动添加模型：提交中 */
   @state() private _addModelLoading = false;
   /** 手动添加模型：结果信息 */
-  @state() private _addModelMsg: { type: "ok" | "err"; text: string } | null = null;
+  @state() private _addModelMsg: { type: "ok" | "warn" | "err"; text: string } | null = null;
   /** 模型切换成功提示 */
   @state() private _switchToast: { model: string; provider: string } | null = null;
   private _switchToastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -351,6 +351,7 @@ export class ModelConfigView extends LitElement {
 
     .prov-row__info { flex: 1; min-width: 0; }
     .prov-row__name { font-size: 13px; font-weight: 600; color: var(--text-strong, #fff); }
+    .prov-row__essential { display: inline-block; font-size: 11px; font-weight: 600; color: #ef4444; margin-left: 6px; vertical-align: middle; }
     .prov-row__tagline { font-size: 11px; color: var(--muted, #8b9caf); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tagline-free { color: #ef4444; font-weight: 600; }
 
@@ -532,7 +533,7 @@ export class ModelConfigView extends LitElement {
     .manage-danger-desc { font-size: 12px; color: var(--muted, #8b9caf); margin-bottom: 12px; }
 
     /* ═══════ ADD CUSTOM MODEL ═══════ */
-    .add-model-section { padding: 16px; background: var(--bg-card, #1a2233); border: 1px solid var(--border, #2d3a4d); border-radius: var(--radius-md, 8px); }
+    .add-model-section { padding: 16px; background: var(--surface-elevated, #1a2233); border: 1px solid var(--border, #2d3a4d); border-radius: var(--radius-md, 8px); }
     .add-model-title { font-size: 13px; font-weight: 600; color: var(--text, #e8ecf1); margin-bottom: 4px; }
     .add-model-desc { font-size: 12px; color: var(--muted, #8b9caf); margin-bottom: 12px; }
     .add-model-row { display: flex; gap: 8px; align-items: center; }
@@ -542,12 +543,14 @@ export class ModelConfigView extends LitElement {
       border: 1px solid var(--border, #2d3a4d); border-radius: var(--radius-sm, 6px);
       outline: none; transition: border-color 0.15s;
     }
+    .add-model-input::selection { background: var(--accent, #6c8cff); color: #fff; }
     .add-model-input:focus { border-color: var(--accent, #6c8cff); }
     .add-model-input:disabled { opacity: 0.5; cursor: not-allowed; }
     .add-model-input::placeholder { color: var(--muted, #8b9caf); opacity: 0.6; }
     .add-model-btn { flex-shrink: 0; min-width: 60px; }
     .add-model-msg { font-size: 12px; margin-top: 8px; padding: 6px 10px; border-radius: var(--radius-sm, 6px); }
     .add-model-msg--ok { background: rgba(74,222,128,.12); color: var(--ok, #4ade80); }
+    .add-model-msg--warn { background: rgba(251,191,36,.12); color: #fbbf24; }
     .add-model-msg--err { background: var(--danger-subtle, rgba(248,113,113,.15)); color: var(--danger, #f87171); }
 
     /* ═══════ FOCUS-VISIBLE ═══════ */
@@ -966,10 +969,38 @@ export class ModelConfigView extends LitElement {
     this._sync(h);
   }
 
+  /** 模型 ID 格式校验：只允许字母、数字、-_./:@ */
+  private static readonly MODEL_ID_RE = /^[a-zA-Z0-9\-_.\/:@]+$/;
+  /** 特定厂商的模型 ID 格式提示 */
+  private static readonly PROVIDER_MODEL_HINTS: Record<string, { pattern?: RegExp; hint: string }> = {
+    "volcengine-ark": { pattern: /^ep-/, hint: "火山引擎/豆包模型 ID 应以 ep- 开头（如 ep-20240901xxxxx）" },
+  };
+
+  /** 前端格式校验 */
+  private _validateModelId(modelId: string, providerId: string): string | null {
+    if (!modelId) return "模型 ID 不能为空";
+    if (modelId.length > 200) return "模型 ID 过长（最多 200 字符）";
+    if (!ModelConfigView.MODEL_ID_RE.test(modelId)) {
+      return "模型 ID 只能包含字母、数字、-_./: 等字符，不能有空格或特殊符号";
+    }
+    const provHint = ModelConfigView.PROVIDER_MODEL_HINTS[providerId];
+    if (provHint?.pattern && !provHint.pattern.test(modelId)) {
+      return provHint.hint;
+    }
+    return null;
+  }
+
   /** 手动添加模型 */
   private async _onAddModel(providerId: string) {
     const modelId = this._addModelId.trim();
     if (!modelId || !this.client || !this.connected) return;
+
+    // 前端格式校验
+    const fmtErr = this._validateModelId(modelId, providerId);
+    if (fmtErr) {
+      this._addModelMsg = { type: "err", text: fmtErr };
+      return;
+    }
 
     this._addModelLoading = true;
     this._addModelMsg = null;
@@ -978,9 +1009,13 @@ export class ModelConfigView extends LitElement {
       const result = await this.client.request("modelConfig.provider.addModel", {
         providerId,
         modelId,
-      }) as { success?: boolean };
+      }) as { success?: boolean; probeWarning?: string };
       if (result.success) {
-        this._addModelMsg = { type: "ok", text: `已添加模型 "${modelId}"` };
+        if (result.probeWarning) {
+          this._addModelMsg = { type: "warn", text: `已添加模型 "${modelId}"（注意: ${result.probeWarning}）` };
+        } else {
+          this._addModelMsg = { type: "ok", text: `已添加模型 "${modelId}"` };
+        }
         this._addModelId = "";
         // 刷新数据
         const h = this._host();
@@ -995,6 +1030,29 @@ export class ModelConfigView extends LitElement {
     } finally {
       this._addModelLoading = false;
     }
+  }
+
+  /** 根据 provider 返回添加模型的说明文案 */
+  private _getAddModelDesc(providerId: string): string {
+    const map: Record<string, string> = {
+      "volcengine-ark": "输入你在火山引擎创建的接入点 ID（ep-xxx），需先在控制台开通模型",
+      "aliyun-bailian": "输入该服务商支持的模型 ID（如 qwen-max、qwen-turbo-latest 等）",
+      "kimi-code": "输入 Kimi 支持的模型 ID（如 kimi-k2-0711-chat）",
+    };
+    return map[providerId] ?? "输入该服务商支持的模型 ID，添加后会自动验证可用性";
+  }
+
+  /** 根据 provider 返回输入框占位符 */
+  private _getAddModelPlaceholder(providerId: string): string {
+    const map: Record<string, string> = {
+      "volcengine-ark": "接入点 ID，如 ep-20240901xxxxx",
+      "aliyun-bailian": "模型 ID，如 qwen-turbo-latest",
+      "deepseek": "模型 ID，如 deepseek-chat",
+      "kimi-code": "模型 ID，如 kimi-k2-0711-chat",
+      "siliconflow": "模型 ID，如 Qwen/Qwen3-8B",
+      "zhipu": "模型 ID，如 glm-4-flash",
+    };
+    return map[providerId] ?? "模型 ID，如 model-name";
   }
 
   /**
@@ -1400,7 +1458,7 @@ export class ModelConfigView extends LitElement {
                 <span class="prov-row__rank">${idx + 1}</span>
                 <div class="prov-row__icon">${p.icon}</div>
                 <div class="prov-row__info">
-                  <div class="prov-row__name">${p.name}</div>
+                  <div class="prov-row__name">${p.name}${p.providerId === ESSENTIAL_PROVIDER ? html`<span class="prov-row__essential">必须配置</span>` : nothing}</div>
                   ${p.tagline ? html`<div class="prov-row__tagline">${renderTagline(p.tagline)}</div>` : nothing}
                 </div>
                 <div class="health-badge" style="color:${getHealthStatusColor(healthStatus)}; border-color: ${getHealthStatusColor(healthStatus)}30; background: ${getHealthStatusColor(healthStatus)}10">
@@ -1487,7 +1545,7 @@ export class ModelConfigView extends LitElement {
       >
         <div class="prov-row__icon">${p.icon}</div>
         <div class="prov-row__info">
-          <div class="prov-row__name">${p.name}</div>
+          <div class="prov-row__name">${p.name}${p.providerId === ESSENTIAL_PROVIDER ? html`<span class="prov-row__essential">必须配置</span>` : nothing}</div>
           ${p.tagline ? html`<div class="prov-row__tagline">${renderTagline(p.tagline)}</div>` : nothing}
         </div>
         <div class="prov-row__caps">
@@ -1710,13 +1768,13 @@ export class ModelConfigView extends LitElement {
 
             <div class="add-model-section">
               <div class="add-model-title">添加自定义模型</div>
-              <div class="add-model-desc">输入该服务商支持的模型 ID（如 qwen-max、gpt-4o 等）</div>
+              <div class="add-model-desc">${this._getAddModelDesc(prov.providerId)}</div>
               <div class="add-model-row">
                 <input
                   class="add-model-input"
                   type="text"
                   aria-label="自定义模型 ID"
-                  placeholder="模型 ID，如 qwen-turbo-latest"
+                  placeholder="${this._getAddModelPlaceholder(prov.providerId)}"
                   .value=${this._addModelId}
                   @input=${(e: Event) => { this._addModelId = (e.target as HTMLInputElement).value; this._addModelMsg = null; }}
                   @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") { e.stopPropagation(); this._onAddModel(prov.providerId); } }}
@@ -1729,7 +1787,7 @@ export class ModelConfigView extends LitElement {
                 >${this._addModelLoading ? "添加中..." : "添加"}</button>
               </div>
               ${this._addModelMsg
-                ? html`<div class="add-model-msg ${this._addModelMsg.type === 'ok' ? 'add-model-msg--ok' : 'add-model-msg--err'}">${this._addModelMsg.text}</div>`
+                ? html`<div class="add-model-msg add-model-msg--${this._addModelMsg.type}">${this._addModelMsg.text}</div>`
                 : nothing}
             </div>
 

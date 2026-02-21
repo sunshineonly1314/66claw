@@ -65,6 +65,26 @@ pub fn configure_process_flags(command: &mut Command) {
     }
 }
 
+/// Open a file in the system file explorer with the file selected/highlighted.
+pub fn open_file_in_explorer(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::open_file_in_explorer(path)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        macos::open_file_in_explorer(path)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // Linux fallback — open parent directory
+        if let Some(parent) = path.parent() {
+            Command::new("xdg-open").arg(parent).spawn()?;
+        }
+        Ok(())
+    }
+}
+
 /// Open a directory in the system file explorer.
 pub fn open_directory(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]

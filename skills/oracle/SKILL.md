@@ -4,7 +4,7 @@ description: Best practices for using the oracle CLI (prompt + file bundling, en
 nameZh: "AI问答"
 descriptionZh: "使用oracle CLI进行提示词和文件捆绑的最佳实践"
 homepage: https://askoracle.dev
-metadata: {"openclawcn":{"emoji":"🧿","requires":{"bins":["oracle"]},"install":[{"id":"node","kind":"node","package":"@steipete/oracle","bins":["oracle"],"label":"Install oracle (node)"}]}}
+metadata: {"openclawcn":{"emoji":"🧿","requires":{"bins":["oracle"]},"install":[{"id":"node","kind":"node","package":"@steipete/oracle","bins":["oracle"],"label":"安装 oracle (node)"}]}}
 ---
 
 # oracle — best use

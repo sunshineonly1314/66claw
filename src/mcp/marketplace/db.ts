@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
-import { initializeSchema } from "./db-schema.js";
+import { initializeSchema, mcpFtsAvailable } from "./db-schema.js";
 import type { McpMarketplaceItem } from "./types.js";
 
 // ========== 配置 ==========
@@ -416,7 +416,9 @@ export function deleteItem(serverId: string): void {
 export function clearAllItems(): void {
   const db = getDatabase();
   db.exec("DELETE FROM mcp_items");
-  db.exec("DELETE FROM mcp_search"); // 显式清空 FTS5 表
+  if (mcpFtsAvailable) {
+    db.exec("DELETE FROM mcp_search");
+  }
 }
 
 // ========== 查询 API ==========
@@ -529,12 +531,17 @@ export function searchItems(options: SearchOptions = {}): SearchResult {
       // 关键词被清空，跳过全文搜索
     } else if (sanitized.length > 500) {
       throw new Error("Keyword too long after sanitization (max 500 chars)");
-    } else {
+    } else if (mcpFtsAvailable) {
       conditions.push(`server_id IN (
         SELECT server_id FROM mcp_search
         WHERE mcp_search MATCH ?
       )`);
       params.push(sanitized);
+    } else {
+      // FTS5 不可用，降级到 LIKE 搜索
+      const likeTerm = `%${sanitized}%`;
+      conditions.push(`(friendly_name_cn LIKE ? OR description_cn LIKE ? OR tags_cn LIKE ?)`);
+      params.push(likeTerm, likeTerm, likeTerm);
     }
   }
 
@@ -574,9 +581,10 @@ export function searchItems(options: SearchOptions = {}): SearchResult {
   const offset = (validPage - 1) * validPageSize;
   // Default sort: prioritize ModelScope items (which have Chinese names)
   // by putting source='modelscope' first, then sub-sort by the requested field.
-  const orderClause = orderBy === "updated_at"
-    ? `ORDER BY (CASE WHEN source = 'modelscope' THEN 0 ELSE 1 END), ${orderBy} ${orderDirection}`
-    : `ORDER BY ${orderBy} ${orderDirection}`;
+  const orderClause =
+    orderBy === "updated_at"
+      ? `ORDER BY (CASE WHEN source = 'modelscope' THEN 0 ELSE 1 END), ${orderBy} ${orderDirection}`
+      : `ORDER BY ${orderBy} ${orderDirection}`;
   const queryStmt = db.prepare(`
     SELECT * FROM mcp_items
     ${whereClause}
@@ -879,9 +887,7 @@ export function ensureMcpBaseline(packageRoot: string): number {
   updateBaselineMeta(items.length, currentHash);
 
   const totalChanges = items.length + deletedCount;
-  console.log(
-    `[MCP DB] Baseline sync complete: ${items.length} upserted, ${deletedCount} deleted`,
-  );
+  console.log(`[MCP DB] Baseline sync complete: ${items.length} upserted, ${deletedCount} deleted`);
 
   return totalChanges;
 }

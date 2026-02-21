@@ -106,6 +106,11 @@ export function resolveModel(
       // (e.g. qwen-dashscope). Default to "openai-completions" — the /chat/completions
       // endpoint is universally supported; "openai-responses" (/responses) is OpenAI-only.
       const resolvedApi = providerCfg?.api ?? "openai-completions";
+      // [CN-PATCH:model-fields] Find matching model definition to carry over
+      // fields like headers and compat that are critical for providers like kimi-coding.
+      const matchingModelDef =
+        providerCfg?.models?.find((m: { id?: string }) => m.id === modelId) ??
+        providerCfg?.models?.[0];
       const fallbackModel: Model<Api> = normalizeModelCompat({
         id: modelId,
         name: modelId,
@@ -115,8 +120,10 @@ export function resolveModel(
         reasoning: false,
         input: ["text"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: providerCfg?.models?.[0]?.contextWindow ?? DEFAULT_CONTEXT_TOKENS,
-        maxTokens: providerCfg?.models?.[0]?.maxTokens ?? DEFAULT_CONTEXT_TOKENS,
+        contextWindow: matchingModelDef?.contextWindow ?? DEFAULT_CONTEXT_TOKENS,
+        maxTokens: matchingModelDef?.maxTokens ?? DEFAULT_CONTEXT_TOKENS,
+        ...(matchingModelDef?.headers ? { headers: matchingModelDef.headers } : {}),
+        ...(matchingModelDef?.compat ? { compat: matchingModelDef.compat } : {}),
       } as Model<Api>);
       // [CN-PATCH:api-guard] Defensive: ensure api is never undefined after resolution
       if (!fallbackModel.api) {

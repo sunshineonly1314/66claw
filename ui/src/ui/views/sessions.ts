@@ -4,7 +4,7 @@ import { formatAgo } from "../format";
 import { formatSessionTokens } from "../presenter";
 import { pathForTab } from "../navigation";
 import type { GatewaySessionRow, SessionsListResult } from "../types";
-import { t } from "../i18n/index.js";
+import { t, tMaybe } from "../i18n/index.js";
 
 export type SessionsProps = {
   loading: boolean;
@@ -34,14 +34,30 @@ export type SessionsProps = {
   onDelete: (key: string) => void;
 };
 
-const THINK_LEVELS = ["", "off", "minimal", "low", "medium", "high"] as const;
-const BINARY_THINK_LEVELS = ["", "off", "on"] as const;
-const VERBOSE_LEVELS = [
-  { value: "", label: "inherit" },
-  { value: "off", label: "off (explicit)" },
-  { value: "on", label: "on" },
+const THINK_LEVELS = [
+  { value: "", labelKey: "sessions.opt.inherit" },
+  { value: "off", labelKey: "sessions.opt.off" },
+  { value: "minimal", labelKey: "sessions.opt.minimal" },
+  { value: "low", labelKey: "sessions.opt.low" },
+  { value: "medium", labelKey: "sessions.opt.medium" },
+  { value: "high", labelKey: "sessions.opt.high" },
 ] as const;
-const REASONING_LEVELS = ["", "off", "on", "stream"] as const;
+const BINARY_THINK_LEVELS = [
+  { value: "", labelKey: "sessions.opt.inherit" },
+  { value: "off", labelKey: "sessions.opt.off" },
+  { value: "on", labelKey: "sessions.opt.on" },
+] as const;
+const VERBOSE_LEVELS = [
+  { value: "", labelKey: "sessions.opt.inherit" },
+  { value: "off", labelKey: "sessions.opt.offExplicit" },
+  { value: "on", labelKey: "sessions.opt.on" },
+] as const;
+const REASONING_LEVELS = [
+  { value: "", labelKey: "sessions.opt.inherit" },
+  { value: "off", labelKey: "sessions.opt.off" },
+  { value: "on", labelKey: "sessions.opt.on" },
+  { value: "stream", labelKey: "sessions.opt.stream" },
+] as const;
 
 function normalizeProviderId(provider?: string | null): string {
   if (!provider) return "";
@@ -54,7 +70,7 @@ function isBinaryThinkingProvider(provider?: string | null): boolean {
   return normalizeProviderId(provider) === "zai";
 }
 
-function resolveThinkLevelOptions(provider?: string | null): readonly string[] {
+function resolveThinkLevelOptions(provider?: string | null) {
   return isBinaryThinkingProvider(provider) ? BINARY_THINK_LEVELS : THINK_LEVELS;
 }
 
@@ -71,14 +87,21 @@ function resolveThinkLevelPatchValue(value: string, isBinary: boolean): string |
   return value;
 }
 
+/** 浮动气泡帮助组件 */
+function tip(helpKey: string, extraClass = "") {
+  return html`<span class="tip-wrap ${extraClass}"><span class="tip-icon">?</span><span class="tip-bubble">${tMaybe(helpKey)}</span></span>`;
+}
+
 export function renderSessions(props: SessionsProps) {
   const rows = props.result?.sessions ?? [];
   return html`
     <section class="card">
       <div class="row" style="justify-content: space-between;">
         <div>
-          <div class="card-title">${t("sessions.title")}</div>
-          <div class="card-sub">${t("sessions.activeSessions")}</div>
+          <div class="card-title">
+            ${t("sessions.title")} ${tip("sessions.help.title")}
+          </div>
+          <div class="card-sub">${t("sessions.subtitle")}</div>
         </div>
         <button class="btn" ?disabled=${props.loading} @click=${props.onRefresh}>
           ${props.loading ? t("common.loading") : t("common.refresh")}
@@ -87,7 +110,7 @@ export function renderSessions(props: SessionsProps) {
 
       <div class="filters" style="margin-top: 14px;">
         <label class="field">
-          <span>Active within (minutes)</span>
+          <span>${t("sessions.filter.activeMinutes")} ${tip("sessions.help.activeMinutes")}</span>
           <input
             .value=${props.activeMinutes}
             @input=${(e: Event) =>
@@ -100,7 +123,7 @@ export function renderSessions(props: SessionsProps) {
           />
         </label>
         <label class="field">
-          <span>Limit</span>
+          <span>${t("sessions.filter.limit")}</span>
           <input
             .value=${props.limit}
             @input=${(e: Event) =>
@@ -113,7 +136,7 @@ export function renderSessions(props: SessionsProps) {
           />
         </label>
         <label class="field checkbox">
-          <span>Include global</span>
+          <span>${t("sessions.filter.includeGlobal")}</span>
           <input
             type="checkbox"
             .checked=${props.includeGlobal}
@@ -127,7 +150,7 @@ export function renderSessions(props: SessionsProps) {
           />
         </label>
         <label class="field checkbox">
-          <span>Include unknown</span>
+          <span>${t("sessions.filter.includeUnknown")}</span>
           <input
             type="checkbox"
             .checked=${props.includeUnknown}
@@ -152,14 +175,14 @@ export function renderSessions(props: SessionsProps) {
 
       <div class="table" style="margin-top: 16px;">
         <div class="table-head">
-          <div>${t("sessions.sessionKey")}</div>
+          <div>${t("sessions.sessionKey")} ${tip("sessions.help.sessionKey")}</div>
           <div>${t("common.name")}</div>
           <div>${t("common.type")}</div>
           <div>${t("common.updated")}</div>
-          <div>Tokens</div>
-          <div>${t("chat.thinkingLevel")}</div>
-          <div>Verbose</div>
-          <div>Reasoning</div>
+          <div>${t("sessions.col.tokens")} ${tip("sessions.help.tokens")}</div>
+          <div>${t("chat.thinkingLevel")} ${tip("sessions.help.thinkingLevel")}</div>
+          <div>${t("sessions.col.verbose")} ${tip("sessions.help.verbose")}</div>
+          <div>${t("sessions.col.reasoning")} ${tip("sessions.help.reasoning", "tip-right")}</div>
           <div>${t("common.actions")}</div>
         </div>
         ${rows.length === 0
@@ -201,14 +224,14 @@ function renderRow(
         <input
           .value=${row.label ?? ""}
           ?disabled=${disabled}
-          placeholder="(optional)"
+          placeholder=${t("sessions.namePlaceholder")}
           @change=${(e: Event) => {
             const value = (e.target as HTMLInputElement).value.trim();
             onPatch(row.key, { label: value || null });
           }}
         />
       </div>
-      <div>${row.kind}</div>
+      <div>${tMaybe(`sessions.kind.${row.kind}`)}</div>
       <div>${updated}</div>
       <div>${formatSessionTokens(row)}</div>
       <div>
@@ -223,7 +246,7 @@ function renderRow(
           }}
         >
           ${thinkLevels.map((level) =>
-            html`<option value=${level}>${level || "inherit"}</option>`,
+            html`<option value=${level.value}>${tMaybe(level.labelKey)}</option>`,
           )}
         </select>
       </div>
@@ -237,7 +260,7 @@ function renderRow(
           }}
         >
           ${VERBOSE_LEVELS.map(
-            (level) => html`<option value=${level.value}>${level.label}</option>`,
+            (level) => html`<option value=${level.value}>${tMaybe(level.labelKey)}</option>`,
           )}
         </select>
       </div>
@@ -251,7 +274,7 @@ function renderRow(
           }}
         >
           ${REASONING_LEVELS.map((level) =>
-            html`<option value=${level}>${level || "inherit"}</option>`,
+            html`<option value=${level.value}>${tMaybe(level.labelKey)}</option>`,
           )}
         </select>
       </div>

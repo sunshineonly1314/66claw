@@ -4,7 +4,7 @@ description: Foodora-only CLI for checking past orders and active order status (
 nameZh: "订单查询"
 descriptionZh: "查看历史订单和实时追踪外卖配送状态"
 homepage: https://ordercli.sh
-metadata: {"openclawcn":{"emoji":"🛵","requires":{"bins":["ordercli"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/ordercli","bins":["ordercli"],"label":"Install ordercli (brew)"},{"id":"go","kind":"go","module":"github.com/steipete/ordercli/cmd/ordercli@latest","bins":["ordercli"],"label":"Install ordercli (go)"}]}}
+metadata: {"openclawcn":{"emoji":"🛵","requires":{"bins":["ordercli"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/ordercli","bins":["ordercli"],"label":"安装 ordercli (brew)"},{"id":"go","kind":"go","module":"github.com/steipete/ordercli/cmd/ordercli@latest","bins":["ordercli"],"label":"安装 ordercli (go)"}]}}
 ---
 
 # ordercli

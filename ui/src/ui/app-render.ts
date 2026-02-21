@@ -39,6 +39,7 @@ import { renderCron } from "./views/cron";
 import { renderDebug } from "./views/debug";
 import { renderInstances } from "./views/instances";
 import { renderLogs } from "./views/logs";
+import { renderLogReportModal } from "./views/log-report";
 import { renderNodes } from "./views/nodes";
 import { renderOverview } from "./views/overview";
 import { renderUsageTab } from "./app-render-usage-tab";
@@ -163,7 +164,7 @@ import {
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity";
 import { loadAgentSkills } from "./controllers/agent-skills";
-import { loadAgents } from "./controllers/agents";
+import { loadAgents, createAgent, deleteAgent } from "./controllers/agents";
 import { loadNodes } from "./controllers/nodes";
 import { loadChatHistory } from "./controllers/chat";
 import {
@@ -533,6 +534,7 @@ export function renderApp(state: AppViewState) {
         </div>
       </aside>
       <main class="content ${isChat ? "content--chat" : ""}">
+        ${state.tab !== "usage" ? html`
         <section class="content-header">
           <div>
             <div class="page-title">${titleForTab(state.tab)}</div>
@@ -545,6 +547,7 @@ export function renderApp(state: AppViewState) {
             ${isChat ? renderChatControls(state) : nothing}
           </div>
         </section>
+        ` : nothing}
 
         ${state.tab === "overview"
           ? renderOverview({
@@ -774,6 +777,12 @@ export function renderApp(state: AppViewState) {
                 agentSkillsError: state.agentSkillsError,
                 agentSkillsAgentId: state.agentSkillsAgentId,
                 skillsFilter: state.skillsFilter,
+                agentCreating: state.agentCreating,
+                agentCreateError: state.agentCreateError,
+                agentDeleting: state.agentDeleting,
+                agentDeleteError: state.agentDeleteError,
+                addFormOpen: state.agentAddFormOpen,
+                onToggleAddForm: (open: boolean) => { state.agentAddFormOpen = open; },
                 onRefresh: async () => {
                   await loadAgents(state);
                   const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
@@ -782,6 +791,7 @@ export function renderApp(state: AppViewState) {
                 onSelectAgent: (agentId) => {
                   if (state.agentsSelectedId === agentId) return;
                   state.agentsSelectedId = agentId;
+                  state.agentDeleteError = null;
                   state.agentFilesList = null;
                   state.agentFilesError = null;
                   state.agentFilesLoading = false;
@@ -929,6 +939,20 @@ export function renderApp(state: AppViewState) {
                     return;
                   }
                   updateConfigFormValue(state, bp, primary ? { primary, fallbacks: normalized } : { fallbacks: normalized });
+                },
+                onCreateAgent: async (id: string, name: string, workspace: string) => {
+                  const result = await createAgent(state, { id, name, workspace });
+                  if (result.ok) {
+                    state.agentAddFormOpen = false;
+                    const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
+                    if (agentIds.length > 0) void loadAgentIdentities(state, agentIds);
+                  }
+                  return result.ok;
+                },
+                onDeleteAgent: async (agentId: string) => {
+                  await deleteAgent(state, { agentId });
+                  const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
+                  if (agentIds.length > 0) void loadAgentIdentities(state, agentIds);
                 },
               })
             : nothing
@@ -1797,8 +1821,58 @@ export function renderApp(state: AppViewState) {
                 void state.client!.request("logs.reveal", {});
               } : null,
               onScroll: (event) => state.handleLogsScroll(event),
+              onReportIssue: state.connected ? () => state.handleLogReportOpen() : null,
             })
           : nothing}
+
+        ${state.logReportState.showModal ? renderLogReportModal({
+          state: state.logReportState,
+          onOpen: () => state.handleLogReportOpen(),
+          onClose: () => state.handleLogReportClose(),
+          onDescriptionChange: (value) => {
+            state.logReportState = { ...state.logReportState, description: value };
+          },
+          onAddAttachment: (att) => {
+            state.logReportState = {
+              ...state.logReportState,
+              attachments: [...state.logReportState.attachments, att],
+            };
+          },
+          onRemoveAttachment: (id) => {
+            state.logReportState = {
+              ...state.logReportState,
+              attachments: state.logReportState.attachments.filter((a) => a.id !== id),
+            };
+          },
+          onImageError: (message) => {
+            state.logReportState = { ...state.logReportState, error: message };
+          },
+          onSubmit: () => void state.handleLogReportSubmit(),
+          onReset: () => {
+            state.logReportState = {
+              ...state.logReportState,
+              description: "",
+              attachments: [],
+              submitting: false,
+              submitted: false,
+              error: null,
+              ticketCode: null,
+              remaining: null,
+            };
+          },
+          onToggleQueryMode: () => {
+            state.logReportState = {
+              ...state.logReportState,
+              queryMode: !state.logReportState.queryMode,
+              queryError: null,
+              queryResult: null,
+            };
+          },
+          onQueryCodeChange: (value) => {
+            state.logReportState = { ...state.logReportState, queryCode: value };
+          },
+          onQuerySubmit: () => void state.handleLogReportQuery(),
+        }) : nothing}
 
         ${state.tab === "docs"
           ? renderDocs({

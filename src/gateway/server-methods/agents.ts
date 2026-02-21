@@ -57,6 +57,19 @@ const MEMORY_FILE_NAMES = [DEFAULT_MEMORY_FILENAME, DEFAULT_MEMORY_ALT_FILENAME]
 
 const ALLOWED_FILE_NAMES = new Set<string>([...BOOTSTRAP_FILE_NAMES, ...MEMORY_FILE_NAMES]);
 
+/**
+ * Files that are safe to expose to users for the default (main) agent.
+ * System-critical files like AGENTS.md, TOOLS.md, BOOTSTRAP.md, HEARTBEAT.md
+ * are hidden from the UI to prevent users from modifying security protocols.
+ */
+const MAIN_AGENT_VISIBLE_FILE_NAMES = new Set<string>([
+  DEFAULT_SOUL_FILENAME,
+  DEFAULT_IDENTITY_FILENAME,
+  DEFAULT_USER_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_MEMORY_ALT_FILENAME,
+]);
+
 function resolveAgentWorkspaceFileOrRespondError(
   params: Record<string, unknown>,
   respond: RespondFn,
@@ -84,6 +97,15 @@ function resolveAgentWorkspaceFileOrRespondError(
     respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `unsupported file "${name}"`));
     return null;
   }
+  // For the main agent, block access to system-critical files via get/set
+  if (agentId === DEFAULT_AGENT_ID && !MAIN_AGENT_VISIBLE_FILE_NAMES.has(name)) {
+    respond(
+      false,
+      undefined,
+      errorShape(ErrorCodes.INVALID_REQUEST, `file "${name}" is read-only for the default agent`),
+    );
+    return null;
+  }
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
   return { cfg, agentId, workspaceDir, name };
 }
@@ -108,7 +130,8 @@ async function statFile(filePath: string): Promise<FileMeta | null> {
   }
 }
 
-async function listAgentFiles(workspaceDir: string) {
+async function listAgentFiles(workspaceDir: string, agentId: string) {
+  const isMainAgent = agentId === DEFAULT_AGENT_ID;
   const files: Array<{
     name: string;
     path: string;
@@ -118,6 +141,10 @@ async function listAgentFiles(workspaceDir: string) {
   }> = [];
 
   for (const name of BOOTSTRAP_FILE_NAMES) {
+    // For the main agent, skip system-critical files
+    if (isMainAgent && !MAIN_AGENT_VISIBLE_FILE_NAMES.has(name)) {
+      continue;
+    }
     const filePath = path.join(workspaceDir, name);
     const meta = await statFile(filePath);
     if (meta) {
@@ -230,13 +257,16 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     const cfg = loadConfig();
     const rawName = String(params.name ?? "").trim();
-    const agentId = normalizeAgentId(rawName);
+    const explicitId = params.id ? String(params.id).trim() : "";
+    const idSource = explicitId || rawName;
+    const agentId = normalizeAgentId(idSource);
     if (agentId === DEFAULT_AGENT_ID) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `"${DEFAULT_AGENT_ID}" is reserved`),
-      );
+      // Distinguish "user typed main" from "non-ASCII collapsed to empty → defaulted to main"
+      const isCollapsed = idSource.toLowerCase().replace(/[^a-z0-9_-]+/g, "").length === 0;
+      const msg = isCollapsed
+        ? `agent ID must contain at least one alphanumeric character (a-z, 0-9)`
+        : `"${DEFAULT_AGENT_ID}" is reserved`;
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, msg));
       return;
     }
 
@@ -417,7 +447,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       return;
     }
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-    const files = await listAgentFiles(workspaceDir);
+    const files = await listAgentFiles(workspaceDir, agentId);
     respond(true, { agentId, workspace: workspaceDir, files }, undefined);
   },
   "agents.files.get": async ({ params, respond }) => {

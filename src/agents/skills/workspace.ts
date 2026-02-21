@@ -27,11 +27,7 @@ import {
 import { invalidateAllFileIndices } from "./file-index.js";
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
-import {
-  decryptFile,
-  ensureDirectoryEncrypted,
-  isEncryptionEnabled,
-} from "../../security/content-vault.js";
+import { decryptFile, isEncryptionEnabled } from "../../security/content-vault.js";
 
 const fsp = fs.promises;
 const skillsLogger = createSubsystemLogger("skills");
@@ -246,15 +242,9 @@ function loadSkillEntries(
   });
   const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
 
-  // 首次启动时加密受保护的 skills（非开发模式）
-  // bundled = 内置 skill（我们的 IP）
-  // managed = 商店下载的 skill（官方/付费资产）
-  // 用户自己写的 skill（extra/personal/project/workspace）不加密
-  if (bundledSkillsDir) {
-    ensureDirectoryEncrypted(bundledSkillsDir);
-  }
-  ensureDirectoryEncrypted(managedSkillsDir);
-
+  // Skills 使用明文加载，不再做机器绑定加密。
+  // .enc 文件仍然支持读取（向后兼容已安装的旧版本），
+  // 但不再主动加密新文件。
   const bundledSkills = bundledSkillsDir
     ? loadSkillsWithEncryption({
         dir: bundledSkillsDir,
@@ -265,9 +255,6 @@ function loadSkillEntries(
 
   // ── Private (owner-only) skills: not packaged, not distributed ──
   const privateSkillsDir = opts?.privateSkillsDir ?? resolvePrivateSkillsDir();
-  if (privateSkillsDir) {
-    ensureDirectoryEncrypted(privateSkillsDir);
-  }
   const privateSkills = privateSkillsDir
     ? loadSkillsWithEncryption({
         dir: privateSkillsDir,

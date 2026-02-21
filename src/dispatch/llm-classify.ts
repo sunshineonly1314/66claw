@@ -10,6 +10,25 @@ import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { parseModelRef } from "../agents/model-selection.js";
 import { resolveApiKeyForProvider } from "../agents/model-auth.js";
 
+/** 从用户配置中读取 text 能力绑定的 provider，作为 parseModelRef 的动态默认值 */
+function resolveDefaultProviderFromConfig(cfg: OpenClawCNConfig): string {
+  const cap = (cfg as Record<string, unknown>).modelCapability as
+    | { capabilities?: Record<string, { providerId?: string; modelId?: string }> }
+    | undefined;
+  const textCap = cap?.capabilities?.["text"];
+  if (textCap?.providerId) {
+    return textCap.providerId;
+  }
+  // 尝试从 agents.defaults.model.primary 中提取 provider
+  const rawModel = cfg.agents?.defaults?.model as { primary?: string } | string | undefined;
+  const primary = typeof rawModel === "string" ? rawModel.trim() : rawModel?.primary?.trim();
+  if (primary && primary.includes("/")) {
+    const p = primary.split("/")[0].trim();
+    if (p) return p;
+  }
+  return DEFAULT_PROVIDER;
+}
+
 export async function classifyWithLightweightModel(params: {
   systemPrompt: string;
   userPrompt: string;
@@ -37,8 +56,9 @@ export async function classifyWithLightweightModel(params: {
   // Early exit if already aborted
   if (params.signal?.aborted) return null;
 
-  // Parse the model reference
-  const modelRef = parseModelRef(model, DEFAULT_PROVIDER);
+  // Parse the model reference — 使用用户配置的 provider 而非硬编码 anthropic
+  const effectiveProvider = resolveDefaultProviderFromConfig(cfg);
+  const modelRef = parseModelRef(model, effectiveProvider);
   if (!modelRef) {
     console.warn(`[dispatch] Invalid classifier model: ${model}`);
     return null;

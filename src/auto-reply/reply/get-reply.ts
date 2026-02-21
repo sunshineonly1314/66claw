@@ -473,6 +473,11 @@ export async function getReplyFromConfig(
         });
 
         // 调用成功，退出循环
+        if (reply === undefined) {
+          defaultRuntime.log(
+            `[getReplyFromConfig] runPreparedReply returned undefined (silent drop). sessionKey=${sessionKey} provider=${currentProvider} model=${currentModel} body="${(ctx.Body ?? "").slice(0, 60)}"`,
+          );
+        }
         break;
       } catch (err) {
         // 只有在使用免费模型时才尝试切换
@@ -613,7 +618,6 @@ export async function getReplyFromConfig(
     }
 
     // 检查是否有有效的响应（防止循环结束后 reply 为 undefined）
-    // 仅在使用免费模型系统时才视为错误；非免费模型的 undefined 是合法返回（静默回复/未激活）
     // Bug #2修复：这里的usingFreeModel已经在循环中正确更新，反映最终状态
     if (reply === undefined && (usingFreeModel || freeModelProvider)) {
       defaultRuntime.log(
@@ -621,8 +625,18 @@ export async function getReplyFromConfig(
       );
       // 返回明确的错误消息，告知用户是模型接口的问题
       return {
-        text: `模型响应失败，请检查模型接口是否正常（${defaultProvider}/${defaultModel}）。`,
+        text: `模型响应失败，请检查模型接口是否正常（${currentProvider}/${currentModel}）。`,
       };
+    }
+
+    // [CN-PATCH] 空响应只记录日志，不向用户显示错误提示。
+    // 原因：模型可能已通过 tool call / block streaming 与用户交互过了，
+    // 最终 payload 为空不代表"没有回复"。强制显示错误提示会导致误报。
+    // 真正的空响应根因（session 污染）已在 session-tool-result-guard.ts 中修复。
+    if (reply === undefined && !opts?.isHeartbeat) {
+      defaultRuntime.log(
+        `[getReplyFromConfig] 模型响应为空 (silent): provider=${currentProvider} model=${currentModel} sessionKey=${sessionKey}`,
+      );
     }
 
     // ========================================

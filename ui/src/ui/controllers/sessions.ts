@@ -67,7 +67,11 @@ export async function deleteSession(state: SessionsState, key: string) {
   if (!state.client || !state.connected) return;
   if (state.sessionsLoading) return;
   const confirmed = window.confirm(
-    `Delete session "${key}"?\n\nDeletes the session entry and archives its transcript.`,
+    `确定要删除此会话吗？\n\n` +
+    `会话密钥：${key}\n\n` +
+    `删除后 AI 会彻底忘掉和这个用户聊过的所有内容。\n` +
+    `用户下次发消息会自动开始全新对话。\n` +
+    `不会影响其他用户，也不会删除账号。`,
   );
   if (!confirmed) return;
   state.sessionsLoading = true;

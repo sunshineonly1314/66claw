@@ -28,6 +28,7 @@ import {
   writeRestartSentinel,
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
+import { diffConfigPaths, buildGatewayReloadPlan } from "../config-reload.js";
 import { loadOpenClawCNPlugins } from "../../plugins/loader.js";
 import {
   ErrorCodes,
@@ -384,10 +385,19 @@ export const configHandlers: GatewayRequestHandlers = {
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
 
-    // [CN-PATCH] noRestart: 对于 dispatch 等热生效字段，跳过 SIGUSR1 重启
+    // [CN-PATCH] 智能判断是否需要 SIGUSR1 重启：
+    // 对比新旧配置 diff，仅当 reload plan 判定需要 restart 时才发 SIGUSR1。
+    // hot reload 和 noop 变更交由 chokidar watcher 的热重载机制处理，避免不必要的完整重启。
     let restart: ReturnType<typeof scheduleGatewaySigusr1Restart> | undefined;
     let sentinelPath: string | null = null;
-    if (!noRestart) {
+    const needsRestart = (() => {
+      if (noRestart) return false;
+      const changedPaths = diffConfigPaths(snapshot.config, validated.config);
+      if (changedPaths.length === 0) return false;
+      const plan = buildGatewayReloadPlan(changedPaths);
+      return plan.restartGateway;
+    })();
+    if (needsRestart) {
       const payload = buildConfigRestartSentinelPayload({
         kind: "config-patch",
         mode: "config.patch",
@@ -473,10 +483,19 @@ export const configHandlers: GatewayRequestHandlers = {
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
 
-    // [CN-PATCH] noRestart: 对于 dispatch 等热生效字段，跳过 SIGUSR1 重启
+    // [CN-PATCH] 智能判断是否需要 SIGUSR1 重启：
+    // 对比新旧配置 diff，仅当 reload plan 判定需要 restart 时才发 SIGUSR1。
+    // hot reload 和 noop 变更交由 chokidar watcher 的热重载机制处理，避免不必要的完整重启。
     let restart: ReturnType<typeof scheduleGatewaySigusr1Restart> | undefined;
     let sentinelPath: string | null = null;
-    if (!noRestart) {
+    const needsRestart = (() => {
+      if (noRestart) return false;
+      const changedPaths = diffConfigPaths(snapshot.config, validated.config);
+      if (changedPaths.length === 0) return false;
+      const plan = buildGatewayReloadPlan(changedPaths);
+      return plan.restartGateway;
+    })();
+    if (needsRestart) {
       const payload = buildConfigRestartSentinelPayload({
         kind: "config-apply",
         mode: "config.apply",
@@ -516,7 +535,11 @@ export const configHandlers: GatewayRequestHandlers = {
     }
     exec(cmd, (err) => {
       if (err) {
-        respond(false, undefined, errorShape(ErrorCodes.INTERNAL_ERROR, `Failed to open folder: ${err.message}`));
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INTERNAL_ERROR, `Failed to open folder: ${err.message}`),
+        );
         return;
       }
       respond(true, { ok: true, path: dir }, undefined);

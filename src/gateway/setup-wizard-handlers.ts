@@ -29,6 +29,8 @@ import {
   DeviceSwitchError,
   LicenseErrorCode,
   getSetupQrcode,
+  enrichLicenseWithSupport,
+  getDeviceId,
 } from "../license/index.js";
 import {
   setSiliconFlowApiKey,
@@ -64,6 +66,7 @@ import type {
 } from "./setup-wizard-types.js";
 import { sendJson, readJsonBody, formatDockerBind } from "./setup-wizard-utils.js";
 import { getSetupState, updateSetupState, getChannelStartCallback } from "./setup-wizard-state.js";
+import { normalizeProviderId } from "../agents/model-selection.js";
 
 const log = createSubsystemLogger("gateway/setup-wizard");
 
@@ -699,7 +702,10 @@ export async function handleConfigureProvider(
     const config = loadConfig();
     const providerConfig = CN_PROVIDERS[provider];
     const defaultModel = model || providerConfig?.models[0]?.id;
-    const modelRef = defaultModel ? `${provider}/${defaultModel}` : undefined;
+    // 🔥 P0 修复: 使用 normalizeProviderId 确保 model ref 一致
+    // 例如 kimi-code → kimi-coding，使 primary = "kimi-coding/kimi-for-coding"
+    const normalizedProvider = normalizeProviderId(provider);
+    const modelRef = defaultModel ? `${normalizedProvider}/${defaultModel}` : undefined;
 
     const nextConfig: OpenClawCNConfig = {
       ...config,
@@ -707,14 +713,14 @@ export async function handleConfigureProvider(
         ...config.auth,
         profiles: {
           ...config.auth?.profiles,
-          [`${provider}:default`]: {
-            provider,
+          [`${normalizedProvider}:default`]: {
+            provider: normalizedProvider,
             mode: "api_key",
           },
         },
         order: {
           ...config.auth?.order,
-          [provider]: [`${provider}:default`],
+          [normalizedProvider]: [`${normalizedProvider}:default`],
         },
       },
       agents: {
@@ -1622,15 +1628,24 @@ export async function handleValidateLicense(
     });
 
     if (result.valid) {
-      // 验证成功，保存许可证状态到配置
+      // 验证成功，保存许可证状态到配置（包含 keyType 等完整字段，与 license.activate 保持一致）
       const config = loadConfig();
       const nextConfig = {
         ...config,
         license: {
+          ...config.license,
           key,
           status: result.license?.tier ?? "basic",
           expiresAt: result.license?.expiresAt ?? undefined,
           validatedAt: new Date().toISOString(),
+          tier: result.license?.tier,
+          tierName: result.license?.tierName,
+          daysRemaining: result.license?.daysRemaining,
+          keyType: result.license?.keyType,
+          features: result.license?.features,
+          deviceId: result.device?.deviceId,
+          deviceLimit: result.device?.deviceLimit,
+          boundDevices: result.device?.boundDevices,
         },
       };
       await writeConfigFile(nextConfig);
@@ -1673,6 +1688,10 @@ export async function handleValidateLicense(
       });
       */
       log.info("License activation completed (token refresh disabled temporarily)");
+
+      // 注入技术支持二维码（本地静态图片，与 license.activate 保持一致）
+      const activatedDeviceId = result.device?.deviceId || getDeviceId();
+      enrichLicenseWithSupport(result.license, activatedDeviceId);
 
       sendJson(res, 200, {
         ok: true,
@@ -1840,15 +1859,24 @@ export async function handleSwitchDevice(req: IncomingMessage, res: ServerRespon
     const result = await switchDevice(key);
 
     if (result.valid) {
-      // 切换成功，更新配置
+      // 切换成功，更新配置（包含 keyType 等完整字段，与 license.switch 保持一致）
       const config = loadConfig();
       const nextConfig = {
         ...config,
         license: {
+          ...config.license,
           key,
           status: result.license?.tier ?? "basic",
           expiresAt: result.license?.expiresAt,
           validatedAt: new Date().toISOString(),
+          tier: result.license?.tier,
+          tierName: result.license?.tierName,
+          daysRemaining: result.license?.daysRemaining,
+          keyType: result.license?.keyType,
+          features: result.license?.features,
+          deviceId: result.device?.deviceId,
+          deviceLimit: result.device?.deviceLimit,
+          boundDevices: result.device?.boundDevices,
         },
       };
       await writeConfigFile(nextConfig);
@@ -1861,7 +1889,7 @@ export async function handleSwitchDevice(req: IncomingMessage, res: ServerRespon
         error: null,
         errorCode: null,
         license: result.license ?? null,
-        device: null,
+        device: result.device ?? null,
         renewalReminder: null,
         forceUpdate: null,
         pendingNotifications: [],
@@ -1869,6 +1897,10 @@ export async function handleSwitchDevice(req: IncomingMessage, res: ServerRespon
         deviceSwitchInfo: null,
         deviceSwitchCooldown: null,
       });
+
+      // 注入技术支持二维码（与 license.switch 保持一致）
+      const switchedDeviceId = result.device?.deviceId || getDeviceId();
+      enrichLicenseWithSupport(result.license, switchedDeviceId);
 
       // 启动短期令牌自动刷新
       startTokenAutoRefresh(key, {

@@ -351,6 +351,10 @@ $dataResDir = Join-Path $ResourcesDir "data"
 New-Item -ItemType Directory -Force -Path $dataResDir | Out-Null
 if (Test-Path "$ProjectRoot\data") {
     # Copy selective seed data (not user runtime data like sessions, logs)
+    # SECURITY: Never include clawdbot.json (contains channel secrets, API keys),
+    #           agents/ (contains auth-profiles with API keys, session logs),
+    #           identity/ (contains device-auth tokens).
+    #           These are user-specific runtime data, not distributable seed data.
     $seedFiles = @(
         "mcp-index.db",
         "mcp-index.json",
@@ -361,10 +365,9 @@ if (Test-Path "$ProjectRoot\data") {
         "skill-verification-needed.json",
         "skills-availability-dictionary.json",
         "skills-availability-dictionary-enriched.json",
-        "clawdbot.json",
         "README-skill-availability.md"
     )
-    $seedDirs = @("agents", "identity", "subagents", "qrcodes")
+    $seedDirs = @("subagents", "qrcodes")
     foreach ($f in $seedFiles) {
         $src = Join-Path "$ProjectRoot\data" $f
         if (Test-Path $src) {

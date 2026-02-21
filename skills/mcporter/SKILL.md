@@ -4,7 +4,7 @@ description: Use the mcporter CLI to list, configure, auth, and call MCP servers
 nameZh: "MCP工具"
 descriptionZh: "管理和调用MCP服务器/工具（HTTP或stdio模式）"
 homepage: http://mcporter.dev
-metadata: {"openclawcn":{"emoji":"📦","requires":{"bins":["mcporter"]},"install":[{"id":"node","kind":"node","package":"mcporter","bins":["mcporter"],"label":"Install mcporter (node)"}]}}
+metadata: {"openclawcn":{"emoji":"📦","requires":{"bins":["mcporter"]},"install":[{"id":"node","kind":"node","package":"mcporter","bins":["mcporter"],"label":"安装 mcporter (node)"}]}}
 ---
 
 # mcporter

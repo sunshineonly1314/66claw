@@ -4,7 +4,7 @@ description: iMessage/SMS CLI for listing chats, history, watch, and sending.
 nameZh: "iMessage"
 descriptionZh: "iMessage/短信的收发、聊天记录查看和监听"
 homepage: https://imsg.to
-metadata: {"openclawcn":{"emoji":"📨","os":["darwin"],"requires":{"bins":["imsg"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/imsg","bins":["imsg"],"label":"Install imsg (brew)"}]}}
+metadata: {"openclawcn":{"emoji":"📨","os":["darwin"],"requires":{"bins":["imsg"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/imsg","bins":["imsg"],"label":"安装 imsg (brew)"}]}}
 ---
 
 # imsg
