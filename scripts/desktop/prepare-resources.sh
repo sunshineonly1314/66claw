@@ -252,10 +252,23 @@ fi
 STEP_START=$(date +%s)
 log "[5/7] Copying skills/..."
 
+# Skills that must NOT be bundled (WeChat/WeCom desktop automation — in skills-private/)
+EXCLUDED_SKILLS="wechat-desktop wecom-desktop"
+
 SKILLS_FOUND=false
 for skills_src in "$PROJECT_ROOT/skills-merged" "$PROJECT_ROOT/skills"; do
   if [[ -d "$skills_src" ]]; then
-    cp -R "$skills_src" "$RESOURCES_DIR/skills"
+    mkdir -p "$RESOURCES_DIR/skills"
+    for skill_dir in "$skills_src"/*/; do
+      skill_name=$(basename "$skill_dir")
+      if echo "$EXCLUDED_SKILLS" | grep -qw "$skill_name"; then
+        log "  Excluded: $skill_name"
+        continue
+      fi
+      cp -R "$skill_dir" "$RESOURCES_DIR/skills/$skill_name"
+    done
+    # Copy top-level files (README, index, etc.)
+    find "$skills_src" -maxdepth 1 -type f -exec cp {} "$RESOURCES_DIR/skills/" \;
     SKILLS_COUNT=$(find "$RESOURCES_DIR/skills" -maxdepth 1 -type d | wc -l | tr -d ' ')
     SKILLS_COUNT=$((SKILLS_COUNT - 1))
     log "  OK: skills/ ($SKILLS_COUNT skills) from $skills_src [$(( $(date +%s) - STEP_START ))s]"
@@ -263,6 +276,7 @@ for skills_src in "$PROJECT_ROOT/skills-merged" "$PROJECT_ROOT/skills"; do
     break
   fi
 done
+# NOTE: skills-private/ is intentionally NOT copied (contains wechat-desktop, wecom-desktop)
 if [[ "$SKILLS_FOUND" != "true" ]]; then
   warn "skills not found. Skills will be unavailable."
 fi

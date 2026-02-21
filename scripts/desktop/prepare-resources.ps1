@@ -206,6 +206,8 @@ if (Test-Path $extSource) {
 # ── 5. Skills ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
 Write-Host "[5/9] Copying skills/..." -ForegroundColor Green
+# Skills that must NOT be bundled (WeChat/WeCom desktop automation — in skills-private/)
+$excludedSkills = @("wechat-desktop", "wecom-desktop")
 $skillsSources = @(
     "$ProjectRoot\skills-merged",
     "$ProjectRoot\skills"
@@ -213,13 +215,26 @@ $skillsSources = @(
 $skillsFound = $false
 foreach ($src in $skillsSources) {
     if (Test-Path $src) {
-        Copy-Item $src "$ResourcesDir\skills" -Recurse -Force
+        # Copy all skill directories except excluded ones
+        New-Item -ItemType Directory -Force -Path "$ResourcesDir\skills" | Out-Null
+        Get-ChildItem $src -Directory | Where-Object { $_.Name -notin $excludedSkills } | ForEach-Object {
+            Copy-Item $_.FullName "$ResourcesDir\skills\$($_.Name)" -Recurse -Force
+        }
+        # Also copy any top-level files (README, index, etc.)
+        Get-ChildItem $src -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "$ResourcesDir\skills\$($_.Name)" -Force
+        }
         $skillsCount = (Get-ChildItem "$ResourcesDir\skills" -Directory -ErrorAction SilentlyContinue).Count
+        $skippedList = ($excludedSkills | Where-Object { Test-Path "$src\$_" }) -join ", "
         Write-Host "  OK: skills/ ($skillsCount skills) from $src [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+        if ($skippedList) {
+            Write-Host "  Excluded: $skippedList" -ForegroundColor Yellow
+        }
         $skillsFound = $true
         break
     }
 }
+# NOTE: skills-private/ is intentionally NOT copied (contains wechat-desktop, wecom-desktop)
 if (-not $skillsFound) {
     Write-Host "  WARNING: skills not found. Skills will be unavailable." -ForegroundColor Yellow
 }
@@ -264,11 +279,14 @@ if (Test-Path "$ProjectRoot\data") {
         "mcp-index-enhanced.json",
         "tool-index.sqlite",
         "skill-availability-dictionary.json",
+        "skill-availability-schema.json",
+        "skill-verification-needed.json",
         "skills-availability-dictionary.json",
         "skills-availability-dictionary-enriched.json",
-        "clawdbot.json"
+        "clawdbot.json",
+        "README-skill-availability.md"
     )
-    $seedDirs = @("agents", "identity")
+    $seedDirs = @("agents", "identity", "subagents")
     foreach ($f in $seedFiles) {
         $src = Join-Path "$ProjectRoot\data" $f
         if (Test-Path $src) {
