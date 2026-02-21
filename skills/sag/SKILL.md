@@ -4,7 +4,7 @@ description: ElevenLabs text-to-speech with mac-style say UX.
 nameZh: "系统分析"
 descriptionZh: "使用ElevenLabs进行文字转语音"
 homepage: https://sag.sh
-metadata: {"openclawcn":{"emoji":"🗣️","requires":{"bins":["sag"],"env":["ELEVENLABS_API_KEY"]},"primaryEnv":"ELEVENLABS_API_KEY","install":[{"id":"brew","kind":"brew","formula":"steipete/tap/sag","bins":["sag"],"label":"安装 sag (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/sag/releases/latest","bins":["sag"],"label":"下载 sag","os":["win32","linux"]}]}}
+metadata: {"openclawcn":{"emoji":"🗣️","requires":{"bins":["sag"],"env":["ELEVENLABS_API_KEY"]},"primaryEnv":"ELEVENLABS_API_KEY","install":[{"id":"brew","kind":"brew","formula":"steipete/tap/sag","bins":["sag"],"label":"Install sag (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/sag/releases/latest","bins":["sag"],"label":"Download sag binary","os":["win32","linux"]}]}}
 ---
 
 # sag

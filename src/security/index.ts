@@ -38,15 +38,14 @@ export {
   performSecuritySelfCheck,
 } from "./ai-tamper-protection.js";
 
-// 内容保险库 — 机器绑定加密
+// 内容保险库 — 本地机器绑定加密
 export {
   setContentVaultDevMode,
   isEncryptionEnabled,
   encryptContent,
   decryptContent,
-  encryptFile,
-  decryptFile,
-  ensureDirectoryEncrypted,
+  encryptConfigField,
+  decryptConfigField,
   destroyContentVault,
 } from "./content-vault.js";
 

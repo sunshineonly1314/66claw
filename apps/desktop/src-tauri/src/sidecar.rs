@@ -16,40 +16,22 @@ static SIDECAR_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 /// Generated once per app launch; passed to both sidecar and WebView.
 static GATEWAY_TOKEN: Mutex<Option<String>> = Mutex::new(None);
 
+/// True when dev mode detected an external gateway already running on the port.
+static EXTERNAL_GATEWAY: Mutex<bool> = Mutex::new(false);
+
 const GATEWAY_PORT: u16 = 19002;
 
 fn is_dev_mode() -> bool {
     std::env::var("TAURI_DEV").is_ok() || cfg!(debug_assertions)
 }
 
-/// Generate a 48-char hex token for local Tauri <-> Gateway auth.
-///
-/// NOTE: This is NOT a cryptographically secure random generator (CSPRNG).
-/// It uses `DefaultHasher` (SipHash) seeded with the current time and PID.
-/// This is sufficient for localhost-only auth where the attacker would need
-/// local access to the machine. If the gateway ever accepts remote connections,
-/// replace this with `getrandom` or `rand::OsRng`.
+/// [MED-08 FIX] Generate a 48-char hex token using OS CSPRNG.
+/// Uses `getrandom` crate which delegates to the OS random source
+/// (CryptGenRandom on Windows, /dev/urandom on Unix).
 fn generate_token() -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    use std::time::SystemTime;
-
-    let mut hasher = DefaultHasher::new();
-    SystemTime::now().hash(&mut hasher);
-    std::process::id().hash(&mut hasher);
-    let h1 = hasher.finish();
-
-    let mut hasher2 = DefaultHasher::new();
-    h1.hash(&mut hasher2);
-    (h1 ^ 0xDEAD_BEEF_CAFE_BABE).hash(&mut hasher2);
-    let h2 = hasher2.finish();
-
-    let mut hasher3 = DefaultHasher::new();
-    h2.hash(&mut hasher3);
-    (h2 ^ 0x1234_5678_9ABC_DEF0).hash(&mut hasher3);
-    let h3 = hasher3.finish();
-
-    format!("{:016x}{:016x}{:016x}", h1, h2, h3)
+    let mut buf = [0u8; 24]; // 24 bytes = 48 hex chars
+    getrandom::getrandom(&mut buf).expect("OS CSPRNG should always be available");
+    buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Try to kill any process occupying the gateway port, including its entire
@@ -250,6 +232,7 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
                 "[Sidecar] Dev mode: port {} already in use (external dev gateway). Skipping sidecar.",
                 GATEWAY_PORT
             );
+            *EXTERNAL_GATEWAY.lock().unwrap() = true;
             return Ok(());
         }
     } else {
@@ -375,7 +358,8 @@ pub fn is_sidecar_running() -> bool {
             }
         }
     } else {
-        false
+        // In dev mode, external gateway may be running without a sidecar process
+        *EXTERNAL_GATEWAY.lock().unwrap()
     }
 }
 

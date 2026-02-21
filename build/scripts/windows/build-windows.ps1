@@ -1044,6 +1044,7 @@ if ($needMainBuild -or $needUiBuild) {
             @{ Name = "build"; Cmd = "pnpm build" },
             @{ Name = "build:cn-compile"; Cmd = "pnpm build:cn-compile" },
             @{ Name = "build:cn-extensions"; Cmd = "pnpm build:cn-extensions" },
+            @{ Name = "verify:extensions"; Cmd = "pnpm verify:extensions" },  # HIGH-04: verify JS matches TS
             @{ Name = "obfuscate"; Cmd = "node --import tsx scripts/obfuscate-dist.ts" }
             # compile-bytecode.ts is handled in Step B with portable Node
             # integrity:gen is handled in Step C (after bytecode)
@@ -1544,6 +1545,7 @@ if (Test-Path $portableNodeExe) {
             @{ Name = "build"; Cmd = "pnpm build" },
             @{ Name = "build:cn-compile"; Cmd = "pnpm build:cn-compile" },
             @{ Name = "build:cn-extensions"; Cmd = "pnpm build:cn-extensions" },
+            @{ Name = "verify:extensions"; Cmd = "pnpm verify:extensions" },  # HIGH-04: verify JS matches TS
             @{ Name = "obfuscate"; Cmd = "node --import tsx scripts/obfuscate-dist.ts" }
         )
 

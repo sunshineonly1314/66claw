@@ -545,7 +545,7 @@ export async function checkHealth(): Promise<HealthCheckResponseData> {
  * 创建验证缓存数据
  */
 export function createLicenseCache(key: string, response: LicenseVerifyResponseData): LicenseCache {
-  return {
+  const cache: LicenseCache = {
     key,
     valid: response.valid,
     verifyTime: Date.now(),
@@ -555,6 +555,20 @@ export function createLicenseCache(key: string, response: LicenseVerifyResponseD
     deviceId: getDeviceId(),
     nextCheckAfterHours: response.nextCheckAfterHours || 24,
   };
+
+  // [HIGH-08] 存储服务端签名载荷，用于离线时重新验证
+  // 这样即使攻击者修改了 cache 中的 tier/expiresAt，签名也会校验失败
+  if (response.signature && response.serverTime) {
+    cache.signedPayload = {
+      signature: response.signature,
+      valid: response.valid,
+      tier: response.license?.tier ?? null,
+      expiresAt: response.license?.expiresAt ?? null,
+      serverTime: response.serverTime,
+    };
+  }
+
+  return cache;
 }
 
 /**

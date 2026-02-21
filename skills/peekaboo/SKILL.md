@@ -4,7 +4,7 @@ description: Capture and automate macOS UI with the Peekaboo CLI.
 nameZh: "屏幕监控"
 descriptionZh: "监控和分析屏幕内容"
 homepage: https://peekaboo.boo
-metadata: {"openclawcn":{"emoji":"👀","os":["darwin"],"requires":{"bins":["peekaboo"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/peekaboo","bins":["peekaboo"],"label":"安装 Peekaboo (brew)"}]}}
+metadata: {"openclawcn":{"emoji":"👀","os":["darwin"],"requires":{"bins":["peekaboo"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/peekaboo","bins":["peekaboo"],"label":"Install Peekaboo (brew)"}]}}
 ---
 
 # Peekaboo
@@ -56,7 +56,7 @@ System
 Vision
 - `see`: annotated UI maps, snapshot IDs, optional analysis
 
-Global 运行时 flags
+Global runtime flags
 - `--json`/`-j`, `--verbose`/`-v`, `--log-level <level>`
 - `--no-remote`, `--bridge-socket <path>`
 

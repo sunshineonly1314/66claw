@@ -21,11 +21,20 @@ export interface PlatformInfo {
  */
 export function getLogoBase64(): string {
   try {
-    // 获取 assets 目录路径（相对于 src/gateway/setup-page.ts）
-    const assetsDir = path.resolve(import.meta.dirname, "../../assets");
-    const logoPath = path.join(assetsDir, "60ad649637d6797ad09120d309408d4c.png");
-    const imageBuffer = fs.readFileSync(logoPath);
-    return `data:image/png;base64,${imageBuffer.toString("base64")}`;
+    // 打包后: dist/../../assets → <installRoot>/assets
+    // dev 模式: dist/../assets → <repoRoot>/assets
+    const candidates = [
+      path.resolve(import.meta.dirname, "../../assets"),
+      path.resolve(import.meta.dirname, "../assets"),
+    ];
+    for (const assetsDir of candidates) {
+      const logoPath = path.join(assetsDir, "60ad649637d6797ad09120d309408d4c.png");
+      if (fs.existsSync(logoPath)) {
+        const imageBuffer = fs.readFileSync(logoPath);
+        return `data:image/png;base64,${imageBuffer.toString("base64")}`;
+      }
+    }
+    return "";
   } catch {
     // 如果读取失败，返回空字符串，后续会使用 fallback SVG
     return "";
@@ -37,10 +46,20 @@ export function getLogoBase64(): string {
  */
 export function getSetupQrcodeBase64(): string {
   try {
-    const qrDir = path.resolve(import.meta.dirname, "../../data/qrcodes");
-    const qrPath = path.join(qrDir, "zlq.jpg");
-    const buf = fs.readFileSync(qrPath);
-    return `data:image/jpeg;base64,${buf.toString("base64")}`;
+    // 打包后: dist/../../data/qrcodes → <installRoot>/data/qrcodes
+    // dev 模式: dist/../data/qrcodes → <repoRoot>/data/qrcodes
+    const candidates = [
+      path.resolve(import.meta.dirname, "../../data/qrcodes"),
+      path.resolve(import.meta.dirname, "../data/qrcodes"),
+    ];
+    for (const qrDir of candidates) {
+      const qrPath = path.join(qrDir, "zlq.jpg");
+      if (fs.existsSync(qrPath)) {
+        const buf = fs.readFileSync(qrPath);
+        return `data:image/jpeg;base64,${buf.toString("base64")}`;
+      }
+    }
+    return "";
   } catch {
     return "";
   }

@@ -1,8 +1,6 @@
 ---
 name: software-protection
 description: OpenClawCN 软件保护方案 - 防止逆向、破解、修改的加密策略
-nameZh: "软件保护"
-descriptionZh: "OpenClawCN 软件保护方案 - 防止逆向、破解、修改的加密策略"
 homepage: https://github.com/nicekate/openclawcn
 metadata: {"openclawcn":{"emoji":"🔐","category":"security"}}
 ---

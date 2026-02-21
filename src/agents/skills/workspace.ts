@@ -27,114 +27,22 @@ import {
 import { invalidateAllFileIndices } from "./file-index.js";
 import { resolvePluginSkillDirs } from "./plugin-skills.js";
 import { serializeByKey } from "./serialize.js";
-import { decryptFile, isEncryptionEnabled } from "../../security/content-vault.js";
-
 const fsp = fs.promises;
 const skillsLogger = createSubsystemLogger("skills");
 const skillCommandDebugOnce = new Set<string>();
 
 /**
- * Load skills from a directory, handling encrypted (.md.enc) files.
- *
- * When encryption is enabled and .enc files exist, creates a temporary
- * decrypted copy for loadSkillsFromDir (which only reads plain .md files),
- * then cleans up immediately.
+ * Load skills from a directory. Returns [] if directory doesn't exist.
  */
-function loadSkillsWithEncryption(params: {
+function loadSkillsFromDirectory(params: {
   dir: string;
   source: string;
   loadSkills: (p: { dir: string; source: string }) => Skill[];
 }): Skill[] {
-  if (!isEncryptionEnabled() || !fs.existsSync(params.dir)) {
-    return params.loadSkills({ dir: params.dir, source: params.source });
-  }
-
-  // Check if directory has any .enc files
-  const hasEncFiles = hasEncryptedFiles(params.dir);
-  if (!hasEncFiles) {
-    return params.loadSkills({ dir: params.dir, source: params.source });
-  }
-
-  // Create temp dir, decrypt .enc files into it, load, then cleanup
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawdbot-skills-"));
-  try {
-    decryptDirectoryTo(params.dir, tmpDir);
-    const skills = params.loadSkills({ dir: tmpDir, source: params.source });
-
-    // Rewrite filePath to point back to original .enc paths so the model
-    // uses the real path (decryption happens again at read time via attempt.ts)
-    for (const skill of skills) {
-      const relPath = path.relative(tmpDir, skill.filePath);
-      const originalEnc = path.join(params.dir, relPath + ".enc");
-      const originalPlain = path.join(params.dir, relPath);
-      if (fs.existsSync(originalEnc)) {
-        skill.filePath = originalEnc;
-        skill.baseDir = path.dirname(originalEnc);
-      } else if (fs.existsSync(originalPlain)) {
-        skill.filePath = originalPlain;
-        skill.baseDir = path.dirname(originalPlain);
-      }
-    }
-
-    return skills;
-  } catch (err) {
-    skillsLogger.warn(`Failed to load encrypted skills from ${params.dir}: ${err}`);
-    // 安全策略: 解密失败时不 fallback 到明文加载，防止跨机器绕过
-    // 仅返回空数组，拒绝暴露受保护内容
+  if (!fs.existsSync(params.dir)) {
     return [];
-  } finally {
-    // Cleanup temp directory
-    try {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
-      // Best effort cleanup
-    }
   }
-}
-
-/** Check recursively if a directory has any .enc files */
-function hasEncryptedFiles(dir: string): boolean {
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.endsWith(".md.enc")) return true;
-      if (entry.isDirectory()) {
-        if (hasEncryptedFiles(path.join(dir, entry.name))) return true;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return false;
-}
-
-/** Decrypt .enc files from srcDir into destDir, preserving directory structure */
-function decryptDirectoryTo(srcDir: string, destDir: string): void {
-  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(srcDir, entry.name);
-    if (entry.isDirectory()) {
-      const subDest = path.join(destDir, entry.name);
-      fs.mkdirSync(subDest, { recursive: true });
-      decryptDirectoryTo(srcPath, subDest);
-    } else if (entry.isFile()) {
-      if (entry.name.endsWith(".md.enc")) {
-        // Decrypt to .md in temp dir
-        const destName = entry.name.slice(0, -4); // remove .enc
-        const destPath = path.join(destDir, destName);
-        try {
-          const plaintext = decryptFile(srcPath);
-          fs.writeFileSync(destPath, plaintext, "utf-8");
-        } catch (err) {
-          skillsLogger.warn(`Failed to decrypt ${srcPath}: ${err}`);
-        }
-      } else {
-        // Copy non-.enc files as-is (e.g. images, etc.)
-        const destPath = path.join(destDir, entry.name);
-        fs.copyFileSync(srcPath, destPath);
-      }
-    }
-  }
+  return params.loadSkills({ dir: params.dir, source: params.source });
 }
 
 function debugSkillCommandOnce(
@@ -242,11 +150,8 @@ function loadSkillEntries(
   });
   const mergedExtraDirs = [...extraDirs, ...pluginSkillDirs];
 
-  // Skills 使用明文加载，不再做机器绑定加密。
-  // .enc 文件仍然支持读取（向后兼容已安装的旧版本），
-  // 但不再主动加密新文件。
   const bundledSkills = bundledSkillsDir
-    ? loadSkillsWithEncryption({
+    ? loadSkillsFromDirectory({
         dir: bundledSkillsDir,
         source: "openclawcn-bundled",
         loadSkills,
@@ -256,7 +161,7 @@ function loadSkillEntries(
   // ── Private (owner-only) skills: not packaged, not distributed ──
   const privateSkillsDir = opts?.privateSkillsDir ?? resolvePrivateSkillsDir();
   const privateSkills = privateSkillsDir
-    ? loadSkillsWithEncryption({
+    ? loadSkillsFromDirectory({
         dir: privateSkillsDir,
         source: "openclawcn-private",
         loadSkills,
@@ -265,30 +170,30 @@ function loadSkillEntries(
 
   const extraSkills = mergedExtraDirs.flatMap((dir) => {
     const resolved = resolveUserPath(dir);
-    return loadSkillsWithEncryption({
+    return loadSkillsFromDirectory({
       dir: resolved,
       source: "openclawcn-extra",
       loadSkills,
     });
   });
-  const managedSkills = loadSkillsWithEncryption({
+  const managedSkills = loadSkillsFromDirectory({
     dir: managedSkillsDir,
     source: "openclawcn-managed",
     loadSkills,
   });
   const personalAgentsSkillsDir = path.resolve(os.homedir(), ".agents", "skills");
-  const personalAgentsSkills = loadSkillsWithEncryption({
+  const personalAgentsSkills = loadSkillsFromDirectory({
     dir: personalAgentsSkillsDir,
     source: "agents-skills-personal",
     loadSkills,
   });
   const projectAgentsSkillsDir = path.resolve(workspaceDir, ".agents", "skills");
-  const projectAgentsSkills = loadSkillsWithEncryption({
+  const projectAgentsSkills = loadSkillsFromDirectory({
     dir: projectAgentsSkillsDir,
     source: "agents-skills-project",
     loadSkills,
   });
-  const workspaceSkills = loadSkillsWithEncryption({
+  const workspaceSkills = loadSkillsFromDirectory({
     dir: workspaceSkillsDir,
     source: "openclawcn-workspace",
     loadSkills,
@@ -322,11 +227,7 @@ function loadSkillEntries(
     let frontmatter: ParsedSkillFrontmatter = {};
     try {
       let raw: string;
-      if (skill.filePath.endsWith(".md.enc")) {
-        raw = decryptFile(skill.filePath);
-      } else {
-        raw = fs.readFileSync(skill.filePath, "utf-8");
-      }
+      raw = fs.readFileSync(skill.filePath, "utf-8");
       frontmatter = parseFrontmatter(raw);
     } catch {
       // ignore malformed skills

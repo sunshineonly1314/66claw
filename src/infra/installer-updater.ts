@@ -16,6 +16,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createWriteStream, createReadStream } from "node:fs";
 import { fetchWithTimeout } from "../utils/fetch-timeout.js";
+import {
+  downloadAndVerifySignature,
+  verifyContentSignature,
+  isUpdateSigningKeyConfigured,
+} from "./update-signature.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -519,6 +524,30 @@ export async function runInstallerUpdate(params: {
       }
     }
 
+    // 3.6 [HIGH-06] Ed25519 签名验证：delta tarball
+    // 签名文件 URL = delta URL + ".sig"
+    {
+      const sigUrl = `${delta.url}.sig`;
+      const sigOk = await downloadAndVerifySignature(
+        downloadPath,
+        sigUrl,
+        (url, init) => fetchWithTimeout(url, init ?? {}, DEFAULT_TIMEOUT_MS),
+        DEFAULT_TIMEOUT_MS,
+      );
+      if (!sigOk) {
+        await rmrf(tempDir);
+        const result: InstallerUpdateResult = {
+          status: "error",
+          mode: "delta",
+          reason: "delta tarball Ed25519 signature verification failed",
+          fromVersion: currentVersion,
+          toVersion,
+          durationMs: Date.now() - startedAt,
+        };
+        return result;
+      }
+    }
+
     // 4. 解压
     const extractDir = path.join(tempDir, "extracted");
     await fs.mkdir(extractDir, { recursive: true });
@@ -558,9 +587,10 @@ export async function runInstallerUpdate(params: {
     const filesChanged = deltaApplyResult.filesChanged;
 
     // 7. 下载并校验 checksums
+    // [MED-09] 无 checksums URL 时必须拒绝更新，防止降级攻击
     const checksumsOk = latest.url?.checksums
       ? await verifyChecksums(root, latest.url.checksums)
-      : true; // 无 checksums URL 时跳过校验（不应发生）
+      : false;
     if (!checksumsOk) {
       // 回滚
       progress?.onError?.("校验失败，正在回滚...");
@@ -830,7 +860,36 @@ async function verifyChecksums(root: string, checksumsUrl: string): Promise<bool
       return false;
     }
 
-    const checksums = (await res.json()) as Record<string, string>;
+    // [HIGH-06] 保留原始 JSON 文本用于签名验证
+    const checksumsText = await res.text();
+
+    // [HIGH-06] Ed25519 签名验证 checksums 文件本身
+    // 签名文件 URL = checksums URL + ".sig"
+    {
+      const sigUrl = `${checksumsUrl}.sig`;
+      try {
+        const sigRes = await fetchWithTimeout(sigUrl, {}, DEFAULT_TIMEOUT_MS);
+        if (!sigRes.ok) {
+          // 如果签名密钥已配置但签名文件不存在，拒绝更新
+          if (isUpdateSigningKeyConfigured()) {
+            return false;
+          }
+          // 签名密钥为 placeholder（开发模式），继续
+        } else {
+          const signatureBase64 = (await sigRes.text()).trim();
+          if (!verifyContentSignature(checksumsText, signatureBase64)) {
+            return false;
+          }
+        }
+      } catch {
+        // 签名文件下载失败且密钥已配置，拒绝更新
+        if (isUpdateSigningKeyConfigured()) {
+          return false;
+        }
+      }
+    }
+
+    const checksums = JSON.parse(checksumsText) as Record<string, string>;
     const total = Object.keys(checksums).length;
     if (total === 0) return true;
 
@@ -947,22 +1006,33 @@ export function detectInstallKind(root: string): "installer" | "git" | "package"
 
 /**
  * 读取更新服务器 URL
- * 优先级: 环境变量 > install.json > 默认值
+ *
+ * [MED-09] 安全加固：生产构建中禁止环境变量和 install.json 覆盖更新服务器地址。
+ * 攻击者若能注入 OPENCLAWCN_UPDATE_SERVER 或篡改 install.json，
+ * 可将更新重定向到恶意服务器，下发带后门的 delta 包。
+ *
+ * 仅开发构建允许覆盖（方便测试内部更新服务器）。
  */
 export function resolveUpdateServerUrl(root: string): string | null {
-  // 1. 环境变量
-  const envUrl = process.env.OPENCLAWCN_UPDATE_SERVER?.trim();
-  if (envUrl) return envUrl;
+  const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
 
-  // 2. install.json 中可能包含更新服务器配置
-  try {
-    const installJsonPath = path.join(root, "install.json");
-    if (fsSync.existsSync(installJsonPath)) {
-      const installJson = JSON.parse(fsSync.readFileSync(installJsonPath, "utf-8"));
-      if (installJson.updateServer) return installJson.updateServer;
+  // 1. 环境变量（仅 dev build 允许）
+  if (isDevBuild) {
+    const envUrl = process.env.OPENCLAWCN_UPDATE_SERVER?.trim();
+    if (envUrl) return envUrl;
+  }
+
+  // 2. install.json 中可能包含更新服务器配置（仅 dev build 允许）
+  if (isDevBuild) {
+    try {
+      const installJsonPath = path.join(root, "install.json");
+      if (fsSync.existsSync(installJsonPath)) {
+        const installJson = JSON.parse(fsSync.readFileSync(installJsonPath, "utf-8"));
+        if (installJson.updateServer) return installJson.updateServer;
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 
   // 3. 默认值

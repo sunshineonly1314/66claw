@@ -492,26 +492,31 @@ export function createGatewayHttpServer(opts: {
         res.setHeader("Cache-Control", "no-cache");
         // Allow Tauri WebView (tauri://localhost) and local origins to fetch health
         const origin = req.headers.origin ?? "";
-        if (origin === "tauri://localhost" || origin.startsWith("http://localhost") || origin.startsWith("http://127.0.0.1")) {
+        if (
+          origin === "tauri://localhost" ||
+          origin.startsWith("http://localhost") ||
+          origin.startsWith("http://127.0.0.1")
+        ) {
           res.setHeader("Access-Control-Allow-Origin", origin);
         }
-        // Always include provider config status so the desktop client can
-        // decide whether to show setup wizard without waiting for ready=true.
+        // [MED-12] Only expose minimal info — no provider IDs, no pid/uptime.
+        // Desktop client uses `needsSetup` (primary) and `hasConfiguredProvider` (fallback).
         const healthConfig = loadConfig();
-        const providers: Record<string, { status: string }> = {};
+        let hasConfiguredProvider = false;
         if (healthConfig.models?.providers) {
-          for (const [id, prov] of Object.entries(healthConfig.models.providers)) {
-            // Providers using non-apiKey auth (aws-sdk, oauth, token) are "ok" even without an apiKey
-            const hasAuth = prov.apiKey || (prov.auth && prov.auth !== "api-key");
-            providers[id] = { status: hasAuth ? "ok" : "unconfigured" };
+          for (const prov of Object.values(healthConfig.models.providers)) {
+            if (prov.apiKey || (prov.auth && prov.auth !== "api-key")) {
+              hasConfiguredProvider = true;
+              break;
+            }
           }
         }
-        const freeModels = (healthConfig as { freeModels?: { accounts?: Array<{ providerId: string; enabled: boolean }> } }).freeModels;
-        if (freeModels?.accounts) {
-          for (const account of freeModels.accounts) {
-            if (account.enabled) {
-              providers[account.providerId] = { status: "ok" };
-            }
+        if (!hasConfiguredProvider) {
+          const freeModels = (
+            healthConfig as { freeModels?: { accounts?: Array<{ enabled: boolean }> } }
+          ).freeModels;
+          if (freeModels?.accounts?.some((a) => a.enabled)) {
+            hasConfiguredProvider = true;
           }
         }
         res.end(
@@ -520,9 +525,7 @@ export function createGatewayHttpServer(opts: {
             ready,
             needsSetup: shouldShowSetupWizard(),
             phase: getGatewayPhase(),
-            pid: process.pid,
-            uptime: process.uptime(),
-            providers,
+            hasConfiguredProvider,
           }),
         );
         return;
@@ -533,7 +536,10 @@ export function createGatewayHttpServer(opts: {
       if (healthPath === "/api/support/qrcode") {
         try {
           const qrcodeConfig = loadConfig();
-          const keyType = (qrcodeConfig.license?.keyType ?? "test") as "test" | "trial" | "standard";
+          const keyType = (qrcodeConfig.license?.keyType ?? "test") as
+            | "test"
+            | "trial"
+            | "standard";
           const qrMap: Record<string, { file: string; groupName: string }> = {
             test: { file: "test.jpg", groupName: "测试体验群" },
             trial: { file: "test.jpg", groupName: "测试体验群" },
@@ -553,7 +559,10 @@ export function createGatewayHttpServer(opts: {
           let qrcode: { base64: string; groupName: string } | null = null;
           if (_fs.existsSync(filePath)) {
             const buf = _fs.readFileSync(filePath);
-            qrcode = { base64: `data:image/jpeg;base64,${buf.toString("base64")}`, groupName: entry.groupName };
+            qrcode = {
+              base64: `data:image/jpeg;base64,${buf.toString("base64")}`,
+              groupName: entry.groupName,
+            };
           }
           res.statusCode = 200;
           res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -652,6 +661,62 @@ export function createGatewayHttpServer(opts: {
             data: { xianyu: "https://m.tb.cn/h.7vUkYDe?tk=hLT6UlwfWs0" },
           }),
         );
+        return;
+      }
+
+      // OpenClawCN: 服务端打开外部 URL（Tauri WebView2 在非 tauri.localhost origin 上
+      // 无法通过 on_navigation/on_new_window 回调拦截外部链接）。
+      // 放在 server-http 顶层，不受 setup 410 guard 限制，setup 和 chat 页面都能用。
+      // 安全: 仅允许 loopback 访问 + 使用 execFile 避免 shell 注入
+      if (healthPath === "/api/open-url" && req.method === "POST") {
+        const remoteIp = req.socket.remoteAddress;
+        const isLocal =
+          remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1";
+        if (!isLocal) {
+          res.statusCode = 403;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: false, error: "Loopback only" }));
+          return;
+        }
+        try {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          const body = JSON.parse(Buffer.concat(chunks).toString());
+          const url = body?.url;
+          // 严格验证: 必须是合法 http(s) URL，拒绝含 shell 元字符的 URL
+          let parsedUrl: URL | undefined;
+          try {
+            parsedUrl = new URL(url);
+          } catch {
+            /* invalid */
+          }
+          if (
+            !url ||
+            typeof url !== "string" ||
+            !parsedUrl ||
+            (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:")
+          ) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: false, error: "Invalid URL" }));
+            return;
+          }
+          const { execFile } = await import("node:child_process");
+          if (process.platform === "win32") {
+            execFile("cmd", ["/c", "start", "", url]);
+          } else if (process.platform === "darwin") {
+            execFile("open", [url]);
+          } else {
+            execFile("xdg-open", [url]);
+          }
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ ok: false, error: String(e) }));
+        }
         return;
       }
 

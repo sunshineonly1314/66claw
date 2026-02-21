@@ -4,7 +4,7 @@ description: Generate or edit images via Gemini 3 Pro Image (Nano Banana Pro).
 nameZh: "AI图片生成Pro"
 descriptionZh: "使用Gemini 3 Pro生成或编辑图片"
 homepage: https://ai.google.dev/
-metadata: {"openclawcn":{"emoji":"🍌","requires":{"bins":["uv"],"env":["GEMINI_API_KEY"]},"primaryEnv":"GEMINI_API_KEY","install":[{"id":"uv-brew","kind":"brew","formula":"uv","bins":["uv"],"label":"安装 uv (brew)"},{"id":"uv-pip","kind":"pip","package":"uv","bins":["uv"],"label":"安装 uv (pip)"}]}}
+metadata: {"openclawcn":{"emoji":"🍌","requires":{"bins":["uv"],"env":["GEMINI_API_KEY"]},"primaryEnv":"GEMINI_API_KEY","install":[{"id":"uv-brew","kind":"brew","formula":"uv","bins":["uv"],"label":"Install uv (brew)"},{"id":"uv-pip","kind":"pip","package":"uv","bins":["uv"],"label":"Install uv (pip)"}]}}
 ---
 
 # Nano Banana Pro (Gemini 3 Pro Image)

@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock content-vault before importing the module under test
-const mockEncryptContent = vi.fn();
-const mockDecryptContent = vi.fn();
+const mockEncryptConfigField = vi.fn();
+const mockDecryptConfigField = vi.fn();
 const mockIsEncryptionEnabled = vi.fn();
 
 vi.mock("../security/content-vault.js", () => ({
-  encryptContent: (...args: unknown[]) => mockEncryptContent(...args),
-  decryptContent: (...args: unknown[]) => mockDecryptContent(...args),
+  encryptConfigField: (...args: unknown[]) => mockEncryptConfigField(...args),
+  decryptConfigField: (...args: unknown[]) => mockDecryptConfigField(...args),
   isEncryptionEnabled: () => mockIsEncryptionEnabled(),
 }));
 
@@ -30,11 +30,11 @@ import {
 function setupMocks(enabled = true) {
   mockIsEncryptionEnabled.mockReturnValue(enabled);
 
-  mockEncryptContent.mockImplementation((plaintext: string) => {
+  mockEncryptConfigField.mockImplementation((plaintext: string) => {
     return Buffer.from(`ENCRYPTED:${plaintext}`);
   });
 
-  mockDecryptContent.mockImplementation((buf: Buffer) => {
+  mockDecryptConfigField.mockImplementation((buf: Buffer) => {
     const str = buf.toString("utf-8");
     if (!str.startsWith("ENCRYPTED:")) {
       throw new Error("Content vault: decryption failed");
@@ -136,7 +136,7 @@ describe("decryptConfigFields", () => {
   });
 
   it("returns ENC{...} as-is on decryption failure (graceful degradation)", () => {
-    mockDecryptContent.mockImplementation(() => {
+    mockDecryptConfigField.mockImplementation(() => {
       throw new Error("wrong machine");
     });
     const enc = fakeEnc("secret");
@@ -167,7 +167,7 @@ describe("encryptConfigFields", () => {
     const result = encryptConfigFields(input) as any;
     expect(isEncryptedValue(result.gateway.auth.token)).toBe(true);
     // Verify the encrypted content can be decrypted back
-    expect(mockEncryptContent).toHaveBeenCalledWith("my-secret-token");
+    expect(mockEncryptConfigField).toHaveBeenCalledWith("my-secret-token");
   });
 
   it("does NOT encrypt non-sensitive fields", () => {
@@ -185,7 +185,7 @@ describe("encryptConfigFields", () => {
     };
     const result = encryptConfigFields(input) as any;
     expect(result.gateway.auth.token).toBe("${GATEWAY_TOKEN}");
-    expect(mockEncryptContent).not.toHaveBeenCalled();
+    expect(mockEncryptConfigField).not.toHaveBeenCalled();
   });
 
   it("skips empty strings", () => {
@@ -194,7 +194,7 @@ describe("encryptConfigFields", () => {
     };
     const result = encryptConfigFields(input) as any;
     expect(result.gateway.auth.token).toBe("");
-    expect(mockEncryptContent).not.toHaveBeenCalled();
+    expect(mockEncryptConfigField).not.toHaveBeenCalled();
   });
 
   it("skips already-encrypted ENC{...} values", () => {
@@ -204,7 +204,7 @@ describe("encryptConfigFields", () => {
     };
     const result = encryptConfigFields(input) as any;
     expect(result.gateway.auth.token).toBe(enc);
-    expect(mockEncryptContent).not.toHaveBeenCalled();
+    expect(mockEncryptConfigField).not.toHaveBeenCalled();
   });
 
   it("reuses existing ciphertext when value is unchanged", () => {
@@ -218,7 +218,7 @@ describe("encryptConfigFields", () => {
     const result = encryptConfigFields(input, diskParsed) as any;
     // Should reuse the disk ciphertext, not encrypt fresh
     expect(result.gateway.auth.token).toBe(existingEnc);
-    expect(mockEncryptContent).not.toHaveBeenCalled();
+    expect(mockEncryptConfigField).not.toHaveBeenCalled();
   });
 
   it("produces new ciphertext when value has changed", () => {
@@ -232,7 +232,7 @@ describe("encryptConfigFields", () => {
     const result = encryptConfigFields(input, diskParsed) as any;
     // old-token != new-token, so it must encrypt fresh
     expect(isEncryptedValue(result.gateway.auth.token)).toBe(true);
-    expect(mockEncryptContent).toHaveBeenCalledWith("new-token");
+    expect(mockEncryptConfigField).toHaveBeenCalledWith("new-token");
   });
 
   it("passes through when encryption is disabled", () => {
@@ -242,14 +242,14 @@ describe("encryptConfigFields", () => {
     };
     const result = encryptConfigFields(input) as any;
     expect(result.gateway.auth.token).toBe("plaintext");
-    expect(mockEncryptContent).not.toHaveBeenCalled();
+    expect(mockEncryptConfigField).not.toHaveBeenCalled();
   });
 
   it("encrypts license.key", () => {
     const input = { license: { key: "ABCD-1234-EFGH" } };
     const result = encryptConfigFields(input) as any;
     expect(isEncryptedValue(result.license.key)).toBe(true);
-    expect(mockEncryptContent).toHaveBeenCalledWith("ABCD-1234-EFGH");
+    expect(mockEncryptConfigField).toHaveBeenCalledWith("ABCD-1234-EFGH");
   });
 
   it("encrypts wildcard-pattern fields (models.providers.*.apiKey)", () => {
@@ -281,7 +281,7 @@ describe("encryptConfigFields", () => {
   });
 
   it("fails open: stores plaintext if encryption throws", () => {
-    mockEncryptContent.mockImplementation(() => {
+    mockEncryptConfigField.mockImplementation(() => {
       throw new Error("crypto failure");
     });
     const input = {

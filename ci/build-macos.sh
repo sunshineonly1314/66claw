@@ -37,12 +37,16 @@ MAC_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo")
 VERSION=""
 ARCH="universal"
 VALIDATE_FLAG=""
+SKIP_DEPLOY=false
+DEPLOY_ONLY=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arch)    ARCH="$2"; shift 2 ;;
     --version) VERSION="$2"; shift 2 ;;
     --validate|--validate-full) VALIDATE_FLAG="$1"; shift ;;
+    --skip-deploy) SKIP_DEPLOY=true; shift ;;
+    --deploy-only) DEPLOY_ONLY=true; shift ;;
     -*)        echo "Unknown option: $1" >&2; exit 1 ;;
     *)
       # Legacy positional args: VERSION ARCH VALIDATE
@@ -75,6 +79,8 @@ REPO="$MAC_REPO"
 VERSION="$VERSION"
 ARCH="$ARCH"
 VALIDATE_FLAG="$VALIDATE_FLAG"
+SKIP_DEPLOY="$SKIP_DEPLOY"
+DEPLOY_ONLY="$DEPLOY_ONLY"
 
 echo "Preparing workspace: \$WORKSPACE"
 
@@ -160,6 +166,26 @@ fi
 
 export VERSION="\$VERSION"
 
+# Tauri 输出路径（根据 target 不同而不同）
+case "\$ARCH" in
+  arm64)     TAURI_TARGET="aarch64-apple-darwin" ;;
+  x64)       TAURI_TARGET="x86_64-apple-darwin" ;;
+  universal) TAURI_TARGET="universal-apple-darwin" ;;
+  *)         TAURI_TARGET="" ;;
+esac
+
+if [ -n "\$TAURI_TARGET" ]; then
+  TAURI_BUNDLE_DIR="apps/desktop/src-tauri/target/\$TAURI_TARGET/release/bundle"
+else
+  TAURI_BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle"
+fi
+
+DMG_DIR="\$TAURI_BUNDLE_DIR/dmg"
+APP_DIR="\$TAURI_BUNDLE_DIR/macos"
+
+# ── 构建阶段（--deploy-only 时跳过） ──
+if [ "\$DEPLOY_ONLY" != "true" ]; then
+
 # 确保 Rust/Cargo 可用
 source "\$HOME/.cargo/env" 2>/dev/null || true
 if command -v cargo &> /dev/null; then
@@ -182,23 +208,6 @@ else
 fi
 
 bash "\$BUILD_SCRIPT" --arch "\$ARCH"
-
-# Tauri 输出路径（根据 target 不同而不同）
-case "\$ARCH" in
-  arm64)     TAURI_TARGET="aarch64-apple-darwin" ;;
-  x64)       TAURI_TARGET="x86_64-apple-darwin" ;;
-  universal) TAURI_TARGET="universal-apple-darwin" ;;
-  *)         TAURI_TARGET="" ;;
-esac
-
-if [ -n "\$TAURI_TARGET" ]; then
-  TAURI_BUNDLE_DIR="apps/desktop/src-tauri/target/\$TAURI_TARGET/release/bundle"
-else
-  TAURI_BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle"
-fi
-
-DMG_DIR="\$TAURI_BUNDLE_DIR/dmg"
-APP_DIR="\$TAURI_BUNDLE_DIR/macos"
 
 # 检查构建产物
 if ls "\$DMG_DIR"/*.dmg 1> /dev/null 2>&1; then
@@ -232,21 +241,22 @@ if [ -f "\$VALIDATION_SCRIPT" ] && [ -d "\$APP_BUNDLE" ]; then
     echo "Post-build validation: ALL PASSED"
   else
     echo "WARNING: Post-build validation had failures (build artifact still available)"
-    # Show the report if available
     if [ -f "\$VALIDATION_LOG_DIR/validation-report.txt" ]; then
       echo "--- Validation Report ---"
       cat "\$VALIDATION_LOG_DIR/validation-report.txt"
       echo "--- End Report ---"
     fi
-    # Don't exit 1 — build succeeded, validation is advisory
   fi
 else
   echo "Skipping post-build validation (script or .app not found)"
 fi
 
+fi # end DEPLOY_ONLY check
+
 # ── Release Deploy: 生成增量包 + 上传（平台模式） ──
-# 使用 --platform macos 上传到平台子目录，避免与 Windows 互相覆盖。
-# 上传完成后通知服务端合并生成最终 latest.json。
+# --skip-deploy 时跳过（并行构建模式下，上传由 trigger-build.sh 串行调度）
+if [ "\$SKIP_DEPLOY" != "true" ]; then
+
 echo ""
 echo "========================================="
 echo "  Release Deploy (macOS - Delta + Upload)"
@@ -290,6 +300,8 @@ else
   echo "WARNING: Release deploy failed (exit code \$?)"
   echo "Build artifacts are still available, but delta packages may not have been published."
 fi
+
+fi # end SKIP_DEPLOY check
 SHEOF
 
 # 上传构建脚本到 Mac Mini

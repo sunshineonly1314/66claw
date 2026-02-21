@@ -717,6 +717,16 @@ export const OpenClawCNSchema = z
         boundDevices: z.number().optional(),
         offlineValidUntil: z.string().optional(),
         shownNotificationIds: z.array(z.number()).optional(),
+        signedPayload: z
+          .object({
+            signature: z.string(),
+            valid: z.boolean(),
+            tier: z.string().nullable(),
+            expiresAt: z.string().nullable(),
+            serverTime: z.number(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

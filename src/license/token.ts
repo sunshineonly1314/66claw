@@ -10,6 +10,7 @@
 
 import { createVerify } from "node:crypto";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { VERSION } from "../version.js";
 import { getDeviceId } from "./device-id.js";
 import { generateSignParams } from "./sign.js";
 import { getLicenseConfig } from "./verify.js";
@@ -36,6 +37,12 @@ export interface LicenseToken {
   expiresAt: number;
   /** 允许的功能列表 */
   allowedFeatures: string[];
+  /**
+   * 服务端派生的内容加密密钥（base64, 32字节）。
+   * 服务端用 HMAC-SHA256(MASTER_KEY, deviceId|"skill-content-v2") 派生，
+   * 由 RSA 签名保护，客户端不可伪造。
+   */
+  skillKey?: string;
   /** 服务端 RSA 签名 */
   signature: string;
 }
@@ -123,19 +130,25 @@ let onTokenInvalidCallback: (() => void) | null = null;
 /**
  * 验证令牌签名
  *
- * 签名内容格式: tokenId|licenseKey|deviceId|issuedAt|expiresAt|features
+ * 签名内容格式（服务端新版）: tokenId|licenseKey|deviceId|issuedAt|expiresAt|features|skillKey
+ * 签名内容格式（服务端旧版）: tokenId|licenseKey|deviceId|issuedAt|expiresAt|features
+ * 兼容两种格式：有 skillKey 时追加，无则不追加。
  */
 export function verifyTokenSignature(token: LicenseToken): boolean {
   try {
-    // 构建签名内容
-    const signContent = [
+    // 构建签名内容（有 skillKey 时追加，保持与服务端一致）
+    const parts = [
       token.tokenId,
       token.licenseKey,
       token.deviceId,
       token.issuedAt.toString(),
       token.expiresAt.toString(),
       token.allowedFeatures.join(","),
-    ].join("|");
+    ];
+    if (token.skillKey) {
+      parts.push(token.skillKey);
+    }
+    const signContent = parts.join("|");
 
     // 验证 RSA 签名
     const verifier = createVerify("RSA-SHA256");
@@ -178,7 +191,9 @@ export function isTokenValid(
     if (options.allowGracePeriod !== false) {
       const expiredDuration = correctedNow - token.expiresAt;
       if (expiredDuration < OFFLINE_GRACE_PERIOD_MS) {
-        log.debug(`Token expired but within grace period (${Math.round(expiredDuration / 60000)} min)`);
+        log.debug(
+          `Token expired but within grace period (${Math.round(expiredDuration / 60000)} min)`,
+        );
         return true; // 宽限期内，仍然有效
       }
     }
@@ -272,6 +287,7 @@ export async function fetchToken(licenseKey: string): Promise<TokenResponse> {
       body: JSON.stringify({
         licenseKey,
         deviceId,
+        clientVersion: VERSION,
         ...signParams,
       }),
       signal: AbortSignal.timeout(10000),
@@ -291,10 +307,13 @@ export async function fetchToken(licenseKey: string): Promise<TokenResponse> {
     }
 
     // 服务端返回格式: { code, message, data: TokenResponse }
-    const rawData = (await response.json()) as { code?: number; message?: string; data?: TokenResponse } | TokenResponse;
+    const rawData = (await response.json()) as
+      | { code?: number; message?: string; data?: TokenResponse }
+      | TokenResponse;
 
     // 兼容两种格式：直接返回 TokenResponse 或包装在 data 字段中
-    const data: TokenResponse = "data" in rawData && rawData.data ? rawData.data : (rawData as TokenResponse);
+    const data: TokenResponse =
+      "data" in rawData && rawData.data ? rawData.data : (rawData as TokenResponse);
 
     if (data.success && data.token) {
       // 验证令牌签名
@@ -314,10 +333,14 @@ export async function fetchToken(licenseKey: string): Promise<TokenResponse> {
       serverTimeDrift = data.token.issuedAt - estimatedServerTime;
 
       if (Math.abs(serverTimeDrift) > 60000) {
-        log.warn(`Detected time drift: ${Math.round(serverTimeDrift / 1000)}s between client and server`);
+        log.warn(
+          `Detected time drift: ${Math.round(serverTimeDrift / 1000)}s between client and server`,
+        );
       }
 
-      const expiresInMin = Math.round((data.token.expiresAt - (Date.now() + serverTimeDrift)) / 60000);
+      const expiresInMin = Math.round(
+        (data.token.expiresAt - (Date.now() + serverTimeDrift)) / 60000,
+      );
       log.info(`Token fetched successfully, expires in ${expiresInMin} minutes`);
     }
 
@@ -380,7 +403,9 @@ export async function refreshToken(licenseKey: string): Promise<boolean> {
       const retryInterval = RETRY_INTERVALS_MS[retryIndex];
       nextRetryTime = Date.now() + retryInterval;
 
-      log.warn(`Token refresh failed (attempt ${tokenState.failureCount}), retry in ${retryInterval / 1000}s: ${response.errorMessage}`);
+      log.warn(
+        `Token refresh failed (attempt ${tokenState.failureCount}), retry in ${retryInterval / 1000}s: ${response.errorMessage}`,
+      );
 
       // 连续失败多次后，触发令牌失效回调
       if (tokenState.failureCount >= 3 && onTokenInvalidCallback) {

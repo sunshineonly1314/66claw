@@ -81,6 +81,57 @@ let INTEGRITY_HASHES: FileHash[] = [];
 let initialized = false;
 
 /**
+ * [LOW-01] 验证 integrity-hashes.json 与 integrity-hashes-root.json 的一致性。
+ *
+ * integrity-hashes-root.json 存储了 integrity-hashes.json 内容的 SHA-256 哈希值，
+ * 由构建脚本 generate-integrity-hashes.ts 自动生成并写入。
+ * integrity-hashes-root.json 本身被纳入 integrity-hashes.json 的巡逻监控列表。
+ *
+ * 攻击者若篡改 integrity-hashes.json（替换某文件的期望哈希），
+ * 此函数会检测到 hashes.json 的内容与 root.json 中记录的哈希不匹配，
+ * 从而拒绝加载被篡改的哈希列表。
+ *
+ * @returns true 表示哈希文件完整，false 表示检测到篡改
+ */
+function verifyHashesFileIntegrity(hashesContent: string, currentDir: string): boolean {
+  try {
+    const rootFilePath = path.join(currentDir, "integrity-hashes-root.json");
+    if (!fs.existsSync(rootFilePath)) {
+      // root 文件不存在：可能是旧版安装或 dev 构建，不强制失败
+      log.debug(
+        "[LOW-01] integrity-hashes-root.json not found — skipping root hash verification (may be dev build or legacy install)",
+      );
+      return true;
+    }
+
+    const rootContent = fs.readFileSync(rootFilePath, "utf8");
+    const root = JSON.parse(rootContent) as { hash?: string; generated?: string };
+    if (typeof root.hash !== "string" || root.hash.length !== 64) {
+      log.warn("[LOW-01] integrity-hashes-root.json has invalid format — treating as tampered");
+      return false;
+    }
+
+    // 验证 hashes.json 内容的 SHA-256 与 root.json 中记录的值一致
+    const actualHash = createHash("sha256").update(hashesContent, "utf8").digest("hex");
+    if (actualHash !== root.hash) {
+      log.error(
+        `[LOW-01] SECURITY: integrity-hashes.json content hash mismatch! ` +
+          `Expected: ${root.hash.slice(0, 16)}... Got: ${actualHash.slice(0, 16)}... — ` +
+          `hashes file may have been tampered`,
+      );
+      return false;
+    }
+
+    log.debug(`[LOW-01] integrity-hashes.json root hash verified OK`);
+    return true;
+  } catch (error) {
+    log.warn(`[LOW-01] Failed to verify root hash: ${error}`);
+    // On error, be permissive (root file may not exist in dev/legacy installs)
+    return true;
+  }
+}
+
+/**
  * 从内嵌的哈希文件加载（备用方案）
  */
 function loadEmbeddedHashes(): FileHash[] {
@@ -92,6 +143,19 @@ function loadEmbeddedHashes(): FileHash[] {
 
     if (fs.existsSync(hashFilePath)) {
       const content = fs.readFileSync(hashFilePath, "utf8");
+
+      // [LOW-01] 验证 integrity-hashes.json 本身未被篡改
+      if (!verifyHashesFileIntegrity(content, currentDir)) {
+        // 哈希文件被篡改：在生产构建中拒绝加载，返回空数组
+        // 空数组 → verifyIntegrity() 返回 {valid: false, missingFiles: ["integrity-hashes.json"]}
+        const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+        if (!isDevBuild) {
+          log.error("[LOW-01] Refusing to load tampered integrity-hashes.json");
+          return [];
+        }
+        log.warn("[LOW-01] integrity-hashes.json root hash mismatch (dev build, continuing)");
+      }
+
       return JSON.parse(content) as FileHash[];
     }
   } catch (error) {
@@ -159,8 +223,18 @@ export async function initIntegrityCheck(
 }
 
 /**
+ * [MED-13] 大文件阈值：超过此大小时使用流式哈希，避免一次性分配大内存
+ * ESM bundle 文件（daemon-cli.js ~2.5MB, gateway-cli ~1.2MB）仍在同步阈值内，
+ * 但未来如果文件更大或平台内存紧张，流式处理更稳健。
+ */
+const STREAMING_HASH_THRESHOLD = 5 * 1024 * 1024; // 5MB
+
+/**
  * 计算文件的 SHA-256 哈希
  * 优先使用 native addon（C++ 实现，无法被 JS patch 绕过）
+ *
+ * [MED-13] 支持大型 ESM bundle 文件：超过阈值时使用 fs.createReadStream
+ * 做增量哈希，避免同步读取大文件导致内存峰值。
  */
 function computeFileHash(filePath: string): string {
   // Prefer native computation (hardened, not patchable from JS)
@@ -170,6 +244,24 @@ function computeFileHash(filePath: string): string {
       if (hash) return hash;
     } catch {
       // Fall through to JS implementation
+    }
+  }
+
+  // Check file size to decide sync vs streaming
+  const stat = fs.statSync(filePath);
+  if (stat.size > STREAMING_HASH_THRESHOLD) {
+    // Streaming hash for large files (synchronous via manual chunk reading)
+    const fd = fs.openSync(filePath, "r");
+    try {
+      const hash = createHash("sha256");
+      const buf = Buffer.allocUnsafe(64 * 1024); // 64KB chunks
+      let bytesRead: number;
+      while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+        hash.update(bytesRead === buf.length ? buf : buf.subarray(0, bytesRead));
+      }
+      return hash.digest("hex");
+    } finally {
+      fs.closeSync(fd);
     }
   }
 

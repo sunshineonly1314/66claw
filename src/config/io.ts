@@ -71,6 +71,53 @@ const SHELL_ENV_EXPECTED_KEYS = [
   "OPENCLAWCN_GATEWAY_PASSWORD",
 ];
 
+/** [MED-14] Redact secret-bearing argv values before writing to audit log. */
+const REDACT_ARG_FLAGS = new Set([
+  "--token",
+  "--password",
+  "--secret",
+  "--api-key",
+  "--apikey",
+  "--license-key",
+]);
+/** Suffix-based matching catches provider-specific flags like --openai-api-key, --anthropic-api-key */
+const REDACT_ARG_SUFFIXES = ["-key", "-token", "-secret", "-password"];
+
+function isRedactFlag(flag: string): boolean {
+  if (REDACT_ARG_FLAGS.has(flag)) return true;
+  if (flag.startsWith("--") && REDACT_ARG_SUFFIXES.some((s) => flag.endsWith(s))) return true;
+  return false;
+}
+
+function redactArgv(args: string[]): string[] {
+  const result: string[] = [];
+  let redactNext = false;
+  for (const arg of args) {
+    if (redactNext) {
+      result.push("***");
+      redactNext = false;
+      continue;
+    }
+    // Handle --flag value (two separate args)
+    if (isRedactFlag(arg.toLowerCase())) {
+      result.push(arg);
+      redactNext = true;
+      continue;
+    }
+    // Handle --flag=value (single arg)
+    const eqIdx = arg.indexOf("=");
+    if (eqIdx > 0) {
+      const flag = arg.slice(0, eqIdx).toLowerCase();
+      if (isRedactFlag(flag)) {
+        result.push(`${arg.slice(0, eqIdx)}=***`);
+        continue;
+      }
+    }
+    result.push(arg);
+  }
+  return result;
+}
+
 const CONFIG_AUDIT_LOG_FILENAME = "config-audit.jsonl";
 const loggedInvalidConfigs = new Set<string>();
 
@@ -549,10 +596,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       const withIncludes = resolveConfigIncludesForRead(parsed, configPath, deps);
       const withOverlay = applyProfileOverlay(withIncludes, configPath, deps);
       const decrypted = decryptConfigFields(withOverlay);
-      const { resolvedConfigRaw: resolvedConfig } = resolveConfigForRead(
-        decrypted,
-        deps.env,
-      );
+      const { resolvedConfigRaw: resolvedConfig } = resolveConfigForRead(decrypted, deps.env);
       warnOnConfigMiskeys(resolvedConfig, deps.logger);
       if (typeof resolvedConfig !== "object" || resolvedConfig === null) {
         return {};
@@ -967,8 +1011,8 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       pid: process.pid,
       ppid: process.ppid,
       cwd: process.cwd(),
-      argv: process.argv.slice(0, 8),
-      execArgv: process.execArgv.slice(0, 8),
+      argv: redactArgv(process.argv.slice(0, 8)),
+      execArgv: redactArgv(process.execArgv.slice(0, 8)),
       watchMode: deps.env.OPENCLAWCN_WATCH_MODE === "1",
       watchSession:
         typeof deps.env.OPENCLAWCN_WATCH_SESSION === "string" &&

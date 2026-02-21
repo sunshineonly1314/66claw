@@ -95,13 +95,9 @@ pub async fn check_needs_setup() -> Result<bool, String> {
         return Ok(needs);
     }
 
-    // Fallback: if needsSetup field is missing (older gateway), check providers
-    if let Some(providers) = body.get("providers").and_then(|p| p.as_object()) {
-        for (_name, provider) in providers {
-            if provider.get("status").and_then(|s| s.as_str()) == Some("ok") {
-                return Ok(false);
-            }
-        }
+    // Fallback: if needsSetup field is missing (older gateway), check hasConfiguredProvider
+    if let Some(has_provider) = body.get("hasConfiguredProvider").and_then(|v| v.as_bool()) {
+        return Ok(!has_provider);
     }
 
     Ok(true)

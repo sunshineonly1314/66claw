@@ -164,8 +164,23 @@ function parseBuildInstructions(payload) {
   return null;
 }
 
+// 构建参数列表（统一使用命名参数，与 trigger-build.sh 一致）
+function buildArgs(platform, instructions, extraFlags = []) {
+  const args = [];
+  if (platform === 'macos') {
+    if (instructions.version) args.push('--version', instructions.version);
+    args.push('--arch', 'universal');
+    if (instructions.validate) args.push('--validate-full');
+  } else {
+    // Windows: 位置参数 VERSION MODE
+    args.push(instructions.version || '', instructions.mode || 'standard');
+  }
+  args.push(...extraFlags);
+  return args;
+}
+
 // 执行远程构建
-function executeBuild(platform, instructions) {
+function executeBuild(platform, instructions, extraFlags = []) {
   return new Promise((resolve, reject) => {
     const builderConfig = config.builders[platform];
 
@@ -184,13 +199,7 @@ function executeBuild(platform, instructions) {
     log.info(`Starting build on ${platform} (${builderConfig.host})...`);
 
     const scriptPath = path.join(__dirname, `build-${platform}.sh`);
-
-    // 构建参数 — Windows: (version, mode, validate), macOS: (version, arch, validate)
-    const args = platform === 'macos'
-      ? [instructions.version || '', 'universal',
-         instructions.validate ? '--validate-full' : '']
-      : [instructions.version || '', instructions.mode || 'standard',
-         instructions.validate ? '-TestInstall' : ''];
+    const args = buildArgs(platform, instructions, extraFlags);
 
     const child = spawn('bash', [scriptPath, ...args], {
       cwd: __dirname,
@@ -271,27 +280,61 @@ app.post('/webhook', async (req, res) => {
   // 异步执行构建
   try {
     if (instructions.platform === 'all') {
-      // 并行构建所有平台
+      // ── 双平台并行构建 + 串行 deploy ──
+      // 构建阶段并行（SSH 到不同机器，完全独立），
+      // OSS 上传阶段串行（OSS 无法并发上传同一版本）。
       const platforms = ['windows', 'macos'].filter(p => config.builders[p].enabled);
 
-      log.info(`Triggering parallel build for platforms: ${platforms.join(', ')}`);
+      // ── 预确定版本号（避免并行 bump 竞态） ──
+      // 并行模式下两个 builder 同时 auto bump 会产生竞态（各自 bump 得到不同版本号）。
+      // 如果 webhook 没有传入版本号，在启动构建前从 package.json 读取并 patch +1。
+      if (!instructions.version) {
+        try {
+          const pkgJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+          const parts = pkgJson.version.split('.');
+          parts[2] = String(Number(parts[2]) + 1);
+          instructions.version = parts.join('.');
+          log.info(`Pre-determined version for parallel build: ${pkgJson.version} → ${instructions.version}`);
+        } catch (e) {
+          log.warn(`Cannot read package.json for version pre-bump: ${e.message}`);
+        }
+      }
 
-      const results = await Promise.allSettled(
-        platforms.map(p => executeBuild(p, instructions))
+      // Phase 1: 并行构建（跳过 deploy）
+      log.info(`Phase 1: Parallel build for ${platforms.join(', ')} (--skip-deploy)`);
+
+      const buildResults = await Promise.allSettled(
+        platforms.map(p => executeBuild(p, instructions, ['--skip-deploy']))
       );
 
-      results.forEach((result, i) => {
+      const buildSuccess = [];
+      buildResults.forEach((result, i) => {
         const platform = platforms[i];
         if (result.status === 'fulfilled' && result.value.success) {
           log.info(`${platform} build completed`);
+          buildSuccess.push(platform);
         } else {
           log.error(`${platform} build failed`);
         }
       });
 
+      // Phase 2: 串行 deploy（只 deploy 构建成功的平台）
+      if (buildSuccess.length > 0) {
+        log.info(`Phase 2: Sequential deploy for ${buildSuccess.join(', ')} (--deploy-only)`);
+        for (const platform of buildSuccess) {
+          try {
+            log.info(`Deploying ${platform}...`);
+            await executeBuild(platform, instructions, ['--deploy-only']);
+            log.info(`${platform} deploy completed`);
+          } catch (err) {
+            log.error(`${platform} deploy failed: ${err.message || JSON.stringify(err)}`);
+          }
+        }
+      }
+
       log.info('All builds completed');
     } else {
-      // 单平台构建
+      // 单平台构建（含 deploy，无需并行保护）
       await executeBuild(instructions.platform, instructions);
     }
   } catch (err) {

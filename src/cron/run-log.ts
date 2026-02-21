@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -35,7 +36,7 @@ async function pruneIfNeeded(filePath: string, opts: { maxBytes: number; keepLin
     .map((l) => l.trim())
     .filter(Boolean);
   const kept = lines.slice(Math.max(0, lines.length - opts.keepLines));
-  const tmp = `${filePath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  const tmp = `${filePath}.${process.pid}.${crypto.randomUUID().slice(0, 8)}.tmp`;
   await fs.writeFile(tmp, `${kept.join("\n")}\n`, "utf-8");
   await fs.rename(tmp, filePath);
 }

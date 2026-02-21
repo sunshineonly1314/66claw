@@ -4,7 +4,7 @@ description: Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, 
 nameZh: "Go工具"
 descriptionZh: "管理Google Workspace（Gmail、日历、云端硬盘、通讯录等）"
 homepage: https://gogcli.sh
-metadata: {"openclawcn":{"emoji":"🎮","requires":{"bins":["gog"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/gogcli","bins":["gog"],"label":"安装 gog (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/gogcli/releases/latest","bins":["gog"],"label":"下载 gog","os":["win32","linux"]}]}}
+metadata: {"openclawcn":{"emoji":"🎮","requires":{"bins":["gog"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/gogcli","bins":["gog"],"label":"Install gog (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/gogcli/releases/latest","bins":["gog"],"label":"Download gog binary","os":["win32","linux"]}]}}
 ---
 
 # gog

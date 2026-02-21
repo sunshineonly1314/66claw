@@ -25,7 +25,7 @@ import {
 
 import { getFeishuRuntime } from "./runtime.js";
 import { sendFeishuMessage, probeFeishuConnection, sendMarkdownCardFeishu } from "./api.js";
-import { createFeishuWebhookHandler } from "./webhook.js";
+import { createFeishuWebhookHandler, resolveFeishuInboundMedia, feishuMediaPlaceholder, extractPostContent } from "./webhook.js";
 import { monitorFeishuProvider, getCurrentBotOpenId } from "./monitor.js";
 import { sendMediaFeishu } from "./media.js";
 import { resolveFeishuCredentials } from "./client.js";
@@ -36,6 +36,8 @@ import type {
   FeishuProbeResult,
   ResolvedFeishuAccount,
   FeishuDomain,
+  FeishuTextContent,
+  FeishuPostContent,
 } from "./types.js";
 
 // ============================================================================
@@ -342,6 +344,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         senderOpenId?: string;
         senderName?: string;
         text: string;
+        mediaPath?: string;
+        mediaType?: string;
       }) => {
         // 扩展层去重：相同 messageId 在 5 分钟内只处理一次
         if (recentMessageIds.has(msg.messageId)) {
@@ -365,6 +369,12 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
           RawBody: msg.text,
           ChatType: msg.chatType === "p2p" ? ("direct" as const) : ("group" as const),
           Timestamp: Date.now(),
+          MediaPath: msg.mediaPath,
+          MediaType: msg.mediaType,
+          MediaUrl: msg.mediaPath,
+          MediaPaths: msg.mediaPath ? [msg.mediaPath] : undefined,
+          MediaUrls: msg.mediaPath ? [msg.mediaPath] : undefined,
+          MediaTypes: msg.mediaType ? [msg.mediaType] : undefined,
         };
 
         try {
@@ -416,15 +426,58 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
           abortSignal: ctx.abortSignal,
           accountId: ctx.accountId,
           onMessage: async (event) => {
-            // 解析消息内容
+            const msgType = event.message.message_type;
             let text = "";
+            let mediaPath: string | undefined;
+            let mediaType: string | undefined;
+
+            let content: Record<string, unknown> | undefined;
             try {
-              const content = JSON.parse(event.message.content);
-              if (event.message.message_type === "text") {
-                text = content.text ?? "";
-              }
+              content = JSON.parse(event.message.content);
             } catch {
+              // content 解析失败，降级为原始字符串
               text = event.message.content;
+            }
+
+            if (content) {
+              if (msgType === "text") {
+                text = (content as FeishuTextContent).text ?? "";
+              } else if (msgType === "post") {
+                try {
+                  const { text: postText, imageKeys } = extractPostContent(content as FeishuPostContent);
+                  text = postText;
+                  if (imageKeys.length > 0) {
+                    const media = await resolveFeishuInboundMedia({
+                      config: channelConfig ?? {},
+                      messageId: event.message.message_id,
+                      messageType: "image",
+                      content: { image_key: imageKeys[0] } as unknown as Record<string, unknown>,
+                      log: { info: (m) => ctx.log?.info(m), warn: (m) => ctx.log?.info(m), error: (m) => ctx.log?.error(m) },
+                    });
+                    if (media) { mediaPath = media.path; mediaType = media.contentType; }
+                  }
+                } catch (err) {
+                  ctx.log?.error(`[feishu] WebSocket 解析富文本失败: ${err}`);
+                  text = event.message.content;
+                }
+              } else if (["image", "file", "audio", "media", "sticker"].includes(msgType)) {
+                text = feishuMediaPlaceholder(msgType);
+                try {
+                  const media = await resolveFeishuInboundMedia({
+                    config: channelConfig ?? {},
+                    messageId: event.message.message_id,
+                    messageType: msgType,
+                    content,
+                    log: { info: (m) => ctx.log?.info(m), warn: (m) => ctx.log?.info(m), error: (m) => ctx.log?.error(m) },
+                  });
+                  if (media) { mediaPath = media.path; mediaType = media.contentType; }
+                } catch (err) {
+                  ctx.log?.error(`[feishu] WebSocket 下载媒体失败 (${msgType}): ${err}`);
+                }
+              } else {
+                ctx.log?.info(`[feishu] WebSocket 收到不支持的消息类型: ${msgType}`);
+                return;
+              }
             }
 
             // 移除 @ 机器人的占位符
@@ -444,6 +497,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
               senderId: event.sender.sender_id.user_id ?? event.sender.sender_id.open_id ?? "unknown",
               senderOpenId: event.sender.sender_id.open_id,
               text,
+              mediaPath,
+              mediaType,
             });
           },
         });
@@ -456,7 +511,16 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         config: channelConfig ?? {},
         log: ctx.log,
         onMessage: async (msg) => {
-          await handleMessage(msg);
+          await handleMessage({
+            messageId: msg.messageId,
+            chatId: msg.chatId,
+            chatType: msg.chatType,
+            senderId: msg.senderId,
+            senderOpenId: msg.senderOpenId,
+            text: msg.text,
+            mediaPath: msg.mediaPath,
+            mediaType: msg.mediaType,
+          });
         },
       });
 

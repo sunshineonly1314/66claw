@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import os from "node:os";
@@ -346,8 +347,15 @@ export function attachGatewayWsMessageHandler(params: {
         const hasSharedAuth = hasTokenAuth || hasPasswordAuth;
         const allowInsecureControlUi =
           isControlUi && configSnapshot.gateway?.controlUi?.allowInsecureAuth === true;
+        // [MED-03] Desktop mode bypass MUST also require the request originates from loopback.
+        // Without this check, an attacker can set OPENCLAWCN_DESKTOP_MODE=1 and connect from LAN
+        // to bypass ControlUI device authentication. Loopback-only is acceptable because the
+        // Tauri WebView always connects via localhost/127.0.0.1.
+        const desktopModeAllowsDeviceBypass = isDesktopMode && isLocalClient;
         const disableControlUiDeviceAuth =
-          isControlUi && (configSnapshot.gateway?.controlUi?.dangerouslyDisableDeviceAuth === true || isDesktopMode);
+          isControlUi &&
+          (configSnapshot.gateway?.controlUi?.dangerouslyDisableDeviceAuth === true ||
+            desktopModeAllowsDeviceBypass);
         const allowControlUiBypass = allowInsecureControlUi || disableControlUiDeviceAuth;
         const device = disableControlUiDeviceAuth ? null : deviceRaw;
 
@@ -820,7 +828,10 @@ export function attachGatewayWsMessageHandler(params: {
 
         if (presenceKey) {
           upsertPresence(presenceKey, {
-            host: connectParams.client.displayName ?? connectParams.client.id ?? os.hostname(),
+            host:
+              connectParams.client.displayName ??
+              connectParams.client.id ??
+              crypto.createHash("sha256").update(os.hostname()).digest("hex").slice(0, 8),
             ip: isLocalClient ? undefined : reportedClientIp,
             version: connectParams.client.version,
             platform: connectParams.client.platform,
@@ -842,13 +853,16 @@ export function attachGatewayWsMessageHandler(params: {
           snapshot.health = cachedHealth;
           snapshot.stateVersion.health = getHealthVersion();
         }
+        // [LOW-06] Anonymize hostname — expose only a short hash, not the raw machine name.
+        // commit is only included in dev builds (leak of build info in production is unnecessary).
+        const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
         const helloOk = {
           type: "hello-ok",
           protocol: PROTOCOL_VERSION,
           server: {
             version: process.env.OPENCLAWCN_VERSION ?? process.env.npm_package_version ?? "dev",
-            commit: process.env.GIT_COMMIT,
-            host: os.hostname(),
+            commit: isDevBuild ? process.env.GIT_COMMIT : undefined,
+            host: crypto.createHash("sha256").update(os.hostname()).digest("hex").slice(0, 8),
             connId,
           },
           features: { methods: gatewayMethods, events },

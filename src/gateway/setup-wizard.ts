@@ -8,11 +8,19 @@
  *   - setup-wizard-state.ts   状态管理
  *   - setup-wizard-utils.ts   工具函数
  *   - setup-wizard-handlers.ts API 处理器
+ *
+ * 安全模型（[HIGH-02] 修复）：
+ * 1. Setup 完成后整个 /api/setup/* 路由返回 410 Gone（防止 setup 完成后继续利用）
+ * 2. 所有写操作端点强制 loopback-only（不依赖 Origin 头，防 LAN 攻击）
+ * 3. /browse-directory 限制只能浏览用户主目录及指定安全路径前缀
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { loadConfig } from "../config/config.js";
 import { serveSetupPage } from "./setup-page.js";
+import { isLocalDirectRequest } from "./auth.js";
 
 // Re-export types and public API for external consumers
 export type { SetupWizardState, ChannelStartCallback } from "./setup-wizard-types.js";
@@ -46,6 +54,43 @@ import {
 } from "./setup-wizard-handlers.js";
 
 // ============================================================================
+// Security helpers
+// ============================================================================
+
+/**
+ * 写操作端点列表 — 这些端点要求 loopback-only，防止 LAN 攻击。
+ * 读操作（GET state/providers 等）在 setup 未完成期间对 loopback 开放，
+ * 因为 setup 页面本身只有 loopback 才能打开。
+ */
+const SETUP_WRITE_API_PATHS = new Set([
+  "/configure-provider",
+  "/configure-workspace",
+  "/configure-security",
+  "/configure-channels",
+  "/complete",
+  "/restart",
+  "/validate-license",
+  "/switch-device",
+  "/fetch-models",
+  "/free-models/configure",
+  "/browse-directory", // 文件系统浏览，有信息泄露风险
+]);
+
+/**
+ * 验证请求来自 loopback，否则返回 403 并返回 false。
+ */
+function requireLoopback(req: IncomingMessage, res: ServerResponse): boolean {
+  if (isLocalDirectRequest(req)) {
+    return true;
+  }
+  sendJson(res, 403, {
+    ok: false,
+    error: "此接口仅允许本机访问",
+  });
+  return false;
+}
+
+// ============================================================================
 // Main HTTP Handler
 // ============================================================================
 
@@ -66,15 +111,27 @@ export async function handleSetupWizardHttpRequest(
   if (pathname.startsWith(SETUP_API_PREFIX)) {
     const apiPath = pathname.slice(SETUP_API_PREFIX.length);
 
-    // 设置 CORS 头 - 限制为本地来源以避免安全风险
+    // [LOW-05] CORS 仅允许 Tauri WebView 和同端口 localhost 来源。
+    // 之前允许任意 localhost 端口，可能被本机其他 Web 服务的 XSS 利用。
     const origin = req.headers.origin;
     if (origin) {
       try {
-        const parsed = new URL(origin);
-        const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
         const isTauri = origin === "tauri://localhost";
-        if (isLocal || isTauri) {
+        if (isTauri) {
           res.setHeader("Access-Control-Allow-Origin", origin);
+        } else {
+          const parsed = new URL(origin);
+          const reqHost = req.headers.host ?? "";
+          // Only allow same-port localhost (i.e., the gateway's own origin)
+          const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+          // Extract port from Host header safely (handles IPv6 like [::1]:19002)
+          const bracketEnd = reqHost.lastIndexOf("]");
+          const lastColon = reqHost.lastIndexOf(":");
+          const hostPort = lastColon > bracketEnd ? reqHost.slice(lastColon + 1) : "";
+          const isSamePort = parsed.port === hostPort;
+          if (isLocal && isSamePort) {
+            res.setHeader("Access-Control-Allow-Origin", origin);
+          }
         }
       } catch {
         // invalid origin, skip CORS header
@@ -86,6 +143,28 @@ export async function handleSetupWizardHttpRequest(
     if (req.method === "OPTIONS") {
       res.statusCode = 204;
       res.end();
+      return true;
+    }
+
+    // [HIGH-02] Setup 完成后整个 /api/setup/* 路由关闭，防止被持续滥用。
+    // 仅依据 setup.completedAt 标记（由 /complete 写入）判断是否关闭。
+    // 不能用 shouldShowSetupWizard()：它还检查 license.key 等字段，但 setup 流程中
+    // 前面的步骤（configure-provider）写入 config 时 writeConfigFile 的 merge 逻辑
+    // 可能恢复了旧的 license.key，导致 shouldShowSetupWizard()=false，
+    // 使得后续步骤（verify-apikey 等）被 410 挡住。
+    // /state 和 /complete 始终放行：/state 供 UI 查询；/complete 需要幂等。
+    const setupExplicitlyCompleted = Boolean(loadConfig().setup?.completedAt);
+    if (setupExplicitlyCompleted && apiPath !== "/state" && apiPath !== "/complete") {
+      sendJson(res, 410, {
+        ok: false,
+        error: "Setup 向导已完成，接口已关闭",
+      });
+      return true;
+    }
+
+    // [HIGH-02] 写操作端点强制 loopback-only IP 检查（不依赖 Origin 头）。
+    // 对非浏览器客户端 Origin 头无效，只有 IP 检查是可靠的。
+    if (SETUP_WRITE_API_PATHS.has(apiPath) && !requireLoopback(req, res)) {
       return true;
     }
 
@@ -163,6 +242,43 @@ export async function handleSetupWizardHttpRequest(
         case "/free-models/configure":
           await handleConfigureFreeModels(req, res);
           return true;
+        case "/open-url": {
+          // 服务端打开外部 URL（Tauri WebView2 无法直接打开外部链接）
+          // 安全: 使用 execFile 避免 shell 注入 + URL 严格校验
+          try {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req) chunks.push(chunk as Buffer);
+            const body = JSON.parse(Buffer.concat(chunks).toString());
+            const url = body?.url;
+            let parsedUrl: URL | undefined;
+            try {
+              parsedUrl = new URL(url);
+            } catch {
+              /* invalid */
+            }
+            if (
+              !url ||
+              typeof url !== "string" ||
+              !parsedUrl ||
+              (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:")
+            ) {
+              sendJson(res, 400, { ok: false, error: "Invalid URL" });
+              return true;
+            }
+            const { execFile } = await import("node:child_process");
+            if (process.platform === "win32") {
+              execFile("cmd", ["/c", "start", "", url]);
+            } else if (process.platform === "darwin") {
+              execFile("open", [url]);
+            } else {
+              execFile("xdg-open", [url]);
+            }
+            sendJson(res, 200, { ok: true });
+          } catch (e) {
+            sendJson(res, 500, { ok: false, error: String(e) });
+          }
+          return true;
+        }
       }
     }
 
@@ -219,4 +335,55 @@ export function shouldShowSetupWizard(): boolean {
  */
 export function getSetupWizardUrl(port: number): string {
   return `http://localhost:${port}/setup`;
+}
+
+// ============================================================================
+// /browse-directory 路径安全边界（供 handlers 使用）
+// ============================================================================
+
+/**
+ * 检查给定路径是否在允许浏览的安全范围内。
+ *
+ * 允许的范围：
+ * - 用户主目录及其子目录
+ * - Windows 驱动器根目录（仅一级，如 C:\，不允许 C:\Windows\System32）
+ *
+ * 禁止的范围：
+ * - 系统目录（Windows: C:\Windows, C:\Program Files; Linux: /etc, /sys 等）
+ * - 配置文件目录之外的任何路径（当 path 参数不在主目录下时拒绝）
+ */
+export function isPathAllowedForBrowse(targetPath: string): boolean {
+  const normalized = path.resolve(targetPath);
+  const homedir = os.homedir();
+
+  // 允许：主目录及其子目录
+  if (normalized === homedir || normalized.startsWith(homedir + path.sep)) {
+    return true;
+  }
+
+  // 允许：Windows 驱动器根目录（仅列出驱动器，不深入系统路径）
+  if (os.platform() === "win32") {
+    // 形如 C:\ 的驱动器根：长度为 3，且第二个字符是 :，第三个是 \
+    if (/^[A-Za-z]:\\$/.test(normalized)) {
+      return true;
+    }
+  }
+
+  // 禁止：Linux 根目录的系统关键路径
+  if (os.platform() !== "win32") {
+    const blockedPrefixes = ["/etc", "/sys", "/proc", "/dev", "/boot", "/root"];
+    for (const blocked of blockedPrefixes) {
+      if (normalized === blocked || normalized.startsWith(blocked + "/")) {
+        return false;
+      }
+    }
+    // 允许：Linux 常见用户数据目录（/home, /tmp）
+    if (normalized === "/" || normalized.startsWith("/home/") || normalized.startsWith("/tmp/")) {
+      return true;
+    }
+    // 其他路径拒绝
+    return false;
+  }
+
+  return false;
 }

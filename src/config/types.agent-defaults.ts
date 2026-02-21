@@ -204,6 +204,8 @@ export type AgentDefaultsConfig = {
   maxConcurrent?: number;
   /** Sub-agent defaults (spawned via sessions_spawn). */
   subagents?: {
+    /** Default allow-list for sub-agent spawning. Use ["*"] to allow any agent. */
+    allowAgents?: string[];
     /** Max concurrent sub-agent runs (global lane: "subagent"). Default: 1. */
     maxConcurrent?: number;
     /**

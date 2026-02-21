@@ -56,7 +56,43 @@ export function resolveNewStateDir(homedir: () => string = resolveDefaultHomeDir
  * State directory for mutable data (sessions, logs, caches).
  * Can be overridden via OPENCLAWCN_STATE_DIR.
  * Default: ~/.openclawcn
+ *
+ * [MED-05] Security: Override is validated to prevent config-injection attacks.
+ * The override path must either:
+ * 1. Start with the user home directory (normal case), OR
+ * 2. Be explicitly set to a well-known deployment path (Docker, CI, etc.)
+ *
+ * Paths that are clearly system-level (e.g. /etc, /sys, /proc, C:\Windows)
+ * are rejected with a warning and the default is used instead.
  */
+function isStateDirSafe(resolvedPath: string, homeDir: string): boolean {
+  const normalized = path.resolve(resolvedPath);
+  // Allow: inside home directory
+  if (normalized === homeDir || normalized.startsWith(homeDir + path.sep)) {
+    return true;
+  }
+  // Reject: known dangerous system paths (defense-in-depth)
+  const blockedPrefixes = [
+    "/etc",
+    "/sys",
+    "/proc",
+    "/dev",
+    "/boot",
+    "C:\\Windows",
+    "C:\\Program Files",
+  ];
+  for (const blocked of blockedPrefixes) {
+    if (
+      normalized === blocked ||
+      normalized.toLowerCase().startsWith(blocked.toLowerCase() + path.sep)
+    ) {
+      return false;
+    }
+  }
+  // Allow: any other absolute path (Docker volume mounts, /data, /app, etc.)
+  return true;
+}
+
 export function resolveStateDir(
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = envHomedir(env),
@@ -64,7 +100,18 @@ export function resolveStateDir(
   const effectiveHomedir = () => resolveRequiredHomeDir(env, homedir);
   const override = env.OPENCLAWCN_STATE_DIR?.trim() || env.CLAWDBOT_STATE_DIR?.trim();
   if (override) {
-    return resolveUserPath(override, env, effectiveHomedir);
+    const resolved = resolveUserPath(override, env, effectiveHomedir);
+    if (!isStateDirSafe(resolved, effectiveHomedir())) {
+      // Log warning and fall through to default — do not honor dangerous overrides.
+      // Using console.warn here because the logging subsystem may not yet be initialized.
+      console.warn(
+        `[security] OPENCLAWCN_STATE_DIR "${override}" resolves to a potentially dangerous ` +
+          `system path "${resolved}" — ignoring override, using default state directory.`,
+      );
+      // Fall through to default resolution below
+    } else {
+      return resolved;
+    }
   }
   const newDir = newStateDir(effectiveHomedir);
   const legacyDirs = legacyStateDirs(effectiveHomedir);

@@ -388,12 +388,12 @@ describe("health endpoint providers status logic", () => {
     expect(determineProviderStatus({ apiKey: "" })).toBe("unconfigured");
   });
 
-  // freeModels integration
-  it("freeModels enabled account marks provider as ok", () => {
-    const providers: Record<string, { status: string }> = {};
+  // [MED-12] freeModels integration — now returns boolean hasConfiguredProvider
+  it("freeModels enabled account sets hasConfiguredProvider=true", () => {
+    let hasConfiguredProvider = false;
 
     // No regular providers configured
-    expect(Object.keys(providers)).toHaveLength(0);
+    expect(hasConfiguredProvider).toBe(false);
 
     // But freeModels has an enabled account
     const freeModels = {
@@ -403,38 +403,23 @@ describe("health endpoint providers status logic", () => {
       ],
     };
 
-    for (const account of freeModels.accounts) {
-      if (account.enabled) {
-        providers[account.providerId] = { status: "ok" };
-      }
+    if (freeModels.accounts.some((a) => a.enabled)) {
+      hasConfiguredProvider = true;
     }
 
-    expect(providers["openai-free"]).toEqual({ status: "ok" });
-    expect(providers["disabled-one"]).toBeUndefined();
+    expect(hasConfiguredProvider).toBe(true);
   });
 
-  // Desktop client decision logic
-  it("check_needs_setup returns false when any provider has status ok", () => {
-    // Mirrors Rust check_needs_setup logic in commands.rs
-    function checkNeedsSetup(providers?: Record<string, { status: string }>): boolean {
-      if (providers) {
-        for (const prov of Object.values(providers)) {
-          if (prov.status === "ok") return false;
-        }
-      }
+  // Desktop client decision logic — mirrors Rust check_needs_setup
+  it("check_needs_setup returns false when hasConfiguredProvider is true", () => {
+    function checkNeedsSetup(hasConfiguredProvider?: boolean): boolean {
+      if (hasConfiguredProvider === true) return false;
       return true;
     }
 
-    expect(checkNeedsSetup({})).toBe(true);
+    expect(checkNeedsSetup(false)).toBe(true);
     expect(checkNeedsSetup(undefined)).toBe(true);
-    expect(checkNeedsSetup({ openai: { status: "unconfigured" } })).toBe(true);
-    expect(checkNeedsSetup({ openai: { status: "ok" } })).toBe(false);
-    expect(
-      checkNeedsSetup({
-        openai: { status: "unconfigured" },
-        bedrock: { status: "ok" },
-      }),
-    ).toBe(false);
+    expect(checkNeedsSetup(true)).toBe(false);
   });
 });
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -182,7 +183,7 @@ function ensureWav(audioPath: string): { wavPath: string; needsCleanup: boolean 
   // Try ffmpeg conversion for non-WAV formats
   const tmpWav = path.join(
     os.tmpdir(),
-    `openclawcn-asr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.wav`,
+    `openclawcn-asr-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.wav`,
   );
 
   try {

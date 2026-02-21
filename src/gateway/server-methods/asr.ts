@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -50,7 +51,7 @@ export const asrHandlers: GatewayRequestHandlers = {
     const format = rawFormat.replace(/[^a-zA-Z0-9]/g, "") || "wav";
     const tmpPath = path.join(
       os.tmpdir(),
-      `openclawcn-asr-rpc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${format}`,
+      `openclawcn-asr-rpc-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${format}`,
     );
 
     try {

@@ -13,7 +13,6 @@ import { Agent as UndiciAgent, fetch as undiciFetch } from "undici";
 import { CONFIG_DIR, ensureDir } from "../../utils.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { validateUrlForSsrf } from "../../infra/net/ssrf.js";
-import { encryptContent, isEncryptionEnabled } from "../../security/content-vault.js";
 import { CLAWDSKILLSPROXY_CONFIG } from "../../config/cn-mirrors.js";
 import type {
   RemoteSkillMeta,
@@ -103,8 +102,7 @@ export function getDefaultProxyConfig(): ProxyRegistryConfig | null {
   // 优先使用环境变量覆盖，否则回退到 cn-mirrors-data.json 中的内置配置
   const baseUrl =
     process.env.OPENCLAWCN_SKILLS_PROXY_URL?.trim() || CLAWDSKILLSPROXY_CONFIG.baseUrl;
-  const token =
-    process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim() || CLAWDSKILLSPROXY_CONFIG.token;
+  const token = process.env.OPENCLAWCN_SKILLS_PROXY_TOKEN?.trim() || CLAWDSKILLSPROXY_CONFIG.token;
 
   if (!baseUrl || !token) {
     logger.debug("ClawdSkillsProxy config not available (no env vars and no built-in config)");
@@ -176,7 +174,7 @@ async function fetchWithAuth(
   try {
     // 使用 undici.fetch + directAgent 绕过系统代理，直连阿里云 skillsproxy
     const response = await undiciFetch(url, {
-      ...options as any,
+      ...(options as any),
       signal: controller.signal,
       dispatcher: directAgent,
       headers: {
@@ -379,14 +377,7 @@ async function extractZipToDir(
         await ensureDir(path.dirname(outPath));
         const content = await zipEntry.async("nodebuffer");
 
-        // 加密 .md 文件（非开发模式）
-        if (isEncryptionEnabled() && outPath.endsWith(".md")) {
-          const plaintext = content.toString("utf-8");
-          const encrypted = encryptContent(plaintext);
-          await fs.promises.writeFile(outPath + ".enc", encrypted);
-        } else {
-          await fs.promises.writeFile(outPath, content);
-        }
+        await fs.promises.writeFile(outPath, content);
 
         // 记录顶层目录
         const topDir = normalizedPath.split("/")[0];
@@ -438,10 +429,9 @@ export async function installProxySkill(
       return { ok: false, error: extractResult.error };
     }
 
-    // 验证 SKILL.md 或 SKILL.md.enc 存在
+    // 验证 SKILL.md 存在
     const skillMdPath = path.join(skillDir, "SKILL.md");
-    const skillEncPath = path.join(skillDir, "SKILL.md.enc");
-    if (!fs.existsSync(skillMdPath) && !fs.existsSync(skillEncPath)) {
+    if (!fs.existsSync(skillMdPath)) {
       // 清理
       if (fs.existsSync(skillDir)) {
         await fs.promises.rm(skillDir, { recursive: true, force: true });
@@ -540,12 +530,11 @@ export async function installProxySkillsBatch(
         continue;
       }
 
-      // 验证每个 skill（支持 .md 和 .md.enc）
+      // 验证每个 skill
       for (const name of batch) {
         const skillDir = path.join(skillsDir, name);
         const skillMdPath = path.join(skillDir, "SKILL.md");
-        const skillEncPath = path.join(skillDir, "SKILL.md.enc");
-        if (fs.existsSync(skillMdPath) || fs.existsSync(skillEncPath)) {
+        if (fs.existsSync(skillMdPath)) {
           installed.push(name);
         } else {
           failed.push({ name, error: "SKILL.md not found after extraction" });

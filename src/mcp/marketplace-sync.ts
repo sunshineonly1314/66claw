@@ -15,11 +15,9 @@
  */
 
 import { writeFile, mkdir, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { invalidateMarketplaceCache, readMarketplaceIndex } from "./marketplace-index.js";
-import { encryptContent, isEncryptionEnabled } from "../security/content-vault.js";
 import { fetchFromCloudIndex } from "./marketplace/cloud-index-source.js";
 import { fetchFromModelScope } from "./marketplace/modelscope-source.js";
 import { fetchFromOfficialRegistry } from "./marketplace/registry-source.js";
@@ -134,12 +132,9 @@ async function getIndexFileAge(): Promise<number | null> {
   ].filter(Boolean) as string[];
 
   for (const dir of candidates) {
-    // Check encrypted file first, then plain
-    const encPath = join(dir, "mcp-index.json.enc");
     const filePath = join(dir, "mcp-index.json");
     try {
-      const target = existsSync(encPath) ? encPath : filePath;
-      const st = await stat(target);
+      const st = await stat(filePath);
       return Date.now() - st.mtimeMs;
     } catch {
       continue;
@@ -435,22 +430,9 @@ async function writeIndexToDataDir(items: unknown[]): Promise<boolean> {
       await mkdir(dir, { recursive: true });
 
       const jsonContent = JSON.stringify(items, null, 2);
-
-      if (isEncryptionEnabled()) {
-        // Write encrypted version
-        const encPath = join(dir, "mcp-index.json.enc");
-        const encrypted = encryptContent(jsonContent);
-        await writeFile(encPath, encrypted);
-        logger.debug("Wrote mcp-index.json.enc (encrypted)", {
-          path: encPath,
-          count: items.length,
-        });
-      } else {
-        // Write plain JSON in dev mode
-        const filePath = join(dir, "mcp-index.json");
-        await writeFile(filePath, jsonContent, "utf-8");
-        logger.debug("Wrote mcp-index.json", { path: filePath, count: items.length });
-      }
+      const filePath = join(dir, "mcp-index.json");
+      await writeFile(filePath, jsonContent, "utf-8");
+      logger.debug("Wrote mcp-index.json", { path: filePath, count: items.length });
 
       return true;
     } catch {

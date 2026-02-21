@@ -12,8 +12,8 @@
  */
 
 import {
-  encryptContent,
-  decryptContent,
+  encryptConfigField,
+  decryptConfigField,
   isEncryptionEnabled,
 } from "../security/content-vault.js";
 import { containsEnvVarReference } from "./env-substitution.js";
@@ -168,7 +168,7 @@ function decryptWalk(value: unknown): unknown {
     try {
       const payload = extractEncPayload(value);
       const buf = Buffer.from(payload, "base64");
-      return decryptContent(buf);
+      return decryptConfigField(buf);
     } catch (err) {
       // Decryption failed (wrong machine, corrupted data).
       // Return as-is; Zod validation will surface the error.
@@ -239,7 +239,7 @@ function encryptWalk(
       try {
         const payload = extractEncPayload(diskValue);
         const buf = Buffer.from(payload, "base64");
-        const decrypted = decryptContent(buf);
+        const decrypted = decryptConfigField(buf);
         if (decrypted === value) {
           return diskValue; // value unchanged, keep existing ciphertext
         }
@@ -250,10 +250,12 @@ function encryptWalk(
 
     // Encrypt the plaintext
     try {
-      const encrypted = encryptContent(value);
+      const encrypted = encryptConfigField(value);
       return wrapEncPayload(encrypted);
     } catch (err) {
-      log.warn(`Failed to encrypt config field at ${path}: ${err instanceof Error ? err.message : err}`);
+      log.warn(
+        `Failed to encrypt config field at ${path}: ${err instanceof Error ? err.message : err}`,
+      );
       return value; // fail open: store plaintext rather than lose data
     }
   }

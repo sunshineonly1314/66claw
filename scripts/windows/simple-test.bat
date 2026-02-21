@@ -39,7 +39,7 @@ set "CLAWDBOT_STATE_DIR=%APPDATA%\ClawdbotCN"
 set "CLAWDBOT_BUNDLED_PLUGINS_DIR=%INSTALL_DIR%\extensions"
 set "CLAWDBOT_BUNDLED_SKILLS_DIR=%INSTALL_DIR%\skills"
 set "CLAWDBOT_BUNDLED_TOOLS_DIR=%INSTALL_DIR%\tools"
-set "CLAWDBOT_GATEWAY_TOKEN=clawdbot2026"
+:: Gateway token comes from config file — do NOT hardcode here
 set "CLAWDBOT_REGION=cn"
 set "PATH=%INSTALL_DIR%\node;%INSTALL_DIR%\tools;%PATH%"
 

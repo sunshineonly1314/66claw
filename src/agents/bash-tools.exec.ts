@@ -48,6 +48,7 @@ import {
   execSchema,
   type ExecProcessHandle,
   validateHostEnv,
+  stripSecretEnvKeys,
 } from "./bash-tools.exec-runtime.js";
 import {
   buildSandboxEnv,
@@ -300,7 +301,10 @@ export function createExecTool(
         validateHostEnv(params.env);
       }
 
-      const mergedEnv = params.env ? { ...baseEnv, ...params.env } : baseEnv;
+      // [MED-10] Strip secret env vars AFTER merging params.env, so that even
+      // user-supplied env cannot re-inject gateway secrets into child processes.
+      const rawMergedEnv = params.env ? { ...baseEnv, ...params.env } : baseEnv;
+      const mergedEnv = sandbox ? rawMergedEnv : stripSecretEnvKeys(rawMergedEnv);
 
       const env = sandbox
         ? buildSandboxEnv({

@@ -12,10 +12,7 @@ import {
   getDefaultWorkspace,
   getPlatformTips,
 } from "./setup-page-utils.js";
-import {
-  renderBodyContent,
-  renderScriptContent,
-} from "./setup-page-components.js";
+import { renderBodyContent, renderScriptContent } from "./setup-page-components.js";
 import type { SetupPageContext } from "./setup-page-components.js";
 
 /**
@@ -337,7 +334,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       height: 120px;
       border-radius: 10px;
       overflow: hidden;
-      background: #fff;
+      background: transparent;
       flex-shrink: 0;
       display: flex;
       align-items: center;
@@ -360,8 +357,9 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      object-position: center;
       display: block;
-      transform: scale(1.25);
+      transform: scale(1.30);
     }
     @media (max-width: 700px) {
       .qr-corner { position: static; margin-bottom: 12px; padding: 10px 12px; }
@@ -800,6 +798,30 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     }
     .provider-option.selected .provider-option-check {
       opacity: 1;
+    }
+    .provider-option-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75em;
+      font-weight: 600;
+      color: #1a1a1a;
+      text-decoration: none;
+      padding: 4px 10px;
+      background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%);
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 4px rgba(255, 165, 0, 0.25);
+      margin-top: 4px;
+      white-space: nowrap;
+    }
+    .provider-option-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 10px rgba(255, 165, 0, 0.4);
+      background: linear-gradient(135deg, #FFE44D 0%, #FFB833 50%, #FFA000 100%);
+    }
+    .provider-option-link .material-icons {
+      font-size: 14px;
     }
 
     /* API Key 输入区域优化 */

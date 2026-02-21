@@ -19,9 +19,9 @@ set "PATH=%NODE_PATH%;%TOOLS_PATH%;%PATH%"
 set "CLAWDBOT_BUNDLED_PLUGINS_DIR=%~dp0extensions"
 set "CLAWDBOT_BUNDLED_SKILLS_DIR=%~dp0skills"
 set "CLAWDBOT_BUNDLED_TOOLS_DIR=%~dp0tools"
-set "CLAWDBOT_GATEWAY_TOKEN=clawdbot2026"
 set "CLAWDBOT_REGION=cn"
 set "CLAWDBOT_STATE_DIR=%APPDATA%\ClawdbotCN"
+:: Gateway token is read from config file — do NOT hardcode here
 
 echo [1/4] 设置 gateway.mode=local...
 "%NODE_PATH%\node.exe" "%~dp0dist\entry.js" config set gateway.mode local
@@ -70,7 +70,7 @@ if defined GW_PID (
     echo ============================================================
     echo.
     echo   正在打开浏览器...
-    start "" "http://127.0.0.1:18789/setup?token=clawdbot2026"
+    start "" "http://127.0.0.1:18789/setup"
 ) else (
     echo.
     echo ============================================================

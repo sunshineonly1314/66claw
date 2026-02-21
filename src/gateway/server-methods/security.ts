@@ -3,10 +3,7 @@
  * 安全模式配置 API - 获取和设置 AI 能力范围
  */
 
-import {
-  ErrorCodes,
-  errorShape,
-} from "../protocol/index.js";
+import { ErrorCodes, errorShape } from "../protocol/index.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { CN_DEFAULT_SECURITY_CONFIG } from "../../config/region-cn.js";
 import type { OpenClawCNConfig } from "../../config/config.js";
@@ -156,23 +153,69 @@ function applySecurityMode(config: OpenClawCNConfig, mode: SecurityMode): OpenCl
             // 预置常用命令白名单
             safeBins: [
               // Windows 常用
-              "notepad", "explorer", "calc", "mspaint", "code", "cmd", "powershell",
-              "start", "where", "dir", "type", "echo", "set", "cd", "mkdir", "copy",
+              "notepad",
+              "explorer",
+              "calc",
+              "mspaint",
+              "code",
+              "start",
+              "where",
+              "dir",
+              "type",
+              "echo",
+              "set",
+              "cd",
+              "mkdir",
+              "copy",
               // 开发工具 - 通用
-              "python", "python3", "pip", "pip3",
-              "node", "npm", "pnpm", "yarn", "bun",
-              "git", "curl", "wget",
+              "python",
+              "python3",
+              "pip",
+              "pip3",
+              "node",
+              "npm",
+              "pnpm",
+              "yarn",
+              "bun",
+              "git",
+              "curl",
+              "wget",
               // 开发工具 - Java
-              "java", "javac", "mvn", "gradle",
+              "java",
+              "javac",
+              "mvn",
+              "gradle",
               // 开发工具 - 其他语言
-              "go", "cargo", "dotnet",
+              "go",
+              "cargo",
+              "dotnet",
               // 压缩工具
-              "tar", "zip", "unzip",
+              "tar",
+              "zip",
+              "unzip",
               // Linux 基础
-              "ls", "cat", "grep", "find", "head", "tail", "wc", "sort", "uniq", "jq",
-              "cp", "mv", "mkdir", "touch", "chmod", "pwd", "which", "env",
+              "ls",
+              "cat",
+              "grep",
+              "find",
+              "head",
+              "tail",
+              "wc",
+              "sort",
+              "uniq",
+              "jq",
+              "cp",
+              "mv",
+              "mkdir",
+              "touch",
+              "chmod",
+              "pwd",
+              "which",
+              "env",
               // 浏览器
-              "chrome", "msedge", "firefox",
+              "chrome",
+              "msedge",
+              "firefox",
             ],
           },
         },
@@ -207,10 +250,14 @@ export const securityHandlers: GatewayRequestHandlers = {
       const config = loadConfig();
       const current = inferSecurityMode(config);
 
-      respond(true, {
-        modes,
-        current,
-      }, undefined);
+      respond(
+        true,
+        {
+          modes,
+          current,
+        },
+        undefined,
+      );
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }
@@ -224,11 +271,7 @@ export const securityHandlers: GatewayRequestHandlers = {
       const p = params as { mode?: SecurityMode; confirmed?: boolean };
 
       if (!p.mode) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, "missing mode parameter"),
-        );
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "missing mode parameter"));
         return;
       }
 
@@ -258,10 +301,14 @@ export const securityHandlers: GatewayRequestHandlers = {
       const nextConfig = applySecurityMode(config, p.mode);
       await writeConfigFile(nextConfig);
 
-      respond(true, {
-        ok: true,
-        mode: p.mode,
-      }, undefined);
+      respond(
+        true,
+        {
+          ok: true,
+          mode: p.mode,
+        },
+        undefined,
+      );
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }

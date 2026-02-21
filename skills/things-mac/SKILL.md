@@ -4,7 +4,7 @@ description: Manage Things 3 via the `things` CLI on macOS (add/update projects+
 nameZh: "Things待办"
 descriptionZh: "通过Things CLI管理Things 3待办事项和项目"
 homepage: https://github.com/ossianhempel/things3-cli
-metadata: {"openclawcn":{"emoji":"✅","os":["darwin"],"requires":{"bins":["things"]},"install":[{"id":"go","kind":"go","module":"github.com/ossianhempel/things3-cli/cmd/things@latest","bins":["things"],"label":"安装 things3-cli (go)"}]}}
+metadata: {"openclawcn":{"emoji":"✅","os":["darwin"],"requires":{"bins":["things"]},"install":[{"id":"go","kind":"go","module":"github.com/ossianhempel/things3-cli/cmd/things@latest","bins":["things"],"label":"Install things3-cli (go)"}]}}
 ---
 
 # Things 3 CLI

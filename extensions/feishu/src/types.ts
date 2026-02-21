@@ -306,6 +306,30 @@ export interface FeishuFileContent {
 }
 
 /**
+ * 飞书语音消息内容
+ */
+export interface FeishuAudioContent {
+  file_key: string;
+  duration?: number;
+}
+
+/**
+ * 飞书视频消息内容 (message_type: "media")
+ */
+export interface FeishuMediaContent {
+  file_key: string;
+  file_name?: string;
+  image_key?: string;
+}
+
+/**
+ * 飞书表情包消息内容
+ */
+export interface FeishuStickerContent {
+  file_key: string;
+}
+
+/**
  * 飞书富文本消息内容
  */
 export interface FeishuPostContent {

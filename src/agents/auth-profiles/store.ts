@@ -7,11 +7,8 @@ import { loadJsonFile, saveJsonFile } from "../../infra/json-file.js";
 import { AUTH_STORE_LOCK_OPTIONS, AUTH_STORE_VERSION, log } from "./constants.js";
 import { syncExternalCliCredentials } from "./external-cli-sync.js";
 import { ensureAuthStoreFile, resolveAuthStorePath, resolveLegacyAuthStorePath } from "./paths.js";
-import {
-  saveEncryptedAuthStore,
-  loadEncryptedAuthStore,
-  isAuthStoreEncrypted,
-} from "./migrate-encryption.js";
+import { saveEncryptedAuthStore, isAuthStoreEncrypted } from "./migrate-encryption.js";
+import { loadSecureJsonSync } from "../../infra/secure-storage.js";
 
 type LegacyAuthStore = Record<string, AuthProfileCredential>;
 
@@ -227,6 +224,24 @@ function applyLegacyStore(store: AuthProfileStore, legacy: LegacyAuthStore): voi
 
 export function loadAuthProfileStore(): AuthProfileStore {
   const authPath = resolveAuthStorePath();
+
+  // [CRIT-05] 如果文件已加密，同步解密后加载
+  if (isAuthStoreEncrypted()) {
+    try {
+      const decrypted = loadSecureJsonSync(authPath);
+      const asStore = coerceAuthStore(decrypted);
+      if (asStore) {
+        const synced = syncExternalCliCredentials(asStore);
+        if (synced) {
+          saveEncryptedAuthStore(asStore).catch(() => {});
+        }
+        return asStore;
+      }
+    } catch (err) {
+      log.warn("failed to load encrypted auth store, falling back to plaintext", { err });
+    }
+  }
+
   const raw = loadJsonFile(authPath);
   const asStore = coerceAuthStore(raw);
   if (asStore) {
@@ -260,6 +275,24 @@ function loadAuthProfileStoreForAgent(
   _options?: { allowKeychainPrompt?: boolean },
 ): AuthProfileStore {
   const authPath = resolveAuthStorePath(agentDir);
+
+  // [CRIT-05] 如果文件已加密，同步解密后加载
+  if (isAuthStoreEncrypted(agentDir)) {
+    try {
+      const decrypted = loadSecureJsonSync(authPath);
+      const asStore = coerceAuthStore(decrypted);
+      if (asStore) {
+        const synced = syncExternalCliCredentials(asStore);
+        if (synced) {
+          saveEncryptedAuthStore(asStore, agentDir).catch(() => {});
+        }
+        return asStore;
+      }
+    } catch (err) {
+      log.warn("failed to load encrypted auth store for agent, falling back", { err, agentDir });
+    }
+  }
+
   const raw = loadJsonFile(authPath);
   const asStore = coerceAuthStore(raw);
   if (asStore) {
@@ -341,8 +374,10 @@ export function ensureAuthProfileStore(
 /**
  * 保存认证存储
  *
- * 注意: 此函数保持同步以向后兼容
- * 如果需要加密存储，请使用 saveAuthProfileStoreEncrypted()
+ * [CRIT-05 FIX] 优先使用加密存储。如果文件已加密或主密钥已存在，
+ * 使用 AES-256-GCM 加密保存；否则降级为明文（首次安装兼容）。
+ * 加密保存是异步的，但为保持调用方兼容性，此函数仍然同步返回
+ * （fire-and-forget 写入加密版本）。
  */
 export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string): void {
   const authPath = resolveAuthStorePath(agentDir);
@@ -354,9 +389,23 @@ export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string)
     usageStats: store.usageStats ?? undefined,
   } satisfies AuthProfileStore;
 
-  // 保持向后兼容，使用明文存储
-  // 用户需要显式调用迁移工具来启用加密
-  saveJsonFile(authPath, payload);
+  // [CRIT-05] 尝试加密保存；失败时降级为明文
+  if (isAuthStoreEncrypted(agentDir) || _encryptionActivated) {
+    saveEncryptedAuthStore(payload, agentDir).catch((err) => {
+      log.warn("encrypted save failed, falling back to plaintext", { err });
+      saveJsonFile(authPath, payload);
+    });
+  } else {
+    saveJsonFile(authPath, payload);
+  }
+}
+
+/**
+ * 标记加密已激活（由 autoMigrateAuthStore 在首次迁移后设置）
+ */
+let _encryptionActivated = false;
+export function setEncryptionActivated(): void {
+  _encryptionActivated = true;
 }
 
 /**

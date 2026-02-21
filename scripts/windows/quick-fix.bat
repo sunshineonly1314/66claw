@@ -39,7 +39,7 @@ echo Starting Gateway (10 second test)...
 echo.
 
 set CLAWDBOT_STATE_DIR=%USERPROFILE%\.clawdbot-test
-set CLAWDBOT_GATEWAY_TOKEN=clawdbot2026
+:: dev/test: no hardcoded token; gateway test uses --allow-unconfigured
 set CLAWDBOT_REGION=cn
 
 start "GatewayTest" cmd /c "node dist\entry.js gateway run --port 18790 --allow-unconfigured 2>&1"

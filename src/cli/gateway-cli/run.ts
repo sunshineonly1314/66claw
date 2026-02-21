@@ -95,6 +95,52 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   }
 
   const cfg = loadConfig();
+
+  // [CRIT-05] 启动时自动迁移 auth-profiles.json 到加密存储
+  try {
+    const { autoMigrateAuthStore } =
+      await import("../../agents/auth-profiles/migrate-encryption.js");
+    const { setEncryptionActivated } = await import("../../agents/auth-profiles/store.js");
+    await autoMigrateAuthStore();
+    setEncryptionActivated();
+  } catch (err) {
+    gatewayLog.warn(`auth store encryption migration skipped: ${String(err)}`);
+  }
+
+  // [MED-07] 启动时校验 CN 扩展签名完整性 (warning-only, 不阻塞启动)
+  try {
+    const { loadAndVerifyManifest, verifyExtensionFile } =
+      await import("../../security/extension-signature.js");
+    const rootDir = path.resolve(path.dirname(CONFIG_PATH), "..");
+    const result = loadAndVerifyManifest(rootDir);
+    if (result) {
+      const { manifest, signatureResult } = result;
+      if (signatureResult.valid) {
+        gatewayLog.info("extension manifest signature OK");
+      } else if (
+        signatureResult.reason?.includes("dev mode") ||
+        signatureResult.reason?.includes("No public key")
+      ) {
+        // Dev mode — no public key, skip silently
+      } else {
+        gatewayLog.warn(`extension manifest signature: ${signatureResult.reason}`);
+      }
+
+      // Spot-check a few extension files against the manifest hashes
+      const fileKeys = Object.keys(manifest.files);
+      const sampled = fileKeys.slice(0, 5);
+      for (const relPath of sampled) {
+        const absPath = path.join(rootDir, relPath);
+        const fileResult = verifyExtensionFile(absPath, rootDir, manifest);
+        if (!fileResult.valid) {
+          gatewayLog.warn(`extension file integrity: ${relPath} — ${fileResult.reason}`);
+        }
+      }
+    }
+  } catch (err) {
+    gatewayLog.warn(`extension signature check skipped: ${String(err)}`);
+  }
+
   const portOverride = parsePort(opts.port);
   if (opts.port !== undefined && portOverride === null) {
     defaultRuntime.error("Invalid port");

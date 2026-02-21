@@ -19,7 +19,9 @@ set "TOOLS_PATH=%~dp0tools"
 set "CLAWDBOT_BUNDLED_PLUGINS_DIR=%~dp0extensions"
 set "CLAWDBOT_BUNDLED_SKILLS_DIR=%~dp0skills"
 set "CLAWDBOT_BUNDLED_TOOLS_DIR=%~dp0tools"
-set "CLAWDBOT_GATEWAY_TOKEN=clawdbot2026"
+:: Gateway token is stored in config file (generated randomly on first install).
+:: Do NOT hardcode token here — it would be readable by anyone who extracts the installer.
+:: The gateway reads its token from: %APPDATA%\ClawdbotCN\clawdbot.json -> gateway.auth.token
 :: Use China region for mirrors (Skills: ClawdSkillsProxy, npm: npmmirror.com)
 set "CLAWDBOT_REGION=cn"
 :: Use isolated config directory consistent with ClawdbotService.exe

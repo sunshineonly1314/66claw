@@ -11,11 +11,24 @@ set "NODE_PATH=%~dp0node"
 set "PATH=%NODE_PATH%;%PATH%"
 set "CLAWDBOT_BUNDLED_PLUGINS_DIR=%~dp0extensions"
 set "CLAWDBOT_BUNDLED_SKILLS_DIR=%~dp0skills"
-set "CLAWDBOT_GATEWAY_TOKEN=clawdbot2026"
 :: Use China region for mirrors (Skills: ClawdSkillsProxy, npm: npmmirror.com)
 set "CLAWDBOT_REGION=cn"
-set "CONFIG_FILE=%USERPROFILE%\.clawdbot\clawdbot.json"
-set "TOKEN=clawdbot2026"
+set "CONFIG_FILE=%APPDATA%\ClawdbotCN\clawdbot.json"
+
+:: Read gateway token from config file (do NOT hardcode here)
+:: Token is generated randomly on first install by: node dist\entry.js daemon install
+:: Use JSON.parse with precise path gateway.auth.token to avoid matching wrong "token" field
+set "TOKEN="
+if exist "%CONFIG_FILE%" (
+    for /f "usebackq tokens=*" %%L in (`"%NODE_PATH%\node.exe" -e "try{const c=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const t=c.gateway&&c.gateway.auth&&c.gateway.auth.token;if(t)process.stdout.write(String(t));}catch(e){}" "%CONFIG_FILE%" 2^>nul`) do set "TOKEN=%%L"
+)
+
+:: Fallback: read from env (set by daemon install)
+if "!TOKEN!"=="" set "TOKEN=%OPENCLAWCN_GATEWAY_TOKEN%"
+if "!TOKEN!"=="" set "TOKEN=%CLAWDBOT_GATEWAY_TOKEN%"
+
+:: If token is still empty, gateway is not configured — direct to setup without token
+:: (setup page itself doesn't require token authentication)
 
 if "%1"=="--setup" goto :setup
 if "%1"=="--open" goto :smartopen
@@ -50,7 +63,8 @@ if !ERRORLEVEL! neq 0 (
 
 :gatewayReady
 :: Check config to decide which page to open
-set "OPEN_URL=http://localhost:18789/setup?token=!TOKEN!"
+:: Use URL fragment (#token=) instead of query string (?token=) to avoid token in server logs
+set "OPEN_URL=http://localhost:18789/setup#token=!TOKEN!"
 set "CONFIGURED=0"
 if exist "%CONFIG_FILE%" (
     findstr /c:"apiKey" "%CONFIG_FILE%" >nul 2>&1
@@ -60,7 +74,7 @@ if exist "%CONFIG_FILE%" (
 )
 
 if "!CONFIGURED!"=="1" (
-    set "OPEN_URL=http://localhost:18789/?token=!TOKEN!"
+    set "OPEN_URL=http://localhost:18789/#token=!TOKEN!"
 )
 
 start "" "!OPEN_URL!"
@@ -73,7 +87,7 @@ if !ERRORLEVEL! neq 0 (
     call "%~dp0start-gateway.bat"
     timeout /t 3 /nobreak >nul
 )
-start "" "http://localhost:18789/setup?token=!TOKEN!"
+start "" "http://localhost:18789/setup#token=!TOKEN!"
 goto :eof
 
 :background

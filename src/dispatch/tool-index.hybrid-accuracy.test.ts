@@ -33,8 +33,7 @@ import {
 // Config
 // ---------------------------------------------------------------------------
 
-const API_KEY =
-  process.env.SILICONFLOW_API_KEY || "sk-bdlrjsxfgryopcpjvqbuyygzchkisgzwqucnbdkzurzueukv";
+const API_KEY = process.env.SILICONFLOW_API_KEY || "";
 const EMBEDDING_CONFIG = {
   model: "BAAI/bge-m3",
   baseUrl: "https://api.siliconflow.cn/v1",

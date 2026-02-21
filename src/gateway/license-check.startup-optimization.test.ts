@@ -49,6 +49,7 @@ vi.mock("../security/index.js", () => ({
   registerProtectedFunction: vi.fn(),
   reportSecurityViolation: vi.fn(),
   recordViolation: vi.fn(),
+  isNativeAddonAvailable: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock("../logging/subsystem.js", () => ({

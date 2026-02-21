@@ -19,7 +19,10 @@ export interface SetupPageContext {
  * 渲染页面 body 内容（不含 <body>/<script> 标签本身）
  * 包括：导航栏、步骤条、Page0-5、所有模态框
  */
-export function renderBodyContent(ctx: SetupPageContext, getPlatformTips: (info: PlatformInfo) => string): string {
+export function renderBodyContent(
+  ctx: SetupPageContext,
+  getPlatformTips: (info: PlatformInfo) => string,
+): string {
   const { logoBase64, setupQrcodeBase64, platformInfo, defaultWorkspace } = ctx;
   return `
   <!-- 顶部导航栏 -->
@@ -173,13 +176,13 @@ export function renderBodyContent(ctx: SetupPageContext, getPlatformTips: (info:
             </a>
             <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
           </div>
-          <div class="provider-card" data-provider="volcengine-ark" onclick="selectProvider('volcengine-ark')">
-            <div class="provider-card-icon">🔥</div>
-            <div class="provider-card-name">豆包</div>
-            <div class="provider-card-desc">字节出品 · 响应极快 · 便宜好用</div>
-            <a href="https://partner.volcengine.com/partners/auth/confirm?inviteToken=HNOCB9ZQY0R8BA3BEK685Z4OKDIYSYZX2UNQZ7IMCYQL7DL0DMPJII6RN9PS063F&partnerType=101&partnerName=%E4%B8%8A%E6%B5%B7%E6%9D%AD%E8%8A%82%E4%BA%91%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8&identityType=11&PartnerEmployeeId=72406401" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+          <div class="provider-card" data-provider="glm" onclick="selectProvider('glm')">
+            <div class="provider-card-icon">🧠</div>
+            <div class="provider-card-name">智谱 GLM</div>
+            <div class="provider-card-desc">清华出品 · GLM-4 Flash 永久免费 · 注册送2000万Token</div>
+            <a href="https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
               <span class="material-icons">rocket_launch</span>
-              免费注册，开始体验
+              注册免费送2000万Token
             </a>
             <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
           </div>
@@ -199,6 +202,20 @@ export function renderBodyContent(ctx: SetupPageContext, getPlatformTips: (info:
               <div class="provider-option-info">
                 <div class="provider-option-name">硅基流动</div>
                 <div class="provider-option-desc">免费送额度 · 包含最新 DeepSeek · 国内速度快</div>
+                <a href="https://cloud.siliconflow.cn/i/uXXX7IEi" target="_blank" class="provider-option-link" onclick="event.stopPropagation()">
+                  <span class="material-icons">rocket_launch</span>免费注册，领取额度
+                </a>
+              </div>
+              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
+            <div class="provider-option" data-provider="minimax" onclick="selectProvider('minimax')">
+              <div class="provider-option-icon">⚡</div>
+              <div class="provider-option-info">
+                <div class="provider-option-name">MiniMax</div>
+                <div class="provider-option-desc">MiniMax M2.5，Agent/代码专家</div>
+                <a href="https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link" target="_blank" class="provider-option-link" onclick="event.stopPropagation()">
+                  <span class="material-icons">rocket_launch</span>注册领取免费额度
+                </a>
               </div>
               <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
             </div>
@@ -207,14 +224,20 @@ export function renderBodyContent(ctx: SetupPageContext, getPlatformTips: (info:
               <div class="provider-option-info">
                 <div class="provider-option-name">DeepSeek</div>
                 <div class="provider-option-desc">DeepSeek 官方，性价比之王</div>
+                <a href="https://platform.deepseek.com/api_keys" target="_blank" class="provider-option-link" onclick="event.stopPropagation()">
+                  <span class="material-icons">rocket_launch</span>注册获取 API Key
+                </a>
               </div>
               <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
             </div>
-            <div class="provider-option" data-provider="glm" onclick="selectProvider('glm')">
-              <div class="provider-option-icon">🧠</div>
+            <div class="provider-option" data-provider="volcengine-ark" onclick="selectProvider('volcengine-ark')">
+              <div class="provider-option-icon">🌋</div>
               <div class="provider-option-info">
-                <div class="provider-option-name">智谱 GLM</div>
-                <div class="provider-option-desc">GLM-4 系列，有永久免费模型</div>
+                <div class="provider-option-name">豆包</div>
+                <div class="provider-option-desc">字节出品，响应极快，便宜好用</div>
+                <a href="https://console.volcengine.com/ark/" target="_blank" class="provider-option-link" onclick="event.stopPropagation()">
+                  <span class="material-icons">rocket_launch</span>注册开通豆包
+                </a>
               </div>
               <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
             </div>
@@ -223,14 +246,9 @@ export function renderBodyContent(ctx: SetupPageContext, getPlatformTips: (info:
               <div class="provider-option-info">
                 <div class="provider-option-name">Kimi (月之暗面)</div>
                 <div class="provider-option-desc">长上下文之王，最长支持1M tokens</div>
-              </div>
-              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
-            </div>
-            <div class="provider-option" data-provider="minimax" onclick="selectProvider('minimax')">
-              <div class="provider-option-icon">⚡</div>
-              <div class="provider-option-info">
-                <div class="provider-option-name">MiniMax</div>
-                <div class="provider-option-desc">MiniMax M2.1，Agent/代码专家</div>
+                <a href="https://platform.moonshot.cn/console/api-keys" target="_blank" class="provider-option-link" onclick="event.stopPropagation()">
+                  <span class="material-icons">rocket_launch</span>注册获取 API Key
+                </a>
               </div>
               <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
             </div>
@@ -239,6 +257,9 @@ export function renderBodyContent(ctx: SetupPageContext, getPlatformTips: (info:
               <div class="provider-option-info">
                 <div class="provider-option-name">腾讯混元</div>
                 <div class="provider-option-desc">混元大模型系列</div>
+                <a href="https://cloud.tencent.com/product/hunyuan" target="_blank" class="provider-option-link" onclick="event.stopPropagation()">
+                  <span class="material-icons">rocket_launch</span>注册开通混元
+                </a>
               </div>
               <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
             </div>
@@ -2332,15 +2353,15 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       // 根据提供商更新 API Key 帮助信息
       const apiKeyHelp = document.getElementById('apiKeyHelp');
       const apiKeyHelpTexts = {
-        'siliconflow': '在 <a href="https://cloud.siliconflow.cn/account/ak" target="_blank">硅基流动控制台</a> 获取 API Key',
+        'siliconflow': '在 <a href="https://cloud.siliconflow.cn/i/uXXX7IEi" target="_blank">硅基流动</a> 免费注册领取额度，然后在 <a href="https://cloud.siliconflow.cn/account/ak" target="_blank">API Keys 页面</a> 获取 Key',
         'aliyun-bailian': '在 <a href="https://bailian.console.aliyun.com/" target="_blank">阿里云百炼控制台</a> 获取 API Key',
         'deepseek': '在 <a href="https://platform.deepseek.com/api_keys" target="_blank">DeepSeek 控制台</a> 获取 API Key',
-        'glm': '在 <a href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank">智谱 AI 开放平台</a> 获取 API Key（有永久免费模型）',
+        'glm': '在 <a href="https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI" target="_blank">智谱 AI 开放平台</a> 注册免费送2000万Token，然后在 <a href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank">API Keys 页面</a> 获取 Key',
         'moonshot': '在 <a href="https://platform.moonshot.cn/console/api-keys" target="_blank">Kimi 开放平台</a> 获取 API Key',
         'kimi-code': '在 <a href="https://www.kimi.com/code/docs/" target="_blank">Kimi Code 文档</a> 获取 API Key（代码专用，262K 超长上下文）',
         'volcengine-ark': '在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank">火山引擎控制台</a> 获取 API Key，需先在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement" target="_blank">开通管理</a> 开通模型 <button class="tutorial-help-btn" onclick="openDoubaoTutorial()"><span class="material-icons">help_outline</span>新手教程</button>',
         'tencent-hunyuan': '在 <a href="https://console.cloud.tencent.com/hunyuan" target="_blank">腾讯云混元控制台</a> 获取 Secret ID 和 Secret Key',
-        'minimax': '在 <a href="https://platform.minimaxi.com/user-center/basic-information/interface-key" target="_blank">MiniMax 开放平台</a> 获取 API Key（不需要 Group ID）',
+        'minimax': '在 <a href="https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link" target="_blank">MiniMax 开放平台</a> 注册领取免费额度，然后在 <a href="https://platform.minimaxi.com/user-center/basic-information/interface-key" target="_blank">接口密钥页面</a> 获取 API Key',
         'openai': '在 <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI 平台</a> 获取 API Key（需要科学上网）',
         'anthropic': '在 <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic 控制台</a> 获取 API Key（需要科学上网）',
         'google': '在 <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a> 获取 API Key（需要科学上网）',
@@ -2456,7 +2477,7 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       } else if (providerId === 'aliyun-bailian') {
         modelHint.textContent = '（推荐 Qwen-Plus，性价比最高）';
       } else if (providerId === 'glm') {
-        modelHint.textContent = '（GLM-4 Flash 永久免费！）';
+        modelHint.textContent = '（注册送2000万Token，GLM-4 Flash 永久免费！）';
       } else if (providerId === 'volcengine-ark') {
         modelHint.textContent = '（推荐豆包 1.8，需先开通模型）';
       } else if (providerId === 'openai') {
@@ -3272,6 +3293,8 @@ export function renderScriptContent(ctx: SetupPageContext): string {
     async function loadSetupQrcode() {
       const imageWrapper = document.getElementById('wechatQrcodeImage');
       const groupNameEl = document.getElementById('wechatQrcodeGroupName');
+      // 如果模板已内联了二维码图片，检测是否已有 <img>
+      const hasInlineImg = imageWrapper && imageWrapper.querySelector('img');
       try {
         const res = await fetch('/api/setup/qrcode');
         const data = await res.json();
@@ -3282,15 +3305,17 @@ export function renderScriptContent(ctx: SetupPageContext): string {
           if (groupNameEl && data.data.qrcode.groupName) {
             groupNameEl.textContent = data.data.qrcode.groupName;
           }
-        } else {
-          // 无二维码时显示占位提示
+        } else if (!hasInlineImg) {
+          // 仅当模板没有内联图片时才显示占位提示
           if (imageWrapper) {
             imageWrapper.innerHTML = '<div class="wechat-qr-placeholder"><span class="material-icons">qr_code_2</span><span>暂未配置</span></div>';
           }
         }
+        // 如果已有内联图片且 API 无数据，保留内联图片不覆盖
       } catch (e) {
         console.warn('[Setup] Failed to load QR code:', e);
-        if (imageWrapper) {
+        // API 失败时，保留已有的内联图片
+        if (!hasInlineImg && imageWrapper) {
           imageWrapper.innerHTML = '<div class="wechat-qr-placeholder"><span class="material-icons">qr_code_2</span><span>加载失败</span></div>';
         }
       }
@@ -3825,20 +3850,22 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       btn.innerHTML = '<span class="status-spinner"></span> 正在启动...';
       showStatus('launchStatus', '正在保存配置...', 'loading');
       
-      // 获取当前的 gateway token（从页面注入的变量）- 必须带上否则用户无法访问！
-      const gatewayToken = window.__GATEWAY_TOKEN__ || 'openclawcn2026';
-      // 构建带 token 的跳转 URL - 必须带 token！
+      // 获取当前的 gateway token（从页面注入的变量）
+      // 若 token 为空，说明 gateway 未配置鉴权，直接跳转（不拼接 token）
+      const gatewayToken = window.__GATEWAY_TOKEN__;
+      // 构建带 token 的跳转 URL（URL fragment，不会出现在服务器日志中）
       const buildRedirectUrl = () => {
         var port = window.location.port || '19002';
         var gwUrl = 'ws://127.0.0.1:' + port;
-        var hash = '#token=' + encodeURIComponent(gatewayToken) + '&gatewayUrl=' + encodeURIComponent(gwUrl);
-        // 桌面端（Tauri）：必须跳回 http://tauri.localhost（Windows Tauri 2 的 origin）
-        // setup 页面在 gateway HTTP (127.0.0.1:19002) 上，没有 __TAURI__ 全局变量，
-        // 但 gateway 注入了 __DESKTOP_MODE__ = true 来标识桌面环境
-        if (window.__DESKTOP_MODE__) {
-          return 'http://tauri.localhost/' + hash;
-        }
-        // 浏览器模式：gateway serve control-ui 在同一 origin
+        // 只在有 token 时才拼接，避免 "#token=undefined"
+        var hash = gatewayToken
+          ? '#token=' + encodeURIComponent(gatewayToken) + '&gatewayUrl=' + encodeURIComponent(gwUrl)
+          : '#gatewayUrl=' + encodeURIComponent(gwUrl);
+        // 始终跳到 gateway HTTP 地址（当前 origin = 127.0.0.1:PORT）。
+        // 不能跳 tauri.localhost：
+        //   1) tauri.localhost 是 Tauri 内嵌的 stale 前端（构建时快照）
+        //   2) 不同 origin 的 localStorage 导致 device token mismatch (1008)
+        //   3) Tauri main.rs poll_and_navigate 也是跳 127.0.0.1:PORT
         return window.location.origin + '/' + hash;
       };
       
@@ -3887,11 +3914,8 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       var port = window.location.port || '19002';
       var gwUrl = 'ws://127.0.0.1:' + port;
       var hash = '#token=' + encodeURIComponent(token) + '&gatewayUrl=' + encodeURIComponent(gwUrl);
-      if (window.__DESKTOP_MODE__) {
-        window.location.href = 'http://tauri.localhost/' + hash;
-      } else {
-        window.location.href = window.location.origin + '/' + hash;
-      }
+      // 始终跳到 gateway HTTP 地址（当前 origin），不跳 tauri.localhost（见 buildRedirectUrl 注释）
+      window.location.href = window.location.origin + '/' + hash;
     }
 
     // ==================== 初始化 ====================
@@ -3915,6 +3939,30 @@ export function renderScriptContent(ctx: SetupPageContext): string {
         if (page1) page1.classList.remove('hidden');
       }
     })();
+
+    // ── Tauri WebView2 外部链接修复 ──────────────────────────────────
+    // WebView2 在 http://127.0.0.1 origin 下，target="_blank" 和 window.open
+    // 都无法触发 Tauri 的 on_new_window 回调。改为通过 gateway API 在服务端打开。
+    document.addEventListener('click', function(e) {
+      var link = e.target.closest('a[href]');
+      if (!link) return;
+      var href = link.getAttribute('href');
+      if (!href) return;
+      try {
+        var u = new URL(href, window.location.origin);
+        if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') return;
+        if (u.protocol === 'http:' || u.protocol === 'https:') {
+          e.preventDefault();
+          e.stopPropagation();
+          fetch('/api/open-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: href })
+          }).catch(function(){});
+        }
+      } catch(_) {}
+    }, true);
+
   </script>
 `;
 }

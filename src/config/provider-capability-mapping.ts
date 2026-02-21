@@ -125,12 +125,8 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "💻",
     group: "cn-recommended",
     tagline: "代码专用 · 262K 超长上下文 · 极速",
-    apiKeyUrl: "https://platform.moonshot.cn/console/api-keys",
-    apiKeyGuide: [
-      "访问 platform.moonshot.cn 注册账号",
-      "进入控制台 → API 密钥",
-      "创建新密钥并复制",
-    ],
+    apiKeyUrl: "https://www.kimi.com/code/docs/",
+    apiKeyGuide: ["访问 Kimi Code 文档页面", "按指引注册并获取 API Key", "复制 API Key"],
     models: [
       {
         modelId: "kimi-for-coding",
@@ -149,8 +145,9 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "☁️",
     group: "cn-recommended",
     tagline: "阿里出品 · 送100万Token · 多模态",
-    apiKeyUrl: "https://dashscope.console.aliyun.com/apiKey",
-    apiKeyGuide: ["访问阿里云百炼平台注册", "开通 DashScope 服务", "创建 API Key 并复制"],
+    apiKeyUrl:
+      "https://www.aliyun.com/daily-act/ecs/activity_selection?source=5176.29345612&userCode=xsngby7y",
+    apiKeyGuide: ["免费注册阿里云，领取额度", "进入百炼控制台开通服务", "创建 API Key 并复制"],
     models: [
       // 文字对话模型
       {
@@ -199,7 +196,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "🔥",
     group: "cn-recommended",
     tagline: "字节出品 · 响应极快 · 性价比高",
-    apiKeyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
+    apiKeyUrl: "https://console.volcengine.com/ark/",
     apiKeyGuide: ["访问火山引擎控制台注册", "开通 Ark 模型服务", "创建 API Key 并复制"],
     models: [
       // 文字对话 + 图片理解模型（豆包 1.8 支持 text/image/video）
@@ -244,9 +241,9 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "🔮",
     group: "cn-recommended",
     tagline: "记忆与推荐必需 · 免费模型多 · 需实名注册",
-    apiKeyUrl: "https://cloud.siliconflow.cn/account/ak",
+    apiKeyUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
     apiKeyGuide: [
-      "访问 siliconflow.cn 注册",
+      "访问硅基流动注册，免费领取额度",
       "完成实名认证 (需身份证)",
       "进入控制台 → API 密钥",
       "创建新密钥并复制",
@@ -355,8 +352,12 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "🧠",
     group: "cn-more",
     tagline: "GLM-4 系列 · 永久免费额度",
-    apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys",
-    apiKeyGuide: ["访问 open.bigmodel.cn 注册", "进入用户中心 → API Keys", "创建密钥并复制"],
+    apiKeyUrl: "https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI",
+    apiKeyGuide: [
+      "访问 bigmodel.cn/glm-coding 注册，免费送2000万Token",
+      "进入用户中心 → API Keys",
+      "创建密钥并复制",
+    ],
     models: [
       // 文字对话模型
       {
@@ -495,8 +496,12 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "⚡",
     group: "cn-more",
     tagline: "多模态 · 文字+图片+视频",
-    apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
-    apiKeyGuide: ["访问 minimaxi.com 注册", "进入用户中心 → 接口密钥", "创建密钥并复制"],
+    apiKeyUrl: "https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link",
+    apiKeyGuide: [
+      "访问 MiniMax 开放平台注册，领取免费额度",
+      "进入用户中心 → 接口密钥",
+      "创建密钥并复制",
+    ],
     models: [
       // 文字对话模型
       {

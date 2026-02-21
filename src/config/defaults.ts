@@ -969,7 +969,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
               remote: {
                 ...memSearch185?.remote,
                 baseUrl: "https://api.siliconflow.cn/v1",
-                apiKey: "sk-bdlrjsxfgryopcpjvqbuyygzchkisgzwqucnbdkzurzueukv",
+                apiKey: "",
                 batch: { enabled: false },
               },
               fallback: "none",
@@ -1017,7 +1017,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
         embedding: {
           model: "BAAI/bge-m3",
           baseUrl: "https://api.siliconflow.cn/v1",
-          apiKey: "sk-bdlrjsxfgryopcpjvqbuyygzchkisgzwqucnbdkzurzueukv",
+          apiKey: "",
           dimensions: 1024,
         },
         search: { maxResults: 8, minScore: 0.2 },

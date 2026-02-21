@@ -91,9 +91,9 @@ export const AFFILIATE_LINKS: Record<string, AffiliateLink> = {
     id: "siliconflow",
     name: "硅基流动",
     logo: "/assets/logos/siliconflow.svg",
-    affiliateUrl: "https://cloud.siliconflow.cn/",
-    consoleUrl: "https://cloud.siliconflow.cn/",
-    apiKeyUrl: "https://cloud.siliconflow.cn/account/ak",
+    affiliateUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
+    consoleUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
+    apiKeyUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
     benefits: [
       "聚合多家顶尖大模型",
       "DeepSeek-R1/V3、Qwen2.5 等免费使用",
@@ -978,16 +978,15 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
   // AI 提供商推荐顺序（必须与 CN_PROVIDERS 中的 key 一致）
   recommendedProviders: [
     // 推荐国产服务（大卡片展示）
-    "siliconflow",
-    "aliyun-bailian",
-    "volcengine-ark",
-    // 代码 AI 专区
     "kimi-code",
-    // 更多国产服务（折叠）
-    "deepseek",
+    "aliyun-bailian",
     "glm",
-    "moonshot",
+    // 更多国产服务（折叠）— 硅基流动、MiniMax 优先
+    "siliconflow",
     "minimax",
+    "deepseek",
+    "volcengine-ark",
+    "moonshot",
     "tencent-hunyuan",
     "ant-ling",
     "meituan-longcat",
@@ -1097,7 +1096,11 @@ export function detectChinaRegion(): boolean {
   try {
     const resolved = Intl.DateTimeFormat().resolvedOptions();
     const timezone = resolved.timeZone;
-    if (timezone.startsWith("Asia/Shanghai") || timezone.startsWith("Asia/Chongqing") || timezone === "Asia/Urumqi") {
+    if (
+      timezone.startsWith("Asia/Shanghai") ||
+      timezone.startsWith("Asia/Chongqing") ||
+      timezone === "Asia/Urumqi"
+    ) {
       return true;
     }
     // Windows 上 Intl locale 比 LANG 更可靠（Windows 通常没有 LANG 环境变量）
@@ -1209,8 +1212,8 @@ export const CN_DEFAULT_SECURITY_CONFIG = {
         "calc",
         "mspaint",
         "code",
-        "cmd",
-        "powershell",
+        // [HIGH-07] cmd/powershell 已移除：配合 ask:"off" 时可执行任意命令，
+        // 等同于无限制 shell 访问。用户如需要可自行加入白名单。
         // 开发工具 - 通用
         "python",
         "python3",

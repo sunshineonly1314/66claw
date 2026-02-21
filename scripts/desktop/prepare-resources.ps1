@@ -30,6 +30,7 @@ Write-Host "[1/9] Copying Node.js runtime..." -ForegroundColor Green
 $nodeDir = Join-Path $ResourcesDir "node"
 New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
 
+$NodeVersion = if ($env:NODE_VERSION) { $env:NODE_VERSION } else { "22.16.0" }
 $nodeSources = @(
     "$ProjectRoot\scripts\windows\node-portable\node.exe",
     "$ProjectRoot\scripts\windows\node\node.exe"
@@ -44,12 +45,51 @@ foreach ($src in $nodeSources) {
         break
     }
 }
+# Fallback: download from CN mirror (npmmirror) if not found locally
 if (-not $nodeFound) {
-    Write-Host "  ERROR: node.exe not found in known locations:" -ForegroundColor Red
+    Write-Host "  node.exe not found locally, downloading from CN mirror..." -ForegroundColor Yellow
+    $nodeZipName = "node-v$NodeVersion-win-x64.zip"
+    $nodeDlDir = Join-Path $ProjectRoot "build\download-output\node"
+    New-Item -ItemType Directory -Force -Path $nodeDlDir | Out-Null
+    $nodeZipPath = Join-Path $nodeDlDir $nodeZipName
+
+    $nodeMirrors = @(
+        "https://npmmirror.com/mirrors/node/v$NodeVersion/$nodeZipName",
+        "https://nodejs.org/dist/v$NodeVersion/$nodeZipName"
+    )
+    foreach ($url in $nodeMirrors) {
+        Write-Host "  Trying: $url"
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $nodeZipPath -TimeoutSec 300 -UseBasicParsing -ErrorAction Stop
+            if (Test-Path $nodeZipPath) {
+                $extractDir = Join-Path $nodeDlDir "node-win-x64"
+                if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+                Expand-Archive -Path $nodeZipPath -DestinationPath $extractDir -Force
+                # node.exe is inside node-vXX.XX.X-win-x64/node.exe
+                $extractedNode = Get-ChildItem "$extractDir\*\node.exe" -Recurse | Select-Object -First 1
+                if ($extractedNode) {
+                    Copy-Item $extractedNode.FullName "$nodeDir\node.exe" -Force
+                    $nodeFound = $true
+                    $size = [math]::Round((Get-Item "$nodeDir\node.exe").Length / 1MB, 2)
+                    Write-Host "  OK: node.exe ($size MB) downloaded from CN mirror [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]" -ForegroundColor Green
+                    Remove-Item $nodeZipPath -Force -ErrorAction SilentlyContinue
+                    break
+                }
+            }
+        } catch {
+            Write-Host "  Download failed: $_" -ForegroundColor Yellow
+        }
+        Remove-Item $nodeZipPath -Force -ErrorAction SilentlyContinue
+    }
+}
+if (-not $nodeFound) {
+    Write-Host "  ERROR: node.exe not found and download failed!" -ForegroundColor Red
+    Write-Host "  Tried local paths:" -ForegroundColor Red
     foreach ($src in $nodeSources) {
         Write-Host "    - $src" -ForegroundColor Red
     }
-    Write-Host "  Please download Node.js portable and place node.exe in one of the above paths." -ForegroundColor Red
+    Write-Host "  Tried CN mirrors:" -ForegroundColor Red
+    Write-Host "    - https://npmmirror.com/mirrors/node/v$NodeVersion/" -ForegroundColor Red
     exit 1
 }
 
@@ -147,6 +187,21 @@ if (-not $skipNpmInstall) {
 $tempInstallDir = Join-Path $env:TEMP "clawdbot-prod-nm-$(Get-Date -Format 'yyyyMMddHHmmss')"
 New-Item -ItemType Directory -Force -Path $tempInstallDir | Out-Null
 
+# Select CN npm registry (same logic as macOS prepare-resources.sh)
+$NpmRegistry = "https://registry.npmmirror.com"
+$registryPingUrls = @(
+    "https://registry.npmmirror.com",
+    "https://registry.npm.taobao.org",
+    "https://registry.npmjs.org"
+)
+foreach ($reg in $registryPingUrls) {
+    try {
+        $resp = Invoke-WebRequest -Uri "$reg/-/ping" -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
+        if ($resp.StatusCode -eq 200) { $NpmRegistry = $reg; break }
+    } catch { }
+}
+Write-Host "  npm registry: $NpmRegistry"
+
 Write-Host "  Strategy: npm install --omit=dev in temp dir (avoids pnpm hardlink expansion)"
 Write-Host "  Temp dir: $tempInstallDir"
 
@@ -158,12 +213,12 @@ try {
     }
 
     # Run npm install with production deps only
-    Write-Host "  Running npm install --omit=dev ..."
+    Write-Host "  Running npm install --omit=dev (registry: $NpmRegistry)..."
     Push-Location $tempInstallDir
     try {
         # Use cmd /c to avoid PowerShell $ErrorActionPreference="Stop" catching npm's
         # stderr warnings (deprecated packages) as terminating errors
-        $npmLog = cmd /c "npm install --omit=dev --ignore-scripts --no-audit --no-fund --legacy-peer-deps 2>&1"
+        $npmLog = cmd /c "npm install --omit=dev --ignore-scripts --no-audit --no-fund --legacy-peer-deps --registry $NpmRegistry 2>&1"
         $npmExitCode = $LASTEXITCODE
         Write-Host "  npm install exit code: $npmExitCode [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
         # Show last few lines of output
@@ -294,7 +349,10 @@ if (Test-Path $extSource) {
         try {
             # Use the real package.json so npm doesn't prune existing production deps
             Copy-Item "$ProjectRoot\package.json" "$ResourcesDir\package.json" -Force
-            $npmArgs = @("install") + $uniqueDeps + @("--no-save", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps")
+            if (Test-Path "$ProjectRoot\.npmrc") {
+                Copy-Item "$ProjectRoot\.npmrc" "$ResourcesDir\.npmrc" -Force
+            }
+            $npmArgs = @("install") + $uniqueDeps + @("--no-save", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--registry", $NpmRegistry)
             $npmLog = cmd /c "npm $($npmArgs -join ' ') 2>&1"
             $npmExitCode = $LASTEXITCODE
             if ($npmExitCode -eq 0) {

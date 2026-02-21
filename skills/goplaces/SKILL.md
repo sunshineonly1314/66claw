@@ -4,7 +4,7 @@ description: Query Google Places API (New) via the goplaces CLI for text search,
 nameZh: "地图导航"
 descriptionZh: "通过Google Places API搜索地点、查看详情和评论"
 homepage: https://github.com/steipete/goplaces
-metadata: {"openclawcn":{"emoji":"📍","requires":{"bins":["goplaces"],"env":["GOOGLE_PLACES_API_KEY"]},"primaryEnv":"GOOGLE_PLACES_API_KEY","install":[{"id":"brew","kind":"brew","formula":"steipete/tap/goplaces","bins":["goplaces"],"label":"安装 goplaces (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/goplaces/releases/latest","bins":["goplaces"],"label":"下载 goplaces","os":["win32","linux"]}]}}
+metadata: {"openclawcn":{"emoji":"📍","requires":{"bins":["goplaces"],"env":["GOOGLE_PLACES_API_KEY"]},"primaryEnv":"GOOGLE_PLACES_API_KEY","install":[{"id":"brew","kind":"brew","formula":"steipete/tap/goplaces","bins":["goplaces"],"label":"Install goplaces (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/goplaces/releases/latest","bins":["goplaces"],"label":"Download goplaces binary","os":["win32","linux"]}]}}
 ---
 
 # goplaces

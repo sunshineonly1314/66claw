@@ -75,6 +75,20 @@ arm64-pkg/
 # Runtime data (should not be committed, root-level only)
 /data/
 
+# CN extension compiled JS (build artifacts, compiled from .ts by compile-extensions.ts)
+# These are NOT committed — the TS source is the single source of truth (HIGH-04)
+extensions/dingtalk/*.js
+extensions/dingtalk/**/*.js
+extensions/feishu/*.js
+extensions/feishu/**/*.js
+extensions/wecom/*.js
+extensions/wecom/**/*.js
+extensions/qqbot/*.js
+extensions/qqbot/**/*.js
+extensions/openclawwechat/*.js
+extensions/openclawwechat/**/*.js
+config/extension-build-manifest.json
+
 # CN pipeline outputs (large generated data)
 cn/skills-mirror/
 cn/skills-qc/output*/

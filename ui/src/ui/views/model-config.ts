@@ -483,8 +483,8 @@ export class ModelConfigView extends LitElement {
     .guide-step:last-child { border-left-color: transparent; }
     .guide-step::before { content: counter(guide-step); position: absolute; left: -10px; top: 8px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg-elevated, #1c242e); border: 1px solid var(--border-strong, #4a5a70); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--muted, #8b9caf); }
 
-    .guide-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 16px; padding: 8px 16px; background: var(--accent-subtle, rgba(108,140,255,.1)); border: 1px solid rgba(108,140,255, 0.2); border-radius: var(--radius-md, 8px); font-size: 12px; color: var(--accent, #6c8cff); cursor: pointer; text-decoration: none; transition: all 0.15s; }
-    .guide-link:hover { background: rgba(108,140,255,.15); border-color: var(--accent, #6c8cff); }
+    .guide-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 16px; padding: 14px 28px; background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%); border: none; border-radius: var(--radius-md, 8px); font-size: 15px; font-weight: 700; color: #1a1a1a; cursor: pointer; text-decoration: none; transition: all 0.2s ease; box-shadow: 0 3px 12px rgba(255, 165, 0, 0.35); width: 100%; }
+    .guide-link:hover { background: linear-gradient(135deg, #FFE44D 0%, #FFB833 50%, #FFA000 100%); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255, 165, 0, 0.5); color: #1a1a1a; }
 
     .form-group { margin-bottom: 16px; }
     .form-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text, #e8ecf1); }

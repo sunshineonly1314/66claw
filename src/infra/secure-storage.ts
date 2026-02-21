@@ -13,6 +13,7 @@
  */
 
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -33,9 +34,64 @@ const getMasterKeyPath = (): string => {
   return path.join(configDir, ".master-key");
 };
 
+/**
+ * [P4] 在 Windows 上通过 icacls 设置文件 ACL，仅允许当前用户和 SYSTEM 访问。
+ * chmod 0600 在 NTFS 上无效，必须用 icacls 替代。
+ */
+function setWindowsFileAcl(filePath: string): void {
+  if (process.platform !== "win32") return;
+  try {
+    const username = process.env.USERNAME?.trim() || os.userInfo().username?.trim();
+    if (!username) return;
+    const domain = process.env.USERDOMAIN?.trim();
+    const principal = domain ? `${domain}\\${username}` : username;
+    // 移除继承、仅授予当前用户和 SYSTEM 完全控制
+    // 使用 execFileSync + args 数组避免 shell 注入（不经过 cmd.exe）
+    execFileSync(
+      "icacls",
+      [filePath, "/inheritance:r", "/grant:r", `${principal}:F`, "/grant:r", "SYSTEM:F"],
+      { timeout: 10000, windowsHide: true, stdio: "ignore" },
+    );
+  } catch {
+    // icacls 失败不阻塞启动，但记录警告
+    console.warn(`[secure-storage] Failed to set Windows ACL on ${filePath}`);
+  }
+}
+
 // ============================================================================
 // 密钥管理
 // ============================================================================
+
+/**
+ * 同步获取或创建主加密密钥（[CRIT-05] 供同步加载路径使用）
+ */
+function getOrCreateMasterKeySync(): Buffer {
+  const keyPath = getMasterKeyPath();
+  const keyDir = path.dirname(keyPath);
+
+  if (!fs.existsSync(keyDir)) {
+    fs.mkdirSync(keyDir, { recursive: true, mode: 0o700 });
+  }
+
+  if (fs.existsSync(keyPath)) {
+    try {
+      const key = fs.readFileSync(keyPath);
+      if (key.length === KEY_LENGTH) return key;
+    } catch {
+      /* regenerate */
+    }
+  }
+
+  const newKey = crypto.randomBytes(KEY_LENGTH);
+  fs.writeFileSync(keyPath, newKey, { mode: 0o600 });
+  try {
+    fs.chmodSync(keyPath, 0o600);
+  } catch {
+    /* non-POSIX */
+  }
+  setWindowsFileAcl(keyPath);
+  return newKey;
+}
 
 /**
  * 获取或创建主加密密钥
@@ -67,15 +123,14 @@ async function getOrCreateMasterKey(): Promise<Buffer> {
   // 生成新密钥
   const newKey = crypto.randomBytes(KEY_LENGTH);
 
-  // 保存密钥（权限 0600）
+  // 保存密钥（权限 0600 + Windows NTFS ACL）
   fs.writeFileSync(keyPath, newKey, { mode: 0o600 });
-
-  // 确认权限设置（Windows 上可能无效，但不影响功能）
   try {
     fs.chmodSync(keyPath, 0o600);
   } catch {
-    // Windows 上 chmod 可能失败，忽略错误
+    /* non-POSIX */
   }
+  setWindowsFileAcl(keyPath);
 
   console.log(`[secure-storage] 已生成新的主加密密钥: ${keyPath}`);
   return newKey;
@@ -177,13 +232,12 @@ export async function saveSecureJson(filepath: string, data: unknown): Promise<v
   }
 
   fs.writeFileSync(filepath, JSON.stringify(payload, null, 2) + "\n", { mode: 0o600 });
-
-  // 确认权限
   try {
     fs.chmodSync(filepath, 0o600);
   } catch {
-    // Windows 上可能失败，忽略
+    /* non-POSIX */
   }
+  setWindowsFileAcl(filepath);
 }
 
 /**
@@ -221,6 +275,30 @@ export async function loadSecureJson(filepath: string): Promise<unknown> {
     console.error(`[secure-storage] 加载加密文件失败 (${filepath}):`, error);
     throw error;
   }
+}
+
+/**
+ * [CRIT-05] 同步加载加密 JSON（供 auth-profile 同步加载路径使用）
+ */
+export function loadSecureJsonSync(filepath: string): unknown {
+  if (!fs.existsSync(filepath)) return null;
+
+  const raw = fs.readFileSync(filepath, "utf8");
+  const payload = JSON.parse(raw) as {
+    version: number;
+    encrypted: string;
+    iv: string;
+    authTag: string;
+  };
+  if (payload.version !== 1) throw new Error(`不支持的加密版本: ${payload.version}`);
+
+  const key = getOrCreateMasterKeySync();
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(payload.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(payload.authTag, "base64"));
+
+  let decrypted = decipher.update(payload.encrypted, "base64", "utf8");
+  decrypted += decipher.final("utf8");
+  return JSON.parse(decrypted) as unknown;
 }
 
 // ============================================================================

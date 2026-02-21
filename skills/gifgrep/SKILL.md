@@ -4,7 +4,7 @@ description: Search GIF providers with CLI/TUI, download results, and extract st
 nameZh: "GIF搜索"
 descriptionZh: "搜索GIF图片、下载结果并提取静态帧"
 homepage: https://gifgrep.com
-metadata: {"openclawcn":{"emoji":"🧲","requires":{"bins":["gifgrep"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/gifgrep","bins":["gifgrep"],"label":"安装 gifgrep (brew)"},{"id":"go","kind":"go","module":"github.com/steipete/gifgrep/cmd/gifgrep@latest","bins":["gifgrep"],"label":"安装 gifgrep (go)"}]}}
+metadata: {"openclawcn":{"emoji":"🧲","requires":{"bins":["gifgrep"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/gifgrep","bins":["gifgrep"],"label":"Install gifgrep (brew)"},{"id":"go","kind":"go","module":"github.com/steipete/gifgrep/cmd/gifgrep@latest","bins":["gifgrep"],"label":"Install gifgrep (go)"}]}}
 ---
 
 # gifgrep

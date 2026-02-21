@@ -11,14 +11,11 @@ function looksLikeSkillsDir(dir: string): boolean {
         continue;
       }
       const fullPath = path.join(dir, entry.name);
-      if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".md.enc"))) {
+      if (entry.isFile() && entry.name.endsWith(".md")) {
         return true;
       }
       if (entry.isDirectory()) {
-        if (
-          fs.existsSync(path.join(fullPath, "SKILL.md")) ||
-          fs.existsSync(path.join(fullPath, "SKILL.md.enc"))
-        ) {
+        if (fs.existsSync(path.join(fullPath, "SKILL.md"))) {
           return true;
         }
       }

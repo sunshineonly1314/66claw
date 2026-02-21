@@ -3,13 +3,13 @@
  * 接收用户反馈并存储到本地文件，同步到远程服务器
  */
 
+import crypto from "node:crypto";
 import { join } from "node:path";
 import { appendFile, mkdir, writeFile, readFile } from "node:fs/promises";
 import { resolveStateDir } from "../../config/paths.js";
 import { getDeviceId } from "../../license/device-id.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
-
 
 /** 反馈 API 基础地址 */
 const FEEDBACK_API_BASE_URL = "https://www.obplugins.cn/api/api/v1/feedback";
@@ -94,7 +94,7 @@ function getPendingSyncPath(): string {
  */
 function generateFeedbackId(): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).slice(2, 8);
+  const random = crypto.randomUUID().slice(0, 8);
   return `fb-${timestamp}-${random}`;
 }
 
@@ -250,18 +250,30 @@ export const feedbackHandlers: GatewayRequestHandlers = {
       const content = payload.content.trim();
 
       if (content.length < 5) {
-        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "反馈内容至少需要5个字符"));
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "反馈内容至少需要5个字符"),
+        );
         return;
       }
 
       if (content.length > FIELD_LIMITS.content) {
-        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `反馈内容不能超过${FIELD_LIMITS.content}个字符`));
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `反馈内容不能超过${FIELD_LIMITS.content}个字符`),
+        );
         return;
       }
 
       // 验证附件数量
       if (payload.attachments && payload.attachments.length > FIELD_LIMITS.attachments) {
-        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, `最多只能上传${FIELD_LIMITS.attachments}张图片`));
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `最多只能上传${FIELD_LIMITS.attachments}张图片`),
+        );
         return;
       }
 
@@ -307,13 +319,17 @@ export const feedbackHandlers: GatewayRequestHandlers = {
       }
 
       // 无论同步是否成功，都返回成功（本地已保存）
-      respond(true, {
-        id: feedback.id,
-        synced,
-        message: synced
-          ? "反馈提交成功，感谢您的宝贵意见！"
-          : "反馈已保存，将在网络恢复后自动同步",
-      }, undefined);
+      respond(
+        true,
+        {
+          id: feedback.id,
+          synced,
+          message: synced
+            ? "反馈提交成功，感谢您的宝贵意见！"
+            : "反馈已保存，将在网络恢复后自动同步",
+        },
+        undefined,
+      );
     } catch (err) {
       logGateway.warn(`Feedback submit error: ${String(err)}`);
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, "提交反馈失败，请稍后重试"));

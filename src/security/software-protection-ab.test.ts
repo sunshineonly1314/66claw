@@ -188,7 +188,7 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
-        expect(hashes.length).toBe(177);
+        expect(hashes.length).toBe(251);
       }
     });
 
@@ -202,7 +202,7 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
         const securityFiles = paths.filter((p: string) => p.startsWith("security/"));
 
         expect(licenseFiles.length).toBe(25); // license 目录文件
-        expect(securityFiles.length).toBe(43); // security 目录文件
+        expect(securityFiles.length).toBe(45); // security 目录文件
       }
     });
 

@@ -5,6 +5,7 @@
  * 每设备每天限2次。
  */
 
+import crypto from "node:crypto";
 import { join } from "node:path";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolveStateDir } from "../../config/paths.js";
@@ -93,13 +94,49 @@ function getRateLimitPath(): string {
 
 function generateReportId(): string {
   const ts = Date.now().toString(36);
-  const rand = Math.random().toString(36).slice(2, 8);
+  const rand = crypto.randomUUID().slice(0, 8);
   return `rpt-${ts}-${rand}`;
 }
 
 function truncate(str: string | undefined, max: number): string | undefined {
   if (!str) return undefined;
   return str.length > max ? str.slice(0, max) : str;
+}
+
+/**
+ * [MED-04] 过滤日志条目中的敏感信息
+ * Redacts API keys, tokens, secrets, and other sensitive patterns from log entries.
+ */
+const SENSITIVE_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
+  // API Keys: sk-xxx, sk-ant-xxx, sk-or-xxx etc.
+  { pattern: /\bsk-[a-zA-Z0-9_-]{8,}\b/g, replacement: "sk-[REDACTED]" },
+  // ENC{...} encrypted field markers
+  { pattern: /ENC\{[^}]+\}/g, replacement: "ENC{[REDACTED]}" },
+  // GitHub OAuth tokens
+  { pattern: /\bgho_[a-zA-Z0-9]{16,}\b/g, replacement: "gho_[REDACTED]" },
+  { pattern: /\bghr_[a-zA-Z0-9]{16,}\b/g, replacement: "ghr_[REDACTED]" },
+  { pattern: /\bghp_[a-zA-Z0-9]{16,}\b/g, replacement: "ghp_[REDACTED]" },
+  // Bearer tokens in logs
+  { pattern: /Bearer\s+[a-zA-Z0-9._-]{20,}/gi, replacement: "Bearer [REDACTED]" },
+  // Generic secret/key/token assignments in logs
+  {
+    pattern: /(?:api[_-]?key|secret|password|token|credential)\s*[:=]\s*["']?[^\s"']{8,}/gi,
+    replacement: "[SENSITIVE_FIELD_REDACTED]",
+  },
+  // Google OAuth GOCSPX- secrets
+  { pattern: /\bGOCSPX-[A-Za-z0-9_-]+\b/g, replacement: "GOCSPX-[REDACTED]" },
+];
+
+function sanitizeLogEntry(entry: string): string {
+  let sanitized = entry;
+  for (const { pattern, replacement } of SENSITIVE_PATTERNS) {
+    sanitized = sanitized.replace(pattern, replacement);
+  }
+  return sanitized;
+}
+
+function sanitizeLogEntries(entries: string[]): string[] {
+  return entries.map(sanitizeLogEntry);
 }
 
 /** 获取今天的日期键 (CST/UTC+8) */
@@ -342,20 +379,25 @@ export const logReportHandlers: GatewayRequestHandlers = {
       }
 
       // 构建报告（服务端要求 logEntries 非空，日志加载失败时插入占位条目）
-      const logEntries = payload.logEntries?.length
+      // [MED-04] 过滤敏感信息后再提交
+      const rawLogEntries = payload.logEntries?.length
         ? payload.logEntries.slice(0, LIMITS.logEntries)
         : ["[no log entries available]"];
+      const logEntries = sanitizeLogEntries(rawLogEntries);
 
       const report: StoredLogReport = {
         id: generateReportId(),
         deviceId: truncate(deviceId, LIMITS.deviceId) || deviceId,
-        description,
+        description: sanitizeLogEntry(description),
         attachments: payload.attachments?.slice(0, LIMITS.attachments),
         logEntries,
         context: {
           version: truncate(payload.context?.version, 20) || "unknown",
           platform: truncate(payload.context?.platform, 50),
-          hostname: truncate(payload.context?.hostname, 50),
+          // [MED-04] hostname 仅发送哈希前6位，防止泄露用户电脑名
+          hostname: payload.context?.hostname
+            ? `host-${Buffer.from(payload.context.hostname).toString("base64url").slice(0, 6)}`
+            : undefined,
           uptime: payload.context?.uptime,
           timestamp: payload.context?.timestamp || new Date().toISOString(),
         },

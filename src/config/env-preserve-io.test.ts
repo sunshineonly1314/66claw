@@ -166,7 +166,10 @@ describe("env snapshot TOCTOU via wrapper APIs", () => {
 
           const written = await fs.readFile(configPath, "utf-8");
           const parsed = JSON.parse(written);
-          expect(parsed.gateway.remote.token).toBe("original-key-123");
+          // When expectedConfigPath does not match, env-preserve restore is skipped,
+          // so the resolved value is written. Field encryption then encrypts the
+          // sensitive value on disk — it should NOT be stored in plaintext.
+          expect(isEncryptedValue(parsed.gateway.remote.token)).toBe(true);
         },
       );
     });

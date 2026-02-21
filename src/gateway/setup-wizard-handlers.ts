@@ -66,6 +66,7 @@ import type {
 } from "./setup-wizard-types.js";
 import { sendJson, readJsonBody, formatDockerBind } from "./setup-wizard-utils.js";
 import { getSetupState, updateSetupState, getChannelStartCallback } from "./setup-wizard-state.js";
+import { isPathAllowedForBrowse } from "./setup-wizard.js";
 import { normalizeProviderId } from "../agents/model-selection.js";
 
 const log = createSubsystemLogger("gateway/setup-wizard");
@@ -735,6 +736,25 @@ export async function handleConfigureProvider(
             : config.agents?.defaults?.model,
         },
       },
+      // 同步写入 modelCapability.capabilities.text，使 chat 页能力检测可识别已配置的模型。
+      // 若不写入，UI 调用 modelConfig.capabilities.list 时会返回 status:"inactive"，
+      // 导致 chat 页显示"未配置"横幅，尽管后台实际可正常调用模型。
+      ...(defaultModel
+        ? {
+            modelCapability: {
+              ...((config as { modelCapability?: { capabilities: Record<string, unknown> } })
+                .modelCapability ?? { capabilities: {} }),
+              capabilities: {
+                ...((config as { modelCapability?: { capabilities: Record<string, unknown> } })
+                  .modelCapability?.capabilities ?? {}),
+                text: {
+                  providerId: normalizedProvider,
+                  modelId: defaultModel,
+                },
+              },
+            },
+          }
+        : {}),
     };
 
     await writeConfigFile(nextConfig);
@@ -841,8 +861,14 @@ export async function handleBrowseDirectory(
       targetPath = os.homedir();
     }
 
-    // 规范化路径
+    // 规范化路径（防止路径遍历：../../../etc/passwd 等）
     targetPath = path.resolve(targetPath);
+
+    // [HIGH-02] 路径安全边界检查：只允许浏览用户主目录及安全路径
+    if (!isPathAllowedForBrowse(targetPath)) {
+      sendJson(res, 403, { ok: false, error: "不允许浏览该路径" });
+      return;
+    }
 
     // 安全检查：确保路径存在且是目录
     let stats: fs.Stats;
@@ -1008,8 +1034,8 @@ export async function handleConfigureSecurity(
         "calc",
         "mspaint",
         "code",
-        "cmd",
-        "powershell",
+        // [HIGH-07] cmd/powershell 已移除：配合 ask:"off" 时可执行任意命令，
+        // 等同于无限制 shell 访问。用户如需要可自行加入白名单。
         "start",
         "where",
         "dir",
@@ -1646,6 +1672,17 @@ export async function handleValidateLicense(
           deviceId: result.device?.deviceId,
           deviceLimit: result.device?.deviceLimit,
           boundDevices: result.device?.boundDevices,
+          // [HIGH-08] 存储服务端签名载荷，启动/离线时重新验证防篡改
+          signedPayload:
+            result.signature && result.serverTime
+              ? {
+                  signature: result.signature,
+                  valid: result.valid,
+                  tier: result.license?.tier ?? null,
+                  expiresAt: result.license?.expiresAt ?? null,
+                  serverTime: result.serverTime,
+                }
+              : undefined,
         },
       };
       await writeConfigFile(nextConfig);
@@ -1774,8 +1811,11 @@ export async function handleValidateLicense(
       });
     }
   } catch (error) {
-    // 如果验证服务不可用，暂时允许使用（开发模式）
-    const isDev = process.env.NODE_ENV === "development" || process.env.OPENCLAWCN_DEV === "1";
+    // 如果验证服务不可用，暂时允许使用（仅开发构建 + 开发环境变量同时满足）
+    // [CRIT-06] 生产构建：__DEV_BUILD__ 被替换为 false，整个 if 块被 tree-shake，杜绝绕过
+    const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+    const isDev =
+      isDevBuild && (process.env.NODE_ENV === "development" || process.env.OPENCLAWCN_DEV === "1");
 
     if (isDev) {
       // 开发模式：允许跳过验证

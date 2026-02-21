@@ -177,7 +177,18 @@ function injectControlUiConfig(html: string, opts: ControlUiInjectionOpts): stri
     `window.__OPENCLAWCN_ASSISTANT_AVATAR__=${JSON.stringify(
       assistantAvatar ?? DEFAULT_ASSISTANT_IDENTITY.avatar,
     )};` +
-    `</script>`;
+    `</script>` +
+    // Tauri WebView2 外部链接修复：在 http://127.0.0.1 origin 下，
+    // on_navigation/on_new_window 回调可能不触发。通过 gateway API 在服务端打开。
+    `<script>document.addEventListener("click",function(e){` +
+    `var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;` +
+    `if(!a)return;var h=a.getAttribute("href");if(!h)return;` +
+    `try{var u=new URL(h,location.origin);` +
+    `if(u.hostname==="127.0.0.1"||u.hostname==="localhost")return;` +
+    `if(u.protocol==="http:"||u.protocol==="https:"){` +
+    `e.preventDefault();e.stopPropagation();` +
+    `fetch("/api/open-url",{method:"POST",headers:{"Content-Type":"application/json"},` +
+    `body:JSON.stringify({url:h})}).catch(function(){})}}catch(x){}},true)</script>`;
   // Check if already injected
   if (html.includes("__OPENCLAWCN_ASSISTANT_NAME__")) {
     return html;

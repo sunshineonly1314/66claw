@@ -21,6 +21,7 @@ export {
 
 // 请求签名
 export {
+  deriveKey,
   generateNonce,
   getTimestamp,
   generateSign,

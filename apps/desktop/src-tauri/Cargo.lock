@@ -308,6 +308,8 @@ name = "clawdbot-desktop"
 version = "0.1.0"
 dependencies = [
  "dirs 5.0.1",
+ "getrandom 0.2.17",
+ "open",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

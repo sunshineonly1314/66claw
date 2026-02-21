@@ -4,7 +4,7 @@ description: Send WhatsApp messages to other people or search/sync WhatsApp hist
 nameZh: "WhatsApp"
 descriptionZh: "通过wacli CLI发送WhatsApp消息和搜索聊天记录"
 homepage: https://wacli.sh
-metadata: {"openclawcn":{"emoji":"📱","requires":{"bins":["wacli"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/wacli","bins":["wacli"],"label":"安装 wacli (brew)"},{"id":"go","kind":"go","module":"github.com/steipete/wacli/cmd/wacli@latest","bins":["wacli"],"label":"安装 wacli (go)"}]}}
+metadata: {"openclawcn":{"emoji":"📱","requires":{"bins":["wacli"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/wacli","bins":["wacli"],"label":"Install wacli (brew)"},{"id":"go","kind":"go","module":"github.com/steipete/wacli/cmd/wacli@latest","bins":["wacli"],"label":"Install wacli (go)"}]}}
 ---
 
 # wacli

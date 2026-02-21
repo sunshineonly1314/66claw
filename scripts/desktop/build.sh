@@ -61,47 +61,113 @@ fi
 echo "  pnpm  : $(pnpm --version)"
 echo ""
 
-# ── Step 2: Build Node.js backend + CN encryption ──
-echo "[2/6] Building Node.js backend (pnpm build:secure)..."
-(cd "$PROJECT_ROOT" && pnpm build:secure)
-echo "  Backend build + CN encryption OK"
+# ── Step 2a: Base build (tsdown) ──
+# Must run first: tsdown clears dist/ before writing, so UI build cannot start yet
+echo "[2a/6] Building Node.js backend (base tsdown)..."
+(cd "$PROJECT_ROOT" && pnpm build)
+echo "  Base build (tsdown) OK"
 
-# ── Step 3: Build UI ──
-echo "[3/6] Building control UI..."
-if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
-  (cd "$PROJECT_ROOT/ui" && pnpm build)
-fi
-echo "  UI build OK"
+# ── Step 2b+3: CN encryption chain + UI build (PARALLEL) ──
+# Safe to parallelize because:
+#   - CN encryption writes to dist/ (cn-protected-files.json listed files only)
+#   - UI build writes to dist/control-ui/ (separate subdir, not touched by CN chain)
+#   - obfuscate-dist.ts only processes CN-listed files, NOT dist/control-ui/
+#   - obfuscate-ui.ts only processes dist/control-ui/ JS files
+echo "[2b+3/6] CN encryption + UI build (parallel)..."
 
-# ── Step 3b: Obfuscate UI bundles ──
-echo "[3b/6] Obfuscating UI bundles..."
-(cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts)
-OBFUSCATE_EXIT=$?
-if [[ $OBFUSCATE_EXIT -ne 0 ]]; then
-  echo "ERROR: UI obfuscation failed!" >&2
+# CN encryption chain (background)
+(cd "$PROJECT_ROOT" && \
+  pnpm build:cn-compile && \
+  pnpm build:cn-extensions && \
+  pnpm verify:extensions && \
+  node --import tsx scripts/obfuscate-dist.ts && \
+  node --import tsx cn/scripts/build/compile-bytecode.ts && \
+  pnpm integrity:gen && \
+  pnpm release:changelog) &
+CN_PID=$!
+
+# UI build + UI obfuscation (background)
+(
+  if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
+    (cd "$PROJECT_ROOT/ui" && pnpm build)
+  fi
+  cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts
+) &
+UI_PID=$!
+
+# Wait for both
+# NOTE: 必须用 set +e，否则 set -e 下 wait 遇到非零退出会直接终止脚本
+set +e
+wait $CN_PID
+CN_EXIT=$?
+wait $UI_PID
+UI_EXIT=$?
+set -e
+
+if [[ $CN_EXIT -ne 0 ]]; then
+  echo "ERROR: CN encryption chain failed (exit $CN_EXIT)!" >&2
   exit 1
 fi
-echo "  UI obfuscation OK"
+echo "  CN encryption chain OK"
 
-# ── Step 4: Prepare bundled resources ──
-echo "[4/6] Preparing bundled resources..."
+if [[ $UI_EXIT -ne 0 ]]; then
+  echo "ERROR: UI build/obfuscation failed (exit $UI_EXIT)!" >&2
+  exit 1
+fi
+echo "  UI build + obfuscation OK"
+
+# ── Step 4+5: Prepare resources + Tauri CLI install (PARALLEL) ──
+# Safe to parallelize because:
+#   - prepare-resources writes to apps/desktop/src-tauri/resources/
+#   - Tauri CLI install writes to apps/desktop/node_modules/
+#   - Completely separate directories, no conflicts
+echo "[4+5/6] Preparing resources + Installing Tauri CLI (parallel)..."
+
 PREPARE_SCRIPT="$SCRIPT_DIR/prepare-resources.sh"
 if [[ -f "$PREPARE_SCRIPT" ]]; then
-  bash "$PREPARE_SCRIPT" --arch "$ARCH"
-  PREPARE_EXIT=$?
-  if [[ $PREPARE_EXIT -ne 0 ]]; then
-    echo "ERROR: Resource preparation failed!" >&2
-    exit 1
-  fi
+  bash "$PREPARE_SCRIPT" --arch "$ARCH" &
+  PREP_PID=$!
 else
   echo "  WARNING: prepare-resources.sh not found, skipping resource staging." >&2
+  PREP_PID=""
 fi
 
-# ── Step 5: Install Tauri CLI dependencies ──
-echo "[5/6] Installing Tauri CLI..."
 if [[ -f "$DESKTOP_DIR/package.json" ]]; then
-  (cd "$DESKTOP_DIR" && pnpm install)
+  (cd "$DESKTOP_DIR" && pnpm install) &
+  TAURI_CLI_PID=$!
+else
+  TAURI_CLI_PID=""
 fi
+
+# Wait for both
+# NOTE: 必须用 set +e，否则 set -e 下 wait 遇到非零退出会直接终止脚本
+set +e
+if [[ -n "$PREP_PID" ]]; then
+  wait $PREP_PID
+  PREP_EXIT=$?
+else
+  PREP_EXIT=0
+fi
+
+if [[ -n "$TAURI_CLI_PID" ]]; then
+  wait $TAURI_CLI_PID
+  TAURI_CLI_EXIT=$?
+else
+  TAURI_CLI_EXIT=0
+fi
+set -e
+
+if [[ $PREP_EXIT -ne 0 ]]; then
+  echo "ERROR: Resource preparation failed (exit $PREP_EXIT)!" >&2
+  exit 1
+fi
+[[ -n "$PREP_PID" ]] && echo "  Resource preparation OK"
+
+if [[ $TAURI_CLI_EXIT -ne 0 ]]; then
+  echo "ERROR: Tauri CLI install failed (exit $TAURI_CLI_EXIT)!" >&2
+  exit 1
+fi
+[[ -n "$TAURI_CLI_PID" ]] && echo "  Tauri CLI install OK"
 
 # ── Step 6: Build Tauri (Rust + bundle) ──
 echo "[6/6] Building Tauri native app..."

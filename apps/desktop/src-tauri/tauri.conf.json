@@ -44,24 +44,14 @@
     }
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "ClawdbotCN AI",
-        "width": 1200,
-        "height": 800,
-        "resizable": true,
-        "center": true,
-        "visible": true
-      }
-    ],
+    "windows": [],
     "security": {
-      "csp": "default-src 'self' http://127.0.0.1:19002 http://localhost:19002; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:19002 http://localhost:19002; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://fonts.font.im https://fonts.loli.net; font-src 'self' https://fonts.gstatic.com https://gstatic.loli.net https://cdn.jsdelivr.net https://fonts.font.im data:; img-src 'self' data: blob: https:; connect-src 'self' ws://localhost:19002 ws://127.0.0.1:19002 http://localhost:19002 http://127.0.0.1:19002 https://api.openclawcn.com https://*.anthropic.com; media-src 'self' blob:; worker-src 'self' blob:"
+      "csp": "default-src 'self' http://127.0.0.1:19002 http://localhost:19002; script-src 'self' 'unsafe-eval' http://127.0.0.1:19002 http://localhost:19002; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://fonts.font.im https://fonts.loli.net; font-src 'self' https://fonts.gstatic.com https://gstatic.loli.net https://cdn.jsdelivr.net https://fonts.font.im data:; img-src 'self' data: blob: https://*.openclawcn.com https://*.anthropic.com; connect-src 'self' ws://localhost:19002 ws://127.0.0.1:19002 http://localhost:19002 http://127.0.0.1:19002 https://api.openclawcn.com https://*.anthropic.com; media-src 'self' blob:; worker-src 'self' blob:"
     }
   },
   "plugins": {
     "shell": {
-      "open": true
+      "open": "^https?://|^mailto:|^tel:"
     }
   }
 }

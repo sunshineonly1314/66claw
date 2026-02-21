@@ -53,71 +53,138 @@ if (-not (Get-Command "pnpm" -ErrorAction SilentlyContinue)) {
 Write-Host "  pnpm  : $(pnpm --version)"
 Write-Host ""
 
-# ── Step 2: Build Node.js backend + CN encryption ──
-Write-Host "[2/6] Building Node.js backend (pnpm build:secure)..." -ForegroundColor Yellow
+# ── Step 2a: Base build (tsdown) ──
+# Must run first: tsdown clears dist/ before writing, so UI build cannot start yet
+Write-Host "[2a/6] Building Node.js backend (base tsdown)..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
-pnpm build:secure
+pnpm build
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Backend build (secure) failed!" -ForegroundColor Red
+    Write-Host "ERROR: Base build (tsdown) failed!" -ForegroundColor Red
     Pop-Location
     exit 1
 }
 Pop-Location
-Write-Host "  Backend build + CN encryption OK" -ForegroundColor Green
+Write-Host "  Base build (tsdown) OK" -ForegroundColor Green
 
-# ── Step 3: Build UI ──
-Write-Host "[3/6] Building control UI..." -ForegroundColor Yellow
-if (Test-Path "$ProjectRoot\ui\package.json") {
-    Push-Location "$ProjectRoot\ui"
+# ── Step 2b+3: CN encryption chain + UI build (PARALLEL) ──
+# Safe to parallelize because:
+#   - CN encryption writes to dist/ (cn-protected-files.json listed files only)
+#   - UI build writes to dist/control-ui/ (separate subdir, not touched by CN chain)
+#   - obfuscate-dist.ts only processes CN-listed files, NOT dist/control-ui/
+#   - obfuscate-ui.ts only processes dist/control-ui/ JS files
+Write-Host "[2b+3/6] CN encryption + UI build (parallel)..." -ForegroundColor Yellow
+
+# Create temp scripts for parallel execution
+$cnScript = Join-Path $env:TEMP "clawdbot-cn-chain-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
+$uiScript = Join-Path $env:TEMP "clawdbot-ui-build-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
+
+# CN encryption chain script
+@"
+`$ErrorActionPreference = 'Continue'
+Set-Location '$ProjectRoot'
+pnpm build:cn-compile
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+pnpm build:cn-extensions
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+pnpm verify:extensions
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+node --import tsx scripts/obfuscate-dist.ts
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+node --import tsx cn/scripts/build/compile-bytecode.ts
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+pnpm integrity:gen
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+pnpm release:changelog
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+"@ | Out-File -FilePath $cnScript -Encoding UTF8
+
+# UI build + obfuscation script
+@"
+`$ErrorActionPreference = 'Continue'
+if (Test-Path '$ProjectRoot\ui\package.json') {
+    Set-Location '$ProjectRoot\ui'
     pnpm build
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: UI build failed!" -ForegroundColor Red
-        Pop-Location
-        exit 1
-    }
-    Pop-Location
+    if (`$LASTEXITCODE -ne 0) { exit 1 }
 }
-Write-Host "  UI build OK" -ForegroundColor Green
-
-# ── Step 3b: Obfuscate UI bundles ──
-Write-Host "[3b/6] Obfuscating UI bundles..." -ForegroundColor Yellow
-Push-Location $ProjectRoot
+Set-Location '$ProjectRoot'
 node --import tsx cn/scripts/build/obfuscate-ui.ts
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: UI obfuscation failed!" -ForegroundColor Red
-    Pop-Location
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+"@ | Out-File -FilePath $uiScript -Encoding UTF8
+
+# Launch both in parallel
+$cnProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$cnScript`"" -NoNewWindow -PassThru
+$uiProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$uiScript`"" -NoNewWindow -PassThru
+
+# Wait for both
+$cnProc.WaitForExit()
+$uiProc.WaitForExit()
+
+$cnExit = $cnProc.ExitCode
+$uiExit = $uiProc.ExitCode
+
+# Cleanup temp scripts
+Remove-Item $cnScript -Force -ErrorAction SilentlyContinue
+Remove-Item $uiScript -Force -ErrorAction SilentlyContinue
+
+if ($cnExit -ne 0) {
+    Write-Host "ERROR: CN encryption chain failed (exit $cnExit)!" -ForegroundColor Red
     exit 1
 }
-Pop-Location
-Write-Host "  UI obfuscation OK" -ForegroundColor Green
+Write-Host "  CN encryption chain OK" -ForegroundColor Green
 
-# ── Step 4: Prepare bundled resources ──
-Write-Host "[4/6] Preparing bundled resources..." -ForegroundColor Yellow
+if ($uiExit -ne 0) {
+    Write-Host "ERROR: UI build/obfuscation failed (exit $uiExit)!" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  UI build + obfuscation OK" -ForegroundColor Green
+
+# ── Step 4+5: Prepare resources + Tauri CLI install (PARALLEL) ──
+# Safe to parallelize because:
+#   - prepare-resources writes to apps/desktop/src-tauri/resources/
+#   - Tauri CLI install writes to apps/desktop/node_modules/
+#   - Completely separate directories, no conflicts
+Write-Host "[4+5/6] Preparing resources + Installing Tauri CLI (parallel)..." -ForegroundColor Yellow
+
 $prepareScript = Join-Path $ScriptDir "prepare-resources.ps1"
+$prepProc = $null
+$tauriProc = $null
+
 if (Test-Path $prepareScript) {
-    # Run as a child process so exit codes are captured correctly via $LASTEXITCODE
-    # (& operator for .ps1 scripts does not reliably set $LASTEXITCODE)
-    powershell -NoProfile -ExecutionPolicy Bypass -File $prepareScript
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: Resource preparation failed!" -ForegroundColor Red
-        exit 1
-    }
-} else {
-    Write-Host "  WARNING: prepare-resources.ps1 not found, skipping resource staging." -ForegroundColor Yellow
+    $prepProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$prepareScript`"" -NoNewWindow -PassThru
 }
 
-# ── Step 5: Install Tauri CLI dependencies ──
-Write-Host "[5/6] Installing Tauri CLI..." -ForegroundColor Yellow
-Push-Location $DesktopDir
 if (Test-Path "$DesktopDir\package.json") {
-    pnpm install
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: Tauri CLI install failed!" -ForegroundColor Red
-        Pop-Location
+    $tauriInstallScript = Join-Path $env:TEMP "clawdbot-tauri-install-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
+    @"
+`$ErrorActionPreference = 'Continue'
+Set-Location '$DesktopDir'
+pnpm install
+if (`$LASTEXITCODE -ne 0) { exit 1 }
+"@ | Out-File -FilePath $tauriInstallScript -Encoding UTF8
+    $tauriProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tauriInstallScript`"" -NoNewWindow -PassThru
+}
+
+if ($prepProc) {
+    $prepProc.WaitForExit()
+    if ($prepProc.ExitCode -ne 0) {
+        Write-Host "ERROR: Resource preparation failed!" -ForegroundColor Red
+        if ($tauriProc -and -not $tauriProc.HasExited) { $tauriProc.Kill() }
         exit 1
     }
+    Write-Host "  Resource preparation OK" -ForegroundColor Green
+} else {
+    Write-Host "  WARNING: prepare-resources.ps1 not found, skipping." -ForegroundColor Yellow
 }
-Pop-Location
+
+if ($tauriProc) {
+    $tauriProc.WaitForExit()
+    Remove-Item $tauriInstallScript -Force -ErrorAction SilentlyContinue
+    if ($tauriProc.ExitCode -ne 0) {
+        Write-Host "ERROR: Tauri CLI install failed!" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  Tauri CLI install OK" -ForegroundColor Green
+}
 
 # ── Step 6: Build Tauri (Rust + bundle) ──
 # NOTE: tauri.conf.json beforeBuildCommand is empty — UI is already built in Step 3

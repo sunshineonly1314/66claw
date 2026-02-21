@@ -68,7 +68,6 @@ export const TENCENT_HUNYUAN_DEFAULT_MODEL_REF = "tencent-hunyuan/hunyuan-pro";
 export const TENCENT_HUNYUAN_ENV_VAR = "HUNYUAN_SECRET_ID";
 export const TENCENT_HUNYUAN_API_ENDPOINT = "https://hunyuan.tencentcloudapi.com";
 
-
 // ============================================================================
 // 配置应用函数 (Config Apply Functions)
 // ============================================================================
@@ -558,10 +557,7 @@ export async function applyAuthChoiceCnProviders(
 
   const noteAgentModel = async (model: string) => {
     if (!params.agentId) return;
-    await params.prompter.note(
-      `默认模型已设置为 ${model}`,
-      "模型配置完成",
-    );
+    await params.prompter.note(`默认模型已设置为 ${model}`, "模型配置完成");
   };
 
   const authChoice = params.authChoice;
@@ -574,11 +570,7 @@ export async function applyAuthChoiceCnProviders(
     let apiKey: string | undefined;
 
     // 检查命令行参数
-    if (
-      !hasCredential &&
-      params.opts?.token &&
-      params.opts?.tokenProvider === "siliconflow"
-    ) {
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "siliconflow") {
       apiKey = normalizeApiKeyInput(params.opts.token);
       await setSiliconFlowApiKey(apiKey, params.agentDir);
       hasCredential = true;
@@ -593,7 +585,7 @@ export async function applyAuthChoiceCnProviders(
           "支持模型: DeepSeek-V3/R1, Qwen2.5, GLM-4 等",
           "",
           "获取 API Key:",
-          "1. 登录硅基流动控制台: https://cloud.siliconflow.cn/",
+          "1. 注册硅基流动（免费领取额度）: https://cloud.siliconflow.cn/i/uXXX7IEi",
           "2. 点击「API 密钥」",
           "3. 创建并复制 API Key",
         ].join("\n"),
@@ -655,11 +647,7 @@ export async function applyAuthChoiceCnProviders(
     let hasCredential = false;
 
     // 检查命令行参数
-    if (
-      !hasCredential &&
-      params.opts?.token &&
-      params.opts?.tokenProvider === "deepseek"
-    ) {
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "deepseek") {
       await setDeepSeekApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
       hasCredential = true;
     }
@@ -714,10 +702,7 @@ export async function applyAuthChoiceCnProviders(
 
     if (params.setDefaultModel) {
       nextConfig = applyDeepSeekConfig(nextConfig);
-      await params.prompter.note(
-        `默认模型已设置为 ${DEEPSEEK_DEFAULT_MODEL_REF}`,
-        "模型配置完成",
-      );
+      await params.prompter.note(`默认模型已设置为 ${DEEPSEEK_DEFAULT_MODEL_REF}`, "模型配置完成");
     } else {
       agentModelOverride = DEEPSEEK_DEFAULT_MODEL_REF;
       await noteAgentModel(DEEPSEEK_DEFAULT_MODEL_REF);
@@ -733,11 +718,7 @@ export async function applyAuthChoiceCnProviders(
     let hasCredential = false;
 
     // 检查命令行参数
-    if (
-      !hasCredential &&
-      params.opts?.token &&
-      params.opts?.tokenProvider === "glm"
-    ) {
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "glm") {
       await setGlmApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
       hasCredential = true;
     }
@@ -751,8 +732,8 @@ export async function applyAuthChoiceCnProviders(
           "支持模型: GLM-4-Plus, GLM-4, GLM-4V, CodeGeeX-4",
           "",
           "获取 API Key:",
-          "1. 登录智谱开放平台: https://open.bigmodel.cn/",
-          "2. 点击「API Keys」",
+          "1. 注册智谱开放平台（免费送2000万Token）: https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI",
+          "2. 进入用户中心 → API Keys",
           "3. 创建并复制 API Key",
         ].join("\n"),
         "智谱 GLM",
@@ -792,10 +773,7 @@ export async function applyAuthChoiceCnProviders(
 
     if (params.setDefaultModel) {
       nextConfig = applyGlmConfig(nextConfig);
-      await params.prompter.note(
-        `默认模型已设置为 ${GLM_DEFAULT_MODEL_REF}`,
-        "模型配置完成",
-      );
+      await params.prompter.note(`默认模型已设置为 ${GLM_DEFAULT_MODEL_REF}`, "模型配置完成");
     } else {
       agentModelOverride = GLM_DEFAULT_MODEL_REF;
       await noteAgentModel(GLM_DEFAULT_MODEL_REF);
@@ -811,11 +789,7 @@ export async function applyAuthChoiceCnProviders(
     let hasCredential = false;
 
     // 检查命令行参数
-    if (
-      !hasCredential &&
-      params.opts?.token &&
-      params.opts?.tokenProvider === "aliyun-bailian"
-    ) {
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "aliyun-bailian") {
       await setAliyunBailianApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
       hasCredential = true;
     }
@@ -886,11 +860,7 @@ export async function applyAuthChoiceCnProviders(
   if (authChoice === "volcengine-ark-api-key") {
     let hasCredential = false;
 
-    if (
-      !hasCredential &&
-      params.opts?.token &&
-      params.opts?.tokenProvider === "volcengine-ark"
-    ) {
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "volcengine-ark") {
       await setVolcengineArkApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
       hasCredential = true;
     }
@@ -962,11 +932,7 @@ export async function applyAuthChoiceCnProviders(
   if (authChoice === "tencent-hunyuan-api-key") {
     let hasCredential = false;
 
-    if (
-      !hasCredential &&
-      params.opts?.token &&
-      params.opts?.tokenProvider === "tencent-hunyuan"
-    ) {
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "tencent-hunyuan") {
       await setTencentHunyuanApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
       hasCredential = true;
     }

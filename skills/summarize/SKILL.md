@@ -4,7 +4,7 @@ description: Summarize or extract text/transcripts from URLs, podcasts, and loca
 nameZh: "内容总结"
 descriptionZh: "总结长文章和文档要点"
 homepage: https://summarize.sh
-metadata: {"openclawcn":{"emoji":"🧾","requires":{"bins":["summarize"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/summarize","bins":["summarize"],"label":"安装 summarize (brew)"},{"id":"download-mac","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"下载 summarize (macOS)","os":["darwin"]},{"id":"download-win","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"下载 summarize (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"下载 summarize (Linux)","os":["linux"]}]}}
+metadata: {"openclawcn":{"emoji":"🧾","requires":{"bins":["summarize"]},"install":[{"id":"brew","kind":"brew","formula":"steipete/tap/summarize","bins":["summarize"],"label":"Install summarize (brew)"},{"id":"download-mac","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"Download summarize (macOS)","os":["darwin"]},{"id":"download-win","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"Download summarize (Windows)","os":["win32"]},{"id":"download-linux","kind":"download","url":"https://github.com/steipete/summarize/releases/latest","bins":["summarize"],"label":"Download summarize (Linux)","os":["linux"]}]}}
 ---
 
 # Summarize

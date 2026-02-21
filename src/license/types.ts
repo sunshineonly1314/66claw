@@ -447,6 +447,22 @@ export interface LicenseCache {
   deviceId: string;
   /** 下次检查间隔(小时) */
   nextCheckAfterHours: number;
+  /**
+   * [HIGH-08] 服务端签名载荷
+   *
+   * 存储服务端返回的 RSA 签名及其对应的签名内容字段。
+   * 离线/启动时重新验证此签名，防止本地篡改 tier/expiresAt/features。
+   * 如果签名验证失败，缓存视为被篡改，拒绝离线使用。
+   */
+  signedPayload?: {
+    /** RSA 签名 (base64) */
+    signature: string;
+    /** 签名覆盖的字段值 */
+    valid: boolean;
+    tier: string | null;
+    expiresAt: string | null;
+    serverTime: number;
+  };
 }
 
 /**

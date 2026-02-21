@@ -4,12 +4,40 @@ import { createServer } from "node:http";
 import type { OpenClawCNPluginApi, ProviderAuthContext } from "openclawcn/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclawcn/plugin-sdk";
 
-// OAuth constants - decoded from pi-ai's base64 encoded values to stay in sync
-const decode = (s: string) => Buffer.from(s, "base64").toString();
-const CLIENT_ID = decode(
-  "MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
-);
-const CLIENT_SECRET = decode("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
+// [CRIT-04 FIX] OAuth credentials from environment variables — never hardcode secrets.
+// Set CLAWDBOT_ANTIGRAVITY_OAUTH_CLIENT_ID and CLAWDBOT_ANTIGRAVITY_OAUTH_CLIENT_SECRET
+// in your environment before starting the application.
+const CLIENT_ID_KEYS = ["CLAWDBOT_ANTIGRAVITY_OAUTH_CLIENT_ID", "GOOGLE_ANTIGRAVITY_OAUTH_CLIENT_ID"];
+const CLIENT_SECRET_KEYS = ["CLAWDBOT_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "GOOGLE_ANTIGRAVITY_OAUTH_CLIENT_SECRET"];
+
+function resolveAntigravityCredentials(): { clientId: string; clientSecret: string } {
+  let clientId: string | undefined;
+  let clientSecret: string | undefined;
+  for (const key of CLIENT_ID_KEYS) {
+    const v = process.env[key]?.trim();
+    if (v) { clientId = v; break; }
+  }
+  for (const key of CLIENT_SECRET_KEYS) {
+    const v = process.env[key]?.trim();
+    if (v) { clientSecret = v; break; }
+  }
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      "Google Antigravity OAuth credentials not configured.\n" +
+      "Set CLAWDBOT_ANTIGRAVITY_OAUTH_CLIENT_ID and CLAWDBOT_ANTIGRAVITY_OAUTH_CLIENT_SECRET environment variables.",
+    );
+  }
+  return { clientId, clientSecret };
+}
+
+// Lazy-resolved at runtime — no secrets in source code
+let _cachedCreds: { clientId: string; clientSecret: string } | null = null;
+function getCredentials() {
+  if (!_cachedCreds) _cachedCreds = resolveAntigravityCredentials();
+  return _cachedCreds;
+}
+const CLIENT_ID_LAZY = () => getCredentials().clientId;
+const CLIENT_SECRET_LAZY = () => getCredentials().clientSecret;
 const REDIRECT_URI = "http://localhost:51121/oauth-callback";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -75,7 +103,7 @@ function shouldUseManualOAuthFlow(isRemote: boolean): boolean {
 
 function buildAuthUrl(params: { challenge: string; state: string }): string {
   const url = new URL(AUTH_URL);
-  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("client_id", CLIENT_ID_LAZY());
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", REDIRECT_URI);
   url.searchParams.set("scope", SCOPES.join(" "));
@@ -183,8 +211,8 @@ async function exchangeCode(params: {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
+      client_id: CLIENT_ID_LAZY(),
+      client_secret: CLIENT_SECRET_LAZY(),
       code: params.code,
       grant_type: "authorization_code",
       redirect_uri: REDIRECT_URI,

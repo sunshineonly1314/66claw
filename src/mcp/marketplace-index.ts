@@ -16,7 +16,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveOpenClawCNPackageRootSync } from "../infra/openclaw-root.js";
 import type { McpMarketplaceItem } from "./marketplace/types.js";
-import { decryptContent, isEncryptionEnabled } from "../security/content-vault.js";
 
 // Re-export the shared type for convenience
 export type { McpMarketplaceItem } from "./marketplace/types.js";
@@ -57,20 +56,13 @@ export async function readMarketplaceIndex(): Promise<McpMarketplaceItem[]> {
   let best: McpMarketplaceItem[] = [];
 
   for (const dir of DATA_DIR_CANDIDATES) {
-    // Try enhanced (AI-translated) file first, then encrypted, then plain JSON
+    // Try enhanced (AI-translated) file first, then plain JSON
     const enhancedPath = join(dir, "mcp-index-enhanced.json");
-    const encPath = join(dir, "mcp-index.json.enc");
     const filePath = join(dir, "mcp-index.json");
     try {
-      let raw: string;
-      if (existsSync(enhancedPath)) {
-        raw = await readFile(enhancedPath, "utf-8");
-      } else if (isEncryptionEnabled() && existsSync(encPath)) {
-        const encrypted = await readFile(encPath);
-        raw = decryptContent(encrypted);
-      } else {
-        raw = await readFile(filePath, "utf-8");
-      }
+      const raw = existsSync(enhancedPath)
+        ? await readFile(enhancedPath, "utf-8")
+        : await readFile(filePath, "utf-8");
       const parsed = JSON.parse(raw);
       const items: McpMarketplaceItem[] = Array.isArray(parsed)
         ? parsed

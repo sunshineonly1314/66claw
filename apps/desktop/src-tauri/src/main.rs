@@ -12,6 +12,7 @@ mod tray;
 use std::io::Write;
 use std::sync::Mutex;
 use tauri::Manager;
+use tauri::WebviewUrl;
 
 /// Simple file logger for debugging desktop startup issues.
 static LOG_FILE: Mutex<Option<std::fs::File>> = Mutex::new(None);
@@ -178,13 +179,49 @@ pub fn run() {
 
             let handle = app.handle().clone();
 
-            // Log what URL the WebView starts with
-            if let Some(window) = app.get_webview_window("main") {
-                match window.url() {
-                    Ok(url) => log(&format!("Initial WebView URL: {}", url)),
-                    Err(e) => log(&format!("Initial URL error: {}", e)),
+            // Create main window programmatically so we can attach on_navigation
+            let _window = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::App("index.html".into()),
+            )
+            .title("ClawdbotCN AI")
+            .inner_size(1200.0, 800.0)
+            .resizable(true)
+            .center()
+            .visible(true)
+            .on_navigation(|url| {
+                let host = url.host_str().unwrap_or("");
+                let scheme = url.scheme();
+                // Allow local gateway and tauri URLs
+                if host == "127.0.0.1" || host == "localhost" || host == "tauri.localhost"
+                    || scheme == "tauri" || scheme == "about"
+                {
+                    return true;
                 }
-            }
+                // External URL — open in system browser and block WebView navigation
+                if scheme == "https" || scheme == "http" {
+                    log(&format!("Opening external URL in browser: {}", url));
+                    let _ = open::that(url.as_str());
+                    return false;
+                }
+                true
+            })
+            .on_new_window(|url, _features| {
+                // Intercept target="_blank" links
+                let host = url.host_str().unwrap_or("");
+                if host != "127.0.0.1" && host != "localhost" {
+                    // External URL — open in system browser
+                    log(&format!("Opening new window URL in browser: {}", url));
+                    let _ = open::that(url.as_str());
+                    return tauri::webview::NewWindowResponse::Deny;
+                }
+                tauri::webview::NewWindowResponse::Allow
+            })
+            .build()
+            .expect("failed to create main window");
+
+            log(&format!("Initial WebView URL: about:blank (programmatic)"));
 
             match sidecar::start_sidecar(handle.clone()) {
                 Ok(()) => {

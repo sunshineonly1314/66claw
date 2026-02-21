@@ -19,6 +19,7 @@ export {
   ensureAuthProfileStore,
   loadAuthProfileStore,
   saveAuthProfileStore,
+  setEncryptionActivated,
 } from "./auth-profiles/store.js";
 export type {
   ApiKeyCredential,

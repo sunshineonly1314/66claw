@@ -32,8 +32,21 @@ WIN_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.host")
 WIN_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.user")
 WIN_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.gitee_repo")
 
-# 参数
-VERSION="${1:-}"
+# 参数解析（位置参数 + 命名参数）
+VERSION=""
+SKIP_DEPLOY=false
+DEPLOY_ONLY=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --skip-deploy) SKIP_DEPLOY=true ;;
+    --deploy-only) DEPLOY_ONLY=true ;;
+    -*)            ;; # ignore unknown flags
+    *)
+      if [ -z "$VERSION" ]; then VERSION="$arg"; fi
+      ;;
+  esac
+done
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🪟 Windows 远程构建"
@@ -49,6 +62,8 @@ cat > "$TEMP_PS1" << PSEOF
 \$WORKSPACE = 'D:\cicd-workspace\openclawcn'
 \$REPO = '$WIN_REPO'
 \$VERSION = '$VERSION'
+\$SKIP_DEPLOY = '$SKIP_DEPLOY'
+\$DEPLOY_ONLY = '$DEPLOY_ONLY'
 
 # Fix PATH: ensure Git Bash comes before WSL bash, and pnpm/node are available
 \$gitBashDir = 'C:\Program Files\Git\bin'
@@ -108,6 +123,11 @@ if (-not \$VERSION) {
     }
 }
 
+\$tauriOutput = Join-Path \$WORKSPACE 'apps\desktop\src-tauri\target\release\bundle\nsis'
+
+# ── 构建阶段（--deploy-only 时跳过） ──
+if (\$DEPLOY_ONLY -ne 'true') {
+
 # ── Rust 环境检查 ──
 if (-not (Get-Command "cargo" -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: Rust/Cargo not found. Install from https://rustup.rs"
@@ -129,7 +149,6 @@ if (\$LASTEXITCODE -ne 0) {
     exit 1
 }
 
-\$tauriOutput = Join-Path \$WORKSPACE 'apps\desktop\src-tauri\target\release\bundle\nsis'
 \$artifacts = Get-ChildItem -Path "\$tauriOutput\*.exe" -ErrorAction SilentlyContinue
 if (\$artifacts) {
     Write-Host "Build completed successfully!"
@@ -139,7 +158,12 @@ if (\$artifacts) {
     exit 1
 }
 
+} # end DEPLOY_ONLY check
+
 # ── Release Deploy: 生成增量包 + 上传 ──
+# --skip-deploy 时跳过（并行构建模式下，上传由 trigger-build.sh 串行调度）
+if (\$SKIP_DEPLOY -ne 'true') {
+
 Write-Host ""
 Write-Host "========================================="
 Write-Host "  Release Deploy (Delta + Upload)"
@@ -189,6 +213,8 @@ if (\$LASTEXITCODE -ne 0) {
 } else {
     Write-Host "Release deploy completed!"
 }
+
+} # end SKIP_DEPLOY check
 PSEOF
 
 # 上传 PS1 脚本到 Windows

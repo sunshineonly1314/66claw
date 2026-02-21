@@ -4,7 +4,7 @@ description: Terminal Spotify playback/search via spogo (preferred) or spotify_p
 nameZh: "Spotify播放器"
 descriptionZh: "使用spotify_player播放音乐"
 homepage: https://www.spotify.com
-metadata: {"openclawcn":{"emoji":"🎵","requires":{"anyBins":["spogo","spotify_player"]},"install":[{"id":"brew","kind":"brew","formula":"spogo","tap":"steipete/tap","bins":["spogo"],"label":"安装 spogo (brew)"},{"id":"brew","kind":"brew","formula":"spotify_player","bins":["spotify_player"],"label":"安装 spotify_player (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/spogo/releases/latest","bins":["spogo"],"label":"下载 spogo","os":["win32","linux"]}]}}
+metadata: {"openclawcn":{"emoji":"🎵","requires":{"anyBins":["spogo","spotify_player"]},"install":[{"id":"brew","kind":"brew","formula":"spogo","tap":"steipete/tap","bins":["spogo"],"label":"Install spogo (brew)"},{"id":"brew","kind":"brew","formula":"spotify_player","bins":["spotify_player"],"label":"Install spotify_player (brew)"},{"id":"download","kind":"download","url":"https://github.com/steipete/spogo/releases/latest","bins":["spogo"],"label":"Download spogo binary","os":["win32","linux"]}]}}
 ---
 
 # spogo / spotify_player

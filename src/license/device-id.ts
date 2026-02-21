@@ -38,14 +38,11 @@ function getDeviceIdFilePath(): string {
  */
 function execPowerShell(command: string): string {
   try {
-    const result = execSync(
-      `powershell -NoProfile -NonInteractive -Command "${command}"`,
-      {
-        encoding: "utf8",
-        timeout: 10000,
-        windowsHide: true,
-      }
-    );
+    const result = execSync(`powershell -NoProfile -NonInteractive -Command "${command}"`, {
+      encoding: "utf8",
+      timeout: 10000,
+      windowsHide: true,
+    });
     return result.trim();
   } catch (error) {
     log.debug(`PowerShell command failed: ${error}`);
@@ -84,9 +81,7 @@ function getMachineId(): string {
 
     if (platform === "win32") {
       // Windows: 优先使用 PowerShell（兼容 Windows 11）
-      let uuid = execPowerShell(
-        "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID"
-      );
+      let uuid = execPowerShell("(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID");
 
       // 后备：使用 wmic（兼容老版本 Windows）
       if (!uuid) {
@@ -132,9 +127,7 @@ function getCpuId(): string {
     if (os.platform() !== "win32") return "";
 
     // 优先使用 PowerShell
-    let cpuId = execPowerShell(
-      "(Get-CimInstance -ClassName Win32_Processor).ProcessorId"
-    );
+    let cpuId = execPowerShell("(Get-CimInstance -ClassName Win32_Processor).ProcessorId");
 
     // 后备：使用 wmic
     if (!cpuId) {
@@ -243,7 +236,7 @@ function getPhysicalMacAddress(): string {
         // 检查是否为虚拟网卡前缀
         const macLower = info.mac.toLowerCase();
         const isVirtual = VIRTUAL_MAC_PREFIXES.some((prefix) =>
-          macLower.startsWith(prefix.toLowerCase())
+          macLower.startsWith(prefix.toLowerCase()),
         );
         if (isVirtual) {
           continue;
@@ -283,14 +276,11 @@ function getPhysicalMacAddress(): string {
         }
 
         // 避免重复添加同一接口的多个地址
-        const existingEntry = entries.find(
-          (e) => e.name === name && e.mac === info.mac
-        );
+        const existingEntry = entries.find((e) => e.name === name && e.mac === info.mac);
         if (existingEntry) {
           // 更新优先级（取更优的）
           existingEntry.priority = Math.min(existingEntry.priority, priority);
-          existingEntry.hasValidIpv4 =
-            existingEntry.hasValidIpv4 || hasValidIpv4;
+          existingEntry.hasValidIpv4 = existingEntry.hasValidIpv4 || hasValidIpv4;
         } else {
           entries.push({
             name,
@@ -380,14 +370,16 @@ function generateDeviceFingerprint(): string {
   // 极端情况：所有硬件标识都获取失败
   // 使用确定性的系统信息组合，确保同一台机器多次生成的指纹一致
   // （不使用 randomUUID，避免文件丢失后生成完全不同的 ID）
-  log.warn(
-    "No stable hardware ID found, using deterministic system info fallback"
-  );
+  log.warn("No stable hardware ID found, using deterministic system info fallback");
   const cpus = os.cpus();
   const cpuModel = cpus.length > 0 ? cpus[0].model : "unknown-cpu";
   const totalMem = os.totalmem();
   let username = "unknown";
-  try { username = os.userInfo().username; } catch { /* no HOME env */ }
+  try {
+    username = os.userInfo().username;
+  } catch {
+    /* no HOME env */
+  }
   const fallbackId = [
     os.hostname(),
     os.platform(),
@@ -403,28 +395,35 @@ function generateDeviceFingerprint(): string {
 
 /**
  * 获取所有可能的设备ID文件路径
- * 
+ *
  * 场景：用户可能在不同启动方式下使用了不同的配置目录
  * - OpenClawCN 安装版使用 %APPDATA%\OpenClawCN (Windows)
  * - 命令行/开发版使用 ~/.openclawcn
- * 
+ *
  * 为确保设备ID一致性，需要检查所有可能的位置
  */
 function getAlternativeDeviceIdPaths(): string[] {
   const homedir = os.homedir();
   const paths: string[] = [];
-  
-  // 1. 旧版默认目录: ~/.openclawcn
+
+  // 1. 当前默认目录: ~/.openclawcn
   paths.push(path.join(homedir, ".openclawcn", DEVICE_ID_FILENAME));
-  
-  // 2. Windows OpenClawCN 安装版目录: %APPDATA%\OpenClawCN
+
+  // 2. 旧版 legacy 目录 (品牌重命名前) — 关键：老用户的 .device_id 在这里
+  paths.push(path.join(homedir, ".clawdbot", DEVICE_ID_FILENAME));
+  paths.push(path.join(homedir, ".moldbot", DEVICE_ID_FILENAME));
+  paths.push(path.join(homedir, ".moltbot", DEVICE_ID_FILENAME));
+
+  // 3. Windows 安装版目录
   if (os.platform() === "win32") {
     const appData = process.env.APPDATA;
     if (appData) {
       paths.push(path.join(appData, "OpenClawCN", DEVICE_ID_FILENAME));
+      // 旧版 Windows 安装路径
+      paths.push(path.join(appData, "ClawdbotCN", DEVICE_ID_FILENAME));
     }
   }
-  
+
   return paths;
 }
 
@@ -448,30 +447,30 @@ function readDeviceIdFile(filePath: string): { id: string; mtime: Date } | null 
 
 /**
  * 尝试从其他配置目录迁移设备ID
- * 
+ *
  * 策略：
  * 1. 检查所有可能的设备ID文件位置
  * 2. 找到第一个有效的设备ID并迁移到当前目录
  * 3. 同步到所有其他目录，确保一致性
- * 
+ *
  * 注意：这个函数只在当前目录没有设备ID时才被调用
- * 
+ *
  * 这解决了用户在不同启动方式下配置目录不一致的问题
  */
 function tryMigrateDeviceIdFromOtherLocations(targetPath: string): string | null {
   const alternativePaths = getAlternativeDeviceIdPaths();
   const normalizedTarget = path.normalize(targetPath).toLowerCase();
-  
+
   // 找到第一个有效的设备ID
   let foundId: string | null = null;
   let foundPath: string | null = null;
-  
+
   for (const altPath of alternativePaths) {
     // 跳过目标路径本身
     if (path.normalize(altPath).toLowerCase() === normalizedTarget) {
       continue;
     }
-    
+
     const result = readDeviceIdFile(altPath);
     if (result) {
       foundId = result.id;
@@ -479,24 +478,24 @@ function tryMigrateDeviceIdFromOtherLocations(targetPath: string): string | null
       break; // 找到第一个就停止
     }
   }
-  
+
   if (!foundId || !foundPath) {
     return null;
   }
-  
+
   log.info(`Found existing device ID at ${foundPath}, migrating to ${targetPath}...`);
-  
+
   try {
     // 确保目标目录存在
     const targetDir = path.dirname(targetPath);
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
-    
+
     // 复制到目标位置
     fs.writeFileSync(targetPath, foundId, "utf8");
     log.info(`Migrated device ID: ${foundId.substring(0, 8)}...`);
-    
+
     return foundId;
   } catch (error) {
     log.warn(`Failed to migrate device ID: ${error}`);
@@ -511,21 +510,21 @@ function tryMigrateDeviceIdFromOtherLocations(targetPath: string): string | null
 function syncDeviceIdToAllLocations(deviceId: string, currentPath: string): void {
   const alternativePaths = getAlternativeDeviceIdPaths();
   const normalizedCurrent = path.normalize(currentPath).toLowerCase();
-  
+
   for (const altPath of alternativePaths) {
     // 跳过当前路径
     if (path.normalize(altPath).toLowerCase() === normalizedCurrent) {
       continue;
     }
-    
+
     try {
       const altDir = path.dirname(altPath);
-      
+
       // 只同步到已存在的目录（不主动创建新目录）
       if (!fs.existsSync(altDir)) {
         continue;
       }
-      
+
       // 检查是否需要同步
       const existing = readDeviceIdFile(altPath);
       if (!existing || existing.id !== deviceId) {
@@ -533,7 +532,9 @@ function syncDeviceIdToAllLocations(deviceId: string, currentPath: string): void
         log.debug(`Synced device ID to ${altPath}`);
       }
     } catch (syncErr) {
-      log.warn(`Failed to sync device ID to ${altPath}: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`);
+      log.warn(
+        `Failed to sync device ID to ${altPath}: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`,
+      );
     }
   }
 }

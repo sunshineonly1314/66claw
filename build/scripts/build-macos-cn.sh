@@ -168,6 +168,7 @@ log_step "Step 2: build:secure (TypeScript + CN-only obfuscation + integrity)"
 STEP_START=$(date +%s)
 
 # build:secure = pnpm build + build:cn-compile + build:cn-extensions
+#              + verify:extensions (HIGH-04: JS must match TS source, no obfuscation)
 #              + obfuscate-dist.ts + compile-bytecode.ts + integrity:gen + release:changelog
 # 已经包含了 bytecode 编译和 integrity 生成，不需要再单独调用
 pnpm build:secure 2>&1

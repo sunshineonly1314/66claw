@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -158,7 +159,7 @@ function psEscape(s: string): string {
 function psFile(script: string, timeoutMs = 10000): string {
   const tmpFile = path.join(
     os.tmpdir(),
-    `openclawcn-dc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`,
+    `openclawcn-dc-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.ps1`,
   );
   try {
     fs.writeFileSync(tmpFile, script, "utf-8");
@@ -700,7 +701,18 @@ export async function handleScreenshot(
     const width = parseInt(parts[1] || "0", 10);
     const height = parseInt(parts[2] || "0", 10);
     const mode = parts[3] || "fullscreen";
-    const note = parts.find((p) => p && !p.startsWith("monitors:") && !p.startsWith("offset:") && !p.startsWith("winpos:") && p !== "ok" && p !== String(width) && p !== String(height) && p !== mode) || "";
+    const note =
+      parts.find(
+        (p) =>
+          p &&
+          !p.startsWith("monitors:") &&
+          !p.startsWith("offset:") &&
+          !p.startsWith("winpos:") &&
+          p !== "ok" &&
+          p !== String(width) &&
+          p !== String(height) &&
+          p !== mode,
+      ) || "";
 
     const monitorInfo = parts.find((p) => p?.startsWith("monitors:")) ?? "";
     const offsetInfo = parts.find((p) => p?.startsWith("offset:")) ?? "";
@@ -755,16 +767,18 @@ export async function handleScreenshot(
       }
 
       if (willBeResized) {
-        const screenOffsetX = offsetInfo ? parseInt((offsetInfo.split(":")[1] ?? "0").split(",")[0] || "0", 10) : 0;
-        const screenOffsetY = offsetInfo ? parseInt((offsetInfo.split(":")[1] ?? "0").split(",")[1] || "0", 10) : 0;
+        const screenOffsetX = offsetInfo
+          ? parseInt((offsetInfo.split(":")[1] ?? "0").split(",")[0] || "0", 10)
+          : 0;
+        const screenOffsetY = offsetInfo
+          ? parseInt((offsetInfo.split(":")[1] ?? "0").split(",")[1] || "0", 10)
+          : 0;
         extraTextLines.push(
           `⚠ 图片已缩放至 ${displayWidth}x${displayHeight} 显示。`,
           `坐标换算公式: screen_x = ${screenOffsetX} + image_x * ${scaleFactor.toFixed(2)}, screen_y = ${screenOffsetY} + image_y * ${scaleFactor.toFixed(2)}`,
         );
       } else if (offsetInfo && offsetInfo !== "offset:0,0") {
-        extraTextLines.push(
-          `多显示器偏移: ${offsetInfo.split(":")[1]} — click 坐标需加上此偏移`,
-        );
+        extraTextLines.push(`多显示器偏移: ${offsetInfo.split(":")[1]} — click 坐标需加上此偏移`);
       } else {
         extraTextLines.push("提示: 图片中的坐标即为 click 操作的物理像素坐标");
       }
@@ -784,7 +798,9 @@ export async function handleScreenshot(
         mode,
         monitors: monitorCount,
         ...(mode === "window" ? { winLeft, winTop } : {}),
-        ...(willBeResized ? { scaleFactor: +scaleFactor.toFixed(2), displayWidth, displayHeight } : {}),
+        ...(willBeResized
+          ? { scaleFactor: +scaleFactor.toFixed(2), displayWidth, displayHeight }
+          : {}),
       },
     });
   } finally {
@@ -1262,7 +1278,7 @@ export function createDesktopControlTool(): AnyAgentTool | null {
       "",
       "Actions: screenshot, click, type, key, scroll, list_windows, focus, app_search",
       "app_search: Search within a known app by process name. Automatically finds the window, clicks the search box, types the query, and presses Enter.",
-      '  Supported apps: cloudmusic (网易云音乐)',
+      "  Supported apps: cloudmusic (网易云音乐)",
       "Examples:",
       '  desktop_control({action:"screenshot"})',
       '  desktop_control({action:"click", x:400, y:300})',

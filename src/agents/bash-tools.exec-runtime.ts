@@ -78,6 +78,35 @@ export function validateHostEnv(env: Record<string, string>): void {
     }
   }
 }
+
+// [MED-10] Sensitive env var patterns that should never leak into child processes.
+// These are the gateway's own secrets, not user-requested env vars.
+const SECRET_ENV_EXACT = new Set([
+  "OPENCLAWCN_GATEWAY_TOKEN",
+  "OPENCLAWCN_GATEWAY_PASSWORD",
+  "CLAWDBOT_GATEWAY_TOKEN",
+  "CLAWDBOT_GATEWAY_PASSWORD",
+  "OPENCLAWCN_LICENSE_KEY",
+  "OPENCLAWCN_DEV",
+]);
+const SECRET_ENV_SUFFIXES = ["_API_KEY", "_SECRET", "_TOKEN", "_PASSWORD", "_CREDENTIAL"];
+
+/**
+ * Remove secret env vars from the inherited process.env before passing to
+ * child processes. This prevents gateway tokens and API keys from being
+ * accessible to user-spawned commands.
+ */
+export function stripSecretEnvKeys(env: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    const upper = key.toUpperCase();
+    if (SECRET_ENV_EXACT.has(upper)) continue;
+    if (SECRET_ENV_SUFFIXES.some((suffix) => upper.endsWith(suffix))) continue;
+    result[key] = value;
+  }
+  return result;
+}
+
 export const DEFAULT_MAX_OUTPUT = clampWithDefault(
   readEnvInt("PI_BASH_MAX_OUTPUT_CHARS"),
   200_000,

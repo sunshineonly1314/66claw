@@ -11,11 +11,9 @@ import type {
 let fetchHandler: (url: string, init?: RequestInit) => Promise<Response>;
 
 vi.mock("../utils/fetch-timeout.js", () => ({
-  fetchWithTimeout: vi.fn(
-    async (url: string, init: RequestInit, _timeoutMs: number) => {
-      return fetchHandler(url, init);
-    },
-  ),
+  fetchWithTimeout: vi.fn(async (url: string, init: RequestInit, _timeoutMs: number) => {
+    return fetchHandler(url, init);
+  }),
 }));
 
 // ─── Import SUT (after mock is installed) ──────────────
@@ -770,10 +768,11 @@ describe("installer-updater", () => {
   // resolveUpdateServerUrl
   // ══════════════════════════════════════════════════════
   describe("resolveUpdateServerUrl", () => {
-    it("returns env var when set", () => {
+    it("returns default when env var is set but not in dev build", () => {
+      // [MED-09] Production builds ignore env var override to prevent update server hijacking
       vi.stubEnv("OPENCLAWCN_UPDATE_SERVER", "https://custom.example.com");
       const url = resolveUpdateServerUrl("/some/root");
-      expect(url).toBe("https://custom.example.com");
+      expect(url).toBe("https://dl.obplugins.cn");
     });
 
     it("returns default when no env and no install.json", () => {

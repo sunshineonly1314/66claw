@@ -106,6 +106,7 @@
       "src/memory/search-tiering-cn.ts",
       "src/memory/memory-schema.ts",
       "src/security/delayed-enforcement.ts",
+      "src/security/extension-signature.ts",
       "src/gateway/server-methods/model-config.ts",
       "src/mcp/marketplace-sync.ts",
       "src/mcp/marketplace-index.ts",
@@ -313,6 +314,17 @@
     ]
   },
 
+  "cn_extension_build": {
+    "description": "CN channel extensions compiled from TS via esbuild (no obfuscation). CI verifies committed .js files exactly match esbuild output. See verify-extensions.ts (HIGH-04 fix).",
+    "directories": [
+      "extensions/dingtalk/",
+      "extensions/feishu/",
+      "extensions/openclawwechat/",
+      "extensions/qqbot/",
+      "extensions/wecom/"
+    ]
+  },
+
   "cn_encryption": {
     "$comment": "Encryption targets. obfuscate-dist.ts and compile-bytecode.ts read from here. Paths are src/ source paths, auto-mapped to dist/ at build time. Only CN-written files are listed — upstream code is never encrypted.",
 
@@ -393,7 +405,7 @@
     },
 
     "obfuscate": {
-      "description": "Standard protection: RC4 obfuscation only (no bytecode). For less-critical CN code. Channel extensions (feishu/dingtalk/wecom/qqbot/openclawwechat) are intentionally NOT encrypted.",
+      "description": "Standard protection: RC4 obfuscation only (no bytecode). For less-critical CN code. Channel extensions are built via cn_extension_build (clean TS→JS, no obfuscation) for auditability.",
       "directories": [],
       "files": [
         "src/config/types.tool-discovery.ts"

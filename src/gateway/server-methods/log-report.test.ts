@@ -240,7 +240,8 @@ describe("log_report.submit", () => {
     const body = JSON.parse((mocks.fetch.mock.calls[0] as [string, RequestInit])[1].body as string);
     expect(body.context.version.length).toBe(20);
     expect(body.context.platform.length).toBe(50);
-    expect(body.context.hostname.length).toBe(50);
+    // [MED-04] hostname is now anonymized as `host-${base64url(6)}` = 11 chars max
+    expect(body.context.hostname).toMatch(/^host-[A-Za-z0-9_-]{6}$/);
   });
 
   // ── 远程同步失败 ────────────────────────────

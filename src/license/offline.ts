@@ -20,6 +20,8 @@ import {
   DEFAULT_LICENSE_CONFIG,
 } from "./types.js";
 import { createLicenseCache } from "./verify.js";
+import { verifyLicenseResponseSignature } from "./rsa-verify.js";
+import { deriveKey } from "./sign.js";
 
 const log = createSubsystemLogger("license:offline");
 
@@ -29,13 +31,14 @@ const LICENSE_CACHE_FILENAME = "license_cache.json";
  * Compute HMAC-SHA256 over critical cache fields to detect field-level tampering.
  * Even though the file is AES-256-GCM encrypted, this provides defense-in-depth
  * against memory-level attacks that modify decrypted data before validation.
+ *
+ * Key derivation uses HKDF with machine-specific context for proper key separation.
  */
 function computeCacheHmac(cache: LicenseCache): string {
-  // Derive HMAC key from machine-specific entropy (pid-independent, survives restart)
-  const hmacSeed = [process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown", cache.key].join(
-    "|",
-  );
-  const hmacKey = crypto.createHash("sha256").update(hmacSeed).digest();
+  // Use HKDF to derive a dedicated cache-HMAC key from the license key,
+  // with machine-specific info for binding to this device.
+  const machineId = process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown";
+  const hmacKey = deriveKey(cache.key, `cache-hmac|${machineId}`);
 
   const payload = [
     cache.key,
@@ -126,12 +129,50 @@ async function parseCacheFile(filePath: string): Promise<LicenseCache | null> {
   }
 
   // HMAC tamper detection (only for caches that have been saved with HMAC)
+  let hmacOk = true;
   if (cache._hmac) {
     const expectedHmac = computeCacheHmac(cache);
     if (cache._hmac !== expectedHmac) {
-      log.warn("License cache HMAC mismatch — possible tampering detected");
+      // Don't reject immediately — HMAC key derivation may have changed after upgrade
+      // (e.g. HKDF migration in LOW-07). If RSA signedPayload is available and valid,
+      // we can still trust the cache and re-stamp the HMAC on next save.
+      hmacOk = false;
+      log.warn("License cache HMAC mismatch — will attempt RSA fallback verification");
+    }
+  }
+
+  // [HIGH-08] RSA signature verification on signed payload
+  // Ensures tier/expiresAt/features haven't been tampered with, even if
+  // the attacker managed to decrypt and re-encrypt the cache file.
+  if (cache.signedPayload) {
+    const sp = cache.signedPayload;
+    // Verify the stored signature against the stored signed fields
+    const sigResult = verifyLicenseResponseSignature(
+      sp.valid,
+      sp.tier,
+      sp.expiresAt,
+      sp.serverTime,
+      sp.signature,
+    );
+    if (!sigResult.valid) {
+      log.warn("License cache signedPayload RSA verification failed — possible tampering");
       return null;
     }
+    // Cross-check: cached fields must match signed fields
+    if (cache.valid !== sp.valid || cache.tier !== sp.tier || cache.expiresAt !== sp.expiresAt) {
+      log.warn("License cache fields diverge from signedPayload — tampering detected");
+      return null;
+    }
+    // RSA verification passed — HMAC mismatch is tolerable (migration scenario)
+    if (!hmacOk) {
+      log.info(
+        "HMAC mismatch tolerated: RSA signedPayload verification passed (key derivation migration)",
+      );
+    }
+  } else if (!hmacOk) {
+    // No RSA signedPayload to fall back on — HMAC is the only integrity check
+    log.warn("License cache HMAC mismatch and no signedPayload — rejecting cache");
+    return null;
   }
 
   return cache;

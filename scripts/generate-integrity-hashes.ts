@@ -25,8 +25,9 @@ const OUTPUT_FILE = path.join(DIST_DIR, "security", "integrity-hashes.json");
  * 需要排除的文件模式（用于目录扫描）
  */
 const EXCLUDE_PATTERNS = [
-  /\.test\.js$/,           // 测试文件
-  /integrity-hashes\.json$/, // 哈希文件本身
+  /\.test\.js$/,                    // 测试文件
+  /integrity-hashes\.json$/,        // 哈希文件本身（生成后自包含）
+  /integrity-hashes-root\.json$/,   // 根哈希文件（Step 4 单独处理，避免循环）
 ];
 
 interface FileHash {
@@ -161,13 +162,59 @@ function main(): void {
     }
   }
 
+  // Step 3.5: [MED-13] 哈希关键 ESM bundle 文件
+  // 这些大型 JS 文件包含 License 逻辑、RSA 公钥、网络层安全代码等。
+  // 之前未纳入完整性校验，攻击者可直接 patch 这些文件绕过授权。
+  // 使用 glob 模式匹配，因为文件名可能含 hash 后缀（如 gateway-cli-kSg0il7V.js）
+  console.log(`\n哈希关键 ESM bundle 文件:`);
+  const ESM_BUNDLE_PATTERNS = [
+    /^gateway-cli[^/]*\.js$/,       // Gateway CLI 主 bundle（含网络层安全逻辑）
+    /^daemon-cli\.js$/,              // Daemon CLI（含加密逻辑）
+    /^content-vault[^/]*\.js$/,      // Content Vault wrapper
+    /^github-copilot-auth[^/]*\.js$/,// Auth profiles 存储（含 saveAuthProfileStore）
+  ];
+  const distTopFiles = fs.readdirSync(DIST_DIR, { withFileTypes: true });
+  for (const entry of distTopFiles) {
+    if (!entry.isFile()) continue;
+    const name = entry.name;
+    const matchesPattern = ESM_BUNDLE_PATTERNS.some((p) => p.test(name));
+    if (matchesPattern) {
+      const fullPath = path.join(DIST_DIR, name);
+      addHash(hashes, seen, fullPath, DIST_DIR);
+    }
+  }
+
   // 确保输出目录存在
   const outputDir = path.dirname(OUTPUT_FILE);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // 写入哈希文件
+  // Step 4: [LOW-01] 生成 integrity-hashes-root.json — 包含 integrity-hashes.json 本身的哈希
+  // 这形成一个双重保护链：
+  //   - integrity-hashes.json 的内容由 root.json 中嵌入的哈希校验
+  //   - integrity-hashes-root.json 本身被纳入 integrity-hashes.json 的巡逻监控
+  // 攻击者若要同时篡改两个文件（绕过巡逻），需在进程启动前完成，
+  // 而启动时 loadEmbeddedHashes() 会验证 hashes.json ↔ root.json 的一致性。
+
+  // 先写入主哈希文件（不含 root.json 条目）
+  const hashesJsonContent = JSON.stringify(hashes, null, 2);
+  const hashesFileHash = createHash("sha256").update(hashesJsonContent, "utf8").digest("hex");
+
+  const ROOT_FILE = path.join(outputDir, "integrity-hashes-root.json");
+  const rootContent = JSON.stringify({ hash: hashesFileHash, generated: new Date().toISOString() }, null, 2);
+  fs.writeFileSync(ROOT_FILE, rootContent, "utf8");
+  console.log(`\n🔐 integrity-hashes-root.json 已生成`);
+  console.log(`   根哈希: ${hashesFileHash.slice(0, 16)}...`);
+
+  // 将 root.json 本身也纳入哈希列表（使巡逻监控覆盖它）
+  const rootRelPath = path.relative(DIST_DIR, ROOT_FILE).replace(/\\/g, "/");
+  const rootFileHash = computeHash(ROOT_FILE);
+  hashes.push({ path: rootRelPath, hash: rootFileHash });
+  seen.add(rootRelPath);
+  console.log(`  ✓ ${rootRelPath} (自包含)`);
+
+  // 最终写入（含 root.json 条目）
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(hashes, null, 2), "utf8");
 
   console.log(`\n✅ 完成！生成了 ${hashes.length} 个 CN 文件的哈希`);

@@ -128,29 +128,132 @@ mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # 执行构建
-if [[ "$PLATFORM" == "windows" ]] || [[ "$PLATFORM" == "all" ]]; then
-  echo ""
-  echo -e "${GREEN}🪟 Starting Windows build...${NC}"
-  LOG_FILE="$LOG_DIR/build-windows-$TIMESTAMP.log"
+if [[ "$PLATFORM" == "all" ]]; then
+  # ── 双平台并行构建 ──
+  # Windows 和 macOS SSH 到不同机器，完全独立，可安全并行。
+  # 构建阶段并行，OSS 上传阶段串行（OSS 无法并发上传同一版本）。
 
-  if bash "$SCRIPT_DIR/build-windows.sh" "$VERSION" "$WIN_MODE" 2>&1 | tee "$LOG_FILE"; then
-    echo -e "${GREEN}✅ Windows build completed!${NC}"
+  # ── 预确定版本号 ──
+  # 并行模式下必须在启动构建前确定版本号，否则两个 builder 同时 auto bump 会产生竞态。
+  # 通过 --version 传入后，两个 builder 都会跳过 auto bump。
+  if [ -z "$VERSION" ]; then
+    echo -e "${YELLOW}📌 Pre-determining version (avoid parallel bump race)...${NC}"
+    # 读取当前 package.json 版本并 patch +1
+    CURRENT_VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "")
+    if [ -n "$CURRENT_VERSION" ]; then
+      # Simple patch bump: 1.1.23 → 1.1.24
+      IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+      PATCH=$((PATCH + 1))
+      VERSION="${MAJOR}.${MINOR}.${PATCH}"
+      echo -e "  Current: $CURRENT_VERSION → Next: ${GREEN}$VERSION${NC}"
+    else
+      echo -e "${YELLOW}  WARNING: Cannot read package.json, letting builders auto-bump${NC}"
+    fi
+  fi
+
+  echo ""
+  echo -e "${GREEN}🚀 双平台并行构建模式${NC}"
+  echo ""
+
+  LOG_WIN="$LOG_DIR/build-windows-$TIMESTAMP.log"
+  LOG_MAC="$LOG_DIR/build-macos-$TIMESTAMP.log"
+
+  echo -e "${GREEN}🪟 Starting Windows build (parallel)...${NC}"
+  bash "$SCRIPT_DIR/build-windows.sh" "$VERSION" "$WIN_MODE" --skip-deploy > "$LOG_WIN" 2>&1 &
+  WIN_PID=$!
+
+  echo -e "${GREEN}🍎 Starting macOS build (parallel)...${NC}"
+  bash "$SCRIPT_DIR/build-macos.sh" --version "$VERSION" --arch "$MAC_ARCH" --skip-deploy > "$LOG_MAC" 2>&1 &
+  MAC_PID=$!
+
+  echo -e "  Windows PID: $WIN_PID  Log: $LOG_WIN"
+  echo -e "  macOS   PID: $MAC_PID  Log: $LOG_MAC"
+  echo ""
+
+  # 等待两个构建完成
+  # NOTE: 必须用 set +e，否则 set -e 下 wait 遇到非零退出会直接终止脚本
+  set +e
+  wait $WIN_PID
+  WIN_EXIT=$?
+  wait $MAC_PID
+  MAC_EXIT=$?
+  set -e
+
+  # 报告构建结果
+  echo ""
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "  Build Results:"
+  if [ $WIN_EXIT -eq 0 ]; then
+    echo -e "  Windows: ${GREEN}SUCCESS${NC}"
   else
-    echo -e "${RED}❌ Windows build failed! Check log: $LOG_FILE${NC}"
+    echo -e "  Windows: ${RED}FAILED (exit $WIN_EXIT)${NC}"
+    echo -e "  ${YELLOW}Last 20 lines of Windows log:${NC}"
+    tail -20 "$LOG_WIN" 2>/dev/null
+  fi
+  if [ $MAC_EXIT -eq 0 ]; then
+    echo -e "  macOS:   ${GREEN}SUCCESS${NC}"
+  else
+    echo -e "  macOS:   ${RED}FAILED (exit $MAC_EXIT)${NC}"
+    echo -e "  ${YELLOW}Last 20 lines of macOS log:${NC}"
+    tail -20 "$LOG_MAC" 2>/dev/null
+  fi
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+  # 如果任一构建失败，退出
+  if [ $WIN_EXIT -ne 0 ] || [ $MAC_EXIT -ne 0 ]; then
+    echo -e "${RED}❌ One or more builds failed. Skipping deploy.${NC}"
     exit 1
   fi
-fi
 
-if [[ "$PLATFORM" == "macos" ]] || [[ "$PLATFORM" == "all" ]]; then
+  # ── OSS 上传阶段：串行执行（避免并发上传冲突） ──
   echo ""
-  echo -e "${GREEN}🍎 Starting macOS build...${NC}"
-  LOG_FILE="$LOG_DIR/build-macos-$TIMESTAMP.log"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${GREEN}📤 Release Deploy (sequential upload)${NC}"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-  if bash "$SCRIPT_DIR/build-macos.sh" "$VERSION" "$MAC_ARCH" 2>&1 | tee "$LOG_FILE"; then
-    echo -e "${GREEN}✅ macOS build completed!${NC}"
+  DEPLOY_LOG_WIN="$LOG_DIR/deploy-windows-$TIMESTAMP.log"
+  DEPLOY_LOG_MAC="$LOG_DIR/deploy-macos-$TIMESTAMP.log"
+
+  echo -e "${GREEN}🪟 Deploying Windows...${NC}"
+  if bash "$SCRIPT_DIR/build-windows.sh" "$VERSION" "$WIN_MODE" --deploy-only 2>&1 | tee "$DEPLOY_LOG_WIN"; then
+    echo -e "${GREEN}✅ Windows deploy completed!${NC}"
   else
-    echo -e "${RED}❌ macOS build failed! Check log: $LOG_FILE${NC}"
-    exit 1
+    echo -e "${RED}❌ Windows deploy failed! Check log: $DEPLOY_LOG_WIN${NC}"
+  fi
+
+  echo -e "${GREEN}🍎 Deploying macOS...${NC}"
+  if bash "$SCRIPT_DIR/build-macos.sh" --version "$VERSION" --arch "$MAC_ARCH" --deploy-only 2>&1 | tee "$DEPLOY_LOG_MAC"; then
+    echo -e "${GREEN}✅ macOS deploy completed!${NC}"
+  else
+    echo -e "${RED}❌ macOS deploy failed! Check log: $DEPLOY_LOG_MAC${NC}"
+  fi
+
+else
+  # ── 单平台构建（保持原有逻辑） ──
+  if [[ "$PLATFORM" == "windows" ]]; then
+    echo ""
+    echo -e "${GREEN}🪟 Starting Windows build...${NC}"
+    LOG_FILE="$LOG_DIR/build-windows-$TIMESTAMP.log"
+
+    if bash "$SCRIPT_DIR/build-windows.sh" "$VERSION" "$WIN_MODE" 2>&1 | tee "$LOG_FILE"; then
+      echo -e "${GREEN}✅ Windows build completed!${NC}"
+    else
+      echo -e "${RED}❌ Windows build failed! Check log: $LOG_FILE${NC}"
+      exit 1
+    fi
+  fi
+
+  if [[ "$PLATFORM" == "macos" ]]; then
+    echo ""
+    echo -e "${GREEN}🍎 Starting macOS build...${NC}"
+    LOG_FILE="$LOG_DIR/build-macos-$TIMESTAMP.log"
+
+    if bash "$SCRIPT_DIR/build-macos.sh" --version "$VERSION" --arch "$MAC_ARCH" 2>&1 | tee "$LOG_FILE"; then
+      echo -e "${GREEN}✅ macOS build completed!${NC}"
+    else
+      echo -e "${RED}❌ macOS build failed! Check log: $LOG_FILE${NC}"
+      exit 1
+    fi
   fi
 fi
 
