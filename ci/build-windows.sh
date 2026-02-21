@@ -65,7 +65,7 @@ cat > "$TEMP_PS1" << PSEOF
 \$SKIP_DEPLOY = '$SKIP_DEPLOY'
 \$DEPLOY_ONLY = '$DEPLOY_ONLY'
 
-# Fix PATH: ensure Git Bash comes before WSL bash, and pnpm/node are available
+# Fix PATH: Git Bash before WSL bash, pnpm/node available
 \$gitBashDir = 'C:\Program Files\Git\bin'
 \$gitUsrBin = 'C:\Program Files\Git\usr\bin'
 if (Test-Path \$gitBashDir) {
@@ -97,9 +97,9 @@ Write-Host "Current branch: \$(git branch --show-current)"
 Write-Host "Installing dependencies..."
 pnpm install --no-frozen-lockfile
 
-# ── Auto version bump ──
+# Auto version bump
 if (-not \$VERSION) {
-    # 检查最新 commit 是否已经是 version bump（避免多平台重复 bump）
+    # Check if last commit is already a version bump (avoid multi-platform double bump)
     \$lastMsg = git log -1 --pretty=%s 2>\$null
     if (\$lastMsg -and \$lastMsg.StartsWith("chore: bump version to ")) {
         \$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
@@ -125,10 +125,10 @@ if (-not \$VERSION) {
 
 \$tauriOutput = Join-Path \$WORKSPACE 'apps\desktop\src-tauri\target\release\bundle\nsis'
 
-# ── 构建阶段（--deploy-only 时跳过） ──
+# Build phase (skip when --deploy-only)
 if (\$DEPLOY_ONLY -ne 'true') {
 
-# ── Rust 环境检查 ──
+# Rust environment check
 if (-not (Get-Command "cargo" -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: Rust/Cargo not found. Install from https://rustup.rs"
     exit 1
@@ -160,8 +160,8 @@ if (\$artifacts) {
 
 } # end DEPLOY_ONLY check
 
-# ── Release Deploy: 生成增量包 + 上传 ──
-# --skip-deploy 时跳过（并行构建模式下，上传由 trigger-build.sh 串行调度）
+# Release Deploy: generate delta packages + upload
+# Skip when --skip-deploy (parallel build mode, upload is serialized by trigger-build.sh)
 if (\$SKIP_DEPLOY -ne 'true') {
 
 Write-Host ""
@@ -169,12 +169,12 @@ Write-Host "========================================="
 Write-Host "  Release Deploy (Delta + Upload)"
 Write-Host "========================================="
 
-# 确保 CWD 回到 workspace（build.ps1 子进程可能改变了上下文）
+# Reset CWD back to workspace (build.ps1 subprocess may have changed it)
 Set-Location \$WORKSPACE
 Write-Host "CWD: \$(Get-Location)"
 
-# 构建阶段会用 --omit=dev 重装 node_modules，tsx 被移除
-# 这里重新安装全部依赖以确保 tsx 可用
+# Build phase reinstalls with --omit=dev, removing tsx
+# Re-install all deps to ensure tsx is available for release-deploy
 Write-Host "Re-installing dev dependencies for release-deploy..."
 pnpm install --no-frozen-lockfile 2>\$null
 
@@ -184,7 +184,7 @@ if (-not (Test-Path \$releaseCacheDir)) {
     Write-Host "Created release cache dir: \$releaseCacheDir"
 }
 
-# OSS 环境变量检查（从系统环境变量读取）
+# OSS env var check (read from system environment)
 \$ossKeyId = \$env:OSS_ACCESS_KEY_ID
 \$ossKeySecret = \$env:OSS_ACCESS_KEY_SECRET
 if (-not \$ossKeyId -or -not \$ossKeySecret) {
