@@ -225,6 +225,26 @@ if [[ -f "$PROJECT_ROOT/.npmrc" ]]; then
   cp "$PROJECT_ROOT/.npmrc" "$TEMP_INSTALL_DIR/.npmrc"
 fi
 
+# Remove dependencies that have git:// sub-dependencies (unreachable from CN network).
+# @whiskeysockets/baileys depends on libsignal-node via git+https://github.com/...
+# which requires github.com access for git ls-remote. WhatsApp channel is not needed
+# in the desktop app, so we remove it before npm install.
+GIT_DEP_PACKAGES=("@whiskeysockets/baileys")
+for pkg in "${GIT_DEP_PACKAGES[@]}"; do
+  log "  Removing git-dep package from temp package.json: $pkg"
+  node -e "
+    const fs = require('fs');
+    const p = JSON.parse(fs.readFileSync('$TEMP_INSTALL_DIR/package.json', 'utf8'));
+    if (p.dependencies && p.dependencies['$pkg']) delete p.dependencies['$pkg'];
+    if (p.optionalDependencies && p.optionalDependencies['$pkg']) delete p.optionalDependencies['$pkg'];
+    // Also remove from pnpm overrides if present
+    if (p.pnpm && p.pnpm.onlyBuiltDependencies) {
+      p.pnpm.onlyBuiltDependencies = p.pnpm.onlyBuiltDependencies.filter(d => d !== '$pkg');
+    }
+    fs.writeFileSync('$TEMP_INSTALL_DIR/package.json', JSON.stringify(p, null, 2) + '\n');
+  "
+done
+
 # Run npm install with production deps only
 # NOTE: Do NOT use --omit=optional here. It can cause transitive dependency
 # resolution to skip packages like @aws-sdk/client-bedrock that are required
