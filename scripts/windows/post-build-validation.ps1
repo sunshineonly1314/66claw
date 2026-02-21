@@ -334,12 +334,18 @@ $env:OPENCLAWCN_BUNDLED_SKILLS_DIR  = Join-Path $InstallDir "skills"
 $env:OPENCLAWCN_BUNDLED_TOOLS_DIR   = Join-Path $InstallDir "tools"
 $env:OPENCLAWCN_GATEWAY_TOKEN      = $token
 $env:OPENCLAWCN_REGION              = "cn"
+$env:OPENCLAWCN_DESKTOP_MODE       = "1"
 $env:CLAWDBOT_BUNDLED_PLUGINS_DIR  = $env:OPENCLAWCN_BUNDLED_PLUGINS_DIR
 $env:CLAWDBOT_BUNDLED_SKILLS_DIR   = $env:OPENCLAWCN_BUNDLED_SKILLS_DIR
 $env:CLAWDBOT_BUNDLED_TOOLS_DIR    = $env:OPENCLAWCN_BUNDLED_TOOLS_DIR
 $env:CLAWDBOT_GATEWAY_TOKEN       = $token
 $env:CLAWDBOT_REGION               = "cn"
 $env:PATH = "$(Join-Path $InstallDir 'node');$(Join-Path $InstallDir 'tools');$env:PATH"
+
+# Create minimal config so gateway starts without manual setup
+New-Item -ItemType Directory -Path $testStateDir -Force | Out-Null
+$minimalConfig = @{ gateway = @{ mode = "local" } } | ConvertTo-Json -Depth 3
+Set-Content -Path (Join-Path $testStateDir "openclawcn.json") -Value $minimalConfig -Encoding UTF8
 
 # 2d. Start Gateway (only if InstallDir and node.exe exist)
 $entryJs = Join-Path $InstallDir "dist\entry.js"

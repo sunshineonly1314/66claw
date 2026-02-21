@@ -364,6 +364,7 @@ export OPENCLAWCN_BUNDLED_SKILLS_DIR="$APP_ROOT/skills"
 export OPENCLAWCN_BUNDLED_TOOLS_DIR="$RESOURCES/tools"
 export OPENCLAWCN_GATEWAY_TOKEN="$TOKEN"
 export OPENCLAWCN_REGION="cn"
+export OPENCLAWCN_DESKTOP_MODE=1
 export NODE_ENV=production
 
 # Save original PATH
@@ -373,6 +374,15 @@ export PATH="$RESOURCES/node/bin:$PATH"
 # 2c. Create state directories
 mkdir -p "$TEST_STATE_DIR/config" 2>/dev/null || true
 mkdir -p "$TEST_STATE_DIR/data" 2>/dev/null || true
+
+# 2c-fix. Create minimal config so gateway starts without manual setup
+cat > "$TEST_STATE_DIR/openclawcn.json" << 'EOFCFG'
+{
+  "gateway": {
+    "mode": "local"
+  }
+}
+EOFCFG
 
 # 2d. Start Gateway (only if node and entry.js exist)
 ENTRY_JS="$APP_ROOT/dist/entry.js"
