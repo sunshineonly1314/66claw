@@ -394,6 +394,7 @@ export OPENCLAWCN_BUNDLED_SKILLS_DIR="$APP_DIR/skills"
 export OPENCLAWCN_BUNDLED_TOOLS_DIR="${TOOLS_DIR:-}"
 export OPENCLAWCN_BUNDLED_PLUGINS_DIR="$APP_DIR/extensions"
 export OPENCLAWCN_STATE_DIR="$STATE_DIR"
+export OPENCLAWCN_DESKTOP_MODE=1
 export NODE_ENV=production
 
 # Read our own version
@@ -549,8 +550,24 @@ if [[ -d "$ROOT_DIR/assets" ]]; then
 fi
 
 # ── Copy data (MCP index) ──
+mkdir -p "$APP_ROOT/data"
 if [[ -d "$ROOT_DIR/data" ]]; then
-  cp -R "$ROOT_DIR/data" "$APP_ROOT/data"
+  cp -R "$ROOT_DIR/data/"* "$APP_ROOT/data/" 2>/dev/null || true
+fi
+# Verify mcp-index data was bundled (CI uploads data/ via SCP before build).
+# Without it, MCP marketplace will be empty until runtime sync.
+if [[ -f "$APP_ROOT/data/mcp-index.json" ]]; then
+  MCP_ITEMS=$(node -pe "JSON.parse(require('fs').readFileSync('$APP_ROOT/data/mcp-index.json','utf8')).items?.length||0" 2>/dev/null || echo 0)
+  log "MCP index bundled: $MCP_ITEMS items"
+  if [[ -f "$APP_ROOT/data/mcp-index-enhanced.json" ]]; then
+    log "MCP enhanced index bundled (with Chinese translations)"
+  fi
+else
+  warn "mcp-index.json not found in data/ — MCP marketplace will be empty on first launch!"
+  warn "Ensure CI uploads data/ files before build (ci/build-macos.sh handles this)."
+  # Create minimal fallback so Gateway doesn't error on startup
+  echo '{"items":[],"generated":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","seed":true}' \
+    > "$APP_ROOT/data/mcp-index.json"
 fi
 
 # ── Uninstall helper ──
@@ -618,8 +635,6 @@ node -e "
     // Native modules not needed in desktop bundle
     'node-llama-cpp', '@napi-rs/canvas', 'playwright-core',
     '@lydell/node-pty', 'sqlite-vec', 'sharp',
-    // Large SDK packages — desktop uses gateway mode, not direct cloud APIs
-    '@aws-sdk/client-bedrock',
     // Dev/test tools that may leak into dependencies
     'oxlint', 'oxfmt', 'oxlint-tsgolint',
   ];
@@ -673,6 +688,23 @@ if [[ "$NPM_INSTALL_OK" != "true" ]]; then
   err "Troubleshooting: curl -v $NPM_REGISTRY/-/ping"
   exit 1
 fi
+
+# Verify critical runtime dependencies are present
+CRITICAL_DEPS=(
+  "@aws-sdk/client-bedrock"
+  "@aws-sdk/client-bedrock-runtime"
+  "express"
+  "zod"
+  "bytenode"
+)
+for dep in "${CRITICAL_DEPS[@]}"; do
+  if [[ ! -d "node_modules/$dep" ]]; then
+    err "CRITICAL: $dep missing from production node_modules!"
+    err "  This will cause Gateway startup failure. Aborting build."
+    exit 1
+  fi
+done
+log "Critical deps verified: ${CRITICAL_DEPS[*]}"
 
 # Aggressive node_modules cleanup
 if [[ "$FAST_MODE" != "true" ]]; then
