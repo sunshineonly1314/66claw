@@ -206,6 +206,27 @@ export const en = {
   "agents.saving": "Saving…",
   "agents.save": "Save",
 
+  // Agent Create / Delete
+  "agents.addAgent": "Add Agent",
+  "agents.addAgentName": "Name",
+  "agents.addAgentWorkspace": "Workspace Path",
+  "agents.addAgentNamePlaceholder": "e.g. work, family",
+  "agents.addAgentWorkspacePlaceholder": "e.g. ~/clawd-work",
+  "agents.createBtn": "Create",
+  "agents.creating": "Creating…",
+  "agents.deleteAgent": "Delete",
+  "agents.deleteConfirm": "Delete agent \"{{name}}\"? Workspace files will be kept, but config and routing bindings will be removed.",
+
+  // Multi-Agent Guide
+  "agents.guideTitle": "Multi-Agent Guide",
+  "agents.guideIntro": "Each agent is an isolated AI persona with its own workspace, memory, and auth. Create different agents for different scenarios (work, family, projects, etc.).",
+  "agents.guideStep1": "Click \"+ Add Agent\" in the sidebar to create a new agent",
+  "agents.guideStep2": "Edit SOUL.md in the Files tab to define the agent's personality",
+  "agents.guideStep3": "Configure available tools and skills in the Tools and Skills tabs",
+  "agents.guideRoutingTitle": "Message Routing (Bindings)",
+  "agents.guideRoutingBody": "After creating multiple agents, configure routing rules to dispatch messages from different channels/groups to the right agent. Edit the bindings array in the config file to set up routing.",
+  "agents.guideCli": "CLI alternative: openclawcn agents add <name>",
+
   // 智能体上下文 (Agent Context)
   "agents.contextTitle": "Agent Context",
   "agents.contextChannelsSub": "Workspace, identity, and model configuration.",
@@ -634,6 +655,34 @@ export const en = {
   "sessions.filterByChannel": "Filter by Channel",
   "sessions.filterByAgent": "Filter by Agent",
   "sessions.searchSessions": "Search sessions...",
+  // Filter labels
+  "sessions.filter.activeMinutes": "Active within (minutes)",
+  "sessions.filter.limit": "Limit",
+  "sessions.filter.includeGlobal": "Include global",
+  "sessions.filter.includeUnknown": "Include unknown",
+  // Column headers
+  "sessions.col.tokens": "Tokens",
+  "sessions.col.verbose": "Verbose",
+  "sessions.col.reasoning": "Reasoning",
+  // Dropdown options
+  "sessions.opt.inherit": "inherit",
+  "sessions.opt.off": "off",
+  "sessions.opt.on": "on",
+  "sessions.opt.stream": "stream",
+  "sessions.opt.offExplicit": "off (explicit)",
+  "sessions.opt.minimal": "minimal",
+  "sessions.opt.low": "low",
+  "sessions.opt.medium": "medium",
+  "sessions.opt.high": "high",
+  // Kind labels
+  "sessions.kind.direct": "direct",
+  "sessions.kind.group": "group",
+  "sessions.kind.global": "global",
+  "sessions.kind.unknown": "unknown",
+  // Subtitle
+  "sessions.subtitle": "View active users and manage per-session AI behavior",
+  // Placeholder
+  "sessions.namePlaceholder": "(optional)",
 
   // ============================================================================
   // 技能页 (Skills)
@@ -797,7 +846,7 @@ export const en = {
   // Unified view tier filters
   "skills.tier.all": "All",
   "skills.tier.core": "Core",
-  "skills.tier.core.desc": "Skills always loaded into AI conversation",
+  "skills.tier.core.desc": "Skills always loaded into AI conversation (each core skill costs tokens per request, keep it lean)",
   "skills.tier.ready": "Ready",
   "skills.tier.ready.desc": "Dependencies satisfied, ready to enable",
   "skills.tier.needsConfig": "Needs Config",
@@ -812,7 +861,8 @@ export const en = {
   "skills.core.disableWarning": "This is a core skill. Disabling it may affect functionality. Are you sure?",
   "skills.core.promoteToCore": "Promote to Core",
   "skills.core.demoteFromCore": "Remove from Core",
-  "skills.core.limitReached": "Core skills limit reached (50). Remove a core skill to add more.",
+  "skills.core.limitReached": "Core skills limit reached (50). Remove a core skill to add more. More skills is not better — too many waste tokens on every request.",
+  "skills.core.tokenWarning": "Over 30 core skills — each core skill costs tokens on every request. Consider trimming to ~30 to protect your token budget.",
   "skills.core.cannotDemoteAlways": "This is a system core skill and cannot be removed",
   "skills.core.systemCore": "System Core",
   "skills.dnd.dropToAdd": "Drop here to add to core",
@@ -896,6 +946,12 @@ export const en = {
   "instances.scopesCount": "{count} scopes",
   "instances.networkingHint": "Configure client nodes to connect to this gateway for mesh networking.",
   "instances.networkingDocLink": "Networking Guide",
+  "instances.description": "Instances are the running processes connected to this gateway — including the gateway itself, control-panel UIs, and any remote client nodes. Each instance sends periodic heartbeat beacons so you can monitor which components are online, their roles, platform info, and connection status in real time.",
+  "instances.whatIsInstance": "What is an Instance?",
+  "instances.descGateway": "Gateway: The central server process that routes messages and manages configuration.",
+  "instances.descUI": "Control Panel (webchat): The admin UI you are using right now to manage the system.",
+  "instances.descNode": "Client Node: A remote worker that connects to the gateway to execute tasks or relay messages from channels (e.g. WeChat, DingTalk, Feishu).",
+  "instances.descChips": "Tags show each instance's mode, roles, permissions, platform, and version at a glance.",
 
   // ============================================================================
   // 配置页 (Config)

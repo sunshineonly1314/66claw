@@ -301,7 +301,18 @@ export async function toggleSkillPinned(
 // Core Skills — promote / demote / limit
 // ============================================================================
 
-/** Maximum number of core skills (always + pinned) */
+/**
+ * 核心技能硬上限 — 技能不是越多越好！
+ *
+ * 每个核心技能的描述都会注入 system prompt，在每一次 API 请求中消耗 token。
+ * 过多核心技能会：
+ * - 浪费大量 token（70+ 技能 ≈ 数千 token / 请求）
+ * - 对 32K/64K 上下文窗口模型频繁触发 compaction
+ * - 降低 AI 回答质量（上下文被压缩）
+ *
+ * 建议保持 ~30 个即可，最多不超过 50 个。
+ * 此限制前后端同时校验（后端: gateway/server-methods/skills.ts）。
+ */
 export const CORE_SKILLS_MAX = 50;
 
 export function countCoreSkills(report: SkillStatusReport | null): number {

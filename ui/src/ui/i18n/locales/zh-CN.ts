@@ -209,6 +209,27 @@ export const zhCN: Record<keyof typeof en, string> = {
   "agents.saving": "保存中…",
   "agents.save": "保存",
 
+  // 智能体创建与删除 (Agent Create / Delete)
+  "agents.addAgent": "添加智能体",
+  "agents.addAgentName": "名称",
+  "agents.addAgentWorkspace": "工作区路径",
+  "agents.addAgentNamePlaceholder": "如: work, family",
+  "agents.addAgentWorkspacePlaceholder": "如: ~/clawd-work",
+  "agents.createBtn": "创建",
+  "agents.creating": "创建中…",
+  "agents.deleteAgent": "删除",
+  "agents.deleteConfirm": "确定要删除智能体 \"{{name}}\" 吗？工作区文件将被保留，但配置和路由绑定会被移除。",
+
+  // 多智能体指南 (Multi-Agent Guide)
+  "agents.guideTitle": "多智能体配置指南",
+  "agents.guideIntro": "每个智能体是一个独立的 AI 人格，拥有自己的工作区、记忆和认证。你可以为不同场景（工作、家庭、项目等）创建不同的智能体。",
+  "agents.guideStep1": "点击左侧「+ 添加智能体」按钮创建新智能体",
+  "agents.guideStep2": "在「文件」标签页编辑 SOUL.md 定义智能体人格",
+  "agents.guideStep3": "在「工具」和「技能」标签页配置可用工具和技能",
+  "agents.guideRoutingTitle": "消息路由（Bindings）",
+  "agents.guideRoutingBody": "创建多个智能体后，需要配置路由规则将不同渠道/群组的消息分发到对应智能体。编辑配置文件中的 bindings 数组即可设置路由规则。",
+  "agents.guideCli": "也可以使用命令行：openclawcn agents add <名称>",
+
   // 智能体上下文 (Agent Context)
   "agents.contextTitle": "智能体上下文",
   "agents.contextChannelsSub": "工作区、身份和模型配置。",
@@ -635,6 +656,43 @@ export const zhCN: Record<keyof typeof en, string> = {
   "sessions.filterByChannel": "按指挥渠道筛选",
   "sessions.filterByAgent": "按助手筛选",
   "sessions.searchSessions": "搜索会话...",
+  // 会话页 tooltip（仅对真正可能困惑的字段提供，大白话）
+  "sessions.help.title": "每条会话就是一个用户和 AI 的聊天记录。AI 靠它\"记住\"之前聊过什么。",
+  "sessions.help.activeMinutes": "留空显示全部，填个数字就只看最近这些分钟内还在聊的。",
+  "sessions.help.sessionKey": "这串字符是会话的身份证号，点击可以直接看聊天内容。",
+  "sessions.help.tokens": "可以理解为\"字数\"。左边是已经用了多少，右边是上限。快满的时候 AI 会变\"健忘\"，删掉就能重新开始。",
+  "sessions.help.thinkingLevel": "AI 想多深再回答。选\"跟随默认\"就用全局统一值。越高回答越仔细，但也越慢。",
+  "sessions.help.verbose": "AI 回复啰不啰嗦。\"跟随默认\"= 用全局设置，on = 详细说，off = 简短答。",
+  "sessions.help.reasoning": "让不让 AI 把思考过程也展示出来。stream = 边想边显示给你看。",
+  "sessions.help.deleteConfirm": "删除后 AI 会彻底忘掉和这个用户聊过的所有内容。\n\n用户下次发消息会自动开始全新对话。\n不会影响其他用户，也不会删除账号。",
+  // 筛选器中文标签
+  "sessions.filter.activeMinutes": "活跃时间（分钟）",
+  "sessions.filter.limit": "显示条数",
+  "sessions.filter.includeGlobal": "包含全局会话",
+  "sessions.filter.includeUnknown": "包含未知来源",
+  // 表头中文
+  "sessions.col.tokens": "Token 用量",
+  "sessions.col.verbose": "详细程度",
+  "sessions.col.reasoning": "推理过程",
+  // 下拉选项中文
+  "sessions.opt.inherit": "跟随默认",
+  "sessions.opt.off": "关闭",
+  "sessions.opt.on": "开启",
+  "sessions.opt.stream": "流式输出",
+  "sessions.opt.offExplicit": "关闭（强制）",
+  "sessions.opt.minimal": "极简",
+  "sessions.opt.low": "低",
+  "sessions.opt.medium": "中",
+  "sessions.opt.high": "高",
+  // 类型中文
+  "sessions.kind.direct": "私聊",
+  "sessions.kind.group": "群聊",
+  "sessions.kind.global": "全局",
+  "sessions.kind.unknown": "未知",
+  // 副标题
+  "sessions.subtitle": "查看正在聊天的用户，管理每个人的 AI 行为和记忆",
+  // placeholder
+  "sessions.namePlaceholder": "备注名（选填）",
 
   // ============================================================================
   // 技能页 (Skills)
@@ -804,7 +862,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   // 统一视图层级筛选
   "skills.tier.all": "全部",
   "skills.tier.core": "核心技能",
-  "skills.tier.core.desc": "始终加载到 AI 对话中的技能",
+  "skills.tier.core.desc": "始终加载到 AI 对话中的技能（每个核心技能都会消耗 token，请精简）",
   "skills.tier.ready": "就绪技能",
   "skills.tier.ready.desc": "已满足依赖条件，可随时启用",
   "skills.tier.needsConfig": "需要配置",
@@ -819,7 +877,8 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skills.core.disableWarning": "这是一个核心技能，禁用后可能影响部分功能。确定要禁用吗？",
   "skills.core.promoteToCore": "设为核心",
   "skills.core.demoteFromCore": "取消核心",
-  "skills.core.limitReached": "核心技能已达上限 (50)，请先移除其他核心技能再添加。",
+  "skills.core.limitReached": "核心技能已达上限 (50)，请先移除其他核心技能再添加。技能不是越多越好，过多会导致每次请求浪费大量 token。",
+  "skills.core.tokenWarning": "核心技能已超过 30 个，每个核心技能都会在每次请求中消耗 token。建议精简到 30 个以内，保护好核心技能范围。",
   "skills.core.cannotDemoteAlways": "此技能为系统核心技能，不可移除",
   "skills.core.systemCore": "系统核心",
   "skills.dnd.dropToAdd": "拖放到此处添加为核心技能",
@@ -903,6 +962,12 @@ export const zhCN: Record<keyof typeof en, string> = {
   "instances.scopesCount": "{count} 个权限",
   "instances.networkingHint": "将客户端节点配置连接到此网关即可实现组网。",
   "instances.networkingDocLink": "组网指南",
+  "instances.description": "实例是当前连接到网关的运行中进程——包括网关本身、控制面板 UI、以及任何远程客户端节点。每个实例会定期发送心跳信标，让你实时监控各组件的在线状态、角色、平台信息和连接情况。",
+  "instances.whatIsInstance": "什么是实例？",
+  "instances.descGateway": "网关 (Gateway)：中心服务进程，负责消息路由和配置管理。",
+  "instances.descUI": "控制面板 (webchat)：你正在使用的管理界面，用于管理和监控整个系统。",
+  "instances.descNode": "客户端节点 (Node)：连接到网关的远程工作进程，负责执行任务或转发来自渠道（如微信、钉钉、飞书等）的消息。",
+  "instances.descChips": "标签展示了每个实例的运行模式、角色、权限、平台和版本等关键信息。",
 
   // ============================================================================
   // 配置页 (Config)
@@ -999,7 +1064,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "subtitle.usage": "使用量统计、会话日志和数据洞察",
   "subtitle.channels": "管理指挥渠道，配置钉钉、飞书等聊天应用",
   "subtitle.instances": "已连接客户端和节点的在线信标",
-  "subtitle.sessions": "检查活跃会话和调整每个会话的默认值",
+  "subtitle.sessions": "查看正在聊天的用户，管理每个人的 AI 行为和记忆",
   "subtitle.cron": "安排唤醒和定期助手运行",
   "subtitle.playground": "发现技能玩法，探索 ClawbotCN 的无限可能",
   "subtitle.skills": "管理技能可用性和 API 密钥",
@@ -1202,7 +1267,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "config.loadingSchema": "加载架构中…",
   "config.formUnsafe": "表单视图无法安全编辑某些字段。使用原始模式以避免丢失配置项。",
   "config.rawJson5": "原始 JSON5",
-  "config.schemaUnavailable": "配置表单加载中...",
+  "config.schemaUnavailable": "渠道配置表不可用。请检查网关是否正在运行。",
   "config.unsupportedSchema": "暂无可视化配置，请在「配置」页面手动编辑。",
   "config.noSettingsMatch": "没有匹配 \"{{query}}\" 的设置",
   "config.noSettingsInSection": "此部分没有设置",

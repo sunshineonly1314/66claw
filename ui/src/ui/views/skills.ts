@@ -328,6 +328,7 @@ function renderTierSection(group: SkillGroup, props: SkillsProps) {
 
 function renderCoreTierSection(group: SkillGroup, props: SkillsProps, config: TierConfig) {
   const atLimit = props.coreCount >= props.coreMax;
+  const nearLimit = !atLimit && props.coreCount > 30; // 超过 30 个就提醒用户注意 token 开销
   const visibleCount = getTierVisibleCount("core");
   const visible = group.skills.slice(0, visibleCount);
   const hasMore = group.skills.length > visibleCount;
@@ -388,6 +389,11 @@ function renderCoreTierSection(group: SkillGroup, props: SkillsProps, config: Ti
             font-size:12px; padding:8px 12px; margin-bottom:12px; border-radius:8px;
             background:rgba(239,68,68,0.08); color:#ef4444; border:1px solid rgba(239,68,68,0.2);
           ">${t("skills.core.limitReached" as never)}</div>`
+        : nearLimit
+        ? html`<div style="
+            font-size:12px; padding:8px 12px; margin-bottom:12px; border-radius:8px;
+            background:rgba(251,191,36,0.08); color:#d97706; border:1px solid rgba(251,191,36,0.2);
+          ">${t("skills.core.tokenWarning" as never)}</div>`
         : html`<div style="
             font-size:11px; color:var(--muted-strong, #6b7d91); margin-bottom:8px;
             padding:6px 12px; border:1px dashed var(--border); border-radius:8px;

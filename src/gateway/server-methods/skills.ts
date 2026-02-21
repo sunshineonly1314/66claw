@@ -10,7 +10,11 @@ import {
 } from "../../agents/agent-scope.js";
 import { installSkill } from "../../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
-import { loadWorkspaceSkillEntries, invalidateSkillEntriesCache, type SkillEntry } from "../../agents/skills.js";
+import {
+  loadWorkspaceSkillEntries,
+  invalidateSkillEntriesCache,
+  type SkillEntry,
+} from "../../agents/skills.js";
 import { clearBinaryCache } from "../../agents/skills/config.js";
 import { registerToolsRoot } from "../../shared/config-eval.js";
 import { CONFIG_DIR } from "../../utils.js";
@@ -226,8 +230,17 @@ export const skillsHandlers: GatewayRequestHandlers = {
           // 没有适用于当前平台的安装方式
           respond(
             false,
-            { ok: false, message: `此技能没有适用于 ${platform} 平台的安装方式`, stdout: "", stderr: "", code: null },
-            errorShape(ErrorCodes.UNAVAILABLE, `No install method available for platform: ${platform}`),
+            {
+              ok: false,
+              message: `此技能没有适用于 ${platform} 平台的安装方式`,
+              stdout: "",
+              stderr: "",
+              code: null,
+            },
+            errorShape(
+              ErrorCodes.UNAVAILABLE,
+              `No install method available for platform: ${platform}`,
+            ),
           );
           return;
         }
@@ -247,11 +260,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
 
         if (!depResult.ok) {
           // 依赖安装失败，返回错误但保留已下载的 SKILL.md
-          respond(
-            false,
-            depResult,
-            errorShape(ErrorCodes.UNAVAILABLE, depResult.message),
-          );
+          respond(false, depResult, errorShape(ErrorCodes.UNAVAILABLE, depResult.message));
           return;
         }
       }
@@ -276,11 +285,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       // 3. 更新技能快照版本，让当前对话的下一条消息能立即使用新技能
       bumpSkillsSnapshotVersion({ reason: "manual" });
 
-      respond(
-        true,
-        { ok: true, message: "已安装", stdout: "", stderr: "", code: 0 },
-        undefined,
-      );
+      respond(true, { ok: true, message: "已安装", stdout: "", stderr: "", code: 0 }, undefined);
       return;
     }
 
@@ -376,10 +381,27 @@ export const skillsHandlers: GatewayRequestHandlers = {
     entries[p.skillKey] = current;
     skills.entries = entries;
     // Handle pinned: add/remove from config.skills.pinnedSkills
+    // 核心技能硬上限 50 —— 技能不是越多越好，每个核心技能的描述都会注入 system prompt，
+    // 过多核心技能会在每次请求中浪费大量 token，对 32K/64K 上下文窗口的模型
+    // 极易触发频繁 compaction，严重影响对话质量。
+    const CORE_SKILLS_MAX = 50;
     if (typeof p.pinned === "boolean") {
       const pinnedList = skills.pinnedSkills ? [...skills.pinnedSkills] : [];
       const idx = pinnedList.indexOf(p.skillKey);
       if (p.pinned && idx === -1) {
+        // 服务端强制校验核心技能上限
+        const currentCoreCount = pinnedList.length;
+        if (currentCoreCount >= CORE_SKILLS_MAX) {
+          respond(
+            false,
+            undefined,
+            errorShape(
+              ErrorCodes.INVALID_REQUEST,
+              `核心技能已达上限 (${CORE_SKILLS_MAX})，请先移除其他核心技能再添加。技能过多会导致每次请求浪费大量 token。`,
+            ),
+          );
+          return;
+        }
         pinnedList.push(p.skillKey);
       } else if (!p.pinned && idx !== -1) {
         pinnedList.splice(idx, 1);
@@ -471,20 +493,26 @@ export const skillsHandlers: GatewayRequestHandlers = {
         try {
           fs.accessSync(`${letter}:\\`);
           drives.push(`${letter}:\\`);
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
       }
     }
 
-    respond(true, {
-      currentPath: targetPath,
-      parentPath: hasParent ? parentPath : null,
-      directories,
-      files,
-      drives,
-      separator: path.sep,
-      isSkillDir: fs.existsSync(path.join(targetPath, "SKILL.md")),
-      skillSubdirCount: directories.filter((d) => d.hasSkillMd).length,
-    }, undefined);
+    respond(
+      true,
+      {
+        currentPath: targetPath,
+        parentPath: hasParent ? parentPath : null,
+        directories,
+        files,
+        drives,
+        separator: path.sep,
+        isSkillDir: fs.existsSync(path.join(targetPath, "SKILL.md")),
+        skillSubdirCount: directories.filter((d) => d.hasSkillMd).length,
+      },
+      undefined,
+    );
   },
 
   // ---------------------------------------------------------------------------
@@ -516,7 +544,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
       const fm = parseFrontmatter(content);
       const skillName = fm.name?.trim();
       if (!skillName) {
-        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "SKILL.md 缺少 name 字段"));
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "SKILL.md 缺少 name 字段"),
+        );
         return;
       }
       const managedDir = getManagedSkillsDir();
@@ -543,7 +575,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
 
     const foundSkills = scanDirForSkills(targetPath);
     if (foundSkills.length === 0) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "目录中未找到 SKILL.md 文件"));
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "目录中未找到 SKILL.md 文件"),
+      );
       return;
     }
 
@@ -570,7 +606,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
       clearBinaryCache();
       invalidateSkillEntriesCache();
       bumpSkillsSnapshotVersion({ reason: "manual" });
-      respond(true, { ok: true, imported: foundSkills.map((s) => s.name), mode: "reference" }, undefined);
+      respond(
+        true,
+        { ok: true, imported: foundSkills.map((s) => s.name), mode: "reference" },
+        undefined,
+      );
     } else {
       // 复制模式: 逐个复制到 managed dir
       const managedDir = getManagedSkillsDir();
@@ -601,7 +641,9 @@ function scanDirForSkills(dir: string): Array<{ name: string; dir: string }> {
       const fm = parseFrontmatter(fs.readFileSync(directSkillMd, "utf-8"));
       const name = fm.name?.trim();
       if (name) results.push({ name, dir });
-    } catch { /* skip invalid */ }
+    } catch {
+      /* skip invalid */
+    }
     return results; // 如果目录本身是技能，不递归子目录
   }
 
@@ -616,9 +658,13 @@ function scanDirForSkills(dir: string): Array<{ name: string; dir: string }> {
           const fm = parseFrontmatter(fs.readFileSync(subSkillMd, "utf-8"));
           const name = fm.name?.trim();
           if (name) results.push({ name, dir: path.join(dir, entry.name) });
-        } catch { /* skip invalid */ }
+        } catch {
+          /* skip invalid */
+        }
       }
     }
-  } catch { /* ignore access errors */ }
+  } catch {
+    /* ignore access errors */
+  }
   return results;
 }

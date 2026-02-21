@@ -1074,8 +1074,16 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
   }
 
   // ── [CN-PATCH:skills] 21.5. skills.allowBundled: 只加载核心技能，省 token ──
-  //    70+ 技能全量注入 system prompt 会消耗数千 token，
-  //    对 32K/64K 上下文窗口的模型极易触发每条消息都 compact。
+  //
+  //    ⚠️ 技能不是越多越好！每个核心技能的描述都会注入 system prompt，
+  //    在每一次 API 请求中消耗 token。硬上限 50 个核心技能。
+  //
+  //    实际影响：
+  //    - 70+ 技能全量注入 system prompt 会消耗数千 token
+  //    - 对 32K/64K 上下文窗口的模型极易触发每条消息都 compact
+  //    - compact 频繁会丢失对话上下文，严重影响 AI 回答质量
+  //    - 建议保持 ~30 个核心技能即可覆盖绝大多数场景
+  //
   //    仅保留上游核心 + CN 高价值技能（~30 个），其余不加载。
   if (next.skills?.allowBundled === undefined) {
     next = {
