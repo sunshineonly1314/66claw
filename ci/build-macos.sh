@@ -65,9 +65,13 @@ echo "Preparing workspace: \$WORKSPACE"
 # 设置 PATH - 确保 node/npm/pnpm 可用
 export PATH="/usr/local/lib/nodejs/node-v22.14.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
 # 加载环境变量（SSH 非交互式 session 不会自动 source profile）
+# NOTE: Must disable set -e before sourcing — .bashrc may contain commands
+# that return non-zero (e.g. cargo env), which would abort our script.
+set +e
 for f in ~/.bash_profile ~/.bashrc ~/.zprofile ~/.profile; do
-  [ -f "\$f" ] && source "\$f" 2>/dev/null || true
+  [ -f "\$f" ] && source "\$f" 2>/dev/null
 done
+set -e
 echo "Node: \$(node --version 2>/dev/null || echo 'not found')"
 echo "pnpm: \$(pnpm --version 2>/dev/null || echo 'not found')"
 
@@ -250,6 +254,23 @@ if [ $? -ne 0 ]; then
   echo "SCP upload failed"
   rm -f "$TEMP_SH"
   exit 1
+fi
+
+# 上传 data/ 目录中的 MCP index 文件（.gitignore 排除了 data/，CI 需要手动传）
+DATA_DIR="$SCRIPT_DIR/../data"
+if [ -d "$DATA_DIR" ]; then
+  echo "Uploading data/ seed files to Mac Mini..."
+  $SSH -o StrictHostKeyChecking=no "$MAC_USER@$MAC_HOST" \
+    "mkdir -p $MAC_WORKSPACE/data"
+  for df in mcp-index.json mcp-index-enhanced.json mcp-index.db tool-index.sqlite; do
+    if [ -f "$DATA_DIR/$df" ]; then
+      $SCP -o StrictHostKeyChecking=no "$DATA_DIR/$df" \
+        "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/data/$df" && \
+        echo "  Uploaded $df" || echo "  Failed to upload $df (non-fatal)"
+    fi
+  done
+else
+  echo "WARNING: local data/ not found, MCP index will not be bundled"
 fi
 
 # 通过 SSH 执行远程构建
