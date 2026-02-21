@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { OpenClawCNConfig } from "../../config/config.js";
 import type { ModelDefinitionConfig } from "../../config/types.js";
@@ -100,7 +102,28 @@ export function resolveModel(
       }
       return { model: forwardCompat, authStorage, modelRegistry };
     }
-    const providerCfg = providers[provider];
+    // [CN-PATCH:models-json-fallback] When neither the PI SDK registry nor config.models.providers
+    // has the model, read models.json directly. The PI SDK's ModelRegistry may reject the entire
+    // file due to strict schema validation (e.g. "video" in input array), but the provider
+    // definitions are still valid for our purposes.
+    const allProviders: Record<string, InlineProviderConfig> = { ...providers };
+    try {
+      const modelsJsonPath = path.join(resolvedAgentDir, "models.json");
+      const raw = fs.readFileSync(modelsJsonPath, "utf8");
+      const parsed = JSON.parse(raw) as { providers?: Record<string, InlineProviderConfig> };
+      if (parsed?.providers) {
+        for (const [key, val] of Object.entries(parsed.providers)) {
+          const nk = normalizeProviderId(key);
+          if (!allProviders[key] && !allProviders[nk]) {
+            allProviders[nk] = val;
+          }
+        }
+      }
+    } catch {
+      // models.json missing or unreadable — proceed with existing providers
+    }
+
+    const providerCfg = allProviders[provider] ?? allProviders[normalizedProvider];
     if (providerCfg || modelId.startsWith("mock-")) {
       // [CN-PATCH:api-guard] providerCfg.api can be undefined when config only has baseUrl
       // (e.g. qwen-dashscope). Default to "openai-completions" — the /chat/completions

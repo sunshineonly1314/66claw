@@ -226,14 +226,37 @@ if [[ -f "$PROJECT_ROOT/.npmrc" ]]; then
 fi
 
 # Run npm install with production deps only
-# --omit=optional skips optional peerDependencies (node-llama-cpp, @napi-rs/canvas)
-log "  Running npm install --omit=dev --omit=optional (registry: $NPM_REGISTRY)..."
-if ! (cd "$TEMP_INSTALL_DIR" && npm install --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund \
-    --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tail -5); then
-  err "npm install --omit=dev failed"
+# NOTE: Do NOT use --omit=optional here. It can cause transitive dependency
+# resolution to skip packages like @aws-sdk/client-bedrock that are required
+# at runtime. Optional peerDependencies (node-llama-cpp, @napi-rs/canvas)
+# won't be installed anyway since they aren't in the npm dependency tree.
+log "  Running npm install --omit=dev (registry: $NPM_REGISTRY)..."
+NPM_LOG="$TEMP_INSTALL_DIR/npm-install.log"
+if ! (cd "$TEMP_INSTALL_DIR" && npm install --omit=dev --ignore-scripts --no-audit --no-fund \
+    --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tee "$NPM_LOG" | tail -10); then
+  err "npm install --omit=dev failed. Full log:"
+  cat "$NPM_LOG" | tail -50
   rm -rf "$TEMP_INSTALL_DIR"
   exit 1
 fi
+
+# Verify critical runtime dependencies are present
+CRITICAL_DEPS=(
+  "@aws-sdk/client-bedrock"
+  "@aws-sdk/client-bedrock-runtime"
+  "express"
+  "zod"
+)
+for dep in "${CRITICAL_DEPS[@]}"; do
+  if [[ ! -d "$TEMP_INSTALL_DIR/node_modules/$dep" ]]; then
+    err "CRITICAL: $dep missing from production node_modules!"
+    err "  This will cause Gateway startup failure. Aborting build."
+    cat "$NPM_LOG" | tail -30
+    rm -rf "$TEMP_INSTALL_DIR"
+    exit 1
+  fi
+done
+log "  Critical deps verified: ${CRITICAL_DEPS[*]}"
 
 # Remove packages not needed at runtime (pulled in as transitive deps)
 for pkg in typescript @typescript; do
@@ -398,6 +421,13 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
       cp -R "$PROJECT_ROOT/data/$d" "$RESOURCES_DIR/data/$d"
     fi
   done
+  # Ensure mcp-index.json exists (Gateway warns if missing).
+  # A minimal seed is enough — runtime sync will fetch the full index.
+  if [[ ! -f "$RESOURCES_DIR/data/mcp-index.json" ]]; then
+    log "  Creating minimal mcp-index.json seed (full index synced at runtime)"
+    echo '{"items":[],"generated":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","seed":true}' \
+      > "$RESOURCES_DIR/data/mcp-index.json"
+  fi
   DATA_SIZE=$(du -sh "$RESOURCES_DIR/data" 2>/dev/null | cut -f1)
   log "  OK: data/ ($DATA_SIZE, seed data only)"
 fi

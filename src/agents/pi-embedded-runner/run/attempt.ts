@@ -145,69 +145,6 @@ export function injectHistoryImagesIntoMessages(
   return didMutate;
 }
 
-function summarizeMessagePayload(msg: AgentMessage): { textChars: number; imageBlocks: number } {
-  const content = (msg as { content?: unknown }).content;
-  if (typeof content === "string") {
-    return { textChars: content.length, imageBlocks: 0 };
-  }
-  if (!Array.isArray(content)) {
-    return { textChars: 0, imageBlocks: 0 };
-  }
-
-  let textChars = 0;
-  let imageBlocks = 0;
-  for (const block of content) {
-    if (!block || typeof block !== "object") {
-      continue;
-    }
-    const typedBlock = block as { type?: unknown; text?: unknown };
-    if (typedBlock.type === "image") {
-      imageBlocks++;
-      continue;
-    }
-    if (typeof typedBlock.text === "string") {
-      textChars += typedBlock.text.length;
-    }
-  }
-
-  return { textChars, imageBlocks };
-}
-
-function summarizeSessionContext(messages: AgentMessage[]): {
-  roleCounts: string;
-  totalTextChars: number;
-  totalImageBlocks: number;
-  maxMessageTextChars: number;
-} {
-  const roleCounts = new Map<string, number>();
-  let totalTextChars = 0;
-  let totalImageBlocks = 0;
-  let maxMessageTextChars = 0;
-
-  for (const msg of messages) {
-    const role = typeof msg.role === "string" ? msg.role : "unknown";
-    roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1);
-
-    const payload = summarizeMessagePayload(msg);
-    totalTextChars += payload.textChars;
-    totalImageBlocks += payload.imageBlocks;
-    if (payload.textChars > maxMessageTextChars) {
-      maxMessageTextChars = payload.textChars;
-    }
-  }
-
-  return {
-    roleCounts:
-      [...roleCounts.entries()]
-        .toSorted((a, b) => a[0].localeCompare(b[0]))
-        .map(([role, count]) => `${role}:${count}`)
-        .join(",") || "none",
-    totalTextChars,
-    totalImageBlocks,
-    maxMessageTextChars,
-  };
-}
-
 export async function runEmbeddedAttempt(
   params: EmbeddedRunAttemptParams,
 ): Promise<EmbeddedRunAttemptResult> {
@@ -288,12 +225,15 @@ export async function runEmbeddedAttempt(
         const onDemandConfig = params.config?.toolDiscovery?.mcpOnDemand;
         // Load up to maxConcurrent MCP servers.
         // Failures are silent — the model can still use existing tools.
-        const loadPromises = params.mcpSuggestions.slice(0, onDemandConfig?.maxConcurrent ?? 3).map(
-          (suggestion) =>
+        const loadPromises = params.mcpSuggestions
+          .slice(0, onDemandConfig?.maxConcurrent ?? 3)
+          .map((suggestion) =>
             loadMCPOnDemand(suggestion, onDemandConfig).catch((err) => {
-              log.debug(`[tool-discovery] MCP on-demand load failed for ${suggestion.serverId}: ${String(err)}`);
+              log.debug(
+                `[tool-discovery] MCP on-demand load failed for ${suggestion.serverId}: ${String(err)}`,
+              );
             }),
-        );
+          );
         // Wait briefly (max 3s) for fast SSE connections; don't block on slow npm installs
         await Promise.race([
           Promise.allSettled(loadPromises),
@@ -670,7 +610,10 @@ export async function runEmbeddedAttempt(
               stopReason: "error" as const,
               errorMessage: errorText,
               usage: {
-                input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
                 totalTokens: 0,
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
               },
@@ -685,7 +628,9 @@ export async function runEmbeddedAttempt(
             // to prevent unhandled rejections from async errors during streaming.
             // The agent-loop will still see the error via the stream's error event.
             if (stream && typeof (stream as unknown as { catch?: Function }).catch === "function") {
-              (stream as unknown as { catch: Function }).catch(() => {/* swallowed – error propagates via stream events */});
+              (stream as unknown as { catch: Function }).catch(() => {
+                /* swallowed – error propagates via stream events */
+              });
             }
             return stream;
           } catch (err) {
@@ -1016,25 +961,6 @@ export async function runEmbeddedAttempt(
             messages: activeSession.messages,
             note: `images: prompt=${imageResult.images.length} history=${imageResult.historyImagesByIndex.size}`,
           });
-
-          // Diagnostic: log context sizes before prompt to help debug early overflow errors.
-          if (log.isEnabled("debug")) {
-            const msgCount = activeSession.messages.length;
-            const systemLen = systemPromptText?.length ?? 0;
-            const promptLen = effectivePrompt.length;
-            const sessionSummary = summarizeSessionContext(activeSession.messages);
-            log.debug(
-              `[context-diag] pre-prompt: sessionKey=${params.sessionKey ?? params.sessionId} ` +
-                `messages=${msgCount} roleCounts=${sessionSummary.roleCounts} ` +
-                `historyTextChars=${sessionSummary.totalTextChars} ` +
-                `maxMessageTextChars=${sessionSummary.maxMessageTextChars} ` +
-                `historyImageBlocks=${sessionSummary.totalImageBlocks} ` +
-                `systemPromptChars=${systemLen} promptChars=${promptLen} ` +
-                `promptImages=${imageResult.images.length} ` +
-                `historyImageMessages=${imageResult.historyImagesByIndex.size} ` +
-                `provider=${params.provider}/${params.modelId} sessionFile=${params.sessionFile}`,
-            );
-          }
 
           // Only pass images option if there are actually images to pass
           // This avoids potential issues with models that don't expect the images parameter

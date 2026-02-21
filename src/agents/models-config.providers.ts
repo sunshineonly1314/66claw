@@ -549,6 +549,31 @@ export function normalizeProviders(params: {
       }
     }
 
+    // [CN-PATCH:pi-sdk-input-compat] The PI SDK's ModelRegistry schema only accepts
+    // "text" and "image" in the input array. CN models may include "video" which causes
+    // the ENTIRE models.json to be rejected by schema validation, making all custom
+    // providers invisible to ModelRegistry.find(). Strip unsupported values here.
+    if (Array.isArray(normalizedProvider.models)) {
+      const PI_SDK_VALID_INPUTS = new Set(["text", "image"]);
+      const sanitizedModels = normalizedProvider.models.map((model: unknown) => {
+        if (!model || typeof model !== "object") return model;
+        const rec = model as Record<string, unknown>;
+        if (!Array.isArray(rec.input)) return model;
+        const sanitized = (rec.input as string[]).filter((v) => PI_SDK_VALID_INPUTS.has(v));
+        if (sanitized.length === rec.input.length) return model;
+        // Ensure at least "text" is present
+        if (sanitized.length === 0) sanitized.push("text");
+        return { ...rec, input: sanitized };
+      });
+      if (sanitizedModels.some((m, i) => m !== normalizedProvider.models![i])) {
+        mutated = true;
+        normalizedProvider = {
+          ...normalizedProvider,
+          models: sanitizedModels as typeof normalizedProvider.models,
+        };
+      }
+    }
+
     next[normalizedKey] = normalizedProvider;
   }
 
