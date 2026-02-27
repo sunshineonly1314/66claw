@@ -178,7 +178,7 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
     "Mirror: https://docs.openclawcn.com",
     "Source: https://github.com/openclawcn/openclawcn",
     "Community: https://discord.com/invite/clawd",
-    "Find new skills: https://clawhub.com",
+    "Find new skills: https://clawhub.com (official ClawHub marketplace; if unreachable, use the built-in skills market in the app)",
     "For OpenClawCN behavior, commands, config, or architecture: consult local docs first.",
     "When diagnosing issues, run `openclawcn status` yourself when possible; only ask the user if you lack access (e.g., sandboxed).",
     "",
@@ -286,7 +286,12 @@ export function buildAgentSystemPrompt(params: {
       "- Between steps, use screenshot to verify state.",
     ].join(" "),
     // GUI automation tools removed from distribution
-    image_gen: "Generate images with AI (DALL-E, DashScope, SiliconFlow)",
+    image_gen:
+      "Generate images from text descriptions using AI models (DALL-E, FLUX, Qwen-Image, Stable Diffusion, etc.). " +
+      "MUST be called when user asks to create/draw/generate any image. You CAN generate images via this tool.",
+    image_edit:
+      "Edit an existing image based on text instructions (Qwen-Image-Edit, FLUX Kontext, etc.). " +
+      "MUST be called when user sends an image and asks to modify/edit/change/P图. Requires source image + editing prompt.",
     // [CN-PATCH:memory-L1] Structured memory tools
     memory_upsert:
       "Save a user fact/preference/correction to long-term memory (profile.json). Use when user shares persistent info worth remembering across sessions.",
@@ -321,6 +326,7 @@ export function buildAgentSystemPrompt(params: {
     "desktop_control",
     // GUI automation tools removed
     "image_gen",
+    "image_edit",
     "memory_upsert",
     "memory_forget",
   ];
@@ -458,6 +464,16 @@ export function buildAgentSystemPrompt(params: {
     "3. MULTI-STEP = KEEP GOING: For tasks with multiple steps (open app → screenshot → click → type → enter), execute step by step. After each tool result comes back, immediately call the next tool. Do NOT stop after one step to narrate or ask questions.",
     "4. NO GIVING UP: Do not suggest alternative approaches or ask the user to choose unless you have already tried AND failed at least once. Try first, ask later.",
     "5. RESPECT USER INPUT: When the user tells you to search/play/type a specific term, use EXACTLY that term. Do NOT replace, translate, or 'improve' the user's keywords. If user says 'play startlight', type 'startlight' — not something else you think is better.",
+    ...(availableTools.has("image_gen")
+      ? [
+          "6. IMAGE GENERATION: You CAN generate images — you have an image_gen tool. When the user asks to draw, create, generate, or design an image/picture/illustration/poster/logo, you MUST call the image_gen tool with a detailed prompt. NEVER say you cannot generate images. Your image_gen tool connects to real image generation models (DALL-E, Stable Diffusion, FLUX, Qwen-Image, etc.).",
+        ]
+      : []),
+    ...(availableTools.has("image_edit")
+      ? [
+          "7. IMAGE EDITING: You CAN edit images — you have an image_edit tool. When the user sends an image and asks to modify, edit, change background, remove watermark, add effects, or P图, you MUST call the image_edit tool with the source image and editing instructions. The image parameter must be the base64 data URL or URL of the user's image.",
+        ]
+      : []),
     "",
     "## Tooling",
     "Tool availability (filtered by policy):",

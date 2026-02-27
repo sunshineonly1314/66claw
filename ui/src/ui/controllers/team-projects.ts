@@ -230,6 +230,100 @@ export async function deleteProject(
   }
 }
 
+// ── Update Project Settings ──────────────────────────────────────────────
+
+export async function updateProjectSettings(
+  state: TeamProjectsState,
+  projectId: string,
+  updates: Record<string, unknown>,
+): Promise<boolean> {
+  if (!state.client || !state.connected) return false;
+  state.teamProjectBusy = true;
+  try {
+    await state.client.request("team.project.update", { projectId, ...updates });
+    await Promise.all([
+      loadProjectDetail(state, projectId),
+      loadTeamProjects(state),
+    ]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    state.teamProjectBusy = false;
+  }
+}
+
+// ── Add / Remove Members ────────────────────────────────────────────────
+
+export async function addProjectMember(
+  state: TeamProjectsState,
+  projectId: string,
+  agentId: string,
+  name: string,
+  role: string,
+  emoji?: string,
+  keywords?: string[],
+): Promise<boolean> {
+  if (!state.client || !state.connected) return false;
+  state.teamProjectBusy = true;
+  try {
+    const detail = state.teamProjectDetail;
+    if (!detail) return false;
+    const project = detail.project;
+    const newMemberIds = [...project.memberIds, agentId];
+    const newMembers = [
+      ...project.members,
+      { id: agentId, name, role, emoji, keywords },
+    ];
+    await state.client.request("team.project.update", {
+      projectId,
+      memberIds: newMemberIds,
+      members: newMembers,
+    });
+    await Promise.all([
+      loadProjectDetail(state, projectId),
+      loadProjectHealth(state, projectId),
+      loadTeamProjects(state),
+    ]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    state.teamProjectBusy = false;
+  }
+}
+
+export async function removeProjectMember(
+  state: TeamProjectsState,
+  projectId: string,
+  agentId: string,
+): Promise<boolean> {
+  if (!state.client || !state.connected) return false;
+  state.teamProjectBusy = true;
+  try {
+    const detail = state.teamProjectDetail;
+    if (!detail) return false;
+    const project = detail.project;
+    if (agentId === project.supervisorId) return false;
+    const newMemberIds = project.memberIds.filter((id) => id !== agentId);
+    const newMembers = project.members.filter((m) => m.id !== agentId);
+    await state.client.request("team.project.update", {
+      projectId,
+      memberIds: newMemberIds,
+      members: newMembers,
+    });
+    await Promise.all([
+      loadProjectDetail(state, projectId),
+      loadTeamProjects(state),
+    ]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    state.teamProjectBusy = false;
+  }
+}
+
 // ── Select Project ──────────────────────────────────────────────────────
 
 export async function selectProject(

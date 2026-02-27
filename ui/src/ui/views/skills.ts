@@ -95,6 +95,13 @@ const SKILLS_CATEGORIES: ReadonlyArray<{ id: string; emoji: string }> = [
   { id: "\u591A\u5A92\u4F53", emoji: "\u{1F3A8}" },                   // 多媒体
 ];
 
+/** 按 category 查找对应的 emoji，QC 数据源没有 emoji 字段，用此做 fallback */
+const _categoryEmojiMap = new Map(SKILLS_CATEGORIES.map((c) => [c.id, c.emoji]));
+function categoryEmoji(category: string | undefined): string {
+  if (!category) return "\u{1F4E6}"; // 📦
+  return _categoryEmojiMap.get(category) ?? "\u{1F4E6}";
+}
+
 let _skillSearchTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ============================================================================
@@ -166,7 +173,7 @@ const TIER_CONFIGS: Record<TierGroupId, TierConfig> = {
 
 export function renderSkills(props: SkillsProps) {
   return html`
-    ${renderTabBar(props.activeTab, props.onTabChange)}
+    ${renderTabBar(props)}
     ${props.activeTab === "local"
       ? renderLocalSkills(props)
       : renderMarketplace(props)}
@@ -177,10 +184,9 @@ export function renderSkills(props: SkillsProps) {
 // Tab bar (matching extensions-page pattern)
 // ============================================================================
 
-function renderTabBar(
-  activeTab: string,
-  onTabChange: (tab: "local" | "market") => void,
-) {
+function renderTabBar(props: SkillsProps) {
+  const { activeTab, onTabChange } = props;
+
   const renderTab = (id: "local" | "market", label: string) => {
     const isActive = id === activeTab;
     return html`
@@ -188,7 +194,7 @@ function renderTabBar(
         @click=${() => onTabChange(id)}
         style="
           all:unset; cursor:pointer;
-          padding:10px 24px;
+          padding:10px 20px;
           font-size:14px;
           font-weight:${isActive ? "700" : "400"};
           color:${isActive ? "var(--fg)" : "var(--muted-strong, #6b7d91)"};
@@ -200,16 +206,51 @@ function renderTabBar(
     `;
   };
 
+  // Compute stats for the inline summary (only when local tab data is available)
+  const skills = props.report?.skills ?? [];
+  const groups = groupByTier(skills);
+  const coreSkillCount = groups.find((g) => g.id === "core")?.skills.length ?? 0;
+  const readySkillCount = groups.find((g) => g.id === "ready")?.skills.length ?? 0;
+  const attentionSkillCount = groups.find((g) => g.id === "needs-config")?.skills.length ?? 0;
+
   return html`
     <div style="
       display:flex;
       align-items:center;
+      justify-content:space-between;
       margin-bottom:20px;
       border-bottom:1px solid var(--border);
-      gap:0;
+      gap:8px;
+      flex-wrap:wrap;
     ">
-      ${renderTab("local", t("skills.tab.local" as never))}
-      ${renderTab("market", t("skills.tab.remote" as never))}
+      <!-- Left: tabs -->
+      <div style="display:flex; align-items:center; gap:0;">
+        ${renderTab("local", t("skills.tab.local" as never))}
+        ${renderTab("market", t("skills.tab.remote" as never))}
+      </div>
+      <!-- Right: stats + actions (only on local tab) -->
+      ${activeTab === "local" ? html`
+        <div style="display:flex; align-items:center; gap:12px; padding-right:4px; flex-shrink:0;">
+          <span style="
+            font-size:12px; color:var(--muted-strong, #6b7d91);
+            white-space:nowrap; font-family:var(--mono, monospace);
+            letter-spacing:0.01em;
+          ">
+            <span style="color:#f59e0b; font-weight:600;">${coreSkillCount}</span> ${t("skills.dashboard.coreLabel" as never)}
+            <span style="opacity:0.4; margin:0 4px;">/</span>
+            <span style="color:#34d399; font-weight:600;">${readySkillCount}</span> ${t("skills.dashboard.readyLabel" as never)}
+            <span style="opacity:0.4; margin:0 4px;">/</span>
+            <span style="color:#f97316; font-weight:600;">${attentionSkillCount}</span> ${t("skills.dashboard.attentionLabel" as never)}
+          </span>
+          <button class="btn" style="font-size:12px; padding:5px 14px;"
+            @click=${props.onImportOpen}
+          >${t("skills.import.button" as never)}</button>
+          <button class="btn" style="font-size:12px; padding:5px 14px;"
+            ?disabled=${props.loading}
+            @click=${props.onRefresh}
+          >${props.loading ? t("skills.market.syncing" as never) : t("common.refresh" as never)}</button>
+        </div>
+      ` : nothing}
     </div>
   `;
 }
@@ -239,14 +280,6 @@ function renderLocalSkills(props: SkillsProps) {
     : skills;
   const groups = groupByTier(filtered);
 
-  // Compute stats for dashboard
-  const coreGroup = groups.find((g) => g.id === "core");
-  const readyGroup = groups.find((g) => g.id === "ready");
-  const needsConfigGroup = groups.find((g) => g.id === "needs-config");
-  const coreSkillCount = coreGroup?.skills.length ?? 0;
-  const readySkillCount = readyGroup?.skills.length ?? 0;
-  const attentionSkillCount = needsConfigGroup?.skills.length ?? 0;
-
   // Always show core section as a drop target if there are core skills in the full list
   // (even when filter hides them all), so users can still drop ready skills into core
   const hasCoreGroup = groups.some((g) => g.id === "core");
@@ -255,43 +288,24 @@ function renderLocalSkills(props: SkillsProps) {
 
   return html`
     <section class="card">
-      <div class="row" style="justify-content: space-between;">
-        <div>
-          <div class="card-title">${t("skills.cardTitle" as never)}</div>
-          <div class="card-sub">${t("skills.cardSub" as never)}</div>
-        </div>
-        <div style="display:flex; gap:8px; align-items:center;">
-          <button class="btn" @click=${props.onImportOpen}>
-            ${t("skills.import.button" as never)}
-          </button>
-          <button
-            class="btn"
-            ?disabled=${props.loading}
-            @click=${props.onRefresh}
-          >
-            ${props.loading
-              ? t("skills.market.syncing" as never)
-              : t("common.refresh" as never)}
-          </button>
-        </div>
-      </div>
-
-      <!-- Dashboard Summary -->
-      ${renderDashboard(props.coreCount, props.coreMax, coreSkillCount, readySkillCount, attentionSkillCount)}
-
-      <div class="filters" style="margin-top: 14px;">
-        <label class="field" style="flex: 1;">
-          <span>${t("skills.filter" as never)}</span>
-          <input
-            .value=${props.filter}
-            @input=${(e: Event) =>
-              props.onFilterChange((e.target as HTMLInputElement).value)}
-            placeholder=${t("skills.filterPlaceholder" as never)}
-          />
-        </label>
-        <div class="muted">
+      <!-- Search -->
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input
+          class="skills-local-search"
+          style="
+            flex:1; padding:8px 14px; font-size:13px;
+            border:1.5px solid var(--border); border-radius:var(--radius-md, 8px);
+            background:var(--card); color:var(--fg); outline:none;
+            transition:border-color 150ms, box-shadow 150ms;
+          "
+          .value=${props.filter}
+          @input=${(e: Event) =>
+            props.onFilterChange((e.target as HTMLInputElement).value)}
+          placeholder=${t("skills.filterPlaceholder" as never)}
+        />
+        <span class="muted" style="font-size:12px; white-space:nowrap;">
           ${filtered.length} ${t("skills.shown" as never)}
-        </div>
+        </span>
       </div>
 
       ${props.error
@@ -884,6 +898,10 @@ function renderLoadMoreButton(tierId: string, shown: number, total: number, prop
 function renderLocalSkillsStyles() {
   return html`
     <style>
+      .skills-local-search:focus {
+        border-color: var(--accent, #6c8cff);
+        box-shadow: 0 0 0 3px rgba(108, 140, 255, 0.1);
+      }
       .skills-tier-grid {
         display: grid;
         gap: 14px;
@@ -1187,6 +1205,33 @@ function renderMarketplace(props: SkillsProps) {
   const items = result?.items ?? [];
 
   return html`
+    <!-- ClawHub official link banner -->
+    <div
+      style="
+        display:flex; align-items:center; gap:12px;
+        padding:12px 18px; margin-bottom:16px;
+        border:1px solid rgba(108,140,255,0.2);
+        border-radius:var(--radius-md, 8px);
+        background:linear-gradient(135deg, rgba(108,140,255,0.06) 0%, rgba(108,140,255,0.02) 100%);
+        font-size:12px; color:var(--muted-strong, #6b7d91);
+      "
+    >
+      <span style="font-size:16px; flex-shrink:0;">\u{1F310}</span>
+      <span style="flex:1;">
+        ${t("skills.market.clawhubBanner" as never)}
+        <a
+          href="https://clawhub.com"
+          target="_blank"
+          rel="noopener"
+          style="color:var(--accent, #6c8cff); text-decoration:underline; font-weight:600;"
+        >clawhub.com</a>
+        <span style="opacity:0.4; margin:0 6px;">|</span>
+        <span style="opacity:0.55;">
+          ${t("skills.market.clawhubFallback" as never)}
+        </span>
+      </span>
+    </div>
+
     <!-- Toolbar: search + categories + refresh -->
     <div
       style="display:flex; gap:12px; margin-bottom:16px; align-items:center; flex-wrap:wrap;"
@@ -1197,11 +1242,11 @@ function renderMarketplace(props: SkillsProps) {
           width:280px; flex-shrink:0;
           display:flex; align-items:center;
           padding:0 14px;
-          border:1px solid var(--border);
+          border:1.5px solid var(--border);
           border-radius:var(--radius-md, 8px);
           background:var(--card);
           transition:border-color 150ms, box-shadow 150ms;
-          height:36px;
+          height:38px;
         "
         class="skills-market-search-box"
       >
@@ -1235,12 +1280,13 @@ function renderMarketplace(props: SkillsProps) {
                 )}
               style="
                 all:unset; cursor:pointer;
-                padding:4px 12px;
+                padding:5px 14px;
                 border-radius:var(--radius-full, 9999px);
                 font-size:11px; white-space:nowrap;
                 border:1px solid ${isActive ? "var(--accent, #6c8cff)" : "var(--border)"};
-                background:${isActive ? "rgba(108,140,255,0.1)" : "transparent"};
+                background:${isActive ? "rgba(108,140,255,0.12)" : "rgba(148,163,184,0.04)"};
                 color:${isActive ? "var(--accent, #6c8cff)" : "var(--muted-strong, #6b7d91)"};
+                font-weight:${isActive ? "600" : "400"};
                 transition:all 150ms;
                 user-select:none;
               "
@@ -1258,12 +1304,13 @@ function renderMarketplace(props: SkillsProps) {
         ?disabled=${props.marketLoading}
         style="
           all:unset; cursor:pointer;
-          padding:0 14px; height:36px;
-          border:1px solid var(--border);
+          padding:0 16px; height:38px;
+          border:1.5px solid var(--border);
           border-radius:var(--radius-md, 8px);
           background:var(--card);
-          color:var(--fg); font-size:12px;
+          color:var(--fg); font-size:12px; font-weight:500;
           flex-shrink:0;
+          transition:border-color 150ms, background 150ms;
         "
       >
         ${props.marketLoading
@@ -1358,7 +1405,7 @@ function tierColor(tier: string): string {
 function renderSkillMarketCard(item: MarketItem, props: SkillsProps) {
   const displayName = item.nameCn || item.name;
   const displayDesc = item.descriptionCn || item.description;
-  const emoji = item.emoji || "\u{1F527}";
+  const emoji = item.emoji || categoryEmoji(item.category);
   const isInstalled = item.installed === true;
   const progress = props.installProgress[item.name];
 
@@ -1367,6 +1414,7 @@ function renderSkillMarketCard(item: MarketItem, props: SkillsProps) {
       style="
         background:var(--card);
         border:1px solid var(--border);
+        border-top:2px solid ${item.tier === "S" ? "#34d399" : item.tier === "A" ? "#60a5fa" : item.tier === "B" ? "#fbbf24" : "var(--border)"};
         border-radius:var(--radius-lg, 12px);
         padding:20px;
         transition:box-shadow 200ms, border-color 200ms, transform 200ms;
@@ -1681,6 +1729,17 @@ function renderMarketError(error: string) {
       >
         ${error}
       </div>
+      <div
+        style="font-size:12px; margin-top:14px; max-width:440px; margin-left:auto; margin-right:auto; line-height:1.6;"
+      >
+        ${t("skills.market.errorClawhubHint" as never)}
+        <a
+          href="https://clawhub.com"
+          target="_blank"
+          rel="noopener"
+          style="color:var(--accent, #6c8cff); text-decoration:underline; font-weight:600;"
+        >clawhub.com</a>
+      </div>
     </div>
   `;
 }
@@ -1696,6 +1755,15 @@ function renderMarketEmpty() {
       </div>
       <div style="font-size:12px; margin-top:8px;">
         ${t("skills.market.emptyHint" as never)}
+      </div>
+      <div style="font-size:12px; margin-top:12px; line-height:1.6;">
+        ${t("skills.market.emptyClawhubHint" as never)}
+        <a
+          href="https://clawhub.com"
+          target="_blank"
+          rel="noopener"
+          style="color:var(--accent, #6c8cff); text-decoration:underline; font-weight:600;"
+        >clawhub.com</a>
       </div>
     </div>
   `;

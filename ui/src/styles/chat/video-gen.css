@@ -89,6 +89,31 @@
   object-fit: contain;
 }
 
+/* --- Hover Overlay (download + regenerate on top-right) --- */
+
+.video-gen-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 10px 12px;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.video-gen-player:hover .video-gen-overlay {
+  opacity: 1;
+}
+
+.video-gen-overlay-actions {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+/* Reuses .image-gen-overlay-btn from image-gen.css */
+
 /* --- Expired Video --- */
 
 .video-gen-expired {

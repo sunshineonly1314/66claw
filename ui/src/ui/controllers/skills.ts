@@ -1,5 +1,6 @@
 import type { GatewayBrowserClient } from "../gateway";
 import type { RemoteSkillsIndex, SkillStatusReport, SkillsMarketResponse } from "../types";
+import { formatGeneralError } from "../chat/error-hints";
 import { markInstallFinished } from "../app-gateway";
 import { t } from "../i18n/index.js";
 
@@ -120,6 +121,11 @@ function getErrorMessage(err: unknown) {
   return String(err);
 }
 
+/** CN: 将 raw error 转为用户友好的中文提示 */
+function friendlyError(err: unknown, context?: string): string {
+  return formatGeneralError(getErrorMessage(err), context).detail;
+}
+
 /** Pending reload requested while a loadSkills was already in flight */
 let _pendingReload = false;
 
@@ -141,7 +147,7 @@ export async function loadSkills(state: SkillsState, options?: LoadSkillsOptions
       | undefined;
     if (res) state.skillsReport = res;
   } catch (err) {
-    state.skillsError = getErrorMessage(err);
+    state.skillsError = friendlyError(err, "加载技能列表");
   } finally {
     state.skillsLoading = false;
   }
@@ -176,7 +182,7 @@ export async function updateSkillEnabled(
       message: enabled ? "技能已启用" : "技能已禁用",
     });
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = friendlyError(err, "技能操作");
     state.skillsError = message;
     setSkillMessage(state, skillKey, {
       kind: "error",
@@ -200,7 +206,7 @@ export async function saveSkillApiKey(state: SkillsState, skillKey: string) {
       message: "API 密钥已保存",
     });
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = friendlyError(err, "技能操作");
     state.skillsError = message;
     setSkillMessage(state, skillKey, {
       kind: "error",
@@ -254,7 +260,7 @@ export async function installSkill(
       setInstallProgress(state, name, null);
     }, 1500);
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = friendlyError(err, "技能安装");
     state.skillsError = message;
     // Mark as "done" first to block late-arriving WS progress events
     setInstallProgress(state, name, { stage: "done", message, percent: 0 });
@@ -287,7 +293,7 @@ export async function toggleSkillPinned(
       message: pinned ? "已置顶" : "已取消置顶",
     });
   } catch (err) {
-    const message = getErrorMessage(err);
+    const message = friendlyError(err, "技能操作");
     state.skillsError = message;
     setSkillMessage(state, skillKey, {
       kind: "error",
@@ -377,8 +383,7 @@ export async function loadRemoteSkills(state: SkillsState) {
       state.skillsRemoteIndex = res;
     }
   } catch (err) {
-    const errorMsg = getErrorMessage(err);
-    state.skillsRemoteError = errorMsg;
+    state.skillsRemoteError = friendlyError(err, "加载远程技能");
   } finally {
     state.skillsRemoteLoading = false;
   }
@@ -498,7 +503,7 @@ export async function installRemoteSkill(
     
   } catch (err) {
     clearInterval(progressTimer);
-    const message = getErrorMessage(err);
+    const message = friendlyError(err, "技能安装");
     state.skillsRemoteError = message;
     state.skillsMarketError = message;
     // Mark as "done" first to block late WS events, then clear after delay
@@ -546,8 +551,7 @@ export async function loadMarketSkills(state: SkillsState) {
       }
     }
   } catch (err) {
-    const errorMsg = getErrorMessage(err);
-    state.skillsMarketError = errorMsg;
+    state.skillsMarketError = friendlyError(err, "技能市场");
   } finally {
     state.skillsMarketLoading = false;
   }
@@ -584,8 +588,7 @@ export async function refreshMarketSkills(state: SkillsState) {
       }
     }
   } catch (err) {
-    const errorMsg = getErrorMessage(err);
-    state.skillsMarketError = errorMsg;
+    state.skillsMarketError = friendlyError(err, "技能市场");
   } finally {
     state.skillsMarketLoading = false;
     state.skillsMarketSyncing = false;
@@ -628,7 +631,7 @@ export async function searchMarketSkills(
       state.skillsMarketPage = result.page;
     }
   } catch (err) {
-    state.skillsMarketError = getErrorMessage(err);
+    state.skillsMarketError = friendlyError(err, "技能市场");
   } finally {
     state.skillsMarketLoading = false;
   }
@@ -682,7 +685,7 @@ export async function loadMoreMarketSkills(state: SkillsState) {
       state.skillsMarketPage = result.page;
     }
   } catch (err) {
-    state.skillsMarketError = getErrorMessage(err);
+    state.skillsMarketError = friendlyError(err, "技能市场");
   } finally {
     state.skillsMarketLoading = false;
   }
@@ -724,7 +727,7 @@ export async function browseSkillDir(state: SkillsState, path?: string) {
       state.skillsImportPath = result.currentPath;
     }
   } catch (err) {
-    state.skillsImportError = getErrorMessage(err);
+    state.skillsImportError = friendlyError(err, "技能导入");
   } finally {
     state.skillsImportLoading = false;
   }
@@ -750,7 +753,7 @@ export async function importSkill(state: SkillsState, path: string, mode: "copy"
       setTimeout(() => closeSkillImport(state), 1500);
     }
   } catch (err) {
-    state.skillsImportError = getErrorMessage(err);
+    state.skillsImportError = friendlyError(err, "技能导入");
   } finally {
     state.skillsImportLoading = false;
   }

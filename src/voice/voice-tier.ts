@@ -158,26 +158,26 @@ export function describeTier(decision: VoiceTierDecision): {
   switch (decision.tier) {
     case "gpu-full":
       return {
-        title: "GPU 全能模式",
-        description: `Qwen3-ASR + Qwen3-TTS — 最高质量语音识别和语音合成 (${decision.hardware.gpu?.name ?? "NVIDIA GPU"})`,
+        title: "GPU 语音识别",
+        description: `Qwen3-ASR — 最高质量实时语音识别 (${decision.hardware.gpu?.name ?? "NVIDIA GPU"})`,
         badge: "gold",
       };
     case "gpu-asr":
       return {
-        title: "GPU 语音识别模式",
-        description: `Qwen3-ASR 高质量识别 + Edge TTS 在线语音合成 (${decision.hardware.gpu?.name ?? "NVIDIA GPU"})`,
+        title: "GPU 语音识别",
+        description: `Qwen3-ASR — 高质量实时语音识别 (${decision.hardware.gpu?.name ?? "NVIDIA GPU"})`,
         badge: "silver",
       };
     case "cpu-full":
       return {
-        title: "CPU 全能模式",
-        description: "SenseVoice 语音识别 + Kokoro 离线语音合成",
+        title: "CPU 语音识别",
+        description: "SenseVoice — 离线语音识别",
         badge: "silver",
       };
     case "cpu-asr":
       return {
-        title: "CPU 语音识别模式",
-        description: "SenseVoice 语音识别 + Edge TTS 在线语音合成",
+        title: "CPU 语音识别",
+        description: "SenseVoice — 离线语音识别",
         badge: "bronze",
       };
     case "disabled":
@@ -207,6 +207,7 @@ export function tierRequiresGpuSidecar(tier: VoiceTierLevel): boolean {
  * Total download size for a tier's models (in MB).
  */
 export function tierDownloadSizeMB(tier: VoiceTierLevel): number {
-  const { asr, tts } = getModelsForTier(tier);
-  return (asr?.downloadSizeMB ?? 0) + (tts?.downloadSizeMB ?? 0);
+  const { asr } = getModelsForTier(tier);
+  // TTS hidden in this release — only count ASR download size
+  return asr?.downloadSizeMB ?? 0;
 }

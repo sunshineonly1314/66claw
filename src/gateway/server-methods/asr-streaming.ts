@@ -29,6 +29,11 @@ import {
   cleanupApiSessionsForConn,
   isApiAsrAvailable,
 } from "./asr-streaming-api.js";
+import {
+  dashscopeStreamHandlers,
+  cleanupDashscopeSessionsForConn,
+  isDashscopeStreamAvailable,
+} from "./asr-streaming-dashscope.js";
 import { cleanupKwsSessionsForConn } from "./kws-streaming.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import { formatForLog } from "../ws-log.js";
@@ -36,7 +41,7 @@ import type { GatewayRequestHandlers } from "./types.js";
 
 // ─── Session type tracking ────────────────────────────────────────────
 
-type SessionBackend = "gpu" | "vad" | "cpu" | "api";
+type SessionBackend = "gpu" | "vad" | "cpu" | "api" | "dashscope-stream";
 const sessionTypes = new Map<string, SessionBackend>();
 
 /** Clean up all streaming sessions for a disconnected connection. */
@@ -45,6 +50,7 @@ export function cleanupSessionsForConn(connId: string): void {
   cleanupVadSessionsForConn(connId);
   cleanupCpuSessionsForConn(connId);
   cleanupApiSessionsForConn(connId);
+  cleanupDashscopeSessionsForConn(connId);
   cleanupKwsSessionsForConn(connId);
 }
 
@@ -62,16 +68,19 @@ async function resolveBackend(): Promise<SessionBackend | null> {
   // 0. CPU true streaming takes priority — real incremental decoding, no text deletion
   if (detectCpuStreamingModel()) return "cpu";
 
-  // 1. User-selected API ASR provider
+  // 1. DashScope Fun-ASR real-time WebSocket — true streaming cloud ASR
+  if (isDashscopeStreamAvailable()) return "dashscope-stream";
+
+  // 2. User-selected API ASR provider (accumulate at end)
   if (await isApiAsrAvailable()) return "api";
 
-  // 2. GPU streaming (Qwen3-ASR 1s sliding window)
+  // 3. GPU streaming (Qwen3-ASR 1s sliding window)
   if (await isGpuStreamAvailable()) return "gpu";
 
-  // 3. CPU offline (SenseVoice via sherpa-onnx)
+  // 4. CPU offline (SenseVoice via sherpa-onnx)
   if (isCpuAsrAvailable()) return "cpu";
 
-  // 4. No backend available
+  // 5. No backend available
   return null;
 }
 
@@ -85,6 +94,8 @@ function getHandlers(backend: SessionBackend): GatewayRequestHandlers {
       return cpuStreamHandlers;
     case "api":
       return apiStreamHandlers;
+    case "dashscope-stream":
+      return dashscopeStreamHandlers;
   }
 }
 
@@ -100,6 +111,8 @@ function getBackendLabel(backend: SessionBackend): string {
         : "SenseVoice (CPU, offline)";
     case "api":
       return "API ASR (cloud)";
+    case "dashscope-stream":
+      return "Fun-ASR (阿里云百炼)";
   }
 }
 
@@ -121,11 +134,13 @@ export const asrStreamingHandlers: GatewayRequestHandlers = {
               ? "gpu-1s-window"
               : backend === "vad"
                 ? "vad+qwen3-asr"
-                : backend === "api"
-                  ? "api-cloud"
-                  : detectCpuStreamingModel()
-                    ? "cpu-streaming"
-                    : "cpu-offline",
+                : backend === "dashscope-stream"
+                  ? "dashscope-realtime"
+                  : backend === "api"
+                    ? "api-cloud"
+                    : detectCpuStreamingModel()
+                      ? "cpu-streaming"
+                      : "cpu-offline",
           streamingMode: backend,
         });
       } else {

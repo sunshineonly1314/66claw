@@ -12,10 +12,41 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, OpenclawwechatStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { OpenclawwechatStatus } from "./channels.types";
+
+export function renderOpenclawwechatTutorial() {
+  return html`
+    <div class="callout success" style="margin-bottom: 16px;">
+      <strong>无需企业认证：</strong>通过 ClawChat 桥接服务接入个人微信号，支持文本、图片、视频、文档。
+    </div>
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>准备 ClawChat 服务</strong>
+          <p>确保 ClawChat 桥接服务已启动并运行</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>获取 API Key</strong>
+          <p>从 ClawChat 服务获取 API Key，格式为 <code>bot_id:secret</code></p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>填写 API Key</strong>
+          <p>将获取的 API Key 填入右侧配置表单</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderOpenclawwechatCard(params: {
   props: ChannelsProps;
@@ -262,6 +293,8 @@ export function renderOpenclawwechatCard(params: {
         </details>
 
         ${renderChannelConfigSection({ channelId: "openclawwechat", props })}
+
+        ${renderChannelRouteSection({ channelId: "openclawwechat", props, accounts: openclawwechatAccounts })}
       </div>
     </details>
   `;

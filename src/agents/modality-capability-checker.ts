@@ -1,14 +1,18 @@
 /**
  * Modality Capability Checker — JIT configuration support.
  *
- * 检测用户是否配置了支持特定模态的模型（图片分析、图片生成、视频分析等）。
+ * 检测用户是否配置了支持特定模态的模型（图片分析、图片生成、图像编辑、视频分析等）。
  * 如果没有配置，提供友好的引导信息帮助用户配置。
  */
 
 import { loadModelCatalog, type ModelCatalogEntry } from "./model-catalog.js";
 import type { OpenClawCNConfig } from "../config/config.js";
 
-export type ModalityCapability = "image-analysis" | "image-generation" | "video-analysis";
+export type ModalityCapability =
+  | "image-analysis"
+  | "image-generation"
+  | "image-editing"
+  | "video-analysis";
 
 export type CapabilityCheckResult = {
   /** 能力类型 */
@@ -33,23 +37,46 @@ function supportsImageAnalysis(model: ModelCatalogEntry): boolean {
 }
 
 /**
- * 检测模型是否支持图片生成能力
+ * 检测模型是否支持图像编辑能力（需要原图 + 编辑指令）
+ * Qwen-Image-Edit, FLUX Kontext 等
+ */
+function supportsImageEditing(model: ModelCatalogEntry): boolean {
+  const id = model.id.toLowerCase();
+
+  // Qwen-Image-Edit / Qwen-Image-Edit-2509
+  if (id.includes("qwen-image-edit") || id.includes("qwen/qwen-image-edit")) {
+    return true;
+  }
+
+  // FLUX Kontext (Black Forest Labs — editing/context-aware generation)
+  if (id.includes("kontext")) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 检测模型是否支持图片生成能力（纯文生图，不含编辑模型）
  * 目前通过模型 ID 或 provider 判断（DALL-E, Stable Diffusion, 通义万相等）
  */
 function supportsImageGeneration(model: ModelCatalogEntry): boolean {
   const id = model.id.toLowerCase();
   const provider = model.provider.toLowerCase();
 
-  // OpenAI DALL-E
-  if (provider.includes("openai") && id.includes("dall-e")) {
+  // Exclude editing models — they are a separate capability
+  if (supportsImageEditing(model)) {
+    return false;
+  }
+
+  // OpenAI DALL-E / GPT-Image
+  if (id.includes("dall-e") || id.includes("gpt-image")) {
     return true;
   }
 
-  // 阿里通义万相
-  if (provider.includes("dashscope") || provider.includes("aliyun")) {
-    if (id.includes("wanx") || id.includes("wan-x") || id.includes("万相")) {
-      return true;
-    }
+  // 阿里通义万相 (DashScope wanx / wan2)
+  if (id.includes("wanx") || id.includes("wan-x") || id.includes("wan2") || id.includes("万相")) {
+    return true;
   }
 
   // 百度文心一格
@@ -59,13 +86,33 @@ function supportsImageGeneration(model: ModelCatalogEntry): boolean {
     }
   }
 
+  // Qwen Image (SiliconFlow / DashScope) — text-to-image only (not Edit)
+  if (id.includes("qwen-image") || id.includes("qwen/qwen-image")) {
+    return true;
+  }
+
   // Stable Diffusion
   if (id.includes("stable-diffusion") || id.startsWith("sd-") || id.includes("sdxl")) {
     return true;
   }
 
-  // Midjourney (如果有接入)
-  if (id.includes("midjourney")) {
+  // FLUX (Black Forest Labs) — non-Kontext variants
+  if (id.includes("flux")) {
+    return true;
+  }
+
+  // Kolors (Kwai)
+  if (id.includes("kolors")) {
+    return true;
+  }
+
+  // CogView (智谱)
+  if (id.includes("cogview")) {
+    return true;
+  }
+
+  // Midjourney / Playground
+  if (id.includes("midjourney") || id.includes("playground")) {
     return true;
   }
 
@@ -87,6 +134,7 @@ const CAPABILITY_CHECKERS: Record<
 > = {
   "image-analysis": { checker: supportsImageAnalysis, label: "图片分析" },
   "image-generation": { checker: supportsImageGeneration, label: "图片生成" },
+  "image-editing": { checker: supportsImageEditing, label: "图像编辑" },
   "video-analysis": { checker: supportsVideoAnalysis, label: "视频分析" },
 };
 
@@ -150,28 +198,36 @@ export function getConfigSuggestions(results: CapabilityCheckResult[]): {
 
   if (missingCapabilities.includes("image-analysis")) {
     suggestions.push(
-      "💡 推荐配置支持图片分析的模型：\n" +
-        "   • 阿里云：qwen-vl-max (通义千问视觉版)\n" +
-        "   • 字节跳动：doubao-seed-1-8 (豆包多模态)\n" +
-        "   • OpenAI：gpt-4-vision-preview\n" +
-        "   • 智谱 AI：glm-4v",
+      "推荐配置支持图片分析的模型：\n" +
+        "   - 阿里云：qwen-vl-max (通义千问视觉版)\n" +
+        "   - 字节跳动：doubao-seed-1-8 (豆包多模态)\n" +
+        "   - OpenAI：gpt-4-vision-preview\n" +
+        "   - 智谱 AI：glm-4v",
     );
   }
 
   if (missingCapabilities.includes("image-generation")) {
     suggestions.push(
-      "💡 推荐配置支持图片生成的模型：\n" +
-        "   • OpenAI：dall-e-3\n" +
-        "   • 阿里云：wanx-v1 (通义万相)\n" +
-        "   • 百度：ernie-vilg-v2 (文心一格)",
+      "推荐配置支持图片生成的模型：\n" +
+        "   - OpenAI：dall-e-3\n" +
+        "   - 阿里云：wanx-v1 (通义万相)\n" +
+        "   - SiliconFlow：Qwen/Qwen-Image, FLUX.1-schnell",
+    );
+  }
+
+  if (missingCapabilities.includes("image-editing")) {
+    suggestions.push(
+      "推荐配置支持图像编辑的模型：\n" +
+        "   - SiliconFlow：Qwen/Qwen-Image-Edit (通义图像编辑)\n" +
+        "   - SiliconFlow：FLUX.1-Kontext-dev (上下文感知编辑)",
     );
   }
 
   if (missingCapabilities.includes("video-analysis")) {
     suggestions.push(
-      "💡 推荐配置支持视频分析的模型：\n" +
-        "   • 字节跳动：doubao-seed-1-8 (豆包多模态)\n" +
-        "   • 其他支持视频理解的多模态大模型",
+      "推荐配置支持视频分析的模型：\n" +
+        "   - 字节跳动：doubao-seed-1-8 (豆包多模态)\n" +
+        "   - 其他支持视频理解的多模态大模型",
     );
   }
 

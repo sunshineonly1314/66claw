@@ -100,13 +100,29 @@ export function closeOrchestrator(state: OrchestratorControllerState): void {
   stopPolling();
 }
 
-// ── Template Quick Deploy ───────────────────────────────────────────────
+// ── Template Preview ────────────────────────────────────────────────────
 
 /**
- * Handle clicking a template card — trigger quick deploy.
+ * Handle clicking a template card — show preview before deploying.
+ */
+export function handleTemplateClick(
+  state: OrchestratorControllerState,
+  templateId: string,
+): void {
+  const orch = state.orchestratorState;
+  if (!orch) return;
+
+  const tpl = orch.templates.find(t => t.id === templateId);
+  if (!tpl) return;
+
+  dispatch(state, { type: "SET_PREVIEW", template: tpl });
+}
+
+/**
+ * Handle confirming deploy from the preview page.
  * Includes double-click guard to prevent duplicate deployments.
  */
-export async function handleTemplateClick(
+export async function handlePreviewDeploy(
   state: OrchestratorControllerState,
   templateId: string,
 ): Promise<void> {
@@ -398,6 +414,12 @@ export function handleActionClick(
       dispatch(state, { type: "SET_INPUT_DISABLED", disabled: false });
       break;
 
+    case "back-from-preview":
+      // Return to welcome from template preview
+      dispatch(state, { type: "SET_PHASE", phase: "welcome" });
+      dispatch(state, { type: "SET_INPUT_DISABLED", disabled: false });
+      break;
+
     case "answer-question": {
       // From renderQuestionsWidget: data = { index: number, answer: string }
       const qData = _data as { index?: number; answer?: string } | undefined;
@@ -514,16 +536,37 @@ async function startPolling(
       // Check for terminal states
       if (response.status === "deployed") {
         stopPolling();
+
+        // Try to fetch the deploy report from the project bridge
+        let report: { agents: unknown[]; summary: unknown } | undefined;
+        try {
+          const reportRes = await gw("orchestrator.deploy.report", { planId }) as {
+            report?: { agents: unknown[]; summary: unknown };
+          } | undefined;
+          if (reportRes?.report) {
+            report = reportRes.report as { agents: unknown[]; summary: unknown };
+          }
+        } catch {
+          // Deploy report is optional — success page still works without it
+        }
+
         dispatch(state, {
           type: "DEPLOY_SUCCESS",
           data: {
             teamDescription: response.plan.teamDescription,
-            agents: response.agents.map(a => ({
-              id: a.id,
-              name: a.name,
-              role: a.role,
-            })),
+            agents: response.agents.map(a => {
+              const ext = a as Record<string, unknown>;
+              return {
+                id: a.id,
+                name: a.name,
+                role: a.role,
+                emoji: typeof ext.emoji === "string" ? ext.emoji : undefined,
+                modelTier: typeof ext.modelTier === "string" ? ext.modelTier : undefined,
+                toolProfile: typeof ext.toolProfile === "string" ? ext.toolProfile : undefined,
+              };
+            }),
             usageGuide: response.plan.usageGuide ?? "",
+            report: report as NonNullable<OrchestratorState["successData"]>["report"],
           },
         });
         // Notify app to refresh the agent list sidebar

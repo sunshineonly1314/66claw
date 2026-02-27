@@ -52,6 +52,7 @@ import {
   resolveHookChannel,
   resolveHookDeliver,
 } from "./hooks.js";
+import { translateError } from "./error-translate.js";
 import { sendGatewayAuthFailure } from "./http-common.js";
 import { getBearerToken, getHeader } from "./http-utils.js";
 import { isPrivateOrLoopbackAddress, resolveGatewayClientIp } from "./net.js";
@@ -869,10 +870,24 @@ export function createGatewayHttpServer(opts: {
       res.statusCode = 404;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("Not Found");
-    } catch {
+    } catch (err) {
+      console.error(
+        "[openclawcn] HTTP handler error:",
+        err instanceof Error ? (err.stack ?? err.message) : err,
+      );
+      const translated = translateError(err);
       res.statusCode = 500;
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.end("Internal Server Error");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(
+        JSON.stringify({
+          error: {
+            message: "Internal Server Error",
+            userMessage: translated.userMessage,
+            category: translated.category,
+            type: "internal_error",
+          },
+        }),
+      );
     }
   }
 

@@ -133,6 +133,10 @@ export const ErrorShapeSchema = Type.Object(
     details: Type.Optional(Type.Unknown()),
     retryable: Type.Optional(Type.Boolean()),
     retryAfterMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    /** CN: 用户友好的中文提示信息 */
+    userMessage: Type.Optional(Type.String()),
+    /** CN: 错误分类 (billing/auth/rate_limit/timeout/overloaded/network/config/internal/unknown) */
+    category: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

@@ -241,18 +241,27 @@ const generateWithSiliconFlow: ImageGenProviderHandler = async ({
   const url = `${normalizeBaseUrl(baseUrl, "https://api.siliconflow.cn")}/v1/images/generations`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  // Qwen-Image models use different parameters than FLUX/SD/Kolors.
+  // Qwen-Image: num_inference_steps + cfg (NO image_size, NO batch_size)
+  // Others: image_size + batch_size
+  const isQwenImage = /qwen[/-]image/i.test(modelId) && !/edit/i.test(modelId);
+  const body: Record<string, unknown> = { model: modelId, prompt };
+  if (isQwenImage) {
+    body.num_inference_steps = 50;
+    body.cfg = 4.0;
+  } else {
+    body.image_size = size;
+    body.batch_size = Math.min(n, 4);
+  }
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: modelId,
-      prompt,
-      image_size: size,
-      batch_size: Math.min(n, 4),
-    }),
+    body: JSON.stringify(body),
     signal: controller.signal,
   });
   clearTimeout(timeout);
@@ -502,7 +511,7 @@ export function createImageGenTool(options?: {
       "Generate images from text descriptions. " +
       "Use this tool when the user asks to create, draw, paint, design, or generate an image, picture, illustration, logo, poster, etc. " +
       "Provide a detailed prompt describing the desired image. " +
-      "Supports multiple images (n=1-4), different sizes, and style presets.",
+      "Generates one image per call. Supports different sizes and style presets.",
     parameters: Type.Object({
       prompt: Type.String({
         description: "Detailed text description of the image to generate",
@@ -517,11 +526,6 @@ export function createImageGenTool(options?: {
         Type.String({
           description:
             "Image style. Options: vivid (default), natural, anime, watercolor, pixel, photorealistic",
-        }),
-      ),
-      n: Type.Optional(
-        Type.Number({
-          description: "Number of images to generate (1-4, default 1)",
         }),
       ),
       quality: Type.Optional(
@@ -543,7 +547,7 @@ export function createImageGenTool(options?: {
       const size = typeof record.size === "string" ? record.size.trim() : "1024x1024";
       const style = typeof record.style === "string" ? record.style.trim() : "vivid";
       const quality = typeof record.quality === "string" ? record.quality.trim() : "standard";
-      const n = typeof record.n === "number" ? Math.max(1, Math.min(4, record.n)) : 1;
+      const n = 1;
 
       const agentDir = options?.agentDir?.trim() || "";
       const cfg = options?.config;
@@ -591,29 +595,84 @@ export function createImageGenTool(options?: {
             modelId: "default",
           });
         } else {
-          // 2. Cloud provider resolution via model registry
+          // 2. Cloud provider resolution
+          //
+          // Priority:
+          //   a) User's explicit modelCapability.capabilities["image-generation"] config
+          //   b) Auto-discover from model registry by ID pattern matching
+
           if (agentDir) await ensureOpenClawCNModelsJson(cfg, agentDir);
           const authStorage = agentDir ? discoverAuthStorage(agentDir) : null;
           const registry = authStorage && agentDir ? discoverModels(authStorage, agentDir) : null;
           const models = registry ? registry.getAll() : [];
 
-          const imageGenModel = models.find((m) => {
-            const id = m.id.toLowerCase();
-            return (
-              id.includes("dall-e") ||
-              id.includes("gpt-image") ||
-              id.includes("wanx") ||
-              id.includes("wan-x") ||
-              id.includes("wan2") ||
-              id.includes("stable-diffusion") ||
-              id.startsWith("sd-") ||
-              id.includes("sdxl") ||
-              id.includes("flux") ||
-              id.includes("midjourney") ||
-              id.includes("playground") ||
-              id.includes("kolors")
+          // 2a. Check user's explicit image-generation model selection
+          let imageGenModel: (typeof models)[number] | undefined;
+
+          const mcCaps = (cfg as Record<string, unknown>).modelCapability as
+            | { capabilities?: Record<string, { providerId?: string; modelId?: string }> }
+            | undefined;
+          const imgCfg = mcCaps?.capabilities?.["image-generation"];
+          if (imgCfg?.providerId && imgCfg?.modelId) {
+            // [CN-FIX] Qwen-Image-Edit is an *editing* model that requires a source
+            // image.  For pure text-to-image generation, prefer Qwen-Image instead.
+            let resolvedModelId = imgCfg.modelId;
+            if (/^Qwen\/Qwen-Image-Edit/i.test(resolvedModelId)) {
+              resolvedModelId = "Qwen/Qwen-Image";
+              log.info(
+                `Remapped image-edit model ${imgCfg.modelId} → ${resolvedModelId} ` +
+                  `(text-to-image generation does not support editing models)`,
+              );
+            }
+
+            // Find this exact model in registry
+            imageGenModel = models.find(
+              (m) =>
+                m.provider === imgCfg.providerId &&
+                (m.id === resolvedModelId || m.id.endsWith(`/${resolvedModelId}`)),
             );
-          });
+            if (!imageGenModel) {
+              // Not in registry — build a synthetic entry so we can still use it
+              // (user configured it in settings, we trust the provider is available)
+              const providerConfig = (
+                (cfg as Record<string, unknown>).models as
+                  | { providers?: Record<string, { baseUrl?: string }> }
+                  | undefined
+              )?.providers?.[imgCfg.providerId];
+              imageGenModel = {
+                id: resolvedModelId,
+                provider: imgCfg.providerId,
+                baseUrl: providerConfig?.baseUrl ?? "",
+              } as (typeof models)[number];
+              log.info(
+                `Using user-configured image-gen model (not in registry): ` +
+                  `${imgCfg.providerId}/${resolvedModelId}`,
+              );
+            }
+          }
+
+          // 2b. Fallback: auto-discover by model ID pattern
+          if (!imageGenModel) {
+            imageGenModel = models.find((m) => {
+              const id = m.id.toLowerCase();
+              return (
+                id.includes("dall-e") ||
+                id.includes("gpt-image") ||
+                id.includes("wanx") ||
+                id.includes("wan-x") ||
+                id.includes("wan2") ||
+                id.includes("stable-diffusion") ||
+                id.startsWith("sd-") ||
+                id.includes("sdxl") ||
+                id.includes("flux") ||
+                id.includes("midjourney") ||
+                id.includes("playground") ||
+                id.includes("kolors") ||
+                id.includes("qwen-image") ||
+                id.includes("cogview")
+              );
+            });
+          }
 
           if (!imageGenModel) {
             return {
@@ -640,16 +699,58 @@ export function createImageGenTool(options?: {
           const apiKey = requireApiKey(authInfo, imageGenModel.provider);
           const handler = resolveImageGenProvider(imageGenModel.provider, imageGenModel.id);
 
-          results = await handler({
-            apiKey,
-            prompt,
-            size,
-            style,
-            quality,
-            n,
-            baseUrl: imageGenModel.baseUrl,
-            modelId: imageGenModel.id,
-          });
+          // [CN-FIX] Fallback chain: if the primary model fails with 400/404,
+          // try well-known alternatives from the same provider before giving up.
+          const SILICONFLOW_FALLBACKS = [
+            "Qwen/Qwen-Image",
+            "black-forest-labs/FLUX.1-schnell",
+            "Kwai-Kolors/Kolors",
+          ];
+
+          let lastError: Error | undefined;
+          const modelsToTry = [imageGenModel.id];
+          if (imageGenModel.provider === "siliconflow") {
+            for (const fb of SILICONFLOW_FALLBACKS) {
+              if (!modelsToTry.includes(fb)) modelsToTry.push(fb);
+            }
+          }
+
+          for (const candidateModelId of modelsToTry) {
+            try {
+              results = await handler({
+                apiKey,
+                prompt,
+                size,
+                style,
+                quality,
+                n,
+                baseUrl: imageGenModel.baseUrl,
+                modelId: candidateModelId,
+              });
+              if (candidateModelId !== imageGenModel.id) {
+                log.info(
+                  `Primary model ${imageGenModel.id} failed, succeeded with fallback: ${candidateModelId}`,
+                );
+              }
+              lastError = undefined;
+              break;
+            } catch (err) {
+              lastError = err instanceof Error ? err : new Error(String(err));
+              const msg = lastError.message;
+              // Only retry on "model not exist" / 400 / 404 errors
+              if (msg.includes("400") || msg.includes("404") || msg.includes("does not exist")) {
+                log.warn(
+                  `Image gen model ${candidateModelId} failed (${msg.substring(0, 100)}), trying next...`,
+                );
+                continue;
+              }
+              // Other errors (auth, timeout, etc.) — don't retry
+              throw lastError;
+            }
+          }
+          if (lastError) {
+            throw lastError;
+          }
         }
 
         const durationMs = Date.now() - startTime;
@@ -751,6 +852,311 @@ export function createImageGenTool(options?: {
             },
           ],
           details: { error: errorMsg, prompt, size, style },
+        };
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Image Edit Tool — edits an existing image based on text instructions
+// ---------------------------------------------------------------------------
+
+type ImageEditProviderHandler = (params: {
+  apiKey: string;
+  prompt: string;
+  image: string;
+  image2?: string;
+  image3?: string;
+  baseUrl?: string;
+  modelId: string;
+}) => Promise<ImageGenResult[]>;
+
+const editWithSiliconFlow: ImageEditProviderHandler = async ({
+  apiKey,
+  prompt,
+  image,
+  image2,
+  image3,
+  baseUrl,
+  modelId,
+}) => {
+  const url = `${normalizeBaseUrl(baseUrl, "https://api.siliconflow.cn")}/v1/images/generations`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90_000);
+
+  const body: Record<string, unknown> = {
+    model: modelId,
+    prompt,
+    image,
+    num_inference_steps: 50,
+    cfg: 4.0,
+  };
+  if (image2) body.image2 = image2;
+  if (image3) body.image3 = image3;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "unknown error");
+    throw new Error(`SiliconFlow image edit failed (${response.status}): ${errorText}`);
+  }
+
+  const data = (await response.json()) as {
+    images?: Array<{ url?: string }>;
+    data?: Array<{ url?: string; b64_json?: string }>;
+  };
+
+  const items = data.images ?? data.data ?? [];
+  const results: ImageGenResult[] = [];
+  for (const item of items) {
+    const b64 = (item as { b64_json?: string }).b64_json;
+    const imageUrl = b64 ? `data:image/png;base64,${b64}` : (item.url ?? "");
+    if (imageUrl) {
+      results.push({ imageUrl, model: modelId, provider: "siliconflow" });
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error("SiliconFlow returned empty image edit data");
+  }
+  return results;
+};
+
+function resolveImageEditProvider(provider: string): ImageEditProviderHandler {
+  if (provider === "siliconflow") return editWithSiliconFlow;
+  // Future: OpenAI edit, DashScope edit, etc.
+  return editWithSiliconFlow; // Default fallback
+}
+
+export function createImageEditTool(options?: {
+  config?: OpenClawCNConfig;
+  agentDir?: string;
+  sessionKey?: string;
+}): AnyAgentTool {
+  return {
+    label: "Image Editing",
+    name: "image_edit",
+    description:
+      "Edit an existing image based on text instructions. " +
+      "Use this tool when the user sends an image and asks to modify, edit, change, remove, or add elements. " +
+      "Requires a source image (base64 data URL or URL) and editing instructions. " +
+      "Examples: change background color, remove watermark, add text overlay, change style.",
+    parameters: Type.Object({
+      prompt: Type.String({
+        description:
+          "Text description of the editing instructions (e.g., 'change the sky to sunset colors')",
+      }),
+      image: Type.String({
+        description:
+          "Source image as a base64 data URL (data:image/png;base64,...) or an HTTPS URL",
+      }),
+      image2: Type.Optional(
+        Type.String({
+          description:
+            "Optional second reference image (for multi-image editing, Qwen-Image-Edit-2509 only)",
+        }),
+      ),
+      image3: Type.Optional(
+        Type.String({
+          description:
+            "Optional third reference image (for multi-image editing, Qwen-Image-Edit-2509 only)",
+        }),
+      ),
+    }),
+    execute: async (_toolCallId, args) => {
+      const record = args as Record<string, unknown>;
+      const prompt = typeof record.prompt === "string" ? record.prompt.trim() : "";
+      const image = typeof record.image === "string" ? record.image.trim() : "";
+
+      if (!prompt) {
+        return {
+          content: [{ type: "text", text: "Error: editing prompt is required." }],
+          details: { error: "missing_prompt" },
+        };
+      }
+      if (!image) {
+        return {
+          content: [{ type: "text", text: "Error: source image is required for editing." }],
+          details: { error: "missing_image" },
+        };
+      }
+
+      const image2 = typeof record.image2 === "string" ? record.image2.trim() : undefined;
+      const image3 = typeof record.image3 === "string" ? record.image3.trim() : undefined;
+      const agentDir = options?.agentDir?.trim() || "";
+      const cfg = options?.config;
+      const sessionKey = options?.sessionKey || `default-${Date.now()}`;
+      const startTime = Date.now();
+
+      try {
+        // Resolve editing model from user config
+        if (agentDir) await ensureOpenClawCNModelsJson(cfg, agentDir);
+        const authStorage = agentDir ? discoverAuthStorage(agentDir) : null;
+        const registry = authStorage && agentDir ? discoverModels(authStorage, agentDir) : null;
+        const models = registry ? registry.getAll() : [];
+
+        let editModel: (typeof models)[number] | undefined;
+
+        const mcCaps = (cfg as Record<string, unknown>)?.modelCapability as
+          | { capabilities?: Record<string, { providerId?: string; modelId?: string }> }
+          | undefined;
+        const editCfg = mcCaps?.capabilities?.["image-editing"];
+        if (editCfg?.providerId && editCfg?.modelId) {
+          editModel = models.find(
+            (m) =>
+              m.provider === editCfg.providerId &&
+              (m.id === editCfg.modelId || m.id.endsWith(`/${editCfg.modelId}`)),
+          );
+          if (!editModel) {
+            const providerConfig = (
+              (cfg as Record<string, unknown>)?.models as
+                | { providers?: Record<string, { baseUrl?: string }> }
+                | undefined
+            )?.providers?.[editCfg.providerId];
+            editModel = {
+              id: editCfg.modelId,
+              provider: editCfg.providerId,
+              baseUrl: providerConfig?.baseUrl ?? "",
+            } as (typeof models)[number];
+            log.info(
+              `Using user-configured image-edit model (not in registry): ` +
+                `${editCfg.providerId}/${editCfg.modelId}`,
+            );
+          }
+        }
+
+        // Fallback: find editing models by pattern
+        if (!editModel) {
+          editModel = models.find((m) => {
+            const id = m.id.toLowerCase();
+            return id.includes("image-edit") || id.includes("kontext");
+          });
+        }
+
+        // Final fallback: default to Qwen-Image-Edit on siliconflow
+        if (!editModel) {
+          editModel = {
+            id: "Qwen/Qwen-Image-Edit",
+            provider: "siliconflow",
+            baseUrl: "",
+          } as (typeof models)[number];
+          log.info(
+            "No image-editing model configured, defaulting to siliconflow/Qwen/Qwen-Image-Edit",
+          );
+        }
+
+        log.info(`Using image edit model: ${editModel.provider}/${editModel.id}`);
+
+        const authInfo = await getApiKeyForModel({
+          model: editModel,
+          cfg,
+          agentDir,
+        });
+        const apiKey = requireApiKey(authInfo, editModel.provider);
+        const handler = resolveImageEditProvider(editModel.provider);
+
+        const results = await handler({
+          apiKey,
+          prompt,
+          image,
+          image2,
+          image3,
+          baseUrl: editModel.baseUrl,
+          modelId: editModel.id,
+        });
+
+        const durationMs = Date.now() - startTime;
+        log.info(
+          `Image edited: ${results.length} image(s), ` +
+            `provider=${results[0]?.provider}, model=${results[0]?.model}, ${durationMs}ms`,
+        );
+
+        // Persist edited images
+        const persistedUrls: string[] = [];
+        const persistedPaths: string[] = [];
+        for (const result of results) {
+          try {
+            const { buffer, mimeType } = await resolveImageBuffer(result.imageUrl);
+            const meta: ImageGenerationMeta = {
+              prompt,
+              revisedPrompt: result.revisedPrompt,
+              model: result.model,
+              provider: result.provider,
+              size: "original",
+              style: "edit",
+              durationMs,
+            };
+            const entry = await saveGeneratedImage({
+              sessionKey,
+              data: buffer,
+              mimeType,
+              meta,
+            });
+            if (entry) {
+              persistedUrls.push(`/api/media/chat-images/${sessionKey}/${entry.file}`);
+              persistedPaths.push(entry.file);
+            } else {
+              persistedUrls.push(result.imageUrl);
+            }
+          } catch (persistErr) {
+            log.warn(`Failed to persist edited image: ${(persistErr as Error).message}`);
+            persistedUrls.push(result.imageUrl);
+          }
+        }
+
+        const firstResult = results[0]!;
+        const lines = [`Image edited successfully.`];
+        if (firstResult.revisedPrompt) {
+          lines.push(`\nRevised prompt: ${firstResult.revisedPrompt}`);
+        }
+
+        const imageMetaBlock = {
+          type: "text",
+          text: `<!--OPENCLAWCN_IMAGE_GEN:${JSON.stringify({
+            imageUrl: persistedUrls[0],
+            imageUrls: persistedUrls,
+            imageFiles: persistedPaths,
+            imageCount: results.length,
+            model: `${firstResult.provider}/${firstResult.model}`,
+            provider: firstResult.provider,
+            prompt,
+            size: "original",
+            style: "edit",
+            durationMs,
+            revisedPrompt: firstResult.revisedPrompt,
+          })}-->`,
+        };
+
+        return {
+          content: [{ type: "text", text: lines.join("\n") }, imageMetaBlock],
+          details: {
+            model: `${firstResult.provider}/${firstResult.model}`,
+            provider: firstResult.provider,
+            imageUrl: persistedUrls[0],
+            imageUrls: persistedUrls,
+            imageFiles: persistedPaths,
+            imageCount: results.length,
+            prompt,
+            durationMs,
+          },
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        log.error(`Image editing failed: ${errorMsg}`);
+
+        return {
+          content: [{ type: "text", text: `Image editing failed: ${errorMsg}` }],
+          details: { error: errorMsg, prompt },
         };
       }
     },

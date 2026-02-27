@@ -5,12 +5,40 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot, NostrStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
 import {
   renderNostrProfileForm,
   type NostrProfileFormState,
   type NostrProfileFormCallbacks,
 } from "./channels.nostr-profile-form";
+
+export function renderNostrTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>Generate Private Key</strong>
+          <p>Generate a new Nostr private key (hex or nsec format) or use an existing one.</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Choose Relays</strong>
+          <p>Select one or more WebSocket relay URLs (e.g. <code>wss://relay.damus.io</code>)</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Configure</strong>
+          <p>Enter the private key and relay URLs in the form.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 /**
  * Truncate a pubkey for display (shows first and last 8 chars)
@@ -256,6 +284,8 @@ export function renderNostrCard(params: {
         <div class="row" style="margin-top: 12px;">
           <button class="btn" @click=${() => props.onRefresh(false)}>${t("channel.refresh")}</button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "nostr", props, accounts: nostrAccounts })}
       </div>
     </details>
   `;

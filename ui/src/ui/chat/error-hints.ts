@@ -1,15 +1,17 @@
 /**
- * 聊天错误分类和友好提示
+ * 错误分类和友好提示（聊天 + 通用场景）
  * 根据错误信息分类并返回用户友好的中文提示
  */
 
-export type ErrorCategory = 
+export type ErrorCategory =
   | "billing"      // 余额不足
   | "auth"         // 认证失败
   | "rate_limit"   // 频率限制
   | "timeout"      // 超时
   | "overloaded"   // 服务过载
   | "network"      // 网络问题
+  | "config"       // 配置错误
+  | "internal"     // 内部错误
   | "unknown";     // 未知错误
 
 /** 错误解决建议 */
@@ -29,6 +31,13 @@ export type FormattedError = {
   showConfigLink: boolean;
 };
 
+/** 网关返回的结构化错误（ErrorShape 的 UI 侧子集） */
+export type ErrorShapeHint = {
+  userMessage?: string;
+  category?: string;
+  retryable?: boolean;
+};
+
 type ErrorPattern = RegExp | string;
 
 const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
@@ -41,6 +50,7 @@ const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
     "plans & billing",
     "quota exceeded",
     "exceeded your current quota",
+    "BILLING_EXCEEDED",
     "余额不足",
     "额度不足",
     "账户欠费",
@@ -61,6 +71,7 @@ const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
     /\b403\b/,
     "no credentials found",
     "no api key found",
+    "AUTH_FAILED",
     "api key 无效",
     "密钥错误",
     "认证失败",
@@ -72,6 +83,7 @@ const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
     "resource has been exhausted",
     "resource_exhausted",
     "usage limit",
+    "RATE_LIMITED",
     "请求过于频繁",
     "请求频率",
   ],
@@ -83,6 +95,7 @@ const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
     "ETIMEDOUT",
     "ECONNRESET",
     "ECONNREFUSED",
+    "AGENT_TIMEOUT",
     "超时",
     "no response",
     "暂未收到响应",
@@ -93,6 +106,7 @@ const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
     "server is busy",
     "service unavailable",
     /\b503\b/,
+    "PROVIDER_OVERLOADED",
     "服务繁忙",
     "服务不可用",
   ],
@@ -102,11 +116,28 @@ const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
     "connection refused",
     "ENOTFOUND",
     "getaddrinfo",
+    "NETWORK_ERROR",
     "网络错误",
     "连接失败",
     "连接断开",
     "disconnected",
     /\b1006\b/, // WebSocket abnormal closure
+  ],
+  config: [
+    "INVALID_CONFIG",
+    "invalid config",
+    "CONFIG_ERROR",
+    /missing.*config/i,
+    "schema validation",
+    "配置错误",
+    "配置有误",
+  ],
+  internal: [
+    "INTERNAL_ERROR",
+    "internal error",
+    "内部错误",
+    "stack overflow",
+    "heap out of memory",
   ],
   unknown: [],
 };
@@ -118,6 +149,8 @@ const FRIENDLY_MESSAGES: Record<ErrorCategory, string> = {
   timeout: "请求超时，请检查以下可能原因",
   overloaded: "模型服务繁忙，请稍后重试",
   network: "网络连接失败，请检查网络设置",
+  config: "配置有误，请检查相关设置项",
+  internal: "内部错误，请重试。如反复出现请查看日志或反馈",
   unknown: "请求失败，请稍后重试",
 };
 
@@ -154,6 +187,16 @@ const ERROR_SUGGESTIONS: Record<ErrorCategory, ErrorSuggestion[]> = {
     { icon: "🔧", title: "检查代理", desc: "如使用代理，请确认代理配置正确" },
     { icon: "🔄", title: "重启网关", desc: "尝试重启 Clawdbot 网关服务" },
   ],
+  config: [
+    { icon: "🔧", title: "检查配置", desc: "前往「设置」页面检查相关配置项" },
+    { icon: "🔄", title: "重置配置", desc: "如无法定位问题，可尝试重置为默认值" },
+    { icon: "📋", title: "查看日志", desc: "前往「调试」页面查看详细错误信息" },
+  ],
+  internal: [
+    { icon: "🔄", title: "重试", desc: "点击重试按钮再次发送" },
+    { icon: "📋", title: "查看日志", desc: "前往「调试」页面查看详细错误信息" },
+    { icon: "💬", title: "反馈问题", desc: "如持续出现，请通过意见反馈告知我们" },
+  ],
   unknown: [
     { icon: "🔄", title: "重试", desc: "点击重试按钮再次发送" },
     { icon: "📋", title: "查看日志", desc: "前往「调试」页面查看详细错误信息" },
@@ -169,6 +212,8 @@ const CAN_RETRY: Record<ErrorCategory, boolean> = {
   rate_limit: true,
   overloaded: true,
   network: true,
+  config: false,
+  internal: true,
   unknown: true,
 };
 
@@ -180,6 +225,8 @@ const SHOW_CONFIG_LINK: Record<ErrorCategory, boolean> = {
   rate_limit: false,
   overloaded: false,
   network: false,
+  config: true,
+  internal: false,
   unknown: false,
 };
 
@@ -191,27 +238,34 @@ function matchesPatterns(raw: string, patterns: ErrorPattern[]): boolean {
   );
 }
 
+function isValidCategory(cat: string | undefined | null): cat is ErrorCategory {
+  if (!cat) return false;
+  return cat in FRIENDLY_MESSAGES;
+}
+
 /**
  * 分类错误信息
  */
 export function classifyError(errorMessage: string | null | undefined): ErrorCategory {
   if (!errorMessage) return "unknown";
-  
+
   const categories: ErrorCategory[] = [
     "billing",
-    "auth", 
+    "auth",
     "rate_limit",
     "timeout",
     "overloaded",
     "network",
+    "config",
+    "internal",
   ];
-  
+
   for (const category of categories) {
     if (matchesPatterns(errorMessage, ERROR_PATTERNS[category])) {
       return category;
     }
   }
-  
+
   return "unknown";
 }
 
@@ -228,9 +282,9 @@ export function getFriendlyErrorMessage(category: ErrorCategory): string {
  */
 export function cleanRawError(errorMessage: string | null | undefined): string {
   if (!errorMessage) return "";
-  
+
   let cleaned = errorMessage.trim();
-  
+
   // 移除常见的冗余前缀
   const prefixPatterns = [
     /^Error:\s*/i,
@@ -241,17 +295,17 @@ export function cleanRawError(errorMessage: string | null | undefined): string {
     /^Request failed:\s*/i,
     /^LLM request rejected:\s*/i,
   ];
-  
+
   for (const pattern of prefixPatterns) {
     cleaned = cleaned.replace(pattern, "");
   }
-  
+
   // 截断过长的错误信息（保留前 200 字符）
   const maxLength = 200;
   if (cleaned.length > maxLength) {
     cleaned = cleaned.slice(0, maxLength) + "...";
   }
-  
+
   return cleaned;
 }
 
@@ -275,8 +329,30 @@ export function formatErrorHint(errorMessage: string | null | undefined): {
 /**
  * 格式化错误提示（完整版）
  * 包含友好提示、原始错误、解决建议等
+ *
+ * 优先使用网关返回的结构化 ErrorShape（含 userMessage/category），
+ * 降级为 regex 分类。
  */
-export function formatErrorHintFull(errorMessage: string | null | undefined): FormattedError {
+export function formatErrorHintFull(
+  errorMessage: string | null | undefined,
+  errorShape?: ErrorShapeHint | null,
+): FormattedError {
+  // 优先使用网关返回的结构化信息
+  if (errorShape?.userMessage) {
+    const cat: ErrorCategory = isValidCategory(errorShape.category)
+      ? errorShape.category
+      : classifyError(errorMessage);
+    return {
+      category: cat,
+      friendlyMessage: errorShape.userMessage,
+      rawError: cleanRawError(errorMessage),
+      suggestions: ERROR_SUGGESTIONS[cat] || ERROR_SUGGESTIONS.unknown,
+      canRetry: errorShape.retryable ?? CAN_RETRY[cat] ?? true,
+      showConfigLink: SHOW_CONFIG_LINK[cat] ?? false,
+    };
+  }
+
+  // 降级：走 regex 分类逻辑
   const category = classifyError(errorMessage);
   return {
     category,
@@ -293,4 +369,21 @@ export function formatErrorHintFull(errorMessage: string | null | undefined): Fo
  */
 export function getErrorSuggestions(category: ErrorCategory): ErrorSuggestion[] {
   return ERROR_SUGGESTIONS[category] || ERROR_SUGGESTIONS.unknown;
+}
+
+// ─── 通用错误提示（非聊天场景） ─────────────────────────
+
+/** 通用格式化错误（MCP 安装、技能操作、配置保存、频道连接等） */
+export function formatGeneralError(
+  errorMessage: string | null | undefined,
+  context?: string,
+): { title: string; detail: string; canRetry: boolean } {
+  const category = classifyError(errorMessage);
+  const friendly = FRIENDLY_MESSAGES[category];
+  const raw = cleanRawError(errorMessage);
+  return {
+    title: context ? `${context}失败` : "操作失败",
+    detail: friendly + (raw ? `\n详细信息：${raw}` : ""),
+    canRetry: CAN_RETRY[category] ?? true,
+  };
 }

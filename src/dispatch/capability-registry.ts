@@ -40,6 +40,7 @@ export type CapabilityKey =
   | "code" // Program: code generation / understanding
   | "vision" // See: image understanding + document/PDF understanding
   | "imageGen" // Draw: text-to-image generation
+  | "imageEdit" // Edit: image editing with reference image
   | "video" // Watch: video understanding
   | "videoGen" // Film: text-to-video generation
   | "audio" // Hear: ASR / speech recognition
@@ -117,6 +118,8 @@ export interface ModelCapabilityCard {
   tags?: string[];
   /** Explicit strength tier override. When set by remote cards, takes precedence over score-based derivation. */
   strengthTier?: ModelStrengthTier;
+  /** Embedding output dimension count (embedding models only). Used for vec binding compatibility checks. */
+  embeddingDims?: number;
 }
 
 /**
@@ -299,6 +302,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     region: "international",
     costTier: "standard",
     costPer1M: 0.13,
+    embeddingDims: 3072,
   },
 
   // ── Google ──
@@ -423,6 +427,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     region: "domestic",
     costTier: "standard",
     costPer1M: 0.7,
+    embeddingDims: 1024,
   },
 
   // ── Zhipu (GLM) ──
@@ -571,6 +576,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     costTier: "free",
     costPer1M: 0.0,
     tags: ["multilingual"],
+    embeddingDims: 1024,
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1115,6 +1121,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     region: "domestic",
     costTier: "standard",
     costPer1M: 0.5,
+    embeddingDims: 2048,
   },
 
   // ── Tencent Hunyuan (腾讯混元) ──
@@ -1259,7 +1266,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     modelId: "Qwen/Qwen-Image-Edit",
     displayName: "Qwen-Image-Edit (图像编辑)",
     aliases: ["qwen-image-edit"],
-    capabilities: { imageGen: 4 },
+    capabilities: { imageEdit: 4 },
     modelType: "specialized",
     region: "domestic",
     costTier: "standard",
@@ -1426,6 +1433,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     region: "domestic",
     costTier: "standard",
     costPer1M: 0.5,
+    embeddingDims: 1536,
   },
 
   // ── StepFun (阶跃星辰) ──
@@ -1491,6 +1499,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     costTier: "free",
     costPer1M: 0.0,
     requiresDownload: true,
+    embeddingDims: 768,
   },
 ];
 
@@ -1808,6 +1817,7 @@ export function getCapabilityMatrixSummary(): CapabilityMatrixSummary {
     "code",
     "vision",
     "imageGen",
+    "imageEdit",
     "video",
     "videoGen",
     "audio",
@@ -1821,8 +1831,10 @@ export function getCapabilityMatrixSummary(): CapabilityMatrixSummary {
   const unconfigured: CapabilityMatrixSummary["unconfigured"] = [];
 
   for (const cap of allCapabilities) {
-    // Check configured models first
-    const configuredResults = queryByCapability(cap, { configuredOnly: true });
+    // Check configured models first.
+    // healthyOnly: false — summary shows *configuration* status, not real-time health.
+    // A temporarily degraded/down provider should still show as "active" (configured).
+    const configuredResults = queryByCapability(cap, { configuredOnly: true, healthyOnly: false });
     if (configuredResults.length > 0) {
       available.push({
         capability: cap,
@@ -1833,7 +1845,7 @@ export function getCapabilityMatrixSummary(): CapabilityMatrixSummary {
     }
 
     // Check if there are unconfigured models that could provide this
-    const allResults = queryByCapability(cap);
+    const allResults = queryByCapability(cap, { healthyOnly: false });
     if (allResults.length > 0) {
       unconfigured.push({
         capability: cap,
@@ -1918,6 +1930,7 @@ export function toModelProfiles(filter?: RegistryQueryFilter): ModelProfile[] {
         videoGen: card.capabilities.videoGen,
         code: card.capabilities.code,
         imageGen: card.capabilities.imageGen,
+        imageEdit: card.capabilities.imageEdit,
       } satisfies ModelCapability,
       costPer1M: card.costPer1M,
       region: card.region,
@@ -1988,6 +2001,7 @@ export function getAllCapabilityKeys(): readonly CapabilityKey[] {
     "code",
     "vision",
     "imageGen",
+    "imageEdit",
     "video",
     "videoGen",
     "audio",

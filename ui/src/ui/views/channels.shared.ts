@@ -63,3 +63,110 @@ export function renderChannelAccountCount(
   if (count < 2) return nothing;
   return html`<div class="account-count">${t("channel.accounts")} (${count})</div>`;
 }
+
+/**
+ * Renders the channel-to-project route binding selector.
+ * Placed at the bottom of each channel card body.
+ *
+ * When a channel has multiple accounts (e.g. 3 feishu bots), renders one
+ * dropdown per account so each bot can be independently routed to a project.
+ * When there's 0 or 1 account, renders a single dropdown for the channel.
+ */
+export function renderChannelRouteSection(params: {
+  channelId: string;
+  props: ChannelsProps;
+  accounts?: ChannelAccountSnapshot[];
+}) {
+  const { channelId, props, accounts } = params;
+  const routes = props.routeSummary;
+  const projects = props.routeProjects;
+
+  // Don't render if route data hasn't loaded yet
+  if (!routes || !projects) return nothing;
+  // Don't render if no projects exist (nothing to bind to)
+  if (projects.length === 0) return nothing;
+
+  const hasMultipleAccounts = accounts && accounts.length > 1;
+
+  if (hasMultipleAccounts) {
+    // Multi-account: one dropdown per account
+    return html`
+      <div class="channel-route-section">
+        <div class="channel-route-section__title">${t("channels.route")}</div>
+        ${accounts.map((account) => {
+          const accountId = account.accountId;
+          const label = account.name || accountId;
+          const currentRoute = routes.find(
+            (r) => r.channel === channelId && r.accountId === accountId,
+          );
+          const currentProjectId = currentRoute?.targetId ?? "";
+
+          const handleChange = (e: Event) => {
+            const select = e.target as HTMLSelectElement;
+            props.onRouteChange(channelId, accountId, select.value || null);
+          };
+
+          return html`
+            <div class="channel-route-section__row">
+              <label class="channel-route-section__label">${label}</label>
+              <select
+                class="channel-route-section__select"
+                .value=${currentProjectId}
+                ?disabled=${props.routeSaving}
+                @change=${handleChange}
+              >
+                <option value="">${t("channels.route.none")}</option>
+                <optgroup label="${t("channels.route.projects")}">
+                  ${projects.map(
+                    (p) => html`
+                      <option value=${p.projectId} ?selected=${p.projectId === currentProjectId}>
+                        ${p.name}
+                      </option>
+                    `,
+                  )}
+                </optgroup>
+              </select>
+            </div>
+          `;
+        })}
+      </div>
+    `;
+  }
+
+  // Single account or no accounts: one dropdown for the whole channel
+  const currentRoute = routes.find(
+    (r) => r.channel === channelId && !r.accountId,
+  );
+  const currentProjectId = currentRoute?.targetId ?? "";
+
+  const handleChange = (e: Event) => {
+    const select = e.target as HTMLSelectElement;
+    props.onRouteChange(channelId, undefined, select.value || null);
+  };
+
+  return html`
+    <div class="channel-route-section">
+      <div class="channel-route-section__title">${t("channels.route")}</div>
+      <div class="channel-route-section__row">
+        <label class="channel-route-section__label">${t("channels.route.target")}</label>
+        <select
+          class="channel-route-section__select"
+          .value=${currentProjectId}
+          ?disabled=${props.routeSaving}
+          @change=${handleChange}
+        >
+          <option value="">${t("channels.route.none")}</option>
+          <optgroup label="${t("channels.route.projects")}">
+            ${projects.map(
+              (p) => html`
+                <option value=${p.projectId} ?selected=${p.projectId === currentProjectId}>
+                  ${p.name}
+                </option>
+              `,
+            )}
+          </optgroup>
+        </select>
+      </div>
+    </div>
+  `;
+}

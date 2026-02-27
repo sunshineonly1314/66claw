@@ -51,6 +51,8 @@ export type ProjectDetailProps = {
   tab: ProjectDetailTab;
   busy: boolean;
   agentIdentityById: Record<string, AgentIdentityResult>;
+  /** All available agents for "add member" picker */
+  allAgents?: AgentsListResult | null;
   onSelectTab: (tab: ProjectDetailTab) => void;
   onPause: (projectId: string) => void;
   onResume: (projectId: string) => void;
@@ -58,6 +60,9 @@ export type ProjectDetailProps = {
   onLoadStats: (projectId: string) => void;
   onLoadMemory: (projectId: string) => void;
   onClearMemory: (projectId: string) => void;
+  onUpdateSettings?: (projectId: string, updates: Record<string, unknown>) => void;
+  onRemoveMember?: (projectId: string, agentId: string) => void;
+  onSelectAgent?: (agentId: string) => void;
 };
 
 // ── Sidebar: Project Groups ─────────────────────────────────────────────
@@ -242,7 +247,7 @@ export function renderProjectDetail(props: ProjectDetailProps): TemplateResult {
     ${renderProjectTabs(props.tab, props.onSelectTab)}
     ${props.tab === "members" ? renderProjectMembers(project, props) : nothing}
     ${props.tab === "stats" ? renderProjectStatsPanel(project, props) : nothing}
-    ${props.tab === "settings" ? renderProjectSettings(project) : nothing}
+    ${props.tab === "settings" ? renderProjectSettings(project, props) : nothing}
     ${props.tab === "memory" ? renderProjectMemoryPanel(project, props) : nothing}
   `;
 }
@@ -320,7 +325,7 @@ function renderProjectTabs(
   `;
 }
 
-// ── Members (Health) Panel ──────────────────────────────────────────────
+// ── Members (Enhanced) Panel ───────────────────────────────────────────
 
 function renderProjectMembers(
   project: TeamProjectDetail["project"],
@@ -332,35 +337,67 @@ function renderProjectMembers(
   return html`
     <div class="card">
       <div class="card-title" style="margin-bottom: 12px;">${t("team.members")} (${members.length})</div>
-      <div class="project-member-table">
-        <div class="project-member-header">
-          <span></span>
-          <span>${t("team.members")}</span>
-          <span>${t("team.detail.status")}</span>
-          <span>${t("team.detail.successes")}</span>
-          <span>${t("team.detail.failures")}</span>
-          <span>${t("team.detail.lastError")}</span>
-        </div>
+      <div class="project-members-cards">
         ${members.map((m) => {
           const h = health?.members.find((hm) => hm.agentId === m.id);
           const state: TeamMemberHealthState = h?.state ?? "healthy";
           const identity = props.agentIdentityById[m.id];
           const emoji = m.emoji || identity?.emoji || "";
+          const isSupervisor = m.id === project.supervisorId;
+          const toolProfile = m.toolProfile ?? "";
+          const modelTier = m.modelTier ?? "";
+          const keywords = m.keywords ?? [];
 
           return html`
-            <div class="project-member-row">
-              <div class="agent-avatar agent-avatar--sm">${emoji || m.name.slice(0, 1)}</div>
-              <div class="project-member-name">
-                <div class="agent-title">${m.name}</div>
-                <div class="agent-sub mono">${m.role}${m.id === project.supervisorId ? ` (${t("team.supervisor")})` : ""}</div>
+            <div class="project-member-card">
+              <div class="project-member-card-header">
+                <div class="agent-avatar agent-avatar--sm">${emoji || m.name.slice(0, 1)}</div>
+                <div class="project-member-card-info">
+                  <div class="agent-title">
+                    ${m.name}
+                    ${isSupervisor ? html`<span class="agent-pill ok" style="margin-left: 6px; font-size: 10px;">Supervisor</span>` : nothing}
+                  </div>
+                  <div class="agent-sub">${m.role}</div>
+                </div>
+                <span class="project-health-badge project-health-badge--${state}">
+                  <span class="project-status-dot project-status-dot--${state === "healthy" ? "active" : state === "degraded" ? "paused" : "error"}"></span>
+                  ${t(`team.health.${state}` as any)}
+                </span>
               </div>
-              <span class="project-health-badge project-health-badge--${state}">
-                <span class="project-status-dot project-status-dot--${state === "healthy" ? "active" : state === "degraded" ? "paused" : "error"}"></span>
-                ${t(`team.health.${state}` as any)}
-              </span>
-              <span class="mono">${h?.totalSuccesses ?? 0}</span>
-              <span class="mono" style="${(h?.totalFailures ?? 0) > 0 ? "color: var(--danger);" : ""}">${h?.totalFailures ?? 0}</span>
-              <span class="agent-sub" style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${h?.lastError ?? ""}">${h?.lastError ?? "—"}</span>
+              <div class="project-member-card-meta">
+                ${modelTier ? html`<span class="agent-pill" title="${t("team.detail.modelTier")}">${modelTier}</span>` : nothing}
+                ${toolProfile ? html`<span class="agent-pill" title="${t("team.detail.toolProfile")}">${toolProfile}</span>` : nothing}
+                ${(h?.totalSuccesses ?? 0) > 0 || (h?.totalFailures ?? 0) > 0 ? html`
+                  <span class="mono" style="font-size: 11px; color: var(--muted);">
+                    ${h?.totalSuccesses ?? 0}/${(h?.totalSuccesses ?? 0) + (h?.totalFailures ?? 0)}
+                  </span>
+                ` : nothing}
+              </div>
+              ${keywords.length > 0 ? html`
+                <div class="project-member-card-keywords">
+                  ${keywords.slice(0, 6).map((kw) => html`<span class="keyword-chip">${kw}</span>`)}
+                  ${keywords.length > 6 ? html`<span class="keyword-chip">+${keywords.length - 6}</span>` : nothing}
+                </div>
+              ` : nothing}
+              ${h?.lastError ? html`
+                <div class="agent-sub" style="margin-top: 4px; color: var(--danger); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${h.lastError}">${h.lastError}</div>
+              ` : nothing}
+              <div class="project-member-card-actions">
+                ${props.onSelectAgent ? html`
+                  <button class="btn btn--xs btn--outline" @click=${() => props.onSelectAgent!(m.id)}>${t("team.action.chat")}</button>
+                ` : nothing}
+                ${!isSupervisor && props.onRemoveMember ? html`
+                  <button
+                    class="btn btn--xs btn--danger"
+                    ?disabled=${props.busy}
+                    @click=${() => {
+                      if (confirm(t("team.action.removeMemberConfirm").replace("{{name}}", m.name))) {
+                        props.onRemoveMember!(project.projectId, m.id);
+                      }
+                    }}
+                  >${t("team.action.remove")}</button>
+                ` : nothing}
+              </div>
             </div>
           `;
         })}
@@ -418,37 +455,196 @@ function renderProjectStatsPanel(
   `;
 }
 
-// ── Settings Panel ──────────────────────────────────────────────────────
+// ── Settings Panel (Editable) ──────────────────────────────────────────
 
-function renderProjectSettings(project: TeamProjectDetail["project"]): TemplateResult {
+function renderProjectSettings(
+  project: TeamProjectDetail["project"],
+  props: ProjectDetailProps,
+): TemplateResult {
+  const bindings = project.bindings ?? [];
+  const canEdit = !!props.onUpdateSettings;
+
+  const handleSave = (field: string, value: unknown) => {
+    if (!props.onUpdateSettings) return;
+    // Backend expects nested objects for coordination/visibility fields
+    const coordFields = ["supervisorStyle", "hopLimit", "memberTimeoutSeconds", "supervisorFallbackEnabled", "handoffStyle"];
+    if (coordFields.includes(field)) {
+      props.onUpdateSettings(project.projectId, { coordination: { [field]: value } });
+    } else if (field === "visibilityMode") {
+      props.onUpdateSettings(project.projectId, { visibility: { mode: value } });
+    } else {
+      props.onUpdateSettings(project.projectId, { [field]: value });
+    }
+  };
+
   return html`
     <div class="card">
-      <div class="agents-overview-grid" style="grid-template-columns: repeat(2, 1fr);">
-        <div class="agent-kv">
-          <div class="label">${t("team.detail.description")}</div>
-          <div>${project.description || "—"}</div>
+      <div class="project-settings-grid">
+        <!-- Supervisor -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.supervisor")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <select
+                class="input input--sm"
+                .value=${project.supervisorId}
+                @change=${(e: Event) => handleSave("supervisorId", (e.target as HTMLSelectElement).value)}
+                ?disabled=${props.busy}
+              >
+                ${project.members.map((m) => html`
+                  <option value="${m.id}" ?selected=${m.id === project.supervisorId}>${m.name}</option>
+                `)}
+              </select>
+            ` : html`<span>${project.members.find((m) => m.id === project.supervisorId)?.name ?? project.supervisorId}</span>`}
+          </div>
         </div>
-        <div class="agent-kv">
-          <div class="label">${t("team.detail.visibility")}</div>
-          <div>${project.visibility.mode}</div>
+
+        <!-- Visibility -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.visibility")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <select
+                class="input input--sm"
+                .value=${project.visibility.mode}
+                @change=${(e: Event) => handleSave("visibilityMode", (e.target as HTMLSelectElement).value)}
+                ?disabled=${props.busy}
+              >
+                <option value="unified" ?selected=${project.visibility.mode === "unified"}>unified</option>
+                <option value="team" ?selected=${project.visibility.mode === "team"}>team</option>
+                <option value="transparent" ?selected=${project.visibility.mode === "transparent"}>transparent</option>
+              </select>
+            ` : html`<span>${project.visibility.mode}</span>`}
+          </div>
         </div>
-        <div class="agent-kv">
-          <div class="label">${t("team.detail.hopLimit")}</div>
-          <div>${project.coordination.hopLimit}</div>
+
+        <!-- Coordination Style -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.coordinationStyle")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <select
+                class="input input--sm"
+                .value=${project.coordination.supervisorStyle}
+                @change=${(e: Event) => handleSave("supervisorStyle", (e.target as HTMLSelectElement).value)}
+                ?disabled=${props.busy}
+              >
+                <option value="concierge" ?selected=${project.coordination.supervisorStyle === "concierge"}>concierge</option>
+                <option value="delegate-only" ?selected=${project.coordination.supervisorStyle === "delegate-only"}>delegate-only</option>
+              </select>
+            ` : html`<span>${project.coordination.supervisorStyle}</span>`}
+          </div>
         </div>
-        <div class="agent-kv">
-          <div class="label">${t("team.detail.memberTimeout")}</div>
-          <div>${project.coordination.memberTimeoutSeconds}s</div>
+
+        <!-- Hop Limit -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.hopLimit")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <input
+                type="number"
+                class="input input--sm"
+                style="width: 80px;"
+                .value=${String(project.coordination.hopLimit)}
+                min="1" max="20"
+                @change=${(e: Event) => handleSave("hopLimit", Number((e.target as HTMLInputElement).value))}
+                ?disabled=${props.busy}
+              />
+            ` : html`<span>${project.coordination.hopLimit}</span>`}
+          </div>
         </div>
-        <div class="agent-kv">
-          <div class="label">${t("team.detail.supervisorFallback")}</div>
-          <div>${project.coordination.supervisorFallbackEnabled ? t("agents.yes") : t("agents.no")}</div>
+
+        <!-- Member Timeout -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.memberTimeout")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <input
+                type="number"
+                class="input input--sm"
+                style="width: 80px;"
+                .value=${String(project.coordination.memberTimeoutSeconds)}
+                min="5" max="300"
+                @change=${(e: Event) => handleSave("memberTimeoutSeconds", Number((e.target as HTMLInputElement).value))}
+                ?disabled=${props.busy}
+              /><span class="agent-sub" style="margin-left: 4px;">s</span>
+            ` : html`<span>${project.coordination.memberTimeoutSeconds}s</span>`}
+          </div>
         </div>
-        <div class="agent-kv">
-          <div class="label">${t("team.detail.memoryMode")}</div>
-          <div>${project.memory.mode}</div>
+
+        <!-- Supervisor Fallback -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.supervisorFallback")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  .checked=${project.coordination.supervisorFallbackEnabled}
+                  @change=${(e: Event) => handleSave("supervisorFallbackEnabled", (e.target as HTMLInputElement).checked)}
+                  ?disabled=${props.busy}
+                />
+                <span>${project.coordination.supervisorFallbackEnabled ? t("agents.yes") : t("agents.no")}</span>
+              </label>
+            ` : html`<span>${project.coordination.supervisorFallbackEnabled ? t("agents.yes") : t("agents.no")}</span>`}
+          </div>
+        </div>
+
+        <!-- Memory Mode -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.memoryMode")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <select
+                class="input input--sm"
+                .value=${project.memory.mode}
+                @change=${(e: Event) => handleSave("memoryMode", (e.target as HTMLSelectElement).value)}
+                ?disabled=${props.busy}
+              >
+                <option value="isolated" ?selected=${project.memory.mode === "isolated"}>isolated</option>
+                <option value="read-shared" ?selected=${project.memory.mode === "read-shared"}>read-shared</option>
+              </select>
+            ` : html`<span>${project.memory.mode}</span>`}
+          </div>
+        </div>
+
+        <!-- Handoff Style -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.handoffStyle")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <select
+                class="input input--sm"
+                .value=${project.coordination.handoffStyle ?? "notify"}
+                @change=${(e: Event) => handleSave("handoffStyle", (e.target as HTMLSelectElement).value)}
+                ?disabled=${props.busy}
+              >
+                <option value="silent" ?selected=${project.coordination.handoffStyle === "silent"}>silent</option>
+                <option value="notify" ?selected=${project.coordination.handoffStyle === "notify" || !project.coordination.handoffStyle}>notify</option>
+                <option value="introduce" ?selected=${project.coordination.handoffStyle === "introduce"}>introduce</option>
+              </select>
+            ` : html`<span>${project.coordination.handoffStyle ?? "notify"}</span>`}
+          </div>
         </div>
       </div>
+    </div>
+    <div class="card" style="margin-top: 12px;">
+      <div class="card-title" style="margin-bottom: 12px;">${t("team.detail.boundChannels")}</div>
+      ${bindings.length > 0
+        ? html`
+          <div class="project-binding-chips">
+            ${bindings.map(
+              (b) => html`
+                <span class="agent-pill">
+                  ${b.channel}${b.accountId ? ` (${b.accountId})` : ""}
+                </span>
+              `,
+            )}
+          </div>
+        `
+        : html`
+          <div class="muted">${t("team.detail.noBindings")}</div>
+        `}
     </div>
   `;
 }

@@ -11,10 +11,14 @@
 import type { GatewayRequestHandlers } from "./types.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import { formatForLog } from "../ws-log.js";
+import { getGpuSidecarState } from "../../voice/gpu-sidecar.js";
 
-// ─── Constants ────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────
 
-const GPU_SIDECAR_PORT = 50100;
+/** Get the GPU sidecar port dynamically (single source of truth from gpu-sidecar.ts). */
+function gpuPort(): number {
+  return getGpuSidecarState().port;
+}
 
 // ─── Session tracking ─────────────────────────────────────────────────
 
@@ -32,7 +36,7 @@ const gpuSessions = new Map<string, GpuStreamSession>();
 /** Check if GPU sidecar supports stream-asr endpoints. */
 export async function isGpuStreamAvailable(): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${GPU_SIDECAR_PORT}/health`, {
+    const res = await fetch(`http://127.0.0.1:${gpuPort()}/health`, {
       signal: AbortSignal.timeout(3_000),
     });
     if (!res.ok) return false;
@@ -48,7 +52,7 @@ export function cleanupGpuSessionsForConn(connId: string): void {
   for (const [sessionId, session] of gpuSessions) {
     if (session.connId === connId) {
       // Fire-and-forget: tell voice-server to clean up
-      fetch(`http://127.0.0.1:${GPU_SIDECAR_PORT}/stream-asr/end`, {
+      fetch(`http://127.0.0.1:${gpuPort()}/stream-asr/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId }),
@@ -73,7 +77,7 @@ export const gpuStreamHandlers: GatewayRequestHandlers = {
     }
 
     try {
-      const res = await fetch(`http://127.0.0.1:${GPU_SIDECAR_PORT}/stream-asr/start`, {
+      const res = await fetch(`http://127.0.0.1:${gpuPort()}/stream-asr/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ language: "zh", chunk_size_sec: 1.0 }),
@@ -133,7 +137,7 @@ export const gpuStreamHandlers: GatewayRequestHandlers = {
     // Fire-and-forget: forward to voice-server, push result when ready
     (async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:${GPU_SIDECAR_PORT}/stream-asr/feed`, {
+        const res = await fetch(`http://127.0.0.1:${gpuPort()}/stream-asr/feed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: sessionId, pcm_base64: pcmBase64 }),
@@ -176,7 +180,7 @@ export const gpuStreamHandlers: GatewayRequestHandlers = {
     }
 
     try {
-      const res = await fetch(`http://127.0.0.1:${GPU_SIDECAR_PORT}/stream-asr/end`, {
+      const res = await fetch(`http://127.0.0.1:${gpuPort()}/stream-asr/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId }),

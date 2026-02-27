@@ -40,8 +40,69 @@ interface SiliconFlowModelsResponse {
   data: SiliconFlowModel[];
 }
 
+// ============================================================================
+// 能力类型 (Capability Types for non-chat models)
+// ============================================================================
+
 // 推荐的模型列表 (用于在无法获取在线列表时的默认值)
 export const SILICONFLOW_RECOMMENDED_MODELS: ModelDefinitionConfig[] = [
+  // ── 图像编辑模型 (Image Editing — requires source image) ──
+  {
+    id: "Qwen/Qwen-Image-Edit-2509",
+    name: "Qwen-Image-Edit-2509 (图像编辑)",
+    reasoning: false,
+    input: ["text", "image"] as ModelDefinitionConfig["input"],
+    cost: SILICONFLOW_DEFAULT_COST,
+    contextWindow: 4096,
+    maxTokens: 1024,
+  },
+  {
+    id: "Qwen/Qwen-Image-Edit",
+    name: "Qwen-Image-Edit (图像编辑)",
+    reasoning: false,
+    input: ["text", "image"] as ModelDefinitionConfig["input"],
+    cost: SILICONFLOW_DEFAULT_COST,
+    contextWindow: 4096,
+    maxTokens: 1024,
+  },
+  // ── 文生图模型 (Text-to-Image Generation) ──
+  {
+    id: "Qwen/Qwen-Image",
+    name: "Qwen-Image (通义生图)",
+    reasoning: false,
+    input: ["text"] as ModelDefinitionConfig["input"],
+    cost: SILICONFLOW_DEFAULT_COST,
+    contextWindow: 4096,
+    maxTokens: 1024,
+  },
+  {
+    id: "Kwai-Kolors/Kolors",
+    name: "Kolors (可图)",
+    reasoning: false,
+    input: ["text"] as ModelDefinitionConfig["input"],
+    cost: SILICONFLOW_DEFAULT_COST,
+    contextWindow: 4096,
+    maxTokens: 1024,
+  },
+  {
+    id: "black-forest-labs/FLUX.1-schnell",
+    name: "FLUX.1-schnell (免费)",
+    reasoning: false,
+    input: ["text"] as ModelDefinitionConfig["input"],
+    cost: SILICONFLOW_DEFAULT_COST,
+    contextWindow: 4096,
+    maxTokens: 1024,
+  },
+  {
+    id: "stabilityai/stable-diffusion-3-5-large",
+    name: "Stable Diffusion 3.5 Large",
+    reasoning: false,
+    input: ["text"] as ModelDefinitionConfig["input"],
+    cost: SILICONFLOW_DEFAULT_COST,
+    contextWindow: 4096,
+    maxTokens: 1024,
+  },
+  // ── 文本对话模型 ──
   // Kimi-K2.5 Pro (硅基流动首选)
   {
     id: "Pro/moonshotai/Kimi-K2.5",
@@ -185,9 +246,7 @@ export const SILICONFLOW_RECOMMENDED_MODELS: ModelDefinitionConfig[] = [
  * @param apiKey API Key
  * @returns 模型配置列表
  */
-export async function discoverSiliconFlowModels(
-  apiKey?: string,
-): Promise<ModelDefinitionConfig[]> {
+export async function discoverSiliconFlowModels(apiKey?: string): Promise<ModelDefinitionConfig[]> {
   // 如果没有 API Key，返回推荐模型列表
   if (!apiKey?.trim()) {
     return SILICONFLOW_RECOMMENDED_MODELS;
@@ -199,34 +258,43 @@ export async function discoverSiliconFlowModels(
   }
 
   try {
-    const response = await fetch(`${SILICONFLOW_BASE_URL}/models?type=text&sub_type=chat`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      signal: AbortSignal.timeout(10000),
-    });
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    const timeout = AbortSignal.timeout(10000);
 
-    if (!response.ok) {
-      console.warn(`Failed to discover SiliconFlow models: ${response.status}`);
+    // 并行请求: 文本聊天模型 + 生图模型
+    const [chatResp, imageResp] = await Promise.allSettled([
+      fetch(`${SILICONFLOW_BASE_URL}/models?type=text&sub_type=chat`, { headers, signal: timeout }),
+      fetch(`${SILICONFLOW_BASE_URL}/models?type=image`, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    ]);
+
+    const chatModels: SiliconFlowModel[] = [];
+    const imageModels: SiliconFlowModel[] = [];
+
+    if (chatResp.status === "fulfilled" && chatResp.value.ok) {
+      const data = (await chatResp.value.json()) as SiliconFlowModelsResponse;
+      if (data.data) chatModels.push(...data.data);
+    }
+
+    if (imageResp.status === "fulfilled" && imageResp.value.ok) {
+      const data = (await imageResp.value.json()) as SiliconFlowModelsResponse;
+      if (data.data) imageModels.push(...data.data);
+    }
+
+    if (chatModels.length === 0 && imageModels.length === 0) {
       return SILICONFLOW_RECOMMENDED_MODELS;
     }
 
-    const data = (await response.json()) as SiliconFlowModelsResponse;
-    if (!data.data || data.data.length === 0) {
-      return SILICONFLOW_RECOMMENDED_MODELS;
-    }
-
-    // 转换为 ModelDefinitionConfig 格式
-    const models: ModelDefinitionConfig[] = data.data
+    // ── 转换聊天模型 ──
+    const models: ModelDefinitionConfig[] = chatModels
       .filter((model) => {
-        // 过滤掉非对话模型 (embedding, reranker 等)
         const id = model.id.toLowerCase();
         return (
           !id.includes("embedding") &&
           !id.includes("rerank") &&
           !id.includes("whisper") &&
-          !id.includes("stable-diffusion") &&
-          !id.includes("flux") &&
           !id.includes("sensevoice")
         );
       })
@@ -239,9 +307,9 @@ export async function discoverSiliconFlowModels(
         const isVision =
           modelId.toLowerCase().includes("vl") ||
           modelId.toLowerCase().includes("vision") ||
-          modelId.toLowerCase().includes("qvq");
+          modelId.toLowerCase().includes("qvq") ||
+          modelId.toLowerCase().includes("kimi");
 
-        // 根据模型名称推断参数
         let contextWindow = SILICONFLOW_DEFAULT_CONTEXT_WINDOW;
         let maxTokens = SILICONFLOW_DEFAULT_MAX_TOKENS;
 
@@ -267,9 +335,32 @@ export async function discoverSiliconFlowModels(
         };
       });
 
-    // 按优先级排序: Pro > DeepSeek > Qwen > 其他
+    // ── 转换生图模型 ──
+    const seenIds = new Set(models.map((m) => m.id));
+    for (const model of imageModels) {
+      if (seenIds.has(model.id)) continue;
+      seenIds.add(model.id);
+
+      const modelId = model.id;
+      const isImageEdit = modelId.toLowerCase().includes("edit");
+
+      models.push({
+        id: modelId,
+        name: formatModelDisplayName(modelId),
+        reasoning: false,
+        input: isImageEdit ? (["text", "image"] as const) : (["text"] as const),
+        cost: SILICONFLOW_DEFAULT_COST,
+        contextWindow: 4096,
+        maxTokens: 1024,
+      });
+    }
+
+    // 按优先级排序: 生图在前，然后 Pro > DeepSeek > Qwen > 其他
     return models.sort((a, b) => {
-      const getPriority = (id: string) => {
+      const getPriority = (m: ModelDefinitionConfig) => {
+        const id = m.id;
+        // 生图模型排到末尾（不影响聊天模型选择）— detect by contextWindow heuristic
+        if (m.contextWindow <= 4096 && m.maxTokens <= 1024) return 100;
         if (id.startsWith("Pro/")) return 0;
         if (id.includes("DeepSeek-V3")) return 1;
         if (id.includes("DeepSeek-R1")) return 2;
@@ -279,7 +370,7 @@ export async function discoverSiliconFlowModels(
         if (id.includes("GLM")) return 6;
         return 10;
       };
-      return getPriority(a.id) - getPriority(b.id);
+      return getPriority(a) - getPriority(b);
     });
   } catch (error) {
     console.warn(`Failed to discover SiliconFlow models: ${String(error)}`);
@@ -318,9 +409,5 @@ export function getSiliconFlowDefaultModel(): string {
  * 获取推荐的免费模型
  */
 export function getSiliconFlowFreeModels(): string[] {
-  return [
-    "Qwen/Qwen2.5-7B-Instruct",
-    "THUDM/GLM-4-9B-0414",
-    "internlm/internlm2_5-7b-chat",
-  ];
+  return ["Qwen/Qwen2.5-7B-Instruct", "THUDM/GLM-4-9B-0414", "internlm/internlm2_5-7b-chat"];
 }

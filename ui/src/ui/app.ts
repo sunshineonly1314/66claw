@@ -28,6 +28,7 @@ import type {
 } from "./types";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types";
 import type { EventLogEntry } from "./app-events";
+import type { ChannelRouteEntry, ChannelRouteProjectOption } from "./views/channels.types";
 import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults";
 import type {
   ExecApprovalsFile,
@@ -394,6 +395,12 @@ export class ClawdbotApp extends LitElement {
   @state() whatsappLoginQrDataUrl: string | null = null;
   @state() whatsappLoginConnected: boolean | null = null;
   @state() whatsappBusy = false;
+  @state() channelRouteSummary: ChannelRouteEntry[] | null = null;
+  @state() channelRouteProjects: ChannelRouteProjectOption[] | null = null;
+  @state() channelRouteSaving = false;
+  @state() channelsSelectedKey: string | null = null;
+  @state() channelsWizardOpen = false;
+  @state() channelsWizardAccountId: string | null = null;
   @state() nostrProfileFormState: NostrProfileFormState | null = null;
   @state() nostrProfileAccountId: string | null = null;
 
@@ -460,6 +467,8 @@ export class ClawdbotApp extends LitElement {
   @state() sessionsFilterLimit = "120";
   @state() sessionsIncludeGlobal = true;
   @state() sessionsIncludeUnknown = false;
+  @state() sessionsHighlightKey = "";
+  @state() sessionsSearchQuery = "";
   // Track chat runs that should trigger session refresh on completion
   refreshSessionsAfterChat = new Set<string>();
 

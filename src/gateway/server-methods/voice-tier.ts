@@ -190,49 +190,15 @@ export const voiceTierHandlers: GatewayRequestHandlers = {
         { id: "groq", label: "Groq (免费)", defaultModel: "whisper-large-v3-turbo" },
         { id: "deepgram", label: "Deepgram", defaultModel: "nova-3" },
         { id: "google", label: "Google Gemini", defaultModel: "gemini-3-flash-preview" },
-        { id: "dashscope", label: "DashScope (阿里)", defaultModel: "sensevoice-v1" },
+        { id: "dashscope", label: "DashScope (阿里)", defaultModel: "fun-asr-realtime" },
         { id: "volcengine", label: "火山引擎 (豆包)", defaultModel: "asr" },
       ].map((p) => ({
         ...p,
         configured: collectProviderApiKeys(p.id).length > 0,
       }));
 
-      const ttsProviders = [
-        {
-          id: "openai",
-          label: "OpenAI TTS",
-          defaultModel: "gpt-4o-mini-tts",
-          defaultVoice: "alloy",
-        },
-        {
-          id: "elevenlabs",
-          label: "ElevenLabs",
-          defaultModel: "eleven_multilingual_v2",
-          defaultVoice: "pMsXgVXv3BLzUgSXRplE",
-        },
-        {
-          id: "edge",
-          label: "Edge TTS (在线)",
-          defaultModel: "",
-          defaultVoice: "zh-CN-XiaoxiaoNeural",
-        },
-        {
-          id: "dashscope",
-          label: "DashScope (阿里)",
-          defaultModel: "cosyvoice-v2",
-          defaultVoice: "longxiaochun",
-        },
-        { id: "volcengine", label: "火山引擎 (豆包)", defaultModel: "tts", defaultVoice: "" },
-        {
-          id: "minimax",
-          label: "MiniMax",
-          defaultModel: "speech-02-hd",
-          defaultVoice: "male-qn-qingse",
-        },
-      ].map((p) => ({
-        ...p,
-        configured: p.id === "edge" ? true : collectProviderApiKeys(p.id).length > 0,
-      }));
+      // TTS hidden in this release
+      const ttsProviders: unknown[] = [];
 
       respond(true, { asrProviders, ttsProviders });
     } catch (err) {

@@ -5,7 +5,35 @@ import { t } from "../i18n/index.js";
 import type { DiscordStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
+
+export function renderDiscordTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>Create Application</strong>
+          <p>Go to <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a> &rarr; New Application</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Create Bot</strong>
+          <p>In your application, go to Bot tab &rarr; Add Bot &rarr; Copy Token</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Invite Bot to Server</strong>
+          <p>Go to OAuth2 &rarr; URL Generator &rarr; Select bot scope &rarr; Copy and open invite URL</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderDiscordCard(params: {
   props: ChannelsProps;
@@ -108,6 +136,8 @@ export function renderDiscordCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "discord", props, accounts: props.snapshot?.channelAccounts?.["discord"] ?? [] })}
       </div>
     </details>
   `;

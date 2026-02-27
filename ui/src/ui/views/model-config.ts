@@ -11,6 +11,7 @@
 
 import { html, css, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { formatGeneralError } from "../chat/error-hints";
 import {
   createInitialModelConfigState,
   loadCapabilities,
@@ -78,7 +79,7 @@ const CAPABILITY_NAME_MAP: Record<string, string> = {
   videoGen: "视频生成",
   audio: "语音识别",
   tts: "语音合成",
-  embedding: "推荐",
+  embedding: "向量嵌入",
   toolCall: "工具调用",
 };
 
@@ -138,8 +139,11 @@ const USER_CAPABILITIES: UserCapDef[] = [
   { id: "code", name: "编程", desc: "代码生成 & 调试", icon: "💻",
     subs: [{ label: "编程", keys: ["code"] }],
     caps: ["code"] },
-  { id: "embedding", name: "推荐", desc: "智能推荐", icon: "🧩",
-    subs: [{ label: "推荐", keys: ["embedding"] }],
+  { id: "embedding", name: "记忆", desc: "向量嵌入 & 记忆提取", icon: "🧠",
+    subs: [
+      { label: "向量嵌入", keys: ["embedding"] },
+      { label: "记忆提取", keys: ["memoryExtraction"] },
+    ],
     caps: ["embedding"] },
 ];
 
@@ -181,6 +185,14 @@ export class ModelConfigView extends LitElement {
   @state() private _quickSwitchLoading = false;
   /** 快速切换：加载错误 */
   @state() private _quickSwitchError: string | null = null;
+  /** 向量库 embedding 绑定状态 */
+  @state() private _embeddingBinding: {
+    bound: boolean; vecModel: string | null; vecDims: number | null; vecCount: number;
+  } | null = null;
+  /** 记忆提取 LLM 状态 */
+  @state() private _extractionStatus: {
+    provider: string | null; model: string | null; status: "active" | "inactive";
+  } | null = null;
   /** 手动添加模型：输入的模型 ID */
   @state() private _addModelId = "";
   /** 手动添加模型：提交中 */
@@ -192,6 +204,24 @@ export class ModelConfigView extends LitElement {
   private _switchToastTimer: ReturnType<typeof setTimeout> | null = null;
   /** 指针拖拽排序状态 */
   private _dragFromIndex: number | null = null;
+
+  /* ── 模型选择器 redesign 状态 ── */
+  /** 模型选择器搜索关键词 */
+  @state() private _modelSelectorSearch = "";
+  /** 模型选择器：按服务商筛选 */
+  @state() private _modelSelectorProviderFilter: string | null = null;
+  /** 模型选择器：按上下文窗口筛选（最低 token 数） */
+  @state() private _modelSelectorContextFilter: number | null = null;
+  /** 模型选择器：按能力等级筛选 */
+  @state() private _modelSelectorStrengthFilter: string | null = null;
+  /** 模型选择器：多子能力卡片的当前 tab 索引 */
+  @state() private _modelSelectorActiveSubIndex = 0;
+  /** 模型选择器：当前打开的 UserCapDef（用于 tab 切换） */
+  private _modelSelectorUserCap: UserCapDef | null = null;
+  /** 模型选择器：服务商筛选下拉是否展开 */
+  @state() private _msProviderDropdownOpen = false;
+  /** 模型选择器：未配置区域是否展开 */
+  @state() private _msUnconfiguredExpanded = false;
 
   /* ── broadcast event handlers (bound for add/removeEventListener) ── */
   private _boundDetectProgress = (e: Event) => {
@@ -424,6 +454,12 @@ export class ModelConfigView extends LitElement {
       margin-top: 10px; padding-top: 10px;
       border-top: 1px solid var(--border, #2d3a4d);
     }
+    .qs-scroll {
+      max-height: 280px; overflow-y: auto;
+    }
+    .qs-scroll::-webkit-scrollbar { width: 4px; }
+    .qs-scroll::-webkit-scrollbar-track { background: transparent; }
+    .qs-scroll::-webkit-scrollbar-thumb { background: var(--border, #2d3a4d); border-radius: 2px; }
     .qs-loading, .qs-empty {
       font-size: 11px; color: var(--muted, #8b9caf); padding: 8px 0; text-align: center;
     }
@@ -597,9 +633,35 @@ export class ModelConfigView extends LitElement {
     .m-item__end { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .checkmark { color: var(--accent, #6c8cff); font-weight: 700; font-size: 14px; }
 
-    .badge { display: inline-flex; align-items: center; padding: 0px 5px; border-radius: 3px; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.5; }
-    .badge--free { background: var(--ok-subtle, rgba(52,211,153,.15)); color: var(--ok, #34d399); }
-    .badge--paid { background: var(--warn-subtle, rgba(251,191,36,.15)); color: var(--warn, #fbbf24); }
+    .badge { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; line-height: 1.6; }
+    .badge--strong { background: rgba(52,211,153,.12); color: #34d399; }
+    .badge--moderate { background: rgba(251,191,36,.12); color: #fbbf24; }
+    .badge--weak { background: rgba(248,113,113,.12); color: #f87171; }
+
+    /* ═══════ STRENGTH TIER WARNING ═══════ */
+    .strength-warn {
+      display: flex; align-items: flex-start; gap: 8px;
+      margin-top: 6px; padding: 6px 8px;
+      border-radius: var(--radius-md, 8px);
+      font-size: 10px; line-height: 1.4;
+    }
+    .strength-warn--weak {
+      background: rgba(248,113,113,.08);
+      color: var(--danger, #f87171);
+      border: 1px solid rgba(248,113,113,.2);
+    }
+    .strength-warn--moderate {
+      background: rgba(251,191,36,.06);
+      color: var(--warn, #fbbf24);
+      border: 1px solid rgba(251,191,36,.15);
+    }
+    .strength-warn__icon { flex-shrink: 0; font-size: 12px; line-height: 1.2; }
+    .strength-warn__text { flex: 1; }
+    .strength-warn__recommend {
+      color: var(--text, #e8ecf1); font-weight: 500;
+    }
+    .cap-card.active.tier-weak { border-color: rgba(248,113,113,.3); }
+    .cap-card.active.tier-moderate { border-color: rgba(251,191,36,.25); }
 
     .add-provider-link {
       display: flex; align-items: center; gap: 6px; padding: 8px 12px;
@@ -614,6 +676,161 @@ export class ModelConfigView extends LitElement {
       width: 14px; height: 14px; border: 2px solid var(--border, #2d3a4d);
       border-top-color: var(--accent, #6c8cff); border-radius: 50%;
       animation: spin 0.7s linear infinite; flex-shrink: 0;
+    }
+
+    /* ═══════ MODEL SELECTOR MODAL (redesigned) ═══════ */
+    .ms-modal {
+      max-width: 720px !important;
+      width: 96% !important;
+      max-height: 85vh !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+    }
+    .ms-current {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 20px;
+      background: rgba(108,140,255,.06);
+      font-size: 13px; color: var(--text, #e8ecf1);
+      border-bottom: 1px solid var(--border, #2d3a4d);
+    }
+    .ms-current__label { color: var(--muted, #8b9caf); font-size: 12px; }
+    .ms-current__model { font-weight: 600; }
+    .ms-current__provider { color: var(--muted, #8b9caf); font-size: 12px; }
+    .ms-current__lock {
+      font-size: 11px; padding: 2px 8px; border-radius: 4px;
+      margin-left: auto; white-space: nowrap;
+    }
+    .ms-current__lock--manual {
+      background: rgba(251,191,36,.15); color: var(--warning, #fbbf24);
+    }
+    .ms-current__lock--auto {
+      background: var(--bg-muted, #2a3544); color: var(--muted, #8b9caf);
+    }
+    .ms-tabs {
+      display: flex; gap: 0; padding: 0 20px;
+      border-bottom: 1px solid var(--border, #2d3a4d);
+    }
+    .ms-tab {
+      padding: 10px 16px; font-size: 13px;
+      background: none; border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted, #8b9caf); cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .ms-tab:hover { color: var(--text, #e8ecf1); }
+    .ms-tab.active {
+      color: var(--accent, #6c8cff);
+      border-bottom-color: var(--accent, #6c8cff);
+    }
+    .ms-toolbar {
+      padding: 12px 20px;
+      display: flex; flex-direction: column; gap: 8px;
+      border-bottom: 1px solid var(--border, #2d3a4d);
+      flex-shrink: 0;
+    }
+    .ms-search {
+      width: 100%; padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--border, #2d3a4d);
+      background: var(--bg-muted, #2a3544); color: var(--text, #e8ecf1);
+      font-size: 13px; outline: none;
+      font-family: inherit;
+    }
+    .ms-search:focus { border-color: var(--accent, #6c8cff); }
+    .ms-search::placeholder { color: var(--muted, #8b9caf); }
+    .ms-filters {
+      display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+    }
+    .ms-filter-chip {
+      padding: 4px 10px; border-radius: 20px; font-size: 11px;
+      border: 1px solid var(--border, #2d3a4d);
+      background: transparent; color: var(--muted, #8b9caf);
+      cursor: pointer; transition: all 0.12s;
+      font-family: inherit; line-height: 1.4;
+    }
+    .ms-filter-chip:hover { border-color: var(--border-strong, #4a5a70); color: var(--text, #e8ecf1); }
+    .ms-filter-chip.active {
+      background: var(--accent-subtle, rgba(108,140,255,.12));
+      color: var(--accent, #6c8cff);
+      border-color: var(--accent, #6c8cff);
+    }
+    .ms-dropdown {
+      position: absolute; top: 100%; left: 0; margin-top: 4px; min-width: 140px;
+      background: var(--surface, #1a2332); border: 1px solid var(--border, #2d3a4d);
+      border-radius: 8px; padding: 4px; z-index: 10;
+      box-shadow: 0 8px 24px rgba(0,0,0,.3);
+    }
+    .ms-dropdown__item {
+      padding: 6px 12px; border-radius: 6px; font-size: 12px;
+      cursor: pointer; color: var(--text, #e8ecf1);
+      transition: background 0.1s;
+    }
+    .ms-dropdown__item:hover { background: rgba(255,255,255,.06); }
+    .ms-dropdown__item.active {
+      background: var(--accent-subtle, rgba(108,140,255,.12));
+      color: var(--accent, #6c8cff);
+    }
+    .ms-body {
+      flex: 1; min-height: 0; overflow-y: auto;
+      padding: 12px 20px;
+    }
+    .ms-body::-webkit-scrollbar { width: 6px; }
+    .ms-body::-webkit-scrollbar-track { background: transparent; }
+    .ms-body::-webkit-scrollbar-thumb { background: var(--border, #2d3a4d); border-radius: 3px; }
+    .ms-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-radius: 8px; cursor: pointer;
+      transition: background 0.12s; margin-bottom: 4px;
+    }
+    .ms-item:hover { background: rgba(255,255,255,.04); }
+    .ms-item.current { background: rgba(108,140,255,.08); }
+    .ms-item.unconfigured { opacity: 0.45; cursor: default; }
+    .ms-item.switching { opacity: 0.6; pointer-events: none; }
+    .ms-item__main { flex: 1; min-width: 0; }
+    .ms-item__name { font-size: 13px; font-weight: 500; color: var(--text, #e8ecf1); }
+    .ms-item__meta {
+      font-size: 11px; color: var(--muted, #8b9caf);
+      display: flex; gap: 8px; margin-top: 2px;
+    }
+    .ms-item__provider { }
+    .ms-item__ctx { }
+    .ms-item__end { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .ms-item__spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border, #2d3a4d);
+      border-top-color: var(--accent, #6c8cff);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    .ms-empty {
+      text-align: center; padding: 40px 0;
+      color: var(--muted, #8b9caf); font-size: 13px;
+    }
+    .ms-unconfigured-section {
+      margin-top: 16px;
+      border-top: 1px solid var(--border, #2d3a4d);
+      padding-top: 12px;
+    }
+    .ms-unconfigured-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 4px; font-size: 12px; color: var(--muted, #8b9caf);
+      cursor: pointer; user-select: none;
+    }
+    .ms-unconfigured-header:hover { color: var(--text, #e8ecf1); }
+    .ms-unconfigured-arrow {
+      transition: transform 0.2s; font-size: 10px;
+    }
+    .ms-unconfigured-arrow.expanded { transform: rotate(90deg); }
+    .ms-unconfigured-list { padding-top: 8px; }
+    .ms-provider-group { margin-bottom: 16px; }
+    .ms-provider-group__header {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 6px; padding-bottom: 4px;
+      border-bottom: 1px solid var(--border, #2d3a4d);
+    }
+    .ms-provider-group__badge {
+      font-size: 10px; padding: 1px 6px; border-radius: 6px;
+      background: var(--bg-muted, #2a3544); color: var(--muted, #8b9caf);
     }
 
     /* ═══════ PROVIDER CONFIG MODAL ═══════ */
@@ -940,8 +1157,17 @@ export class ModelConfigView extends LitElement {
     ]);
     this._dataLoaded = true;
     this._sync(h);
-    // 异步加载本地引擎状态（不阻塞主数据加载）
+    // 异步加载本地引擎状态和记忆提取状态（不阻塞主数据加载）
     this._loadLocalEngine();
+    this._loadExtractionStatus();
+  }
+
+  private async _loadExtractionStatus() {
+    if (!this.client) return;
+    try {
+      const res = await this.client.request("capability_matrix.extractionStatus");
+      this._extractionStatus = res as typeof this._extractionStatus;
+    } catch { /* ignore */ }
   }
 
   private async _loadLocalEngine() {
@@ -985,12 +1211,29 @@ export class ModelConfigView extends LitElement {
     this._quickSwitchLoading = true;
     this._quickSwitchError = null;
 
+    // embedding 卡片额外加载绑定状态和提取状态
+    if (userCap.id === "embedding") {
+      try {
+        const [bindingRes, extractionRes] = await Promise.all([
+          this.client!.request("capability_matrix.embeddingBinding").catch(() => null),
+          this.client!.request("capability_matrix.extractionStatus").catch(() => null),
+        ]);
+        this._embeddingBinding = bindingRes as typeof this._embeddingBinding;
+        this._extractionStatus = extractionRes as typeof this._extractionStatus;
+      } catch { /* ignore */ }
+    }
+
     const hasMultiSubs = userCap.subs.length > 1;
 
     if (hasMultiSubs) {
       // 多子能力：并行加载每个子能力的模型列表
       try {
         await Promise.all(userCap.subs.map(async (sub) => {
+          // "记忆提取" 是虚拟子能力，不从 registry 查询模型
+          if (sub.keys.includes("memoryExtraction")) {
+            this._quickSwitchSubModels.set(sub.label, { cap: undefined, models: [] });
+            return;
+          }
           const cap = this._resolveSubCap(sub);
           if (!cap) {
             this._quickSwitchSubModels.set(sub.label, { cap: undefined, models: [] });
@@ -1113,12 +1356,12 @@ export class ModelConfigView extends LitElement {
         this._showSwitchToast(m.modelName || m.modelId, m.providerName || m.providerId);
       } else {
         const h = this._host();
-        h.modelConfigError = data.error ?? "切换失败";
+        h.modelConfigError = formatGeneralError(data.error, "模型切换").detail;
         this._sync(h);
       }
     } catch (err) {
       const h = this._host();
-      h.modelConfigError = `切换失败: ${String(err)}`;
+      h.modelConfigError = formatGeneralError(String(err), "模型切换").detail;
       this._sync(h);
     } finally {
       this._switchingModelId = null;
@@ -1126,7 +1369,7 @@ export class ModelConfigView extends LitElement {
   }
 
   /** 快速切换：多子能力卡片内直接选模型（指定具体子能力） */
-  private async _onQuickSwitchSub(cap: Capability, m: ModelInfo) {
+  private async _onQuickSwitchSub(cap: Capability, m: ModelInfo, force = false) {
     if (!m.configured || this._switchingModelId) return;
     if (!this.client || !this.connected) return;
 
@@ -1141,8 +1384,9 @@ export class ModelConfigView extends LitElement {
         capability: cap.capability,
         providerId: m.providerId,
         modelId: m.modelId,
+        force,
       });
-      const data = result as { success: boolean; error?: string };
+      const data = result as { success: boolean; error?: string; requiresRebuild?: boolean };
       if (data.success) {
         this._quickSwitchCap = null;
         this._quickSwitchModels = [];
@@ -1151,14 +1395,24 @@ export class ModelConfigView extends LitElement {
         await loadCapabilities(h2);
         this._sync(h2);
         this._showSwitchToast(m.modelName || m.modelId, m.providerName || m.providerId);
+      } else if (data.requiresRebuild) {
+        // 向量库绑定冲突 — 弹出确认对话框
+        this._switchingModelId = null;
+        const confirmed = confirm(
+          `${data.error}\n\n确认切换并重建向量库？`,
+        );
+        if (confirmed) {
+          await this._onQuickSwitchSub(cap, m, true);
+        }
+        return;
       } else {
         const h = this._host();
-        h.modelConfigError = data.error ?? "切换失败";
+        h.modelConfigError = formatGeneralError(data.error, "模型切换").detail;
         this._sync(h);
       }
     } catch (err) {
       const h = this._host();
-      h.modelConfigError = `切换失败: ${String(err)}`;
+      h.modelConfigError = formatGeneralError(String(err), "模型切换").detail;
       this._sync(h);
     } finally {
       this._switchingModelId = null;
@@ -1166,13 +1420,25 @@ export class ModelConfigView extends LitElement {
   }
 
   /** 从快速切换面板打开完整模型选择器弹窗 */
-  private async _openFullModelSelector(userCap: UserCapDef) {
+  private async _openFullModelSelector(userCap: UserCapDef, subIndex = 0) {
     this._quickSwitchCap = null;
     this._quickSwitchModels = [];
 
-    const matchedCap = userCap.caps
-      .map(c => this._s.capabilities.find(cap => cap.capability === c))
-      .find(c => c);
+    // 重置筛选状态
+    this._modelSelectorSearch = "";
+    this._modelSelectorProviderFilter = null;
+    this._modelSelectorContextFilter = null;
+    this._modelSelectorStrengthFilter = null;
+    this._modelSelectorActiveSubIndex = subIndex;
+    this._modelSelectorUserCap = userCap;
+    this._msProviderDropdownOpen = false;
+    this._msUnconfiguredExpanded = false;
+
+    // 对多子能力卡片，使用指定 sub 的 capability
+    const targetSub = userCap.subs[subIndex] ?? userCap.subs[0];
+    const matchedCap = targetSub
+      ? targetSub.keys.map(k => this._s.capabilities.find(cap => cap.capability === k)).find(c => c)
+      : userCap.caps.map(c => this._s.capabilities.find(cap => cap.capability === c)).find(c => c);
     if (matchedCap) {
       const h = this._host();
       await openModelSelector(h, matchedCap);
@@ -1184,6 +1450,34 @@ export class ModelConfigView extends LitElement {
     const h = this._host();
     closeModelSelector(h);
     this._sync(h);
+    this._modelSelectorUserCap = null;
+  }
+
+  /** 模型选择器：切换子能力 tab */
+  private async _onModelSelectorTabSwitch(subIndex: number) {
+    if (!this._modelSelectorUserCap) return;
+    this._modelSelectorActiveSubIndex = subIndex;
+    this._modelSelectorSearch = "";
+    this._modelSelectorProviderFilter = null;
+    this._modelSelectorContextFilter = null;
+    this._modelSelectorStrengthFilter = null;
+    this._msProviderDropdownOpen = false;
+    this._msUnconfiguredExpanded = false;
+
+    const sub = this._modelSelectorUserCap.subs[subIndex];
+    if (!sub) return;
+
+    // 跳过虚拟 sub（如 memoryExtraction）
+    if (sub.keys.includes("memoryExtraction")) return;
+
+    const matchedCap = sub.keys
+      .map(k => this._s.capabilities.find(cap => cap.capability === k))
+      .find(c => c);
+    if (matchedCap) {
+      const h = this._host();
+      await openModelSelector(h, matchedCap);
+      this._sync(h);
+    }
   }
 
   private _onProviderClick(p: ProviderInfo) {
@@ -1305,7 +1599,7 @@ export class ModelConfigView extends LitElement {
     try {
       await installModel(this.client as never, modelId);
     } catch (err) {
-      this._le = { ...this._le, error: `安装失败: ${String(err)}` };
+      this._le = { ...this._le, error: formatGeneralError(String(err), "模型安装").detail };
     }
   }
 
@@ -1315,7 +1609,7 @@ export class ModelConfigView extends LitElement {
       await uninstallModel(this.client as never, modelId);
       await this._loadLocalEngine();
     } catch (err) {
-      this._le = { ...this._le, error: `卸载失败: ${String(err)}` };
+      this._le = { ...this._le, error: formatGeneralError(String(err), "模型卸载").detail };
     }
   }
 
@@ -1325,7 +1619,7 @@ export class ModelConfigView extends LitElement {
       await startSidecar(this.client as never, domain);
       await this._loadLocalEngine();
     } catch (err) {
-      this._le = { ...this._le, error: `启动失败: ${String(err)}` };
+      this._le = { ...this._le, error: formatGeneralError(String(err), "引擎启动").detail };
     }
   }
 
@@ -1335,7 +1629,7 @@ export class ModelConfigView extends LitElement {
       await stopSidecar(this.client as never, domain);
       await this._loadLocalEngine();
     } catch (err) {
-      this._le = { ...this._le, error: `停止失败: ${String(err)}` };
+      this._le = { ...this._le, error: formatGeneralError(String(err), "引擎停止").detail };
     }
   }
 
@@ -1345,7 +1639,7 @@ export class ModelConfigView extends LitElement {
       await redetectHardware(this.client as never);
       await this._loadLocalEngine();
     } catch (err) {
-      this._le = { ...this._le, error: `检测失败: ${String(err)}` };
+      this._le = { ...this._le, error: formatGeneralError(String(err), "硬件检测").detail };
     }
   }
 
@@ -1354,7 +1648,7 @@ export class ModelConfigView extends LitElement {
     try {
       await installRecommended(this.client as never);
     } catch (err) {
-      this._le = { ...this._le, error: `安装失败: ${String(err)}` };
+      this._le = { ...this._le, error: formatGeneralError(String(err), "模型安装").detail };
     }
   }
 
@@ -1640,8 +1934,50 @@ export class ModelConfigView extends LitElement {
     return this._getUserCapModels(userCap).some(c => c.status === "active");
   }
 
+  /** 获取当前激活模型的 strengthTier（用于卡片边框颜色） */
+  private _getCapStrengthTier(userCap: UserCapDef): string | undefined {
+    for (const sub of userCap.subs) {
+      const cap = this._resolveSubCap(sub);
+      if (cap?.status === "active" && cap.currentModel?.strengthTier) {
+        return cap.currentModel.strengthTier;
+      }
+    }
+    return undefined;
+  }
+
   private _isAllInactive(): boolean {
     return this._s.capabilities.length > 0 && this._s.capabilities.every(c => c.status === "inactive");
+  }
+
+  /** 模型选择器：应用搜索和筛选 */
+  private _getFilteredModels(models: ModelInfo[]): ModelInfo[] {
+    let filtered = models;
+    const search = this._modelSelectorSearch.toLowerCase().trim();
+    if (search) {
+      filtered = filtered.filter(m =>
+        (m.modelName ?? "").toLowerCase().includes(search) ||
+        (m.modelId ?? "").toLowerCase().includes(search) ||
+        (m.providerName ?? "").toLowerCase().includes(search)
+      );
+    }
+    if (this._modelSelectorProviderFilter) {
+      filtered = filtered.filter(m => m.providerId === this._modelSelectorProviderFilter);
+    }
+    if (this._modelSelectorContextFilter) {
+      filtered = filtered.filter(m => (m.maxContextTokens ?? 0) >= this._modelSelectorContextFilter!);
+    }
+    if (this._modelSelectorStrengthFilter) {
+      filtered = filtered.filter(m => m.strengthTier === this._modelSelectorStrengthFilter);
+    }
+    return filtered;
+  }
+
+  /** 格式化 context token 数 */
+  private _formatContextTokens(tokens?: number): string {
+    if (!tokens) return "";
+    if (tokens >= 1_000_000) return `${Math.round(tokens / 1_000_000)}M`;
+    if (tokens >= 1000) return `${Math.round(tokens / 1000)}K`;
+    return String(tokens);
   }
 
   private _groupModelsByProvider(models: ModelInfo[]) {
@@ -1832,9 +2168,11 @@ export class ModelConfigView extends LitElement {
     const active = this._isUserCapActive(userCap);
     const expanded = this._quickSwitchCap === userCap.id;
     const hasMultiSubs = userCap.subs.length > 1;
+    const tier = active ? this._getCapStrengthTier(userCap) : undefined;
+    const tierClass = tier === "weak" ? "tier-weak" : tier === "moderate" ? "tier-moderate" : "";
 
     return html`
-      <div class="cap-card ${active ? 'active' : 'inactive'} ${expanded ? 'expanded' : ''}">
+      <div class="cap-card ${active ? 'active' : 'inactive'} ${expanded ? 'expanded' : ''} ${tierClass}">
         <div
           class="cap-card__clickable"
           tabindex="0" role="button"
@@ -1860,19 +2198,53 @@ export class ModelConfigView extends LitElement {
   private _renderSingleSubStatus(userCap: UserCapDef) {
     const cap = this._resolveSubCap(userCap.subs[0]);
     if (cap?.status === "active" && cap.currentModel) {
+      const tier = cap.currentModel.strengthTier;
       return html`
         <div class="cap-card__model">${cap.currentModel.modelName}</div>
         <div class="cap-card__provider">${cap.currentModel.providerName}</div>
+        ${tier === "weak" ? html`
+          <div class="strength-warn strength-warn--weak">
+            <span class="strength-warn__icon">!</span>
+            <span class="strength-warn__text">
+              模型能力较弱，建议切换到
+              <span class="strength-warn__recommend">DeepSeek V3</span> 等主流模型
+            </span>
+          </div>
+        ` : tier === "moderate" ? html`
+          <div class="strength-warn strength-warn--moderate">
+            <span class="strength-warn__icon">i</span>
+            <span class="strength-warn__text">中等模型，复杂任务可能力不从心</span>
+          </div>
+        ` : nothing}
       `;
     }
     return html`<div class="cap-card__empty">未开通</div>`;
   }
 
-  /** 多能力卡片的子能力状态渲染（图片、视频、语音） */
+  /** 多能力卡片的子能力状态渲染（图片、视频、语音、记忆） */
   private _renderMultiSubStatus(userCap: UserCapDef) {
     return html`
       <div class="cap-card__subs">
         ${userCap.subs.map(sub => {
+          // "记忆提取" 虚拟子能力 — 使用 _extractionStatus 而非 registry
+          if (sub.keys.includes("memoryExtraction")) {
+            const ext = this._extractionStatus;
+            const extActive = ext?.status === "active";
+            const PROVIDER_NAMES: Record<string, string> = {
+              "meituan-longcat": "美团", "ant-ling": "蚂蚁百灵",
+              siliconflow: "硅基流动", modelscope: "魔搭",
+            };
+            const provLabel = ext?.provider ? (PROVIDER_NAMES[ext.provider] ?? ext.provider) : "";
+            return html`
+              <div class="cap-card__sub">
+                <span class="cap-card__sub-dot ${extActive ? 'on' : 'off'}"></span>
+                <span class="cap-card__sub-label">${sub.label}</span>
+                ${extActive
+                  ? html`<span class="cap-card__sub-model">${ext!.model} (${provLabel})</span>`
+                  : html`<span class="cap-card__sub-model cap-card__sub-model--off">未配置</span>`}
+              </div>
+            `;
+          }
           const cap = this._resolveSubCap(sub);
           const subActive = cap?.status === "active" && cap.currentModel;
           return html`
@@ -1943,31 +2315,36 @@ export class ModelConfigView extends LitElement {
 
     return html`
       <div class="qs-panel">
-        ${this._quickSwitchModels.map(m => {
-          const isCurrent = m.active || m.modelId === currentModelId;
-          const isSwitching = this._switchingModelId === m.modelId;
-          return html`
-            <div
-              class="qs-item ${isCurrent ? 'current' : ''} ${isSwitching ? 'switching' : ''}"
-              tabindex="0" role="button"
-              @click=${(e: Event) => { e.stopPropagation(); if (!isCurrent) this._onQuickSwitch(userCap, m); }}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !isCurrent) { e.stopPropagation(); this._onQuickSwitch(userCap, m); } }}
-            >
-              <div class="qs-item__info">
-                <div class="qs-item__name">${m.modelName}</div>
-                <div class="qs-item__provider">${m.providerName}</div>
-              </div>
-              <div class="qs-item__end">
-                ${m.pricing.type === "free" ? html`<span class="badge badge--free">FREE</span>` : nothing}
-                ${isSwitching
-                  ? html`<span class="qs-spinner"></span>`
-                  : isCurrent
-                    ? html`<span class="qs-check">✓</span>`
+        <div class="qs-scroll">
+          ${this._quickSwitchModels.map(m => {
+            const isCurrent = m.active || m.modelId === currentModelId;
+            const isSwitching = this._switchingModelId === m.modelId;
+            return html`
+              <div
+                class="qs-item ${isCurrent ? 'current' : ''} ${isSwitching ? 'switching' : ''}"
+                tabindex="0" role="button"
+                @click=${(e: Event) => { e.stopPropagation(); if (!isCurrent) this._onQuickSwitch(userCap, m); }}
+                @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !isCurrent) { e.stopPropagation(); this._onQuickSwitch(userCap, m); } }}
+              >
+                <div class="qs-item__info">
+                  <div class="qs-item__name">${m.modelName}</div>
+                  <div class="qs-item__provider">${m.providerName}</div>
+                </div>
+                <div class="qs-item__end">
+                  ${m.strengthTier === "weak" ? html`<span class="badge badge--weak">弱</span>`
+                    : m.strengthTier === "moderate" ? html`<span class="badge badge--moderate">中</span>`
+                    : m.strengthTier === "strong" ? html`<span class="badge badge--strong">强</span>`
                     : nothing}
+                  ${isSwitching
+                    ? html`<span class="qs-spinner"></span>`
+                    : isCurrent
+                      ? html`<span class="qs-check">✓</span>`
+                      : nothing}
+                </div>
               </div>
-            </div>
-          `;
-        })}
+            `;
+          })}
+        </div>
         <div class="qs-more" tabindex="0" role="button"
           @click=${(e: Event) => { e.stopPropagation(); this._openFullModelSelector(userCap); }}>
           查看全部模型 ›
@@ -1980,7 +2357,8 @@ export class ModelConfigView extends LitElement {
   private _renderMultiSubQuickSwitch(userCap: UserCapDef) {
     const totalModels = Array.from(this._quickSwitchSubModels.values()).reduce((sum, v) => sum + v.models.length, 0);
 
-    if (totalModels === 0 && this._quickSwitchSubModels.size > 0) {
+    // embedding 卡片：即使没有 switchable 模型也不显示 "暂无" — 有绑定信息和提取信息
+    if (totalModels === 0 && this._quickSwitchSubModels.size > 0 && userCap.id !== "embedding") {
       return html`
         <div class="qs-panel">
           <div class="qs-empty">暂无已配置的模型</div>
@@ -1994,42 +2372,71 @@ export class ModelConfigView extends LitElement {
 
     return html`
       <div class="qs-panel">
-        ${userCap.subs.map(sub => {
-          const entry = this._quickSwitchSubModels.get(sub.label);
-          if (!entry) return nothing;
-          const currentModelId = entry.cap?.currentModel?.modelId;
-          return html`
-            <div class="qs-sub-group">
-              <div class="qs-sub-label">${sub.label}</div>
-              ${entry.models.length === 0
-                ? html`<div class="qs-empty" style="padding:4px 0;font-size:10px">无可用模型</div>`
-                : entry.models.map(m => {
-                    const isCurrent = m.active || m.modelId === currentModelId;
-                    const isSwitching = this._switchingModelId === m.modelId;
-                    return html`
-                      <div
-                        class="qs-item ${isCurrent ? 'current' : ''} ${isSwitching ? 'switching' : ''}"
-                        tabindex="0" role="button"
-                        @click=${(e: Event) => { e.stopPropagation(); if (!isCurrent && entry.cap) this._onQuickSwitchSub(entry.cap, m); }}
-                      >
-                        <div class="qs-item__info">
-                          <div class="qs-item__name">${m.modelName}</div>
-                          <div class="qs-item__provider">${m.providerName}</div>
-                        </div>
-                        <div class="qs-item__end">
-                          ${m.pricing.type === "free" ? html`<span class="badge badge--free">FREE</span>` : nothing}
-                          ${isSwitching
-                            ? html`<span class="qs-spinner"></span>`
-                            : isCurrent
-                              ? html`<span class="qs-check">✓</span>`
-                              : nothing}
-                        </div>
-                      </div>
-                    `;
-                  })}
+        <div class="qs-scroll">
+          ${userCap.id === "embedding" && this._embeddingBinding?.bound ? html`
+            <div style="background:rgba(251,191,36,0.1);padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px;color:var(--warning,#fbbf24);">
+              向量库已绑定 <b>${this._embeddingBinding.vecModel}</b>（${this._embeddingBinding.vecDims ?? "?"}维，${this._embeddingBinding.vecCount} 条向量）。切换模型需清空重建，耗时较长。
             </div>
-          `;
-        })}
+          ` : nothing}
+          ${userCap.subs.map(sub => {
+            // "记忆提取" — 纯信息展示，不可切换
+            if (sub.keys.includes("memoryExtraction")) {
+              return html`
+                <div class="qs-sub-group">
+                  <div class="qs-sub-label">${sub.label}</div>
+                  <div style="padding:6px 0;font-size:12px;color:var(--muted,#8b9caf);line-height:1.5;">
+                    自动选择免费 LLM 提取长期记忆，保证 AI 记住你的偏好和习惯。<br>
+                    优先级: 美团 LongCat &rarr; 蚂蚁百灵 &rarr; 硅基流动 &rarr; 魔搭。<br>
+                    配置对应服务商 API Key 即可激活（全部免费）。
+                  </div>
+                </div>
+              `;
+            }
+            const entry = this._quickSwitchSubModels.get(sub.label);
+            if (!entry) return nothing;
+            const currentModelId = entry.cap?.currentModel?.modelId;
+            return html`
+              <div class="qs-sub-group">
+                <div class="qs-sub-label">${sub.label}</div>
+                ${entry.models.length === 0
+                  ? html`<div class="qs-empty" style="padding:4px 0;font-size:10px">无可用模型</div>`
+                  : entry.models.map(m => {
+                      const isCurrent = m.active || m.modelId === currentModelId;
+                      const isSwitching = this._switchingModelId === m.modelId;
+                      return html`
+                        <div
+                          class="qs-item ${isCurrent ? 'current' : ''} ${isSwitching ? 'switching' : ''}"
+                          tabindex="0" role="button"
+                          @click=${(e: Event) => { e.stopPropagation(); if (!isCurrent && entry.cap) this._onQuickSwitchSub(entry.cap, m); }}
+                        >
+                          <div class="qs-item__info">
+                            <div class="qs-item__name">${m.modelName}</div>
+                            <div class="qs-item__provider">${m.providerName}</div>
+                          </div>
+                          <div class="qs-item__end">
+                            ${m.strengthTier === "weak" ? html`<span class="badge badge--weak">弱</span>`
+                              : m.strengthTier === "moderate" ? html`<span class="badge badge--moderate">中</span>`
+                              : m.strengthTier === "strong" ? html`<span class="badge badge--strong">强</span>`
+                              : nothing}
+                            ${isSwitching
+                              ? html`<span class="qs-spinner"></span>`
+                              : isCurrent
+                                ? html`<span class="qs-check">✓</span>`
+                                : nothing}
+                          </div>
+                        </div>
+                      `;
+                    })}
+              </div>
+            `;
+          })}
+        </div>
+        ${userCap.id !== "embedding" ? html`
+          <div class="qs-more" tabindex="0" role="button"
+            @click=${(e: Event) => { e.stopPropagation(); this._openFullModelSelector(userCap); }}>
+            查看全部模型 ›
+          </div>
+        ` : nothing}
         <div class="qs-more" tabindex="0" role="button"
           @click=${(e: Event) => { e.stopPropagation(); this._scrollToAddProviders(); }}>
           添加更多服务商 ↓
@@ -2161,70 +2568,215 @@ export class ModelConfigView extends LitElement {
     `;
   }
 
-  /* ═══════ MODEL SELECTOR MODAL ═══════ */
+  /* ═══════ MODEL SELECTOR MODAL (redesigned) ═══════ */
   private _renderModelSelector() {
     const { modelSelectorCapability: cap, modelSelectorModels: models, modelSelectorLoading: loading } = this._s;
     if (!cap) return nothing;
-    const providerGroups = this._groupModelsByProvider(models);
+
+    const userCap = this._modelSelectorUserCap;
+    const hasMultiSubs = userCap ? userCap.subs.filter(s => !s.keys.includes("memoryExtraction")).length > 1 : false;
+
+    // 分离已配置 / 未配置
+    const configured = models.filter(m => m.configured);
+    const unconfigured = models.filter(m => !m.configured);
+    const filtered = this._getFilteredModels(configured);
+
+    // 唯一服务商列表（用于筛选下拉）
+    const uniqueProviders = [...new Map(configured.map(m => [m.providerId, m.providerName])).entries()];
+
+    // 当前模型信息（从 capability 获取，而非 models 列表）
+    const currentModel = cap.currentModel;
+    const isLocked = currentModel?.auto === false;
 
     return html`
       <div class="modal-overlay" @click=${() => this._closeModelSelector()} @keydown=${(e: KeyboardEvent) => this._onModalKeydown(e, () => this._closeModelSelector())}>
-        <div class="modal" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="modal ms-modal" @click=${(e: Event) => e.stopPropagation()}>
+          <!-- Header -->
           <div class="modal-header">
             <span class="modal-title">选择「${cap.name}」模型</span>
             <button class="modal-close" @click=${() => this._closeModelSelector()}>&times;</button>
           </div>
-          <div class="modal-body">
+
+          <!-- 当前模型 banner -->
+          ${currentModel ? html`
+            <div class="ms-current">
+              <span class="ms-current__label">当前:</span>
+              <span class="ms-current__model">${currentModel.modelName}</span>
+              <span class="ms-current__provider">(${currentModel.providerName})</span>
+              ${isLocked
+                ? html`<span class="ms-current__lock ms-current__lock--manual">手动锁定</span>`
+                : html`<span class="ms-current__lock ms-current__lock--auto">自动分配</span>`}
+            </div>
+          ` : nothing}
+
+          <!-- 多子能力 tabs -->
+          ${hasMultiSubs && userCap ? html`
+            <div class="ms-tabs">
+              ${userCap.subs
+                .filter(s => !s.keys.includes("memoryExtraction"))
+                .map((sub, i) => html`
+                  <button
+                    class="ms-tab ${this._modelSelectorActiveSubIndex === i ? 'active' : ''}"
+                    @click=${() => this._onModelSelectorTabSwitch(i)}
+                  >${sub.label}</button>
+                `)}
+            </div>
+          ` : nothing}
+
+          <!-- 搜索 + 筛选工具栏 -->
+          <div class="ms-toolbar">
+            <input
+              class="ms-search"
+              type="text"
+              placeholder="搜索模型名称或服务商..."
+              .value=${this._modelSelectorSearch}
+              @input=${(e: Event) => { this._modelSelectorSearch = (e.target as HTMLInputElement).value; }}
+            />
+            <div class="ms-filters">
+              <!-- 服务商筛选 -->
+              <div style="position:relative">
+                <button
+                  class="ms-filter-chip ${this._modelSelectorProviderFilter ? 'active' : ''}"
+                  @click=${() => { this._msProviderDropdownOpen = !this._msProviderDropdownOpen; }}
+                >${this._modelSelectorProviderFilter
+                    ? uniqueProviders.find(([id]) => id === this._modelSelectorProviderFilter)?.[1] ?? "服务商"
+                    : "服务商"} ▾</button>
+                ${this._msProviderDropdownOpen ? html`
+                  <div class="ms-dropdown">
+                    <div class="ms-dropdown__item ${!this._modelSelectorProviderFilter ? 'active' : ''}"
+                      @click=${() => { this._modelSelectorProviderFilter = null; this._msProviderDropdownOpen = false; }}>
+                      全部
+                    </div>
+                    ${uniqueProviders.map(([pid, pname]) => html`
+                      <div class="ms-dropdown__item ${this._modelSelectorProviderFilter === pid ? 'active' : ''}"
+                        @click=${() => { this._modelSelectorProviderFilter = pid; this._msProviderDropdownOpen = false; }}>
+                        ${pname}
+                      </div>
+                    `)}
+                  </div>
+                ` : nothing}
+              </div>
+              <!-- 上下文窗口筛选 -->
+              ${[
+                { label: "全部", value: null },
+                { label: ">=32K", value: 32000 },
+                { label: ">=128K", value: 128000 },
+                { label: ">=256K", value: 256000 },
+              ].map(opt => html`
+                <button
+                  class="ms-filter-chip ${this._modelSelectorContextFilter === opt.value ? 'active' : ''}"
+                  @click=${() => { this._modelSelectorContextFilter = opt.value; }}
+                >${opt.label}</button>
+              `)}
+              <!-- 能力等级筛选 -->
+              ${[
+                { label: "全部", value: null as string | null },
+                { label: "强", value: "strong" },
+                { label: "中", value: "moderate" },
+                { label: "弱", value: "weak" },
+              ].map(opt => html`
+                <button
+                  class="ms-filter-chip ${this._modelSelectorStrengthFilter === opt.value ? 'active' : ''}"
+                  @click=${() => { this._modelSelectorStrengthFilter = opt.value; }}
+                >${opt.label}</button>
+              `)}
+            </div>
+          </div>
+
+          <!-- 模型列表（scrollable） -->
+          <div class="ms-body">
             ${loading
               ? html`<div class="loading-state" style="padding:40px 0">加载中...</div>`
-              : providerGroups.map(g => this._renderModelGroup(g))}
+              : filtered.length === 0
+                ? html`<div class="ms-empty">${this._modelSelectorSearch || this._modelSelectorProviderFilter || this._modelSelectorContextFilter || this._modelSelectorStrengthFilter ? '没有匹配的模型' : '暂无已配置的模型'}</div>`
+                : filtered.map(m => this._renderMsItem(m))}
+
+            <!-- 未配置的服务商（可折叠） -->
+            ${!loading && unconfigured.length > 0 ? html`
+              <div class="ms-unconfigured-section">
+                <div
+                  class="ms-unconfigured-header"
+                  tabindex="0" role="button"
+                  @click=${() => { this._msUnconfiguredExpanded = !this._msUnconfiguredExpanded; }}
+                >
+                  <span>未配置的服务商 (${unconfigured.length} 个模型)</span>
+                  <span class="ms-unconfigured-arrow ${this._msUnconfiguredExpanded ? 'expanded' : ''}">▶</span>
+                </div>
+                ${this._msUnconfiguredExpanded ? html`
+                  <div class="ms-unconfigured-list">
+                    ${this._groupModelsByProvider(unconfigured).map(g => html`
+                      <div class="ms-provider-group">
+                        <div class="ms-provider-group__header">
+                          <span>${g.providerIcon}</span>
+                          <span style="flex:1;font-size:12px;font-weight:600">${g.providerName}</span>
+                          <span class="ms-provider-group__badge">未配置</span>
+                        </div>
+                        ${g.models.map(m => html`
+                          <div class="ms-item unconfigured" title="需要先配置 ${g.providerName}">
+                            <div class="ms-item__main">
+                              <div class="ms-item__name">${m.modelName}</div>
+                              <div class="ms-item__meta">
+                                <span class="ms-item__provider">${m.providerName}</span>
+                                ${m.maxContextTokens ? html`<span class="ms-item__ctx">${this._formatContextTokens(m.maxContextTokens)}</span>` : nothing}
+                              </div>
+                            </div>
+                            <div class="ms-item__end">
+                              ${this._renderStrengthBadge(m.strengthTier)}
+                            </div>
+                          </div>
+                        `)}
+                        <div class="add-provider-link" tabindex="0" role="button"
+                          @click=${() => this._onNavigateToProvider(g.providerId)}
+                          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this._onNavigateToProvider(g.providerId); }}
+                        >+ 添加 ${g.providerName} 配置</div>
+                      </div>
+                    `)}
+                  </div>
+                ` : nothing}
+              </div>
+            ` : nothing}
           </div>
         </div>
       </div>
     `;
   }
 
-  private _renderModelGroup(group: { providerId: string; providerName: string; providerIcon: string; configured: boolean; isCurrent: boolean; models: ModelInfo[] }) {
-    const statusClass = group.isCurrent ? "current" : group.configured ? "configured" : "unconfigured";
-    const statusText = group.isCurrent ? "当前" : group.configured ? "已配置" : "未配置";
-    const switching = this._s.modelSelectorSwitching;
-
+  /** 单个模型条目（已配置） */
+  private _renderMsItem(m: ModelInfo) {
+    const isCurrent = m.active;
+    const isSwitching = this._switchingModelId === m.modelId;
     return html`
-      <div class="model-group">
-        <div class="model-group__header">
-          <span class="model-group__icon">${group.providerIcon}</span>
-          <span class="model-group__name">${group.providerName}</span>
-          <span class="model-group__badge ${statusClass}">${statusText}</span>
+      <div
+        class="ms-item ${isCurrent ? 'current' : ''} ${isSwitching ? 'switching' : ''}"
+        tabindex="0" role="button"
+        @click=${() => this._onModelSelect(m)}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this._onModelSelect(m); }}
+      >
+        <div class="ms-item__main">
+          <div class="ms-item__name">${m.modelName}</div>
+          <div class="ms-item__meta">
+            <span class="ms-item__provider">${m.providerName}</span>
+            ${m.maxContextTokens ? html`<span class="ms-item__ctx">${this._formatContextTokens(m.maxContextTokens)} tokens</span>` : nothing}
+          </div>
         </div>
-        ${group.configured
-          ? group.models.map(m => html`
-              <div
-                class="m-item ${m.active ? 'current' : ''} ${switching ? 'switching' : ''}"
-                tabindex="0" role="button"
-                @click=${() => this._onModelSelect(m)}
-                @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this._onModelSelect(m); }}
-              >
-                <div class="m-item__info"><div class="m-item__name">${m.modelName}</div></div>
-                <div class="m-item__end">
-                  <span class="badge ${m.pricing.type === 'free' ? 'badge--free' : 'badge--paid'}">${m.pricing.type === "free" ? "FREE" : "PAID"}</span>
-                  ${this._switchingModelId === m.modelId ? html`<span class="m-item__spinner"></span>` : m.active ? html`<span class="checkmark">✓</span>` : nothing}
-                </div>
-              </div>
-            `)
-          : html`
-              ${group.models.map(m => html`
-                <div class="m-item locked" title="需要先配置 ${group.providerName} 才能使用此模型">
-                  <div class="m-item__info"><div class="m-item__name">${m.modelName}</div></div>
-                  <div class="m-item__end">
-                    <span class="badge ${m.pricing.type === 'free' ? 'badge--free' : 'badge--paid'}">${m.pricing.type === "free" ? "FREE" : "PAID"}</span>
-                    <span style="font-size:10px;color:var(--muted,#8b9caf)">🔒</span>
-                  </div>
-                </div>
-              `)}
-              <div class="add-provider-link" tabindex="0" role="button" @click=${() => this._onNavigateToProvider(group.providerId)} @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter") this._onNavigateToProvider(group.providerId); }}>+ 添加 ${group.providerName} 配置</div>
-            `}
+        <div class="ms-item__end">
+          ${this._renderStrengthBadge(m.strengthTier)}
+          ${isSwitching
+            ? html`<span class="ms-item__spinner"></span>`
+            : isCurrent
+              ? html`<span class="checkmark">&#x2713;</span>`
+              : nothing}
+        </div>
       </div>
     `;
+  }
+
+  /** 能力等级徽章 */
+  private _renderStrengthBadge(tier?: string) {
+    if (tier === "weak") return html`<span class="badge badge--weak">弱</span>`;
+    if (tier === "moderate") return html`<span class="badge badge--moderate">中</span>`;
+    if (tier === "strong") return html`<span class="badge badge--strong">强</span>`;
+    return nothing;
   }
 
   /* ═══════ PROVIDER CONFIG MODAL ═══════ */

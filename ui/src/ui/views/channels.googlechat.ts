@@ -5,7 +5,35 @@ import { t } from "../i18n/index.js";
 import type { GoogleChatStatus } from "../types";
 import { renderChannelConfigSection } from "./channels.config";
 import type { ChannelsProps } from "./channels.types";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
+
+export function renderGooglechatTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>Create Google Cloud Project</strong>
+          <p>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a> &rarr; Create or select a project</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Enable Chat API</strong>
+          <p>APIs &amp; Services &rarr; Enable Google Chat API &rarr; Configure Chat app</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Create Service Account</strong>
+          <p>IAM &amp; Admin &rarr; Service Accounts &rarr; Create &rarr; Download JSON key file</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderGoogleChatCard(params: {
   props: ChannelsProps;
@@ -120,6 +148,8 @@ export function renderGoogleChatCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "googlechat", props, accounts: props.snapshot?.channelAccounts?.["googlechat"] ?? [] })}
       </div>
     </details>
   `;

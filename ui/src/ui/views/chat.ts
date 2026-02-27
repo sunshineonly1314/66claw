@@ -957,7 +957,11 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       continue;
     }
 
-    if (!props.showThinking && normalized.role.toLowerCase() === "toolresult") {
+    if (normalized.role.toLowerCase() === "toolresult") {
+      // [CN-FIX] Always hide ALL tool result messages — they show raw technical
+      // details (error messages, file contents, etc.) that confuse end users.
+      // Image/video gen data is injected into the assistant bubble via the
+      // assistant-message scan below (reads from history[] directly).
       continue;
     }
 
@@ -981,17 +985,17 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         const kind = String(block.type ?? "").toLowerCase();
         if (!["tool_use", "tooluse", "toolcall", "tool_call"].includes(kind)) return false;
         const name = String(block.name ?? "");
-        return name === "image_gen" || name === "video_gen";
+        return name === "image_gen" || name === "image_edit" || name === "video_gen";
       });
       if (hasMediaToolUse) {
         message = Object.assign({}, message as Record<string, unknown>, { __staleMediaTools: true });
       }
     }
 
-    // [CN-FIX:image-display] When showThinking is off, toolResult messages are
-    // skipped above. But if a preceding toolResult contains image/video gen data,
-    // attach it to this assistant message so the image renders in the assistant bubble.
-    if (!props.showThinking && normalized.role.toLowerCase() === "assistant") {
+    // [CN-FIX:image-display] Image/video gen toolResult messages are always
+    // skipped above. Attach their data to this assistant message so the image
+    // renders inline in the assistant bubble (no separate "tool" group).
+    if (normalized.role.toLowerCase() === "assistant") {
       for (let j = i - 1; j >= historyStart; j--) {
         const prev = normalizeMessage(history[j]);
         if (prev.role.toLowerCase() !== "toolresult") break;

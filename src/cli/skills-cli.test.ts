@@ -61,6 +61,7 @@ describe("skills-cli", () => {
       const report = createMockReport([]);
       const output = formatSkillsList(report, {});
       expect(output).toContain("No skills found");
+      expect(output).toContain("clawhub.com");
       expect(output).toContain("npx clawhub");
     });
 
@@ -141,6 +142,7 @@ describe("skills-cli", () => {
       const report = createMockReport([]);
       const output = formatSkillInfo(report, "unknown-skill", {});
       expect(output).toContain("not found");
+      expect(output).toContain("clawhub.com");
       expect(output).toContain("npx clawhub");
     });
 
@@ -201,10 +203,11 @@ describe("skills-cli", () => {
       expect(output).toContain("ready-2");
       expect(output).toContain("not-ready");
       expect(output).toContain("go"); // missing binary
+      expect(output).toContain("clawhub.com");
       expect(output).toContain("npx clawhub");
     });
 
-    it("outputs JSON with --json flag", () => {
+    it("outputs JSON with --json flag (no clawhub hint)", () => {
       const report = createMockReport([
         createMockSkill({ name: "skill-1", eligible: true }),
         createMockSkill({ name: "skill-2", eligible: false }),
@@ -213,6 +216,8 @@ describe("skills-cli", () => {
       const parsed = JSON.parse(output);
       expect(parsed.summary.eligible).toBe(1);
       expect(parsed.summary.total).toBe(2);
+      // JSON mode should NOT include clawhub hint
+      expect(output).not.toContain("clawhub.com");
     });
   });
 

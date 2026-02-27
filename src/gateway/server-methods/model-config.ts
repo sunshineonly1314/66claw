@@ -24,9 +24,14 @@ import {
   refreshProviderConfigured,
   upsertUserCard,
   removeUserCardsByProvider,
+  queryByCapability,
+  getAllCapabilityKeys,
+  findCard,
+  getCardStrengthTier,
   type CapabilityKey,
   type ModelCapabilityCard,
 } from "../../dispatch/capability-registry.js";
+import { getVecBindingStatus } from "../../dispatch/tool-index.js";
 import { getProviderAliases } from "../../agents/model-selection.js";
 import { ensureOpenClawCNModelsJson } from "../../agents/models-config.js";
 
@@ -148,12 +153,74 @@ const V2_KEY_TO_LEGACY: Record<string, Capability | string | undefined> = {
   vision: "image-understanding",
   imageGen: "image-generation",
   video: "video",
-  videoGen: "videoGen", // 视频生成 — 独立于视频理解
+  videoGen: "video-generation", // 与静态模型定义的 capabilities: ["video-generation"] 一致
   audio: "audio",
   tts: "tts",
   embedding: "embedding",
   toolCall: "toolCall",
 };
+
+/**
+ * 查询当前向量库的 embedding 绑定状态。
+ * 供 gateway API 和 UI 使用。
+ */
+export function getEmbeddingBindingStatus(): {
+  bound: boolean;
+  vecModel: string | null;
+  vecDims: number | null;
+  vecCount: number;
+} {
+  return getVecBindingStatus();
+}
+
+/**
+ * 检查拟切换的 embedding 模型是否与现有向量库兼容。
+ *
+ * - 向量库为空 → 允许任意模型
+ * - 向量库非空且模型相同 → 允许
+ * - 向量库非空且模型不同 → 需用户确认重建（返回 warning）
+ */
+function checkEmbeddingCompatibility(
+  proposedProvider: string,
+  proposedModel: string,
+): {
+  allowed: boolean;
+  dbEmpty: boolean;
+  warning?: string;
+  currentModel?: string;
+  currentDims?: number;
+  proposedDims?: number;
+  vecCount?: number;
+} {
+  const binding = getVecBindingStatus();
+
+  if (!binding.bound) {
+    return { allowed: true, dbEmpty: true };
+  }
+
+  // 已绑定 — 检查模型是否匹配（vec_model 存的是 modelId，不含 provider 前缀）
+  if (proposedModel === binding.vecModel) {
+    return { allowed: true, dbEmpty: false };
+  }
+
+  // 查询拟切换模型的维度（从 capability registry）
+  const proposedCard = findCard(proposedProvider, proposedModel);
+  const proposedDims = proposedCard?.embeddingDims;
+
+  return {
+    allowed: false,
+    dbEmpty: false,
+    warning:
+      `当前向量库已绑定模型 ${binding.vecModel}（${binding.vecDims ?? "?"}维，` +
+      `共 ${binding.vecCount} 条向量）。` +
+      `切换到 ${proposedModel}${proposedDims ? `（${proposedDims}维）` : ""} ` +
+      `需要清空并重建整个向量库，耗时较长。`,
+    currentModel: binding.vecModel ?? undefined,
+    currentDims: binding.vecDims ?? undefined,
+    proposedDims,
+    vecCount: binding.vecCount,
+  };
+}
 
 /**
  * API: 获取某个能力的所有可用模型
@@ -177,16 +244,23 @@ export async function getCapabilityModels(params: { capability: Capability | str
   const isActiveModel = (providerId: string, modelId: string) =>
     currentConfig?.modelId === modelId && currentAliases.includes(providerId);
 
-  const models = allModels.map((m) => ({
-    providerId: m.providerId,
-    providerName: m.providerName,
-    providerIcon: m.providerIcon,
-    modelId: m.model.modelId,
-    modelName: m.model.modelName,
-    pricing: m.model.pricing,
-    configured: providerStatus.get(m.providerId) || false,
-    active: isActiveModel(m.providerId, m.model.modelId),
-  }));
+  const models = allModels.map((m) => {
+    const card = findCard(m.providerId, m.model.modelId);
+    const strengthTier = card ? getCardStrengthTier(card) : undefined;
+    return {
+      providerId: m.providerId,
+      providerName: m.providerName,
+      providerIcon: m.providerIcon,
+      modelId: m.model.modelId,
+      modelName: m.model.modelName,
+      pricing: m.model.pricing,
+      configured: providerStatus.get(m.providerId) || false,
+      active: isActiveModel(m.providerId, m.model.modelId),
+      strengthTier,
+      capabilities: card?.capabilities,
+      maxContextTokens: card?.maxContextTokens,
+    };
+  });
 
   // 合并 v2 capability registry 中存在但 v1 静态映射缺失的模型
   try {
@@ -208,6 +282,9 @@ export async function getCapabilityModels(params: { capability: Capability | str
           pricing: { type: card.costTier === "free" ? ("free" as const) : ("paid" as const) },
           configured: providerStatus.get(card.provider) || false,
           active: isActiveModel(card.provider, card.modelId),
+          strengthTier: getCardStrengthTier(card),
+          capabilities: card.capabilities,
+          maxContextTokens: card.maxContextTokens,
         });
       }
     }
@@ -226,17 +303,61 @@ export async function getCapabilityModels(params: { capability: Capability | str
       const provName = mapping?.name ?? pid;
       const provIcon = mapping?.icon ?? "";
       for (const m of provCfg.models) {
-        // 根据模型 input 字段推断是否匹配当前 capability
+        // 根据模型 input 字段 + v2 registry card + 名称启发式推断是否匹配当前 capability
         const modelInput = m.input ?? ["text"];
+        const mId = (m.id ?? "").toLowerCase();
         let matchesCap = false;
         if (capability === "text" && modelInput.includes("text")) matchesCap = true;
         if (capability === "image-understanding" && modelInput.includes("image")) matchesCap = true;
-        if (capability === "embedding" && m.id?.includes("embed")) matchesCap = true;
+        if (capability === "image-generation") {
+          // input: ["image"] is ambiguous (both understanding & generation).
+          // Use v2 registry card (imageGen score) or name heuristics.
+          const card = findCard(pid, m.id);
+          if (card?.capabilities?.imageGen) {
+            matchesCap = true;
+          } else if (
+            mId.includes("image-edit") ||
+            mId.includes("image_edit") ||
+            mId.includes("qwen-image") ||
+            mId.includes("kolors") ||
+            mId.includes("flux") ||
+            mId.includes("stable-diffusion") ||
+            mId.includes("dall-e") ||
+            mId.includes("dalle")
+          ) {
+            matchesCap = true;
+          }
+        }
+        if (capability === "video" && modelInput.includes("video")) matchesCap = true;
+        if (capability === "embedding" && mId.includes("embed")) matchesCap = true;
+        // Extended v1 capability keys (stored by v2 auto-assign)
+        if (capability === "code" && modelInput.includes("text")) {
+          const card = findCard(pid, m.id);
+          if (card?.capabilities?.code) matchesCap = true;
+          else if (mId.includes("coder") || mId.includes("coding")) matchesCap = true;
+        }
+        if (capability === "videoGen") {
+          const card = findCard(pid, m.id);
+          if (card?.capabilities?.videoGen) matchesCap = true;
+        }
+        if (capability === "audio") {
+          const card = findCard(pid, m.id);
+          if (card?.capabilities?.audio) matchesCap = true;
+        }
+        if (capability === "tts") {
+          const card = findCard(pid, m.id);
+          if (card?.capabilities?.tts) matchesCap = true;
+        }
+        if (capability === "toolCall" && modelInput.includes("text")) {
+          const card = findCard(pid, m.id);
+          if (card?.capabilities?.toolCall) matchesCap = true;
+        }
         if (!matchesCap) continue;
 
         const alreadyInList = models.some((e) => e.providerId === pid && e.modelId === m.id);
         if (alreadyInList) continue;
 
+        const ucCard = findCard(pid, m.id);
         models.push({
           providerId: pid,
           providerName: provName,
@@ -246,6 +367,9 @@ export async function getCapabilityModels(params: { capability: Capability | str
           pricing: { type: "paid" as const },
           configured: true,
           active: isActiveModel(pid, m.id),
+          strengthTier: ucCard ? getCardStrengthTier(ucCard) : undefined,
+          capabilities: ucCard?.capabilities,
+          maxContextTokens: ucCard?.maxContextTokens,
         });
       }
     }
@@ -253,15 +377,25 @@ export async function getCapabilityModels(params: { capability: Capability | str
     /* 非关键 — 用户配置读取失败时跳过 */
   }
 
-  // 排序：已配置的在前，免费的在前，当前使用的在最前
+  // 排序：当前使用的在最前 → 已配置的在前 → 按能力分数从高到低
+  // 找到当前 capability 对应的 v2 score key，用于按能力分数排序
+  const v2ScoreKey =
+    Object.entries(V2_KEY_TO_LEGACY).find(([, v]) => v === capability)?.[0] ?? capability;
+  const getCapScore = (m: (typeof models)[0]): number => {
+    if (!m.capabilities) return 0;
+    // 优先用当前能力维度的分数，否则取 text+code 均值作为综合分
+    const specific = (m.capabilities as Record<string, number | undefined>)[v2ScoreKey];
+    if (specific != null) return specific;
+    const t = m.capabilities.text ?? 0;
+    const c = m.capabilities.code ?? 0;
+    return t > 0 || c > 0 ? (t + c) / 2 : 0;
+  };
   models.sort((a, b) => {
     if (a.active) return -1;
     if (b.active) return 1;
     if (a.configured && !b.configured) return -1;
     if (!a.configured && b.configured) return 1;
-    if (a.pricing.type === "free" && b.pricing.type !== "free") return -1;
-    if (a.pricing.type !== "free" && b.pricing.type === "free") return 1;
-    return 0;
+    return getCapScore(b) - getCapScore(a);
   });
 
   return { models };
@@ -274,11 +408,31 @@ export async function switchCapabilityModel(params: {
   capability: Capability | string;
   providerId: string;
   modelId: string;
+  force?: boolean;
 }) {
   const { providerId, modelId } = params;
   // 支持 v2 capability key：先尝试映射到旧版 key
   const capability = (V2_KEY_TO_LEGACY[params.capability as string] ??
     params.capability) as Capability;
+
+  // embedding 动态绑定检查：向量库非空时需确认重建
+  if (capability === "embedding") {
+    const compat = checkEmbeddingCompatibility(providerId, modelId);
+    if (!compat.allowed && !params.force) {
+      return {
+        success: false,
+        error: compat.warning,
+        requiresRebuild: true,
+        currentModel: compat.currentModel,
+        currentDims: compat.currentDims,
+        proposedDims: compat.proposedDims,
+        vecCount: compat.vecCount,
+      };
+    }
+    if (!compat.allowed && params.force) {
+      log.warn(`embedding 强制切换: ${compat.currentModel} → ${modelId}，向量库将在下次启动时重建`);
+    }
+  }
 
   // 验证该 Provider 是否已配置（双重检查：v1 status + v2 hasUserConfiguredProvider）
   const providerStatus = await getProviderConfigStatus();
@@ -342,14 +496,6 @@ export async function switchCapabilityModel(params: {
     };
   }
 
-  // agentOnly 模型不能用于普通 chat（会 403）
-  if (capability === "text" && targetModel.model.agentOnly) {
-    return {
-      success: false,
-      error: `${targetModel.model.modelName} 是代码代理专用模型，不支持普通聊天`,
-    };
-  }
-
   // 更新配置（使用写锁保证原子性）
   const prev = _modelConfigWriteLock;
   let release: () => void;
@@ -400,10 +546,11 @@ export async function switchCapabilityModel(params: {
  */
 function capabilitiesToInput(capabilities: Capability[]): Array<"text" | "image" | "video"> {
   const input: Array<"text" | "image" | "video"> = [];
-  if (capabilities.includes("text")) input.push("text");
+  if (capabilities.includes("text") || capabilities.includes("code")) input.push("text");
   if (capabilities.includes("image-understanding") || capabilities.includes("image-generation"))
     input.push("image");
-  if (capabilities.includes("video")) input.push("video");
+  if (capabilities.includes("video") || capabilities.includes("video-generation"))
+    input.push("video");
   // 确保至少包含 text
   if (input.length === 0) input.push("text");
   return input;
@@ -543,25 +690,6 @@ export async function detectProviderModelsWithProgress(
     return r && (r.status === "ok" || r.status === "skipped");
   });
 
-  const autoEnabled: Partial<Record<Capability, string>> = {};
-  for (const capability of [
-    "text",
-    "image-understanding",
-    "image-generation",
-    "video",
-    "embedding",
-  ] as Capability[]) {
-    if (customModel && capability === "text") {
-      autoEnabled[capability] = customModel;
-      continue;
-    }
-    const capModels = availableModels.filter((m) => m.capabilities.includes(capability));
-    if (capModels.length > 0) {
-      const freeModel = capModels.find((m) => m.pricing.type === "free");
-      autoEnabled[capability] = (freeModel || capModels[0])!.modelId;
-    }
-  }
-
   // 保存配置（复用现有的写入逻辑）
   const trimmedKey = apiKey.trim();
   const cnProvider = CN_PROVIDERS[providerId];
@@ -607,38 +735,20 @@ export async function detectProviderModelsWithProgress(
       models: modelDefinitions,
     };
 
-    const configWithCapability = config as { modelCapability?: ModelCapabilityConfig };
-    if (!configWithCapability.modelCapability)
-      configWithCapability.modelCapability = { capabilities: {} };
-    for (const [capability, modelId] of Object.entries(autoEnabled)) {
-      const cap = capability as Capability;
-      if (!configWithCapability.modelCapability.capabilities[cap]) {
-        configWithCapability.modelCapability.capabilities[cap] = {
+    // 如果用户指定了自定义模型，先为 text 能力设置它（customModel 优先）
+    if (customModel) {
+      const configWithCapability = config as { modelCapability?: ModelCapabilityConfig };
+      if (!configWithCapability.modelCapability)
+        configWithCapability.modelCapability = { capabilities: {} };
+      const existing = configWithCapability.modelCapability.capabilities["text" as Capability] as
+        | CapabilityModelConfig
+        | undefined;
+      if (!existing || existing.auto !== false) {
+        configWithCapability.modelCapability.capabilities["text" as Capability] = {
           providerId,
-          modelId: modelId as string,
+          modelId: customModel,
           auto: true,
         };
-      }
-    }
-
-    if (autoEnabled.text) {
-      if (!config.agents) config.agents = {};
-      if (!config.agents.defaults) config.agents.defaults = {};
-      const newPrimary = buildModelRef(providerId, autoEnabled.text);
-      const modelField = config.agents.defaults.model;
-      const existingPrimary =
-        typeof modelField === "object" && modelField !== null
-          ? (modelField as Record<string, unknown>).primary
-          : undefined;
-      const shouldOverwrite =
-        !existingPrimary ||
-        (typeof existingPrimary === "string" && existingPrimary.startsWith("anthropic/"));
-      if (shouldOverwrite) {
-        if (typeof modelField === "object" && modelField !== null) {
-          (modelField as Record<string, unknown>).primary = newPrimary;
-        } else {
-          config.agents.defaults.model = { primary: newPrimary };
-        }
       }
     }
 
@@ -661,6 +771,24 @@ export async function detectProviderModelsWithProgress(
       log.info(`models.json refreshed after detecting ${providerId}`);
     } catch (mjErr) {
       log.warn(`models.json refresh failed (non-critical): ${mjErr}`);
+    }
+
+    // ── v2 自动分配：基于能力注册表为所有 10 个能力维度分配最强模型 ──
+    // registry 已刷新，新 provider 已可见，此时可以跨全部 provider 比较质量分
+    try {
+      const freshConfig = structuredClone(await loadConfig());
+      await autoAssignBestModelsForAllCapabilities(freshConfig);
+      await writeConfigFile(freshConfig);
+      log.info(`autoAssign: v2 best-model assignment completed after detecting ${providerId}`);
+
+      // 如果 text 能力变更了，同步 session overrides
+      const textBinding = (freshConfig as { modelCapability?: ModelCapabilityConfig })
+        .modelCapability?.capabilities?.["text" as Capability] as CapabilityModelConfig | undefined;
+      if (textBinding) {
+        await updateSessionModelOverrides(textBinding.providerId, textBinding.modelId);
+      }
+    } catch (assignErr) {
+      log.warn(`autoAssign: v2 assignment failed (non-critical): ${assignErr}`);
     }
 
     // 如果有自定义模型，注入 capability registry
@@ -702,10 +830,27 @@ export async function detectProviderModelsWithProgress(
   ).length;
   const failedCount = modelResults.filter((r) => r.status === "failed").length;
 
+  // 从最终配置中提取自动分配结果，供 UI 展示
+  const finalAutoEnabled: Partial<Record<Capability, string>> = {};
+  try {
+    const finalCfg = await loadConfig();
+    const finalCaps = (finalCfg as { modelCapability?: ModelCapabilityConfig }).modelCapability
+      ?.capabilities;
+    if (finalCaps) {
+      for (const [cap, binding] of Object.entries(finalCaps)) {
+        if (binding && (binding as CapabilityModelConfig).modelId) {
+          finalAutoEnabled[cap as Capability] = (binding as CapabilityModelConfig).modelId;
+        }
+      }
+    }
+  } catch {
+    // 非关键
+  }
+
   broadcast("modelConfig.detect.complete", {
     success: true,
     models: modelResults,
-    autoEnabled,
+    autoEnabled: finalAutoEnabled,
     availableCount,
     failedCount,
   } satisfies DetectCompleteEvent);
@@ -1115,7 +1260,7 @@ interface DetectCompleteEvent {
     status: "ok" | "failed" | "skipped";
     message?: string;
   }>;
-  autoEnabled: Record<string, string>;
+  autoEnabled: Partial<Record<string, string>>;
   availableCount: number;
   failedCount: number;
 }
@@ -1210,12 +1355,31 @@ export async function addCustomModel(params: {
     // 将新模型注入 capability registry，使 capability_matrix.query/summary
     // 立即可见，避免用户添加模型后在模型卡片上找不到
     try {
-      const caps: ModelCapabilityCard["capabilities"] = {};
+      const regCaps: ModelCapabilityCard["capabilities"] = {};
+      const mIdLower = modelId.toLowerCase();
       if (inputTypes.includes("text")) {
-        caps.text = 3;
-        caps.code = 2; // 几乎所有 text 模型都能处理代码
+        regCaps.text = 3;
+        regCaps.code = 2; // 几乎所有 text 模型都能处理代码
+        regCaps.toolCall = 2;
       }
-      if (inputTypes.includes("image")) caps.vision = 2;
+      if (inputTypes.includes("image")) {
+        // Distinguish image-understanding vs image-generation via name heuristics
+        const isImageGen =
+          mIdLower.includes("image-edit") ||
+          mIdLower.includes("image_edit") ||
+          mIdLower.includes("qwen-image") ||
+          mIdLower.includes("kolors") ||
+          mIdLower.includes("flux") ||
+          mIdLower.includes("stable-diffusion") ||
+          mIdLower.includes("dall-e") ||
+          mIdLower.includes("dalle");
+        if (isImageGen) {
+          regCaps.imageGen = 3;
+        } else {
+          regCaps.vision = 2;
+        }
+      }
+      if (inputTypes.includes("video")) regCaps.video = 2;
       // 使用 alias 体系判断国内/国际，避免 "zhipu"/"doubao" 等别名被误判
       const aliases = getProviderAliases(providerId);
       const isDomestic = aliases.some((a) => !!CN_PROVIDERS[a]);
@@ -1223,8 +1387,8 @@ export async function addCustomModel(params: {
         provider: providerId,
         modelId,
         displayName: modelName || modelId,
-        capabilities: caps,
-        modelType: "chat",
+        capabilities: regCaps,
+        modelType: regCaps.imageGen ? "specialized" : "chat",
         region: isDomestic ? "domestic" : "international",
         costTier: "standard",
         costPer1M: 0,
@@ -1532,6 +1696,114 @@ function prewarmProviderConnection(providerId: string): void {
 // ===== END =====
 
 /**
+ * 新增 Provider 后，基于 v2 能力注册表为所有 10 个能力维度自动分配最强模型。
+ *
+ * 核心逻辑：
+ * - 遍历全部 v2 能力 key (text, code, vision, imageGen, video, videoGen, audio, tts, embedding, toolCall)
+ * - 对每个能力，queryByCapability 查询已配置 provider 中质量最高的模型
+ * - 如果当前能力槽为空，或为 auto 分配且新模型更强 → 升级
+ * - 用户手动选择 (auto === false) 的能力槽绝不覆盖
+ * - 同步 text → agents.defaults.model.primary + session overrides
+ *
+ * 在 detectProviderModelsWithProgress 保存配置 + registry refresh 之后调用。
+ * 直接修改传入的 config 对象（caller 负责 structuredClone + writeConfigFile）。
+ */
+async function autoAssignBestModelsForAllCapabilities(config: OpenClawCNConfig): Promise<void> {
+  const configWithCap = config as { modelCapability?: ModelCapabilityConfig };
+  if (!configWithCap.modelCapability) configWithCap.modelCapability = { capabilities: {} };
+  const caps = configWithCap.modelCapability.capabilities;
+
+  const allV2Keys = getAllCapabilityKeys();
+  let textChanged = false;
+
+  for (const v2Key of allV2Keys) {
+    const v1Key = (V2_KEY_TO_LEGACY[v2Key] ?? v2Key) as string;
+    const existing = caps[v1Key as Capability] as CapabilityModelConfig | undefined;
+
+    // embedding 动态绑定：向量库非空时保留绑定模型，为空时走正常 auto-assign
+    if (v2Key === "embedding") {
+      const binding = getVecBindingStatus();
+      if (binding.bound && binding.vecModel) {
+        // 向量库已有数据 — 保留绑定模型，不做 auto-assign
+        if (existing?.modelId === binding.vecModel) {
+          continue; // 配置已匹配绑定
+        }
+        // 配置与绑定不一致（可能手动改了配置文件）— 修正为绑定模型
+        const boundCards = queryByCapability("embedding", {
+          configuredOnly: false,
+          healthyOnly: false,
+        });
+        const boundCard = boundCards.find((c) => c.modelId === binding.vecModel);
+        if (boundCard) {
+          caps[v1Key as Capability] = {
+            providerId: boundCard.provider,
+            modelId: boundCard.modelId,
+            auto: true,
+          };
+          log.info(
+            `autoAssign: embedding 维持绑定 → ${boundCard.provider}/${boundCard.modelId} (${binding.vecDims}维, ${binding.vecCount}条向量)`,
+          );
+        }
+        continue;
+      }
+      // 向量库为空 — fall through 到正常 auto-assign 逻辑
+    }
+
+    // 用户手动选择 → 绝不覆盖
+    if (existing && existing.auto === false) continue;
+
+    // 查询已配置 provider 中该能力最强的模型（已按 best-quality 排序）
+    let results;
+    try {
+      results = queryByCapability(v2Key, { configuredOnly: true, healthyOnly: false });
+    } catch {
+      continue; // registry 尚未初始化等极端情况
+    }
+    const best = results[0]; // 排序后第一个就是最强的
+    if (!best) continue;
+
+    // 与现有 auto 分配对比 —— 只升级不降级
+    if (existing) {
+      const existingAliases = getProviderAliases(existing.providerId);
+      const existingCard = results.find(
+        (c) => existingAliases.includes(c.provider) && c.modelId === existing.modelId,
+      );
+      const existingScore = existingCard?.capabilities[v2Key] ?? 0;
+      const bestScore = best.capabilities[v2Key] ?? 0;
+      // 新模型不比现有的强 → 保留现有
+      if (bestScore <= existingScore) continue;
+    }
+
+    // 升级到更强的模型
+    caps[v1Key as Capability] = {
+      providerId: best.provider,
+      modelId: best.modelId,
+      auto: true,
+    };
+    log.info(
+      `autoAssign: ${v1Key} → ${best.provider}/${best.modelId} (score=${best.capabilities[v2Key]})`,
+    );
+
+    if (v1Key === "text") textChanged = true;
+  }
+
+  // 同步 text → agents.defaults.model.primary
+  const textBinding = caps["text" as Capability] as CapabilityModelConfig | undefined;
+  if (textBinding && textChanged) {
+    if (!config.agents) config.agents = {};
+    if (!config.agents.defaults) config.agents.defaults = {};
+    const newPrimary = buildModelRef(textBinding.providerId, textBinding.modelId);
+    const modelField = config.agents.defaults.model;
+    if (typeof modelField === "object" && modelField !== null) {
+      (modelField as Record<string, unknown>).primary = newPrimary;
+    } else {
+      config.agents.defaults.model = { primary: newPrimary };
+    }
+    log.info(`autoAssign: agents.defaults.model.primary → ${newPrimary}`);
+  }
+}
+
+/**
  * 根据 providerPriority 顺序，自动同步 modelCapability 和 agents.defaults.model.primary。
  *
  * 规则：
@@ -1542,13 +1814,9 @@ function prewarmProviderConnection(providerId: string): void {
  * 注意: 此函数直接修改传入的 config 对象（caller 负责 structuredClone + writeConfigFile）。
  */
 function syncModelSelectionsFromPriority(config: OpenClawCNConfig, priority: string[]): void {
-  const ALL_CAPABILITIES: Capability[] = [
-    "text",
-    "image-understanding",
-    "image-generation",
-    "video",
-    "embedding",
-  ];
+  // Use ALL 10 v2 capability keys (not just the original 5 v1 keys).
+  // Maps v2 key → v1 config storage key via V2_KEY_TO_LEGACY.
+  const allV2Keys = getAllCapabilityKeys();
 
   const configWithCap = config as { modelCapability?: ModelCapabilityConfig };
   if (!configWithCap.modelCapability) {
@@ -1556,52 +1824,159 @@ function syncModelSelectionsFromPriority(config: OpenClawCNConfig, priority: str
   }
   const caps = configWithCap.modelCapability.capabilities;
 
-  // 收集已配置（有 apiKey）的 provider 集合
+  // 收集已配置（有 apiKey）的 provider 集合 (含别名扩展)
+  // 与 getProviderConfigStatus 保持一致：检查 config.models.providers + auth-profiles + freeModels
   const configuredProviders = new Set<string>();
   if (config.models?.providers) {
     for (const [pid, pCfg] of Object.entries(config.models.providers)) {
-      if (pCfg.apiKey) configuredProviders.add(pid);
+      if (pCfg.apiKey) {
+        configuredProviders.add(pid);
+        for (const alias of getProviderAliases(pid)) configuredProviders.add(alias);
+      }
+    }
+  }
+  // auth-profiles.json (setup wizard)
+  try {
+    const authStore = loadAuthProfileStore();
+    if (authStore.profiles) {
+      for (const [, profile] of Object.entries(authStore.profiles)) {
+        const p = profile as { provider?: string; key?: string };
+        if (p.provider && p.key) {
+          configuredProviders.add(p.provider);
+          for (const alias of getProviderAliases(p.provider)) configuredProviders.add(alias);
+        }
+      }
+    }
+  } catch {
+    /* auth-profiles may not exist */
+  }
+  // freeModels accounts
+  const freeModels = (
+    config as { freeModels?: { accounts?: Array<{ providerId: string; enabled: boolean }> } }
+  ).freeModels;
+  if (freeModels?.accounts) {
+    for (const acct of freeModels.accounts) {
+      if (acct.enabled) {
+        configuredProviders.add(acct.providerId);
+        for (const alias of getProviderAliases(acct.providerId)) configuredProviders.add(alias);
+      }
     }
   }
 
-  for (const capability of ALL_CAPABILITIES) {
-    const existing = caps[capability];
+  for (const v2Key of allV2Keys) {
+    const storageKey = (V2_KEY_TO_LEGACY[v2Key] ?? v2Key) as string;
+    const existing = caps[storageKey as Capability] as CapabilityModelConfig | undefined;
+
+    // embedding 动态绑定：向量库非空时保留绑定模型，为空时走正常 priority 逻辑
+    if (v2Key === "embedding") {
+      const binding = getVecBindingStatus();
+      if (binding.bound && binding.vecModel) {
+        if (existing?.modelId === binding.vecModel) {
+          continue; // 配置已匹配绑定
+        }
+        const boundCards = queryByCapability("embedding", {
+          configuredOnly: false,
+          healthyOnly: false,
+        });
+        const boundCard = boundCards.find((c) => c.modelId === binding.vecModel);
+        if (boundCard) {
+          caps[storageKey as Capability] = {
+            providerId: boundCard.provider,
+            modelId: boundCard.modelId,
+            auto: true,
+          };
+          log.debug(
+            `syncPriority: embedding 维持绑定 → ${boundCard.provider}/${boundCard.modelId}`,
+          );
+        }
+        continue;
+      }
+      // 向量库为空 — fall through 到正常 priority 逻辑
+    }
 
     // 只有用户明确手动选择（auto === false）的才不覆盖
     // 旧数据无 auto 字段（undefined）视为可覆盖，否则旧配置永远不会被联动
     if (existing && existing.auto === false) {
       // 但要检查该 provider 是否还存在，不存在则清除
-      if (!configuredProviders.has(existing.providerId)) {
-        log.debug(`syncPriority: ${capability} 绑定的 ${existing.providerId} 已不存在，清除`);
-        delete caps[capability];
+      const existingAliases = getProviderAliases(existing.providerId);
+      if (!existingAliases.some((a) => configuredProviders.has(a))) {
+        log.debug(`syncPriority: ${storageKey} 绑定的 ${existing.providerId} 已不存在，清除`);
+        delete caps[storageKey as Capability];
         // 继续往下走自动分配逻辑
       } else {
         continue; // 手动选择且 provider 仍存在，保留
       }
     }
 
-    // 按 priority 顺序找第一个已配置且有该能力模型的 provider
-    const models = getModelsByCapability(capability);
+    // 按 priority 顺序，用 v2 registry 找第一个已配置且有该能力的 provider 的最佳模型
     let assigned = false;
+
+    // 先尝试 v2 registry（覆盖所有 10 种能力）
     for (const providerId of priority) {
       if (!configuredProviders.has(providerId)) continue;
+      const providerAliases = getProviderAliases(providerId);
+      try {
+        const candidates = queryByCapability(v2Key, { configuredOnly: true, healthyOnly: false });
+        // 对 text/code/toolCall 等通用能力，排除 specialized 模型 (避免生图模型被分配到文字聊天)
+        // 对 imageGen/videoGen/tts/audio/embedding 等专用能力，允许 specialized 模型
+        const GENERAL_CAPS: string[] = ["text", "code", "toolCall"];
+        const allowSpecialized = !GENERAL_CAPS.includes(v2Key);
+        const match = candidates.find(
+          (c) =>
+            providerAliases.includes(c.provider) &&
+            (allowSpecialized || c.modelType !== "specialized"),
+        );
+        if (match) {
+          caps[storageKey as Capability] = {
+            providerId: match.provider,
+            modelId: match.modelId,
+            auto: true,
+          };
+          log.debug(`syncPriority: ${storageKey} → ${match.provider}/${match.modelId} (v2 auto)`);
+          assigned = true;
+          break;
+        }
+      } catch {
+        /* registry not ready — fall through to v1 */
+      }
+    }
 
-      const match = models.find((m) => m.providerId === providerId && !m.model.agentOnly);
-      if (match) {
-        caps[capability] = {
-          providerId,
-          modelId: match.model.modelId,
-          auto: true,
-        };
-        log.debug(`syncPriority: ${capability} → ${providerId}/${match.model.modelId} (auto)`);
-        assigned = true;
-        break;
+    // v1 fallback：传统能力 + video-generation
+    if (!assigned) {
+      const v1Cap = storageKey as Capability;
+      const LEGACY_CAPS: Capability[] = [
+        "text",
+        "image-understanding",
+        "image-generation",
+        "video",
+        "video-generation",
+        "embedding",
+      ];
+      if (LEGACY_CAPS.includes(v1Cap)) {
+        const models = getModelsByCapability(v1Cap);
+        for (const providerId of priority) {
+          if (!configuredProviders.has(providerId)) continue;
+          const provAliases = getProviderAliases(providerId);
+          const match = models.find((m) => provAliases.includes(m.providerId));
+          if (match) {
+            caps[v1Cap] = {
+              providerId,
+              modelId: match.model.modelId,
+              auto: true,
+            };
+            log.debug(
+              `syncPriority: ${storageKey} → ${providerId}/${match.model.modelId} (v1 auto)`,
+            );
+            assigned = true;
+            break;
+          }
+        }
       }
     }
 
     if (!assigned && existing) {
       // priority 中没有任何 provider 能提供该能力 — 清除旧的 auto 绑定
-      delete caps[capability];
+      delete caps[storageKey as Capability];
     }
   }
 
@@ -1670,15 +2045,8 @@ export async function saveProviderPriority(params: {
     await prev;
     const config = structuredClone(await loadConfig());
     config.providerPriority = priority;
-    // 拖拽优先级 = 用户要求重新自动分配，清除所有手动选择标记
-    const capsObj = (config as { modelCapability?: ModelCapabilityConfig }).modelCapability
-      ?.capabilities;
-    if (capsObj) {
-      for (const cap of Object.values(capsObj)) {
-        if (cap && cap.auto === false) cap.auto = true;
-      }
-    }
-    // 同步 modelCapability 和 agents.defaults.model.primary
+    // 拖拽优先级只影响 auto=true 的自动分配，保留用户手动选择 (auto=false)
+    // syncModelSelectionsFromPriority 内部会跳过 auto===false 的能力绑定
     syncModelSelectionsFromPriority(config, priority);
     await writeConfigFile(config);
 

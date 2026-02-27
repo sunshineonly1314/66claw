@@ -5,7 +5,35 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot, TelegramStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
+
+export function renderTelegramTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>Create Bot via @BotFather</strong>
+          <p>Open Telegram, search for <a href="https://t.me/BotFather" target="_blank">@BotFather</a>, send <code>/newbot</code></p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Copy Bot Token</strong>
+          <p>BotFather will send you a token like <code>123456:ABC-DEF...</code>. Copy it.</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Paste Token</strong>
+          <p>Paste the bot token into the config form on the right.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderTelegramCard(params: {
   props: ChannelsProps;
@@ -160,6 +188,8 @@ export function renderTelegramCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "telegram", props, accounts: telegramAccounts })}
       </div>
     </details>
   `;

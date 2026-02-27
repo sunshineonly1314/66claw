@@ -25,7 +25,7 @@ import { resolveWorkspaceRoot } from "./workspace-dir.js";
 import { createOpenAppTool } from "./tools/open-app.js";
 import { createDesktopControlTool } from "./tools/desktop-control.js";
 // wechat/wecom tools moved to E:\openclawcn\privateskills\tools (private, not distributed)
-import { createImageGenTool } from "./tools/image-gen-tool.js";
+import { createImageGenTool, createImageEditTool } from "./tools/image-gen-tool.js";
 import { createVideoGenTool } from "./tools/video-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
 // [CN-PATCH:memory-L1] Structured memory tools (profile.json)
@@ -100,6 +100,11 @@ export function createOpenClawCNTools(options?: {
   const desktopControlTool = createDesktopControlTool();
   // wechat/wecom tools removed from project (private)
   const imageGenTool = createImageGenTool({
+    config: options?.config,
+    agentDir: options?.agentDir,
+    sessionKey: options?.agentSessionKey,
+  });
+  const imageEditTool = createImageEditTool({
     config: options?.config,
     agentDir: options?.agentDir,
     sessionKey: options?.agentSessionKey,
@@ -201,6 +206,7 @@ export function createOpenClawCNTools(options?: {
     ...(desktopControlTool ? [desktopControlTool] : []),
     // wechat/wecom tools removed from project
     imageGenTool,
+    imageEditTool,
     videoGenTool,
     ...(memoryUpsertTool ? [memoryUpsertTool] : []),
     ...(memoryForgetTool ? [memoryForgetTool] : []),

@@ -72,8 +72,8 @@ export async function generateVoiceResponse(
   const agentDir = deps.resolveAgentDir(cfg, agentId);
   const workspaceDir = deps.resolveAgentWorkspaceDir(cfg, agentId);
 
-  // Ensure workspace exists
-  await deps.ensureAgentWorkspace({ dir: workspaceDir });
+  // Ensure workspace exists (with bootstrap files for first-run onboarding)
+  await deps.ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: true });
 
   // Load or create session entry
   const sessionStore = deps.loadSessionStore(storePath);

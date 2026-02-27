@@ -48,8 +48,11 @@ export type InferredCapabilities = {
     allowAgents?: string[];
   };
   heartbeat?: {
-    enabled: boolean;
-    schedule?: string;          // cron expression
+    every: string;              // e.g. "24h", "8h"
+    activeHours?: {
+      start?: string;           // e.g. "09:00"
+      end?: string;             // e.g. "21:00"
+    };
   };
 };
 
@@ -76,6 +79,8 @@ export type AgentBlueprint = {
   dependsOn?: string[];
   /** Inferred full capabilities (filled by capability-inference engine) */
   inferredCapabilities?: InferredCapabilities;
+  /** Routing keywords for fast-path keyword matching in agent-team */
+  routingKeywords?: string[];
 };
 
 export type AgentToolRecommendation = {

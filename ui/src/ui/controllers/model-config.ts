@@ -19,6 +19,8 @@ export interface Capability {
     maxContextTokens?: number;
     capabilities?: Record<string, number>;
     strengthTier?: string;
+    /** undefined or true = auto-assigned, false = user manually locked */
+    auto?: boolean;
   } | null;
   availableModels: number;
 }
@@ -41,6 +43,8 @@ export interface ModelInfo {
   maxContextTokens?: number;
   /** Full capability scores map */
   capabilities?: Record<string, number>;
+  /** Model strength tier: "strong" / "moderate" / "weak" */
+  strengthTier?: string;
 }
 
 export interface ProviderInfo {
@@ -224,6 +228,7 @@ interface CapMatrixEntry {
     maxContextTokens?: number;
     capabilities?: Record<string, number>;
     strengthTier?: string;
+    auto?: boolean;
   };
   alternatives?: number;
   recommendation?: unknown;
@@ -263,6 +268,7 @@ export async function loadCapabilities(host: ModelConfigHost): Promise<void> {
             maxContextTokens: entry.bestModel.maxContextTokens,
             capabilities: entry.bestModel.capabilities,
             strengthTier: entry.bestModel.strengthTier,
+            auto: entry.bestModel.auto,
           }
         : null,
       availableModels: entry.alternatives ?? 0,

@@ -48,7 +48,7 @@ type CoreAgentDeps = {
     meta?: { aborted?: boolean };
   }>;
   resolveAgentTimeoutMs: (opts: { cfg: CoreConfig }) => number;
-  ensureAgentWorkspace: (params?: { dir: string }) => Promise<void>;
+  ensureAgentWorkspace: (params?: { dir?: string; ensureBootstrapFiles?: boolean }) => Promise<void>;
   resolveStorePath: (store?: string, opts?: { agentId?: string }) => string;
   loadSessionStore: (storePath: string) => Record<string, unknown>;
   saveSessionStore: (

@@ -19,7 +19,7 @@ type ChannelConfigFormProps = {
   onPatch: (path: Array<string | number>, value: unknown) => void;
 };
 
-function resolveSchemaNode(
+export function resolveSchemaNode(
   schema: JsonSchema | null,
   path: Array<string | number>,
 ): JsonSchema | null {
@@ -51,7 +51,7 @@ function resolveSchemaNode(
   return current;
 }
 
-function resolveChannelValue(
+export function resolveChannelValue(
   config: Record<string, unknown>,
   channelId: string,
 ): Record<string, unknown> {

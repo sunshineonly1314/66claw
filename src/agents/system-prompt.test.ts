@@ -125,6 +125,9 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain(
       "For OpenClawCN behavior, commands, config, or architecture: consult local docs first.",
     );
+    // clawhub.com is the primary skill discovery link with fallback guidance
+    expect(prompt).toContain("https://clawhub.com");
+    expect(prompt).toContain("if unreachable, use the built-in skills market");
   });
 
   it("includes workspace notes when provided", () => {

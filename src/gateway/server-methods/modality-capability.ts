@@ -30,6 +30,22 @@ const IMAGE_GEN_KEYWORDS = [
   "illustration",
 ];
 
+/** 图像编辑意图检测关键词 */
+const IMAGE_EDIT_KEYWORDS = [
+  "修改图片",
+  "编辑图片",
+  "P图",
+  "p图",
+  "改一下图",
+  "换个背景",
+  "去掉背景",
+  "去水印",
+  "加滤镜",
+  "edit image",
+  "modify image",
+  "remove background",
+];
+
 /**
  * 检查单个能力是否可用
  *
@@ -61,6 +77,7 @@ export const modalityCapabilityHandlers: GatewayRequestHandlers = {
     const validCapabilities: ModalityCapability[] = [
       "image-analysis",
       "image-generation",
+      "image-editing",
       "video-analysis",
     ];
     if (!validCapabilities.includes(capability)) {
@@ -164,9 +181,14 @@ export const modalityCapabilityHandlers: GatewayRequestHandlers = {
 
     const requiredCapabilities: ModalityCapability[] = [];
 
-    // 检测图片附件 → 需要图片分析能力
+    // 检测图片附件 → 图片分析或图像编辑
     if (hasAttachments && attachmentTypes.some((type: string) => type.startsWith("image/"))) {
-      requiredCapabilities.push("image-analysis");
+      const lp = prompt.toLowerCase();
+      if (IMAGE_EDIT_KEYWORDS.some((kw) => lp.includes(kw.toLowerCase()))) {
+        requiredCapabilities.push("image-editing");
+      } else {
+        requiredCapabilities.push("image-analysis");
+      }
     }
 
     // 检测视频附件 → 需要视频分析能力
@@ -174,9 +196,11 @@ export const modalityCapabilityHandlers: GatewayRequestHandlers = {
       requiredCapabilities.push("video-analysis");
     }
 
-    // 检测提示词中的图片生成意图
+    // 检测提示词中的图片生成/编辑意图
     const lowerPrompt = prompt.toLowerCase();
-    if (IMAGE_GEN_KEYWORDS.some((kw) => lowerPrompt.includes(kw.toLowerCase()))) {
+    if (IMAGE_EDIT_KEYWORDS.some((kw) => lowerPrompt.includes(kw.toLowerCase()))) {
+      requiredCapabilities.push("image-editing");
+    } else if (IMAGE_GEN_KEYWORDS.some((kw) => lowerPrompt.includes(kw.toLowerCase()))) {
       requiredCapabilities.push("image-generation");
     }
 

@@ -112,12 +112,15 @@ describe("skills_marketplace.search", () => {
   it("uses hybridSearch when keyword has 2+ chars", async () => {
     mocks.searchToolIndex.mockResolvedValue({
       ids: ["weather", "openweather"],
-      scores: new Map([["weather", 0.92], ["openweather", 0.85]]),
+      scores: new Map([
+        ["weather", 0.92],
+        ["openweather", 0.85],
+      ]),
     });
     mocks.getItemsByIds.mockReturnValue({
       items: [
-        { skillId: "weather", name: "weather", category: "工具" },
-        { skillId: "openweather", name: "openweather", category: "工具" },
+        { skillId: "weather", name: "weather", category: "工具", source: "proxy" },
+        { skillId: "openweather", name: "openweather", category: "工具", source: "proxy" },
       ],
       total: 2,
       page: 1,
@@ -128,11 +131,14 @@ describe("skills_marketplace.search", () => {
     const opts = makeOpts({ keyword: "天气" });
     await skillsMarketplaceSearch(opts);
 
-    expect(mocks.searchToolIndex).toHaveBeenCalledWith("天气", expect.objectContaining({ type: "skill" }));
-    expect(mocks.getItemsByIds).toHaveBeenCalledWith(
-      ["weather", "openweather"],
-      { page: 1, pageSize: 2 },
+    expect(mocks.searchToolIndex).toHaveBeenCalledWith(
+      "天气",
+      expect.objectContaining({ type: "skill" }),
     );
+    expect(mocks.getItemsByIds).toHaveBeenCalledWith(["weather", "openweather"], {
+      page: 1,
+      pageSize: 2,
+    });
     // Should NOT fall back to FTS5
     expect(mocks.searchItems).not.toHaveBeenCalled();
     expect(opts.respond).toHaveBeenCalledWith(true, expect.objectContaining({ total: 2 }));
@@ -141,12 +147,15 @@ describe("skills_marketplace.search", () => {
   it("applies category filter on hybrid results", async () => {
     mocks.searchToolIndex.mockResolvedValue({
       ids: ["weather", "code-review"],
-      scores: new Map([["weather", 0.9], ["code-review", 0.8]]),
+      scores: new Map([
+        ["weather", 0.9],
+        ["code-review", 0.8],
+      ]),
     });
     mocks.getItemsByIds.mockReturnValue({
       items: [
-        { skillId: "weather", name: "weather", category: "工具" },
-        { skillId: "code-review", name: "code-review", category: "开发" },
+        { skillId: "weather", name: "weather", category: "工具", source: "proxy" },
+        { skillId: "code-review", name: "code-review", category: "开发", source: "proxy" },
       ],
       total: 2,
       page: 1,
@@ -160,20 +169,39 @@ describe("skills_marketplace.search", () => {
     // Only the weather skill should pass the category filter
     expect(opts.respond).toHaveBeenCalledWith(
       true,
-      expect.objectContaining({ total: 1, items: [expect.objectContaining({ skillId: "weather" })] }),
+      expect.objectContaining({
+        total: 1,
+        items: [expect.objectContaining({ skillId: "weather" })],
+      }),
     );
   });
 
   it("applies tier and cnBlocked filters on hybrid results", async () => {
     mocks.searchToolIndex.mockResolvedValue({
       ids: ["weather", "code-review", "blocked-skill"],
-      scores: new Map([["weather", 0.9], ["code-review", 0.8], ["blocked-skill", 0.7]]),
+      scores: new Map([
+        ["weather", 0.9],
+        ["code-review", 0.8],
+        ["blocked-skill", 0.7],
+      ]),
     });
     mocks.getItemsByIds.mockReturnValue({
       items: [
-        { skillId: "weather", name: "weather", tier: "A", cnBlocked: false },
-        { skillId: "code-review", name: "code-review", tier: "B", cnBlocked: false },
-        { skillId: "blocked-skill", name: "blocked-skill", tier: "A", cnBlocked: true },
+        { skillId: "weather", name: "weather", tier: "A", cnBlocked: false, source: "proxy" },
+        {
+          skillId: "code-review",
+          name: "code-review",
+          tier: "B",
+          cnBlocked: false,
+          source: "proxy",
+        },
+        {
+          skillId: "blocked-skill",
+          name: "blocked-skill",
+          tier: "A",
+          cnBlocked: true,
+          source: "proxy",
+        },
       ],
       total: 3,
       page: 1,
@@ -187,7 +215,10 @@ describe("skills_marketplace.search", () => {
     // Only "weather" matches tier=A + cnBlocked=false
     expect(opts.respond).toHaveBeenCalledWith(
       true,
-      expect.objectContaining({ total: 1, items: [expect.objectContaining({ skillId: "weather" })] }),
+      expect.objectContaining({
+        total: 1,
+        items: [expect.objectContaining({ skillId: "weather" })],
+      }),
     );
   });
 
@@ -198,7 +229,7 @@ describe("skills_marketplace.search", () => {
       scores: new Map(ids.map((id, i) => [id, 1 - i * 0.1])),
     });
     mocks.getItemsByIds.mockReturnValue({
-      items: ids.map((id) => ({ skillId: id, name: id })),
+      items: ids.map((id) => ({ skillId: id, name: id, source: "proxy" })),
       total: 5,
       page: 1,
       pageSize: 5,

@@ -142,26 +142,13 @@ export async function startGpuSidecar(
   const asrModelDir = decision.asrModel
     ? path.join(VOICE_MODELS_DIR, decision.asrModel.modelDirName)
     : null;
-  const ttsModelDir =
-    decision.ttsModel?.backend === "python-sidecar"
-      ? path.join(VOICE_MODELS_DIR, decision.ttsModel.modelDirName)
-      : null;
 
   if (asrModelDir && fs.existsSync(asrModelDir)) {
     args.push("--asr-model-dir", asrModelDir);
   }
-  if (ttsModelDir && fs.existsSync(ttsModelDir)) {
-    args.push("--tts-model-dir", ttsModelDir);
-  }
 
-  // CosyVoice for streaming TTS — prefer 300M-SFT (built-in speakers, better quality)
-  const cosyvoiceSftDir = path.join(VOICE_MODELS_DIR, "CosyVoice-300M-SFT");
-  const cosyvoice2Dir = path.join(VOICE_MODELS_DIR, "CosyVoice2-0.5B");
-  const cosyvoiceModelDir = fs.existsSync(cosyvoiceSftDir) ? cosyvoiceSftDir : cosyvoice2Dir;
-  if (fs.existsSync(cosyvoiceModelDir)) {
-    args.push("--cosyvoice-model-dir", cosyvoiceModelDir);
-    log.info(`Using CosyVoice model: ${cosyvoiceModelDir}`);
-  }
+  // TTS hidden in this release — skip --tts-model-dir and --cosyvoice-model-dir
+  // to save GPU VRAM and startup time. voice-server.py will print "TTS disabled".
 
   log.info(`Starting GPU sidecar: ${venvPython} ${args.join(" ")}`);
 

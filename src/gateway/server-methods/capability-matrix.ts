@@ -16,6 +16,8 @@
  *   - capability_matrix.provider.getConfig — get masked provider config
  *   - capability_matrix.health            — provider health map
  *   - capability_matrix.priority.get      — get provider priority order
+ *   - capability_matrix.embeddingBinding  — vec DB embedding model binding status
+ *   - capability_matrix.extractionStatus  — memory extraction LLM status
  *
  * Endpoints (write):
  *   - capability_matrix.switchModel             — switch model for a capability
@@ -54,7 +56,9 @@ import {
   testProviderConnection,
   saveProviderPriority,
   getProviderPriority,
+  getEmbeddingBindingStatus,
 } from "./model-config.js";
+import { getExtractionProviderStatus as _getExtractionProviderStatus } from "../../auto-reply/reply/memory-extraction.js";
 import {
   PROVIDER_GROUPS,
   PROVIDER_CAPABILITY_MAPPINGS,
@@ -73,7 +77,7 @@ const V2_TO_V1_KEY: Partial<Record<CapabilityKey, string>> = {
   embedding: "embedding",
   audio: "audio",
   tts: "tts",
-  videoGen: "videoGen",
+  videoGen: "video-generation",
   toolCall: "toolCall",
 };
 
@@ -119,6 +123,12 @@ const CAPABILITY_DESCRIPTIONS: Record<CapabilityKey, string> = {
   toolCall: "函数调用和 MCP 工具",
 };
 
+/**
+ * Capabilities hidden from the UI in this release.
+ * The underlying data/handlers are preserved; they are just filtered from API responses.
+ */
+const HIDDEN_CAPABILITIES = new Set<CapabilityKey>(["tts"]);
+
 export const capabilityMatrixHandlers: GatewayRequestHandlers = {
   /**
    * Get the full capability matrix summary.
@@ -129,7 +139,7 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
   "capability_matrix.summary": async ({ respond }) => {
     try {
       const summary = getCapabilityMatrixSummary();
-      const allKeys = getAllCapabilityKeys();
+      const allKeys = getAllCapabilityKeys().filter((k) => !HIDDEN_CAPABILITIES.has(k));
 
       // Read user's explicit model choices from modelCapability config
       const cfg = (await loadConfig()) as {
@@ -182,7 +192,7 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
                 costTier: "standard",
                 costPer1M: 0,
                 maxContextTokens: 32768,
-                strengthTier: "mid",
+                strengthTier: "moderate",
                 tags: [],
                 languages: [],
                 runtime: { configured: true, health: "unknown" as const, probeResults: {} },
@@ -205,6 +215,7 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
               maxContextTokens: card.maxContextTokens,
               capabilities: card.capabilities,
               strengthTier: card.strengthTier,
+              auto: userChoice?.auto,
             },
             alternatives: available.alternatives,
           };
@@ -431,10 +442,11 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
    */
   "capability_matrix.switchModel": async ({ params, respond }) => {
     try {
-      const { capability, providerId, modelId } = params as {
+      const { capability, providerId, modelId, force } = params as {
         capability?: string;
         providerId?: string;
         modelId?: string;
+        force?: boolean;
       };
       if (!capability || !providerId || !modelId) {
         respond(
@@ -447,7 +459,7 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
         );
         return;
       }
-      const result = await switchCapabilityModel({ capability, providerId, modelId });
+      const result = await switchCapabilityModel({ capability, providerId, modelId, force });
       respond(true, result, undefined);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
@@ -674,6 +686,33 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
     try {
       const result = await getProviderPriority();
       respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * 查询向量库 embedding 绑定状态。
+   * 返回当前绑定的模型、维度、向量数量，供 UI 展示绑定警告。
+   */
+  "capability_matrix.embeddingBinding": async ({ respond }) => {
+    try {
+      const status = getEmbeddingBindingStatus();
+      respond(true, status, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * 查询记忆提取 LLM 的当前状态（哪个 provider 可用）。
+   * 用于 UI "记忆" 卡片中展示记忆提取模型信息。
+   */
+  "capability_matrix.extractionStatus": async ({ respond }) => {
+    try {
+      const cfg = loadConfig();
+      const status = _getExtractionProviderStatus(cfg);
+      respond(true, status, undefined);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
     }

@@ -201,6 +201,33 @@ export function updateAgentStatus(
   };
 }
 
+// ── Deploy Report Storage ────────────────────────────────────────────────
+
+function reportPath(planId: string): string {
+  return path.join(ensureStateDir(), "reports", `${sanitizePlanId(planId)}.json`);
+}
+
+/**
+ * Save a deploy report (produced by agent-team deploy-bridge).
+ */
+export async function saveReport(planId: string, report: unknown): Promise<void> {
+  await atomicWriteJson(reportPath(planId), report);
+}
+
+/**
+ * Load a deploy report by planId.
+ */
+export async function loadReport(planId: string): Promise<unknown | null> {
+  try {
+    const raw = await fs.readFile(reportPath(planId), "utf-8");
+    return JSON.parse(raw);
+  } catch (err: unknown) {
+    if (isFileNotFound(err)) return null;
+    console.error(`[orchestrator] failed to load report "${planId}":`, err);
+    return null;
+  }
+}
+
 // ── Plan ID Generation ───────────────────────────────────────────────────
 
 /**

@@ -28,6 +28,10 @@ import type {
   TeamProjectStatsResult,
   TeamSharedMemoryEntry,
 } from "./types";
+import type {
+  ChannelRouteEntry,
+  ChannelRouteProjectOption,
+} from "./views/channels.types";
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types";
 import type { EventLogEntry } from "./app-events";
 import type { SkillMessage } from "./controllers/skills";
@@ -174,6 +178,15 @@ export type AppViewState = {
   whatsappLoginQrDataUrl: string | null;
   whatsappLoginConnected: boolean | null;
   whatsappBusy: boolean;
+  // Channel route binding
+  channelRouteSummary: ChannelRouteEntry[] | null;
+  channelRouteProjects: ChannelRouteProjectOption[] | null;
+  channelRouteSaving: boolean;
+  // Channel master-detail layout
+  channelsSelectedKey: string | null;
+  // Channel config wizard
+  channelsWizardOpen: boolean;
+  channelsWizardAccountId: string | null;
   nostrProfileFormState: NostrProfileFormState | null;
   nostrProfileAccountId: string | null;
   configFormDirty: boolean;
@@ -246,6 +259,10 @@ export type AppViewState = {
   sessionsFilterLimit: string;
   sessionsIncludeGlobal: boolean;
   sessionsIncludeUnknown: boolean;
+  /** Session key to highlight when navigated from chat "View Details" */
+  sessionsHighlightKey: string;
+  /** Search query for filtering sessions on the sessions page */
+  sessionsSearchQuery: string;
   cronLoading: boolean;
   cronJobs: CronJob[];
   cronStatus: CronStatus | null;

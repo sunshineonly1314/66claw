@@ -1,0 +1,276 @@
+/**
+ * Channel Config Wizard - Split-pane modal
+ * Left: tutorial steps, Right: essential config form + advanced settings
+ */
+
+import { html, nothing, type TemplateResult } from "lit";
+
+import { t } from "../i18n/index.js";
+import type { ChannelsProps } from "./channels.types";
+import {
+  analyzeConfigSchema,
+  renderNode,
+  type JsonSchema,
+} from "./config-form";
+import { CHANNEL_LABELS } from "./channels.types";
+import { resolveSchemaNode, resolveChannelValue } from "./channels.config";
+
+// ── Tutorial imports (lazy loaded from channel card files) ──────────────────
+
+import { renderFeishuTutorial } from "./channels.feishu";
+import { renderDingtalkTutorial } from "./channels.dingtalk";
+import { renderWecomTutorial } from "./channels.wecom";
+import { renderQqbotTutorial } from "./channels.qq";
+import { renderOpenclawwechatTutorial } from "./channels.openclawwechat";
+import { renderTelegramTutorial } from "./channels.telegram";
+import { renderDiscordTutorial } from "./channels.discord";
+import { renderWhatsappTutorial } from "./channels.whatsapp";
+import { renderSlackTutorial } from "./channels.slack";
+import { renderGooglechatTutorial } from "./channels.googlechat";
+import { renderSignalTutorial } from "./channels.signal";
+import { renderImessageTutorial } from "./channels.imessage";
+import { renderNostrTutorial } from "./channels.nostr";
+
+// ── Essential fields per channel ────────────────────────────────────────────
+
+const ESSENTIAL_FIELDS: Record<string, string[]> = {
+  feishu: ["appId", "appSecret", "encryptKey", "verificationToken"],
+  dingtalk: ["appKey", "appSecret", "robotToken"],
+  wecom: ["corpId", "agentId", "secret", "token", "encodingAESKey"],
+  qqbot: ["appId", "appSecret", "token", "publicKey"],
+  openclawwechat: ["apiKey"],
+  telegram: ["botToken"],
+  discord: ["token"],
+  whatsapp: [],
+  slack: ["botToken", "appToken"],
+  googlechat: ["serviceAccount", "serviceAccountFile"],
+  signal: ["account", "httpUrl"],
+  imessage: ["cliPath", "remoteHost"],
+  nostr: ["privateKey", "relays"],
+};
+
+// ── Tutorial registry ───────────────────────────────────────────────────────
+
+const TUTORIALS: Record<string, () => TemplateResult | typeof nothing> = {
+  feishu: renderFeishuTutorial,
+  dingtalk: renderDingtalkTutorial,
+  wecom: renderWecomTutorial,
+  qqbot: renderQqbotTutorial,
+  openclawwechat: renderOpenclawwechatTutorial,
+  telegram: renderTelegramTutorial,
+  discord: renderDiscordTutorial,
+  whatsapp: renderWhatsappTutorial,
+  slack: renderSlackTutorial,
+  googlechat: renderGooglechatTutorial,
+  signal: renderSignalTutorial,
+  imessage: renderImessageTutorial,
+  nostr: renderNostrTutorial,
+};
+
+// ── Schema helpers ──────────────────────────────────────────────────────────
+
+function filterSchemaProperties(
+  schema: JsonSchema,
+  keys: string[],
+  include: boolean,
+): JsonSchema {
+  const keySet = new Set(keys);
+  const filtered: Record<string, JsonSchema> = {};
+  for (const [k, v] of Object.entries(schema.properties ?? {})) {
+    const matches = keySet.has(k);
+    if (include ? matches : !matches) {
+      filtered[k] = v;
+    }
+  }
+  return { ...schema, properties: filtered };
+}
+
+// ── Route dropdown for wizard ───────────────────────────────────────────────
+
+function renderWizardRouteDropdown(channelId: string, props: ChannelsProps) {
+  const routes = props.routeSummary;
+  const projects = props.routeProjects;
+  if (!routes || !projects || projects.length === 0) return nothing;
+
+  const accountId = props.channelsWizardAccountId ?? undefined;
+  const currentRoute = routes.find(
+    (r) =>
+      r.channel === channelId &&
+      (accountId ? r.accountId === accountId : !r.accountId),
+  );
+  const currentProjectId = currentRoute?.targetId ?? "";
+
+  const handleChange = (e: Event) => {
+    const select = e.target as HTMLSelectElement;
+    props.onRouteChange(channelId, accountId, select.value || null);
+  };
+
+  return html`
+    <div class="ch-wizard__route">
+      <label class="cfg-field__label">${t("channels.route")}</label>
+      <select
+        class="ch-wizard__route-select"
+        .value=${currentProjectId}
+        ?disabled=${props.routeSaving}
+        @change=${handleChange}
+      >
+        <option value="">${t("channels.route.none")}</option>
+        <optgroup label="${t("channels.route.projects")}">
+          ${projects.map(
+            (p) => html`
+              <option value=${p.projectId} ?selected=${p.projectId === currentProjectId}>
+                ${p.name}
+              </option>
+            `,
+          )}
+        </optgroup>
+      </select>
+    </div>
+  `;
+}
+
+// ── Main wizard ─────────────────────────────────────────────────────────────
+
+export function renderChannelWizard(props: ChannelsProps) {
+  const channelId = props.channelsSelectedKey;
+  if (!channelId) return nothing;
+
+  const label = CHANNEL_LABELS[channelId] ?? channelId;
+  const isEditing = props.channelsWizardAccountId != null;
+
+  // Resolve schema
+  const analysis = analyzeConfigSchema(props.configSchema);
+  const normalized = analysis.schema;
+  const channelSchema = normalized
+    ? resolveSchemaNode(normalized, ["channels", channelId])
+    : null;
+
+  // Resolve current config value
+  const configValue = props.configForm ?? {};
+  const value = resolveChannelValue(configValue, channelId);
+
+  // Split schema into essential and advanced
+  const essentialKeys = ESSENTIAL_FIELDS[channelId] ?? [];
+  const hasEssentialFields = essentialKeys.length > 0;
+
+  const essentialSchema = channelSchema && hasEssentialFields
+    ? filterSchemaProperties(channelSchema, essentialKeys, true)
+    : null;
+  const advancedSchema = channelSchema
+    ? filterSchemaProperties(channelSchema, essentialKeys, false)
+    : null;
+
+  const hasAdvancedFields = advancedSchema
+    && Object.keys(advancedSchema.properties ?? {}).length > 0;
+
+  // Tutorial
+  const tutorialFn = TUTORIALS[channelId];
+  const tutorial = tutorialFn ? tutorialFn() : nothing;
+
+  const disabled = props.configSaving || props.configSchemaLoading;
+
+  const renderFormSection = (schema: JsonSchema | null, sectionValue: unknown) => {
+    if (!schema || Object.keys(schema.properties ?? {}).length === 0) return nothing;
+    return renderNode({
+      schema,
+      value: sectionValue,
+      path: ["channels", channelId],
+      hints: props.configUiHints,
+      unsupported: new Set(analysis.unsupportedPaths),
+      disabled,
+      showLabel: false,
+      onPatch: props.onConfigPatch,
+    });
+  };
+
+  const handleKeydown = (e: KeyboardEvent) => {
+    if (e.key === "Escape") props.onWizardClose();
+  };
+
+  return html`
+    <div class="ch-wizard-overlay" @click=${props.onWizardClose} @keydown=${handleKeydown}>
+      <div class="ch-wizard" @click=${(e: Event) => e.stopPropagation()}>
+        <!-- Header -->
+        <div class="ch-wizard__header">
+          <span class="ch-wizard__title">
+            ${isEditing
+              ? t("channels.wizard.editTitle", { channel: label })
+              : t("channels.wizard.addTitle", { channel: label })}
+          </span>
+          <button class="ch-wizard__close" aria-label="${t("common.close")}" @click=${props.onWizardClose}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Body: two columns -->
+        <div class="ch-wizard__body">
+          <!-- Left: Tutorial -->
+          <div class="ch-wizard__tutorial">
+            <div class="ch-wizard__tutorial-title">${t("channels.wizard.tutorialTitle")}</div>
+            ${tutorial}
+          </div>
+
+          <!-- Right: Config form -->
+          <div class="ch-wizard__form">
+            ${props.configSchemaLoading
+              ? html`<div class="muted">${t("config.loadingSchema")}</div>`
+              : channelSchema
+                ? html`
+                  <div class="config-form">
+                    <!-- Essential fields -->
+                    ${essentialSchema
+                      ? html`
+                        <div class="ch-wizard__essential">
+                          ${renderFormSection(essentialSchema, value)}
+                        </div>
+                      `
+                      : html`
+                        <div class="ch-wizard__no-credentials">
+                          ${t("channels.wizard.noCredentials")}
+                        </div>
+                      `}
+
+                    <!-- Route dropdown -->
+                    ${renderWizardRouteDropdown(channelId, props)}
+
+                    <!-- Advanced fields -->
+                    ${hasAdvancedFields
+                      ? html`
+                        <details class="ch-wizard__advanced">
+                          <summary class="ch-wizard__advanced-toggle">
+                            ${t("channels.wizard.advancedSettings")}
+                          </summary>
+                          <div class="ch-wizard__advanced-body">
+                            ${renderFormSection(advancedSchema, value)}
+                          </div>
+                        </details>
+                      `
+                      : nothing}
+                  </div>
+                `
+                : html`<div class="muted">${t("config.schemaUnavailable")}</div>`}
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="ch-wizard__footer">
+          <button class="btn" @click=${props.onWizardClose}>
+            ${t("common.cancel")}
+          </button>
+          <button
+            class="btn primary"
+            ?disabled=${disabled || !props.configFormDirty}
+            @click=${() => props.onConfigSave()}
+          >
+            ${props.configSaving
+              ? t("config.applying")
+              : t("channels.wizard.saveAndProbe")}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}

@@ -11,6 +11,7 @@ import type {
     SlackStatus,
     TelegramStatus,
     WhatsAppStatus,
+    TeamProjectBinding,
 } from "../types";
 import type { NostrProfileFormState } from "./channels.nostr-profile-form";
 
@@ -103,6 +104,27 @@ export type OpenclawwechatStatus = {
   lastError?: string | null;
 };
 
+// ── Channel Route Types ──────────────────────────────────────────────────
+
+export type ChannelRouteEntry = {
+  channel: string;
+  accountId?: string;
+  targetType: "project";
+  targetId: string;
+  targetName: string;
+};
+
+export type ChannelRouteProjectOption = {
+  projectId: string;
+  name: string;
+  supervisorId: string;
+  bindings?: TeamProjectBinding[];
+  description?: string;
+  status?: string;
+  memberCount?: number;
+  memberIds?: string[];
+};
+
 export type ChannelsProps = {
   connected: boolean;
   loading: boolean;
@@ -121,6 +143,10 @@ export type ChannelsProps = {
   configFormDirty: boolean;
   nostrProfileFormState: NostrProfileFormState | null;
   nostrProfileAccountId: string | null;
+  // Channel-to-project route binding
+  routeSummary: ChannelRouteEntry[] | null;
+  routeProjects: ChannelRouteProjectOption[] | null;
+  routeSaving: boolean;
   onRefresh: (probe: boolean) => void;
   onWhatsAppStart: (force: boolean) => void;
   onWhatsAppWait: () => void;
@@ -134,6 +160,15 @@ export type ChannelsProps = {
   onNostrProfileSave: () => void;
   onNostrProfileImport: () => void;
   onNostrProfileToggleAdvanced: () => void;
+  onRouteChange: (channel: string, accountId: string | undefined, projectId: string | null) => void;
+  // Master-detail layout state
+  channelsSelectedKey: ChannelKey | null;
+  onSelectChannel: (key: ChannelKey) => void;
+  // Config wizard state
+  channelsWizardOpen: boolean;
+  channelsWizardAccountId: string | null;
+  onWizardOpen: (accountId?: string) => void;
+  onWizardClose: () => void;
 };
 
 export type ChannelsChannelData = {
@@ -151,4 +186,22 @@ export type ChannelsChannelData = {
   imessage?: IMessageStatus | null;
   nostr?: NostrStatus | null;
   channelAccounts?: Record<string, ChannelAccountSnapshot[]> | null;
+};
+
+// ── Channel labels (shared between channels.ts and channels.wizard.ts) ──
+
+export const CHANNEL_LABELS: Record<string, string> = {
+  feishu: "飞书",
+  dingtalk: "钉钉",
+  wecom: "企业微信",
+  qqbot: "QQ",
+  openclawwechat: "微信 (个人号)",
+  whatsapp: "WhatsApp",
+  telegram: "Telegram",
+  discord: "Discord",
+  googlechat: "Google Chat",
+  slack: "Slack",
+  signal: "Signal",
+  imessage: "iMessage",
+  nostr: "Nostr",
 };

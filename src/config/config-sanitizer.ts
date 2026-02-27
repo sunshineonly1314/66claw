@@ -55,7 +55,7 @@ function sanitizeToolsConfig(config: Record<string, unknown>): {
     if (web.search && typeof web.search === "object" && web.search !== null) {
       const search = web.search as Record<string, unknown>;
       const provider = search.provider;
-      const validProviders = ["brave", "perplexity", "baidu", "bing"];
+      const validProviders = ["brave", "perplexity", "grok", "baidu", "bing", "bocha"];
 
       if (provider !== undefined) {
         if (provider === null || provider === "" || typeof provider !== "string") {

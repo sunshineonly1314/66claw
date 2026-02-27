@@ -122,6 +122,7 @@ import {
   type EventFrame,
   EventFrameSchema,
   errorShape,
+  errorShapeFromError,
   type GatewayFrame,
   GatewayFrameSchema,
   type HelloOk,
@@ -501,6 +502,7 @@ export {
   PROTOCOL_VERSION,
   ErrorCodes,
   errorShape,
+  errorShapeFromError,
 };
 
 export type {

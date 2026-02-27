@@ -404,14 +404,20 @@ function hasRenderableContent(message: unknown): boolean {
   const text = extractTextCached(message);
   // 静默回复（NO_REPLY）不算有效内容
   if (text?.trim() && !isSilentReplyText(text)) return true;
-  
+
   const toolCards = extractToolCards(message);
-  if (toolCards.length > 0) return true;
-  
+  // Only count visible tool cards (pending/interrupted); resolved cards are hidden.
+  const visibleCards = toolCards.filter((c) => Boolean(c.pending) || Boolean(c.interrupted));
+  if (visibleCards.length > 0) return true;
+
   // 使用已有的 extractImages 函数检查图片
   const images = extractImages(message);
   if (images.length > 0) return true;
-  
+
+  // Injected image/video gen data counts as renderable content
+  const m = message as Record<string, unknown>;
+  if (m.__imageGenDetails || m.__videoGenDetails) return true;
+
   return false;
 }
 
@@ -694,7 +700,10 @@ function renderGroupedMessage(
     typeof m.tool_call_id === "string";
 
   const toolCards = extractToolCards(message);
-  const hasToolCards = toolCards.length > 0;
+  // Only count tool cards that will actually render (pending or interrupted).
+  // Resolved cards are hidden, so they shouldn't affect layout decisions.
+  const visibleToolCards = toolCards.filter((c) => Boolean(c.pending) || Boolean(c.interrupted));
+  const hasToolCards = visibleToolCards.length > 0;
   const images = extractImages(message);
   const hasImages = images.length > 0;
 
@@ -754,10 +763,15 @@ function renderGroupedMessage(
 
   if (!markdown && !hasToolCards && !hasImages && !freeModelNotification && !injectedImageGen && !injectedVideoGen) return nothing;
 
+  // Determine if the bubble has any visible inner content (text, images, visible tool cards).
+  // If the only content is injected image/video gen (rendered OUTSIDE the bubble), skip the empty bubble div.
+  const hasBubbleContent = Boolean(markdown) || hasImages || hasToolCards || Boolean(reasoningMarkdown);
+
   return html`
     ${freeModelNotification ? renderFreeModelNotificationCard(freeModelNotification) : nothing}
     ${injectedImageGen ? renderImageGenResult(injectedImageGen) : nothing}
     ${injectedVideoGen ? renderVideoGenResult(injectedVideoGen as any) : nothing}
+    ${hasBubbleContent ? html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}
@@ -769,6 +783,6 @@ function renderGroupedMessage(
         : nothing}
       ${renderToolCardGroup(toolCards, onOpenSidebar)}
       ${showActions ? renderMessageActions(markdown, opts.isStreaming, opts.justCompleted) : nothing}
-    </div>
+    </div>` : nothing}
   `;
 }

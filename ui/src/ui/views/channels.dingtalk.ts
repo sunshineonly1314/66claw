@@ -10,10 +10,73 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, DingtalkStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { DingtalkStatus } from "./channels.types";
+
+export function renderDingtalkTutorial() {
+  return html`
+    <div class="callout success" style="margin-bottom: 16px;">
+      <strong>推荐使用 Stream 模式：</strong>无需公网 IP，无需配置回调地址，本地即可接收消息！
+    </div>
+    <p>${t("channels.dingtalk.configDesc")}</p>
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>登录钉钉开放平台</strong>
+          <p>访问 <a href="https://open-dev.dingtalk.com" target="_blank">open-dev.dingtalk.com</a>，点击右上角「登录」按钮，用钉钉 App 扫码</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>创建企业内部应用</strong>
+          <p>左侧菜单点击「应用开发」&rarr;「企业内部开发」&rarr; 点击「创建应用」</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>获取 AppKey 和 AppSecret</strong>
+          <p>创建成功后，左侧菜单点击「凭证与基础信息」：</p>
+          <ul>
+            <li><strong>Client ID (AppKey)</strong>：直接复制</li>
+            <li><strong>Client Secret (AppSecret)</strong>：点击「查看」&rarr; 扫码验证 &rarr; 立即复制！</li>
+          </ul>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <strong>添加机器人能力</strong>
+          <p>左侧菜单点击「添加应用能力」&rarr; 找到「机器人」卡片 &rarr; 点击「添加」</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">5</div>
+        <div class="step-content">
+          <strong>配置 Stream 模式（最关键！）</strong>
+          <p>左侧菜单点击「机器人」&rarr; 找到「消息接收模式」&rarr; 选择「Stream 模式」</p>
+          <div class="callout warning" style="margin-top: 8px; padding: 8px 12px;">
+            必须选择 Stream 模式！不要选 HTTP 模式！选了 Stream 模式就不需要公网 IP
+          </div>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">6</div>
+        <div class="step-content">
+          <strong>发布应用</strong>
+          <p>左侧菜单点击「版本管理与发布」&rarr;「创建新版本」&rarr; 填写版本号 &rarr; 点击「发布」</p>
+        </div>
+      </div>
+    </div>
+    <a href="${t("channels.dingtalk.docsUrl")}" target="_blank" rel="noreferrer" class="btn btn--link" style="margin-top: 12px;">
+      ${t("channels.dingtalk.docsLabel")} &rarr;
+    </a>
+  `;
+}
 
 export function renderDingtalkCard(params: {
   props: ChannelsProps;
@@ -240,6 +303,8 @@ export function renderDingtalkCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "dingtalk", props, accounts: dingtalkAccounts })}
       </div>
     </details>
   `;

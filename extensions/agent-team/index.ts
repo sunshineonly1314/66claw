@@ -114,7 +114,17 @@ function clearPeerAgentEntriesForProject(project: Project): void {
 
 function rebuildAgentIndex(): void {
   agentToProject.clear();
+  // Two-pass: federation meta-projects first, then regular projects.
+  // Regular (non-federation) projects overwrite federation entries so that
+  // a child supervisor maps to its own child project, not the federation.
   for (const [projectId, project] of projectCache) {
+    if (!project.isFederation) continue;
+    for (const memberId of project.memberIds) {
+      agentToProject.set(memberId, projectId);
+    }
+  }
+  for (const [projectId, project] of projectCache) {
+    if (project.isFederation) continue;
     for (const memberId of project.memberIds) {
       agentToProject.set(memberId, projectId);
     }
@@ -252,7 +262,7 @@ const plugin: OpenClawCNPluginDefinition = {
   id: "agent-team",
   name: "Agent Team Manager",
   description: "Project-level agent team management.",
-  version: "0.4.0",
+  version: "0.5.0",
 
   register(api: OpenClawCNPluginApi) {
     const logger = api.logger;
@@ -325,13 +335,51 @@ const plugin: OpenClawCNPluginDefinition = {
 
         if (!result) return; // No deterministic match → Supervisor LLM
 
+        // ── Federation: two-level cascade ──────────────────────────────
+        // If the first-level result points to an agent that is ALSO a
+        // supervisor of another project, attempt a second routing pass
+        // to reach the final member agent directly (zero extra LLM cost).
+        let finalResult = result;
+        const childProject = findProjectBySupervisorId(result.agentId);
+        if (childProject && childProject.status === "active") {
+          const childHealthMap = getOrCreateHealthMap(
+            childProject.projectId,
+            childProject.memberIds,
+          );
+          const innerResult = routeMessage({
+            message: event.message,
+            project: childProject,
+            peerId: ctx.peerId,
+            healthMap: childHealthMap,
+          });
+          if (innerResult) {
+            // Record affinity at the child project level too
+            setAffinity(
+              childProject.projectId,
+              ctx.peerId,
+              innerResult.agentId,
+            );
+            logger.info(
+              `[FastPath] federation cascade: ` +
+                `${result.agentId} → ${innerResult.agentId} ` +
+                `(${innerResult.method}, ${(innerResult.confidence * 100).toFixed(0)}%)`,
+            );
+            finalResult = innerResult;
+          }
+          // If innerResult is null, message goes to child supervisor LLM — correct
+        }
+
         // Build new session key pointing to the target member agent
         const newSessionKey = replaceAgentInSessionKey(
           event.sessionKey,
-          result.agentId,
+          finalResult.agentId,
         );
 
-        // Update affinity for sticky routing on follow-up messages
+        // Update affinity for sticky routing on follow-up messages.
+        // For federation: store the child supervisor ID (result.agentId) at the
+        // meta-project level, not the final member ID. The meta-project's
+        // routableMembers only contains child supervisors, so storing a final
+        // member ID would never match on subsequent affinity lookups.
         setAffinity(
           project.projectId,
           ctx.peerId,
@@ -341,17 +389,17 @@ const plugin: OpenClawCNPluginDefinition = {
         // Record peer→agent mapping for message_sending hook.
         // resolve_agent is the only hook with peerId (= ctx.From).
         // message_sending uses event.to which is the same peer address.
-        setLastAgentForPeer(ctx.peerId, result.agentId);
+        setLastAgentForPeer(ctx.peerId, finalResult.agentId);
 
         logger.info(
-          `[FastPath] ${result.method}: ` +
-            `"${result.matchedPattern ?? ""}" → ${result.agentId} ` +
-            `(${(result.confidence * 100).toFixed(0)}%)`,
+          `[FastPath] ${finalResult.method}: ` +
+            `"${finalResult.matchedPattern ?? ""}" → ${finalResult.agentId} ` +
+            `(${(finalResult.confidence * 100).toFixed(0)}%)`,
         );
 
         return {
           sessionKey: newSessionKey,
-          reason: `fast-path:${result.method}`,
+          reason: `fast-path:${finalResult.method}`,
         };
       },
       { priority: 100 },
@@ -587,6 +635,7 @@ const plugin: OpenClawCNPluginDefinition = {
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
         version: p.version,
+        bindings: p.bindings,
       }));
       respond(true, { projects }, undefined);
     });
@@ -777,7 +826,7 @@ const plugin: OpenClawCNPluginDefinition = {
         }
 
         try {
-          const project = await createProjectFromPlan(callGateway, {
+          const { project, report } = await createProjectFromPlan(callGateway, {
             planId,
             name: typeof p.name === "string" ? p.name : undefined,
             supervisorAgentId:
@@ -796,7 +845,7 @@ const plugin: OpenClawCNPluginDefinition = {
             project.memberIds,
           );
 
-          respond(true, { project }, undefined);
+          respond(true, { project, report }, undefined);
         } catch (err) {
           respond(false, undefined, {
             code: "CREATE_FROM_PLAN_FAILED",
@@ -872,6 +921,33 @@ const plugin: OpenClawCNPluginDefinition = {
           }
         }
 
+        // Bindings update (channel-to-project routing)
+        let updatedBindings = project.bindings;
+        if (Array.isArray(p.bindings)) {
+          updatedBindings = (p.bindings as Array<Record<string, unknown>>)
+            .filter(
+              (b) => typeof b.channel === "string" && b.channel.length > 0,
+            )
+            .map((b) => ({
+              channel: String(b.channel),
+              ...(typeof b.accountId === "string"
+                ? { accountId: b.accountId }
+                : {}),
+              ...(typeof b.peer === "string" ? { peer: b.peer } : {}),
+            }));
+        }
+
+        // supervisorId update (must be a valid member)
+        let updatedSupervisorId = project.supervisorId;
+        if (typeof p.supervisorId === "string" && p.supervisorId.length > 0) {
+          const memberIds = Array.isArray(p.memberIds)
+            ? (p.memberIds as string[])
+            : project.memberIds;
+          if (memberIds.includes(p.supervisorId)) {
+            updatedSupervisorId = p.supervisorId;
+          }
+        }
+
         const updated: Project = {
           ...project,
           name:
@@ -880,6 +956,7 @@ const plugin: OpenClawCNPluginDefinition = {
             typeof p.description === "string"
               ? p.description
               : project.description,
+          supervisorId: updatedSupervisorId,
           constraints:
             p.constraints !== undefined
               ? extractConstraints(p.constraints)
@@ -887,6 +964,7 @@ const plugin: OpenClawCNPluginDefinition = {
           memory: updatedMemory,
           coordination: { ...project.coordination, ...coordPatch },
           visibility: { ...project.visibility, ...visPatch },
+          bindings: updatedBindings,
           version: project.version + 1,
           updatedAt: new Date().toISOString(),
         };
@@ -963,6 +1041,57 @@ const plugin: OpenClawCNPluginDefinition = {
             }
           }
 
+          // ── Clean up federation cross-references ──────────────────
+          // If this is a child in a federation: remove from parent's childProjectIds + members
+          if (project.parentProjectId) {
+            const parent = projectCache.get(project.parentProjectId);
+            if (parent && parent.isFederation) {
+              const updatedParent: Project = {
+                ...parent,
+                childProjectIds: (parent.childProjectIds ?? []).filter(
+                  (id) => id !== projectId,
+                ),
+                memberIds: parent.memberIds.filter(
+                  (id) => id !== project.supervisorId,
+                ),
+                members: parent.members.filter(
+                  (m) => m.id !== project.supervisorId,
+                ),
+                version: parent.version + 1,
+                updatedAt: new Date().toISOString(),
+              };
+              await saveProject(updatedParent);
+              projectCache.set(parent.projectId, updatedParent);
+              // Regenerate parent supervisor SOUL with updated member list
+              const parentMembers = updatedParent.members.filter(
+                (m) => m.id !== updatedParent.supervisorId,
+              );
+              const soul = generateSupervisorSoul(updatedParent, parentMembers);
+              callGateway("agents.files.set", {
+                agentId: updatedParent.supervisorId,
+                name: "SOUL.md",
+                content: soul,
+              }).catch(() => {});
+            }
+          }
+
+          // If this is a federation: clear parentProjectId on all child projects
+          if (project.isFederation && project.childProjectIds?.length) {
+            for (const childId of project.childProjectIds) {
+              const child = projectCache.get(childId);
+              if (child && child.parentProjectId === projectId) {
+                const updatedChild: Project = {
+                  ...child,
+                  parentProjectId: undefined,
+                  version: child.version + 1,
+                  updatedAt: new Date().toISOString(),
+                };
+                await saveProject(updatedChild);
+                projectCache.set(childId, updatedChild);
+              }
+            }
+          }
+
           // Remove from disk + cache + affinity + route table + peer mapping
           await deleteProject(projectId);
           projectCache.delete(projectId);
@@ -979,6 +1108,199 @@ const plugin: OpenClawCNPluginDefinition = {
             code: "DELETE_FAILED",
             message:
               err instanceof Error ? err.message : String(err),
+          });
+        }
+      },
+    );
+
+    // ── team.federation.create ───────────────────────────────────────
+    // Creates a federation meta-project from existing child projects.
+    // The meta-supervisor routes to child project supervisors via fast-path,
+    // and child supervisors route to their members — two-level zero-token cascade.
+    api.registerGatewayMethod(
+      "team.federation.create",
+      async ({ params, respond }) => {
+        const p = params as Record<string, unknown>;
+
+        const name = String(p.name ?? "").trim();
+        const description = String(p.description ?? "").trim();
+        const metaSupervisorId = String(p.metaSupervisorId ?? "").trim();
+        const childProjectIds = Array.isArray(p.childProjectIds)
+          ? (p.childProjectIds as unknown[])
+              .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+              .map((s) => s.trim())
+          : [];
+
+        if (!name || !metaSupervisorId || childProjectIds.length === 0) {
+          respond(false, undefined, {
+            code: "INVALID_PARAMS",
+            message: "Required: name, metaSupervisorId, childProjectIds (non-empty array)",
+          });
+          return;
+        }
+
+        // Validate all child projects exist and are active
+        const childProjects: Project[] = [];
+        for (const cid of childProjectIds) {
+          const cp = projectCache.get(cid);
+          if (!cp) {
+            respond(false, undefined, {
+              code: "NOT_FOUND",
+              message: `Child project "${cid}" not found`,
+            });
+            return;
+          }
+          if (cp.status !== "active") {
+            respond(false, undefined, {
+              code: "INVALID_STATE",
+              message: `Child project "${cid}" is not active (status: ${cp.status})`,
+            });
+            return;
+          }
+          childProjects.push(cp);
+        }
+
+        // ── Federation integrity guards ──────────────────────────────
+        // Guard: metaSupervisorId must not be a supervisor of any child project
+        for (const cp of childProjects) {
+          if (cp.supervisorId === metaSupervisorId) {
+            respond(false, undefined, {
+              code: "INVALID_PARAMS",
+              message: `metaSupervisorId "${metaSupervisorId}" is already the supervisor of child project "${cp.projectId}". Use a dedicated agent as meta-supervisor.`,
+            });
+            return;
+          }
+        }
+
+        // Guard: child project must not already belong to another federation
+        for (const cp of childProjects) {
+          if (cp.parentProjectId) {
+            respond(false, undefined, {
+              code: "INVALID_STATE",
+              message: `Child project "${cp.projectId}" already belongs to federation "${cp.parentProjectId}"`,
+            });
+            return;
+          }
+        }
+
+        // Guard: child project must not itself be a federation (no nested federations)
+        for (const cp of childProjects) {
+          if (cp.isFederation) {
+            respond(false, undefined, {
+              code: "INVALID_STATE",
+              message: `Child project "${cp.projectId}" is itself a federation. Nested federations are not supported.`,
+            });
+            return;
+          }
+        }
+
+        // Build members from child project supervisors
+        // Each child supervisor becomes a "member" of the federation,
+        // with role = child project description (for keyword routing).
+        // Dedup by supervisor ID: if two child projects share a supervisor,
+        // merge their descriptions into one role string.
+        const memberIds = [metaSupervisorId];
+        const members: MemberInfo[] = [];
+        for (const cp of childProjects) {
+          if (!memberIds.includes(cp.supervisorId)) {
+            memberIds.push(cp.supervisorId);
+          }
+          // Find supervisor info from child project's members list
+          const supervisorInfo = cp.members.find(
+            (m) => m.id === cp.supervisorId,
+          );
+          const existing = members.find((m) => m.id === cp.supervisorId);
+          if (existing) {
+            // Shared supervisor: merge role descriptions
+            existing.role += `; ${cp.description}`;
+            existing.name += ` / ${cp.name}`;
+          } else {
+            members.push({
+              id: cp.supervisorId,
+              name: cp.name, // Use project name, not agent name
+              role: cp.description, // Key: project description drives keyword routing
+              emoji: supervisorInfo?.emoji,
+            });
+          }
+        }
+
+        const now = new Date().toISOString();
+        const project: Project = {
+          projectId: generateProjectId(),
+          name,
+          description: description || name,
+          status: "active",
+          version: 1,
+          createdAt: now,
+          updatedAt: now,
+          supervisorId: metaSupervisorId,
+          memberIds,
+          members,
+          memory: { mode: "isolated" },
+          coordination: {
+            supervisorStyle: "delegate-only", // Meta-supervisor always delegates
+            maxMembers: 20, // Federations can be larger
+            hopLimit: 3, // meta-sup → child-sup → member = 2 hops max
+            memberTimeoutSeconds: 30,
+            supervisorFallbackEnabled: true,
+          },
+          visibility: {
+            mode: "unified", // Federation is invisible to end users
+            displayName: typeof p.displayName === "string" ? p.displayName : undefined,
+          },
+          constraints: extractConstraints(p.constraints),
+          bindings: [],
+          isFederation: true,
+          childProjectIds,
+        };
+
+        try {
+          await saveProject(project);
+
+          // Mark child projects as belonging to this federation
+          for (const cp of childProjects) {
+            const updated: Project = {
+              ...cp,
+              parentProjectId: project.projectId,
+              version: cp.version + 1,
+              updatedAt: now,
+            };
+            await saveProject(updated);
+            projectCache.set(cp.projectId, updated);
+          }
+
+          // Update caches
+          projectCache.set(project.projectId, project);
+          rebuildAgentIndex();
+          getOrCreateHealthMap(project.projectId, memberIds);
+
+          // Generate meta-supervisor SOUL.md
+          // members here are child project supervisors with role = project description
+          const soul = generateSupervisorSoul(project, members);
+          try {
+            await callGateway("agents.files.set", {
+              agentId: metaSupervisorId,
+              name: "SOUL.md",
+              content: soul,
+            });
+          } catch {
+            // Non-fatal
+          }
+
+          const warnings: string[] = [];
+          if (project.bindings.length === 0) {
+            warnings.push(
+              "Federation created with no channel bindings. " +
+              "Use team.project.update to add bindings, or assign the " +
+              "meta-supervisor agent directly to a channel.",
+            );
+          }
+
+          respond(true, { project, warnings }, undefined);
+        } catch (err) {
+          respond(false, undefined, {
+            code: "CREATE_FEDERATION_FAILED",
+            message: err instanceof Error ? err.message : String(err),
           });
         }
       },
@@ -1195,6 +1517,33 @@ const plugin: OpenClawCNPluginDefinition = {
       },
     );
 
+    // ── team.route.summary ─────────────────────────────────────────
+    // Aggregated view: for each project binding, return channel → project mapping.
+    // Used by the Channels page to show which project handles each channel.
+    api.registerGatewayMethod("team.route.summary", ({ respond }) => {
+      const routes: Array<{
+        channel: string;
+        accountId?: string;
+        targetType: "project";
+        targetId: string;
+        targetName: string;
+      }> = [];
+
+      for (const project of projectCache.values()) {
+        for (const binding of project.bindings) {
+          routes.push({
+            channel: binding.channel,
+            ...(binding.accountId ? { accountId: binding.accountId } : {}),
+            targetType: "project",
+            targetId: project.projectId,
+            targetName: project.name,
+          });
+        }
+      }
+
+      respond(true, { routes }, undefined);
+    });
+
     // ═══════════════════════════════════════════════════════════════════
     // BACKGROUND SERVICE: Health Checker
     // ═══════════════════════════════════════════════════════════════════
@@ -1271,12 +1620,12 @@ const plugin: OpenClawCNPluginDefinition = {
     });
 
     logger.info(
-      `Agent Team plugin registered successfully (v0.4.0). ` +
-        `Hooks: resolve_agent, before_agent_start, agent_end, message_sending, gateway_start. ` +
+      `Agent Team plugin registered successfully (v0.5.0). ` +
+        `Hooks: resolve_agent (federation cascade), before_agent_start, agent_end, message_sending, gateway_start. ` +
         `Methods: team.project.{list,get,create,createFromPlan,update,delete,pause,resume,health,stats}, ` +
-        `team.shared-memory.{list,clear}. ` +
+        `team.federation.create, team.shared-memory.{list,clear}. ` +
         `Tools: memory_share (read-shared mode). ` +
-        `Service: agent-team-health. Fast Path Router: affinity+keyword.`,
+        `Service: agent-team-health. Fast Path Router: affinity+keyword+federation.`,
     );
   },
 };

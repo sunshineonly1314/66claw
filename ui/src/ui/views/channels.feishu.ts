@@ -10,10 +10,106 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, FeishuStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { FeishuStatus } from "./channels.types";
+
+export function renderFeishuTutorial() {
+  return html`
+    <div class="callout success" style="margin-bottom: 16px;">
+      <strong>推荐使用长连接模式：</strong>无需公网 IP，无需配置回调地址，本地即可接收消息！
+    </div>
+    <p>${t("channels.feishu.configDesc")}</p>
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>登录飞书开放平台</strong>
+          <p>访问 <a href="https://open.feishu.cn/app" target="_blank">open.feishu.cn/app</a>，点击<strong>右上角</strong>「<strong>登录</strong>」按钮，用飞书 App 扫码</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>创建企业自建应用</strong>
+          <p>点击「<strong>创建企业自建应用</strong>」按钮 &rarr; 填写应用名称和描述 &rarr; 点击「<strong>创建</strong>」</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>添加机器人能力</strong>
+          <p>左侧菜单点击「<strong>添加应用能力</strong>」&rarr; 找到「<strong>机器人</strong>」卡片 &rarr; 点击「<strong>+ 添加</strong>」</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <strong>获取 App ID 和 App Secret</strong>
+          <p>左侧菜单点击「<strong>凭证与基础信息</strong>」：</p>
+          <ul>
+            <li><strong>App ID</strong>：以 <code>cli_</code> 开头，直接复制</li>
+            <li><strong>App Secret</strong>：点击「显示」&rarr; <strong>立即复制！</strong></li>
+          </ul>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">5</div>
+        <div class="step-content">
+          <strong>获取 Encrypt Key 和 Verification Token</strong>
+          <p>左侧菜单「<strong>开发配置</strong>」&rarr;「<strong>事件与回调</strong>」&rarr; 点击「<strong>加密策略</strong>」&rarr; 点击小眼睛显示密钥</p>
+          <div class="callout" style="margin-top: 8px; padding: 8px 12px;">
+            第一次创建的应用需点击「刷新」生成 Encrypt Key。WebSocket 模式下可选填
+          </div>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">6</div>
+        <div class="step-content">
+          <strong>配置长连接模式（最关键！）</strong>
+          <p>还是在「<strong>事件与回调</strong>」&rarr; 找到「<strong>事件配置方式</strong>」&rarr; <strong>选择「使用长连接接收事件」</strong></p>
+          <div class="callout warning" style="margin-top: 8px; padding: 8px 12px;">
+            必须选择长连接模式！不要选"发送至开发者服务器"！选了长连接就不需要公网 IP
+          </div>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">7</div>
+        <div class="step-content">
+          <strong>添加接收消息事件（必须！）</strong>
+          <p>在「事件与回调」页面点击「<strong>添加事件</strong>」&rarr; 搜索「<strong>接收消息</strong>」&rarr; 勾选 <code>im.message.receive_v1</code> &rarr; 点击「<strong>确认添加</strong>」</p>
+          <div class="callout danger" style="margin-top: 8px; padding: 8px 12px;">
+            不添加这个事件，机器人就收不到消息！
+          </div>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">8</div>
+        <div class="step-content">
+          <strong>添加权限（必须！）</strong>
+          <p>左侧菜单点击「<strong>权限管理</strong>」&rarr; 搜索以下标识符并开通权限：</p>
+          <ul>
+            <li>搜索 <code>im:message</code> &rarr; 「<strong>获取与发送单聊、群组消息</strong>」（必须）</li>
+            <li>搜索 <code>im:message:send_as_bot</code> &rarr; 「<strong>以应用的身份发消息</strong>」（必须）</li>
+            <li>搜索 <code>im:message.group_at_msg</code> &rarr; 「<strong>接收群聊中@机器人消息事件</strong>」（群聊）</li>
+            <li>搜索 <code>im:resource</code> &rarr; 「<strong>获取与上传图片或文件资源</strong>」（推荐）</li>
+          </ul>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">9</div>
+        <div class="step-content">
+          <strong>发布应用</strong>
+          <p>左侧菜单点击「<strong>版本管理与发布</strong>」&rarr;「<strong>创建版本</strong>」&rarr; 填写版本号 &rarr; 点击「<strong>申请发布</strong>」</p>
+        </div>
+      </div>
+    </div>
+    <a href="${t("channels.feishu.docsUrl")}" target="_blank" rel="noreferrer" class="btn btn--link" style="margin-top: 12px;">
+      ${t("channels.feishu.docsLabel")} &rarr;
+    </a>
+  `;
+}
 
 export function renderFeishuCard(params: {
   props: ChannelsProps;
@@ -288,6 +384,8 @@ export function renderFeishuCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "feishu", props, accounts: feishuAccounts })}
       </div>
     </details>
   `;

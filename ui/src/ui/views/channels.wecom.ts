@@ -10,10 +10,61 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, WecomStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { WecomStatus } from "./channels.types";
+
+export function renderWecomTutorial() {
+  return html`
+    <div class="callout success" style="margin-bottom: 16px;">
+      <strong>推荐使用回调模式：</strong>需要公网 IP 或内网穿透工具（如 ngrok、frp）。
+    </div>
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>登录企业微信管理后台</strong>
+          <p>访问 <a href="https://work.weixin.qq.com" target="_blank">work.weixin.qq.com</a>，用企业微信 App 扫码登录</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>创建自建应用</strong>
+          <p>进入「应用管理」&rarr;「自建」&rarr; 点击「创建应用」&rarr; 填写基本信息</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>获取凭证</strong>
+          <p>进入应用详情页获取以下信息：</p>
+          <ul>
+            <li><strong>CorpID</strong>：「我的企业」&rarr; 页面底部「企业ID」</li>
+            <li><strong>AgentID</strong>：应用详情页「AgentId」</li>
+            <li><strong>Secret</strong>：应用详情页「Secret」</li>
+          </ul>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <strong>配置回调地址</strong>
+          <p>在应用详情页「接收消息」&rarr; 设置 API 接收 &rarr; 填写回调 URL</p>
+          <p>记下 <strong>Token</strong> 和 <strong>EncodingAESKey</strong></p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">5</div>
+        <div class="step-content">
+          <strong>设置可信 IP</strong>
+          <p>在应用详情页「企业可信IP」中添加服务器公网 IP</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderWecomCard(params: {
   props: ChannelsProps;
@@ -329,6 +380,8 @@ export function renderWecomCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "wecom", props, accounts: wecomAccounts })}
       </div>
     </details>
   `;

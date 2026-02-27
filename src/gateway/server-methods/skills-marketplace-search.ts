@@ -60,12 +60,17 @@ export const skillsMarketplaceSearch: GatewayRequestHandler = async ({ params, r
     }
 
     // 提取过滤参数（空字符串视为无过滤）
-    const category = typeof params.category === "string" && params.category ? params.category : undefined;
+    const category =
+      typeof params.category === "string" && params.category ? params.category : undefined;
     const tier = typeof params.tier === "string" && params.tier ? params.tier : undefined;
     const cnBlocked = typeof params.cnBlocked === "boolean" ? params.cnBlocked : undefined;
     const installed = typeof params.installed === "boolean" ? params.installed : undefined;
-    // 默认只显示远端可下载的 skills（source='proxy'），排除仅有评测数据的 qc 条目
-    const source = (params.source === "proxy" || params.source === "qc") ? params.source : "proxy" as const;
+    // 不再强制 source='proxy'：proxy 技能缺少 category 字段，导致分类过滤全部为空。
+    // 只有调用方显式传入 source 参数时才按来源过滤。
+    const source =
+      params.source === "proxy" || params.source === "qc" || params.source === "availability-dict"
+        ? params.source
+        : undefined;
 
     // FTS5 fallback — 原始 skills-index.db 搜索
     const fts5Search = (): SkillSearchResult =>
@@ -103,7 +108,7 @@ export const skillsMarketplaceSearch: GatewayRequestHandler = async ({ params, r
 
           // 在已排序的结果上应用过滤条件
           let filtered = fullResult.items;
-          // 按数据来源过滤（默认 proxy = 可下载）
+          // 按数据来源过滤（仅在调用方显式指定 source 时生效）
           if (source) {
             filtered = filtered.filter((item) => item.source === source);
           }

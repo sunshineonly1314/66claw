@@ -18,7 +18,7 @@ import {
   writeCache,
 } from "./web-shared.js";
 
-const SEARCH_PROVIDERS = ["brave", "perplexity", "grok"] as const;
+const SEARCH_PROVIDERS = ["brave", "perplexity", "grok", "bocha"] as const;
 const DEFAULT_SEARCH_COUNT = 5;
 const MAX_SEARCH_COUNT = 10;
 
@@ -31,6 +31,8 @@ const OPENROUTER_KEY_PREFIXES = ["sk-or-"];
 
 const XAI_API_ENDPOINT = "https://api.x.ai/v1/responses";
 const DEFAULT_GROK_MODEL = "grok-4-1-fast";
+
+const BOCHA_SEARCH_ENDPOINT = "https://api.bochaai.com/v1/web-search";
 
 const SEARCH_CACHE = new Map<string, CacheEntry<Record<string, unknown>>>();
 const BRAVE_FRESHNESS_SHORTCUTS = new Set(["pd", "pw", "pm", "py"]);
@@ -64,7 +66,7 @@ const WebSearchSchema = Type.Object({
   freshness: Type.Optional(
     Type.String({
       description:
-        "Filter results by discovery time. Brave supports 'pd', 'pw', 'pm', 'py', and date range 'YYYY-MM-DDtoYYYY-MM-DD'. Perplexity supports 'pd', 'pw', 'pm', and 'py'.",
+        "Filter results by discovery time. Brave/Bocha supports 'pd', 'pw', 'pm', 'py', and date range 'YYYY-MM-DDtoYYYY-MM-DD'. Perplexity supports 'pd', 'pw', 'pm', and 'py'.",
     }),
   ),
 });
@@ -124,6 +126,21 @@ type GrokSearchResponse = {
     end_index: number;
     url: string;
   }>;
+};
+
+type BochaSearchResult = {
+  name?: string;
+  url?: string;
+  snippet?: string;
+  summary?: string;
+  siteName?: string;
+  datePublished?: string;
+};
+
+type BochaSearchResponse = {
+  webPages?: {
+    value?: BochaSearchResult[];
+  };
 };
 
 type PerplexitySearchResponse = {
@@ -205,6 +222,14 @@ function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
       docs: "https://docs.openclawcn.ai/tools/web",
     };
   }
+  if (provider === "bocha") {
+    return {
+      error: "missing_bocha_api_key",
+      message:
+        "web_search (bocha) needs an API key. Set BOCHA_API_KEY in the Gateway environment, or configure tools.web.search.bocha.apiKey.",
+      docs: "https://docs.openclawcn.ai/tools/web",
+    };
+  }
   return {
     error: "missing_brave_api_key",
     message: `web_search needs a Brave Search API key. Run \`${formatCliCommand("openclawcn configure --section web")}\` to store it, or set BRAVE_API_KEY in the Gateway environment.`,
@@ -222,6 +247,9 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
   }
   if (raw === "grok") {
     return "grok";
+  }
+  if (raw === "bocha") {
+    return "bocha";
   }
   if (raw === "brave") {
     return "brave";
@@ -365,6 +393,109 @@ function resolveGrokModel(grok?: GrokConfig): string {
 
 function resolveGrokInlineCitations(grok?: GrokConfig): boolean {
   return grok?.inlineCitations === true;
+}
+
+// ── Bocha (博查) helpers ──
+
+type BochaConfig = {
+  apiKey?: string;
+};
+
+function resolveBochaConfig(search?: WebSearchConfig): BochaConfig {
+  if (!search || typeof search !== "object") {
+    return {};
+  }
+  const bocha = "bocha" in search ? search.bocha : undefined;
+  if (!bocha || typeof bocha !== "object") {
+    return {};
+  }
+  return bocha as BochaConfig;
+}
+
+function resolveBochaApiKey(bocha?: BochaConfig): string | undefined {
+  const fromConfig = normalizeApiKey(bocha?.apiKey);
+  if (fromConfig) {
+    return fromConfig;
+  }
+  const fromEnv = normalizeApiKey(process.env.BOCHA_API_KEY);
+  return fromEnv || undefined;
+}
+
+const BOCHA_FRESHNESS_MAP: Record<string, string> = {
+  pd: "oneDay",
+  pw: "oneWeek",
+  pm: "oneMonth",
+  py: "oneYear",
+};
+
+function toBochaFreshness(braveFreshness?: string): string | undefined {
+  if (!braveFreshness) {
+    return undefined;
+  }
+  const mapped = BOCHA_FRESHNESS_MAP[braveFreshness];
+  if (mapped) {
+    return mapped;
+  }
+  // Brave date range "YYYY-MM-DDtoYYYY-MM-DD" → Bocha "YYYY-MM-DD..YYYY-MM-DD"
+  const match = braveFreshness.match(/^(\d{4}-\d{2}-\d{2})to(\d{4}-\d{2}-\d{2})$/);
+  if (match) {
+    return `${match[1]}..${match[2]}`;
+  }
+  return "noLimit";
+}
+
+async function runBochaSearch(params: {
+  query: string;
+  apiKey: string;
+  count: number;
+  timeoutSeconds: number;
+  freshness?: string;
+}): Promise<
+  Array<{
+    title: string;
+    url: string;
+    description: string;
+    published?: string;
+    siteName?: string;
+  }>
+> {
+  const body: Record<string, unknown> = {
+    query: params.query,
+    count: params.count,
+    summary: false,
+  };
+  const bochaFreshness = toBochaFreshness(params.freshness);
+  if (bochaFreshness) {
+    body.freshness = bochaFreshness;
+  }
+
+  const res = await fetch(BOCHA_SEARCH_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+  });
+
+  if (!res.ok) {
+    const detail = await readResponseText(res);
+    throw new Error(`Bocha Search API error (${res.status}): ${detail || res.statusText}`);
+  }
+
+  const data = (await res.json()) as BochaSearchResponse;
+  const results = Array.isArray(data.webPages?.value) ? data.webPages!.value : [];
+  return results.map((entry) => ({
+    title: entry.name ? wrapWebContent(entry.name, "web_search") : "",
+    url: entry.url ?? "",
+    description:
+      entry.snippet || entry.summary
+        ? wrapWebContent(entry.snippet || entry.summary || "", "web_search")
+        : "",
+    published: entry.datePublished || undefined,
+    siteName: entry.siteName || undefined,
+  }));
 }
 
 function resolveSearchCount(value: unknown, fallback: number): number {
@@ -570,7 +701,9 @@ async function runWebSearch(params: {
       ? `${params.provider}:${params.query}:${params.count}:${params.country || "default"}:${params.search_lang || "default"}:${params.ui_lang || "default"}:${params.freshness || "default"}`
       : params.provider === "perplexity"
         ? `${params.provider}:${params.query}:${params.perplexityBaseUrl ?? DEFAULT_PERPLEXITY_BASE_URL}:${params.perplexityModel ?? DEFAULT_PERPLEXITY_MODEL}:${params.freshness || "default"}`
-        : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
+        : params.provider === "bocha"
+          ? `${params.provider}:${params.query}:${params.count}:${params.freshness || "default"}`
+          : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
   );
   const cached = readCache(SEARCH_CACHE, cacheKey);
   if (cached) {
@@ -630,6 +763,32 @@ async function runWebSearch(params: {
       content: wrapWebContent(content),
       citations,
       inlineCitations,
+    };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
+  if (params.provider === "bocha") {
+    const results = await runBochaSearch({
+      query: params.query,
+      apiKey: params.apiKey,
+      count: params.count,
+      timeoutSeconds: params.timeoutSeconds,
+      freshness: params.freshness,
+    });
+
+    const payload = {
+      query: params.query,
+      provider: params.provider,
+      count: results.length,
+      tookMs: Date.now() - start,
+      externalContent: {
+        untrusted: true,
+        source: "web_search",
+        provider: params.provider,
+        wrapped: true,
+      },
+      results,
     };
     writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
     return payload;
@@ -714,13 +873,16 @@ export function createWebSearchTool(options?: {
   const provider = resolveSearchProvider(search);
   const perplexityConfig = resolvePerplexityConfig(search);
   const grokConfig = resolveGrokConfig(search);
+  const bochaConfig = resolveBochaConfig(search);
 
   const description =
     provider === "perplexity"
       ? "Search the web using Perplexity Sonar (direct or via OpenRouter). Returns AI-synthesized answers with citations from real-time web search."
       : provider === "grok"
         ? "Search the web using xAI Grok. Returns AI-synthesized answers with citations from real-time web search."
-        : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
+        : provider === "bocha"
+          ? "Search the web using Bocha Search API. Returns titles, URLs, and snippets. Optimized for Chinese-language content and mainland China network access."
+          : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
 
   return {
     label: "Web Search",
@@ -735,7 +897,9 @@ export function createWebSearchTool(options?: {
           ? perplexityAuth?.apiKey
           : provider === "grok"
             ? resolveGrokApiKey(grokConfig)
-            : resolveSearchApiKey(search);
+            : provider === "bocha"
+              ? resolveBochaApiKey(bochaConfig)
+              : resolveSearchApiKey(search);
 
       if (!apiKey) {
         return jsonResult(missingSearchKeyPayload(provider));
@@ -748,10 +912,16 @@ export function createWebSearchTool(options?: {
       const search_lang = readStringParam(params, "search_lang");
       const ui_lang = readStringParam(params, "ui_lang");
       const rawFreshness = readStringParam(params, "freshness");
-      if (rawFreshness && provider !== "brave" && provider !== "perplexity") {
+      if (
+        rawFreshness &&
+        provider !== "brave" &&
+        provider !== "perplexity" &&
+        provider !== "bocha"
+      ) {
         return jsonResult({
           error: "unsupported_freshness",
-          message: "freshness is only supported by the Brave and Perplexity web_search providers.",
+          message:
+            "freshness is only supported by the Brave, Perplexity, and Bocha web_search providers.",
           docs: "https://docs.openclawcn.ai/tools/web",
         });
       }
@@ -800,4 +970,6 @@ export const __testing = {
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
+  resolveBochaApiKey,
+  toBochaFreshness,
 } as const;

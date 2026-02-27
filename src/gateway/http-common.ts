@@ -21,7 +21,11 @@ export function sendMethodNotAllowed(res: ServerResponse, allow = "POST") {
 
 export function sendUnauthorized(res: ServerResponse) {
   sendJson(res, 401, {
-    error: { message: "Unauthorized", type: "unauthorized" },
+    error: {
+      message: "Unauthorized",
+      userMessage: "认证失败，请检查访问凭证",
+      type: "unauthorized",
+    },
   });
 }
 
@@ -32,6 +36,7 @@ export function sendRateLimited(res: ServerResponse, retryAfterMs?: number) {
   sendJson(res, 429, {
     error: {
       message: "Too many failed authentication attempts. Please try again later.",
+      userMessage: "请求过于频繁，请稍后再试",
       type: "rate_limited",
     },
   });
@@ -47,7 +52,11 @@ export function sendGatewayAuthFailure(res: ServerResponse, authResult: GatewayA
 
 export function sendInvalidRequest(res: ServerResponse, message: string) {
   sendJson(res, 400, {
-    error: { message, type: "invalid_request_error" },
+    error: {
+      message,
+      userMessage: "请求参数有误，请检查后重试",
+      type: "invalid_request_error",
+    },
   });
 }
 
@@ -60,13 +69,21 @@ export async function readJsonBodyOrError(
   if (!body.ok) {
     if (body.error === "payload too large") {
       sendJson(res, 413, {
-        error: { message: "Payload too large", type: "invalid_request_error" },
+        error: {
+          message: "Payload too large",
+          userMessage: "请求内容过大，请减少内容后重试",
+          type: "invalid_request_error",
+        },
       });
       return undefined;
     }
     if (body.error === "request body timeout") {
       sendJson(res, 408, {
-        error: { message: "Request body timeout", type: "invalid_request_error" },
+        error: {
+          message: "Request body timeout",
+          userMessage: "请求超时，请检查网络连接后重试",
+          type: "invalid_request_error",
+        },
       });
       return undefined;
     }

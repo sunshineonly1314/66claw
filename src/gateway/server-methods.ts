@@ -1,5 +1,5 @@
 import type { GatewayRequestHandlers, GatewayRequestOptions } from "./server-methods/types.js";
-import { ErrorCodes, errorShape } from "./protocol/index.js";
+import { ErrorCodes, errorShape, errorShapeFromError } from "./protocol/index.js";
 import { agentHandlers } from "./server-methods/agent.js";
 import { agentsHandlers } from "./server-methods/agents.js";
 import { browserHandlers } from "./server-methods/browser.js";
@@ -228,12 +228,17 @@ export async function handleGatewayRequest(
     );
     return;
   }
-  await handler({
-    req,
-    params: (req.params ?? {}) as Record<string, unknown>,
-    client,
-    isWebchatConnect,
-    respond,
-    context,
-  });
+  try {
+    await handler({
+      req,
+      params: (req.params ?? {}) as Record<string, unknown>,
+      client,
+      isWebchatConnect,
+      respond,
+      context,
+    });
+  } catch (err) {
+    // CN: 统一的 handler 错误捕获 — 自动分类 + 中文翻译，避免一律返回 UNAVAILABLE
+    respond(false, undefined, errorShapeFromError(ErrorCodes.INTERNAL_ERROR, err));
+  }
 }

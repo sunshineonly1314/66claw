@@ -5,7 +5,35 @@ import { t } from "../i18n/index.js";
 import type { SlackStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
+
+export function renderSlackTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>Create Slack App</strong>
+          <p>Go to <a href="https://api.slack.com/apps" target="_blank">api.slack.com/apps</a> &rarr; Create New App</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Enable Socket Mode</strong>
+          <p>Settings &rarr; Socket Mode &rarr; Enable. Copy the <strong>App Token</strong> (starts with <code>xapp-</code>)</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Get Bot Token</strong>
+          <p>OAuth &amp; Permissions &rarr; Install to Workspace &rarr; Copy <strong>Bot User OAuth Token</strong> (starts with <code>xoxb-</code>)</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderSlackCard(params: {
   props: ChannelsProps;
@@ -108,6 +136,8 @@ export function renderSlackCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "slack", props, accounts: props.snapshot?.channelAccounts?.["slack"] ?? [] })}
       </div>
     </details>
   `;

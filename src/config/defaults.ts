@@ -731,7 +731,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
   //    CN 不再额外覆盖 — 上游的默认值已经合理，无需强制缩短 TTL
   //    无 Anthropic auth 时也不应注入 contextPruning（cache-ttl 依赖 Anthropic prompt caching API）
 
-  // ── 13. tools.web.search.provider: "bing"（中国区默认使用 Bing 搜索，香港/大陆均可访问，无需 API key）──
+  // ── 13. tools.web.search.provider: "bocha"（中国区默认使用博查搜索，国内可直连，需 BOCHA_API_KEY）──
   if (next.tools?.web?.search?.provider === undefined) {
     next = {
       ...next,
@@ -741,7 +741,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
           ...next.tools?.web,
           search: {
             ...next.tools?.web?.search,
-            provider: "bing",
+            provider: "bocha",
           },
         },
       },

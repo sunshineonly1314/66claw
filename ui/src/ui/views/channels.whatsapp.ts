@@ -5,7 +5,35 @@ import { t } from "../i18n/index.js";
 import type { WhatsAppStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass, formatDuration } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, formatDuration, renderChannelRouteSection } from "./channels.shared";
+
+export function renderWhatsappTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>Show QR Code</strong>
+          <p>Click "Show QR" below to generate a WhatsApp Web QR code.</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Scan with WhatsApp</strong>
+          <p>Open WhatsApp on your phone &rarr; Settings &rarr; Linked Devices &rarr; Scan QR code</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Wait for Connection</strong>
+          <p>After scanning, the connection will establish automatically. No credentials needed.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderWhatsAppCard(params: {
   props: ChannelsProps;
@@ -164,6 +192,8 @@ export function renderWhatsAppCard(params: {
         </div>
 
         ${renderChannelConfigSection({ channelId: "whatsapp", props })}
+
+        ${renderChannelRouteSection({ channelId: "whatsapp", props, accounts: props.snapshot?.channelAccounts?.["whatsapp"] ?? [] })}
       </div>
     </details>
   `;

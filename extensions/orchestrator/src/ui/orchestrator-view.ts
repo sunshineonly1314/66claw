@@ -6,7 +6,8 @@
  */
 
 import { html, nothing, type TemplateResult } from "lit";
-import type { CommunityTemplate, OrchestratorState, TeamProposal } from "./orchestrator-state.js";
+import type { CommunityTemplate, DeployReportAgent, DeployReportSummary, OrchestratorState, TeamProposal } from "./orchestrator-state.js";
+import type { SceneTemplate } from "../types.js";
 
 // ── Handler Types ────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ export type OrchestratorHandlers = {
   onActionClick: (action: string, data?: unknown) => void;
   onAnswerQuestion: (questionIndex: number, answer: string) => void;
   onDeployProposal: (planId: string) => void;
+  onPreviewDeploy?: (templateId: string) => void;
 };
 
 // ── SVG Icons ────────────────────────────────────────────────────────────
@@ -58,6 +60,8 @@ export function renderOrchestrator(
           ? renderGatheringQuestions(state, handlers, t) : nothing}
         ${state.phase === "proposed" && state.proposal
           ? renderTeamProposal(state.proposal, handlers, t) : nothing}
+        ${state.phase === "previewing" && state.previewTemplate
+          ? renderTemplatePreview(state.previewTemplate, handlers, t) : nothing}
         ${state.phase === "deploying" ? renderDeployProgress(state, t) : nothing}
         ${state.phase === "success" ? renderSuccess(state, handlers, t) : nothing}
         ${state.phase === "error" ? renderError(state, handlers, t) : nothing}
@@ -481,9 +485,9 @@ function renderTeamProposal(
             </div>
             <div class="orch-preview-agent-tags">
               <span class="orch-preview-tag orch-preview-tag--tier">${
-                agent.modelTier === "sota" ? "旗舰模型"
-                : agent.modelTier === "mid" ? "主力模型"
-                : "轻量模型"
+                agent.modelTier === "sota" ? t("orch.tierSota")
+                : agent.modelTier === "mid" ? t("orch.tierMid")
+                : t("orch.tierCheap")
               }</span>
               ${agent.tools.slice(0, 3).map(tool => html`
                 <span class="orch-preview-tag">${formatToolName(tool)}</span>
@@ -533,6 +537,90 @@ function formatToolName(tool: string): string {
     "browser": "浏览器",
   };
   return TOOL_NAMES[tool] ?? tool;
+}
+
+// ── Template Preview ─────────────────────────────────────────────────────
+
+function renderTemplatePreview(
+  tpl: SceneTemplate,
+  handlers: OrchestratorHandlers,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): TemplateResult {
+  return html`
+    <div class="orch-preview">
+      <div class="orch-preview-header">
+        <div class="orch-preview-title">${tpl.name}</div>
+        <div class="orch-preview-desc">${tpl.description}</div>
+      </div>
+
+      ${tpl.highlights?.length ? html`
+        <div class="orch-preview-highlights">
+          ${tpl.highlights.map(h => html`
+            <div class="orch-preview-highlight-item">${h}</div>
+          `)}
+        </div>
+      ` : nothing}
+
+      <div class="orch-preview-section-title">${t("orch.previewAgents")}</div>
+      <div class="orch-preview-agents">
+        ${tpl.agents.map((agent, i) => html`
+          <div class="orch-preview-agent">
+            <div class="orch-preview-agent-top">
+              <div class="orch-avatar orch-avatar--${i % 6}" style="width:36px;height:36px;font-size:14px;">
+                ${agent.emoji ?? agent.name.charAt(0)}
+              </div>
+              <div class="orch-preview-agent-info">
+                <div class="orch-preview-agent-name">${agent.name}</div>
+                <div class="orch-preview-agent-role">${agent.role}</div>
+              </div>
+            </div>
+            <div class="orch-preview-agent-tags">
+              <span class="orch-preview-tag orch-preview-tag--tier">${
+                agent.modelTier === "sota" ? t("orch.tierSota")
+                : agent.modelTier === "mid" ? t("orch.tierMid")
+                : t("orch.tierCheap")
+              }</span>
+              ${agent.tools?.profile ? html`
+                <span class="orch-preview-tag orch-preview-tag--profile">${formatProfileName(agent.tools.profile, t)}</span>
+              ` : nothing}
+              ${(agent.tools?.allow ?? []).slice(0, 3).map(tool => html`
+                <span class="orch-preview-tag">${formatToolName(tool)}</span>
+              `)}
+            </div>
+            ${agent.routingKeywords?.length ? html`
+              <div class="orch-preview-agent-keywords">
+                ${agent.routingKeywords.slice(0, 6).map(kw => html`
+                  <span class="orch-preview-kw">${kw}</span>
+                `)}
+              </div>
+            ` : nothing}
+          </div>
+        `)}
+      </div>
+
+      <div class="orch-preview-actions">
+        <button class="btn primary" @click=${() => handlers.onPreviewDeploy?.(tpl.id)}>
+          ${t("orch.deployNow")}
+        </button>
+        <button class="btn" @click=${() => handlers.onActionClick("back-from-preview")}>
+          ${t("orch.back")}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function formatProfileName(profile: string, t: (key: string) => string): string {
+  const PROFILE_NAMES: Record<string, string> = {
+    minimal: "minimal",
+    coding: "coding",
+    messaging: "messaging",
+    research: "research",
+    creative: "creative",
+    data: "data",
+    full: "full",
+  };
+  return t(`orch.profile.${profile}`) || PROFILE_NAMES[profile] || profile;
 }
 
 // ── Deploy Progress ──────────────────────────────────────────────────────
@@ -602,6 +690,8 @@ function renderSuccess(
   const data = state.successData;
   if (!data) return html``;
 
+  const report = data.report;
+
   return html`
     <div class="orch-success">
       <div class="orch-success-mark">${checkIcon}</div>
@@ -610,24 +700,44 @@ function renderSuccess(
         ${t("orch.successSub", { team: data.teamDescription })}
       </div>
 
+      ${report ? renderDeployReportSummary(report.summary, t) : nothing}
+
       <div class="orch-deployed-grid">
-        ${data.agents.map((agent, i) => html`
-          <div class="orch-deployed-card">
-            <div class="orch-deployed-card-head">
-              <div class="orch-avatar orch-avatar--${i % 6}">
-                ${agent.name.charAt(0)}
+        ${data.agents.map((agent, i) => {
+          const agentReport = report?.agents.find(r => r.agentId === agent.id);
+          return html`
+            <div class="orch-deployed-card">
+              <div class="orch-deployed-card-head">
+                <div class="orch-avatar orch-avatar--${i % 6}">
+                  ${agent.emoji ?? agent.name.charAt(0)}
+                </div>
+                <span class="orch-deployed-card-name">${agent.name}</span>
               </div>
-              <span class="orch-deployed-card-name">${agent.name}</span>
+              <div class="orch-deployed-card-desc">${agent.role}</div>
+              ${agent.modelTier || agent.toolProfile ? html`
+                <div class="orch-deployed-card-meta">
+                  ${agent.modelTier ? html`
+                    <span class="orch-preview-tag orch-preview-tag--tier">${
+                      agent.modelTier === "sota" ? t("orch.tierSota")
+                      : agent.modelTier === "mid" ? t("orch.tierMid")
+                      : t("orch.tierCheap")
+                    }</span>
+                  ` : nothing}
+                  ${agent.toolProfile ? html`
+                    <span class="orch-preview-tag orch-preview-tag--profile">${formatProfileName(agent.toolProfile, t)}</span>
+                  ` : nothing}
+                </div>
+              ` : nothing}
+              ${agentReport ? renderAgentStepBadges(agentReport, t) : nothing}
+              <button
+                class="btn btn--sm primary"
+                @click=${() => handlers.onActionClick("start-chat", agent.id)}
+              >
+                ${t("orch.startChat")}
+              </button>
             </div>
-            <div class="orch-deployed-card-desc">${agent.role}</div>
-            <button
-              class="btn btn--sm primary"
-              @click=${() => handlers.onActionClick("start-chat", agent.id)}
-            >
-              ${t("orch.startChat")}
-            </button>
-          </div>
-        `)}
+          `;
+        })}
       </div>
 
       ${data.usageGuide ? html`
@@ -652,6 +762,59 @@ function renderSuccess(
           ${t("orch.createMore")}
         </button>
       </div>
+    </div>
+  `;
+}
+
+// ── Deploy Report Summary ─────────────────────────────────────────────
+
+function renderDeployReportSummary(
+  summary: DeployReportSummary,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): TemplateResult {
+  return html`
+    <div class="orch-report-summary">
+      <div class="orch-report-stat">
+        <span class="orch-report-stat-num">${summary.readyAgents}/${summary.totalAgents}</span>
+        <span class="orch-report-stat-label">${t("orch.reportAgentsReady")}</span>
+      </div>
+      <div class="orch-report-stat">
+        <span class="orch-report-stat-num">${summary.soulsWritten}</span>
+        <span class="orch-report-stat-label">${t("orch.reportSoulsWritten")}</span>
+      </div>
+      <div class="orch-report-stat">
+        <span class="orch-report-stat-num">${summary.toolPoliciesWritten}</span>
+        <span class="orch-report-stat-label">${t("orch.reportToolPolicies")}</span>
+      </div>
+      <div class="orch-report-stat">
+        <span class="orch-report-stat-num">${summary.keywordsPopulated}</span>
+        <span class="orch-report-stat-label">${t("orch.reportKeywords")}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderAgentStepBadges(
+  agentReport: DeployReportAgent,
+  t: (key: string) => string,
+): TemplateResult {
+  if (!agentReport.steps.length) return html``;
+  const hasWarn = agentReport.steps.some(s => s.status === "warn");
+  const hasFail = agentReport.steps.some(s => s.status === "fail");
+  if (!hasWarn && !hasFail) return html``;
+
+  return html`
+    <div class="orch-deployed-card-steps">
+      ${agentReport.steps
+        .filter(s => s.status !== "ok")
+        .map(s => html`
+          <span class="orch-step-badge orch-step-badge--${s.status}" title=${s.detail}>
+            ${s.step === "soul" ? t("orch.stepSoul")
+              : s.step === "tool-policy" ? t("orch.stepToolPolicy")
+              : s.step === "keywords" ? t("orch.stepKeywords")
+              : s.step}
+          </span>
+        `)}
     </div>
   `;
 }
@@ -700,7 +863,7 @@ function renderCompose(
   handlers: OrchestratorHandlers,
   t: (key: string) => string,
 ): TemplateResult {
-  if (state.phase === "deploying" || state.phase === "success") {
+  if (state.phase === "deploying" || state.phase === "success" || state.phase === "previewing") {
     return html``;
   }
 

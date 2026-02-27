@@ -18,6 +18,7 @@ export type OrchestratorPhase =
   | "proposed"
   | "refining"
   | "soul-preview"
+  | "previewing"
   | "deploying"
   | "success"
   | "error";
@@ -31,6 +32,7 @@ export type MessageWidget =
   | "proposal"
   | "soul-preview"
   | "deploy-progress"
+  | "deploy-report"
   | "success"
   | "error";
 
@@ -93,6 +95,32 @@ export type CommunityTemplate = {
 
 // ── State ────────────────────────────────────────────────────────────────
 
+// ── Deploy Report (from agent-team) ─────────────────────────────────────
+
+export type DeployReportAgentStep = {
+  step: string;
+  status: "ok" | "warn" | "fail";
+  detail?: string;
+};
+
+export type DeployReportAgent = {
+  agentId: string;
+  name: string;
+  role: string;
+  emoji?: string;
+  modelTier?: string;
+  toolProfile?: string;
+  steps: DeployReportAgentStep[];
+};
+
+export type DeployReportSummary = {
+  totalAgents: number;
+  readyAgents: number;
+  toolPoliciesWritten: number;
+  keywordsPopulated: number;
+  soulsWritten: number;
+};
+
 export type OrchestratorState = {
   phase: OrchestratorPhase;
   messages: OrchestratorMessage[];
@@ -105,11 +133,16 @@ export type OrchestratorState = {
   communityError: string | null;
   gatheringQuestions: GatheringQuestion[];
   proposal: TeamProposal | null;
+  previewTemplate: SceneTemplate | null;
   deployProgress: DeployProgress | null;
   successData: {
     teamDescription: string;
-    agents: Array<{ id: string; name: string; role: string }>;
+    agents: Array<{ id: string; name: string; role: string; emoji?: string; modelTier?: string; toolProfile?: string }>;
     usageGuide: string;
+    report?: {
+      agents: DeployReportAgent[];
+      summary: DeployReportSummary;
+    };
   } | null;
   error: string | null;
 };
@@ -128,6 +161,7 @@ export type OrchestratorAction =
   | { type: "SET_QUESTIONS"; questions: GatheringQuestion[] }
   | { type: "ANSWER_QUESTION"; questionIndex: number; answer: string }
   | { type: "SET_PROPOSAL"; proposal: TeamProposal }
+  | { type: "SET_PREVIEW"; template: SceneTemplate }
   | { type: "SET_DEPLOY_PROGRESS"; progress: DeployProgress }
   | { type: "DEPLOY_SUCCESS"; data: OrchestratorState["successData"] }
   | { type: "DEPLOY_ERROR"; error: string }
@@ -151,6 +185,7 @@ export function createInitialOrchestratorState(): OrchestratorState {
     communityError: null,
     gatheringQuestions: [],
     proposal: null,
+    previewTemplate: null,
     deployProgress: null,
     successData: null,
     error: null,
@@ -209,6 +244,14 @@ export function orchestratorReducer(
         phase: "proposed",
         proposal: action.proposal,
         inputDisabled: false,
+      };
+
+    case "SET_PREVIEW":
+      return {
+        ...state,
+        phase: "previewing",
+        previewTemplate: action.template,
+        inputDisabled: true,
       };
 
     case "SET_DEPLOY_PROGRESS":

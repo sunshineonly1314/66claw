@@ -63,7 +63,7 @@ export function extractToolCards(message: unknown): ToolCard[] {
       if (card.kind !== "call") continue;
       // Stale image_gen/video_gen calls (page closed mid-generation, no active run):
       // mark as interrupted instead of pending so the renderer shows a recovery UI.
-      if (isStaleMedia && (card.name === "image_gen" || card.name === "video_gen")) {
+      if (isStaleMedia && (card.name === "image_gen" || card.name === "image_edit" || card.name === "video_gen")) {
         card.interrupted = true;
       } else {
         card.pending = true;
@@ -113,16 +113,22 @@ export function renderToolCardSidebar(
   const isPending = Boolean(card.pending);
   const isInterrupted = Boolean(card.interrupted);
 
+  // OpenClawCN: Hide all resolved tool cards — users don't need to see
+  // technical tool call details. Only keep pending (shimmer) and interrupted states.
+  if (!isPending && !isInterrupted) {
+    return nothing as unknown as ReturnType<typeof html>;
+  }
+
   // OpenClawCN: Interrupted generation (page was closed mid-generation, loaded from history)
-  if (isInterrupted && card.name === "image_gen") {
+  if (isInterrupted && (card.name === "image_gen" || card.name === "image_edit")) {
     return renderImageGenInterrupted(card.args as Record<string, unknown> | undefined);
   }
   if (isInterrupted && card.name === "video_gen") {
     return renderVideoGenInterrupted(card.args as Record<string, unknown> | undefined);
   }
 
-  // OpenClawCN: Specialized shimmer placeholder for image_gen tool calls in progress
-  if (isPending && card.name === "image_gen") {
+  // OpenClawCN: Specialized shimmer placeholder for image_gen/image_edit tool calls in progress
+  if (isPending && (card.name === "image_gen" || card.name === "image_edit")) {
     return renderImageGenPending(card.args as Record<string, unknown> | undefined);
   }
   // OpenClawCN: Specialized shimmer placeholder for video_gen tool calls in progress
@@ -213,17 +219,21 @@ export function renderToolCardGroup(
   cards: ToolCard[],
   onOpenSidebar?: (content: string) => void,
 ) {
-  if (cards.length === 0) return nothing;
+  // Only keep cards that have visible state (pending/interrupted).
+  // Resolved cards are hidden by renderToolCardSidebar, so filter them
+  // out here to avoid rendering empty group wrappers.
+  const visibleCards = cards.filter((c) => Boolean(c.pending) || Boolean(c.interrupted));
+  if (visibleCards.length === 0) return nothing;
 
-  if (cards.length <= 2) {
-    return html`${cards.map((card) =>
+  if (visibleCards.length <= 2) {
+    return html`${visibleCards.map((card) =>
       renderToolCardSidebar(card, onOpenSidebar),
     )}`;
   }
 
   // 3+ cards: group them
-  const lastCard = cards[cards.length - 1];
-  const previousCards = cards.slice(0, -1);
+  const lastCard = visibleCards[visibleCards.length - 1];
+  const previousCards = visibleCards.slice(0, -1);
 
   const handleGroupToggle = (e: Event) => {
     const container = (e.currentTarget as HTMLElement).closest(
@@ -247,7 +257,7 @@ export function renderToolCardGroup(
       >
         <span class="chat-tool-group__icon">${icons.wrench}</span>
         <span class="chat-tool-group__count">
-          ${cards.length} 步操作已完成
+          ${visibleCards.length} 步操作进行中
         </span>
         <span class="chat-tool-group__chevron">
           <svg

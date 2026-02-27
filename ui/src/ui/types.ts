@@ -583,6 +583,12 @@ export type HealthSnapshot = Record<string, unknown>;
 
 export type TeamProjectStatus = "deploying" | "active" | "paused" | "archived" | "error";
 
+export type TeamProjectBinding = {
+  channel: string;
+  accountId?: string;
+  peer?: string;
+};
+
 export type TeamProjectSummary = {
   projectId: string;
   name: string;
@@ -594,6 +600,7 @@ export type TeamProjectSummary = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  bindings?: TeamProjectBinding[];
 };
 
 export type TeamMemberInfo = {
@@ -601,6 +608,9 @@ export type TeamMemberInfo = {
   name: string;
   role: string;
   emoji?: string;
+  toolProfile?: string;
+  modelTier?: string;
+  keywords?: string[];
 };
 
 export type TeamProjectDetail = {
@@ -615,10 +625,12 @@ export type TeamProjectDetail = {
     version: number;
     visibility: { mode: string; displayName?: string };
     coordination: {
+      supervisorStyle?: string;
       hopLimit: number;
       memberTimeoutSeconds: number;
       supervisorFallbackEnabled: boolean;
       fastPath?: { affinityTimeoutMinutes: number };
+      handoffStyle?: string;
     };
     constraints?: {
       brandRules?: {
@@ -628,6 +640,7 @@ export type TeamProjectDetail = {
       };
     };
     memory: { mode: string };
+    bindings?: TeamProjectBinding[];
   };
   state: Record<string, unknown> | null;
 };

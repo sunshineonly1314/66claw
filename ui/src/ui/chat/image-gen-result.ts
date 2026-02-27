@@ -40,22 +40,21 @@ export interface ImageGenDetails {
 // ---------------------------------------------------------------------------
 
 export function renderImageGenPending(args?: Record<string, unknown>): TemplateResult {
-  const size = typeof args?.size === "string" ? args.size : "1024x1024";
   const prompt = typeof args?.prompt === "string" ? (args.prompt as string) : "";
-  const [w, h] = parseSizeToAspect(size);
 
   return html`
-    <div class="image-gen-pending">
-      <div class="image-gen-shimmer" style="aspect-ratio: ${w}/${h}">
-        <div class="image-gen-shimmer-inner"></div>
+    <div class="media-gen-progress">
+      <div class="media-gen-progress__icon media-gen-progress__icon--image">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+          <circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+        </svg>
       </div>
-      <div class="image-gen-pending-info">
-        <span class="image-gen-pending-label">
-          ${icons.image}
-          <span>${tMaybe("chat.imageGen.generating")}</span>
-        </span>
+      <div class="media-gen-progress__body">
+        <div class="media-gen-progress__title">${tMaybe("chat.imageGen.generating")}</div>
+        <div class="media-gen-progress__hint">通常需要 5-15 秒</div>
         ${prompt
-          ? html`<span class="image-gen-pending-prompt">${truncate(prompt, 60)}</span>`
+          ? html`<div class="media-gen-progress__prompt">${truncate(prompt, 80)}</div>`
           : nothing}
       </div>
     </div>
@@ -118,17 +117,26 @@ function renderSingleImage(
           @click=${() => openImageLightbox(url)}
           @error=${handleImageLoadError}
         />
-        <div class="image-gen-result-overlay" @click=${() => openImageLightbox(url)}>
-          <span class="image-gen-zoom-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              <path d="M11 8v6"/><path d="M8 11h6"/>
-            </svg>
-          </span>
+        <div class="image-gen-result-overlay">
+          <div class="image-gen-overlay-actions">
+            <button
+              class="image-gen-overlay-btn"
+              title="${tMaybe("chat.imageGen.download")}"
+              @click=${(e: Event) => { e.stopPropagation(); downloadImage(url, meta.details.prompt); }}
+            >
+              ${icons.download}
+            </button>
+            <button
+              class="image-gen-overlay-btn"
+              title="${tMaybe("chat.imageGen.regenerate")}"
+              @click=${(e: Event) => { e.stopPropagation(); regenerateImage(meta.details.prompt ?? ""); }}
+            >
+              ${icons.refreshCw}
+            </button>
+          </div>
         </div>
       </div>
       ${renderMeta(meta)}
-      ${renderActions(meta.details)}
     </div>
   `;
 }
@@ -161,12 +169,22 @@ function renderMultiImage(
                 @click=${() => openImageLightbox(url, urls)}
                 @error=${handleImageLoadError}
               />
+              <div class="image-gen-result-overlay">
+                <div class="image-gen-overlay-actions">
+                  <button
+                    class="image-gen-overlay-btn"
+                    title="${tMaybe("chat.imageGen.download")}"
+                    @click=${(e: Event) => { e.stopPropagation(); downloadImage(url, meta.details.prompt); }}
+                  >
+                    ${icons.download}
+                  </button>
+                </div>
+              </div>
             </div>
           `,
         )}
       </div>
       ${renderMeta(meta)}
-      ${renderActions(meta.details)}
     </div>
   `;
 }
@@ -264,23 +282,25 @@ function renderImageGenError(error: string, prompt?: string): TemplateResult {
 
 function renderExpiredImage(details: ImageGenDetails): TemplateResult {
   return html`
-    <div class="image-gen-expired">
-      <div class="image-gen-expired-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <div class="media-gen-progress media-gen-progress--interrupted">
+      <div class="media-gen-progress__icon media-gen-progress__icon--interrupted">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
-          <path d="m9.5 9.5 5 5"/><path d="m14.5 9.5-5 5"/>
+          <circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
         </svg>
       </div>
-      <div class="image-gen-expired-text">${tMaybe("chat.imageGen.expired")}</div>
-      ${details.prompt
-        ? html`
-            <div class="image-gen-expired-prompt">"${truncate(details.prompt, 50)}"</div>
-            <button class="image-gen-action" @click=${() => regenerateImage(details.prompt!)}>
+      <div class="media-gen-progress__body">
+        <div class="media-gen-progress__title">${tMaybe("chat.imageGen.expired")}</div>
+        ${details.prompt
+          ? html`<div class="media-gen-progress__prompt">"${truncate(details.prompt, 60)}"</div>`
+          : nothing}
+        ${details.prompt
+          ? html`<button class="media-gen-progress__action" @click=${() => regenerateImage(details.prompt!)}>
               ${icons.refreshCw}
               <span>${tMaybe("chat.imageGen.regenerate")}</span>
-            </button>
-          `
-        : nothing}
+            </button>`
+          : nothing}
+      </div>
     </div>
   `;
 }
@@ -292,23 +312,25 @@ function renderExpiredImage(details: ImageGenDetails): TemplateResult {
 export function renderImageGenInterrupted(args?: Record<string, unknown>): TemplateResult {
   const prompt = typeof args?.prompt === "string" ? (args.prompt as string) : undefined;
   return html`
-    <div class="image-gen-expired">
-      <div class="image-gen-expired-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
+    <div class="media-gen-progress media-gen-progress--interrupted">
+      <div class="media-gen-progress__icon media-gen-progress__icon--interrupted">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+          <circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
         </svg>
       </div>
-      <div class="image-gen-expired-text">${tMaybe("chat.imageGen.interrupted")}</div>
-      ${prompt
-        ? html`
-            <div class="image-gen-expired-prompt">"${truncate(prompt, 50)}"</div>
-            <button class="image-gen-action" @click=${() => regenerateImage(prompt)}>
+      <div class="media-gen-progress__body">
+        <div class="media-gen-progress__title">${tMaybe("chat.imageGen.interrupted")}</div>
+        ${prompt
+          ? html`<div class="media-gen-progress__prompt">"${truncate(prompt, 60)}"</div>`
+          : nothing}
+        ${prompt
+          ? html`<button class="media-gen-progress__action" @click=${() => regenerateImage(prompt)}>
               ${icons.refreshCw}
               <span>${tMaybe("chat.imageGen.regenerate")}</span>
-            </button>
-          `
-        : nothing}
+            </button>`
+          : nothing}
+      </div>
     </div>
   `;
 }

@@ -122,6 +122,12 @@ export type MemberInfo = {
   name: string;
   role: string;
   emoji?: string;
+  /** Routing keywords for fast-path keyword matching */
+  keywords?: string[];
+  /** Tool profile assigned to this agent (informational, actual config lives in agent config) */
+  toolProfile?: string;
+  /** Model tier assigned to this agent */
+  modelTier?: string;
 };
 
 // ── The Core Project Entity ─────────────────────────────────────────────
@@ -163,6 +169,18 @@ export type Project = {
   sourcePlanId?: string;
   /** Template ID if created from a template */
   templateId?: string;
+
+  // ── Federation (Project-of-Projects) ──
+  /**
+   * If true, this is a federation meta-project.
+   * Its "members" are supervisors of child projects, not regular agents.
+   * The fast-path router cascades: meta-supervisor → child supervisor → member.
+   */
+  isFederation?: boolean;
+  /** Child project IDs (only set when isFederation = true) */
+  childProjectIds?: string[];
+  /** Parent federation project ID (set on child projects for back-reference) */
+  parentProjectId?: string;
 };
 
 // ── Member Health ───────────────────────────────────────────────────────
@@ -239,6 +257,39 @@ export type SessionAffinityRecord = {
   lastActiveAt: string;
   /** Count of consecutive messages to this agent */
   messageCount: number;
+};
+
+// ── Deploy Report (structured result from deploy-bridge) ────────────────
+
+export type DeployStepStatus = "ok" | "warn" | "fail";
+
+export type DeployStepReport = {
+  step: string;
+  status: DeployStepStatus;
+  detail?: string;
+};
+
+export type AgentDeployReport = {
+  agentId: string;
+  name: string;
+  role: string;
+  emoji?: string;
+  modelTier?: string;
+  toolProfile?: string;
+  steps: DeployStepReport[];
+};
+
+export type ProjectDeployReport = {
+  projectId: string;
+  projectName: string;
+  agents: AgentDeployReport[];
+  summary: {
+    totalAgents: number;
+    readyAgents: number;
+    toolPoliciesWritten: number;
+    keywordsPopulated: number;
+    soulsWritten: number;
+  };
 };
 
 // ── Gateway call function type (shared with orchestrator) ──────────────

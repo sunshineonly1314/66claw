@@ -273,7 +273,7 @@ function inferHeartbeat(
   ctx: UserContext,
 ): InferredCapabilities["heartbeat"] | undefined {
   if (/定时|提醒|定期|cron|schedule|remind/i.test(role) || ctx.scenario === "scheduling") {
-    return { enabled: true, schedule: "0 9 * * *" }; // default: every day at 9am
+    return { every: "24h", activeHours: { start: "09:00", end: "21:00" } };
   }
   return undefined;
 }

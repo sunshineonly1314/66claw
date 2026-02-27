@@ -10,10 +10,57 @@ import { t } from "../i18n/index.js";
 import type { ChannelAccountSnapshot } from "../types";
 import type { ChannelsProps, QqbotStatus } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
 
 // 重新导出类型以保持向后兼容
 export type { QqbotStatus } from "./channels.types";
+
+export function renderQqbotTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>登录 QQ 开放平台</strong>
+          <p>访问 <a href="https://q.qq.com" target="_blank">q.qq.com</a>，登录开发者账号</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>创建机器人应用</strong>
+          <p>点击「创建机器人」&rarr; 填写基本信息 &rarr; 提交创建</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>获取凭证</strong>
+          <p>在应用设置页面获取：</p>
+          <ul>
+            <li><strong>AppID</strong> 和 <strong>AppSecret</strong></li>
+            <li><strong>Token</strong>（回调验证令牌）</li>
+            <li><strong>Public Key</strong>（Ed25519 公钥，十六进制）</li>
+          </ul>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <strong>配置回调地址</strong>
+          <p>在「开发设置」中填写回调 URL，确保服务器可访问</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">5</div>
+        <div class="step-content">
+          <strong>发布应用</strong>
+          <p>完成配置后提交审核 &rarr; 审核通过后即可使用</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderQqbotCard(params: {
   props: ChannelsProps;
@@ -239,6 +286,8 @@ export function renderQqbotCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "qqbot", props, accounts: qqbotAccounts })}
       </div>
     </details>
   `;

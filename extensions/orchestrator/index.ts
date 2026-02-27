@@ -12,7 +12,7 @@ import type { OpenClawCNPluginDefinition, OpenClawCNPluginApi } from "../../src/
 import { createOrchestrateTool, performQuickDeploy, performGuidedPropose, performGuidedDeploy, deployAgentId, listOrchestratedAgents, type CallGatewayFn } from "./src/orchestrate-tool.js";
 import { getOrchestratorPromptBlock } from "./src/system-prompt.js";
 import { getTemplate, listTemplates, matchTemplate } from "./src/templates.js";
-import { initStateDir, listPlanIds, loadPlan, loadState } from "./src/state.js";
+import { initStateDir, listPlanIds, loadPlan, loadState, loadReport } from "./src/state.js";
 
 const plugin: OpenClawCNPluginDefinition = {
   id: "orchestrator",
@@ -271,6 +271,9 @@ const plugin: OpenClawCNPluginDefinition = {
             deployedId: deployAgentId(planId, a.blueprintId),
             name: bp?.name ?? a.agentId,
             role: bp?.role ?? "",
+            emoji: bp?.emoji,
+            modelTier: bp?.modelTier,
+            toolProfile: bp?.tools?.profile,
             status: a.status,
             error: a.error,
           };
@@ -283,6 +286,18 @@ const plugin: OpenClawCNPluginDefinition = {
           usageGuide: plan.usageGuide,
         },
       }, undefined);
+    });
+
+    // ── Gateway methods: Deploy Report ─────────────────────────────────
+
+    api.registerGatewayMethod("orchestrator.deploy.report", async ({ params, respond }) => {
+      const planId = String((params as Record<string, unknown>).planId ?? "");
+      const report = await loadReport(planId);
+      if (!report) {
+        respond(false, undefined, { code: "NOT_FOUND", message: "Deploy report not found" });
+        return;
+      }
+      respond(true, { report }, undefined);
     });
 
     // ── Gateway methods: Deploy Validation (S2-3: dry-run) ──────────────

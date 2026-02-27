@@ -143,6 +143,10 @@ export type AgentsProps = {
   onClearProjectMemory: (projectId: string) => void;
   onToggleProjectCollapse: (projectId: string) => void;
   onDeleteOrchGroup?: (agentIds: string[]) => void;
+  // Team project detail: settings + member management
+  onUpdateProjectSettings?: (projectId: string, updates: Record<string, unknown>) => void;
+  onRemoveProjectMember?: (projectId: string, agentId: string) => void;
+  onSelectAgentFromProject?: (agentId: string) => void;
   // Overview: inline identity update
   onIdentityUpdate?: (agentId: string, name: string, emoji: string) => Promise<boolean>;
   // Overview: inline SOUL.md load/save
@@ -255,6 +259,7 @@ export function renderAgents(props: AgentsProps) {
                 tab: props.teamProjectTab,
                 busy: props.teamProjectBusy,
                 agentIdentityById: props.agentIdentityById,
+                allAgents: props.agentsList,
                 onSelectTab: props.onSelectProjectTab,
                 onPause: props.onPauseProject,
                 onResume: props.onResumeProject,
@@ -262,6 +267,9 @@ export function renderAgents(props: AgentsProps) {
                 onLoadStats: props.onLoadProjectStats,
                 onLoadMemory: props.onLoadProjectMemory,
                 onClearMemory: props.onClearProjectMemory,
+                onUpdateSettings: props.onUpdateProjectSettings,
+                onRemoveMember: props.onRemoveProjectMember,
+                onSelectAgent: props.onSelectAgentFromProject,
               })
           : !selectedAgent
             ? html`
@@ -603,39 +611,20 @@ function renderAgentOverview(params: {
     <section class="card">
       <div class="card-title">${t("agents.identityTitle")}</div>
       <div class="card-sub">${t("agents.identitySub")}</div>
-      <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
-        <label class="field">
-          <span>${t("agents.identityName")}</span>
-          <input
-            type="text"
-            .value=${overviewIdentity.name}
-            placeholder=${t("agents.identityNamePlaceholder")}
-            style="box-sizing: border-box; width: 100%;"
-            @input=${(e: Event) => {
-              overviewIdentity.name = (e.target as HTMLInputElement).value;
-              overviewIdentity.dirty = true;
-              requestUpdate();
-            }}
-          />
-        </label>
-        <div style="display: flex; align-items: flex-end; gap: 12px;">
-          <label class="field" style="flex: 0 0 auto;">
-            <span>${t("agents.identityEmoji")}</span>
-            <input
-              type="text"
-              .value=${overviewIdentity.emoji}
-              placeholder="🤖"
-              style="text-align: center; font-size: 18px; box-sizing: border-box; width: 80px;"
-              @input=${(e: Event) => {
-                overviewIdentity.emoji = (e.target as HTMLInputElement).value;
-                overviewIdentity.dirty = true;
-                requestUpdate();
-              }}
-            />
-          </label>
-          <span class="muted" style="font-size: 12px; padding-bottom: 10px;">${t("agents.identityEmojiHint")}</span>
-        </div>
-      </div>
+      <label class="field" style="margin-top: 12px;">
+        <span>${t("agents.identityName")}</span>
+        <input
+          type="text"
+          .value=${overviewIdentity.name}
+          placeholder=${t("agents.identityNamePlaceholder")}
+          style="box-sizing: border-box; width: 100%;"
+          @input=${(e: Event) => {
+            overviewIdentity.name = (e.target as HTMLInputElement).value;
+            overviewIdentity.dirty = true;
+            requestUpdate();
+          }}
+        />
+      </label>
       ${identityDirty && params.onIdentityUpdate
         ? html`
           <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 8px;">

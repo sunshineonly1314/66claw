@@ -86,24 +86,11 @@ async function autoBindVoiceCapabilities(
       }
     }
 
-    // Bind TTS → Qwen3 TTS (GPU) if user hasn't manually chosen
-    if (decision.ttsModel) {
-      const existing = capObj.capabilities["tts"];
-      if (!existing || existing.auto !== false) {
-        capObj.capabilities["tts"] = {
-          providerId: "local",
-          modelId: decision.ttsModel.id,
-          auto: true,
-        };
-        changed = true;
-      }
-    }
+    // TTS hidden in this release — skip auto-binding TTS capability card
 
     if (changed) {
       await writeConfigFile(config);
-      log.warn(
-        `auto-bound voice capability cards to GPU models (ASR=${decision.asrModel?.id}, TTS=${decision.ttsModel?.id})`,
-      );
+      log.warn(`auto-bound voice capability cards to GPU models (ASR=${decision.asrModel?.id})`);
     }
   } catch (err) {
     log.warn(`failed to auto-bind voice capabilities: ${String(err)}`);

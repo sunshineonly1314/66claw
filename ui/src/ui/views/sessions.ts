@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 
 import { formatAgo } from "../format";
+import { icons } from "../icons.js";
 import { formatSessionTokens } from "../presenter";
 import { pathForTab } from "../navigation";
 import type { GatewaySessionRow, SessionsListResult } from "../types";
@@ -15,12 +16,17 @@ export type SessionsProps = {
   includeGlobal: boolean;
   includeUnknown: boolean;
   basePath: string;
+  /** Session key to highlight (navigated from chat "View Details") */
+  highlightKey: string;
+  /** Current search query for filtering sessions */
+  searchQuery: string;
   onFiltersChange: (next: {
     activeMinutes: string;
     limit: string;
     includeGlobal: boolean;
     includeUnknown: boolean;
   }) => void;
+  onSearchChange: (query: string) => void;
   onRefresh: () => void;
   onPatch: (
     key: string,
@@ -92,20 +98,84 @@ function tip(helpKey: string, extraClass = "") {
   return html`<span class="tip-wrap ${extraClass}"><span class="tip-icon">?</span><span class="tip-bubble">${tMaybe(helpKey)}</span></span>`;
 }
 
+// ── Session title resolution (mirrors conversation-sidebar logic) ──
+
+/** Detect hash/UUID-like strings that aren't meaningful titles */
+const HASH_LIKE_RE = /^[0-9a-f]{6,}(?:\s|$)/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+const CHANNEL_KEY_RE = /^(?:slack|telegram|discord|signal|wecom|wechat|qq|feishu|dingtalk|nostr):/i;
+
+function isHashLike(text: string): boolean {
+  return HASH_LIKE_RE.test(text) || UUID_RE.test(text) || CHANNEL_KEY_RE.test(text);
+}
+
+function cleanForTitle(raw: string): string | null {
+  let t = raw;
+  t = t.replace(/^\[?(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[^\]]*\]?\s*/i, "");
+  t = t.replace(/^\d{4}[-/]\d{1,2}[-/]\d{1,2}[\sT]\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:GMT|UTC)?[+-]?\d{0,4})?\s*/i, "");
+  t = t.replace(/[*_~`#]+/g, "");
+  t = t.replace(/https?:\/\/\S+/gi, "");
+  t = t.replace(/^(?:视频已生成[！!]?\s*)/i, "");
+  t = t.replace(/^[\s\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F]+/gu, "");
+  t = t.replace(/\s+/g, " ").trim();
+  if (t.length < 2) return null;
+  return t.length > 40 ? t.slice(0, 40) + "..." : t;
+}
+
+function getSessionTitle(s: GatewaySessionRow): string {
+  if (s.displayName?.trim()) return s.displayName.trim();
+  if (s.derivedTitle?.trim()) {
+    const cleaned = cleanForTitle(s.derivedTitle.trim());
+    if (cleaned && !isHashLike(cleaned)) return cleaned;
+  }
+  if (s.lastMessagePreview?.trim()) {
+    const cleaned = cleanForTitle(s.lastMessagePreview.trim());
+    if (cleaned && !isHashLike(cleaned)) return cleaned;
+  }
+  if (s.label?.trim()) {
+    const cleaned = cleanForTitle(s.label.trim());
+    if (cleaned && !isHashLike(cleaned)) return cleaned;
+  }
+  return "";
+}
+
+function filterSessionRows(rows: GatewaySessionRow[], query: string): GatewaySessionRow[] {
+  if (!query.trim()) return rows;
+  const lower = query.toLowerCase();
+  return rows.filter((s) => {
+    const title = getSessionTitle(s).toLowerCase();
+    const label = (s.label ?? "").toLowerCase();
+    const key = s.key.toLowerCase();
+    return title.includes(lower) || label.includes(lower) || key.includes(lower);
+  });
+}
+
 export function renderSessions(props: SessionsProps) {
-  const rows = props.result?.sessions ?? [];
+  const allRows = props.result?.sessions ?? [];
+  const rows = filterSessionRows(allRows, props.searchQuery);
   return html`
     <section class="card">
-      <div class="row" style="justify-content: space-between;">
-        <div>
-          <div class="card-title">
-            ${t("sessions.title")} ${tip("sessions.help.title")}
-          </div>
-          <div class="card-sub">${t("sessions.subtitle")}</div>
+      <!-- Search + refresh bar -->
+      <div class="row" style="justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <div class="sessions-search" style="flex: 1; min-width: 200px; max-width: 400px; position: relative;">
+          <input
+            type="text"
+            class="sessions-search__input"
+            placeholder=${t("sessions.searchSessions")}
+            .value=${props.searchQuery}
+            @input=${(e: Event) => props.onSearchChange((e.target as HTMLInputElement).value)}
+            style="width: 100%; padding: 6px 12px 6px 32px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg); color: var(--fg);"
+          />
+          <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); width: 16px; height: 16px; pointer-events: none;">${icons.search}</span>
         </div>
-        <button class="btn" ?disabled=${props.loading} @click=${props.onRefresh}>
-          ${props.loading ? t("common.loading") : t("common.refresh")}
-        </button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          ${allRows.length !== rows.length
+            ? html`<span class="muted" style="font-size: 13px;">${t("sessions.searchResultCount", { shown: String(rows.length), total: String(allRows.length) })}</span>`
+            : nothing}
+          <button class="btn" ?disabled=${props.loading} @click=${props.onRefresh}>
+            ${props.loading ? t("common.loading") : t("common.refresh")}
+          </button>
+        </div>
       </div>
 
       <div class="filters" style="margin-top: 14px;">
@@ -176,6 +246,7 @@ export function renderSessions(props: SessionsProps) {
       <div class="table" style="margin-top: 16px;">
         <div class="table-head">
           <div>${t("sessions.sessionKey")} ${tip("sessions.help.sessionKey")}</div>
+          <div>${t("sessions.col.conversationTitle")} ${tip("sessions.help.conversationTitle")}</div>
           <div>${t("common.name")}</div>
           <div>${t("common.type")}</div>
           <div>${t("common.updated")}</div>
@@ -188,7 +259,7 @@ export function renderSessions(props: SessionsProps) {
         ${rows.length === 0
           ? html`<div class="muted">${t("sessions.noSessions")}</div>`
           : rows.map((row) =>
-              renderRow(row, props.basePath, props.onPatch, props.onDelete, props.loading),
+              renderRow(row, props.basePath, props.highlightKey, props.onPatch, props.onDelete, props.loading),
             )}
       </div>
     </section>
@@ -198,6 +269,7 @@ export function renderSessions(props: SessionsProps) {
 function renderRow(
   row: GatewaySessionRow,
   basePath: string,
+  highlightKey: string,
   onPatch: SessionsProps["onPatch"],
   onDelete: SessionsProps["onDelete"],
   disabled: boolean,
@@ -214,12 +286,15 @@ function renderRow(
   const chatUrl = canLink
     ? `${pathForTab("chat", basePath)}?session=${encodeURIComponent(row.key)}`
     : null;
+  const isHighlighted = highlightKey === row.key;
+  const convTitle = getSessionTitle(row);
 
   return html`
-    <div class="table-row">
+    <div class="table-row ${isHighlighted ? "table-row--highlight" : ""}">
       <div class="mono">${canLink
         ? html`<a href=${chatUrl} class="session-link">${displayName}</a>`
         : displayName}</div>
+      <div class="session-conv-title">${convTitle || html`<span class="muted">-</span>`}</div>
       <div>
         <input
           .value=${row.label ?? ""}

@@ -28,7 +28,11 @@ import {
   PortInUseError,
 } from "./infra/ports.js";
 import { assertSupportedRuntime } from "./infra/runtime-guard.js";
-import { installUnhandledRejectionHandler } from "./infra/unhandled-rejections.js";
+import {
+  installUnhandledRejectionHandler,
+  isTransientNetworkError,
+  isApiResponseError,
+} from "./infra/unhandled-rejections.js";
 import { enableConsoleCapture } from "./logging.js";
 import { runCommandWithTimeout, runExec } from "./process/exec.js";
 import { assertWebChannel, normalizeE164, toWhatsappJid } from "./utils.js";
@@ -88,6 +92,14 @@ if (isMain) {
   installUnhandledRejectionHandler();
 
   process.on("uncaughtException", (error) => {
+    // CN: 对可恢复的网络/API 错误不终止网关进程，保证服务持续可用
+    if (isTransientNetworkError(error) || isApiResponseError(error)) {
+      console.error(
+        "[openclawcn] Non-fatal uncaught exception (continuing):",
+        formatUncaughtError(error),
+      );
+      return;
+    }
     console.error("[openclawcn] Uncaught exception:", formatUncaughtError(error));
     process.exit(1);
   });

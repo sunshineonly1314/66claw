@@ -35,7 +35,11 @@ export const FeishuConfigSchema = z
     verificationToken: z.string().optional().describe("事件订阅 Verification Token (兼容简写)"),
     webhookPath: z.string().optional().default("/feishu/webhook").describe("Webhook 路径"),
     allowFrom: z.array(z.string()).optional().describe("允许的用户 ID 列表"),
-    dmPolicy: z.enum(["open", "allowlist", "pairing"]).optional().default("pairing").describe("私聊策略"),
+    dmPolicy: z
+      .enum(["open", "allowlist", "pairing"])
+      .optional()
+      .default("pairing")
+      .describe("私聊策略"),
     groupPolicy: z.enum(["open", "allowlist"]).optional().default("allowlist").describe("群聊策略"),
     groups: z.record(z.string(), FeishuGroupSchema.optional()).optional().describe("群聊配置"),
   })
@@ -70,7 +74,11 @@ export const DingtalkConfigSchema = z
     robotToken: z.string().optional().describe("机器人 Token (兼容简写)"),
     webhookPath: z.string().optional().default("/dingtalk/webhook").describe("Webhook 路径"),
     allowFrom: z.array(z.string()).optional().describe("允许的用户 ID 列表"),
-    dmPolicy: z.enum(["open", "allowlist", "pairing"]).optional().default("pairing").describe("私聊策略"),
+    dmPolicy: z
+      .enum(["open", "allowlist", "pairing"])
+      .optional()
+      .default("pairing")
+      .describe("私聊策略"),
     groupPolicy: z.enum(["open", "allowlist"]).optional().default("allowlist").describe("群聊策略"),
     groups: z.record(z.string(), DingtalkGroupSchema.optional()).optional().describe("群聊配置"),
   })
@@ -104,9 +112,15 @@ export const WecomConfigSchema = z
     corpId: z.string().optional().describe("企业微信 CorpID (兼容简写)"),
     agentId: z.string().optional().describe("应用 AgentID (兼容简写)"),
     secret: z.string().optional().describe("应用 Secret (兼容简写)"),
+    token: z.string().optional().describe("回调 Token (兼容简写)"),
+    encodingAESKey: z.string().optional().describe("回调 EncodingAESKey (兼容简写)"),
     webhookPath: z.string().optional().default("/wecom/webhook").describe("Webhook 路径"),
     allowFrom: z.array(z.string()).optional().describe("允许的用户 ID 列表"),
-    dmPolicy: z.enum(["open", "allowlist", "pairing"]).optional().default("pairing").describe("私聊策略"),
+    dmPolicy: z
+      .enum(["open", "allowlist", "pairing"])
+      .optional()
+      .default("pairing")
+      .describe("私聊策略"),
     groupPolicy: z.enum(["open", "allowlist"]).optional().default("allowlist").describe("群聊策略"),
     groups: z.record(z.string(), WecomGroupSchema.optional()).optional().describe("群聊配置"),
   })
@@ -137,9 +151,17 @@ export const QqbotConfigSchema = z
     enabled: z.boolean().optional().default(true).describe("是否启用"),
     sandbox: z.boolean().optional().default(false).describe("是否使用沙箱环境"),
     app: QqbotAppSchema.optional().describe("应用配置"),
+    appId: z.string().optional().describe("QQ 机器人 AppID (兼容简写)"),
+    appSecret: z.string().optional().describe("QQ 机器人 AppSecret (兼容简写)"),
+    token: z.string().optional().describe("QQ 机器人 Token (兼容简写)"),
+    publicKey: z.string().optional().describe("QQ 机器人公钥 (兼容简写)"),
     webhookPath: z.string().optional().default("/qqbot/webhook").describe("Webhook 路径"),
     allowFrom: z.array(z.string()).optional().describe("允许的用户 ID 列表"),
-    dmPolicy: z.enum(["open", "allowlist", "pairing"]).optional().default("pairing").describe("私聊策略"),
+    dmPolicy: z
+      .enum(["open", "allowlist", "pairing"])
+      .optional()
+      .default("pairing")
+      .describe("私聊策略"),
     groupPolicy: z.enum(["open", "allowlist"]).optional().default("allowlist").describe("群聊策略"),
     groups: z.record(z.string(), QqbotGroupSchema.optional()).optional().describe("群聊配置"),
   })
@@ -152,9 +174,22 @@ export const QqbotConfigSchema = z
 export const OpenclawwechatConfigSchema = z
   .object({
     enabled: z.boolean().optional().default(true).describe("是否启用个人微信渠道"),
-    apiKey: z.string().optional().describe("ClawChat API Key (格式: bot_id:secret，在 ClawChat 中获取)"),
-    pollIntervalMs: z.number().int().positive().optional().default(2000).describe("轮询间隔 (毫秒)，默认 2000ms"),
-    sessionKey: z.string().optional().default("agent:main:main").describe("会话标识 (格式: agent:<agentId>:<rest>)"),
+    apiKey: z
+      .string()
+      .optional()
+      .describe("ClawChat API Key (格式: bot_id:secret，在 ClawChat 中获取)"),
+    pollIntervalMs: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(2000)
+      .describe("轮询间隔 (毫秒)，默认 2000ms"),
+    sessionKey: z
+      .string()
+      .optional()
+      .default("agent:main:main")
+      .describe("会话标识 (格式: agent:<agentId>:<rest>)"),
     debug: z.boolean().optional().default(false).describe("调试模式，启用详细日志"),
   })
   .passthrough();

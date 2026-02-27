@@ -16,6 +16,7 @@ import { CONFIG_DIR } from "../../utils.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import { formatForLog } from "../ws-log.js";
 import type { GatewayRequestHandlers } from "./types.js";
+import { getGpuSidecarState } from "../../voice/gpu-sidecar.js";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -111,7 +112,10 @@ export function cleanupVadSessionsForConn(connId: string): void {
 
 // ─── GPU sidecar port ─────────────────────────────────────────────────
 
-const GPU_SIDECAR_PORT = 50100;
+/** Dynamic port from gpu-sidecar.ts — single source of truth. */
+function gpuPort(): number {
+  return getGpuSidecarState().port;
+}
 
 // ─── VAD → Qwen3-ASR (GPU) recognition ───────────────────────────────
 
@@ -140,7 +144,7 @@ async function recognizeWithGpu(samples: Float32Array): Promise<string> {
   const buf = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
   const pcmBase64 = buf.toString("base64");
 
-  const res = await fetch(`http://127.0.0.1:${GPU_SIDECAR_PORT}/transcribe-pcm`, {
+  const res = await fetch(`http://127.0.0.1:${gpuPort()}/transcribe-pcm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pcm_base64: pcmBase64, sample_rate: VAD_SAMPLE_RATE }),
@@ -184,7 +188,7 @@ async function processVadSegments(
  */
 async function isGpuAsrAvailable(): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${GPU_SIDECAR_PORT}/health`, {
+    const res = await fetch(`http://127.0.0.1:${gpuPort()}/health`, {
       signal: AbortSignal.timeout(3_000),
     });
     if (!res.ok) return false;

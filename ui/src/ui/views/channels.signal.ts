@@ -5,7 +5,35 @@ import { t } from "../i18n/index.js";
 import type { SignalStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
+
+export function renderSignalTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>Deploy signal-cli REST API</strong>
+          <p>Deploy <a href="https://github.com/bbernhard/signal-cli-rest-api" target="_blank">signal-cli-rest-api</a> service via Docker</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Register/Link Account</strong>
+          <p>Register a new Signal account or link to an existing one via the REST API</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Configure Connection</strong>
+          <p>Enter the phone number (account) and the REST API URL in the form</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderSignalCard(params: {
   props: ChannelsProps;
@@ -112,6 +140,8 @@ export function renderSignalCard(params: {
             ${t("channels.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "signal", props, accounts: props.snapshot?.channelAccounts?.["signal"] ?? [] })}
       </div>
     </details>
   `;

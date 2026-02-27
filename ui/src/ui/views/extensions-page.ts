@@ -105,8 +105,6 @@ export type ExtensionsPageProps = {
     url?: string;
     headers?: Record<string, string>;
   }) => Promise<boolean>;
-  /** Force re-render trigger for manual form */
-  manualFormTrigger?: number;
   // — Batch API Key configuration —
   onOpenBatchConfig?: () => void;
   onCloseBatchConfig?: () => void;
@@ -320,6 +318,23 @@ function renderInlineStats(props: ExtensionsPageProps): TemplateResult {
       <div style="display:flex; align-items:center; gap:6px; padding:0 16px; font-size:11px; color:var(--muted-strong, #6b7d91);">
         \u{1F504} ${t("extensions.stats.lastSync")}
       </div>
+      <div style="width:1px;height:16px;background:var(--border);"></div>
+      <!-- Import MCP button -->
+      <button
+        @click=${() => _openImportMcpModal(props.onManualAdd)}
+        style="
+          all:unset; cursor:pointer;
+          display:flex; align-items:center; gap:5px;
+          padding:4px 14px;
+          border-radius:6px;
+          font-size:12px; font-weight:600;
+          color:var(--accent-2, #20d5bc);
+          border:1px solid var(--accent-2, #20d5bc);
+          background:transparent;
+          transition:opacity 150ms;
+          white-space:nowrap;
+        "
+      >+ ${t("extensions.stats.importMcp" as never)}</button>
     </div>
   `;
 }
@@ -401,7 +416,7 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
         <span style="font-size:10px; transition:transform 150ms; transform:rotate(${advancedOpen ? "90deg" : "0deg"});">\u25B6</span>
         ${t("extensions.advanced")}
       </button>
-      ${advancedOpen ? renderAdvancedSection(processes, onRestart, onDisable, onEnable, onTest, onCheckUpdate, testingServerId, testResults, props.onManualAdd, props.manualFormTrigger) : nothing}
+      ${advancedOpen ? renderAdvancedSection(processes, onRestart, onDisable, onEnable, onTest, onCheckUpdate, testingServerId, testResults) : nothing}
     </div>
 
     <style>
@@ -892,8 +907,6 @@ function renderAdvancedSection(
   onCheckUpdate: () => void,
   testingServerId: string | null,
   testResults: Record<string, "success" | "failed">,
-  onManualAdd?: ExtensionsPageProps["onManualAdd"],
-  _manualFormTrigger?: number,
 ): TemplateResult {
   const totalMemory = processes.reduce((sum, p) => sum + p.memoryMB, 0);
 
@@ -1018,17 +1031,12 @@ function renderAdvancedSection(
         >${t("extensions.advanced.checkUpdate")}</button>
       </div>
 
-      <!-- Manual add MCP server -->
-      ${renderManualAddForm(onManualAdd)}
     </div>
 
     <style>
       .ext-process-row:hover {
         background: var(--bg-hover, #2a3544) !important;
       }
-      #mcp-manual-add-section > summary { list-style: none; }
-      #mcp-manual-add-section > summary::-webkit-details-marker { display: none; }
-      #mcp-manual-add-section > summary::marker { display: none; content: ""; }
     </style>
   `;
 }
@@ -1089,31 +1097,12 @@ function renderMcpToast(toast: McpToast): TemplateResult {
 }
 
 // ============================================================================
-// Manual add MCP server form — JSON paste mode
+// Import MCP modal — JSON paste mode (imperative DOM, immune to Lit re-render)
 // ============================================================================
-
-/**
- * JSON paste mode for adding MCP servers.
- *
- * Accepts standard MCP JSON config formats:
- *
- *   Format A (Cursor / Claude Desktop style):
- *   { "mcpServers": { "name": { "command": "npx", "args": [...] } } }
- *
- *   Format B (single named server):
- *   { "name": { "command": "npx", "args": [...] } }
- *
- *   Format C (bare server config):
- *   { "command": "npx", "args": [...] }
- *
- *   Format D (SSE):
- *   { "mcpServers": { "name": { "url": "https://..." } } }
- */
-let _manualFormOpen = false;
 
 type ManualAddConfig = NonNullable<ExtensionsPageProps["onManualAdd"]> extends (c: infer C) => void ? C : never;
 
-/** Try to parse pasted JSON into one or more server configs. Returns array on success, error string on failure. */
+/** Parse pasted JSON into server configs. Returns array on success, error string on failure. */
 function _parseMcpJson(raw: string): ManualAddConfig[] | string {
   let obj: unknown;
   try {
@@ -1134,7 +1123,7 @@ function _parseMcpJson(raw: string): ManualAddConfig[] | string {
       ? (rec.mcpServers as Record<string, unknown>)
       : rec;
 
-  // Detect Format C: bare server config (has "command" or "url" at top level)
+  // Format C: bare server config (has "command" or "url" at top level)
   if (typeof servers.command === "string" || typeof servers.url === "string") {
     const cfg = _extractServerConfig("mcp-server", servers);
     if (!cfg) return t("extensions.advanced.jsonPaste.invalidConfig" as never) as string;
@@ -1158,8 +1147,6 @@ function _parseMcpJson(raw: string): ManualAddConfig[] | string {
 function _extractServerConfig(id: string, obj: Record<string, unknown>): ManualAddConfig | null {
   const command = typeof obj.command === "string" ? obj.command : "";
   const url = typeof obj.url === "string" ? obj.url : undefined;
-
-  // Must have at least command (stdio) or url (sse)
   if (!command && !url) return null;
 
   const transport: "stdio" | "sse" = url && !command ? "sse" : "stdio";
@@ -1176,10 +1163,14 @@ function _extractServerConfig(id: string, obj: Record<string, unknown>): ManualA
   return { id, command, args, transport, env, url, headers };
 }
 
-function renderManualAddForm(
-  onManualAdd: ExtensionsPageProps["onManualAdd"],
-): TemplateResult {
-  if (!onManualAdd) return html``;
+/**
+ * Open import-MCP modal: creates a centered overlay with a JSON textarea.
+ * Pure DOM — not a Lit template — so it's immune to re-render race conditions.
+ */
+function _openImportMcpModal(onManualAdd: ExtensionsPageProps["onManualAdd"]): void {
+  if (!onManualAdd) return;
+  // Prevent duplicate
+  if (document.getElementById("mcp-import-modal-backdrop")) return;
 
   const placeholder = `{
   "mcpServers": {
@@ -1190,165 +1181,139 @@ function renderManualAddForm(
   }
 }`;
 
-  return html`
-    <details style="margin-top:16px;" id="mcp-manual-add-section"
-      @toggle=${(e: Event) => { _manualFormOpen = (e.target as HTMLDetailsElement).open; }}
-    >
-      <summary
-        style="
-          cursor:pointer;
-          font-size:12px; color:var(--accent-2, #20d5bc);
-          display:flex; align-items:center; gap:4px;
-          padding:6px 10px;
-          border-radius:6px;
-          list-style:none;
-          user-select:none;
-        "
-      >
-        <span style="font-size:14px;">+</span>
-        ${t("extensions.advanced.manualAdd" as never)}
-      </summary>
+  // --- Backdrop ---
+  const backdrop = document.createElement("div");
+  backdrop.id = "mcp-import-modal-backdrop";
+  Object.assign(backdrop.style, {
+    position: "fixed", inset: "0", zIndex: "9999",
+    background: "rgba(0,0,0,0.45)", backdropFilter: "blur(2px)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    animation: "extUpdateIn 150ms ease both",
+  });
 
-      <div
-        id="mcp-manual-form"
-        style="
-          margin-top:12px;
-          padding:16px;
-          border-radius:8px;
-          background:var(--card);
-          border:1px solid var(--border);
-          display:flex;
-          flex-direction:column;
-          gap:10px;
-          animation:extUpdateIn 200ms ease both;
-        "
-      >
-        <div style="font-size:11px; color:var(--muted-strong, #6b7d91); line-height:1.5;">
-          ${t("extensions.advanced.jsonPaste.hint" as never)}
-        </div>
-        <textarea
-          id="mcp-json-input"
-          .placeholder=${placeholder}
-          rows="8"
-          style="
-            padding:10px 12px;
-            border:1px solid var(--border);
-            border-radius:6px;
-            background:var(--bg);
-            color:var(--fg);
-            font-size:12px;
-            font-family:monospace;
-            resize:vertical;
-            outline:none;
-            tab-size:2;
-            white-space:pre;
-          "
-          @keydown=${(e: KeyboardEvent) => {
-            // Allow Tab to insert indentation instead of moving focus
-            if (e.key === "Tab") {
-              e.preventDefault();
-              const ta = e.target as HTMLTextAreaElement;
-              const start = ta.selectionStart;
-              const end = ta.selectionEnd;
-              ta.value = ta.value.substring(0, start) + "  " + ta.value.substring(end);
-              ta.selectionStart = ta.selectionEnd = start + 2;
-            }
-          }}
-        ></textarea>
+  const close = () => { backdrop.remove(); };
+  backdrop.addEventListener("mousedown", (e) => { if (e.target === backdrop) close(); });
 
-        <div id="mcp-json-status" style="display:none; font-size:11px; padding:0 4px;"></div>
+  // --- Dialog card ---
+  const card = document.createElement("div");
+  Object.assign(card.style, {
+    background: "var(--card, #1e293b)", border: "1px solid var(--border, #334155)",
+    borderRadius: "12px", padding: "24px", width: "520px", maxWidth: "90vw",
+    maxHeight: "80vh", overflowY: "auto",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+    display: "flex", flexDirection: "column", gap: "14px",
+    animation: "extUpdateIn 200ms ease both",
+  });
 
-        <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center;">
-          <span id="mcp-json-spinner" style="display:none; font-size:11px; color:var(--muted-strong, #6b7d91);">
-            ${t("extensions.advanced.jsonPaste.adding" as never)}
-          </span>
-          <button
-            id="mcp-json-submit"
-            @click=${(e: Event) => {
-              const btn = e.target as HTMLButtonElement;
-              const section = btn.closest("#mcp-manual-add-section");
-              if (!section) return;
-              const textarea = section.querySelector("#mcp-json-input") as HTMLTextAreaElement | null;
-              const statusDiv = section.querySelector("#mcp-json-status") as HTMLElement | null;
-              const spinner = section.querySelector("#mcp-json-spinner") as HTMLElement | null;
-              const raw = textarea?.value.trim() ?? "";
-              if (!raw) return;
+  // Title row
+  const titleRow = document.createElement("div");
+  Object.assign(titleRow.style, { display: "flex", alignItems: "center", justifyContent: "space-between" });
+  const title = document.createElement("div");
+  title.textContent = t("extensions.stats.importMcp" as never) as string;
+  Object.assign(title.style, { fontSize: "15px", fontWeight: "700", color: "var(--fg, #e2e8f0)" });
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "\u2715";
+  Object.assign(closeBtn.style, {
+    all: "unset", cursor: "pointer", fontSize: "16px", color: "var(--muted, #8b9caf)",
+    padding: "4px 8px", borderRadius: "4px", lineHeight: "1",
+  });
+  closeBtn.addEventListener("click", close);
+  titleRow.append(title, closeBtn);
 
-              const result = _parseMcpJson(raw);
+  // Hint text
+  const hint = document.createElement("div");
+  hint.textContent = t("extensions.advanced.jsonPaste.hint" as never) as string;
+  Object.assign(hint.style, { fontSize: "12px", color: "var(--muted-strong, #6b7d91)", lineHeight: "1.5" });
 
-              if (typeof result === "string") {
-                if (statusDiv) {
-                  statusDiv.textContent = result;
-                  statusDiv.style.display = "block";
-                  statusDiv.style.color = "#f87171";
-                }
-                return;
-              }
+  // Textarea
+  const textarea = document.createElement("textarea");
+  textarea.placeholder = placeholder;
+  textarea.rows = 10;
+  Object.assign(textarea.style, {
+    padding: "10px 12px", border: "1px solid var(--border, #334155)",
+    borderRadius: "8px", background: "var(--bg, #0f172a)", color: "var(--fg, #e2e8f0)",
+    fontSize: "13px", fontFamily: "monospace", resize: "vertical",
+    outline: "none", tabSize: "2", whiteSpace: "pre", lineHeight: "1.5",
+  });
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const s = textarea.selectionStart, end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, s) + "  " + textarea.value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = s + 2;
+    }
+    if (e.key === "Escape") close();
+  });
 
-              // Hide previous status, show spinner, disable button
-              if (statusDiv) statusDiv.style.display = "none";
-              if (spinner) spinner.style.display = "inline";
-              btn.disabled = true;
-              btn.style.opacity = "0.5";
+  // Status line
+  const status = document.createElement("div");
+  Object.assign(status.style, { display: "none", fontSize: "12px", padding: "0 2px", lineHeight: "1.4" });
 
-              // Add all parsed servers sequentially, collect results
-              void (async () => {
-                const names: string[] = [];
-                const failures: string[] = [];
-                for (const cfg of result) {
-                  const ok = await onManualAdd(cfg);
-                  if (ok) names.push(cfg.id);
-                  else failures.push(cfg.id);
-                }
+  // Button row
+  const btnRow = document.createElement("div");
+  Object.assign(btnRow.style, { display: "flex", gap: "10px", justifyContent: "flex-end", alignItems: "center" });
 
-                // Restore button
-                btn.disabled = false;
-                btn.style.opacity = "1";
-                if (spinner) spinner.style.display = "none";
+  const spinner = document.createElement("span");
+  spinner.textContent = t("extensions.advanced.jsonPaste.adding" as never) as string;
+  Object.assign(spinner.style, { display: "none", fontSize: "12px", color: "var(--muted-strong, #6b7d91)" });
 
-                if (statusDiv) {
-                  if (failures.length > 0 && names.length === 0) {
-                    // All failed
-                    statusDiv.textContent = (t("extensions.advanced.jsonPaste.addFailed" as never) as string)
-                      .replace("{{names}}", failures.join(", "));
-                    statusDiv.style.color = "#f87171";
-                    statusDiv.style.display = "block";
-                  } else if (failures.length > 0) {
-                    // Partial success
-                    statusDiv.textContent = (t("extensions.advanced.jsonPaste.addPartial" as never) as string)
-                      .replace("{{ok}}", names.join(", "))
-                      .replace("{{fail}}", failures.join(", "));
-                    statusDiv.style.color = "#fb923c";
-                    statusDiv.style.display = "block";
-                  } else {
-                    // All succeeded — show brief success then close
-                    statusDiv.textContent = (t("extensions.advanced.jsonPaste.addSuccess" as never) as string)
-                      .replace("{{names}}", names.join(", "));
-                    statusDiv.style.color = "#34d399";
-                    statusDiv.style.display = "block";
-                    setTimeout(() => {
-                      if (textarea) textarea.value = "";
-                      statusDiv.style.display = "none";
-                      const details = section.closest("details") ?? section;
-                      if (details instanceof HTMLDetailsElement) details.open = false;
-                      _manualFormOpen = false;
-                    }, 1500);
-                  }
-                }
-              })();
-            }}
-            style="
-              all:unset; cursor:pointer;
-              padding:6px 18px;
-              border-radius:6px;
-              font-size:12px; font-weight:600;
-              background:var(--accent, #6366f1);
-              color:#fff;
-              transition: opacity 150ms;
-            "
-          >${t("extensions.advanced.manualAdd.submit" as never)}</button>
-        </div>
-      </div>
-    </details>
-  `;
+  const submitBtn = document.createElement("button");
+  submitBtn.textContent = t("extensions.advanced.manualAdd.submit" as never) as string;
+  Object.assign(submitBtn.style, {
+    all: "unset", cursor: "pointer", padding: "8px 24px", borderRadius: "8px",
+    fontSize: "13px", fontWeight: "600", background: "var(--accent, #6366f1)", color: "#fff",
+    transition: "opacity 150ms",
+  });
+
+  submitBtn.addEventListener("click", () => {
+    const raw = textarea.value.trim();
+    if (!raw) return;
+
+    const result = _parseMcpJson(raw);
+    if (typeof result === "string") {
+      status.textContent = result;
+      status.style.display = "block";
+      status.style.color = "#f87171";
+      return;
+    }
+
+    status.style.display = "none";
+    spinner.style.display = "inline";
+    submitBtn.style.opacity = "0.5";
+    submitBtn.style.pointerEvents = "none";
+
+    void (async () => {
+      const ok: string[] = [], fail: string[] = [];
+      for (const cfg of result) {
+        (await onManualAdd(cfg)) ? ok.push(cfg.id) : fail.push(cfg.id);
+      }
+
+      submitBtn.style.opacity = "1";
+      submitBtn.style.pointerEvents = "";
+      spinner.style.display = "none";
+
+      if (fail.length > 0 && ok.length === 0) {
+        status.textContent = (t("extensions.advanced.jsonPaste.addFailed" as never) as string).replace("{{names}}", fail.join(", "));
+        status.style.color = "#f87171";
+        status.style.display = "block";
+      } else if (fail.length > 0) {
+        status.textContent = (t("extensions.advanced.jsonPaste.addPartial" as never) as string).replace("{{ok}}", ok.join(", ")).replace("{{fail}}", fail.join(", "));
+        status.style.color = "#fb923c";
+        status.style.display = "block";
+      } else {
+        status.textContent = (t("extensions.advanced.jsonPaste.addSuccess" as never) as string).replace("{{names}}", ok.join(", "));
+        status.style.color = "#34d399";
+        status.style.display = "block";
+        setTimeout(close, 1200);
+      }
+    })();
+  });
+
+  btnRow.append(spinner, submitBtn);
+  card.append(titleRow, hint, textarea, status, btnRow);
+  backdrop.append(card);
+  document.body.append(backdrop);
+
+  // Auto-focus textarea
+  requestAnimationFrame(() => textarea.focus());
 }

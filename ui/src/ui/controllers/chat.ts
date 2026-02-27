@@ -1,5 +1,5 @@
 import { extractText, extractRawText, type FailoverNotificationPayload } from "../chat/message-extract";
-import { formatErrorHint } from "../chat/error-hints";
+import { formatErrorHintFull } from "../chat/error-hints";
 import type { GatewayBrowserClient } from "../gateway";
 import { generateUUID } from "../uuid";
 import type { ChatAttachment } from "../ui-types";
@@ -217,8 +217,8 @@ export async function sendChatMessage(
     
     state.lastError = error;
     
-    // 添加格式化的错误消息
-    const errorHint = formatErrorHint(error);
+    // 添加格式化的错误消息（使用完整版 — 含友好提示 + 解决建议）
+    const errorHint = formatErrorHintFull(error);
     const errorText = errorHint.rawError
       ? `${errorHint.friendlyMessage}\n\n> ${errorHint.rawError}`
       : errorHint.friendlyMessage;
@@ -226,7 +226,7 @@ export async function sendChatMessage(
       ...state.chatMessages,
       {
         role: "assistant",
-        content: [{ type: "text", text: `⚠️ ${errorText}` }],
+        content: [{ type: "text", text: errorText }],
         timestamp: Date.now(),
         isError: true,
       },
@@ -354,11 +354,11 @@ export function handleChatEvent(
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
-    const errorMsg = payload.errorMessage ?? "chat error";
+    const errorMsg = payload.errorMessage ?? "聊天请求失败";
     state.lastError = errorMsg;
-    
-    // 添加格式化的错误消息到聊天历史
-    const errorHint = formatErrorHint(errorMsg);
+
+    // 添加格式化的错误消息到聊天历史（使用完整版 — 含友好提示 + 解决建议）
+    const errorHint = formatErrorHintFull(errorMsg);
     const errorText = errorHint.rawError
       ? `${errorHint.friendlyMessage}\n\n> ${errorHint.rawError}`
       : errorHint.friendlyMessage;
@@ -366,7 +366,7 @@ export function handleChatEvent(
       ...state.chatMessages,
       {
         role: "assistant",
-        content: [{ type: "text", text: `⚠️ ${errorText}` }],
+        content: [{ type: "text", text: errorText }],
         timestamp: Date.now(),
         isError: true,
       },

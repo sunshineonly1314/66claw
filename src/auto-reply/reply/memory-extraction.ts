@@ -253,7 +253,7 @@ export function shouldRunMemoryExtraction(params: {
 
 type ExtractionProviderOption = { provider: string; model: string };
 
-const EXTRACTION_FALLBACK_CHAIN: ExtractionProviderOption[] = [
+export const EXTRACTION_FALLBACK_CHAIN: ExtractionProviderOption[] = [
   { provider: "meituan-longcat", model: "longcat-flash-chat" },
   { provider: "ant-ling", model: "ling-1t" },
   { provider: "siliconflow", model: "deepseek-ai/DeepSeek-V3" },
@@ -332,6 +332,38 @@ function resolveExtractionProvider(
   }
 
   return null;
+}
+
+/**
+ * 查询当前可用的记忆提取 provider（只检查 API key 是否存在，不发起 LLM 调用）。
+ * 用于 UI 展示记忆提取模型状态。
+ */
+export function getExtractionProviderStatus(cfg?: OpenClawCNConfig): {
+  provider: string | null;
+  model: string | null;
+  status: "active" | "inactive";
+} {
+  const settings = resolveMemoryExtractionSettings(cfg);
+  if (!settings) return { provider: null, model: null, status: "inactive" };
+
+  // 1. 尝试配置的 primary provider
+  const primaryKey = resolveMemoryProviderApiKey(cfg, settings.provider);
+  if (primaryKey) {
+    const baseUrl = resolveMemoryProviderBaseUrl(cfg, settings.provider);
+    if (baseUrl) return { provider: settings.provider, model: settings.model, status: "active" };
+  }
+
+  // 2. 遍历 fallback chain
+  for (const fb of EXTRACTION_FALLBACK_CHAIN) {
+    if (fb.provider === settings.provider) continue;
+    const key = resolveMemoryProviderApiKey(cfg, fb.provider);
+    if (key) {
+      const baseUrl = resolveMemoryProviderBaseUrl(cfg, fb.provider);
+      if (baseUrl) return { provider: fb.provider, model: fb.model, status: "active" };
+    }
+  }
+
+  return { provider: null, model: null, status: "inactive" };
 }
 
 // ── LLM Call ──

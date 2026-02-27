@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 
+import { formatGeneralError } from "./chat/error-hints";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { AppViewState, McpMarketplaceItem } from "./app-view-state";
 import { generateUUID } from "./uuid";
@@ -78,6 +79,7 @@ import {
   handleActionClick as orchActionClick,
   handleAnswerQuestion as orchAnswerQuestion,
   handleDeployProposal as orchDeployProposal,
+  handlePreviewDeploy as orchPreviewDeploy,
 } from "./controllers/orchestrator";
 import { renderUpdateBanner } from "./views/update-banner";
 import { renderUpdateDialog } from "./views/update-dialog";
@@ -163,7 +165,7 @@ import {
   type LicenseDialogType,
 } from "./license/index";
 import { handleRenewalReminderDismiss } from "./app-gateway";
-import { loadChannels } from "./controllers/channels";
+import { loadChannels, loadChannelRoutes, updateChannelRoute } from "./controllers/channels";
 import { loadPresence } from "./controllers/presence";
 import { deleteSession, loadSessions, patchSession } from "./controllers/sessions";
 import {
@@ -201,6 +203,8 @@ import {
   loadSharedMemory,
   clearSharedMemory,
   stopProjectHealthPoll,
+  updateProjectSettings,
+  removeProjectMember,
 } from "./controllers/team-projects";
 import { loadNodes } from "./controllers/nodes";
 import {
@@ -727,6 +731,9 @@ export function renderApp(state: AppViewState) {
               configFormDirty: state.configFormDirty,
               nostrProfileFormState: state.nostrProfileFormState,
               nostrProfileAccountId: state.nostrProfileAccountId,
+              routeSummary: state.channelRouteSummary,
+              routeProjects: state.channelRouteProjects,
+              routeSaving: state.channelRouteSaving,
               onRefresh: (probe) => loadChannels(state, probe),
               onWhatsAppStart: (force) => state.handleWhatsAppStart(force),
               onWhatsAppWait: () => state.handleWhatsAppWait(),
@@ -742,6 +749,29 @@ export function renderApp(state: AppViewState) {
               onNostrProfileSave: () => state.handleNostrProfileSave(),
               onNostrProfileImport: () => state.handleNostrProfileImport(),
               onNostrProfileToggleAdvanced: () => state.handleNostrProfileToggleAdvanced(),
+              onRouteChange: (channel, accountId, projectId) =>
+                updateChannelRoute(state, channel, accountId, projectId),
+              channelsSelectedKey: state.channelsSelectedKey ?? null,
+              onSelectChannel: (key) => {
+                state.channelsSelectedKey = key;
+                state.requestUpdate();
+              },
+              channelsWizardOpen: state.channelsWizardOpen ?? false,
+              channelsWizardAccountId: state.channelsWizardAccountId ?? null,
+              onWizardOpen: (accountId) => {
+                state.channelsWizardOpen = true;
+                state.channelsWizardAccountId = accountId ?? null;
+                state.requestUpdate();
+              },
+              onWizardClose: () => {
+                state.channelsWizardOpen = false;
+                state.channelsWizardAccountId = null;
+                // Reload config to discard unsaved wizard edits and reset dirty state
+                if (state.configFormDirty) {
+                  state.handleChannelConfigReload();
+                }
+                state.requestUpdate();
+              },
             })
           : nothing}
 
@@ -765,12 +795,15 @@ export function renderApp(state: AppViewState) {
               includeGlobal: state.sessionsIncludeGlobal,
               includeUnknown: state.sessionsIncludeUnknown,
               basePath: state.basePath,
+              highlightKey: state.sessionsHighlightKey,
+              searchQuery: state.sessionsSearchQuery,
               onFiltersChange: (next) => {
                 state.sessionsFilterActive = next.activeMinutes;
                 state.sessionsFilterLimit = next.limit;
                 state.sessionsIncludeGlobal = next.includeGlobal;
                 state.sessionsIncludeUnknown = next.includeUnknown;
 	              },
+              onSearchChange: (query) => { state.sessionsSearchQuery = query; },
 	              onRefresh: () => loadSessions(state),
 	              onPatch: (key, patch) => patchSession(state, key, patch),
 	              onDelete: (key) => deleteSession(state, key),
@@ -1144,6 +1177,15 @@ export function renderApp(state: AppViewState) {
                     await deleteAgent(state as any, { agentId, deleteFiles: true });
                   }
                 },
+                // Team project detail: settings + member management
+                onUpdateProjectSettings: (projectId: string, updates: Record<string, unknown>) =>
+                  void updateProjectSettings(state as any, projectId, updates),
+                onRemoveProjectMember: (projectId: string, agentId: string) =>
+                  void removeProjectMember(state as any, projectId, agentId),
+                onSelectAgentFromProject: (agentId: string) => {
+                  state.agentsSelectedId = agentId;
+                  state.teamProjectSelectedId = null;
+                },
                 // Overview: inline identity & SOUL.md editing
                 requestUpdate: () => state.requestUpdate(),
                 onIdentityUpdate: async (agentId: string, name: string, emoji: string) => {
@@ -1216,6 +1258,7 @@ export function renderApp(state: AppViewState) {
                       onActionClick: (action: string, data?: unknown) => orchActionClick(state as any, action, data),
                       onAnswerQuestion: (qi: number, answer: string) => orchAnswerQuestion(state as any, qi, answer),
                       onDeployProposal: (planId: string) => void orchDeployProposal(state as any, planId),
+                      onPreviewDeploy: (templateId: string) => void orchPreviewDeploy(state as any, templateId),
                     }, t)
                   : nothing,
               })
@@ -1369,8 +1412,8 @@ export function renderApp(state: AppViewState) {
                     if (proc?.status === "running") {
                       showMcpToast(state, `${id} — ${t("extensions.advanced.restartSuccess" as never)}`, "success");
                     } else {
-                      const errInfo = proc?.error ? `: ${proc.error}` : "";
-                      showMcpToast(state, `${id} — ${t("extensions.advanced.restartFailed" as never)}${errInfo}`, "error");
+                      const { detail } = formatGeneralError(proc?.error, `${id} 重启`);
+                      showMcpToast(state, detail, "error");
                     }
                   } catch {
                     showMcpToast(state, `${id} — ${t("extensions.advanced.restartFailed" as never)}`, "error");
@@ -1409,8 +1452,8 @@ export function renderApp(state: AppViewState) {
                       const toolInfo = result.toolCount ? ` (${result.toolCount} tools)` : "";
                       showMcpToast(state, `${id} — ${t("extensions.advanced.testSuccess" as never)}${toolInfo}`, "success");
                     } else {
-                      const errorInfo = result.error ? `: ${result.error}` : "";
-                      showMcpToast(state, `${id} — ${t("extensions.advanced.testFailed" as never)}${errorInfo}`, "error");
+                      const { detail } = formatGeneralError(result.error, `${id} 测试`);
+                      showMcpToast(state, detail, "error");
                     }
                     // Also refresh status after test
                     await checkMcpUpdate(state.client, {
@@ -1570,10 +1613,8 @@ export function renderApp(state: AppViewState) {
                     setTimeout(() => void refreshCaps(), 3000);
                   } else {
                     const errorDetail = result?.connectError;
-                    const toastMsg = errorDetail
-                      ? errorDetail
-                      : `${item.friendlyName} ${t("extensions.toast.error" as never)}`;
-                    showMcpToast(state, toastMsg, "error");
+                    const { detail } = formatGeneralError(errorDetail, `${item.friendlyName} 安装`);
+                    showMcpToast(state, detail, "error");
                   }
                 })();
               },
@@ -1723,7 +1764,6 @@ export function renderApp(state: AppViewState) {
                   return false;
                 }
               },
-              manualFormTrigger: state.mcpManualFormTrigger,
               onRetrySync: () => {
                 const mcpCallbacks: MarketplaceCallbacks = {
                   onStateChange: (patch) => {
@@ -2043,7 +2083,7 @@ export function renderApp(state: AppViewState) {
                   void state.client?.request("sessions.rename", { sessionKey: key, name });
                 },
                 onViewDetails: (key: string) => {
-                  state.sessionKey = key;
+                  state.sessionsHighlightKey = key;
                   state.setTab("sessions" as Tab);
                 },
                 onManageAll: () => { state.setTab("sessions" as Tab); },

@@ -1210,8 +1210,18 @@ async function executeDeploySequenceInner(
     let projectCreated = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await callGateway("team.project.createFromPlan", { planId: plan.planId });
+        const createResult = await callGateway("team.project.createFromPlan", { planId: plan.planId }) as
+          { project?: unknown; report?: unknown } | undefined;
         projectCreated = true;
+        // Persist the deploy report so orchestrator.deploy.report can serve it
+        if (createResult?.report) {
+          try {
+            const { saveReport } = await import("./state.js");
+            await saveReport(plan.planId, createResult.report);
+          } catch {
+            // Non-fatal: report is optional enrichment
+          }
+        }
         break;
       } catch (err) {
         emitDiagnosticEvent({
@@ -1475,7 +1485,7 @@ function buildFullConfigPatch(bp: AgentBlueprint, deployedId?: string): Record<s
   if (cap.subagents) agentEntry.subagents = cap.subagents;
 
   // heartbeat
-  if (cap.heartbeat?.enabled) agentEntry.heartbeat = cap.heartbeat;
+  if (cap.heartbeat?.every) agentEntry.heartbeat = cap.heartbeat;
 
   if (Object.keys(agentEntry).length <= 1) return undefined;
 

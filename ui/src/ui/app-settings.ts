@@ -11,7 +11,7 @@ import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
 import { loadAgents, loadDmScopeStatus } from "./controllers/agents.ts";
-import { loadChannels } from "./controllers/channels.ts";
+import { loadChannels, loadChannelRoutes } from "./controllers/channels.ts";
 import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
 import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
 import { loadDebug } from "./controllers/debug.ts";
@@ -478,6 +478,7 @@ export async function loadChannelsTab(host: SettingsHost) {
     loadChannels(host as unknown as OpenClawCNApp, true),
     loadConfigSchema(host as unknown as OpenClawCNApp),
     loadConfig(host as unknown as OpenClawCNApp),
+    loadChannelRoutes(host as unknown as OpenClawCNApp),
   ]);
 }
 

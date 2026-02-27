@@ -40,17 +40,18 @@ export function renderVideoGenPending(args?: Record<string, unknown>): TemplateR
   const prompt = typeof args?.prompt === "string" ? (args.prompt as string) : "";
 
   return html`
-    <div class="video-gen-pending">
-      <div class="video-gen-shimmer">
-        <div class="video-gen-shimmer-inner"></div>
+    <div class="media-gen-progress">
+      <div class="media-gen-progress__icon media-gen-progress__icon--video">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect width="18" height="18" x="3" y="3" rx="2"/>
+          <path d="m10 8 6 4-6 4Z"/>
+        </svg>
       </div>
-      <div class="video-gen-pending-info">
-        <span class="video-gen-pending-label">
-          ${icons.film}
-          <span>${tMaybe("chat.videoGen.generating")}</span>
-        </span>
+      <div class="media-gen-progress__body">
+        <div class="media-gen-progress__title">${tMaybe("chat.videoGen.generating")}</div>
+        <div class="media-gen-progress__hint">这一过程可能需要 1-2 分钟</div>
         ${prompt
-          ? html`<span class="video-gen-pending-prompt">${truncate(prompt, 60)}</span>`
+          ? html`<div class="media-gen-progress__prompt">${truncate(prompt, 80)}</div>`
           : nothing}
       </div>
     </div>
@@ -90,9 +91,26 @@ export function renderVideoGenResult(details: VideoGenDetails): TemplateResult {
         >
           <source src=${videoUrl} type="video/mp4" />
         </video>
+        <div class="video-gen-overlay">
+          <div class="video-gen-overlay-actions">
+            <button
+              class="image-gen-overlay-btn"
+              title="${tMaybe("chat.videoGen.regenerate")}"
+              @click=${(e: Event) => { e.stopPropagation(); regenerateVideo(details.prompt ?? ""); }}
+            >
+              ${icons.refreshCw}
+            </button>
+            <button
+              class="image-gen-overlay-btn"
+              title="${tMaybe("chat.videoGen.download")}"
+              @click=${(e: Event) => { e.stopPropagation(); downloadVideo(details.videoUrl!, details.prompt); }}
+            >
+              ${icons.download}
+            </button>
+          </div>
+        </div>
       </div>
       ${renderMeta({ modelDisplay, sizeDisplay, durationDisplay })}
-      ${renderActions(details)}
     </div>
   `;
 }
@@ -180,20 +198,25 @@ function renderVideoGenError(error: string, prompt?: string): TemplateResult {
 
 function renderExpiredVideo(details: VideoGenDetails): TemplateResult {
   return html`
-    <div class="video-gen-expired">
-      <div class="video-gen-expired-icon">
-        ${icons.film}
+    <div class="media-gen-progress media-gen-progress--interrupted">
+      <div class="media-gen-progress__icon media-gen-progress__icon--interrupted">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect width="18" height="18" x="3" y="3" rx="2"/>
+          <path d="m10 8 6 4-6 4Z"/>
+        </svg>
       </div>
-      <div class="video-gen-expired-text">${tMaybe("chat.videoGen.expired")}</div>
-      ${details.prompt
-        ? html`
-            <div class="video-gen-expired-prompt">"${truncate(details.prompt, 50)}"</div>
-            <button class="image-gen-action" @click=${() => regenerateVideo(details.prompt!)}>
+      <div class="media-gen-progress__body">
+        <div class="media-gen-progress__title">${tMaybe("chat.videoGen.expired")}</div>
+        ${details.prompt
+          ? html`<div class="media-gen-progress__prompt">"${truncate(details.prompt, 60)}"</div>`
+          : nothing}
+        ${details.prompt
+          ? html`<button class="media-gen-progress__action" @click=${() => regenerateVideo(details.prompt!)}>
               ${icons.refreshCw}
               <span>${tMaybe("chat.videoGen.regenerate")}</span>
-            </button>
-          `
-        : nothing}
+            </button>`
+          : nothing}
+      </div>
     </div>
   `;
 }
@@ -205,20 +228,25 @@ function renderExpiredVideo(details: VideoGenDetails): TemplateResult {
 export function renderVideoGenInterrupted(args?: Record<string, unknown>): TemplateResult {
   const prompt = typeof args?.prompt === "string" ? (args.prompt as string) : undefined;
   return html`
-    <div class="video-gen-expired">
-      <div class="video-gen-expired-icon">
-        ${icons.film}
+    <div class="media-gen-progress media-gen-progress--interrupted">
+      <div class="media-gen-progress__icon media-gen-progress__icon--interrupted">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect width="18" height="18" x="3" y="3" rx="2"/>
+          <path d="m10 8 6 4-6 4Z"/>
+        </svg>
       </div>
-      <div class="video-gen-expired-text">${tMaybe("chat.videoGen.interrupted")}</div>
-      ${prompt
-        ? html`
-            <div class="video-gen-expired-prompt">"${truncate(prompt, 50)}"</div>
-            <button class="image-gen-action" @click=${() => regenerateVideo(prompt)}>
+      <div class="media-gen-progress__body">
+        <div class="media-gen-progress__title">${tMaybe("chat.videoGen.interrupted")}</div>
+        ${prompt
+          ? html`<div class="media-gen-progress__prompt">"${truncate(prompt, 60)}"</div>`
+          : nothing}
+        ${prompt
+          ? html`<button class="media-gen-progress__action" @click=${() => regenerateVideo(prompt)}>
               ${icons.refreshCw}
               <span>${tMaybe("chat.videoGen.regenerate")}</span>
-            </button>
-          `
-        : nothing}
+            </button>`
+          : nothing}
+      </div>
     </div>
   `;
 }

@@ -188,7 +188,12 @@ export async function runExec(
           encoding: "utf8" as const,
         };
   try {
-    const { stdout, stderr } = await execFileAsync(resolveCommand(command), args, options);
+    const resolved = resolveCommand(command);
+    // Node.js v24+ on Windows: execFile() rejects .cmd/.bat with EINVAL.
+    // Use cmd.exe /c wrapper (same approach as runCommandWithTimeout).
+    const execCmd = process.platform === "win32" && /\.cmd$/i.test(resolved) ? "cmd.exe" : resolved;
+    const execArgs = execCmd === "cmd.exe" ? ["/c", resolved, ...args] : args;
+    const { stdout, stderr } = await execFileAsync(execCmd, execArgs, options);
     if (shouldLogVerbose()) {
       if (stdout.trim()) {
         logDebug(stdout.trim());
@@ -273,7 +278,18 @@ export async function runCommandWithTimeout(
 
   const stdio = resolveCommandStdio({ hasInput, preferInherit: true });
   const resolvedCommand = resolveCommand(argv[0] ?? "");
-  const child = spawn(resolvedCommand, argv.slice(1), {
+
+  // Node.js v24+ on Windows: spawn() rejects .cmd/.bat files with EINVAL
+  // because they are batch scripts, not PE executables.
+  // Wrap via `cmd.exe /c` instead of `shell: true` to avoid command-injection.
+  let spawnCmd = resolvedCommand;
+  let spawnArgs = argv.slice(1);
+  if (process.platform === "win32" && /\.cmd$/i.test(resolvedCommand)) {
+    spawnArgs = ["/c", resolvedCommand, ...spawnArgs];
+    spawnCmd = "cmd.exe";
+  }
+
+  const child = spawn(spawnCmd, spawnArgs, {
     stdio,
     cwd,
     env: resolvedEnv,

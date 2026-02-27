@@ -5,7 +5,35 @@ import { t } from "../i18n/index.js";
 import type { IMessageStatus } from "../types";
 import type { ChannelsProps } from "./channels.types";
 import { renderChannelConfigSection } from "./channels.config";
-import { isUnconfiguredError, errorCalloutClass } from "./channels.shared";
+import { isUnconfiguredError, errorCalloutClass, renderChannelRouteSection } from "./channels.shared";
+
+export function renderImessageTutorial() {
+  return html`
+    <div class="config-steps">
+      <div class="config-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <strong>macOS Required</strong>
+          <p>iMessage integration requires a Mac logged into an iMessage account.</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <strong>Install CLI Tool</strong>
+          <p>Install the iMessage CLI binary or configure the database path.</p>
+        </div>
+      </div>
+      <div class="config-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <strong>Grant Permissions</strong>
+          <p>Allow Full Disk Access for the CLI tool in System Preferences &rarr; Security.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 export function renderIMessageCard(params: {
   props: ChannelsProps;
@@ -108,6 +136,8 @@ export function renderIMessageCard(params: {
             ${t("channel.probe")}
           </button>
         </div>
+
+        ${renderChannelRouteSection({ channelId: "imessage", props, accounts: props.snapshot?.channelAccounts?.["imessage"] ?? [] })}
       </div>
     </details>
   `;

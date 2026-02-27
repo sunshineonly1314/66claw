@@ -5,13 +5,28 @@
  * 用于模型配置页面的智能检测和能力展示
  */
 
-/** 能力类型 */
+import type { ModelCapabilityCard, CapabilityKey } from "../dispatch/capability-registry.js";
+
+/** 能力类型
+ *
+ * v1 core: text, image-understanding, image-generation, video, embedding
+ * v1 extended: video-generation (used in static model defs)
+ * v2 storage keys: code, videoGen, audio, tts, toolCall (written by auto-assign via V2_KEY_TO_LEGACY)
+ */
 export type Capability =
   | "text" // 文字对话
   | "image-understanding" // 图片理解
   | "image-generation" // 图片生成
+  | "image-editing" // 图像编辑（需提供原图）
   | "video" // 视频理解
-  | "embedding"; // Embedding (向量化)
+  | "video-generation" // 视频生成 (v1 extended)
+  | "embedding" // Embedding (向量化)
+  // v2 storage keys — config 中保存的 v2 能力绑定
+  | "code" // 代码生成
+  | "videoGen" // 视频生成 (v2 alias, 与 video-generation 等价)
+  | "audio" // 语音识别
+  | "tts" // 语音合成
+  | "toolCall"; // 工具调用
 
 /** 模型定义 */
 export interface ModelDef {
@@ -33,8 +48,6 @@ export interface ModelDef {
   contextWindow?: number;
   /** 最大输出 tokens (可选) */
   maxTokens?: number;
-  /** 仅限 Coding Agent 使用，不可作为通用聊天模型自动分配 */
-  agentOnly?: boolean;
 }
 
 /** Provider 分组 */
@@ -143,7 +156,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     name: "Kimi Code",
     icon: "💻",
     group: "cn-codeplan",
-    tagline: "代码专用 · 262K 超长上下文 · 极速",
+    tagline: "聊天+编程+图片理解 · 262K 超长上下文 · 极速",
     apiKeyUrl: "https://www.kimi.com/code/docs/",
     apiKeyGuide: ["访问 Kimi Code 文档页面", "按指引注册并获取 API Key", "复制 API Key"],
     models: [
@@ -154,7 +167,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid", details: "代码+文字+图片理解,262K 超长上下文" },
         contextWindow: 262144,
         maxTokens: 8192,
-        agentOnly: true,
       },
     ],
   },
@@ -176,7 +188,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid", details: "推荐 · 图片理解" },
         contextWindow: 131072,
         maxTokens: 8192,
-        agentOnly: true,
       },
       {
         modelId: "kimi-k2.5",
@@ -185,7 +196,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid", details: "图片理解" },
         contextWindow: 131072,
         maxTokens: 8192,
-        agentOnly: true,
       },
       {
         modelId: "glm-5",
@@ -194,7 +204,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid" },
         contextWindow: 128000,
         maxTokens: 8192,
-        agentOnly: true,
       },
       {
         modelId: "MiniMax-M2.5",
@@ -203,7 +212,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid" },
         contextWindow: 200000,
         maxTokens: 8192,
-        agentOnly: true,
       },
       {
         modelId: "qwen3-coder-plus",
@@ -212,7 +220,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid", details: "Coding Plan 代码专用" },
         contextWindow: 131072,
         maxTokens: 8192,
-        agentOnly: true,
       },
       {
         modelId: "qwen3-coder-next",
@@ -221,7 +228,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid", details: "下一代预览" },
         contextWindow: 131072,
         maxTokens: 8192,
-        agentOnly: true,
       },
     ],
   },
@@ -232,8 +238,12 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     icon: "🧠",
     group: "cn-codeplan",
     tagline: "GLM-5 · 智谱 Coding Plan",
-    apiKeyUrl: "https://open.bigmodel.cn",
-    apiKeyGuide: ["访问 open.bigmodel.cn 注册", "开通 Coding Plan 服务", "创建 API Key 并复制"],
+    apiKeyUrl: "https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI",
+    apiKeyGuide: [
+      "访问 bigmodel.cn/glm-coding 注册",
+      "开通 Coding Plan 服务",
+      "创建 API Key 并复制",
+    ],
     models: [
       {
         modelId: "glm-5",
@@ -242,7 +252,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid", details: "Coding Plan 代码专用" },
         contextWindow: 128000,
         maxTokens: 8192,
-        agentOnly: true,
       },
       {
         modelId: "glm-4.7",
@@ -251,7 +260,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid" },
         contextWindow: 128000,
         maxTokens: 4096,
-        agentOnly: true,
       },
     ],
   },
@@ -272,7 +280,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         pricing: { type: "paid", details: "Coding Plan 订阅专属" },
         contextWindow: 200000,
         maxTokens: 8192,
-        agentOnly: true,
       },
     ],
   },
@@ -450,8 +457,8 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       },
       {
         modelId: "Qwen/Qwen-Image-Edit",
-        modelName: "Qwen-Image-Edit (图像编辑)",
-        capabilities: ["image-generation"],
+        modelName: "Qwen-Image-Edit (图像编辑，需提供原图)",
+        capabilities: ["image-editing"],
         pricing: { type: "paid" },
       },
       {
@@ -1112,6 +1119,129 @@ export function getProviderCapabilityMapping(
   return PROVIDER_CAPABILITY_MAPPINGS[providerId];
 }
 
+// ============================================================================
+// v2 Registry Bridge — connects v2 CapabilityRegistry to v1 static data
+// ============================================================================
+
+/** v2 (CapabilityKey) → v1 (Capability) mapping for the 5 core + video-generation keys.
+ *  Keys with no v1 equivalent (audio, tts, toolCall) return undefined. */
+const REGISTRY_KEY_TO_LEGACY: Record<string, Capability | undefined> = {
+  text: "text",
+  code: "text", // merged into text for v1
+  vision: "image-understanding",
+  imageGen: "image-generation",
+  video: "video",
+  videoGen: "video-generation",
+  embedding: "embedding",
+  audio: undefined,
+  tts: undefined,
+  toolCall: undefined,
+};
+
+/** v1 (Capability) → v2 (CapabilityKey[]) reverse mapping.
+ *  Includes both original v1 keys and v2 storage keys that are now valid Capability values. */
+const LEGACY_KEY_TO_REGISTRY: Record<string, CapabilityKey[]> = {
+  // Original v1 keys
+  text: ["text", "code"],
+  "image-understanding": ["vision"],
+  "image-generation": ["imageGen"],
+  video: ["video"],
+  "video-generation": ["videoGen"],
+  embedding: ["embedding"],
+  // v2 storage keys (used as Capability values in config)
+  code: ["code"],
+  videoGen: ["videoGen"],
+  audio: ["audio"],
+  tts: ["tts"],
+  toolCall: ["toolCall"],
+};
+
+/**
+ * Map a v2 CapabilityKey to the v1 Capability string.
+ * Returns undefined for keys with no v1 equivalent (audio, tts, toolCall).
+ */
+export function registryKeyToLegacy(key: string): Capability | undefined {
+  return REGISTRY_KEY_TO_LEGACY[key];
+}
+
+/**
+ * Map a v1 Capability string to one or more v2 CapabilityKey(s).
+ * E.g. "text" → ["text", "code"] because both v2 keys share the v1 "text" slot.
+ */
+export function legacyKeyToRegistry(key: string): CapabilityKey[] {
+  return LEGACY_KEY_TO_REGISTRY[key] ?? [];
+}
+
+/**
+ * Convert a v2 ModelCapabilityCard to a v1 ModelDef.
+ * Used when dynamically bridging registry data into the static model list.
+ */
+export function cardToModelDef(card: ModelCapabilityCard): ModelDef {
+  const capabilities: Capability[] = [];
+  const seen = new Set<Capability>();
+  for (const v2Key of Object.keys(card.capabilities)) {
+    const v1Key = REGISTRY_KEY_TO_LEGACY[v2Key];
+    if (v1Key && !seen.has(v1Key)) {
+      seen.add(v1Key);
+      capabilities.push(v1Key);
+    }
+  }
+  return {
+    modelId: card.modelId,
+    modelName: card.displayName,
+    capabilities,
+    pricing: {
+      type: card.costTier === "free" ? "free" : "paid",
+      details: card.tags?.join(", "),
+    },
+    contextWindow: card.maxContextTokens,
+  };
+}
+
+// ── Registry link for dynamic delegation ──
+
+type CardAccessor = () => readonly ModelCapabilityCard[];
+let _getAllCards: CardAccessor | null = null;
+
+/**
+ * Link the capability registry so that getModelsByCapability / getProviderCapabilities
+ * can delegate to live v2 data.
+ *
+ * Call with `null` or a no-op accessor to unlink (e.g. in tests).
+ */
+export function linkCapabilityRegistry(accessor: CardAccessor): void {
+  _getAllCards = accessor;
+}
+
+// ── Provider ID: registry → static mapping key resolution ──
+
+// Alias groups: matches PROVIDER_ALIAS_GROUPS in model-selection.ts
+// First element is the canonical/static-mapping key.
+const _STATIC_ALIAS_GROUPS: readonly string[][] = [
+  ["glm", "zhipu"],
+  ["aliyun-bailian", "qwen", "dashscope", "qwen-dashscope"],
+  ["volcengine-ark", "doubao", "ark"],
+  ["kimi-coding", "kimi-code"],
+  ["zai", "z.ai", "z-ai"],
+  ["opencode", "opencode-zen"],
+];
+
+// Build reverse map: alias → canonical (static mapping key)
+const _aliasToStaticKey = new Map<string, string>();
+for (const group of _STATIC_ALIAS_GROUPS) {
+  const canonical = group[0];
+  for (const alias of group) {
+    _aliasToStaticKey.set(alias, canonical);
+  }
+}
+
+function findStaticMappingKey(registryProviderId: string): string | undefined {
+  if (PROVIDER_CAPABILITY_MAPPINGS[registryProviderId]) return registryProviderId;
+  const canonical = _aliasToStaticKey.get(registryProviderId);
+  if (canonical && PROVIDER_CAPABILITY_MAPPINGS[canonical]) return canonical;
+  return undefined;
+}
+
 /**
  * 获取所有支持某个能力的模型
  */
@@ -1121,16 +1251,48 @@ export function getModelsByCapability(capability: Capability): Array<{
   providerIcon: string;
   model: ModelDef;
 }> {
-  const results: Array<{
-    providerId: string;
-    providerName: string;
-    providerIcon: string;
-    model: ModelDef;
-  }> = [];
+  type Result = { providerId: string; providerName: string; providerIcon: string; model: ModelDef };
+  const results: Result[] = [];
+  const seenModels = new Set<string>(); // "providerId/modelId"
 
+  // ── Phase 1: Delegate to v2 registry if linked ──
+  if (_getAllCards) {
+    const cards = _getAllCards();
+    // Map v1 capability to v2 keys for matching
+    const v2Keys = LEGACY_KEY_TO_REGISTRY[capability] ?? [];
+
+    for (const card of cards) {
+      // Check if card has any of the matching v2 capabilities
+      const hasCapability = v2Keys.some((k) => (card.capabilities[k] ?? 0) > 0);
+      if (!hasCapability) continue;
+
+      // Resolve registry provider ID to static mapping key
+      const staticKey = findStaticMappingKey(card.provider);
+      const mapping = staticKey ? PROVIDER_CAPABILITY_MAPPINGS[staticKey] : undefined;
+      const usePid = staticKey ?? card.provider;
+      const provName = mapping?.name ?? card.displayName;
+      const provIcon = mapping?.icon ?? "";
+
+      const key = `${usePid}/${card.modelId}`;
+      if (seenModels.has(key)) continue;
+      seenModels.add(key);
+
+      results.push({
+        providerId: usePid,
+        providerName: provName,
+        providerIcon: provIcon,
+        model: cardToModelDef(card),
+      });
+    }
+  }
+
+  // ── Phase 2: Fill in from static PROVIDER_CAPABILITY_MAPPINGS ──
   for (const [providerId, mapping] of Object.entries(PROVIDER_CAPABILITY_MAPPINGS)) {
     for (const model of mapping.models) {
       if (model.capabilities.includes(capability)) {
+        const key = `${providerId}/${model.modelId}`;
+        if (seenModels.has(key)) continue;
+        seenModels.add(key);
         results.push({
           providerId,
           providerName: mapping.name,
@@ -1148,13 +1310,31 @@ export function getModelsByCapability(capability: Capability): Array<{
  * 获取某个提供商支持的所有能力
  */
 export function getProviderCapabilities(providerId: string): Capability[] {
-  const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
-  if (!mapping) return [];
-
   const capabilitiesSet = new Set<Capability>();
-  for (const model of mapping.models) {
-    for (const capability of model.capabilities) {
-      capabilitiesSet.add(capability);
+
+  // ── Phase 1: Check v2 registry if linked ──
+  if (_getAllCards) {
+    const cards = _getAllCards();
+    for (const card of cards) {
+      // Check if this card belongs to the requested provider (including alias resolution)
+      const staticKey = findStaticMappingKey(card.provider);
+      if (staticKey !== providerId && card.provider !== providerId) continue;
+
+      for (const v2Key of Object.keys(card.capabilities)) {
+        if ((card.capabilities[v2Key as CapabilityKey] ?? 0) <= 0) continue;
+        const v1Key = REGISTRY_KEY_TO_LEGACY[v2Key];
+        if (v1Key) capabilitiesSet.add(v1Key);
+      }
+    }
+  }
+
+  // ── Phase 2: Fill in from static mapping ──
+  const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
+  if (mapping) {
+    for (const model of mapping.models) {
+      for (const capability of model.capabilities) {
+        capabilitiesSet.add(capability);
+      }
     }
   }
 
@@ -1164,32 +1344,50 @@ export function getProviderCapabilities(providerId: string): Capability[] {
 /**
  * 能力的人性化名称 (中文)
  */
-export const CAPABILITY_NAMES: Record<Capability, string> = {
+export const CAPABILITY_NAMES: Partial<Record<Capability, string>> = {
   text: "聊天",
   "image-understanding": "看图",
   "image-generation": "画图",
   video: "看视频",
+  "video-generation": "生视频",
   embedding: "智能推荐",
+  code: "写代码",
+  videoGen: "生视频",
+  audio: "听语音",
+  tts: "语音合成",
+  toolCall: "工具调用",
 };
 
 /**
  * 能力的详细说明 (中文)
  */
-export const CAPABILITY_DESCRIPTIONS: Record<Capability, string> = {
+export const CAPABILITY_DESCRIPTIONS: Partial<Record<Capability, string>> = {
   text: "和 AI 聊天对话",
   "image-understanding": "上传图片让 AI 识别和理解",
   "image-generation": "用文字描述让 AI 画图",
   video: "上传视频让 AI 总结内容",
+  "video-generation": "用文字描述让 AI 生成视频",
   embedding: "智能推荐工具和技能 (必需)",
+  code: "编写和理解代码",
+  videoGen: "用文字描述让 AI 生成视频",
+  audio: "语音识别和转写",
+  tts: "文字转语音",
+  toolCall: "工具/函数调用",
 };
 
 /**
  * 能力的图标 (emoji)
  */
-export const CAPABILITY_ICONS: Record<Capability, string> = {
+export const CAPABILITY_ICONS: Partial<Record<Capability, string>> = {
   text: "💬",
   "image-understanding": "👁️",
   "image-generation": "🎨",
   video: "📹",
+  "video-generation": "🎬",
   embedding: "🧩",
+  code: "💻",
+  videoGen: "🎬",
+  audio: "🎤",
+  tts: "🔊",
+  toolCall: "🔧",
 };

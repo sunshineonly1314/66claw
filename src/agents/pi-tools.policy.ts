@@ -199,7 +199,16 @@ export function resolveEffectiveToolPolicy(params: {
   const agentTools = agentConfig?.tools;
   const globalTools = params.config?.tools;
 
-  const profile = agentTools?.profile ?? globalTools?.profile;
+  let profile = agentTools?.profile ?? globalTools?.profile;
+
+  // [CN-FIX:main-agent-minimal] The default ("main") agent should never be restricted
+  // to the "minimal" profile (which only allows session_status). This can happen when
+  // the orchestrator creates agents with minimal profile and the main agent inherits it.
+  // Silently upgrade to "full" so the main chat agent has access to all tools.
+  if (profile === "minimal" && agentId === "main") {
+    profile = undefined; // undefined = no profile restriction = full access
+  }
+
   const providerPolicy = resolveProviderToolPolicy({
     byProvider: globalTools?.byProvider,
     modelProvider: params.modelProvider,

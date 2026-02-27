@@ -38,6 +38,7 @@ export type ModalityIntent =
   | "code" // Code generation / debugging
   | "image_understand" // User sent an image, wants it analyzed
   | "image_generate" // User wants an image created
+  | "image_edit" // User sent an image and wants it edited
   | "audio_understand" // User sent audio/voice
   | "video_understand" // User sent a video
   | "video_generate" // User wants a video created (future)
@@ -52,6 +53,7 @@ export type ModelCapability = {
   videoGen?: number;
   code?: number;
   imageGen?: number;
+  imageEdit?: number;
 };
 
 /** A model profile in the capability matrix. */
@@ -163,12 +165,12 @@ export function detectModalityIntent(body: string, attachments: MediaAttachment[
   if (hasVideo) return "video_understand";
   if (hasAudio) return "audio_understand";
   if (hasImage) {
-    // When user sends an image, only edit patterns trigger image_generate.
+    // When user sends an image + edit patterns → image_edit (not image_generate).
     // Gen patterns are NOT checked here because phrases like "generate a description
     // of this picture" would false-positive to image_generate (M10 fix).
     const text = body.trim();
     if (text && IMAGE_EDIT_PATTERNS.some((p) => p.test(text))) {
-      return "image_generate";
+      return "image_edit";
     }
     return "image_understand";
   }
@@ -550,6 +552,20 @@ export async function routeByModality(
   // 2. For plain text or document-only input, current model is fine
   if (intent === "text" || intent === "document_understand") {
     return null; // Current model handles text, no switch needed
+  }
+
+  // 3. Image/video generation should NOT switch the chat model.
+  //    These are handled by dedicated tools (image_gen, video_gen) that call
+  //    specialized APIs (/v1/images/generations). Switching the chat model to
+  //    a non-chat image-gen model (e.g. Qwen-Image-Edit) breaks /chat/completions.
+  //    The modality intent is still returned so callers (tool-filter, system-prompt)
+  //    can enable the appropriate tools.
+  if (intent === "image_generate" || intent === "image_edit" || intent === "video_generate") {
+    log.debug(
+      `modality-router: ${intent} detected, keeping chat model ` +
+        `(image/video gen/edit handled by dedicated tools)`,
+    );
+    return null;
   }
 
   const requiredCap = REQUIRED_CAPABILITY[intent];

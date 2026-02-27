@@ -1,6 +1,13 @@
 import type { AnyAgentTool } from "./tools/common.js";
 
-export type ToolProfileId = "minimal" | "coding" | "messaging" | "full";
+export type ToolProfileId =
+  | "minimal"
+  | "coding"
+  | "messaging"
+  | "research"
+  | "creative"
+  | "data"
+  | "full";
 
 type ToolProfilePolicy = {
   allow?: string[];
@@ -77,6 +84,25 @@ const TOOL_PROFILES: Record<ToolProfileId, ToolProfilePolicy> = {
       "sessions_send",
       "session_status",
     ],
+  },
+  research: {
+    allow: ["group:web", "group:memory", "group:fs", "image", "session_status"],
+  },
+  creative: {
+    allow: [
+      "group:web",
+      "group:memory",
+      "group:fs",
+      "image",
+      "image_gen",
+      "image_edit",
+      "video_gen",
+      "tts",
+      "session_status",
+    ],
+  },
+  data: {
+    allow: ["group:fs", "group:runtime", "group:memory", "group:web", "image", "session_status"],
   },
   full: {},
 };

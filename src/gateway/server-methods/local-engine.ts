@@ -174,71 +174,9 @@ async function buildStatus(): Promise<LocalEngineStatus> {
 
   models["voice"] = asrModels;
 
-  // --- Voice TTS models (capability: "tts") ---
-  const ttsModels: LocalModelItem[] = [];
-
-  const qwen3Tts = VOICE_MODELS["qwen3-tts-0.6b"];
-  if (qwen3Tts) {
-    const isRecommended = voiceTier.ttsModel?.id === qwen3Tts.id;
-    const isRunning =
-      voiceStatus.gpuSidecar?.status === "running" && voiceStatus.gpuSidecar?.ttsReady;
-    // Check disk directly — getModelInstallStates only checks tier-recommended model
-    const ttsDir = path.join(VOICE_MODELS_DIR, qwen3Tts.modelDirName);
-    const isInstalled =
-      fs.existsSync(ttsDir) && fs.existsSync(path.join(ttsDir, "model.safetensors"));
-    const hasEnoughVram = hw.gpu?.vendor === "nvidia" && hw.gpu.vramTotalMB * 0.7 >= 6300;
-
-    ttsModels.push({
-      id: qwen3Tts.id,
-      displayName: qwen3Tts.displayName,
-      runMode: "gpu",
-      recommended: isRecommended,
-      description: "多音色 · 多语言 · 流式输出",
-      downloadSizeMB: qwen3Tts.downloadSizeMB,
-      runtimeMemoryMB: qwen3Tts.estimatedMemoryMB,
-      status: !hasEnoughVram
-        ? "not_available"
-        : isRunning
-          ? "running"
-          : isInstalled
-            ? "installed"
-            : "installable",
-      capability: "tts",
-      unavailableReason: !hasEnoughVram ? "需要 NVIDIA GPU (6.3GB+ VRAM，含 ASR 共用)" : undefined,
-    });
-  }
-
-  const kokoro = VOICE_MODELS["kokoro-82m"];
-  if (kokoro) {
-    const isRecommended = voiceTier.ttsModel?.id === kokoro.id;
-    let kokoroInstalled = false;
-    try {
-      const { isKokoroInstalled } = await import("../../tts/tts-kokoro.js");
-      kokoroInstalled = isKokoroInstalled();
-    } catch {
-      /* not available */
-    }
-    const hasEnoughRam = hw.freeRamMB * 0.7 >= 1400;
-
-    ttsModels.push({
-      id: kokoro.id,
-      displayName: kokoro.displayName,
-      runMode: "cpu",
-      recommended: isRecommended,
-      description: "离线可用 · 轻量 · 中英",
-      downloadSizeMB: kokoro.downloadSizeMB,
-      runtimeMemoryMB: kokoro.estimatedMemoryMB,
-      status: !hasEnoughRam ? "not_available" : kokoroInstalled ? "installed" : "installable",
-      capability: "tts",
-      unavailableReason: !hasEnoughRam ? "需要 1.4GB+ 可用内存" : undefined,
-    });
-  }
-
-  // Edge TTS is an online service (no download, no local resources).
-  // It is managed by voice-tier preferences, not the local model hub.
-
-  // Merge TTS into voice group
-  models["voice"] = [...(models["voice"] ?? []), ...ttsModels];
+  // --- Voice TTS models — HIDDEN in this release (TTS not ready for production) ---
+  // TTS models (Qwen3-TTS, Kokoro, Edge TTS) are intentionally excluded from the
+  // local model hub. The underlying code is preserved for future re-enablement.
 
   // --- KWS (wake word) model (capability: "audio") ---
   const kws = VOICE_MODELS["kws-zipformer-zh-en-3m"];

@@ -975,6 +975,7 @@ export function getIndexStats(db: DatabaseSync): {
   entryCount: number;
   vectorized: boolean;
   vecModel?: string;
+  vecDims?: number;
   vecCount?: number;
   builtAt?: number;
 } {
@@ -982,9 +983,37 @@ export function getIndexStats(db: DatabaseSync): {
     entryCount: Number(readMeta(db, "entry_count") ?? 0),
     vectorized: readMeta(db, "vectorized") === "true",
     vecModel: readMeta(db, "vec_model") ?? undefined,
+    vecDims: Number(readMeta(db, "vec_dims") ?? 0) || undefined,
     vecCount: Number(readMeta(db, "vec_count") ?? 0) || undefined,
     builtAt: Number(readMeta(db, "built_at") ?? 0) || undefined,
   };
+}
+
+/**
+ * 查询当前向量库的绑定状态（模型 + 维度 + 向量数量）。
+ * 使用 singleton 缓存的 DB 连接，若 DB 未打开则返回 unbound 状态。
+ */
+export function getVecBindingStatus(): {
+  bound: boolean;
+  vecModel: string | null;
+  vecDims: number | null;
+  vecCount: number;
+} {
+  if (!_db) {
+    return { bound: false, vecModel: null, vecDims: null, vecCount: 0 };
+  }
+  try {
+    const stats = getIndexStats(_db);
+    const count = stats.vecCount ?? 0;
+    return {
+      bound: stats.vectorized && count > 0,
+      vecModel: stats.vecModel ?? null,
+      vecDims: stats.vecDims ?? null,
+      vecCount: count,
+    };
+  } catch {
+    return { bound: false, vecModel: null, vecDims: null, vecCount: 0 };
+  }
 }
 
 // ---------------------------------------------------------------------------
