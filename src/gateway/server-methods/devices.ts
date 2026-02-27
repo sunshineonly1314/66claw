@@ -4,6 +4,7 @@ import {
   listDevicePairing,
   type DeviceAuthToken,
   rejectDevicePairing,
+  removeDevice,
   revokeDeviceToken,
   rotateDeviceToken,
   summarizeDeviceTokens,
@@ -15,6 +16,7 @@ import {
   validateDevicePairApproveParams,
   validateDevicePairListParams,
   validateDevicePairRejectParams,
+  validateDeviceRemoveParams,
   validateDeviceTokenRevokeParams,
   validateDeviceTokenRotateParams,
 } from "../protocol/index.js";
@@ -186,5 +188,28 @@ export const deviceHandlers: GatewayRequestHandlers = {
       { deviceId, role: entry.role, revokedAtMs: entry.revokedAtMs ?? Date.now() },
       undefined,
     );
+  },
+  "device.remove": async ({ params, respond, context }) => {
+    if (!validateDeviceRemoveParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid device.remove params: ${formatValidationErrors(
+            validateDeviceRemoveParams.errors,
+          )}`,
+        ),
+      );
+      return;
+    }
+    const { deviceId } = params as { deviceId: string };
+    const removed = await removeDevice({ deviceId });
+    if (!removed) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown deviceId"));
+      return;
+    }
+    context.logGateway.info(`device removed device=${deviceId}`);
+    respond(true, { deviceId, removedAtMs: Date.now() }, undefined);
   },
 };

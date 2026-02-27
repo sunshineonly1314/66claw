@@ -143,9 +143,19 @@ export type DiagnosticToolLoopEvent = DiagnosticBaseEvent & {
 export type DiagnosticOrchestratorDeployEvent = DiagnosticBaseEvent & {
   type: "orchestrator.deploy";
   planId: string;
-  phase: "start" | "agent_ready" | "conflict" | "failed" | "complete" | "cancelled";
+  phase:
+    | "start"
+    | "agent_ready"
+    | "conflict"
+    | "conflict-cleanup"
+    | "failed"
+    | "complete"
+    | "cancelled"
+    | "project-create-failed"
+    | "project-create-exhausted";
   agentId?: string;
   agentCount?: number;
+  agents?: string;
   error?: string;
 };
 

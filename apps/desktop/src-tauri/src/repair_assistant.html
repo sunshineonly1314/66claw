@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>ClawdbotCN 检修助手</title>
+<title>ClawdbotCN 一键检修</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0f0f1a;--bg2:#161625;--bg3:#1e1e30;--border:#2a2a45;--text:#e0e0e0;--text2:#888;--accent:#4a6cf7;--accent2:#3b5de7;--green:#4ade80;--red:#f87171;--yellow:#fbbf24;--radius:8px}
@@ -21,6 +21,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .btn:disabled{opacity:0.4;cursor:not-allowed}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-primary:hover:not(:disabled){background:var(--accent2)}
+.btn-repair{background:linear-gradient(135deg,#4a6cf7,#7c3aed);color:#fff;font-weight:600;font-size:13px;padding:8px 20px}
+.btn-repair:hover:not(:disabled){background:linear-gradient(135deg,#3b5de7,#6d28d9)}
 .btn-sm{padding:4px 10px;font-size:11px}
 .btn-fix{background:rgba(74,222,128,0.15);color:var(--green);border:1px solid rgba(74,222,128,0.3)}
 .btn-fix:hover{background:rgba(74,222,128,0.25)}
@@ -29,15 +31,35 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .main{display:flex;flex:1;overflow:hidden}
 
 /* Left panel: diagnostics */
-.panel-left{width:38%;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.panel-left{width:42%;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
 .panel-header{padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .sys-info{padding:10px 16px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:11px;color:var(--text2);line-height:1.6;flex-shrink:0}
 .sys-info span{color:var(--text);font-weight:500}
-.checks-list{flex:1;overflow-y:auto;padding:8px 0}
+.checks-list{flex:1;overflow-y:auto;padding:0}
+
+/* Section headers in checks list */
+.section-header{padding:8px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);background:var(--bg2);border-bottom:1px solid var(--border);border-top:1px solid var(--border);position:sticky;top:0;z-index:1}
+.section-header:first-child{border-top:none}
 .check-item{display:flex;align-items:center;padding:6px 16px;gap:8px;border-bottom:1px solid rgba(255,255,255,0.03)}
 .check-icon{font-size:14px;flex-shrink:0;width:18px;text-align:center}
 .check-name{font-weight:500;min-width:80px;flex-shrink:0}
 .check-msg{flex:1;color:var(--text2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Doctor raw output (collapsible) */
+.doctor-raw{border-top:1px solid var(--border)}
+.doctor-raw-toggle{padding:6px 16px;font-size:11px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:4px;background:var(--bg2);user-select:none}
+.doctor-raw-toggle:hover{color:var(--text)}
+.doctor-raw-toggle .arrow{transition:transform 0.2s;display:inline-block}
+.doctor-raw-toggle.open .arrow{transform:rotate(90deg)}
+.doctor-raw-content{display:none;padding:10px 16px;font-size:11px;line-height:1.6;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;color:var(--text2);background:var(--bg);font-family:monospace}
+.doctor-raw-content.open{display:block}
+
+/* Progress bar */
+.repair-progress{padding:8px 16px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0;display:none}
+.repair-progress.active{display:block}
+.progress-bar{height:3px;background:rgba(74,108,247,0.2);border-radius:2px;overflow:hidden}
+.progress-bar-fill{height:100%;background:var(--accent);transition:width 0.3s;width:0}
+.progress-text{font-size:11px;color:var(--text2);margin-top:4px}
 
 /* Right panel: AI chat */
 .panel-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -105,18 +127,18 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 <!-- Header -->
 <div class="header">
   <h1>
-    ClawdbotCN 检修助手
+    ClawdbotCN 一键检修
     <span class="status-dot red" id="status-dot" title="Gateway 未运行"></span>
   </h1>
   <div class="header-actions">
     <button class="btn btn-sm" onclick="uploadLogs()">上传日志</button>
-    <button class="btn btn-sm" onclick="goBack()">返回主界面</button>
+    <button class="btn btn-sm" onclick="goBack()">关闭</button>
   </div>
 </div>
 
 <!-- Tab bar -->
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('manual')">手动检修</button>
+  <button class="tab-btn active" onclick="switchTab('manual')">检修</button>
   <button class="tab-btn" onclick="switchTab('remote')">远程修复</button>
 </div>
 
@@ -126,22 +148,19 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <!-- Left: Diagnostics -->
   <div class="panel-left">
     <div class="panel-header">
-      <span>诊断结果</span>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-primary btn-sm" id="btn-run-doctor" onclick="runDoctor()">Doctor 自检修复</button>
-        <button class="btn btn-sm" id="btn-recheck" onclick="runDiagnostics()">重新检查</button>
+      <span>诊断 &amp; 修复</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-repair" id="btn-one-click" onclick="oneClickRepair()">一键检修</button>
+        <button class="btn btn-sm" id="btn-recheck" onclick="runFullScan()">重新扫描</button>
       </div>
+    </div>
+    <div class="repair-progress" id="repair-progress">
+      <div class="progress-bar"><div class="progress-bar-fill" id="progress-fill"></div></div>
+      <div class="progress-text" id="progress-text">准备中...</div>
     </div>
     <div class="sys-info" id="sys-info">正在获取系统信息...</div>
-    <div id="doctor-output-section" style="display:none;border-bottom:1px solid var(--border)">
-      <div class="panel-header" style="font-size:12px;padding:6px 16px">
-        <span>Doctor 输出</span>
-        <button class="btn btn-sm" onclick="hideDoctorOutput()">收起</button>
-      </div>
-      <pre id="doctor-output" style="padding:10px 16px;font-size:11px;line-height:1.6;overflow-y:auto;max-height:250px;margin:0;white-space:pre-wrap;word-break:break-word;color:var(--text2);background:var(--bg)"></pre>
-    </div>
     <div class="checks-list" id="checks-list">
-      <div style="padding:20px;text-align:center;color:#555"><span class="loading"></span> 正在运行诊断...</div>
+      <div style="padding:20px;text-align:center;color:#555"><span class="loading"></span> 正在扫描...</div>
     </div>
   </div>
 
@@ -157,14 +176,14 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         <div class="msg-role assistant">检修助手</div>
         <div class="msg-content">你好，我是 ClawdbotCN 检修助手。
 
-我可以帮你诊断和修复 Gateway 服务的问题。请描述你遇到的问题，或者点击左侧诊断结果中的修复按钮。
+正在自动扫描系统状态，完成后会显示诊断结果。
 
-点击下方的「自动诊断」按钮，我可以根据诊断结果为你分析问题。</div>
+点击左侧「一键检修」可自动修复所有检测到的问题。</div>
       </div>
     </div>
     <div class="chat-input-area">
       <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="btn btn-primary" style="flex:1;padding:8px 16px;font-size:13px" id="btn-auto-diag" onclick="autoDiagnose()">🔍 AI 自动诊断</button>
+        <button class="btn btn-primary" style="flex:1;padding:8px 16px;font-size:13px" id="btn-auto-diag" onclick="autoDiagnose()">AI 自动诊断</button>
       </div>
       <div class="chat-input-row">
         <textarea id="chat-input" placeholder="或者在这里描述你遇到的问题..." onkeydown="handleChatKey(event)"></textarea>
@@ -176,7 +195,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   </div>
 </div>
 
-</div><!-- /.main -->
 </div><!-- /#tab-manual -->
 
 <!-- Tab: Remote Repair -->
@@ -252,16 +270,22 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
     // ── State ──────────────────────────────────────────────────
     var diagnosticResult = null;
+    var doctorOutput = null;
     var providers = [];
     var selectedProvider = "";
     var chatBusy = false;
     var currentAssistantMsg = null;
+    var repairInProgress = false;
 
     // ── Init ───────────────────────────────────────────────────
+    var initDone = false;
     function init() {
-        runDiagnostics();
+        if (initDone) return;
+        initDone = true;
         discoverProviders();
         setupTokenListener();
+        // Auto-start full scan on open
+        runFullScan();
     }
 
     // Wait for Tauri IPC to be ready
@@ -271,48 +295,24 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             init();
         }
     }, 200);
-    // Fallback: init after 2s even if IPC not ready
     setTimeout(function() {
         clearInterval(initTimer);
-        if (!diagnosticResult) init();
+        init();
     }, 2000);
 
-    // ── Doctor ─────────────────────────────────────────────────
-    window.runDoctor = function() {
-        var invoke = getInvoke();
-        if (!invoke) return;
-        var btn = document.getElementById('btn-run-doctor');
-        btn.disabled = true;
-        btn.textContent = 'Doctor 运行中...';
+    // ── Progress helpers ────────────────────────────────────────
+    function showProgress(pct, text) {
+        var el = document.getElementById('repair-progress');
+        el.classList.add('active');
+        document.getElementById('progress-fill').style.width = pct + '%';
+        document.getElementById('progress-text').textContent = text;
+    }
+    function hideProgress() {
+        document.getElementById('repair-progress').classList.remove('active');
+    }
 
-        var section = document.getElementById('doctor-output-section');
-        var output = document.getElementById('doctor-output');
-        section.style.display = 'block';
-        output.textContent = '正在运行 Doctor 自检修复...\n这可能需要 10-30 秒，请稍候。';
-
-        invoke('repair_apply_fix', { fixId: 'run_doctor' }).then(function(result) {
-            btn.disabled = false;
-            btn.textContent = 'Doctor 自检修复';
-            var prefix = result.success ? '--- Doctor 完成 ---\n\n' : '--- Doctor 失败 ---\n\n';
-            output.textContent = prefix + result.message;
-            if (result.requires_restart) {
-                appendChat('system', 'Doctor 已应用修复，建议重启服务以使修改生效。可点击左侧诊断结果中的 [FIX:restart_service] 按钮。');
-            }
-            // Re-run diagnostics to reflect any changes doctor made
-            setTimeout(runDiagnostics, 1500);
-        }).catch(function(e) {
-            btn.disabled = false;
-            btn.textContent = 'Doctor 自检修复';
-            output.textContent = 'Doctor 执行失败: ' + String(e);
-        });
-    };
-
-    window.hideDoctorOutput = function() {
-        document.getElementById('doctor-output-section').style.display = 'none';
-    };
-
-    // ── Diagnostics ────────────────────────────────────────────
-    window.runDiagnostics = function() {
+    // ── Full scan: Phase 1 (Rust) + Phase 2 (Doctor) ──────────
+    window.runFullScan = function() {
         var invoke = getInvoke();
         if (!invoke) {
             document.getElementById("checks-list").innerHTML =
@@ -321,48 +321,291 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         }
         document.getElementById("btn-recheck").disabled = true;
         document.getElementById("checks-list").innerHTML =
-            '<div style="padding:20px;text-align:center;color:#555"><span class="loading"></span> 正在运行诊断...</div>';
+            '<div style="padding:20px;text-align:center;color:#555"><span class="loading"></span> 正在扫描...</div>';
 
+        showProgress(10, '阶段 1/2: 快速检查...');
+
+        // Phase 1: Rust native diagnostics (instant)
         invoke("repair_run_diagnostics").then(function(result) {
             diagnosticResult = result;
-            renderDiagnostics(result);
+            showProgress(50, '阶段 2/2: Doctor 深度扫描...');
+            renderAllChecks();
             updateStatusDot(result);
-            showDiagGuidance(result);
+
+            // Phase 2: Doctor deep scan (1-5 seconds)
+            return invoke('repair_apply_fix', { fixId: 'run_doctor' });
+        }).then(function(doctorResult) {
+            doctorOutput = doctorResult;
+            showProgress(100, '扫描完成');
+            renderAllChecks();
+            setTimeout(hideProgress, 1000);
             document.getElementById("btn-recheck").disabled = false;
+            showScanGuidance();
         }).catch(function(e) {
-            document.getElementById("checks-list").innerHTML =
-                '<div style="padding:20px;color:var(--red)">诊断失败: ' + escapeHtml(String(e)) + '</div>';
+            hideProgress();
             document.getElementById("btn-recheck").disabled = false;
+            // Still render what we have
+            if (diagnosticResult) {
+                renderAllChecks();
+                updateStatusDot(diagnosticResult);
+            } else {
+                document.getElementById("checks-list").innerHTML =
+                    '<div style="padding:20px;color:var(--red)">扫描失败: ' + escapeHtml(String(e)) + '</div>';
+            }
         });
     };
 
-    function renderDiagnostics(result) {
-        // System info
-        var si = result.system_info;
-        var sysEl = document.getElementById("sys-info");
-        sysEl.innerHTML =
-            '系统: <span>' + escapeHtml(si.os) + '</span> | ' +
-            '内存: <span>' + escapeHtml(String(si.memory_total_mb)) + ' MB</span> | ' +
-            '磁盘: <span>' + escapeHtml(String(si.disk_free_mb)) + ' MB</span> | ' +
-            'Gateway: <span>' + (si.sidecar_running ? '运行中' : '未运行') + '</span> | ' +
-            '端口: <span>' + escapeHtml(String(si.gateway_port)) + '</span>';
+    // ── One-click repair ────────────────────────────────────────
+    window.oneClickRepair = function() {
+        if (repairInProgress) return;
+        var invoke = getInvoke();
+        if (!invoke) return;
 
-        // Checks
-        var html = '';
-        for (var i = 0; i < result.checks.length; i++) {
-            var c = result.checks[i];
-            var icon = c.status === 'Pass' ? '✅' : (c.status === 'Warn' ? '⚠️' : '❌');
-            html += '<div class="check-item">';
-            html += '<span class="check-icon">' + icon + '</span>';
-            html += '<span class="check-name">' + escapeHtml(c.name) + '</span>';
-            html += '<span class="check-msg" title="' + escapeHtml(c.message) + '">' + escapeHtml(c.message) + '</span>';
-            if (c.fix_id) {
-                html += '<button class="btn btn-fix btn-sm" onclick="applyFix(\'' + escapeHtml(c.fix_id) + '\')">修复</button>';
-            }
-            html += '</div>';
+        repairInProgress = true;
+        var btn = document.getElementById('btn-one-click');
+        var recheckBtn = document.getElementById('btn-recheck');
+        btn.disabled = true;
+        btn.textContent = '检修中...';
+        recheckBtn.disabled = true;
+        showProgress(0, '正在执行一键检修...');
+
+        appendChat("system", "开始一键检修...");
+
+        var fixableChecks = [];
+        if (diagnosticResult) {
+            fixableChecks = diagnosticResult.checks.filter(function(c) {
+                return c.status !== 'Pass' && c.fix_id;
+            });
         }
-        document.getElementById("checks-list").innerHTML = html;
+
+        // Step 1: Fix individual Rust-detected issues
+        var fixPromise = Promise.resolve();
+        var fixCount = 0;
+        var totalSteps = fixableChecks.length + 1; // +1 for doctor
+
+        fixableChecks.forEach(function(c, idx) {
+            fixPromise = fixPromise.then(function() {
+                var pct = Math.round(((idx + 1) / totalSteps) * 80);
+                showProgress(pct, '修复: ' + (FIX_LABELS[c.fix_id] || c.fix_id) + '...');
+                return invoke("repair_apply_fix", { fixId: c.fix_id }).then(function(r) {
+                    var prefix = r.success ? "  OK  " : "  FAIL";
+                    appendChat("system", prefix + " " + (FIX_LABELS[c.fix_id] || c.fix_id) + ": " + r.message);
+                    if (r.success) fixCount++;
+                });
+            });
+        });
+
+        // Step 2: Run doctor --fix to catch everything else
+        fixPromise.then(function() {
+            showProgress(85, 'Doctor 深度修复...');
+            return invoke('repair_apply_fix', { fixId: 'run_doctor' });
+        }).then(function(doctorResult) {
+            doctorOutput = doctorResult;
+            var doctorStatus = doctorResult.success ? "Doctor 完成" : "Doctor 失败";
+            appendChat("system", doctorStatus + (doctorResult.message.length > 200 ?
+                " (详见左侧 Doctor 输出)" : ": " + doctorResult.message));
+
+            showProgress(95, '重新扫描验证...');
+
+            // Step 3: Re-scan to verify
+            return invoke("repair_run_diagnostics");
+        }).then(function(result) {
+            diagnosticResult = result;
+            renderAllChecks();
+            updateStatusDot(result);
+
+            var remaining = result.checks.filter(function(c) { return c.status === 'Fail'; });
+            if (remaining.length === 0) {
+                showProgress(100, '检修完成');
+                setTimeout(hideProgress, 1500);
+                appendChat("system", "一键检修完成，所有检查项已通过。");
+                if (doctorOutput && doctorOutput.requires_restart) {
+                    appendChat("system", "建议重启服务以使修复生效。");
+                }
+                return;
+            }
+
+            // Still have failures — auto-upload logs to server
+            showProgress(98, '仍有问题未解决，正在上传诊断日志...');
+            appendChat("system", "一键检修完成，仍有 " + remaining.length + " 个问题未能自动修复。正在自动上传诊断日志...");
+
+            var desc = buildAutoUploadDescription(remaining);
+            return invoke("upload_crash_logs", { description: desc }).then(function(r) {
+                showProgress(100, '检修完成');
+                setTimeout(hideProgress, 1500);
+                if (r.success) {
+                    var ticketMsg = r.ticket_code
+                        ? "工单号: " + r.ticket_code + "\n"
+                        : "";
+                    appendChat("system",
+                        "诊断日志已自动上传。\n" + ticketMsg +
+                        "技术人员将尽快处理，你也可以切换到「远程修复」页面获取实时协助。");
+                } else {
+                    appendChat("system", "日志上传失败: " + r.message + "\n你可以点击顶部「上传日志」按钮手动重试。");
+                }
+            }).catch(function(uploadErr) {
+                showProgress(100, '检修完成');
+                setTimeout(hideProgress, 1500);
+                appendChat("system", "日志上传失败: " + String(uploadErr) + "\n你可以点击顶部「上传日志」按钮手动重试。");
+            });
+        }).catch(function(e) {
+            appendChat("system", "检修过程出错: " + String(e));
+            hideProgress();
+        }).finally(function() {
+            repairInProgress = false;
+            btn.disabled = false;
+            btn.textContent = '一键检修';
+            recheckBtn.disabled = false;
+        });
+    };
+
+    // ── Render checks (two-phase) ───────────────────────────────
+    function renderAllChecks() {
+        var html = '';
+
+        // System info
+        if (diagnosticResult) {
+            var si = diagnosticResult.system_info;
+            document.getElementById("sys-info").innerHTML =
+                '系统: <span>' + escapeHtml(si.os) + '</span> | ' +
+                '内存: <span>' + si.memory_total_mb + ' MB</span> | ' +
+                '磁盘: <span>' + si.disk_free_mb + ' MB</span> | ' +
+                'Gateway: <span>' + (si.sidecar_running ? '运行中' : '未运行') + '</span> | ' +
+                '端口: <span>' + si.gateway_port + '</span>';
+        }
+
+        // Phase 1: Rust quick checks
+        if (diagnosticResult) {
+            html += '<div class="section-header">快速检查</div>';
+            for (var i = 0; i < diagnosticResult.checks.length; i++) {
+                html += renderCheckItem(diagnosticResult.checks[i]);
+            }
+        }
+
+        // Phase 2: Doctor deep scan
+        if (doctorOutput) {
+            html += '<div class="section-header">Doctor 深度扫描 ' +
+                (doctorOutput.success ? '<span style="color:var(--green)">PASS</span>' :
+                 '<span style="color:var(--red)">FAIL</span>') + '</div>';
+
+            // Parse doctor output into individual check items
+            var doctorChecks = parseDoctorOutput(doctorOutput.message);
+            for (var j = 0; j < doctorChecks.length; j++) {
+                html += renderCheckItem(doctorChecks[j]);
+            }
+
+            // Raw output toggle
+            html += '<div class="doctor-raw">';
+            html += '<div class="doctor-raw-toggle" onclick="toggleDoctorRaw(this)">';
+            html += '<span class="arrow">&#9654;</span> Doctor 原始输出';
+            html += '</div>';
+            html += '<div class="doctor-raw-content" id="doctor-raw-content">' +
+                escapeHtml(doctorOutput.message) + '</div>';
+            html += '</div>';
+        } else if (diagnosticResult) {
+            // Doctor still running
+            html += '<div class="section-header">Doctor 深度扫描</div>';
+            html += '<div style="padding:12px 16px;color:#555"><span class="loading"></span> Doctor 扫描中...</div>';
+        }
+
+        var checksList = document.getElementById("checks-list");
+        checksList.innerHTML = html;
+        // Bind fix buttons via event delegation (avoids inline onclick XSS)
+        var fixBtns = checksList.querySelectorAll('[data-fix-id]');
+        for (var k = 0; k < fixBtns.length; k++) {
+            (function(btn) {
+                btn.addEventListener('click', function() {
+                    applyFix(btn.getAttribute('data-fix-id'));
+                });
+            })(fixBtns[k]);
+        }
     }
+
+    function renderCheckItem(c) {
+        var icon = c.status === 'Pass' ? '&#10003;' : (c.status === 'Warn' ? '!' : '&#10007;');
+        var iconColor = c.status === 'Pass' ? 'var(--green)' : (c.status === 'Warn' ? 'var(--yellow)' : 'var(--red)');
+        var h = '<div class="check-item">';
+        h += '<span class="check-icon" style="color:' + iconColor + ';font-weight:bold">' + icon + '</span>';
+        h += '<span class="check-name">' + escapeHtml(c.name) + '</span>';
+        h += '<span class="check-msg" title="' + escapeHtml(c.message) + '">' + escapeHtml(c.message) + '</span>';
+        if (c.fix_id && /^[a-z_]+$/.test(c.fix_id)) {
+            h += '<button class="btn btn-fix btn-sm" data-fix-id="' + escapeHtml(c.fix_id) + '">修复</button>';
+        }
+        h += '</div>';
+        return h;
+    }
+
+    // Parse doctor text output into structured check items
+    function parseDoctorOutput(text) {
+        if (!text || typeof text !== 'string') return [];
+        var checks = [];
+        var lines = text.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (!line) continue;
+
+            // Match common doctor output patterns
+            var status = 'Pass';
+            var name = '';
+            var msg = line;
+
+            // "✔ Something" or "✓ Something" patterns (Unicode checkmarks only)
+            if (/^[✔✓]\s/.test(line)) {
+                status = 'Pass';
+                msg = line.replace(/^[✔✓]\s*/, '');
+            }
+            // "✖ Something" or "✗ Something" patterns (Unicode X marks only)
+            else if (/^[✖✗]\s/.test(line)) {
+                status = 'Fail';
+                msg = line.replace(/^[✖✗]\s*/, '');
+            }
+            // "⚠ Something" or "! Something"
+            else if (/^[⚠!]\s/.test(line)) {
+                status = 'Warn';
+                msg = line.replace(/^[⚠!]\s*/, '');
+            }
+            // Lines starting with "- " are sub-items, keep as-is
+            else if (/^[-*]\s/.test(line)) {
+                // Append to previous check if exists
+                if (checks.length > 0) {
+                    checks[checks.length - 1].message += '\n' + line;
+                }
+                continue;
+            }
+            // Skip decorative lines and headers
+            else if (/^[─═┌┐└┘│|]/.test(line) || /^(OpenClawCN|Doctor|doctor)/i.test(line)) {
+                continue;
+            }
+            // Generic informational line
+            else {
+                status = 'Pass';
+            }
+
+            // Extract a short name from the message
+            var colonIdx = msg.indexOf(':');
+            if (colonIdx > 0 && colonIdx < 30) {
+                name = msg.substring(0, colonIdx).trim();
+                msg = msg.substring(colonIdx + 1).trim();
+            } else {
+                // Use first few words as name
+                var words = msg.split(/\s+/);
+                name = words.slice(0, Math.min(3, words.length)).join(' ');
+                if (name.length > 24) name = name.substring(0, 24) + '...';
+                msg = words.length > 3 ? words.slice(3).join(' ') : '';
+            }
+
+            if (name) {
+                checks.push({ id: 'doctor_' + i, name: name, status: status, message: msg, fix_id: null });
+            }
+        }
+        return checks;
+    }
+
+    window.toggleDoctorRaw = function(el) {
+        el.classList.toggle('open');
+        var content = document.getElementById('doctor-raw-content');
+        content.classList.toggle('open');
+    };
 
     function updateStatusDot(result) {
         var dot = document.getElementById("status-dot");
@@ -418,11 +661,13 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     }
 
     // ── AI Chat ────────────────────────────────────────────────
+    var tokenListenerRetries = 0;
     function setupTokenListener() {
         var listen = getListen();
         if (!listen) {
-            // Retry after a short delay
-            setTimeout(setupTokenListener, 500);
+            if (++tokenListenerRetries < 20) {
+                setTimeout(setupTokenListener, 500);
+            }
             return;
         }
         listen("repair-ai-token", function(event) {
@@ -441,7 +686,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             if (payload.done) {
                 chatBusy = false;
                 updateSendBtn();
-                // Post-process: convert [FIX:xxx] markers to buttons
                 processFixMarkers(contentEl);
                 return;
             }
@@ -560,21 +804,31 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     }
 
     function buildContext() {
-        if (!diagnosticResult) return "";
         var lines = [];
-        lines.push("=== 系统信息 ===");
-        var si = diagnosticResult.system_info;
-        lines.push("OS: " + si.os);
-        lines.push("内存: " + si.memory_total_mb + " MB");
-        lines.push("磁盘剩余: " + si.disk_free_mb + " MB");
-        lines.push("Gateway: " + (si.sidecar_running ? "运行中" : "未运行"));
-        lines.push("端口: " + si.gateway_port);
-        lines.push("");
-        lines.push("=== 诊断结果 ===");
-        for (var i = 0; i < diagnosticResult.checks.length; i++) {
-            var c = diagnosticResult.checks[i];
-            var icon = c.status === "Pass" ? "PASS" : (c.status === "Warn" ? "WARN" : "FAIL");
-            lines.push("[" + icon + "] " + c.name + ": " + c.message);
+        if (diagnosticResult) {
+            var si = diagnosticResult.system_info;
+            lines.push("=== 系统信息 ===");
+            lines.push("OS: " + si.os);
+            lines.push("内存: " + si.memory_total_mb + " MB");
+            lines.push("磁盘剩余: " + si.disk_free_mb + " MB");
+            lines.push("Gateway: " + (si.sidecar_running ? "运行中" : "未运行"));
+            lines.push("端口: " + si.gateway_port);
+            lines.push("");
+            lines.push("=== 快速检查 ===");
+            for (var i = 0; i < diagnosticResult.checks.length; i++) {
+                var c = diagnosticResult.checks[i];
+                var icon = c.status === "Pass" ? "PASS" : (c.status === "Warn" ? "WARN" : "FAIL");
+                lines.push("[" + icon + "] " + c.name + ": " + c.message);
+            }
+        }
+        if (doctorOutput) {
+            lines.push("");
+            lines.push("=== Doctor 深度扫描 ===");
+            lines.push("状态: " + (doctorOutput.success ? "PASS" : "FAIL"));
+            // Include first 2000 chars of doctor output
+            var doctorText = doctorOutput.message || '';
+            if (doctorText.length > 2000) doctorText = doctorText.substring(0, 2000) + '...(truncated)';
+            lines.push(doctorText);
         }
         return lines.join("\n");
     }
@@ -583,9 +837,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         var text = contentEl.textContent;
         var fixRegex = /\[FIX:([a-z_]+)\]/g;
         if (!fixRegex.test(text)) return;
-        fixRegex.lastIndex = 0; // reset after test()
+        fixRegex.lastIndex = 0;
 
-        // Build DOM nodes instead of innerHTML to eliminate XSS risk
         var frag = document.createDocumentFragment();
         var lastIndex = 0;
         var m;
@@ -623,17 +876,35 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         var fixLabel = FIX_LABELS[fixId] || fixId;
         appendChat("system", "正在执行：" + fixLabel + "...");
         invoke("repair_apply_fix", { fixId: fixId }).then(function(result) {
-            var prefix = result.success ? "✅ " : "❌ ";
-            appendChat("system", prefix + result.message);
+            var prefix = result.success ? "  OK  " : "  FAIL";
+            appendChat("system", prefix + " " + result.message);
             if (result.requires_restart) {
                 appendChat("system", "建议重启服务以使修复生效。");
             }
-            // Re-run diagnostics after fix
-            setTimeout(runDiagnostics, 1000);
+            setTimeout(function() { runFullScan(); }, 1000);
         }).catch(function(e) {
-            appendChat("system", "❌ 修复失败: " + String(e));
+            appendChat("system", "修复失败: " + String(e));
         });
     };
+
+    // ── Auto-upload description builder ───────────────────────
+    function buildAutoUploadDescription(failedChecks) {
+        var lines = ['[一键检修] 自动修复后仍有问题'];
+        if (diagnosticResult && diagnosticResult.system_info) {
+            var si = diagnosticResult.system_info;
+            lines.push('OS: ' + si.os + ', GW: ' + (si.sidecar_running ? 'running' : 'stopped'));
+        }
+        lines.push('未修复项:');
+        for (var i = 0; i < failedChecks.length && i < 10; i++) {
+            lines.push('- ' + failedChecks[i].name + ': ' + failedChecks[i].message);
+        }
+        if (doctorOutput && !doctorOutput.success) {
+            var excerpt = (doctorOutput.message || '').substring(0, 300);
+            lines.push('Doctor: ' + excerpt);
+        }
+        // upload_crash_logs requires >= 5 chars; our output is always longer
+        return lines.join('\n');
+    }
 
     // ── Upload logs ────────────────────────────────────────────
     window.uploadLogs = function() {
@@ -664,18 +935,51 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         });
     };
 
-    // ── Go back — close the repair assistant window ───────────────
+    // ── Go back ─────────────────────────────────────────────────
     window.goBack = function() {
         var gwRunning = diagnosticResult && diagnosticResult.system_info && diagnosticResult.system_info.sidecar_running;
         if (gwRunning) {
-            // Gateway is running, safe to close
             window.close();
         } else {
-            if (confirm("Gateway 服务尚未恢复，关闭检修窗口后可回到主界面。\n\n确定关闭吗？")) {
+            if (confirm("Gateway 服务尚未恢复，确定关闭检修窗口吗？")) {
                 window.close();
             }
         }
     };
+
+    // ── Guidance after scan ─────────────────────────────────────
+    var guidanceShown = false;
+    function showScanGuidance() {
+        if (guidanceShown) return;
+        if (!diagnosticResult) return;
+        var fails = diagnosticResult.checks.filter(function(c) { return c.status === 'Fail'; });
+        var warns = diagnosticResult.checks.filter(function(c) { return c.status === 'Warn'; });
+        var doctorOk = doctorOutput && doctorOutput.success;
+
+        guidanceShown = true;
+
+        if (fails.length === 0 && warns.length === 0 && doctorOk) {
+            appendChat("system", "扫描完成，系统状态良好。所有检查项已通过。");
+            return;
+        }
+
+        var lines = [];
+        if (fails.length > 0) {
+            lines.push("扫描完成，检测到 " + fails.length + " 个问题：");
+            for (var i = 0; i < fails.length; i++) {
+                var fixHint = fails[i].fix_id ? "（可自动修复）" : "";
+                lines.push("  " + fails[i].name + fixHint);
+            }
+        }
+        if (warns.length > 0) {
+            lines.push((fails.length > 0 ? "\n另有 " : "检测到 ") + warns.length + " 个警告项。");
+        }
+        if (!doctorOk && doctorOutput) {
+            lines.push("\nDoctor 深度扫描发现问题，详见左侧面板。");
+        }
+        lines.push("\n点击「一键检修」可自动修复所有可修复的问题。");
+        appendChat("system", lines.join("\n"));
+    }
 
     // ── Fix ID → Chinese label ──────────────────────────────────
     var FIX_LABELS = {
@@ -687,37 +991,9 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         repair_permissions: "修复权限",
         reset_auth_profiles: "重置认证",
         regenerate_master_key: "重建密钥",
-        open_state_dir: "打开目录"
+        open_state_dir: "打开目录",
+        run_doctor: "Doctor 深度修复"
     };
-
-    // Show guidance in chat after diagnostics complete
-    var guidanceShown = false;
-    function showDiagGuidance(result) {
-        if (guidanceShown) return; // only show once
-        var fails = result.checks.filter(function(c) { return c.status === 'Fail'; });
-        var warns = result.checks.filter(function(c) { return c.status === 'Warn'; });
-        if (fails.length === 0 && warns.length === 0) return;
-        guidanceShown = true;
-        var lines = [];
-        if (fails.length > 0) {
-            lines.push("检测到 " + fails.length + " 个问题：");
-            for (var i = 0; i < fails.length; i++) {
-                var fixHint = fails[i].fix_id ? "（可自动修复）" : "";
-                lines.push("  ❌ " + fails[i].name + fixHint);
-            }
-        }
-        if (warns.length > 0) {
-            lines.push((fails.length > 0 ? "\n另有 " : "检测到 ") + warns.length + " 个警告项。");
-        }
-        var fixable = fails.filter(function(c) { return c.fix_id; });
-        if (fixable.length > 0) {
-            lines.push("\n你可以点击左侧诊断项旁边的「修复」按钮来自动修复。");
-        }
-        if (selectedProvider) {
-            lines.push("也可以点击下方的「自动诊断」按钮，让 AI 帮你分析问题。");
-        }
-        appendChat("system", lines.join("\n"));
-    }
 
     // ── Tab switching ──────────────────────────────────────────
     window.switchTab = function(tabId) {
@@ -798,7 +1074,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         startBtn.textContent = '正在建立隧道...';
         addRemoteLog('info', '正在创建修复工单...');
 
-        // Step 1: Create ticket via API to get session_id + SSH public key
         fetch(REPAIR_API + '/ticket', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -819,7 +1094,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             addRemoteLog('info', '工单已创建: ' + ticket.ticketId);
 
             if (ticket.status === 'payment_required' && ticket.paymentUrl) {
-                // Validate URL scheme to prevent javascript: or data: injection
                 var payUrl = String(ticket.paymentUrl);
                 if (!/^https?:\/\//i.test(payUrl)) {
                     throw new Error('付费链接格式无效（仅支持 http/https）');
@@ -831,7 +1105,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 return;
             }
 
-            // Step 2: Start frpc tunnel
             addRemoteLog('action', '正在建立 SSH 隧道...');
             return invoke('repair_tunnel_start', {
                 sessionId: ticket.ticketId,
@@ -839,12 +1112,11 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 localSshPort: null
             });
         }).then(function(info) {
-            if (!info) return; // payment_required path
+            if (!info) return;
 
             addRemoteLog('result', '隧道已建立! 远程端口: ' + info.remote_port);
 
-            // Step 3: Notify API that tunnel is ready
-            return fetch(REPAIR_API + '/ticket/' + tunnelSession.ticketId + '/tunnel-ready', {
+            return fetch(REPAIR_API + '/ticket/' + encodeURIComponent(tunnelSession.ticketId) + '/tunnel-ready', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tunnelPort: info.remote_port })
@@ -905,7 +1177,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             var invoke = getInvoke();
             if (!invoke) return;
 
-            // Poll tunnel status
             invoke('repair_tunnel_status').then(function(status) {
                 if (!status.active) {
                     addRemoteLog('info', '隧道已断开。');
@@ -922,9 +1193,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 }
             });
 
-            // Poll ticket status from API
             if (tunnelSession && tunnelSession.ticketId) {
-                fetch(REPAIR_API + '/ticket/' + tunnelSession.ticketId)
+                fetch(REPAIR_API + '/ticket/' + encodeURIComponent(tunnelSession.ticketId))
                     .then(function(r) { return r.json(); })
                     .then(function(t) {
                         if (t.log && t.log.length > 0) {
@@ -934,7 +1204,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                             addRemoteLog('result', '修复完成: ' + (t.summary || ''));
                             clearInterval(tunnelPollTimer);
                             tunnelPollTimer = null;
-                            // Auto-close tunnel after completion
                             setTimeout(function() { stopRemoteRepair(); }, 5000);
                         } else if (t.status === 'failed') {
                             addRemoteLog('error', '修复失败: ' + (t.summary || ''));
@@ -970,7 +1239,6 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         if (tunnelSession && tunnelSession.ticketId) {
             var invoke = getInvoke();
             if (invoke) {
-                // Best-effort: stop tunnel and clean up SSH key
                 invoke('repair_tunnel_stop', { sessionId: tunnelSession.ticketId });
             }
         }
@@ -981,7 +1249,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
     // ── Utilities ──────────────────────────────────────────────
     function escapeHtml(str) {
-        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        if (str == null) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 })();
 </script>

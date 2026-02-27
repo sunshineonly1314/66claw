@@ -38,6 +38,8 @@ export type ProjectSidebarProps = {
   onSelectProject: (projectId: string) => void;
   onSelectAgent: (agentId: string) => void;
   onToggleCollapse: (projectId: string) => void;
+  /** Delete all agents in an orphan orchestration group. */
+  onDeleteOrchGroup?: (agentIds: string[]) => void;
 };
 
 export type ProjectDetailProps = {
@@ -79,13 +81,72 @@ export function renderProjectSidebarGroups(props: ProjectSidebarProps): Template
   // Standalone agents = not in any project
   const standaloneAgents = allAgents.filter((a) => !assignedAgentIds.has(a.id));
 
+  // Further split standalone agents: group orchestrator agents by orch prefix,
+  // truly standalone agents are those without an orch- prefix.
+  const orchGroups = new Map<string, typeof standaloneAgents>();
+  const trulyStandalone: typeof standaloneAgents = [];
+  for (const agent of standaloneAgents) {
+    const orchMatch = /^(orch-[^-]+-[^-]+)--/.exec(agent.id);
+    if (orchMatch) {
+      const orchId = orchMatch[1];
+      let group = orchGroups.get(orchId);
+      if (!group) { group = []; orchGroups.set(orchId, group); }
+      group.push(agent);
+    } else {
+      trulyStandalone.push(agent);
+    }
+  }
+
   return html`
     ${projects.map((project) => renderProjectGroup(project, props))}
-    ${standaloneAgents.length > 0 ? html`
+    ${orchGroups.size > 0 ? [...orchGroups.entries()].map(([orchId, agents]) => html`
+      <div class="orch-group">
+        <div class="orch-group-header">
+          <span class="project-status-dot project-status-dot--warn"></span>
+          <span class="orch-group-name">${t("team.orchGroup")}</span>
+          <span class="project-group-count">${agents.length}</span>
+          ${props.onDeleteOrchGroup ? html`
+            <button
+              type="button"
+              class="orch-group-delete"
+              title="${t("team.orchGroupDelete")}"
+              @click=${(e: Event) => {
+                e.stopPropagation();
+                const ids = agents.map(a => a.id);
+                if (confirm(t("team.orchGroupDeleteConfirm", { count: ids.length }))) {
+                  props.onDeleteOrchGroup!(ids);
+                }
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="12" height="12"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+            </button>
+          ` : nothing}
+        </div>
+        <div class="project-group-agents">
+          ${agents.map((agent) => {
+            const emoji = resolveAgentEmoji(agent, props.agentIdentityById[agent.id] ?? null);
+            const isAgentSelected = props.selectedAgentId === agent.id && !props.selectedProjectId;
+            return html`
+              <button
+                type="button"
+                class="agent-row agent-row--nested ${isAgentSelected ? "active" : ""}"
+                @click=${() => props.onSelectAgent(agent.id)}
+              >
+                <div class="agent-avatar agent-avatar--sm">${emoji || normalizeAgentLabel(agent).slice(0, 1)}</div>
+                <div class="agent-info">
+                  <div class="agent-title">${normalizeAgentLabel(agent)}</div>
+                </div>
+              </button>
+            `;
+          })}
+        </div>
+      </div>
+    `) : nothing}
+    ${trulyStandalone.length > 0 ? html`
       <div class="standalone-divider">
         <span>${t("team.standalone")}</span>
       </div>
-      ${standaloneAgents.map((agent) => {
+      ${trulyStandalone.map((agent) => {
         const badge = agent.id === props.defaultAgentId ? t("agents.default") : null;
         const emoji = resolveAgentEmoji(agent, props.agentIdentityById[agent.id] ?? null);
         return html`

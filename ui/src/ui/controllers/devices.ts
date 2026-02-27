@@ -133,3 +133,23 @@ export async function revokeDeviceToken(
     state.devicesError = String(err);
   }
 }
+
+export async function removeDevice(
+  state: DevicesState,
+  deviceId: string,
+  confirmMessage: string,
+) {
+  if (!state.client || !state.connected) return;
+  const confirmed = window.confirm(confirmMessage);
+  if (!confirmed) return;
+  try {
+    await state.client.request("device.remove", { deviceId });
+    const identity = await loadOrCreateDeviceIdentity();
+    if (deviceId === identity.deviceId) {
+      clearDeviceAuthToken({ deviceId: identity.deviceId, role: "operator" });
+    }
+    await loadDevices(state);
+  } catch (err) {
+    state.devicesError = String(err);
+  }
+}

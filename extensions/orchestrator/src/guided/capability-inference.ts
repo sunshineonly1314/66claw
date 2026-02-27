@@ -125,7 +125,10 @@ function selectModel(
       .filter(m => configured.length === 0 || configured.includes(m.provider));
   }
 
+  // If still no candidates but user has a global text model configured, use that
   if (candidates.length === 0) {
+    const globalModel = getGlobalTextModel(pluginConfig);
+    if (globalModel) return { primary: globalModel };
     // Ultimate fallback: use the first candidate from the full table
     return { primary: MODEL_CANDIDATES[0].fullId };
   }
@@ -142,14 +145,31 @@ function selectModel(
   };
 }
 
+/** Read the user's global text model from config as a fallback. */
+function getGlobalTextModel(config?: Record<string, unknown>): string | undefined {
+  try {
+    const agents = config?.agents as Record<string, unknown> | undefined;
+    const defaults = agents?.defaults as Record<string, unknown> | undefined;
+    const model = defaults?.model;
+    if (typeof model === "string" && model.includes("/")) return model;
+    if (model && typeof model === "object") {
+      const primary = (model as Record<string, unknown>).primary;
+      if (typeof primary === "string" && primary.includes("/")) return primary;
+    }
+  } catch { /* ignore */ }
+  return undefined;
+}
+
 function getConfiguredProviders(config?: Record<string, unknown>): string[] {
   try {
     const models = config?.models as Record<string, unknown> | undefined;
-    const providers = models?.providers as Array<Record<string, unknown>> | undefined;
-    if (!Array.isArray(providers)) return [];
-    return providers
-      .map(p => String(p.id ?? ""))
-      .filter(Boolean);
+    const providers = models?.providers;
+    if (!providers || typeof providers !== "object") return [];
+    // providers is Record<string, ProviderConfig> (object keyed by provider ID), not an array
+    if (Array.isArray(providers)) {
+      return providers.map(p => String(p.id ?? "")).filter(Boolean);
+    }
+    return Object.keys(providers as Record<string, unknown>).filter(Boolean);
   } catch {
     return [];
   }

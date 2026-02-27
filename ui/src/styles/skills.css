@@ -928,6 +928,154 @@
 }
 
 /* ===========================================
+   Tier Section Accents
+   =========================================== */
+.skills-tier-section--core {
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 1px 4px rgba(245, 158, 11, 0.08);
+}
+
+.skills-tier-section--ready {
+  border-left: 4px solid #34d399;
+}
+
+.skills-tier-section--needs-config {
+  border-left: 4px solid #f97316;
+}
+
+.skills-tier-section--incompatible {
+  border-left: 4px solid var(--border);
+}
+
+.skills-tier-section--incompatible > summary {
+  filter: grayscale(0.3);
+  opacity: 0.85;
+}
+
+.skills-tier-section--incompatible[open] > summary {
+  filter: none;
+  opacity: 1;
+}
+
+/* ===========================================
+   Drop Zone Active Animation
+   =========================================== */
+.skills-drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin-bottom: 10px;
+  border: 1.5px dashed var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  transition: border-color 250ms, background 250ms, color 250ms;
+}
+
+.skills-drop-zone__icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.5;
+  transition: opacity 250ms;
+}
+
+.skills-drop-zone__icon svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.skills-drop-active {
+  border-color: var(--accent, #6c8cff);
+  background: rgba(108, 140, 255, 0.05);
+  color: var(--accent, #6c8cff);
+  animation: skills-drop-pulse 1.2s ease-in-out infinite;
+}
+
+.skills-drop-active .skills-drop-zone__icon {
+  opacity: 1;
+}
+
+@keyframes skills-drop-pulse {
+  0%, 100% { border-color: var(--accent, #6c8cff); background: rgba(108, 140, 255, 0.05); }
+  50% { border-color: rgba(108, 140, 255, 0.6); background: rgba(108, 140, 255, 0.1); }
+}
+
+.skills-drop-active--core {
+  border-color: #f59e0b;
+  background: rgba(251, 191, 36, 0.06);
+  color: #f59e0b;
+  animation: skills-drop-pulse-core 1.2s ease-in-out infinite;
+}
+
+@keyframes skills-drop-pulse-core {
+  0%, 100% { border-color: #f59e0b; background: rgba(251, 191, 36, 0.06); }
+  50% { border-color: rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.12); }
+}
+
+.skills-drop-active--ready {
+  border-color: #34d399;
+  background: rgba(52, 211, 153, 0.06);
+  color: #34d399;
+  animation: skills-drop-pulse-ready 1.2s ease-in-out infinite;
+}
+
+@keyframes skills-drop-pulse-ready {
+  0%, 100% { border-color: #34d399; background: rgba(52, 211, 153, 0.06); }
+  50% { border-color: rgba(52, 211, 153, 0.6); background: rgba(52, 211, 153, 0.12); }
+}
+
+/* ===========================================
+   Card Footer Separator
+   =========================================== */
+.skills-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* ===========================================
+   Drag Handle
+   =========================================== */
+.skills-drag-handle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 3px;
+  opacity: 0.35;
+  cursor: grab;
+  transition: opacity 200ms;
+  flex-shrink: 0;
+}
+
+.skills-drag-handle:hover {
+  opacity: 0.7;
+}
+
+.skills-drag-handle__line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.skills-tier-card--draggable:active .skills-drag-handle {
+  cursor: grabbing;
+  opacity: 0.7;
+}
+
+/* ===========================================
    Legacy compat: batch install progress styles
    (kept for skills-batch-*.ts views)
    =========================================== */

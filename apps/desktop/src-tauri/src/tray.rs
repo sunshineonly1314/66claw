@@ -2,7 +2,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder};
 use tauri::{App, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::{platform, repair, sidecar};
+use crate::{platform, sidecar};
 
 /// Stored tray state for lifecycle management and dynamic menu control.
 pub struct TrayState {
@@ -69,69 +69,6 @@ fn open_repair_assistant(app: &tauri::AppHandle) {
     }
 }
 
-/// Run `openclawcn doctor --fix --non-interactive` from the tray menu.
-/// Opens a minimal result window (local HTML, no Gateway dependency) since
-/// the main WebView may be unavailable when Gateway is down.
-fn run_doctor_from_tray(app: &tauri::AppHandle) {
-    let handle = app.app_handle().clone();
-
-    // Open or re-use the doctor result window
-    if let Some(window) = handle.get_webview_window("doctor-result") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        // Reset to loading state
-        let _ = window.eval(
-            "document.getElementById('output').innerHTML=\
-             '<span class=\"spin\"></span>正在运行 Doctor，请稍候...'"
-        );
-    } else {
-        match WebviewWindowBuilder::new(
-            &handle,
-            "doctor-result",
-            WebviewUrl::App("doctor-result.html".into()),
-        )
-        .title("Doctor 自检修复")
-        .inner_size(680.0, 480.0)
-        .resizable(true)
-        .center()
-        .visible(true)
-        .build()
-        {
-            Ok(_) => {}
-            Err(e) => {
-                show_tray_error(&handle, &format!("打开 Doctor 窗口失败: {}", e));
-                return;
-            }
-        }
-    }
-
-    // Run doctor in background thread to avoid blocking the tray event loop
-    std::thread::spawn(move || {
-        let result = repair::repair_actions::apply_fix(&handle, "run_doctor");
-
-        // Escape the message for safe injection into JS
-        let status = if result.success { "Doctor 完成" } else { "Doctor 失败" };
-        let escaped_msg = result.message
-            .replace('\\', "\\\\")
-            .replace('\'', "\\'")
-            .replace('\n', "\\n")
-            .replace('\r', "");
-
-        let js = format!(
-            "document.getElementById('output').textContent=\
-             '--- {} ---\\n\\n{}'",
-            status, escaped_msg
-        );
-
-        if let Some(window) = handle.get_webview_window("doctor-result") {
-            let _ = window.eval(&js);
-        }
-
-        // Refresh tray menu state in case doctor fixed the service
-        update_tray_menu_state(&handle);
-    });
-}
-
 pub fn setup_tray(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let start_item =
         MenuItem::with_id(app, "start_service", "▶ 启动服务", true, None::<&str>)?;
@@ -151,8 +88,7 @@ pub fn setup_tray(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             &restart_item,
             &MenuItem::new(app, "───", false, None::<&str>)?,
             &MenuItem::with_id(app, "open_logs", "📁 查看日志", true, None::<&str>)?,
-            &MenuItem::with_id(app, "repair_assistant", "🔧 检修助手", true, None::<&str>)?,
-            &MenuItem::with_id(app, "run_doctor", "🩺 Doctor 自检修复", true, None::<&str>)?,
+            &MenuItem::with_id(app, "repair_assistant", "🔧 一键检修", true, None::<&str>)?,
             &MenuItem::new(app, "───", false, None::<&str>)?,
             &MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?,
         ],
@@ -230,9 +166,6 @@ pub fn setup_tray(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             }
             "repair_assistant" => {
                 open_repair_assistant(app);
-            }
-            "run_doctor" => {
-                run_doctor_from_tray(app);
             }
             "quit" => {
                 sidecar::cleanup_on_exit();

@@ -767,6 +767,15 @@ const plugin: OpenClawCNPluginDefinition = {
           return;
         }
 
+        // Idempotency: check if a project with this sourcePlanId already exists
+        const existingProject = [...projectCache.values()].find(
+          (proj) => proj.sourcePlanId === planId,
+        );
+        if (existingProject) {
+          respond(true, { project: existingProject, deduplicated: true }, undefined);
+          return;
+        }
+
         try {
           const project = await createProjectFromPlan(callGateway, {
             planId,

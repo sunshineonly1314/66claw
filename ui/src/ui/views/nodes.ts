@@ -39,6 +39,7 @@ export type NodesProps = {
   onDeviceReject: (requestId: string) => void;
   onDeviceRotate: (deviceId: string, role: string, scopes?: string[]) => void;
   onDeviceRevoke: (deviceId: string, role: string) => void;
+  onDeviceRemove: (deviceId: string) => void;
   onLoadConfig: () => void;
   onLoadExecApprovals: () => void;
   onBindDefault: (nodeId: string | null) => void;
@@ -180,8 +181,18 @@ function renderPairedDevice(device: PairedDevice, props: NodesProps) {
   return html`
     <div class="list-item">
       <div class="list-main">
-        <div class="list-title">${name}</div>
-        <div class="list-sub">${device.deviceId}${ip}</div>
+        <div class="row" style="justify-content: space-between; align-items: flex-start;">
+          <div>
+            <div class="list-title">${name}</div>
+            <div class="list-sub">${device.deviceId}${ip}</div>
+          </div>
+          <button
+            class="btn btn--sm danger"
+            @click=${() => props.onDeviceRemove(device.deviceId)}
+          >
+            ${t("network.devices.unpair")}
+          </button>
+        </div>
         <div class="muted" style="margin-top: 6px;">${roles} · ${scopes}</div>
         ${tokens.length === 0
           ? html`<div class="muted" style="margin-top: 6px;">${t("nodes.tokensNone")}</div>`

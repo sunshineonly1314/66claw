@@ -180,7 +180,7 @@ const logRunner = (message, deps) => {
 };
 
 const runOpenClawCN = async (deps) => {
-  const nodeProcess = deps.spawn(deps.execPath, ["openclawcn.mjs", ...deps.args], {
+  const nodeProcess = deps.spawn(deps.execPath, ["--use-env-proxy", "openclawcn.mjs", ...deps.args], {
     cwd: deps.cwd,
     env: deps.env,
     stdio: "inherit",

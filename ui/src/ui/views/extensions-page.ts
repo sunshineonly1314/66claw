@@ -95,8 +95,16 @@ export type ExtensionsPageProps = {
   onLoadMore?: () => void;
   /** Retry marketplace data sync (shown when load fails or returns empty) */
   onRetrySync?: () => void;
-  /** Manual add MCP server (advanced users) */
-  onManualAdd?: (config: { id: string; command: string; args: string[]; transport: "stdio" | "sse"; env?: Record<string, string> }) => void;
+  /** Manual add MCP server (advanced users). Returns true on success. */
+  onManualAdd?: (config: {
+    id: string;
+    command: string;
+    args: string[];
+    transport: "stdio" | "sse";
+    env?: Record<string, string>;
+    url?: string;
+    headers?: Record<string, string>;
+  }) => Promise<boolean>;
   /** Force re-render trigger for manual form */
   manualFormTrigger?: number;
   // — Batch API Key configuration —
@@ -1018,6 +1026,9 @@ function renderAdvancedSection(
       .ext-process-row:hover {
         background: var(--bg-hover, #2a3544) !important;
       }
+      #mcp-manual-add-section > summary { list-style: none; }
+      #mcp-manual-add-section > summary::-webkit-details-marker { display: none; }
+      #mcp-manual-add-section > summary::marker { display: none; content: ""; }
     </style>
   `;
 }
@@ -1078,44 +1089,125 @@ function renderMcpToast(toast: McpToast): TemplateResult {
 }
 
 // ============================================================================
-// Manual add MCP server form (Feature 5)
+// Manual add MCP server form — JSON paste mode
 // ============================================================================
 
 /**
- * Manual add form.
+ * JSON paste mode for adding MCP servers.
  *
- * Uses DOM-based value reading (querySelector) instead of module-level
- * mutable state so that the form works correctly even though Lit cannot
- * observe module-level variable changes for re-rendering.
+ * Accepts standard MCP JSON config formats:
+ *
+ *   Format A (Cursor / Claude Desktop style):
+ *   { "mcpServers": { "name": { "command": "npx", "args": [...] } } }
+ *
+ *   Format B (single named server):
+ *   { "name": { "command": "npx", "args": [...] } }
+ *
+ *   Format C (bare server config):
+ *   { "command": "npx", "args": [...] }
+ *
+ *   Format D (SSE):
+ *   { "mcpServers": { "name": { "url": "https://..." } } }
  */
 let _manualFormOpen = false;
+
+type ManualAddConfig = NonNullable<ExtensionsPageProps["onManualAdd"]> extends (c: infer C) => void ? C : never;
+
+/** Try to parse pasted JSON into one or more server configs. Returns array on success, error string on failure. */
+function _parseMcpJson(raw: string): ManualAddConfig[] | string {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(raw);
+  } catch {
+    return t("extensions.advanced.jsonPaste.parseError" as never) as string;
+  }
+
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return t("extensions.advanced.jsonPaste.parseError" as never) as string;
+  }
+
+  const rec = obj as Record<string, unknown>;
+
+  // Unwrap "mcpServers" envelope if present
+  const servers: Record<string, unknown> =
+    rec.mcpServers && typeof rec.mcpServers === "object" && !Array.isArray(rec.mcpServers)
+      ? (rec.mcpServers as Record<string, unknown>)
+      : rec;
+
+  // Detect Format C: bare server config (has "command" or "url" at top level)
+  if (typeof servers.command === "string" || typeof servers.url === "string") {
+    const cfg = _extractServerConfig("mcp-server", servers);
+    if (!cfg) return t("extensions.advanced.jsonPaste.invalidConfig" as never) as string;
+    return [cfg];
+  }
+
+  // Format A / B: iterate named server entries
+  const results: ManualAddConfig[] = [];
+  for (const [name, val] of Object.entries(servers)) {
+    if (!val || typeof val !== "object" || Array.isArray(val)) continue;
+    const cfg = _extractServerConfig(name, val as Record<string, unknown>);
+    if (cfg) results.push(cfg);
+  }
+
+  if (results.length === 0) {
+    return t("extensions.advanced.jsonPaste.noServers" as never) as string;
+  }
+  return results;
+}
+
+function _extractServerConfig(id: string, obj: Record<string, unknown>): ManualAddConfig | null {
+  const command = typeof obj.command === "string" ? obj.command : "";
+  const url = typeof obj.url === "string" ? obj.url : undefined;
+
+  // Must have at least command (stdio) or url (sse)
+  if (!command && !url) return null;
+
+  const transport: "stdio" | "sse" = url && !command ? "sse" : "stdio";
+  const args = Array.isArray(obj.args) ? obj.args.filter((a): a is string => typeof a === "string") : [];
+  const env =
+    obj.env && typeof obj.env === "object" && !Array.isArray(obj.env)
+      ? (obj.env as Record<string, string>)
+      : undefined;
+  const headers =
+    obj.headers && typeof obj.headers === "object" && !Array.isArray(obj.headers)
+      ? (obj.headers as Record<string, string>)
+      : undefined;
+
+  return { id, command, args, transport, env, url, headers };
+}
 
 function renderManualAddForm(
   onManualAdd: ExtensionsPageProps["onManualAdd"],
 ): TemplateResult {
   if (!onManualAdd) return html``;
 
+  const placeholder = `{
+  "mcpServers": {
+    "server-name": {
+      "command": "npx",
+      "args": ["-y", "@org/mcp-server"]
+    }
+  }
+}`;
+
   return html`
-    <div style="margin-top:16px;" id="mcp-manual-add-section">
-      <button
-        @click=${(e: Event) => {
-          _manualFormOpen = !_manualFormOpen;
-          // Force the sibling container to toggle visibility via DOM
-          const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
-          const form = section?.querySelector("#mcp-manual-form") as HTMLElement | null;
-          if (form) {
-            form.style.display = _manualFormOpen ? "flex" : "none";
-          }
-        }}
+    <details style="margin-top:16px;" id="mcp-manual-add-section"
+      @toggle=${(e: Event) => { _manualFormOpen = (e.target as HTMLDetailsElement).open; }}
+    >
+      <summary
         style="
-          all:unset; cursor:pointer;
+          cursor:pointer;
           font-size:12px; color:var(--accent-2, #20d5bc);
           display:flex; align-items:center; gap:4px;
+          padding:6px 10px;
+          border-radius:6px;
+          list-style:none;
+          user-select:none;
         "
       >
         <span style="font-size:14px;">+</span>
         ${t("extensions.advanced.manualAdd" as never)}
-      </button>
+      </summary>
 
       <div
         id="mcp-manual-form"
@@ -1125,52 +1217,21 @@ function renderManualAddForm(
           border-radius:8px;
           background:var(--card);
           border:1px solid var(--border);
-          display:${_manualFormOpen ? "flex" : "none"};
+          display:flex;
           flex-direction:column;
           gap:10px;
           animation:extUpdateIn 200ms ease both;
         "
       >
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <input
-            type="text"
-            id="mcp-form-id"
-            placeholder=${t("extensions.advanced.manualAdd.id" as never)}
-            style="
-              flex:1; min-width:140px;
-              padding:8px 12px;
-              border:1px solid var(--border);
-              border-radius:6px;
-              background:var(--bg);
-              color:var(--fg);
-              font-size:12px;
-              outline:none;
-            "
-          />
-          <input
-            type="text"
-            id="mcp-form-command"
-            value="npx"
-            placeholder=${t("extensions.advanced.manualAdd.command" as never)}
-            style="
-              flex:1; min-width:100px;
-              padding:8px 12px;
-              border:1px solid var(--border);
-              border-radius:6px;
-              background:var(--bg);
-              color:var(--fg);
-              font-size:12px;
-              outline:none;
-            "
-          />
+        <div style="font-size:11px; color:var(--muted-strong, #6b7d91); line-height:1.5;">
+          ${t("extensions.advanced.jsonPaste.hint" as never)}
         </div>
-
         <textarea
-          id="mcp-form-args"
-          placeholder=${t("extensions.advanced.manualAdd.args" as never)}
-          rows="2"
+          id="mcp-json-input"
+          .placeholder=${placeholder}
+          rows="8"
           style="
-            padding:8px 12px;
+            padding:10px 12px;
             border:1px solid var(--border);
             border-radius:6px;
             background:var(--bg);
@@ -1179,89 +1240,102 @@ function renderManualAddForm(
             font-family:monospace;
             resize:vertical;
             outline:none;
+            tab-size:2;
+            white-space:pre;
           "
+          @keydown=${(e: KeyboardEvent) => {
+            // Allow Tab to insert indentation instead of moving focus
+            if (e.key === "Tab") {
+              e.preventDefault();
+              const ta = e.target as HTMLTextAreaElement;
+              const start = ta.selectionStart;
+              const end = ta.selectionEnd;
+              ta.value = ta.value.substring(0, start) + "  " + ta.value.substring(end);
+              ta.selectionStart = ta.selectionEnd = start + 2;
+            }
+          }}
         ></textarea>
 
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:11px; color:var(--muted-strong, #6b7d91);">
-            ${t("extensions.advanced.manualAdd.transport" as never)}:
+        <div id="mcp-json-status" style="display:none; font-size:11px; padding:0 4px;"></div>
+
+        <div style="display:flex; gap:8px; justify-content:flex-end; align-items:center;">
+          <span id="mcp-json-spinner" style="display:none; font-size:11px; color:var(--muted-strong, #6b7d91);">
+            ${t("extensions.advanced.jsonPaste.adding" as never)}
           </span>
-          <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
-            <input type="radio" name="mcp-transport" value="stdio" checked
-              @change=${(e: Event) => {
-                const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
-                const urlRow = section?.querySelector("#mcp-form-url-row") as HTMLElement | null;
-                if (urlRow) urlRow.style.display = "none";
-              }}
-            /> stdio
-          </label>
-          <label style="font-size:12px; color:var(--fg); cursor:pointer; display:flex; align-items:center; gap:3px;">
-            <input type="radio" name="mcp-transport" value="sse"
-              @change=${(e: Event) => {
-                const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
-                const urlRow = section?.querySelector("#mcp-form-url-row") as HTMLElement | null;
-                if (urlRow) urlRow.style.display = "block";
-              }}
-            /> sse
-          </label>
-        </div>
-
-        <!-- SSE URL field (shown when transport=sse) -->
-        <div id="mcp-form-url-row" style="display:none;">
-          <input
-            type="text"
-            id="mcp-form-url"
-            placeholder="https://example.com/mcp/sse"
-            style="
-              width:100%; box-sizing:border-box;
-              padding:8px 12px;
-              border:1px solid var(--border);
-              border-radius:6px;
-              background:var(--bg);
-              color:var(--fg);
-              font-size:12px;
-              outline:none;
-            "
-          />
-        </div>
-
-        <div style="display:flex; gap:8px; justify-content:flex-end;">
           <button
+            id="mcp-json-submit"
             @click=${(e: Event) => {
-              const section = (e.target as HTMLElement).closest("#mcp-manual-add-section");
+              const btn = e.target as HTMLButtonElement;
+              const section = btn.closest("#mcp-manual-add-section");
               if (!section) return;
-              const idEl = section.querySelector("#mcp-form-id") as HTMLInputElement | null;
-              const cmdEl = section.querySelector("#mcp-form-command") as HTMLInputElement | null;
-              const argsEl = section.querySelector("#mcp-form-args") as HTMLTextAreaElement | null;
-              const transportEl = section.querySelector('input[name="mcp-transport"]:checked') as HTMLInputElement | null;
+              const textarea = section.querySelector("#mcp-json-input") as HTMLTextAreaElement | null;
+              const statusDiv = section.querySelector("#mcp-json-status") as HTMLElement | null;
+              const spinner = section.querySelector("#mcp-json-spinner") as HTMLElement | null;
+              const raw = textarea?.value.trim() ?? "";
+              if (!raw) return;
 
-              const id = idEl?.value.trim() ?? "";
-              const command = cmdEl?.value.trim() ?? "";
-              const transport = (transportEl?.value === "sse" ? "sse" : "stdio") as "stdio" | "sse";
+              const result = _parseMcpJson(raw);
 
-              // For SSE transport, URL is required instead of command
-              const urlEl = section.querySelector("#mcp-form-url") as HTMLInputElement | null;
-              const url = urlEl?.value.trim() ?? "";
+              if (typeof result === "string") {
+                if (statusDiv) {
+                  statusDiv.textContent = result;
+                  statusDiv.style.display = "block";
+                  statusDiv.style.color = "#f87171";
+                }
+                return;
+              }
 
-              if (!id || (transport === "stdio" && !command) || (transport === "sse" && !url)) return;
+              // Hide previous status, show spinner, disable button
+              if (statusDiv) statusDiv.style.display = "none";
+              if (spinner) spinner.style.display = "inline";
+              btn.disabled = true;
+              btn.style.opacity = "0.5";
 
-              const args = (argsEl?.value ?? "").split("\n").map((a) => a.trim()).filter(Boolean);
+              // Add all parsed servers sequentially, collect results
+              void (async () => {
+                const names: string[] = [];
+                const failures: string[] = [];
+                for (const cfg of result) {
+                  const ok = await onManualAdd(cfg);
+                  if (ok) names.push(cfg.id);
+                  else failures.push(cfg.id);
+                }
 
-              onManualAdd({
-                id,
-                command: transport === "sse" ? url : command,
-                args: transport === "sse" ? [] : args,
-                transport,
-              });
+                // Restore button
+                btn.disabled = false;
+                btn.style.opacity = "1";
+                if (spinner) spinner.style.display = "none";
 
-              // Reset form
-              if (idEl) idEl.value = "";
-              if (cmdEl) cmdEl.value = "npx";
-              if (argsEl) argsEl.value = "";
-              // Hide form
-              const form = section.querySelector("#mcp-manual-form") as HTMLElement | null;
-              if (form) form.style.display = "none";
-              _manualFormOpen = false;
+                if (statusDiv) {
+                  if (failures.length > 0 && names.length === 0) {
+                    // All failed
+                    statusDiv.textContent = (t("extensions.advanced.jsonPaste.addFailed" as never) as string)
+                      .replace("{{names}}", failures.join(", "));
+                    statusDiv.style.color = "#f87171";
+                    statusDiv.style.display = "block";
+                  } else if (failures.length > 0) {
+                    // Partial success
+                    statusDiv.textContent = (t("extensions.advanced.jsonPaste.addPartial" as never) as string)
+                      .replace("{{ok}}", names.join(", "))
+                      .replace("{{fail}}", failures.join(", "));
+                    statusDiv.style.color = "#fb923c";
+                    statusDiv.style.display = "block";
+                  } else {
+                    // All succeeded — show brief success then close
+                    statusDiv.textContent = (t("extensions.advanced.jsonPaste.addSuccess" as never) as string)
+                      .replace("{{names}}", names.join(", "));
+                    statusDiv.style.color = "#34d399";
+                    statusDiv.style.display = "block";
+                    setTimeout(() => {
+                      if (textarea) textarea.value = "";
+                      statusDiv.style.display = "none";
+                      const details = section.closest("details") ?? section;
+                      if (details instanceof HTMLDetailsElement) details.open = false;
+                      _manualFormOpen = false;
+                    }, 1500);
+                  }
+                }
+              })();
             }}
             style="
               all:unset; cursor:pointer;
@@ -1270,10 +1344,11 @@ function renderManualAddForm(
               font-size:12px; font-weight:600;
               background:var(--accent, #6366f1);
               color:#fff;
+              transition: opacity 150ms;
             "
           >${t("extensions.advanced.manualAdd.submit" as never)}</button>
         </div>
       </div>
-    </div>
+    </details>
   `;
 }

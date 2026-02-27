@@ -1,6 +1,6 @@
 /**
  * 模型配置 Controller
- * 能力优先的模型管理,调用 Gateway 的 modelConfig.* API
+ * 能力优先的模型管理,调用 Gateway 的 capability_matrix.* API
  */
 
 export interface Capability {
@@ -230,7 +230,7 @@ interface CapMatrixEntry {
 }
 
 /**
- * 加载能力列表 — 优先使用 v2 capability_matrix API，回退到 v1
+ * 加载能力列表 — 使用 v2 capability_matrix API
  */
 export async function loadCapabilities(host: ModelConfigHost): Promise<void> {
   if (!host.client || !host.connected) {
@@ -243,12 +243,9 @@ export async function loadCapabilities(host: ModelConfigHost): Promise<void> {
   host.modelConfigError = null;
 
   try {
-    // 优先尝试 v2 capability_matrix API
     const result = await host.client.request("capability_matrix.summary");
     const data = result as { capabilities: CapMatrixEntry[] };
-    // 验证 v2 响应结构有效（Gateway 未注册该方法时返回空对象）
     if (!Array.isArray(data.capabilities)) throw new Error("v2 response invalid");
-    // 将 v2 响应适配为 UI 使用的 Capability 接口
     host.capabilities = data.capabilities.map(entry => ({
       capability: entry.key,
       name: entry.name,
@@ -270,15 +267,8 @@ export async function loadCapabilities(host: ModelConfigHost): Promise<void> {
         : null,
       availableModels: entry.alternatives ?? 0,
     }));
-  } catch {
-    // v2 不可用时回退到 v1
-    try {
-      const result = await host.client.request("modelConfig.capabilities.list");
-      const data = result as { capabilities: Capability[] };
-      host.capabilities = data.capabilities ?? [];
-    } catch (err) {
-      host.modelConfigError = `加载失败: ${String(err)}`;
-    }
+  } catch (err) {
+    host.modelConfigError = `加载失败: ${String(err)}`;
   } finally {
     host.modelConfigLoading = false;
   }
@@ -291,7 +281,7 @@ export async function loadProviderGroups(host: ModelConfigHost): Promise<void> {
   if (!host.client || !host.connected) return;
 
   try {
-    const result = await host.client.request("modelConfig.providerGroups.list");
+    const result = await host.client.request("capability_matrix.providerGroups");
     const data = result as { groups: Array<{ id: string; name: string; description: string; icon: string; defaultExpanded: boolean; order: number }> };
     host.providerGroups = (data.groups ?? []).map(g => ({
       ...g,
@@ -331,7 +321,7 @@ interface CapMatrixModel {
 }
 
 /**
- * 打开模型选择器 — 优先使用 v2 API，回退到 v1
+ * 打开模型选择器 — 使用 v2 capability_matrix.models API
  */
 export async function openModelSelector(
   host: ModelConfigHost,
@@ -345,45 +335,14 @@ export async function openModelSelector(
   host.modelSelectorLoading = true;
 
   try {
-    // 优先尝试 v2 capability_matrix.query
-    const result = await host.client.request("capability_matrix.query", {
+    const result = await host.client.request("capability_matrix.models", {
       capability: capability.capability,
     });
-    const data = result as { models: CapMatrixModel[] };
-    if (!Array.isArray(data.models)) throw new Error("v2 response invalid");
-    // 适配为 ModelInfo 接口
-    host.modelSelectorModels = data.models.map(m => ({
-      providerId: m.provider,
-      providerName: m.provider,
-      providerIcon: "",
-      modelId: m.modelId,
-      modelName: m.displayName,
-      pricing: { type: m.costTier === "free" ? "free" as const : "paid" as const },
-      configured: m.configured,
-      active: false, // v2 不直接标记 active，由 UI 根据 currentModel 判断
-      quality: m.quality ?? 0,
-      maxContextTokens: m.maxContextTokens,
-      capabilities: m.capabilities,
-    }));
-    // 标记当前激活的模型
-    const currentModelId = capability.currentModel?.modelId;
-    if (currentModelId) {
-      host.modelSelectorModels = host.modelSelectorModels.map(m =>
-        m.modelId === currentModelId ? { ...m, active: true } : m
-      );
-    }
-  } catch {
-    // v2 不可用时回退到 v1
-    try {
-      const result = await host.client.request("modelConfig.capability.models", {
-        capability: capability.capability,
-      });
-      const data = result as { models: ModelInfo[] };
-      host.modelSelectorModels = data.models ?? [];
-    } catch (err) {
-      host.modelConfigError = `加载模型列表失败: ${String(err)}`;
-      closeModelSelector(host);
-    }
+    const data = result as { models: ModelInfo[] };
+    host.modelSelectorModels = data.models ?? [];
+  } catch (err) {
+    host.modelConfigError = `加载模型列表失败: ${String(err)}`;
+    closeModelSelector(host);
   } finally {
     host.modelSelectorLoading = false;
   }
@@ -414,7 +373,7 @@ export async function switchModel(
   host.modelSelectorSwitching = true;
 
   try {
-    const result = await host.client.request("modelConfig.capability.switchModel", {
+    const result = await host.client.request("capability_matrix.switchModel", {
       capability: host.modelSelectorCapability.capability,
       providerId,
       modelId,
@@ -447,7 +406,7 @@ export async function loadProviders(host: ModelConfigHost): Promise<void> {
   if (!host.client || !host.connected) return;
 
   try {
-    const result = await host.client.request("modelConfig.providers.list");
+    const result = await host.client.request("capability_matrix.providers.list");
     const data = result as { providers: ProviderInfo[] };
     host.providers = data.providers ?? [];
   } catch (err) {
@@ -593,7 +552,7 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
   });
 
   try {
-    const result = await host.client.request("modelConfig.provider.detect", {
+    const result = await host.client.request("capability_matrix.provider.detect", {
       providerId: host.providerConfigProvider.providerId,
       apiKey: host.providerConfigApiKey,
       ...(host.providerConfigBaseUrl ? { baseUrl: host.providerConfigBaseUrl.trim() } : {}),
@@ -763,7 +722,7 @@ export async function openProviderManage(host: ModelConfigHost, provider: Provid
   // 加载脱敏 Key
   if (host.client && host.connected) {
     try {
-      const result = await host.client.request("modelConfig.provider.getConfig", {
+      const result = await host.client.request("capability_matrix.provider.getConfig", {
         providerId: provider.providerId,
       });
       // stale check: 弹窗可能已被关闭或切换到其他 provider
@@ -796,7 +755,7 @@ export async function deleteProviderConfig(host: ModelConfigHost, providerId: st
 
   host.providerManageDeleting = true;
   try {
-    await host.client.request("modelConfig.provider.delete", { providerId });
+    await host.client.request("capability_matrix.provider.delete", { providerId });
     closeProviderManage(host);
     // 刷新数据
     await Promise.all([loadCapabilities(host), loadProviders(host)]);
@@ -868,7 +827,7 @@ export async function loadProviderHealth(host: ModelConfigHost): Promise<void> {
 
   host.providerHealthLoading = true;
   try {
-    const result = await host.client.request("modelConfig.providers.health");
+    const result = await host.client.request("capability_matrix.health");
     const data = result as { health: Record<string, ProviderHealthInfo> };
     host.providerHealthMap = data.health ?? {};
   } catch {
@@ -888,7 +847,7 @@ export async function testProviderConnection(host: ModelConfigHost, providerId: 
   host.providerTestResult = null;
 
   try {
-    const result = await host.client.request("modelConfig.provider.testConnection", { providerId });
+    const result = await host.client.request("capability_matrix.provider.testConnection", { providerId });
     const data = result as { success: boolean; status: string; message: string };
     host.providerTestResult = {
       providerId,
@@ -930,7 +889,7 @@ export async function loadProviderPriority(host: ModelConfigHost): Promise<void>
   if (!host.client || !host.connected) return;
 
   try {
-    const result = await host.client.request("modelConfig.providers.getPriority");
+    const result = await host.client.request("capability_matrix.priority.get");
     const data = result as { priority: string[] };
     host.providerPriority = data.priority ?? [];
   } catch {
@@ -950,7 +909,7 @@ export async function saveProviderPriority(host: ModelConfigHost, priority: stri
 
   host.providerPrioritySaving = true;
   try {
-    await host.client.request("modelConfig.providers.savePriority", { priority });
+    await host.client.request("capability_matrix.priority.save", { priority });
     host.providerPriority = priority;
     // 优先级变更会联动 modelCapability，刷新 UI 显示（失败不影响主流程）
     try { await loadCapabilities(host); } catch { /* UI 刷新失败非关键 */ }

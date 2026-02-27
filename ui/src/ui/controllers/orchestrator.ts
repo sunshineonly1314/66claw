@@ -42,9 +42,11 @@ export type OrchestratorControllerState = {
   orchestratorState: OrchestratorState | null;
 };
 
-// ── Internal: remember the user's original requirement ──────────────────
+// ── Internal state ───────────────────────────────────────────────────────
 
 let _userRequirement = "";
+/** Guard: prevent double-click on template deploy buttons. */
+let _deployInFlight = false;
 
 // ── Dispatch Helper ─────────────────────────────────────────────────────
 
@@ -93,6 +95,7 @@ export function closeOrchestrator(state: OrchestratorControllerState): void {
   state.orchestratorOpen = false;
   state.orchestratorState = null;
   _userRequirement = "";
+  _deployInFlight = false;
   // Stop any active polling
   stopPolling();
 }
@@ -101,6 +104,7 @@ export function closeOrchestrator(state: OrchestratorControllerState): void {
 
 /**
  * Handle clicking a template card — trigger quick deploy.
+ * Includes double-click guard to prevent duplicate deployments.
  */
 export async function handleTemplateClick(
   state: OrchestratorControllerState,
@@ -108,6 +112,11 @@ export async function handleTemplateClick(
 ): Promise<void> {
   const orch = state.orchestratorState;
   if (!orch) return;
+
+  // Double-click guard: reject if a deploy is already in flight
+  if (_deployInFlight || orch.phase === "deploying") return;
+  _deployInFlight = true;
+
   const tpl = orch.templates.find(t => t.id === templateId);
   const tplName = tpl?.name ?? templateId;
 
@@ -127,6 +136,8 @@ export async function handleTemplateClick(
     await startPolling(state, result.planId);
   } catch (err) {
     dispatch(state, { type: "DEPLOY_ERROR", error: String(err) });
+  } finally {
+    _deployInFlight = false;
   }
 }
 

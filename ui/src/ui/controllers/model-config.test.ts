@@ -68,7 +68,7 @@ function disconnectedHost(overrides?: Partial<ModelConfigState>) {
   };
 }
 
-/** 创建一个测试 Capability */
+/** 创建一个测试 Capability (controller 输出格式) */
 function makeCap(id: string, status: "active" | "inactive" = "inactive"): Capability {
   return {
     capability: id,
@@ -77,9 +77,34 @@ function makeCap(id: string, status: "active" | "inactive" = "inactive"): Capabi
     icon: "📦",
     status,
     currentModel: status === "active"
-      ? { providerId: "openai", providerName: "OpenAI", modelId: "gpt-4o", modelName: "GPT-4o", isFree: false }
+      ? { providerId: "openai", providerName: "openai", modelId: "gpt-4o", modelName: "GPT-4o", isFree: false, quality: 5, maxContextTokens: 128000, capabilities: { text: 5 }, strengthTier: "strong" }
       : null,
     availableModels: 3,
+  };
+}
+
+/** 创建 v2 capability_matrix.summary 响应中的 entry */
+function makeCapEntry(id: string, status: "active" | "unconfigured" | "missing" = "unconfigured") {
+  return {
+    key: id,
+    name: `${id} name`,
+    description: `${id} description`,
+    icon: "📦",
+    status,
+    ...(status === "active" ? {
+      bestModel: {
+        provider: "openai",
+        modelId: "gpt-4o",
+        displayName: "GPT-4o",
+        quality: 5,
+        costTier: "standard",
+        region: "international",
+        maxContextTokens: 128000,
+        capabilities: { text: 5 },
+        strengthTier: "strong",
+      },
+      alternatives: 3,
+    } : {}),
   };
 }
 
@@ -164,14 +189,19 @@ describe("model-config Controller", () => {
     });
 
     it("成功加载时应设置 capabilities", async () => {
-      const caps = [makeCap("text"), makeCap("video")];
+      const entries = [makeCapEntry("text", "active"), makeCapEntry("video")];
       const host = connectedHost({}, {
-        "modelConfig.capabilities.list": { capabilities: caps },
+        "capability_matrix.summary": { capabilities: entries },
       });
 
       await loadCapabilities(host);
 
-      expect(host.capabilities).toEqual(caps);
+      expect(host.capabilities).toHaveLength(2);
+      expect(host.capabilities[0].capability).toBe("text");
+      expect(host.capabilities[0].status).toBe("active");
+      expect(host.capabilities[0].currentModel?.modelId).toBe("gpt-4o");
+      expect(host.capabilities[1].capability).toBe("video");
+      expect(host.capabilities[1].status).toBe("inactive");
       expect(host.modelConfigLoading).toBe(false);
       expect(host.modelConfigError).toBeNull();
     });
@@ -179,7 +209,7 @@ describe("model-config Controller", () => {
     it("加载过程中应设置 loading 状态", async () => {
       let capturedLoading = false;
       const host = connectedHost({}, {
-        "modelConfig.capabilities.list": { capabilities: [] },
+        "capability_matrix.summary": { capabilities: [] },
       });
 
       // 拦截 request 检查中间状态
@@ -196,7 +226,7 @@ describe("model-config Controller", () => {
 
     it("请求失败时应设置错误", async () => {
       const host = connectedHost({}, {
-        "modelConfig.capabilities.list": new Error("network error"),
+        "capability_matrix.summary": new Error("network error"),
       });
 
       await loadCapabilities(host);
@@ -206,13 +236,14 @@ describe("model-config Controller", () => {
       expect(host.modelConfigLoading).toBe(false);
     });
 
-    it("返回 null capabilities 时应使用空数组", async () => {
+    it("返回无效响应时应设置错误", async () => {
       const host = connectedHost({}, {
-        "modelConfig.capabilities.list": { capabilities: null },
+        "capability_matrix.summary": { capabilities: null },
       });
 
       await loadCapabilities(host);
-      expect(host.capabilities).toEqual([]);
+      // v2 controller 校验 Array.isArray → 抛错 → 设置 modelConfigError
+      expect(host.modelConfigError).toContain("加载失败");
     });
   });
 
@@ -229,7 +260,7 @@ describe("model-config Controller", () => {
     it("成功加载时应设置 providers", async () => {
       const providers = [makeProvider("openai"), makeProvider("deepseek")];
       const host = connectedHost({}, {
-        "modelConfig.providers.list": { providers },
+        "capability_matrix.providers.list": { providers },
       });
 
       await loadProviders(host);
@@ -238,7 +269,7 @@ describe("model-config Controller", () => {
 
     it("请求失败时应设置错误", async () => {
       const host = connectedHost({}, {
-        "modelConfig.providers.list": new Error("timeout"),
+        "capability_matrix.providers.list": new Error("timeout"),
       });
 
       await loadProviders(host);
@@ -262,7 +293,7 @@ describe("model-config Controller", () => {
         { id: "intl", name: "国际", description: "", icon: "🌍", defaultExpanded: false, order: 2 },
       ];
       const host = connectedHost({}, {
-        "modelConfig.providerGroups.list": { groups },
+        "capability_matrix.providerGroups": { groups },
       });
 
       await loadProviderGroups(host);
@@ -274,7 +305,7 @@ describe("model-config Controller", () => {
 
     it("请求失败时应设置错误", async () => {
       const host = connectedHost({}, {
-        "modelConfig.providerGroups.list": new Error("fail"),
+        "capability_matrix.providerGroups": new Error("fail"),
       });
 
       await loadProviderGroups(host);
@@ -327,7 +358,7 @@ describe("model-config Controller", () => {
         { providerId: "openai", providerName: "OpenAI", providerIcon: "", modelId: "gpt-4o", modelName: "GPT-4o", pricing: { type: "paid" as const }, configured: true, active: true },
       ];
       const host = connectedHost({}, {
-        "modelConfig.capability.models": { models },
+        "capability_matrix.models": { models },
       });
 
       await openModelSelector(host, makeCap("text"));
@@ -340,7 +371,7 @@ describe("model-config Controller", () => {
 
     it("请求失败时应关闭选择器并设置错误", async () => {
       const host = connectedHost({}, {
-        "modelConfig.capability.models": new Error("load failed"),
+        "capability_matrix.models": new Error("load failed"),
       });
 
       await openModelSelector(host, makeCap("text"));
@@ -387,12 +418,12 @@ describe("model-config Controller", () => {
     });
 
     it("切换成功时应关闭选择器并刷新", async () => {
-      const caps = [makeCap("text", "active")];
+      const entries = [makeCapEntry("text", "active")];
       const host = connectedHost(
         { modelSelectorCapability: makeCap("text") },
         {
-          "modelConfig.capability.switchModel": { success: true },
-          "modelConfig.capabilities.list": { capabilities: caps },
+          "capability_matrix.switchModel": { success: true },
+          "capability_matrix.summary": { capabilities: entries },
         },
       );
 
@@ -401,7 +432,9 @@ describe("model-config Controller", () => {
       // 选择器应该关闭
       expect(host.modelSelectorOpen).toBe(false);
       // 能力应该刷新
-      expect(host.capabilities).toEqual(caps);
+      expect(host.capabilities).toHaveLength(1);
+      expect(host.capabilities[0].capability).toBe("text");
+      expect(host.capabilities[0].status).toBe("active");
       expect(host.modelSelectorSwitching).toBe(false);
     });
 
@@ -409,7 +442,7 @@ describe("model-config Controller", () => {
       const host = connectedHost(
         { modelSelectorCapability: makeCap("text") },
         {
-          "modelConfig.capability.switchModel": { success: false, error: "模型不兼容" },
+          "capability_matrix.switchModel": { success: false, error: "模型不兼容" },
         },
       );
 
@@ -423,7 +456,7 @@ describe("model-config Controller", () => {
       const host = connectedHost(
         { modelSelectorCapability: makeCap("text") },
         {
-          "modelConfig.capability.switchModel": new Error("RPC error"),
+          "capability_matrix.switchModel": new Error("RPC error"),
         },
       );
 
@@ -599,7 +632,7 @@ describe("model-config Controller", () => {
           providerConfigApiKey: "sk-test-1234567890",
         },
         {
-          "modelConfig.provider.detect": {
+          "capability_matrix.provider.detect": {
             success: true,
             models: [{ modelId: "gpt-4o", modelName: "GPT-4o", capabilities: ["text"], available: true }],
             autoEnabled: { text: "gpt-4o" },
@@ -623,7 +656,7 @@ describe("model-config Controller", () => {
           providerConfigApiKey: "bad-key",
         },
         {
-          "modelConfig.provider.detect": {
+          "capability_matrix.provider.detect": {
             success: false,
             error: "Invalid API key",
           },
@@ -646,7 +679,7 @@ describe("model-config Controller", () => {
           providerConfigApiKey: "sk-test",
         },
         {
-          "modelConfig.provider.detect": new Error("connection refused"),
+          "capability_matrix.provider.detect": new Error("connection refused"),
         },
       );
 
@@ -714,7 +747,7 @@ describe("model-config Controller", () => {
     it("应该打开管理弹窗并加载脱敏 Key", async () => {
       const provider = makeProvider("openai", { configured: true });
       const host = connectedHost({}, {
-        "modelConfig.provider.getConfig": {
+        "capability_matrix.provider.getConfig": {
           configured: true,
           maskedApiKey: "sk-t****cdef",
         },
@@ -731,7 +764,7 @@ describe("model-config Controller", () => {
     it("加载 Key 失败时应显示错误文本", async () => {
       const provider = makeProvider("openai");
       const host = connectedHost({}, {
-        "modelConfig.provider.getConfig": new Error("load failed"),
+        "capability_matrix.provider.getConfig": new Error("load failed"),
       });
 
       await openProviderManage(host, provider);
@@ -781,7 +814,7 @@ describe("model-config Controller", () => {
     });
 
     it("删除成功时应关闭弹窗并刷新数据", async () => {
-      const caps = [makeCap("text", "inactive")];
+      const entries = [makeCapEntry("text")];
       const providers = [makeProvider("openai")];
       const host = connectedHost(
         {
@@ -789,9 +822,9 @@ describe("model-config Controller", () => {
           providerManageTarget: makeProvider("openai"),
         },
         {
-          "modelConfig.provider.delete": { success: true },
-          "modelConfig.capabilities.list": { capabilities: caps },
-          "modelConfig.providers.list": { providers },
+          "capability_matrix.provider.delete": { success: true },
+          "capability_matrix.summary": { capabilities: entries },
+          "capability_matrix.providers.list": { providers },
         },
       );
 
@@ -799,7 +832,8 @@ describe("model-config Controller", () => {
 
       expect(host.providerManageOpen).toBe(false);
       expect(host.providerManageTarget).toBeNull();
-      expect(host.capabilities).toEqual(caps);
+      expect(host.capabilities).toHaveLength(1);
+      expect(host.capabilities[0].capability).toBe("text");
       expect(host.providers).toEqual(providers);
       expect(host.providerManageDeleting).toBe(false);
     });
@@ -811,13 +845,13 @@ describe("model-config Controller", () => {
           providerManageTarget: makeProvider("openai"),
         },
         {
-          "modelConfig.provider.delete": new Error("permission denied"),
+          "capability_matrix.provider.delete": new Error("permission denied"),
         },
       );
 
       await deleteProviderConfig(host, "openai");
 
-      expect(host.modelConfigError).toContain("删除失败");
+      expect(host.providerManageError).toContain("删除失败");
       expect(host.providerManageDeleting).toBe(false);
     });
 
@@ -829,9 +863,12 @@ describe("model-config Controller", () => {
       );
 
       host.client!.request = vi.fn(async (method) => {
-        if (method === "modelConfig.provider.delete") {
+        if (method === "capability_matrix.provider.delete") {
           capturedDeleting = host.providerManageDeleting;
           return { success: true };
+        }
+        if (method === "capability_matrix.summary") {
+          return { capabilities: [] };
         }
         return {};
       });

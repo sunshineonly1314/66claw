@@ -240,22 +240,13 @@ async function checkChatModelConfigured(host: ChatHost): Promise<void> {
   const app = host as unknown as ClawdbotApp;
   if (!app.client || !app.connected) return;
   try {
-    // 优先 v2 capability_matrix API，回退 v1
-    let caps: Array<{ capability: string; status: string }> = [];
-    try {
-      const result = await app.client.request("capability_matrix.summary") as {
-        capabilities?: Array<{ key: string; status: string }>;
-      };
-      caps = (result.capabilities ?? []).map(c => ({
-        capability: c.key,
-        status: c.status === "active" ? "active" : "inactive",
-      }));
-    } catch {
-      const result = await app.client.request("modelConfig.capabilities.list") as {
-        capabilities?: Array<{ capability: string; status: string }>;
-      };
-      caps = result.capabilities ?? [];
-    }
+    const result = await app.client.request("capability_matrix.summary") as {
+      capabilities?: Array<{ key: string; status: string }>;
+    };
+    const caps = (result.capabilities ?? []).map(c => ({
+      capability: c.key,
+      status: c.status === "active" ? "active" : "inactive",
+    }));
     const textCap = caps.find((c) => c.capability === "text");
     host.chatModelConfigured = textCap?.status === "active";
     // 同步提取所有已激活的能力，供 intent-hint 判断缺失能力
@@ -266,7 +257,7 @@ async function checkChatModelConfigured(host: ChatHost): Promise<void> {
 
     // 检查必要 provider（硅基流动）是否已配置
     try {
-      const provResult = await app.client.request("modelConfig.providers.list") as {
+      const provResult = await app.client.request("capability_matrix.providers.list") as {
         providers?: Array<{ providerId: string; configured?: boolean }>;
       };
       const sf = (provResult.providers ?? []).find(p => p.providerId === "siliconflow");

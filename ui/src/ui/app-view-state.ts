@@ -190,7 +190,7 @@ export type AppViewState = {
   agentDeleting: boolean;
   agentDeleteError: string | null;
   agentAddFormOpen: boolean;
-  agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+  agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" | "chat";
   agentFilesLoading: boolean;
   agentFilesError: string | null;
   agentFilesList: AgentsFilesListResult | null;
@@ -205,6 +205,17 @@ export type AppViewState = {
   agentSkillsError: string | null;
   agentSkillsReport: SkillStatusReport | null;
   agentSkillsAgentId: string | null;
+  // Agent embedded chat
+  agentChatSessionKey: string;
+  agentChatMessages: unknown[];
+  agentChatStream: string | null;
+  agentChatStreamStartedAt: number | null;
+  agentChatRunId: string | null;
+  agentChatSending: boolean;
+  agentChatLoading: boolean;
+  agentChatMessage: string;
+  agentChatAttachments: ChatAttachment[];
+  agentChatError: string | null;
   // dmScope auto-detection status (session isolation)
   dmScopeStatus: {
     recommended: string;

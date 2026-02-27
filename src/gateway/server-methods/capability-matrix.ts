@@ -1,14 +1,29 @@
 /**
- * Capability Matrix API — unified model capability status for the UI.
+ * Capability Matrix API v2 — unified model capability & provider management for the UI.
  *
- * Provides the frontend with a complete view of the user's AI capability coverage,
- * powered by the unified capability registry (capability-registry.ts).
+ * This is the single gateway API surface for all model/provider operations.
+ * v1 `modelConfig.*` methods are deprecated and will be removed in a future release;
+ * all new UI code should use `capability_matrix.*` exclusively.
  *
- * Endpoints:
- *   - capability_matrix.summary   — full capability matrix overview
- *   - capability_matrix.query     — query models for a specific capability
- *   - capability_matrix.providers — get all capabilities for a provider
- *   - capability_matrix.refresh   — trigger remote capability card update
+ * Endpoints (read):
+ *   - capability_matrix.summary           — full capability matrix overview
+ *   - capability_matrix.query             — query models for a specific capability
+ *   - capability_matrix.providers         — get all capabilities for a provider (registry)
+ *   - capability_matrix.refresh           — trigger remote capability card update
+ *   - capability_matrix.models            — list switchable models for a capability
+ *   - capability_matrix.providers.list    — list all providers with config status
+ *   - capability_matrix.providerGroups    — provider group metadata
+ *   - capability_matrix.provider.getConfig — get masked provider config
+ *   - capability_matrix.health            — provider health map
+ *   - capability_matrix.priority.get      — get provider priority order
+ *
+ * Endpoints (write):
+ *   - capability_matrix.switchModel             — switch model for a capability
+ *   - capability_matrix.provider.detect         — detect & configure a provider
+ *   - capability_matrix.provider.delete         — delete a provider configuration
+ *   - capability_matrix.provider.addModel       — add a custom model to a provider
+ *   - capability_matrix.provider.testConnection — test provider connectivity
+ *   - capability_matrix.priority.save           — save provider priority order
  */
 
 import type { GatewayRequestHandlers } from "./types.js";
@@ -26,6 +41,27 @@ import {
 } from "../../dispatch/index.js";
 import { loadConfig } from "../../config/config.js";
 import { getProviderAliases } from "../../agents/model-selection.js";
+// Import v1 business logic for delegation (will be inlined into v2 post-migration)
+import {
+  getCapabilityModels,
+  switchCapabilityModel,
+  detectProviderModelsWithProgress,
+  listProviders,
+  getProviderConfig,
+  deleteProviderConfig,
+  addCustomModel,
+  getProvidersHealth,
+  testProviderConnection,
+  saveProviderPriority,
+  getProviderPriority,
+} from "./model-config.js";
+import {
+  PROVIDER_GROUPS,
+  PROVIDER_CAPABILITY_MAPPINGS,
+} from "../../config/provider-capability-mapping.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
+
+const log = createSubsystemLogger("gateway/capability-matrix");
 
 /** v2 capability key → modelCapability config key */
 const V2_TO_V1_KEY: Partial<Record<CapabilityKey, string>> = {
@@ -96,7 +132,7 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
       const allKeys = getAllCapabilityKeys();
 
       // Read user's explicit model choices from modelCapability config
-      const cfg = loadConfig() as {
+      const cfg = (await loadConfig()) as {
         modelCapability?: {
           capabilities?: Record<string, { providerId: string; modelId: string; auto?: boolean }>;
         };
@@ -121,7 +157,37 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
             const chosenCard = configuredResults.find(
               (c) => choiceAliases.includes(c.provider) && c.modelId === userChoice.modelId,
             );
-            if (chosenCard) card = chosenCard;
+            if (chosenCard) {
+              card = chosenCard;
+            } else {
+              // User's model is not in the v2 card registry (e.g. a model only
+              // known to v1 PROVIDER_CAPABILITY_MAPPINGS, or a user-added custom
+              // model). Build a synthetic card with safe defaults instead of
+              // spreading from bestCard (which belongs to a different model).
+              const providerModels = (cfg as Record<string, unknown>).models as
+                | { providers?: Record<string, { models?: Array<{ id?: string; name?: string }> }> }
+                | undefined;
+              const modelDef = providerModels?.providers?.[userChoice.providerId]?.models?.find(
+                (m) => m.id === userChoice.modelId,
+              );
+              const aliases = getProviderAliases(userChoice.providerId);
+              const isDomestic = aliases.some((a) => !!PROVIDER_CAPABILITY_MAPPINGS[a]);
+              card = {
+                provider: userChoice.providerId,
+                modelId: userChoice.modelId,
+                displayName: modelDef?.name ?? userChoice.modelId,
+                capabilities: { [key]: 3 } as Record<CapabilityKey, number>,
+                modelType: "chat",
+                region: isDomestic ? "domestic" : "international",
+                costTier: "standard",
+                costPer1M: 0,
+                maxContextTokens: 32768,
+                strengthTier: "mid",
+                tags: [],
+                languages: [],
+                runtime: { configured: true, health: "unknown" as const, probeResults: {} },
+              } as EnrichedCard;
+            }
           }
           return {
             key,
@@ -323,6 +389,290 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
   "capability_matrix.refresh": async ({ respond }) => {
     try {
       const result = await triggerRemoteFetch();
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  // =========================================================================
+  // v2 unified handlers — delegating to v1 business logic
+  // These will eventually replace all modelConfig.* methods.
+  // =========================================================================
+
+  /**
+   * List switchable models for a capability (v2 of modelConfig.capability.models).
+   *
+   * Merges v1 static mappings + v2 capability registry + user config models.
+   */
+  "capability_matrix.models": async ({ params, respond }) => {
+    try {
+      const { capability } = params as { capability?: string };
+      if (!capability) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: capability"),
+        );
+        return;
+      }
+      const result = await getCapabilityModels({ capability });
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Switch the active model for a capability (v2 of modelConfig.capability.switchModel).
+   *
+   * Handles: config write lock, provider validation, session override,
+   * agents.defaults.model.primary sync, connection pre-warming.
+   */
+  "capability_matrix.switchModel": async ({ params, respond }) => {
+    try {
+      const { capability, providerId, modelId } = params as {
+        capability?: string;
+        providerId?: string;
+        modelId?: string;
+      };
+      if (!capability || !providerId || !modelId) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            "Missing required parameters: capability, providerId, modelId",
+          ),
+        );
+        return;
+      }
+      const result = await switchCapabilityModel({ capability, providerId, modelId });
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * List all providers with config status (v2 of modelConfig.providers.list).
+   */
+  "capability_matrix.providers.list": async ({ respond }) => {
+    try {
+      const result = await listProviders();
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Provider group metadata (v2 of modelConfig.providerGroups.list).
+   */
+  "capability_matrix.providerGroups": async ({ respond }) => {
+    try {
+      respond(true, { groups: PROVIDER_GROUPS }, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Detect & configure a provider (v2 of modelConfig.provider.detect).
+   *
+   * Responds immediately with { started, total }, then broadcasts progress events.
+   */
+  "capability_matrix.provider.detect": async ({ params, respond, context, client }) => {
+    try {
+      const { providerId, apiKey, customModel, baseUrl } = params as {
+        providerId: string;
+        apiKey: string;
+        customModel?: string;
+        baseUrl?: string;
+      };
+      if (!providerId || typeof providerId !== "string") {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: providerId"),
+        );
+        return;
+      }
+      if (!apiKey || typeof apiKey !== "string") {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: apiKey"),
+        );
+        return;
+      }
+      const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
+      const totalModels = mapping
+        ? mapping.models.length +
+          (customModel && !mapping.models.some((m) => m.modelId === customModel) ? 1 : 0)
+        : 0;
+
+      const connIds = client?.connId ? new Set([client.connId]) : undefined;
+      const broadcastFn = (event: string, payload: unknown) => {
+        if (connIds) {
+          context.broadcastToConnIds(event, payload, connIds);
+        } else {
+          context.broadcast(event, payload);
+        }
+      };
+
+      respond(true, { started: true, total: totalModels }, undefined);
+
+      void detectProviderModelsWithProgress(
+        { providerId, apiKey, customModel, baseUrl },
+        broadcastFn,
+      ).catch((err) => {
+        log.error(`detectProviderModelsWithProgress failed: ${err}`);
+        broadcastFn("modelConfig.detect.complete", {
+          success: false,
+          models: [],
+          autoEnabled: {},
+          availableCount: 0,
+          failedCount: 0,
+          error: `检测异常: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      });
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Get masked provider config (v2 of modelConfig.provider.getConfig).
+   */
+  "capability_matrix.provider.getConfig": async ({ params, respond }) => {
+    try {
+      const { providerId } = params as { providerId?: string };
+      if (!providerId) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: providerId"),
+        );
+        return;
+      }
+      const result = await getProviderConfig({ providerId });
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Delete a provider configuration (v2 of modelConfig.provider.delete).
+   */
+  "capability_matrix.provider.delete": async ({ params, respond }) => {
+    try {
+      const { providerId } = params as { providerId?: string };
+      if (!providerId) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: providerId"),
+        );
+        return;
+      }
+      const result = await deleteProviderConfig({ providerId });
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Add a custom model to a provider (v2 of modelConfig.provider.addModel).
+   */
+  "capability_matrix.provider.addModel": async ({ params, respond }) => {
+    try {
+      const { providerId, modelId, modelName, input } = params as {
+        providerId?: string;
+        modelId?: string;
+        modelName?: string;
+        input?: Array<"text" | "image" | "video">;
+      };
+      if (!providerId || !modelId) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            "Missing required parameters: providerId, modelId",
+          ),
+        );
+        return;
+      }
+      const result = await addCustomModel({ providerId, modelId, modelName, input });
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Provider health map (v2 of modelConfig.providers.health).
+   */
+  "capability_matrix.health": async ({ respond }) => {
+    try {
+      const result = await getProvidersHealth();
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Test provider connectivity (v2 of modelConfig.provider.testConnection).
+   */
+  "capability_matrix.provider.testConnection": async ({ params, respond }) => {
+    try {
+      const { providerId } = params as { providerId?: string };
+      if (!providerId) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: providerId"),
+        );
+        return;
+      }
+      const result = await testProviderConnection({ providerId });
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Save provider priority order (v2 of modelConfig.providers.savePriority).
+   */
+  "capability_matrix.priority.save": async ({ params, respond }) => {
+    try {
+      const { priority } = params as { priority?: string[] };
+      if (!Array.isArray(priority)) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: priority (array)"),
+        );
+        return;
+      }
+      const result = await saveProviderPriority({ priority });
+      respond(true, result, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  },
+
+  /**
+   * Get provider priority order (v2 of modelConfig.providers.getPriority).
+   */
+  "capability_matrix.priority.get": async ({ respond }) => {
+    try {
+      const result = await getProviderPriority();
       respond(true, result, undefined);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));

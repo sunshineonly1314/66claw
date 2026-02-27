@@ -188,7 +188,12 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
           ${!cap.isBuiltin && onUninstall
             ? html`
                 <button
-                  @click=${() => onUninstall(cap.id)}
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    if (confirm(t("extensions.detail.uninstallConfirm" as never).replace("{{name}}", cap.friendlyName))) {
+                      onUninstall(cap.id);
+                    }
+                  }}
                   style="
                     all:unset;
                     cursor:pointer;

@@ -147,6 +147,13 @@ export function handleUpdated(
       host as unknown as Parameters<typeof scheduleChatScroll>[0],
       forcedByTab || forcedByLoad || !host.chatHasAutoScrolled,
     );
+    // Auto-focus the chat textarea when navigating to the chat tab
+    if (forcedByTab) {
+      requestAnimationFrame(() => {
+        const ta = document.querySelector<HTMLTextAreaElement>(".cc-textarea");
+        if (ta) ta.focus();
+      });
+    }
   }
   if (
     host.tab === "logs" &&

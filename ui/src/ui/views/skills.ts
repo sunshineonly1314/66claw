@@ -239,6 +239,14 @@ function renderLocalSkills(props: SkillsProps) {
     : skills;
   const groups = groupByTier(filtered);
 
+  // Compute stats for dashboard
+  const coreGroup = groups.find((g) => g.id === "core");
+  const readyGroup = groups.find((g) => g.id === "ready");
+  const needsConfigGroup = groups.find((g) => g.id === "needs-config");
+  const coreSkillCount = coreGroup?.skills.length ?? 0;
+  const readySkillCount = readyGroup?.skills.length ?? 0;
+  const attentionSkillCount = needsConfigGroup?.skills.length ?? 0;
+
   // Always show core section as a drop target if there are core skills in the full list
   // (even when filter hides them all), so users can still drop ready skills into core
   const hasCoreGroup = groups.some((g) => g.id === "core");
@@ -267,6 +275,9 @@ function renderLocalSkills(props: SkillsProps) {
           </button>
         </div>
       </div>
+
+      <!-- Dashboard Summary -->
+      ${renderDashboard(props.coreCount, props.coreMax, coreSkillCount, readySkillCount, attentionSkillCount)}
 
       <div class="filters" style="margin-top: 14px;">
         <label class="field" style="flex: 1;">
@@ -298,14 +309,110 @@ function renderLocalSkills(props: SkillsProps) {
           : nothing}
         ${groups.map((group) => renderTierSection(group, props))}
         ${filtered.length === 0 && !showEmptyCoreSection
-          ? html`<div class="muted">
-              ${t("skills.noSkillsFound" as never)}
-            </div>`
+          ? renderEmptyState(props)
           : nothing}
       </div>
     </section>
     ${renderLocalSkillsStyles()}
     ${props.importOpen ? renderSkillImportModal(props) : nothing}
+  `;
+}
+
+// ============================================================================
+// Dashboard summary: ring chart + 3 stat cards
+// ============================================================================
+
+function renderDashboard(
+  coreCount: number,
+  coreMax: number,
+  coreFiltered: number,
+  readyFiltered: number,
+  attentionFiltered: number,
+) {
+  // SVG ring chart calculations
+  const radius = 34;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = coreMax > 0 ? Math.min(coreCount / coreMax, 1) : 0;
+  const dashOffset = circumference * (1 - ratio);
+  const ringColor = ratio >= 1 ? "#ef4444" : ratio > 0.6 ? "#f59e0b" : "var(--accent, #6c8cff)";
+
+  return html`
+    <div class="skills-dashboard">
+      <!-- Ring Chart -->
+      <div class="skills-dashboard__ring">
+        <svg class="skills-ring-svg" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r="${radius}"
+            fill="none" stroke="var(--border)" stroke-width="6" opacity="0.3" />
+          <circle cx="40" cy="40" r="${radius}"
+            fill="none" stroke="${ringColor}" stroke-width="6"
+            stroke-dasharray="${circumference}"
+            stroke-dashoffset="${dashOffset}"
+            stroke-linecap="round"
+            class="skills-ring-progress"
+            transform="rotate(-90 40 40)" />
+        </svg>
+        <div class="skills-ring-text">
+          <span class="skills-ring-value">${coreCount}</span>
+          <span class="skills-ring-max">/ ${coreMax}</span>
+        </div>
+      </div>
+
+      <!-- 3 Stat Cards -->
+      <div class="skills-dashboard__stats">
+        <div class="skills-stat-card">
+          <div class="skills-stat-card__icon skills-stat-card__icon--core">
+            <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+          </div>
+          <div class="skills-stat-card__info">
+            <span class="skills-stat-card__value">${coreFiltered}</span>
+            <span class="skills-stat-card__label">${t("skills.dashboard.coreLabel" as never)}</span>
+          </div>
+        </div>
+
+        <div class="skills-stat-card">
+          <div class="skills-stat-card__icon skills-stat-card__icon--ready">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12" /></svg>
+          </div>
+          <div class="skills-stat-card__info">
+            <span class="skills-stat-card__value">${readyFiltered}</span>
+            <span class="skills-stat-card__label">${t("skills.dashboard.readyLabel" as never)}</span>
+          </div>
+        </div>
+
+        <div class="skills-stat-card">
+          <div class="skills-stat-card__icon skills-stat-card__icon--blocked">
+            <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+          </div>
+          <div class="skills-stat-card__info">
+            <span class="skills-stat-card__value">${attentionFiltered}</span>
+            <span class="skills-stat-card__label">${t("skills.dashboard.attentionLabel" as never)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================================
+// Empty state with illustration + CTA
+// ============================================================================
+
+function renderEmptyState(props: SkillsProps) {
+  return html`
+    <div class="skills-empty-state">
+      <div class="skills-empty-state__icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+        </svg>
+      </div>
+      <div class="skills-empty-state__title">${t("skills.empty.title" as never)}</div>
+      <div class="skills-empty-state__desc">${t("skills.empty.description" as never)}</div>
+      <button
+        class="btn"
+        style="margin-top:16px;"
+        @click=${() => props.onTabChange("market")}
+      >${t("skills.empty.browseMarket" as never)}</button>
+    </div>
   `;
 }
 
@@ -335,10 +442,9 @@ function renderCoreTierSection(group: SkillGroup, props: SkillsProps, config: Ti
 
   return html`
     <div
-      class="skills-tier-section"
+      class="skills-tier-section skills-tier-section--core"
       data-tier="core"
       style="
-        border:2px solid transparent;
         border-radius:var(--radius-lg, 12px);
         padding:16px;
         background:${config.accentBg};
@@ -349,18 +455,21 @@ function renderCoreTierSection(group: SkillGroup, props: SkillsProps, config: Ti
         if (atLimit) return;
         e.preventDefault();
         e.dataTransfer!.dropEffect = "move";
-        (e.currentTarget as HTMLElement).style.borderColor = config.accentColor;
+        const dropZone = (e.currentTarget as HTMLElement).querySelector(".skills-drop-zone");
+        if (dropZone) dropZone.classList.add("skills-drop-active", "skills-drop-active--core");
       }}
       @dragleave=${(e: DragEvent) => {
         const el = e.currentTarget as HTMLElement;
         if (!el.contains(e.relatedTarget as Node)) {
-          el.style.borderColor = "transparent";
+          const dropZone = el.querySelector(".skills-drop-zone");
+          if (dropZone) dropZone.classList.remove("skills-drop-active", "skills-drop-active--core");
         }
       }}
       @drop=${(e: DragEvent) => {
         e.preventDefault();
         const el = e.currentTarget as HTMLElement;
-        el.style.borderColor = "transparent";
+        const dropZone = el.querySelector(".skills-drop-zone");
+        if (dropZone) dropZone.classList.remove("skills-drop-active", "skills-drop-active--core");
         if (atLimit) return;
         const skillKey = e.dataTransfer?.getData("text/plain");
         const sourceTier = e.dataTransfer?.getData("application/x-skill-tier");
@@ -373,9 +482,9 @@ function renderCoreTierSection(group: SkillGroup, props: SkillsProps, config: Ti
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-size:18px;">${config.icon}</span>
-          <span style="font-size:15px; font-weight:700; color:var(--fg);">${group.label}</span>
+          <span style="font-size:16px; font-weight:700; color:var(--fg);">${group.label}</span>
           <span style="
-            font-size:11px; font-weight:600; padding:2px 10px; border-radius:10px;
+            font-size:12px; font-weight:700; padding:3px 12px; border-radius:10px;
             background:${atLimit ? "rgba(239,68,68,0.12)" : "rgba(251,191,36,0.15)"};
             color:${atLimit ? "#ef4444" : "#f59e0b"};
             font-family:var(--mono, monospace);
@@ -395,11 +504,12 @@ function renderCoreTierSection(group: SkillGroup, props: SkillsProps, config: Ti
             font-size:12px; padding:8px 12px; margin-bottom:12px; border-radius:8px;
             background:rgba(251,191,36,0.08); color:#d97706; border:1px solid rgba(251,191,36,0.2);
           ">${t("skills.core.tokenWarning" as never)}</div>`
-        : html`<div style="
-            font-size:11px; color:var(--muted-strong, #6b7d91); margin-bottom:8px;
-            padding:6px 12px; border:1px dashed var(--border); border-radius:8px;
-            text-align:center; opacity:0.7;
-          ">${t("skills.dnd.dropToAdd" as never)}</div>`}
+        : html`<div class="skills-drop-zone">
+            <span class="skills-drop-zone__icon">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+            </span>
+            ${t("skills.dnd.dropToAdd" as never)}
+          </div>`}
       <!-- Cards -->
       <div class="skills-tier-grid">
         ${visible.map((skill) => renderDraggableSkillCard(skill, "core", props))}
@@ -418,10 +528,9 @@ function renderReadyTierSection(group: SkillGroup, props: SkillsProps, config: T
 
   return html`
     <div
-      class="skills-tier-section"
+      class="skills-tier-section skills-tier-section--ready"
       data-tier="ready"
       style="
-        border:2px solid transparent;
         border-radius:var(--radius-lg, 12px);
         padding:16px;
         background:${config.accentBg};
@@ -431,18 +540,21 @@ function renderReadyTierSection(group: SkillGroup, props: SkillsProps, config: T
         if (!e.dataTransfer?.types.includes("application/x-skill-tier")) return;
         e.preventDefault();
         e.dataTransfer!.dropEffect = "move";
-        (e.currentTarget as HTMLElement).style.borderColor = config.accentColor;
+        const dropZone = (e.currentTarget as HTMLElement).querySelector(".skills-drop-zone");
+        if (dropZone) dropZone.classList.add("skills-drop-active", "skills-drop-active--ready");
       }}
       @dragleave=${(e: DragEvent) => {
         const el = e.currentTarget as HTMLElement;
         if (!el.contains(e.relatedTarget as Node)) {
-          el.style.borderColor = "transparent";
+          const dropZone = el.querySelector(".skills-drop-zone");
+          if (dropZone) dropZone.classList.remove("skills-drop-active", "skills-drop-active--ready");
         }
       }}
       @drop=${(e: DragEvent) => {
         e.preventDefault();
         const el = e.currentTarget as HTMLElement;
-        el.style.borderColor = "transparent";
+        const dropZone = el.querySelector(".skills-drop-zone");
+        if (dropZone) dropZone.classList.remove("skills-drop-active", "skills-drop-active--ready");
         const skillKey = e.dataTransfer?.getData("text/plain");
         const sourceTier = e.dataTransfer?.getData("application/x-skill-tier");
         if (skillKey && sourceTier === "core") {
@@ -461,11 +573,12 @@ function renderReadyTierSection(group: SkillGroup, props: SkillsProps, config: T
           ${t("skills.tier.ready.desc" as never)}
         </span>
       </div>
-      <div style="
-        font-size:11px; color:var(--muted-strong, #6b7d91); margin-bottom:8px;
-        padding:6px 12px; border:1px dashed var(--border); border-radius:8px;
-        text-align:center; opacity:0.7;
-      ">${t("skills.dnd.dropToRemove" as never)}</div>
+      <div class="skills-drop-zone">
+        <span class="skills-drop-zone__icon">
+          <svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6" /></svg>
+        </span>
+        ${t("skills.dnd.dropToRemove" as never)}
+      </div>
       <!-- Cards -->
       <div class="skills-tier-grid">
         ${visible.map((skill) => renderDraggableSkillCard(skill, "ready", props))}
@@ -484,7 +597,7 @@ function renderStaticTierSection(group: SkillGroup, props: SkillsProps, config: 
   const hasMore = group.skills.length > visibleCount;
 
   return html`
-    <div style="
+    <div class="skills-tier-section--needs-config" style="
       border-radius:var(--radius-lg, 12px);
       padding:16px;
       background:${config.accentBg};
@@ -518,7 +631,7 @@ function renderIncompatibleTierSection(group: SkillGroup, props: SkillsProps, co
   const hasMore = group.skills.length > visibleCount;
 
   return html`
-    <details style="
+    <details class="skills-tier-section--incompatible" style="
       border-radius:var(--radius-lg, 12px);
       background:${config.accentBg};
     ">
@@ -550,23 +663,30 @@ function renderIncompatibleTierSection(group: SkillGroup, props: SkillsProps, co
 // ============================================================================
 
 function renderDraggableSkillCard(skill: SkillStatusEntry, tier: TierGroupId, props: SkillsProps) {
-  const isDraggable = true;
-
   return html`
     <div
-      class="skills-tier-card ${isDraggable ? "skills-tier-card--draggable" : ""}"
-      draggable=${isDraggable ? "true" : "false"}
-      @dragstart=${isDraggable ? (e: DragEvent) => {
+      class="skills-tier-card skills-tier-card--draggable"
+      draggable="true"
+      @dragstart=${(e: DragEvent) => {
         e.dataTransfer!.setData("text/plain", skill.skillKey);
         e.dataTransfer!.setData("application/x-skill-tier", tier);
         e.dataTransfer!.effectAllowed = "move";
         (e.currentTarget as HTMLElement).classList.add("skills-tier-card--dragging");
-      } : nothing}
-      @dragend=${isDraggable ? (e: DragEvent) => {
+      }}
+      @dragend=${(e: DragEvent) => {
         (e.currentTarget as HTMLElement).classList.remove("skills-tier-card--dragging");
-      } : nothing}
+      }}
     >
-      ${renderSkillCardContent(skill, tier, props)}
+      <div style="display:flex; gap:4px;">
+        <div class="skills-drag-handle" title="${t("skills.dnd.dragHint" as never)}">
+          <span class="skills-drag-handle__line"></span>
+          <span class="skills-drag-handle__line"></span>
+          <span class="skills-drag-handle__line"></span>
+        </div>
+        <div style="flex:1; min-width:0;">
+          ${renderSkillCardContent(skill, tier, props)}
+        </div>
+      </div>
     </div>
   `;
 }
@@ -593,13 +713,17 @@ function renderSkillCardContent(skill: SkillStatusEntry, tier: TierGroupId, prop
     <!-- Header row -->
     <div style="display:flex; align-items:flex-start; gap:10px; margin-bottom:8px;">
       <div style="
-        width:36px; height:36px; border-radius:8px; flex-shrink:0;
+        width:40px; height:40px; border-radius:10px; flex-shrink:0;
         display:flex; align-items:center; justify-content:center;
-        font-size:18px;
+        font-size:20px;
         background:${tier === "core" ? "rgba(251,191,36,0.12)" :
                      tier === "ready" ? "rgba(52,211,153,0.1)" :
                      tier === "incompatible" ? "rgba(148,163,184,0.1)" :
                      "rgba(249,115,22,0.1)"};
+        border:1px solid ${tier === "core" ? "rgba(251,191,36,0.2)" :
+                          tier === "ready" ? "rgba(52,211,153,0.15)" :
+                          tier === "incompatible" ? "rgba(148,163,184,0.15)" :
+                          "rgba(249,115,22,0.15)"};
       ">
         ${skill.emoji || "\u{1F4E6}"}
       </div>
@@ -608,10 +732,6 @@ function renderSkillCardContent(skill: SkillStatusEntry, tier: TierGroupId, prop
           <span style="font-size:13px; font-weight:600; color:var(--fg);">
             ${skill.nameZh || skill.name}
           </span>
-          ${tier === "core"
-            ? html`<span style="font-size:9px; color:var(--muted-strong, #6b7d91);"
-              title="可拖拽移除">\u2630</span>`
-            : nothing}
           ${tier === "incompatible" ? renderIncompatibleBadge(skill.requirements.os) : nothing}
           ${skill.bundled && !skill.activeInPrompt && !skill.disabled && tier === "ready"
             ? html`<span style="font-size:10px; padding:1px 6px; border-radius:4px;
@@ -630,8 +750,9 @@ function renderSkillCardContent(skill: SkillStatusEntry, tier: TierGroupId, prop
                 ${t("skills.disabled" as never)}</span>`
             : nothing}
         </div>
-        <div style="font-size:11px; color:var(--fg-secondary, #a0aec0); margin-top:2px;
-          display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
+        <div style="font-size:11px; color:var(--fg-secondary, #a0aec0); margin-top:3px;
+          display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+          line-height:1.5;">
           ${clampText(skill.descriptionZh || skill.description, 100)}
         </div>
       </div>
@@ -650,7 +771,7 @@ function renderSkillCardContent(skill: SkillStatusEntry, tier: TierGroupId, prop
       : nothing}
 
     <!-- Actions row -->
-    <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-top:auto;">
+    <div class="skills-card-footer">
       ${tier === "ready"
         ? html`<button
             class="btn" style="font-size:11px; padding:3px 10px;"
@@ -765,7 +886,7 @@ function renderLocalSkillsStyles() {
     <style>
       .skills-tier-grid {
         display: grid;
-        gap: 12px;
+        gap: 14px;
         grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
       }
       @media (max-width: 700px) {

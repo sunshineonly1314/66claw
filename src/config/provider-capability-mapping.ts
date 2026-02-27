@@ -442,12 +442,49 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         capabilities: ["image-generation"],
         pricing: { type: "paid" },
       },
+      {
+        modelId: "Qwen/Qwen-Image",
+        modelName: "Qwen-Image (通义生图)",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "Qwen/Qwen-Image-Edit",
+        modelName: "Qwen-Image-Edit (图像编辑)",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "Kwai-Kolors/Kolors",
+        modelName: "Kolors (可图)",
+        capabilities: ["image-generation"],
+        pricing: { type: "free" },
+      },
       // 视频理解模型
       {
         modelId: "Qwen/Qwen2-VL-7B-Instruct",
         modelName: "Qwen2-VL-7B",
         capabilities: ["video"],
         pricing: { type: "free" },
+      },
+      // 视频生成模型
+      {
+        modelId: "Wan-AI/Wan2.2-T2V-A14B",
+        modelName: "Wan2.2 文生视频 14B",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "Wan-AI/Wan2.2-I2V-A14B",
+        modelName: "Wan2.2 图生视频 14B",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "Pro/THUDM/CogVideoX-5B",
+        modelName: "CogVideoX-5B (视频)",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid" },
       },
       // Embedding 模型 (必需!)
       {
@@ -895,22 +932,22 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     name: "Google Gemini",
     icon: "🔷",
     group: "international",
-    tagline: "Gemini 3.5 · 免费额度充足",
+    tagline: "Gemini 2.5 / 3 · 免费额度充足",
     apiKeyUrl: "https://aistudio.google.com/apikey",
     apiKeyGuide: ["访问 Google AI Studio", "登录 Google 账号", "创建 API Key 并复制"],
     models: [
       // 文字对话模型
       {
-        modelId: "gemini-3-5-flash",
-        modelName: "Gemini 3.5 Flash",
+        modelId: "gemini-2.5-flash",
+        modelName: "Gemini 2.5 Flash",
         capabilities: ["text"],
         pricing: { type: "free", details: "免费额度充足" },
         contextWindow: 1000000,
         maxTokens: 8192,
       },
       {
-        modelId: "gemini-3-5-pro",
-        modelName: "Gemini 3.5 Pro",
+        modelId: "gemini-2.5-pro",
+        modelName: "Gemini 2.5 Pro",
         capabilities: ["text", "image-understanding"],
         pricing: { type: "paid" },
         contextWindow: 2000000,

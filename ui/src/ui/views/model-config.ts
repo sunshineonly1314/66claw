@@ -997,7 +997,7 @@ export class ModelConfigView extends LitElement {
             return;
           }
           try {
-            const result = await this.client!.request("modelConfig.capability.models", {
+            const result = await this.client!.request("capability_matrix.models", {
               capability: cap.capability,
             });
             const data = result as { models: ModelInfo[] };
@@ -1028,7 +1028,7 @@ export class ModelConfigView extends LitElement {
       }
 
       try {
-        const result = await this.client.request("modelConfig.capability.models", {
+        const result = await this.client.request("capability_matrix.models", {
           capability: matchedCap.capability,
         });
         const data = result as { models: ModelInfo[] };
@@ -1095,7 +1095,7 @@ export class ModelConfigView extends LitElement {
     this._switchingModelId = m.modelId;
 
     try {
-      const result = await this.client.request("modelConfig.capability.switchModel", {
+      const result = await this.client.request("capability_matrix.switchModel", {
         capability: activeCap.capability,
         providerId: m.providerId,
         modelId: m.modelId,
@@ -1137,7 +1137,7 @@ export class ModelConfigView extends LitElement {
     this._switchingModelId = m.modelId;
 
     try {
-      const result = await this.client.request("modelConfig.capability.switchModel", {
+      const result = await this.client.request("capability_matrix.switchModel", {
         capability: cap.capability,
         providerId: m.providerId,
         modelId: m.modelId,
@@ -1465,7 +1465,7 @@ export class ModelConfigView extends LitElement {
     this._addModelMsg = null;
 
     try {
-      const result = await this.client.request("modelConfig.provider.addModel", {
+      const result = await this.client.request("capability_matrix.provider.addModel", {
         providerId,
         modelId,
       }) as { success?: boolean; probeWarning?: string };

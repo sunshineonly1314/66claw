@@ -54,6 +54,7 @@ import {
   approveDevicePairing,
   loadDevices,
   rejectDevicePairing,
+  removeDevice,
   revokeDeviceToken,
   rotateDeviceToken,
 } from "./controllers/devices";
@@ -211,6 +212,12 @@ import {
 } from "./controllers/networking";
 import { renderNetworkCenter } from "./views/network-center";
 import { loadChatHistory } from "./controllers/chat";
+import {
+  loadAgentChatHistory,
+  sendAgentChatMessage,
+  abortAgentChatRun,
+  resetAgentChatState,
+} from "./controllers/agent-chat";
 import {
   applyConfig,
   loadConfig,
@@ -901,6 +908,10 @@ export function renderApp(state: AppViewState) {
                   void loadAgentIdentity(state, agentId);
                   if (state.agentsPanel === "files") void loadAgentFiles(state, agentId);
                   if (state.agentsPanel === "skills") void loadAgentSkills(state, agentId);
+                  if (state.agentsPanel === "chat") {
+                    resetAgentChatState(state as any, `agent:${agentId}:main`);
+                    void loadAgentChatHistory(state as any);
+                  }
                 },
                 onSelectPanel: (panel) => {
                   state.agentsPanel = panel;
@@ -917,6 +928,13 @@ export function renderApp(state: AppViewState) {
                   if (panel === "skills" && resolvedAgentId) void loadAgentSkills(state, resolvedAgentId);
                   if (panel === "channels") void loadChannels(state, false);
                   if (panel === "cron") void state.loadCron();
+                  if (panel === "chat" && resolvedAgentId) {
+                    const key = `agent:${resolvedAgentId}:main`;
+                    if (state.agentChatSessionKey !== key) {
+                      resetAgentChatState(state as any, key);
+                    }
+                    void loadAgentChatHistory(state as any);
+                  }
                 },
                 onLoadFiles: (agentId) => loadAgentFiles(state, agentId),
                 onSelectFile: (name) => {
@@ -1051,6 +1069,43 @@ export function renderApp(state: AppViewState) {
                   const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
                   if (agentIds.length > 0) void loadAgentIdentities(state, agentIds);
                 },
+                onStartChat: (agentId: string) => {
+                  resetAgentChatState(state as any, `agent:${agentId}:main`);
+                  state.agentsPanel = "chat";
+                  void loadAgentChatHistory(state as any);
+                },
+                agentChatProps: state.agentChatSessionKey
+                  ? {
+                      connected: state.connected,
+                      loading: state.agentChatLoading,
+                      messages: state.agentChatMessages,
+                      stream: state.agentChatStream,
+                      streamStartedAt: state.agentChatStreamStartedAt,
+                      sending: state.agentChatSending,
+                      runId: state.agentChatRunId,
+                      draft: state.agentChatMessage,
+                      attachments: state.agentChatAttachments,
+                      error: state.agentChatError,
+                      onDraftChange: (next: string) => { state.agentChatMessage = next; },
+                      onSend: () => {
+                        const msg = state.agentChatMessage.trim();
+                        const atts = [...state.agentChatAttachments];
+                        state.agentChatMessage = "";
+                        state.agentChatAttachments = [];
+                        if (msg || atts.length > 0) {
+                          void sendAgentChatMessage(state as any, msg, atts);
+                        }
+                      },
+                      onAbort: () => { void abortAgentChatRun(state as any); },
+                      onAttachmentsChange: (atts) => { state.agentChatAttachments = atts; },
+                      onPaste: (e: ClipboardEvent) => {
+                        // Reuse paste handler from compose-card
+                        handleComposePaste(e, state.agentChatAttachments, (next) => {
+                          state.agentChatAttachments = next;
+                        });
+                      },
+                    }
+                  : null,
                 // Team Projects
                 teamProjects: state.teamProjectsList,
                 teamProjectSelectedId: state.teamProjectSelectedId,
@@ -1083,6 +1138,67 @@ export function renderApp(state: AppViewState) {
                   if (_teamCollapsedProjects.has(projectId)) _teamCollapsedProjects.delete(projectId);
                   else _teamCollapsedProjects.add(projectId);
                   state.requestUpdate();
+                },
+                onDeleteOrchGroup: async (agentIds: string[]) => {
+                  for (const agentId of agentIds) {
+                    await deleteAgent(state as any, { agentId, deleteFiles: true });
+                  }
+                },
+                // Overview: inline identity & SOUL.md editing
+                requestUpdate: () => state.requestUpdate(),
+                onIdentityUpdate: async (agentId: string, name: string, emoji: string) => {
+                  if (!state.client || !state.connected) return false;
+                  try {
+                    await state.client.request("agents.update", { agentId, name });
+                    // Read existing IDENTITY.md, update Name/Emoji lines, preserve others
+                    let existingContent = "";
+                    try {
+                      const res = await state.client.request<{ file?: { content?: string } } | null>(
+                        "agents.files.get", { agentId, name: "IDENTITY.md" },
+                      );
+                      existingContent = res?.file?.content ?? "";
+                    } catch { /* ignore: file may not exist yet */ }
+                    const lines = existingContent.split("\n");
+                    const kept = lines.filter((l) => !l.startsWith("- Name:") && !l.startsWith("- Emoji:"));
+                    const newLines = [`- Name: ${name}`];
+                    if (emoji) newLines.push(`- Emoji: ${emoji}`);
+                    const merged = [...newLines, ...kept.filter((l) => l.trim())].join("\n") + "\n";
+                    await state.client.request("agents.files.set", {
+                      agentId,
+                      name: "IDENTITY.md",
+                      content: merged,
+                    });
+                    // Reload identity to reflect changes
+                    void loadAgentIdentity(state, agentId);
+                    await loadAgents(state);
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                },
+                onSoulLoad: async (agentId: string) => {
+                  if (!state.client || !state.connected) return "";
+                  try {
+                    const res = await state.client.request<{ file?: { content?: string } } | null>(
+                      "agents.files.get", { agentId, name: "SOUL.md" },
+                    );
+                    return res?.file?.content ?? "";
+                  } catch {
+                    return "";
+                  }
+                },
+                onSoulSave: async (agentId: string, content: string) => {
+                  if (!state.client || !state.connected) return false;
+                  try {
+                    await state.client.request("agents.files.set", {
+                      agentId,
+                      name: "SOUL.md",
+                      content,
+                    });
+                    return true;
+                  } catch {
+                    return false;
+                  }
                 },
                 // OpenClawCN: Orchestrator entry & view
                 orchestratorEntryHtml: renderOrchestratorEntry(
@@ -1463,7 +1579,15 @@ export function renderApp(state: AppViewState) {
               },
               onUninstall: (serverId) => {
                 // Capture name BEFORE optimistic update
-                const itemName = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName ?? serverId;
+                const itemName = state.mcpMarketplace.items.find((i) => i.serverId === serverId)?.friendlyName
+                  ?? state.mcpCapabilities.find((c) => c.id === serverId)?.friendlyName
+                  ?? serverId;
+
+                // Optimistic: immediately remove from "My Capabilities" list
+                // so the card disappears instantly without waiting for RPC roundtrip
+                const removedCap = state.mcpCapabilities.find((c) => c.id === serverId);
+                state.mcpCapabilities = state.mcpCapabilities.filter((c) => c.id !== serverId || c.isBuiltin);
+                state.mcpProcesses = state.mcpProcesses.filter((p) => p.id !== serverId);
 
                 void (async () => {
                   try {
@@ -1478,7 +1602,7 @@ export function renderApp(state: AppViewState) {
                       },
                     );
                     showMcpToast(state, `${itemName} ${t("extensions.toast.uninstalled" as never)}`, "info");
-                    // Refresh My Capabilities
+                    // Refresh My Capabilities to get authoritative server-side state
                     void checkMcpUpdate(state.client, {
                       onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
                         if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
@@ -1488,6 +1612,10 @@ export function renderApp(state: AppViewState) {
                     });
                   } catch (err) {
                     console.error("[mcp] uninstall failed:", serverId, err);
+                    // Rollback: restore the optimistically removed capability
+                    if (removedCap && !state.mcpCapabilities.some((c) => c.id === serverId)) {
+                      state.mcpCapabilities = [...state.mcpCapabilities, removedCap];
+                    }
                     showMcpToast(state, `${itemName} ${t("extensions.toast.error" as never)}`, "error");
                   }
                 })();
@@ -1567,31 +1695,33 @@ export function renderApp(state: AppViewState) {
               },
               runningCount: state.mcpProcesses.filter((p) => p.status === "running").length,
               toast: state.mcpMarketplace.toast,
-              onManualAdd: (config) => {
-                void (async () => {
-                  try {
-                    await state.client?.request("mcp.servers.add", {
-                      id: config.id,
-                      command: config.command,
-                      args: config.args,
-                      transport: config.transport,
-                      env: config.env,
-                      enabled: true,
-                      autoStart: true,
-                    });
-                    showMcpToast(state, `${config.id} ${t("extensions.toast.installed" as never)}`, "success");
-                    void checkMcpUpdate(state.client, {
-                      onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
-                        if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
-                        if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
-                        if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
-                      },
-                    });
-                  } catch (err) {
-                    console.error("[mcp] manual add failed:", config.id, err);
-                    showMcpToast(state, `${t("extensions.toast.error" as never)}: ${config.id}`, "error");
-                  }
-                })();
+              onManualAdd: async (config) => {
+                try {
+                  await state.client?.request("mcp.servers.add", {
+                    id: config.id,
+                    command: config.command,
+                    args: config.args,
+                    transport: config.transport,
+                    env: config.env,
+                    url: config.url,
+                    headers: config.headers,
+                    enabled: true,
+                    autoStart: true,
+                  });
+                  showMcpToast(state, `${config.id} ${t("extensions.toast.installed" as never)}`, "success");
+                  void checkMcpUpdate(state.client, {
+                    onStateChange: (lcPatch: Partial<McpLifecycleState>) => {
+                      if (lcPatch.capabilities !== undefined) state.mcpCapabilities = lcPatch.capabilities;
+                      if (lcPatch.processes !== undefined) state.mcpProcesses = lcPatch.processes;
+                      if (lcPatch.updateNotice !== undefined) state.mcpUpdateNotice = lcPatch.updateNotice;
+                    },
+                  });
+                  return true;
+                } catch (err) {
+                  console.error("[mcp] manual add failed:", config.id, err);
+                  showMcpToast(state, `${t("extensions.toast.error" as never)}: ${config.id}`, "error");
+                  return false;
+                }
               },
               manualFormTrigger: state.mcpManualFormTrigger,
               onRetrySync: () => {
@@ -1681,6 +1811,8 @@ export function renderApp(state: AppViewState) {
                 rotateDeviceToken(state, { deviceId, role, scopes }),
               onDeviceRevoke: (deviceId, role) =>
                 revokeDeviceToken(state, { deviceId, role }),
+              onDeviceRemove: (deviceId) =>
+                removeDevice(state, deviceId, t("network.devices.unpairConfirm")),
               onLoadConfig: () => loadConfig(state),
               onLoadExecApprovals: () => {
                 const target =

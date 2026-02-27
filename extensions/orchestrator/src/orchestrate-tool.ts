@@ -1205,17 +1205,32 @@ async function executeDeploySequenceInner(
   }
 
   // Auto-create team project from deployed plan (bridge orchestrator → agent-team)
+  // Retry up to 3 times with delay to handle Windows atomic-write race
   if (finalStatus === "deployed") {
-    try {
-      await callGateway("team.project.createFromPlan", { planId: plan.planId });
-    } catch (err) {
-      // Non-fatal: agents are deployed even if project creation fails
-      // (agent-team plugin may not be loaded, or project already exists)
+    let projectCreated = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await callGateway("team.project.createFromPlan", { planId: plan.planId });
+        projectCreated = true;
+        break;
+      } catch (err) {
+        emitDiagnosticEvent({
+          type: "orchestrator.deploy",
+          planId: plan.planId,
+          phase: "project-create-failed",
+          error: `attempt ${attempt}/3: ${String(err)}`,
+        });
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
+      }
+    }
+    if (!projectCreated) {
       emitDiagnosticEvent({
         type: "orchestrator.deploy",
         planId: plan.planId,
-        phase: "project-create-failed",
-        error: String(err),
+        phase: "project-create-exhausted",
+        error: "All 3 attempts to create team project failed",
       });
     }
   }

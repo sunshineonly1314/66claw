@@ -27,6 +27,7 @@ import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
 import { shouldReloadHistoryForFinalEvent } from "./chat-event-reload.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
+import { handleAgentChatEvent } from "./controllers/agent-chat.ts";
 import { loadDevices } from "./controllers/devices.ts";
 import {
   addExecApproval,
@@ -301,6 +302,15 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         payload.sessionKey,
       );
     }
+
+    // Agent embedded chat: intercept if sessionKey matches agentChat
+    const app = host as unknown as OpenClawCNApp;
+    if (payload?.sessionKey && app.agentChatSessionKey &&
+        payload.sessionKey === app.agentChatSessionKey) {
+      handleAgentChatEvent(app, payload);
+      return;  // consumed by embedded chat, skip main chat
+    }
+
     const state = handleChatEvent(host as unknown as OpenClawCNApp, payload);
     if (state === "final" || state === "final_failover" || state === "error" || state === "aborted") {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);

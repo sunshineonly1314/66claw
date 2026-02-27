@@ -945,9 +945,15 @@ export async function runEmbeddedAttempt(
               },
             );
             if (hookResult?.prependContext) {
-              effectivePrompt = `${hookResult.prependContext}\n\n${params.prompt}`;
+              // Inject hook context into the system prompt so the LLM treats
+              // it as instructions rather than user speech. This prevents the
+              // orchestrator prompt from appearing as chat content in the UI
+              // and from confusing the model about who said what.
+              const currentSysPrompt = activeSession.agent.systemPrompt ?? "";
+              const updatedSysPrompt = currentSysPrompt + "\n\n" + hookResult.prependContext;
+              activeSession.agent.setSystemPrompt(updatedSysPrompt);
               log.debug(
-                `hooks: prepended context to prompt (${hookResult.prependContext.length} chars)`,
+                `hooks: injected context into system prompt (${hookResult.prependContext.length} chars)`,
               );
             }
           } catch (hookErr) {

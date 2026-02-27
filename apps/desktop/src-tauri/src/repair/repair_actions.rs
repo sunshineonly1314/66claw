@@ -49,15 +49,38 @@ fn log_action(action: &str, result: &str) {
 }
 
 fn chrono_now_simple() -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs();
-    let time_of_day = secs % 86400;
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    let seconds = time_of_day % 60;
-    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    // Return local time HH:MM:SS (not UTC).
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        #[allow(non_snake_case)]
+        struct SYSTEMTIME {
+            wYear: u16, wMonth: u16, wDayOfWeek: u16, wDay: u16,
+            wHour: u16, wMinute: u16, wSecond: u16, wMilliseconds: u16,
+        }
+        extern "system" {
+            fn GetLocalTime(lpSystemTime: *mut SYSTEMTIME);
+        }
+        let mut st = SYSTEMTIME {
+            wYear: 0, wMonth: 0, wDayOfWeek: 0, wDay: 0,
+            wHour: 0, wMinute: 0, wSecond: 0, wMilliseconds: 0,
+        };
+        unsafe { GetLocalTime(&mut st); }
+        return format!("{:02}:{:02}:{:02}", st.wHour, st.wMinute, st.wSecond);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Fallback: UTC + 8 hours (China Standard Time).
+        // Most CN desktop users are in CST; avoids libc dependency.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let local_secs = (now.as_secs() + 8 * 3600) % 86400;
+        let hours = local_secs / 3600;
+        let minutes = (local_secs % 3600) / 60;
+        let seconds = local_secs % 60;
+        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    }
 }
 
 // ── Fix implementations ──────────────────────────────────────────────────────
@@ -196,8 +219,21 @@ fn fix_repair_config_syntax() -> FixResult {
         fixed = true;
     }
 
-    // Try to parse as JSON5 first — if it works, the file is fine
+    // Try to parse as JSON5 first — if it works, the content is valid
     if json5::from_str::<serde_json::Value>(&text).is_ok() {
+        // If BOM was stripped, write the clean version back
+        if fixed {
+            let backup_path = config_path.with_extension("json.bak");
+            let _ = fs::copy(&config_path, &backup_path);
+            let _ = fs::write(&config_path, &text);
+            log_action("repair_config_syntax", "stripped BOM");
+            return FixResult {
+                fix_id: "repair_config_syntax".into(),
+                success: true,
+                message: "已移除配置文件的 BOM 标记（原文件已备份为 .json.bak）。".into(),
+                requires_restart: false,
+            };
+        }
         return FixResult {
             fix_id: "repair_config_syntax".into(),
             success: true,

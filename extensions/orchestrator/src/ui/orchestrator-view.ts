@@ -127,6 +127,7 @@ function renderWelcome(
                 </div>
                 <button
                   class="btn btn--sm primary orch-tpl-action"
+                  ?disabled=${state.phase === "deploying"}
                   @click=${() => handlers.onTemplateClick(tpl.id)}
                 >
                   ${t("orch.templateCreate")}

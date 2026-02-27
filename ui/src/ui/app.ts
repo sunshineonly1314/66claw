@@ -428,6 +428,18 @@ export class ClawdbotApp extends LitElement {
   @state() agentSkillsAgentId: string | null = null;
   @state() dmScopeStatus: import("./app-view-state").AppViewState["dmScopeStatus"] = null;
 
+  // Agent embedded chat
+  @state() agentChatSessionKey = "";
+  @state() agentChatMessages: unknown[] = [];
+  @state() agentChatStream: string | null = null;
+  @state() agentChatStreamStartedAt: number | null = null;
+  @state() agentChatRunId: string | null = null;
+  @state() agentChatSending = false;
+  @state() agentChatLoading = false;
+  @state() agentChatMessage = "";
+  @state() agentChatAttachments: ChatAttachment[] = [];
+  @state() agentChatError: string | null = null;
+
   // Team Projects
   @state() teamProjectsLoading = false;
   @state() teamProjectsList: import("./types").TeamProjectSummary[] | null = null;
@@ -1563,8 +1575,8 @@ export class ClawdbotApp extends LitElement {
   /** Focus the chat textarea after voice input completes so the user can edit/send. */
   private _focusChatInput() {
     requestAnimationFrame(() => {
-      const ta = this.shadowRoot?.querySelector<HTMLTextAreaElement>(".chat-compose textarea") ??
-                 this.shadowRoot?.querySelector<HTMLTextAreaElement>("textarea");
+      const ta = document.querySelector<HTMLTextAreaElement>(".cc-textarea") ??
+                 this.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
       if (ta) {
         ta.focus();
         // Place cursor at the end of text

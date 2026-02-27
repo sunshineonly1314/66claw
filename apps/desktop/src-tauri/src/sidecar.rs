@@ -12,6 +12,11 @@ use crate::platform;
 
 static SIDECAR_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 
+/// Last known PID of the sidecar process. Preserved even after the Child handle
+/// is consumed by `try_wait()` detecting an exit, so the watchdog can still kill
+/// orphaned child processes (MCP servers, workers) that outlive the parent.
+static LAST_SIDECAR_PID: Mutex<Option<u32>> = Mutex::new(None);
+
 /// Runtime-generated token for Tauri <-> Gateway auth.
 /// Generated once per app launch; passed to both sidecar and WebView.
 static GATEWAY_TOKEN: Mutex<Option<String>> = Mutex::new(None);
@@ -135,6 +140,124 @@ pub fn cleanup_gateway_locks() {
             }
         }
     }
+}
+
+/// Kill orphaned child processes from a crashed gateway instance.
+///
+/// When the gateway parent crashes, its children (MCP servers, workers) become
+/// orphans. `taskkill /T /PID <parent>` won't work because the parent is gone.
+///
+/// Strategy: use LAST_SIDECAR_PID to find all node.exe processes whose
+/// ParentProcessId matches the dead sidecar PID (direct children), then
+/// recursively find their children too. On Windows uses WMIC; on Unix
+/// orphans get re-parented to PID 1 so we match by command line patterns.
+pub fn kill_orphaned_gateway_processes() -> u32 {
+    let dead_pid = LAST_SIDECAR_PID.lock().unwrap().take();
+    let my_pid = std::process::id();
+    let mut killed: u32 = 0;
+
+    #[cfg(target_os = "windows")]
+    {
+        // Build a PID -> children map from all running processes, then walk
+        // the tree from the dead sidecar PID to find all descendants.
+        let output = Command::new("wmic")
+            .args([
+                "process", "get",
+                "ProcessId,ParentProcessId",
+                "/FORMAT:CSV",
+            ])
+            .creation_flags(0x08000000)
+            .output();
+
+        if let Ok(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // WMIC CSV: Node,ParentProcessId,ProcessId
+            let mut parent_map: std::collections::HashMap<u32, Vec<u32>> =
+                std::collections::HashMap::new();
+
+            for line in stdout.lines().skip(1) {
+                let line = line.trim();
+                if line.is_empty() { continue; }
+                let fields: Vec<&str> = line.split(',').collect();
+                if fields.len() < 3 { continue; }
+                let ppid: u32 = fields[1].trim().parse().unwrap_or(0);
+                let pid: u32 = fields[2].trim().parse().unwrap_or(0);
+                if pid == 0 { continue; }
+                parent_map.entry(ppid).or_default().push(pid);
+            }
+
+            // Collect all descendants of the dead sidecar PID
+            let mut to_kill: Vec<u32> = Vec::new();
+            if let Some(root_pid) = dead_pid {
+                let mut stack = vec![root_pid];
+                while let Some(pid) = stack.pop() {
+                    if let Some(children) = parent_map.get(&pid) {
+                        for &child in children {
+                            if child != my_pid && child != 0 {
+                                to_kill.push(child);
+                                stack.push(child); // recurse into grandchildren
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Kill each orphan (leaf-first order doesn't matter with /F)
+            for pid in &to_kill {
+                println!("[Sidecar] Killing orphaned gateway child (pid={})", pid);
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/PID", &pid.to_string()])
+                    .creation_flags(0x08000000)
+                    .output();
+                killed += 1;
+            }
+
+            if killed > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        // On Unix, orphans get re-parented to PID 1.
+        // Use pgrep to find node processes with PPID=1 that have gateway markers.
+        let patterns = [
+            "entry.js gateway",
+            "openclawcn.mjs gateway",
+        ];
+        for pattern in &patterns {
+            let output = Command::new("pgrep")
+                .args(["-f", pattern, "-P", "1"])
+                .output();
+            if let Ok(output) = output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for pid_str in stdout.lines() {
+                    if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                        if pid != 0 && pid != my_pid {
+                            println!("[Sidecar] Killing orphaned gateway process (pid={})", pid);
+                            // Kill the process group to get its children too
+                            let _ = Command::new("kill").args(["-9", &format!("-{}", pid)]).output();
+                            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+                            killed += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also try killing by the dead PID's process group if known
+        if let Some(root_pid) = dead_pid {
+            let _ = Command::new("kill")
+                .args(["-9", &format!("-{}", root_pid)])
+                .output();
+        }
+    }
+
+    if killed > 0 {
+        println!("[Sidecar] Cleaned up {} orphaned gateway process(es)", killed);
+    }
+    killed
 }
 
 /// Check if the gateway port is available. If occupied, try to kill the occupant.
@@ -337,10 +460,15 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         .into()
     })?;
 
+    let pid = child.id();
+    {
+        let mut last_pid = LAST_SIDECAR_PID.lock().unwrap();
+        *last_pid = Some(pid);
+    }
     let mut process = SIDECAR_PROCESS.lock().unwrap();
     *process = Some(child);
 
-    println!("[Sidecar] Node.js sidecar started on port {}", GATEWAY_PORT);
+    println!("[Sidecar] Node.js sidecar started on port {} (pid={})", GATEWAY_PORT, pid);
     Ok(())
 }
 

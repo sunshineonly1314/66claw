@@ -53,6 +53,8 @@ fn init_log() {
 
 /// Poll the gateway's /api/health endpoint from Rust and inject
 /// the token via hash change when ready (no page reload).
+/// After the gateway is ready, starts a watchdog that auto-restarts
+/// the sidecar if it crashes unexpectedly.
 fn poll_and_navigate(handle: tauri::AppHandle) {
     let port = sidecar::gateway_port();
     let token = sidecar::gateway_token();
@@ -115,6 +117,9 @@ fn poll_and_navigate(handle: tauri::AppHandle) {
                                 log("Navigated to gateway UI");
                             }
                         }
+
+                        // Gateway is up — start the watchdog to auto-restart on crash
+                        start_sidecar_watchdog(handle);
                         return;
                     }
                 }
@@ -127,6 +132,103 @@ fn poll_and_navigate(handle: tauri::AppHandle) {
 
             let delay = if elapsed.as_secs() < 10 { 300 } else { 1000 };
             std::thread::sleep(std::time::Duration::from_millis(delay));
+        }
+    });
+}
+
+/// Background watchdog that detects sidecar crashes and auto-restarts the gateway.
+/// Checks every 5 seconds. On crash: cleans stale locks, restarts sidecar, waits
+/// for health, then re-navigates the WebView.
+fn start_sidecar_watchdog(handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        // Wait a bit before starting monitoring — the gateway just came up.
+        std::thread::sleep(std::time::Duration::from_secs(10));
+        log("[Watchdog] Sidecar watchdog started");
+
+        let mut consecutive_failures: u32 = 0;
+        const MAX_RESTART_ATTEMPTS: u32 = 5;
+
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+
+            if sidecar::is_sidecar_running() {
+                consecutive_failures = 0;
+                continue;
+            }
+
+            // Sidecar is dead
+            consecutive_failures += 1;
+            log(&format!(
+                "[Watchdog] Sidecar crash detected! (attempt {}/{})",
+                consecutive_failures, MAX_RESTART_ATTEMPTS
+            ));
+
+            if consecutive_failures > MAX_RESTART_ATTEMPTS {
+                log("[Watchdog] Max restart attempts reached, stopping watchdog");
+                // Show persistent error in WebView
+                if let Some(window) = handle.get_webview_window("main") {
+                    let _ = window.eval(
+                        "if(!document.querySelector('#__watchdog_err__')){var d=document.createElement('div');d.id='__watchdog_err__';d.style.cssText='position:fixed;top:0;left:0;right:0;padding:12px 20px;background:#991b1b;color:#fff;font:14px system-ui;text-align:center;z-index:99999';d.textContent='\\u670D\\u52A1\\u591A\\u6B21\\u91CD\\u542F\\u5931\\u8D25\\uFF0C\\u8BF7\\u901A\\u8FC7\\u6258\\u76D8\\u83DC\\u5355\\u201C\\u4E00\\u952E\\u68C0\\u4FEE\\u201D\\u8FDB\\u884C\\u4FEE\\u590D';document.body.appendChild(d)}"
+                    );
+                }
+                return;
+            }
+
+            // Clean up orphaned child processes (MCP servers, workers) and stale locks
+            sidecar::kill_orphaned_gateway_processes();
+            sidecar::cleanup_gateway_locks();
+
+            // Brief delay to let the OS release resources
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+
+            // Attempt restart
+            match sidecar::start_sidecar(handle.clone()) {
+                Ok(()) => {
+                    log("[Watchdog] Sidecar restarted, waiting for health...");
+                    tray::update_tray_menu_state(&handle);
+
+                    // Wait for gateway to become ready (up to 30s)
+                    let port = sidecar::gateway_port();
+                    let health_url = format!("http://127.0.0.1:{}/api/health", port);
+                    let client = reqwest::blocking::Client::builder()
+                        .timeout(std::time::Duration::from_secs(3))
+                        .build()
+                        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+                    let start = std::time::Instant::now();
+                    let mut ready = false;
+                    while start.elapsed() < std::time::Duration::from_secs(30) {
+                        if let Ok(resp) = client.get(&health_url).send() {
+                            if let Ok(body) = resp.json::<serde_json::Value>() {
+                                if body.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
+                                    ready = true;
+                                    break;
+                                }
+                            }
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+
+                    if ready {
+                        log("[Watchdog] Gateway back online, re-navigating WebView");
+                        let token = sidecar::gateway_token();
+                        if let Some(window) = handle.get_webview_window("main") {
+                            let js = format!(
+                                "window.location.href='http://127.0.0.1:{}/#token={}&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A{}';",
+                                port, token, port,
+                            );
+                            let _ = window.eval(&js);
+                        }
+                        // Reset failure counter on successful recovery
+                        consecutive_failures = 0;
+                    } else {
+                        log("[Watchdog] Gateway did not become ready after restart");
+                    }
+                }
+                Err(e) => {
+                    log(&format!("[Watchdog] Failed to restart sidecar: {}", e));
+                }
+            }
         }
     });
 }

@@ -75,9 +75,11 @@ export async function fetchFromCloudIndex(): Promise<McpMarketplaceItem[]> {
       // Sanitize SSE URLs — strip embedded credentials from scraped data
       for (const item of items) {
         if (item.sseUrl) item.sseUrl = sanitizeSseUrl(item.sseUrl);
-        if (item.serverConfig && typeof item.serverConfig === "object") {
-          const cfg = item.serverConfig as Record<string, unknown>;
-          if (typeof cfg.url === "string") cfg.url = sanitizeSseUrl(cfg.url as string);
+        // Raw cloud JSON may include serverConfig with url field (not on typed interface)
+        const raw = item as unknown as Record<string, unknown>;
+        if (raw.serverConfig && typeof raw.serverConfig === "object") {
+          const cfg = raw.serverConfig as Record<string, unknown>;
+          if (typeof cfg.url === "string") cfg.url = sanitizeSseUrl(cfg.url);
         }
       }
       logger.info(`Tier 0 (Cloud Index): ${items.length} items fetched`);

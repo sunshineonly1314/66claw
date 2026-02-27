@@ -2,6 +2,37 @@ import { stripEnvelope, stripMessageIdHints } from "../shared/chat-envelope.js";
 
 export { stripEnvelope };
 
+const HOOK_CTX_RE = /<!--HOOK_CTX_START-->[\s\S]*?<!--HOOK_CTX_END-->\s*/g;
+
+/**
+ * Legacy orchestrator prompt detection for messages written before the
+ * HOOK_CTX markers were introduced. The orchestrator system prompt always
+ * starts with "## 智能组队" and ends with a section containing
+ * "action=\"rollback\"". We locate the end of that block and strip it.
+ */
+const LEGACY_ORCH_TAIL = 'action="rollback"';
+const LEGACY_ORCH_HEAD = "## 智能组队";
+
+function stripHookContext(text: string): string {
+  // New-style markers
+  if (text.includes("<!--HOOK_CTX_START-->")) {
+    return text.replace(HOOK_CTX_RE, "");
+  }
+  // Legacy orchestrator prompt (no markers)
+  if (text.startsWith(LEGACY_ORCH_HEAD)) {
+    const tailIdx = text.indexOf(LEGACY_ORCH_TAIL);
+    if (tailIdx >= 0) {
+      // Find end of the line containing the tail marker, then skip whitespace
+      const lineEnd = text.indexOf("\n", tailIdx);
+      if (lineEnd >= 0) {
+        const rest = text.substring(lineEnd).replace(/^\s+/, "");
+        return rest;
+      }
+    }
+  }
+  return text;
+}
+
 function stripEnvelopeFromContent(content: unknown[]): { content: unknown[]; changed: boolean } {
   let changed = false;
   const next = content.map((item) => {
@@ -12,7 +43,7 @@ function stripEnvelopeFromContent(content: unknown[]): { content: unknown[]; cha
     if (entry.type !== "text" || typeof entry.text !== "string") {
       return item;
     }
-    const stripped = stripMessageIdHints(stripEnvelope(entry.text));
+    const stripped = stripHookContext(stripMessageIdHints(stripEnvelope(entry.text)));
     if (stripped === entry.text) {
       return item;
     }
@@ -39,7 +70,7 @@ export function stripEnvelopeFromMessage(message: unknown): unknown {
   const next: Record<string, unknown> = { ...entry };
 
   if (typeof entry.content === "string") {
-    const stripped = stripMessageIdHints(stripEnvelope(entry.content));
+    const stripped = stripHookContext(stripMessageIdHints(stripEnvelope(entry.content)));
     if (stripped !== entry.content) {
       next.content = stripped;
       changed = true;
@@ -51,7 +82,7 @@ export function stripEnvelopeFromMessage(message: unknown): unknown {
       changed = true;
     }
   } else if (typeof entry.text === "string") {
-    const stripped = stripMessageIdHints(stripEnvelope(entry.text));
+    const stripped = stripHookContext(stripMessageIdHints(stripEnvelope(entry.text)));
     if (stripped !== entry.text) {
       next.text = stripped;
       changed = true;

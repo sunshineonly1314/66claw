@@ -38,8 +38,9 @@ import {
   renderProjectDetail,
   type ProjectDetailTab,
 } from "./team-projects.ts";
+import { renderAgentChatPanel, type AgentChatPanelProps } from "./agent-chat-panel.ts";
 
-export type AgentsPanel = "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+export type AgentsPanel = "overview" | "files" | "tools" | "skills" | "channels" | "cron" | "chat";
 
 export type AgentsProps = {
   loading: boolean;
@@ -103,6 +104,9 @@ export type AgentsProps = {
   onToggleAddForm: (open: boolean) => void;
   onCreateAgent: (id: string, name: string, workspace: string) => Promise<boolean>;
   onDeleteAgent: (agentId: string) => Promise<void>;
+  onStartChat: (agentId: string) => void;
+  // Embedded agent chat
+  agentChatProps: Omit<AgentChatPanelProps, "agentId" | "agentName" | "agentEmoji"> | null;
   // dmScope auto-detection status
   dmScopeStatus?: {
     recommended: string;
@@ -138,6 +142,14 @@ export type AgentsProps = {
   onLoadProjectMemory: (projectId: string) => void;
   onClearProjectMemory: (projectId: string) => void;
   onToggleProjectCollapse: (projectId: string) => void;
+  onDeleteOrchGroup?: (agentIds: string[]) => void;
+  // Overview: inline identity update
+  onIdentityUpdate?: (agentId: string, name: string, emoji: string) => Promise<boolean>;
+  // Overview: inline SOUL.md load/save
+  onSoulLoad?: (agentId: string) => Promise<string>;
+  onSoulSave?: (agentId: string, content: string) => Promise<boolean>;
+  // Force UI re-render (for module-scoped state)
+  requestUpdate?: () => void;
 };
 
 export type AgentContext = {
@@ -151,6 +163,15 @@ export type AgentContext = {
 
 /* ── Add-agent form field values (module-scoped, non-reactive) ── */
 const addFormFields = { id: "", name: "", workspace: "" };
+
+/* ── Overview identity editing state ── */
+const overviewIdentity = { name: "", emoji: "", dirty: false, agentId: "" };
+
+/* ── Overview SOUL.md editing state ── */
+const overviewSoul = { content: "", draft: "", loaded: false, dirty: false, agentId: "" };
+
+/* ── Advanced section collapse state ── */
+let overviewAdvancedOpen = false;
 
 export function renderAgents(props: AgentsProps) {
   const agents = props.agentsList?.agents ?? [];
@@ -197,6 +218,7 @@ export function renderAgents(props: AgentsProps) {
                     onSelectProject: props.onSelectProject,
                     onSelectAgent: props.onSelectAgent,
                     onToggleCollapse: props.onToggleProjectCollapse,
+                    onDeleteOrchGroup: props.onDeleteOrchGroup,
                   })
                 : agents.map((agent) => {
                     const badge = agentBadgeText(agent.id, defaultId);
@@ -274,6 +296,10 @@ export function renderAgents(props: AgentsProps) {
                         onModelChange: props.onModelChange,
                         onModelFallbacksChange: props.onModelFallbacksChange,
                         dmScopeStatus: props.dmScopeStatus ?? null,
+                        onIdentityUpdate: props.onIdentityUpdate,
+                        onSoulLoad: props.onSoulLoad,
+                        onSoulSave: props.onSoulSave,
+                        requestUpdate: props.requestUpdate ?? (() => {}),
                       })
                     : nothing
                 }
@@ -374,6 +400,16 @@ export function renderAgents(props: AgentsProps) {
                       })
                     : nothing
                 }
+                ${
+                  props.activePanel === "chat" && props.agentChatProps
+                    ? renderAgentChatPanel({
+                        agentId: selectedAgent.id,
+                        agentName: normalizeAgentLabel(selectedAgent),
+                        agentEmoji: resolveAgentEmoji(selectedAgent, props.agentIdentityById[selectedAgent.id] ?? null),
+                        ...props.agentChatProps,
+                      })
+                    : nothing
+                }
               `
         }
       </section>
@@ -409,6 +445,13 @@ function renderAgentHeader(
       <div class="agent-header-meta">
         <div class="mono">${agent.id}</div>
         ${badge ? html`<span class="agent-pill">${badge}</span>` : nothing}
+        <button
+          class="btn btn--sm primary"
+          style="margin-left: 8px;"
+          @click=${() => props.onStartChat(agent.id)}
+        >
+          ${t("agents.startChat")}
+        </button>
         ${!isDefault
           ? html`
             <button
@@ -435,11 +478,12 @@ function renderAgentHeader(
 function renderAgentTabs(active: AgentsPanel, onSelect: (panel: AgentsPanel) => void) {
   const tabs: Array<{ id: AgentsPanel; label: string }> = [
     { id: "overview", label: t("agents.tabOverview") },
-    { id: "files", label: t("agents.tabFiles") },
+    { id: "chat", label: t("agents.tabChat") },
     { id: "tools", label: t("agents.tabTools") },
     { id: "skills", label: t("agents.tabSkills") },
     { id: "channels", label: t("agents.tabChannels") },
     { id: "cron", label: t("agents.tabCron") },
+    { id: "files", label: t("agents.tabFiles") },
   ];
   return html`
     <div class="agent-tabs">
@@ -474,6 +518,10 @@ function renderAgentOverview(params: {
   onModelChange: (agentId: string, modelId: string | null) => void;
   onModelFallbacksChange: (agentId: string, fallbacks: string[]) => void;
   dmScopeStatus: AgentsProps["dmScopeStatus"] | null;
+  onIdentityUpdate?: AgentsProps["onIdentityUpdate"];
+  onSoulLoad?: AgentsProps["onSoulLoad"];
+  onSoulSave?: AgentsProps["onSoulSave"];
+  requestUpdate: () => void;
 }) {
   const {
     agent,
@@ -489,6 +537,7 @@ function renderAgentOverview(params: {
     onConfigSave,
     onModelChange,
     onModelFallbacksChange,
+    requestUpdate,
   } = params;
   const config = resolveAgentConfig(configForm, agent.id);
   const workspaceFromFiles =
@@ -517,102 +566,229 @@ function renderAgentOverview(params: {
   const identityEmoji = resolvedEmoji || "-";
   const skillFilter = Array.isArray(config.entry?.skills) ? config.entry?.skills : null;
   const skillCount = skillFilter?.length ?? null;
-  const identityStatus = agentIdentityLoading
-    ? t("agents.loading")
-    : agentIdentityError
-      ? t("agents.unavailable")
-      : "";
   const isDefault = Boolean(params.defaultId && agent.id === params.defaultId);
 
-  return html`
-    <section class="card">
-      <div class="card-title">${t("agents.overviewTitle")}</div>
-      <div class="card-sub">${t("agents.overviewSub")}</div>
-      <div class="agents-overview-grid">
-        <div class="agent-kv">
-          <div class="label">${t("agents.workspace")}</div>
-          <div class="mono">${workspace}</div>
-        </div>
-        <div class="agent-kv">
-          <div class="label">${t("agents.primaryModel")}</div>
-          <div class="mono">${model}</div>
-        </div>
-        <div class="agent-kv">
-          <div class="label">${t("agents.identityName")}</div>
-          <div>${identityName}</div>
-          ${identityStatus ? html`<div class="agent-kv-sub muted">${identityStatus}</div>` : nothing}
-        </div>
-        <div class="agent-kv">
-          <div class="label">${t("agents.default")}</div>
-          <div>${isDefault ? t("agents.yes") : t("agents.no")}</div>
-        </div>
-        <div class="agent-kv">
-          <div class="label">${t("agents.identityEmoji")}</div>
-          <div>${identityEmoji}</div>
-        </div>
-        <div class="agent-kv">
-          <div class="label">${t("agents.skillsFilter")}</div>
-          <div>${skillFilter ? `${skillCount} ${t("agents.selectedSkills")}` : t("agents.allSkills")}</div>
-        </div>
-        <div class="agent-kv">
-          <div class="label">${t("agents.sessionIsolation")}</div>
-          <div>
-            ${params.dmScopeStatus ? (() => { const k = `dmScope.label.${params.dmScopeStatus!.current}`; const v = (t as (k: string) => string)(k); return v !== k ? v : params.dmScopeStatus!.current; })() : "-"}
-            ${params.dmScopeStatus?.shouldUpgrade ? html`<span class="agent-pill warn">${t("agents.dmScopeUpgradeNeeded")}</span>` : params.dmScopeStatus && params.dmScopeStatus.current !== "main" ? html`<span class="agent-pill">${t("agents.dmScopeOk")}</span>` : nothing}
-          </div>
-        </div>
-      </div>
+  // Sync identity editing state when agent changes
+  if (overviewIdentity.agentId !== agent.id) {
+    overviewIdentity.agentId = agent.id;
+    overviewIdentity.name = identityName !== "-" ? identityName : "";
+    overviewIdentity.emoji = identityEmoji !== "-" ? identityEmoji : "";
+    overviewIdentity.dirty = false;
+  }
 
-      <div class="agent-model-select" style="margin-top: 16px;">
-        <div class="label">${t("agents.modelSelection")}</div>
-        <div class="row" style="gap: 12px; flex-wrap: wrap;">
-          <label class="field" style="min-width: 260px; flex: 1;">
-            <span>${isDefault ? t("agents.primaryModelDefault") : t("agents.primaryModelLabel")}</span>
-            <select
-              .value=${effectivePrimary ?? ""}
-              ?disabled=${!configForm || configLoading || configSaving}
-              @change=${(e: Event) =>
-                onModelChange(agent.id, (e.target as HTMLSelectElement).value || null)}
-            >
-              ${
-                isDefault
-                  ? nothing
-                  : html`
-                      <option value="">
-                        ${defaultPrimary ? t("agents.inheritDefaultWithModel", { model: defaultPrimary }) : t("agents.inheritDefault")}
-                      </option>
-                    `
-              }
-              ${buildModelOptions(configForm, effectivePrimary ?? undefined)}
-            </select>
-          </label>
-          <label class="field" style="min-width: 260px; flex: 1;">
-            <span>${t("agents.fallbacks")}</span>
+  // Auto-load SOUL.md when agent changes
+  if (overviewSoul.agentId !== agent.id) {
+    overviewSoul.agentId = agent.id;
+    overviewSoul.content = "";
+    overviewSoul.draft = "";
+    overviewSoul.loaded = false;
+    overviewSoul.dirty = false;
+    if (params.onSoulLoad) {
+      void params.onSoulLoad(agent.id).then((content) => {
+        if (overviewSoul.agentId === agent.id) {
+          overviewSoul.content = content;
+          overviewSoul.draft = content;
+          overviewSoul.loaded = true;
+          requestUpdate();
+        }
+      });
+    }
+  }
+
+  const identityDirty = overviewIdentity.dirty;
+  const soulDirty = overviewSoul.dirty;
+
+  return html`
+    <!-- Card 1: Identity (editable) -->
+    <section class="card">
+      <div class="card-title">${t("agents.identityTitle")}</div>
+      <div class="card-sub">${t("agents.identitySub")}</div>
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+        <label class="field">
+          <span>${t("agents.identityName")}</span>
+          <input
+            type="text"
+            .value=${overviewIdentity.name}
+            placeholder=${t("agents.identityNamePlaceholder")}
+            style="box-sizing: border-box; width: 100%;"
+            @input=${(e: Event) => {
+              overviewIdentity.name = (e.target as HTMLInputElement).value;
+              overviewIdentity.dirty = true;
+              requestUpdate();
+            }}
+          />
+        </label>
+        <div style="display: flex; align-items: flex-end; gap: 12px;">
+          <label class="field" style="flex: 0 0 auto;">
+            <span>${t("agents.identityEmoji")}</span>
             <input
-              .value=${fallbackText}
-              ?disabled=${!configForm || configLoading || configSaving}
-              placeholder="provider/model, provider/model"
-              @input=${(e: Event) =>
-                onModelFallbacksChange(
-                  agent.id,
-                  parseFallbackList((e.target as HTMLInputElement).value),
-                )}
+              type="text"
+              .value=${overviewIdentity.emoji}
+              placeholder="🤖"
+              style="text-align: center; font-size: 18px; box-sizing: border-box; width: 80px;"
+              @input=${(e: Event) => {
+                overviewIdentity.emoji = (e.target as HTMLInputElement).value;
+                overviewIdentity.dirty = true;
+                requestUpdate();
+              }}
             />
           </label>
-        </div>
-        <div class="row" style="justify-content: flex-end; gap: 8px;">
-          <button class="btn btn--sm" ?disabled=${configLoading} @click=${onConfigReload}>
-            ${t("agents.reloadConfig")}
-          </button>
-          <button
-            class="btn btn--sm primary"
-            ?disabled=${configSaving || !configDirty}
-            @click=${onConfigSave}
-          >
-            ${configSaving ? t("agents.saving") : t("agents.save")}
-          </button>
+          <span class="muted" style="font-size: 12px; padding-bottom: 10px;">${t("agents.identityEmojiHint")}</span>
         </div>
       </div>
+      ${identityDirty && params.onIdentityUpdate
+        ? html`
+          <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 8px;">
+            <button class="btn btn--sm" @click=${() => {
+              overviewIdentity.name = identityName !== "-" ? identityName : "";
+              overviewIdentity.emoji = identityEmoji !== "-" ? identityEmoji : "";
+              overviewIdentity.dirty = false;
+              requestUpdate();
+            }}>${t("agents.reset")}</button>
+            <button class="btn btn--sm primary" @click=${async () => {
+              const ok = await params.onIdentityUpdate!(agent.id, overviewIdentity.name.trim(), overviewIdentity.emoji.trim());
+              if (ok) overviewIdentity.dirty = false;
+              requestUpdate();
+            }}>${t("agents.save")}</button>
+          </div>
+        `
+        : nothing}
+    </section>
+
+    <!-- Card 2: Role Description (SOUL.md) -->
+    <section class="card">
+      <div class="card-title">${t("agents.soulTitle")}</div>
+      <div class="card-sub">${t("agents.soulSub")}</div>
+      ${!overviewSoul.loaded
+        ? html`<div class="muted" style="margin-top: 12px;">${t("agents.loading")}</div>`
+        : html`
+          <label class="field" style="margin-top: 12px;">
+            <textarea
+              .value=${overviewSoul.draft}
+              rows="8"
+              placeholder=${t("agents.soulPlaceholder")}
+              style="min-height: 120px; font-family: inherit; line-height: 1.6;"
+              @input=${(e: Event) => {
+                overviewSoul.draft = (e.target as HTMLTextAreaElement).value;
+                overviewSoul.dirty = overviewSoul.draft !== overviewSoul.content;
+                requestUpdate();
+              }}
+            ></textarea>
+          </label>
+          ${soulDirty && params.onSoulSave
+            ? html`
+              <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 8px;">
+                <button class="btn btn--sm" @click=${() => {
+                  overviewSoul.draft = overviewSoul.content;
+                  overviewSoul.dirty = false;
+                  requestUpdate();
+                }}>${t("agents.reset")}</button>
+                <button class="btn btn--sm primary" @click=${async () => {
+                  const ok = await params.onSoulSave!(agent.id, overviewSoul.draft);
+                  if (ok) {
+                    overviewSoul.content = overviewSoul.draft;
+                    overviewSoul.dirty = false;
+                  }
+                  requestUpdate();
+                }}>${t("agents.save")}</button>
+              </div>
+            `
+            : nothing}
+        `}
+    </section>
+
+    <!-- Card 3: Model Selection -->
+    <section class="card">
+      <div class="card-title">${t("agents.modelSelection")}</div>
+      <div class="card-sub">${t("agents.modelSelectionSub")}</div>
+      <div class="row" style="gap: 12px; flex-wrap: wrap; margin-top: 12px;">
+        <label class="field" style="min-width: 260px; flex: 1;">
+          <span>${isDefault ? t("agents.primaryModelDefault") : t("agents.primaryModelLabel")}</span>
+          <select
+            .value=${effectivePrimary ?? ""}
+            ?disabled=${!configForm || configLoading || configSaving}
+            @change=${(e: Event) =>
+              onModelChange(agent.id, (e.target as HTMLSelectElement).value || null)}
+          >
+            ${
+              isDefault
+                ? nothing
+                : html`
+                    <option value="">
+                      ${defaultPrimary ? t("agents.inheritDefaultWithModel", { model: defaultPrimary }) : t("agents.inheritDefault")}
+                    </option>
+                  `
+            }
+            ${buildModelOptions(configForm, effectivePrimary ?? undefined)}
+          </select>
+        </label>
+        <label class="field" style="min-width: 260px; flex: 1;">
+          <span>${t("agents.fallbacks")}</span>
+          <input
+            .value=${fallbackText}
+            ?disabled=${!configForm || configLoading || configSaving}
+            placeholder="provider/model, provider/model"
+            @input=${(e: Event) =>
+              onModelFallbacksChange(
+                agent.id,
+                parseFallbackList((e.target as HTMLInputElement).value),
+              )}
+          />
+        </label>
+      </div>
+      <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 8px;">
+        <button class="btn btn--sm" ?disabled=${configLoading} @click=${onConfigReload}>
+          ${t("agents.reloadConfig")}
+        </button>
+        <button
+          class="btn btn--sm primary"
+          ?disabled=${configSaving || !configDirty}
+          @click=${onConfigSave}
+        >
+          ${configSaving ? t("agents.saving") : t("agents.save")}
+        </button>
+      </div>
+    </section>
+
+    <!-- Card 4: Advanced (collapsed by default) -->
+    <section class="card">
+      <button
+        type="button"
+        class="overview-advanced-toggle"
+        @click=${() => { overviewAdvancedOpen = !overviewAdvancedOpen; requestUpdate(); }}
+      >
+        <span>${overviewAdvancedOpen ? "▾" : "▸"} ${t("agents.advancedTitle")}</span>
+      </button>
+      ${overviewAdvancedOpen
+        ? html`
+          <div class="card-sub" style="margin-top: 4px;">${t("agents.advancedSub")}</div>
+          <div class="agents-overview-grid" style="margin-top: 12px;">
+            <div class="agent-kv">
+              <div class="label">${t("agents.workspace")}</div>
+              <div class="mono">${workspace}</div>
+            </div>
+            <div class="agent-kv">
+              <div class="label">${t("agents.primaryModel")}</div>
+              <div class="mono">${model}</div>
+            </div>
+            <div class="agent-kv">
+              <div class="label">${t("agents.default")}</div>
+              <div>${isDefault ? t("agents.yes") : t("agents.no")}</div>
+            </div>
+            <div class="agent-kv">
+              <div class="label">${t("agents.skillsFilter")}</div>
+              <div>${skillFilter ? `${skillCount} ${t("agents.selectedSkills")}` : t("agents.allSkills")}</div>
+            </div>
+            <div class="agent-kv">
+              <div class="label">${t("agents.sessionIsolation")}</div>
+              <div>
+                ${params.dmScopeStatus ? (() => { const k = `dmScope.label.${params.dmScopeStatus!.current}`; const v = (t as (k: string) => string)(k); return v !== k ? v : params.dmScopeStatus!.current; })() : "-"}
+                ${params.dmScopeStatus?.shouldUpgrade ? html`<span class="agent-pill warn">${t("agents.dmScopeUpgradeNeeded")}</span>` : params.dmScopeStatus && params.dmScopeStatus.current !== "main" ? html`<span class="agent-pill">${t("agents.dmScopeOk")}</span>` : nothing}
+              </div>
+            </div>
+          </div>
+        `
+        : nothing}
     </section>
   `;
 }

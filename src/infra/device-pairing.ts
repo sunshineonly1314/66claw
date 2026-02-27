@@ -72,7 +72,30 @@ type DevicePairingStateFile = {
 
 const PENDING_TTL_MS = 5 * 60 * 1000;
 
+/** Paired devices with no token activity for 90 days are considered stale. */
+export const PAIRED_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
 const withLock = createAsyncLock();
+
+function pruneExpiredPaired(
+  pairedByDeviceId: Record<string, PairedDevice>,
+  nowMs: number,
+  ttlMs: number,
+): void {
+  for (const [id, device] of Object.entries(pairedByDeviceId)) {
+    const tokens = device.tokens ? Object.values(device.tokens) : [];
+    const lastActivity = Math.max(
+      device.approvedAtMs ?? 0,
+      ...tokens.map((tok) => tok.lastUsedAtMs ?? tok.rotatedAtMs ?? tok.createdAtMs ?? 0),
+    );
+    if (lastActivity > 0 && nowMs - lastActivity > ttlMs) {
+      const allRevoked = tokens.length > 0 && tokens.every((tok) => tok.revokedAtMs);
+      if (allRevoked || tokens.length === 0) {
+        delete pairedByDeviceId[id];
+      }
+    }
+  }
+}
 
 async function loadState(baseDir?: string): Promise<DevicePairingStateFile> {
   const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "devices");
@@ -84,7 +107,9 @@ async function loadState(baseDir?: string): Promise<DevicePairingStateFile> {
     pendingById: pending ?? {},
     pairedByDeviceId: paired ?? {},
   };
-  pruneExpiredPending(state.pendingById, Date.now(), PENDING_TTL_MS);
+  const now = Date.now();
+  pruneExpiredPending(state.pendingById, now, PENDING_TTL_MS);
+  pruneExpiredPaired(state.pairedByDeviceId, now, PAIRED_STALE_TTL_MS);
   return state;
 }
 
@@ -214,6 +239,22 @@ export async function requestDevicePairing(
     if (existing) {
       return { status: "pending", request: existing, created: false };
     }
+    // When a silent (local) client reconnects with a new identity, evict stale
+    // pairings that share the same clientId+clientMode but have a different
+    // deviceId.  This prevents phantom device accumulation caused by Tauri
+    // webview localStorage loss across restarts.
+    if (req.silent && req.clientId && req.clientMode) {
+      for (const [oldId, old] of Object.entries(state.pairedByDeviceId)) {
+        if (
+          oldId !== deviceId &&
+          old.clientId === req.clientId &&
+          old.clientMode === req.clientMode
+        ) {
+          delete state.pairedByDeviceId[oldId];
+        }
+      }
+    }
+
     const isRepair = Boolean(state.pairedByDeviceId[deviceId]);
     const request: DevicePairingPendingRequest = {
       requestId: randomUUID(),
@@ -470,6 +511,23 @@ export async function rotateDeviceToken(params: {
     state.pairedByDeviceId[device.deviceId] = device;
     await persistState(state, params.baseDir);
     return next;
+  });
+}
+
+export async function removeDevice(params: {
+  deviceId: string;
+  baseDir?: string;
+}): Promise<PairedDevice | null> {
+  return await withLock(async () => {
+    const state = await loadState(params.baseDir);
+    const id = normalizeDeviceId(params.deviceId);
+    const device = state.pairedByDeviceId[id];
+    if (!device) {
+      return null;
+    }
+    delete state.pairedByDeviceId[id];
+    await persistState(state, params.baseDir);
+    return device;
   });
 }
 

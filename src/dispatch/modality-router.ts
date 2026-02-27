@@ -325,10 +325,68 @@ const BUILTIN_PROFILES: ModelProfile[] = [
     region: "domestic",
   },
   {
+    provider: "siliconflow",
+    model: "Qwen/Qwen-Image",
+    capabilities: { imageGen: 4 },
+    costPer1M: 3.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "Qwen/Qwen-Image-Edit",
+    capabilities: { imageGen: 4 },
+    costPer1M: 3.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "Kwai-Kolors/Kolors",
+    capabilities: { imageGen: 3 },
+    costPer1M: 0.0,
+    region: "domestic",
+  },
+  {
     provider: "local",
     model: "sd-cpp",
     capabilities: { imageGen: 3 },
     costPer1M: 0.0,
+    region: "domestic",
+  },
+
+  // ── Video Generation Models ──
+  {
+    provider: "zhipu",
+    model: "cogvideox-flash",
+    capabilities: { videoGen: 3 },
+    costPer1M: 5.0,
+    region: "domestic",
+  },
+  {
+    provider: "zhipu",
+    model: "cogvideox",
+    capabilities: { videoGen: 4 },
+    costPer1M: 10.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "Wan-AI/Wan2.2-T2V-A14B",
+    capabilities: { videoGen: 5 },
+    costPer1M: 6.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "Wan-AI/Wan2.2-I2V-A14B",
+    capabilities: { videoGen: 5 },
+    costPer1M: 6.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "Pro/THUDM/CogVideoX-5B",
+    capabilities: { videoGen: 3 },
+    costPer1M: 8.0,
     region: "domestic",
   },
 
