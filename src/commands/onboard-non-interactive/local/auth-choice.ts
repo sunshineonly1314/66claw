@@ -30,6 +30,10 @@ import {
   applyXaiConfig,
   applyXiaomiConfig,
   applyZaiConfig,
+  // Coding Plan providers
+  applyAliyunCodeplanConfig,
+  applyGlmCodeplanConfig,
+  applyMinimaxCodeplanConfig,
   setAnthropicApiKey,
   setCloudflareAiGatewayConfig,
   setQianfanApiKey,
@@ -48,6 +52,10 @@ import {
   setVercelAiGatewayApiKey,
   setXiaomiApiKey,
   setZaiApiKey,
+  // Coding Plan credential setters
+  setAliyunCodeplanApiKey,
+  setGlmCodeplanApiKey,
+  setMinimaxCodeplanApiKey,
 } from "../../onboard-auth.js";
 import {
   applyCustomApiConfig,
@@ -674,6 +682,79 @@ export async function applyNonInteractiveAuthChoice(params: {
       mode: "api_key",
     });
     return applyHuggingfaceConfig(nextConfig);
+  }
+
+  // ============================================================================
+  // Coding Plan providers
+  // ============================================================================
+
+  if (authChoice === "aliyun-codeplan-api-key") {
+    const resolved = await resolveNonInteractiveApiKey({
+      provider: "aliyun-codeplan",
+      cfg: baseConfig,
+      flagValue: opts.aliyunCodeplanApiKey,
+      flagName: "--aliyun-codeplan-api-key",
+      envVar: "ALIYUN_CODEPLAN_API_KEY",
+      runtime,
+    });
+    if (!resolved) {
+      return null;
+    }
+    if (resolved.source !== "profile") {
+      await setAliyunCodeplanApiKey(resolved.key);
+    }
+    nextConfig = applyAuthProfileConfig(nextConfig, {
+      profileId: "aliyun-codeplan:default",
+      provider: "aliyun-codeplan",
+      mode: "api_key",
+    });
+    return applyAliyunCodeplanConfig(nextConfig);
+  }
+
+  if (authChoice === "glm-codeplan-api-key") {
+    const resolved = await resolveNonInteractiveApiKey({
+      provider: "glm-codeplan",
+      cfg: baseConfig,
+      flagValue: opts.glmCodeplanApiKey,
+      flagName: "--glm-codeplan-api-key",
+      envVar: "GLM_CODEPLAN_API_KEY",
+      runtime,
+    });
+    if (!resolved) {
+      return null;
+    }
+    if (resolved.source !== "profile") {
+      await setGlmCodeplanApiKey(resolved.key);
+    }
+    nextConfig = applyAuthProfileConfig(nextConfig, {
+      profileId: "glm-codeplan:default",
+      provider: "glm-codeplan",
+      mode: "api_key",
+    });
+    return applyGlmCodeplanConfig(nextConfig);
+  }
+
+  if (authChoice === "minimax-codeplan-api-key") {
+    const resolved = await resolveNonInteractiveApiKey({
+      provider: "minimax-codeplan",
+      cfg: baseConfig,
+      flagValue: opts.minimaxCodeplanApiKey,
+      flagName: "--minimax-codeplan-api-key",
+      envVar: "MINIMAX_CODEPLAN_API_KEY",
+      runtime,
+    });
+    if (!resolved) {
+      return null;
+    }
+    if (resolved.source !== "profile") {
+      await setMinimaxCodeplanApiKey(resolved.key);
+    }
+    nextConfig = applyAuthProfileConfig(nextConfig, {
+      profileId: "minimax-codeplan:default",
+      provider: "minimax-codeplan",
+      mode: "api_key",
+    });
+    return applyMinimaxCodeplanConfig(nextConfig);
   }
 
   if (authChoice === "custom-api-key") {

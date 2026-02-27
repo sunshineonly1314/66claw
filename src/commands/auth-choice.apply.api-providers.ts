@@ -41,6 +41,13 @@ import {
   applyXiaomiProviderConfig,
   applyZaiConfig,
   applyZaiProviderConfig,
+  // Coding Plan providers
+  applyAliyunCodeplanConfig,
+  applyAliyunCodeplanProviderConfig,
+  applyGlmCodeplanConfig,
+  applyGlmCodeplanProviderConfig,
+  applyMinimaxCodeplanConfig,
+  applyMinimaxCodeplanProviderConfig,
   CLOUDFLARE_AI_GATEWAY_DEFAULT_MODEL_REF,
   LITELLM_DEFAULT_MODEL_REF,
   QIANFAN_DEFAULT_MODEL_REF,
@@ -51,6 +58,10 @@ import {
   VENICE_DEFAULT_MODEL_REF,
   VERCEL_AI_GATEWAY_DEFAULT_MODEL_REF,
   XIAOMI_DEFAULT_MODEL_REF,
+  // Coding Plan model refs
+  ALIYUN_CODEPLAN_DEFAULT_MODEL_REF,
+  GLM_CODEPLAN_DEFAULT_MODEL_REF,
+  MINIMAX_CODEPLAN_DEFAULT_MODEL_REF,
   setCloudflareAiGatewayConfig,
   setQianfanApiKey,
   setGeminiApiKey,
@@ -64,6 +75,10 @@ import {
   setVercelAiGatewayApiKey,
   setXiaomiApiKey,
   setZaiApiKey,
+  // Coding Plan credential setters
+  setAliyunCodeplanApiKey,
+  setGlmCodeplanApiKey,
+  setMinimaxCodeplanApiKey,
   ZAI_DEFAULT_MODEL_REF,
 } from "./onboard-auth.js";
 import { OPENCODE_ZEN_DEFAULT_MODEL } from "./opencode-zen-model-default.js";
@@ -124,6 +139,12 @@ export async function applyAuthChoiceApiProviders(
       authChoice = "opencode-zen";
     } else if (params.opts.tokenProvider === "qianfan") {
       authChoice = "qianfan-api-key";
+    } else if (params.opts.tokenProvider === "aliyun-codeplan") {
+      authChoice = "aliyun-codeplan-api-key";
+    } else if (params.opts.tokenProvider === "glm-codeplan") {
+      authChoice = "glm-codeplan-api-key";
+    } else if (params.opts.tokenProvider === "minimax-codeplan") {
+      authChoice = "minimax-codeplan-api-key";
     }
   }
 
@@ -921,6 +942,178 @@ export async function applyAuthChoiceApiProviders(
 
   if (authChoice === "huggingface-api-key") {
     return applyAuthChoiceHuggingface({ ...params, authChoice });
+  }
+
+  // ============================================================================
+  // Coding Plan providers
+  // ============================================================================
+
+  if (authChoice === "aliyun-codeplan-api-key") {
+    let hasCredential = false;
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "aliyun-codeplan") {
+      await setAliyunCodeplanApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
+      hasCredential = true;
+    }
+
+    if (!hasCredential) {
+      await params.prompter.note(
+        [
+          "Aliyun Coding Plan provides dedicated coding models (Qwen3-Coder).",
+          "Get your API key at: https://www.aliyun.com/benefit/ai/aistar?userCode=xsngby7y",
+        ].join("\n"),
+        "Aliyun Code",
+      );
+    }
+    const envKey = resolveEnvApiKey("aliyun-codeplan");
+    if (envKey) {
+      const useExisting = await params.prompter.confirm({
+        message: `Use existing ALIYUN_CODEPLAN_API_KEY (${envKey.source}, ${formatApiKeyPreview(envKey.apiKey)})?`,
+        initialValue: true,
+      });
+      if (useExisting) {
+        await setAliyunCodeplanApiKey(envKey.apiKey, params.agentDir);
+        hasCredential = true;
+      }
+    }
+    if (!hasCredential) {
+      const key = await params.prompter.text({
+        message: "Enter Aliyun Coding Plan API key",
+        validate: validateApiKeyInput,
+      });
+      await setAliyunCodeplanApiKey(normalizeApiKeyInput(String(key ?? "")), params.agentDir);
+    }
+    nextConfig = applyAuthProfileConfig(nextConfig, {
+      profileId: "aliyun-codeplan:default",
+      provider: "aliyun-codeplan",
+      mode: "api_key",
+    });
+    {
+      const applied = await applyDefaultModelChoice({
+        config: nextConfig,
+        setDefaultModel: params.setDefaultModel,
+        defaultModel: ALIYUN_CODEPLAN_DEFAULT_MODEL_REF,
+        applyDefaultConfig: applyAliyunCodeplanConfig,
+        applyProviderConfig: applyAliyunCodeplanProviderConfig,
+        noteDefault: ALIYUN_CODEPLAN_DEFAULT_MODEL_REF,
+        noteAgentModel,
+        prompter: params.prompter,
+      });
+      nextConfig = applied.config;
+      agentModelOverride = applied.agentModelOverride ?? agentModelOverride;
+    }
+    return { config: nextConfig, agentModelOverride };
+  }
+
+  if (authChoice === "glm-codeplan-api-key") {
+    let hasCredential = false;
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "glm-codeplan") {
+      await setGlmCodeplanApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
+      hasCredential = true;
+    }
+
+    if (!hasCredential) {
+      await params.prompter.note(
+        [
+          "GLM Coding Plan provides dedicated coding models (GLM-5/GLM-4.7).",
+          "Get your API key at: https://open.bigmodel.cn",
+        ].join("\n"),
+        "GLM Code",
+      );
+    }
+    const envKey = resolveEnvApiKey("glm-codeplan");
+    if (envKey) {
+      const useExisting = await params.prompter.confirm({
+        message: `Use existing GLM_CODEPLAN_API_KEY (${envKey.source}, ${formatApiKeyPreview(envKey.apiKey)})?`,
+        initialValue: true,
+      });
+      if (useExisting) {
+        await setGlmCodeplanApiKey(envKey.apiKey, params.agentDir);
+        hasCredential = true;
+      }
+    }
+    if (!hasCredential) {
+      const key = await params.prompter.text({
+        message: "Enter GLM Coding Plan API key",
+        validate: validateApiKeyInput,
+      });
+      await setGlmCodeplanApiKey(normalizeApiKeyInput(String(key ?? "")), params.agentDir);
+    }
+    nextConfig = applyAuthProfileConfig(nextConfig, {
+      profileId: "glm-codeplan:default",
+      provider: "glm-codeplan",
+      mode: "api_key",
+    });
+    {
+      const applied = await applyDefaultModelChoice({
+        config: nextConfig,
+        setDefaultModel: params.setDefaultModel,
+        defaultModel: GLM_CODEPLAN_DEFAULT_MODEL_REF,
+        applyDefaultConfig: applyGlmCodeplanConfig,
+        applyProviderConfig: applyGlmCodeplanProviderConfig,
+        noteDefault: GLM_CODEPLAN_DEFAULT_MODEL_REF,
+        noteAgentModel,
+        prompter: params.prompter,
+      });
+      nextConfig = applied.config;
+      agentModelOverride = applied.agentModelOverride ?? agentModelOverride;
+    }
+    return { config: nextConfig, agentModelOverride };
+  }
+
+  if (authChoice === "minimax-codeplan-api-key") {
+    let hasCredential = false;
+    if (!hasCredential && params.opts?.token && params.opts?.tokenProvider === "minimax-codeplan") {
+      await setMinimaxCodeplanApiKey(normalizeApiKeyInput(params.opts.token), params.agentDir);
+      hasCredential = true;
+    }
+
+    if (!hasCredential) {
+      await params.prompter.note(
+        [
+          "MiniMax Coding Plan provides dedicated MiniMax-M2.5 for code.",
+          "Requires a Coding Plan subscription at minimax.io.",
+        ].join("\n"),
+        "MiniMax Code",
+      );
+    }
+    const envKey = resolveEnvApiKey("minimax-codeplan");
+    if (envKey) {
+      const useExisting = await params.prompter.confirm({
+        message: `Use existing MINIMAX_CODEPLAN_API_KEY (${envKey.source}, ${formatApiKeyPreview(envKey.apiKey)})?`,
+        initialValue: true,
+      });
+      if (useExisting) {
+        await setMinimaxCodeplanApiKey(envKey.apiKey, params.agentDir);
+        hasCredential = true;
+      }
+    }
+    if (!hasCredential) {
+      const key = await params.prompter.text({
+        message: "Enter MiniMax Coding Plan API key",
+        validate: validateApiKeyInput,
+      });
+      await setMinimaxCodeplanApiKey(normalizeApiKeyInput(String(key ?? "")), params.agentDir);
+    }
+    nextConfig = applyAuthProfileConfig(nextConfig, {
+      profileId: "minimax-codeplan:default",
+      provider: "minimax-codeplan",
+      mode: "api_key",
+    });
+    {
+      const applied = await applyDefaultModelChoice({
+        config: nextConfig,
+        setDefaultModel: params.setDefaultModel,
+        defaultModel: MINIMAX_CODEPLAN_DEFAULT_MODEL_REF,
+        applyDefaultConfig: applyMinimaxCodeplanConfig,
+        applyProviderConfig: applyMinimaxCodeplanProviderConfig,
+        noteDefault: MINIMAX_CODEPLAN_DEFAULT_MODEL_REF,
+        noteAgentModel,
+        prompter: params.prompter,
+      });
+      nextConfig = applied.config;
+      agentModelOverride = applied.agentModelOverride ?? agentModelOverride;
+    }
+    return { config: nextConfig, agentModelOverride };
   }
 
   if (authChoice === "qianfan-api-key") {

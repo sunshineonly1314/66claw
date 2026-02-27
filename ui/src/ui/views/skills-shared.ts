@@ -16,9 +16,8 @@ export function computeSkillReasons(skill: SkillStatusEntry): string[] {
   if (skill.disabled) {
     reasons.push(t("agents.skillDisabled"));
   }
-  if (skill.blockedByAllowlist) {
-    reasons.push(t("agents.skillBlockedByAllowlist"));
-  }
+  // blockedByAllowlist is shown as a badge in the card header (ready tier),
+  // no longer as a blocking reason since eligible is now independent of allowBundled.
   return reasons;
 }
 

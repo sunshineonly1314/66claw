@@ -67,6 +67,11 @@ import {
 import { getDmHistoryLimitFromSessionKey, limitHistoryTurns } from "./history.js";
 import { resolveGlobalLane, resolveSessionLane } from "./lanes.js";
 import { log } from "./logger.js";
+import {
+  readProfile,
+  formatProfileForSystemPrompt,
+  PROFILE_MAX_PROMPT_CHARS,
+} from "../../memory/profile-store.js";
 import { buildModelAliasLines, resolveModel } from "./model.js";
 import { buildEmbeddedSandboxInfo } from "./sandbox-info.js";
 import { prewarmSessionFile, trackSessionManagerAccess } from "./session-manager-cache.js";
@@ -384,8 +389,8 @@ export async function compactEmbeddedPiSessionDirect(
       modelId,
       modelAuthMode: resolveModelAuthMode(model.provider, params.config),
     });
-    const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider });
-    logToolSchemasForGoogle({ tools, provider });
+    const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider, modelApi: model.api });
+    logToolSchemasForGoogle({ tools, provider, modelApi: model.api });
     const machineName = await getMachineDisplayName();
     const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
     let runtimeCapabilities = runtimeChannel
@@ -477,6 +482,20 @@ export async function compactEmbeddedPiSessionDirect(
       moduleUrl: import.meta.url,
     });
     const ttsHint = params.config ? buildTtsSystemPromptHint(params.config) : undefined;
+
+    // [CN-PATCH:memory] Inject user profile into compaction so the LLM has user context
+    // when deciding what to preserve in the summary. Skips cold retrieval (non-critical here).
+    let profilePrompt = "";
+    try {
+      const profile = readProfile(effectiveWorkspace);
+      profilePrompt = formatProfileForSystemPrompt(
+        profile,
+        Math.floor(PROFILE_MAX_PROMPT_CHARS * 0.7),
+      );
+    } catch {
+      /* non-fatal — compact without profile */
+    }
+
     const appendPrompt = buildEmbeddedSystemPrompt({
       workspaceDir: effectiveWorkspace,
       defaultThinkLevel: params.thinkLevel,
@@ -497,6 +516,7 @@ export async function compactEmbeddedPiSessionDirect(
       sandboxInfo,
       tools,
       modelAliasLines: buildModelAliasLines(params.config),
+      profilePrompt,
       userTimezone,
       userTime,
       userTimeFormat,

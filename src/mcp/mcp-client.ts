@@ -5,6 +5,7 @@
  * spawn/connect → initialize → tools/list → callTool → shutdown.
  */
 
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -107,12 +108,24 @@ const BLOCKED_ENV_KEYS = new Set([
   "VISUAL", // 编辑器相关命令执行
 ]);
 
-/** Build a safe environment for MCP child processes. */
+/** Build a safe environment for MCP child processes.
+ *  Includes the bundled node.exe directory in PATH so npx/npm can be found. */
 function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of SAFE_ENV_KEYS) {
     if (process.env[key]) env[key] = process.env[key]!;
   }
+
+  // Ensure the bundled node.exe directory is in PATH for child processes.
+  // This is critical for MCP servers that use npx/npm — without it,
+  // the child process can't find npx on machines without system-wide Node.js.
+  const execDir = path.dirname(process.execPath);
+  const currentPath = env.PATH || env.Path || "";
+  if (execDir && !currentPath.includes(execDir)) {
+    const pathKey = process.platform === "win32" && env.Path ? "Path" : "PATH";
+    env[pathKey] = `${execDir}${path.delimiter}${currentPath}`;
+  }
+
   // Config-specified env vars override (these are intentional), but block dangerous keys
   // FIX BUG-R2-1: Windows 环境变量不区分大小写，用 toUpperCase 统一比较
   if (configEnv) {
@@ -193,8 +206,15 @@ export class MCPClient {
     // (64KB Linux, ~4KB Windows) without being consumed, the child blocks.
     const stderrStream = stdioTransport.stderr;
     if (stderrStream) {
-      stderrStream.on("data", () => {
-        /* drain — prevent buffer-full deadlock */
+      const serverId = this.config.id;
+      let stderrBuf = "";
+      stderrStream.on("data", (chunk: Buffer | string) => {
+        const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+        stderrBuf += text;
+        // Log first 2KB of stderr for debugging startup failures
+        if (stderrBuf.length <= 2048) {
+          console.warn(`[mcp:stderr:${serverId}] ${text.trimEnd()}`);
+        }
       });
       stderrStream.on("error", () => {
         /* ignore stderr errors */

@@ -1,8 +1,8 @@
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder};
-use tauri::{App, Manager};
+use tauri::{App, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::{platform, sidecar};
+use crate::{platform, repair, sidecar};
 
 /// Stored tray state for lifecycle management and dynamic menu control.
 pub struct TrayState {
@@ -40,6 +40,98 @@ fn show_tray_error(app: &tauri::AppHandle, msg: &str) {
     }
 }
 
+/// Open the repair assistant in a dedicated window.
+/// If the window already exists, focus it instead of creating a new one.
+fn open_repair_assistant(app: &tauri::AppHandle) {
+    // Re-use existing window if already open
+    if let Some(window) = app.get_webview_window("repair-assistant") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    match WebviewWindowBuilder::new(
+        app,
+        "repair-assistant",
+        WebviewUrl::App("repair-assistant.html".into()),
+    )
+    .title("ClawdbotCN 检修助手")
+    .inner_size(960.0, 640.0)
+    .resizable(true)
+    .center()
+    .visible(true)
+    .build()
+    {
+        Ok(_) => {}
+        Err(e) => {
+            show_tray_error(app, &format!("打开检修助手失败: {}", e));
+        }
+    }
+}
+
+/// Run `openclawcn doctor --fix --non-interactive` from the tray menu.
+/// Opens a minimal result window (local HTML, no Gateway dependency) since
+/// the main WebView may be unavailable when Gateway is down.
+fn run_doctor_from_tray(app: &tauri::AppHandle) {
+    let handle = app.app_handle().clone();
+
+    // Open or re-use the doctor result window
+    if let Some(window) = handle.get_webview_window("doctor-result") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        // Reset to loading state
+        let _ = window.eval(
+            "document.getElementById('output').innerHTML=\
+             '<span class=\"spin\"></span>正在运行 Doctor，请稍候...'"
+        );
+    } else {
+        match WebviewWindowBuilder::new(
+            &handle,
+            "doctor-result",
+            WebviewUrl::App("doctor-result.html".into()),
+        )
+        .title("Doctor 自检修复")
+        .inner_size(680.0, 480.0)
+        .resizable(true)
+        .center()
+        .visible(true)
+        .build()
+        {
+            Ok(_) => {}
+            Err(e) => {
+                show_tray_error(&handle, &format!("打开 Doctor 窗口失败: {}", e));
+                return;
+            }
+        }
+    }
+
+    // Run doctor in background thread to avoid blocking the tray event loop
+    std::thread::spawn(move || {
+        let result = repair::repair_actions::apply_fix(&handle, "run_doctor");
+
+        // Escape the message for safe injection into JS
+        let status = if result.success { "Doctor 完成" } else { "Doctor 失败" };
+        let escaped_msg = result.message
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+            .replace('\n', "\\n")
+            .replace('\r', "");
+
+        let js = format!(
+            "document.getElementById('output').textContent=\
+             '--- {} ---\\n\\n{}'",
+            status, escaped_msg
+        );
+
+        if let Some(window) = handle.get_webview_window("doctor-result") {
+            let _ = window.eval(&js);
+        }
+
+        // Refresh tray menu state in case doctor fixed the service
+        update_tray_menu_state(&handle);
+    });
+}
+
 pub fn setup_tray(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let start_item =
         MenuItem::with_id(app, "start_service", "▶ 启动服务", true, None::<&str>)?;
@@ -59,6 +151,8 @@ pub fn setup_tray(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             &restart_item,
             &MenuItem::new(app, "───", false, None::<&str>)?,
             &MenuItem::with_id(app, "open_logs", "📁 查看日志", true, None::<&str>)?,
+            &MenuItem::with_id(app, "repair_assistant", "🔧 检修助手", true, None::<&str>)?,
+            &MenuItem::with_id(app, "run_doctor", "🩺 Doctor 自检修复", true, None::<&str>)?,
             &MenuItem::new(app, "───", false, None::<&str>)?,
             &MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?,
         ],
@@ -133,6 +227,12 @@ pub fn setup_tray(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                         show_tray_error(app, &format!("获取日志路径失败: {}", e));
                     }
                 }
+            }
+            "repair_assistant" => {
+                open_repair_assistant(app);
+            }
+            "run_doctor" => {
+                run_doctor_from_tray(app);
             }
             "quit" => {
                 sidecar::cleanup_on_exit();

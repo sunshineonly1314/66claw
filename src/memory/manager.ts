@@ -116,6 +116,19 @@ export class MemoryIndexManager implements MemorySearchManager {
     if (existing) {
       return existing;
     }
+
+    // Evict stale cache entries for the same agentId+workspaceDir but different settings.
+    // Without this, config changes leave old managers in the cache holding open DB handles,
+    // file watchers, and interval timers indefinitely.
+    // We only remove from cache — we do NOT close() here because the caller may still
+    // hold a reference. The caller is responsible for calling close() when done.
+    const prefix = `${agentId}:${workspaceDir}:`;
+    for (const [cachedKey] of INDEX_CACHE) {
+      if (cachedKey.startsWith(prefix) && cachedKey !== key) {
+        INDEX_CACHE.delete(cachedKey);
+      }
+    }
+
     const providerResult = await createEmbeddingProvider({
       config: cfg,
       agentDir: resolveAgentDir(cfg, agentId),
@@ -244,7 +257,16 @@ export class MemoryIndexManager implements MemorySearchManager {
 
     if (!hybrid.enabled) {
       // [CN-PATCH:memory-p0] 冷热分层过滤：优先返回近期记忆，减少 token 消耗
-      const tiered = applyTimeTiering(vectorResults);
+      let tiered = applyTimeTiering(vectorResults);
+      // [CN-PATCH:memory-p0] Reindex 降级：当前 model 无结果但 DB 有旧 model 数据时，
+      // 用 FTS keyword-only 搜索（不带 model 过滤）提供降级结果。
+      // 场景：用户切换 embedding provider 后 reindex 尚未完成，避免"把事都忘了"的体验。
+      if (tiered.length === 0 && this.fts.enabled && this.fts.available) {
+        const degraded = await this.searchKeywordDegraded(cleaned, candidates).catch(() => []);
+        if (degraded.length > 0) {
+          tiered = applyTimeTiering(degraded);
+        }
+      }
       return tiered.filter((entry) => entry.score >= minScore).slice(0, maxResults);
     }
 
@@ -256,7 +278,18 @@ export class MemoryIndexManager implements MemorySearchManager {
     });
 
     // [CN-PATCH:memory-p0] 冷热分层过滤：优先返回近期记忆，减少 token 消耗
-    const tiered = applyTimeTiering(merged);
+    let tiered = applyTimeTiering(merged);
+
+    // [CN-PATCH:memory-p0] Reindex 降级：hybrid 模式下也检查。
+    // vector 搜索因 model 不匹配返回空，keyword 因 model filter 也为空时，
+    // 降级到不带 model 过滤的 FTS 纯文本搜索。
+    if (tiered.length === 0 && this.fts.enabled && this.fts.available) {
+      const degraded = await this.searchKeywordDegraded(cleaned, candidates).catch(() => []);
+      if (degraded.length > 0) {
+        tiered = applyTimeTiering(degraded);
+      }
+    }
+
     return tiered.filter((entry) => entry.score >= minScore).slice(0, maxResults);
   }
 
@@ -306,6 +339,44 @@ export class MemoryIndexManager implements MemorySearchManager {
     return results.map((entry) => entry as MemorySearchResult & { id: string; textScore: number });
   }
 
+  /**
+   * [CN-PATCH:memory-p0] Degraded keyword search without model filter.
+   * Used during reindex window when embedding model changed but new chunks haven't been indexed yet.
+   * Falls back to FTS-only text matching across ALL model's chunks, providing continuity
+   * of cold memory recall even when the current model has zero indexed chunks.
+   * Scores are halved (multiplied by 0.5) to indicate degraded quality.
+   */
+  private async searchKeywordDegraded(
+    query: string,
+    limit: number,
+  ): Promise<Array<MemorySearchResult & { id: string; textScore: number }>> {
+    if (!this.fts.enabled || !this.fts.available) {
+      return [];
+    }
+    const sourceFilter = this.buildSourceFilter("f");
+    const results = await searchKeyword({
+      db: this.db,
+      ftsTable: FTS_TABLE,
+      providerModel: this.provider.model,
+      query,
+      limit,
+      snippetMaxChars: SNIPPET_MAX_CHARS,
+      sourceFilter,
+      buildFtsQuery: (raw) => this.buildFtsQuery(raw),
+      bm25RankToScore,
+      skipModelFilter: true,
+    });
+    // Halve scores to signal degraded quality (cross-model FTS results)
+    return results.map(
+      (entry) =>
+        ({
+          ...entry,
+          score: entry.score * 0.5,
+          textScore: entry.textScore * 0.5,
+        }) as MemorySearchResult & { id: string; textScore: number },
+    );
+  }
+
   private mergeHybridResults(params: {
     vector: Array<MemorySearchResult & { id: string }>;
     keyword: Array<MemorySearchResult & { id: string; textScore: number }>;
@@ -344,8 +415,15 @@ export class MemoryIndexManager implements MemorySearchManager {
     force?: boolean;
     progress?: (update: MemorySyncProgressUpdate) => void;
   }): Promise<void> {
-    if (this.syncing) {
+    // If a sync is already running and the new call does NOT need force,
+    // coalesce onto the existing promise (single-flight).
+    // If the new call needs force, we must NOT coalesce — it would skip the reindex.
+    if (this.syncing && !params?.force) {
       return this.syncing;
+    }
+    // Wait for any ongoing sync to finish before starting a new one
+    if (this.syncing) {
+      await this.syncing.catch(() => {});
     }
     this.syncing = this.runSync(params).finally(() => {
       this.syncing = null;

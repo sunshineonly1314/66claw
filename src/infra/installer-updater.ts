@@ -45,16 +45,18 @@ export interface PlatformUpdateData {
 
 export interface UpdateServerLatest {
   version: string;
-  buildTime: string;
-  gitCommit: string;
-  nodeVersion: string;
+  buildTime?: string;
+  gitCommit?: string;
+  nodeVersion?: string;
   /** 旧格式（无平台区分）: 直接包含 url/deltas */
   url?: {
-    /** @deprecated 全量包已移除，保留仅为兼容 OSS latest.json 格式 */
-    full: string;
-    manifest: string;
-    checksums: string;
+    full?: string;
+    manifest?: string;
+    checksums?: string;
+    changelog?: string;
   };
+  /** 顶层 checksumsUrl（服务端简化格式，与 url.checksums 二选一） */
+  checksumsUrl?: string;
   /** 旧格式 deltas（无平台区分） */
   deltas?: Array<{
     from: string;
@@ -68,10 +70,19 @@ export interface UpdateServerLatest {
   fullSha256?: string;
   /** 新格式（多平台）: 按平台 key 存储各自的 url/deltas */
   platforms?: Record<string, PlatformUpdateData>;
-  changelog: {
-    "zh-CN": string;
-    "en-US": string;
+  changelog?: {
+    "zh-CN"?: string;
+    "en-US"?: string;
   };
+  /** 是否强制更新（静态文件 latest.json 也可携带此字段） */
+  mandatory?: boolean;
+  /** installer 模式的下载链接（静态文件 latest.json 可携带） */
+  installerUrl?: string;
+}
+
+/** 从 latest 中获取 checksums URL（兼容 url.checksums 和顶层 checksumsUrl） */
+export function resolveChecksumsUrl(latest: UpdateServerLatest): string | undefined {
+  return latest.url?.checksums || latest.checksumsUrl || undefined;
 }
 
 export interface DeltaManifest {
@@ -88,8 +99,8 @@ export interface DeltaManifest {
 /** 服务端 /update/check 响应 data 字段 */
 export interface UpdateCheckResponseData {
   hasUpdate: boolean;
-  /** delta = 增量热更新, installer = 引导重装 */
-  updateType?: "delta" | "installer";
+  /** delta = 增量热更新, full = 全量包热替换, installer = 引导重装 */
+  updateType?: "delta" | "full" | "installer";
   mandatory?: boolean;
   version?: string;
   buildTime?: string;
@@ -122,7 +133,7 @@ export type UpdateReportStatus = "ok" | "error" | "broken" | "redirect_to_instal
 
 export type InstallerUpdateResult = {
   status: "ok" | "error" | "broken" | "up-to-date" | "skipped";
-  mode: "delta" | "none";
+  mode: "delta" | "full" | "none";
   reason?: string;
   fromVersion: string;
   toVersion?: string;
@@ -147,8 +158,8 @@ export type InstallerUpdateProgress = {
 /** checkInstallerUpdate 返回结构 */
 export type InstallerUpdateCheckResult = {
   hasUpdate: boolean;
-  /** delta = 有增量包可热更新, installer = 版本跨度大需重装 */
-  updateType?: "delta" | "installer";
+  /** delta = 有增量包可热更新, full = 全量包热替换, installer = 版本跨度大需重装 */
+  updateType?: "delta" | "full" | "installer";
   /** 目标版本号（无论 delta 还是 installer 场景都会填充） */
   version?: string;
   latest: UpdateServerLatest | null;
@@ -169,7 +180,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // 10 minutes for large downloads
 const UPDATE_API_PATH = "/api/api/v1/update";
 /** 需要备份和回滚的目录列表 */
-const BACKUP_DIRS = ["dist", "skills", "extensions"] as const;
+export const BACKUP_DIRS = ["dist", "skills", "extensions"] as const;
 
 // ─── Core ──────────────────────────────────────────────
 
@@ -392,13 +403,41 @@ async function checkViaStaticFile(
       return { hasUpdate: false, latest: null };
     }
 
+    // S3-1: 从 latest.json 读取 mandatory 和 installerUrl（静态文件也支持强制更新）
+    const mandatory = latest.mandatory === true ? true : undefined;
+    const installerUrl = latest.installerUrl;
+
     // 检查是否有当前版本的增量包
     const hasDelta = latest.deltas.some((d) => d.from === currentVersion);
+    if (hasDelta) {
+      return {
+        hasUpdate: true,
+        updateType: "delta",
+        version: latest.version,
+        latest,
+        mandatory,
+      };
+    }
+
+    // 无增量包，但有全量包 → full 热替换（比重装安装包更轻量）
+    if (latest.url?.full) {
+      return {
+        hasUpdate: true,
+        updateType: "full",
+        version: latest.version,
+        latest,
+        mandatory,
+      };
+    }
+
+    // 既无增量包也无全量包 → 引导重装
     return {
       hasUpdate: true,
-      updateType: hasDelta ? "delta" : "installer",
+      updateType: "installer",
       version: latest.version,
-      latest: hasDelta ? latest : null,
+      latest: null,
+      mandatory,
+      installerUrl,
     };
   } catch (err) {
     return { hasUpdate: false, latest: null, error: String(err) };
@@ -497,6 +536,21 @@ export async function runInstallerUpdate(params: {
       return result;
     }
 
+    // S7-1: 磁盘空间预检（下载 + 解压 + 备份，估算需要 3 倍 delta 大小 + 500MB 备份裕量）
+    const spaceNeeded = delta.size * 3 + 500 * 1024 * 1024;
+    const spaceError = await checkDiskSpace(root, spaceNeeded);
+    if (spaceError) {
+      await rmrf(tempDir);
+      return {
+        status: "error",
+        mode: "delta",
+        reason: spaceError,
+        fromVersion: currentVersion,
+        toVersion,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
     progress?.onDownloadStart?.("delta", delta.size);
 
     // 3. 下载增量包
@@ -531,7 +585,8 @@ export async function runInstallerUpdate(params: {
       const sigOk = await downloadAndVerifySignature(
         downloadPath,
         sigUrl,
-        (url, init) => fetchWithTimeout(url, init ?? {}, DEFAULT_TIMEOUT_MS),
+        ((url: string | URL | Request, init?: RequestInit) =>
+          fetchWithTimeout(String(url), init ?? {}, DEFAULT_TIMEOUT_MS)) as typeof fetch,
         DEFAULT_TIMEOUT_MS,
       );
       if (!sigOk) {
@@ -552,6 +607,9 @@ export async function runInstallerUpdate(params: {
     const extractDir = path.join(tempDir, "extracted");
     await fs.mkdir(extractDir, { recursive: true });
     await extractTarGz(downloadPath, extractDir);
+
+    // 4.5 路径穿越检测：确保解压内容全部在 extractDir 内（含 symlink 检测）
+    await assertExtractedPathsWithinRoot(extractDir);
 
     // 5. 备份当前 dist/, skills/, extensions/, package.json
     await rmrf(backupDir);
@@ -588,8 +646,9 @@ export async function runInstallerUpdate(params: {
 
     // 7. 下载并校验 checksums
     // [MED-09] 无 checksums URL 时必须拒绝更新，防止降级攻击
-    const checksumsOk = latest.url?.checksums
-      ? await verifyChecksums(root, latest.url.checksums)
+    const checksumsUrlResolved = resolveChecksumsUrl(latest);
+    const checksumsOk = checksumsUrlResolved
+      ? await verifyChecksums(root, checksumsUrlResolved)
       : false;
     if (!checksumsOk) {
       // 回滚
@@ -618,6 +677,32 @@ export async function runInstallerUpdate(params: {
     // 8. 检查 package.json 依赖是否变化
     const depsOk = await checkAndInstallDeps(root, backupDir);
 
+    // CR-7: 依赖安装失败时回滚（与 Full 路径一致），防止 MODULE_NOT_FOUND 崩溃
+    if (!depsOk) {
+      progress?.onError?.("依赖安装失败，正在回滚...");
+      await rollback(root, backupDir);
+      await rmrf(tempDir);
+      await rmrf(backupDir);
+      const result: InstallerUpdateResult = {
+        status: "error",
+        mode: "delta",
+        reason:
+          "dependency install failed after delta update, rolled back to prevent MODULE_NOT_FOUND crash",
+        fromVersion: currentVersion,
+        toVersion,
+        filesChanged,
+        durationMs: Date.now() - startedAt,
+      };
+      void reportUpdateResult({
+        updateServerUrl,
+        licenseKey: params.licenseKey,
+        deviceId: params.deviceId,
+        result,
+        reportStatus: "error",
+      });
+      return result;
+    }
+
     // 9. 清理临时目录和备份目录
     await rmrf(tempDir);
     await rmrf(backupDir);
@@ -625,7 +710,6 @@ export async function runInstallerUpdate(params: {
     const result: InstallerUpdateResult = {
       status: "ok",
       mode: "delta",
-      reason: depsOk ? undefined : "update-ok-but-deps-install-failed",
       fromVersion: currentVersion,
       toVersion,
       downloadedBytes,
@@ -657,6 +741,18 @@ export async function runInstallerUpdate(params: {
       // rollback failed
     }
 
+    // S2-1: 清理临时目录（避免残留几十MB的 delta.tar.gz）
+    try {
+      await rmrf(tempDir);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await rmrf(backupDir);
+    } catch {
+      /* ignore */
+    }
+
     const result: InstallerUpdateResult = {
       status: rollbackOk ? "error" : "broken",
       mode: "delta",
@@ -685,8 +781,13 @@ export async function runInstallerUpdate(params: {
  * 则 path.join(root, entry.path) 会穿越到 root 之外。
  */
 function assertWithinRoot(root: string, filePath: string, label: string): void {
-  const resolved = path.resolve(filePath);
-  const resolvedRoot = path.resolve(root);
+  let resolved = path.resolve(filePath);
+  let resolvedRoot = path.resolve(root);
+  // CR-20: Windows 文件系统大小写不敏感，统一为小写比较
+  if (process.platform === "win32") {
+    resolved = resolved.toLowerCase();
+    resolvedRoot = resolvedRoot.toLowerCase();
+  }
   if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) {
     throw new Error(`Path traversal detected in ${label}: ${filePath} escapes root ${root}`);
   }
@@ -791,7 +892,7 @@ async function applyDelta(
 
 // ─── Rollback ──────────────────────────────────────────
 
-async function rollback(root: string, backupDir: string) {
+export async function rollback(root: string, backupDir: string) {
   // Atomic rollback: snapshot current state to a temp dir first so that if
   // copyDir() fails mid-way we can attempt to restore from the snapshot,
   // avoiding a partially-overwritten state.
@@ -852,7 +953,7 @@ async function rollback(root: string, backupDir: string) {
 }
 // ─── Checksums ─────────────────────────────────────────
 
-async function verifyChecksums(root: string, checksumsUrl: string): Promise<boolean> {
+export async function verifyChecksums(root: string, checksumsUrl: string): Promise<boolean> {
   try {
     const res = await fetchWithTimeout(checksumsUrl, {}, DEFAULT_TIMEOUT_MS);
     if (!res.ok) {
@@ -889,9 +990,21 @@ async function verifyChecksums(root: string, checksumsUrl: string): Promise<bool
       }
     }
 
-    const checksums = JSON.parse(checksumsText) as Record<string, string>;
-    const total = Object.keys(checksums).length;
-    if (total === 0) return true;
+    const rawChecksums = JSON.parse(checksumsText) as Record<string, unknown>;
+
+    // S9-1: 兼容两种格式 — 扁平 {path: hash} 和嵌套 {files: {path: hash}, version: ...}
+    const checksums: Record<string, string> =
+      rawChecksums.files &&
+      typeof rawChecksums.files === "object" &&
+      !Array.isArray(rawChecksums.files)
+        ? (rawChecksums.files as Record<string, string>)
+        : (rawChecksums as Record<string, string>);
+
+    // 过滤掉非 hash 值的元数据字段（version, generatedAt 等）
+    const hashEntries = Object.entries(checksums).filter(
+      ([, v]) => typeof v === "string" && /^[0-9a-f]{64}$/i.test(v),
+    );
+    if (hashEntries.length === 0) return true;
 
     let failed = 0;
 
@@ -900,7 +1013,7 @@ async function verifyChecksums(root: string, checksumsUrl: string): Promise<bool
     //   - 其余 → 相对于 root/dist/（兼容旧格式）
     const ROOTED_PREFIXES = ["skills/", "extensions/"];
 
-    for (const [rawRelPath, expectedHash] of Object.entries(checksums)) {
+    for (const [rawRelPath, expectedHash] of hashEntries) {
       // 归一化路径分隔符（防止 Windows 生成的 checksums 含反斜杠）
       const relPath = rawRelPath.replace(/\\/g, "/");
       const isRooted = ROOTED_PREFIXES.some((p) => relPath.startsWith(p));
@@ -928,7 +1041,7 @@ async function verifyChecksums(root: string, checksumsUrl: string): Promise<bool
 
 // ─── Dependency Check ──────────────────────────────────
 
-async function checkAndInstallDeps(root: string, backupDir: string): Promise<boolean> {
+export async function checkAndInstallDeps(root: string, backupDir: string): Promise<boolean> {
   try {
     const newPkg = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf-8"));
     const oldPkgPath = path.join(backupDir, "package.json");
@@ -967,6 +1080,69 @@ async function checkAndInstallDeps(root: string, backupDir: string): Promise<boo
     );
     return false;
   }
+}
+
+// ─── Startup Recovery ─────────────────────────────────
+
+/**
+ * S2-5: 启动时检测残留的更新中间状态并恢复。
+ *
+ * 如果 .update-backup/ 存在，说明上次更新在文件替换过程中被强杀（taskkill /F），
+ * 当前 dist/ 可能处于半更新状态。自动从备份回滚到更新前的状态。
+ *
+ * 如果只有 .update-temp/ 存在（无 backup），说明上次下载中断，直接清理即可。
+ *
+ * 应在 Gateway 启动的早期阶段调用（server.impl.ts），仅对 installer 安装模式生效。
+ */
+export async function recoverFromInterruptedUpdate(root: string): Promise<{
+  recovered: boolean;
+  action?: "rollback" | "cleanup";
+  error?: string;
+}> {
+  const backupDir = path.join(root, BACKUP_DIR);
+  const tempDir = path.join(root, UPDATE_TEMP_DIR);
+
+  const hasBackup = fsSync.existsSync(backupDir);
+  const hasTemp = fsSync.existsSync(tempDir);
+
+  if (!hasBackup && !hasTemp) {
+    return { recovered: false };
+  }
+
+  // .update-backup/ 存在 → 上次更新被中断，需要回滚
+  if (hasBackup) {
+    try {
+      await rollback(root, backupDir);
+      // 清理残留
+      try {
+        await rmrf(backupDir);
+      } catch {
+        /* ignore */
+      }
+      try {
+        await rmrf(tempDir);
+      } catch {
+        /* ignore */
+      }
+      console.warn(
+        "[installer-updater] recovered from interrupted update: rolled back to previous version",
+      );
+      return { recovered: true, action: "rollback" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[installer-updater] failed to recover from interrupted update: ${msg}`);
+      return { recovered: false, error: msg };
+    }
+  }
+
+  // 只有 .update-temp/ → 下载残留，直接清理
+  try {
+    await rmrf(tempDir);
+  } catch {
+    /* ignore */
+  }
+  console.warn("[installer-updater] cleaned up stale update temp directory");
+  return { recovered: true, action: "cleanup" };
 }
 
 // ─── Install Kind Detection ────────────────────────────
@@ -1036,7 +1212,7 @@ export function resolveUpdateServerUrl(root: string): string | null {
   }
 
   // 3. 默认值
-  return "https://dl.obplugins.cn";
+  return "https://www.obplugins.cn";
 }
 
 // ─── Update Report ────────────────────────────────────
@@ -1133,7 +1309,32 @@ export async function reportInstallerRedirect(params: {
 
 // ─── File Utilities ────────────────────────────────────
 
-async function downloadFile(
+/**
+ * S7-1: 检查磁盘剩余空间是否足够执行更新。
+ * 需要空间 = 下载包大小 + 解压空间 + 备份空间（估算为现有 dist 大小）。
+ * 返回 null 表示检查通过或无法检查（不阻塞更新），返回 string 表示空间不足的错误信息。
+ */
+export async function checkDiskSpace(root: string, requiredBytes: number): Promise<string | null> {
+  try {
+    // Node.js 18.15+ 支持 fs.statfs
+    if (typeof (fs as unknown as { statfs: unknown }).statfs !== "function") return null;
+    const stat = await (
+      fs as unknown as { statfs: (p: string) => Promise<{ bavail: bigint; bsize: bigint }> }
+    ).statfs(root);
+    const availableBytes = Number(stat.bavail) * Number(stat.bsize);
+    if (availableBytes < requiredBytes) {
+      const availMB = (availableBytes / (1024 * 1024)).toFixed(0);
+      const reqMB = (requiredBytes / (1024 * 1024)).toFixed(0);
+      return `磁盘空间不足: 需要 ${reqMB}MB，仅剩 ${availMB}MB`;
+    }
+    return null;
+  } catch {
+    // statfs 不可用或失败，不阻塞更新
+    return null;
+  }
+}
+
+export async function downloadFile(
   url: string,
   destPath: string,
   timeoutMs: number,
@@ -1199,7 +1400,7 @@ async function downloadFile(
   return downloaded;
 }
 
-async function extractTarGz(tarPath: string, destDir: string) {
+export async function extractTarGz(tarPath: string, destDir: string) {
   if (process.platform === "win32") {
     // Windows: 尝试 Git 自带的 tar
     const gitTarPaths = [
@@ -1223,7 +1424,7 @@ async function extractTarGz(tarPath: string, destDir: string) {
   }
 }
 
-async function sha256File(filePath: string): Promise<string> {
+export async function sha256File(filePath: string): Promise<string> {
   const hash = crypto.createHash("sha256");
   const stream = createReadStream(filePath);
   for await (const chunk of stream) {
@@ -1232,7 +1433,7 @@ async function sha256File(filePath: string): Promise<string> {
   return hash.digest("hex");
 }
 
-async function rmrf(dir: string) {
+export async function rmrf(dir: string) {
   try {
     await fs.rm(dir, { recursive: true, force: true });
   } catch {
@@ -1240,7 +1441,7 @@ async function rmrf(dir: string) {
   }
 }
 
-async function copyDir(src: string, dest: string) {
+export async function copyDir(src: string, dest: string) {
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
@@ -1250,7 +1451,35 @@ async function copyDir(src: string, dest: string) {
     if (entry.isDirectory()) {
       await copyDir(srcPath, destPath);
     } else {
-      await fs.copyFile(srcPath, destPath);
+      await copyFileWithRetry(srcPath, destPath);
+      // CR-21: 保留文件权限（Linux/macOS 上执行位等）
+      if (process.platform !== "win32") {
+        try {
+          const stat = await fs.stat(srcPath);
+          await fs.chmod(destPath, stat.mode);
+        } catch {
+          /* ignore permission errors */
+        }
+      }
+    }
+  }
+}
+
+/**
+ * S8-1: Windows 上杀毒软件可能在写入后锁定文件（EBUSY/EPERM），
+ * 添加指数退避重试（最多 3 次，间隔 200ms/600ms/1800ms）。
+ */
+async function copyFileWithRetry(src: string, dest: string, maxRetries = 3): Promise<void> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await fs.copyFile(src, dest);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const isRetryable = code === "EBUSY" || code === "EPERM" || code === "EACCES";
+      if (!isRetryable || attempt >= maxRetries) throw err;
+      // 指数退避: 200ms, 600ms, 1800ms
+      await new Promise((r) => setTimeout(r, 200 * Math.pow(3, attempt)));
     }
   }
 }
@@ -1307,4 +1536,37 @@ function compareVersions(a: string, b: string): number {
   if (preA && !preB) return -1; // a 是预发布，b 是正式版
 
   return 0;
+}
+
+/**
+ * Security: assert all extracted paths are within the root directory.
+ * Rejects symlinks and path-traversal (../) entries to prevent zip-slip attacks.
+ */
+export async function assertExtractedPathsWithinRoot(root: string): Promise<void> {
+  const realRoot = await fsRealpathNative(root);
+  const isWin = process.platform === "win32";
+  const normalizedRoot = isWin ? realRoot.toLowerCase() : realRoot;
+  const stack = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`Symlink rejected during extraction: ${fullPath}`);
+      }
+      const realPath = await fsRealpathNative(fullPath);
+      const normalizedPath = isWin ? realPath.toLowerCase() : realPath;
+      if (!normalizedPath.startsWith(normalizedRoot)) {
+        throw new Error(`Path traversal detected: ${fullPath} resolves outside root`);
+      }
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      }
+    }
+  }
+}
+
+async function fsRealpathNative(p: string): Promise<string> {
+  return (await import("node:fs/promises")).realpath(p);
 }

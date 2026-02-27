@@ -6,7 +6,7 @@
 #define MyAppVersion "1.1.6"
 #define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
-#define MyAppUpdateServer "https://dl.obplugins.cn"
+#define MyAppUpdateServer "https://www.obplugins.cn"
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}

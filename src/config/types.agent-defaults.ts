@@ -256,6 +256,19 @@ export type AgentDefaultsConfig = {
   /** Prefer domestic (CN) models in modality routing. When true, domestic models get a score bonus. */
   preferDomestic?: boolean;
   // ===== END =====
+  /** [CN-PATCH:memory-extraction] Deterministic post-reply memory extraction settings. */
+  memoryExtraction?: {
+    enabled?: boolean;
+    provider?: string;
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    timeoutMs?: number;
+    periodicTurnInterval?: number;
+    minMessageLength?: number;
+    longMessageThreshold?: number;
+    keywords?: string[];
+  };
 };
 
 export type AgentCompactionMode = "default" | "safeguard";

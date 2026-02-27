@@ -49,7 +49,7 @@ function httpError(status: number): Response {
   return { ok: false, status, json: async () => ({}) } as Response;
 }
 
-const BASE_URL = "https://dl.obplugins.cn";
+const BASE_URL = "https://www.obplugins.cn";
 const API_CHECK_URL = `${BASE_URL}/api/api/v1/update/check`;
 const API_REPORT_URL = `${BASE_URL}/api/api/v1/update/report`;
 const OSS_LATEST_URL = `${BASE_URL}/releases/latest.json`;
@@ -772,13 +772,13 @@ describe("installer-updater", () => {
       // [MED-09] Production builds ignore env var override to prevent update server hijacking
       vi.stubEnv("OPENCLAWCN_UPDATE_SERVER", "https://custom.example.com");
       const url = resolveUpdateServerUrl("/some/root");
-      expect(url).toBe("https://dl.obplugins.cn");
+      expect(url).toBe("https://www.obplugins.cn");
     });
 
     it("returns default when no env and no install.json", () => {
       vi.stubEnv("OPENCLAWCN_UPDATE_SERVER", "");
       const url = resolveUpdateServerUrl("/nonexistent/path");
-      expect(url).toBe("https://dl.obplugins.cn");
+      expect(url).toBe("https://www.obplugins.cn");
     });
   });
 

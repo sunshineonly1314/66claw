@@ -374,7 +374,7 @@ describe("doctor legacy state migrations", () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it("warns when legacy state dir is empty and target already exists", async () => {
+  it("does nothing when legacy state dir is empty and target already exists", async () => {
     const root = await makeTempRoot();
     const targetDir = path.join(root, ".openclawcn");
     const legacyDir = path.join(root, ".clawdbot");
@@ -386,13 +386,12 @@ describe("doctor legacy state migrations", () => {
       homedir: () => root,
     });
 
+    // [CN-PATCH:migration-p0] Empty legacy dir → merge produces no changes
     expect(result.migrated).toBe(false);
-    expect(result.warnings).toEqual([
-      `State dir migration skipped: target already exists (${targetDir}). Remove or merge manually.`,
-    ]);
+    expect(result.warnings).toEqual([]);
   });
 
-  it("warns when legacy state dir contains non-symlink entries and target already exists", async () => {
+  it("merges when legacy state dir contains entries and target already exists", async () => {
     const root = await makeTempRoot();
     const targetDir = path.join(root, ".openclawcn");
     const legacyDir = path.join(root, ".clawdbot");
@@ -405,10 +404,9 @@ describe("doctor legacy state migrations", () => {
       homedir: () => root,
     });
 
+    // [CN-PATCH:migration-p0] Legacy data is now merged into target instead of skipped
     expect(result.migrated).toBe(false);
-    expect(result.warnings).toEqual([
-      `State dir migration skipped: target already exists (${targetDir}). Remove or merge manually.`,
-    ]);
+    expect(result.warnings).toEqual([]);
   });
 
   it("does not warn when legacy state dir contains nested symlink mirrors", async () => {
@@ -435,7 +433,7 @@ describe("doctor legacy state migrations", () => {
     expect(result.warnings).toEqual([]);
   });
 
-  it("warns when legacy state dir symlink points outside the target tree", async () => {
+  it("handles legacy state dir with symlink pointing outside the target tree", async () => {
     const root = await makeTempRoot();
     const targetDir = path.join(root, ".openclawcn");
     const legacyDir = path.join(root, ".clawdbot");
@@ -452,13 +450,13 @@ describe("doctor legacy state migrations", () => {
       homedir: () => root,
     });
 
+    // [CN-PATCH:migration-p0] Now attempts merge instead of warning — no mergeable
+    // workspace data in this setup, so no changes.
     expect(result.migrated).toBe(false);
-    expect(result.warnings).toEqual([
-      `State dir migration skipped: target already exists (${targetDir}). Remove or merge manually.`,
-    ]);
+    expect(result.warnings).toEqual([]);
   });
 
-  it("warns when legacy state dir contains a broken symlink target", async () => {
+  it("handles legacy state dir with a broken symlink target", async () => {
     const root = await makeTempRoot();
     const targetDir = path.join(root, ".openclawcn");
     const legacyDir = path.join(root, ".clawdbot");
@@ -475,13 +473,13 @@ describe("doctor legacy state migrations", () => {
       homedir: () => root,
     });
 
+    // [CN-PATCH:migration-p0] Merge proceeds — broken symlink in legacy is not
+    // a workspace dir so it's silently skipped.
     expect(result.migrated).toBe(false);
-    expect(result.warnings).toEqual([
-      `State dir migration skipped: target already exists (${targetDir}). Remove or merge manually.`,
-    ]);
+    expect(result.warnings).toEqual([]);
   });
 
-  it("warns when legacy symlink escapes target tree through second-hop symlink", async () => {
+  it("handles legacy symlink escaping target tree through second-hop symlink", async () => {
     const root = await makeTempRoot();
     const targetDir = path.join(root, ".openclawcn");
     const legacyDir = path.join(root, ".clawdbot");
@@ -500,9 +498,8 @@ describe("doctor legacy state migrations", () => {
       homedir: () => root,
     });
 
+    // [CN-PATCH:migration-p0] Merge proceeds — symlink is not a workspace dir.
     expect(result.migrated).toBe(false);
-    expect(result.warnings).toEqual([
-      `State dir migration skipped: target already exists (${targetDir}). Remove or merge manually.`,
-    ]);
+    expect(result.warnings).toEqual([]);
   });
 });

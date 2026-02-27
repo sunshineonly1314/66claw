@@ -48,12 +48,20 @@ import {
 } from "./app-scroll";
 import { connectGateway as connectGatewayInternal } from "./app-gateway";
 import { initQrGuard } from "./qr-guard";
+// OpenClawCN: 预加载内嵌二维码数据（离线备用）
+import { getEmbeddedQrcode } from "./embedded-qrcodes";
+import { setupContextMenuDismiss } from "./views/conversation-sidebar";
 import type { RecordingState } from "./voice/audio-recorder";
 import { AudioRecorder } from "./voice/audio-recorder";
+import { StreamingAudioRecorder, type SilenceDetectionOptions } from "./voice/streaming-audio-recorder";
 import {
   checkAsrAvailability,
+  checkStreamingAsrAvailability,
   dismissMascot,
+  endStreamingAsr,
+  feedStreamingAsr,
   isMascotDismissed,
+  startStreamingAsr,
   transcribeAudio,
 } from "./controllers/voice";
 import {
@@ -100,10 +108,14 @@ import {
   checkBatchSkills as checkBatchSkillsController,
   handleBatchEvent as handleBatchEventController,
 } from "./controllers/skills-batch";
+import { loadAgents } from "./controllers/agents";
+import { loadChatHistory } from "./controllers/chat";
+import { loadTeamProjects } from "./controllers/team-projects";
 
 declare global {
   interface Window {
     __CLAWDBOT_CONTROL_UI_BASE_PATH__?: string;
+    __OPENCLAWCN_CONTROL_UI_BASE_PATH__?: string;
   }
 }
 
@@ -163,19 +175,88 @@ export class ClawdbotApp extends LitElement {
   @state() failoverBanner: import("./app-view-state").AppViewState["failoverBanner"] = null;
   // OpenClawCN: 聊天模型是否已配置（text capability active）
   @state() chatModelConfigured: boolean | null = null;
-  // Voice mascot state
+  // OpenClawCN: 必要 provider（硅基流动）是否已配置
+  @state() essentialProviderConfigured: boolean | null = null;
+  // OpenClawCN: 当前已激活的能力列表（用于 intent-hint 判断缺失能力）
+  @state() activeCapabilities: string[] = [];
+  // OpenClawCN: 生图模式开关
+  @state() imageGenMode = false;
+  // Voice / ASR state
   @state() voiceAsrAvailable: boolean | null = null;
+  @state() voiceStreamingAsrAvailable = false;
   @state() voiceMascotDismissed = isMascotDismissed();
   @state() voiceRecordingState: RecordingState = "idle";
   @state() voiceError: string | null = null;
+  @state() voiceMode = false;
+  @state() voiceWakeListening = false;
+  @state() voiceVolumeLevel = 0;
+  @state() voiceStreamSessionId: string | null = null;
+  @state() voicePartialText = "";
   private audioRecorder: AudioRecorder | null = null;
+  private streamingRecorder: StreamingAudioRecorder | null = null;
   private voiceErrorTimer: ReturnType<typeof setTimeout> | null = null;
+  private _asrHealthTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True when handleSendChat() is stopping a recording — prevents double-send in voice mode. */
+  private _sendingStopsRecording = false;
+  /** Set by handleVoiceStopRecording to tell batch onComplete to auto-send. */
+  private _batchAutoSend = false;
+  private _ttsAudio: HTMLAudioElement | null = null;
+  /** Streaming TTS: audio queue for chunk-by-chunk playback. */
+  private _ttsQueue: Array<{ base64: string; format: string }> = [];
+  /** Whether a TTS chunk is currently being played from the queue. */
+  private _ttsQueuePlaying = false;
+  /** Whether the final tts.chunk (isFinal=true) has been received for the current run. */
+  private _ttsQueueFinalReceived = false;
+
+  // OpenClawCN: Screen Share
+  @state() screenShareActive = false;
+  @state() screenShareFrameCount = 0;
+  @state() screenShareModelName: string | null = null;
+  /** Latest captured frame — plain property, not @state(), to avoid re-rendering on every 3s frame. */
+  screenShareLatestFrame: string | null = null;
+  private screenLive: import("./screen/screen-live").ScreenLive | null = null;
+
+  // OpenClawCN: Orchestrator (智能组队)
+  @state() orchestratorOpen = false;
+  @state() orchestratorState: import("../../../extensions/orchestrator/src/ui/orchestrator-state").OrchestratorState | null = null;
+
+  // OpenClawCN: Update system
+  @state() updateAvailable: import("./views/update-dialog").UpdateAvailableInfo | null = null;
+  @state() updateDialogOpen = false;
+  @state() updateExecuting = false;
+  @state() updateProgress: import("./views/update-dialog").UpdateProgress | null = null;
+  @state() updateResult: import("./views/update-dialog").UpdateResult | null = null;
+
+  // OpenClawCN: Conversation sidebar
+  @state() convSidebarOpen = false;
+  @state() convSidebarAssets: import("./views/conversation-sidebar").DigitalAsset[] = [];
+  @state() convSidebarAssetsLoading = false;
+  @state() convSidebarAssetsSessionKey = "";
+
+  // OpenClawCN: Image gallery overlay
+  @state() imageGalleryOpen = false;
+  @state() imageGalleryImages: Array<{ url: string; prompt?: string; model?: string; timestamp?: number }> = [];
 
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
   @state() sidebarContent: string | null = null;
   @state() sidebarError: string | null = null;
   @state() splitRatio = this.settings.splitRatio;
+
+  // OpenClawCN: Networking Center
+  @state() networkTab: import("./app-view-state.js").NetworkTab = "devices";
+  @state() networkStatusLoading = false;
+  @state() networkStatus: import("./app-view-state.js").NetworkCenterStatus | null = null;
+  @state() networkStatusError: string | null = null;
+  @state() networkDiscoveryLoading = false;
+  @state() networkDiscoveredGateways: import("./app-view-state.js").NetworkDiscoveredGateway[] = [];
+  @state() networkDiscoveryError: string | null = null;
+  @state() networkProbeLoading = false;
+  @state() networkProbeResult: import("./app-view-state.js").NetworkProbeResult | null = null;
+  @state() networkInterfacesLoading = false;
+  @state() networkInterfaces: import("./app-view-state.js").NetworkInterfaceInfo[] = [];
+  @state() networkConfigureLoading = false;
+  @state() networkConfigureError: string | null = null;
 
   @state() nodesLoading = false;
   @state() nodes: Array<Record<string, unknown>> = [];
@@ -345,6 +426,20 @@ export class ClawdbotApp extends LitElement {
   @state() agentSkillsError: string | null = null;
   @state() agentSkillsReport: SkillStatusReport | null = null;
   @state() agentSkillsAgentId: string | null = null;
+  @state() dmScopeStatus: import("./app-view-state").AppViewState["dmScopeStatus"] = null;
+
+  // Team Projects
+  @state() teamProjectsLoading = false;
+  @state() teamProjectsList: import("./types").TeamProjectSummary[] | null = null;
+  @state() teamProjectsError: string | null = null;
+  @state() teamProjectSelectedId: string | null = null;
+  @state() teamProjectDetail: import("./types").TeamProjectDetail | null = null;
+  @state() teamProjectDetailLoading = false;
+  @state() teamProjectHealth: import("./types").TeamProjectHealthResult | null = null;
+  @state() teamProjectStats: import("./types").TeamProjectStatsResult | null = null;
+  @state() teamProjectMemory: import("./types").TeamSharedMemoryEntry[] | null = null;
+  @state() teamProjectTab: "members" | "stats" | "settings" | "memory" = "members";
+  @state() teamProjectBusy = false;
 
   @state() sessionsLoading = false;
   @state() sessionsResult: SessionsListResult | null = null;
@@ -607,6 +702,11 @@ export class ClawdbotApp extends LitElement {
   }
 
   private _silentNewHandler: (() => void) | null = null;
+  private _imageGenRegenerateHandler: ((e: Event) => void) | null = null;
+  private _videoGenRegenerateHandler: ((e: Event) => void) | null = null;
+  private _contextMenuDismissCleanup: (() => void) | null = null;
+  private _orchNavigateHandler: ((e: Event) => void) | null = null;
+  private _orchAgentsChangedHandler: (() => void) | null = null;
 
   private handleDocsKeydown = (e: KeyboardEvent) => {
     // ⌘K or Ctrl+K to open docs search
@@ -635,6 +735,8 @@ export class ClawdbotApp extends LitElement {
     initCodeBlockCopyHandlers();
     // 初始化 QR 码截屏保护
     initQrGuard();
+    // OpenClawCN: 全局点击关闭会话侧栏右键菜单
+    this._contextMenuDismissCleanup = setupContextMenuDismiss(() => this.requestUpdate());
     // 模型切换后静默清空聊天 UI（服务端 session 不动，modelOverride 已由 updateSessionModelOverrides 更新）
     this._silentNewHandler = () => {
       this.chatMessages = [];
@@ -642,6 +744,47 @@ export class ClawdbotApp extends LitElement {
       this.chatRunId = null;
     };
     globalThis.addEventListener("openclawcn:silent-new", this._silentNewHandler);
+    // OpenClawCN: 图片重新生成事件
+    this._imageGenRegenerateHandler = (e: Event) => {
+      const prompt = (e as CustomEvent).detail?.prompt;
+      if (typeof prompt === "string" && prompt.trim()) {
+        void this.handleSendChat(`[生图模式] 请使用 image_gen 工具，根据以下描述生成图片：${prompt.trim()}`);
+      }
+    };
+    document.addEventListener("image-gen-regenerate", this._imageGenRegenerateHandler);
+    // OpenClawCN: 视频重新生成事件
+    this._videoGenRegenerateHandler = (e: Event) => {
+      const prompt = (e as CustomEvent).detail?.prompt;
+      if (typeof prompt === "string" && prompt.trim()) {
+        void this.handleSendChat(`[视频生成模式] 请使用 video_gen 工具，根据以下描述生成视频：${prompt.trim()}`);
+      }
+    };
+    document.addEventListener("video-gen-regenerate", this._videoGenRegenerateHandler);
+    // OpenClawCN: 智能组队 — 部署完成后导航到 agent 聊天
+    this._orchNavigateHandler = (e: Event) => {
+      const agentId = (e as CustomEvent).detail?.agentId;
+      if (typeof agentId === "string" && agentId) {
+        const key = `agent:${agentId}:main`;
+        this.sessionKey = key;
+        this.chatMessages = [];
+        this.chatStream = null;
+        this.chatRunId = null;
+        this.chatQueue = [];
+        this.resetToolStream();
+        this.resetChatScroll();
+        this.applySettings({ ...this.settings, sessionKey: key, lastActiveSessionKey: key });
+        void this.loadAssistantIdentity();
+        void loadChatHistory(this as any);
+        this.setTab("chat");
+      }
+    };
+    globalThis.addEventListener("orch:navigate-to-agent", this._orchNavigateHandler);
+    // OpenClawCN: 智能组队 — 部署完成后刷新 agent 列表
+    this._orchAgentsChangedHandler = () => {
+      void loadAgents(this as any);
+      void loadTeamProjects(this as any);
+    };
+    globalThis.addEventListener("orch:agents-changed", this._orchAgentsChangedHandler);
     // HTTP fallback: 立即获取运维二维码（不依赖 WebSocket 连接）
     this._fetchFallbackQrcode();
   }
@@ -649,12 +792,17 @@ export class ClawdbotApp extends LitElement {
   private async _fetchFallbackQrcode() {
     try {
       const resp = await fetch("/api/support/qrcode");
-      if (!resp.ok) return;
+      if (!resp.ok) throw new Error("not ok");
       const json = (await resp.json()) as { ok?: boolean; qrcode?: { base64: string; groupName: string } | null };
       if (json?.ok && json.qrcode) {
         this.fallbackQrcode = json.qrcode;
+      } else {
+        this.fallbackQrcode = getEmbeddedQrcode("test");
       }
-    } catch { /* silent — gateway may not be up yet */ }
+    } catch {
+      // API 不可用时使用内嵌二维码
+      this.fallbackQrcode = getEmbeddedQrcode("test");
+    }
   }
 
   protected firstUpdated() {
@@ -666,6 +814,22 @@ export class ClawdbotApp extends LitElement {
     document.removeEventListener("keydown", this.handleDocsKeydown);
     if (this._silentNewHandler) {
       globalThis.removeEventListener("openclawcn:silent-new", this._silentNewHandler);
+    }
+    if (this._imageGenRegenerateHandler) {
+      document.removeEventListener("image-gen-regenerate", this._imageGenRegenerateHandler);
+    }
+    if (this._videoGenRegenerateHandler) {
+      document.removeEventListener("video-gen-regenerate", this._videoGenRegenerateHandler);
+    }
+    if (this._orchNavigateHandler) {
+      globalThis.removeEventListener("orch:navigate-to-agent", this._orchNavigateHandler);
+    }
+    if (this._orchAgentsChangedHandler) {
+      globalThis.removeEventListener("orch:agents-changed", this._orchAgentsChangedHandler);
+    }
+    if (this._contextMenuDismissCleanup) {
+      this._contextMenuDismissCleanup();
+      this._contextMenuDismissCleanup = null;
     }
     if (this.batchPillAutoDismissTimer != null) {
       window.clearTimeout(this.batchPillAutoDismissTimer);
@@ -911,6 +1075,48 @@ export class ClawdbotApp extends LitElement {
     await this.setSecurityMode("trust", true);
   }
 
+  async handleRunUpdate() {
+    if (!this.client || !this.connected) return;
+    if (this.updateExecuting) return; // CR-8: 防止双击
+    this.updateExecuting = true;
+    this.updateProgress = null;
+    this.updateResult = null;
+    try {
+      const res = await this.client.request("update.execute", {}) as {
+        ok?: boolean;
+        status?: string;
+        error?: string;
+        installerUrl?: string;
+        version?: string;
+      } | undefined;
+      if (!res) {
+        // CR-4: 空响应时重置状态，防止对话框永久卡在进度态
+        this.updateResult = { ok: false, error: "empty response from server" };
+        this.updateExecuting = false;
+        return;
+      }
+      // installer-redirect: set result directly so dialog shows download link
+      if (res.status === "installer-redirect") {
+        this.updateResult = {
+          ok: true,
+          status: "installer-redirect",
+          installerUrl: res.installerUrl,
+          version: res.version,
+        };
+        this.updateExecuting = false;
+        return;
+      }
+      // delta/full failure (success is driven by update.progress broadcast)
+      if (!res.ok) {
+        this.updateResult = { ok: false, error: res.error };
+        this.updateExecuting = false;
+      }
+    } catch (err) {
+      this.updateResult = { ok: false, error: String(err) };
+      this.updateExecuting = false;
+    }
+  }
+
   async loadCron() {
     await loadCronInternal(
       this as unknown as Parameters<typeof loadCronInternal>[0],
@@ -934,9 +1140,26 @@ export class ClawdbotApp extends LitElement {
     messageOverride?: string,
     opts?: Parameters<typeof handleSendChatInternal>[2],
   ) {
+    // If voice recording is active, stop it first so we get the final text.
+    // Set _sendingStopsRecording to prevent handleVoiceStopRecording from
+    // auto-sending in voice-mode (we'll send here after stop completes).
+    if (this.voiceRecordingState === "recording" && this.streamingRecorder) {
+      this._sendingStopsRecording = true;
+      await this.handleVoiceStopRecording();
+      this._sendingStopsRecording = false;
+    }
+    // 生图模式：为用户消息添加生图指令前缀，引导 LLM 调用 image_gen tool
+    let msg = messageOverride;
+    if (this.imageGenMode && !msg) {
+      const draft = this.chatMessage?.trim();
+      if (draft) {
+        msg = `[生图模式] 请使用 image_gen 工具，根据以下描述生成图片：${draft}`;
+        this.chatMessage = "";
+      }
+    }
     await handleSendChatInternal(
       this as unknown as Parameters<typeof handleSendChatInternal>[0],
-      messageOverride,
+      msg,
       opts,
     );
   }
@@ -1143,13 +1366,96 @@ export class ClawdbotApp extends LitElement {
 
   async checkVoiceCapabilities() {
     if (!this.client) return;
-    this.voiceAsrAvailable = await checkAsrAvailability(this.client);
+    const [batchAvail, streamAvail] = await Promise.all([
+      checkAsrAvailability(this.client),
+      checkStreamingAsrAvailability(this.client),
+    ]);
+    this.voiceAsrAvailable = batchAvail || streamAvail;
+    this.voiceStreamingAsrAvailable = streamAvail;
   }
 
+  /**
+   * Start voice recording. Prefers streaming ASR (real-time partial text)
+   * when available, falls back to batch recording + asr.transcribe.
+   */
   async handleVoiceStartRecording() {
     if (!this.client) return;
+    if (this.voiceRecordingState !== "idle") return;
     this.setVoiceError(null);
-    // Dispose previous recorder to release mic tracks if still held
+
+    // Lock state immediately to prevent duplicate calls while awaiting RPC
+    this.voiceRecordingState = "recording";
+
+    // Try streaming ASR first
+    if (this.voiceStreamingAsrAvailable) {
+      const startResult = await startStreamingAsr(this.client);
+      if (startResult) {
+        this._startStreamingRecording(startResult.sessionId);
+        return;
+      }
+      // Streaming start failed — fall through to batch
+    }
+
+    // Fallback: batch recording + asr.transcribe
+    this.voiceRecordingState = "idle"; // reset so AudioRecorder's onStateChange can take over
+    this._startBatchRecording();
+  }
+
+  /** Streaming path: StreamingAudioRecorder + asr.stream.feed + asr.partial events. */
+  private _startStreamingRecording(sessionId: string) {
+    this.streamingRecorder?.dispose();
+    this.voiceStreamSessionId = sessionId;
+    this.voicePartialText = "";
+    this.voiceVolumeLevel = 0;
+
+    // In voice mode, enable silence detection to auto-stop when user stops speaking
+    const silenceDetection: SilenceDetectionOptions | undefined = this.voiceMode
+      ? { threshold: 0.05, silenceDurationMs: 2000, minRecordingMs: 1200 }
+      : undefined;
+
+    this.streamingRecorder = new StreamingAudioRecorder({
+      onStateChange: (s) => {
+        if (s === "recording" || s === "idle" || s === "requesting") {
+          this.voiceRecordingState = s === "requesting" ? "recording" : s;
+        }
+        // "processing" is set explicitly in handleVoiceStopRecording
+      },
+      onError: (err) => {
+        this.setVoiceError(err);
+        this._cleanupStreamingSession();
+        this.voiceRecordingState = "idle";
+      },
+      onVolume: (v) => { this.voiceVolumeLevel = v; },
+      onChunk: (pcmBase64) => {
+        if (this.client && this.voiceStreamSessionId) {
+          void feedStreamingAsr(this.client, this.voiceStreamSessionId, pcmBase64);
+        }
+      },
+      onRecordingEnd: () => {
+        // Triggered by silence detection, auto-stop (30s timer), or manual stop.
+        // Run the full stop flow to send asr.stream.end and get the final text.
+        // Auto-send since the user was actively recording.
+        if (this.voiceStreamSessionId) {
+          void this.handleVoiceStopRecording({ autoSend: true });
+        }
+      },
+    }, undefined, silenceDetection);
+
+    void this.streamingRecorder.start();
+
+    // ASR health watchdog: if no asr.partial arrives within 8s, the backend is non-functional
+    this._clearAsrHealthTimer();
+    this._asrHealthTimer = setTimeout(() => {
+      if (this.voiceRecordingState === "recording" && this.voiceStreamSessionId && !this.voicePartialText) {
+        console.warn("[asr] health watchdog: no partial text received after 8s — ASR backend may be non-functional");
+        this.setVoiceError("voice.error.asrNoResponse");
+        // Don't stop recording — user may still want to end manually and get final text
+      }
+    }, 8000);
+  }
+
+  /** Batch fallback: original AudioRecorder + asr.transcribe. */
+  private _startBatchRecording() {
     this.audioRecorder?.dispose();
     this.audioRecorder = new AudioRecorder({
       onStateChange: (s) => { this.voiceRecordingState = s; },
@@ -1160,27 +1466,314 @@ export class ClawdbotApp extends LitElement {
         try {
           const result = await transcribeAudio(this.client, wavBase64);
           if ("text" in result && result.text) {
-            this.chatMessage = (this.chatMessage ? `${this.chatMessage} ` : "") + result.text;
+            if (this.voiceMode || this._batchAutoSend) {
+              this._batchAutoSend = false;
+              await this.handleSendChat(result.text, { voiceInput: true, voiceMode: this.voiceMode });
+            } else {
+              this.chatMessage = (this.chatMessage ? `${this.chatMessage} ` : "") + result.text;
+            }
           } else if ("error" in result) {
             this.setVoiceError(result.error);
           }
         } catch {
           this.setVoiceError("voice.error.transcriptionFailed");
         } finally {
+          this._batchAutoSend = false;
           this.voiceRecordingState = "idle";
         }
       },
     });
-    await this.audioRecorder.start();
+    void this.audioRecorder.start();
   }
 
-  handleVoiceStopRecording() {
+  /**
+   * @param opts.autoSend — if true, auto-send the final text after recording stops.
+   *   Mic-button click passes true; textarea-edit-triggered stop passes false.
+   */
+  private _voiceStopInProgress = false;
+
+  /**
+   * @param opts.autoSend — if true, auto-send the final text after recording stops.
+   *   Mic-button click passes true; textarea-edit-triggered stop passes false.
+   */
+  async handleVoiceStopRecording(opts?: { autoSend?: boolean }) {
+    const shouldAutoSend = opts?.autoSend ?? false;
+
+    // Streaming path: stop recorder, then get final text from server
+    if (this.streamingRecorder && this.voiceStreamSessionId) {
+      // Guard against re-entrant calls: streamingRecorder.stop() fires
+      // onRecordingEnd synchronously, which would call us again.
+      if (this._voiceStopInProgress) return;
+      this._voiceStopInProgress = true;
+
+      // Clear sessionId BEFORE stop() to prevent onRecordingEnd re-entry
+      const sessionId = this.voiceStreamSessionId;
+      this.voiceStreamSessionId = null;
+
+      this.streamingRecorder.stop();
+      this.voiceRecordingState = "processing";
+      this.voiceVolumeLevel = 0;
+      this._clearAsrHealthTimer();
+
+      // Use voicePartialText (clean, without "..." suffix) as fallback
+      let finalText = this.voicePartialText || this.chatMessage?.replace(/\.{3}$/, "") || "";
+
+      if (this.client) {
+        try {
+          const result = await endStreamingAsr(this.client, sessionId);
+          if (result?.text) {
+            finalText = result.text;
+            // Immediately show complete text in input box
+            this.chatMessage = finalText;
+          }
+        } catch {
+          // keep whatever partial text we already have
+        }
+      }
+
+      // Auto-send: in voice-mode always, or when mic button was explicitly clicked.
+      // But not if handleSendChat() initiated this stop (it will send for us).
+      // Filter out noise: require at least 2 meaningful characters (Chinese/letters)
+      const meaningfulChars = finalText.replace(/[\s.。,，!！?？…·、\-_]+/g, "");
+      const isSubstantial = meaningfulChars.length >= 2;
+      if (finalText && isSubstantial && !this._sendingStopsRecording && (this.voiceMode || shouldAutoSend)) {
+        this.chatMessage = "";
+        void this.handleSendChat(finalText, { voiceInput: true, voiceMode: this.voiceMode });
+      } else if (!shouldAutoSend || !isSubstantial) {
+        // Not auto-sending: put text in input for user to edit
+        this.chatMessage = finalText;
+      }
+
+      this._cleanupStreamingSession();
+      this.voiceRecordingState = "idle";
+      this._voiceStopInProgress = false;
+      if (!shouldAutoSend) this._focusChatInput();
+      return;
+    }
+
+    // Batch path: stop triggers processRecording → onComplete
+    if (shouldAutoSend) this._batchAutoSend = true;
     this.audioRecorder?.stop();
+  }
+
+  private _clearAsrHealthTimer() {
+    if (this._asrHealthTimer) { clearTimeout(this._asrHealthTimer); this._asrHealthTimer = null; }
+  }
+
+  /** Focus the chat textarea after voice input completes so the user can edit/send. */
+  private _focusChatInput() {
+    requestAnimationFrame(() => {
+      const ta = this.shadowRoot?.querySelector<HTMLTextAreaElement>(".chat-compose textarea") ??
+                 this.shadowRoot?.querySelector<HTMLTextAreaElement>("textarea");
+      if (ta) {
+        ta.focus();
+        // Place cursor at the end of text
+        ta.selectionStart = ta.selectionEnd = ta.value.length;
+      }
+    });
+  }
+
+  private _cleanupStreamingSession() {
+    this._clearAsrHealthTimer();
+    this.voiceStreamSessionId = null;
+    this.voicePartialText = "";
+    this.voiceVolumeLevel = 0;
+    this.streamingRecorder?.dispose();
+    this.streamingRecorder = null;
   }
 
   handleVoiceMascotDismiss() {
     dismissMascot();
     this.voiceMascotDismissed = true;
+  }
+
+  // ── Voice loop & wake word ────────────────────────────────────────────
+
+  async toggleVoiceMode() {
+    if (this.voiceMode) {
+      // Exit voice mode
+      this.voiceMode = false;
+      this._stopTtsPlayback();
+      // Clean up both recorder types
+      this._cleanupStreamingSession();
+      this.audioRecorder?.stop();
+      this.audioRecorder?.dispose();
+      this.audioRecorder = null;
+      this.voiceRecordingState = "idle";
+      // Resume KWS if it was active before entering voice mode
+      if (this.voiceWakeListening) {
+        void this.startWakeWordListening();
+      }
+    } else {
+      // Enter voice mode — pause KWS first (mic conflict)
+      const wasListening = this.voiceWakeListening;
+      if (wasListening) {
+        await this.stopWakeWordListening();
+        // Preserve the flag so KWS resumes when voice mode exits
+        this.voiceWakeListening = true;
+      }
+      this.voiceMode = true;
+      await this.handleVoiceStartRecording();
+    }
+  }
+
+  // ── Screen Share ──────────────────────────────────────────────────────
+
+  private _screenShareToggling = false;
+
+  async toggleScreenShare() {
+    if (this._screenShareToggling) return; // prevent double-click race
+    this._screenShareToggling = true;
+    try {
+      if (this.screenShareActive) {
+        // Stop screen sharing
+        await this.screenLive?.stop();
+        this.screenLive = null;
+        this.screenShareActive = false;
+        this.screenShareFrameCount = 0;
+        this.screenShareLatestFrame = null;
+        this.screenShareModelName = null;
+      } else {
+        // Start screen sharing
+        const { ScreenLive } = await import("./screen/screen-live.js");
+        this.screenLive = new ScreenLive({
+          onStateChange: (state) => {
+            this.screenShareActive = state === "active";
+            if (state === "idle" || state === "error") {
+              this.screenShareActive = false;
+            }
+            this.requestUpdate();
+          },
+          onFrame: (frameBase64) => {
+            this.screenShareLatestFrame = frameBase64;
+            this.screenShareFrameCount++; // @state() triggers re-render for frame count display
+          },
+          onError: (error) => {
+            console.warn("[ScreenShare] Error:", error);
+            this.screenShareActive = false;
+            this.requestUpdate();
+          },
+        });
+        await this.screenLive.start();
+        // If user cancelled the dialog or an error occurred, clean up
+        if (this.screenLive.getState() !== "active") {
+          this.screenLive = null;
+        }
+      }
+    } catch (e) {
+      console.error("[ScreenShare] toggleScreenShare failed:", e);
+      this.screenShareActive = false;
+      this.screenLive = null;
+      this.requestUpdate();
+    } finally {
+      this._screenShareToggling = false;
+    }
+  }
+
+  playTtsAudio(base64: string, format: string) {
+    this._stopTtsPlayback();
+    const mime = format === "mp3" ? "audio/mpeg" : format === "opus" ? "audio/opus" : "audio/wav";
+    const audio = new Audio(`data:${mime};base64,${base64}`);
+    this._ttsAudio = audio;
+    audio.onended = () => {
+      this._ttsAudio = null;
+      if (this.voiceMode) {
+        void this.handleVoiceStartRecording();
+      }
+    };
+    audio.onerror = () => {
+      this._ttsAudio = null;
+      if (this.voiceMode) {
+        void this.handleVoiceStartRecording();
+      }
+    };
+    audio.play().catch(() => {
+      this._ttsAudio = null;
+      if (this.voiceMode) {
+        void this.handleVoiceStartRecording();
+      }
+    });
+  }
+
+  private _stopTtsPlayback() {
+    if (this._ttsAudio) {
+      this._ttsAudio.onended = null;
+      this._ttsAudio.onerror = null;
+      this._ttsAudio.pause();
+      this._ttsAudio = null;
+    }
+    // Also clear streaming queue
+    this._ttsQueue = [];
+    this._ttsQueuePlaying = false;
+    this._ttsQueueFinalReceived = false;
+  }
+
+  /**
+   * Enqueue a TTS audio chunk for streaming playback.
+   * Called by the gateway event handler when a tts.chunk event arrives.
+   */
+  enqueueTtsChunk(base64: string, format: string) {
+    this._ttsQueue.push({ base64, format });
+    if (!this._ttsQueuePlaying) {
+      this._playNextTtsChunk();
+    }
+  }
+
+  /**
+   * Mark that the final tts.chunk has been received (no more audio coming).
+   */
+  markTtsStreamComplete() {
+    this._ttsQueueFinalReceived = true;
+    // If queue is empty and nothing is playing, trigger voice recording
+    if (!this._ttsQueuePlaying && this._ttsQueue.length === 0) {
+      this._onTtsStreamDone();
+    }
+  }
+
+  private _playNextTtsChunk() {
+    const next = this._ttsQueue.shift();
+    if (!next) {
+      this._ttsQueuePlaying = false;
+      if (this._ttsQueueFinalReceived) {
+        this._onTtsStreamDone();
+      }
+      return;
+    }
+
+    this._ttsQueuePlaying = true;
+    const mime = next.format === "mp3" ? "audio/mpeg" : next.format === "opus" ? "audio/opus" : "audio/wav";
+    const audio = new Audio(`data:${mime};base64,${next.base64}`);
+    this._ttsAudio = audio;
+
+    audio.onended = () => {
+      this._ttsAudio = null;
+      this._playNextTtsChunk();
+    };
+    audio.onerror = () => {
+      this._ttsAudio = null;
+      this._playNextTtsChunk();
+    };
+    audio.play().catch(() => {
+      this._ttsAudio = null;
+      this._playNextTtsChunk();
+    });
+  }
+
+  private _onTtsStreamDone() {
+    this._ttsQueueFinalReceived = false;
+    if (this.voiceMode) {
+      void this.handleVoiceStartRecording();
+    }
+  }
+
+  async startWakeWordListening() {
+    const { startWakeWordListening } = await import("./controllers/wake-word.ts");
+    await startWakeWordListening(this as unknown as import("./controllers/wake-word.ts").WakeWordHost);
+  }
+
+  async stopWakeWordListening() {
+    const { stopWakeWordListening } = await import("./controllers/wake-word.ts");
+    await stopWakeWordListening(this as unknown as import("./controllers/wake-word.ts").WakeWordHost);
   }
 
   // 关闭适配公告弹框（永久记住）
@@ -1441,3 +2034,6 @@ export class ClawdbotApp extends LitElement {
     return renderApp(this);
   }
 }
+
+/** Alias kept for CN compatibility. */
+export type OpenClawCNApp = ClawdbotApp;

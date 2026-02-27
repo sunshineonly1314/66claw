@@ -1,7 +1,7 @@
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::{platform, sidecar, tray};
+use crate::{offline_diag, platform, repair, sidecar, tray};
 
 #[derive(Debug, Serialize)]
 pub struct GatewayInfo {
@@ -103,6 +103,62 @@ pub async fn check_needs_setup() -> Result<bool, String> {
     Ok(true)
 }
 
+/// Show the screen-share border overlay (transparent, always-on-top, click-through).
+#[tauri::command]
+pub async fn show_screen_border(app: AppHandle) -> Result<String, String> {
+    // If overlay already exists, just return
+    if app.get_webview_window("screen-share-border").is_some() {
+        return Ok("already visible".to_string());
+    }
+
+    // Get primary monitor size in logical pixels (accounts for HiDPI scaling).
+    // monitor.size() returns PhysicalSize but inner_size() expects logical pixels.
+    let (width, height) = if let Some(monitor) = app
+        .get_webview_window("main")
+        .and_then(|w| w.current_monitor().ok().flatten())
+    {
+        let size = monitor.size();
+        let scale = monitor.scale_factor();
+        (size.width as f64 / scale, size.height as f64 / scale)
+    } else {
+        (1920.0, 1080.0)
+    };
+
+    let overlay = WebviewWindowBuilder::new(
+        &app,
+        "screen-share-border",
+        WebviewUrl::App("screen-border.html".into()),
+    )
+    .title("")
+    .inner_size(width, height)
+    .position(0.0, 0.0)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .build()
+    .map_err(|e| format!("Failed to create overlay: {}", e))?;
+
+    // Make the window click-through so users can interact with everything underneath
+    overlay
+        .set_ignore_cursor_events(true)
+        .map_err(|e| format!("Failed to set click-through: {}", e))?;
+
+    Ok("ok".to_string())
+}
+
+/// Hide the screen-share border overlay.
+#[tauri::command]
+pub async fn hide_screen_border(app: AppHandle) -> Result<String, String> {
+    if let Some(overlay) = app.get_webview_window("screen-share-border") {
+        overlay
+            .close()
+            .map_err(|e| format!("Failed to close overlay: {}", e))?;
+    }
+    Ok("ok".to_string())
+}
+
 /// Open the sidecar log file in the system file explorer (with file selected).
 #[tauri::command]
 pub async fn open_logs_directory() -> Result<String, String> {
@@ -113,4 +169,95 @@ pub async fn open_logs_directory() -> Result<String, String> {
         .map_err(|e| format!("打开日志文件失败: {}", e))?;
 
     Ok(format!("已打开日志: {}", log_path.display()))
+}
+
+// ── Repair Assistant IPC commands ───────────────────────────────────────────
+
+/// Run all offline diagnostic checks and return results.
+#[tauri::command]
+pub async fn repair_run_diagnostics() -> Result<repair::diagnostics::DiagnosticResult, String> {
+    Ok(repair::diagnostics::run_all_checks())
+}
+
+/// Discover locally available AI providers for the repair chat.
+#[tauri::command]
+pub async fn repair_discover_providers() -> Result<Vec<repair::provider_discovery::ProviderInfo>, String> {
+    Ok(repair::provider_discovery::discover_and_cache())
+}
+
+/// Send a message to the AI repair assistant (streaming via events).
+#[tauri::command]
+pub async fn repair_ai_chat(
+    app: AppHandle,
+    message: String,
+    context: String,
+    provider_id: String,
+) -> Result<(), String> {
+    let provider = repair::provider_discovery::get_cached_provider(&provider_id)
+        .ok_or_else(|| format!("找不到 AI provider: {}", provider_id))?;
+    repair::ai_client::stream_chat(&app, &provider, &message, &context).await
+}
+
+/// Apply an automated repair fix by its ID.
+#[tauri::command]
+pub async fn repair_apply_fix(app: AppHandle, fix_id: String) -> Result<repair::repair_actions::FixResult, String> {
+    Ok(repair::repair_actions::apply_fix(&app, &fix_id))
+}
+
+/// Upload crash logs to the remote support server.
+#[tauri::command]
+pub async fn upload_crash_logs(description: String) -> Result<offline_diag::UploadResult, String> {
+    offline_diag::upload_crash_logs(description).await
+}
+
+/// Check SSH server status on this machine.
+#[tauri::command]
+pub async fn repair_ssh_check() -> Result<repair::ssh_setup::SshStatus, String> {
+    Ok(repair::ssh_setup::check_ssh())
+}
+
+/// Enable/install SSH server on this machine.
+#[tauri::command]
+pub async fn repair_ssh_enable() -> Result<(), String> {
+    repair::ssh_setup::enable_ssh()
+}
+
+/// Start a remote repair tunnel (frpc + SSH key injection).
+#[tauri::command]
+pub async fn repair_tunnel_start(
+    session_id: String,
+    public_key: String,
+    local_ssh_port: Option<u16>,
+) -> Result<repair::remote_tunnel::TunnelInfo, String> {
+    // Inject the repair session's public key into authorized_keys
+    repair::ssh_setup::inject_authorized_key(&public_key, &session_id)?;
+
+    // Determine SSH port (use provided or auto-detect)
+    let ssh_port = local_ssh_port.unwrap_or_else(|| {
+        let status = repair::ssh_setup::check_ssh();
+        status.port
+    });
+
+    match repair::remote_tunnel::start_tunnel(&session_id, ssh_port) {
+        Ok(info) => Ok(info),
+        Err(e) => {
+            // Clean up the injected key on tunnel failure
+            let _ = repair::ssh_setup::cleanup_authorized_key(&session_id);
+            Err(e)
+        }
+    }
+}
+
+/// Stop the remote repair tunnel and clean up SSH keys.
+#[tauri::command]
+pub async fn repair_tunnel_stop(session_id: String) -> Result<(), String> {
+    repair::remote_tunnel::stop_tunnel()?;
+    repair::ssh_setup::cleanup_authorized_key(&session_id)?;
+    Ok(())
+}
+
+/// Get the current tunnel status (for UI polling).
+#[tauri::command]
+pub async fn repair_tunnel_status() -> Result<repair::remote_tunnel::TunnelStatus, String> {
+    Ok(repair::remote_tunnel::get_tunnel_status())
 }

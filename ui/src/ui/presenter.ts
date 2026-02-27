@@ -45,7 +45,7 @@ export function formatCronState(job: CronJob) {
 
 export function formatCronSchedule(job: CronJob) {
   const s = job.schedule;
-  if (s.kind === "at") return `At ${formatMs(s.atMs)}`;
+  if (s.kind === "at") return `At ${formatMs(s.atMs ?? new Date(s.at).getTime())}`;
   if (s.kind === "every") return `Every ${formatDurationMs(s.everyMs)}`;
   return `Cron ${s.expr}${s.tz ? ` (${s.tz})` : ""}`;
 }

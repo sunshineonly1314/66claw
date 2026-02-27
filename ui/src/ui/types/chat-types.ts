@@ -43,4 +43,6 @@ export type ToolCard = {
   text?: string;
   /** True when the tool call has no matching result yet (still executing). */
   pending?: boolean;
+  /** True when the tool call was interrupted (page closed mid-generation, no active run). */
+  interrupted?: boolean;
 };

@@ -35,6 +35,9 @@ import {
   XIAOMI_DEFAULT_MODEL_REF,
   ZAI_DEFAULT_MODEL_REF,
   XAI_DEFAULT_MODEL_REF,
+  ALIYUN_CODEPLAN_DEFAULT_MODEL_REF,
+  GLM_CODEPLAN_DEFAULT_MODEL_REF,
+  MINIMAX_CODEPLAN_DEFAULT_MODEL_REF,
 } from "./onboard-auth.credentials.js";
 export {
   applyCloudflareAiGatewayConfig,
@@ -52,6 +55,9 @@ import {
   buildZaiModelDefinition,
   buildMoonshotModelDefinition,
   buildXaiModelDefinition,
+  buildAliyunCodeplanModelDefinition,
+  buildGlmCodeplanModelDefinition,
+  buildMinimaxCodeplanModelDefinition,
   QIANFAN_BASE_URL,
   QIANFAN_DEFAULT_MODEL_REF,
   KIMI_CODING_MODEL_REF,
@@ -63,6 +69,15 @@ import {
   resolveZaiBaseUrl,
   XAI_BASE_URL,
   XAI_DEFAULT_MODEL_ID,
+  ALIYUN_CODEPLAN_BASE_URL,
+  ALIYUN_CODEPLAN_DEFAULT_MODEL_ID,
+  ALIYUN_CODEPLAN_MODEL_REF,
+  GLM_CODEPLAN_BASE_URL,
+  GLM_CODEPLAN_DEFAULT_MODEL_ID,
+  GLM_CODEPLAN_MODEL_REF,
+  MINIMAX_CODEPLAN_BASE_URL,
+  MINIMAX_CODEPLAN_DEFAULT_MODEL_ID,
+  MINIMAX_CODEPLAN_MODEL_REF,
 } from "./onboard-auth.models.js";
 
 export function applyZaiProviderConfig(
@@ -920,6 +935,229 @@ export function applyQianfanConfig(cfg: OpenClawCNConfig): OpenClawCNConfig {
               }
             : undefined),
           primary: QIANFAN_DEFAULT_MODEL_REF,
+        },
+      },
+    },
+  };
+}
+
+// ============================================================================
+// Coding Plan Providers
+// ============================================================================
+
+export function applyAliyunCodeplanProviderConfig(cfg: OpenClawCNConfig): OpenClawCNConfig {
+  const models = { ...cfg.agents?.defaults?.models };
+  models[ALIYUN_CODEPLAN_MODEL_REF] = {
+    ...models[ALIYUN_CODEPLAN_MODEL_REF],
+    alias: models[ALIYUN_CODEPLAN_MODEL_REF]?.alias ?? "Aliyun Code",
+  };
+
+  const providers = { ...cfg.models?.providers };
+  const existingProvider = providers["aliyun-codeplan"];
+  const existingModels = Array.isArray(existingProvider?.models) ? existingProvider.models : [];
+  const defaultModels = [
+    buildAliyunCodeplanModelDefinition({ id: "qwen3.5-plus" }),
+    buildAliyunCodeplanModelDefinition({ id: "kimi-k2.5" }),
+    buildAliyunCodeplanModelDefinition({ id: "glm-5" }),
+    buildAliyunCodeplanModelDefinition({ id: "MiniMax-M2.5" }),
+    buildAliyunCodeplanModelDefinition({ id: "qwen3-coder-plus" }),
+    buildAliyunCodeplanModelDefinition({ id: "qwen3-coder-next" }),
+  ];
+  const mergedModels = [...existingModels];
+  const seen = new Set(existingModels.map((m) => m.id));
+  for (const model of defaultModels) {
+    if (!seen.has(model.id)) {
+      mergedModels.push(model);
+      seen.add(model.id);
+    }
+  }
+  const { apiKey: existingApiKey, ...existingProviderRest } = (existingProvider ?? {}) as Record<
+    string,
+    unknown
+  > as { apiKey?: string };
+  const resolvedApiKey = typeof existingApiKey === "string" ? existingApiKey : undefined;
+  const normalizedApiKey = resolvedApiKey?.trim();
+  providers["aliyun-codeplan"] = {
+    ...existingProviderRest,
+    baseUrl: ALIYUN_CODEPLAN_BASE_URL,
+    api: "openai-completions" as const,
+    ...(normalizedApiKey ? { apiKey: normalizedApiKey } : {}),
+    models: mergedModels.length > 0 ? mergedModels : defaultModels,
+  };
+
+  return {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      defaults: {
+        ...cfg.agents?.defaults,
+        models,
+      },
+    },
+    models: {
+      mode: cfg.models?.mode ?? "merge",
+      providers,
+    },
+  };
+}
+
+export function applyAliyunCodeplanConfig(cfg: OpenClawCNConfig): OpenClawCNConfig {
+  const next = applyAliyunCodeplanProviderConfig(cfg);
+  const existingModel = next.agents?.defaults?.model;
+  return {
+    ...next,
+    agents: {
+      ...next.agents,
+      defaults: {
+        ...next.agents?.defaults,
+        model: {
+          ...(existingModel && "fallbacks" in (existingModel as Record<string, unknown>)
+            ? {
+                fallbacks: (existingModel as { fallbacks?: string[] }).fallbacks,
+              }
+            : undefined),
+          primary: ALIYUN_CODEPLAN_MODEL_REF,
+        },
+      },
+    },
+  };
+}
+
+export function applyGlmCodeplanProviderConfig(cfg: OpenClawCNConfig): OpenClawCNConfig {
+  const models = { ...cfg.agents?.defaults?.models };
+  models[GLM_CODEPLAN_MODEL_REF] = {
+    ...models[GLM_CODEPLAN_MODEL_REF],
+    alias: models[GLM_CODEPLAN_MODEL_REF]?.alias ?? "GLM Code",
+  };
+
+  const providers = { ...cfg.models?.providers };
+  const existingProvider = providers["glm-codeplan"];
+  const existingModels = Array.isArray(existingProvider?.models) ? existingProvider.models : [];
+  const defaultModels = [
+    buildGlmCodeplanModelDefinition({ id: "glm-5" }),
+    buildGlmCodeplanModelDefinition({ id: "glm-4.7" }),
+  ];
+  const mergedModels = [...existingModels];
+  const seen = new Set(existingModels.map((m) => m.id));
+  for (const model of defaultModels) {
+    if (!seen.has(model.id)) {
+      mergedModels.push(model);
+      seen.add(model.id);
+    }
+  }
+  const { apiKey: existingApiKey, ...existingProviderRest } = (existingProvider ?? {}) as Record<
+    string,
+    unknown
+  > as { apiKey?: string };
+  const resolvedApiKey = typeof existingApiKey === "string" ? existingApiKey : undefined;
+  const normalizedApiKey = resolvedApiKey?.trim();
+  providers["glm-codeplan"] = {
+    ...existingProviderRest,
+    baseUrl: GLM_CODEPLAN_BASE_URL,
+    api: "openai-completions" as const,
+    ...(normalizedApiKey ? { apiKey: normalizedApiKey } : {}),
+    models: mergedModels.length > 0 ? mergedModels : defaultModels,
+  };
+
+  return {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      defaults: {
+        ...cfg.agents?.defaults,
+        models,
+      },
+    },
+    models: {
+      mode: cfg.models?.mode ?? "merge",
+      providers,
+    },
+  };
+}
+
+export function applyGlmCodeplanConfig(cfg: OpenClawCNConfig): OpenClawCNConfig {
+  const next = applyGlmCodeplanProviderConfig(cfg);
+  const existingModel = next.agents?.defaults?.model;
+  return {
+    ...next,
+    agents: {
+      ...next.agents,
+      defaults: {
+        ...next.agents?.defaults,
+        model: {
+          ...(existingModel && "fallbacks" in (existingModel as Record<string, unknown>)
+            ? {
+                fallbacks: (existingModel as { fallbacks?: string[] }).fallbacks,
+              }
+            : undefined),
+          primary: GLM_CODEPLAN_MODEL_REF,
+        },
+      },
+    },
+  };
+}
+
+export function applyMinimaxCodeplanProviderConfig(cfg: OpenClawCNConfig): OpenClawCNConfig {
+  const models = { ...cfg.agents?.defaults?.models };
+  models[MINIMAX_CODEPLAN_MODEL_REF] = {
+    ...models[MINIMAX_CODEPLAN_MODEL_REF],
+    alias: models[MINIMAX_CODEPLAN_MODEL_REF]?.alias ?? "MiniMax Code",
+  };
+
+  const providers = { ...cfg.models?.providers };
+  const existingProvider = providers["minimax-codeplan"];
+  const existingModels = Array.isArray(existingProvider?.models) ? existingProvider.models : [];
+  const defaultModel = buildMinimaxCodeplanModelDefinition();
+  const hasDefaultModel = existingModels.some(
+    (model) => model.id === MINIMAX_CODEPLAN_DEFAULT_MODEL_ID,
+  );
+  const mergedModels = hasDefaultModel ? existingModels : [...existingModels, defaultModel];
+  const { apiKey: existingApiKey, ...existingProviderRest } = (existingProvider ?? {}) as Record<
+    string,
+    unknown
+  > as { apiKey?: string };
+  const resolvedApiKey = typeof existingApiKey === "string" ? existingApiKey : undefined;
+  const normalizedApiKey = resolvedApiKey?.trim();
+  providers["minimax-codeplan"] = {
+    ...existingProviderRest,
+    baseUrl: MINIMAX_CODEPLAN_BASE_URL,
+    api: "anthropic-messages" as const,
+    ...(normalizedApiKey ? { apiKey: normalizedApiKey } : {}),
+    models: mergedModels.length > 0 ? mergedModels : [defaultModel],
+  };
+
+  return {
+    ...cfg,
+    agents: {
+      ...cfg.agents,
+      defaults: {
+        ...cfg.agents?.defaults,
+        models,
+      },
+    },
+    models: {
+      mode: cfg.models?.mode ?? "merge",
+      providers,
+    },
+  };
+}
+
+export function applyMinimaxCodeplanConfig(cfg: OpenClawCNConfig): OpenClawCNConfig {
+  const next = applyMinimaxCodeplanProviderConfig(cfg);
+  const existingModel = next.agents?.defaults?.model;
+  return {
+    ...next,
+    agents: {
+      ...next.agents,
+      defaults: {
+        ...next.agents?.defaults,
+        model: {
+          ...(existingModel && "fallbacks" in (existingModel as Record<string, unknown>)
+            ? {
+                fallbacks: (existingModel as { fallbacks?: string[] }).fallbacks,
+              }
+            : undefined),
+          primary: MINIMAX_CODEPLAN_MODEL_REF,
         },
       },
     },

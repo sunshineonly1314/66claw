@@ -30,6 +30,10 @@ export type SubagentRunRecord = {
   archiveAtMs?: number;
   cleanupCompletedAt?: number;
   cleanupHandled?: boolean;
+  /** Number of times announce delivery has been attempted and returned false (deferred). */ // [CN-MERGE:a6c741eb46]
+  announceRetryCount?: number;
+  /** Timestamp of the last announce retry attempt (for backoff). */
+  lastAnnounceRetryAt?: number;
 };
 
 const subagentRuns = new Map<string, SubagentRunRecord>();
@@ -41,6 +45,8 @@ let listenerStop: (() => void) | null = null;
 // Use var to avoid TDZ when init runs across circular imports during bootstrap.
 var restoreAttempted = false;
 const SUBAGENT_ANNOUNCE_TIMEOUT_MS = 120_000;
+const MAX_ANNOUNCE_RETRY_COUNT = 3; // [CN-MERGE:a6c741eb46]
+const ANNOUNCE_EXPIRY_MS = 5 * 60_000; // 5 minutes
 
 const SUBAGENT_STORE_KEY = "subagent:runs";
 
@@ -149,6 +155,18 @@ function resumeSubagentRun(runId: string) {
     return;
   }
   if (entry.cleanupCompletedAt) {
+    return;
+  }
+
+  // Skip entries that have exhausted their retry budget or expired (#18264). // [CN-MERGE:a6c741eb46]
+  if ((entry.announceRetryCount ?? 0) >= MAX_ANNOUNCE_RETRY_COUNT) {
+    entry.cleanupCompletedAt = Date.now();
+    persistSubagentRuns();
+    return;
+  }
+  if (typeof entry.endedAt === "number" && Date.now() - entry.endedAt > ANNOUNCE_EXPIRY_MS) {
+    entry.cleanupCompletedAt = Date.now();
+    persistSubagentRuns();
     return;
   }
 
@@ -311,6 +329,18 @@ function finalizeSubagentCleanup(runId: string, cleanup: "delete" | "keep", didA
     return;
   }
   if (!didAnnounce) {
+    // Track retry count and enforce limits (#18264). // [CN-MERGE:a6c741eb46]
+    const retryCount = (entry.announceRetryCount ?? 0) + 1;
+    entry.announceRetryCount = retryCount;
+    entry.lastAnnounceRetryAt = Date.now();
+
+    const endedAgo = typeof entry.endedAt === "number" ? Date.now() - entry.endedAt : 0;
+    if (retryCount >= MAX_ANNOUNCE_RETRY_COUNT || endedAgo > ANNOUNCE_EXPIRY_MS) {
+      entry.cleanupCompletedAt = Date.now();
+      persistSubagentRuns();
+      return;
+    }
+
     // Allow retry on the next wake if announce was deferred or failed.
     entry.cleanupHandled = false;
     persistSubagentRuns();

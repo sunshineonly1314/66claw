@@ -4,6 +4,8 @@ import { formatToolDetail, resolveToolDisplay } from "../tool-display";
 import { icons } from "../icons";
 import type { ToolCard } from "../types/chat-types";
 import { TOOL_INLINE_THRESHOLD } from "./constants";
+import { renderImageGenPending, renderImageGenInterrupted } from "./image-gen-result";
+import { renderVideoGenPending, renderVideoGenInterrupted } from "./video-gen-result";
 import {
   formatToolOutputForSidebar,
   getTruncatedPreview,
@@ -55,9 +57,17 @@ export function extractToolCards(message: unknown): ToolCard[] {
   // Skip if the message is tagged as resolved (tool result exists in a separate history message).
   const hasResult = cards.some((card) => card.kind === "result");
   const isResolved = Boolean((m as Record<string, unknown>).__toolsResolved);
+  const isStaleMedia = Boolean((m as Record<string, unknown>).__staleMediaTools);
   if (!hasResult && !isResolved) {
     for (const card of cards) {
-      if (card.kind === "call") card.pending = true;
+      if (card.kind !== "call") continue;
+      // Stale image_gen/video_gen calls (page closed mid-generation, no active run):
+      // mark as interrupted instead of pending so the renderer shows a recovery UI.
+      if (isStaleMedia && (card.name === "image_gen" || card.name === "video_gen")) {
+        card.interrupted = true;
+      } else {
+        card.pending = true;
+      }
     }
   }
 
@@ -101,6 +111,24 @@ export function renderToolCardSidebar(
       : undefined;
 
   const isPending = Boolean(card.pending);
+  const isInterrupted = Boolean(card.interrupted);
+
+  // OpenClawCN: Interrupted generation (page was closed mid-generation, loaded from history)
+  if (isInterrupted && card.name === "image_gen") {
+    return renderImageGenInterrupted(card.args as Record<string, unknown> | undefined);
+  }
+  if (isInterrupted && card.name === "video_gen") {
+    return renderVideoGenInterrupted(card.args as Record<string, unknown> | undefined);
+  }
+
+  // OpenClawCN: Specialized shimmer placeholder for image_gen tool calls in progress
+  if (isPending && card.name === "image_gen") {
+    return renderImageGenPending(card.args as Record<string, unknown> | undefined);
+  }
+  // OpenClawCN: Specialized shimmer placeholder for video_gen tool calls in progress
+  if (isPending && card.name === "video_gen") {
+    return renderVideoGenPending(card.args as Record<string, unknown> | undefined);
+  }
 
   return html`
     <div

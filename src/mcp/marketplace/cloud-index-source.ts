@@ -1,26 +1,28 @@
 /**
  * Cloud Index data source (Tier 0 — highest priority).
  *
- * Fetches a pre-aggregated MCP marketplace index from an Alibaba Cloud
- * CDN / static file URL.  This index is built daily by the standalone
- * sync script (scripts/mcp-full-sync.ts) running on ECS via cron.
+ * Fetches a pre-aggregated MCP marketplace index from the SkillsProxy
+ * mirror service (obplugins.cn). The index is built by the detail crawl
+ * pipeline (scripts/mcp-detail-crawl.ts) and served as a static JSON file
+ * via Nginx on the SkillsProxy server.
  *
  * Advantages over per-client sync:
- *   - Fast (~1-3 sec HTTP GET vs ~10 min ModelScope spawn)
+ *   - Fast (~0.5 sec HTTP GET vs ~10 min ModelScope spawn)
  *   - No local Python / uvx dependency required
- *   - 3000+ items pre-aggregated and deduplicated
+ *   - 9500+ items pre-aggregated with install info
  *
  * URL is configurable via OPENCLAWCN_MCP_INDEX_URL.
  */
 
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { sanitizeSseUrl } from "./types.js";
 import type { McpMarketplaceItem } from "./types.js";
 
 const logger = createSubsystemLogger("cloud-index-source");
 
 const CLOUD_INDEX_CONFIG = {
   /** Overridable via OPENCLAWCN_MCP_INDEX_URL env var. */
-  defaultUrl: "",
+  defaultUrl: "https://www.obplugins.cn/mcp-index.json",
   timeoutMs: 15_000,
 };
 
@@ -70,6 +72,14 @@ export async function fetchFromCloudIndex(): Promise<McpMarketplaceItem[]> {
         : [];
 
     if (items.length > 0) {
+      // Sanitize SSE URLs — strip embedded credentials from scraped data
+      for (const item of items) {
+        if (item.sseUrl) item.sseUrl = sanitizeSseUrl(item.sseUrl);
+        if (item.serverConfig && typeof item.serverConfig === "object") {
+          const cfg = item.serverConfig as Record<string, unknown>;
+          if (typeof cfg.url === "string") cfg.url = sanitizeSseUrl(cfg.url as string);
+        }
+      }
       logger.info(`Tier 0 (Cloud Index): ${items.length} items fetched`);
     } else {
       logger.warn("Cloud index returned 0 items");

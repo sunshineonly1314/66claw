@@ -80,7 +80,7 @@ class TypewriterStreamDirective extends AsyncDirective {
   private lastRenderedHtml = "";
 
   override update(
-    _part: import("lit/directive").Part,
+    _part: import("lit/directive.js").Part,
     [fullText, streamKey]: [string, string],
   ) {
     this.fullText = fullText ?? "";

@@ -1,5 +1,6 @@
 import chokidar from "chokidar";
 import type { OpenClawCNConfig, ConfigFileSnapshot, GatewayReloadMode } from "../config/config.js";
+import { tryRepairConfig } from "../config/config-repair.js";
 import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js";
 import { getActivePluginRegistry } from "../plugins/runtime.js";
 import { isPlainObject } from "../utils.js";
@@ -261,11 +262,17 @@ export type GatewayConfigReloader = {
   stop: () => Promise<void>;
 };
 
+export type ConfigRepairedEvent = {
+  method: "strip" | "rollback";
+  details: string;
+};
+
 export function startGatewayConfigReloader(opts: {
   initialConfig: OpenClawCNConfig;
   readSnapshot: () => Promise<ConfigFileSnapshot>;
   onHotReload: (plan: GatewayReloadPlan, nextConfig: OpenClawCNConfig) => Promise<void>;
   onRestart: (plan: GatewayReloadPlan, nextConfig: OpenClawCNConfig) => void;
+  onRepaired?: (event: ConfigRepairedEvent) => void;
   log: {
     info: (msg: string) => void;
     warn: (msg: string) => void;
@@ -280,6 +287,8 @@ export function startGatewayConfigReloader(opts: {
   let running = false;
   let stopped = false;
   let restartQueued = false;
+  let lastRepairAttemptMs = 0;
+  const REPAIR_COOLDOWN_MS = 10_000;
 
   const schedule = () => {
     if (stopped) {
@@ -308,10 +317,39 @@ export function startGatewayConfigReloader(opts: {
       debounceTimer = null;
     }
     try {
-      const snapshot = await opts.readSnapshot();
+      let snapshot = await opts.readSnapshot();
       if (!snapshot.valid) {
         const issues = snapshot.issues.map((issue) => `${issue.path}: ${issue.message}`).join(", ");
-        opts.log.warn(`config reload skipped (invalid config): ${issues}`);
+        opts.log.warn(`config invalid after external change: ${issues}`);
+
+        // Cooldown: prevent infinite repair loops if repair produces invalid config
+        const now = Date.now();
+        if (now - lastRepairAttemptMs < REPAIR_COOLDOWN_MS) {
+          opts.log.warn("config repair skipped (cooldown active)");
+          return;
+        }
+        lastRepairAttemptMs = now;
+
+        // Auto-repair: strip unknown keys or rollback to backup
+        const repair = await tryRepairConfig({
+          configPath: opts.watchPath,
+          rawConfig: snapshot.resolved,
+          issues: snapshot.issues,
+          log: opts.log,
+        });
+
+        if (repair.repaired) {
+          opts.log.info(`config auto-repaired (${repair.method}): ${repair.details}`);
+          opts.onRepaired?.({ method: repair.method!, details: repair.details });
+          // Repair wrote a valid file back to disk. The chokidar watcher will
+          // pick up the change and trigger another reload cycle with the fixed
+          // config, so we can safely return here.
+          return;
+        }
+
+        opts.log.error(
+          `config auto-repair failed: ${repair.details}. Run "openclawcn doctor --fix" manually.`,
+        );
         return;
       }
       const nextConfig = snapshot.config;

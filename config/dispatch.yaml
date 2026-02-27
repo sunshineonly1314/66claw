@@ -40,22 +40,44 @@ intents:
         - "画一只"
         - "生成图"
         - "生图"
+        - "出图"
+        - "做图"
+        - "配图"
+        - "P图"
+        - "美图"
         - "AI绘画"
         - "绘画"
         - "生成一张"
         - "来张图"
+        - "壁纸"
+        - "头像"
+        - "表情包"
+        - "海报"
+        - "封面"
+        - "logo"
+        - "icon"
+        - "插画"
+        - "漫画"
         - "generate image"
         - "draw a"
         - "create image"
         - "make a picture"
+        - "render"
+        - "illustration"
+        - "create a logo"
+        - "design a poster"
       regex:
         - "(画|绘|生成|create|generate|make).*?(图|画|image|picture|photo|illustration)"
         - "seed\\s*dance"
-      semanticTags: ["image", "visual", "drawing", "illustration", "artwork"]
+        - "(做|配|出|P)[一个张幅].*?(?:图|海报|封面|头像|壁纸)"
+        - "(制作|创建|设计).*?(?:图片|图像|头像|表情包|logo|icon|壁纸|封面)"
+        - "(?:修改|编辑|调整|改一下|换个).{0,6}(?:图|图片|背景|颜色|风格)"
+        - "(?:去掉|删除|移除).{0,6}(?:背景|水印|人物)"
+      semanticTags: ["image", "visual", "drawing", "illustration", "artwork", "poster", "avatar", "wallpaper"]
       # When user sends an image, boost this intent (e.g. "modify this image")
       mediaTypes: ["image"]
       # Prevent false matches from unrelated words containing "画"
-      excludeKeywords: ["计划", "规划", "策划", "动画片", "笔画", "动漫"]
+      excludeKeywords: ["计划", "规划", "策划", "动画片", "笔画", "动漫", "画面描述"]
     routing:
       model: "seeddance/seeddance-2.0"
       fallbackModel: "openai/dall-e-3"

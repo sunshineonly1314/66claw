@@ -31,7 +31,14 @@ fi
 MAC_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.host")
 MAC_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.user")
 MAC_WORKSPACE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.workspace")
-MAC_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo")
+# Construct Gitee clone URL from env var (never hardcode PAT in config files)
+if [ -z "$GITEE_PAT" ]; then
+  echo "ERROR: GITEE_PAT environment variable is not set."
+  echo "Set it with: export GITEE_PAT='your-gitee-personal-access-token'"
+  exit 1
+fi
+MAC_REPO_TEMPLATE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo_template")
+MAC_REPO=$(echo "$MAC_REPO_TEMPLATE" | sed "s/\${GITEE_PAT}/$GITEE_PAT/g")
 
 # 参数解析（支持命名参数和位置参数）
 VERSION=""
@@ -265,26 +272,17 @@ echo "========================================="
 RELEASE_CACHE_DIR="\$WORKSPACE/.release-cache"
 mkdir -p "\$RELEASE_CACHE_DIR"
 
-# OSS 环境变量检查
-OSS_KEY_ID="\${OSS_ACCESS_KEY_ID:-}"
-OSS_KEY_SECRET="\${OSS_ACCESS_KEY_SECRET:-}"
-if [ -z "\$OSS_KEY_ID" ] || [ -z "\$OSS_KEY_SECRET" ]; then
-  echo "WARNING: OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET not set, using --output-only mode"
-  echo "Delta packages will be generated locally but NOT uploaded."
-fi
-
 RELEASE_ARGS=""
 if [ -n "\$VERSION" ]; then
   RELEASE_ARGS="\$RELEASE_ARGS -v \$VERSION"
 fi
 RELEASE_ARGS="\$RELEASE_ARGS --cache-dir \$RELEASE_CACHE_DIR"
 RELEASE_ARGS="\$RELEASE_ARGS --platform macos"
-if [ -n "\$OSS_KEY_ID" ] && [ -n "\$OSS_KEY_SECRET" ]; then
-  RELEASE_ARGS="\$RELEASE_ARGS --oss --oss-domain dl.obplugins.cn"
-  RELEASE_ARGS="\$RELEASE_ARGS --notify-url https://dl.obplugins.cn/api/v1/release/notify"
-else
-  RELEASE_ARGS="\$RELEASE_ARGS --output-only"
+if [ -z "\$DEPLOY_SERVER" ] || [ -z "\$DEPLOY_DOMAIN" ]; then
+  echo "ERROR: DEPLOY_SERVER and DEPLOY_DOMAIN env vars must be set for release deploy."
+  exit 1
 fi
+RELEASE_ARGS="\$RELEASE_ARGS --server \$DEPLOY_SERVER --domain \$DEPLOY_DOMAIN"
 RELEASE_ARGS="\$RELEASE_ARGS --installers \$DMG_DIR"
 
 # 优先用 pnpm tsx（pnpm install 后 npx 可能找不到 tsx）

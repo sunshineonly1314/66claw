@@ -25,6 +25,30 @@ const AUTH_CHOICE_GROUP_DEFS: {
   cnPriority?: number;
 }[] = [
   // ============================================================================
+  // Coding Plan 代码助手 - 最优先显示
+  // ============================================================================
+  {
+    value: "aliyun-codeplan",
+    label: "Aliyun Code",
+    hint: "Coding Plan 代码助手 (推荐)",
+    choices: ["aliyun-codeplan-api-key"],
+    cnPriority: 0,
+  },
+  {
+    value: "glm-codeplan",
+    label: "GLM Code",
+    hint: "Coding Plan 代码助手",
+    choices: ["glm-codeplan-api-key"],
+    cnPriority: 0,
+  },
+  {
+    value: "minimax-codeplan",
+    label: "MiniMax Code",
+    hint: "Coding Plan 代码助手",
+    choices: ["minimax-codeplan-api-key"],
+    cnPriority: 0,
+  },
+  // ============================================================================
   // 中国区提供商 (China Region Providers) - 优先显示
   // ============================================================================
   {
@@ -213,6 +237,24 @@ const AUTH_CHOICE_GROUP_DEFS: {
 ];
 
 const BASE_AUTH_CHOICE_OPTIONS: ReadonlyArray<AuthChoiceOption> = [
+  // ============================================================================
+  // Coding Plan 代码助手
+  // ============================================================================
+  {
+    value: "aliyun-codeplan-api-key",
+    label: "Aliyun Code API Key",
+    hint: "Coding Plan 代码专用 (阿里云)",
+  },
+  {
+    value: "glm-codeplan-api-key",
+    label: "GLM Code API Key",
+    hint: "Coding Plan 代码专用 (智谱)",
+  },
+  {
+    value: "minimax-codeplan-api-key",
+    label: "MiniMax Code API Key",
+    hint: "Coding Plan 订阅专属",
+  },
   // ============================================================================
   // 中国区提供商 (China Region Providers)
   // ============================================================================

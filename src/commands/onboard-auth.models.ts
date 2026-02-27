@@ -159,6 +159,113 @@ export function buildZaiModelDefinition(params: {
   };
 }
 
+// ============================================================================
+// Coding Plan Providers
+// ============================================================================
+
+export const ALIYUN_CODEPLAN_BASE_URL = "https://coding.dashscope.aliyuncs.com/v1";
+export const ALIYUN_CODEPLAN_DEFAULT_MODEL_ID = "qwen3-coder-plus";
+export const ALIYUN_CODEPLAN_MODEL_REF = `aliyun-codeplan/${ALIYUN_CODEPLAN_DEFAULT_MODEL_ID}`;
+export const ALIYUN_CODEPLAN_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+export const GLM_CODEPLAN_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4";
+export const GLM_CODEPLAN_DEFAULT_MODEL_ID = "glm-4.7";
+export const GLM_CODEPLAN_MODEL_REF = `glm-codeplan/${GLM_CODEPLAN_DEFAULT_MODEL_ID}`;
+export const GLM_CODEPLAN_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+export const MINIMAX_CODEPLAN_BASE_URL = "https://api.minimaxi.com/anthropic";
+export const MINIMAX_CODEPLAN_DEFAULT_MODEL_ID = "MiniMax-M2.5";
+export const MINIMAX_CODEPLAN_MODEL_REF = `minimax-codeplan/${MINIMAX_CODEPLAN_DEFAULT_MODEL_ID}`;
+export const MINIMAX_CODEPLAN_DEFAULT_COST = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+const ALIYUN_CODEPLAN_MODEL_CATALOG = {
+  "qwen3.5-plus": { name: "Qwen3.5 Plus", reasoning: true, vision: true },
+  "kimi-k2.5": { name: "Kimi K2.5", reasoning: false, vision: true },
+  "glm-5": { name: "GLM-5", reasoning: true, vision: false },
+  "MiniMax-M2.5": { name: "MiniMax M2.5", reasoning: true, vision: false },
+  "qwen3-coder-plus": { name: "Qwen3 Coder Plus", reasoning: true, vision: false },
+  "qwen3-coder-next": { name: "Qwen3 Coder Next", reasoning: true, vision: false },
+} as const;
+
+type AliyunCodeplanCatalogId = keyof typeof ALIYUN_CODEPLAN_MODEL_CATALOG;
+
+export function buildAliyunCodeplanModelDefinition(params?: {
+  id?: string;
+  name?: string;
+  reasoning?: boolean;
+  cost?: ModelDefinitionConfig["cost"];
+  contextWindow?: number;
+  maxTokens?: number;
+}): ModelDefinitionConfig {
+  const id = params?.id ?? ALIYUN_CODEPLAN_DEFAULT_MODEL_ID;
+  const catalog = ALIYUN_CODEPLAN_MODEL_CATALOG[id as AliyunCodeplanCatalogId];
+  return {
+    id,
+    name: params?.name ?? catalog?.name ?? id,
+    reasoning: params?.reasoning ?? catalog?.reasoning ?? true,
+    input: catalog?.vision ? (["text", "image"] as const) : (["text"] as const),
+    cost: params?.cost ?? ALIYUN_CODEPLAN_DEFAULT_COST,
+    contextWindow: params?.contextWindow ?? 131072,
+    maxTokens: params?.maxTokens ?? 8192,
+  };
+}
+
+export function buildGlmCodeplanModelDefinition(params?: {
+  id?: string;
+  name?: string;
+  reasoning?: boolean;
+  cost?: ModelDefinitionConfig["cost"];
+  contextWindow?: number;
+  maxTokens?: number;
+}): ModelDefinitionConfig {
+  const id = params?.id ?? GLM_CODEPLAN_DEFAULT_MODEL_ID;
+  const catalog = ZAI_MODEL_CATALOG[id as ZaiCatalogId];
+  return {
+    id,
+    name: params?.name ?? catalog?.name ?? `GLM ${id}`,
+    reasoning: params?.reasoning ?? catalog?.reasoning ?? true,
+    input: ["text"],
+    cost: params?.cost ?? GLM_CODEPLAN_DEFAULT_COST,
+    contextWindow: params?.contextWindow ?? 204800,
+    maxTokens: params?.maxTokens ?? 131072,
+  };
+}
+
+export function buildMinimaxCodeplanModelDefinition(params?: {
+  id?: string;
+  name?: string;
+  reasoning?: boolean;
+  cost?: ModelDefinitionConfig["cost"];
+  contextWindow?: number;
+  maxTokens?: number;
+}): ModelDefinitionConfig {
+  const id = params?.id ?? MINIMAX_CODEPLAN_DEFAULT_MODEL_ID;
+  return {
+    id,
+    name: params?.name ?? "MiniMax M2.5",
+    reasoning: params?.reasoning ?? true,
+    input: ["text"],
+    cost: params?.cost ?? MINIMAX_CODEPLAN_DEFAULT_COST,
+    contextWindow: params?.contextWindow ?? 200000,
+    maxTokens: params?.maxTokens ?? 8192,
+  };
+}
+
 export const XAI_BASE_URL = "https://api.x.ai/v1";
 export const XAI_DEFAULT_MODEL_ID = "grok-4";
 export const XAI_DEFAULT_MODEL_REF = `xai/${XAI_DEFAULT_MODEL_ID}`;

@@ -36,11 +36,17 @@ export function createDoctorPrompter(params: {
 
   const canPrompt = isTty && !yes && !nonInteractive;
   const confirmDefault = async (p: Parameters<typeof confirm>[0]) => {
-    if (nonInteractive) {
-      return false;
-    }
+    // --fix / --yes: auto-apply safe repairs even in non-interactive mode.
+    // This lets `doctor --fix --non-interactive` (e.g. from Tauri tray) actually
+    // perform config migrations, auth profile fixes, etc., instead of skipping
+    // everything.  Heavy operations (daemon install, sandbox build, permissions)
+    // are still gated by confirmSkipInNonInteractive which has its own
+    // nonInteractive guard.
     if (shouldRepair) {
       return true;
+    }
+    if (nonInteractive) {
+      return false;
     }
     if (!canPrompt) {
       return Boolean(p.initialValue ?? false);
@@ -57,19 +63,24 @@ export function createDoctorPrompter(params: {
   return {
     confirm: confirmDefault,
     confirmRepair: async (p) => {
-      if (nonInteractive) {
+      // shouldRepair is already checked inside confirmDefault, so we only
+      // need the nonInteractive guard for non-repair runs (plain doctor
+      // piped to a non-TTY without --fix).
+      if (nonInteractive && !shouldRepair) {
         return false;
       }
       return confirmDefault(p);
     },
     confirmAggressive: async (p) => {
-      if (nonInteractive) {
-        return false;
-      }
+      // Aggressive actions need --fix --force to auto-execute.
+      // --fix alone returns false (safe default).
       if (shouldRepair && shouldForce) {
         return true;
       }
       if (shouldRepair && !shouldForce) {
+        return false;
+      }
+      if (nonInteractive) {
         return false;
       }
       if (!canPrompt) {

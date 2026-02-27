@@ -54,6 +54,10 @@ export type AuthChoice =
   | "glm-api-key"
   | "volcengine-ark-api-key"
   | "tencent-hunyuan-api-key"
+  // Coding Plan providers
+  | "aliyun-codeplan-api-key"
+  | "glm-codeplan-api-key"
+  | "minimax-codeplan-api-key"
   | "skip";
 export type AuthChoiceGroupId =
   | "openai"
@@ -85,7 +89,11 @@ export type AuthChoiceGroupId =
   | "aliyun-bailian"
   | "glm"
   | "volcengine-ark"
-  | "tencent-hunyuan";
+  | "tencent-hunyuan"
+  // Coding Plan providers
+  | "aliyun-codeplan"
+  | "glm-codeplan"
+  | "minimax-codeplan";
 export type GatewayAuthChoice = "token" | "password";
 export type ResetScope = "config" | "config+creds+sessions" | "full";
 export type GatewayBind = "loopback" | "lan" | "auto" | "custom" | "tailnet";
@@ -134,6 +142,9 @@ export type OnboardOptions = {
   opencodeZenApiKey?: string;
   xaiApiKey?: string;
   qianfanApiKey?: string;
+  aliyunCodeplanApiKey?: string;
+  glmCodeplanApiKey?: string;
+  minimaxCodeplanApiKey?: string;
   customBaseUrl?: string;
   customApiKey?: string;
   customModelId?: string;

@@ -25,12 +25,25 @@ const log = createSubsystemLogger("infra:update-signature");
 /**
  * Ed25519 public key for update package verification.
  *
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ * !! PLACEHOLDER — MUST BE REPLACED BEFORE PRODUCTION RELEASE      !!
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ *
+ * Current status: PLACEHOLDER key. All signature verification is BYPASSED
+ * via `isUpdateSigningKeyConfigured()` returning false. This means update
+ * packages are NOT cryptographically verified in the current build.
+ *
+ * To enable signature verification:
+ *   1. Generate a keypair:
+ *        openssl genpkey -algorithm Ed25519 -out update-signing.pem
+ *        openssl pkey -in update-signing.pem -pubout -out update-signing.pub
+ *   2. Replace the placeholder below with the contents of update-signing.pub
+ *   3. Store the private key (update-signing.pem) as the CI secret
+ *      UPDATE_SIGNING_PRIVATE_KEY — used by scripts/release-deploy.ts to sign artifacts
+ *   4. NEVER commit the private key to the repository
+ *
  * The corresponding private key is stored in CI secrets (UPDATE_SIGNING_PRIVATE_KEY)
  * and used by build scripts to sign delta packages and checksums.
- *
- * Key generation command:
- *   openssl genpkey -algorithm Ed25519 -out update-signing.pem
- *   openssl pkey -in update-signing.pem -pubout -out update-signing.pub
  *
  * IMPORTANT: Update this key when rotating signing keys.
  * Old clients will reject packages signed with new keys (intentional — forces upgrade).

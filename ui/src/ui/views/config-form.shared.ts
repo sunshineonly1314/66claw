@@ -116,6 +116,22 @@ export function resolveLabel(
   return hint?.label ?? schema.title ?? humanize(fallbackKey ?? String(path.at(-1)));
 }
 
+/**
+ * Resolves a human-friendly label for a config field's value.
+ * Looks up i18n key `config.value.<dotted.path>.<value>`, falls back to raw value.
+ */
+export function resolveValueLabel(
+  path: Array<string | number>,
+  value: unknown,
+): string {
+  const raw = String(value ?? "");
+  const dotPath = path.filter((s) => typeof s === "string").join(".");
+  const i18nKey = `config.value.${dotPath}.${raw}`;
+  const translated = tMaybe(i18nKey);
+  if (translated !== i18nKey) return translated;
+  return raw;
+}
+
 export function isSensitivePath(path: Array<string | number>): boolean {
   const key = pathKey(path).toLowerCase();
   return (

@@ -45,8 +45,12 @@ import {
   setMoonshotApiKey,
   setModelscopeApiKey,
   setKimiCodingApiKey,
+  setAliyunCodeplanApiKey,
+  setGlmCodeplanApiKey,
+  setMinimaxCodeplanApiKey,
   setOllamaApiKey,
   setZaiApiKey,
+  setOpenrouterApiKey,
 } from "../commands/onboard-auth.js";
 import { discoverSiliconFlowModels } from "../agents/siliconflow-models.js";
 import { getAllFreeModelProviders, getFreeModelProvider } from "../config/free-model-providers.js";
@@ -68,6 +72,8 @@ import { sendJson, readJsonBody, formatDockerBind } from "./setup-wizard-utils.j
 import { getSetupState, updateSetupState, getChannelStartCallback } from "./setup-wizard-state.js";
 import { isPathAllowedForBrowse } from "./setup-wizard.js";
 import { normalizeProviderId } from "../agents/model-selection.js";
+import { ensureOpenClawCNModelsJson } from "../agents/models-config.js";
+import { ensureAuthProfileStore } from "../agents/auth-profiles/store.js";
 
 const log = createSubsystemLogger("gateway/setup-wizard");
 
@@ -244,6 +250,9 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
       "moonshot",
       "openai",
       "nvidia",
+      "openrouter",
+      "aliyun-codeplan",
+      "glm-codeplan",
     ]);
 
     // 构建测试请求
@@ -270,6 +279,20 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
         Authorization: `Bearer ${trimmedKey}`,
         "Content-Type": "application/json",
         "User-Agent": "KimiCLI/0.77",
+      };
+      testBody = JSON.stringify({
+        model: testModel,
+        messages: [{ role: "user", content: "Hi" }],
+        max_tokens: 5,
+      });
+    } else if (provider === "minimax-codeplan") {
+      // MiniMax Coding Plan 使用 Anthropic Messages 兼容 API
+      testUrl = `${endpoint}/v1/messages`;
+      testHeaders = {
+        "x-api-key": trimmedKey,
+        Authorization: `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
       };
       testBody = JSON.stringify({
         model: testModel,
@@ -654,6 +677,16 @@ export async function handleConfigureProvider(
 
       await writeConfigFile(nextConfig);
 
+      // 立即刷新 models.json，使自定义模型对 agent 运行时和模型设置页可见
+      // 自定义提供商的 apiKey 已内联到 nextConfig.models.providers 中，
+      // 不依赖 auth-profiles，直接传 config 即可
+      try {
+        await ensureOpenClawCNModelsJson(nextConfig);
+        log.info("models.json refreshed after setup custom provider");
+      } catch (mjErr) {
+        log.warn(`models.json refresh after setup failed (non-critical): ${mjErr}`);
+      }
+
       updateSetupState({
         step: 2,
         provider: "custom",
@@ -682,6 +715,12 @@ export async function handleConfigureProvider(
       await setMoonshotApiKey(trimmedKey);
     } else if (provider === "kimi-code") {
       await setKimiCodingApiKey(trimmedKey);
+    } else if (provider === "aliyun-codeplan") {
+      await setAliyunCodeplanApiKey(trimmedKey);
+    } else if (provider === "glm-codeplan") {
+      await setGlmCodeplanApiKey(trimmedKey);
+    } else if (provider === "minimax-codeplan") {
+      await setMinimaxCodeplanApiKey(trimmedKey);
     } else if (provider === "modelscope") {
       await setModelscopeApiKey(trimmedKey);
     } else if (provider === "google") {
@@ -692,6 +731,8 @@ export async function handleConfigureProvider(
       await setAnthropicApiKey(trimmedKey);
     } else if (provider === "nvidia") {
       await setZaiApiKey(trimmedKey);
+    } else if (provider === "openrouter") {
+      await setOpenrouterApiKey(trimmedKey);
     } else if (provider === "ollama") {
       await setOllamaApiKey(trimmedKey);
     } else {
@@ -706,7 +747,13 @@ export async function handleConfigureProvider(
     // 🔥 P0 修复: 使用 normalizeProviderId 确保 model ref 一致
     // 例如 kimi-code → kimi-coding，使 primary = "kimi-coding/kimi-for-coding"
     const normalizedProvider = normalizeProviderId(provider);
-    const modelRef = defaultModel ? `${normalizedProvider}/${defaultModel}` : undefined;
+    // 避免 modelId 已包含 provider 前缀时产生双重前缀
+    // 例如 openrouter + openrouter/auto → "openrouter/auto" 而非 "openrouter/openrouter/auto"
+    const modelRef = defaultModel
+      ? defaultModel.startsWith(`${normalizedProvider}/`)
+        ? defaultModel
+        : `${normalizedProvider}/${defaultModel}`
+      : undefined;
 
     const nextConfig: OpenClawCNConfig = {
       ...config,
@@ -758,6 +805,25 @@ export async function handleConfigureProvider(
     };
 
     await writeConfigFile(nextConfig);
+
+    // 立即刷新 models.json，使新配置的提供商模型对 agent 运行时和模型设置页可见
+    // 传入 authStore 并注入刚写入的凭据，避免加密模式下异步写入未完成导致读到旧数据
+    try {
+      const authStore = ensureAuthProfileStore();
+      // 确保 authStore 包含刚才 setXxxApiKey 写入的凭据（加密模式可能尚未落盘）
+      const profileId = `${normalizedProvider}:default`;
+      if (!authStore.profiles[profileId]) {
+        authStore.profiles[profileId] = {
+          type: "api_key" as const,
+          provider: normalizedProvider,
+          key: trimmedKey,
+        };
+      }
+      await ensureOpenClawCNModelsJson(nextConfig, undefined, authStore);
+      log.info(`models.json refreshed after setup provider: ${provider}`);
+    } catch (mjErr) {
+      log.warn(`models.json refresh after setup failed (non-critical): ${mjErr}`);
+    }
 
     updateSetupState({
       step: 2,
@@ -1507,6 +1573,38 @@ export async function handleConfigureChannels(
     // 持久化到磁盘
     await writeConfigFile(nextConfig);
 
+    // ── dmScope 自动检测 ──────────────────────────────────────────────
+    // 写完渠道配置后,如果 dmScope 未显式设置且检测建议升级,自动应用推荐值
+    try {
+      const { getActivePluginRegistry } = await import("../plugins/runtime.js");
+      const registry = getActivePluginRegistry();
+      const channelPlugins = (registry?.channels ?? []).map((c) => c.plugin);
+      if (channelPlugins.length > 0) {
+        const { recommendDmScope } = await import("../session/dm-scope-auto.js");
+        const recommendation = recommendDmScope({
+          cfg: nextConfig,
+          plugins: channelPlugins,
+        });
+        if (!recommendation.isExplicit && recommendation.shouldUpgrade) {
+          const patched: OpenClawCNConfig = {
+            ...nextConfig,
+            session: {
+              ...(nextConfig.session ?? {}),
+              dmScope: recommendation.recommended,
+            } as OpenClawCNConfig["session"],
+          };
+          await writeConfigFile(patched);
+          log.info(
+            `dmScope auto-set to "${recommendation.recommended}" (reason: ${recommendation.reason})`,
+          );
+        }
+      }
+    } catch (err) {
+      log.warn(
+        `dmScope auto-detection skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     // 立即启动配置的渠道（热更新，无需重启 Gateway）
     const startedChannels: string[] = [];
     const channelStartCallback = getChannelStartCallback();
@@ -1584,6 +1682,15 @@ export async function handleComplete(_req: IncomingMessage, res: ServerResponse)
       },
     };
     await writeConfigFile(nextConfig);
+
+    // Setup 完成时确保 models.json 已包含所有已配置的提供商模型
+    // handleComplete 不写入新凭据，此时加密写入已完成，直接从磁盘读取即可
+    try {
+      await ensureOpenClawCNModelsJson(nextConfig);
+      log.info("models.json refreshed on setup completion");
+    } catch (mjErr) {
+      log.warn(`models.json refresh on setup completion failed (non-critical): ${mjErr}`);
+    }
 
     updateSetupState({
       completed: true,

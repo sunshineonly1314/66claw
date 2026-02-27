@@ -35,6 +35,7 @@ export type ChatState = {
   chatRunId: string | null;
   chatStream: string | null;
   chatStreamStartedAt: number | null;
+  chatStreamJustCompleted?: boolean;
   lastError: string | null;
   /** OpenClawCN: auto-failover notification banner */
   failoverBanner: {
@@ -52,6 +53,8 @@ export type ChatEventPayload = {
   state: "delta" | "final" | "aborted" | "error";
   message?: unknown;
   errorMessage?: string;
+  /** TTS audio attached by server on "final" when auto-TTS is active. */
+  ttsAudio?: { base64: string; format: string };
 };
 
 export async function loadChatHistory(state: ChatState) {
@@ -84,12 +87,29 @@ function dataUrlToBase64(dataUrl: string): { content: string; mimeType: string }
   return { mimeType: match[1], content: match[2] };
 }
 
+// [CN-MERGE:8264d4521b+f2e9986813] Validate final assistant message before appending
+function normalizeFinalAssistantMessage(message: unknown): Record<string, unknown> | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  const candidate = message as Record<string, unknown>;
+  const role = typeof candidate.role === "string" ? candidate.role.toLowerCase() : "";
+  if (role && role !== "assistant") {
+    return null;
+  }
+  if (!("content" in candidate) && !("text" in candidate)) {
+    return null;
+  }
+  return candidate;
+}
+
 export type ChatSendResult = boolean | { ok: false; isLicenseError: true; error: string };
 
 export async function sendChatMessage(
   state: ChatState,
   message: string,
   attachments?: ChatAttachment[],
+  opts?: { voiceInput?: boolean; voiceMode?: boolean },
 ): Promise<ChatSendResult> {
   if (!state.client || !state.connected) return false;
   const msg = message.trim();
@@ -113,13 +133,22 @@ export async function sendChatMessage(
   if (msg) {
     contentBlocks.push({ type: "text", text: msg });
   }
-  // Add image previews to the message for display
+  // Add attachment previews to the message for display
   if (hasAttachments) {
     for (const att of attachments) {
-      contentBlocks.push({
-        type: "image",
-        source: { type: "base64", media_type: att.mimeType, data: att.dataUrl },
-      });
+      const cat = att.category ?? (att.mimeType.startsWith("image/") ? "image" : att.mimeType.startsWith("video/") ? "video" : "file");
+      if (cat === "image") {
+        contentBlocks.push({
+          type: "image",
+          source: { type: "base64", media_type: att.mimeType, data: att.dataUrl },
+        });
+      } else {
+        // Non-image: show as text in the message bubble
+        contentBlocks.push({
+          type: "text",
+          text: `📎 ${att.fileName ?? "file"} (${att.mimeType})`,
+        });
+      }
     }
   }
 
@@ -145,10 +174,12 @@ export async function sendChatMessage(
         .map((att) => {
           const parsed = dataUrlToBase64(att.dataUrl);
           if (!parsed) return null;
+          const isImage = att.mimeType.startsWith("image/");
           return {
-            type: "image",
+            type: isImage ? "image" : "file",
             mimeType: parsed.mimeType,
             content: parsed.content,
+            fileName: att.fileName,
           };
         })
         .filter((a): a is NonNullable<typeof a> => a !== null)
@@ -161,6 +192,8 @@ export async function sendChatMessage(
       deliver: false,
       idempotencyKey: runId,
       attachments: apiAttachments,
+      ...(opts?.voiceInput ? { voiceInput: true } : {}),
+      ...(opts?.voiceMode ? { voiceMode: true } : {}),
     });
 
     return true;
@@ -235,7 +268,15 @@ export function handleChatEvent(
     state.chatRunId &&
     payload.runId !== state.chatRunId
   ) {
-    if (payload.state === "final") return "final";
+    // [CN-MERGE:f2e9986813] Append out-of-band final payloads inline
+    if (payload.state === "final") {
+      const finalMessage = normalizeFinalAssistantMessage(payload.message);
+      if (finalMessage) {
+        state.chatMessages = [...state.chatMessages, finalMessage];
+        return null;
+      }
+      return "final";
+    }
     return null;
   }
 
@@ -283,8 +324,21 @@ export function handleChatEvent(
     // [CN-PATCH:dedup] Optimistically add the final message to chatMessages BEFORE
     // clearing chatStream. This prevents the "reply disappears" gap between clearing
     // the stream and the async loadChatHistory RPC completing.
-    if (payload.message) {
-      state.chatMessages = [...state.chatMessages, payload.message];
+    // [CN-MERGE:8264d4521b] Validate message has assistant role and content before appending.
+    let finalMessage = normalizeFinalAssistantMessage(payload.message);
+    // [CN-FIX:swallowed-reply] When the server sends chat.final with no message
+    // (e.g. tool-only responses where the buffer was empty), preserve whatever
+    // was streamed so the user doesn't see their content vanish.
+    if (!finalMessage && state.chatStream) {
+      finalMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: state.chatStream }],
+        timestamp: Date.now(),
+        _streamFallback: true,
+      };
+    }
+    if (finalMessage) {
+      state.chatMessages = [...state.chatMessages, finalMessage];
     }
     state.chatStream = null;
     state.chatRunId = null;

@@ -13,6 +13,8 @@ import { readStringParam } from "./common.js";
 // ─── Constants ──────────────────────────────────────────────────────
 
 const ASR_MODELS_DIR = path.join(CONFIG_DIR, "tools", "sherpa-onnx-asr", "models");
+/** New voice-models directory used by voice-install.ts */
+const VOICE_MODELS_DIR = path.join(CONFIG_DIR, "voice-models");
 
 /** Supported model architectures. */
 type AsrModelKind = "senseVoice" | "paraformer";
@@ -79,24 +81,27 @@ function isValidModelDir(dir: string): boolean {
   );
 }
 
-export function detectInstalledModel(): AsrModelEntry | null {
-  if (!fs.existsSync(ASR_MODELS_DIR)) return null;
+/**
+ * Scan a single directory for valid ASR model subdirectories.
+ * Returns the best match (SenseVoice preferred) or null.
+ */
+function scanModelDir(baseDir: string): AsrModelEntry | null {
+  if (!fs.existsSync(baseDir)) return null;
 
   let entries: string[];
   try {
-    entries = fs.readdirSync(ASR_MODELS_DIR);
+    entries = fs.readdirSync(baseDir);
   } catch {
     return null;
   }
 
-  // Two-pass: prefer SenseVoice (best multilingual), fall back to Paraformer.
   let paraformerFallback: AsrModelEntry | null = null;
 
   for (const entry of entries) {
-    const dir = path.join(ASR_MODELS_DIR, entry);
+    const dir = path.join(baseDir, entry);
     if (!isDir(dir) || !isValidModelDir(dir)) continue;
 
-    if (entry.includes("sense-voice")) {
+    if (entry.includes("sense-voice") || entry.includes("sense_voice")) {
       return { kind: "senseVoice", dir, label: entry };
     }
 
@@ -106,6 +111,23 @@ export function detectInstalledModel(): AsrModelEntry | null {
   }
 
   return paraformerFallback;
+}
+
+/**
+ * Detect installed ASR model. Searches both the legacy tools directory
+ * and the new voice-models directory (used by voice-install.ts).
+ *
+ * Priority:
+ *   1. voice-models/ (new unified location)
+ *   2. tools/sherpa-onnx-asr/models/ (legacy location)
+ */
+export function detectInstalledModel(): AsrModelEntry | null {
+  // Search new voice-models dir first (voice-install.ts writes here)
+  const fromVoiceModels = scanModelDir(VOICE_MODELS_DIR);
+  if (fromVoiceModels) return fromVoiceModels;
+
+  // Fall back to legacy dir
+  return scanModelDir(ASR_MODELS_DIR);
 }
 
 // ─── Recognizer cache ───────────────────────────────────────────────

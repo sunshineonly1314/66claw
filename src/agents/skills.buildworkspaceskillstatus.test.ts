@@ -100,7 +100,11 @@ describe("buildWorkspaceSkillStatus", () => {
 
       expect(skill).toBeDefined();
       expect(skill?.blockedByAllowlist).toBe(true);
-      expect(skill?.eligible).toBe(false);
+      // `eligible` = technical requirements met (deps, bins, env satisfied).
+      // Bundled skills without requirements are eligible even if not in allowBundled.
+      // `activeInPrompt` = actually injected into system prompt (only when pinned or always).
+      expect(skill?.eligible).toBe(true);
+      expect(skill?.activeInPrompt).toBe(false);
     } finally {
       if (originalBundled === undefined) {
         delete process.env.OPENCLAWCN_BUNDLED_SKILLS_DIR;

@@ -1,6 +1,6 @@
 # Check what's locking the installer file
 $ErrorActionPreference = 'Continue'
-$LOG = 'C:\Users\SunBin\check-lock.log'
+$LOG = Join-Path $env:USERPROFILE 'check-lock.log'
 
 $file = "E:\clawdbuild\ClawdbotCN-Setup-2026.2.15-x64.exe"
 

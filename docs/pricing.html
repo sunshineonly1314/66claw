@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClawdBot CN — 选择你的版本</title>
+<link rel="preconnect" href="https://fonts.loli.net" crossorigin>
+<link href="https://fonts.loli.net/css2?family=Noto+Sans+SC:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   Design Tokens — inherited from ClawdBot base.css
+   ============================================================================ */
+:root {
+  --bg: #0a0e14;
+  --bg-accent: #111820;
+  --bg-elevated: #1a2332;
+  --bg-hover: #243044;
+  --card: #141c28;
+  --card-pro: #141e2e;
+  --card-highlight: rgba(255,255,255,0.04);
+  --text: #c8d1dc;
+  --text-strong: #f0f2f5;
+  --text-white: #ffffff;
+  --muted: #6b7d91;
+  --border: #1e2a3a;
+  --border-strong: #2d3e54;
+  --accent: #6c8cff;
+  --accent-rgb: 108,140,255;
+  --accent-hover: #89a5ff;
+  --accent-glow: rgba(108,140,255,0.25);
+  --ok: #34d399;
+  --ok-rgb: 52,211,153;
+  --ok-glow: rgba(52,211,153,0.2);
+  --warn: #fbbf24;
+  --warn-rgb: 251,191,36;
+  --teal: #20d5bc;
+  --teal-rgb: 32,213,188;
+  --font-cn: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ============================================================================
+   Light Theme
+   ============================================================================ */
+:root[data-theme="light"] {
+  --bg: #f5f3f0;
+  --bg-accent: #eeece8;
+  --bg-elevated: #ffffff;
+  --bg-hover: #e8e5e0;
+  --card: #ffffff;
+  --card-pro: #fffbf5;
+  --card-highlight: rgba(0,0,0,0.02);
+  --text: #4a4a52;
+  --text-strong: #1a1a20;
+  --text-white: #ffffff;
+  --muted: #8a8a96;
+  --border: #e0ddd8;
+  --border-strong: #ccc8c0;
+  --accent: #4a6aff;
+  --accent-rgb: 74,106,255;
+  --accent-hover: #3a58e0;
+  --accent-glow: rgba(74,106,255,0.15);
+  --ok: #16a34a;
+  --ok-rgb: 22,163,74;
+  --ok-glow: rgba(22,163,74,0.12);
+  --warn: #d97706;
+  --warn-rgb: 217,119,6;
+  --teal: #0d9488;
+  --teal-rgb: 13,148,136;
+}
+
+/* ============================================================================
+   Reset & Base
+   ============================================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-cn);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: rgba(var(--accent-rgb), 0.25);
+  color: var(--text-strong);
+}
+
+/* ============================================================================
+   Noise Texture Overlay
+   ============================================================================ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+:root[data-theme="light"] body::before {
+  opacity: 0.02;
+}
+
+/* ============================================================================
+   Theme Toggle
+   ============================================================================ */
+.theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  z-index: 100;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s var(--ease-out);
+  backdrop-filter: blur(12px);
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 20px var(--accent-glow);
+  transform: scale(1.08);
+}
+
+.theme-toggle svg {
+  width: 20px;
+  height: 20px;
+  stroke: var(--text);
+  stroke-width: 1.8;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.3s;
+}
+
+.theme-toggle:hover svg { stroke: var(--accent); }
+
+.theme-toggle .icon-moon { display: block; }
+.theme-toggle .icon-sun { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-moon { display: none; }
+:root[data-theme="light"] .theme-toggle .icon-sun { display: block; }
+
+/* ============================================================================
+   Layout
+   ============================================================================ */
+.page {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ============================================================================
+   Hero Section
+   ============================================================================ */
+.hero {
+  position: relative;
+  padding: 100px 0 60px;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* Ambient glow */
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -180px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 500px;
+  background: radial-gradient(ellipse, rgba(var(--accent-rgb), 0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 100px;
+  border: 1px solid rgba(var(--ok-rgb), 0.25);
+  background: rgba(var(--ok-rgb), 0.06);
+  color: var(--ok);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin-bottom: 32px;
+  animation: rise 0.6s var(--ease-out) both;
+}
+
+.hero-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+.hero h1 {
+  font-size: clamp(36px, 5vw, 56px);
+  font-weight: 900;
+  color: var(--text-strong);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: 20px;
+  animation: rise 0.6s var(--ease-out) 0.1s both;
+}
+
+.hero h1 .gradient-text {
+  background: linear-gradient(135deg, var(--accent), var(--teal));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-sub {
+  font-size: clamp(16px, 2vw, 19px);
+  color: var(--muted);
+  max-width: 560px;
+  margin: 0 auto 40px;
+  line-height: 1.7;
+  font-weight: 300;
+  animation: rise 0.6s var(--ease-out) 0.2s both;
+}
+
+.hero-stats {
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  animation: rise 0.6s var(--ease-out) 0.3s both;
+}
+
+.hero-stat {
+  text-align: center;
+}
+
+.hero-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  letter-spacing: -0.03em;
+}
+
+.hero-stat-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ============================================================================
+   Pricing Grid
+   ============================================================================ */
+.pricing-section {
+  padding: 40px 0 80px;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+/* ============================================================================
+   Pricing Card Base
+   ============================================================================ */
+.pricing-card {
+  position: relative;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 36px 28px 32px;
+  transition: all 0.4s var(--ease-out);
+  animation: card-enter 0.7s var(--ease-out) both;
+}
+
+.pricing-card:nth-child(1) { animation-delay: 0.15s; }
+.pricing-card:nth-child(2) { animation-delay: 0.25s; }
+.pricing-card:nth-child(3) { animation-delay: 0.35s; }
+
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pricing-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.15), 0 0 0 1px var(--border-strong);
+}
+
+/* ---- Featured card (Pro) ---- */
+.pricing-card.featured {
+  border-color: rgba(var(--accent-rgb), 0.35);
+  background: var(--card-pro);
+  transform: scale(1.02);
+  z-index: 2;
+}
+
+.pricing-card.featured::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 17px;
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.2), rgba(var(--teal-rgb), 0.1), transparent 60%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.pricing-card.featured:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  transform: scale(1.02) translateY(-4px);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.2), 0 0 40px var(--accent-glow);
+}
+
+/* ---- Popular badge ---- */
+.popular-badge {
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-50%);
+  padding: 5px 20px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--accent), #5a78e8);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.35);
+}
+
+/* ---- Card Header ---- */
+.card-tier-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  font-size: 20px;
+}
+
+.tier-community .card-tier-icon {
+  background: rgba(var(--ok-rgb), 0.1);
+  border: 1px solid rgba(var(--ok-rgb), 0.15);
+}
+
+.tier-pro .card-tier-icon {
+  background: rgba(var(--accent-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-rgb), 0.15);
+}
+
+.tier-team .card-tier-icon {
+  background: rgba(var(--warn-rgb), 0.1);
+  border: 1px solid rgba(var(--warn-rgb), 0.15);
+}
+
+.card-tier-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin-bottom: 6px;
+}
+
+.card-tier-desc {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+/* ---- Price ---- */
+.card-price {
+  margin-bottom: 24px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.price-currency {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.price-amount {
+  font-size: 48px;
+  font-weight: 900;
+  color: var(--text-strong);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-family: var(--font-mono);
+}
+
+.price-period {
+  font-size: 15px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+/* ---- CTA Button ---- */
+.card-cta {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-cn);
+  cursor: pointer;
+  transition: all 0.3s var(--ease-out);
+  text-align: center;
+  text-decoration: none;
+  margin-bottom: 28px;
+}
+
+.tier-community .card-cta {
+  background: rgba(var(--ok-rgb), 0.1);
+  color: var(--ok);
+  border: 1px solid rgba(var(--ok-rgb), 0.2);
+}
+.tier-community .card-cta:hover {
+  background: rgba(var(--ok-rgb), 0.18);
+  border-color: rgba(var(--ok-rgb), 0.4);
+  box-shadow: 0 4px 20px var(--ok-glow);
+  transform: translateY(-1px);
+}
+
+.tier-pro .card-cta {
+  background: linear-gradient(135deg, var(--accent), #5a78e8);
+  color: #fff;
+  border: 1px solid transparent;
+  box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.3);
+}
+.tier-pro .card-cta:hover {
+  box-shadow: 0 8px 30px rgba(var(--accent-rgb), 0.45);
+  transform: translateY(-2px);
+}
+
+.tier-team .card-cta {
+  background: rgba(var(--warn-rgb), 0.1);
+  color: var(--warn);
+  border: 1px solid rgba(var(--warn-rgb), 0.2);
+}
+.tier-team .card-cta:hover {
+  background: rgba(var(--warn-rgb), 0.18);
+  border-color: rgba(var(--warn-rgb), 0.4);
+  box-shadow: 0 4px 20px rgba(var(--warn-rgb), 0.15);
+  transform: translateY(-1px);
+}
+
+/* ---- Divider ---- */
+.card-divider {
+  height: 1px;
+  background: var(--border);
+  margin-bottom: 24px;
+}
+
+/* ---- Feature List ---- */
+.card-features {
+  list-style: none;
+}
+
+.card-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.card-feature svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.card-feature.included svg { stroke: var(--ok); }
+.card-feature.excluded svg { stroke: var(--muted); opacity: 0.4; }
+.card-feature.excluded span { color: var(--muted); opacity: 0.5; }
+
+.card-feature.highlight {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.feature-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.feature-section-label:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+/* ============================================================================
+   Feature Comparison Table
+   ============================================================================ */
+.comparison-section {
+  padding: 40px 0 100px;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.section-header h2 {
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 800;
+  color: var(--text-strong);
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+
+.section-header p {
+  font-size: 16px;
+  color: var(--muted);
+  font-weight: 300;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--card);
+  animation: rise 0.6s var(--ease-out) 0.2s both;
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 14px 20px;
+  text-align: center;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.comparison-table th {
+  background: var(--bg-accent);
+  font-weight: 600;
+  color: var(--text-strong);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.comparison-table th:first-child {
+  text-align: left;
+  width: 40%;
+}
+
+.comparison-table td:first-child {
+  text-align: left;
+  color: var(--text);
+}
+
+.comparison-table tr:last-child td {
+  border-bottom: none;
+}
+
+.comparison-table tr:hover td {
+  background: rgba(var(--accent-rgb), 0.02);
+}
+
+.comparison-table .group-row td {
+  background: var(--bg-accent);
+  font-weight: 600;
+  color: var(--text-strong);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 10px 20px;
+}
+
+.tbl-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(var(--ok-rgb), 0.1);
+}
+
+.tbl-check svg {
+  width: 13px;
+  height: 13px;
+  stroke: var(--ok);
+  stroke-width: 2.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tbl-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(128,128,128,0.06);
+}
+
+.tbl-x svg {
+  width: 11px;
+  height: 11px;
+  stroke: var(--muted);
+  stroke-width: 2;
+  fill: none;
+  opacity: 0.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tbl-text {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.tbl-text.accent { color: var(--accent); font-weight: 600; }
+.tbl-text.ok { color: var(--ok); font-weight: 600; }
+
+/* Column highlight for Pro */
+.comparison-table th:nth-child(3),
+.comparison-table td:nth-child(3) {
+  background: rgba(var(--accent-rgb), 0.03);
+}
+
+.comparison-table .group-row td:nth-child(3) {
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+/* ============================================================================
+   FAQ Section
+   ============================================================================ */
+.faq-section {
+  padding: 0 0 100px;
+}
+
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  animation: rise 0.6s var(--ease-out) 0.3s both;
+}
+
+.faq-item {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 24px;
+  transition: all 0.3s var(--ease-out);
+}
+
+.faq-item:hover {
+  border-color: var(--border-strong);
+}
+
+.faq-q {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.faq-q::before {
+  content: "Q";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.faq-a {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.65;
+  padding-left: 32px;
+}
+
+/* ============================================================================
+   Founding Member Banner
+   ============================================================================ */
+.founding-banner {
+  margin: 0 auto 80px;
+  max-width: 720px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--warn-rgb), 0.2);
+  background: linear-gradient(135deg, rgba(var(--warn-rgb), 0.04), rgba(var(--accent-rgb), 0.02));
+  padding: 32px;
+  text-align: center;
+  animation: rise 0.6s var(--ease-out) 0.4s both;
+}
+
+.founding-banner h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin-bottom: 12px;
+}
+
+.founding-banner h3 .emoji { margin-right: 8px; }
+
+.founding-banner p {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.7;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.founding-perks {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.founding-perk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--warn);
+}
+
+.founding-perk svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--warn);
+  stroke-width: 2.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ============================================================================
+   Footer
+   ============================================================================ */
+.footer {
+  text-align: center;
+  padding: 40px 0;
+  border-top: 1px solid var(--border);
+}
+
+.footer p {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================================
+   Animations
+   ============================================================================ */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================================
+   Responsive
+   ============================================================================ */
+@media (max-width: 900px) {
+  .pricing-grid {
+    grid-template-columns: 1fr;
+    max-width: 420px;
+    margin: 0 auto;
+    gap: 24px;
+  }
+
+  .pricing-card.featured {
+    transform: none;
+    order: -1;
+  }
+
+  .pricing-card.featured:hover {
+    transform: translateY(-4px);
+  }
+
+  .hero-stats {
+    gap: 32px;
+  }
+
+  .faq-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-table {
+    font-size: 13px;
+  }
+
+  .comparison-table th,
+  .comparison-table td {
+    padding: 10px 12px;
+  }
+
+  .founding-perks {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero { padding: 80px 0 40px; }
+  .hero-stats { gap: 24px; }
+  .hero-stat-value { font-size: 22px; }
+  .price-amount { font-size: 40px; }
+  .container { padding: 0 16px; }
+
+  .comparison-section { overflow-x: auto; }
+  .comparison-table { min-width: 600px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Theme Toggle -->
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换主题">
+    <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+  </button>
+
+  <!-- ======== Hero ======== -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">新版定价上线</div>
+      <h1>你的 AI 助手，<br><span class="gradient-text">你来选择怎么用</span></h1>
+      <p class="hero-sub">
+        接入国内外 16 家 AI 供应商，中文优先设计。<br>
+        从个人到团队，选最合适的那一档。
+      </p>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="hero-stat-value">16</div>
+          <div class="hero-stat-label">AI 供应商</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-value">7000+</div>
+          <div class="hero-stat-label">可用插件</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-value">Win/Mac</div>
+          <div class="hero-stat-label">跨平台桌面端</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Pricing Cards ======== -->
+  <section class="pricing-section">
+    <div class="container">
+      <div class="pricing-grid">
+
+        <!-- Community -->
+        <div class="pricing-card tier-community">
+          <div class="card-tier-icon">🌱</div>
+          <div class="card-tier-name">社区版</div>
+          <div class="card-tier-desc">核心功能齐全，轻松上手</div>
+          <div class="card-price">
+            <span class="price-currency">¥</span>
+            <span class="price-amount">79</span>
+            <span class="price-period">/年</span>
+          </div>
+          <a href="#" class="card-cta">开始使用</a>
+          <div class="card-divider"></div>
+          <ul class="card-features">
+            <li class="feature-section-label">核心能力</li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>16 家 AI 供应商全部可用</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>完整中文界面</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>Win / Mac 桌面客户端</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>开箱向导 — 填 Key 就能用</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>自动更新 &amp; 一键诊断</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>聊天智能压缩，不丢上下文</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>免费模型自动优先，帮你省钱</span>
+            </li>
+            <li class="feature-section-label">插件与工具</li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>预装 5 个常用插件</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>插件商城（官方源）</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>30 个基础技能</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>发图片给 AI 看图识别</span>
+            </li>
+            <li class="feature-section-label">设备与支持</li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>绑定 1 台设备</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>社区群答疑</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Pro (Featured) -->
+        <div class="pricing-card featured tier-pro">
+          <div class="popular-badge">最受欢迎</div>
+          <div class="card-tier-icon">⚡</div>
+          <div class="card-tier-name">专业版</div>
+          <div class="card-tier-desc">全部功能解锁，效率拉满</div>
+          <div class="card-price">
+            <span class="price-currency">¥</span>
+            <span class="price-amount">159</span>
+            <span class="price-period">/年</span>
+          </div>
+          <a href="#" class="card-cta">立即升级</a>
+          <div class="card-divider"></div>
+          <ul class="card-features">
+            <li class="feature-section-label">包含社区版全部功能，另外还有</li>
+            <li class="card-feature included highlight">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>7000+ 插件扩展源（ModelScope）</span>
+            </li>
+            <li class="card-feature included highlight">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>智能选模型 — 发图/发代码自动切换</span>
+            </li>
+            <li class="card-feature included highlight">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>模型能力对比，选模型不纠结</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>用量和花费统计，预算看得见</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>12000+ 工具智能推荐</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>音频 / 视频理解（不止文字和图片）</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>图片理解全供应商可用</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>多 AI 协同编排（复杂任务自动拆解）</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>全部技能解锁</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>Power 极速模式（最大算力）</span>
+            </li>
+            <li class="feature-section-label">设备与支持</li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>绑定 1 台设备</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>社区群答疑</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Team -->
+        <div class="pricing-card tier-team">
+          <div class="card-tier-icon">🏢</div>
+          <div class="card-tier-name">团队版</div>
+          <div class="card-tier-desc">专人交付，省心到家</div>
+          <div class="card-price">
+            <span class="price-currency">¥</span>
+            <span class="price-amount">299</span>
+            <span class="price-period">/年</span>
+          </div>
+          <a href="#" class="card-cta">联系购买</a>
+          <div class="card-divider"></div>
+          <ul class="card-features">
+            <li class="feature-section-label">专属服务</li>
+            <li class="card-feature included highlight">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>1 对 1 远程安装交付</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>帮你装好、配好、跑通第一次对话</span>
+            </li>
+            <li class="feature-section-label">包含专业版全部功能</li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>7000+ 插件扩展源</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>智能选模型 — 自动切换</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>模型能力对比</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>用量和花费统计</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>12000+ 工具智能推荐</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>音频 / 视频理解</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>多 AI 协同编排</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>全部技能解锁</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>Power 极速模式</span>
+            </li>
+            <li class="feature-section-label">设备与支持</li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>绑定 1 台设备</span>
+            </li>
+            <li class="card-feature included">
+              <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              <span>社区群答疑</span>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Comparison Table ======== -->
+  <section class="comparison-section">
+    <div class="container">
+      <div class="section-header">
+        <h2>完整功能对比</h2>
+        <p>一张表看清三个版本的区别</p>
+      </div>
+
+      <div style="overflow-x: auto;">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>功能</th>
+            <th>社区版 ¥79</th>
+            <th>专业版 ¥159</th>
+            <th>团队版 ¥299</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- 基础能力 -->
+          <tr class="group-row"><td colspan="4">基础能力</td></tr>
+          <tr>
+            <td>16 家 AI 供应商</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>完整中文界面</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>桌面客户端（Win / Mac）</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>开箱向导</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>自动更新 &amp; 自动诊断</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>对话智能压缩</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>免费模型优先</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+
+          <!-- 插件与工具 -->
+          <tr class="group-row"><td colspan="4">插件与工具</td></tr>
+          <tr>
+            <td>预装常用插件</td>
+            <td><span class="tbl-text">5 个</span></td>
+            <td><span class="tbl-text accent">5 个</span></td>
+            <td><span class="tbl-text accent">5 个</span></td>
+          </tr>
+          <tr>
+            <td>插件商城（官方源）</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>7000+ 扩展插件源（ModelScope）</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>技能数量</td>
+            <td><span class="tbl-text">30 个基础</span></td>
+            <td><span class="tbl-text accent">全部解锁</span></td>
+            <td><span class="tbl-text accent">全部解锁</span></td>
+          </tr>
+          <tr>
+            <td>智能工具推荐（12000+）</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+
+          <!-- 智能能力 -->
+          <tr class="group-row"><td colspan="4">智能能力</td></tr>
+          <tr>
+            <td>智能选模型（按内容自动切换）</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>模型能力对比</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>用量和花费统计</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>性能模式</td>
+            <td><span class="tbl-text">节能 + 均衡</span></td>
+            <td><span class="tbl-text accent">全部 3 档（含极速）</span></td>
+            <td><span class="tbl-text accent">全部 3 档（含极速）</span></td>
+          </tr>
+          <tr>
+            <td>多 AI 协同编排</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+
+          <!-- 多媒体理解 -->
+          <tr class="group-row"><td colspan="4">多媒体能力</td></tr>
+          <tr>
+            <td>图片理解</td>
+            <td><span class="tbl-text">1 家供应商</span></td>
+            <td><span class="tbl-text accent">全部供应商</span></td>
+            <td><span class="tbl-text accent">全部供应商</span></td>
+          </tr>
+          <tr>
+            <td>音频理解（发语音也能聊）</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>视频理解（发视频也能聊）</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+
+          <!-- 设备与服务 -->
+          <tr class="group-row"><td colspan="4">设备与服务</td></tr>
+          <tr>
+            <td>可绑定设备数</td>
+            <td><span class="tbl-text">1 台</span></td>
+            <td><span class="tbl-text">1 台</span></td>
+            <td><span class="tbl-text">1 台</span></td>
+          </tr>
+          <tr>
+            <td>社区群答疑</td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+          <tr>
+            <td>1 对 1 远程安装交付</td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td>
+            <td><span class="tbl-check"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Founding Member Banner ======== -->
+  <section>
+    <div class="container">
+      <div class="founding-banner">
+        <h3><span class="emoji">🏅</span>致早期用户</h3>
+        <p>
+          感谢你的信任与支持！所有在新版定价上线前购买的用户，
+          账户已自动升级为「创始会员」——
+          续费价格永久锁定，且未来新功能优先体验。
+          你买到的东西只会越来越多，绝不缩水。
+        </p>
+        <div class="founding-perks">
+          <div class="founding-perk">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>创始会员标识</span>
+          </div>
+          <div class="founding-perk">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>新功能优先体验</span>
+          </div>
+          <div class="founding-perk">
+            <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>续费价格永久锁定</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== FAQ ======== -->
+  <section class="faq-section">
+    <div class="container">
+      <div class="section-header">
+        <h2>常见问题</h2>
+      </div>
+      <div class="faq-grid">
+        <div class="faq-item">
+          <div class="faq-q">社区版够用吗？</div>
+          <div class="faq-a">
+            够用。16 家 AI 供应商全部可用，中文界面、桌面客户端、自动更新、智能压缩全都有。
+            日常和 AI 对话完全没问题，就是少了一些自动化和高级功能。
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">专业版比社区版多了什么？</div>
+          <div class="faq-a">
+            主要多了三块：① 智能调度 — 发图自动切视觉模型、发代码自动切代码模型；
+            ② 海量插件和工具推荐；③ 音频/视频理解 + 企业协作功能。
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">团队版的 1v1 交付包含什么？</div>
+          <div class="faq-a">
+            远程帮你安装客户端、配置 AI 供应商的 API Key、调通第一次对话、
+            确认一切正常运行。大概 30~60 分钟搞定。
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">可以从社区版升级吗？</div>
+          <div class="faq-a">
+            可以，随时补差价升级到专业版或团队版。已用天数按比例折算，不浪费。
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">AI 供应商的费用包含在里面吗？</div>
+          <div class="faq-a">
+            ClawdBot 是 AI 客户端工具，不包含各供应商的 API 调用费用。
+            但我们会自动帮你优先使用免费额度，尽量帮你省钱。
+          </div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q">一台设备不够用怎么办？</div>
+          <div class="faq-a">
+            社区版 1 台、专业版 3 台、团队版 5 台。
+            可以在设备管理里随时解绑旧设备、绑定新设备。
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== Footer ======== -->
+  <footer class="footer">
+    <div class="container">
+      <p>ClawdBot CN &mdash; 为中国用户设计的 AI 助手平台</p>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const current = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', current === 'light' ? 'dark' : 'light');
+}
+
+// Intersection Observer for scroll-triggered animations
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.style.animationPlayState = 'running';
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.pricing-card, .faq-item, .comparison-table, .founding-banner').forEach(el => {
+  observer.observe(el);
+});
+</script>
+</body>
+</html>

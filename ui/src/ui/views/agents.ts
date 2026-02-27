@@ -1,4 +1,4 @@
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../i18n/index.js";
 import type {
   AgentIdentityResult,
@@ -8,6 +8,11 @@ import type {
   CronJob,
   CronStatus,
   SkillStatusReport,
+  TeamProjectSummary,
+  TeamProjectDetail,
+  TeamProjectHealthResult,
+  TeamProjectStatsResult,
+  TeamSharedMemoryEntry,
 } from "../types.ts";
 import {
   renderAgentFiles,
@@ -28,6 +33,11 @@ import {
   resolveModelLabel,
   resolveModelPrimary,
 } from "./agents-utils.ts";
+import {
+  renderProjectSidebarGroups,
+  renderProjectDetail,
+  type ProjectDetailTab,
+} from "./team-projects.ts";
 
 export type AgentsPanel = "overview" | "files" | "tools" | "skills" | "channels" | "cron";
 
@@ -93,6 +103,41 @@ export type AgentsProps = {
   onToggleAddForm: (open: boolean) => void;
   onCreateAgent: (id: string, name: string, workspace: string) => Promise<boolean>;
   onDeleteAgent: (agentId: string) => Promise<void>;
+  // dmScope auto-detection status
+  dmScopeStatus?: {
+    recommended: string;
+    current: string;
+    isExplicit: boolean;
+    shouldUpgrade: boolean;
+    reason: string;
+    configuredChannelCount: number;
+    totalAccounts: number;
+    multiUserChannels: string[];
+  } | null;
+  onDmScopeApply?: () => void;
+  // OpenClawCN: Orchestrator (智能组队) entry
+  orchestratorEntryHtml?: TemplateResult | typeof nothing;
+  orchestratorHtml?: TemplateResult | typeof nothing;
+  // Team Projects
+  teamProjects: TeamProjectSummary[] | null;
+  teamProjectSelectedId: string | null;
+  teamProjectDetail: TeamProjectDetail | null;
+  teamProjectDetailLoading: boolean;
+  teamProjectHealth: TeamProjectHealthResult | null;
+  teamProjectStats: TeamProjectStatsResult | null;
+  teamProjectMemory: TeamSharedMemoryEntry[] | null;
+  teamProjectTab: ProjectDetailTab;
+  teamProjectBusy: boolean;
+  teamCollapsedProjects: Set<string>;
+  onSelectProject: (projectId: string) => void;
+  onSelectProjectTab: (tab: ProjectDetailTab) => void;
+  onPauseProject: (projectId: string) => void;
+  onResumeProject: (projectId: string) => void;
+  onDeleteProject: (projectId: string) => void;
+  onLoadProjectStats: (projectId: string) => void;
+  onLoadProjectMemory: (projectId: string) => void;
+  onClearProjectMemory: (projectId: string) => void;
+  onToggleProjectCollapse: (projectId: string) => void;
 };
 
 export type AgentContext = {
@@ -117,6 +162,8 @@ export function renderAgents(props: AgentsProps) {
   const isOnlyDefault = agents.length <= 1;
 
   return html`
+    <div class="agents-wrapper">
+    ${props.orchestratorHtml && props.orchestratorHtml !== nothing ? html`<div class="orch-overlay">${props.orchestratorHtml}</div>` : nothing}
     <div class="agents-layout">
       <section class="agents-sidebar">
         <div class="row" style="justify-content: space-between;">
@@ -133,38 +180,68 @@ export function renderAgents(props: AgentsProps) {
             ? html`<div class="callout danger">${props.error}</div>`
             : nothing
         }
+        ${props.orchestratorEntryHtml ?? nothing}
         <div class="agent-list">
           ${
             agents.length === 0
-              ? html`
-                  <div class="muted">${t("agents.noAgents")}</div>
-                `
-              : agents.map((agent) => {
-                  const badge = agentBadgeText(agent.id, defaultId);
-                  const emoji = resolveAgentEmoji(agent, props.agentIdentityById[agent.id] ?? null);
-                  return html`
-                    <button
-                      type="button"
-                      class="agent-row ${selectedId === agent.id ? "active" : ""}"
-                      @click=${() => props.onSelectAgent(agent.id)}
-                    >
-                      <div class="agent-avatar">${emoji || normalizeAgentLabel(agent).slice(0, 1)}</div>
-                      <div class="agent-info">
-                        <div class="agent-title">${normalizeAgentLabel(agent)}</div>
-                        <div class="agent-sub mono">${agent.id}</div>
-                      </div>
-                      ${badge ? html`<span class="agent-pill">${badge}</span>` : nothing}
-                    </button>
-                  `;
-                })
+              ? html`<div class="muted">${t("agents.noAgents")}</div>`
+              : hasTeamProjects(props.teamProjects)
+                ? renderProjectSidebarGroups({
+                    projects: props.teamProjects,
+                    agents: props.agentsList,
+                    agentIdentityById: props.agentIdentityById,
+                    selectedProjectId: props.teamProjectSelectedId,
+                    selectedAgentId: selectedId,
+                    defaultAgentId: defaultId,
+                    collapsedProjects: props.teamCollapsedProjects,
+                    onSelectProject: props.onSelectProject,
+                    onSelectAgent: props.onSelectAgent,
+                    onToggleCollapse: props.onToggleProjectCollapse,
+                  })
+                : agents.map((agent) => {
+                    const badge = agentBadgeText(agent.id, defaultId);
+                    const emoji = resolveAgentEmoji(agent, props.agentIdentityById[agent.id] ?? null);
+                    return html`
+                      <button
+                        type="button"
+                        class="agent-row ${selectedId === agent.id ? "active" : ""}"
+                        @click=${() => props.onSelectAgent(agent.id)}
+                      >
+                        <div class="agent-avatar">${emoji || normalizeAgentLabel(agent).slice(0, 1)}</div>
+                        <div class="agent-info">
+                          <div class="agent-title">${normalizeAgentLabel(agent)}</div>
+                          <div class="agent-sub mono">${agent.id}</div>
+                        </div>
+                        ${badge ? html`<span class="agent-pill">${badge}</span>` : nothing}
+                      </button>
+                    `;
+                  })
           }
         </div>
         ${renderAddAgentForm(props)}
       </section>
       <section class="agents-main">
-        ${isOnlyDefault ? renderMultiAgentGuide() : nothing}
+        ${isOnlyDefault && !hasTeamProjects(props.teamProjects) ? renderMultiAgentGuide() : nothing}
         ${
-          !selectedAgent
+          props.teamProjectSelectedId
+            ? renderProjectDetail({
+                detail: props.teamProjectDetail,
+                detailLoading: props.teamProjectDetailLoading,
+                health: props.teamProjectHealth,
+                stats: props.teamProjectStats,
+                memory: props.teamProjectMemory,
+                tab: props.teamProjectTab,
+                busy: props.teamProjectBusy,
+                agentIdentityById: props.agentIdentityById,
+                onSelectTab: props.onSelectProjectTab,
+                onPause: props.onPauseProject,
+                onResume: props.onResumeProject,
+                onDelete: props.onDeleteProject,
+                onLoadStats: props.onLoadProjectStats,
+                onLoadMemory: props.onLoadProjectMemory,
+                onClearMemory: props.onClearProjectMemory,
+              })
+          : !selectedAgent
             ? html`
                 <div class="card">
                   <div class="card-title">${t("agents.selectAgent")}</div>
@@ -196,6 +273,7 @@ export function renderAgents(props: AgentsProps) {
                         onConfigSave: props.onConfigSave,
                         onModelChange: props.onModelChange,
                         onModelFallbacksChange: props.onModelFallbacksChange,
+                        dmScopeStatus: props.dmScopeStatus ?? null,
                       })
                     : nothing
                 }
@@ -272,6 +350,8 @@ export function renderAgents(props: AgentsProps) {
                         error: props.channelsError,
                         lastSuccess: props.channelsLastSuccess,
                         onRefresh: props.onChannelsRefresh,
+                        dmScopeStatus: props.dmScopeStatus ?? null,
+                        onDmScopeApply: props.onDmScopeApply,
                       })
                     : nothing
                 }
@@ -298,7 +378,12 @@ export function renderAgents(props: AgentsProps) {
         }
       </section>
     </div>
+    </div>
   `;
+}
+
+function hasTeamProjects(projects: TeamProjectSummary[] | null): boolean {
+  return !!projects && projects.length > 0;
 }
 
 function renderAgentHeader(
@@ -388,6 +473,7 @@ function renderAgentOverview(params: {
   onConfigSave: () => void;
   onModelChange: (agentId: string, modelId: string | null) => void;
   onModelFallbacksChange: (agentId: string, fallbacks: string[]) => void;
+  dmScopeStatus: AgentsProps["dmScopeStatus"] | null;
 }) {
   const {
     agent,
@@ -467,6 +553,13 @@ function renderAgentOverview(params: {
         <div class="agent-kv">
           <div class="label">${t("agents.skillsFilter")}</div>
           <div>${skillFilter ? `${skillCount} ${t("agents.selectedSkills")}` : t("agents.allSkills")}</div>
+        </div>
+        <div class="agent-kv">
+          <div class="label">${t("agents.sessionIsolation")}</div>
+          <div>
+            ${params.dmScopeStatus ? (() => { const k = `dmScope.label.${params.dmScopeStatus!.current}`; const v = (t as (k: string) => string)(k); return v !== k ? v : params.dmScopeStatus!.current; })() : "-"}
+            ${params.dmScopeStatus?.shouldUpgrade ? html`<span class="agent-pill warn">${t("agents.dmScopeUpgradeNeeded")}</span>` : params.dmScopeStatus && params.dmScopeStatus.current !== "main" ? html`<span class="agent-pill">${t("agents.dmScopeOk")}</span>` : nothing}
+          </div>
         </div>
       </div>
 

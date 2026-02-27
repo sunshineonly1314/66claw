@@ -66,6 +66,10 @@ export type GatewayRequestContext = {
   chatAbortedRuns: Map<string, number>;
   chatRunBuffers: Map<string, string>;
   chatDeltaSentAt: Map<string, number>;
+  /** TTS audio file paths keyed by clientRunId, for web UI auto-playback. */
+  chatTtsMediaUrls: Map<string, string>;
+  /** Tracks runs where the inbound message was voice input (enables TTS on response). */
+  chatVoiceInputRuns: Map<string, boolean>;
   addChatRun: (sessionId: string, entry: { sessionKey: string; clientRunId: string }) => void;
   removeChatRun: (
     sessionId: string,

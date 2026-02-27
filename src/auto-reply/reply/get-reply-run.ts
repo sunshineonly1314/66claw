@@ -202,6 +202,27 @@ export async function runPreparedReply(
     }
     extraSystemPrompt = [extraSystemPrompt, summaryPrompt].filter(Boolean).join("\n\n");
   }
+  // ── [CN-PATCH:voice-mode] 语音对话模式：注入口语化提示词 ──
+  // Trigger on voiceInput (MediaType=audio, i.e. TTS will play) OR explicit voiceMode.
+  const isVoiceResponse = ctx.VoiceMode || ctx.MediaType === "audio";
+  if (isVoiceResponse) {
+    logVerbose(
+      `[get-reply-run] voice prompt injected (VoiceMode=${!!ctx.VoiceMode}, MediaType=${ctx.MediaType})`,
+    );
+    const voiceModePrompt = [
+      "## Voice Conversation Mode",
+      "The user is currently in voice conversation mode — they are LISTENING to your response via text-to-speech, not reading it.",
+      "You MUST follow these rules:",
+      "- Use natural, spoken Chinese (口语化). Write as if you are talking to a friend.",
+      "- NEVER use markdown formatting: no tables, no bold/italic, no headers, no bullet lists, no code blocks.",
+      "- NEVER use emoji or special symbols.",
+      "- Keep responses short and concise (1-3 sentences). Do not ramble.",
+      "- Use complete sentences with clear punctuation (。！？) so TTS can produce natural pauses.",
+      "- Avoid numbers, URLs, file paths, or technical jargon that sounds bad when read aloud.",
+      "- If you need to convey structured data (like a list), narrate it conversationally instead of formatting it.",
+    ].join("\n");
+    extraSystemPrompt = [extraSystemPrompt, voiceModePrompt].filter(Boolean).join("\n\n");
+  }
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
   // Use CommandBody/RawBody for bare reset detection (clean message without structural context).
   const rawBodyTrimmed = (ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? "").trim();

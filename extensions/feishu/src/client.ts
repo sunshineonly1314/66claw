@@ -27,7 +27,7 @@ noProxyHttpInstance.interceptors.request.use((req) => {
   return req;
 }, undefined, { synchronous: true });
 noProxyHttpInstance.interceptors.response.use((resp) => {
-  if ((resp.config as Record<string, unknown>)["$return_headers"]) {
+  if ((resp.config as unknown as Record<string, unknown>)["$return_headers"]) {
     return { data: resp.data, headers: resp.headers } as unknown as typeof resp;
   }
   return resp.data as unknown as typeof resp;

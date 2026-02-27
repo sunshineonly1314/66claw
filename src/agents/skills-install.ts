@@ -2726,6 +2726,21 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
       usingCNMirror: useCN,
       percent: 90,
     });
+    // Actually verify the installed binaries are on PATH
+    const expectedBins = spec.bins ?? [];
+    if (expectedBins.length > 0) {
+      // Clear hasBinary cache so we re-scan PATH
+      const { clearBinaryCache } = await import("./skills/config.js");
+      clearBinaryCache();
+      const missingBins = expectedBins.filter((bin) => !hasBinary(bin));
+      if (missingBins.length > 0) {
+        warnings.push(
+          useCN
+            ? `安装命令成功但以下二进制未在 PATH 中找到: ${missingBins.join(", ")}`
+            : `Install succeeded but binaries not found on PATH: ${missingBins.join(", ")}`,
+        );
+      }
+    }
   }
 
   // OpenClawCN: Fallback to HK binary server when brew install fails

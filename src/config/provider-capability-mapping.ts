@@ -39,6 +39,7 @@ export interface ModelDef {
 
 /** Provider 分组 */
 export type ProviderGroup =
+  | "cn-codeplan" // 代码助手 (Coding Plan)
   | "cn-recommended" // 国内主流推荐
   | "cn-more" // 更多国内服务
   | "international" // 国际服务
@@ -56,6 +57,14 @@ export interface ProviderGroupMeta {
 
 /** 所有 Provider 分组定义 */
 export const PROVIDER_GROUPS: ProviderGroupMeta[] = [
+  {
+    id: "cn-codeplan",
+    name: "代码助手 (Coding Plan)",
+    description: "代码专用模型，编程体验最佳",
+    icon: "🔥",
+    defaultExpanded: true,
+    order: -1,
+  },
   {
     id: "cn-recommended",
     name: "国内主流推荐",
@@ -108,6 +117,12 @@ export interface ProviderCapabilityMapping {
   apiKeyGuide?: string[];
   /** 该 Provider 的所有模型 */
   models: ModelDef[];
+  /** 是否需要用户输入 Base URL（如 Ollama、OpenAI 兼容等本地/自定义服务） */
+  needsBaseUrl?: boolean;
+  /** 默认 Base URL（用于预填输入框） */
+  defaultBaseUrl?: string;
+  /** API Key 是否可选（如 Ollama 本地不需要 Key） */
+  apiKeyOptional?: boolean;
 }
 
 /**
@@ -119,11 +134,15 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
      国内主流推荐 (优先展示)
      =========================================== */
 
-  "kimi-code": {
-    providerId: "kimi-code",
+  /* ===========================================
+     代码助手 (Coding Plan) - 最优先展示
+     =========================================== */
+
+  "kimi-coding": {
+    providerId: "kimi-coding",
     name: "Kimi Code",
     icon: "💻",
-    group: "cn-recommended",
+    group: "cn-codeplan",
     tagline: "代码专用 · 262K 超长上下文 · 极速",
     apiKeyUrl: "https://www.kimi.com/code/docs/",
     apiKeyGuide: ["访问 Kimi Code 文档页面", "按指引注册并获取 API Key", "复制 API Key"],
@@ -131,13 +150,136 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "kimi-for-coding",
         modelName: "Kimi for Coding",
-        capabilities: ["text"],
-        pricing: { type: "paid", details: "代码+文字,262K 超长上下文" },
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "代码+文字+图片理解,262K 超长上下文" },
         contextWindow: 262144,
         maxTokens: 8192,
+        agentOnly: true,
       },
     ],
   },
+
+  "aliyun-codeplan": {
+    providerId: "aliyun-codeplan",
+    name: "Aliyun Code",
+    icon: "☁️",
+    group: "cn-codeplan",
+    tagline: "模型聚合 · 一个 Key 调多款顶级代码模型",
+    apiKeyUrl:
+      "https://www.aliyun.com/benefit/ai/aistar?userCode=xsngby7y&clubBiz=subTask..12414078..10263..",
+    apiKeyGuide: ["免费注册阿里云 AI Star", "开通 Coding Plan 服务", "创建 API Key 并复制"],
+    models: [
+      {
+        modelId: "qwen3.5-plus",
+        modelName: "Qwen3.5-Plus",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "推荐 · 图片理解" },
+        contextWindow: 131072,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+      {
+        modelId: "kimi-k2.5",
+        modelName: "Kimi-K2.5",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "图片理解" },
+        contextWindow: 131072,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+      {
+        modelId: "glm-5",
+        modelName: "GLM-5",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+        contextWindow: 128000,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+      {
+        modelId: "MiniMax-M2.5",
+        modelName: "MiniMax-M2.5",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+      {
+        modelId: "qwen3-coder-plus",
+        modelName: "Qwen3-Coder-Plus",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "Coding Plan 代码专用" },
+        contextWindow: 131072,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+      {
+        modelId: "qwen3-coder-next",
+        modelName: "Qwen3-Coder-Next",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "下一代预览" },
+        contextWindow: 131072,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+    ],
+  },
+
+  "glm-codeplan": {
+    providerId: "glm-codeplan",
+    name: "GLM Code",
+    icon: "🧠",
+    group: "cn-codeplan",
+    tagline: "GLM-5 · 智谱 Coding Plan",
+    apiKeyUrl: "https://open.bigmodel.cn",
+    apiKeyGuide: ["访问 open.bigmodel.cn 注册", "开通 Coding Plan 服务", "创建 API Key 并复制"],
+    models: [
+      {
+        modelId: "glm-5",
+        modelName: "GLM-5",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "Coding Plan 代码专用" },
+        contextWindow: 128000,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+      {
+        modelId: "glm-4.7",
+        modelName: "GLM-4.7",
+        capabilities: ["text"],
+        pricing: { type: "paid" },
+        contextWindow: 128000,
+        maxTokens: 4096,
+        agentOnly: true,
+      },
+    ],
+  },
+
+  "minimax-codeplan": {
+    providerId: "minimax-codeplan",
+    name: "MiniMax Code",
+    icon: "⚡",
+    group: "cn-codeplan",
+    tagline: "MiniMax-M2.5 · Coding Plan 订阅",
+    apiKeyUrl: "https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link",
+    apiKeyGuide: ["访问 MiniMax 订阅 Coding Plan", "获取专用 API Key", "复制 API Key"],
+    models: [
+      {
+        modelId: "MiniMax-M2.5",
+        modelName: "MiniMax-M2.5",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "Coding Plan 订阅专属" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+        agentOnly: true,
+      },
+    ],
+  },
+
+  /* ===========================================
+     国内主流推荐 (优先展示)
+     =========================================== */
 
   "aliyun-bailian": {
     providerId: "aliyun-bailian",
@@ -240,7 +382,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     name: "硅基流动",
     icon: "🔮",
     group: "cn-recommended",
-    tagline: "记忆与推荐必需 · 免费模型多 · 需实名注册",
+    tagline: "向量记忆必需 · 免费模型多 · 需实名注册",
     apiKeyUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
     apiKeyGuide: [
       "访问硅基流动注册，免费领取额度",
@@ -309,8 +451,8 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       },
       // Embedding 模型 (必需!)
       {
-        modelId: "BAAI/bge-large-zh-v1.5",
-        modelName: "bge-large-zh-v1.5",
+        modelId: "BAAI/bge-m3",
+        modelName: "BGE-M3",
         capabilities: ["embedding"],
         pricing: { type: "free", details: "智能推荐必需" },
         testEndpoint: "/embeddings",
@@ -609,13 +751,13 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     providerId: "ant-ling",
     name: "蚂蚁百灵",
     icon: "🐜",
-    group: "cn-more",
-    tagline: "每日免费50万Token · 多模态 · 联网搜索",
+    group: "cn-recommended",
+    tagline: "记忆提取必需 · 每日免费50万Token · 注册即用",
     apiKeyUrl: "https://ling.tbox.cn/open",
     apiKeyGuide: [
       "访问 ling.tbox.cn/open 注册账号",
       "进入开放平台获取 API Key",
-      "每日免费 50 万 tokens",
+      "每日免费 50 万 tokens，记忆提取自动使用",
     ],
     models: [
       {
@@ -643,11 +785,15 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     providerId: "meituan-longcat",
     name: "美团LongCat",
     icon: "🐱",
-    group: "cn-more",
-    tagline: "每日免费50万Token · 128K上下文 · OpenAI兼容",
+    group: "cn-recommended",
+    tagline: "记忆提取必需 · 每日免费50万Token · 128K上下文",
     apiKeyUrl:
       "https://longcat.chat/login?countrycode=86&countryname=China&callback=https%3A%2F%2Flongcat.chat%2Fplatform",
-    apiKeyGuide: ["访问 longcat.chat 注册账号", "进入平台获取 API Key", "每日免费 50 万 tokens"],
+    apiKeyGuide: [
+      "访问 longcat.chat 注册账号",
+      "进入平台获取 API Key",
+      "每日免费 50 万 tokens，记忆提取自动使用",
+    ],
     models: [
       {
         modelId: "longcat-flash-chat",
@@ -801,6 +947,58 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     ],
   },
 
+  openrouter: {
+    providerId: "openrouter",
+    name: "OpenRouter",
+    icon: "🔀",
+    group: "international",
+    tagline: "聚合路由 · 数百模型 · 按量计费",
+    apiKeyUrl: "https://openrouter.ai/keys",
+    apiKeyGuide: ["访问 openrouter.ai 注册账号", "进入 Keys 页面创建 API Key"],
+    models: [
+      {
+        modelId: "openrouter/auto",
+        modelName: "Auto (智能路由)",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "按量计费" },
+        contextWindow: 128000,
+        maxTokens: 4096,
+      },
+      {
+        modelId: "anthropic/claude-sonnet-4",
+        modelName: "Claude Sonnet 4",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "$3/$15 per 1M" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+      {
+        modelId: "google/gemini-2.5-flash-preview",
+        modelName: "Gemini 2.5 Flash",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "低价" },
+        contextWindow: 1000000,
+        maxTokens: 8192,
+      },
+      {
+        modelId: "openai/gpt-4o",
+        modelName: "GPT-4o",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "$2.5/$10 per 1M" },
+        contextWindow: 128000,
+        maxTokens: 4096,
+      },
+      {
+        modelId: "deepseek/deepseek-chat-v3-0324",
+        modelName: "DeepSeek V3",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "低价" },
+        contextWindow: 128000,
+        maxTokens: 8192,
+      },
+    ],
+  },
+
   /* ===========================================
      本地模型 & 自定义
      =========================================== */
@@ -813,6 +1011,9 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     tagline: "本地运行 · 完全免费 · 隐私安全",
     apiKeyUrl: "https://ollama.com/download",
     apiKeyGuide: ["下载并安装 Ollama", "运行 ollama serve 启动服务", "API Key 留空即可"],
+    needsBaseUrl: true,
+    defaultBaseUrl: "http://localhost:11434/v1",
+    apiKeyOptional: true,
     models: [
       // 注意: Ollama 的模型列表需要动态检测
       // 这里只列出常见模型作为示例
@@ -856,6 +1057,8 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       "填入 Base URL 和 API Key",
       "模型列表将自动检测",
     ],
+    needsBaseUrl: true,
+    defaultBaseUrl: "",
     models: [
       // OpenAI 兼容服务的模型列表需要动态检测
       // 这里不提供预定义模型

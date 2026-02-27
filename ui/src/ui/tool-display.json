@@ -209,6 +209,18 @@
         "ban": { "label": "ban", "detailKeys": ["guildId", "userId"] }
       }
     },
+    "image_gen": {
+      "icon": "image",
+      "title": "Image Generation",
+      "label": "generate image",
+      "detailKeys": ["prompt", "size", "style"]
+    },
+    "video_gen": {
+      "icon": "film",
+      "title": "Video Generation",
+      "label": "generate video",
+      "detailKeys": ["prompt", "size"]
+    },
     "open_app": {
       "icon": "rocket",
       "title": "打开应用",

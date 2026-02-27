@@ -60,7 +60,9 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
     chatRunId: null,
     chatStream: null,
     chatStreamStartedAt: null,
+    chatStreamJustCompleted: false,
     lastError: null,
+    failoverBanner: null,
     ...overrides,
   };
 }

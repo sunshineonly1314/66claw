@@ -4,6 +4,8 @@ export type ChatAttachment = {
   mimeType: string;
   fileName?: string;
   fileSize?: number;
+  /** UI rendering category, derived from mimeType at creation time. */
+  category?: "image" | "video" | "file";
 };
 
 export type ChatQueueItem = {

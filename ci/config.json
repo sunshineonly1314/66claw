@@ -10,7 +10,8 @@
       "port": 22,
       "user": "SunBin",
       "workspace": "/mnt/d/cicd-workspace/openclawcn",
-      "gitee_repo": "https://sunshine1314:7c15433c23160cdae4aea6fff0996543@gitee.com/sunshine1314/openclawcn.git",
+      "gitee_repo_note": "Gitee clone URL is constructed at runtime from GITEE_PAT env var. See ci/build-*.sh.",
+      "gitee_repo_template": "https://sunshine1314:${GITEE_PAT}@gitee.com/sunshine1314/openclawcn.git",
       "output": "/mnt/d/cicd-workspace/openclawcn/apps/desktop/src-tauri/target/release/bundle/nsis",
       "node_version": "22.16.0",
       "build_script": "scripts/desktop/build.ps1",
@@ -22,7 +23,8 @@
       "port": 22,
       "user": "kevinsun",
       "workspace": "/Users/kevinsun/cicd-workspace/openclawcn",
-      "gitee_repo": "https://sunshine1314:7c15433c23160cdae4aea6fff0996543@gitee.com/sunshine1314/openclawcn.git",
+      "gitee_repo_note": "Gitee clone URL is constructed at runtime from GITEE_PAT env var. See ci/build-*.sh.",
+      "gitee_repo_template": "https://sunshine1314:${GITEE_PAT}@gitee.com/sunshine1314/openclawcn.git",
       "output": "/Users/kevinsun/cicd-workspace/openclawcn/apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg",
       "node_version": "22.16.0",
       "build_script": "scripts/desktop/build.sh",
@@ -33,7 +35,7 @@
   "webhook": {
     "port": 8888,
     "host": "0.0.0.0",
-    "secret": "clawdbot-ci-secret-2026",
+    "secret_note": "Webhook secret is read from CI_WEBHOOK_SECRET env var at runtime. DO NOT hardcode.",
     "auto_trigger": {
       "on_push": true,
       "on_tag": true,
@@ -43,8 +45,9 @@
   "release": {
     "enabled": true,
     "cache_dir": "E:\\openclawcn\\.release-cache",
-    "upload_method": "oss",
-    "oss_domain": "dl.obplugins.cn",
+    "upload_method": "scp",
+    "server_note": "Deploy server is read from DEPLOY_SERVER env var. See ci/release-deploy-remote.ps1.",
+    "domain_note": "Deploy domain is read from DEPLOY_DOMAIN env var.",
     "skip_upload": false
   },
   "artifacts": {

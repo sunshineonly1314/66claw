@@ -27,6 +27,9 @@ import type {
   PluginHookMessageSentEvent,
   PluginHookName,
   PluginHookRegistration,
+  PluginHookResolveAgentContext,
+  PluginHookResolveAgentEvent,
+  PluginHookResolveAgentResult,
   PluginHookSessionContext,
   PluginHookSessionEndEvent,
   PluginHookSessionStartEvent,
@@ -34,11 +37,16 @@ import type {
   PluginHookToolResultPersistContext,
   PluginHookToolResultPersistEvent,
   PluginHookToolResultPersistResult,
+  PluginHookBeforeMessageWriteEvent,
+  PluginHookBeforeMessageWriteResult,
 } from "./types.js";
 
 // Re-export types for consumers
 export type {
   PluginHookAgentContext,
+  PluginHookResolveAgentEvent,
+  PluginHookResolveAgentContext,
+  PluginHookResolveAgentResult,
   PluginHookBeforeAgentStartEvent,
   PluginHookBeforeAgentStartResult,
   PluginHookAgentEndEvent,
@@ -57,6 +65,8 @@ export type {
   PluginHookToolResultPersistContext,
   PluginHookToolResultPersistEvent,
   PluginHookToolResultPersistResult,
+  PluginHookBeforeMessageWriteEvent,
+  PluginHookBeforeMessageWriteResult,
   PluginHookSessionContext,
   PluginHookSessionStartEvent,
   PluginHookSessionEndEvent,
@@ -171,6 +181,31 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     }
 
     return result;
+  }
+
+  // =========================================================================
+  // Routing Hooks
+  // =========================================================================
+
+  /**
+   * Run resolve_agent hook.
+   * Allows plugins to override the target agent by replacing the session key
+   * before agent selection in getReplyFromConfig.
+   * Runs sequentially — last writer wins for sessionKey.
+   */
+  async function runResolveAgent(
+    event: PluginHookResolveAgentEvent,
+    ctx: PluginHookResolveAgentContext,
+  ): Promise<PluginHookResolveAgentResult | undefined> {
+    return runModifyingHook<"resolve_agent", PluginHookResolveAgentResult>(
+      "resolve_agent",
+      event,
+      ctx,
+      (acc, next) => ({
+        sessionKey: next.sessionKey ?? acc?.sessionKey,
+        reason: next.reason ?? acc?.reason,
+      }),
+    );
   }
 
   // =========================================================================
@@ -385,6 +420,63 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     return { message: current };
   }
 
+  /**
+   * Run before_message_write hook.
+   *
+   * This hook is intentionally synchronous: it runs in the hot path where
+   * session transcripts are appended synchronously.
+   *
+   * Handlers are executed sequentially in priority order (higher first). Each
+   * handler may return `{ message }` to replace the message, or `{ block: true }`
+   * to prevent the message from being written.
+   */
+  function runBeforeMessageWrite(
+    event: PluginHookBeforeMessageWriteEvent,
+    ctx: { agentId?: string; sessionKey?: string },
+  ): PluginHookBeforeMessageWriteResult | undefined {
+    const hooks = getHooksForName(registry, "before_message_write");
+    if (hooks.length === 0) {
+      return undefined;
+    }
+    let current = event.message;
+    for (const hook of hooks) {
+      try {
+        const out = (hook.handler as any)({ ...event, message: current }, ctx) as
+          | PluginHookBeforeMessageWriteResult
+          | void
+          | Promise<unknown>;
+        if (out && typeof (out as any).then === "function") {
+          const msg =
+            `[hooks] before_message_write handler from ${hook.pluginId} returned a Promise; ` +
+            `this hook is synchronous and the result was ignored.`;
+          if (catchErrors) {
+            logger?.warn?.(msg);
+            continue;
+          }
+          throw new Error(msg);
+        }
+        const result = out as PluginHookBeforeMessageWriteResult | undefined;
+        if (result?.block) {
+          return { block: true };
+        }
+        if (result?.message) {
+          current = result.message;
+        }
+      } catch (err) {
+        const msg = `[hooks] before_message_write handler from ${hook.pluginId} failed: ${String(err)}`;
+        if (catchErrors) {
+          logger?.error(msg);
+        } else {
+          throw new Error(msg, { cause: err });
+        }
+      }
+    }
+    if (current !== event.message) {
+      return { message: current };
+    }
+    return undefined;
+  }
+
   // =========================================================================
   // Session Hooks
   // =========================================================================
@@ -456,6 +548,8 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
   }
 
   return {
+    // Routing hooks
+    runResolveAgent,
     // Agent hooks
     runBeforeAgentStart,
     runAgentEnd,
@@ -470,6 +564,7 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     runBeforeToolCall,
     runAfterToolCall,
     runToolResultPersist,
+    runBeforeMessageWrite,
     // Session hooks
     runSessionStart,
     runSessionEnd,

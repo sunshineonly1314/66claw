@@ -127,6 +127,36 @@ export type DiagnosticHeartbeatEvent = DiagnosticBaseEvent & {
   queued: number;
 };
 
+export type DiagnosticToolLoopEvent = DiagnosticBaseEvent & {
+  type: "tool.loop";
+  sessionKey?: string;
+  sessionId?: string;
+  toolName: string;
+  level: "warning" | "critical";
+  action: "warn" | "block";
+  detector: "generic_repeat" | "known_poll_no_progress" | "global_circuit_breaker" | "ping_pong";
+  count: number;
+  message: string;
+  pairedToolName?: string;
+};
+
+export type DiagnosticOrchestratorDeployEvent = DiagnosticBaseEvent & {
+  type: "orchestrator.deploy";
+  planId: string;
+  phase: "start" | "agent_ready" | "conflict" | "failed" | "complete" | "cancelled";
+  agentId?: string;
+  agentCount?: number;
+  error?: string;
+};
+
+export type DiagnosticOrchestratorRollbackEvent = DiagnosticBaseEvent & {
+  type: "orchestrator.rollback";
+  planId: string;
+  phase: "start" | "complete";
+  deletedCount?: number;
+  failedCount?: number;
+};
+
 export type DiagnosticEventPayload =
   | DiagnosticUsageEvent
   | DiagnosticWebhookReceivedEvent
@@ -139,7 +169,10 @@ export type DiagnosticEventPayload =
   | DiagnosticLaneEnqueueEvent
   | DiagnosticLaneDequeueEvent
   | DiagnosticRunAttemptEvent
-  | DiagnosticHeartbeatEvent;
+  | DiagnosticHeartbeatEvent
+  | DiagnosticToolLoopEvent
+  | DiagnosticOrchestratorDeployEvent
+  | DiagnosticOrchestratorRollbackEvent;
 
 export type DiagnosticEventInput = DiagnosticEventPayload extends infer Event
   ? Event extends DiagnosticEventPayload

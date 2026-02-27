@@ -49,6 +49,7 @@ export type ModelCapability = {
   vision?: number;
   audio?: number;
   video?: number;
+  videoGen?: number;
   code?: number;
   imageGen?: number;
 };
@@ -104,13 +105,24 @@ const IMAGE_GEN_PATTERNS: RegExp[] = [
   /设计[一个张幅]/,
   /创作.{0,4}(?:图片|插画|漫画)/,
   /P[一个张].*图/,
-  /(?:制作|创建).{0,4}(?:图片|图像|头像|表情包)/,
+  /(?:制作|创建|配).{0,4}(?:图片|图像|头像|表情包|壁纸|封面)/,
+  /出[一个张].{0,4}(?:图|效果)/,
+  /美[一下个].*图/,
 ];
 
 // English patterns for image generation requests
 const IMAGE_GEN_PATTERNS_EN: RegExp[] = [
-  /\b(?:generate|create|make|draw|paint|design)\b.{0,20}\b(?:image|picture|photo|illustration|icon|logo|poster)\b/i,
+  /\b(?:generate|create|make|draw|paint|design)\b.{0,20}\b(?:image|picture|photo|illustration|icon|logo|poster|wallpaper|avatar)\b/i,
   /\b(?:image|picture|photo)\b.{0,10}\b(?:of|with|showing)\b/i,
+  /\b(?:render|illustrate)\b/i,
+];
+
+// Chinese patterns for image editing (user sends image + edit instruction)
+const IMAGE_EDIT_PATTERNS: RegExp[] = [
+  /(?:修改|编辑|调整|改一下|换个).{0,6}(?:图|图片|背景|颜色|风格)/,
+  /(?:把|将).{0,10}(?:改成|换成|变成)/,
+  /(?:去掉|删除|移除).{0,6}(?:背景|水印|人物)/,
+  /(?:添加|加上|增加).{0,6}(?:滤镜|效果|文字|水印)/,
 ];
 
 // Chinese patterns for video generation requests
@@ -150,7 +162,16 @@ export function detectModalityIntent(body: string, attachments: MediaAttachment[
 
   if (hasVideo) return "video_understand";
   if (hasAudio) return "audio_understand";
-  if (hasImage) return "image_understand";
+  if (hasImage) {
+    // When user sends an image, only edit patterns trigger image_generate.
+    // Gen patterns are NOT checked here because phrases like "generate a description
+    // of this picture" would false-positive to image_generate (M10 fix).
+    const text = body.trim();
+    if (text && IMAGE_EDIT_PATTERNS.some((p) => p.test(text))) {
+      return "image_generate";
+    }
+    return "image_understand";
+  }
   if (hasDocument) return "document_understand";
 
   // 2. No attachments — analyze text for generation intents
@@ -274,6 +295,43 @@ const BUILTIN_PROFILES: ModelProfile[] = [
     region: "domestic",
   },
 
+  // ── Image Generation Models ──
+  {
+    provider: "dashscope",
+    model: "wanx-v1",
+    capabilities: { imageGen: 4 },
+    costPer1M: 0.5,
+    region: "domestic",
+  },
+  {
+    provider: "dashscope",
+    model: "wanx2.1-t2i-turbo",
+    capabilities: { imageGen: 5 },
+    costPer1M: 1.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "stabilityai/stable-diffusion-xl-base-1.0",
+    capabilities: { imageGen: 3 },
+    costPer1M: 0.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "black-forest-labs/FLUX.1-schnell",
+    capabilities: { imageGen: 4 },
+    costPer1M: 0.5,
+    region: "domestic",
+  },
+  {
+    provider: "local",
+    model: "sd-cpp",
+    capabilities: { imageGen: 3 },
+    costPer1M: 0.0,
+    region: "domestic",
+  },
+
   // ── International (国际模型, higher quality, may need proxy) ──
   {
     provider: "anthropic",
@@ -367,7 +425,7 @@ const REQUIRED_CAPABILITY: Record<ModalityIntent, keyof ModelCapability> = {
   image_generate: "imageGen",
   audio_understand: "audio",
   video_understand: "video",
-  video_generate: "video",
+  video_generate: "videoGen",
   document_understand: "text",
 };
 

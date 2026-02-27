@@ -11,8 +11,8 @@ export type LicenseConfig = {
   expiresAt?: string;
   /** 最后验证时间 (ISO 8601) */
   validatedAt?: string;
-  /** 产品等级: basic | test */
-  tier?: "basic" | "test";
+  /** 产品等级 */
+  tier?: "test" | "basic" | "professional" | "enterprise";
   /** 等级名称 */
   tierName?: string;
   /** 剩余天数 */

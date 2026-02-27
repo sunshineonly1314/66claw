@@ -9,7 +9,7 @@ import { formatBytes, formatDuration } from "../controllers/skills-batch.js";
 export type SkillCategory = {
   name: string;
   icon: string;
-  skills: { name: string; description: string }[];
+  skills: { name: string; nameZh?: string; description: string; descriptionZh?: string }[];
 };
 
 export function renderSkillsBatchComplete(props: {

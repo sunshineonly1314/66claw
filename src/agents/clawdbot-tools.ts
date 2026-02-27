@@ -21,8 +21,9 @@ import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createOpenAppTool } from "./tools/open-app.js";
 import { createDesktopControlTool } from "./tools/desktop-control.js";
-// GUI automation tools removed from distribution (wechat-send, wechat-check, wecom-send, wecom-check)
+// wechat/wecom tools moved to E:\openclawcn\privateskills\tools (private, not distributed)
 import { createImageGenTool } from "./tools/image-gen-tool.js";
+import { createVideoGenTool } from "./tools/video-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
 // applyToolHints removed — reordering is now done at the outer level in pi-tools.ts
 
@@ -86,6 +87,12 @@ export function createOpenClawCNTools(options?: {
   const imageGenTool = createImageGenTool({
     config: options?.config,
     agentDir: options?.agentDir,
+    sessionKey: options?.agentSessionKey,
+  });
+  const videoGenTool = createVideoGenTool({
+    config: options?.config,
+    agentDir: options?.agentDir,
+    sessionKey: options?.agentSessionKey,
   });
   const tools: AnyAgentTool[] = [
     createBrowserTool({
@@ -159,6 +166,7 @@ export function createOpenClawCNTools(options?: {
     ...(desktopControlTool ? [desktopControlTool] : []),
     // GUI automation tools removed from distribution
     imageGenTool,
+    videoGenTool,
     // ── [CN-PATCH:tool-discovery] MCP 按需安装工具 ──
     ...(options?.config?.toolDiscovery?.mcpOnDemand?.enabled !== false
       ? [createMcpInstallTool()]

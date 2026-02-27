@@ -1,5 +1,6 @@
 import type { GatewayBrowserClient } from "../gateway";
 import type { AgentsListResult } from "../types";
+import type { AppViewState } from "../app-view-state";
 
 export type AgentsState = {
   client: GatewayBrowserClient | null;
@@ -12,6 +13,7 @@ export type AgentsState = {
   agentDeleting: boolean;
   agentDeleteError: string | null;
   agentsSelectedId: string | null;
+  dmScopeStatus?: AppViewState["dmScopeStatus"];
 };
 
 export async function loadAgents(state: AgentsState) {
@@ -70,6 +72,18 @@ export async function createAgent(
     return { ok: false };
   } finally {
     state.agentCreating = false;
+  }
+}
+
+export async function loadDmScopeStatus(state: AgentsState) {
+  if (!state.client || !state.connected) return;
+  try {
+    const res = (await state.client.request("sessions.dmScopeStatus", {})) as
+      | AppViewState["dmScopeStatus"]
+      | undefined;
+    if (res) state.dmScopeStatus = res;
+  } catch {
+    // Non-fatal: dmScope status is optional
   }
 }
 

@@ -11,8 +11,10 @@ import {
   checkInstallerUpdate,
   resolveUpdateServerUrl,
   reportInstallerRedirect,
+  recoverFromInterruptedUpdate,
 } from "./installer-updater.js";
 import { extractUpdateContent } from "./update-content.js";
+import { setAvailableUpdate } from "./update-state.js";
 import { getDeviceId } from "../license/device-id.js";
 
 type UpdateCheckState = {
@@ -98,6 +100,20 @@ export async function runGatewayUpdateCheck(params: {
 
   // installer 模式：从更新服务器检查
   if (status.installKind === "installer") {
+    // S2-5: 启动时检测并恢复上次被中断的更新
+    if (root) {
+      try {
+        const recovery = await recoverFromInterruptedUpdate(root);
+        if (recovery.recovered) {
+          params.log.info(
+            `update recovery on startup: ${recovery.action}${recovery.error ? ` (${recovery.error})` : ""}`,
+          );
+        }
+      } catch {
+        // recovery 不应阻塞启动
+      }
+    }
+
     const updateServerUrl = root ? resolveUpdateServerUrl(root) : null;
     if (updateServerUrl) {
       // 读取 license key 和 deviceId
@@ -130,6 +146,16 @@ export async function runGatewayUpdateCheck(params: {
               params.log.info(`  下载地址: ${check.installerUrl}`);
             }
             nextState.lastNotifiedVersion = ver;
+            // Persist for UI to read via update.status RPC
+            await setAvailableUpdate({
+              version: ver,
+              updateType: "installer",
+              changelog: { "zh-CN": "", "en-US": "" },
+              checkedAt: new Date().toISOString(),
+              dismissed: false,
+              installerUrl: check.installerUrl,
+              checkResult: check,
+            });
             // 上报引导重装事件
             void reportInstallerRedirect({
               updateServerUrl,
@@ -153,6 +179,16 @@ export async function runGatewayUpdateCheck(params: {
               params.log.info(`  更新内容: ${content.summary}`);
             }
             nextState.lastNotifiedVersion = ver;
+            // Persist for UI to read via update.status RPC
+            await setAvailableUpdate({
+              version: ver,
+              updateType: check.updateType ?? "delta",
+              changelog: check.latest?.changelog ?? { "zh-CN": "", "en-US": "" },
+              checkedAt: new Date().toISOString(),
+              dismissed: false,
+              mandatory: check.mandatory,
+              checkResult: check,
+            });
           }
         }
       }

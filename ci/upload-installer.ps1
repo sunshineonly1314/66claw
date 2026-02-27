@@ -1,49 +1,62 @@
-$env:OSS_ACCESS_KEY_ID = "LTAI5tGbuzYX98dppnUcs2tU"
-$env:OSS_ACCESS_KEY_SECRET = "1k2GQB7r3wNqsmxivnJWZ6D4PYr1da"
-$env:OSS_BUCKET = "chuhai-tecbin"
-$env:OSS_REGION = "oss-cn-hangzhou"
 Set-Location D:\cicd-workspace\openclawcn
 
-Write-Host "=== Upload Installer to OSS ==="
+Write-Host "=== Upload Installer to Server via SCP ==="
 
-$script = @'
-import { createRequire } from "node:module";
-import fs from "node:fs";
+# Read version from package.json instead of hardcoding
+$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
+$VERSION = $pkgJson.version
+Write-Host "Version (from package.json): $VERSION"
 
-const require = createRequire(import.meta.url);
-globalThis.Buffer = globalThis.Buffer || require("buffer").Buffer;
-const OSS = require("ali-oss");
+# Find installer by glob pattern instead of hardcoded path
+$installerFile = Get-ChildItem -Path "E:\clawdbuild\ClawdbotCN-Setup-*-x64.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $installerFile) {
+    Write-Host "ERROR: No installer found matching E:\clawdbuild\ClawdbotCN-Setup-*-x64.exe"
+    exit 1
+}
 
-const client = new OSS({
-  region: process.env.OSS_REGION,
-  accessKeyId: process.env.OSS_ACCESS_KEY_ID,
-  accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
-  bucket: process.env.OSS_BUCKET,
-});
+$remoteDir = "/data/dl/releases/$VERSION/installers"
+$server = $env:DEPLOY_SERVER
+if (-not $server) {
+    Write-Host "ERROR: DEPLOY_SERVER environment variable must be set."
+    exit 1
+}
 
-const localPath = "E:\\clawdbuild\\ClawdbotCN-Setup-2026.2.15-x64.exe";
-const ossKey = "releases/2026.2.15/installers/ClawdbotCN-Setup-2026.2.15-x64.exe";
+$size = $installerFile.Length
+Write-Host "Uploading: $($installerFile.FullName)"
+Write-Host "  Size: $([math]::Round($size / 1MB, 1)) MB"
+Write-Host "  To: ${server}:${remoteDir}/"
 
-const size = fs.statSync(localPath).size;
-console.log(`Uploading: ${localPath}`);
-console.log(`  Size: ${(size / 1024 / 1024).toFixed(1)} MB`);
-console.log(`  To: ${ossKey}`);
+# Compute local SHA256 before upload
+$localHash = (Get-FileHash -Path $installerFile.FullName -Algorithm SHA256).Hash
+Write-Host "  Local SHA256: $localHash"
 
-const result = await client.multipartUpload(ossKey, localPath, {
-  progress: (p) => {
-    const pct = Math.round(p * 100);
-    if (pct % 10 === 0) process.stdout.write(`  Progress: ${pct}%\r`);
-  },
-});
-console.log(`\nUpload complete!`);
-console.log(`  URL: https://dl.obplugins.cn/${ossKey}`);
-'@
-
-$tmpFile = "D:\cicd-workspace\openclawcn\_upload-installer.mjs"
-$script | Out-File -FilePath $tmpFile -Encoding UTF8
-node $tmpFile 2>&1
+ssh $server "mkdir -p $remoteDir"
+scp $installerFile.FullName "${server}:${remoteDir}/"
 $exitCode = $LASTEXITCODE
-Remove-Item $tmpFile -ErrorAction SilentlyContinue
+
 Write-Host ""
+if ($exitCode -eq 0) {
+    $fileName = $installerFile.Name
+    Write-Host "Upload complete!"
+    $domain = if ($env:DEPLOY_DOMAIN) { $env:DEPLOY_DOMAIN } else { "www.obplugins.cn" }
+    Write-Host "  URL: https://$domain/releases/$VERSION/installers/$fileName"
+
+    # Post-upload integrity check: compare remote SHA256 with local
+    Write-Host "  Verifying remote integrity..."
+    $remoteHash = ssh $server "sha256sum $remoteDir/$fileName" 2>$null
+    if ($remoteHash) {
+        $remoteHashValue = ($remoteHash -split '\s+')[0].ToUpper()
+        if ($remoteHashValue -eq $localHash) {
+            Write-Host "  Integrity OK: SHA256 matches" -ForegroundColor Green
+        } else {
+            Write-Host "  INTEGRITY MISMATCH! Local=$localHash Remote=$remoteHashValue" -ForegroundColor Red
+            $exitCode = 1
+        }
+    } else {
+        Write-Host "  WARNING: Could not verify remote hash (sha256sum not available on server)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "Upload FAILED (exit: $exitCode)"
+}
 Write-Host "=== Upload Exit: $exitCode ==="
 exit $exitCode

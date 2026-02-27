@@ -34,6 +34,26 @@ const SEARCH_PENDING_UPDATE_WAIT_MS = 500;
 const MAX_QMD_OUTPUT_CHARS = 200_000;
 const NUL_MARKER_RE = /(?:\^@|\\0|\\x00|\\u0000|null\s*byte|nul\s*byte)/i;
 
+// [CN-MERGE:1ad9f9af5a] Resolve .cmd shim for qmd/mcporter on Windows
+function resolveWindowsCommandShim(command: string): string {
+  if (process.platform !== "win32") {
+    return command;
+  }
+  const trimmed = command.trim();
+  if (!trimmed) {
+    return command;
+  }
+  const ext = path.extname(trimmed).toLowerCase();
+  if (ext === ".cmd" || ext === ".exe" || ext === ".bat") {
+    return command;
+  }
+  const base = path.basename(trimmed).toLowerCase();
+  if (base === "qmd" || base === "mcporter") {
+    return `${trimmed}.cmd`;
+  }
+  return command;
+}
+
 type CollectionRoot = {
   path: string;
   kind: MemorySource;
@@ -427,14 +447,7 @@ export class QmdMemoryManager implements MemorySearchManager {
       return { text, path: relPath };
     }
     const content = await fs.readFile(absPath, "utf-8");
-    if (!params.from && !params.lines) {
-      return { text: content, path: relPath };
-    }
-    const lines = content.split("\n");
-    const start = Math.max(1, params.from ?? 1);
-    const count = Math.max(1, params.lines ?? lines.length);
-    const slice = lines.slice(start - 1, start - 1 + count);
-    return { text: slice.join("\n"), path: relPath };
+    return { text: content, path: relPath };
   }
 
   status(): MemoryProviderStatus {
@@ -638,7 +651,7 @@ export class QmdMemoryManager implements MemorySearchManager {
     opts?: { timeoutMs?: number },
   ): Promise<{ stdout: string; stderr: string }> {
     return await new Promise((resolve, reject) => {
-      const child = spawn(this.qmd.command, args, {
+      const child = spawn(resolveWindowsCommandShim(this.qmd.command), args, {
         env: this.env,
         cwd: this.workspaceDir,
       });
@@ -724,8 +737,11 @@ export class QmdMemoryManager implements MemorySearchManager {
     }
     const { DatabaseSync } = requireNodeSqlite();
     this.db = new DatabaseSync(this.indexPath, { readOnly: true });
-    // Keep QMD recall responsive when the updater holds a write lock.
-    this.db.exec("PRAGMA busy_timeout = 1");
+    // [CN-PATCH:memory-p0] busy_timeout=500ms: balance between responsiveness and contention tolerance.
+    // Original value (1ms) caused SQLITE_BUSY under multi-agent concurrency, silently returning
+    // empty results from cold recall. 500ms is enough to wait through WAL checkpoint while
+    // staying well within acceptable QMD query latency (< 1s).
+    this.db.exec("PRAGMA busy_timeout = 500");
     return this.db;
   }
 
@@ -958,9 +974,6 @@ export class QmdMemoryManager implements MemorySearchManager {
     if (relativePath.startsWith("..")) {
       return false;
     }
-    if (relativePath.startsWith(`..${path.sep}`)) {
-      return false;
-    }
     return !path.isAbsolute(relativePath);
   }
 
@@ -989,22 +1002,28 @@ export class QmdMemoryManager implements MemorySearchManager {
   }
 
   private isWithinWorkspace(absPath: string): boolean {
-    const normalizedWorkspace = this.workspaceDir.endsWith(path.sep)
-      ? this.workspaceDir
-      : `${this.workspaceDir}${path.sep}`;
-    if (absPath === this.workspaceDir) {
+    // On Windows, paths are case-insensitive — normalize to lowercase for comparison
+    // to prevent path traversal bypass via different casing.
+    const isWin = process.platform === "win32";
+    const ws = isWin ? this.workspaceDir.toLowerCase() : this.workspaceDir;
+    const ap = isWin ? absPath.toLowerCase() : absPath;
+    const normalizedWorkspace = ws.endsWith(path.sep) ? ws : `${ws}${path.sep}`;
+    if (ap === ws) {
       return true;
     }
-    const candidate = absPath.endsWith(path.sep) ? absPath : `${absPath}${path.sep}`;
+    const candidate = ap.endsWith(path.sep) ? ap : `${ap}${path.sep}`;
     return candidate.startsWith(normalizedWorkspace);
   }
 
   private isWithinRoot(root: string, candidate: string): boolean {
-    const normalizedRoot = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-    if (candidate === root) {
+    const isWin = process.platform === "win32";
+    const r = isWin ? root.toLowerCase() : root;
+    const c = isWin ? candidate.toLowerCase() : candidate;
+    const normalizedRoot = r.endsWith(path.sep) ? r : `${r}${path.sep}`;
+    if (c === r) {
       return true;
     }
-    const next = candidate.endsWith(path.sep) ? candidate : `${candidate}${path.sep}`;
+    const next = c.endsWith(path.sep) ? c : `${c}${path.sep}`;
     return next.startsWith(normalizedRoot);
   }
 

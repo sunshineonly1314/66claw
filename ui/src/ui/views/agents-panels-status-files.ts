@@ -186,6 +186,17 @@ export function renderAgentChannels(params: {
   error: string | null;
   lastSuccess: number | null;
   onRefresh: () => void;
+  dmScopeStatus?: {
+    recommended: string;
+    current: string;
+    isExplicit: boolean;
+    shouldUpgrade: boolean;
+    reason: string;
+    configuredChannelCount: number;
+    totalAccounts: number;
+    multiUserChannels: string[];
+  } | null;
+  onDmScopeApply?: () => void;
 }) {
   const entries = resolveChannelEntries(params.snapshot);
   const lastSuccessLabel = params.lastSuccess
@@ -207,6 +218,34 @@ export function renderAgentChannels(params: {
         <div class="muted" style="margin-top: 8px;">
           ${t("agents.lastRefresh")} ${lastSuccessLabel}
         </div>
+        ${
+          params.dmScopeStatus?.shouldUpgrade
+            ? html`
+                <div class="callout warning" style="margin-top: 12px;">
+                  <div style="font-weight: 600; margin-bottom: 4px;">${t("agents.dmScopeWarningTitle")}</div>
+                  <div>${
+                    (() => {
+                      const curKey = `config.value.session.dmScope.${params.dmScopeStatus!.current}`;
+                      const recKey = `config.value.session.dmScope.${params.dmScopeStatus!.recommended}`;
+                      const curLabel = ((t as (k: string) => string)(curKey) !== curKey) ? (t as (k: string) => string)(curKey) : params.dmScopeStatus!.current;
+                      const recLabel = ((t as (k: string) => string)(recKey) !== recKey) ? (t as (k: string) => string)(recKey) : params.dmScopeStatus!.recommended;
+                      return (t as (k: string, vars?: Record<string, string>) => string)(
+                        "agents.dmScopeWarningBody",
+                        {
+                          current: curLabel,
+                          recommended: recLabel,
+                          channels: params.dmScopeStatus!.multiUserChannels.join(", ") || "-",
+                        },
+                      );
+                    })()
+                  }</div>
+                  ${params.onDmScopeApply
+                    ? html`<button class="btn btn--sm" style="margin-top: 8px;" @click=${params.onDmScopeApply}>${t("agents.dmScopeApply")}</button>`
+                    : nothing}
+                </div>
+              `
+            : nothing
+        }
         ${
           params.error
             ? html`<div class="callout danger" style="margin-top: 12px;">${params.error}</div>`

@@ -310,10 +310,72 @@ export const zhCN: Record<keyof typeof en, string> = {
   "agents.skillMissing": "缺失：",
   "agents.skillReason": "原因：",
   "agents.skillDisabled": "已禁用",
-  "agents.skillBlockedByAllowlist": "被白名单阻止",
+  "agents.skillBlockedByAllowlist": "未纳入核心技能集",
   "agents.skillBundled": "内置",
   "agents.skillEligible": "可用",
   "agents.skillBlocked": "已阻止",
+
+  // ── 会话隔离 (dmScope) ──
+  "agents.sessionIsolation": "会话隔离",
+  "agents.dmScopeOk": "已隔离",
+  "agents.dmScopeUpgradeNeeded": "建议升级",
+  "agents.dmScopeWarningTitle": "会话隔离级别偏低",
+  "agents.dmScopeWarningBody":
+    "当前为「{{current}}」，检测到 {{channels}} 有多用户场景，建议升级到「{{recommended}}」",
+  "agents.dmScopeApply": "立即应用推荐设置",
+
+  // 团队项目 (Team Projects)
+  "team.projects": "团队项目",
+  "team.standalone": "独立智能体",
+  "team.supervisor": "主管",
+  "team.members": "成员",
+  "team.stats": "统计",
+  "team.settings": "设置",
+  "team.memory": "共享记忆",
+  "team.noProjects": "暂无团队项目",
+  "team.status.deploying": "部署中",
+  "team.status.active": "运行中",
+  "team.status.paused": "已暂停",
+  "team.status.archived": "已归档",
+  "team.status.error": "异常",
+  "team.health.healthy": "健康",
+  "team.health.degraded": "降级",
+  "team.health.down": "离线",
+  "team.action.pause": "暂停",
+  "team.action.resume": "恢复",
+  "team.action.delete": "删除",
+  "team.action.deleteConfirm": "确定要删除团队项目 \"{{name}}\" 吗？所有路由和会话亲和性将被清除。",
+  "team.detail.description": "描述",
+  "team.detail.visibility": "可见模式",
+  "team.detail.hopLimit": "最大路由跳数",
+  "team.detail.memberTimeout": "成员超时(秒)",
+  "team.detail.supervisorFallback": "主管兜底",
+  "team.detail.memoryMode": "记忆模式",
+  "team.detail.totalCalls": "总调用",
+  "team.detail.avgDuration": "平均耗时",
+  "team.detail.callCount": "调用次数",
+  "team.detail.duration": "总耗时",
+  "team.detail.lastCall": "最近调用",
+  "team.detail.successes": "成功次数",
+  "team.detail.failures": "失败次数",
+  "team.detail.status": "状态",
+  "team.detail.lastError": "最近错误",
+  "team.detail.noMemory": "暂无共享记忆条目。",
+  "team.detail.clearMemory": "清空共享记忆",
+  "team.detail.selectProject": "选择一个团队项目",
+  "team.detail.selectProjectHint": "在左侧选择团队项目以查看其成员健康状况和统计数据。",
+
+  "dmScope.label.main": "共享 (所有用户共享同一个会话)",
+  "dmScope.label.per-peer": "按用户隔离 (每个用户独立会话)",
+  "dmScope.label.per-channel-peer":
+    "按渠道+用户隔离 (不同渠道的同一用户也分开)",
+  "dmScope.label.per-account-channel-peer":
+    "按账号+渠道+用户隔离 (完全隔离)",
+  "config.value.session.dmScope.main": "共享",
+  "config.value.session.dmScope.per-peer": "按用户",
+  "config.value.session.dmScope.per-channel-peer": "按渠道+用户",
+  "config.value.session.dmScope.per-account-channel-peer":
+    "按账号+渠道+用户",
 
   // ============================================================================
   // 命令审批 (Exec Approval)
@@ -496,6 +558,35 @@ export const zhCN: Record<keyof typeof en, string> = {
   "chat.placeholder.default": "输入消息（↩ 发送，Shift+↩ 换行，可粘贴图片）",
   "chat.placeholder.withImages": "添加消息或继续粘贴图片...",
   "chat.placeholder.disconnected": "连接网关后开始对话...",
+
+  // 意图提示（能力缺失提示）
+  "chat.hint.imageGen": "尚未配置图片生成模型",
+  "chat.hint.vision": "尚未配置图片理解模型",
+  "chat.hint.search": "尚未配置搜索功能",
+  "chat.hint.videoGen": "尚未配置视频生成模型",
+  "chat.hint.video": "尚未配置视频理解模型",
+  "chat.hint.memory": "尚未配置记忆/向量功能",
+  "chat.hint.configure": "去配置",
+
+  // 图片生成结果
+  "chat.imageGen.generating": "正在生成图片...",
+  "chat.imageGen.download": "下载",
+  "chat.imageGen.copy": "复制",
+  "chat.imageGen.regenerate": "重新生成",
+  "chat.imageGen.retry": "重试",
+  "chat.imageGen.failed": "图片生成失败",
+  "chat.imageGen.expired": "图片已过期",
+  "chat.imageGen.interrupted": "图片生成未完成，可点击重新生成",
+  "chat.imageGen.copied": "已复制！",
+
+  // 视频生成结果
+  "chat.videoGen.generating": "视频生成中...",
+  "chat.videoGen.download": "下载视频",
+  "chat.videoGen.regenerate": "重新生成",
+  "chat.videoGen.failed": "视频生成失败",
+  "chat.videoGen.retry": "重试",
+  "chat.videoGen.expired": "视频已过期",
+  "chat.videoGen.interrupted": "视频生成未完成，可点击重新生成",
 
   // ============================================================================
   // 指挥渠道页 (Channels)
@@ -737,7 +828,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skills.missing": "缺失",
   "skills.noDescription": "点击安装了解更多",
   "skills.reason": "原因",
-  "skills.blockedByAllowlist": "被白名单阻止",
+  "skills.blockedByAllowlist": "未纳入核心技能集（点击添加）",
   // 技能帮助文字
   "skills.help.title": "什么是技能？",
   "skills.help.description": "技能是可以扩展 AI 助手能力的插件模块。每个技能提供特定的功能，如网页搜索、代码执行、文件操作等。",
@@ -747,10 +838,10 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skills.help.apiKeyDesc": "某些技能（如搜索引擎）需要第三方服务的 API 密钥才能正常工作。请前往相应服务商网站注册获取密钥。",
   "skills.help.statusExplain": "状态说明",
   "skills.help.eligibleDesc": "可用 - 技能已就绪，可以被 AI 助手调用",
-  "skills.help.blockedDesc": "已阻止 - 技能因白名单限制或缺少依赖而无法使用",
+  "skills.help.blockedDesc": "需配置 - 技能未纳入核心集或缺少依赖，点击「添加到核心」即可启用",
   "skills.help.disabledDesc": "已禁用 - 技能已被手动禁用",
   // 技能标签页
-  "skills.tab.local": "本地技能",
+  "skills.tab.local": "技能管理",
   "skills.tab.remote": "技能市场",
   "skills.tab.active": "已激活",
   "skills.tab.library": "技能库",
@@ -890,8 +981,14 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skills.deps.missingBins": "缺少命令行工具",
   "skills.deps.missingEnv": "缺少环境变量",
   "skills.deps.missingConfig": "缺少配置项",
-  "skills.tab.local": "技能管理",
-  "skills.tab.remote": "技能市场",
+  // ── 技能市场 cnBlocked 增强 ──
+  "skills.market.cnBlocked.reason": "此技能依赖海外服务，国内网络无法直接使用",
+  "skills.market.cnBlocked.vpnHint": "使用代理可安装",
+  "skills.market.cnBlocked.alternative": "国内替代：{alternative}",
+  "skills.market.cnBlocked.installAnyway": "仍然安装",
+  // ── allowBundled / bundled 标签 ──
+  "skills.allowBundled.addToCore": "添加到核心",
+  "skills.bundled.notInCore": "内置 · 加入核心后注入对话",
 
   // ============================================================================
   // 节点页 (Nodes)
@@ -1231,6 +1328,220 @@ export const zhCN: Record<keyof typeof en, string> = {
   "nodes.noNodesFound": "未找到节点。",
   "nodes.unpaired": "未配对",
   "nodes.offline": "离线",
+
+  // ============================================================================
+  // 组网中心 (Network Center) — OpenClawCN
+  // ============================================================================
+
+  // ── 导航 & 页面标题 ──
+  "nav.network": "组网",
+  "subtitle.network": "管理你的设备、网络连接和安全设置。",
+
+  // ── Sub-tab 标签 ──
+  "network.tab.devices": "我的设备",
+  "network.tab.connection": "连接方式",
+  "network.tab.security": "安全设置",
+
+  // ── 顶部状态条 ──
+  "network.statusBar.title": "网络状态",
+  "network.statusBar.loopback": "仅本机模式",
+  "network.statusBar.lan": "局域网模式",
+  "network.statusBar.lanWithIp": "局域网模式 · {ip}",
+  "network.statusBar.tailnet": "远程模式 · Tailscale",
+  "network.statusBar.devicesOnline": "{count} 台设备在线",
+  "network.statusBar.noDevices": "暂无设备",
+  "network.statusBar.noRemote": "无远程访问",
+  "network.statusBar.tailscaleServe": "Tailscale 组网已开启",
+  "network.statusBar.tailscaleFunnel": "公网访问已开启",
+  "network.statusBar.frpConnected": "FRP 穿透已连接",
+  "network.statusBar.restarting": "正在重启...",
+  "network.statusBar.nodesOnline": "{count} 个节点在线",
+
+  // ── Tab 1: 我的设备 ──
+  "network.devices.title": "在线设备",
+  "network.devices.desc": "所有连接到网关的设备和实例。",
+  "network.devices.addDevice": "添加设备",
+  "network.devices.noDevices": "暂无设备连接。",
+  "network.devices.gateway": "网关",
+  "network.devices.webchat": "控制面板",
+  "network.devices.node": "客户端节点",
+  "network.devices.heartbeatOk": "心跳正常",
+  "network.devices.heartbeatAgo": "心跳 {seconds} 秒前",
+  "network.devices.lastInput": "最后输入 {time}",
+  "network.devices.online": "在线",
+  "network.devices.offline": "离线",
+  "network.devices.discovered": "已发现",
+  "network.devices.paired": "已配对",
+  "network.devices.connect": "连接",
+  "network.devices.currentBrowser": "当前浏览器",
+
+  // 设备配对区
+  "network.devices.pairing": "设备配对",
+  "network.devices.pendingApprovals": "待审批",
+  "network.devices.noPending": "暂无待审批的设备。",
+  "network.devices.pairedDevices": "已配对设备",
+  "network.devices.noPaired": "暂无已配对设备。",
+  "network.devices.approveConnect": "批准连接",
+  "network.devices.rejectConnect": "拒绝",
+  "network.devices.rotateKey": "更换密钥",
+  "network.devices.unpair": "取消配对",
+  "network.devices.unpairConfirm": "确定要取消这个设备的配对吗？设备需要重新配对才能连接。",
+  "network.devices.newDeviceRequest": "新设备请求连接: {name}",
+  "network.devices.deviceId": "设备 ID: {id}",
+  "network.devices.requestTime": "{time} 前",
+
+  // 添加设备弹窗
+  "network.devices.addDialog.title": "添加设备",
+  "network.devices.addDialog.ipLabel": "IP 地址",
+  "network.devices.addDialog.ipPlaceholder": "192.168.1.50",
+  "network.devices.addDialog.portLabel": "端口",
+  "network.devices.addDialog.portDefault": "(默认)",
+  "network.devices.addDialog.passwordLabel": "密码",
+  "network.devices.addDialog.passwordHint": "没有可以不填",
+  "network.devices.addDialog.testBtn": "测试能不能连上",
+  "network.devices.addDialog.testing": "测试中...",
+  "network.devices.addDialog.reachable": "连上了! 对方版本 {version}",
+  "network.devices.addDialog.unreachable": "连不上: {error}",
+  "network.devices.addDialog.cancel": "取消",
+  "network.devices.addDialog.confirm": "添加到我的设备",
+
+  // 空状态引导
+  "network.devices.emptyState.title": "还没有其他设备连上来",
+  "network.devices.emptyState.desc": "想让手机或其他电脑连接到你的 AI 助手？",
+  "network.devices.emptyState.step1": "把网络模式改成「同一个网络」",
+  "network.devices.emptyState.step2": "在手机上下载 OpenClawCN App",
+  "network.devices.emptyState.step3": "App 会自动发现你的电脑，点一下就连上了",
+  "network.devices.emptyState.goToConnection": "去设置网络模式",
+  "network.devices.emptyState.remoteHint": "不在同一个 Wi-Fi？试试远程穿透",
+  "network.devices.emptyState.goToRemote": "去设置远程穿透",
+
+  // Windows 提示
+  "network.devices.windowsHint": "自动搜索附近设备的功能正在开发中。你可以点击「添加设备」手动输入对方的 IP 地址连接。好消息：其他设备（Mac/手机）可以自动发现你的电脑。",
+
+  // 添加设备教程（折叠）
+  "network.devices.tutorial.title": "如何添加新设备",
+  "network.devices.tutorial.mobile": "手机/平板：",
+  "network.devices.tutorial.mobileStep1": "下载 OpenClawCN App（应用商店搜索 \"OpenClaw\"）",
+  "network.devices.tutorial.mobileStep2": "打开 App，自动发现同一 Wi-Fi 下的网关",
+  "network.devices.tutorial.mobileStep3": "在上方「待审批」中批准连接",
+  "network.devices.tutorial.desktop": "其他电脑：",
+  "network.devices.tutorial.desktopStep1": "在目标电脑上安装 OpenClawCN",
+  "network.devices.tutorial.desktopStep2": "运行后会自动发现局域网网关",
+  "network.devices.tutorial.desktopStep3": "或者点击上方「添加设备」手动输入地址",
+
+  // ── Tab 2: 连接方式 ──
+  "network.connection.modeTitle": "网络模式",
+  "network.connection.modeDesc": "谁能连接到你的网关？",
+  "network.connection.current": "当前",
+  "network.connection.save": "保存",
+  "network.connection.saving": "正在保存...",
+  "network.connection.applying": "正在应用配置...",
+  "network.connection.restartNote": "保存后网关会重启，大约 3 秒就好。页面会自动恢复。",
+
+  // 三种网络模式
+  "network.connection.mode.loopback": "只有本机",
+  "network.connection.mode.loopbackDesc": "最安全，适合单人使用。",
+  "network.connection.mode.lan": "同一个网络",
+  "network.connection.mode.lanDesc": "家里/公司 Wi-Fi 下的设备可以连接。",
+  "network.connection.mode.tailnet": "任何地方",
+  "network.connection.mode.tailnetDesc": "需要穿透工具辅助（Tailscale / FRP）。",
+
+  // 连接密码
+  "network.connection.password.title": "连接密码",
+  "network.connection.password.desc": "需要设置一个连接密码，防止陌生设备随意连入：",
+  "network.connection.password.autoGenerate": "帮我自动生成一个（推荐）",
+  "network.connection.password.custom": "我自己设",
+  "network.connection.password.placeholder": "输入密码...",
+
+  // 当前地址
+  "network.connection.currentAddress": "当前地址",
+  "network.connection.lanIp": "你的局域网 IP",
+
+  // 发现
+  "network.connection.discovery.title": "发现其他 Gateway",
+  "network.connection.discovery.desc": "扫描局域网中的其他 OpenClawCN 实例。",
+  "network.connection.discovery.scan": "扫描",
+  "network.connection.discovery.scanning": "扫描中...",
+  "network.connection.discovery.noGateways": "未发现其他 Gateway。",
+  "network.connection.discovery.found": "发现 {count} 个 Gateway",
+  "network.connection.discovery.probe": "测试连接",
+  "network.connection.discovery.probing": "测试中...",
+  "network.connection.discovery.reachable": "可达 · 延迟 {ms}ms",
+  "network.connection.discovery.unreachable": "不可达: {error}",
+
+  // 网络接口信息
+  "network.connection.interfaces.title": "网络接口",
+  "network.connection.interfaces.name": "接口",
+  "network.connection.interfaces.address": "地址",
+  "network.connection.interfaces.tailnet": "Tailnet",
+
+  // 远程穿透（Phase 2 占位）
+  "network.connection.tunnel.title": "远程穿透",
+  "network.connection.tunnel.desc": "不在同一个网络？用以下方式让远程设备也能连上来：",
+  "network.connection.tunnel.comingSoon": "穿透功能正在开发中，敬请期待。",
+
+  // Redis 同步（Phase 3 占位）
+  "network.connection.redis.title": "多台网关联动",
+  "network.connection.redis.desc": "如果你有多台电脑各跑一个网关，想让它们共享消息...",
+  "network.connection.redis.comingSoon": "此高级功能正在开发中。",
+
+  // ── Tab 3: 安全设置 ──
+  "network.security.title": "安全设置",
+  "network.security.desc": "控制 AI 助手的命令权限和运行位置。",
+  "network.security.guidance": "如果你只在一台设备上使用，这些默认设置已经够用了，不需要修改。",
+
+  // 命令权限
+  "network.security.permissions.title": "命令权限",
+  "network.security.permissions.desc": "控制 AI 助手能在设备上执行哪些操作。这是重要的安全设置，可以防止 AI 做出危险操作。",
+  "network.security.permissions.target": "管控对象",
+  "network.security.permissions.targetGateway": "网关（本机）",
+  "network.security.permissions.targetNode": "选择节点",
+  "network.security.permissions.perAgent": "按助手设置",
+  "network.security.permissions.globalDefaults": "全局默认",
+
+  // 权限级别
+  "network.security.level.title": "权限级别",
+  "network.security.level.desc": "AI 助手在这台设备上能做什么？",
+  "network.security.level.deny": "禁止一切",
+  "network.security.level.denyDesc": "AI 不能执行任何命令。",
+  "network.security.level.allowlist": "只允许指定命令（推荐）",
+  "network.security.level.allowlistDesc": "只能跑你批准的命令。",
+  "network.security.level.full": "完全放开",
+  "network.security.level.fullDesc": "AI 可以执行任何命令（有风险）。",
+
+  // 遇到新命令
+  "network.security.ask.title": "遇到没见过的命令时",
+  "network.security.ask.desc": "AI 想执行一个不在列表里的命令时，怎么办？",
+  "network.security.ask.off": "不问，直接拒绝",
+  "network.security.ask.onMiss": "只在不认识的命令时问我",
+  "network.security.ask.always": "每次都问我",
+
+  // 弹窗后备
+  "network.security.askFallback.title": "弹窗问不了时怎么办",
+  "network.security.askFallback.desc": "如果界面没打开、弹窗无法显示：",
+  "network.security.askFallback.deny": "拒绝执行",
+  "network.security.askFallback.allow": "允许执行",
+
+  // 自动信任技能命令
+  "network.security.autoAllowSkills.title": "自动信任技能自带的命令",
+  "network.security.autoAllowSkills.desc": "已安装技能声明的可执行文件，自动加入允许列表。",
+
+  // 允许的命令列表
+  "network.security.allowlist.title": "允许的命令列表",
+  "network.security.allowlist.add": "添加命令",
+  "network.security.allowlist.pattern": "命令模式",
+  "network.security.allowlist.lastUsed": "上次使用",
+  "network.security.allowlist.never": "从未",
+  "network.security.allowlist.delete": "删除",
+  "network.security.allowlist.wildcardHint": "支持通配符 * ，例如 node* 匹配 node、npm、npx 等。",
+
+  // 运行位置
+  "network.security.bindings.title": "运行位置",
+  "network.security.bindings.desc": "指定 AI 助手在哪台设备上执行命令。默认在网关本机执行。如果你有远程服务器，可以指定到那台机器上。",
+  "network.security.bindings.default": "默认运行位置",
+  "network.security.bindings.defaultDesc": "没有特别指定的助手，都在这里跑：",
+  "network.security.bindings.gateway": "网关本机",
+  "network.security.bindings.followDefault": "跟随默认",
 
   // ============================================================================
   // 配置详细 (Config Details)
@@ -1891,6 +2202,21 @@ export const zhCN: Record<keyof typeof en, string> = {
   // ============================================================================
   // 对话欢迎消息 (Chat Welcome)
   // ============================================================================
+  "chat.greeting.morning": "早上好",
+  "chat.greeting.afternoon": "下午好",
+  "chat.greeting.evening": "晚上好",
+  "chat.greeting.intro": "我是你的AI助手，",
+  "chat.greeting.introDefault": "我是你的AI助手",
+  "chat.skill.imageGen": "图像生成",
+  "chat.skill.imageGen.prompt": "帮我生成一张图片：",
+  "chat.skill.research": "深入研究",
+  "chat.skill.research.prompt": "帮我深入研究一下：",
+  "chat.skill.writing": "帮我写作",
+  "chat.skill.writing.prompt": "帮我写一篇：",
+  "chat.skill.videoGen": "视频生成",
+  "chat.skill.videoGen.prompt": "帮我生成一个视频：",
+  "chat.skill.homework": "解题答疑",
+  "chat.skill.homework.prompt": "帮我解答这道题：",
   "chat.welcome.title": "开始与 AI 助手对话",
   "chat.welcome.subtitle": "我可以帮助你完成各种任务",
   "chat.welcome.tryAsk": "试着问我：",
@@ -6386,6 +6712,11 @@ export const zhCN: Record<keyof typeof en, string> = {
   "extensions.chatHint.install": "安装",
   "extensions.chatHint.title": "安装 \"{{name}}\" 让 AI {{action}}",
   "extensions.config.addEnvVar": "添加变量",
+  "extensions.config.needsEnvVars": "需要配置以下环境变量才能使用：",
+  "extensions.config.configAdvanced": "可在下方添加环境变量或调整连接配置",
+  "extensions.config.noEnvHint": "该服务暂无已知的环境变量要求。如果安装后启动失败，请查看项目文档确认是否需要额外配置。可在下方手动添加环境变量。",
+  "extensions.config.optional": "可选",
+  "extensions.config.required": "必填",
   "extensions.config.installMethod": "安装方式",
   "extensions.config.installMethodHint": "该能力未提供安装信息，请选择安装方式并填写对应地址或包名",
   "extensions.config.advancedConfig": "高级配置",
@@ -6415,6 +6746,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "extensions.detail.installedManage": "已安装 · 管理",
   "extensions.detail.lastUpdate": "最近更新",
   "extensions.detail.needsKeyWarning": "此能力需要 API Key",
+  "extensions.detail.requiredEnvVars": "需要配置的环境变量",
   "extensions.detail.platform": "平台",
   "extensions.detail.securityAudit": "安全审计",
   "extensions.detail.sendToChat": "发送",
@@ -6425,6 +6757,10 @@ export const zhCN: Record<keyof typeof en, string> = {
   "extensions.detail.trySay": "试着对 AI 说：",
   "extensions.detail.uninstall": "卸载",
   "extensions.detail.uninstallConfirm": "确定要卸载 {{name}} 吗？这将停止服务并移除配置。",
+  "extensions.detail.sseRiskTitle": "远程服务安全提醒",
+  "extensions.detail.sseRiskBody": "此能力将连接到第三方服务器（{{domain}}）。你的对话内容和工具调用参数会直接发送到对方服务器。服务方可能会记录、存储或以未知方式处理你的数据。",
+  "extensions.detail.sseRiskUnverified": "此服务尚未经过平台安全验证。",
+  "extensions.store.sseInstallConfirm": "{{name}} 是远程服务，将连接到：\n\n{{url}}\n\n你的对话内容和数据将发送到该第三方服务器。确认安装？",
   "extensions.detail.whatIsApiKey": "什么是 API Key？",
   "extensions.enable": "启用",
   "extensions.errorSummary": "发生错误",
@@ -6490,6 +6826,10 @@ export const zhCN: Record<keyof typeof en, string> = {
   "extensions.store.reload": "重新加载",
   "extensions.store.searchPlaceholder": "搜索能力... 如 \"天气\" \"文件\"",
   "extensions.store.securityScore": "安全性",
+  "extensions.store.remoteService": "远程",
+  "extensions.store.remoteServiceTip": "连接第三方服务器 —— 你的对话内容和数据将发送到对方服务器",
+  "extensions.store.highRisk": "未验证远程",
+  "extensions.store.highRiskTip": "此服务连接到未经平台验证的第三方服务器",
   "extensions.store.sort.name": "名称 A-Z",
   "extensions.store.sort.newest": "最新",
   "extensions.store.sort.popular": "最热",
@@ -6692,10 +7032,29 @@ export const zhCN: Record<keyof typeof en, string> = {
   "voice.error.notSupported": "浏览器不支持语音录制",
   "voice.error.recordingFailed": "录音失败，请重试",
   "voice.error.transcriptionFailed": "语音识别失败，请重试",
+  "voice.error.asrNoResponse": "语音识别服务无响应，请检查 ASR 模型是否正常运行",
   "voice.mascot.hint": "语音告诉我",
   "voice.processing": "识别中...",
   "voice.startRecording": "开始语音输入",
   "voice.stopRecording": "停止录音",
+  "voice.clickToStart": "点击开始语音输入",
+  "voice.clickToStop": "点击停止录音",
+  "voice.setupRequired": "需要安装语音模型",
+  "voice.voiceMode.start": "语音对话",
+  "voice.voiceMode.stop": "结束语音对话",
+  "voice.voiceMode.active": "语音对话中...",
+  "voice.wakeWord.listening": "唤醒词监听中",
+  "voice.wakeWord.greeting": "你好，我在，请说",
+
+  // ============================================================================
+  // 屏幕共享
+  // ============================================================================
+  "screenShare.start": "共享屏幕",
+  "screenShare.stop": "结束共享",
+  "screenShare.active": "屏幕共享中",
+  "screenShare.analyzed": "已分析",
+  "screenShare.end": "结束共享",
+  "screenShare.defaultPrompt": "请看我的屏幕",
 
   // ============================================================================
   // Gateway URL 确认弹窗
@@ -6705,4 +7064,136 @@ export const zhCN: Record<keyof typeof en, string> = {
   "gateway.urlConfirm.warning": "请仅在信任该 URL 时确认。恶意 URL 可能危害您的系统。",
   "gateway.urlConfirm.confirm": "确认",
   "gateway.urlConfirm.cancel": "取消",
+
+  // ============================================================================
+  // 智能组队 (Orchestrator) — 从 bak5 提取
+  // ============================================================================
+  "orch.back": "返回",
+  "orch.backToList": "返回智能体列表",
+  "orch.createMore": "再建一个团队",
+  "orch.entrySub": "一键组建你的 AI 助手团队",
+  "orch.entryTitle": "智能组队",
+  "orch.errorBack": "返回",
+  "orch.errorRetry": "重试",
+  "orch.guideLabel": "这样用，马上出效果",
+  "orch.headerTitle": "组建团队",
+  "orch.inputPlaceholder": "用一句话描述你想要的团队...",
+  "orch.sectionCustom": "想要别的？告诉我",
+  "orch.sectionTemplates": "热门场景",
+  "orch.soulEdit": "编辑",
+  "orch.soulToggle": "展开/折叠",
+  "orch.startChat": "开始对话",
+  "orch.successSub": "「{{team}}」全部上线",
+  "orch.successTitle": "团队已就绪！",
+  "orch.templateCount": "{{count}} 个助手",
+  "orch.templateCreate": "一键创建",
+  "orch.templateDeploy": "立即部署",
+  "orch.thinking": "思考中...",
+  "orch.welcomeSub": "选一个场景，30 秒自动搞定",
+  "orch.welcomeTitle": "组建你的 AI 团队",
+  "orch.gatheringTitle": "帮我了解一下你的需求",
+  "orch.gatheringSub": "选一下每个问题的选项，我就能给你规划出最合适的团队",
+  "orch.gatheringConfirm": "就这样，帮我规划团队",
+  "orch.deployNow": "确认，开始创建",
+  "orch.adjustTeam": "我想调整一下",
+  "orch.communitySectionTitle": "社区分享",
+  "orch.communityDownloads": "次使用",
+  "orch.communityLoadError": "社区模板加载失败",
+  "orch.communityRetry": "重试",
+  "orch.deployTitle": "正在创建你的团队...",
+  "orch.deployStatusPending": "等待中",
+  "orch.deployStatusCreating": "创建中",
+  "orch.deployStatusConfiguring": "配置中",
+  "orch.deployStatusReady": "已就绪",
+  "orch.deployStatusFailed": "失败",
+
+  // ============================================================================
+  // 软件更新 (Update) — 从 bak5 提取
+  // ============================================================================
+  "update.banner.available": "v{version} 可用",
+  "update.banner.later": "稍后",
+  "update.banner.view": "查看",
+  "update.config.updateAvailable": "更新到 v{version}",
+  "update.dialog.closeBtn": "关闭",
+  "update.dialog.confirmBtn": "立即更新",
+  "update.dialog.downloadBtn": "下载安装包",
+  "update.dialog.laterBtn": "稍后",
+  "update.dialog.mandatory": "强制更新",
+  "update.dialog.restartBtn": "立即重启",
+  "update.dialog.retryBtn": "重试",
+  "update.dialog.title": "软件更新",
+  "update.dialog.typeDelta": "增量更新",
+  "update.dialog.typeFull": "全量更新",
+  "update.dialog.typeInstaller": "安装包更新",
+  "update.dialog.version": "新版本: v{version}",
+  "update.progress.applying": "正在应用更新...",
+  "update.progress.checking": "正在检查更新...",
+  "update.progress.complete": "更新完成，即将重启...",
+  "update.progress.downloading": "正在下载...",
+  "update.progress.error": "更新失败",
+  "update.progress.verifying": "正在校验完整性...",
+  "update.result.installerRedirect": "此版本需要重新安装",
+  "update.result.installerRedirectDesc": "版本跨度较大，请下载最新安装包完成更新",
+  "update.result.success": "更新成功，重启后生效",
+
+  // ============================================================================
+  // 会话侧边栏 (Conversation Sidebar) — 从 bak5 提取
+  // ============================================================================
+  "sidebar.archive": "归档",
+  "sidebar.copyKey": "复制会话标识",
+  "sidebar.delete": "删除",
+  "sidebar.deleteConfirm": "确定要删除此对话吗？删除后无法恢复。",
+  "sidebar.manageAll": "管理所有会话",
+  "sidebar.more": "更多",
+  "sidebar.newChat": "新建对话",
+  "sidebar.noConversations": "还没有对话",
+  "sidebar.noSearchResults": "没有匹配的对话",
+  "sidebar.older": "更早",
+  "sidebar.past30days": "近 30 天",
+  "sidebar.past7days": "近 7 天",
+  "sidebar.pin": "置顶",
+  "sidebar.pinned": "已置顶",
+  "sidebar.rename": "重命名",
+  "sidebar.searchPlaceholder": "搜索对话...",
+  "sidebar.today": "今天",
+  "sidebar.toggleSidebar": "切换侧边栏",
+  "sidebar.history": "历史对话",
+  "sidebar.unarchive": "取消归档",
+  "sidebar.unpin": "取消置顶",
+  "sidebar.viewDetails": "查看详情",
+  "sidebar.yesterday": "昨天",
+
+  // ============================================================================
+  // 语音能力卡片 (Voice Tier) — 从 bak5 提取
+  // ============================================================================
+  "voiceTier.asr": "语音识别",
+  "voiceTier.badge.bronze": "基础",
+  "voiceTier.badge.gold": "最佳",
+  "voiceTier.badge.silver": "良好",
+  "voiceTier.detecting": "正在检测硬件...",
+  "voiceTier.downloadSize": "下载大小",
+  "voiceTier.gpu": "GPU",
+  "voiceTier.install": "一键安装",
+  "voiceTier.installComplete": "安装完成",
+  "voiceTier.installFailed": "安装失败",
+  "voiceTier.installed": "已安装",
+  "voiceTier.installing": "安装中...",
+  "voiceTier.notInstalled": "未安装",
+  "voiceTier.ram": "内存",
+  "voiceTier.redetect": "重新检测硬件",
+  "voiceTier.sidecar.error": "错误",
+  "voiceTier.sidecar.running": "运行中",
+  "voiceTier.sidecar.start": "启动 GPU 服务",
+  "voiceTier.sidecar.stop": "停止 GPU 服务",
+  "voiceTier.sidecar.stopped": "已停止",
+  "voiceTier.tier.cpuAsr": "CPU 语音识别模式",
+  "voiceTier.tier.cpuFull": "CPU 全能模式",
+  "voiceTier.tier.disabled": "语音功能已禁用",
+  "voiceTier.tier.gpuAsr": "GPU 语音识别模式",
+  "voiceTier.tier.gpuFull": "GPU 全能模式",
+  "voiceTier.title": "语音能力",
+  "voiceTier.tts": "语音合成",
+  "voiceTier.backend.auto": "自动 (本地)",
+  "voiceTier.backend.needKey": "需配置 API Key",
+  "voiceTier.vram": "显存",
 } as const;

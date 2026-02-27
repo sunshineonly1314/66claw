@@ -1060,8 +1060,12 @@ function renderMcpToast(toast: McpToast): TemplateResult {
       backdrop-filter:blur(8px);
       animation:mcpToastIn 300ms ease both;
       pointer-events:none;
+      max-width:min(560px, 90vw);
+      white-space:pre-line;
+      line-height:1.4;
+      text-align:left;
     ">
-      <span style="font-size:14px;" aria-hidden="true">${icon}</span>
+      <span style="font-size:14px; flex-shrink:0;" aria-hidden="true">${icon}</span>
       ${toast.message}
     </div>
     <style>

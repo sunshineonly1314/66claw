@@ -1,0 +1,11 @@
+{
+  "id": "orchestrator",
+  "name": "Agent Orchestrator",
+  "description": "Intelligent multi-agent orchestration: plan, deploy, and coordinate agent teams from natural language requirements.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

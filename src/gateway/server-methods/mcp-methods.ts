@@ -12,6 +12,8 @@
  *   mcp.servers.remove — Remove a server config
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { getMCPManagerSafe, initMCPManager } from "../../mcp/index.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
@@ -19,6 +21,7 @@ import { buildWorkspaceSkillStatus, type SkillStatusEntry } from "../../agents/s
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 import type { MCPServerConfig } from "../../mcp/types.js";
+import type { McpMarketplaceItem } from "../../mcp/marketplace/types.js";
 import {
   shouldUseCNMirror,
   getNpmMirrorUrl,
@@ -29,6 +32,117 @@ import {
 
 function mcpError(message: string) {
   return errorShape(ErrorCodes.INVALID_REQUEST, message);
+}
+
+// ============================================================================
+// Command resolution — find npx/uvx with bundled Node.js fallback
+// ============================================================================
+
+/**
+ * Common Windows paths where Node.js / npm / npx may be installed.
+ * Matches the list in skills-install.ts WINDOWS_NODE_PATHS.
+ */
+const WINDOWS_NODE_SEARCH_PATHS: string[] =
+  process.platform === "win32"
+    ? [
+        // Bundled node alongside the gateway process
+        path.dirname(process.execPath),
+        // Common manual installs
+        "D:\\Program Files\\node",
+        "C:\\Program Files\\nodejs",
+        "C:\\Program Files\\node",
+        `${process.env.LOCALAPPDATA ?? ""}\\Programs\\nodejs`,
+        `${process.env.USERPROFILE ?? ""}\\scoop\\apps\\nodejs\\current`,
+        `${process.env.USERPROFILE ?? ""}\\scoop\\apps\\nodejs-lts\\current`,
+        `${process.env.APPDATA ?? ""}\\nvm`,
+        `${process.env.APPDATA ?? ""}\\npm`,
+      ].filter(Boolean)
+    : [];
+
+/**
+ * Resolve a command like "npx" or "uvx" to its full path.
+ * On Windows, searches common Node.js install paths AND the user's PATH.
+ *
+ * Returns the full path if found, or the original command name if not.
+ * Also returns extra PATH dirs that should be injected into the child process env.
+ */
+function resolveInstallCommand(command: string): { resolved: string; extraPath: string[] } {
+  const isWindows = process.platform === "win32";
+  const extensions = isWindows ? [".cmd", ".exe", ""] : [""];
+  const extraPath: string[] = [];
+
+  // Always add the gateway's own directory to extra PATH (bundled node.exe lives there)
+  const execDir = path.dirname(process.execPath);
+  if (execDir && !extraPath.includes(execDir)) {
+    extraPath.push(execDir);
+  }
+
+  if (isWindows) {
+    // 1. Search well-known Windows paths
+    for (const basePath of WINDOWS_NODE_SEARCH_PATHS) {
+      if (!basePath) continue;
+      for (const ext of extensions) {
+        const fullPath = path.join(basePath, `${command}${ext}`);
+        try {
+          if (fs.existsSync(fullPath)) {
+            if (!extraPath.includes(basePath)) extraPath.push(basePath);
+            return { resolved: fullPath, extraPath };
+          }
+        } catch {
+          // continue
+        }
+      }
+    }
+    // 2. Search PATH env var
+    const pathDirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+    for (const dir of pathDirs) {
+      for (const ext of extensions) {
+        const fullPath = path.join(dir, `${command}${ext}`);
+        try {
+          if (fs.existsSync(fullPath)) {
+            return { resolved: fullPath, extraPath };
+          }
+        } catch {
+          // continue
+        }
+      }
+    }
+  } else {
+    // Unix: search PATH
+    const pathDirs = (process.env.PATH ?? "").split(":").filter(Boolean);
+    for (const dir of pathDirs) {
+      const fullPath = path.join(dir, command);
+      try {
+        if (fs.existsSync(fullPath)) {
+          return { resolved: fullPath, extraPath };
+        }
+      } catch {
+        // continue
+      }
+    }
+  }
+
+  return { resolved: command, extraPath };
+}
+
+/**
+ * Check whether a command (npx/uvx) is actually available on the system.
+ * Returns a diagnostic message if NOT available, or null if OK.
+ */
+function checkCommandAvailability(command: string): string | null {
+  const { resolved } = resolveInstallCommand(command);
+  // If resolved === command (unchanged), it was not found as full path
+  if (resolved === command) {
+    // Still could be on PATH — but we already searched, so it's missing
+    if (command === "npx" || command === "npm") {
+      return `未检测到 Node.js (${command})。请安装 Node.js (推荐 v20+) 后重试，或联系技术支持。\n下载地址：https://nodejs.org`;
+    }
+    if (command === "uvx" || command === "uv") {
+      return `未检测到 Python 工具 (${command})。请安装 uv (https://docs.astral.sh/uv/) 后重试。`;
+    }
+    return `未找到命令：${command}`;
+  }
+  return null;
 }
 
 // ============================================================================
@@ -66,6 +180,8 @@ function buildCNMirrorEnv(
 // ── Network error detection (same as skills-install.ts) ─────────────────
 function isNetworkError(errorStr: string): boolean {
   const s = errorStr.toLowerCase();
+  // NOTE: "could not determine executable" is NOT a network error —
+  // it means npx/uvx binary is missing. Do NOT retry with other mirrors.
   return (
     s.includes("enotfound") ||
     s.includes("etimedout") ||
@@ -81,26 +197,46 @@ function isNetworkError(errorStr: string): boolean {
     s.includes("502") ||
     s.includes("503") ||
     s.includes("timeout") ||
-    s.includes("could not determine executable") ||
-    s.includes("not found in registry")
+    s.includes("not found in registry") ||
+    // "Connection closed" from MCP SDK (-32000) — process may have crashed
+    // during package download; worth retrying with another mirror
+    s.includes("connection closed")
   );
 }
 
 // ── Friendly CN error messages ──────────────────────────────────────────
 function friendlyInstallError(serverId: string, lastError: string): string {
-  if (lastError.includes("could not determine executable")) {
-    return `${serverId} 安装失败：npm 包不存在或无法执行，该包可能已下架`;
+  const s = lastError.toLowerCase();
+  // npx/uvx not installed — most common for beginner users
+  if (
+    s.includes("could not determine executable") ||
+    s.includes("is not recognized") ||
+    s.includes("enoent")
+  ) {
+    if (s.includes("npx") || s.includes("npm")) {
+      return `${serverId} 安装失败：未检测到 Node.js/npx。请安装 Node.js (推荐 v20+) 后重试。\n下载：https://nodejs.org`;
+    }
+    if (s.includes("uvx") || s.includes("uv")) {
+      return `${serverId} 安装失败：未检测到 Python/uvx。请安装 uv 后重试。\n下载：https://docs.astral.sh/uv/`;
+    }
+    return `${serverId} 安装失败：运行环境缺失 (${lastError.slice(0, 80)})`;
   }
-  if (lastError.includes("not found in registry") || lastError.includes("404")) {
-    return `${serverId} 安装失败：包在镜像源中找不到`;
+  if (s.includes("not found in registry") || s.includes("404")) {
+    return `${serverId} 安装失败：包在镜像源中找不到，可能已下架或名称有误`;
   }
-  if (lastError.includes("enotfound") || lastError.includes("etimedout")) {
+  if (s.includes("enotfound") || s.includes("etimedout")) {
     return `${serverId} 安装失败：所有国内镜像源均无法连接，请检查网络`;
   }
-  if (lastError.includes("connection closed") || lastError.includes("Connection closed")) {
-    return `${serverId} 安装失败：服务启动后连接中断，可能需要额外配置`;
+  if (s.includes("econnrefused")) {
+    return `${serverId} 安装失败：镜像源连接被拒绝，请稍后重试`;
   }
-  return `${serverId} 安装失败：${lastError.slice(0, 120)}`;
+  if (s.includes("connection closed") || s.includes("Connection closed")) {
+    return `${serverId} 安装失败：服务启动后连接中断，可能需要额外配置。点击"失败·重试"可打开配置面板填写必要的环境变量。`;
+  }
+  if (s.includes("timeout") || s.includes("init timeout")) {
+    return `${serverId} 安装失败：启动超时，该服务可能需要较长初始化时间或额外配置`;
+  }
+  return `${serverId} 安装失败：${lastError.slice(0, 150)}`;
 }
 
 // ── Synthetic SSE URL detection ──────────────────────────────────────────
@@ -110,6 +246,88 @@ function friendlyInstallError(serverId: string, lastError: string): string {
 function isSyntheticSseUrl(url: string): boolean {
   if (!url) return false;
   return /\.api-inference\.modelscope\.net\/sse$/.test(url);
+}
+
+/**
+ * Detect template/placeholder SSE URLs like `https://{HAPI_FQDN}:{HAPI_PORT}/mcp`.
+ * These require user to manually fill in the actual host/port before connecting.
+ */
+function isTemplateSseUrl(url: string): boolean {
+  if (!url) return false;
+  return /\{[A-Za-z_][A-Za-z0-9_]*\}/.test(url);
+}
+
+/**
+ * Quick SSE URL reachability check.
+ * Attempts a lightweight fetch with short timeout to detect common issues:
+ * - Network unreachable (overseas servers blocked in China)
+ * - Auth required (401/403)
+ * - Server down (ECONNREFUSED, 5xx)
+ * Returns null if reachable, or a diagnostic message if not.
+ */
+async function checkSseReachability(
+  sseUrl: string,
+): Promise<{ reachable: boolean; diagnosis: string | null; statusCode?: number }> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    // Use GET instead of HEAD — many SSE endpoints don't support HEAD
+    const resp = await fetch(sseUrl, {
+      method: "GET",
+      signal: controller.signal,
+      // Don't follow too many redirects
+      redirect: "follow",
+    });
+    clearTimeout(timer);
+
+    if (resp.status === 401 || resp.status === 403) {
+      return {
+        reachable: true,
+        diagnosis: `该服务需要认证 (HTTP ${resp.status})。请使用「配置并安装」填写 API Key。`,
+        statusCode: resp.status,
+      };
+    }
+    if (resp.status >= 500) {
+      return {
+        reachable: true,
+        diagnosis: `该服务暂时不可用 (HTTP ${resp.status})，请稍后重试。`,
+        statusCode: resp.status,
+      };
+    }
+    // Any response (including 404, 405) means the server is reachable
+    return { reachable: true, diagnosis: null, statusCode: resp.status };
+  } catch (err: unknown) {
+    const msg = String(err);
+    const s = msg.toLowerCase();
+    if (s.includes("abort") || s.includes("timeout")) {
+      return {
+        reachable: false,
+        diagnosis: "连接超时，该服务可能位于海外或已下线，国内网络无法直连。",
+      };
+    }
+    if (s.includes("enotfound")) {
+      return {
+        reachable: false,
+        diagnosis: "域名无法解析，该服务地址可能有误或已下线。",
+      };
+    }
+    if (s.includes("econnrefused")) {
+      return {
+        reachable: false,
+        diagnosis: "连接被拒绝，该服务可能未启动或端口有误。",
+      };
+    }
+    if (s.includes("econnreset") || s.includes("fetch failed") || s.includes("socket")) {
+      return {
+        reachable: false,
+        diagnosis: "网络连接失败，该服务可能位于海外，国内网络无法直连。",
+      };
+    }
+    return {
+      reachable: false,
+      diagnosis: `连接失败：${msg.slice(0, 100)}`,
+    };
+  }
 }
 
 /**
@@ -127,13 +345,34 @@ async function tryInstallWithMirrorFallback(params: {
   userEnv?: Record<string, string>;
   waitMs?: number;
 }): Promise<{ ok: boolean; error?: string; usedMirror?: string }> {
-  const { manager, serverId, type, packageStr, version, userEnv, waitMs = 4000 } = params;
+  const { manager, serverId, type, packageStr, version, userEnv } = params;
+
+  // ── Step 0: Pre-flight check — is the required command available? ──
+  const baseCommand = type === "npm" ? "npx" : "uvx";
+  const preflightError = checkCommandAvailability(baseCommand);
+  if (preflightError) {
+    console.warn(`[mcp] Pre-flight failed for ${serverId}: ${preflightError}`);
+    return { ok: false, error: preflightError };
+  }
+
+  // Resolve to full path & get extra PATH dirs (bundled node, etc.)
+  const { resolved: resolvedCommand, extraPath } = resolveInstallCommand(baseCommand);
+  console.log(
+    `[mcp] Resolved "${baseCommand}" -> "${resolvedCommand}" (extra PATH: ${extraPath.join(", ") || "none"})`,
+  );
+
+  // ── Step 1: Determine mirrors ──
   const useCN = shouldUseCNMirror();
   const mirrors = useCN
     ? type === "npm"
       ? getNpmMirrors()
       : getPipMirrors()
     : [type === "npm" ? "https://registry.npmjs.org" : "https://pypi.org/simple"];
+
+  // Timeout: CN networks need more time for first npm download
+  // Poll every 2s instead of single wait, total max ~30s per mirror
+  const pollIntervalMs = 2000;
+  const maxPollAttempts = params.waitMs ? Math.ceil(params.waitMs / pollIntervalMs) : 15; // default 30s
 
   let lastError = "";
 
@@ -147,15 +386,22 @@ async function tryInstallWithMirrorFallback(params: {
       }
     })();
 
-    // Build server config with this mirror's env
+    // Build server config with this mirror's env + injected PATH
+    const mirrorEnv = buildCNMirrorEnv(type, userEnv, mirror) ?? {};
+    // Inject extra PATH so the child process can find npx/node/uvx
+    if (extraPath.length > 0) {
+      const existingPath = mirrorEnv.PATH || process.env.PATH || "";
+      mirrorEnv.PATH = [...extraPath, existingPath].filter(Boolean).join(path.delimiter);
+    }
+
     let serverConfig: MCPServerConfig;
     if (type === "npm") {
       const versionedPkg = version ? `${packageStr}@${version}` : packageStr;
       serverConfig = {
         id: serverId,
-        command: "npx",
+        command: resolvedCommand,
         args: ["-y", versionedPkg],
-        env: buildCNMirrorEnv("npm", userEnv, mirror),
+        env: mirrorEnv,
         transport: "stdio",
         version: version || undefined,
         enabled: true,
@@ -165,13 +411,17 @@ async function tryInstallWithMirrorFallback(params: {
       const versionedPkg = version ? `${packageStr}==${version}` : packageStr;
       serverConfig = {
         id: serverId,
-        command: "uvx",
+        command: resolvedCommand,
         args: [versionedPkg],
-        env: buildCNMirrorEnv("pypi", userEnv, mirror),
+        env: mirrorEnv,
         transport: "stdio",
         version: version || undefined,
         enabled: true,
         autoStart: true,
+        // uvx cold start downloads packages + creates venv — needs more time
+        // than npm (which just downloads and runs). 60s handles large packages
+        // like lxml (~4MB) on slow CN mirrors.
+        timeout: 60_000,
       };
     }
 
@@ -179,11 +429,23 @@ async function tryInstallWithMirrorFallback(params: {
 
     try {
       await manager.addServer(serverConfig);
-      await new Promise((r) => setTimeout(r, waitMs));
 
-      const postStatus = manager.getStatus();
-      const serverStatus = postStatus.servers.find((s) => s.config.id === serverId);
-      const isRunning = serverStatus?.status === "running";
+      // ── Poll for running status instead of single wait ──
+      let isRunning = false;
+      let serverStatus: { status?: string; error?: string } | undefined;
+      for (let poll = 0; poll < maxPollAttempts; poll++) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        const postStatus = manager.getStatus();
+        serverStatus = postStatus.servers.find((s) => s.config.id === serverId);
+        if (serverStatus?.status === "running") {
+          isRunning = true;
+          break;
+        }
+        // If process already exited with error, stop polling early
+        if (serverStatus?.status === "error" && serverStatus?.error) {
+          break;
+        }
+      }
 
       if (isRunning) {
         console.log(`[mcp] Install success via ${mirrorHost}: ${serverId}`);
@@ -215,6 +477,75 @@ async function tryInstallWithMirrorFallback(params: {
         /* best-effort */
       }
       if (!isNetworkError(lastError)) break;
+    }
+  }
+
+  // ── pypi fallback: "uvx --from <pkg> <executable>" ──────────────────────
+  // Many pypi packages have a different executable name than the package name
+  // (e.g. package "xhs-mcp-server" provides executable "xhs_mcp_server").
+  // When uvx fails with "is not provided by package", retry with --from syntax
+  // using the underscore-normalized executable name.
+  if (type === "pypi" && packageStr.includes("-") && lastError.includes("Connection closed")) {
+    const underscoreName = packageStr.replace(/-/g, "_");
+    const firstMirror = mirrors[0]!;
+    const mirrorEnv = buildCNMirrorEnv(type, userEnv, firstMirror) ?? {};
+    if (extraPath.length > 0) {
+      const existingPath = mirrorEnv.PATH || process.env.PATH || "";
+      mirrorEnv.PATH = [...extraPath, existingPath].filter(Boolean).join(path.delimiter);
+    }
+    const versionedPkg = version ? `${packageStr}==${version}` : packageStr;
+
+    console.log(
+      `[mcp] Retrying pypi install with --from for ${serverId}: uvx --from ${versionedPkg} ${underscoreName}`,
+    );
+
+    const serverConfig: MCPServerConfig = {
+      id: serverId,
+      command: resolvedCommand,
+      args: ["--from", versionedPkg, underscoreName],
+      env: mirrorEnv,
+      transport: "stdio",
+      version: version || undefined,
+      enabled: true,
+      autoStart: true,
+      timeout: 60_000,
+    };
+
+    try {
+      await manager.addServer(serverConfig);
+
+      let isRunning = false;
+      let serverStatus: { status?: string; error?: string } | undefined;
+      for (let poll = 0; poll < maxPollAttempts; poll++) {
+        await new Promise((r) => setTimeout(r, pollIntervalMs));
+        const postStatus = manager.getStatus();
+        serverStatus = postStatus.servers.find((s) => s.config.id === serverId);
+        if (serverStatus?.status === "running") {
+          isRunning = true;
+          break;
+        }
+        if (serverStatus?.status === "error" && serverStatus?.error) break;
+      }
+
+      if (isRunning) {
+        console.log(`[mcp] Install success with --from fallback: ${serverId}`);
+        return { ok: true, usedMirror: "fallback-from" };
+      }
+
+      lastError = serverStatus?.error ?? lastError;
+      try {
+        await manager.removeServer(serverId);
+        persistMcpServerRemove(serverId).catch(() => {});
+      } catch {
+        /* best-effort */
+      }
+    } catch (err) {
+      try {
+        await manager.removeServer(serverId);
+        persistMcpServerRemove(serverId).catch(() => {});
+      } catch {
+        /* best-effort */
+      }
     }
   }
 
@@ -344,7 +675,7 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
   }
 
   // Load marketplace index to enrich installed servers with CN names + descriptions
-  let marketplaceItems: Record<string, unknown>[] = [];
+  let marketplaceItems: McpMarketplaceItem[] = [];
   try {
     const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
     marketplaceItems = await readMarketplaceIndex();
@@ -371,9 +702,7 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
     }
 
     // Enrich with marketplace data: CN name, description, example prompt
-    const marketItem = marketplaceItems.find(
-      (i: Record<string, unknown>) => i.serverId === s.config.id,
-    ) as Record<string, unknown> | undefined;
+    const marketItem = marketplaceItems.find((i) => i.serverId === s.config.id);
 
     // Build friendly name: marketplace CN name → marketplace EN name → serverId
     const friendlyName = String(
@@ -388,7 +717,7 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
 
     // Build example prompt from marketplace or first tool
     const examplePrompt = marketItem?.examplePrompts
-      ? String((marketItem.examplePrompts as string[])[0] ?? "")
+      ? String(marketItem.examplePrompts[0] ?? "")
       : s.tools.length > 0
         ? s.tools[0]!.name
         : "";
@@ -407,9 +736,7 @@ const mcpStatusHandler: GatewayRequestHandler = safeHandler(async ({ respond }) 
   const processes = status.servers.map((s) => ({
     id: s.config.id,
     friendlyName: (() => {
-      const m = marketplaceItems.find((i: Record<string, unknown>) => i.serverId === s.config.id) as
-        | Record<string, unknown>
-        | undefined;
+      const m = marketplaceItems.find((i) => i.serverId === s.config.id);
       return String(m?.friendlyNameCn || m?.friendlyName || s.config.id);
     })(),
     status:
@@ -845,13 +1172,14 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
         // Exclude synthetic ModelScope SSE URLs that don't actually work
         const realSseUrl = i.sseUrl && !isSyntheticSseUrl(i.sseUrl) ? i.sseUrl : "";
         const installable = !!(i.npmPackage || i.pypiPackage || realSseUrl);
-        // SSE first — most reliable in China (no npm/pip dependency issues)
-        const installMethod: "npm" | "pypi" | "sse" | "none" = realSseUrl
-          ? "sse"
-          : i.npmPackage
-            ? "npm"
-            : i.pypiPackage
-              ? "pypi"
+        // npm/pypi first — work reliably with CN mirrors.
+        // SSE as fallback — many SSE services are overseas and unreachable from China.
+        const installMethod: "npm" | "pypi" | "sse" | "none" = i.npmPackage
+          ? "npm"
+          : i.pypiPackage
+            ? "pypi"
+            : realSseUrl
+              ? "sse"
               : "none";
 
         // Auto-detect requiresApiKey from platformNotes when data source doesn't provide it
@@ -864,7 +1192,18 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
                 platformNotes,
               )
             : false;
-        const requiresApiKey = !!(i.requiresApiKey || inferredNeedsKey);
+        const hasEnvRequired = Array.isArray(i.envRequired) && i.envRequired.length > 0;
+        const hasEnvSchema = !!(
+          i.envSchema &&
+          typeof i.envSchema === "object" &&
+          Object.keys(i.envSchema).length > 0
+        );
+        const requiresApiKey = !!(
+          i.requiresApiKey ||
+          inferredNeedsKey ||
+          hasEnvRequired ||
+          hasEnvSchema
+        );
         // Pass platformNotes as configHint so UI can show setup instructions
         const configHint = requiresApiKey && platformNotes ? platformNotes : undefined;
 
@@ -904,18 +1243,37 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
         };
       });
 
-      // Sort: installed first, then SSE (most reliable), then other installable, then non-installable last
+      // Sort: installed → npm/pypi (CN mirrors work) → SSE-with-no-template → SSE-template/non-installable
+      // For CN users, npm/pypi are more reliable than SSE (overseas servers often unreachable)
       annotated.sort((a, b) => {
         // Installed items always first
         const aInst = a.installStatus === "installed" ? 0 : 1;
         const bInst = b.installStatus === "installed" ? 0 : 1;
         if (aInst !== bInst) return aInst - bInst;
-        // SSE items next (work best in China), then npm/pypi, then non-installable
-        const methodRank = (m: string | undefined) =>
-          m === "sse" ? 0 : m === "npm" || m === "pypi" ? 1 : 2;
-        const am = methodRank(a.installMethod);
-        const bm = methodRank(b.installMethod);
+
+        // Rank install methods for CN users:
+        // 0 = npm/pypi (CN mirrors make these reliable)
+        // 1 = SSE with real URL (may work, pre-connect will verify)
+        // 2 = SSE with template URL (needs manual config — hard for beginners)
+        // 3 = non-installable
+        const methodRank = (item: typeof a) => {
+          if (item.installMethod === "npm" || item.installMethod === "pypi") return 0;
+          if (item.installMethod === "sse") {
+            const url = String((item as Record<string, unknown>).sseUrl ?? "");
+            if (isTemplateSseUrl(url)) return 2;
+            return 1;
+          }
+          return 3;
+        };
+        const am = methodRank(a);
+        const bm = methodRank(b);
         if (am !== bm) return am - bm;
+
+        // Within same rank: items NOT requiring API key come first (easier for beginners)
+        const aKey = a.requiresApiKey ? 1 : 0;
+        const bKey = b.requiresApiKey ? 1 : 0;
+        if (aKey !== bKey) return aKey - bKey;
+
         return 0;
       });
 
@@ -950,7 +1308,7 @@ const mcpMarketplaceDetailHandler: GatewayRequestHandler = safeHandler(
     try {
       const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
       const allItems = await readMarketplaceIndex();
-      const item = allItems.find((i: Record<string, unknown>) => i.serverId === serverId);
+      const item = allItems.find((i) => i.serverId === serverId);
 
       if (!item) {
         respond(false, undefined, mcpError("Item not found: " + serverId));
@@ -980,9 +1338,7 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
     try {
       const { readMarketplaceIndex } = await import("../../mcp/marketplace-index.js");
       const allItems = await readMarketplaceIndex();
-      const item = allItems.find((i: Record<string, unknown>) => i.serverId === serverId) as
-        | Record<string, unknown>
-        | undefined;
+      const item = allItems.find((i) => i.serverId === serverId);
 
       if (!item) {
         respond(false, undefined, mcpError("Item not found: " + serverId));
@@ -1009,7 +1365,11 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
       // User overrides take precedence over marketplace data
       const npmPackage = overrideNpmPkg || String(item.npmPackage ?? "");
       const pypiPackage = overridePypiPkg || String(item.pypiPackage ?? "");
-      const version = String(item.version ?? "");
+      // "0.0.0" is a placeholder version from the scraping pipeline — not a real
+      // version on npm/pypi.  Treat it (and other clearly-invalid placeholders)
+      // as "no version" so we install the latest release.
+      const rawVersion = String(item.version ?? "");
+      const version = rawVersion && rawVersion !== "0.0.0" ? rawVersion : "";
       const sseUrl = overrideSseUrl || realItemSseUrl;
       const env =
         params.env && typeof params.env === "object"
@@ -1036,10 +1396,40 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
       }
 
       // ── Determine install method ───────────────────────────────────
-      // SSE first (most reliable in China — just connect to URL, no npm/pip)
-      // npm/pypi: multi-mirror fallback (Taobao → Tencent → Huawei for npm)
-      if (sseUrl) {
-        // SSE: direct connection, no mirrors needed
+      // Priority: npm/pypi first (work with CN mirrors), then SSE (may be overseas)
+      if (sseUrl && !npmPackage && !pypiPackage) {
+        // ── SSE-only path ──────────────────────────────────────────
+        // Step 1: Reject template URLs that need user configuration
+        if (isTemplateSseUrl(sseUrl)) {
+          respond(
+            false,
+            undefined,
+            mcpError(
+              `${serverId} 的连接地址包含占位符（如 {HOST}），需要手动配置。\n请使用「配置并安装」填写实际的服务地址后重试。`,
+            ),
+          );
+          return;
+        }
+
+        // Step 2: Pre-connect reachability check (fast fail for overseas/down services)
+        const probe = await checkSseReachability(sseUrl);
+        if (!probe.reachable) {
+          respond(false, undefined, mcpError(`${serverId}：${probe.diagnosis}`));
+          return;
+        }
+        // Auth error detected during probe — guide to config wizard
+        if (probe.statusCode === 401 || probe.statusCode === 403) {
+          respond(
+            false,
+            undefined,
+            mcpError(
+              `${serverId} 需要认证才能连接 (HTTP ${probe.statusCode})。请使用「配置并安装」填写 API Key 后重试。`,
+            ),
+          );
+          return;
+        }
+
+        // Step 3: Actually install
         const serverConfig: MCPServerConfig = {
           id: serverId,
           command: "",
@@ -1203,7 +1593,7 @@ function extractSkillKeywords(skills: SkillStatusEntry[]): Set<string> {
   return keywords;
 }
 
-function scoreRecommendation(item: Record<string, unknown>, keywords: Set<string>): number {
+function scoreRecommendation(item: McpMarketplaceItem, keywords: Set<string>): number {
   let score = 0;
   const tags = Array.isArray(item.tags) ? item.tags.map(String) : [];
   const serverId = String(item.serverId ?? "").toLowerCase();
@@ -1255,7 +1645,7 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
     // 5. Score and rank — only recommend China-friendly items
     //    (no external API key required = can run locally without VPN)
     const scored = allItems
-      .filter((item: Record<string, unknown>) => {
+      .filter((item) => {
         if (installedMcp.has(String(item.serverId ?? ""))) return false;
         // Skip items requiring external API keys (most are foreign services)
         if (item.requiresApiKey === true) return false;
@@ -1271,7 +1661,7 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
           return false;
         return true;
       })
-      .map((item: Record<string, unknown>) => ({
+      .map((item) => ({
         item,
         score: scoreRecommendation(item, keywords),
       }))
@@ -1289,15 +1679,16 @@ const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async 
             ? "sse"
             : "none";
       // Prefer Chinese names for CN users
-      const friendlyName = (item.friendlyNameCn as string) || (item.friendlyName as string);
-      const description = (item.descriptionCn as string) || (item.description as string);
-      const tags = (item.tagsCn as string[])?.length ? item.tagsCn : item.tags;
+      const friendlyName = item.friendlyNameCn || item.friendlyName;
+      const description = item.descriptionCn || item.description;
+      const tags = item.tagsCn?.length ? item.tagsCn : item.tags;
       return {
         ...item,
         friendlyName,
         description,
         tags,
-        installStatus: (item.installStatus as string) ?? "not_installed",
+        installStatus:
+          ((item as unknown as Record<string, unknown>).installStatus as string) ?? "not_installed",
         installable,
         installMethod,
       };
@@ -1372,7 +1763,8 @@ const mcpMarketplaceUpdateHandler: GatewayRequestHandler = safeHandler(
 
       const npmPackage = item.npmPackage ?? "";
       const pypiPackage = item.pypiPackage ?? "";
-      const version = item.version ?? "";
+      const rawVer = item.version ?? "";
+      const version = rawVer && rawVer !== "0.0.0" ? rawVer : "";
       const sseUrl = item.sseUrl ?? "";
 
       if (npmPackage && !isValidPackageName(npmPackage)) {

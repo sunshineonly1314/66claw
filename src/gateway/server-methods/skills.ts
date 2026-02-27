@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { OpenClawCNConfig } from "../../config/config.js";
-import type { GatewayRequestHandlers } from "./types.js";
+import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
@@ -29,12 +29,13 @@ import {
   forceRefreshMarket,
   refreshInstalledList,
 } from "../../agents/skills/sync.js";
-import { parseFrontmatter } from "../../agents/skills/frontmatter.js";
+import { parseFrontmatter, resolveSkillKey } from "../../agents/skills/frontmatter.js";
 import { bumpSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { detectChinaRegion, isSkillHiddenInCn } from "../../config/region-cn.js";
 import {
   ErrorCodes,
   errorShape,
@@ -44,6 +45,31 @@ import {
   validateSkillsStatusParams,
   validateSkillsUpdateParams,
 } from "../protocol/index.js";
+
+// ---------------------------------------------------------------------------
+// Path safety: block sensitive system directories from skills.browse/import
+// ---------------------------------------------------------------------------
+const BLOCKED_PATH_PATTERNS =
+  process.platform === "win32"
+    ? [/^[a-z]:\\windows\\/i, /^[a-z]:\\programdata\\/i, /\\system32\\/i, /\\syswow64\\/i]
+    : [/^\/etc\b/, /^\/var\/log\b/, /^\/proc\b/, /^\/sys\b/, /^\/dev\b/, /^\/boot\b/];
+
+function isPathBlocked(targetPath: string): boolean {
+  const normalized = targetPath.replace(/\\/g, "/");
+  // Block paths that look like SSH/credential directories
+  if (/[/\\]\.ssh([/\\]|$)/.test(normalized)) return true;
+  if (/[/\\]\.gnupg([/\\]|$)/.test(normalized)) return true;
+  if (/[/\\]\.aws([/\\]|$)/.test(normalized)) return true;
+  for (const re of BLOCKED_PATH_PATTERNS) {
+    if (re.test(targetPath)) return true;
+  }
+  return false;
+}
+
+// Mutex for skills.update to prevent TOCTOU race on pinnedSkills count check.
+// Two concurrent pin requests could both pass the CORE_SKILLS_MAX check before
+// either writes, exceeding the limit.  This serializes pin operations.
+let _updateMutex: Promise<void> = Promise.resolve();
 
 function listWorkspaceDirs(cfg: OpenClawCNConfig): string[] {
   const dirs = new Set<string>();
@@ -88,6 +114,106 @@ function collectSkillBins(entries: SkillEntry[]): string[] {
     }
   }
   return [...bins].toSorted();
+}
+
+// ---------------------------------------------------------------------------
+// skills.update inner logic (extracted for mutex serialization)
+// ---------------------------------------------------------------------------
+async function _skillsUpdateInner(params: unknown, respond: RespondFn): Promise<void> {
+  const p = params as {
+    skillKey: string;
+    enabled?: boolean;
+    apiKey?: string;
+    env?: Record<string, string>;
+    pinned?: boolean;
+  };
+  const cfg = loadConfig();
+  const skills = cfg.skills ? { ...cfg.skills } : {};
+  const entries = skills.entries ? { ...skills.entries } : {};
+  const current = entries[p.skillKey] ? { ...entries[p.skillKey] } : {};
+  if (typeof p.enabled === "boolean") {
+    current.enabled = p.enabled;
+  }
+  if (typeof p.apiKey === "string") {
+    const trimmed = normalizeSecretInput(p.apiKey);
+    if (trimmed) {
+      current.apiKey = trimmed;
+    } else {
+      delete current.apiKey;
+    }
+  }
+  if (p.env && typeof p.env === "object") {
+    const nextEnv = current.env ? { ...current.env } : {};
+    for (const [key, value] of Object.entries(p.env)) {
+      const trimmedKey = key.trim();
+      if (!trimmedKey) {
+        continue;
+      }
+      const trimmedVal = value.trim();
+      if (!trimmedVal) {
+        delete nextEnv[trimmedKey];
+      } else {
+        nextEnv[trimmedKey] = trimmedVal;
+      }
+    }
+    current.env = nextEnv;
+  }
+  entries[p.skillKey] = current;
+  skills.entries = entries;
+
+  const CORE_SKILLS_MAX = 50;
+  if (typeof p.pinned === "boolean") {
+    const pinnedList = skills.pinnedSkills ? [...skills.pinnedSkills] : [];
+    if (p.pinned) {
+      const defaultAgentId = resolveDefaultAgentId(cfg);
+      const workspaceDir = resolveAgentWorkspaceDir(cfg, defaultAgentId);
+      const allEntries = loadWorkspaceSkillEntries(workspaceDir, { config: cfg });
+      const matchedEntry = allEntries.find((e) => {
+        const key = resolveSkillKey(e.skill, e);
+        return key === p.skillKey || e.skill.name === p.skillKey;
+      });
+      if (!matchedEntry) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            `技能 "${p.skillKey}" 不存在，请检查技能名称是否正确。`,
+          ),
+        );
+        return;
+      }
+      const canonicalKey = resolveSkillKey(matchedEntry.skill, matchedEntry);
+      const idx = pinnedList.indexOf(canonicalKey);
+      if (idx === -1) {
+        if (pinnedList.length >= CORE_SKILLS_MAX) {
+          respond(
+            false,
+            undefined,
+            errorShape(
+              ErrorCodes.INVALID_REQUEST,
+              `核心技能已达上限 (${CORE_SKILLS_MAX})，请先移除其他核心技能再添加。技能过多会导致每次请求浪费大量 token。`,
+            ),
+          );
+          return;
+        }
+        pinnedList.push(canonicalKey);
+      }
+      // Note: allowBundled sync removed. pinnedSkills is the sole gate for prompt injection.
+    } else {
+      const idx = pinnedList.indexOf(p.skillKey);
+      if (idx !== -1) {
+        pinnedList.splice(idx, 1);
+      }
+    }
+    skills.pinnedSkills = pinnedList.length > 0 ? pinnedList : undefined;
+  }
+  const nextConfig: OpenClawCNConfig = {
+    ...cfg,
+    skills,
+  };
+  await writeConfigFile(nextConfig);
+  respond(true, { ok: true, skillKey: p.skillKey, config: current }, undefined);
 }
 
 export const skillsHandlers: GatewayRequestHandlers = {
@@ -168,6 +294,17 @@ export const skillsHandlers: GatewayRequestHandlers = {
       installId: string;
       timeoutMs?: number;
     };
+
+    // CN region: block installation of hidden/blocked skills
+    if (detectChinaRegion() && isSkillHiddenInCn(p.name)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, `技能 "${p.name}" 在当前区域不可用。`),
+      );
+      return;
+    }
+
     const cfg = loadConfig();
 
     // Broadcast install progress to UI via WebSocket
@@ -340,80 +477,18 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const p = params as {
-      skillKey: string;
-      enabled?: boolean;
-      apiKey?: string;
-      env?: Record<string, string>;
-      pinned?: boolean;
-    };
-    const cfg = loadConfig();
-    const skills = cfg.skills ? { ...cfg.skills } : {};
-    const entries = skills.entries ? { ...skills.entries } : {};
-    const current = entries[p.skillKey] ? { ...entries[p.skillKey] } : {};
-    if (typeof p.enabled === "boolean") {
-      current.enabled = p.enabled;
+    // Serialize update operations to prevent TOCTOU race on pinnedSkills count
+    let releaseMutex: () => void;
+    const prev = _updateMutex;
+    _updateMutex = new Promise<void>((r) => {
+      releaseMutex = r;
+    });
+    await prev;
+    try {
+      await _skillsUpdateInner(params, respond);
+    } finally {
+      releaseMutex!();
     }
-    if (typeof p.apiKey === "string") {
-      const trimmed = normalizeSecretInput(p.apiKey);
-      if (trimmed) {
-        current.apiKey = trimmed;
-      } else {
-        delete current.apiKey;
-      }
-    }
-    if (p.env && typeof p.env === "object") {
-      const nextEnv = current.env ? { ...current.env } : {};
-      for (const [key, value] of Object.entries(p.env)) {
-        const trimmedKey = key.trim();
-        if (!trimmedKey) {
-          continue;
-        }
-        const trimmedVal = value.trim();
-        if (!trimmedVal) {
-          delete nextEnv[trimmedKey];
-        } else {
-          nextEnv[trimmedKey] = trimmedVal;
-        }
-      }
-      current.env = nextEnv;
-    }
-    entries[p.skillKey] = current;
-    skills.entries = entries;
-    // Handle pinned: add/remove from config.skills.pinnedSkills
-    // 核心技能硬上限 50 —— 技能不是越多越好，每个核心技能的描述都会注入 system prompt，
-    // 过多核心技能会在每次请求中浪费大量 token，对 32K/64K 上下文窗口的模型
-    // 极易触发频繁 compaction，严重影响对话质量。
-    const CORE_SKILLS_MAX = 50;
-    if (typeof p.pinned === "boolean") {
-      const pinnedList = skills.pinnedSkills ? [...skills.pinnedSkills] : [];
-      const idx = pinnedList.indexOf(p.skillKey);
-      if (p.pinned && idx === -1) {
-        // 服务端强制校验核心技能上限
-        const currentCoreCount = pinnedList.length;
-        if (currentCoreCount >= CORE_SKILLS_MAX) {
-          respond(
-            false,
-            undefined,
-            errorShape(
-              ErrorCodes.INVALID_REQUEST,
-              `核心技能已达上限 (${CORE_SKILLS_MAX})，请先移除其他核心技能再添加。技能过多会导致每次请求浪费大量 token。`,
-            ),
-          );
-          return;
-        }
-        pinnedList.push(p.skillKey);
-      } else if (!p.pinned && idx !== -1) {
-        pinnedList.splice(idx, 1);
-      }
-      skills.pinnedSkills = pinnedList.length > 0 ? pinnedList : undefined;
-    }
-    const nextConfig: OpenClawCNConfig = {
-      ...cfg,
-      skills,
-    };
-    await writeConfigFile(nextConfig);
-    respond(true, { ok: true, skillKey: p.skillKey, config: current }, undefined);
   },
   "skills.remote.list": async ({ params, respond }) => {
     const result = await fetchRemoteSkillsIndex();
@@ -455,6 +530,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
   "skills.browse": ({ params, respond }) => {
     const p = params as { path?: string };
     const targetPath = p.path ? path.resolve(p.path) : os.homedir();
+
+    if (isPathBlocked(targetPath)) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "无法浏览此系统目录"));
+      return;
+    }
 
     try {
       const stat = fs.statSync(targetPath);
@@ -526,6 +606,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
     }
     const targetPath = path.resolve(p.path);
     const mode = p.mode ?? "copy";
+
+    if (isPathBlocked(targetPath)) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "无法从此系统目录导入"));
+      return;
+    }
 
     if (!fs.existsSync(targetPath)) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "路径不存在"));

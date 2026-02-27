@@ -268,6 +268,26 @@ export async function fetchProxySkillsIndex(
       return { ok: false, error: `API error: ${json.message}` };
     }
 
+    // 防御性检查：proxy 可能返回 code=200 但 data 为空（增量无更新时）
+    if (!json.data || !Array.isArray(json.data.skills)) {
+      // 增量同步无更新：返回空索引而非崩溃
+      if (sinceVersion !== undefined) {
+        logger.debug("Incremental sync: no new skills since version", { sinceVersion });
+        return {
+          ok: true,
+          index: {
+            version: sinceVersion,
+            updated: new Date().toISOString(),
+            skills: [],
+          },
+        };
+      }
+      return {
+        ok: false,
+        error: `Invalid proxy response: missing data.skills (code=${json.code}, data=${JSON.stringify(json.data)})`,
+      };
+    }
+
     // 转换为兼容格式
     const skills = json.data.skills.map(convertToRemoteSkillMeta);
 

@@ -1,4 +1,8 @@
-﻿export type HybridSource = string;
+﻿import { applyMMRToHybridResults, type MMRConfig, DEFAULT_MMR_CONFIG } from "./mmr.js";
+
+export type HybridSource = string;
+
+export { type MMRConfig, DEFAULT_MMR_CONFIG };
 
 export type HybridVectorResult = {
   id: string;
@@ -80,11 +84,14 @@ export function buildFtsQuery(raw: string): string | null {
 
 export function bm25RankToScore(rank: number): number {
   // FIX: SQLite FTS5 bm25() 返回负值，越负 = 越相关。
-  // 之前用 Math.max(0, rank) 把所有负值截为 0，导致所有匹配项得分 = 1.0。
-  // 第二版用 1/(1+abs) 导致方向反转：越相关得分越低，与 vectorScore 方向冲突。
-  // 正确做法：abs/(1+abs) — 越相关(abs越大) → 分数越高(趋近1)，与 vectorScore 方向一致。
+  // 旧版 abs/(1+abs) 饱和过快：x=9→0.9, x=19→0.95，高分区分度低。
+  // 改用 log(1+abs) / log(1+abs+K) — 对数变换保留更宽的有效区间：
+  //   x=1→0.19, x=5→0.44, x=10→0.55, x=20→0.63, x=50→0.73, x=100→0.79
+  // K=100 控制饱和速度，与 vectorScore (cosine, 0-1) 范围兼容。
   const absRank = Number.isFinite(rank) ? Math.abs(rank) : 0;
-  return absRank / (1 + absRank);
+  if (absRank === 0) return 0;
+  const K = 100;
+  return Math.log(1 + absRank) / Math.log(1 + absRank + K);
 }
 
 export function mergeHybridResults(params: {
@@ -92,6 +99,8 @@ export function mergeHybridResults(params: {
   keyword: HybridKeywordResult[];
   vectorWeight: number;
   textWeight: number;
+  /** MMR configuration for diversity-aware re-ranking */
+  mmr?: Partial<MMRConfig>;
 }): Array<{
   path: string;
   startLine: number;
@@ -173,5 +182,13 @@ export function mergeHybridResults(params: {
     };
   });
 
-  return merged.toSorted((a, b) => b.score - a.score);
+  const sorted = merged.toSorted((a, b) => b.score - a.score);
+
+  // Apply MMR re-ranking if enabled
+  const mmrConfig = { ...DEFAULT_MMR_CONFIG, ...params.mmr };
+  if (mmrConfig.enabled) {
+    return applyMMRToHybridResults(sorted, mmrConfig);
+  }
+
+  return sorted;
 }

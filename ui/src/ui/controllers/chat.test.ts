@@ -20,7 +20,9 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
     chatRunId: null,
     chatStream: null,
     chatStreamStartedAt: null,
+    chatStreamJustCompleted: false,
     lastError: null,
+    failoverBanner: null,
     ...overrides,
   };
 }
@@ -58,7 +60,9 @@ describe("handleChatEvent", () => {
     expect(state.chatStream).toBe("Hello");
   });
 
-  it("returns 'final' for final from another run (e.g. sub-agent announce) without clearing state", () => {
+  // [CN-MERGE:f2e9986813] Out-of-band finals with valid assistant messages
+  // are now appended inline (returns null) instead of triggering full reload ("final").
+  it("appends out-of-band final assistant message inline without clearing own run state", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-user",
@@ -74,13 +78,17 @@ describe("handleChatEvent", () => {
         content: [{ type: "text", text: "Sub-agent findings" }],
       },
     };
-    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(handleChatEvent(state, payload)).toBe(null);
     expect(state.chatRunId).toBe("run-user");
     expect(state.chatStream).toBe("Working...");
     expect(state.chatStreamStartedAt).toBe(123);
+    // Message should have been appended to chatMessages
+    expect(state.chatMessages).toHaveLength(1);
   });
 
-  it("processes final from own run — clears runId/startedAt, keeps chatStream for gateway", () => {
+  // [CN-MERGE:8264d4521b] Own-run final now clears chatStream synchronously
+  // because the final message is appended inline via normalizeFinalAssistantMessage.
+  it("processes final from own run — clears runId, chatStream, and startedAt", () => {
     const state = createState({
       sessionKey: "main",
       chatRunId: "run-1",
@@ -94,9 +102,7 @@ describe("handleChatEvent", () => {
     };
     expect(handleChatEvent(state, payload)).toBe("final");
     expect(state.chatRunId).toBe(null);
-    // chatStream is intentionally NOT cleared here — app-gateway clears it
-    // after loadChatHistory completes for a seamless typewriter transition.
-    expect(state.chatStream).toBe("Reply");
+    expect(state.chatStream).toBe(null);
     expect(state.chatStreamStartedAt).toBe(null);
   });
 

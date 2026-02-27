@@ -30,7 +30,14 @@ fi
 # 解析配置（不使用 fallback 硬编码 IP，强制从 config.json 读取）
 WIN_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.host")
 WIN_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.user")
-WIN_REPO=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.gitee_repo")
+# Construct Gitee clone URL from env var (never hardcode PAT in config files)
+if [ -z "$GITEE_PAT" ]; then
+  echo "ERROR: GITEE_PAT environment variable is not set."
+  echo "Set it with: export GITEE_PAT='your-gitee-personal-access-token'"
+  exit 1
+fi
+WIN_REPO_TEMPLATE=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.gitee_repo_template")
+WIN_REPO=$(echo "$WIN_REPO_TEMPLATE" | sed "s/\${GITEE_PAT}/$GITEE_PAT/g")
 
 # 参数解析（位置参数 + 命名参数）
 VERSION=""
@@ -187,23 +194,15 @@ if (-not (Test-Path \$releaseCacheDir)) {
     Write-Host "Created release cache dir: \$releaseCacheDir"
 }
 
-# OSS env var check (read from system environment)
-\$ossKeyId = \$env:OSS_ACCESS_KEY_ID
-\$ossKeySecret = \$env:OSS_ACCESS_KEY_SECRET
-if (-not \$ossKeyId -or -not \$ossKeySecret) {
-    Write-Host "WARNING: OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET not set, using --output-only mode"
-    Write-Host "Delta packages will be generated locally but NOT uploaded."
-}
-
 \$releaseArgs = @()
 if (\$VERSION) { \$releaseArgs += @('-v', \$VERSION) }
 \$releaseArgs += @('--cache-dir', \$releaseCacheDir)
 \$releaseArgs += @('--platform', 'windows')
-if (\$ossKeyId -and \$ossKeySecret) {
-    \$releaseArgs += @('--oss', '--oss-domain', 'dl.obplugins.cn')
-} else {
-    \$releaseArgs += @('--output-only')
+if (-not \$env:DEPLOY_SERVER -or -not \$env:DEPLOY_DOMAIN) {
+    Write-Host "ERROR: DEPLOY_SERVER and DEPLOY_DOMAIN env vars must be set for release deploy."
+    exit 1
 }
+\$releaseArgs += @('--server', \$env:DEPLOY_SERVER, '--domain', \$env:DEPLOY_DOMAIN)
 \$releaseArgs += @('--installers', \$tauriOutput)
 
 # Switch to Continue so stderr from node/tsx doesn't trigger PS termination

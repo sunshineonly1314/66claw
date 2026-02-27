@@ -1,4 +1,5 @@
 import { abortChatRun, loadChatHistory, sendChatMessage, type ChatSendResult } from "./controllers/chat";
+import { t } from "./i18n/index.js";
 import { loadSessions } from "./controllers/sessions";
 import { syncPerformanceProfile } from "./controllers/perf-profile";
 import { syncSmartDispatch } from "./controllers/smart-dispatch";
@@ -10,6 +11,7 @@ import { normalizeBasePath } from "./navigation";
 import type { GatewayHelloOk } from "./gateway";
 import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
 import type { ClawdbotApp } from "./app";
+import type { AppViewState } from "./app-view-state";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types";
 import type { LicenseDialogType } from "./license/types";
 
@@ -28,6 +30,11 @@ type ChatHost = {
   showLicenseDialog: LicenseDialogType | null;
   // OpenClawCN: 聊天模型是否已配置
   chatModelConfigured: boolean | null;
+  // OpenClawCN: 必要 provider（硅基流动）是否已配置
+  essentialProviderConfigured: boolean | null;
+  // OpenClawCN: Screen share state
+  screenShareActive?: boolean;
+  screenShareLatestFrame?: string | null;
 };
 
 export const CHAT_SESSIONS_ACTIVE_MINUTES = 10;
@@ -80,6 +87,8 @@ async function sendChatMessageNow(
     attachments?: ChatAttachment[];
     previousAttachments?: ChatAttachment[];
     restoreAttachments?: boolean;
+    voiceInput?: boolean;
+    voiceMode?: boolean;
   },
 ) {
   resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
@@ -90,7 +99,7 @@ async function sendChatMessageNow(
   // Reset API monitor state for new request
   app.apiMonitorDismissed = false;
   app.apiMonitorElapsedMs = 0;
-  const result: ChatSendResult = await sendChatMessage(app, message, opts?.attachments);
+  const result: ChatSendResult = await sendChatMessage(app, message, opts?.attachments, { voiceInput: opts?.voiceInput, voiceMode: opts?.voiceMode });
 
   // 检查是否为授权错误 - 如果是，弹出激活对话框而不是显示错误
   if (typeof result === "object" && result.isLicenseError) {
@@ -152,13 +161,29 @@ export function removeQueuedMessage(host: ChatHost, id: string) {
 export async function handleSendChat(
   host: ChatHost,
   messageOverride?: string,
-  opts?: { restoreDraft?: boolean },
+  opts?: { restoreDraft?: boolean; voiceInput?: boolean },
 ) {
   if (!host.connected) return;
   const previousDraft = host.chatMessage;
-  const message = (messageOverride ?? host.chatMessage).trim();
+  let message = (messageOverride ?? host.chatMessage).trim();
   const attachments = host.chatAttachments ?? [];
-  const attachmentsToSend = messageOverride == null ? attachments : [];
+  let attachmentsToSend = messageOverride == null ? [...attachments] : [];
+
+  // OpenClawCN: Auto-inject latest screen frame when screen sharing is active
+  const hasScreenFrame = Boolean(host.screenShareActive && host.screenShareLatestFrame);
+  if (hasScreenFrame) {
+    attachmentsToSend.push({
+      id: `screen-${Date.now()}`,
+      dataUrl: host.screenShareLatestFrame!,
+      mimeType: "image/jpeg",
+      fileName: "screen-capture.jpg",
+    });
+    // If user sent without text during screen share, add a default prompt
+    if (!message) {
+      message = t("screenShare.defaultPrompt" as Parameters<typeof t>[0]);
+    }
+  }
+
   const hasAttachments = attachmentsToSend.length > 0;
 
   // Allow sending with just attachments (no message text required)
@@ -169,8 +194,8 @@ export async function handleSendChat(
     return;
   }
 
-  // 优化：仅清空消息文本，暂不清空附件（避免卡顿）
-  // 附件将在发送成功后由 sendChatMessageNow 内部清空
+  // 清空消息文本 — 仅当用户主动发送时清空输入框，
+  // messageOverride（如语音自动发送）不应清空用户正在编辑的草稿
   if (messageOverride == null) {
     host.chatMessage = "";
   }
@@ -191,6 +216,7 @@ export async function handleSendChat(
     attachments: hasAttachments ? attachmentsToSend : undefined,
     previousAttachments: attachments,
     restoreAttachments: Boolean(messageOverride && opts?.restoreDraft),
+    voiceInput: opts?.voiceInput,
   });
 }
 
@@ -199,8 +225,8 @@ export async function refreshChat(host: ChatHost) {
     loadChatHistory(host as unknown as ClawdbotApp),
     loadSessions(host as unknown as ClawdbotApp),
     refreshChatAvatar(host),
-    syncPerformanceProfile(host as unknown as ClawdbotApp),
-    syncSmartDispatch(host as unknown as ClawdbotApp),
+    syncPerformanceProfile(host as unknown as AppViewState),
+    syncSmartDispatch(host as unknown as AppViewState),
     checkChatModelConfigured(host),
   ]);
   scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], true);
@@ -214,14 +240,44 @@ async function checkChatModelConfigured(host: ChatHost): Promise<void> {
   const app = host as unknown as ClawdbotApp;
   if (!app.client || !app.connected) return;
   try {
-    const result = await app.client.request("modelConfig.capabilities.list") as {
-      capabilities?: Array<{ capability: string; status: string }>;
-    };
-    const textCap = result.capabilities?.find((c) => c.capability === "text");
+    // 优先 v2 capability_matrix API，回退 v1
+    let caps: Array<{ capability: string; status: string }> = [];
+    try {
+      const result = await app.client.request("capability_matrix.summary") as {
+        capabilities?: Array<{ key: string; status: string }>;
+      };
+      caps = (result.capabilities ?? []).map(c => ({
+        capability: c.key,
+        status: c.status === "active" ? "active" : "inactive",
+      }));
+    } catch {
+      const result = await app.client.request("modelConfig.capabilities.list") as {
+        capabilities?: Array<{ capability: string; status: string }>;
+      };
+      caps = result.capabilities ?? [];
+    }
+    const textCap = caps.find((c) => c.capability === "text");
     host.chatModelConfigured = textCap?.status === "active";
+    // 同步提取所有已激活的能力，供 intent-hint 判断缺失能力
+    const activeCaps = caps
+      .filter((c) => c.status === "active")
+      .map((c) => c.capability);
+    (app as unknown as { activeCapabilities: string[] }).activeCapabilities = activeCaps;
+
+    // 检查必要 provider（硅基流动）是否已配置
+    try {
+      const provResult = await app.client.request("modelConfig.providers.list") as {
+        providers?: Array<{ providerId: string; configured?: boolean }>;
+      };
+      const sf = (provResult.providers ?? []).find(p => p.providerId === "siliconflow");
+      host.essentialProviderConfigured = sf?.configured ?? false;
+    } catch {
+      host.essentialProviderConfigured = null;
+    }
   } catch {
     // 降级：查询失败时不显示提示
     host.chatModelConfigured = null;
+    host.essentialProviderConfigured = null;
   }
 }
 

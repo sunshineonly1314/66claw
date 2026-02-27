@@ -3,6 +3,7 @@ import path from "node:path";
 import { type OpenClawCNConfig, loadConfig } from "../config/config.js";
 import { isRecord } from "../utils.js";
 import { resolveOpenClawCNAgentDir } from "./agent-paths.js";
+import type { AuthProfileStore } from "./auth-profiles/types.js";
 import {
   normalizeProviders,
   type ProviderConfig,
@@ -14,6 +15,15 @@ import {
 type ModelsConfig = NonNullable<OpenClawCNConfig["models"]>;
 
 const DEFAULT_MODE: NonNullable<ModelsConfig["mode"]> = "merge";
+
+/**
+ * Serialize concurrent ensureOpenClawCNModelsJson calls so that read-merge-write
+ * on models.json does not race.  Each call chains onto the previous one; callers
+ * that arrive while a write is in progress will wait and then run their own rebuild
+ * (because the config / auth-profiles state may have changed between queuing and
+ * execution).
+ */
+let _modelsJsonPending: Promise<unknown> = Promise.resolve();
 
 function mergeProviderModels(implicit: ProviderConfig, explicit: ProviderConfig): ProviderConfig {
   const implicitModels = Array.isArray(implicit.models) ? implicit.models : [];
@@ -45,8 +55,14 @@ function mergeProviderModels(implicit: ProviderConfig, explicit: ProviderConfig)
     const impRec = implicitMatch as Record<string, unknown>;
     let patched = false;
     const patch: Record<string, unknown> = {};
-    if (!rec.headers && impRec.headers) { patch.headers = impRec.headers; patched = true; }
-    if (!rec.compat && impRec.compat) { patch.compat = impRec.compat; patched = true; }
+    if (!rec.headers && impRec.headers) {
+      patch.headers = impRec.headers;
+      patched = true;
+    }
+    if (!rec.compat && impRec.compat) {
+      patch.compat = impRec.compat;
+      patched = true;
+    }
     return patched ? { ...model, ...patch } : model;
   });
 
@@ -100,12 +116,32 @@ async function readJson(pathname: string): Promise<unknown> {
 export async function ensureOpenClawCNModelsJson(
   config?: OpenClawCNConfig,
   agentDirOverride?: string,
+  /** Pass an already-loaded auth store to avoid re-reading from disk (encrypted write race). */
+  authStore?: AuthProfileStore,
+): Promise<{ agentDir: string; wrote: boolean }> {
+  // Serialize: chain onto the previous pending call to prevent concurrent read-merge-write races.
+  const result = _modelsJsonPending.then(() =>
+    _ensureOpenClawCNModelsJsonImpl(config, agentDirOverride, authStore),
+  );
+  // Always advance the chain (even on failure) so subsequent calls are not blocked.
+  _modelsJsonPending = result.catch(() => {});
+  return result;
+}
+
+async function _ensureOpenClawCNModelsJsonImpl(
+  config?: OpenClawCNConfig,
+  agentDirOverride?: string,
+  authStore?: AuthProfileStore,
 ): Promise<{ agentDir: string; wrote: boolean }> {
   const cfg = config ?? loadConfig();
   const agentDir = agentDirOverride?.trim() ? agentDirOverride.trim() : resolveOpenClawCNAgentDir();
 
   const explicitProviders = cfg.models?.providers ?? {};
-  const implicitProviders = await resolveImplicitProviders({ agentDir, explicitProviders });
+  const implicitProviders = await resolveImplicitProviders({
+    agentDir,
+    explicitProviders,
+    authStore,
+  });
   const providers: Record<string, ProviderConfig> = mergeProviders({
     implicit: implicitProviders,
     explicit: explicitProviders,
@@ -169,11 +205,16 @@ export async function ensureOpenClawCNModelsJson(
 export async function getMergedProvidersForAgent(
   cfg: OpenClawCNConfig,
   agentDirOverride?: string,
+  authStore?: AuthProfileStore,
 ): Promise<Record<string, ProviderConfig>> {
   const agentDir = agentDirOverride?.trim() ? agentDirOverride.trim() : resolveOpenClawCNAgentDir();
 
   const explicitProviders = cfg.models?.providers ?? {};
-  const implicitProviders = await resolveImplicitProviders({ agentDir, explicitProviders });
+  const implicitProviders = await resolveImplicitProviders({
+    agentDir,
+    explicitProviders,
+    authStore,
+  });
   const providers: Record<string, ProviderConfig> = mergeProviders({
     implicit: implicitProviders,
     explicit: explicitProviders,

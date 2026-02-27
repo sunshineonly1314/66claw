@@ -15,6 +15,14 @@ import { resolveSignalReactionLevel } from "../../../signal/reaction-level.js";
 import { resolveTelegramInlineButtonsScope } from "../../../telegram/inline-buttons.js";
 import { resolveTelegramReactionLevel } from "../../../telegram/reaction-level.js";
 import { buildTtsSystemPromptHint } from "../../../tts/tts.js";
+// [CN-PATCH:memory-L1] Profile injection into system prompt
+import {
+  readProfile,
+  formatProfileForSystemPrompt,
+  PROFILE_MAX_PROMPT_CHARS,
+} from "../../../memory/profile-store.js";
+// [CN-PATCH:memory-L2] Cold memory retrieval for system prompt injection
+import { retrieveColdMemories, getRetrievalManager } from "../../../memory/profile-retrieval.js";
 import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
@@ -288,8 +296,12 @@ export async function runEmbeddedAttempt(
           // ── [CN-PATCH:tool-filter] Pass tool filter policy for dynamic injection ──
           toolFilterPolicy: params.toolFilterPolicy,
         });
-    const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider: params.provider });
-    logToolSchemasForGoogle({ tools, provider: params.provider });
+    const tools = sanitizeToolsForGoogle({
+      tools: toolsRaw,
+      provider: params.provider,
+      modelApi: params.model?.api,
+    });
+    logToolSchemasForGoogle({ tools, provider: params.provider, modelApi: params.model?.api });
 
     const machineName = await getMachineDisplayName();
     const runtimeChannel = normalizeMessageChannel(params.messageChannel ?? params.messageProvider);
@@ -392,8 +404,49 @@ export async function runEmbeddedAttempt(
     });
     const ttsHint = params.config ? buildTtsSystemPromptHint(params.config) : undefined;
 
+    // [CN-PATCH:memory-L1] Read profile.json and format for system prompt injection.
+    // readProfile() is synchronous with a 5s in-memory cache; formatProfileForSystemPrompt()
+    // returns "" for empty profiles, so this is a no-op for new users.
+    const profile = readProfile(effectiveWorkspace);
+    // Use 70% of budget for hot profile, leaving 30% for cold retrieval.
+    // Pass user's prompt as queryHint for topic-relevant injection ranking.
+    const profilePrompt = formatProfileForSystemPrompt(
+      profile,
+      Math.floor(PROFILE_MAX_PROMPT_CHARS * 0.7),
+      params.prompt,
+    );
+
+    // [CN-PATCH:memory-L2] Cold memory retrieval — search archived memories relevant to
+    // the current user message. Uses hybrid search (FTS5 + vector) via MemoryIndexManager.
+    let coldMemoryPrompt = "";
+    try {
+      const COLD_RETRIEVAL_TIMEOUT_MS = 5_000;
+      const coldPromise = (async () => {
+        const hotKeys = new Set(profile.entries.map((e) => `${e.category}:${e.key.toLowerCase()}`));
+        const manager = await getRetrievalManager({
+          cfg: params.config,
+          agentId: sessionAgentId,
+        });
+        if (!manager) return "";
+        return retrieveColdMemories({ manager, query: params.prompt, hotKeys });
+      })();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      coldMemoryPrompt = await Promise.race([
+        coldPromise.finally(() => clearTimeout(timer)),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve(""), COLD_RETRIEVAL_TIMEOUT_MS);
+        }),
+      ]);
+    } catch {
+      // Never block agent turn due to cold retrieval failure
+    }
+
+    const combinedProfilePrompt =
+      [profilePrompt, coldMemoryPrompt].filter(Boolean).join("\n") || undefined;
+
     const appendPrompt = buildEmbeddedSystemPrompt({
       workspaceDir: effectiveWorkspace,
+      profilePrompt: combinedProfilePrompt,
       defaultThinkLevel: params.thinkLevel,
       reasoningLevel: params.reasoningLevel ?? "off",
       extraSystemPrompt: params.extraSystemPrompt,
@@ -870,6 +923,7 @@ export async function runEmbeddedAttempt(
             }).sessionAgentId;
 
       let promptError: unknown = null;
+      let promptErrorSource: "prompt" | "compaction" | null = null;
       try {
         const promptStartedAt = Date.now();
 
@@ -971,6 +1025,7 @@ export async function runEmbeddedAttempt(
           }
         } catch (err) {
           promptError = err;
+          promptErrorSource = "prompt";
         } finally {
           log.debug(
             `embedded run prompt end: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - promptStartedAt}`,
@@ -993,6 +1048,7 @@ export async function runEmbeddedAttempt(
           if (isRunnerAbortError(err)) {
             if (!promptError) {
               promptError = err;
+              promptErrorSource = "compaction";
             }
             if (!isProbeSession) {
               log.debug(
@@ -1041,6 +1097,23 @@ export async function runEmbeddedAttempt(
         }
         messagesSnapshot = snapshotSelection.messagesSnapshot;
         sessionIdUsed = snapshotSelection.sessionIdUsed;
+
+        if (promptError && promptErrorSource === "prompt") {
+          try {
+            sessionManager.appendCustomEntry("openclawcn:prompt-error", {
+              timestamp: Date.now(),
+              runId: params.runId,
+              sessionId: params.sessionId,
+              provider: params.provider,
+              model: params.modelId,
+              api: params.model.api,
+              error: describeUnknownError(promptError),
+            });
+          } catch (entryErr) {
+            log.warn(`failed to persist prompt error entry: ${String(entryErr)}`);
+          }
+        }
+
         cacheTrace?.recordStage("session:after", {
           messages: messagesSnapshot,
           note: timedOutDuringCompaction

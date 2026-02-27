@@ -127,8 +127,10 @@ export function evaluateRequirements(params: {
   });
   const missingConfig = configChecks.filter((check) => !check.satisfied).map((check) => check.path);
 
+  // `always` bypasses bins/env/config requirements but NOT OS constraints.
+  // This matches `shouldIncludeSkill()` where the OS check runs before the `always` short-circuit.
   const missing = params.always
-    ? { bins: [], anyBins: [], env: [], config: [], os: [] }
+    ? { bins: [], anyBins: [], env: [], config: [], os: missingOs }
     : {
         bins: missingBins,
         anyBins: missingAnyBins,
@@ -138,12 +140,12 @@ export function evaluateRequirements(params: {
       };
 
   const eligible =
-    params.always ||
-    (missing.bins.length === 0 &&
-      missing.anyBins.length === 0 &&
-      missing.env.length === 0 &&
-      missing.config.length === 0 &&
-      missing.os.length === 0);
+    (params.always ||
+      (missingBins.length === 0 &&
+        missingAnyBins.length === 0 &&
+        missingEnv.length === 0 &&
+        missingConfig.length === 0)) &&
+    missingOs.length === 0;
 
   return { missing, eligible, configChecks };
 }

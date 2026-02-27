@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -54,6 +55,29 @@ export function resolveRequiredHomeDir(
   homedir: () => string = os.homedir,
 ): string {
   return resolveEffectiveHomeDir(env, homedir) ?? path.resolve(process.cwd());
+}
+
+/**
+ * Portable mode: walk from process.execPath upward to find a `.portable` marker file.
+ * If found, return `<markerDir>/data` as the portable data directory.
+ * Returns `undefined` when not in portable mode.
+ */
+export function resolvePortableDataDir(): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  try {
+    let dir = path.dirname(process.execPath);
+    const root = path.parse(dir).root;
+    for (let i = 0; i < 5 && dir !== root; i++) {
+      const marker = path.join(dir, ".portable");
+      if (fs.existsSync(marker)) {
+        return path.join(dir, "data");
+      }
+      dir = path.dirname(dir);
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
 }
 
 export function expandHomePrefix(

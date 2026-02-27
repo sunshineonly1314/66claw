@@ -21,6 +21,8 @@ import {
   readConfigFileSnapshot,
   writeConfigFile,
 } from "../config/config.js";
+import type { OpenClawCNConfig } from "../config/types.js";
+import { tryRepairConfig } from "../config/config-repair.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import { clearAgentRunContext, onAgentEvent } from "../infra/agent-events.js";
 import {
@@ -36,6 +38,7 @@ import { startHeartbeatRunner, type HeartbeatRunner } from "../infra/heartbeat-r
 import { getMachineDisplayName } from "../infra/machine-name.js";
 import { ensureOpenClawCNCliOnPath } from "../infra/path-env.js";
 import { setGatewaySigusr1RestartPolicy, setPreRestartDeferralCheck } from "../infra/restart.js";
+import { autoMigrateToPortable } from "../infra/state-migration-portable.js";
 import { initStateStore, closeStateStore } from "../infra/state-store/index.js";
 import type { StateStoreConfig } from "../infra/state-store/index.js";
 import { initDistributedBroadcast } from "./distributed-broadcast.js";
@@ -62,6 +65,13 @@ import { startGatewayDiscovery } from "./server-discovery-runtime.js";
 import { applyGatewayLaneConcurrency } from "./server-lanes.js";
 import { startGatewayMaintenanceTimers } from "./server-maintenance.js";
 import { GATEWAY_EVENTS, listGatewayMethods } from "./server-methods-list.js";
+import {
+  initCapabilityRegistry,
+  extractCapabilityCardOverrides,
+} from "../dispatch/capability-registry.js";
+import { initRemoteUpdates } from "../dispatch/capability-registry-remote.js";
+import { hasUserConfiguredProvider } from "../agents/model-auth.js";
+import { loadAuthProfileStore } from "../agents/auth-profiles/store.js";
 import { cnGatewayHandlers } from "./cn-handlers.js";
 import { coreGatewayHandlers } from "./server-methods.js";
 import { createExecApprovalHandlers } from "./server-methods/exec-approval.js";
@@ -192,6 +202,23 @@ export async function startGatewayServer(
     description: "raw stream log path override",
   });
 
+  // [CN-PATCH:migration-p0] Run portable migration before reading config.
+  // This ensures C:-drive data is migrated to portable install dir before any
+  // config file is read. Safe to call on every startup — internally idempotent.
+  const portableMigration = autoMigrateToPortable();
+  if (portableMigration.migrated) {
+    const migLog = createSubsystemLogger("portable-migration");
+    migLog.info(
+      `Migrated data from ${portableMigration.sourceDir ?? "C: drive"}:\n` +
+        portableMigration.changes.map((c) => `  - ${c}`).join("\n"),
+    );
+    if (portableMigration.warnings.length > 0) {
+      migLog.warn(
+        `Migration warnings:\n` + portableMigration.warnings.map((w) => `  - ${w}`).join("\n"),
+      );
+    }
+  }
+
   let configSnapshot = await readConfigFileSnapshot();
   if (configSnapshot.legacyIssues.length > 0) {
     if (isNixMode) {
@@ -217,15 +244,31 @@ export async function startGatewayServer(
 
   configSnapshot = await readConfigFileSnapshot();
   if (configSnapshot.exists && !configSnapshot.valid) {
-    const issues =
-      configSnapshot.issues.length > 0
-        ? configSnapshot.issues
-            .map((issue) => `${issue.path || "<root>"}: ${issue.message}`)
-            .join("\n")
-        : "Unknown validation issue.";
-    throw new Error(
-      `Invalid config at ${configSnapshot.path}.\n${issues}\nRun "${formatCliCommand("openclawcn doctor")}" to repair, then retry.`,
-    );
+    // Try auto-repair before giving up
+    const repair = await tryRepairConfig({
+      configPath: configSnapshot.path,
+      rawConfig: configSnapshot.resolved,
+      issues: configSnapshot.issues,
+      log,
+    });
+
+    if (repair.repaired) {
+      log.info(`gateway: config auto-repaired at startup (${repair.method}): ${repair.details}`);
+      configSnapshot = await readConfigFileSnapshot();
+    }
+
+    // If still invalid after repair attempt, throw
+    if (configSnapshot.exists && !configSnapshot.valid) {
+      const issues =
+        configSnapshot.issues.length > 0
+          ? configSnapshot.issues
+              .map((issue) => `${issue.path || "<root>"}: ${issue.message}`)
+              .join("\n")
+          : "Unknown validation issue.";
+      throw new Error(
+        `Invalid config at ${configSnapshot.path}.\n${issues}\nRun "${formatCliCommand("openclawcn doctor")}" to repair, then retry.`,
+      );
+    }
   }
 
   const autoEnable = applyPluginAutoEnable({ config: configSnapshot.config, env: process.env });
@@ -440,6 +483,60 @@ export async function startGatewayServer(
   const hasMobileNodeConnected = () => hasConnectedMobileNode(nodeRegistry);
   applyGatewayLaneConcurrency(cfgAtStart);
 
+  // ── Initialize capability registry ──────────────────────────────────
+  // Wire up provider credential detection so capability_matrix.summary
+  // can correctly report configured vs unconfigured capabilities.
+  // The callback re-reads config and auth store on every call to avoid stale
+  // snapshots after the user configures new providers at runtime.
+  try {
+    // Cache config + auth store snapshots to avoid re-reading from disk
+    // hundreds of times per capability_matrix.summary call.
+    // The summary iterates ~100 cards × 10 capabilities, calling isProviderConfigured
+    // on each — without caching that's ~2000 synchronous file reads.
+    let _cfgSnapshot: OpenClawCNConfig | undefined;
+    let _storeSnapshot: ReturnType<typeof loadAuthProfileStore> | undefined;
+    let _snapshotTs = 0;
+    const SNAPSHOT_TTL = 2_000; // 2s — fresh enough for UI, avoids disk thrashing
+
+    initCapabilityRegistry({
+      isProviderConfigured: (provider) => {
+        try {
+          if (provider === "local") {
+            try {
+              const {
+                isSdCppAvailable,
+                getInstalledModelIds,
+              } = require("../imagegen/imagegen-install.js");
+              return isSdCppAvailable() && getInstalledModelIds().length > 0;
+            } catch {
+              return false;
+            }
+          }
+          const now = Date.now();
+          if (now - _snapshotTs >= SNAPSHOT_TTL) {
+            _cfgSnapshot = loadConfig();
+            _storeSnapshot = loadAuthProfileStore();
+            _snapshotTs = now;
+          }
+          return hasUserConfiguredProvider(provider, _cfgSnapshot, _storeSnapshot);
+        } catch {
+          return false;
+        }
+      },
+      userOverrides: extractCapabilityCardOverrides(cfgAtStart),
+    });
+  } catch (err) {
+    log.warn(`capability-registry init failed: ${err}`);
+  }
+
+  // Load remote capability cards (from obplugins.cn / cache)
+  try {
+    const stateDir = path.dirname(configSnapshot.path);
+    initRemoteUpdates({ stateDir, requireSignature: false });
+  } catch (err) {
+    log.warn(`capability-registry remote init failed: ${err}`);
+  }
+
   let cronState = buildGatewayCronService({
     cfg: cfgAtStart,
     deps,
@@ -457,24 +554,25 @@ export async function startGatewayServer(
 
   // Desktop mode: skip Bonjour/mDNS discovery (not needed for local-only desktop use)
   const isDesktopModeEarly = process.env.OPENCLAWCN_DESKTOP_MODE === "1";
-  const discoveryPromise = !minimalTestGateway && !isDesktopModeEarly
-    ? (async () => {
-        const machineDisplayName = await getMachineDisplayName();
-        const discovery = await startGatewayDiscovery({
-          machineDisplayName,
-          port,
-          gatewayTls: gatewayTls.enabled
-            ? { enabled: true, fingerprintSha256: gatewayTls.fingerprintSha256 }
-            : undefined,
-          wideAreaDiscoveryEnabled: cfgAtStart.discovery?.wideArea?.enabled === true,
-          wideAreaDiscoveryDomain: cfgAtStart.discovery?.wideArea?.domain,
-          tailscaleMode,
-          mdnsMode: cfgAtStart.discovery?.mdns?.mode,
-          logDiscovery,
-        });
-        return discovery.bonjourStop;
-      })()
-    : Promise.resolve(null);
+  const discoveryPromise =
+    !minimalTestGateway && !isDesktopModeEarly
+      ? (async () => {
+          const machineDisplayName = await getMachineDisplayName();
+          const discovery = await startGatewayDiscovery({
+            machineDisplayName,
+            port,
+            gatewayTls: gatewayTls.enabled
+              ? { enabled: true, fingerprintSha256: gatewayTls.fingerprintSha256 }
+              : undefined,
+            wideAreaDiscoveryEnabled: cfgAtStart.discovery?.wideArea?.enabled === true,
+            wideAreaDiscoveryDomain: cfgAtStart.discovery?.wideArea?.domain,
+            tailscaleMode,
+            mdnsMode: cfgAtStart.discovery?.mdns?.mode,
+            logDiscovery,
+          });
+          return discovery.bonjourStop;
+        })()
+      : Promise.resolve(null);
 
   if (!minimalTestGateway) {
     setSkillsRemoteRegistry(nodeRegistry);
@@ -659,6 +757,8 @@ export async function startGatewayServer(
       chatAbortedRuns: chatRunState.abortedRuns,
       chatRunBuffers: chatRunState.buffers,
       chatDeltaSentAt: chatRunState.deltaSentAt,
+      chatTtsMediaUrls: chatRunState.ttsMediaUrls,
+      chatVoiceInputRuns: chatRunState.voiceInputRuns,
       addChatRun,
       removeChatRun,
       registerToolEventRecipient: toolEventRecipients.add,
@@ -746,6 +846,9 @@ export async function startGatewayServer(
           readSnapshot: readConfigFileSnapshot,
           onHotReload: applyHotReload,
           onRestart: requestGatewayRestart,
+          onRepaired: (event) => {
+            broadcast("config.repaired", event, { dropIfSlow: true });
+          },
           log: {
             info: (msg) => logReload.info(msg),
             warn: (msg) => logReload.warn(msg),
@@ -756,12 +859,18 @@ export async function startGatewayServer(
       })();
 
   const close = createGatewayCloseHandler({
-    get bonjourStop() { return lateBindingRefs.bonjourStop; },
-    get tailscaleCleanup() { return lateBindingRefs.tailscaleCleanup; },
+    get bonjourStop() {
+      return lateBindingRefs.bonjourStop;
+    },
+    get tailscaleCleanup() {
+      return lateBindingRefs.tailscaleCleanup;
+    },
     canvasHost,
     canvasHostServer,
     stopChannel,
-    get pluginServices() { return lateBindingRefs.pluginServices; },
+    get pluginServices() {
+      return lateBindingRefs.pluginServices;
+    },
     cron,
     heartbeatRunner,
     nodePresenceTimers,
@@ -774,7 +883,9 @@ export async function startGatewayServer(
     chatRunState,
     clients,
     configReloader,
-    get browserControl() { return lateBindingRefs.browserControl; },
+    get browserControl() {
+      return lateBindingRefs.browserControl;
+    },
     wss,
     httpServer,
     httpServers,
@@ -831,49 +942,52 @@ export async function startGatewayServer(
   // Use allSettled so a single failure does not prevent other refs from populating.
   // Keep the promise reference so `close()` can wait for subsystems to finish
   // before attempting cleanup — prevents orphaned background tasks on early shutdown.
-  const subsystemsSettled = Promise.allSettled([tailscalePromise, sidecarsPromise, discoveryPromise])
-    .then(([tsResult, sidecarsResult, discoveryResult]) => {
-      // Populate late-binding refs from settled results
-      if (tsResult.status === "fulfilled") {
-        lateBindingRefs.tailscaleCleanup = tsResult.value;
-      } else {
-        log.error(`tailscale subsystem failed: ${String(tsResult.reason)}`);
-      }
+  const subsystemsSettled = Promise.allSettled([
+    tailscalePromise,
+    sidecarsPromise,
+    discoveryPromise,
+  ]).then(([tsResult, sidecarsResult, discoveryResult]) => {
+    // Populate late-binding refs from settled results
+    if (tsResult.status === "fulfilled") {
+      lateBindingRefs.tailscaleCleanup = tsResult.value;
+    } else {
+      log.error(`tailscale subsystem failed: ${String(tsResult.reason)}`);
+    }
 
-      if (sidecarsResult.status === "fulfilled") {
-        browserControl = sidecarsResult.value.browserControl;
-        pluginServices = sidecarsResult.value.pluginServices;
-        lateBindingRefs.browserControl = browserControl;
-        lateBindingRefs.pluginServices = pluginServices;
-      } else {
-        log.error(`sidecars subsystem failed: ${String(sidecarsResult.reason)}`);
-      }
+    if (sidecarsResult.status === "fulfilled") {
+      browserControl = sidecarsResult.value.browserControl;
+      pluginServices = sidecarsResult.value.pluginServices;
+      lateBindingRefs.browserControl = browserControl;
+      lateBindingRefs.pluginServices = pluginServices;
+    } else {
+      log.error(`sidecars subsystem failed: ${String(sidecarsResult.reason)}`);
+    }
 
-      if (discoveryResult.status === "fulfilled") {
-        lateBindingRefs.bonjourStop = discoveryResult.value;
-      } else {
-        log.error(`discovery subsystem failed: ${String(discoveryResult.reason)}`);
-      }
+    if (discoveryResult.status === "fulfilled") {
+      lateBindingRefs.bonjourStop = discoveryResult.value;
+    } else {
+      log.error(`discovery subsystem failed: ${String(discoveryResult.reason)}`);
+    }
 
-      const failedCount = [tsResult, sidecarsResult, discoveryResult].filter(
-        (r) => r.status === "rejected",
-      ).length;
-      if (failedCount === 0) {
-        log.info("gateway subsystems ready");
-      } else {
-        log.warn(`gateway subsystems partially ready (${failedCount}/3 failed)`);
-      }
+    const failedCount = [tsResult, sidecarsResult, discoveryResult].filter(
+      (r) => r.status === "rejected",
+    ).length;
+    if (failedCount === 0) {
+      log.info("gateway subsystems ready");
+    } else {
+      log.warn(`gateway subsystems partially ready (${failedCount}/3 failed)`);
+    }
 
-      // Run gateway_start plugin hook (fire-and-forget)
-      if (!minimalTestGateway) {
-        const hookRunner = getGlobalHookRunner();
-        if (hookRunner?.hasHooks("gateway_start")) {
-          void hookRunner.runGatewayStart({ port }, { port }).catch((err) => {
-            log.warn(`gateway_start hook failed: ${String(err)}`);
-          });
-        }
+    // Run gateway_start plugin hook (fire-and-forget)
+    if (!minimalTestGateway) {
+      const hookRunner = getGlobalHookRunner();
+      if (hookRunner?.hasHooks("gateway_start")) {
+        void hookRunner.runGatewayStart({ port }, { port }).catch((err) => {
+          log.warn(`gateway_start hook failed: ${String(err)}`);
+        });
       }
-    });
+    }
+  });
 
   return {
     close: async (opts) => {
@@ -884,10 +998,14 @@ export async function startGatewayServer(
       const SUBSYSTEM_WAIT_TIMEOUT_MS = 15_000;
       await Promise.race([
         subsystemsSettled,
-        new Promise<void>((resolve) => setTimeout(() => {
-          log.warn(`subsystem init still pending after ${SUBSYSTEM_WAIT_TIMEOUT_MS}ms, proceeding with shutdown`);
-          resolve();
-        }, SUBSYSTEM_WAIT_TIMEOUT_MS)),
+        new Promise<void>((resolve) =>
+          setTimeout(() => {
+            log.warn(
+              `subsystem init still pending after ${SUBSYSTEM_WAIT_TIMEOUT_MS}ms, proceeding with shutdown`,
+            );
+            resolve();
+          }, SUBSYSTEM_WAIT_TIMEOUT_MS),
+        ),
       ]);
 
       // Run gateway_stop plugin hook before shutdown

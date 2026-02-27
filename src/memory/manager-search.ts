@@ -72,10 +72,13 @@ export async function searchVector(params: {
     }));
   }
 
+  // Brute-force fallback: load chunks into memory for cosine similarity.
+  // Cap at 2000 to prevent OOM on large indices (~2000 × 6KB embedding ≈ 12MB).
   const candidates = listChunks({
     db: params.db,
     providerModel: params.providerModel,
     sourceFilter: params.sourceFilterChunks,
+    limit: 2000,
   });
   const scored = candidates
     .map((chunk) => ({
@@ -113,8 +116,9 @@ export function listChunks(params: {
   source: SearchSource;
   updatedAt: number;
 }> {
-  // Add LIMIT to prevent OOM on large indices (default: 10,000 chunks max)
-  const limit = params.limit ?? 10_000;
+  // Add LIMIT to prevent OOM on large indices (default: 2,000 chunks max).
+  // Each chunk ≈ 6KB (1536-float embedding JSON) → 2000 chunks ≈ 12MB.
+  const limit = params.limit ?? 2_000;
   const rows = params.db
     .prepare(
       `SELECT id, path, start_line, end_line, text, embedding, source, updated_at\n` +
@@ -155,6 +159,8 @@ export async function searchKeyword(params: {
   sourceFilter: { sql: string; params: SearchSource[] };
   buildFtsQuery: (raw: string) => string | null;
   bm25RankToScore: (rank: number) => number;
+  /** [CN-PATCH:memory-p0] When true, skip model filter for cross-model degraded search. */
+  skipModelFilter?: boolean;
 }): Promise<Array<SearchRowResult & { textScore: number }>> {
   if (params.limit <= 0) {
     return [];
@@ -166,6 +172,10 @@ export async function searchKeyword(params: {
 
   // [CN-PATCH:memory-p0] JOIN chunks 表获取 updated_at，用于冷热分层搜索
   // FTS5 虚拟表本身没有 updated_at 列，通过 id 关联 chunks 表获取
+  const modelClause = params.skipModelFilter ? "" : " AND f.model = ?";
+  const queryParams = params.skipModelFilter
+    ? [ftsQuery, ...params.sourceFilter.params, params.limit]
+    : [ftsQuery, params.providerModel, ...params.sourceFilter.params, params.limit];
   const rows = params.db
     .prepare(
       `SELECT f.id, f.path, f.source, f.start_line, f.end_line, f.text,\n` +
@@ -173,11 +183,11 @@ export async function searchKeyword(params: {
         `       c.updated_at\n` +
         `  FROM ${params.ftsTable} f\n` +
         `  JOIN chunks c ON c.id = f.id\n` +
-        ` WHERE ${params.ftsTable} MATCH ? AND f.model = ?${params.sourceFilter.sql}\n` +
+        ` WHERE ${params.ftsTable} MATCH ?${modelClause}${params.sourceFilter.sql}\n` +
         ` ORDER BY rank ASC\n` +
         ` LIMIT ?`,
     )
-    .all(ftsQuery, params.providerModel, ...params.sourceFilter.params, params.limit) as Array<{
+    .all(...queryParams) as Array<{
     id: string;
     path: string;
     source: SearchSource;

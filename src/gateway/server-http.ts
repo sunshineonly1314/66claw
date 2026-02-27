@@ -58,6 +58,7 @@ import { isPrivateOrLoopbackAddress, resolveGatewayClientIp } from "./net.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
+import { handleChatMediaHttpRequest } from "./chat-media-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 type HookAuthFailure = { count: number; windowStartedAtMs: number };
@@ -823,6 +824,12 @@ export function createGatewayHttpServer(opts: {
           return;
         }
       }
+      // OpenClawCN: Serve chat-images and chat-videos from the config media directory
+      // so they don't fall through to the SPA catch-all and return index.html.
+      if (await handleChatMediaHttpRequest(req, res)) {
+        return;
+      }
+
       if (controlUiEnabled) {
         // OpenClawCN: Redirect first-time users to the setup wizard when required config is missing.
         const reqPath = req.url?.split("?")[0] ?? "/";

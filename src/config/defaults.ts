@@ -1073,7 +1073,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     }
   }
 
-  // ── [CN-PATCH:skills] 21.5. skills.allowBundled: 只加载核心技能，省 token ──
+  // ── [CN-PATCH:skills] 21.5. Default core skills (pinnedSkills) ──
   //
   //    ⚠️ 技能不是越多越好！每个核心技能的描述都会注入 system prompt，
   //    在每一次 API 请求中消耗 token。硬上限 50 个核心技能。
@@ -1084,45 +1084,34 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
   //    - compact 频繁会丢失对话上下文，严重影响 AI 回答质量
   //    - 建议保持 ~30 个核心技能即可覆盖绝大多数场景
   //
-  //    仅保留上游核心 + CN 高价值技能（~30 个），其余不加载。
-  if (next.skills?.allowBundled === undefined) {
+  //    pinnedSkills = 核心技能 = UI 核心区 = 注入 prompt。唯一真相源。
+  //    allowBundled 已废弃，仅作为向后兼容的只读参考。
+  //    新用户: pinnedSkills 默认注入这些 skill。
+  //    老用户: 已有 pinnedSkills 不会被覆盖。
+  if (next.skills?.pinnedSkills === undefined) {
     next = {
       ...next,
       skills: {
         ...next.skills,
-        allowBundled: [
+        pinnedSkills: [
           // ── 上游核心技能 ──
-          "coding-agent",
+          // 注：cnDeprioritizedSkills 中的海外技能由 shouldIncludeSkill 的 CN 降级逻辑过滤
           "canvas",
           "github",
-          "summarize",
           "weather",
           "skill-creator",
           "session-logs",
           "model-usage",
-          "oracle",
           "nano-pdf",
-          "nano-banana-pro",
           "tmux",
-          "slack",
-          "discord",
-          "notion",
           "obsidian",
-          "trello",
           "himalaya",
           "video-frames",
-          "voice-call",
-          "gemini",
-          "openai-image-gen",
-          "openai-whisper-api",
           // ── CN 高价值技能 ──
-          // wechat-desktop / wecom-desktop 已移入 skills-private/，不走 bundled 分发
-          "wechat-cs",
           "xiaohongshu",
           "desktop-control",
           "open-app",
           "software-protection",
-          "build-packaging",
           "packaging",
           "skills-troubleshoot",
           "self-troubleshoot",
@@ -1178,6 +1167,23 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
       };
       mutated = true;
     }
+  }
+
+  // ── [CN-PATCH:voice] 22. messages.tts.auto = "inbound" ──
+  //    CN 默认启用 TTS：收到语音输入时自动播放 AI 回复的语音
+  //    用户可在设置中切换为 "always" / "off" / "tagged"
+  if (next.messages?.tts?.auto === undefined) {
+    next = {
+      ...next,
+      messages: {
+        ...next.messages,
+        tts: {
+          ...next.messages?.tts,
+          auto: "inbound" as const,
+        },
+      },
+    };
+    mutated = true;
   }
 
   return mutated ? next : cfg;

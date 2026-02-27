@@ -34,15 +34,15 @@ fn generate_token() -> String {
     buf.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Try to kill any process occupying the gateway port, including its entire
+/// Try to kill any process occupying the given port, including its entire
 /// process tree (child node.exe workers from the previous gateway instance).
 /// On Windows, uses `netstat` + `taskkill /T /F`. On Unix, uses `lsof` + `kill`.
 /// Returns true if a process was found and killed.
-fn try_kill_port_occupant() -> bool {
+fn kill_port_occupant(port: u16) -> bool {
     #[cfg(target_os = "windows")]
     {
         let output = Command::new("cmd")
-            .args(["/C", &format!("netstat -ano | findstr :{} | findstr LISTENING", GATEWAY_PORT)])
+            .args(["/C", &format!("netstat -ano | findstr :{} | findstr LISTENING", port)])
             .creation_flags(0x08000000)
             .output();
 
@@ -55,7 +55,7 @@ fn try_kill_port_occupant() -> bool {
                         if pid == 0 || pid == std::process::id() {
                             continue;
                         }
-                        println!("[Sidecar] Found process {} occupying port {}, killing tree...", pid, GATEWAY_PORT);
+                        println!("[Sidecar] Found process {} occupying port {}, killing tree...", pid, port);
                         // /T = kill entire process tree (parent + children)
                         // /F = force kill
                         let kill_result = Command::new("taskkill")
@@ -78,7 +78,7 @@ fn try_kill_port_occupant() -> bool {
     #[cfg(not(target_os = "windows"))]
     {
         let output = Command::new("lsof")
-            .args(["-ti", &format!(":{}", GATEWAY_PORT)])
+            .args(["-ti", &format!(":{}", port)])
             .output();
 
         if let Ok(output) = output {
@@ -88,7 +88,7 @@ fn try_kill_port_occupant() -> bool {
                     if pid == 0 || pid == std::process::id() {
                         continue;
                     }
-                    println!("[Sidecar] Found process {} occupying port {}, killing...", pid, GATEWAY_PORT);
+                    println!("[Sidecar] Found process {} occupying port {}, killing...", pid, port);
                     // Kill the process group to get children too
                     let _ = Command::new("kill").args(["-9", &format!("-{}", pid)]).output();
                     let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
@@ -98,6 +98,42 @@ fn try_kill_port_occupant() -> bool {
             }
         }
         false
+    }
+}
+
+/// Internal: kill port occupant on the default gateway port.
+fn try_kill_port_occupant() -> bool {
+    kill_port_occupant(GATEWAY_PORT)
+}
+
+/// Public API: try to kill any process occupying the specified port.
+/// Used by the repair assistant to release stuck ports.
+pub fn try_kill_port_occupant_pub(port: u16) -> bool {
+    kill_port_occupant(port)
+}
+
+/// Clean up stale gateway lock files in the system temp directory.
+/// Removes any `gateway.*.lock` files found in `openclawcn-*` temp dirs.
+pub fn cleanup_gateway_locks() {
+    let temp_dir = std::env::temp_dir();
+    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if !name_str.starts_with("openclawcn-") || !entry.path().is_dir() {
+                continue;
+            }
+            if let Ok(lock_entries) = std::fs::read_dir(entry.path()) {
+                for lock_entry in lock_entries.flatten() {
+                    let lock_name = lock_entry.file_name();
+                    let lock_str = lock_name.to_string_lossy();
+                    if lock_str.starts_with("gateway.") && lock_str.ends_with(".lock") {
+                        println!("[Sidecar] Removing stale lock: {:?}", lock_entry.path());
+                        let _ = std::fs::remove_file(lock_entry.path());
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -169,6 +205,12 @@ fn resolve_app_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
             Ok(exe_dir.to_path_buf())
         }
     }
+}
+
+/// Public wrapper for `resolve_app_dir()`. Used by the repair assistant
+/// to locate the Node.js binary and `dist/entry.js` for running `doctor`.
+pub fn resolve_app_dir_pub() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    resolve_app_dir()
 }
 
 fn open_log_file(log_path: &Path) -> Option<std::fs::File> {
@@ -360,6 +402,16 @@ pub fn is_sidecar_running() -> bool {
     } else {
         // In dev mode, external gateway may be running without a sidecar process
         *EXTERNAL_GATEWAY.lock().unwrap()
+    }
+}
+
+/// Returns the gateway token only if the sidecar is currently running.
+/// Used by doctor subprocess to authenticate with the running gateway.
+pub fn gateway_token_if_running() -> Option<String> {
+    if is_sidecar_running() {
+        GATEWAY_TOKEN.lock().unwrap().clone()
+    } else {
+        None
     }
 }
 

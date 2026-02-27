@@ -95,20 +95,40 @@ function renderInstallButton(
           ${t("extensions.store.installing")}
         </span>
       `;
-    case "error":
+    case "error": {
+      const errMsg = item.errorMessage || "";
+      // Show a short snippet below the button (max 60 chars)
+      const shortErr = errMsg.length > 60 ? errMsg.slice(0, 57) + "..." : errMsg;
       return html`
-        <button
-          @click=${(e: Event) => { e.stopPropagation(); onInstall(); }}
-          style="
-            all:unset; cursor:pointer;
-            font-size:11px; font-weight:600;
-            padding:5px 14px;
-            border-radius:6px;
-            background:rgba(248,113,113,0.1);
-            color:#f87171;
-          "
-        >${t("extensions.store.installFailed")}</button>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px;">
+          <button
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              // Route to config wizard if item has env vars to configure;
+              // otherwise just retry the install directly.
+              const hasConfigurableEnv = item.requiresApiKey
+                || (item.envRequired && item.envRequired.length > 0)
+                || (item.envSchema && Object.keys(item.envSchema).length > 0);
+              if (hasConfigurableEnv) { onConfigInstall(); } else { onInstall(); }
+            }}
+            title=${errMsg}
+            style="
+              all:unset; cursor:pointer;
+              font-size:11px; font-weight:600;
+              padding:5px 14px;
+              border-radius:6px;
+              background:rgba(248,113,113,0.1);
+              color:#f87171;
+            "
+          >${t("extensions.store.installFailed")}</button>
+          ${shortErr ? html`<span style="
+            font-size:10px; color:#f87171; opacity:0.8;
+            max-width:200px; word-break:break-all;
+            line-height:1.3;
+          ">${shortErr}</span>` : nothing}
+        </div>
       `;
+    }
     default: // not_installed
       // Items without any install method → show "Manual Config" button + optional "View Source" link
       if (item.installable === false) {
@@ -144,7 +164,7 @@ function renderInstallButton(
           </div>
         `;
       }
-      if (item.requiresApiKey) {
+      if (item.requiresApiKey || (item.envRequired && item.envRequired.length > 0) || (item.envSchema && Object.keys(item.envSchema).length > 0)) {
         return html`
           <button
             @click=${(e: Event) => { e.stopPropagation(); onConfigInstall(); }}
@@ -196,7 +216,7 @@ function renderInstallMethodBadge(item: McpMarketplaceItem): TemplateResult {
         title="${t("extensions.store.installMethodPypiTip" as never)}"
         >${t("extensions.store.installMethodPypi" as never)}</span>`;
     case "sse":
-      return html`<span style="${pillStyle("rgba(52,211,153,0.12)", "#34d399")}"
+      return html`<span style="${pillStyle("rgba(251,146,60,0.12)", "#fb923c")}"
         title="${t("extensions.store.installMethodSseTip" as never)}"
         >${t("extensions.store.installMethodSse" as never)}</span>`;
     default:
@@ -216,10 +236,24 @@ function renderBadges(item: McpMarketplaceItem): TemplateResult {
   if (item.isOfficial) {
     badges.push(html`<span style="${pillStyle("rgba(99,102,241,0.12)", "#818cf8")}">${t("extensions.store.official")}</span>`);
   }
-  if (!item.requiresApiKey && item.installable !== false && item.installMethod !== "none") {
+  const needsConfig = item.requiresApiKey || (item.envRequired && item.envRequired.length > 0) || (item.envSchema && Object.keys(item.envSchema).length > 0);
+  if (!needsConfig && item.installable !== false && item.installMethod !== "none") {
     badges.push(html`<span style="${pillStyle("rgba(52,211,153,0.12)", "#34d399")}">${t("extensions.store.zeroConfig")}</span>`);
-  } else if (item.requiresApiKey) {
+  } else if (needsConfig) {
     badges.push(html`<span style="${pillStyle("rgba(251,191,36,0.12)", "#fbbf24")}">${t("extensions.store.needsKey")}</span>`);
+  }
+  // SSE risk badge — warn users this connects to a third-party server
+  if (item.installMethod === "sse") {
+    const isVerified = (item as McpMarketplaceItem & { isVerified?: boolean }).isVerified;
+    if (!isVerified) {
+      badges.push(html`<span style="${pillStyle("rgba(248,113,113,0.12)", "#f87171")}"
+        title="${t("extensions.store.highRiskTip" as never)}"
+        >${t("extensions.store.highRisk" as never)}</span>`);
+    } else {
+      badges.push(html`<span style="${pillStyle("rgba(251,146,60,0.12)", "#fb923c")}"
+        title="${t("extensions.store.remoteServiceTip" as never)}"
+        >${t("extensions.store.remoteService" as never)}</span>`);
+    }
   }
   if (item.isNew) {
     badges.push(html`<span style="${pillStyle("rgba(96,165,250,0.12)", "#60a5fa")}">${t("extensions.store.newBadge")}</span>`);

@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { OpenClawCNConfig } from "../config/config.js";
+import { detectChinaRegion, isSkillDeprioritizedInCn } from "../config/region-cn.js";
 import { evaluateRequirementsFromMetadata } from "../shared/requirements.js";
 import { CONFIG_DIR } from "../utils.js";
 import {
@@ -46,7 +47,14 @@ export type SkillStatusEntry = {
   pinned: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
+  /** Skill depends on overseas services, not auto-injected into prompt in CN region. */
+  cnDeprioritized: boolean;
+  /** Technical eligibility: dependencies met, can be used if activated. */
   eligible: boolean;
+  /** Actually injected into the LLM system prompt right now.
+   *  True = pinned + not disabled, OR always + not disabled.
+   *  This is the SINGLE source of truth for the UI "core" tier. */
+  activeInPrompt: boolean;
   requirements: {
     bins: string[];
     anyBins: string[];
@@ -189,6 +197,9 @@ function buildSkillStatus(
   const disabled = skillConfig?.enabled === false;
   const allowBundled = resolveBundledAllowlist(config);
   const blockedByAllowlist = !isBundledSkillAllowed(entry, allowBundled);
+  const isCn = detectChinaRegion();
+  const cnDeprioritized =
+    isCn && (isSkillDeprioritizedInCn(skillKey) || isSkillDeprioritizedInCn(entry.skill.name));
   const always = entry.metadata?.always === true;
   const pinnedSkills = config?.skills?.pinnedSkills ?? [];
   const pinned = pinnedSkills.includes(skillKey) || pinnedSkills.includes(entry.skill.name);
@@ -225,7 +236,12 @@ function buildSkillStatus(
       ),
     isConfigSatisfied: (pathStr) => isConfigPathTruthy(config, pathStr),
   });
-  const eligible = !disabled && !blockedByAllowlist && requirementsSatisfied;
+  // `eligible` = technically usable (dependencies met).
+  // Pinned skills bypass bins/env/config checks (same as shouldIncludeSkill).
+  const eligible = !disabled && (pinned || requirementsSatisfied);
+  // `activeInPrompt` = actually injected into the LLM system prompt.
+  // Matches shouldIncludeSkill() logic: pinned OR always, AND not disabled.
+  const activeInPrompt = !disabled && (pinned || always);
 
   return {
     name: entry.skill.name,
@@ -244,7 +260,9 @@ function buildSkillStatus(
     pinned,
     disabled,
     blockedByAllowlist,
+    cnDeprioritized,
     eligible,
+    activeInPrompt,
     requirements: required,
     missing,
     configChecks,

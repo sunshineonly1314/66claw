@@ -30,7 +30,7 @@
   ReadRegStr $0 SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Clawdbot" "UninstallString"
   ${If} $0 != ""
     MessageBox MB_YESNO|MB_ICONINFORMATION "检测到旧版本 Clawdbot，建议先卸载旧版本再安装新版。是否先卸载旧版本？" IDNO skip_old_clawdbot
-    ExecWait '$0'
+    ExecWait '$0 /S'
     skip_old_clawdbot:
   ${EndIf}
 
@@ -53,6 +53,6 @@
   ;
   ; The ${VERSION} macro is provided by Tauri NSIS bundler from tauri.conf.json.
   FileOpen $0 "$INSTDIR\resources\install.json" w
-  FileWrite $0 '{"installKind":"installer","updateServer":"https://dl.openclawcn.com","version":"${VERSION}"}'
+  FileWrite $0 '{"installKind":"installer","updateServer":"https://www.obplugins.cn","version":"${VERSION}"}'
   FileClose $0
 !macroend

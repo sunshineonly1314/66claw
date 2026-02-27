@@ -78,8 +78,14 @@ const READ_METHODS = new Set([
   "node.list",
   "node.describe",
   "chat.history",
+  "media.list",
   "config.get",
   "talk.config",
+  // OpenClawCN: Networking Center read methods
+  "gateway.network.status",
+  "gateway.network.discover",
+  "gateway.network.probe",
+  "gateway.network.interfaces",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -96,6 +102,8 @@ const WRITE_METHODS = new Set([
   "chat.send",
   "chat.abort",
   "browser.request",
+  // OpenClawCN: Networking Center write methods
+  "gateway.network.configure",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {

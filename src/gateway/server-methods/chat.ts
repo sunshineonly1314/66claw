@@ -44,6 +44,88 @@ import {
   recordPerfMeasurement,
   completePerfTrace,
 } from "../../infra/perf-tracker.js";
+import { resolveChatImagePath, loadChatImages } from "../../media/chat-image-store.js";
+import { resolveChatVideoPath, loadChatVideos } from "../../media/chat-video-store.js";
+
+/**
+ * Rehydrate image URLs in tool result messages.
+ * Checks if local image files still exist and marks them accordingly.
+ */
+function rehydrateGeneratedImages(messages: unknown[], sessionKey: string): void {
+  const safeSK = sessionKey.replace(/[^a-zA-Z0-9_\-.]/g, "_");
+  for (const msg of messages) {
+    if (!msg || typeof msg !== "object") continue;
+    const m = msg as Record<string, unknown>;
+
+    // Check top-level details (tool result messages)
+    rehydrateDetails(m.details, safeSK);
+
+    // Check content array for tool_result blocks
+    if (Array.isArray(m.content)) {
+      for (const block of m.content) {
+        if (!block || typeof block !== "object") continue;
+        const b = block as Record<string, unknown>;
+        rehydrateDetails(b.details, safeSK);
+      }
+    }
+  }
+}
+
+function rehydrateDetails(details: unknown, fallbackSessionKey: string): void {
+  if (!details || typeof details !== "object") return;
+  const d = details as Record<string, unknown>;
+
+  // Check imageUrl
+  if (typeof d.imageUrl === "string") {
+    const url = d.imageUrl as string;
+    if (url.includes("/api/media/chat-images/")) {
+      // Extract session key and image file from URL path:
+      // /api/media/chat-images/<sessionKey>/<imageFile>
+      const parts = url.split("/");
+      const imageFile = parts[parts.length - 1];
+      // The session key in the URL may differ from the top-level sessionKey
+      // (e.g. "agent:main:uuid" vs "main"). Use the URL's key for lookup.
+      const urlSessionKey = parts.length >= 2 ? parts[parts.length - 2] : undefined;
+      const effectiveKey = urlSessionKey || fallbackSessionKey;
+      if (imageFile) {
+        const localPath = resolveChatImagePath(effectiveKey, imageFile);
+        d.imageAvailable = localPath !== null;
+      }
+    }
+  }
+
+  // Check imageUrls array
+  if (Array.isArray(d.imageUrls)) {
+    let allAvailable = true;
+    for (const url of d.imageUrls) {
+      if (typeof url === "string" && url.includes("/api/media/chat-images/")) {
+        const parts = (url as string).split("/");
+        const imageFile = parts[parts.length - 1];
+        const urlSK = parts.length >= 2 ? parts[parts.length - 2] : undefined;
+        const effectiveKey = urlSK || fallbackSessionKey;
+        if (imageFile && !resolveChatImagePath(effectiveKey, imageFile)) {
+          allAvailable = false;
+          break;
+        }
+      }
+    }
+    d.imageAvailable = allAvailable;
+  }
+
+  // Check videoUrl
+  if (typeof d.videoUrl === "string") {
+    const url = d.videoUrl as string;
+    if (url.includes("/api/media/videos/")) {
+      const parts = url.split("/");
+      const videoFile = parts[parts.length - 1];
+      if (videoFile) {
+        const urlSK = parts.length >= 2 ? parts[parts.length - 2] : undefined;
+        const localPath = resolveChatVideoPath(urlSK || fallbackSessionKey, videoFile);
+        d.videoAvailable = localPath !== null;
+      }
+    }
+  }
+}
 
 type TranscriptAppendResult = {
   ok: boolean;
@@ -204,15 +286,24 @@ function broadcastChatFinal(params: {
   runId: string;
   sessionKey: string;
   message?: Record<string, unknown>;
+  ttsAudioBase64?: string;
+  ttsFormat?: string;
 }) {
   const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
-  const payload = {
+  const payload: Record<string, unknown> = {
     runId: params.runId,
     sessionKey: params.sessionKey,
     seq,
     state: "final" as const,
     message: params.message,
   };
+  // Attach TTS audio for web UI auto-playback (Siri-style)
+  if (params.ttsAudioBase64) {
+    payload.ttsAudio = {
+      base64: params.ttsAudioBase64,
+      format: params.ttsFormat ?? "wav",
+    };
+  }
   params.context.broadcast("chat", payload);
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
   params.context.agentRunSeq.delete(params.runId);
@@ -265,6 +356,10 @@ export const chatHandlers: GatewayRequestHandlers = {
     const sliced = rawMessages.length > max ? rawMessages.slice(-max) : rawMessages;
     const sanitized = stripEnvelopeFromMessages(sliced);
     const capped = capArrayByJsonBytes(sanitized, getMaxChatHistoryMessagesBytes()).items;
+
+    // Rehydrate generated image URLs — check if local files still exist
+    rehydrateGeneratedImages(capped, sessionKey);
+
     let thinkingLevel = entry?.thinkingLevel;
     if (!thinkingLevel) {
       const configured = cfg.agents?.defaults?.thinkingDefault;
@@ -378,6 +473,10 @@ export const chatHandlers: GatewayRequestHandlers = {
       }>;
       timeoutMs?: number;
       idempotencyKey: string;
+      /** True when the message originated from voice input (ASR). Enables TTS on response. */
+      voiceInput?: boolean;
+      /** True when the UI is in continuous voice conversation mode. Triggers conversational system prompt. */
+      voiceMode?: boolean;
     };
     const sanitizedMessageResult = sanitizeChatSendMessageInput(p.message);
     if (!sanitizedMessageResult.ok) {
@@ -555,7 +654,15 @@ export const chatHandlers: GatewayRequestHandlers = {
         SenderName: clientInfo?.displayName,
         SenderUsername: clientInfo?.displayName,
         GatewayClientScopes: client?.connect?.scopes,
+        // Voice input flag: enables TTS on response (tts.auto = "inbound" mode)
+        ...(p.voiceInput ? { MediaType: "audio" } : {}),
+        // Voice conversation mode: triggers conversational system prompt
+        ...(p.voiceMode ? { VoiceMode: true } : {}),
       };
+
+      if (p.voiceMode) {
+        context.logGateway.info(`[chat.send] voiceMode=true for run ${clientRunId}`);
+      }
 
       const agentId = resolveSessionAgentId({
         sessionKey,
@@ -567,6 +674,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         channel: INTERNAL_MESSAGE_CHANNEL,
       });
       const finalReplyParts: string[] = [];
+      let ttsMediaUrl: string | undefined;
       const dispatcher = createReplyDispatcher({
         ...prefixOptions,
         onError: (err) => {
@@ -576,6 +684,12 @@ export const chatHandlers: GatewayRequestHandlers = {
           if (info.kind !== "final") {
             return;
           }
+          // Capture TTS audio path if present (generated by maybeApplyTtsToPayload)
+          if (payload.mediaUrl && !ttsMediaUrl) {
+            ttsMediaUrl = payload.mediaUrl;
+            // Also store in shared state so emitChatFinal (agent-run path) can read it
+            context.chatTtsMediaUrls.set(clientRunId, payload.mediaUrl);
+          }
           const text = payload.text?.trim() ?? "";
           if (!text) {
             return;
@@ -583,6 +697,11 @@ export const chatHandlers: GatewayRequestHandlers = {
           finalReplyParts.push(text);
         },
       });
+
+      // Track voice-input runs so emitChatFinal can generate TTS for agent-run path
+      if (p.voiceInput) {
+        context.chatVoiceInputRuns.set(clientRunId, true);
+      }
 
       let agentRunStarted = false;
 
@@ -687,11 +806,31 @@ export const chatHandlers: GatewayRequestHandlers = {
             );
 
             recordPerfMeasurement(clientRunId, "agent_response_process", { hasMessage: !!message });
+
+            // Read TTS audio file and convert to base64 for web UI playback
+            let ttsAudioBase64: string | undefined;
+            let ttsFormat: string | undefined;
+            if (ttsMediaUrl) {
+              try {
+                const audioBuffer = fs.readFileSync(ttsMediaUrl);
+                ttsAudioBase64 = audioBuffer.toString("base64");
+                ttsFormat = ttsMediaUrl.endsWith(".mp3")
+                  ? "mp3"
+                  : ttsMediaUrl.endsWith(".opus")
+                    ? "opus"
+                    : "wav";
+              } catch {
+                context.logGateway.warn(`TTS audio file read failed: ${ttsMediaUrl}`);
+              }
+            }
+
             broadcastChatFinal({
               context,
               runId: clientRunId,
               sessionKey: rawSessionKey,
               message,
+              ttsAudioBase64,
+              ttsFormat,
             });
           }
           context.dedupe.set(`chat:${clientRunId}`, {
@@ -738,6 +877,8 @@ export const chatHandlers: GatewayRequestHandlers = {
             `[DEBUG-CHAT] dispatchInboundMessage FINALLY: runId=${clientRunId}, cleaning up abortController`,
           );
           context.chatAbortControllers.delete(clientRunId);
+          // Safety cleanup: ensure voiceInputRuns doesn't leak
+          context.chatVoiceInputRuns.delete(clientRunId);
         });
     } catch (err) {
       // 🔍 DEBUG: 日志10 - 外层 try-catch 捕获到同步错误
@@ -829,5 +970,47 @@ export const chatHandlers: GatewayRequestHandlers = {
     context.nodeSendToSession(rawSessionKey, "chat", chatPayload);
 
     respond(true, { ok: true, messageId: appended.messageId });
+  },
+  "media.list": async ({ params, respond }) => {
+    const rawSessionKey = typeof params.sessionKey === "string" ? params.sessionKey : "";
+    if (!rawSessionKey) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "sessionKey required"));
+      return;
+    }
+    // Normalize the session key: bare UUIDs (from URL params) need the
+    // "agent:<id>:" prefix so the media stores find the correct directory.
+    const { canonicalKey } = loadSessionEntry(rawSessionKey);
+    const sessionKey = canonicalKey || rawSessionKey;
+    try {
+      const [images, videos] = await Promise.all([
+        loadChatImages(sessionKey),
+        loadChatVideos(sessionKey),
+      ]);
+      const assets = [
+        ...images.map((img) => ({
+          id: img.id,
+          type: "image" as const,
+          url: `/api/media/chat-images/${encodeURIComponent(sessionKey)}/${encodeURIComponent(img.file)}`,
+          name: img.file,
+          size: img.sizeBytes,
+          createdAt: new Date(img.createdAt).getTime(),
+          sessionKey,
+        })),
+        ...videos.map((vid) => ({
+          id: vid.id,
+          type: "video" as const,
+          url: `/api/media/videos/${encodeURIComponent(sessionKey)}/${encodeURIComponent(vid.file)}`,
+          name: vid.file,
+          size: vid.sizeBytes,
+          createdAt: new Date(vid.createdAt).getTime(),
+          sessionKey,
+        })),
+      ];
+      // Sort by creation time descending (newest first)
+      assets.sort((a, b) => b.createdAt - a.createdAt);
+      respond(true, { assets });
+    } catch {
+      respond(true, { assets: [] });
+    }
   },
 };

@@ -94,7 +94,8 @@ describe("formatAssistantErrorText", () => {
   it("includes provider name in billing message when provider is given", () => {
     const msg = makeAssistantError("insufficient credits");
     const result = formatAssistantErrorText(msg, { provider: "Anthropic" });
-    expect(result).toBe(formatBillingErrorMessage("Anthropic"));
+    // [CN-MERGE:3d4ef56044] Now includes model name from msg.model
+    expect(result).toBe(formatBillingErrorMessage("Anthropic", "test-model"));
     expect(result).toContain("Anthropic");
     expect(result).not.toContain("API provider");
   });

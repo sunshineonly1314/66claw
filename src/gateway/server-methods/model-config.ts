@@ -23,8 +23,24 @@ import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveStorePath } from "../../config/sessions/paths.js";
 import { updateSessionStore } from "../../config/sessions/store.js";
 import { loadAuthProfileStore } from "../../agents/auth-profiles/store.js";
+import { hasUserConfiguredProvider } from "../../agents/model-auth.js";
+import {
+  refreshProviderConfigured,
+  upsertUserCard,
+  removeUserCardsByProvider,
+  type CapabilityKey,
+  type ModelCapabilityCard,
+} from "../../dispatch/capability-registry.js";
+import { getProviderAliases } from "../../agents/model-selection.js";
+import { ensureOpenClawCNModelsJson } from "../../agents/models-config.js";
 
 const log = createSubsystemLogger("gateway/model-config");
+
+/** Build `provider/model` ref without double-prefixing when modelId already starts with `provider/`. */
+function buildModelRef(providerId: string, modelId: string): string {
+  if (modelId.startsWith(`${providerId}/`)) return modelId;
+  return `${providerId}/${modelId}`;
+}
 
 /**
  * 能力配置类型
@@ -39,7 +55,7 @@ interface CapabilityModelConfig {
  * 模型能力配置
  */
 export interface ModelCapabilityConfig {
-  capabilities: Partial<Record<Capability, CapabilityModelConfig>>;
+  capabilities: Partial<Record<Capability | CapabilityKey | string, CapabilityModelConfig>>;
 }
 
 /**
@@ -83,16 +99,13 @@ async function saveModelCapabilityConfig(capabilityConfig: ModelCapabilityConfig
 /**
  * 获取所有 Provider 的配置状态
  *
- * 注意: 这里混合了两种Provider:
- * 1. models.providers: 用户自己配置的Provider (openai, anthropic, siliconflow等)
- * 2. freeModels.accounts: ClawdbotCN提供的免费账号 (ant-ling, meituan-longcat)
+ * 从三个来源收集 provider 配置信息:
+ * 1. models.providers: 用户自己配置的 Provider
+ * 2. freeModels.accounts: ClawdbotCN 提供的免费账号
+ * 3. auth-profiles.json: setup wizard 存储的凭据
  *
- * 这两者的providerId在不同的命名空间,不会冲突:
- * - PROVIDER_CAPABILITY_MAPPINGS只包含前者
- * - 免费模型的providerId不在PROVIDER_CAPABILITY_MAPPINGS中
- *
- * 因此这个混合逻辑是安全的,但需要注意未来如果要将免费模型
- * 也纳入PROVIDER_CAPABILITY_MAPPINGS,需要重新设计这部分逻辑
+ * 最后，通过 getProviderAliases 将配置状态扩展到同一逻辑 provider
+ * 的所有别名 ID（解决 v1 "glm" vs v2 "zhipu" 等 ID 不一致问题）。
  */
 async function getProviderConfigStatus(): Promise<Map<string, boolean>> {
   const config = await loadConfig();
@@ -105,7 +118,7 @@ async function getProviderConfigStatus(): Promise<Map<string, boolean>> {
     }
   }
 
-  // 检查免费模型账号 (ClawdbotCN提供,命名空间不同,不会冲突)
+  // 检查免费模型账号
   const freeModels = (
     config as { freeModels?: { accounts?: Array<{ providerId: string; enabled: boolean }> } }
   ).freeModels;
@@ -116,25 +129,35 @@ async function getProviderConfigStatus(): Promise<Map<string, boolean>> {
   }
 
   // 检查 auth-profiles.json 中的凭据（setup wizard 通过 upsertAuthProfile 存储 API key）
-  // 这是 Kimi Code 等 provider 的 key 实际存储位置
   try {
     const authStore = loadAuthProfileStore();
     if (authStore.profiles) {
       for (const [, profile] of Object.entries(authStore.profiles)) {
         const p = profile as { provider?: string; key?: string; type?: string };
         if (p.provider && p.key) {
-          // 🔥 P0 修复: auth-profiles 存的是 "kimi-coding"，但 PROVIDER_CAPABILITY_MAPPINGS
-          // 用 "kimi-code"。同时设置原始 ID 和反向映射，确保两边都能查到。
           providers.set(p.provider, true);
-          // 反向映射: "kimi-coding" -> 也设置 "kimi-code"
-          if (p.provider === "kimi-coding") {
-            providers.set("kimi-code", true);
-          }
         }
       }
     }
   } catch {
     // auth-profiles.json may not exist — ignore
+  }
+
+  // 将已配置的 provider 状态扩展到所有别名 ID.
+  // 例如: 用户配置了 "glm" → 同时标记 "zhipu" 为已配置,
+  //       用户配置了 "aliyun-bailian" → 同时标记 "qwen"、"dashscope" 为已配置.
+  const extraEntries: [string, boolean][] = [];
+  for (const [id, configured] of providers) {
+    if (!configured) continue;
+    const aliases = getProviderAliases(id);
+    for (const alias of aliases) {
+      if (!providers.get(alias)) {
+        extraEntries.push([alias, true]);
+      }
+    }
+  }
+  for (const [alias, val] of extraEntries) {
+    providers.set(alias, val);
   }
 
   return providers;
@@ -166,11 +189,15 @@ export async function listCapabilities() {
     const configuredModels = availableModels.filter((m) => providerStatus.get(m.providerId));
 
     let currentModel = null;
-    if (currentConfig && providerStatus.get(currentConfig.providerId)) {
-      // 找到当前使用的模型信息（先从 PROVIDER_CAPABILITY_MAPPINGS 查找）
+    // 用户保存的 providerId 可能与 v1 映射使用不同别名
+    const cfgAliases = currentConfig?.providerId
+      ? getProviderAliases(currentConfig.providerId)
+      : [];
+    const providerConfigured = cfgAliases.some((a) => providerStatus.get(a));
+    if (currentConfig && providerConfigured) {
+      // 找到当前使用的模型信息（先从 PROVIDER_CAPABILITY_MAPPINGS 查找, 使用别名匹配）
       const modelInfo = availableModels.find(
-        (m) =>
-          m.providerId === currentConfig.providerId && m.model.modelId === currentConfig.modelId,
+        (m) => cfgAliases.includes(m.providerId) && m.model.modelId === currentConfig.modelId,
       );
 
       if (modelInfo) {
@@ -218,17 +245,41 @@ export async function listCapabilities() {
   return { capabilities: result };
 }
 
+/** v2 capability key → modelCapability config storage key 映射 */
+const V2_KEY_TO_LEGACY: Record<string, Capability | string | undefined> = {
+  text: "text",
+  code: "code", // code 独立于 text，各自可选不同模型
+  vision: "image-understanding",
+  imageGen: "image-generation",
+  video: "video",
+  videoGen: "videoGen", // 视频生成 — 独立于视频理解
+  audio: "audio",
+  tts: "tts",
+  embedding: "embedding",
+  toolCall: "toolCall",
+};
+
 /**
  * API: 获取某个能力的所有可用模型
  */
-export async function getCapabilityModels(params: { capability: Capability }) {
-  const { capability } = params;
+export async function getCapabilityModels(params: { capability: Capability | string }) {
+  // 支持 v2 key：先映射到旧版
+  const capability = (V2_KEY_TO_LEGACY[params.capability as string] ??
+    params.capability) as Capability;
 
   const capabilityConfig = await getModelCapabilityConfig();
   const providerStatus = await getProviderConfigStatus();
 
   const currentConfig = capabilityConfig.capabilities[capability];
   const allModels = getModelsByCapability(capability);
+
+  // 用户保存的 providerId 和 v2 card 的 provider 可能是同一 provider 的不同别名
+  // (如 "glm" vs "zhipu")。预先计算别名组以正确匹配 active 状态。
+  const currentAliases = currentConfig?.providerId
+    ? getProviderAliases(currentConfig.providerId)
+    : [];
+  const isActiveModel = (providerId: string, modelId: string) =>
+    currentConfig?.modelId === modelId && currentAliases.includes(providerId);
 
   const models = allModels.map((m) => ({
     providerId: m.providerId,
@@ -238,9 +289,73 @@ export async function getCapabilityModels(params: { capability: Capability }) {
     modelName: m.model.modelName,
     pricing: m.model.pricing,
     configured: providerStatus.get(m.providerId) || false,
-    active:
-      currentConfig?.providerId === m.providerId && currentConfig?.modelId === m.model.modelId,
+    active: isActiveModel(m.providerId, m.model.modelId),
   }));
+
+  // 合并 v2 capability registry 中存在但 v1 静态映射缺失的模型
+  try {
+    const { queryByCapability } = await import("../../dispatch/index.js");
+    const v2Key =
+      Object.entries(V2_KEY_TO_LEGACY).find(([, v]) => v === capability)?.[0] ?? capability;
+    const v2Results = queryByCapability(v2Key as any, { configuredOnly: false });
+    for (const card of v2Results) {
+      const alreadyInList = models.some(
+        (m) => m.providerId === card.provider && m.modelId === card.modelId,
+      );
+      if (!alreadyInList) {
+        models.push({
+          providerId: card.provider,
+          providerName: card.displayName,
+          providerIcon: "",
+          modelId: card.modelId,
+          modelName: card.displayName,
+          pricing: { type: card.costTier === "free" ? ("free" as const) : ("paid" as const) },
+          configured: providerStatus.get(card.provider) || false,
+          active: isActiveModel(card.provider, card.modelId),
+        });
+      }
+    }
+  } catch {
+    /* v2 registry not initialized — use v1 only */
+  }
+
+  // 合并 config.models.providers 中用户已配置但不在静态映射中的模型
+  // （如 Ollama 动态发现的模型、OpenAI 兼容端点的模型）
+  try {
+    const userConfig = await loadConfig();
+    const userProviders = userConfig.models?.providers ?? {};
+    for (const [pid, provCfg] of Object.entries(userProviders)) {
+      if (!provCfg.models?.length) continue;
+      const mapping = PROVIDER_CAPABILITY_MAPPINGS[pid];
+      const provName = mapping?.name ?? pid;
+      const provIcon = mapping?.icon ?? "";
+      for (const m of provCfg.models) {
+        // 根据模型 input 字段推断是否匹配当前 capability
+        const modelInput = m.input ?? ["text"];
+        let matchesCap = false;
+        if (capability === "text" && modelInput.includes("text")) matchesCap = true;
+        if (capability === "image-understanding" && modelInput.includes("image")) matchesCap = true;
+        if (capability === "embedding" && m.id?.includes("embed")) matchesCap = true;
+        if (!matchesCap) continue;
+
+        const alreadyInList = models.some((e) => e.providerId === pid && e.modelId === m.id);
+        if (alreadyInList) continue;
+
+        models.push({
+          providerId: pid,
+          providerName: provName,
+          providerIcon: provIcon,
+          modelId: m.id,
+          modelName: m.name ?? m.id,
+          pricing: { type: "paid" as const },
+          configured: true,
+          active: isActiveModel(pid, m.id),
+        });
+      }
+    }
+  } catch {
+    /* 非关键 — 用户配置读取失败时跳过 */
+  }
 
   // 排序：已配置的在前，免费的在前，当前使用的在最前
   models.sort((a, b) => {
@@ -260,26 +375,69 @@ export async function getCapabilityModels(params: { capability: Capability }) {
  * API: 切换能力的当前模型
  */
 export async function switchCapabilityModel(params: {
-  capability: Capability;
+  capability: Capability | string;
   providerId: string;
   modelId: string;
 }) {
-  const { capability, providerId, modelId } = params;
+  const { providerId, modelId } = params;
+  // 支持 v2 capability key：先尝试映射到旧版 key
+  const capability = (V2_KEY_TO_LEGACY[params.capability as string] ??
+    params.capability) as Capability;
 
-  // 验证该 Provider 是否已配置
+  // 验证该 Provider 是否已配置（双重检查：v1 status + v2 hasUserConfiguredProvider）
   const providerStatus = await getProviderConfigStatus();
   if (!providerStatus.get(providerId)) {
-    return {
-      success: false,
-      error: `服务商 ${providerId} 尚未配置，请先添加配置`,
-    };
+    // v1 未命中时二次确认 — 加密 store / auth-profiles 路径差异可能导致 v1 漏判
+    const cfg = loadConfig();
+    let store;
+    try {
+      store = loadAuthProfileStore();
+    } catch {
+      /* ignore */
+    }
+    if (!hasUserConfiguredProvider(providerId, cfg, store)) {
+      return {
+        success: false,
+        error: `服务商 ${providerId} 尚未配置，请先添加配置`,
+      };
+    }
   }
 
-  // 验证该模型是否支持该能力
+  // 验证该模型是否支持该能力（v1 静态映射 + v2 capability registry 双重查找）
   const allModels = getModelsByCapability(capability);
-  const targetModel = allModels.find(
-    (m) => m.providerId === providerId && m.model.modelId === modelId,
+  const switchAliases = getProviderAliases(providerId);
+  let targetModel = allModels.find(
+    (m) => switchAliases.includes(m.providerId) && m.model.modelId === modelId,
   );
+
+  // v1 未找到时尝试 v2 capability registry — 远程卡片只在 v2 中
+  if (!targetModel) {
+    try {
+      const { queryByCapability } = await import("../../dispatch/index.js");
+      const v2Key =
+        Object.entries(V2_KEY_TO_LEGACY).find(([, v]) => v === capability)?.[0] ?? capability;
+      const v2Results = queryByCapability(v2Key as any, { configuredOnly: false });
+      const v2Match = v2Results.find(
+        (c) => switchAliases.includes(c.provider) && c.modelId === modelId,
+      );
+      if (v2Match) {
+        // Synthesize a targetModel-like object so the rest of the function works
+        targetModel = {
+          providerId,
+          providerName: providerId,
+          providerIcon: "",
+          model: {
+            modelId,
+            modelName: v2Match.displayName,
+            capabilities: [capability],
+            pricing: { type: v2Match.costTier === "free" ? ("free" as const) : ("paid" as const) },
+          },
+        };
+      }
+    } catch {
+      /* v2 not available, stick with v1 result */
+    }
+  }
 
   if (!targetModel) {
     return {
@@ -315,7 +473,7 @@ export async function switchCapabilityModel(params: {
       if (!config.agents) config.agents = {};
       if (!config.agents.defaults) config.agents.defaults = {};
       const modelField = config.agents.defaults.model;
-      const newPrimary = `${providerId}/${modelId}`;
+      const newPrimary = buildModelRef(providerId, modelId);
       if (typeof modelField === "object" && modelField !== null) {
         modelField.primary = newPrimary;
       } else {
@@ -692,7 +850,7 @@ export async function detectProviderModels(params: {
     if (autoEnabled.text) {
       if (!config.agents) config.agents = {};
       if (!config.agents.defaults) config.agents.defaults = {};
-      const newPrimary = `${providerId}/${autoEnabled.text}`;
+      const newPrimary = buildModelRef(providerId, autoEnabled.text);
       const modelField = config.agents.defaults.model;
       const existingPrimary =
         typeof modelField === "object" && modelField !== null
@@ -716,6 +874,43 @@ export async function detectProviderModels(params: {
     // 一次性写入,避免两次写入导致的竞争
     try {
       await writeConfigFile(config);
+
+      // 刷新 capability registry 的 isProviderConfigured 回调
+      try {
+        const updatedConfig = await loadConfig();
+        const authStore = loadAuthProfileStore();
+        refreshProviderConfigured((p) => hasUserConfiguredProvider(p, updatedConfig, authStore));
+      } catch {
+        /* 非关键 */
+      }
+
+      // 立即刷新 models.json，使新检测到的模型对 agent 运行时可见
+      try {
+        await ensureOpenClawCNModelsJson(config);
+      } catch {
+        /* 非关键 */
+      }
+
+      // 如果有自定义模型（如火山引擎 endpoint ID），注入 capability registry
+      if (customModel) {
+        try {
+          const aliases = getProviderAliases(providerId);
+          const isDomestic = aliases.some((a) => !!CN_PROVIDERS[a]);
+          upsertUserCard({
+            provider: providerId,
+            modelId: customModel,
+            displayName: customModel,
+            capabilities: { text: 3, code: 2 },
+            modelType: "chat",
+            region: isDomestic ? "domestic" : "international",
+            costTier: "standard",
+            costPer1M: 0,
+            maxContextTokens: 32768,
+          });
+        } catch {
+          /* 非关键 */
+        }
+      }
     } catch (writeErr) {
       // 配置写入失败（可能是 Zod 校验失败）— 返回明确错误而非静默失败
       console.error("[model-config] writeConfigFile failed:", writeErr);
@@ -733,6 +928,308 @@ export async function detectProviderModels(params: {
     models,
     autoEnabled,
   };
+}
+
+/**
+ * 并发探测 Provider 下所有模型，通过 broadcast 实时报告进度。
+ *
+ * 流程：
+ *   1. 用第一个 chat 模型验证 API Key（快速失败）
+ *   2. Key 有效后并发探测所有模型（concurrency=4）
+ *   3. 每个模型完成后 broadcast progress 事件
+ *   4. 全部完成后保存配置 + broadcast complete 事件
+ */
+export async function detectProviderModelsWithProgress(
+  params: { providerId: string; apiKey: string; customModel?: string; baseUrl?: string },
+  broadcast: (event: string, payload: unknown) => void,
+): Promise<void> {
+  const { providerId, apiKey, customModel, baseUrl: userBaseUrl } = params;
+  const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
+  if (!mapping) {
+    broadcast("modelConfig.detect.complete", {
+      success: false,
+      models: [],
+      autoEnabled: {},
+      availableCount: 0,
+      failedCount: 0,
+      error: `未知的服务商: ${providerId}`,
+    });
+    return;
+  }
+
+  const allModels = [...mapping.models];
+  if (customModel && !allModels.some((m) => m.modelId === customModel)) {
+    allModels.unshift({
+      modelId: customModel,
+      modelName: customModel,
+      capabilities: ["text"] as Capability[],
+      pricing: { type: "paid" as const },
+    });
+  }
+
+  // ── 预备：自定义端点模型自动发现 ──
+  // 对于 openai-compatible 等无预定义模型的 Provider，尝试从 /models 端点获取模型列表
+  const resolvedBaseUrl = userBaseUrl?.trim() || CN_PROVIDERS[providerId]?.apiEndpoint || "";
+  if (allModels.length === 0 && resolvedBaseUrl) {
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${apiKey}` };
+      const resp = await fetch(`${resolvedBaseUrl}/models`, {
+        method: "GET",
+        headers,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (resp.ok) {
+        const body = (await resp.json()) as { data?: Array<{ id: string }> };
+        const models = body.data ?? [];
+        for (const m of models.slice(0, 20)) {
+          if (m.id && !allModels.some((e) => e.modelId === m.id)) {
+            allModels.push({
+              modelId: m.id,
+              modelName: m.id,
+              capabilities: ["text"] as Capability[],
+              pricing: { type: "paid" as const },
+            });
+          }
+        }
+      }
+    } catch {
+      // /models 不可用 — 继续用空列表或 customModel
+    }
+  }
+
+  // ── 第一阶段：快速 API Key 验证 ──
+  // 找一个 chat 模型做快速验证，确认 key 有效
+  const chatModel = allModels.find((m) => m.capabilities.includes("text")) ?? allModels[0];
+  if (chatModel) {
+    const keyCheck = await probeModel(providerId, chatModel.modelId, apiKey, userBaseUrl);
+    if (!keyCheck.ok && keyCheck.fatal) {
+      // Key 无效 — 不进入逐模型探测
+      broadcast("modelConfig.detect.complete", {
+        success: false,
+        models: [],
+        autoEnabled: {},
+        availableCount: 0,
+        failedCount: 0,
+        error: keyCheck.message,
+      });
+      return;
+    }
+  }
+
+  // ── 第二阶段：并发探测所有模型 ──
+  const total = allModels.length;
+  let completed = 0;
+  const modelResults: Array<{
+    modelId: string;
+    modelName: string;
+    status: "ok" | "failed" | "skipped";
+    message?: string;
+  }> = [];
+
+  const tasks = allModels.map((model) => async () => {
+    // 如果是第一阶段已验证过的 chat 模型，直接标记成功
+    let result: Awaited<ReturnType<typeof probeModelByType>>;
+    if (model === chatModel) {
+      result = { ok: true, status: "ok" as const };
+    } else {
+      result = await probeModelByType(providerId, model, apiKey, userBaseUrl);
+    }
+
+    completed++;
+    const entry = {
+      modelId: model.modelId,
+      modelName: model.modelName,
+      status: result.status,
+      message: result.ok ? undefined : (result as { message?: string }).message,
+    };
+    modelResults.push(entry);
+
+    broadcast("modelConfig.detect.progress", {
+      modelId: model.modelId,
+      modelName: model.modelName,
+      status: result.status,
+      message: entry.message,
+      completed,
+      total,
+    } satisfies DetectProgressEvent);
+
+    return result;
+  });
+
+  await withConcurrencyLimit(tasks, 4);
+
+  // ── 第三阶段：保存配置（只保存验证通过 + skipped 的模型） ──
+  const availableModels = allModels.filter((m) => {
+    const r = modelResults.find((r2) => r2.modelId === m.modelId);
+    return r && (r.status === "ok" || r.status === "skipped");
+  });
+
+  const autoEnabled: Partial<Record<Capability, string>> = {};
+  for (const capability of [
+    "text",
+    "image-understanding",
+    "image-generation",
+    "video",
+    "embedding",
+  ] as Capability[]) {
+    if (customModel && capability === "text") {
+      autoEnabled[capability] = customModel;
+      continue;
+    }
+    const capModels = availableModels.filter((m) => m.capabilities.includes(capability));
+    if (capModels.length > 0) {
+      const freeModel = capModels.find((m) => m.pricing.type === "free");
+      autoEnabled[capability] = (freeModel || capModels[0])!.modelId;
+    }
+  }
+
+  // 保存配置（复用现有的写入逻辑）
+  const trimmedKey = apiKey.trim();
+  const cnProvider = CN_PROVIDERS[providerId];
+  const baseUrl = userBaseUrl?.trim() || cnProvider?.apiEndpoint || "";
+
+  if (!baseUrl) {
+    broadcast("modelConfig.detect.complete", {
+      success: false,
+      models: modelResults,
+      autoEnabled: {},
+      availableCount: 0,
+      failedCount: 0,
+      error: `无法获取服务商 ${providerId} 的 API 端点，请填写 Base URL`,
+    });
+    return;
+  }
+
+  const prev = _modelConfigWriteLock;
+  let release: () => void;
+  _modelConfigWriteLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await prev;
+    const config = structuredClone(await loadConfig());
+    if (!config.models) config.models = { providers: {} };
+    if (!config.models.providers) config.models.providers = {};
+
+    const modelDefinitions: ModelDefinitionConfig[] = availableModels.map((m) => ({
+      id: m.modelId,
+      name: m.modelName,
+      contextWindow: m.contextWindow ?? 32768,
+      maxTokens: m.maxTokens ?? 4096,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      input: capabilitiesToInput(m.capabilities),
+      reasoning: false,
+    }));
+
+    config.models.providers[providerId] = {
+      ...config.models.providers[providerId],
+      baseUrl,
+      apiKey: trimmedKey,
+      models: modelDefinitions,
+    };
+
+    const configWithCapability = config as { modelCapability?: ModelCapabilityConfig };
+    if (!configWithCapability.modelCapability)
+      configWithCapability.modelCapability = { capabilities: {} };
+    for (const [capability, modelId] of Object.entries(autoEnabled)) {
+      const cap = capability as Capability;
+      if (!configWithCapability.modelCapability.capabilities[cap]) {
+        configWithCapability.modelCapability.capabilities[cap] = {
+          providerId,
+          modelId: modelId as string,
+          auto: true,
+        };
+      }
+    }
+
+    if (autoEnabled.text) {
+      if (!config.agents) config.agents = {};
+      if (!config.agents.defaults) config.agents.defaults = {};
+      const newPrimary = buildModelRef(providerId, autoEnabled.text);
+      const modelField = config.agents.defaults.model;
+      const existingPrimary =
+        typeof modelField === "object" && modelField !== null
+          ? (modelField as Record<string, unknown>).primary
+          : undefined;
+      const shouldOverwrite =
+        !existingPrimary ||
+        (typeof existingPrimary === "string" && existingPrimary.startsWith("anthropic/"));
+      if (shouldOverwrite) {
+        if (typeof modelField === "object" && modelField !== null) {
+          (modelField as Record<string, unknown>).primary = newPrimary;
+        } else {
+          config.agents.defaults.model = { primary: newPrimary };
+        }
+      }
+    }
+
+    await writeConfigFile(config);
+
+    // 刷新 capability registry 的 isProviderConfigured 回调，
+    // 让 capability_matrix API 立即反映新保存的凭据。
+    try {
+      const updatedConfig = await loadConfig();
+      const authStore = loadAuthProfileStore();
+      refreshProviderConfigured((p) => hasUserConfiguredProvider(p, updatedConfig, authStore));
+    } catch {
+      // 非关键 — registry 在下次 gateway 重启时会自行刷新
+    }
+
+    // 立即刷新 models.json，让新检测到的模型对 agent 运行时可见
+    try {
+      const refreshedConfig = await loadConfig();
+      await ensureOpenClawCNModelsJson(refreshedConfig);
+      log.info(`models.json refreshed after detecting ${providerId}`);
+    } catch (mjErr) {
+      log.warn(`models.json refresh failed (non-critical): ${mjErr}`);
+    }
+
+    // 如果有自定义模型，注入 capability registry
+    if (customModel) {
+      try {
+        const aliases = getProviderAliases(providerId);
+        const isDomestic = aliases.some((a) => !!CN_PROVIDERS[a]);
+        upsertUserCard({
+          provider: providerId,
+          modelId: customModel,
+          displayName: customModel,
+          capabilities: { text: 3, code: 2 },
+          modelType: "chat",
+          region: isDomestic ? "domestic" : "international",
+          costTier: "standard",
+          costPer1M: 0,
+          maxContextTokens: 32768,
+        });
+      } catch {
+        /* 非关键 */
+      }
+    }
+  } catch (writeErr) {
+    broadcast("modelConfig.detect.complete", {
+      success: false,
+      models: modelResults,
+      autoEnabled: {},
+      availableCount: 0,
+      failedCount: 0,
+      error: `配置保存失败: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
+    });
+    return;
+  } finally {
+    release!();
+  }
+
+  const availableCount = modelResults.filter(
+    (r) => r.status === "ok" || r.status === "skipped",
+  ).length;
+  const failedCount = modelResults.filter((r) => r.status === "failed").length;
+
+  broadcast("modelConfig.detect.complete", {
+    success: true,
+    models: modelResults,
+    autoEnabled,
+    availableCount,
+    failedCount,
+  } satisfies DetectCompleteEvent);
 }
 
 /**
@@ -770,6 +1267,9 @@ export async function listProviders() {
       capabilities: getProviderCapabilities(providerId),
       configured,
       activeModels,
+      needsBaseUrl: mapping.needsBaseUrl ?? false,
+      defaultBaseUrl: mapping.defaultBaseUrl ?? "",
+      apiKeyOptional: mapping.apiKeyOptional ?? false,
     });
   }
 
@@ -876,7 +1376,7 @@ export async function deleteProviderConfig(params: { providerId: string }) {
         configWithCapability.modelCapability.capabilities,
       )) {
         if (binding?.providerId === providerId) {
-          delete configWithCapability.modelCapability.capabilities[cap as Capability];
+          delete configWithCapability.modelCapability.capabilities[cap];
         }
       }
     }
@@ -887,6 +1387,20 @@ export async function deleteProviderConfig(params: { providerId: string }) {
     }
 
     await writeConfigFile(config);
+
+    // 立即刷新 models.json，使删除的提供商从 agent 运行时移除
+    try {
+      await ensureOpenClawCNModelsJson(config);
+    } catch {
+      /* 非关键 */
+    }
+
+    // 从 capability registry 中移除该 provider 的 user card，避免残留
+    try {
+      removeUserCardsByProvider(providerId);
+    } catch {
+      /* 非关键 */
+    }
   } finally {
     release!();
   }
@@ -909,9 +1423,10 @@ async function probeModel(
   providerId: string,
   modelId: string,
   apiKey: string,
+  baseUrlOverride?: string,
 ): Promise<{ ok: true } | { ok: false; fatal: boolean; message: string }> {
   const cnProvider = CN_PROVIDERS[providerId];
-  const baseUrl = cnProvider?.apiEndpoint;
+  const baseUrl = baseUrlOverride?.trim() || cnProvider?.apiEndpoint;
   if (!baseUrl) {
     // 无端点信息，跳过探测
     return { ok: true };
@@ -1016,6 +1531,116 @@ async function probeModel(
   }
 }
 
+/**
+ * 按模型类型选择合适的探测方式。
+ * - chat/vision → POST /chat/completions（复用 probeModel）
+ * - embedding   → POST /embeddings
+ * - image-gen   → 跳过（API 格式不统一且会产生费用）
+ */
+async function probeModelByType(
+  providerId: string,
+  model: { modelId: string; modelName: string; capabilities: Capability[]; testEndpoint?: string },
+  apiKey: string,
+  baseUrlOverride?: string,
+): Promise<
+  | { ok: true; status: "ok" | "skipped" }
+  | { ok: false; status: "failed"; fatal: boolean; message: string }
+> {
+  // image-gen 模型跳过探测（避免产生费用）
+  if (model.capabilities.includes("image-generation")) {
+    return { ok: true, status: "skipped" };
+  }
+
+  // embedding 模型 — 用 /embeddings 端点探测
+  if (model.testEndpoint === "/embeddings" || model.capabilities.includes("embedding")) {
+    const cnProvider = CN_PROVIDERS[providerId];
+    const baseUrl = baseUrlOverride?.trim() || cnProvider?.apiEndpoint;
+    if (!baseUrl) return { ok: true, status: "skipped" };
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    };
+    try {
+      const resp = await fetch(`${baseUrl}/embeddings`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: model.modelId, input: "test" }),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (resp.ok) return { ok: true, status: "ok" };
+      if (resp.status === 404)
+        return {
+          ok: false,
+          status: "failed",
+          fatal: true,
+          message: `模型 "${model.modelId}" 不存在`,
+        };
+      if (resp.status === 401 || resp.status === 403)
+        return { ok: false, status: "failed", fatal: true, message: "API Key 无效" };
+      if (resp.status === 429)
+        return { ok: false, status: "failed", fatal: false, message: "请求频率受限" };
+      return { ok: false, status: "failed", fatal: true, message: `HTTP ${resp.status}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        status: "failed",
+        fatal: true,
+        message: msg.includes("timeout") ? "超时" : msg,
+      };
+    }
+  }
+
+  // chat/vision/video 模型 — 复用 probeModel
+  const result = await probeModel(providerId, model.modelId, apiKey, baseUrlOverride);
+  if (result.ok) return { ok: true, status: "ok" };
+  return { ok: false, status: "failed", fatal: result.fatal, message: result.message };
+}
+
+/**
+ * 并发执行任务，限制最大并发数。
+ */
+async function withConcurrencyLimit<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number,
+): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let nextIdx = 0;
+  const worker = async () => {
+    while (nextIdx < tasks.length) {
+      const idx = nextIdx++;
+      results[idx] = await tasks[idx]!();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()));
+  return results;
+}
+
+/** 并发探测进度事件 */
+export interface DetectProgressEvent {
+  modelId: string;
+  modelName: string;
+  status: "ok" | "failed" | "skipped";
+  message?: string;
+  completed: number;
+  total: number;
+}
+
+/** 并发探测完成事件 */
+export interface DetectCompleteEvent {
+  success: boolean;
+  models: Array<{
+    modelId: string;
+    modelName: string;
+    status: "ok" | "failed" | "skipped";
+    message?: string;
+  }>;
+  autoEnabled: Record<string, string>;
+  availableCount: number;
+  failedCount: number;
+}
+
 export async function addCustomModel(params: {
   providerId: string;
   modelId: string;
@@ -1090,6 +1715,40 @@ export async function addCustomModel(params: {
     });
 
     await writeConfigFile(config);
+
+    // 立即刷新 models.json，使新添加的自定义模型对 agent 运行时可见
+    try {
+      await ensureOpenClawCNModelsJson(config);
+    } catch {
+      /* 非关键 */
+    }
+
+    // 将新模型注入 capability registry，使 capability_matrix.query/summary
+    // 立即可见，避免用户添加模型后在模型卡片上找不到
+    try {
+      const caps: ModelCapabilityCard["capabilities"] = {};
+      if (inputTypes.includes("text")) {
+        caps.text = 3;
+        caps.code = 2; // 几乎所有 text 模型都能处理代码
+      }
+      if (inputTypes.includes("image")) caps.vision = 2;
+      // 使用 alias 体系判断国内/国际，避免 "zhipu"/"doubao" 等别名被误判
+      const aliases = getProviderAliases(providerId);
+      const isDomestic = aliases.some((a) => !!CN_PROVIDERS[a]);
+      upsertUserCard({
+        provider: providerId,
+        modelId,
+        displayName: modelName || modelId,
+        capabilities: caps,
+        modelType: "chat",
+        region: isDomestic ? "domestic" : "international",
+        costTier: "standard",
+        costPer1M: 0,
+        maxContextTokens: 131072,
+      });
+    } catch {
+      /* 非关键 — registry 未初始化时跳过 */
+    }
   } finally {
     release!();
   }
@@ -1468,7 +2127,7 @@ function syncModelSelectionsFromPriority(config: OpenClawCNConfig, priority: str
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     const modelField = config.agents.defaults.model;
-    const newPrimary = `${textBinding.providerId}/${textBinding.modelId}`;
+    const newPrimary = buildModelRef(textBinding.providerId, textBinding.modelId);
     if (typeof modelField === "object" && modelField !== null) {
       modelField.primary = newPrimary;
     } else {
@@ -1578,7 +2237,7 @@ export const MODEL_CONFIG_HANDLERS: Record<string, import("./types.js").GatewayR
   },
   "modelConfig.capability.models": async ({ params, respond }) => {
     try {
-      const result = await getCapabilityModels(params as { capability: Capability });
+      const result = await getCapabilityModels(params as { capability: string });
       respond(true, result, undefined);
     } catch (err) {
       respond(false, undefined, { code: "INTERNAL_ERROR", message: String(err) });
@@ -1587,19 +2246,56 @@ export const MODEL_CONFIG_HANDLERS: Record<string, import("./types.js").GatewayR
   "modelConfig.capability.switchModel": async ({ params, respond }) => {
     try {
       const result = await switchCapabilityModel(
-        params as { capability: Capability; providerId: string; modelId: string },
+        params as { capability: string; providerId: string; modelId: string },
       );
       respond(true, result, undefined);
     } catch (err) {
       respond(false, undefined, { code: "INTERNAL_ERROR", message: String(err) });
     }
   },
-  "modelConfig.provider.detect": async ({ params, respond }) => {
+  "modelConfig.provider.detect": async ({ params, respond, context, client }) => {
     try {
-      const result = await detectProviderModels(
-        params as { providerId: string; apiKey: string; customModel?: string },
-      );
-      respond(true, result, undefined);
+      const { providerId, apiKey, customModel, baseUrl } = params as {
+        providerId: string;
+        apiKey: string;
+        customModel?: string;
+        baseUrl?: string;
+      };
+      const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
+      const totalModels = mapping
+        ? mapping.models.length +
+          (customModel && !mapping.models.some((m) => m.modelId === customModel) ? 1 : 0)
+        : 0;
+
+      // Determine which connIds to push progress to
+      const connIds = client?.connId ? new Set([client.connId]) : undefined;
+
+      const broadcastFn = (event: string, payload: unknown) => {
+        if (connIds) {
+          context.broadcastToConnIds(event, payload, connIds);
+        } else {
+          context.broadcast(event, payload);
+        }
+      };
+
+      // Respond immediately — progress via broadcast
+      respond(true, { started: true, total: totalModels }, undefined);
+
+      // Run concurrent detection in background (fire-and-forget)
+      void detectProviderModelsWithProgress(
+        { providerId, apiKey, customModel, baseUrl },
+        broadcastFn,
+      ).catch((err) => {
+        log.error(`detectProviderModelsWithProgress failed: ${err}`);
+        broadcastFn("modelConfig.detect.complete", {
+          success: false,
+          models: [],
+          autoEnabled: {},
+          availableCount: 0,
+          failedCount: 0,
+          error: `检测异常: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      });
     } catch (err) {
       respond(false, undefined, { code: "INTERNAL_ERROR", message: String(err) });
     }

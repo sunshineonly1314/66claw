@@ -22,6 +22,7 @@ import { dispatchRequest } from "../../dispatch/index.js";
 import type { RoutingDecision } from "../../dispatch/types.js";
 // ===== END =====
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
+import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { resolveDefaultModel } from "./directive-handling.js";
 import { resolveReplyDirectives } from "./get-reply-directives.js";
 import { handleInlineActions } from "./get-reply-inline-actions.js";
@@ -52,7 +53,40 @@ export async function getReplyFromConfig(
     let cfg = configOverride ?? loadConfig();
     const targetSessionKey =
       ctx.CommandSource === "native" ? ctx.CommandTargetSessionKey?.trim() : undefined;
-    const agentSessionKey = targetSessionKey || ctx.SessionKey;
+    let agentSessionKey = targetSessionKey || ctx.SessionKey;
+
+    // ===== OpenClawCN: resolve_agent hook — Fast Path Router =====
+    // Allows agent-team plugin to override the target agent before selection.
+    // The hook can replace the session key (which embeds the agentId),
+    // and all downstream derivations (agentDir, workspaceDir, session state)
+    // will naturally follow.
+    const hookRunner = getGlobalHookRunner();
+    if (hookRunner?.hasHooks("resolve_agent")) {
+      try {
+        const resolveResult = await hookRunner.runResolveAgent(
+          {
+            message: ctx.Body ?? ctx.CommandBody ?? "",
+            sessionKey: agentSessionKey ?? "",
+          },
+          {
+            channelId: (ctx.Surface ?? ctx.Provider ?? "").toLowerCase(),
+            accountId: ctx.AccountId,
+            peerId: ctx.From,
+          },
+        );
+        if (resolveResult?.sessionKey) {
+          agentSessionKey = resolveResult.sessionKey;
+          if (resolveResult.reason) {
+            defaultRuntime.log(`[ResolveAgent] ${resolveResult.reason}`);
+          }
+        }
+      } catch (err) {
+        // Hook failure must not block normal flow
+        defaultRuntime.log(`[ResolveAgent] hook failed: ${err}`);
+      }
+    }
+    // ===== END OpenClawCN: resolve_agent hook =====
+
     const agentId = resolveSessionAgentId({
       sessionKey: agentSessionKey,
       config: cfg,

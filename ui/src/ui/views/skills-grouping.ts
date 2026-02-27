@@ -12,9 +12,9 @@ export type TierGroupId = "core" | "ready" | "needs-config" | "incompatible";
 /**
  * Group skills by status tier:
  * - incompatible: missing.os.length > 0 (OS not supported)
- * - core: (always=true OR pinned=true) AND !disabled
- * - ready: eligible AND not core AND !disabled
- * - needs-config: everything else (not eligible, disabled, or has missing deps)
+ * - core: activeInPrompt=true (pinned or always, injected into LLM prompt)
+ * - ready: eligible AND not in core AND !disabled (can be activated)
+ * - needs-config: everything else (missing deps, disabled, etc.)
  */
 export function groupByTier(skills: SkillStatusEntry[]): SkillGroup[] {
   const core: SkillStatusEntry[] = [];
@@ -25,7 +25,7 @@ export function groupByTier(skills: SkillStatusEntry[]): SkillGroup[] {
   for (const skill of skills) {
     if (skill.missing.os.length > 0) {
       incompatible.push(skill);
-    } else if (!skill.disabled && (skill.pinned || skill.always)) {
+    } else if (skill.activeInPrompt) {
       core.push(skill);
     } else if (!skill.disabled && skill.eligible) {
       ready.push(skill);

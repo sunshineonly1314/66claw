@@ -255,11 +255,16 @@ export function resolveTtsConfig(cfg: OpenClawCNConfig): ResolvedTtsConfig {
   const raw: TtsConfig = cfg.messages?.tts ?? {};
   const providerSource = raw.provider ? "config" : "default";
   const edgeOutputFormat = raw.edge?.outputFormat?.trim();
-  const auto = normalizeTtsAutoMode(raw.auto) ?? (raw.enabled ? "always" : "off");
+  // Handle boolean auto (legacy: true → "inbound", false → "off") and string auto.
+  // Runtime JSON may contain boolean despite the type declaring string — cast to unknown for safety.
+  const rawAuto: unknown = raw.auto;
+  const auto =
+    normalizeTtsAutoMode(raw.auto) ??
+    (rawAuto === true ? "inbound" : raw.enabled ? "always" : rawAuto === false ? "off" : "off");
   return {
     auto,
     mode: raw.mode ?? "final",
-    provider: raw.provider ?? "edge",
+    provider: raw.provider ?? "local",
     providerSource,
     summaryModel: raw.summaryModel?.trim() || undefined,
     modelOverrides: resolveModelOverridePolicy(raw.modelOverrides),
@@ -434,13 +439,9 @@ export function getTtsProvider(config: ResolvedTtsConfig, prefsPath: string): Tt
     return config.provider;
   }
 
-  if (resolveTtsApiKey(config, "openai")) {
-    return "openai";
-  }
-  if (resolveTtsApiKey(config, "elevenlabs")) {
-    return "elevenlabs";
-  }
-  return "edge";
+  // Default priority: local (tier-aware) → cloud → edge.
+  // Local will gracefully fall through if no local models are available.
+  return "local";
 }
 
 export function setTtsProvider(prefsPath: string, provider: TtsProvider): void {
@@ -507,13 +508,17 @@ export function resolveTtsApiKey(
   return undefined;
 }
 
-export const TTS_PROVIDERS = ["openai", "elevenlabs", "edge"] as const;
+export const TTS_PROVIDERS = ["local", "openai", "elevenlabs", "edge"] as const;
 
 export function resolveTtsProviderOrder(primary: TtsProvider): TtsProvider[] {
   return [primary, ...TTS_PROVIDERS.filter((provider) => provider !== primary)];
 }
 
 export function isTtsProviderConfigured(config: ResolvedTtsConfig, provider: TtsProvider): boolean {
+  if (provider === "local") {
+    // local provider is always "configured" — availability is checked at runtime
+    return true;
+  }
   if (provider === "edge") {
     return config.edge.enabled;
   }
@@ -549,6 +554,34 @@ export async function textToSpeech(params: {
   for (const provider of providers) {
     const providerStart = Date.now();
     try {
+      if (provider === "local") {
+        // Local tier-aware TTS: GPU (Qwen3-TTS) → CPU (Kokoro) → skip to next provider
+        try {
+          const { unifiedSynthesize } = await import("../voice/voice-router.js");
+          const localResult = await unifiedSynthesize(params.text);
+          if (localResult.ok && localResult.audioBase64) {
+            const tempDir = mkdtempSync(path.join(tmpdir(), "tts-"));
+            const ext = localResult.format === "wav" ? ".wav" : ".mp3";
+            const audioPath = path.join(tempDir, `voice-${Date.now()}${ext}`);
+            writeFileSync(audioPath, Buffer.from(localResult.audioBase64, "base64"));
+            scheduleCleanup(tempDir);
+
+            return {
+              success: true,
+              audioPath,
+              latencyMs: localResult.latencyMs ?? Date.now() - providerStart,
+              provider: `local/${localResult.backend ?? "unknown"}`,
+              outputFormat: localResult.format ?? "wav",
+              voiceCompatible: false,
+            };
+          }
+          lastError = `local: ${localResult.error ?? "no local backend available"}`;
+        } catch (err) {
+          lastError = `local: ${(err as Error).message}`;
+        }
+        continue;
+      }
+
       if (provider === "edge") {
         if (!config.edge.enabled) {
           lastError = "edge: disabled";
@@ -714,6 +747,28 @@ export async function textToSpeechTelephony(params: {
   for (const provider of providers) {
     const providerStart = Date.now();
     try {
+      if (provider === "local") {
+        // Local tier-aware TTS for telephony: synthesize → PCM buffer
+        try {
+          const { unifiedSynthesize } = await import("../voice/voice-router.js");
+          const localResult = await unifiedSynthesize(params.text);
+          if (localResult.ok && localResult.audioBase64) {
+            return {
+              success: true,
+              audioBuffer: Buffer.from(localResult.audioBase64, "base64"),
+              latencyMs: localResult.latencyMs ?? Date.now() - providerStart,
+              provider: `local/${localResult.backend ?? "unknown"}`,
+              outputFormat: localResult.format ?? "wav",
+              sampleRate: 22050,
+            };
+          }
+          lastError = `local: ${localResult.error ?? "no local backend available"}`;
+        } catch (err) {
+          lastError = `local: ${(err as Error).message}`;
+        }
+        continue;
+      }
+
       if (provider === "edge") {
         lastError = "edge: unsupported for telephony";
         continue;

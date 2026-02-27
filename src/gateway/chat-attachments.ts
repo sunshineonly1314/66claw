@@ -14,9 +14,18 @@ export type ChatImageContent = {
   mimeType: string;
 };
 
+export type ChatFileContent = {
+  type: "file";
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
 export type ParsedMessageWithImages = {
   message: string;
   images: ChatImageContent[];
+  /** Non-image file metadata (not sent as content blocks, appended as text). */
+  files: ChatFileContent[];
 };
 
 type AttachmentLog = {
@@ -53,10 +62,11 @@ export async function parseMessageWithAttachments(
   const maxBytes = opts?.maxBytes ?? 5_000_000; // decoded bytes (5,000,000)
   const log = opts?.log;
   if (!attachments || attachments.length === 0) {
-    return { message, images: [] };
+    return { message, images: [], files: [] };
   }
 
   const images: ChatImageContent[] = [];
+  const files: ChatFileContent[] = [];
 
   for (const [idx, att] of attachments.entries()) {
     if (!att) {
@@ -87,28 +97,43 @@ export async function parseMessageWithAttachments(
 
     const providedMime = normalizeMime(mime);
     const sniffedMime = normalizeMime(await sniffMimeFromBase64(b64));
-    if (sniffedMime && !isImageMime(sniffedMime)) {
-      log?.warn(`attachment ${label}: detected non-image (${sniffedMime}), dropping`);
-      continue;
-    }
-    if (!sniffedMime && !isImageMime(providedMime)) {
-      log?.warn(`attachment ${label}: unable to detect image mime type, dropping`);
-      continue;
-    }
-    if (sniffedMime && providedMime && sniffedMime !== providedMime) {
-      log?.warn(
-        `attachment ${label}: mime mismatch (${providedMime} -> ${sniffedMime}), using sniffed`,
-      );
-    }
 
-    images.push({
-      type: "image",
-      data: b64,
-      mimeType: sniffedMime ?? providedMime ?? mime,
-    });
+    // Image path: sniffed MIME is an image
+    if ((sniffedMime && isImageMime(sniffedMime)) || (!sniffedMime && isImageMime(providedMime))) {
+      if (sniffedMime && providedMime && sniffedMime !== providedMime) {
+        log?.warn(
+          `attachment ${label}: mime mismatch (${providedMime} -> ${sniffedMime}), using sniffed`,
+        );
+      }
+      images.push({
+        type: "image",
+        data: b64,
+        mimeType: sniffedMime ?? providedMime ?? mime,
+      });
+    } else {
+      // Non-image file: record metadata for text inclusion
+      const resolvedMime = sniffedMime ?? providedMime ?? mime;
+      log?.warn(`attachment ${label}: non-image file (${resolvedMime}), including as metadata`);
+      files.push({ type: "file", fileName: label, mimeType: resolvedMime, sizeBytes });
+    }
   }
 
-  return { message, images };
+  // Append file metadata to message so the LLM knows about attached files
+  let augmentedMessage = message;
+  if (files.length > 0) {
+    const fileSummary = files
+      .map((f) => `[附件: ${f.fileName} (${f.mimeType}, ${formatBytes(f.sizeBytes)})]`)
+      .join("\n");
+    augmentedMessage = message ? `${message}\n\n${fileSummary}` : fileSummary;
+  }
+
+  return { message: augmentedMessage, images, files };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**

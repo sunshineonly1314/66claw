@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ClawdbotCN 检修助手</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f0f1a;--bg2:#161625;--bg3:#1e1e30;--border:#2a2a45;--text:#e0e0e0;--text2:#888;--accent:#4a6cf7;--accent2:#3b5de7;--green:#4ade80;--red:#f87171;--yellow:#fbbf24;--radius:8px}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:13px;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.header h1{font-size:16px;font-weight:600;color:#fff}
+.header .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:8px;vertical-align:middle}
+.header .status-dot.green{background:var(--green)}
+.header .status-dot.yellow{background:var(--yellow)}
+.header .status-dot.red{background:var(--red)}
+.header-actions{display:flex;gap:8px}
+.btn{padding:6px 14px;border:none;border-radius:var(--radius);font-size:12px;cursor:pointer;transition:all 0.2s;color:#ccc;background:rgba(255,255,255,0.08)}
+.btn:hover{background:rgba(255,255,255,0.15)}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--accent2)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-fix{background:rgba(74,222,128,0.15);color:var(--green);border:1px solid rgba(74,222,128,0.3)}
+.btn-fix:hover{background:rgba(74,222,128,0.25)}
+
+/* Main layout */
+.main{display:flex;flex:1;overflow:hidden}
+
+/* Left panel: diagnostics */
+.panel-left{width:38%;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.panel-header{padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.sys-info{padding:10px 16px;background:var(--bg3);border-bottom:1px solid var(--border);font-size:11px;color:var(--text2);line-height:1.6;flex-shrink:0}
+.sys-info span{color:var(--text);font-weight:500}
+.checks-list{flex:1;overflow-y:auto;padding:8px 0}
+.check-item{display:flex;align-items:center;padding:6px 16px;gap:8px;border-bottom:1px solid rgba(255,255,255,0.03)}
+.check-icon{font-size:14px;flex-shrink:0;width:18px;text-align:center}
+.check-name{font-weight:500;min-width:80px;flex-shrink:0}
+.check-msg{flex:1;color:var(--text2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Right panel: AI chat */
+.panel-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.provider-bar{padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.provider-bar select{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;font-size:12px}
+.provider-bar .no-provider{color:var(--yellow);font-size:12px}
+.chat-messages{flex:1;overflow-y:auto;padding:16px}
+.msg{margin-bottom:14px;line-height:1.6}
+.msg-role{font-size:11px;font-weight:600;margin-bottom:2px}
+.msg-role.assistant{color:var(--accent)}
+.msg-role.user{color:var(--green)}
+.msg-content{white-space:pre-wrap;word-break:break-word}
+.msg-content code{background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;font-size:12px}
+.msg-error{color:var(--red);font-size:12px;margin-top:4px}
+.chat-input-area{padding:12px 16px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
+.chat-input-row{display:flex;gap:8px}
+.chat-input-row textarea{flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:8px;font-size:13px;resize:none;height:60px;font-family:inherit}
+.chat-input-row textarea::placeholder{color:#555}
+.chat-input-row textarea:focus{outline:none;border-color:var(--accent)}
+
+/* Bottom panel: upload */
+.panel-bottom{border-top:1px solid var(--border);padding:10px 20px;background:var(--bg2);flex-shrink:0;display:flex;align-items:center;gap:12px;font-size:12px}
+.panel-bottom .upload-result{flex:1;color:var(--text2)}
+.panel-bottom .upload-result.success{color:var(--green)}
+.panel-bottom .upload-result.error{color:var(--red)}
+
+/* Loading spinner */
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+.loading{display:inline-block;width:14px;height:14px;border:2px solid rgba(74,108,247,0.2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px}
+
+/* Inline fix button in AI response */
+.inline-fix{display:inline-block;margin:2px 4px;padding:2px 8px;background:rgba(74,222,128,0.15);color:var(--green);border:1px solid rgba(74,222,128,0.3);border-radius:4px;cursor:pointer;font-size:11px}
+.inline-fix:hover{background:rgba(74,222,128,0.3)}
+
+/* Tabs */
+.tab-bar{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.tab-btn{padding:8px 20px;font-size:13px;font-weight:500;color:var(--text2);background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all 0.2s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none;flex:1;overflow:hidden;flex-direction:column}
+.tab-content.active{display:flex}
+
+/* Remote repair panel */
+.remote-panel{flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:24px;gap:20px}
+.remote-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px}
+.remote-section h3{font-size:14px;font-weight:600;margin-bottom:8px}
+.remote-section p{color:var(--text2);font-size:12px;line-height:1.6;margin-bottom:12px}
+.status-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.status-indicator{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.status-indicator.green{background:var(--green)}
+.status-indicator.red{background:var(--red)}
+.status-indicator.yellow{background:var(--yellow)}
+.status-indicator.gray{background:#555}
+.remote-log{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-family:monospace;font-size:11px;line-height:1.6;max-height:200px;overflow-y:auto;color:var(--text2)}
+.remote-log .log-info{color:var(--text2)}
+.remote-log .log-action{color:var(--accent)}
+.remote-log .log-result{color:var(--green)}
+.remote-log .log-error{color:var(--red)}
+.remote-timer{font-size:12px;color:var(--yellow);margin-top:8px}
+
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1>
+    ClawdbotCN 检修助手
+    <span class="status-dot red" id="status-dot" title="Gateway 未运行"></span>
+  </h1>
+  <div class="header-actions">
+    <button class="btn btn-sm" onclick="uploadLogs()">上传日志</button>
+    <button class="btn btn-sm" onclick="goBack()">返回主界面</button>
+  </div>
+</div>
+
+<!-- Tab bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('manual')">手动检修</button>
+  <button class="tab-btn" onclick="switchTab('remote')">远程修复</button>
+</div>
+
+<!-- Tab: Manual -->
+<div class="tab-content active" id="tab-manual">
+<div class="main" style="flex:1">
+  <!-- Left: Diagnostics -->
+  <div class="panel-left">
+    <div class="panel-header">
+      <span>诊断结果</span>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-primary btn-sm" id="btn-run-doctor" onclick="runDoctor()">Doctor 自检修复</button>
+        <button class="btn btn-sm" id="btn-recheck" onclick="runDiagnostics()">重新检查</button>
+      </div>
+    </div>
+    <div class="sys-info" id="sys-info">正在获取系统信息...</div>
+    <div id="doctor-output-section" style="display:none;border-bottom:1px solid var(--border)">
+      <div class="panel-header" style="font-size:12px;padding:6px 16px">
+        <span>Doctor 输出</span>
+        <button class="btn btn-sm" onclick="hideDoctorOutput()">收起</button>
+      </div>
+      <pre id="doctor-output" style="padding:10px 16px;font-size:11px;line-height:1.6;overflow-y:auto;max-height:250px;margin:0;white-space:pre-wrap;word-break:break-word;color:var(--text2);background:var(--bg)"></pre>
+    </div>
+    <div class="checks-list" id="checks-list">
+      <div style="padding:20px;text-align:center;color:#555"><span class="loading"></span> 正在运行诊断...</div>
+    </div>
+  </div>
+
+  <!-- Right: AI Chat -->
+  <div class="panel-right">
+    <div class="provider-bar">
+      <span style="font-size:12px;color:var(--text2)">AI 模型:</span>
+      <select id="provider-select"><option value="">检测中...</option></select>
+      <span id="provider-status"></span>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      <div class="msg">
+        <div class="msg-role assistant">检修助手</div>
+        <div class="msg-content">你好，我是 ClawdbotCN 检修助手。
+
+我可以帮你诊断和修复 Gateway 服务的问题。请描述你遇到的问题，或者点击左侧诊断结果中的修复按钮。
+
+点击下方的「自动诊断」按钮，我可以根据诊断结果为你分析问题。</div>
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn btn-primary" style="flex:1;padding:8px 16px;font-size:13px" id="btn-auto-diag" onclick="autoDiagnose()">🔍 AI 自动诊断</button>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" placeholder="或者在这里描述你遇到的问题..." onkeydown="handleChatKey(event)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <button class="btn btn-primary" id="btn-send" onclick="sendMessage()">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /.main -->
+</div><!-- /#tab-manual -->
+
+<!-- Tab: Remote Repair -->
+<div class="tab-content" id="tab-remote">
+<div class="remote-panel">
+
+  <!-- SSH Status -->
+  <div class="remote-section">
+    <h3>1. SSH 服务状态</h3>
+    <p>远程修复需要开启 SSH 服务，以便我们的修复工程师安全连接到你的电脑。</p>
+    <div class="status-row">
+      <span class="status-indicator gray" id="ssh-indicator"></span>
+      <span id="ssh-status-text">正在检查...</span>
+    </div>
+    <div id="ssh-user-info" style="font-size:11px;color:var(--text2);margin-bottom:8px"></div>
+    <button class="btn btn-primary" id="btn-enable-ssh" style="display:none" onclick="enableSsh()">开启 SSH 服务</button>
+    <button class="btn btn-sm" onclick="checkSsh()">重新检查</button>
+  </div>
+
+  <!-- Problem Description -->
+  <div class="remote-section">
+    <h3>2. 描述问题</h3>
+    <p>简单描述你遇到的问题，帮助修复工程师更快定位。</p>
+    <textarea id="remote-desc" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:13px;resize:none;height:80px;font-family:inherit" placeholder="例如：启动后白屏、配置丢失、无法连接模型..."></textarea>
+  </div>
+
+  <!-- Start Tunnel -->
+  <div class="remote-section">
+    <h3>3. 开始远程修复</h3>
+    <p>点击下方按钮，将自动建立安全隧道。修复工程师将通过 SSH 远程诊断和修复你的问题。</p>
+    <button class="btn-primary btn" id="btn-start-remote" style="padding:10px 28px;font-size:14px;font-weight:600" onclick="startRemoteRepair()">建立隧道，开始远程修复</button>
+    <button class="btn" id="btn-stop-remote" style="display:none;padding:10px 28px" onclick="stopRemoteRepair()">关闭隧道</button>
+  </div>
+
+  <!-- Tunnel Status -->
+  <div class="remote-section" id="tunnel-status-section" style="display:none">
+    <h3>隧道状态</h3>
+    <div class="status-row">
+      <span class="status-indicator green" id="tunnel-indicator"></span>
+      <span id="tunnel-status-text">隧道活跃</span>
+    </div>
+    <div id="tunnel-info" style="font-size:12px;color:var(--text2);line-height:1.8"></div>
+    <div class="remote-timer" id="tunnel-timer"></div>
+  </div>
+
+  <!-- Repair Log -->
+  <div class="remote-section" id="repair-log-section" style="display:none">
+    <h3>修复日志</h3>
+    <div class="remote-log" id="repair-log"></div>
+  </div>
+
+</div>
+</div><!-- /#tab-remote -->
+
+<!-- Bottom: Upload -->
+<div class="panel-bottom">
+  <span style="color:var(--text2)">遇到无法解决的问题？</span>
+  <span class="upload-result" id="upload-result"></span>
+</div>
+
+<script>
+(function() {
+    // ── Tauri IPC ──────────────────────────────────────────────
+    function getInvoke() {
+        return (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) ||
+               (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
+    }
+    function getListen() {
+        return (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) ||
+               (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.event &&
+                window.__TAURI_INTERNALS__.event.listen);
+    }
+
+    // ── State ──────────────────────────────────────────────────
+    var diagnosticResult = null;
+    var providers = [];
+    var selectedProvider = "";
+    var chatBusy = false;
+    var currentAssistantMsg = null;
+
+    // ── Init ───────────────────────────────────────────────────
+    function init() {
+        runDiagnostics();
+        discoverProviders();
+        setupTokenListener();
+    }
+
+    // Wait for Tauri IPC to be ready
+    var initTimer = setInterval(function() {
+        if (getInvoke()) {
+            clearInterval(initTimer);
+            init();
+        }
+    }, 200);
+    // Fallback: init after 2s even if IPC not ready
+    setTimeout(function() {
+        clearInterval(initTimer);
+        if (!diagnosticResult) init();
+    }, 2000);
+
+    // ── Doctor ─────────────────────────────────────────────────
+    window.runDoctor = function() {
+        var invoke = getInvoke();
+        if (!invoke) return;
+        var btn = document.getElementById('btn-run-doctor');
+        btn.disabled = true;
+        btn.textContent = 'Doctor 运行中...';
+
+        var section = document.getElementById('doctor-output-section');
+        var output = document.getElementById('doctor-output');
+        section.style.display = 'block';
+        output.textContent = '正在运行 Doctor 自检修复...\n这可能需要 10-30 秒，请稍候。';
+
+        invoke('repair_apply_fix', { fixId: 'run_doctor' }).then(function(result) {
+            btn.disabled = false;
+            btn.textContent = 'Doctor 自检修复';
+            var prefix = result.success ? '--- Doctor 完成 ---\n\n' : '--- Doctor 失败 ---\n\n';
+            output.textContent = prefix + result.message;
+            if (result.requires_restart) {
+                appendChat('system', 'Doctor 已应用修复，建议重启服务以使修改生效。可点击左侧诊断结果中的 [FIX:restart_service] 按钮。');
+            }
+            // Re-run diagnostics to reflect any changes doctor made
+            setTimeout(runDiagnostics, 1500);
+        }).catch(function(e) {
+            btn.disabled = false;
+            btn.textContent = 'Doctor 自检修复';
+            output.textContent = 'Doctor 执行失败: ' + String(e);
+        });
+    };
+
+    window.hideDoctorOutput = function() {
+        document.getElementById('doctor-output-section').style.display = 'none';
+    };
+
+    // ── Diagnostics ────────────────────────────────────────────
+    window.runDiagnostics = function() {
+        var invoke = getInvoke();
+        if (!invoke) {
+            document.getElementById("checks-list").innerHTML =
+                '<div style="padding:20px;color:var(--red)">Tauri IPC 不可用</div>';
+            return;
+        }
+        document.getElementById("btn-recheck").disabled = true;
+        document.getElementById("checks-list").innerHTML =
+            '<div style="padding:20px;text-align:center;color:#555"><span class="loading"></span> 正在运行诊断...</div>';
+
+        invoke("repair_run_diagnostics").then(function(result) {
+            diagnosticResult = result;
+            renderDiagnostics(result);
+            updateStatusDot(result);
+            showDiagGuidance(result);
+            document.getElementById("btn-recheck").disabled = false;
+        }).catch(function(e) {
+            document.getElementById("checks-list").innerHTML =
+                '<div style="padding:20px;color:var(--red)">诊断失败: ' + escapeHtml(String(e)) + '</div>';
+            document.getElementById("btn-recheck").disabled = false;
+        });
+    };
+
+    function renderDiagnostics(result) {
+        // System info
+        var si = result.system_info;
+        var sysEl = document.getElementById("sys-info");
+        sysEl.innerHTML =
+            '系统: <span>' + escapeHtml(si.os) + '</span> | ' +
+            '内存: <span>' + escapeHtml(String(si.memory_total_mb)) + ' MB</span> | ' +
+            '磁盘: <span>' + escapeHtml(String(si.disk_free_mb)) + ' MB</span> | ' +
+            'Gateway: <span>' + (si.sidecar_running ? '运行中' : '未运行') + '</span> | ' +
+            '端口: <span>' + escapeHtml(String(si.gateway_port)) + '</span>';
+
+        // Checks
+        var html = '';
+        for (var i = 0; i < result.checks.length; i++) {
+            var c = result.checks[i];
+            var icon = c.status === 'Pass' ? '✅' : (c.status === 'Warn' ? '⚠️' : '❌');
+            html += '<div class="check-item">';
+            html += '<span class="check-icon">' + icon + '</span>';
+            html += '<span class="check-name">' + escapeHtml(c.name) + '</span>';
+            html += '<span class="check-msg" title="' + escapeHtml(c.message) + '">' + escapeHtml(c.message) + '</span>';
+            if (c.fix_id) {
+                html += '<button class="btn btn-fix btn-sm" onclick="applyFix(\'' + escapeHtml(c.fix_id) + '\')">修复</button>';
+            }
+            html += '</div>';
+        }
+        document.getElementById("checks-list").innerHTML = html;
+    }
+
+    function updateStatusDot(result) {
+        var dot = document.getElementById("status-dot");
+        var hasError = result.checks.some(function(c) { return c.status === 'Fail'; });
+        var hasWarn = result.checks.some(function(c) { return c.status === 'Warn'; });
+        if (result.system_info.sidecar_running) {
+            dot.className = 'status-dot green';
+            dot.title = 'Gateway 运行中';
+        } else if (hasError) {
+            dot.className = 'status-dot red';
+            dot.title = 'Gateway 未运行，存在错误';
+        } else if (hasWarn) {
+            dot.className = 'status-dot yellow';
+            dot.title = 'Gateway 未运行，存在警告';
+        } else {
+            dot.className = 'status-dot red';
+            dot.title = 'Gateway 未运行';
+        }
+    }
+
+    // ── Provider discovery ─────────────────────────────────────
+    function discoverProviders() {
+        var invoke = getInvoke();
+        if (!invoke) return;
+        invoke("repair_discover_providers").then(function(result) {
+            providers = result;
+            renderProviderSelect(result);
+        }).catch(function() {
+            renderProviderSelect([]);
+        });
+    }
+
+    function renderProviderSelect(providerList) {
+        var sel = document.getElementById("provider-select");
+        var status = document.getElementById("provider-status");
+        sel.innerHTML = '';
+        if (providerList.length === 0) {
+            sel.innerHTML = '<option value="">无可用模型</option>';
+            status.innerHTML = '<span class="no-provider">未检测到 AI 模型 — 诊断和手动修复仍可使用</span>';
+            selectedProvider = "";
+            return;
+        }
+        for (var i = 0; i < providerList.length; i++) {
+            var p = providerList[i];
+            var opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = p.name + ' (' + p.key_preview + ')';
+            sel.appendChild(opt);
+        }
+        selectedProvider = providerList[0].id;
+        status.innerHTML = '<span style="color:var(--green);font-size:11px">就绪</span>';
+        sel.onchange = function() { selectedProvider = sel.value; };
+    }
+
+    // ── AI Chat ────────────────────────────────────────────────
+    function setupTokenListener() {
+        var listen = getListen();
+        if (!listen) {
+            // Retry after a short delay
+            setTimeout(setupTokenListener, 500);
+            return;
+        }
+        listen("repair-ai-token", function(event) {
+            var payload = event.payload;
+            if (!currentAssistantMsg) return;
+            var contentEl = currentAssistantMsg.querySelector(".msg-content");
+            if (payload.error) {
+                var errEl = document.createElement("div");
+                errEl.className = "msg-error";
+                errEl.textContent = payload.error;
+                currentAssistantMsg.appendChild(errEl);
+                chatBusy = false;
+                updateSendBtn();
+                return;
+            }
+            if (payload.done) {
+                chatBusy = false;
+                updateSendBtn();
+                // Post-process: convert [FIX:xxx] markers to buttons
+                processFixMarkers(contentEl);
+                return;
+            }
+            contentEl.textContent += payload.text;
+            scrollChatToBottom();
+        });
+    }
+
+    window.sendMessage = function() {
+        if (chatBusy) return;
+        var input = document.getElementById("chat-input");
+        var msg = input.value.trim();
+        if (!msg) return;
+        if (!selectedProvider) {
+            appendChat("system", "当前没有可用的 AI 模型。\n\n你仍然可以使用左侧的诊断和修复功能。\n如需 AI 辅助，请在应用配置中添加 AI 模型（如 DeepSeek、通义千问等），或联系管理员获取帮助。");
+            return;
+        }
+        input.value = '';
+        appendChat("user", msg);
+        startAssistantResponse();
+
+        var context = buildContext();
+        var invoke = getInvoke();
+        if (!invoke) return;
+        invoke("repair_ai_chat", {
+            message: msg,
+            context: context,
+            providerId: selectedProvider
+        }).catch(function(e) {
+            if (currentAssistantMsg) {
+                var errEl = document.createElement("div");
+                errEl.className = "msg-error";
+                errEl.textContent = "请求失败: " + String(e);
+                currentAssistantMsg.appendChild(errEl);
+            }
+            chatBusy = false;
+            updateSendBtn();
+        });
+    };
+
+    window.autoDiagnose = function() {
+        if (chatBusy) return;
+        if (!selectedProvider) {
+            appendChat("system", "当前没有可用的 AI 模型，无法进行 AI 诊断。\n你仍然可以使用左侧的诊断和修复功能。");
+            return;
+        }
+        if (!diagnosticResult) {
+            appendChat("system", "请等待诊断完成。");
+            return;
+        }
+        var msg = "请分析以下诊断结果，告诉我问题出在哪里以及如何修复。";
+        appendChat("user", msg);
+        startAssistantResponse();
+
+        var context = buildContext();
+        var invoke = getInvoke();
+        if (!invoke) return;
+        invoke("repair_ai_chat", {
+            message: msg,
+            context: context,
+            providerId: selectedProvider
+        }).catch(function(e) {
+            if (currentAssistantMsg) {
+                var errEl = document.createElement("div");
+                errEl.className = "msg-error";
+                errEl.textContent = "请求失败: " + String(e);
+                currentAssistantMsg.appendChild(errEl);
+            }
+            chatBusy = false;
+            updateSendBtn();
+        });
+    };
+
+    function startAssistantResponse() {
+        chatBusy = true;
+        updateSendBtn();
+        var msgDiv = document.createElement("div");
+        msgDiv.className = "msg";
+        var roleDiv = document.createElement("div");
+        roleDiv.className = "msg-role assistant";
+        roleDiv.textContent = "检修助手";
+        var contentDiv = document.createElement("div");
+        contentDiv.className = "msg-content";
+        contentDiv.textContent = "";
+        msgDiv.appendChild(roleDiv);
+        msgDiv.appendChild(contentDiv);
+        document.getElementById("chat-messages").appendChild(msgDiv);
+        currentAssistantMsg = msgDiv;
+        scrollChatToBottom();
+    }
+
+    function appendChat(role, text) {
+        var msgDiv = document.createElement("div");
+        msgDiv.className = "msg";
+        var roleDiv = document.createElement("div");
+        roleDiv.className = "msg-role " + (role === "user" ? "user" : "assistant");
+        roleDiv.textContent = role === "user" ? "你" : (role === "system" ? "系统" : "检修助手");
+        var contentDiv = document.createElement("div");
+        contentDiv.className = "msg-content";
+        contentDiv.textContent = text;
+        msgDiv.appendChild(roleDiv);
+        msgDiv.appendChild(contentDiv);
+        document.getElementById("chat-messages").appendChild(msgDiv);
+        scrollChatToBottom();
+    }
+
+    function scrollChatToBottom() {
+        var el = document.getElementById("chat-messages");
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function updateSendBtn() {
+        var btn = document.getElementById("btn-send");
+        btn.disabled = chatBusy;
+        btn.textContent = chatBusy ? "..." : "发送";
+    }
+
+    function buildContext() {
+        if (!diagnosticResult) return "";
+        var lines = [];
+        lines.push("=== 系统信息 ===");
+        var si = diagnosticResult.system_info;
+        lines.push("OS: " + si.os);
+        lines.push("内存: " + si.memory_total_mb + " MB");
+        lines.push("磁盘剩余: " + si.disk_free_mb + " MB");
+        lines.push("Gateway: " + (si.sidecar_running ? "运行中" : "未运行"));
+        lines.push("端口: " + si.gateway_port);
+        lines.push("");
+        lines.push("=== 诊断结果 ===");
+        for (var i = 0; i < diagnosticResult.checks.length; i++) {
+            var c = diagnosticResult.checks[i];
+            var icon = c.status === "Pass" ? "PASS" : (c.status === "Warn" ? "WARN" : "FAIL");
+            lines.push("[" + icon + "] " + c.name + ": " + c.message);
+        }
+        return lines.join("\n");
+    }
+
+    function processFixMarkers(contentEl) {
+        var text = contentEl.textContent;
+        var fixRegex = /\[FIX:([a-z_]+)\]/g;
+        if (!fixRegex.test(text)) return;
+        fixRegex.lastIndex = 0; // reset after test()
+
+        // Build DOM nodes instead of innerHTML to eliminate XSS risk
+        var frag = document.createDocumentFragment();
+        var lastIndex = 0;
+        var m;
+        while ((m = fixRegex.exec(text)) !== null) {
+            if (m.index > lastIndex) {
+                frag.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
+            }
+            var btn = document.createElement("span");
+            btn.className = "inline-fix";
+            btn.textContent = FIX_LABELS[m[1]] || m[1];
+            (function(fixId) {
+                btn.addEventListener("click", function() { applyFix(fixId); });
+            })(m[1]);
+            frag.appendChild(btn);
+            lastIndex = fixRegex.lastIndex;
+        }
+        if (lastIndex < text.length) {
+            frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+        }
+        contentEl.textContent = '';
+        contentEl.appendChild(frag);
+    }
+
+    window.handleChatKey = function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    // ── Fix actions ────────────────────────────────────────────
+    window.applyFix = function(fixId) {
+        var invoke = getInvoke();
+        if (!invoke) return;
+        var fixLabel = FIX_LABELS[fixId] || fixId;
+        appendChat("system", "正在执行：" + fixLabel + "...");
+        invoke("repair_apply_fix", { fixId: fixId }).then(function(result) {
+            var prefix = result.success ? "✅ " : "❌ ";
+            appendChat("system", prefix + result.message);
+            if (result.requires_restart) {
+                appendChat("system", "建议重启服务以使修复生效。");
+            }
+            // Re-run diagnostics after fix
+            setTimeout(runDiagnostics, 1000);
+        }).catch(function(e) {
+            appendChat("system", "❌ 修复失败: " + String(e));
+        });
+    };
+
+    // ── Upload logs ────────────────────────────────────────────
+    window.uploadLogs = function() {
+        var desc = prompt("请描述您遇到的问题（至少5个字符）：");
+        if (!desc || desc.trim().length < 5) {
+            if (desc !== null) {
+                document.getElementById("upload-result").textContent = "描述至少需要5个字符";
+                document.getElementById("upload-result").className = "upload-result error";
+            }
+            return;
+        }
+        var resultEl = document.getElementById("upload-result");
+        resultEl.textContent = "上传中...";
+        resultEl.className = "upload-result";
+        var invoke = getInvoke();
+        if (!invoke) return;
+        invoke("upload_crash_logs", { description: desc.trim() }).then(function(r) {
+            if (r.success) {
+                resultEl.textContent = r.message;
+                resultEl.className = "upload-result success";
+            } else {
+                resultEl.textContent = r.message;
+                resultEl.className = "upload-result error";
+            }
+        }).catch(function(e) {
+            resultEl.textContent = "上传失败: " + String(e);
+            resultEl.className = "upload-result error";
+        });
+    };
+
+    // ── Go back — close the repair assistant window ───────────────
+    window.goBack = function() {
+        var gwRunning = diagnosticResult && diagnosticResult.system_info && diagnosticResult.system_info.sidecar_running;
+        if (gwRunning) {
+            // Gateway is running, safe to close
+            window.close();
+        } else {
+            if (confirm("Gateway 服务尚未恢复，关闭检修窗口后可回到主界面。\n\n确定关闭吗？")) {
+                window.close();
+            }
+        }
+    };
+
+    // ── Fix ID → Chinese label ──────────────────────────────────
+    var FIX_LABELS = {
+        restart_service: "重启服务",
+        kill_stale_port: "释放端口",
+        clear_gateway_locks: "清理锁文件",
+        clear_cache: "清理缓存",
+        repair_config_syntax: "修复配置",
+        repair_permissions: "修复权限",
+        reset_auth_profiles: "重置认证",
+        regenerate_master_key: "重建密钥",
+        open_state_dir: "打开目录"
+    };
+
+    // Show guidance in chat after diagnostics complete
+    var guidanceShown = false;
+    function showDiagGuidance(result) {
+        if (guidanceShown) return; // only show once
+        var fails = result.checks.filter(function(c) { return c.status === 'Fail'; });
+        var warns = result.checks.filter(function(c) { return c.status === 'Warn'; });
+        if (fails.length === 0 && warns.length === 0) return;
+        guidanceShown = true;
+        var lines = [];
+        if (fails.length > 0) {
+            lines.push("检测到 " + fails.length + " 个问题：");
+            for (var i = 0; i < fails.length; i++) {
+                var fixHint = fails[i].fix_id ? "（可自动修复）" : "";
+                lines.push("  ❌ " + fails[i].name + fixHint);
+            }
+        }
+        if (warns.length > 0) {
+            lines.push((fails.length > 0 ? "\n另有 " : "检测到 ") + warns.length + " 个警告项。");
+        }
+        var fixable = fails.filter(function(c) { return c.fix_id; });
+        if (fixable.length > 0) {
+            lines.push("\n你可以点击左侧诊断项旁边的「修复」按钮来自动修复。");
+        }
+        if (selectedProvider) {
+            lines.push("也可以点击下方的「自动诊断」按钮，让 AI 帮你分析问题。");
+        }
+        appendChat("system", lines.join("\n"));
+    }
+
+    // ── Tab switching ──────────────────────────────────────────
+    window.switchTab = function(tabId) {
+        var tabs = document.querySelectorAll('.tab-content');
+        var btns = document.querySelectorAll('.tab-btn');
+        for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+        for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+        document.getElementById('tab-' + tabId).classList.add('active');
+        var idx = tabId === 'manual' ? 0 : 1;
+        btns[idx].classList.add('active');
+        if (tabId === 'remote') checkSsh();
+    };
+
+    // ── Remote repair ────────────────────────────────────────
+    var tunnelSession = null;
+    var tunnelPollTimer = null;
+    var REPAIR_API = 'https://www.obplugins.cn/api/v1/repair';
+
+    window.checkSsh = function() {
+        var invoke = getInvoke();
+        if (!invoke) return;
+        document.getElementById('ssh-status-text').textContent = '正在检查...';
+        document.getElementById('ssh-indicator').className = 'status-indicator gray';
+
+        invoke('repair_ssh_check').then(function(s) {
+            var ind = document.getElementById('ssh-indicator');
+            var txt = document.getElementById('ssh-status-text');
+            var btn = document.getElementById('btn-enable-ssh');
+            var info = document.getElementById('ssh-user-info');
+
+            info.textContent = 'SSH 用户: ' + s.username + '  |  端口: ' + s.port;
+
+            if (s.running) {
+                ind.className = 'status-indicator green';
+                txt.textContent = s.message;
+                btn.style.display = 'none';
+            } else if (s.installed) {
+                ind.className = 'status-indicator yellow';
+                txt.textContent = s.message;
+                btn.style.display = 'inline-block';
+                btn.textContent = '启动 SSH 服务';
+            } else {
+                ind.className = 'status-indicator red';
+                txt.textContent = s.message;
+                btn.style.display = 'inline-block';
+                btn.textContent = '安装并启动 SSH';
+            }
+        }).catch(function(e) {
+            document.getElementById('ssh-indicator').className = 'status-indicator red';
+            document.getElementById('ssh-status-text').textContent = '检查失败: ' + String(e);
+        });
+    };
+
+    window.enableSsh = function() {
+        var invoke = getInvoke();
+        if (!invoke) return;
+        var btn = document.getElementById('btn-enable-ssh');
+        btn.disabled = true;
+        btn.textContent = '正在安装...';
+
+        invoke('repair_ssh_enable').then(function() {
+            btn.disabled = false;
+            checkSsh();
+        }).catch(function(e) {
+            btn.disabled = false;
+            btn.textContent = '安装失败，重试';
+            document.getElementById('ssh-status-text').textContent = '启用失败: ' + String(e);
+        });
+    };
+
+    window.startRemoteRepair = function() {
+        var invoke = getInvoke();
+        if (!invoke) return;
+
+        var desc = (document.getElementById('remote-desc').value || '').trim() || '需要远程修复帮助';
+        var startBtn = document.getElementById('btn-start-remote');
+        startBtn.disabled = true;
+        startBtn.textContent = '正在建立隧道...';
+        addRemoteLog('info', '正在创建修复工单...');
+
+        // Step 1: Create ticket via API to get session_id + SSH public key
+        fetch(REPAIR_API + '/ticket', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                description: desc,
+                product: 'openclawcn',
+                os: navigator.platform
+            })
+        }).then(function(r) { return r.json(); }).then(function(ticket) {
+            if (!ticket.ticketId || !ticket.sshPublicKey) {
+                throw new Error(ticket.message || '创建工单失败');
+            }
+
+            tunnelSession = {
+                ticketId: ticket.ticketId,
+                publicKey: ticket.sshPublicKey
+            };
+            addRemoteLog('info', '工单已创建: ' + ticket.ticketId);
+
+            if (ticket.status === 'payment_required' && ticket.paymentUrl) {
+                // Validate URL scheme to prevent javascript: or data: injection
+                var payUrl = String(ticket.paymentUrl);
+                if (!/^https?:\/\//i.test(payUrl)) {
+                    throw new Error('付费链接格式无效（仅支持 http/https）');
+                }
+                addRemoteLog('info', '需要付费，正在打开付费页面...');
+                window.open(payUrl, '_blank');
+                startBtn.disabled = false;
+                startBtn.textContent = '已付费，继续';
+                return;
+            }
+
+            // Step 2: Start frpc tunnel
+            addRemoteLog('action', '正在建立 SSH 隧道...');
+            return invoke('repair_tunnel_start', {
+                sessionId: ticket.ticketId,
+                publicKey: ticket.sshPublicKey,
+                localSshPort: null
+            });
+        }).then(function(info) {
+            if (!info) return; // payment_required path
+
+            addRemoteLog('result', '隧道已建立! 远程端口: ' + info.remote_port);
+
+            // Step 3: Notify API that tunnel is ready
+            return fetch(REPAIR_API + '/ticket/' + tunnelSession.ticketId + '/tunnel-ready', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tunnelPort: info.remote_port })
+            }).then(function() {
+                addRemoteLog('info', '等待修复工程师连接...');
+                showTunnelStatus(info);
+                startTunnelPolling();
+            });
+        }).catch(function(e) {
+            addRemoteLog('error', '错误: ' + String(e));
+            startBtn.disabled = false;
+            startBtn.textContent = '建立隧道，开始远程修复';
+        });
+    };
+
+    window.stopRemoteRepair = function() {
+        var invoke = getInvoke();
+        if (!invoke || !tunnelSession) return;
+
+        if (tunnelPollTimer) {
+            clearInterval(tunnelPollTimer);
+            tunnelPollTimer = null;
+        }
+
+        invoke('repair_tunnel_stop', { sessionId: tunnelSession.ticketId }).then(function() {
+            addRemoteLog('info', '隧道已关闭，密钥已清理。');
+            hideTunnelStatus();
+            tunnelSession = null;
+        }).catch(function(e) {
+            addRemoteLog('error', '关闭隧道失败: ' + String(e));
+        });
+    };
+
+    function showTunnelStatus(info) {
+        document.getElementById('tunnel-status-section').style.display = 'block';
+        document.getElementById('repair-log-section').style.display = 'block';
+        document.getElementById('btn-start-remote').style.display = 'none';
+        document.getElementById('btn-stop-remote').style.display = 'inline-block';
+
+        document.getElementById('tunnel-info').innerHTML =
+            '会话 ID: <span style="color:var(--text)">' + escapeHtml(info.session_id) + '</span><br>' +
+            '本地端口: <span style="color:var(--text)">' + info.local_port + '</span><br>' +
+            '远程端口: <span style="color:var(--text)">' + info.remote_port + '</span>';
+    }
+
+    function hideTunnelStatus() {
+        document.getElementById('tunnel-status-section').style.display = 'none';
+        document.getElementById('btn-start-remote').style.display = 'inline-block';
+        document.getElementById('btn-start-remote').disabled = false;
+        document.getElementById('btn-start-remote').textContent = '建立隧道，开始远程修复';
+        document.getElementById('btn-stop-remote').style.display = 'none';
+    }
+
+    function startTunnelPolling() {
+        if (tunnelPollTimer) clearInterval(tunnelPollTimer);
+
+        tunnelPollTimer = setInterval(function() {
+            var invoke = getInvoke();
+            if (!invoke) return;
+
+            // Poll tunnel status
+            invoke('repair_tunnel_status').then(function(status) {
+                if (!status.active) {
+                    addRemoteLog('info', '隧道已断开。');
+                    clearInterval(tunnelPollTimer);
+                    tunnelPollTimer = null;
+                    hideTunnelStatus();
+                    return;
+                }
+                if (status.remaining_secs !== null && status.remaining_secs !== undefined) {
+                    var min = Math.floor(status.remaining_secs / 60);
+                    var sec = status.remaining_secs % 60;
+                    document.getElementById('tunnel-timer').textContent =
+                        '剩余时间: ' + min + ' 分 ' + sec + ' 秒';
+                }
+            });
+
+            // Poll ticket status from API
+            if (tunnelSession && tunnelSession.ticketId) {
+                fetch(REPAIR_API + '/ticket/' + tunnelSession.ticketId)
+                    .then(function(r) { return r.json(); })
+                    .then(function(t) {
+                        if (t.log && t.log.length > 0) {
+                            renderTicketLogs(t.log);
+                        }
+                        if (t.status === 'completed') {
+                            addRemoteLog('result', '修复完成: ' + (t.summary || ''));
+                            clearInterval(tunnelPollTimer);
+                            tunnelPollTimer = null;
+                            // Auto-close tunnel after completion
+                            setTimeout(function() { stopRemoteRepair(); }, 5000);
+                        } else if (t.status === 'failed') {
+                            addRemoteLog('error', '修复失败: ' + (t.summary || ''));
+                        }
+                    }).catch(function() { /* ignore poll errors */ });
+            }
+        }, 3000);
+    }
+
+    var lastLogCount = 0;
+    function renderTicketLogs(logs) {
+        if (logs.length <= lastLogCount) return;
+        for (var i = lastLogCount; i < logs.length; i++) {
+            addRemoteLog(logs[i].type || 'info', logs[i].message);
+        }
+        lastLogCount = logs.length;
+    }
+
+    function addRemoteLog(type, message) {
+        var logEl = document.getElementById('repair-log');
+        document.getElementById('repair-log-section').style.display = 'block';
+        var line = document.createElement('div');
+        line.className = 'log-' + type;
+        var now = new Date();
+        var ts = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2);
+        line.textContent = '[' + ts + '] ' + message;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // ── Cleanup tunnel on window close ─────────────────────────
+    window.addEventListener('beforeunload', function() {
+        if (tunnelSession && tunnelSession.ticketId) {
+            var invoke = getInvoke();
+            if (invoke) {
+                // Best-effort: stop tunnel and clean up SSH key
+                invoke('repair_tunnel_stop', { sessionId: tunnelSession.ticketId });
+            }
+        }
+        if (tunnelPollTimer) {
+            clearInterval(tunnelPollTimer);
+        }
+    });
+
+    // ── Utilities ──────────────────────────────────────────────
+    function escapeHtml(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+})();
+</script>
+</body>
+</html>

@@ -707,7 +707,7 @@ export const OpenClawCNSchema = z
         status: z.string().optional(),
         expiresAt: z.string().optional(),
         validatedAt: z.string().optional(),
-        tier: z.union([z.literal("basic"), z.literal("test")]).optional(),
+        tier: z.enum(["test", "basic", "professional", "enterprise"]).optional(),
         tierName: z.string().optional(),
         daysRemaining: z.number().optional(),
         keyType: z.union([z.literal("test"), z.literal("trial"), z.literal("standard")]).optional(),

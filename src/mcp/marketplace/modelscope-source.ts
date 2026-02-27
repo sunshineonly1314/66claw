@@ -22,6 +22,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { sanitizeSseUrl } from "./types.js";
 import type { McpMarketplaceItem } from "./types.js";
 
 const logger = createSubsystemLogger("modelscope-source");
@@ -658,10 +659,11 @@ function normalizeToMarketplaceItem(
       version,
       npmPackage: typeof detail.npm_package === "string" ? detail.npm_package : undefined,
       pypiPackage: typeof detail.pypi_package === "string" ? detail.pypi_package : undefined,
-      sseUrl:
+      sseUrl: sanitizeSseUrl(
         typeof detail.sse_url === "string"
           ? detail.sse_url
           : MODELSCOPE_CONFIG.sseUrlPattern.replace("{name}", serverId),
+      ),
       securityScore: typeof detail.security_score === "number" ? detail.security_score : undefined,
       requiresApiKey: detail.requires_api_key === true,
       apiKeyName: typeof detail.api_key_name === "string" ? detail.api_key_name : undefined,

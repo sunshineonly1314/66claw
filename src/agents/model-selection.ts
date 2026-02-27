@@ -30,21 +30,84 @@ export function modelKey(provider: string, model: string) {
   return `${provider}/${model}`;
 }
 
+/**
+ * Provider alias groups — each group lists all IDs that refer to the same
+ * logical provider across different subsystems (v1 mapping, v2 capability
+ * cards, setup wizard, auth-profiles, env vars).
+ *
+ * The FIRST entry in each group is the **canonical ID** returned by
+ * `normalizeProviderId()`.  All other entries are aliases that resolve to it.
+ *
+ * When checking whether a provider is configured we must check ALL aliases
+ * in the group — see `getProviderAliases()`.
+ */
+const PROVIDER_ALIAS_GROUPS: readonly string[][] = [
+  // 智谱 GLM — v2 cards use "zhipu", v1/setup wizard use "glm"
+  ["glm", "zhipu"],
+  // 通义千问 — v1/setup use "aliyun-bailian", v2 chat cards use "qwen",
+  //            v2 image-gen cards + env use "dashscope", env also has "qwen-dashscope"
+  ["aliyun-bailian", "qwen", "dashscope", "qwen-dashscope"],
+  // 豆包 (火山引擎) — v1/setup use "volcengine-ark", v2 chat cards use "doubao",
+  //                   env also has "ark"
+  ["volcengine-ark", "doubao", "ark"],
+  // Kimi Code — region-cn uses "kimi-code", everything else uses "kimi-coding"
+  ["kimi-coding", "kimi-code"],
+  // ZAI — various spellings
+  ["zai", "z.ai", "z-ai"],
+  // OpenCode
+  ["opencode", "opencode-zen"],
+];
+
+/** Lazily-built reverse index: lowercased alias → canonical ID. */
+let _aliasToCanonical: Map<string, string> | undefined;
+/** Lazily-built reverse index: canonical ID → full alias group. */
+let _canonicalToGroup: Map<string, readonly string[]> | undefined;
+
+function ensureAliasIndices(): void {
+  if (_aliasToCanonical) return;
+  _aliasToCanonical = new Map();
+  _canonicalToGroup = new Map();
+  for (const group of PROVIDER_ALIAS_GROUPS) {
+    const canonical = group[0];
+    _canonicalToGroup.set(canonical, group);
+    for (const alias of group) {
+      _aliasToCanonical.set(alias.toLowerCase(), canonical);
+    }
+  }
+}
+
 export function normalizeProviderId(provider: string): string {
   const normalized = provider.trim().toLowerCase();
-  if (normalized === "z.ai" || normalized === "z-ai") {
-    return "zai";
-  }
-  if (normalized === "opencode-zen") {
-    return "opencode";
-  }
+  ensureAliasIndices();
+  // NOTE: "qwen" alone maps to "qwen-portal" (the Qwen Portal OAuth provider),
+  // which is a different service from the DashScope/Bailian API.
+  // The alias group ["aliyun-bailian", "qwen", ...] handles this at the
+  // *credential lookup* layer (getProviderAliases), but normalizeProviderId
+  // intentionally keeps "qwen" → "qwen-portal" for the model-selection layer
+  // so that `qwen/qwen-max` resolves to the portal endpoint.
+  // For capability-registry cards that use provider="qwen", the card itself
+  // stores the correct baseUrl, so normalisation here doesn't affect routing.
   if (normalized === "qwen") {
     return "qwen-portal";
   }
-  if (normalized === "kimi-code") {
-    return "kimi-coding";
-  }
-  return normalized;
+  return _aliasToCanonical!.get(normalized) ?? normalized;
+}
+
+/**
+ * Return ALL provider IDs in the same alias group.
+ *
+ * Example: `getProviderAliases("zhipu")` → `["glm", "zhipu"]`
+ *
+ * If the provider has no alias group, returns `[provider]`.
+ *
+ * This is used by `hasUserConfiguredProvider` to check ALL possible IDs
+ * when determining if credentials exist for a provider.
+ */
+export function getProviderAliases(provider: string): readonly string[] {
+  const normalized = provider.trim().toLowerCase();
+  ensureAliasIndices();
+  const canonical = _aliasToCanonical!.get(normalized) ?? normalized;
+  return _canonicalToGroup!.get(canonical) ?? [normalized];
 }
 
 export function isCliProvider(provider: string, cfg?: OpenClawCNConfig): boolean {

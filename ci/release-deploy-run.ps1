@@ -1,13 +1,27 @@
-$env:OSS_ACCESS_KEY_ID = "LTAI5tGbuzYX98dppnUcs2tU"
-$env:OSS_ACCESS_KEY_SECRET = "1k2GQB7r3wNqsmxivnJWZ6D4PYr1da"
-$env:OSS_BUCKET = "chuhai-tecbin"
-$env:OSS_REGION = "oss-cn-hangzhou"
-Set-Location D:\cicd-workspace\openclawcn
+# Quick one-shot release deploy. Reads version from package.json.
+# Required env vars: DEPLOY_SERVER, DEPLOY_DOMAIN (see release-deploy-remote.ps1)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not $env:DEPLOY_SERVER -or -not $env:DEPLOY_DOMAIN) {
+    Write-Error "DEPLOY_SERVER and DEPLOY_DOMAIN environment variables must be set."
+    exit 1
+}
+
+$WORKSPACE = if ($env:CICD_WORKSPACE) { $env:CICD_WORKSPACE } else { 'D:\cicd-workspace\openclawcn' }
+Set-Location $WORKSPACE
+
+# Dynamic version from package.json
+$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
+$VERSION = $pkgJson.version
+
 Write-Host "=== Release Deploy Start ==="
 Write-Host "CWD: $(Get-Location)"
 Write-Host "Node: $(node --version)"
-Write-Host "OSS AK: $($env:OSS_ACCESS_KEY_ID.Substring(0,8))..."
-node --import tsx scripts/release-deploy.ts --version 2026.2.15 --oss --oss-domain dl.obplugins.cn --skip-delta 2>&1
+Write-Host "Version: $VERSION"
+Write-Host "Upload: SCP to $env:DEPLOY_SERVER ($env:DEPLOY_DOMAIN)"
+
+node --import tsx scripts/release-deploy.ts --version $VERSION --server $env:DEPLOY_SERVER --domain $env:DEPLOY_DOMAIN --skip-delta 2>&1
 $exitCode = $LASTEXITCODE
 Write-Host ""
 Write-Host "=== Release Deploy Exit: $exitCode ==="

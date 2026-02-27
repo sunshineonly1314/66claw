@@ -240,6 +240,28 @@ export function loadAuthProfileStore(): AuthProfileStore {
     } catch (err) {
       log.warn("failed to load encrypted auth store, falling back to plaintext", { err });
     }
+
+    // Encrypted decryption failed — try the plaintext backup left by migration
+    const backupPath = authPath + ".plaintext.backup";
+    const backupRaw = loadJsonFile(backupPath);
+    const backupStore = coerceAuthStore(backupRaw);
+    if (backupStore) {
+      log.warn("loaded auth store from plaintext backup");
+      const synced = syncExternalCliCredentials(backupStore);
+      if (synced) {
+        saveEncryptedAuthStore(backupStore)
+          .then(() => {
+            // Re-encryption succeeded — remove plaintext backup for security
+            try {
+              fs.unlinkSync(backupPath);
+            } catch {
+              /* best effort */
+            }
+          })
+          .catch(() => {});
+      }
+      return backupStore;
+    }
   }
 
   const raw = loadJsonFile(authPath);
@@ -290,6 +312,28 @@ function loadAuthProfileStoreForAgent(
       }
     } catch (err) {
       log.warn("failed to load encrypted auth store for agent, falling back", { err, agentDir });
+    }
+
+    // Encrypted decryption failed — try the plaintext backup left by migration
+    const backupPath = authPath + ".plaintext.backup";
+    const backupRaw = loadJsonFile(backupPath);
+    const backupStore = coerceAuthStore(backupRaw);
+    if (backupStore) {
+      log.warn("loaded auth store from plaintext backup", { agentDir });
+      const synced = syncExternalCliCredentials(backupStore);
+      if (synced) {
+        saveEncryptedAuthStore(backupStore, agentDir)
+          .then(() => {
+            // Re-encryption succeeded — remove plaintext backup for security
+            try {
+              fs.unlinkSync(backupPath);
+            } catch {
+              /* best effort */
+            }
+          })
+          .catch(() => {});
+      }
+      return backupStore;
     }
   }
 

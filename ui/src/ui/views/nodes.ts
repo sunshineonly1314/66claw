@@ -103,7 +103,7 @@ export function renderNodes(props: NodesProps) {
   `;
 }
 
-function renderDevices(props: NodesProps) {
+export function renderDevices(props: NodesProps) {
   const list = props.devicesList ?? { pending: [], paired: [] };
   const pending = Array.isArray(list.pending) ? list.pending : [];
   const paired = Array.isArray(list.paired) ? list.paired : [];
@@ -238,7 +238,7 @@ type BindingNode = {
   label: string;
 };
 
-type BindingState = {
+export type BindingState = {
   ready: boolean;
   disabled: boolean;
   configDirty: boolean;
@@ -275,7 +275,7 @@ type ExecApprovalsTargetNode = {
   label: string;
 };
 
-type ExecApprovalsState = {
+export type ExecApprovalsState = {
   ready: boolean;
   disabled: boolean;
   dirty: boolean;
@@ -316,7 +316,7 @@ function getAskOptions(): Array<{ value: ExecAsk; label: string }> {
   ];
 }
 
-function resolveBindingsState(props: NodesProps): BindingState {
+export function resolveBindingsState(props: NodesProps): BindingState {
   const config = props.configForm;
   const nodes = resolveExecNodes(props.nodes);
   const { defaultBinding, agents } = resolveAgentBindings(config);
@@ -412,7 +412,7 @@ function resolveExecApprovalsScope(
   return EXEC_APPROVALS_DEFAULT_SCOPE;
 }
 
-function resolveExecApprovalsState(props: NodesProps): ExecApprovalsState {
+export function resolveExecApprovalsState(props: NodesProps): ExecApprovalsState {
   const form = props.execApprovalsForm ?? props.execApprovalsSnapshot?.file ?? null;
   const ready = Boolean(form);
   const defaults = resolveExecApprovalsDefaults(form);
@@ -460,7 +460,7 @@ function resolveExecApprovalsState(props: NodesProps): ExecApprovalsState {
   };
 }
 
-function renderBindings(state: BindingState) {
+export function renderBindings(state: BindingState) {
   const supportsBinding = state.nodes.length > 0;
   const defaultValue = state.defaultBinding ?? "";
   return html`
@@ -541,7 +541,7 @@ function renderBindings(state: BindingState) {
   `;
 }
 
-function renderExecApprovals(state: ExecApprovalsState) {
+export function renderExecApprovals(state: ExecApprovalsState) {
   const ready = state.ready;
   const targetReady = state.target !== "node" || Boolean(state.targetNodeId);
   return html`

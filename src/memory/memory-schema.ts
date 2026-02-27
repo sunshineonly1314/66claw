@@ -99,6 +99,43 @@ export function ensureMemoryIndexSchema(params: {
   ensureColumn(params.db, "chunks", "source", "TEXT NOT NULL DEFAULT 'memory'");
   params.db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);`);
   params.db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);`);
+  // Unique index on (path, source) prevents cross-source overwrites.
+  // The original PRIMARY KEY is path alone, but different sources (memory vs sessions)
+  // can produce identical relative paths. This index ensures both are tracked independently.
+  params.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_files_path_source ON files(path, source);`);
+
+  // [CN-PATCH:memory-v2] Extraction queue — caches failed extractions for retry
+  params.db.exec(`
+    CREATE TABLE IF NOT EXISTS extraction_queue (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_msg    TEXT NOT NULL,
+      agent_reply TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      attempts    INTEGER NOT NULL DEFAULT 0,
+      last_error  TEXT,
+      status      TEXT NOT NULL DEFAULT 'pending'
+    );
+  `);
+  params.db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_eq_status ON extraction_queue(status, created_at);`,
+  );
+
+  // [CN-PATCH:memory-v2] Profile changelog — audit trail for all profile mutations
+  params.db.exec(`
+    CREATE TABLE IF NOT EXISTS profile_changelog (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      category    TEXT NOT NULL,
+      key         TEXT NOT NULL,
+      old_value   TEXT,
+      new_value   TEXT,
+      operation   TEXT NOT NULL,
+      reason      TEXT,
+      created_at  INTEGER NOT NULL
+    );
+  `);
+  params.db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_changelog_key ON profile_changelog(category, key);`,
+  );
 
   return { ftsAvailable, ...(ftsError ? { ftsError } : {}) };
 }

@@ -154,6 +154,12 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
       return { ok: true, synced: false, error };
     }
 
+    // 增量同步且无新数据时，跳过覆盖本地缓存（避免用空列表清空已有索引）
+    if (sinceVersion !== undefined && result.index.skills.length === 0) {
+      logger.debug("Incremental sync returned no new skills, keeping local cache");
+      return { ok: true, synced: false };
+    }
+
     // 获取本地已安装的技能列表
     const installed = getInstalledSkills();
 
@@ -164,19 +170,12 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     // 写入 SQLite（非阻塞，失败不影响主流程）
     const isProxyPath = sinceVersion !== undefined && proxyConfig;
     try {
-      const {
-        populateFromRemoteIndex,
-        populateFromProxyIndex,
-        setLastGlobalVersion,
-      } = await import("./marketplace/db.js");
+      const { populateFromRemoteIndex, populateFromProxyIndex, setLastGlobalVersion } =
+        await import("./marketplace/db.js");
 
       if (isProxyPath && result.index.version) {
         // 增量 proxy 路径: 使用 populateFromProxyIndex 以保留 proxyVersion/sha256/size
-        populateFromProxyIndex(
-          result.index.skills as any[],
-          installed,
-          result.index.version,
-        );
+        populateFromProxyIndex(result.index.skills as any[], installed, result.index.version);
       } else {
         populateFromRemoteIndex(result.index.skills, installed);
       }

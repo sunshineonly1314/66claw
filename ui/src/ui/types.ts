@@ -400,6 +400,10 @@ export type GatewaySessionRow = {
   model?: string;
   modelProvider?: string;
   contextTokens?: number;
+  // OpenClawCN: conversation sidebar extensions
+  derivedTitle?: string;
+  lastMessagePreview?: string;
+  pinned?: boolean;
 };
 
 export type SessionsListResult = {
@@ -435,7 +439,7 @@ export type {
 } from "./usage-types.ts";
 
 export type CronSchedule =
-  | { kind: "at"; at: string }
+  | { kind: "at"; at: string; atMs?: number }
   | { kind: "every"; everyMs: number; anchorMs?: number }
   | { kind: "cron"; expr: string; tz?: string };
 
@@ -530,7 +534,10 @@ export type SkillStatusEntry = {
   pinned: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
+  cnDeprioritized: boolean;
   eligible: boolean;
+  /** Actually injected into LLM system prompt. Single source of truth for "core" tier. */
+  activeInPrompt: boolean;
   requirements: {
     bins: string[];
     env: string[];
@@ -553,9 +560,117 @@ export type SkillStatusReport = {
   skills: SkillStatusEntry[];
 };
 
+// OpenClawCN: Remote skills index (from skills.remote.list RPC)
+export type RemoteSkillsIndex = {
+  version: number;
+  updated: string;
+  skills: Array<Record<string, unknown>>;
+};
+
+// OpenClawCN: Skills market response (from skills.market.list RPC)
+export type SkillsMarketResponse = {
+  skills: Array<Record<string, unknown>>;
+  syncing: boolean;
+  lastSyncedAt: string | null;
+  total?: number;
+};
+
 export type StatusSummary = Record<string, unknown>;
 
 export type HealthSnapshot = Record<string, unknown>;
+
+// ── Team Project Types ──────────────────────────────────────────────────
+
+export type TeamProjectStatus = "deploying" | "active" | "paused" | "archived" | "error";
+
+export type TeamProjectSummary = {
+  projectId: string;
+  name: string;
+  description: string;
+  status: TeamProjectStatus;
+  memberCount: number;
+  memberIds: string[];
+  supervisorId: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type TeamMemberInfo = {
+  id: string;
+  name: string;
+  role: string;
+  emoji?: string;
+};
+
+export type TeamProjectDetail = {
+  project: {
+    projectId: string;
+    name: string;
+    description: string;
+    status: TeamProjectStatus;
+    supervisorId: string;
+    memberIds: string[];
+    members: TeamMemberInfo[];
+    version: number;
+    visibility: { mode: string; displayName?: string };
+    coordination: {
+      hopLimit: number;
+      memberTimeoutSeconds: number;
+      supervisorFallbackEnabled: boolean;
+      fastPath?: { affinityTimeoutMinutes: number };
+    };
+    constraints?: {
+      brandRules?: {
+        userAddress?: string;
+        forbidden?: string[];
+        safetyRules?: string[];
+      };
+    };
+    memory: { mode: string };
+  };
+  state: Record<string, unknown> | null;
+};
+
+export type TeamMemberHealthState = "healthy" | "degraded" | "down";
+
+export type TeamMemberHealthEntry = {
+  agentId: string;
+  state: TeamMemberHealthState;
+  totalSuccesses: number;
+  totalFailures: number;
+  lastError: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+};
+
+export type TeamProjectHealthResult = {
+  projectId: string;
+  status: TeamProjectStatus;
+  members: TeamMemberHealthEntry[];
+};
+
+export type TeamMemberStatsEntry = {
+  agentId: string;
+  callCount: number;
+  totalDurationMs: number;
+  avgDurationMs: number;
+  lastCallAt: string | null;
+};
+
+export type TeamProjectStatsResult = {
+  projectId: string;
+  members: TeamMemberStatsEntry[];
+  totalCalls: number;
+  avgDurationMs: number;
+};
+
+export type TeamSharedMemoryEntry = {
+  key: string;
+  value: string;
+  agentId?: string;
+  updatedAt?: string;
+};
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 

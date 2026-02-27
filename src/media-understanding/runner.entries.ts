@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {
+  collectProviderApiKeysForExecution,
+  executeWithApiKeyRotation,
+} from "../agents/api-key-rotation.js";
 import type { MsgContext } from "../auto-reply/templating.js";
 import type { OpenClawCNConfig } from "../config/config.js";
 import type {
@@ -403,7 +407,10 @@ export async function runProviderEntry(params: {
       preferredProfile: entry.preferredProfile,
       agentDir: params.agentDir,
     });
-    const apiKey = requireApiKey(auth, providerId);
+    const apiKeys = collectProviderApiKeysForExecution({
+      provider: providerId,
+      primaryApiKey: requireApiKey(auth, providerId),
+    });
     const providerConfig = cfg.models?.providers?.[providerId];
     const baseUrl = entry.baseUrl ?? params.config?.baseUrl ?? providerConfig?.baseUrl;
     const mergedHeaders = {
@@ -418,18 +425,23 @@ export async function runProviderEntry(params: {
       entry,
     });
     const model = entry.model?.trim() || DEFAULT_AUDIO_MODELS[providerId] || entry.model;
-    const result = await provider.transcribeAudio({
-      buffer: media.buffer,
-      fileName: media.fileName,
-      mime: media.mime,
-      apiKey,
-      baseUrl,
-      headers,
-      model,
-      language: entry.language ?? params.config?.language ?? cfg.tools?.media?.audio?.language,
-      prompt,
-      query: providerQuery,
-      timeoutMs,
+    const result = await executeWithApiKeyRotation({
+      provider: providerId,
+      apiKeys,
+      execute: async (apiKey) =>
+        provider.transcribeAudio!({
+          buffer: media.buffer,
+          fileName: media.fileName,
+          mime: media.mime,
+          apiKey,
+          baseUrl,
+          headers,
+          model,
+          language: entry.language ?? params.config?.language ?? cfg.tools?.media?.audio?.language,
+          prompt,
+          query: providerQuery,
+          timeoutMs,
+        }),
     });
     return {
       kind: "audio.transcription",
@@ -463,18 +475,26 @@ export async function runProviderEntry(params: {
     preferredProfile: entry.preferredProfile,
     agentDir: params.agentDir,
   });
-  const apiKey = requireApiKey(auth, providerId);
+  const apiKeys = collectProviderApiKeysForExecution({
+    provider: providerId,
+    primaryApiKey: requireApiKey(auth, providerId),
+  });
   const providerConfig = cfg.models?.providers?.[providerId];
-  const result = await provider.describeVideo({
-    buffer: media.buffer,
-    fileName: media.fileName,
-    mime: media.mime,
-    apiKey,
-    baseUrl: providerConfig?.baseUrl,
-    headers: providerConfig?.headers,
-    model: entry.model,
-    prompt,
-    timeoutMs,
+  const result = await executeWithApiKeyRotation({
+    provider: providerId,
+    apiKeys,
+    execute: (apiKey) =>
+      provider.describeVideo!({
+        buffer: media.buffer,
+        fileName: media.fileName,
+        mime: media.mime,
+        apiKey,
+        baseUrl: providerConfig?.baseUrl,
+        headers: providerConfig?.headers,
+        model: entry.model,
+        prompt,
+        timeoutMs,
+      }),
   });
   return {
     kind: "video.description",

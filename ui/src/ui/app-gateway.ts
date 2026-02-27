@@ -22,8 +22,10 @@ import {
 } from "./app-settings.ts";
 import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
 import { loadAgents } from "./controllers/agents.ts";
+import { loadTeamProjects } from "./controllers/team-projects.ts";
 import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
 import { loadChatHistory } from "./controllers/chat.ts";
+import { shouldReloadHistoryForFinalEvent } from "./chat-event-reload.ts";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
 import { loadDevices } from "./controllers/devices.ts";
 import {
@@ -35,10 +37,15 @@ import {
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
+import { isVoiceTierProgressEvent } from "./controllers/voice-tier.ts";
+import { isImageGenTierProgressEvent } from "./controllers/imagegen-tier.ts";
+import { isLocalEngineProgressEvent } from "./controllers/local-engine.ts";
 
 type GatewayHost = {
   settings: UiSettings;
   password: string;
+  // [CN-MERGE:d574056761] Stable websocket instance ID for reconnection dedup
+  clientInstanceId: string;
   client: GatewayBrowserClient | null;
   connected: boolean;
   hello: GatewayHelloOk | null;
@@ -63,6 +70,8 @@ type GatewayHost = {
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
   skillsInstallProgress: Record<string, InstallProgress>;
+  globalToast: import("./app-view-state.ts").McpToast | null;
+  _globalToastTimer: number | null;
 };
 
 type SessionDefaultsSnapshot = {
@@ -144,6 +153,7 @@ export function connectGateway(host: GatewayHost) {
     password: host.password.trim() ? host.password : undefined,
     clientName: "openclawcn-control-ui",
     mode: "webchat",
+    instanceId: host.clientInstanceId,
     onHello: (hello) => {
       if (host.client !== client) {
         return;
@@ -160,12 +170,59 @@ export function connectGateway(host: GatewayHost) {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void loadAssistantIdentity(host as unknown as OpenClawCNApp);
       void loadAgents(host as unknown as OpenClawCNApp);
+      void loadTeamProjects(host as unknown as OpenClawCNApp);
       void loadNodes(host as unknown as OpenClawCNApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawCNApp, { quiet: true });
       void loadLicenseStatus(host as unknown as LicenseLoadHost);
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
       // Desktop first-run: auto-navigate to model-config if no providers configured
       void detectFirstRunSetup(host);
+      // CR-5 + S2-6: 重连时如果之前有正在执行的更新，先标记为断开，
+      // 然后查 update.status 判断更新是否其实已成功（VERSION 已变）。
+      const wasExecutingUpdate = host.updateExecuting;
+      if (wasExecutingUpdate) {
+        host.updateExecuting = false;
+        host.updateProgress = null;
+      }
+      // Smooth Update: restore update banner state after reconnect
+      void client.request("update.status", {}).then((res: Record<string, unknown> | undefined) => {
+        if (wasExecutingUpdate && (!res?.hasUpdate || res.dismissed)) {
+          // S2-6: 之前在执行更新，重连后发现更新状态已清除 → 更新实际成功了
+          host.updateResult = { ok: true, status: "ok", version: host.updateAvailable?.version };
+          return;
+        }
+        if (wasExecutingUpdate && !host.updateResult) {
+          // 仍有更新可用，说明更新未成功 → 显示连接丢失错误
+          host.updateResult = { ok: false, error: "connection lost during update" };
+        }
+        if (res?.hasUpdate && !res.dismissed && typeof res.version === "string") {
+          host.updateAvailable = {
+            version: res.version,
+            updateType: (res.updateType as "delta" | "full" | "installer") ?? "installer",
+            changelog: res.changelog as { "zh-CN"?: string; "en-US"?: string } | undefined,
+            summary: typeof res.summary === "string" ? res.summary : undefined,
+            mandatory: res.mandatory === true,
+            installerUrl: typeof res.installerUrl === "string" ? res.installerUrl : undefined,
+          };
+        }
+      }).catch(() => {
+        // 查询失败，保守处理
+        if (wasExecutingUpdate && !host.updateResult) {
+          host.updateResult = { ok: false, error: "connection lost during update" };
+        }
+      });
+      // [CN-PATCH:voice] Check ASR availability + auto-start KWS wake word listening
+      {
+        const app = host as unknown as OpenClawCNApp;
+        if (typeof app.checkVoiceCapabilities === "function") {
+          void app.checkVoiceCapabilities().then(() => {
+            // Auto-start KWS if voice is available
+            if (app.voiceAsrAvailable && typeof app.startWakeWordListening === "function") {
+              void app.startWakeWordListening();
+            }
+          });
+        }
+      }
     },
     onClose: ({ code, reason }) => {
       if (host.client !== client) {
@@ -251,15 +308,89 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       const runId = payload?.runId;
       if (runId && host.refreshSessionsAfterChat.has(runId)) {
         host.refreshSessionsAfterChat.delete(runId);
-        if (state === "final") {
-          void loadSessions(host as unknown as OpenClawCNApp, {
-            activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-          });
-        }
+      }
+      // Always refresh sessions after chat completes so sidebar titles update
+      if (state === "final" || state === "final_failover") {
+        void loadSessions(host as unknown as OpenClawCNApp, {
+          activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+        });
       }
     }
-    if (state === "final" || state === "final_failover") {
-      void loadChatHistory(host as unknown as OpenClawCNApp);
+    // [CN-MERGE:dc6afeb4f8] Skip full history reload when the final message was already
+    // appended inline by handleChatEvent (normalizeFinalAssistantMessage).
+    // [CN-FIX:swallowed-reply] When no inline message was appended (agent/tool-only runs),
+    // delay the history reload slightly to give the PI runner time to persist the
+    // assistant message to the session JSONL. Without this delay, the reload can
+    // race with server-side persistence and return stale history.
+    if ((state === "final" || state === "final_failover") &&
+        shouldReloadHistoryForFinalEvent(evt.payload as import("./controllers/chat.ts").ChatEventPayload)) {
+      setTimeout(() => {
+        void loadChatHistory(host as unknown as OpenClawCNApp);
+        // Refresh sidebar assets after tool use (image/video gen may have produced new files)
+        const app = host as unknown as OpenClawCNApp;
+        app.convSidebarAssetsSessionKey = "";
+      }, 600);
+    }
+    // [CN-PATCH:voice] Auto-play TTS audio on chat final (one-shot fallback)
+    // Skip if streaming TTS queue is active (already playing chunks progressively)
+    if ((state === "final" || state === "final_failover") && payload?.ttsAudio) {
+      const app = host as unknown as OpenClawCNApp;
+      const hasStreamQueue = (app as any)._ttsQueuePlaying || (app as any)._ttsQueue?.length > 0;
+      if (!hasStreamQueue && typeof app.playTtsAudio === "function") {
+        app.playTtsAudio(payload.ttsAudio.base64, payload.ttsAudio.format);
+      }
+    }
+    return;
+  }
+
+  // [CN-PATCH:voice] Streaming TTS chunks → enqueue for progressive playback
+  if (evt.event === "tts.chunk") {
+    const payload = evt.payload as {
+      runId?: string;
+      audio?: { base64: string; format: string; sampleRate?: number } | null;
+      isFinal?: boolean;
+    } | undefined;
+    const app = host as unknown as OpenClawCNApp;
+    if (payload?.audio && typeof app.enqueueTtsChunk === "function") {
+      app.enqueueTtsChunk(payload.audio.base64, payload.audio.format);
+    }
+    if (payload?.isFinal && typeof app.markTtsStreamComplete === "function") {
+      app.markTtsStreamComplete();
+    }
+    return;
+  }
+
+  // [CN-PATCH:voice] Streaming ASR partial results → update chatMessage in real-time
+  if (evt.event === "asr.partial") {
+    const payload = evt.payload as { sessionId?: string; partial?: string; final?: string; isFinal?: boolean } | undefined;
+    const app = host as unknown as OpenClawCNApp;
+    if (payload?.sessionId && payload.sessionId === app.voiceStreamSessionId) {
+      // Cancel ASR health watchdog — we got a response
+      if (typeof (app as any)._clearAsrHealthTimer === "function") {
+        (app as any)._clearAsrHealthTimer();
+      }
+      if (payload.isFinal && payload.final) {
+        app.voicePartialText = payload.final;
+        app.chatMessage = payload.final;
+      } else if (payload.partial && payload.partial !== "...") {
+        // Filter out "..." placeholder from API backend — it's just a recording indicator
+        app.voicePartialText = payload.partial;
+        // Show partial with trailing indicator so users know it's incomplete;
+        // the final result from OfflineRecognizer will replace this.
+        app.chatMessage = payload.partial + "...";
+      }
+    }
+    return;
+  }
+
+  // [CN-PATCH:voice] Wake word detected → enter voice interaction loop
+  if (evt.event === "voicewake.detected") {
+    const payload = evt.payload as { keyword?: string } | undefined;
+    if (payload?.keyword) {
+      const app = host as unknown as OpenClawCNApp;
+      if (typeof app.toggleVoiceMode === "function" && !app.voiceMode) {
+        void app.toggleVoiceMode();
+      }
     }
     return;
   }
@@ -311,6 +442,63 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     }
   }
 
+  // Voice tier install progress — forward as DOM CustomEvent for model-config view
+  if (isVoiceTierProgressEvent(evt)) {
+    document.dispatchEvent(
+      new CustomEvent("voice-tier-progress", { detail: evt.payload }),
+    );
+    return;
+  }
+
+  // ImageGen tier install progress — forward as DOM CustomEvent for model-config view
+  if (isImageGenTierProgressEvent(evt)) {
+    document.dispatchEvent(
+      new CustomEvent("imagegen-tier-progress", { detail: evt.payload }),
+    );
+    return;
+  }
+
+  // Local engine install progress — forward as DOM CustomEvent for model-config view
+  if (isLocalEngineProgressEvent(evt)) {
+    document.dispatchEvent(
+      new CustomEvent("local-engine-progress", { detail: evt.payload }),
+    );
+    return;
+  }
+
+  // Config auto-repair notification → show global toast
+  if (evt.event === "config.repaired") {
+    const payload = evt.payload as { method?: string; details?: string } | undefined;
+    const method = payload?.method === "rollback" ? "rollback" : "strip";
+    const detail = payload?.details ?? "";
+    const msg = method === "strip"
+      ? `config auto-repaired: removed invalid keys (${detail})`
+      : `config auto-repaired: rolled back to backup (${detail})`;
+    if (host._globalToastTimer) clearTimeout(host._globalToastTimer);
+    host.globalToast = { message: msg, type: "info", timestamp: Date.now() };
+    host._globalToastTimer = window.setTimeout(() => {
+      host.globalToast = null;
+      host._globalToastTimer = null;
+    }, 5000);
+    return;
+  }
+
+  // Model detect progress broadcast from backend → forward to model-config view
+  if (evt.event === "modelConfig.detect.progress") {
+    globalThis.dispatchEvent(new CustomEvent("openclawcn:detect-progress", { detail: evt.payload }));
+    return;
+  }
+  if (evt.event === "modelConfig.detect.complete") {
+    globalThis.dispatchEvent(new CustomEvent("openclawcn:detect-complete", { detail: evt.payload }));
+    return;
+  }
+
+  // Local engine progress broadcast from backend → forward to model-config view
+  if (evt.event === "local_engine.progress") {
+    globalThis.dispatchEvent(new CustomEvent("openclawcn:local-engine-progress", { detail: evt.payload }));
+    return;
+  }
+
   // Skill install progress broadcast from backend
   if (evt.event === "skill.install.progress") {
     const payload = evt.payload as {
@@ -338,6 +526,56 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         [key]: { stage, message: progressMsg, percent: pct },
       };
     }
+    return;
+  }
+
+  // Smooth Update: server-pushed update availability notification
+  if (evt.event === "update.available") {
+    const payload = evt.payload as {
+      version?: string;
+      updateType?: "delta" | "full" | "installer";
+      changelog?: { "zh-CN"?: string; "en-US"?: string };
+      summary?: string;
+      mandatory?: boolean;
+      installerUrl?: string;
+    } | undefined;
+    if (payload?.version) {
+      host.updateAvailable = {
+        version: payload.version,
+        updateType: payload.updateType ?? "installer",
+        changelog: payload.changelog,
+        summary: payload.summary,
+        mandatory: payload.mandatory,
+        installerUrl: payload.installerUrl,
+      };
+    }
+    return;
+  }
+
+  // Smooth Update: real-time progress broadcast during update execution
+  if (evt.event === "update.progress") {
+    const payload = evt.payload as {
+      stage?: string;
+      percent?: number;
+      message?: string;
+    } | undefined;
+    if (host.updateExecuting && payload) {
+      host.updateProgress = {
+        stage: (payload.stage ?? "checking") as
+          "checking" | "downloading" | "applying" | "verifying" | "complete" | "error",
+        percent: payload.percent ?? 0,
+        message: payload.message ?? "",
+      };
+      if (payload.stage === "complete") {
+        host.updateResult = { ok: true, status: "ok", version: host.updateAvailable?.version };
+        host.updateExecuting = false;
+      }
+      if (payload.stage === "error") {
+        host.updateResult = { ok: false, error: payload.message };
+        host.updateExecuting = false;
+      }
+    }
+    return;
   }
 }
 
@@ -427,8 +665,8 @@ async function detectFirstRunSetup(host: GatewayHost) {
       // The setup wizard is a server-rendered page at /setup that guides through
       // API key, model, workspace, and license configuration.
       const isDesktop = Boolean(
-        (window as Record<string, unknown>).__TAURI__ ||
-        (window as Record<string, unknown>).__TAURI_INTERNALS__,
+        (window as unknown as Record<string, unknown>).__TAURI__ ||
+        (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__,
       );
       if (isDesktop) {
         console.log("[FirstRun] Desktop mode: redirecting to gateway setup wizard");

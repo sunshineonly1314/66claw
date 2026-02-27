@@ -422,6 +422,99 @@ function isLegacyDirSymlinkMirror(legacyDir: string, targetDir: string): boolean
   return isLegacyTreeSymlinkMirror(legacyDir, realTargetDir);
 }
 
+/**
+ * [CN-PATCH:migration-p0] Merge data from a legacy state dir into the target,
+ * covering workspace memory, config files, and other critical data.
+ * Called when both dirs exist simultaneously.
+ */
+function mergeLegacyIntoTarget(
+  legacyDir: string,
+  targetDir: string,
+): { changes: string[]; warnings: string[] } {
+  const changes: string[] = [];
+  const warnings: string[] = [];
+
+  // 1. Merge workspace memory (profile.json, MEMORY.md) for all workspaces
+  try {
+    const entries = fs.readdirSync(legacyDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === "workspace" || entry.name.startsWith("workspace-")) {
+        const legacyWs = path.join(legacyDir, entry.name);
+        const targetWs = path.join(targetDir, entry.name);
+        ensureDir(targetWs);
+        const wsResult = mergeWorkspaceMemory(legacyWs, targetWs);
+        changes.push(...wsResult.changes.map((c) => `${entry.name}: ${c}`));
+        warnings.push(...wsResult.warnings.map((w) => `${entry.name}: ${w}`));
+      }
+    }
+  } catch (err) {
+    warnings.push(`Failed to scan legacy workspaces: ${String(err)}`);
+  }
+
+  // 2. Merge legacy config filenames
+  const cfgResult = migrateLegacyConfigFilename(legacyDir);
+  // If legacy dir had a renamed-to-canonical config, merge it into target's config
+  const legacyCanonical = path.join(legacyDir, "openclawcn.json");
+  if (fileExists(legacyCanonical)) {
+    const targetCanonical = path.join(targetDir, "openclawcn.json");
+    try {
+      const legacyCfg = JSON.parse(fs.readFileSync(legacyCanonical, "utf-8"));
+      if (fileExists(targetCanonical)) {
+        const targetCfg = JSON.parse(fs.readFileSync(targetCanonical, "utf-8"));
+        const merged = deepMergeConfigsSmart(legacyCfg, targetCfg);
+        writeFileAtomic(targetCanonical, JSON.stringify(merged, null, 2));
+        changes.push("merged legacy openclawcn.json into target");
+      } else {
+        fs.copyFileSync(legacyCanonical, targetCanonical);
+        changes.push("copied legacy openclawcn.json to target");
+      }
+    } catch (err) {
+      warnings.push(`Failed to merge legacy config: ${String(err)}`);
+    }
+  }
+  changes.push(...cfgResult.changes);
+  warnings.push(...cfgResult.warnings);
+
+  // 3. Copy credentials and master key (no-overwrite — target's credentials take priority)
+  for (const rel of [".master-key", ".device_id", ".env", "node.json"]) {
+    const src = path.join(legacyDir, rel);
+    const dst = path.join(targetDir, rel);
+    if (fileExists(src) && !fileExists(dst)) {
+      try {
+        fs.copyFileSync(src, dst);
+        changes.push(`copied ${rel} from legacy`);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  // 4. Copy credential directories (no-overwrite per file)
+  for (const dirRel of ["credentials", "identity"]) {
+    const srcDir = path.join(legacyDir, dirRel);
+    const dstDir = path.join(targetDir, dirRel);
+    if (existsDir(srcDir)) {
+      ensureDir(dstDir);
+      try {
+        const files = fs.readdirSync(srcDir);
+        for (const file of files) {
+          const srcFile = path.join(srcDir, file);
+          const dstFile = path.join(dstDir, file);
+          if (fileExists(srcFile) && !fileExists(dstFile)) {
+            fs.copyFileSync(srcFile, dstFile);
+            changes.push(`copied ${dirRel}/${file} from legacy`);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  return { changes, warnings };
+}
+
 export async function autoMigrateLegacyStateDir(params: {
   env?: NodeJS.ProcessEnv;
   homedir?: () => string;
@@ -508,9 +601,46 @@ export async function autoMigrateLegacyStateDir(params: {
     if (legacyDir && isLegacyDirSymlinkMirror(legacyDir, targetDir)) {
       return { migrated: false, skipped: false, changes, warnings };
     }
-    warnings.push(
-      `State dir migration skipped: target already exists (${targetDir}). Remove or merge manually.`,
-    );
+    // [CN-PATCH:migration-p0] Both dirs exist — merge workspace memory and config
+    // instead of giving up. This handles the common upgrade scenario where the
+    // new dir was auto-created but the old dir still has valuable user data.
+    if (legacyDir) {
+      const mergeResult = mergeLegacyIntoTarget(legacyDir, targetDir);
+      changes.push(...mergeResult.changes);
+      warnings.push(...mergeResult.warnings);
+
+      if (mergeResult.changes.length > 0) {
+        // Create symlink from legacy → target so future launches don't re-merge
+        try {
+          // Remove legacy dir contents (already merged) and replace with symlink
+          // Only safe because we just merged everything worth keeping.
+          fs.renameSync(legacyDir, legacyDir + ".pre-merge.bak");
+          try {
+            fs.symlinkSync(targetDir, legacyDir, "dir");
+            changes.push(formatStateDirMigration(legacyDir, targetDir));
+          } catch {
+            try {
+              if (process.platform === "win32") {
+                fs.symlinkSync(targetDir, legacyDir, "junction");
+                changes.push(formatStateDirMigration(legacyDir, targetDir));
+              }
+            } catch {
+              // Symlink failed — rename backup back
+              try {
+                fs.renameSync(legacyDir + ".pre-merge.bak", legacyDir);
+              } catch {
+                /* ignore */
+              }
+              warnings.push(`Merge succeeded but could not symlink legacy dir`);
+            }
+          }
+        } catch (err) {
+          warnings.push(`Could not replace legacy dir with symlink: ${String(err)}`);
+        }
+      }
+
+      return { migrated: changes.length > 0, skipped: false, changes, warnings };
+    }
     return { migrated: false, skipped: false, changes, warnings };
   }
 
@@ -969,4 +1099,322 @@ export async function autoMigrateLegacyState(params: {
     changes,
     warnings,
   };
+}
+
+// ── Workspace Memory Merge ──────────────────────────────────────────
+// [CN-PATCH:migration-p0] Smart merge for workspace memory data when
+// both legacy and target directories exist.
+
+const IMPORT_MARKER = "Imported from legacy config";
+const MERGE_PROFILE_MAX_ENTRIES = 50;
+
+interface MergeProfileEntry {
+  category: string;
+  key: string;
+  value: string;
+  updatedAt: number;
+  hits: number;
+}
+
+function isValidProfileEntry(e: unknown): e is MergeProfileEntry {
+  if (!e || typeof e !== "object") return false;
+  const obj = e as Record<string, unknown>;
+  return (
+    typeof obj.category === "string" &&
+    typeof obj.key === "string" &&
+    typeof obj.value === "string" &&
+    typeof obj.updatedAt === "number" &&
+    !Number.isNaN(obj.updatedAt)
+  );
+}
+
+function readProfileSafe(
+  filePath: string,
+): { version: number; entries: MergeProfileEntry[] } | null {
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.entries)) {
+      const entries = parsed.entries.filter(isValidProfileEntry).map((e: MergeProfileEntry) => ({
+        ...e,
+        hits: typeof e.hits === "number" ? e.hits : 0,
+      }));
+      return { version: Number(parsed.version ?? 1), entries };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeFileAtomic(filePath: string, data: string): void {
+  const tmpPath = filePath + `.tmp.${process.pid}`;
+  fs.writeFileSync(tmpPath, data, "utf-8");
+  fs.renameSync(tmpPath, filePath);
+}
+
+export function mergeWorkspaceMemory(
+  legacyWs: string,
+  targetWs: string,
+): { changes: string[]; warnings: string[] } {
+  const changes: string[] = [];
+  const warnings: string[] = [];
+
+  // ── Profile merge ─────────────────────────────────────────────────
+  const legacyProfilePath = path.join(legacyWs, "memory", "profile.json");
+  const targetProfilePath = path.join(targetWs, "memory", "profile.json");
+
+  if (fileExists(legacyProfilePath)) {
+    const legacyProfile = readProfileSafe(legacyProfilePath);
+    if (legacyProfile && legacyProfile.entries.length > 0) {
+      ensureDir(path.join(targetWs, "memory"));
+
+      if (!fileExists(targetProfilePath)) {
+        // Target has no profile — copy from legacy
+        const capped = legacyProfile.entries.slice(0, MERGE_PROFILE_MAX_ENTRIES);
+        writeFileAtomic(
+          targetProfilePath,
+          JSON.stringify({ version: legacyProfile.version, entries: capped }, null, 2),
+        );
+        changes.push(`copied ${capped.length} profile entries from legacy`);
+      } else {
+        const targetProfile = readProfileSafe(targetProfilePath);
+        if (targetProfile) {
+          // Both exist — merge by (category, key)
+          const targetMap = new Map<string, MergeProfileEntry>();
+          for (const e of targetProfile.entries) {
+            targetMap.set(`${e.category}::${e.key}`, e);
+          }
+
+          let newCount = 0;
+          let updatedCount = 0;
+          for (const legacyEntry of legacyProfile.entries) {
+            const compositeKey = `${legacyEntry.category}::${legacyEntry.key}`;
+            const existing = targetMap.get(compositeKey);
+            if (!existing) {
+              targetMap.set(compositeKey, legacyEntry);
+              newCount++;
+            } else if (legacyEntry.updatedAt > existing.updatedAt) {
+              // Legacy has newer data for same key — update
+              targetMap.set(compositeKey, {
+                ...legacyEntry,
+                hits: Math.max(legacyEntry.hits, existing.hits),
+              });
+              updatedCount++;
+            }
+            // else: target is newer or same — keep target
+          }
+
+          if (newCount > 0 || updatedCount > 0) {
+            const merged = Array.from(targetMap.values())
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+              .slice(0, MERGE_PROFILE_MAX_ENTRIES);
+            writeFileAtomic(
+              targetProfilePath,
+              JSON.stringify(
+                {
+                  version: Math.max(targetProfile.version, legacyProfile.version),
+                  entries: merged,
+                },
+                null,
+                2,
+              ),
+            );
+            if (newCount > 0) {
+              changes.push(`merged ${newCount} new profile entries from legacy`);
+            }
+            if (updatedCount > 0) {
+              changes.push(`updated profile entries from legacy (${updatedCount} newer)`);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── MEMORY.md merge ───────────────────────────────────────────────
+  const legacyMemoryMd = path.join(legacyWs, "MEMORY.md");
+  const targetMemoryMd = path.join(targetWs, "MEMORY.md");
+
+  if (fileExists(legacyMemoryMd)) {
+    const legacyContent = fs.readFileSync(legacyMemoryMd, "utf-8");
+    if (legacyContent.trim()) {
+      ensureDir(targetWs);
+
+      if (!fileExists(targetMemoryMd)) {
+        fs.copyFileSync(legacyMemoryMd, targetMemoryMd);
+        changes.push("copied MEMORY.md from legacy");
+      } else {
+        const targetContent = fs.readFileSync(targetMemoryMd, "utf-8");
+        // Skip if already imported or content is identical
+        if (targetContent.includes(IMPORT_MARKER)) {
+          // Already imported — do nothing
+        } else if (targetContent.trim() === legacyContent.trim()) {
+          // Identical content — do nothing
+        } else {
+          // Append legacy content with import marker
+          const now = new Date().toISOString().split("T")[0];
+          const separator = `\n---\n<!-- ${IMPORT_MARKER} (${now}) -->\n`;
+          writeFileAtomic(targetMemoryMd, targetContent.trimEnd() + separator + legacyContent);
+          changes.push("appended legacy content to MEMORY.md");
+        }
+      }
+    }
+  }
+
+  return { changes, warnings };
+}
+
+// ── Legacy Config Filename Migration ────────────────────────────────
+// [CN-PATCH:migration-p0] Scan for legacy config filenames in a state
+// dir and merge/rename them into the canonical openclawcn.json.
+
+const LEGACY_CONFIG_FILENAMES = [
+  "clawdbotcn.json",
+  "clawdbot.json",
+  "moldbot.json",
+  "moltbot.json",
+];
+
+/**
+ * Deep merge two config objects with smart array handling.
+ * `target` values take priority for same keys.
+ * Arrays of objects with `id` fields are merged by id.
+ */
+function deepMergeConfigsSmart(
+  source: Record<string, unknown>,
+  target: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...source };
+  for (const key of Object.keys(target)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    const srcVal = source[key];
+    const tgtVal = target[key];
+    if (
+      tgtVal !== null &&
+      typeof tgtVal === "object" &&
+      !Array.isArray(tgtVal) &&
+      srcVal !== null &&
+      typeof srcVal === "object" &&
+      !Array.isArray(srcVal)
+    ) {
+      result[key] = deepMergeConfigsSmart(
+        srcVal as Record<string, unknown>,
+        tgtVal as Record<string, unknown>,
+      );
+    } else if (Array.isArray(tgtVal) && Array.isArray(srcVal)) {
+      // Smart array merge: if items have `id` fields, merge by id
+      result[key] = mergeArraysSmart(srcVal, tgtVal);
+    } else {
+      result[key] = tgtVal;
+    }
+  }
+  return result;
+}
+
+/**
+ * Smart array merge: for arrays of objects with `id` fields, merge by id
+ * (target entries win on conflict). For other arrays, target wins entirely.
+ */
+function mergeArraysSmart(source: unknown[], target: unknown[]): unknown[] {
+  // Check if both arrays contain objects with `id` fields
+  const sourceHasIds =
+    source.length > 0 &&
+    source.every(
+      (item) => item && typeof item === "object" && "id" in (item as Record<string, unknown>),
+    );
+  const targetHasIds =
+    target.length > 0 &&
+    target.every(
+      (item) => item && typeof item === "object" && "id" in (item as Record<string, unknown>),
+    );
+
+  if (sourceHasIds || targetHasIds) {
+    // Merge by id: target entries take priority
+    const seen = new Map<string, unknown>();
+    // Source entries first (will be overridden by target)
+    for (const item of source) {
+      if (item && typeof item === "object") {
+        const id = (item as Record<string, unknown>).id;
+        if (typeof id === "string") {
+          seen.set(id, item);
+        }
+      }
+    }
+    // Target entries override
+    for (const item of target) {
+      if (item && typeof item === "object") {
+        const id = (item as Record<string, unknown>).id;
+        if (typeof id === "string") {
+          seen.set(id, item);
+        }
+      }
+    }
+    return Array.from(seen.values());
+  }
+
+  // Non-id arrays: target wins entirely (preserve existing behavior for
+  // simple string arrays like allowCommands, deny lists, etc.)
+  return target;
+}
+
+export function migrateLegacyConfigFilename(stateDir: string): {
+  changes: string[];
+  warnings: string[];
+} {
+  const changes: string[] = [];
+  const warnings: string[] = [];
+  const canonicalPath = path.join(stateDir, "openclawcn.json");
+
+  for (const legacyName of LEGACY_CONFIG_FILENAMES) {
+    const legacyPath = path.join(stateDir, legacyName);
+    if (!fileExists(legacyPath)) continue;
+
+    let legacyConfig: Record<string, unknown> | null = null;
+    try {
+      legacyConfig = JSON.parse(fs.readFileSync(legacyPath, "utf-8"));
+    } catch {
+      // Unreadable legacy file — remove it
+      try {
+        fs.unlinkSync(legacyPath);
+        changes.push(`Removed unreadable legacy config: ${legacyName}`);
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+
+    if (!legacyConfig || typeof legacyConfig !== "object") {
+      try {
+        fs.unlinkSync(legacyPath);
+        changes.push(`Removed unreadable legacy config: ${legacyName}`);
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+
+    if (!fileExists(canonicalPath)) {
+      // No canonical config — rename legacy to canonical
+      try {
+        fs.renameSync(legacyPath, canonicalPath);
+        changes.push(`Renamed ${legacyName} → openclawcn.json`);
+      } catch (err) {
+        warnings.push(`Failed to rename ${legacyName}: ${String(err)}`);
+      }
+    } else {
+      // Both exist — merge (canonical wins)
+      try {
+        const canonicalConfig = JSON.parse(fs.readFileSync(canonicalPath, "utf-8"));
+        const merged = deepMergeConfigsSmart(legacyConfig, canonicalConfig);
+        writeFileAtomic(canonicalPath, JSON.stringify(merged, null, 2));
+        fs.unlinkSync(legacyPath);
+        changes.push(`merged ${legacyName} into openclawcn.json`);
+      } catch (err) {
+        warnings.push(`Failed to merge ${legacyName}: ${String(err)}`);
+      }
+    }
+  }
+
+  return { changes, warnings };
 }

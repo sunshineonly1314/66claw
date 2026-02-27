@@ -32,9 +32,12 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
   ctx.log.debug(`embedded run agent end: runId=${ctx.params.runId} isError=${isError}`);
 
   if (isError && lastAssistant) {
+    // [CN-MERGE:3d4ef56044] Include provider+model in error context
     const friendlyError = formatAssistantErrorText(lastAssistant, {
       cfg: ctx.params.config,
       sessionKey: ctx.params.sessionKey,
+      provider: lastAssistant.provider,
+      model: lastAssistant.model,
     });
     emitAgentEvent({
       runId: ctx.params.runId,

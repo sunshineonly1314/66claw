@@ -28,6 +28,7 @@ export type ToolDisplay = {
   label: string;
   verb?: string;
   detail?: string;
+  rawDetail?: string;
 };
 
 const TOOL_DISPLAY_CONFIG = rawConfig as ToolDisplayConfig;

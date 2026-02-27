@@ -87,6 +87,19 @@ const KIMI_CODE_DEFAULT_COST = {
   cacheWrite: 0,
 };
 
+// ── Coding Plan Providers ──
+const ALIYUN_CODEPLAN_BASE_URL = "https://coding.dashscope.aliyuncs.com/v1";
+const ALIYUN_CODEPLAN_DEFAULT_MODEL_ID = "qwen3-coder-plus";
+const ALIYUN_CODEPLAN_DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+const GLM_CODEPLAN_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4";
+const GLM_CODEPLAN_DEFAULT_MODEL_ID = "glm-4.7";
+const GLM_CODEPLAN_DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+const MINIMAX_CODEPLAN_BASE_URL = "https://api.minimaxi.com/anthropic";
+const MINIMAX_CODEPLAN_DEFAULT_MODEL_ID = "MiniMax-M2.5";
+const MINIMAX_CODEPLAN_DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
 const ANT_LING_BASE_URL = "https://api.tbox.cn/api/llm/v1";
 const ANT_LING_DEFAULT_MODEL_ID = "ling-1t";
 const ANT_LING_DEFAULT_COST = {
@@ -715,7 +728,7 @@ function buildKimiCodeProvider(): ProviderConfig {
         id: KIMI_CODE_MODEL_ID,
         name: "Kimi For Coding",
         reasoning: true,
-        input: ["text"],
+        input: ["text", "image"],
         cost: KIMI_CODE_DEFAULT_COST,
         contextWindow: KIMI_CODE_CONTEXT_WINDOW,
         maxTokens: KIMI_CODE_MAX_TOKENS,
@@ -733,6 +746,116 @@ function buildKimiCodeProvider(): ProviderConfig {
         maxTokens: KIMI_CODE_MAX_TOKENS,
         headers: KIMI_CODE_HEADERS,
         compat: KIMI_CODE_COMPAT,
+      },
+    ],
+  };
+}
+
+// ── Coding Plan Provider Builders ──
+
+function buildAliyunCodeplanProvider(): ProviderConfig {
+  return {
+    baseUrl: ALIYUN_CODEPLAN_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: "qwen3.5-plus",
+        name: "Qwen3.5 Plus",
+        reasoning: true,
+        input: ["text", "image"],
+        cost: ALIYUN_CODEPLAN_DEFAULT_COST,
+        contextWindow: 131072,
+        maxTokens: 8192,
+      },
+      {
+        id: "kimi-k2.5",
+        name: "Kimi K2.5",
+        reasoning: false,
+        input: ["text", "image"],
+        cost: ALIYUN_CODEPLAN_DEFAULT_COST,
+        contextWindow: 131072,
+        maxTokens: 8192,
+      },
+      {
+        id: "glm-5",
+        name: "GLM-5",
+        reasoning: true,
+        input: ["text"],
+        cost: ALIYUN_CODEPLAN_DEFAULT_COST,
+        contextWindow: 128000,
+        maxTokens: 8192,
+      },
+      {
+        id: "MiniMax-M2.5",
+        name: "MiniMax M2.5",
+        reasoning: true,
+        input: ["text"],
+        cost: ALIYUN_CODEPLAN_DEFAULT_COST,
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+      {
+        id: "qwen3-coder-plus",
+        name: "Qwen3 Coder Plus",
+        reasoning: true,
+        input: ["text"],
+        cost: ALIYUN_CODEPLAN_DEFAULT_COST,
+        contextWindow: 131072,
+        maxTokens: 32768,
+      },
+      {
+        id: "qwen3-coder-next",
+        name: "Qwen3 Coder Next",
+        reasoning: true,
+        input: ["text"],
+        cost: ALIYUN_CODEPLAN_DEFAULT_COST,
+        contextWindow: 131072,
+        maxTokens: 32768,
+      },
+    ],
+  };
+}
+
+function buildGlmCodeplanProvider(): ProviderConfig {
+  return {
+    baseUrl: GLM_CODEPLAN_BASE_URL,
+    api: "openai-completions",
+    models: [
+      {
+        id: "glm-5",
+        name: "GLM-5",
+        reasoning: true,
+        input: ["text"],
+        cost: GLM_CODEPLAN_DEFAULT_COST,
+        contextWindow: 204800,
+        maxTokens: 131072,
+      },
+      {
+        id: "glm-4.7",
+        name: "GLM-4.7",
+        reasoning: true,
+        input: ["text"],
+        cost: GLM_CODEPLAN_DEFAULT_COST,
+        contextWindow: 204800,
+        maxTokens: 131072,
+      },
+    ],
+  };
+}
+
+function buildMinimaxCodeplanProvider(): ProviderConfig {
+  return {
+    baseUrl: MINIMAX_CODEPLAN_BASE_URL,
+    api: "anthropic-messages",
+    models: [
+      {
+        id: "MiniMax-M2.5",
+        name: "MiniMax M2.5",
+        reasoning: true,
+        input: ["text"],
+        cost: MINIMAX_CODEPLAN_DEFAULT_COST,
+        contextWindow: 200000,
+        maxTokens: 8192,
       },
     ],
   };
@@ -1391,11 +1514,15 @@ function buildTencentHunyuanProvider(): ProviderConfig {
 export async function resolveImplicitProviders(params: {
   agentDir: string;
   explicitProviders?: Record<string, ProviderConfig> | null;
+  /** Pass an already-loaded auth store to skip disk I/O (avoids race with async encrypted writes). */
+  authStore?: import("./auth-profiles/types.js").AuthProfileStore;
 }): Promise<ModelsConfig["providers"]> {
   const providers: Record<string, ProviderConfig> = {};
-  const authStore = ensureAuthProfileStore(params.agentDir, {
-    allowKeychainPrompt: false,
-  });
+  const authStore =
+    params.authStore ??
+    ensureAuthProfileStore(params.agentDir, {
+      allowKeychainPrompt: false,
+    });
 
   const minimaxKey =
     resolveEnvApiKeyVarName("minimax") ??
@@ -1424,6 +1551,31 @@ export async function resolveImplicitProviders(params: {
     resolveApiKeyFromProfiles({ provider: "kimi-code", store: authStore });
   if (kimiCodeKey) {
     providers["kimi-code"] = { ...buildKimiCodeProvider(), apiKey: kimiCodeKey };
+  }
+
+  // ── Coding Plan Providers (independent API keys) ──
+  const aliyunCodeplanKey =
+    resolveEnvApiKeyVarName("aliyun-codeplan") ??
+    resolveApiKeyFromProfiles({ provider: "aliyun-codeplan", store: authStore });
+  if (aliyunCodeplanKey) {
+    providers["aliyun-codeplan"] = { ...buildAliyunCodeplanProvider(), apiKey: aliyunCodeplanKey };
+  }
+
+  const glmCodeplanKey =
+    resolveEnvApiKeyVarName("glm-codeplan") ??
+    resolveApiKeyFromProfiles({ provider: "glm-codeplan", store: authStore });
+  if (glmCodeplanKey) {
+    providers["glm-codeplan"] = { ...buildGlmCodeplanProvider(), apiKey: glmCodeplanKey };
+  }
+
+  const minimaxCodeplanKey =
+    resolveEnvApiKeyVarName("minimax-codeplan") ??
+    resolveApiKeyFromProfiles({ provider: "minimax-codeplan", store: authStore });
+  if (minimaxCodeplanKey) {
+    providers["minimax-codeplan"] = {
+      ...buildMinimaxCodeplanProvider(),
+      apiKey: minimaxCodeplanKey,
+    };
   }
 
   const syntheticKey =

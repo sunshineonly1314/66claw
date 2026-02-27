@@ -298,6 +298,7 @@ export type PluginDiagnostic = {
 // ============================================================================
 
 export type PluginHookName =
+  | "resolve_agent"
   | "before_agent_start"
   | "agent_end"
   | "before_compaction"
@@ -309,6 +310,7 @@ export type PluginHookName =
   | "before_tool_call"
   | "after_tool_call"
   | "tool_result_persist"
+  | "before_message_write"
   | "session_start"
   | "session_end"
   | "gateway_start"
@@ -321,6 +323,29 @@ export type PluginHookAgentContext = {
   sessionId?: string;
   workspaceDir?: string;
   messageProvider?: string;
+};
+
+// resolve_agent hook — runs before agent selection in getReplyFromConfig.
+// Allows plugins to override the session key (and thus the target agent)
+// based on message content + channel metadata. Used by agent-team Fast Path Router.
+export type PluginHookResolveAgentEvent = {
+  /** Raw user message text */
+  message: string;
+  /** Current session key (embeds the default agentId) */
+  sessionKey: string;
+};
+
+export type PluginHookResolveAgentContext = {
+  channelId?: string;
+  accountId?: string;
+  peerId?: string;
+};
+
+export type PluginHookResolveAgentResult = {
+  /** Overridden session key (must embed the target agentId) */
+  sessionKey?: string;
+  /** Optional: reason for routing decision (for logging) */
+  reason?: string;
 };
 
 // before_agent_start hook
@@ -460,6 +485,18 @@ export type PluginHookToolResultPersistResult = {
   message?: AgentMessage;
 };
 
+// before_message_write hook
+export type PluginHookBeforeMessageWriteEvent = {
+  message: AgentMessage;
+  sessionKey?: string;
+  agentId?: string;
+};
+
+export type PluginHookBeforeMessageWriteResult = {
+  block?: boolean;
+  message?: AgentMessage;
+};
+
 // Session context
 export type PluginHookSessionContext = {
   agentId?: string;
@@ -537,6 +574,10 @@ export type PluginHookHandlerMap = {
     event: PluginHookToolResultPersistEvent,
     ctx: PluginHookToolResultPersistContext,
   ) => PluginHookToolResultPersistResult | void;
+  before_message_write: (
+    event: PluginHookBeforeMessageWriteEvent,
+    ctx: { agentId?: string; sessionKey?: string },
+  ) => PluginHookBeforeMessageWriteResult | void;
   session_start: (
     event: PluginHookSessionStartEvent,
     ctx: PluginHookSessionContext,

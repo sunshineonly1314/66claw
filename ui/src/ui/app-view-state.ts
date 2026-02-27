@@ -22,6 +22,11 @@ import type {
   SessionsListResult,
   SkillStatusReport,
   StatusSummary,
+  TeamProjectSummary,
+  TeamProjectDetail,
+  TeamProjectHealthResult,
+  TeamProjectStatsResult,
+  TeamSharedMemoryEntry,
 } from "./types";
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types";
 import type { EventLogEntry } from "./app-events";
@@ -82,6 +87,8 @@ export type AppViewState = {
   } | null;
   // OpenClawCN: 聊天模型是否已配置
   chatModelConfigured: boolean | null;
+  // OpenClawCN: 必要 provider（硅基流动）是否已配置
+  essentialProviderConfigured: boolean | null;
   // API Response Monitor state
   apiMonitorElapsedMs: number;
   apiMonitorDismissed: boolean;
@@ -198,6 +205,29 @@ export type AppViewState = {
   agentSkillsError: string | null;
   agentSkillsReport: SkillStatusReport | null;
   agentSkillsAgentId: string | null;
+  // dmScope auto-detection status (session isolation)
+  dmScopeStatus: {
+    recommended: string;
+    current: string;
+    isExplicit: boolean;
+    shouldUpgrade: boolean;
+    reason: string;
+    configuredChannelCount: number;
+    totalAccounts: number;
+    multiUserChannels: string[];
+  } | null;
+  // Team Projects
+  teamProjectsLoading: boolean;
+  teamProjectsList: TeamProjectSummary[] | null;
+  teamProjectsError: string | null;
+  teamProjectSelectedId: string | null;
+  teamProjectDetail: TeamProjectDetail | null;
+  teamProjectDetailLoading: boolean;
+  teamProjectHealth: TeamProjectHealthResult | null;
+  teamProjectStats: TeamProjectStatsResult | null;
+  teamProjectMemory: TeamSharedMemoryEntry[] | null;
+  teamProjectTab: "members" | "stats" | "settings" | "memory";
+  teamProjectBusy: boolean;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
   sessionsError: string | null;
@@ -470,6 +500,86 @@ export type AppViewState = {
   logsLastFetchAt: number | null;
   logsLimit: number;
   logsMaxBytes: number;
+
+  // ── OpenClawCN: Voice / ASR / TTS ──────────────────────────────────
+  voiceAsrAvailable: boolean | null;
+  voiceStreamingAsrAvailable: boolean;
+  voiceError: string | null;
+  voiceMascotDismissed: boolean;
+  voiceMode: boolean;
+  voiceRecordingState: "idle" | "recording" | "processing";
+  /** Real-time volume level (0..1) from AnalyserNode during recording. */
+  voiceVolumeLevel: number;
+  /** Active streaming ASR session ID, null when not streaming. */
+  voiceStreamSessionId: string | null;
+  /** Partial transcription text from streaming ASR (updated via asr.partial events). */
+  voicePartialText: string;
+  handleVoiceMascotDismiss: () => void;
+  handleVoiceStartRecording: () => Promise<void>;
+  handleVoiceStopRecording: (opts?: { autoSend?: boolean }) => void | Promise<void>;
+  toggleVoiceMode: () => Promise<void>;
+
+  // ── OpenClawCN: Screen Share ──────────────────────────────────────
+  screenShareActive: boolean;
+  screenShareFrameCount: number;
+  screenShareModelName: string | null;
+  screenShareLatestFrame: string | null;
+  toggleScreenShare: () => Promise<void>;
+
+  // ── OpenClawCN: Update system ──────────────────────────────────────
+  updateAvailable: import("./views/update-dialog").UpdateAvailableInfo | null;
+  updateDialogOpen: boolean;
+  updateExecuting: boolean;
+  updateProgress: import("./views/update-dialog").UpdateProgress | null;
+  updateResult: import("./views/update-dialog").UpdateResult | null;
+
+  // ── OpenClawCN: Orchestrator (智能组队) ─────────────────────────────
+  orchestratorOpen: boolean;
+  orchestratorState: unknown;
+
+  // ── OpenClawCN: Networking Center (组网中心) ───────────────────────
+  networkTab: NetworkTab;
+  networkStatusLoading: boolean;
+  networkStatus: NetworkCenterStatus | null;
+  networkStatusError: string | null;
+  networkDiscoveryLoading: boolean;
+  networkDiscoveredGateways: NetworkDiscoveredGateway[];
+  networkDiscoveryError: string | null;
+  networkProbeLoading: boolean;
+  networkProbeResult: NetworkProbeResult | null;
+  networkInterfacesLoading: boolean;
+  networkInterfaces: NetworkInterfaceInfo[];
+  networkConfigureLoading: boolean;
+  networkConfigureError: string | null;
+
+  // ── OpenClawCN: Conversation sidebar ───────────────────────────────
+  convSidebarOpen: boolean;
+  convSidebarAssets: import("./views/conversation-sidebar").DigitalAsset[];
+  convSidebarAssetsLoading: boolean;
+  convSidebarAssetsSessionKey: string;
+
+  // ── OpenClawCN: Image gallery ──────────────────────────────────────
+  imageGalleryOpen: boolean;
+  imageGalleryImages: Array<{ url: string; prompt?: string; model?: string; timestamp?: number }>;
+
+  // ── OpenClawCN: Chat stream ────────────────────────────────────────
+  chatStreamJustCompleted: boolean;
+
+  // ── OpenClawCN: MCP batch config ───────────────────────────────────
+  _mcpBatchConfigResult: { success: number; failed: number } | null;
+  _mcpBatchConfigSaving: boolean;
+  _mcpServerEnvStatus: Record<string, Record<string, boolean>>;
+  _mcpToastTimer: number | null;
+
+  // ── OpenClawCN: Success messages ───────────────────────────────────
+  modelsSuccessMessage: string | null;
+  securitySuccessMessage: string | null;
+
+  // ── OpenClawCN: Skills tier ────────────────────────────────────────
+  skillsTierRenderKey: number;
+
+  // ── LitElement base (re-declared for structural typing) ────────────
+  requestUpdate: () => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -522,6 +632,8 @@ export type McpMarketplaceItem = {
   isNew: boolean;
   toolCount: number;
   installStatus: "not_installed" | "installing" | "installed" | "error";
+  /** Detailed error message from last failed install attempt */
+  errorMessage?: string;
   /** Capabilities list shown in detail modal */
   capabilities?: string[];
   /** Example prompts for "try saying" */
@@ -542,6 +654,16 @@ export type McpMarketplaceItem = {
   source?: string;
   /** Setup hint from platformNotes (shown when requiresApiKey is inferred) */
   configHint?: string;
+  /** Environment variable schema from ModelScope (keys, descriptions, placeholders) */
+  envSchema?: Record<string, { description?: string; type?: string; placeholder?: string }>;
+  /** Required environment variable names */
+  envRequired?: string[];
+  /** SSE endpoint URL (for remote/cloud services) */
+  sseUrl?: string;
+  /** Whether the item has been verified by the platform */
+  isVerified?: boolean;
+  /** Whether the SSE service is hosted on a known platform (smithery/modelscope/fcapp) */
+  isHosted?: boolean;
 };
 
 export type McpMarketplaceState = {
@@ -580,3 +702,57 @@ export type McpToast = {
 };
 
 export type McpExtensionsTab = "my" | "store";
+
+// ---------------------------------------------------------------------------
+// OpenClawCN: Networking Center (组网中心) types
+// ---------------------------------------------------------------------------
+
+export type NetworkTab = "devices" | "connection" | "security";
+
+export type NetworkCenterStatus = {
+  mode: "loopback" | "lan" | "tailnet";
+  gatewayBind: string;
+  gatewayPort: number;
+  gatewayTls: boolean;
+  onlineDeviceCount: number;
+  onlineNodeCount: number;
+  mdnsEnabled: boolean;
+  tailscaleAvailable: boolean;
+  tailscaleConnected: boolean;
+  localIp: string | null;
+  tailnetIp: string | null;
+  hasAuthToken: boolean;
+  platform: string;
+};
+
+export type NetworkDiscoveredGateway = {
+  instanceName: string;
+  displayName: string;
+  host: string;
+  port: number;
+  domain: string;
+  tailnetDns?: string;
+  lanHost?: string;
+  role?: string;
+  platform?: string;
+  version?: string;
+  gatewayTls?: boolean;
+};
+
+export type NetworkProbeResult = {
+  targetHost: string;
+  reachable: boolean;
+  latencyMs: number;
+  error?: string;
+  gatewayVersion?: string;
+};
+
+export type NetworkInterfaceInfo = {
+  name: string;
+  address: string;
+  family: "IPv4" | "IPv6";
+  internal: boolean;
+  netmask: string;
+  mac: string;
+  isTailnet: boolean;
+};

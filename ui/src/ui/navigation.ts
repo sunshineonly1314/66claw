@@ -9,9 +9,9 @@ export const TAB_GROUPS = [
   { label: "Chat", tabs: ["chat"] },
   {
     label: "Control",
-    tabs: ["overview", "model-config", "usage", "channels", "instances", "sessions", "cron"],
+    tabs: ["overview", "model-config", "usage", "channels", "network", "sessions", "cron"],
   },
-  { label: "Agent", tabs: ["agents", "skills", "extensions", "nodes"] },
+  { label: "Agent", tabs: ["agents", "skills", "extensions"] },
   { label: "Settings", tabs: ["config", "debug", "logs"] },
 ] as const;
 
@@ -23,9 +23,9 @@ export function getTabGroups() {
     { label: t("nav.chat"), tabs: ["chat"] as const },
     {
       label: t("nav.control"),
-      tabs: ["overview", "model-config", "usage", "channels", "instances", "sessions", "cron"] as const,
+      tabs: ["overview", "model-config", "usage", "channels", "network", "sessions", "cron"] as const,
     },
-    { label: t("nav.agent"), tabs: ["agents", "skills", "extensions", "nodes"] as const },
+    { label: t("nav.agent"), tabs: ["agents", "skills", "extensions"] as const },
     { label: t("nav.settings"), tabs: ["config", "debug", "logs"] as const },
   ];
 }
@@ -43,6 +43,7 @@ export type Tab =
   | "skills"
   | "extensions"
   | "nodes"
+  | "network"
   | "chat"
   | "config"
   | "debug"
@@ -62,6 +63,7 @@ const TAB_PATHS: Record<Tab, string> = {
   skills: "/skills",
   extensions: "/extensions",
   nodes: "/nodes",
+  network: "/network",
   chat: "/chat",
   config: "/config",
   debug: "/debug",
@@ -160,6 +162,8 @@ export function iconForTab(tab: Tab): IconName {
       return "plug";
     case "nodes":
       return "monitor";
+    case "network":
+      return "network";
     case "config":
       return "settings";
     case "debug":
@@ -199,6 +203,8 @@ export function titleForTab(tab: Tab) {
       return t("nav.extensions");
     case "nodes":
       return t("nav.nodes");
+    case "network":
+      return t("nav.network");
     case "chat":
       return t("nav.chat");
     case "config":
@@ -240,6 +246,8 @@ export function subtitleForTab(tab: Tab) {
       return t("subtitle.extensions");
     case "nodes":
       return t("subtitle.nodes");
+    case "network":
+      return t("subtitle.network");
     case "chat":
       return t("subtitle.chat");
     case "config":

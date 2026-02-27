@@ -545,4 +545,28 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       undefined,
     );
   },
+
+  // ── dmScope auto-detection status ──────────────────────────────────
+  "sessions.dmScopeStatus": async ({ respond }) => {
+    try {
+      const cfg = loadConfig();
+      const { getActivePluginRegistry } = await import("../../plugins/runtime.js");
+      const registry = getActivePluginRegistry();
+      const channelPlugins = (registry?.channels ?? []).map((c) => c.plugin);
+      const { recommendDmScope, resolveAllowFromCounts } =
+        await import("../../session/dm-scope-auto.js");
+      const allowFromCounts = await resolveAllowFromCounts(channelPlugins);
+      const recommendation = recommendDmScope({
+        cfg,
+        plugins: channelPlugins,
+        allowFromCounts,
+      });
+      respond(true, recommendation);
+    } catch (err) {
+      respond(false, undefined, {
+        code: ErrorCodes.InternalError,
+        message: `dmScope status check failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  },
 };

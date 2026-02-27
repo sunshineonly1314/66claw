@@ -14,7 +14,7 @@ export type SessionsState = {
   sessionsIncludeUnknown: boolean;
 };
 
-export async function loadSessions(state: SessionsState) {
+export async function loadSessions(state: SessionsState, opts?: { activeMinutes?: number; force?: boolean }) {
   if (!state.client || !state.connected) return;
   if (state.sessionsLoading) return;
   state.sessionsLoading = true;
@@ -23,6 +23,8 @@ export async function loadSessions(state: SessionsState) {
     const params: Record<string, unknown> = {
       includeGlobal: state.sessionsIncludeGlobal,
       includeUnknown: state.sessionsIncludeUnknown,
+      includeDerivedTitles: true,
+      includeLastMessage: true,
     };
     const activeMinutes = toNumber(state.sessionsFilterActive, 0);
     const limit = toNumber(state.sessionsFilterLimit, 0);

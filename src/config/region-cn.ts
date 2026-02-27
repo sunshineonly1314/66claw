@@ -523,6 +523,114 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
   },
 
   // ============================================================================
+  // Aliyun Coding Plan - 阿里云代码助手
+  // ============================================================================
+  "aliyun-codeplan": {
+    id: "aliyun-codeplan",
+    name: "Aliyun Code",
+    description: "模型聚合平台，一个 Key 调多款顶级代码模型",
+    apiEndpoint: "https://coding.dashscope.aliyuncs.com/v1",
+    authField: "apiKey",
+    authHint: "格式: sk-xxx (在阿里云 AI Star 获取)",
+    authNote: "Coding Plan 代码专用密钥，与百炼 API Key 不同",
+    models: [
+      {
+        id: "qwen3.5-plus",
+        name: "Qwen3.5-Plus (推荐)",
+        description: "图片理解 · 131K 上下文",
+        recommended: true,
+        pricing: "按量计费",
+      },
+      {
+        id: "kimi-k2.5",
+        name: "Kimi-K2.5",
+        description: "图片理解 · 131K 上下文",
+        pricing: "按量计费",
+      },
+      {
+        id: "glm-5",
+        name: "GLM-5",
+        description: "智谱旗舰 · 128K 上下文",
+        pricing: "按量计费",
+      },
+      {
+        id: "MiniMax-M2.5",
+        name: "MiniMax-M2.5",
+        description: "200K 上下文",
+        pricing: "按量计费",
+      },
+      {
+        id: "qwen3-coder-plus",
+        name: "Qwen3-Coder-Plus",
+        description: "代码专用 · 131K 上下文",
+        pricing: "按量计费",
+      },
+      {
+        id: "qwen3-coder-next",
+        name: "Qwen3-Coder-Next (预览)",
+        description: "下一代预览版",
+        pricing: "按量计费",
+      },
+    ],
+    envVar: "ALIYUN_CODEPLAN_API_KEY",
+    docsUrl: "https://www.aliyun.com/benefit/ai/aistar?userCode=xsngby7y",
+  },
+
+  // ============================================================================
+  // GLM Coding Plan - 智谱代码助手
+  // ============================================================================
+  "glm-codeplan": {
+    id: "glm-codeplan",
+    name: "GLM Code",
+    description: "GLM-5 代码专用模型，智谱 Coding Plan",
+    apiEndpoint: "https://open.bigmodel.cn/api/coding/paas/v4",
+    authField: "apiKey",
+    authHint: "在 open.bigmodel.cn 获取 Coding Plan 专用 API Key",
+    authNote: "Coding Plan 代码专用密钥，与通用 GLM API Key 不同",
+    models: [
+      {
+        id: "glm-5",
+        name: "GLM-5 (推荐)",
+        description: "Coding Plan 代码专用，128K 上下文",
+        recommended: true,
+        pricing: "按量计费",
+      },
+      {
+        id: "glm-4.7",
+        name: "GLM-4.7",
+        description: "Coding Plan 代码模型",
+        pricing: "按量计费",
+      },
+    ],
+    envVar: "GLM_CODEPLAN_API_KEY",
+    docsUrl: "https://open.bigmodel.cn",
+  },
+
+  // ============================================================================
+  // MiniMax Coding Plan - MiniMax 代码助手
+  // ============================================================================
+  "minimax-codeplan": {
+    id: "minimax-codeplan",
+    name: "MiniMax Code",
+    description: "MiniMax-M2.5 代码专用，Coding Plan 订阅",
+    apiEndpoint: "https://api.minimaxi.com/anthropic",
+    authField: "apiKey",
+    authHint: "在 MiniMax 平台获取 Coding Plan 专用 API Key",
+    authNote: "Coding Plan 订阅专属密钥",
+    models: [
+      {
+        id: "MiniMax-M2.5",
+        name: "MiniMax-M2.5 (推荐)",
+        description: "Coding Plan 订阅专属，200K 上下文",
+        recommended: true,
+        pricing: "订阅制",
+      },
+    ],
+    envVar: "MINIMAX_CODEPLAN_API_KEY",
+    docsUrl: "https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link",
+  },
+
+  // ============================================================================
   // MiniMax
   // ============================================================================
   minimax: {
@@ -912,6 +1020,54 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
   },
 
   // ============================================================================
+  // 国际服务 - OpenRouter (聚合路由)
+  // ============================================================================
+  openrouter: {
+    id: "openrouter",
+    name: "OpenRouter",
+    description: "聚合数百个 AI 模型的统一 API（需要科学上网）",
+    apiEndpoint: "https://openrouter.ai/api/v1",
+    authField: "apiKey",
+    authHint: "格式: sk-or-v1-... (在 openrouter.ai/keys 获取)",
+    authNote: "⚠️ 需要科学上网",
+    models: [
+      {
+        id: "openrouter/auto",
+        name: "🔀 Auto 智能路由 (推荐)",
+        description: "自动选择最优模型",
+        recommended: true,
+        pricing: "按量计费",
+      },
+      {
+        id: "anthropic/claude-sonnet-4",
+        name: "Claude Sonnet 4",
+        description: "Anthropic 编程最强",
+        pricing: "$3/$15 per 1M",
+      },
+      {
+        id: "google/gemini-2.5-flash-preview",
+        name: "Gemini 2.5 Flash",
+        description: "Google 最新 百万上下文",
+        pricing: "低价",
+      },
+      {
+        id: "openai/gpt-4o",
+        name: "GPT-4o",
+        description: "OpenAI 旗舰多模态",
+        pricing: "$2.5/$10 per 1M",
+      },
+      {
+        id: "deepseek/deepseek-chat-v3-0324",
+        name: "DeepSeek V3",
+        description: "高性价比国产模型",
+        pricing: "低价",
+      },
+    ],
+    envVar: "OPENROUTER_API_KEY",
+    docsUrl: "https://openrouter.ai/docs",
+  },
+
+  // ============================================================================
   // 蚂蚁百灵 - 每日免费 50 万 tokens
   // ============================================================================
   "ant-ling": {
@@ -977,13 +1133,16 @@ export const CN_PROVIDERS: Record<string, CnProviderConfig> = {
 export const CN_REGION_CONFIG: CnRegionConfig = {
   // AI 提供商推荐顺序（必须与 CN_PROVIDERS 中的 key 一致）
   recommendedProviders: [
-    // 推荐国产服务（大卡片展示）
+    // 代码助手 Coding Plan（大卡片展示）
     "kimi-code",
-    "aliyun-bailian",
-    "glm",
+    "aliyun-codeplan",
+    "glm-codeplan",
+    "minimax-codeplan",
     // 更多国产服务（折叠）— 硅基流动、MiniMax 优先
+    "aliyun-bailian",
     "siliconflow",
     "minimax",
+    "glm",
     "deepseek",
     "volcengine-ark",
     "moonshot",
@@ -1011,7 +1170,7 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
     // "openai", // 已启用
     // "anthropic", // 已启用
     // "google", // 已启用
-    "openrouter",
+    // "openrouter", // 已启用
     "ai-gateway",
   ],
 

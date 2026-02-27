@@ -611,7 +611,7 @@ describe("model-config Controller", () => {
 
       expect(host.providerConfigStep).toBe("result");
       expect(host.providerConfigTestResult?.success).toBe(true);
-      expect(host.providerConfigTestResult?.message).toContain("配置成功");
+      expect(host.providerConfigTestResult?.message).toContain("配置完成");
       expect(host.providerConfigAutoEnabled).toEqual({ text: "gpt-4o" });
       expect(host.providerConfigDetecting).toBe(false);
     });

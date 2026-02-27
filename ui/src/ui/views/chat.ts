@@ -22,11 +22,15 @@ import {
   renderWelcomeDiscovery,
   type WelcomeDiscoveryProps,
 } from "./welcome-discovery";
+import { extractImageGenDetails } from "../chat/image-gen-result";
+import { extractVideoGenDetails } from "../chat/video-gen-result";
 import {
   renderVoiceMascot,
   type VoiceMascotProps,
 } from "./voice-mascot";
 import { detectTextDirection } from "../text-direction";
+import { renderComposeCard, type ComposeCardProps } from "../chat/compose-card";
+import { renderIntentHint, type IntentHintProps } from "../chat/intent-hint";
 
 /**
  * 打开购买链接
@@ -135,6 +139,10 @@ export type ChatProps = {
   // OpenClawCN: 聊天模型是否已配置
   chatModelConfigured?: boolean | null;
   onNavigateToModelConfig?: () => void;
+  // OpenClawCN: compose-card 替代原始 textarea
+  composeCardProps?: ComposeCardProps | null;
+  // OpenClawCN: intent-hint 智能提示
+  intentHintProps?: IntentHintProps | null;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -267,20 +275,47 @@ async function handlePaste(
 }
 
 /**
+ * Defense-in-depth: reject SVG and non-raster data URLs.
+ * SVG can contain embedded <script>, <foreignObject>, etc.
+ */
+function isSafeImageDataUrl(dataUrl: string): boolean {
+  if (!dataUrl.startsWith("data:image/")) return false;
+  const mime = dataUrl.slice(5, dataUrl.indexOf(";")).toLowerCase();
+  // Only allow known-safe raster formats
+  const SAFE_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif"];
+  return SAFE_MIMES.includes(mime);
+}
+
+/**
+ * Check if a MIME type is a safe raster image (blocks SVG).
+ */
+function isSafeImageMime(mime: string): boolean {
+  const lower = mime.toLowerCase();
+  return (
+    lower === "image/png" ||
+    lower === "image/jpeg" ||
+    lower === "image/gif" ||
+    lower === "image/webp" ||
+    lower === "image/bmp" ||
+    lower === "image/avif"
+  );
+}
+
+/**
  * Check if text content is an image reference
  */
 function isImageReference(text: string): boolean {
   if (!text || text.trim().length === 0) return false;
   const trimmed = text.trim();
 
-  // Base64 data URL
-  if (trimmed.startsWith("data:image/")) return true;
+  // Base64 data URL -- only safe raster formats
+  if (trimmed.startsWith("data:image/")) return isSafeImageDataUrl(trimmed);
 
-  // HTTP(S) URL ending with image extension
-  if (/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(trimmed)) return true;
+  // HTTP(S) URL ending with image extension (exclude SVG)
+  if (/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|bmp|avif)(\?.*)?$/i.test(trimmed)) return true;
 
-  // File path ending with image extension
-  if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(trimmed)) return true;
+  // File path ending with image extension (exclude SVG)
+  if (/\.(jpg|jpeg|png|gif|webp|bmp|avif)$/i.test(trimmed)) return true;
 
   return false;
 }
@@ -294,8 +329,12 @@ async function handleTextImageReference(
 ): Promise<void> {
   const trimmed = text.trim();
 
-  // Case 1: Base64 data URL (already in correct format)
+  // Case 1: Base64 data URL -- only safe raster formats (XSS defense: block SVG)
   if (trimmed.startsWith("data:image/")) {
+    if (!isSafeImageDataUrl(trimmed)) {
+      console.warn("[handlePaste] Blocked unsafe data URL (SVG or unsupported format)");
+      return;
+    }
     const mimeTypeMatch = trimmed.match(/^data:(image\/[^;]+);base64,/);
     if (mimeTypeMatch) {
       const newAttachment: ChatAttachment = {
@@ -365,7 +404,7 @@ function handleDrop(
   if (!files || files.length === 0) return;
 
   for (const file of Array.from(files)) {
-    if (!file.type.startsWith("image/")) continue;
+    if (!file.type.startsWith("image/") || !isSafeImageMime(file.type)) continue;
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
@@ -389,7 +428,7 @@ function renderAttachmentPreview(props: ChatProps) {
 
   return html`
     <div class="chat-attachments">
-      ${attachments.map(
+      ${attachments.filter((att) => isSafeImageDataUrl(att.dataUrl)).map(
         (att) => html`
           <div class="chat-attachment">
             <img
@@ -446,124 +485,34 @@ export function renderChat(props: ChatProps) {
   // Check if we have messages to show
   const hasMessages = props.messages.length > 0 || props.stream !== null || props.loading;
   
-  // Example prompts for welcome card
-  const examplePrompts = [
-    { icon: "☀️", text: t("chat.welcome.example1") },
-    { icon: "🎨", text: t("chat.welcome.example2") },
-    { icon: "✉️", text: t("chat.welcome.example3") },
-    { icon: "📊", text: t("chat.welcome.example4") },
-    { icon: "💻", text: t("chat.welcome.example5") },
-  ];
-
   // License info for conditional rendering
   const license = props.licenseState?.license ?? null;
   const isTestUser = license?.keyType === "test" || license?.keyType === "trial";
   const supportQrcode = license?.supportQrcode ?? null;
   const purchaseUrl = license?.purchaseUrl ?? null;
 
-  const welcomeCard = html`
-    <div class="chat-welcome">
-      <div class="chat-welcome__header">
-        <div class="chat-welcome__icon">🤖</div>
-        <h2 class="chat-welcome__title">
-          ${isTestUser ? t("chat.welcome.titleTrial") : t("chat.welcome.title")}
-        </h2>
-        <p class="chat-welcome__subtitle">
-          ${isTestUser ? t("chat.welcome.subtitleTrial") : t("chat.welcome.subtitle")}
-        </p>
-      </div>
+  // Time-based greeting
+  const hour = new Date().getHours();
+  const timeGreeting = hour < 12 ? t("chat.greeting.morning") : hour < 18 ? t("chat.greeting.afternoon") : t("chat.greeting.evening");
+  const hasCustomName = props.assistantName && props.assistantName !== "Assistant";
+  const subtitleText = hasCustomName
+    ? `${t("chat.greeting.intro")}${props.assistantName}`
+    : t("chat.greeting.introDefault");
 
-      ${isTestUser ? html`
-        <!-- 试用用户：二维码 + 购买链接 同一行 -->
-        <div class="chat-welcome__hero-row">
-          ${supportQrcode ? html`
-            <div class="chat-welcome__hero-qr-wrap">
-              <img class="chat-welcome__hero-qr" src="${supportQrcode.base64}" alt="Support QR" />
-            </div>
-          ` : nothing}
-          <div class="chat-welcome__hero-info">
-            <div class="chat-welcome__hero-badge">💬</div>
-            <div class="chat-welcome__hero-title">${t("support.heroScanTitle")}</div>
-            ${supportQrcode ? html`
-              <div class="chat-welcome__hero-group">${supportQrcode.groupName}</div>
-            ` : nothing}
-            <div class="chat-welcome__hero-desc">${t("support.basicGroupDesc")}</div>
-            <button
-              class="chat-welcome__hero-purchase"
-              type="button"
-              @click=${() => void openPurchaseUrl(purchaseUrl)}
-            >
-              🛒 ${t("support.purchaseOnXianyu")}
-            </button>
-          </div>
-        </div>
-      ` : nothing}
+  const greetingLine = hasCustomName
+    ? `${timeGreeting}，${subtitleText}`
+    : `${timeGreeting}，${subtitleText}`;
 
-      <div class="chat-welcome__section">
-        <h3 class="chat-welcome__section-title">${t("chat.welcome.tryAsk")}</h3>
-        <div class="chat-welcome__examples">
-          ${examplePrompts.map(
-            (example) => html`
-              <button
-                class="chat-welcome__example"
-                type="button"
-                @click=${() => props.onDraftChange(example.text)}
-              >
-                <span class="chat-welcome__example-icon">${example.icon}</span>
-                <span class="chat-welcome__example-text">${example.text}</span>
-              </button>
-            `,
-          )}
-        </div>
-      </div>
-
-      <div class="chat-welcome__section">
-        <h3 class="chat-welcome__section-title">${t("chat.welcome.capabilities")}</h3>
-        <div class="chat-welcome__capabilities">
-          <div class="chat-welcome__capability">
-            <span class="chat-welcome__capability-icon">💬</span>
-            <span class="chat-welcome__capability-text">${t("chat.welcome.capability.chat")}</span>
-          </div>
-          <div class="chat-welcome__capability">
-            <span class="chat-welcome__capability-icon">🔧</span>
-            <span class="chat-welcome__capability-text">${t("chat.welcome.capability.tool")}</span>
-          </div>
-          <div class="chat-welcome__capability">
-            <span class="chat-welcome__capability-icon">⚡</span>
-            <span class="chat-welcome__capability-text">${t("chat.welcome.capability.automation")}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 技术支持二维码（非试用用户 / 正式用户单独显示） -->
-      ${!isTestUser && supportQrcode ? html`
-        <div class="chat-welcome__support-card chat-welcome__support-card--pro">
-          <div class="chat-welcome__support-header">
-            <span class="chat-welcome__support-badge">⭐</span>
-            <span class="chat-welcome__support-title">
-              ${t("support.scanForPremiumSupport")}
-            </span>
-          </div>
-          <div class="chat-welcome__support-body">
-            <img class="chat-welcome__support-qr" src="${supportQrcode.base64}" alt="Support QR" />
-            <div class="chat-welcome__support-info">
-              <div class="chat-welcome__support-name">${supportQrcode.groupName}</div>
-              <div class="chat-welcome__support-desc">
-                ${t("support.premiumGroupDesc")}
-              </div>
-            </div>
-          </div>
-        </div>
-      ` : nothing}
-
-      <div class="chat-welcome__footer">
-        <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="chat-welcome__tecbinai">
-          🚀 由 <strong>tecbinai</strong> 提供技术支持 · 及时追踪 AI 最新内容
-        </a>
-      </div>
+  const greetingCard = html`
+    <div class="chat-greeting">
+      <h1 class="chat-greeting__text">${greetingLine}</h1>
     </div>
   `;
-  
+
+  // Whether to show the centered empty-state layout (greeting + compose together)
+  const showEmptyCenter = !hasMessages && props.connected
+    && !(props.showDiscovery && props.discoveryProps);
+
   const thread = html`
     <div
       class="chat-thread"
@@ -574,7 +523,7 @@ export function renderChat(props: ChatProps) {
       ${!hasMessages && props.connected
         ? props.showDiscovery && props.discoveryProps
           ? renderWelcomeDiscovery(props.discoveryProps)
-          : welcomeCard
+          : nothing
         : nothing}
       ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
       ${(() => {
@@ -624,7 +573,7 @@ export function renderChat(props: ChatProps) {
 
   return html`
     <section
-      class="card chat"
+      class="card chat ${showEmptyCenter ? "chat--empty" : ""}"
       @dragover=${(e: DragEvent) => {
         e.preventDefault();
         e.dataTransfer!.dropEffect = "copy";
@@ -672,21 +621,7 @@ export function renderChat(props: ChatProps) {
         </div>
       ` : nothing}
 
-      ${props.chatModelConfigured === false ? html`
-        <div class="callout warning chat-model-banner">
-          <span class="chat-model-banner__icon">🔑</span>
-          <span class="chat-model-banner__text">
-            聊天功能需要配置 <strong>硅基流动 API Key</strong>，请先前往模型设置完成配置
-          </span>
-          <button
-            class="chat-model-banner__btn"
-            type="button"
-            @click=${props.onNavigateToModelConfig}
-          >
-            前往配置
-          </button>
-        </div>
-      ` : nothing}
+      <!-- OpenClawCN: model config banner moved to content-header -->
 
       ${
         props.showNewMessages
@@ -716,37 +651,43 @@ export function renderChat(props: ChatProps) {
           `
         : nothing}
 
-      <div
-        class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
-      >
-        <div
-          class="chat-main"
-          style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
-        >
-          ${thread}
+      ${showEmptyCenter ? html`
+        <div class="chat-empty-center">
+          ${greetingCard}
         </div>
+      ` : html`
+        <div
+          class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
+        >
+          <div
+            class="chat-main"
+            style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
+          >
+            ${thread}
+          </div>
 
-        ${sidebarOpen
-          ? html`
-              <resizable-divider
-                .splitRatio=${splitRatio}
-                @resize=${(e: CustomEvent) =>
-                  props.onSplitRatioChange?.(e.detail.splitRatio)}
-              ></resizable-divider>
-              <div class="chat-sidebar">
-                ${renderMarkdownSidebar({
-                  content: props.sidebarContent ?? null,
-                  error: props.sidebarError ?? null,
-                  onClose: props.onCloseSidebar!,
-                  onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) return;
-                    props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
-                  },
-                })}
-              </div>
-            `
-          : nothing}
-      </div>
+          ${sidebarOpen
+            ? html`
+                <resizable-divider
+                  .splitRatio=${splitRatio}
+                  @resize=${(e: CustomEvent) =>
+                    props.onSplitRatioChange?.(e.detail.splitRatio)}
+                ></resizable-divider>
+                <div class="chat-sidebar">
+                  ${renderMarkdownSidebar({
+                    content: props.sidebarContent ?? null,
+                    error: props.sidebarError ?? null,
+                    onClose: props.onCloseSidebar!,
+                    onViewRawText: () => {
+                      if (!props.sidebarContent || !props.onOpenSidebar) return;
+                      props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
+                    },
+                  })}
+                </div>
+              `
+            : nothing}
+        </div>
+      `}
 
       ${isTestUser ? html`
         <!-- 试用用户常驻浮条：输入框与聊天之间 -->
@@ -818,92 +759,96 @@ export function renderChat(props: ChatProps) {
 
       <div class="chat-compose">
         ${props.voiceMascot ? renderVoiceMascot(props.voiceMascot) : nothing}
-        ${renderAttachmentPreview(props)}
-        <div class="chat-compose__row">
-          <label class="field chat-compose__field">
-            <span>Message</span>
-            <textarea
-              .value=${live(props.draft)}
-              dir=${detectTextDirection(props.draft)}
-              ?disabled=${!props.connected}
-              @keydown=${(e: KeyboardEvent) => {
-                if (e.key !== "Enter") return;
-                if (e.isComposing || e.keyCode === 229) return;
-                if (e.shiftKey) return; // Allow Shift+Enter for line breaks
-                if (!props.connected) return;
-                e.preventDefault();
-                if (canCompose) props.onSend();
-              }}
-              @input=${(e: Event) =>
-                props.onDraftChange((e.target as HTMLTextAreaElement).value)}
-              @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
-              placeholder=${composePlaceholder}
-            ></textarea>
-          </label>
-          <div class="chat-compose__actions">
-            ${props.onAttachmentsChange ? html`
-              <input
-                type="file"
-                id="chat-file-input"
-                accept="image/*"
-                multiple
-                style="display: none;"
-                @change=${(e: Event) => {
-                  const input = e.target as HTMLInputElement;
-                  if (!input.files || input.files.length === 0) return;
-
-                  for (const file of Array.from(input.files)) {
-                    if (!file.type.startsWith("image/")) continue;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const dataUrl = reader.result as string;
-                      const newAttachment: ChatAttachment = {
-                        id: generateAttachmentId(),
-                        dataUrl,
-                        mimeType: file.type,
-                        fileName: file.name,
-                        fileSize: file.size,
-                      };
-                      const current = props.attachments ?? [];
-                      props.onAttachmentsChange?.([...current, newAttachment]);
-                    };
-                    reader.readAsDataURL(file);
-                  }
-                  // Reset input to allow selecting the same file again
-                  input.value = '';
-                }}
-              />
-              <button
-                type="button"
-                class="btn chat-attach-btn"
-                ?disabled=${!props.connected}
-                @click=${() => {
-                  const input = document.getElementById('chat-file-input') as HTMLInputElement;
-                  input?.click();
-                }}
-                title="Attach images (Ctrl+V to paste, or drag and drop)"
-                aria-label="Attach images"
-              >
-                ${icons.paperclip}
-              </button>
-            ` : nothing}
-            <button
-              class="btn"
-              ?disabled=${!props.connected || (!canAbort && props.sending)}
-              @click=${canAbort ? props.onAbort : props.onNewSession}
-            >
-              ${canAbort ? t("chat.stop") : t("chat.newSession")}
-            </button>
-            <button
-              class="btn primary"
-              ?disabled=${!props.connected}
-              @click=${props.onSend}
-            >
-              ${isBusy ? t("chat.queue") : t("chat.send")}<kbd class="btn-kbd">↵</kbd>
-            </button>
-          </div>
-        </div>
+        ${props.intentHintProps ? renderIntentHint(props.intentHintProps) : nothing}
+        ${props.composeCardProps
+          ? renderComposeCard(props.composeCardProps)
+          : html`
+            ${renderAttachmentPreview(props)}
+            <div class="chat-compose__row">
+              <label class="field chat-compose__field">
+                <span>Message</span>
+                <textarea
+                  .value=${live(props.draft)}
+                  dir=${detectTextDirection(props.draft)}
+                  ?disabled=${!props.connected}
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key !== "Enter") return;
+                    if (e.isComposing || e.keyCode === 229) return;
+                    if (e.shiftKey) return;
+                    if (!props.connected) return;
+                    e.preventDefault();
+                    if (canCompose) props.onSend();
+                  }}
+                  @input=${(e: Event) =>
+                    props.onDraftChange((e.target as HTMLTextAreaElement).value)}
+                  @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
+                  placeholder=${composePlaceholder}
+                ></textarea>
+              </label>
+              <div class="chat-compose__actions">
+                ${props.onAttachmentsChange ? html`
+                  <input
+                    type="file"
+                    id="chat-file-input"
+                    accept="image/*"
+                    multiple
+                    style="display: none;"
+                    @change=${(e: Event) => {
+                      const input = e.target as HTMLInputElement;
+                      if (!input.files || input.files.length === 0) return;
+                      for (const file of Array.from(input.files)) {
+                        if (!file.type.startsWith("image/")) continue;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const dataUrl = reader.result as string;
+                          const newAttachment: ChatAttachment = {
+                            id: generateAttachmentId(),
+                            dataUrl,
+                            mimeType: file.type,
+                            fileName: file.name,
+                            fileSize: file.size,
+                          };
+                          const current = props.attachments ?? [];
+                          props.onAttachmentsChange?.([...current, newAttachment]);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                      input.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    class="btn chat-attach-btn"
+                    ?disabled=${!props.connected}
+                    @click=${() => {
+                      const input = document.getElementById('chat-file-input') as HTMLInputElement;
+                      input?.click();
+                    }}
+                    title="Attach images (Ctrl+V to paste, or drag and drop)"
+                    aria-label="Attach images"
+                  >
+                    ${icons.paperclip}
+                  </button>
+                ` : nothing}
+                <button
+                  class="btn"
+                  ?disabled=${!props.connected || (!canAbort && props.sending)}
+                  @click=${canAbort ? props.onAbort : props.onNewSession}
+                >
+                  ${canAbort ? t("chat.stop") : t("chat.newSession")}
+                </button>
+                <button
+                  class="btn primary"
+                  ?disabled=${!props.connected}
+                  @click=${props.onSend}
+                >
+                  ${isBusy ? t("chat.queue") : t("chat.send")}<kbd class="btn-kbd">↵</kbd>
+                </button>
+              </div>
+            </div>
+          `}
       </div>
+
     </section>
   `;
 }
@@ -1018,9 +963,50 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
 
     // If this assistant message's tool calls have a matching tool result in
     // history, tag it so extractToolCards won't mark them as pending/spinning.
-    const message = resolvedToolCallIndices.has(i)
+    let message: unknown = resolvedToolCallIndices.has(i)
       ? Object.assign({}, msg as Record<string, unknown>, { __toolsResolved: true })
       : msg;
+
+    // [CN-FIX:interrupted-gen] When loading from history with no active stream,
+    // unresolved image_gen/video_gen tool calls are stale (page was closed mid-
+    // generation). Mark them so the renderer shows "interrupted" instead of shimmer.
+    const isLiveSession = props.stream !== null || props.sending;
+    if (
+      !isLiveSession &&
+      !resolvedToolCallIndices.has(i) &&
+      normalized.role.toLowerCase() === "assistant"
+    ) {
+      const contentArr = Array.isArray(raw.content) ? raw.content as Array<Record<string, unknown>> : [];
+      const hasMediaToolUse = contentArr.some((block) => {
+        const kind = String(block.type ?? "").toLowerCase();
+        if (!["tool_use", "tooluse", "toolcall", "tool_call"].includes(kind)) return false;
+        const name = String(block.name ?? "");
+        return name === "image_gen" || name === "video_gen";
+      });
+      if (hasMediaToolUse) {
+        message = Object.assign({}, message as Record<string, unknown>, { __staleMediaTools: true });
+      }
+    }
+
+    // [CN-FIX:image-display] When showThinking is off, toolResult messages are
+    // skipped above. But if a preceding toolResult contains image/video gen data,
+    // attach it to this assistant message so the image renders in the assistant bubble.
+    if (!props.showThinking && normalized.role.toLowerCase() === "assistant") {
+      for (let j = i - 1; j >= historyStart; j--) {
+        const prev = normalizeMessage(history[j]);
+        if (prev.role.toLowerCase() !== "toolresult") break;
+        const imgDetails = extractImageGenDetails(history[j]);
+        if (imgDetails) {
+          message = Object.assign({}, message as Record<string, unknown>, { __imageGenDetails: imgDetails });
+          break;
+        }
+        const vidDetails = extractVideoGenDetails(history[j]);
+        if (vidDetails) {
+          message = Object.assign({}, message as Record<string, unknown>, { __videoGenDetails: vidDetails });
+          break;
+        }
+      }
+    }
 
     items.push({
       kind: "message",

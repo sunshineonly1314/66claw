@@ -36,7 +36,7 @@ beforeEach(() => {
 
 describe("checkModalityBeforeSend", () => {
   it("returns canProceed: true when guide says OK", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: true });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: false, canProceed: true });
     const client = createMockClient();
 
     const result = await checkModalityBeforeSend({
@@ -50,7 +50,7 @@ describe("checkModalityBeforeSend", () => {
   });
 
   it("returns canProceed: false when guide says needs config", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: false });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: true, canProceed: false });
     const client = createMockClient();
 
     const result = await checkModalityBeforeSend({
@@ -69,7 +69,7 @@ describe("checkModalityBeforeSend", () => {
   });
 
   it("extracts MIME type from dataUrl (base64 prefix)", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: true });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: false, canProceed: true });
     const client = createMockClient();
 
     await checkModalityBeforeSend({
@@ -89,7 +89,7 @@ describe("checkModalityBeforeSend", () => {
   });
 
   it("falls back to att.mimeType when dataUrl has no base64 prefix", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: true });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: false, canProceed: true });
     const client = createMockClient();
 
     await checkModalityBeforeSend({
@@ -109,7 +109,7 @@ describe("checkModalityBeforeSend", () => {
   });
 
   it("passes message as prompt to the guide", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: true });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: false, canProceed: true });
     const client = createMockClient();
 
     await checkModalityBeforeSend({
@@ -123,7 +123,7 @@ describe("checkModalityBeforeSend", () => {
   });
 
   it("passes client through to the guide", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: true });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: false, canProceed: true });
     const client = createMockClient();
 
     await checkModalityBeforeSend({
@@ -136,7 +136,7 @@ describe("checkModalityBeforeSend", () => {
   });
 
   it("handles multiple attachments with different MIME types", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: true });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: false, canProceed: true });
     const client = createMockClient();
 
     await checkModalityBeforeSend({
@@ -158,12 +158,12 @@ describe("checkModalityBeforeSend", () => {
 
     const callArgs = mockCheckAndGuide.mock.calls[0][0];
     expect(callArgs.attachments).toHaveLength(2);
-    expect(callArgs.attachments[0].mimeType).toBe("image/png");
-    expect(callArgs.attachments[1].mimeType).toBe("image/gif");
+    expect(callArgs.attachments![0].mimeType).toBe("image/png");
+    expect(callArgs.attachments![1].mimeType).toBe("image/gif");
   });
 
   it("works with undefined attachments", async () => {
-    mockCheckAndGuide.mockResolvedValue({ canProceed: true });
+    mockCheckAndGuide.mockResolvedValue({ needsConfiguration: false, canProceed: true });
     const client = createMockClient();
 
     const result = await checkModalityBeforeSend({

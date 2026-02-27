@@ -78,7 +78,7 @@ export async function checkAsrAvailability(
 }
 
 /**
- * Transcribe a base64-encoded WAV audio clip.
+ * Transcribe a base64-encoded WAV audio clip (batch mode).
  * Returns transcribed text on success, or an error string.
  */
 export async function transcribeAudio(
@@ -96,5 +96,87 @@ export async function transcribeAudio(
 		return { error: "voice.error.transcriptionFailed" };
 	} catch {
 		return { error: "voice.error.transcriptionFailed" };
+	}
+}
+
+// ── Streaming ASR RPC calls ────────────────────────────
+
+type AsrStreamStatusResult = {
+	available: boolean;
+	model: string | null;
+	method: string | null;
+	streamingMode: string | null;
+};
+
+type AsrStreamStartResult = {
+	sessionId: string;
+};
+
+type AsrStreamEndResult = {
+	text: string;
+};
+
+/**
+ * Check if streaming ASR is available (any backend: GPU/CPU/API).
+ */
+export async function checkStreamingAsrAvailability(
+	client: GatewayBrowserClient,
+): Promise<boolean> {
+	try {
+		const result = await client.request<AsrStreamStatusResult>("asr.stream.status");
+		return result?.available ?? false;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Start a streaming ASR session. Returns { sessionId } on success, null on failure.
+ */
+export async function startStreamingAsr(
+	client: GatewayBrowserClient,
+): Promise<{ sessionId: string } | null> {
+	try {
+		const result = await client.request<AsrStreamStartResult>("asr.stream.start");
+		if (result?.sessionId) {
+			return { sessionId: result.sessionId };
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Feed a PCM16 audio chunk to a streaming ASR session.
+ * Fire-and-forget — results come via "asr.partial" server-push events.
+ */
+export async function feedStreamingAsr(
+	client: GatewayBrowserClient,
+	sessionId: string,
+	pcmBase64: string,
+): Promise<void> {
+	try {
+		await client.request("asr.stream.feed", { sessionId, pcmBase64 });
+	} catch {
+		// Non-fatal: individual chunk feed failures are tolerable
+	}
+}
+
+/**
+ * End a streaming ASR session. Returns the final transcription text.
+ */
+export async function endStreamingAsr(
+	client: GatewayBrowserClient,
+	sessionId: string,
+): Promise<{ text: string } | null> {
+	try {
+		const result = await client.request<AsrStreamEndResult>("asr.stream.end", { sessionId });
+		if (result?.text !== undefined) {
+			return { text: result.text };
+		}
+		return null;
+	} catch {
+		return null;
 	}
 }

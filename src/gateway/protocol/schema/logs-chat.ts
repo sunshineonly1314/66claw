@@ -40,6 +40,10 @@ export const ChatSendParamsSchema = Type.Object(
     attachments: Type.Optional(Type.Array(Type.Unknown())),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
     idempotencyKey: NonEmptyString,
+    /** True when the message originated from voice input (ASR). Enables TTS on response. */
+    voiceInput: Type.Optional(Type.Boolean()),
+    /** True when the client is in continuous voice conversation mode. Enables streaming TTS. */
+    voiceMode: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
@@ -76,6 +80,13 @@ export const ChatEventSchema = Type.Object(
     errorMessage: Type.Optional(Type.String()),
     usage: Type.Optional(Type.Unknown()),
     stopReason: Type.Optional(Type.String()),
+    /** Base64-encoded TTS audio for voice mode auto-playback. */
+    ttsAudio: Type.Optional(
+      Type.Object({
+        base64: Type.String(),
+        format: Type.String(),
+      }),
+    ),
   },
   { additionalProperties: false },
 );

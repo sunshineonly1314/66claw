@@ -42,6 +42,7 @@ type ScoredItem<T> = {
 
 const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/;
 const STOP_WORDS = new Set([
+  // Chinese
   "的",
   "了",
   "是",
@@ -55,6 +56,14 @@ const STOP_WORDS = new Set([
   "都",
   "一",
   "一个",
+  "帮我",
+  "帮忙",
+  "请",
+  "能不能",
+  "可以",
+  "想要",
+  "需要",
+  // English function words
   "the",
   "a",
   "an",
@@ -80,13 +89,47 @@ const STOP_WORDS = new Set([
   "might",
   "must",
   "shall",
-  "帮我",
-  "帮忙",
-  "请",
-  "能不能",
-  "可以",
-  "想要",
-  "需要",
+  // Common short English words that cause false-positive matches
+  "the",
+  "for",
+  "and",
+  "not",
+  "but",
+  "all",
+  "any",
+  "get",
+  "set",
+  "run",
+  "use",
+  "new",
+  "try",
+  "let",
+  "var",
+  "how",
+  "why",
+  "what",
+  "that",
+  "this",
+  "with",
+  "from",
+  "they",
+  "them",
+  "than",
+  "then",
+  "also",
+  "just",
+  "like",
+  "make",
+  "want",
+  "some",
+  "into",
+  "only",
+  "very",
+  "when",
+  "come",
+  "here",
+  "there",
+  "about",
 ]);
 
 /**
@@ -108,10 +151,11 @@ function extractKeywords(text: string): string[] {
   }
 
   // 英文分词（按空格 + 标点分隔）
+  // Minimum 4 chars to avoid over-matching common short words (run, set, log, etc.)
   const asciiTerms = lower
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
+    .filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
 
   return [...new Set([...cjkTerms, ...asciiTerms])];
 }

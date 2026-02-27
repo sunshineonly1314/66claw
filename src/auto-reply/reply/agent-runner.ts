@@ -39,6 +39,8 @@ import { enqueueFollowupRun, type FollowupRun, type QueueSettings } from "./queu
 import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-threading.js";
 import { persistSessionUsageUpdate } from "./session-usage.js";
 import { recordFreeModelUsage } from "./free-model-usage.js";
+// [CN-PATCH:memory-L1] Post-reply memory extraction
+import { runPostReplyMemoryExtraction } from "./memory-extraction.js";
 import { incrementCompactionCount } from "./session-updates.js";
 import type { TypingController } from "./typing.js";
 import { createTypingSignaler } from "./typing-mode.js";
@@ -444,6 +446,24 @@ export async function runReplyAgent(params: {
         );
       }
     }
+
+    // [CN-PATCH:memory-L1] Fire-and-forget post-reply memory extraction.
+    // Extracts user facts/preferences/corrections from the conversation into profile.json.
+    // Uses a free CN LLM (ant-ling/siliconflow fallback chain). Non-blocking.
+    void runPostReplyMemoryExtraction({
+      commandBody,
+      agentReplyText: payloadArray
+        .filter((p) => p.text)
+        .map((p) => p.text!)
+        .join("\n")
+        .slice(0, 2000),
+      followupRun,
+      cfg,
+      sessionKey,
+      isHeartbeat,
+    }).catch((err) => {
+      defaultRuntime.error(`[MemoryExtraction] ${String(err).slice(0, 200)}`);
+    });
 
     // Drain any late tool/block deliveries before deciding there's "nothing to send".
     // Otherwise, a late typing trigger (e.g. from a tool callback) can outlive the run and

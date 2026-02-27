@@ -182,6 +182,24 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
+    // [CN-PATCH] Prefer domestic models in modality routing
+    preferDomestic: z.boolean().optional(),
+    // [CN-PATCH] Deterministic post-reply memory extraction settings
+    memoryExtraction: z
+      .object({
+        enabled: z.boolean().optional(),
+        provider: z.string().optional(),
+        model: z.string().optional(),
+        temperature: z.number().min(0).max(2).optional(),
+        maxTokens: z.number().int().positive().optional(),
+        timeoutMs: z.number().int().positive().optional(),
+        periodicTurnInterval: z.number().int().positive().optional(),
+        minMessageLength: z.number().int().nonnegative().optional(),
+        longMessageThreshold: z.number().int().positive().optional(),
+        keywords: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .optional();

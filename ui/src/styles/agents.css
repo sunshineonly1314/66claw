@@ -2,13 +2,19 @@
    Agents Page
    =========================================== */
 
+/* ---- Page Wrapper (owns the positioning context for orchestrator overlay) ---- */
+.agents-wrapper {
+  position: relative;
+  height: calc(100vh - 160px);
+  margin: -16px;
+}
+
 /* ---- Page Layout ---- */
 .agents-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 0;
-  height: calc(100vh - 160px);
-  margin: -16px;
+  height: 100%;
   border-radius: var(--radius-xl);
   overflow: hidden;
   border: 1px solid var(--border);
@@ -633,11 +639,16 @@
 
 /* ---- Responsive ---- */
 @media (max-width: 900px) {
+  .agents-wrapper {
+    height: auto;
+    min-height: calc(100vh - 160px);
+  }
+
   .agents-layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
     height: auto;
-    min-height: calc(100vh - 160px);
+    min-height: 100%;
   }
 
   .agents-sidebar {
@@ -688,4 +699,380 @@
     border-bottom: 1px solid var(--border);
     max-height: 160px;
   }
+}
+
+/* ===========================================
+   Team Projects — Sidebar Groups
+   =========================================== */
+
+/* ---- Project Group ---- */
+.project-group {
+  margin-bottom: 2px;
+}
+
+.project-group--selected > .project-group-header {
+  background: var(--accent-subtle);
+  border-color: rgba(var(--accent-rgb), 0.25);
+}
+
+.project-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition:
+    background var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.project-group-header:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.project-group-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+.project-group-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.project-group-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-group-count {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--secondary);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ---- Chevron ---- */
+.project-group-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  transition: transform var(--duration-fast) ease;
+}
+
+.project-group-chevron svg {
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.project-group-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* ---- Nested Agent List ---- */
+.project-group-agents {
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+  max-height: 500px;
+  padding-left: 12px;
+}
+
+.project-group-agents--collapsed {
+  max-height: 0;
+}
+
+.agent-row--nested {
+  padding: 6px 10px;
+  gap: 8px;
+}
+
+.agent-avatar--sm {
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Status Dot ---- */
+.project-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.project-status-dot--active {
+  background: var(--ok);
+  box-shadow: 0 0 4px var(--ok);
+}
+
+.project-status-dot--paused,
+.project-status-dot--degraded {
+  background: var(--warn);
+  box-shadow: 0 0 4px var(--warn);
+}
+
+.project-status-dot--error,
+.project-status-dot--down {
+  background: var(--danger);
+  box-shadow: 0 0 4px var(--danger);
+}
+
+.project-status-dot--deploying,
+.project-status-dot--archived {
+  background: var(--muted);
+}
+
+/* ---- Standalone Divider ---- */
+.standalone-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.standalone-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ===========================================
+   Team Projects — Detail Panels
+   =========================================== */
+
+/* ---- Agent Avatar Icon (for project header) ---- */
+.agent-avatar-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+}
+
+.agent-avatar-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- Pill variants ---- */
+.agent-pill.ok {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--ok);
+}
+
+.agent-pill.danger {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--danger);
+}
+
+/* ---- Outline button variant ---- */
+.btn--outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.btn--outline:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+/* ---- Danger button variant ---- */
+.btn--danger {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.btn--danger:hover {
+  background: rgba(248, 113, 113, 0.2);
+}
+
+/* ---- Members Table ---- */
+.project-member-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.project-member-header {
+  display: grid;
+  grid-template-columns: 32px 1fr 90px 70px 70px minmax(80px, 200px);
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.project-member-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 90px 70px 70px minmax(80px, 200px);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--duration-fast) ease;
+}
+
+.project-member-row:last-child {
+  border-bottom: none;
+}
+
+.project-member-row:hover {
+  background: var(--bg-hover);
+}
+
+.project-member-name {
+  min-width: 0;
+}
+
+/* ---- Health Badge ---- */
+.project-health-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.project-health-badge--healthy {
+  color: var(--ok);
+}
+
+.project-health-badge--degraded {
+  color: var(--warn);
+}
+
+.project-health-badge--down {
+  color: var(--danger);
+}
+
+/* ---- Stats Bar ---- */
+.project-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.project-stat-label {
+  width: 120px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.project-stat-bar-bg {
+  flex: 1;
+  height: 8px;
+  background: var(--secondary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.project-stat-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.project-stat-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+  width: 50px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ---- Memory List ---- */
+.project-memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-memory-entry {
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.project-memory-key {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.project-memory-value {
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
 }

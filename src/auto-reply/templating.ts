@@ -141,6 +141,8 @@ export type MsgContext = {
    * Used for hook confirmation messages like "Session context saved to memory".
    */
   HookMessages?: string[];
+  /** True when the UI is in continuous voice conversation mode. Triggers conversational system prompt. */
+  VoiceMode?: boolean;
 };
 
 export type FinalizedMsgContext = Omit<MsgContext, "CommandAuthorized"> & {

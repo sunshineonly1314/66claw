@@ -18,6 +18,8 @@ import {
 import { extractToolCards, renderToolCardGroup } from "./tool-cards";
 import { formatErrorHintFull, type FormattedError } from "./error-hints";
 import { openImageLightbox } from "./image-lightbox";
+import { extractImageGenDetails, renderImageGenResult, renderImageGenPending } from "./image-gen-result";
+import { extractVideoGenDetails, renderVideoGenResult } from "./video-gen-result";
 
 // 思考过程折叠阈值（字符数）
 const THINKING_COLLAPSE_THRESHOLD = 200;
@@ -168,7 +170,7 @@ function extractImages(message: unknown): ImageBlock[] {
       const b = block as Record<string, unknown>;
 
       if (b.type === "image") {
-        // Handle source object format (from sendChatMessage)
+        // Handle source object format (from sendChatMessage optimistic message)
         const source = b.source as Record<string, unknown> | undefined;
         if (source?.type === "base64" && typeof source.data === "string") {
           const data = source.data as string;
@@ -179,6 +181,15 @@ function extractImages(message: unknown): ImageBlock[] {
           const url = data.startsWith("data:")
             ? data
             : `data:${mediaType};base64,${data}`;
+          images.push({ url });
+        } else if (typeof b.data === "string" && typeof b.mimeType === "string") {
+          // Handle pi-agent-core ImageContent format from backend history:
+          // { type: "image", data: "raw-base64...", mimeType: "image/jpeg" }
+          const data = b.data as string;
+          if (!isValidBase64ImageData(data)) continue;
+          const url = data.startsWith("data:")
+            ? data
+            : `data:${b.mimeType};base64,${data}`;
           images.push({ url });
         } else if (typeof b.url === "string" && isValidImageUrl(b.url)) {
           images.push({ url: b.url });
@@ -718,14 +729,35 @@ function renderGroupedMessage(
     .filter(Boolean)
     .join(" ");
 
+  // [CN-FIX:image-display] Check for image/video gen results BEFORE the
+  // markdown guard. Tool results from JSONL have text content ("Image generated
+  // successfully.") which makes `markdown` truthy, but we still want specialized
+  // rendering with the actual image inline.
+  if (isToolResult) {
+    const imageGenDetails = extractImageGenDetails(message);
+    if (imageGenDetails) {
+      return renderImageGenResult(imageGenDetails);
+    }
+    const videoGenDetails = extractVideoGenDetails(message);
+    if (videoGenDetails) {
+      return renderVideoGenResult(videoGenDetails);
+    }
+  }
   if (!markdown && hasToolCards && isToolResult) {
     return renderToolCardGroup(toolCards, onOpenSidebar);
   }
 
-  if (!markdown && !hasToolCards && !hasImages && !freeModelNotification) return nothing;
+  // [CN-FIX:image-display] Render image/video gen results injected from preceding
+  // toolResult messages (attached by buildChatItems as __imageGenDetails/__videoGenDetails).
+  const injectedImageGen = isAssistant ? (m.__imageGenDetails as import("./image-gen-result").ImageGenDetails | undefined) : undefined;
+  const injectedVideoGen = isAssistant ? (m.__videoGenDetails as Record<string, unknown> | undefined) : undefined;
+
+  if (!markdown && !hasToolCards && !hasImages && !freeModelNotification && !injectedImageGen && !injectedVideoGen) return nothing;
 
   return html`
     ${freeModelNotification ? renderFreeModelNotificationCard(freeModelNotification) : nothing}
+    ${injectedImageGen ? renderImageGenResult(injectedImageGen) : nothing}
+    ${injectedVideoGen ? renderVideoGenResult(injectedVideoGen as any) : nothing}
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}

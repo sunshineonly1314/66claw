@@ -94,7 +94,9 @@ export class MirrorSelector {
           return {
             url,
             latency_ms: Date.now() - start,
-            available: response.ok || response.status === 405 || response.status === 403,
+            // 405 (Method Not Allowed) means the server exists but rejects HEAD — still usable.
+            // 403 (Forbidden) likely means geo-block or IP ban — skip to avoid wasted download attempt.
+            available: response.ok || response.status === 405,
           };
         } catch {
           return { url, latency_ms: Date.now() - start, available: false };
@@ -462,6 +464,18 @@ async function installSingleSkill(
       if (spec.kind === "brew" && platform !== "darwin") return false;
       return true;
     });
+
+    if (filteredInstall.length === 0) {
+      // No install specs match the current platform — skip without marking as installed
+      onProgress({ type: "skill.progress", skill: skillName, stage: "done" });
+      return {
+        ok: true,
+        skill: skillName,
+        message: "skipped (no install specs for current platform)",
+        mirrors_tried: mirrorsTried,
+        duration_ms: Date.now() - startTime,
+      };
+    }
 
     if (filteredInstall.length > 0) {
       const firstSpec = filteredInstall[0];

@@ -15,6 +15,18 @@ import { resolveMemoryFlushContextWindowTokens } from "./memory-flush.js";
 
 export const DEFAULT_PROACTIVE_COMPACTION_THRESHOLD_RATIO = 0.88;
 
+/**
+ * Returns a dynamic compaction threshold ratio scaled by model context window size.
+ * Smaller models compact earlier (lower ratio) to preserve conversation space;
+ * larger models can tolerate more context usage before compacting.
+ */
+export function resolveDynamicThresholdRatio(contextWindowTokens: number): number {
+  if (contextWindowTokens <= 32_768) return 0.8;
+  if (contextWindowTokens <= 65_536) return 0.85;
+  if (contextWindowTokens <= 131_072) return 0.88;
+  return 0.92;
+}
+
 export type ProactiveCompactionConfig = {
   enabled: boolean;
   thresholdRatio: number;

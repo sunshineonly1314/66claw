@@ -304,6 +304,21 @@ select {
 }
 
 /* Animations - Polished with spring feel */
+
+/* Update banner/dialog animations (CR-17) */
+@keyframes updateBannerIn {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes updateDialogBgIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes updateDialogIn {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
 @keyframes rise {
   from {
     opacity: 0;

@@ -15,6 +15,10 @@ export interface Capability {
     modelId: string;
     modelName: string;
     isFree: boolean;
+    quality?: number;
+    maxContextTokens?: number;
+    capabilities?: Record<string, number>;
+    strengthTier?: string;
   } | null;
   availableModels: number;
 }
@@ -31,6 +35,12 @@ export interface ModelInfo {
   };
   configured: boolean;
   active: boolean;
+  /** Capability quality score 1-5, 0 = unknown */
+  quality?: number;
+  /** Max context window in tokens */
+  maxContextTokens?: number;
+  /** Full capability scores map */
+  capabilities?: Record<string, number>;
 }
 
 export interface ProviderInfo {
@@ -44,6 +54,9 @@ export interface ProviderInfo {
   capabilities: string[];
   configured: boolean;
   activeModels: number;
+  needsBaseUrl: boolean;
+  defaultBaseUrl: string;
+  apiKeyOptional: boolean;
 }
 
 export interface ProviderGroupInfo {
@@ -58,11 +71,22 @@ export interface ProviderGroupInfo {
 
 export type ProviderConfigStep = "guide" | "apikey" | "detecting" | "result";
 
+/** 检测子阶段（用于动画进度反馈） */
+export type DetectPhase = "validating" | "scanning" | "saving" | "done";
+
 /** Provider 健康状态信息 */
 export interface ProviderHealthInfo {
   status: "normal" | "billing_error" | "auth_invalid" | "rate_limited" | "degraded" | "down" | "unknown";
   message?: string;
   lastCheckedAt: number;
+}
+
+/** 单个模型的探测结果状态 */
+export interface DetectModelEntry {
+  modelId: string;
+  modelName: string;
+  status: "pending" | "ok" | "failed" | "skipped";
+  message?: string;
 }
 
 export interface ModelConfigState {
@@ -84,12 +108,25 @@ export interface ModelConfigState {
   providerConfigOpen: boolean;
   providerConfigProvider: ProviderInfo | null;
   providerConfigApiKey: string;
+  providerConfigBaseUrl: string;
   providerConfigCustomModel: string;
   providerConfigTesting: boolean;
   providerConfigTestResult: { success: boolean; message: string } | null;
   providerConfigDetecting: boolean;
   providerConfigStep: ProviderConfigStep;
   providerConfigAutoEnabled: Record<string, string> | null;
+  /** 检测子阶段（动画进度） */
+  providerConfigDetectPhase: DetectPhase;
+  /** 检测耗时秒数（实时更新） */
+  providerConfigDetectElapsed: number;
+  /** 取消检测的 AbortController */
+  providerConfigDetectAbort: AbortController | null;
+  /** 并发检测：总模型数 */
+  providerConfigDetectTotal: number;
+  /** 并发检测：已完成数 */
+  providerConfigDetectCompleted: number;
+  /** 并发检测：逐模型结果列表 */
+  providerConfigDetectModels: DetectModelEntry[];
 
   // Provider 列表
   providers: ProviderInfo[];
@@ -138,12 +175,19 @@ export function createInitialModelConfigState(): ModelConfigState {
     providerConfigOpen: false,
     providerConfigProvider: null,
     providerConfigApiKey: "",
+    providerConfigBaseUrl: "",
     providerConfigCustomModel: "",
     providerConfigTesting: false,
     providerConfigTestResult: null,
     providerConfigDetecting: false,
     providerConfigStep: "guide",
     providerConfigAutoEnabled: null,
+    providerConfigDetectPhase: "validating",
+    providerConfigDetectElapsed: 0,
+    providerConfigDetectAbort: null,
+    providerConfigDetectTotal: 0,
+    providerConfigDetectCompleted: 0,
+    providerConfigDetectModels: [],
     providers: [],
     providerGroups: [],
     providerManageOpen: false,
@@ -163,8 +207,30 @@ export function createInitialModelConfigState(): ModelConfigState {
   };
 }
 
+/** v2 capability_matrix.summary 响应中单个能力的形状 */
+interface CapMatrixEntry {
+  key: string;
+  name: string;
+  icon: string;
+  description: string;
+  status: "active" | "unconfigured" | "missing";
+  bestModel?: {
+    provider: string;
+    modelId: string;
+    displayName: string;
+    quality: number;
+    costTier: string;
+    region: string;
+    maxContextTokens?: number;
+    capabilities?: Record<string, number>;
+    strengthTier?: string;
+  };
+  alternatives?: number;
+  recommendation?: unknown;
+}
+
 /**
- * 加载能力列表
+ * 加载能力列表 — 优先使用 v2 capability_matrix API，回退到 v1
  */
 export async function loadCapabilities(host: ModelConfigHost): Promise<void> {
   if (!host.client || !host.connected) {
@@ -177,11 +243,42 @@ export async function loadCapabilities(host: ModelConfigHost): Promise<void> {
   host.modelConfigError = null;
 
   try {
-    const result = await host.client.request("modelConfig.capabilities.list");
-    const data = result as { capabilities: Capability[] };
-    host.capabilities = data.capabilities ?? [];
-  } catch (err) {
-    host.modelConfigError = `加载失败: ${String(err)}`;
+    // 优先尝试 v2 capability_matrix API
+    const result = await host.client.request("capability_matrix.summary");
+    const data = result as { capabilities: CapMatrixEntry[] };
+    // 验证 v2 响应结构有效（Gateway 未注册该方法时返回空对象）
+    if (!Array.isArray(data.capabilities)) throw new Error("v2 response invalid");
+    // 将 v2 响应适配为 UI 使用的 Capability 接口
+    host.capabilities = data.capabilities.map(entry => ({
+      capability: entry.key,
+      name: entry.name,
+      description: entry.description,
+      icon: entry.icon,
+      status: entry.status === "active" ? "active" as const : "inactive" as const,
+      currentModel: entry.bestModel
+        ? {
+            providerId: entry.bestModel.provider,
+            providerName: entry.bestModel.provider,
+            modelId: entry.bestModel.modelId,
+            modelName: entry.bestModel.displayName,
+            isFree: entry.bestModel.costTier === "free",
+            quality: entry.bestModel.quality,
+            maxContextTokens: entry.bestModel.maxContextTokens,
+            capabilities: entry.bestModel.capabilities,
+            strengthTier: entry.bestModel.strengthTier,
+          }
+        : null,
+      availableModels: entry.alternatives ?? 0,
+    }));
+  } catch {
+    // v2 不可用时回退到 v1
+    try {
+      const result = await host.client.request("modelConfig.capabilities.list");
+      const data = result as { capabilities: Capability[] };
+      host.capabilities = data.capabilities ?? [];
+    } catch (err) {
+      host.modelConfigError = `加载失败: ${String(err)}`;
+    }
   } finally {
     host.modelConfigLoading = false;
   }
@@ -214,8 +311,27 @@ export function toggleProviderGroup(host: ModelConfigHost, groupId: string): voi
   );
 }
 
+/** v2 capability_matrix.query 响应中单个模型的形状 */
+interface CapMatrixModel {
+  provider: string;
+  modelId: string;
+  displayName: string;
+  quality: number;
+  costTier: string;
+  costPer1M?: number;
+  region?: string;
+  modelType?: string;
+  configured: boolean;
+  health?: string;
+  probeStatus?: string;
+  tags?: string[];
+  languages?: string[];
+  requiresDownload?: boolean;
+  capabilities?: Record<string, number>;
+}
+
 /**
- * 打开模型选择器
+ * 打开模型选择器 — 优先使用 v2 API，回退到 v1
  */
 export async function openModelSelector(
   host: ModelConfigHost,
@@ -229,14 +345,45 @@ export async function openModelSelector(
   host.modelSelectorLoading = true;
 
   try {
-    const result = await host.client.request("modelConfig.capability.models", {
+    // 优先尝试 v2 capability_matrix.query
+    const result = await host.client.request("capability_matrix.query", {
       capability: capability.capability,
     });
-    const data = result as { models: ModelInfo[] };
-    host.modelSelectorModels = data.models ?? [];
-  } catch (err) {
-    host.modelConfigError = `加载模型列表失败: ${String(err)}`;
-    closeModelSelector(host);
+    const data = result as { models: CapMatrixModel[] };
+    if (!Array.isArray(data.models)) throw new Error("v2 response invalid");
+    // 适配为 ModelInfo 接口
+    host.modelSelectorModels = data.models.map(m => ({
+      providerId: m.provider,
+      providerName: m.provider,
+      providerIcon: "",
+      modelId: m.modelId,
+      modelName: m.displayName,
+      pricing: { type: m.costTier === "free" ? "free" as const : "paid" as const },
+      configured: m.configured,
+      active: false, // v2 不直接标记 active，由 UI 根据 currentModel 判断
+      quality: m.quality ?? 0,
+      maxContextTokens: m.maxContextTokens,
+      capabilities: m.capabilities,
+    }));
+    // 标记当前激活的模型
+    const currentModelId = capability.currentModel?.modelId;
+    if (currentModelId) {
+      host.modelSelectorModels = host.modelSelectorModels.map(m =>
+        m.modelId === currentModelId ? { ...m, active: true } : m
+      );
+    }
+  } catch {
+    // v2 不可用时回退到 v1
+    try {
+      const result = await host.client.request("modelConfig.capability.models", {
+        capability: capability.capability,
+      });
+      const data = result as { models: ModelInfo[] };
+      host.modelSelectorModels = data.models ?? [];
+    } catch (err) {
+      host.modelConfigError = `加载模型列表失败: ${String(err)}`;
+      closeModelSelector(host);
+    }
   } finally {
     host.modelSelectorLoading = false;
   }
@@ -315,6 +462,7 @@ export function openProviderConfig(host: ModelConfigHost, provider: ProviderInfo
   host.providerConfigOpen = true;
   host.providerConfigProvider = provider;
   host.providerConfigApiKey = "";
+  host.providerConfigBaseUrl = provider.defaultBaseUrl ?? "";
   host.providerConfigTesting = false;
   host.providerConfigTestResult = null;
   host.providerConfigDetecting = false;
@@ -330,12 +478,16 @@ export function closeProviderConfig(host: ModelConfigHost): void {
   host.providerConfigOpen = false;
   host.providerConfigProvider = null;
   host.providerConfigApiKey = "";
+  host.providerConfigBaseUrl = "";
   host.providerConfigCustomModel = "";
   host.providerConfigTesting = false;
   host.providerConfigTestResult = null;
   host.providerConfigDetecting = false;
   host.providerConfigStep = "guide";
   host.providerConfigAutoEnabled = null;
+  host.providerConfigDetectTotal = 0;
+  host.providerConfigDetectCompleted = 0;
+  host.providerConfigDetectModels = [];
 }
 
 /**
@@ -343,6 +495,14 @@ export function closeProviderConfig(host: ModelConfigHost): void {
  */
 export function updateProviderApiKey(host: ModelConfigHost, apiKey: string): void {
   host.providerConfigApiKey = apiKey;
+  host.providerConfigTestResult = null;
+}
+
+/**
+ * 更新 Base URL
+ */
+export function updateProviderBaseUrl(host: ModelConfigHost, baseUrl: string): void {
+  host.providerConfigBaseUrl = baseUrl;
   host.providerConfigTestResult = null;
 }
 
@@ -385,70 +545,209 @@ export function navigateToProviderConfig(host: ModelConfigHost, providerId: stri
 
 /**
  * 自动检测并配置 Provider
+ *
+ * 采用 respond-immediately + broadcast 进度模式：
+ *   1. RPC 立即返回 { started, total }
+ *   2. 后端并发探测每个模型，逐个 broadcast progress 事件
+ *   3. 全部完成后 broadcast complete 事件
+ *   UI 通过 handleDetectProgressEvent / handleDetectCompleteEvent 处理进度
  */
-/** 检测超时时间 (30秒) */
-const DETECT_TIMEOUT_MS = 30_000;
+const DETECT_TIMEOUT_MS = 60_000;
 
 export async function detectAndConfigureProvider(host: ModelConfigHost): Promise<void> {
   if (!host.client || !host.connected) return;
   if (!host.providerConfigProvider) return;
 
+  // 初始化检测状态
+  const abort = new AbortController();
   host.providerConfigDetecting = true;
   host.providerConfigTestResult = null;
   host.providerConfigStep = "detecting";
+  host.providerConfigDetectPhase = "validating";
+  host.providerConfigDetectElapsed = 0;
+  host.providerConfigDetectAbort = abort;
+  host.providerConfigDetectTotal = 0;
+  host.providerConfigDetectCompleted = 0;
+  host.providerConfigDetectModels = [];
+
+  // 耗时计时器 — 每秒更新
+  const startTime = Date.now();
+  const elapsedTimer = setInterval(() => {
+    host.providerConfigDetectElapsed = Math.floor((Date.now() - startTime) / 1000);
+  }, 1000);
+
+  // 超时保护
+  const timeoutTimer = setTimeout(() => {
+    if (host.providerConfigDetecting) {
+      _finishDetection(host, elapsedTimer, {
+        success: false,
+        message: "检测超时，请检查网络后重试",
+      });
+    }
+  }, DETECT_TIMEOUT_MS);
+
+  // 取消监听
+  abort.signal.addEventListener("abort", () => {
+    clearTimeout(timeoutTimer);
+    _finishDetection(host, elapsedTimer, null); // null = 用户取消
+  });
 
   try {
-    const rpcPromise = host.client.request("modelConfig.provider.detect", {
+    const result = await host.client.request("modelConfig.provider.detect", {
       providerId: host.providerConfigProvider.providerId,
       apiKey: host.providerConfigApiKey,
+      ...(host.providerConfigBaseUrl ? { baseUrl: host.providerConfigBaseUrl.trim() } : {}),
       ...(host.providerConfigCustomModel ? { customModel: host.providerConfigCustomModel.trim() } : {}),
     });
 
-    // 超时保护：防止 Gateway 挂起导致弹窗永远卡在 detecting
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("DETECT_TIMEOUT")), DETECT_TIMEOUT_MS)
-    );
+    const data = result as { started?: boolean; total?: number };
 
-    const result = await Promise.race([rpcPromise, timeoutPromise]);
-
-    const data = result as {
-      success: boolean;
-      error?: string;
-      models?: Array<{
-        modelId: string;
-        modelName: string;
-        capabilities: string[];
-        available: boolean;
-      }>;
-      autoEnabled?: Record<string, string>;
-    };
-
-    if (data.success) {
-      const enabledCount = Object.keys(data.autoEnabled ?? {}).length;
-      host.providerConfigTestResult = {
-        success: true,
-        message: `配置成功！已自动启用 ${enabledCount} 个能力`,
-      };
-      host.providerConfigAutoEnabled = (data.autoEnabled as Record<string, string>) ?? null;
-      host.providerConfigStep = "result";
+    if (data.started) {
+      // RPC 返回 started — 进度通过 broadcast 事件到达
+      host.providerConfigDetectPhase = "scanning";
+      host.providerConfigDetectTotal = data.total ?? 0;
+      // 初始化 pending 模型列表（真实列表会随 progress 事件更新）
+      // 此时不知道模型名，留空 — progress 事件会填充
     } else {
-      host.providerConfigTestResult = {
-        success: false,
-        message: translateProviderError(data.error ?? "配置失败"),
+      // 兼容旧版 Gateway（直接返回完整结果）
+      clearTimeout(timeoutTimer);
+      const legacyData = result as {
+        success: boolean;
+        error?: string;
+        autoEnabled?: Record<string, string>;
       };
-      host.providerConfigStep = "apikey";
+      if (legacyData.success) {
+        const enabledCount = Object.keys(legacyData.autoEnabled ?? {}).length;
+        _finishDetection(host, elapsedTimer, {
+          success: true,
+          message: `配置完成！已自动启用 ${enabledCount} 个能力`,
+          autoEnabled: legacyData.autoEnabled as Record<string, string>,
+        });
+      } else {
+        _finishDetection(host, elapsedTimer, {
+          success: false,
+          message: translateProviderError(legacyData.error ?? "配置失败"),
+        });
+      }
     }
   } catch (err) {
+    clearTimeout(timeoutTimer);
     const errStr = String(err);
-    const isTimeout = errStr.includes("DETECT_TIMEOUT");
-    host.providerConfigTestResult = {
+    const isTimeout = errStr.includes("DETECT_TIMEOUT") || errStr.includes("timeout");
+    _finishDetection(host, elapsedTimer, {
       success: false,
       message: isTimeout ? "检测超时，请检查网络后重试" : `配置失败: ${errStr}`,
-    };
-    host.providerConfigStep = "apikey";
-  } finally {
-    host.providerConfigDetecting = false;
+    });
   }
+}
+
+/** 内部：结束检测流程 */
+function _finishDetection(
+  host: ModelConfigState,
+  elapsedTimer: ReturnType<typeof setInterval> | null,
+  outcome: { success: boolean; message: string; autoEnabled?: Record<string, string> } | null,
+): void {
+  if (elapsedTimer) clearInterval(elapsedTimer);
+  host.providerConfigDetecting = false;
+  host.providerConfigDetectAbort = null;
+
+  if (outcome === null) {
+    // 用户取消
+    host.providerConfigStep = "apikey";
+    host.providerConfigTestResult = null;
+  } else if (outcome.success) {
+    host.providerConfigDetectPhase = "done";
+    host.providerConfigTestResult = { success: true, message: outcome.message };
+    host.providerConfigAutoEnabled = outcome.autoEnabled ?? null;
+    host.providerConfigStep = "result";
+  } else {
+    host.providerConfigTestResult = { success: false, message: outcome.message };
+    host.providerConfigStep = "apikey";
+  }
+}
+
+/**
+ * 处理 modelConfig.detect.progress broadcast 事件
+ */
+export function handleDetectProgressEvent(
+  host: ModelConfigState,
+  payload: {
+    modelId: string;
+    modelName: string;
+    status: "ok" | "failed" | "skipped";
+    message?: string;
+    completed: number;
+    total: number;
+  },
+): void {
+  if (!host.providerConfigDetecting) return;
+
+  host.providerConfigDetectCompleted = payload.completed;
+  host.providerConfigDetectTotal = payload.total;
+
+  // 更新或添加模型条目
+  const existing = host.providerConfigDetectModels.find(m => m.modelId === payload.modelId);
+  if (existing) {
+    existing.status = payload.status;
+    existing.message = payload.message;
+  } else {
+    host.providerConfigDetectModels = [
+      ...host.providerConfigDetectModels,
+      {
+        modelId: payload.modelId,
+        modelName: payload.modelName,
+        status: payload.status,
+        message: payload.message,
+      },
+    ];
+  }
+}
+
+/**
+ * 处理 modelConfig.detect.complete broadcast 事件
+ */
+export function handleDetectCompleteEvent(
+  host: ModelConfigState & { providerConfigDetectAbort: AbortController | null },
+  payload: {
+    success: boolean;
+    models: Array<{ modelId: string; modelName: string; status: string; message?: string }>;
+    autoEnabled: Record<string, string>;
+    availableCount: number;
+    failedCount: number;
+    error?: string;
+  },
+): void {
+  if (!host.providerConfigDetecting) return;
+
+  // 更新最终的模型列表
+  host.providerConfigDetectModels = payload.models.map(m => ({
+    modelId: m.modelId,
+    modelName: m.modelName,
+    status: m.status as DetectModelEntry["status"],
+    message: m.message,
+  }));
+  host.providerConfigDetectCompleted = payload.models.length;
+
+  if (payload.success) {
+    const enabledCount = Object.keys(payload.autoEnabled).length;
+    _finishDetection(host, null, {
+      success: true,
+      message: `配置完成！${payload.availableCount} 个模型可用${payload.failedCount > 0 ? `，${payload.failedCount} 个不可用` : ""}，已自动启用 ${enabledCount} 个能力`,
+      autoEnabled: payload.autoEnabled,
+    });
+  } else {
+    _finishDetection(host, null, {
+      success: false,
+      message: translateProviderError(payload.error ?? "配置失败"),
+    });
+  }
+}
+
+/**
+ * 取消正在进行的检测
+ */
+export function cancelDetection(host: ModelConfigHost): void {
+  host.providerConfigDetectAbort?.abort();
 }
 
 /**

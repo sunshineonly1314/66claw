@@ -16,7 +16,7 @@ import {
   resolveAuthProfileOrder,
   resolveAuthStorePathForDisplay,
 } from "./auth-profiles.js";
-import { normalizeProviderId } from "./model-selection.js";
+import { normalizeProviderId, getProviderAliases } from "./model-selection.js";
 
 export { ensureAuthProfileStore, resolveAuthProfileOrder } from "./auth-profiles.js";
 
@@ -335,6 +335,10 @@ export function resolveEnvApiKey(provider: string): EnvApiKeyResult | null {
     "tencent-hunyuan": "HUNYUAN_API_KEY",
     "ant-ling": "ANT_LING_API_KEY",
     "meituan-longcat": "LONGCAT_API_KEY",
+    // Coding Plan providers
+    "aliyun-codeplan": "ALIYUN_CODEPLAN_API_KEY",
+    "glm-codeplan": "GLM_CODEPLAN_API_KEY",
+    "minimax-codeplan": "MINIMAX_CODEPLAN_API_KEY",
   };
   const envVar = envMap[normalized];
   if (!envVar) {
@@ -440,6 +444,58 @@ export function hasProviderCredentials(
   // 5. amazon-bedrock implicit aws-sdk fallback
   if (authOverride === undefined && normalized === "amazon-bedrock") {
     return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check if a provider was *explicitly configured by the user* —
+ * i.e. has an auth profile, a config apiKey, or an enabled freeModels account.
+ *
+ * Unlike hasProviderCredentials, this deliberately ignores environment
+ * variables (ANTHROPIC_API_KEY etc.) so that capability cards only show
+ * providers the user intentionally set up in the UI / config file.
+ *
+ * Checks ALL aliases in the provider's alias group so that e.g.
+ * `hasUserConfiguredProvider("zhipu", ...)` returns true when the user
+ * configured "glm" through the setup wizard.
+ */
+export function hasUserConfiguredProvider(
+  provider: string,
+  cfg: OpenClawCNConfig | undefined,
+  store?: AuthProfileStore,
+): boolean {
+  const aliases = getProviderAliases(provider);
+
+  for (const alias of aliases) {
+    // 1. Auth profiles exist for this provider (or alias)
+    if (store) {
+      const profiles = listProfilesForProvider(store, alias);
+      if (profiles.length > 0) {
+        return true;
+      }
+    }
+
+    // 2. Config apiKey (written by setup wizard / UI)
+    if (getCustomProviderApiKey(cfg, alias)) {
+      return true;
+    }
+  }
+
+  // 3. freeModels.accounts — check if an enabled free-model account exists
+  //    for any alias of this provider
+  const freeModels = (
+    cfg as
+      | { freeModels?: { accounts?: Array<{ providerId: string; enabled: boolean }> } }
+      | undefined
+  )?.freeModels;
+  if (freeModels?.accounts) {
+    for (const account of freeModels.accounts) {
+      if (account.enabled && aliases.includes(account.providerId.toLowerCase())) {
+        return true;
+      }
+    }
   }
 
   return false;

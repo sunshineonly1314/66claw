@@ -35,6 +35,12 @@ export {
   applyXiaomiProviderConfig,
   applyZaiConfig,
   applyZaiProviderConfig,
+  applyAliyunCodeplanConfig,
+  applyAliyunCodeplanProviderConfig,
+  applyGlmCodeplanConfig,
+  applyGlmCodeplanProviderConfig,
+  applyMinimaxCodeplanConfig,
+  applyMinimaxCodeplanProviderConfig,
 } from "./onboard-auth.config-core.js";
 export {
   applyMinimaxApiConfig,
@@ -92,6 +98,13 @@ export {
   setTencentHunyuanApiKey,
   setModelscopeApiKey,
   setOllamaApiKey,
+  // Coding Plan providers
+  ALIYUN_CODEPLAN_DEFAULT_MODEL_REF,
+  GLM_CODEPLAN_DEFAULT_MODEL_REF,
+  MINIMAX_CODEPLAN_DEFAULT_MODEL_REF,
+  setAliyunCodeplanApiKey,
+  setGlmCodeplanApiKey,
+  setMinimaxCodeplanApiKey,
 } from "./onboard-auth.credentials.js";
 export {
   buildMinimaxApiModelDefinition,
@@ -118,4 +131,14 @@ export {
   ZAI_CODING_GLOBAL_BASE_URL,
   ZAI_CN_BASE_URL,
   ZAI_GLOBAL_BASE_URL,
+  // Coding Plan model constants
+  ALIYUN_CODEPLAN_BASE_URL,
+  ALIYUN_CODEPLAN_DEFAULT_MODEL_ID,
+  ALIYUN_CODEPLAN_MODEL_REF,
+  GLM_CODEPLAN_BASE_URL,
+  GLM_CODEPLAN_DEFAULT_MODEL_ID,
+  GLM_CODEPLAN_MODEL_REF,
+  MINIMAX_CODEPLAN_BASE_URL,
+  MINIMAX_CODEPLAN_DEFAULT_MODEL_ID,
+  MINIMAX_CODEPLAN_MODEL_REF,
 } from "./onboard-auth.models.js";

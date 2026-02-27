@@ -3,6 +3,7 @@ import type { OpenClawCNConfig } from "../config/config.js";
 import { resolveAgentDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { resolveMemorySearchConfig } from "../agents/memory-search.js";
 import { resolveApiKeyForProvider } from "../agents/model-auth.js";
+import { resolveMemoryBackendConfig } from "../memory/backend-config.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { note } from "../terminal/note.js";
 import { resolveUserPath } from "../utils.js";
@@ -19,6 +20,12 @@ export async function noteMemorySearchHealth(cfg: OpenClawCNConfig): Promise<voi
 
   if (!resolved) {
     note("Memory search is explicitly disabled (enabled: false).", "Memory search");
+    return;
+  }
+
+  // [CN-MERGE:b45bb6801c] Skip embedding provider check when QMD backend handles it
+  const backendConfig = resolveMemoryBackendConfig({ cfg, agentId });
+  if (backendConfig.backend === "qmd") {
     return;
   }
 

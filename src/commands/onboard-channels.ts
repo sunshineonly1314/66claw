@@ -675,5 +675,45 @@ export async function setupChannels(
     });
   }
 
+  // ── dmScope 自动检测提示 ──────────────────────────────────────────
+  try {
+    const channelPlugins = selection
+      .map((id) => {
+        try {
+          return getChannelPlugin(id);
+        } catch {
+          return null;
+        }
+      })
+      .filter((p): p is NonNullable<typeof p> => p != null);
+    if (channelPlugins.length > 0) {
+      const { recommendDmScope } = await import("../session/dm-scope-auto.js");
+      const recommendation = recommendDmScope({ cfg: next, plugins: channelPlugins });
+      if (recommendation.shouldUpgrade) {
+        const label =
+          recommendation.recommended === "per-peer"
+            ? "per-peer (per user)"
+            : recommendation.recommended === "per-channel-peer"
+              ? "per-channel-peer (per channel + user)"
+              : "per-account-channel-peer (full isolation)";
+        const apply = await prompter.confirm({
+          message: `Session isolation "${recommendation.current}" is low for ${recommendation.multiUserChannels.join(", ")}. Upgrade to "${label}"?`,
+          initialValue: true,
+        });
+        if (apply) {
+          next = {
+            ...next,
+            session: {
+              ...(next.session ?? {}),
+              dmScope: recommendation.recommended,
+            } as OpenClawCNConfig["session"],
+          };
+        }
+      }
+    }
+  } catch {
+    // Non-fatal: dmScope detection is best-effort
+  }
+
   return next;
 }

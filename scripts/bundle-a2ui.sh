@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Windows Git Bash lacks shasum; fall back to sha256sum
+if command -v shasum &>/dev/null; then
+  SHA_CMD="shasum -a 256"
+elif command -v sha256sum &>/dev/null; then
+  SHA_CMD="sha256sum"
+else
+  echo "ERROR: no shasum or sha256sum found" >&2; exit 1
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HASH_FILE="$ROOT_DIR/src/canvas-host/a2ui/.bundle.hash"
 
@@ -25,8 +34,8 @@ collect_files() {
 compute_hash() {
   collect_files \
     | LC_ALL=C sort -z \
-    | xargs -0 shasum -a 256 \
-    | shasum -a 256 \
+    | xargs -0 $SHA_CMD \
+    | $SHA_CMD \
     | awk '{print $1}'
 }
 

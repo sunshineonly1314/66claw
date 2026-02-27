@@ -51,25 +51,39 @@ function buildMemorySection(params: {
   isMinimal: boolean;
   availableTools: Set<string>;
   citationsMode?: MemoryCitationsMode;
+  /** Pre-formatted profile.json content for L1 hot injection. */
+  profilePrompt?: string;
 }) {
   if (params.isMinimal) {
     return [];
   }
-  if (!params.availableTools.has("memory_search") && !params.availableTools.has("memory_get")) {
+  // Profile injection is independent of memory_search tool availability.
+  // Even without search tools, the user profile should be visible to the agent.
+  const hasSearchTools =
+    params.availableTools.has("memory_search") || params.availableTools.has("memory_get");
+  if (!hasSearchTools && !params.profilePrompt) {
     return [];
   }
-  const lines = [
-    "## Memory Recall",
-    "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
-  ];
-  if (params.citationsMode === "off") {
+  const lines: string[] = ["## Memory Recall"];
+  if (hasSearchTools) {
     lines.push(
-      "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
     );
-  } else {
-    lines.push(
-      "Citations: include Source: <path#line> when it helps the user verify memory snippets.",
-    );
+    if (params.citationsMode === "off") {
+      lines.push(
+        "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",
+      );
+    } else {
+      lines.push(
+        "Citations: include Source: <path#line> when it helps the user verify memory snippets.",
+      );
+    }
+  }
+  // [CN-PATCH:memory-L1] Inject hot profile entries from profile.json.
+  // This ensures the agent always sees user identity/preferences/corrections
+  // without depending on the model actively calling memory_search.
+  if (params.profilePrompt) {
+    lines.push("", params.profilePrompt);
   }
   lines.push("");
   return lines;
@@ -226,6 +240,8 @@ export function buildAgentSystemPrompt(params: {
     channel: string;
   };
   memoryCitationsMode?: MemoryCitationsMode;
+  /** [CN-PATCH:memory-L1] Pre-formatted profile.json content for system prompt injection. */
+  profilePrompt?: string;
 }) {
   const coreToolSummaries: Record<string, string> = {
     read: "Read file contents",
@@ -271,6 +287,10 @@ export function buildAgentSystemPrompt(params: {
     ].join(" "),
     // GUI automation tools removed from distribution
     image_gen: "Generate images with AI (DALL-E, DashScope, SiliconFlow)",
+    // [CN-PATCH:memory-L1] Structured memory tools
+    memory_upsert:
+      "Save a user fact/preference/correction to long-term memory (profile.json). Use when user shares persistent info worth remembering across sessions.",
+    memory_forget: "Remove a specific memory entry by category and key.",
   };
 
   const toolOrder = [
@@ -301,6 +321,8 @@ export function buildAgentSystemPrompt(params: {
     "desktop_control",
     // GUI automation tools removed
     "image_gen",
+    "memory_upsert",
+    "memory_forget",
   ];
 
   const rawToolNames = (params.toolNames ?? []).map((tool) => tool.trim());
@@ -410,6 +432,7 @@ export function buildAgentSystemPrompt(params: {
     isMinimal,
     availableTools,
     citationsMode: params.memoryCitationsMode,
+    profilePrompt: params.profilePrompt,
   });
   const docsSection = buildDocsSection({
     docsPath: params.docsPath,

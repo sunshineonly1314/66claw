@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+  }
+  .border-overlay {
+    position: fixed;
+    inset: 0;
+    border: 4px solid #00d4aa;
+    border-radius: 4px;
+    box-shadow: inset 0 0 20px rgba(0, 212, 170, 0.15), 0 0 15px rgba(0, 212, 170, 0.3);
+    pointer-events: none;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% {
+      border-color: #00d4aa;
+      box-shadow: inset 0 0 20px rgba(0, 212, 170, 0.1), 0 0 15px rgba(0, 212, 170, 0.3);
+    }
+    50% {
+      border-color: #00ffcc;
+      box-shadow: inset 0 0 30px rgba(0, 255, 204, 0.12), 0 0 25px rgba(0, 255, 204, 0.4);
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="border-overlay"></div>
+</body>
+</html>

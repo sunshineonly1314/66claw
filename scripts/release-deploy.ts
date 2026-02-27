@@ -41,8 +41,8 @@ const DIST_DIR = path.join(ROOT_DIR, "dist");
 const CACHE_DIR_DEFAULT = path.join(ROOT_DIR, ".release-cache");
 const DEPLOY_DIR = path.join(ROOT_DIR, ".release-deploy"); // 临时部署目录
 /** 服务器上文件系统路径（用于 scp 上传） */
-const SERVER_RELEASES_FS_PATH = "/var/www/updates/releases";
-/** URL 路径（Nginx root = /var/www/updates，对外暴露 /releases/） */
+const SERVER_RELEASES_FS_PATH = "/data/dl/releases";
+/** URL 路径（Nginx root = /data/dl，对外暴露 /releases/） */
 const SERVER_RELEASES_URL_PATH = "/releases";
 
 /** 保留最近几个版本的缓存用于增量包生成 */
@@ -84,7 +84,7 @@ const { values: args } = parseArgs({
     version: { type: "string", short: "v" },
     server: { type: "string", short: "s" },
     port: { type: "string", short: "p", default: "22" },
-    protocol: { type: "string", default: "http" },
+    protocol: { type: "string", default: "https" },
     "output-only": { type: "boolean", default: false },
     "skip-delta": { type: "boolean", default: false },
     "skip-upload": { type: "boolean", default: false },
@@ -151,6 +151,17 @@ Examples:
   node --import tsx scripts/release-deploy.ts -v 2026.2.20 -s root@1.2.3.4 --installers ./build-artifacts/
 `);
   process.exit(0);
+}
+
+// ─── 输入校验（防止 shell 注入） ─────────────────────
+
+/** 校验 CLI 参数中不含 shell 元字符，防止 exec() 命令注入 */
+function assertSafeShellArg(name: string, value: string): void {
+  // 允许: 字母、数字、.、-、_、:、@、/、\（路径）
+  // 拒绝: ;、|、&、`、$、(、)、{、}、<、>、换行等
+  if (/[;|&`$(){}<>\n\r]/.test(value)) {
+    throw new Error(`参数 --${name} 含有不安全字符: ${JSON.stringify(value)}`);
+  }
 }
 
 // ─── 工具函数 ─────────────────────────────────────────
@@ -245,7 +256,7 @@ function compareVersions(a: string, b: string): number {
 // ─── 核心逻辑 ─────────────────────────────────────────
 
 async function main() {
-  const totalSteps = 9;
+  const totalSteps = 10;
   const startedAt = Date.now();
 
   console.log("");
@@ -430,11 +441,39 @@ async function main() {
       }
 
       const deltaManifest = readJson<{
-        added: unknown[];
-        modified: unknown[];
+        added: Array<{ path: string; sha256: string; size: number }>;
+        modified: Array<{ path: string; sha256: string; size: number }>;
         removed: string[];
         totalFiles: number;
+        totalSize: number;
       }>(deltaJsonPath);
+
+      // CR-3: 将 package.json 变更也纳入 delta 包（防止依赖变更后 MODULE_NOT_FOUND）
+      {
+        const newPkgPath = path.join(ROOT_DIR, "package.json");
+        const oldPkgPath = path.join(CACHE_DIR, oldVersion, "package.json");
+        if (fileExists(newPkgPath)) {
+          const newPkgHash = sha256File(newPkgPath);
+          const oldPkgHash = fileExists(oldPkgPath) ? sha256File(oldPkgPath) : null;
+          if (oldPkgHash !== newPkgHash) {
+            const pkgSize = fs.statSync(newPkgPath).size;
+            const destDir = oldPkgHash ? "modified" : "added";
+            fs.mkdirSync(path.join(deltaOutputDir, destDir), { recursive: true });
+            fs.copyFileSync(newPkgPath, path.join(deltaOutputDir, destDir, "package.json"));
+            const entry = { path: "package.json", sha256: newPkgHash, size: pkgSize };
+            if (oldPkgHash) {
+              deltaManifest.modified.push(entry);
+            } else {
+              deltaManifest.added.push(entry);
+            }
+            deltaManifest.totalFiles++;
+            deltaManifest.totalSize += pkgSize;
+            // 回写更新后的 delta.json
+            fs.writeFileSync(deltaJsonPath, JSON.stringify(deltaManifest, null, 2), "utf-8");
+            info(`  package.json 已纳入增量包 (${destDir})`);
+          }
+        }
+      }
 
       const hasChanges = deltaManifest.totalFiles > 0 || deltaManifest.removed.length > 0;
       if (!hasChanges) {
@@ -507,9 +546,71 @@ async function main() {
     info(`  ${f} (${fileSizeHuman(size)})`);
   }
 
-  // ─── Step 6: 生成 platform-manifest.json / latest.json ───
+  // ─── Step 6.5: Ed25519 签名 ───
 
-  step(7, totalSteps, buildPlatform ? "生成 platform-manifest.json" : "生成 latest.json");
+  step(7, totalSteps, "Ed25519 签名");
+
+  const signingPrivateKeyRaw = process.env.UPDATE_SIGNING_PRIVATE_KEY?.trim();
+  // CR-12: CI 环境变量中换行符可能被转义为 \n 字面量，需要还原为真实换行符
+  const signingPrivateKey = signingPrivateKeyRaw?.replace(/\\n/g, "\n");
+  if (signingPrivateKey) {
+    // 验证 PEM 格式
+    if (!signingPrivateKey.includes("-----BEGIN")) {
+      error("UPDATE_SIGNING_PRIVATE_KEY 格式错误：需要 PEM 格式（以 -----BEGIN 开头）");
+      error("提示：如果密钥是 base64 编码的 DER，请用 openssl 转换为 PEM 格式");
+      process.exit(1);
+    }
+
+    // 预先测试密钥可用性
+    try {
+      crypto.createPrivateKey(signingPrivateKey);
+    } catch (e) {
+      error(`UPDATE_SIGNING_PRIVATE_KEY 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+      error("请检查密钥格式是否完整（包含 BEGIN/END 行和正确的换行）");
+      process.exit(1);
+    }
+
+    info("检测到 UPDATE_SIGNING_PRIVATE_KEY，为发布文件生成 Ed25519 签名...");
+
+    const privateKeyObj = crypto.createPrivateKey(signingPrivateKey);
+
+    function signFile(filePath: string): void {
+      const content = fs.readFileSync(filePath);
+      const signature = crypto.sign(null, content, privateKeyObj);
+      const sigBase64 = signature.toString("base64");
+      const sigPath = `${filePath}.sig`;
+      fs.writeFileSync(sigPath, sigBase64, "utf-8");
+      info(`  签名: ${path.basename(filePath)} -> ${path.basename(sigPath)}`);
+    }
+
+    // 签名 full.tar.gz
+    if (fileExists(fullTarPath)) {
+      signFile(fullTarPath);
+    }
+
+    // 签名 checksums.json
+    const checksumsInDeploy = path.join(versionDir, "checksums.json");
+    if (fileExists(checksumsInDeploy)) {
+      signFile(checksumsInDeploy);
+    }
+
+    // 签名所有 delta 包
+    for (const d of deltas) {
+      const deltaTarInDeploy = path.join(versionDir, d.tarName);
+      if (fileExists(deltaTarInDeploy)) {
+        signFile(deltaTarInDeploy);
+      }
+    }
+
+    info("Ed25519 签名完成");
+  } else {
+    warn("未设置 UPDATE_SIGNING_PRIVATE_KEY 环境变量，跳过 Ed25519 签名");
+    warn("生产发布前请配置签名密钥（openssl genpkey -algorithm Ed25519）");
+  }
+
+  // ─── Step 7: 生成 platform-manifest.json / latest.json ───
+
+  step(8, totalSteps, buildPlatform ? "生成 platform-manifest.json" : "生成 latest.json");
 
   // 根据上传方式确定下载 URL 前缀
   let urlBase: string;
@@ -693,9 +794,9 @@ async function main() {
     info("latest.json 生成完成");
   }
 
-  // ─── Step 7: 上传到服务器 ───
+  // ─── Step 8: 上传到服务器 ───
 
-  step(8, totalSteps, "上传到服务器");
+  step(9, totalSteps, "上传到服务器");
 
   if (outputOnly || skipUpload) {
     info("跳过上传 (--output-only / --skip-upload)");
@@ -709,6 +810,14 @@ async function main() {
   // ─── Step 8.5: 通知服务端合并 latest.json（平台模式） ───
 
   if (buildPlatform && !outputOnly && !skipUpload && notifyUrl) {
+    // [CN-PATCH] 强制 HTTPS — 防止 secret 明文传输
+    if (!notifyUrl.startsWith("https://")) {
+      warn(`--notify-url 不是 HTTPS (${notifyUrl})，secret 将明文传输!`);
+      if (!notifyUrl.startsWith("http://127.0.0.1") && !notifyUrl.startsWith("http://localhost")) {
+        error("非本地 notify-url 必须使用 HTTPS，跳过通知");
+        return;
+      }
+    }
     info(`通知服务端合并 latest.json: ${notifyUrl}`);
     try {
       const notifyRes = await fetch(notifyUrl, {
@@ -736,7 +845,7 @@ async function main() {
 
   // ─── Step 9: 缓存当前 dist/ ───
 
-  step(9, totalSteps, "缓存当前版本 dist/");
+  step(10, totalSteps, "缓存当前版本 dist/");
 
   cacheCurrentDist(version, CACHE_DIR);
 
@@ -959,6 +1068,12 @@ async function uploadToOss(version: string, ossDomain?: string, buildPlatform?: 
 
 /** scp 上传到服务器 */
 function uploadToServer(server: string, port: string, version: string, buildPlatform?: string) {
+  // [CN-PATCH] 校验所有会拼入 shell 命令的参数
+  assertSafeShellArg("server", server);
+  assertSafeShellArg("port", port);
+  assertSafeShellArg("version", version);
+  if (buildPlatform) assertSafeShellArg("platform", buildPlatform);
+
   const deployBaseDir = path.join(DEPLOY_DIR, version);
 
   info(`上传到 ${server}:${SERVER_RELEASES_FS_PATH}/${version}/`);
@@ -977,8 +1092,10 @@ function uploadToServer(server: string, port: string, version: string, buildPlat
   }
   exec(`ssh -p ${port} ${server} "mkdir -p ${mkdirPaths.join(" ")}"`, { silent: true });
 
-  // 上传版本目录中的所有文件
+  // 上传版本目录中的所有文件，收集本地哈希用于校验
   const allFiles = findFilesRecursive(deployBaseDir);
+  const uploadedFiles: { relPath: string; remotePath: string; localHash: string }[] = [];
+
   for (const relPath of allFiles) {
     const localPath = path.join(deployBaseDir, relPath);
     const remotePath = `${SERVER_RELEASES_FS_PATH}/${version}/${relPath.replace(/\\/g, "/")}`;
@@ -987,6 +1104,7 @@ function uploadToServer(server: string, port: string, version: string, buildPlat
       `scp -P ${port} "${localPath}" ${server}:${remotePath}`,
       { silent: true },
     );
+    uploadedFiles.push({ relPath, remotePath, localHash: sha256File(localPath) });
   }
 
   // 旧模式：上传 latest.json；平台模式：不上传（由服务端合并）
@@ -994,6 +1112,45 @@ function uploadToServer(server: string, port: string, version: string, buildPlat
     const latestJsonPath = path.join(DEPLOY_DIR, "latest.json");
     info("  上传 latest.json...");
     exec(`scp -P ${port} "${latestJsonPath}" ${server}:${SERVER_RELEASES_FS_PATH}/`, { silent: true });
+    uploadedFiles.push({
+      relPath: "latest.json",
+      remotePath: `${SERVER_RELEASES_FS_PATH}/latest.json`,
+      localHash: sha256File(latestJsonPath),
+    });
+  }
+
+  // Post-upload integrity verification: compare remote SHA256 with local hashes
+  info("验证远程文件完整性...");
+  const remotePaths = uploadedFiles.map((f) => f.remotePath).join(" ");
+  try {
+    const remoteOutput = exec(
+      `ssh -p ${port} ${server} "sha256sum ${remotePaths}"`,
+      { silent: true },
+    );
+    if (remoteOutput) {
+      const remoteHashes = new Map<string, string>();
+      for (const line of remoteOutput.trim().split("\n")) {
+        const [hash, filePath] = line.trim().split(/\s+/, 2);
+        if (hash && filePath) remoteHashes.set(filePath, hash.toLowerCase());
+      }
+      let mismatches = 0;
+      for (const f of uploadedFiles) {
+        const remoteHash = remoteHashes.get(f.remotePath);
+        if (!remoteHash) {
+          warn(`  未获取到远程哈希: ${f.relPath}`);
+        } else if (remoteHash !== f.localHash.toLowerCase()) {
+          error(`  完整性不匹配: ${f.relPath} (local=${f.localHash} remote=${remoteHash})`);
+          mismatches++;
+        }
+      }
+      if (mismatches > 0) {
+        error(`${mismatches} 个文件完整性校验失败!`);
+        process.exit(1);
+      }
+      info(`完整性校验通过 (${uploadedFiles.length} 个文件)`);
+    }
+  } catch {
+    warn("远程 SHA256 校验失败（sha256sum 可能不可用），跳过完整性验证");
   }
 
   info("上传完成!");

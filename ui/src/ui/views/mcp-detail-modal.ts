@@ -121,11 +121,14 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
             ${item.isOfficial
               ? badgePill("rgba(99,102,241,0.12)", "#818cf8", `\u{1F4E6} ${t("extensions.store.official")}`)
               : nothing}
-            ${!item.requiresApiKey && item.installable !== false && item.installMethod !== "none"
-              ? badgePill("rgba(52,211,153,0.12)", "#34d399", `\u26A1 ${t("extensions.store.zeroConfig")}`)
-              : item.requiresApiKey
-                ? badgePill("rgba(251,191,36,0.12)", "#fbbf24", `\u{1F511} ${t("extensions.store.needsKey")}`)
-                : nothing}
+            ${(() => {
+              const needsKey = item.requiresApiKey || (item.envRequired && item.envRequired.length > 0) || (item.envSchema && Object.keys(item.envSchema).length > 0);
+              return !needsKey && item.installable !== false && item.installMethod !== "none"
+                ? badgePill("rgba(52,211,153,0.12)", "#34d399", `\u26A1 ${t("extensions.store.zeroConfig")}`)
+                : needsKey
+                  ? badgePill("rgba(251,191,36,0.12)", "#fbbf24", `\u{1F511} ${t("extensions.store.needsKey")}`)
+                  : nothing;
+            })()}
             ${item.securityScore >= 60
               ? badgePill("rgba(52,211,153,0.08)", scoreColor, `\u{1F6E1}\uFE0F ${item.securityScore}`)
               : nothing}
@@ -158,8 +161,41 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
             </div>
           `}
 
+      <!-- SSE Remote Service risk warning -->
+      ${item.installMethod === "sse"
+        ? (() => {
+            const sseUrl = (item as McpMarketplaceItem & { sseUrl?: string }).sseUrl || "";
+            let domain = "";
+            try { domain = new URL(sseUrl).hostname; } catch { domain = sseUrl; }
+            const isVerified = (item as McpMarketplaceItem & { isVerified?: boolean }).isVerified;
+            return html`
+              <div style="
+                margin-top:16px;
+                padding:12px 14px;
+                border-radius:8px;
+                background:rgba(248,113,113,0.06);
+                border:1px solid rgba(248,113,113,0.18);
+                font-size:12px;
+                color:var(--fg-secondary, #a0aec0);
+              ">
+                <div style="font-weight:600; color:#f87171; margin-bottom:6px;">
+                  ${t("extensions.detail.sseRiskTitle" as never)}
+                </div>
+                <div style="font-size:11px; line-height:1.6; color:var(--muted-strong, #6b7d91); margin-bottom:4px;">
+                  ${(t("extensions.detail.sseRiskBody" as never) as string).replace("{{domain}}", domain || "unknown")}
+                </div>
+                ${!isVerified
+                  ? html`<div style="font-size:11px; font-weight:600; color:#f87171; margin-top:4px;">
+                      ${t("extensions.detail.sseRiskUnverified" as never)}
+                    </div>`
+                  : nothing}
+              </div>
+            `;
+          })()
+        : nothing}
+
       <!-- API Key warning -->
-      ${item.requiresApiKey
+      ${item.requiresApiKey || (item.envRequired && item.envRequired.length > 0) || (item.envSchema && Object.keys(item.envSchema).length > 0)
         ? html`
             <div style="
               margin-top:16px;
@@ -178,6 +214,21 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
                     ${item.configHint}
                   </div>`
                 : nothing}
+              ${(() => {
+                const envVarNames = item.envRequired && item.envRequired.length > 0
+                  ? item.envRequired
+                  : item.envSchema && Object.keys(item.envSchema).length > 0
+                    ? Object.keys(item.envSchema)
+                    : [];
+                return envVarNames.length > 0
+                  ? html`<div style="font-size:11px; color:var(--muted-strong, #6b7d91); margin-bottom:6px;">
+                      ${t("extensions.detail.requiredEnvVars" as never)}:
+                      <code style="font-size:10px; background:rgba(148,163,184,0.1); padding:1px 4px; border-radius:3px;">
+                        ${envVarNames.join(", ")}
+                      </code>
+                    </div>`
+                  : nothing;
+              })()}
               <details style="cursor:pointer;">
                 <summary style="font-size:11px; color:var(--accent-2, #20d5bc); margin-bottom:6px;">
                   ${t("extensions.detail.whatIsApiKey")}
@@ -377,7 +428,7 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
                     ` : nothing}
                   </div>
                 `
-              : item.requiresApiKey
+              : (item.requiresApiKey || (item.envRequired && item.envRequired.length > 0) || (item.envSchema && Object.keys(item.envSchema).length > 0))
                 ? html`
                     <button
                       @click=${() => { onConfigInstall(); }}

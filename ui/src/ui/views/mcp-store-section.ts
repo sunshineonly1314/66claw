@@ -307,6 +307,7 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
           onInstall: () => onInstall(marketplace.detailItem!),
           onUninstall: () => props.onUninstall(marketplace.detailItem!.serverId),
           onConfigInstall: () => onOpenConfigWizard(marketplace.detailItem!),
+          onUpdate: () => { /* no-op: update handled by store refresh */ },
           onTrySay: () => { /* not available in shared context */ },
         })
       : nothing}

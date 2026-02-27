@@ -183,6 +183,10 @@ class MemoryManagerSyncOps {
     try {
       db.exec("PRAGMA journal_mode=WAL");
       db.exec("PRAGMA synchronous=NORMAL");
+      // [CN-PATCH:memory-p0] busy_timeout=3000ms: prevent SQLITE_BUSY during WAL checkpoint.
+      // Without this, sync operations (embedding writes, chunk inserts) can fail
+      // when concurrent QMD readers or other sync tasks hold shared locks.
+      db.exec("PRAGMA busy_timeout=3000");
     } catch {
       // 部分 SQLite 构建可能不支持 WAL（如只读文件系统），静默回退到默认模式
     }
@@ -194,11 +198,16 @@ class MemoryManagerSyncOps {
       return;
     }
     try {
+      // [CN-PATCH:memory-p0] Only migrate cache entries for the CURRENT provider/model.
+      // Previously copied ALL providers' caches (no WHERE filter), causing cumulative bloat
+      // when users switch embedding providers multiple times. With composite PK
+      // (provider, model, provider_key, hash), old provider entries are never hit but waste space.
       const rows = sourceDb
         .prepare(
-          `SELECT provider, model, provider_key, hash, embedding, dims, updated_at FROM ${EMBEDDING_CACHE_TABLE}`,
+          `SELECT provider, model, provider_key, hash, embedding, dims, updated_at FROM ${EMBEDDING_CACHE_TABLE}` +
+            ` WHERE provider = ? AND model = ?`,
         )
-        .all() as Array<{
+        .all(this.provider.id, this.provider.model) as Array<{
         provider: string;
         model: string;
         provider_key: string;
@@ -811,9 +820,14 @@ class MemoryManagerSyncOps {
       }
 
       if (shouldSyncSessions) {
+        // Snapshot dirty files before sync. New files added during sync
+        // (by concurrent listeners) are preserved — only processed files are removed.
+        const processedDirtyFiles = new Set(this.sessionsDirtyFiles);
         await this.syncSessionFiles({ needsFullReindex, progress: progress ?? undefined });
-        this.sessionsDirty = false;
-        this.sessionsDirtyFiles.clear();
+        for (const f of processedDirtyFiles) {
+          this.sessionsDirtyFiles.delete(f);
+        }
+        this.sessionsDirty = this.sessionsDirtyFiles.size > 0;
       } else if (this.sessionsDirtyFiles.size > 0) {
         this.sessionsDirty = true;
       } else {
@@ -962,9 +976,12 @@ class MemoryManagerSyncOps {
       }
 
       if (shouldSyncSessions) {
+        const processedDirtyFiles = new Set(this.sessionsDirtyFiles);
         await this.syncSessionFiles({ needsFullReindex: true, progress: params.progress });
-        this.sessionsDirty = false;
-        this.sessionsDirtyFiles.clear();
+        for (const f of processedDirtyFiles) {
+          this.sessionsDirtyFiles.delete(f);
+        }
+        this.sessionsDirty = this.sessionsDirtyFiles.size > 0;
       } else if (this.sessionsDirtyFiles.size > 0) {
         this.sessionsDirty = true;
       } else {
@@ -1042,9 +1059,12 @@ class MemoryManagerSyncOps {
     }
 
     if (shouldSyncSessions) {
+      const processedDirtyFiles = new Set(this.sessionsDirtyFiles);
       await this.syncSessionFiles({ needsFullReindex: true, progress: params.progress });
-      this.sessionsDirty = false;
-      this.sessionsDirtyFiles.clear();
+      for (const f of processedDirtyFiles) {
+        this.sessionsDirtyFiles.delete(f);
+      }
+      this.sessionsDirty = this.sessionsDirtyFiles.size > 0;
     } else if (this.sessionsDirtyFiles.size > 0) {
       this.sessionsDirty = true;
     } else {

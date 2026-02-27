@@ -142,7 +142,7 @@ export function renderBodyContent(
       <!-- 小提示 -->
       <div class="provider-tip">
         <span class="provider-tip-icon">💡</span>
-        <span>不知道选哪个？选「Kimi Code」就对了！代码专用模型，262K 超长上下文，极速响应</span>
+        <span>不知道选哪个？选「Kimi Code」就对了！代码专用模型，262K 超长上下文，极速响应。也可以试试 Aliyun Code 和 GLM Code！</span>
       </div>
       
       <!-- 模型选择提醒 -->
@@ -151,9 +151,9 @@ export function renderBodyContent(
         <span style="color: #ad6800; font-size: 0.9em; font-weight: 500;">配置完成后，记得在模型下拉框中选择你需要的模型！每个平台有多种模型可选。</span>
       </div>
 
-      <!-- 推荐服务商 - 大卡片 -->
+      <!-- 推荐服务商 - 大卡片 (代码助手 Coding Plan) -->
       <div class="provider-recommended-section">
-        <div class="provider-section-title">🇨🇳 推荐服务</div>
+        <div class="provider-section-title">🔥 代码助手 (Coding Plan)</div>
         <div class="provider-recommended-grid">
           <div class="provider-card featured selected" data-provider="kimi-code" onclick="selectProvider('kimi-code')">
             <div class="provider-card-badge">⭐ 首选推荐</div>
@@ -166,23 +166,33 @@ export function renderBodyContent(
             </a>
             <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
           </div>
-          <div class="provider-card" data-provider="aliyun-bailian" onclick="selectProvider('aliyun-bailian')">
+          <div class="provider-card" data-provider="aliyun-codeplan" onclick="selectProvider('aliyun-codeplan')">
             <div class="provider-card-icon">☁️</div>
-            <div class="provider-card-name">通义千问</div>
-            <div class="provider-card-desc">阿里出品 · 稳定可靠 · 送100万Token</div>
-            <a href="https://www.aliyun.com/daily-act/ecs/activity_selection?source=5176.29345612&userCode=xsngby7y" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+            <div class="provider-card-name">Aliyun Code</div>
+            <div class="provider-card-desc">一个 Key 调 Qwen3.5/Kimi-K2.5/GLM-5/MiniMax · 模型聚合</div>
+            <a href="https://www.aliyun.com/benefit/ai/aistar?userCode=xsngby7y&clubBiz=subTask..12414078..10263.." target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
               <span class="material-icons">rocket_launch</span>
-              免费注册，领取额度
+              免费注册 AI Star
             </a>
             <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
           </div>
-          <div class="provider-card" data-provider="glm" onclick="selectProvider('glm')">
+          <div class="provider-card" data-provider="glm-codeplan" onclick="selectProvider('glm-codeplan')">
             <div class="provider-card-icon">🧠</div>
-            <div class="provider-card-name">智谱 GLM</div>
-            <div class="provider-card-desc">清华出品 · GLM-4 Flash 永久免费 · 注册送2000万Token</div>
-            <a href="https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+            <div class="provider-card-name">GLM Code</div>
+            <div class="provider-card-desc">GLM-5 · 智谱 Coding Plan · 代码专用</div>
+            <a href="https://open.bigmodel.cn" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
               <span class="material-icons">rocket_launch</span>
-              注册免费送2000万Token
+              注册获取 Coding Plan Key
+            </a>
+            <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
+          </div>
+          <div class="provider-card" data-provider="minimax-codeplan" onclick="selectProvider('minimax-codeplan')">
+            <div class="provider-card-icon">⚡</div>
+            <div class="provider-card-name">MiniMax Code</div>
+            <div class="provider-card-desc">MiniMax-M2.5 · Coding Plan 订阅 · Anthropic 协议</div>
+            <a href="https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+              <span class="material-icons">rocket_launch</span>
+              订阅 Coding Plan
             </a>
             <div class="provider-card-check"><span class="material-icons">check_circle</span></div>
           </div>
@@ -304,6 +314,14 @@ export function renderBodyContent(
               <div class="provider-option-info">
                 <div class="provider-option-name">NVIDIA NIM</div>
                 <div class="provider-option-desc">高性能推理，有免费额度</div>
+              </div>
+              <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
+            </div>
+            <div class="provider-option" data-provider="openrouter" onclick="selectProvider('openrouter')">
+              <div class="provider-option-icon">🔀</div>
+              <div class="provider-option-info">
+                <div class="provider-option-name">OpenRouter</div>
+                <div class="provider-option-desc">聚合多家模型，统一 API，按量付费</div>
               </div>
               <div class="provider-option-check"><span class="material-icons">check_circle</span></div>
             </div>
@@ -2316,10 +2334,14 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       'minimax': 'MiniMax-M2.1',
       'moonshot': 'kimi-latest',
       'kimi-code': 'kimi-for-coding',
+      'aliyun-codeplan': 'qwen3-coder-plus',
+      'glm-codeplan': 'glm-4.7',
+      'minimax-codeplan': 'MiniMax-M2.5',
       'openai': 'o4-mini',
       'anthropic': 'claude-sonnet-4-20250514',
       'google': 'gemini-3-flash-preview',
       'nvidia': 'nvidia/llama-3.3-nemotron-super-49b-v1',
+      'openrouter': 'openrouter/auto',
       'custom': 'custom-model'
     };
     
@@ -2359,6 +2381,9 @@ export function renderScriptContent(ctx: SetupPageContext): string {
         'glm': '在 <a href="https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI" target="_blank">智谱 AI 开放平台</a> 注册免费送2000万Token，然后在 <a href="https://open.bigmodel.cn/usercenter/apikeys" target="_blank">API Keys 页面</a> 获取 Key',
         'moonshot': '在 <a href="https://platform.moonshot.cn/console/api-keys" target="_blank">Kimi 开放平台</a> 获取 API Key',
         'kimi-code': '在 <a href="https://www.kimi.com/code/docs/" target="_blank">Kimi Code 文档</a> 获取 API Key（代码专用，262K 超长上下文）',
+        'aliyun-codeplan': '在 <a href="https://www.aliyun.com/benefit/ai/aistar?userCode=xsngby7y&clubBiz=subTask..12414078..10263.." target="_blank">阿里云 AI Star</a> 注册获取 Coding Plan API Key（代码专用，与百炼 Key 不同）',
+        'glm-codeplan': '在 <a href="https://open.bigmodel.cn" target="_blank">智谱开放平台</a> 获取 Coding Plan API Key（代码专用，与通用 GLM Key 不同）',
+        'minimax-codeplan': '在 <a href="https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link" target="_blank">MiniMax 平台</a> 订阅 Coding Plan 获取专用 API Key',
         'volcengine-ark': '在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank">火山引擎控制台</a> 获取 API Key，需先在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement" target="_blank">开通管理</a> 开通模型 <button class="tutorial-help-btn" onclick="openDoubaoTutorial()"><span class="material-icons">help_outline</span>新手教程</button>',
         'tencent-hunyuan': '在 <a href="https://console.cloud.tencent.com/hunyuan" target="_blank">腾讯云混元控制台</a> 获取 Secret ID 和 Secret Key',
         'minimax': '在 <a href="https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link" target="_blank">MiniMax 开放平台</a> 注册领取免费额度，然后在 <a href="https://platform.minimaxi.com/user-center/basic-information/interface-key" target="_blank">接口密钥页面</a> 获取 API Key',
@@ -2366,6 +2391,7 @@ export function renderScriptContent(ctx: SetupPageContext): string {
         'anthropic': '在 <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic 控制台</a> 获取 API Key（需要科学上网）',
         'google': '在 <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a> 获取 API Key（需要科学上网）',
         'nvidia': '在 <a href="https://build.nvidia.com/settings" target="_blank">NVIDIA Build</a> 获取 API Key（需要科学上网）',
+        'openrouter': '在 <a href="https://openrouter.ai/keys" target="_blank">OpenRouter</a> 获取 API Key（需要科学上网，聚合多家模型）',
         'modelscope': '在 <a href="https://modelscope.cn/my/myaccesstoken" target="_blank">魔搭社区</a> 获取 Access Token（完全免费！）',
         'ollama': '本地模型无需 API Key，默认填 ollama 即可。需先 <a href="https://ollama.com/download" target="_blank">安装 Ollama</a>',
         'custom': '填写你的自定义 API 端点地址和 API Key'

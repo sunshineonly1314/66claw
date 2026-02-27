@@ -1,4 +1,8 @@
 import type { EmbeddingProvider, EmbeddingProviderOptions } from "./embeddings.js";
+import {
+  collectProviderApiKeysForExecution,
+  executeWithApiKeyRotation,
+} from "../agents/api-key-rotation.js";
 import { requireApiKey, resolveApiKeyForProvider } from "../agents/model-auth.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -8,6 +12,7 @@ export type GeminiEmbeddingClient = {
   headers: Record<string, string>;
   model: string;
   modelPath: string;
+  apiKeys: string[];
 };
 
 const DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -73,23 +78,39 @@ export async function createGeminiEmbeddingProvider(
   const embedUrl = `${baseUrl}/${client.modelPath}:embedContent`;
   const batchUrl = `${baseUrl}/${client.modelPath}:batchEmbedContents`;
 
-  const embedQuery = async (text: string): Promise<number[]> => {
-    if (!text.trim()) {
-      return [];
-    }
-    const res = await fetch(embedUrl, {
+  const fetchWithGeminiAuth = async (apiKey: string, endpoint: string, body: unknown) => {
+    const headers = {
+      ...client.headers,
+      "x-goog-api-key": apiKey,
+    };
+    const res = await fetch(endpoint, {
       method: "POST",
-      headers: client.headers,
-      body: JSON.stringify({
-        content: { parts: [{ text }] },
-        taskType: "RETRIEVAL_QUERY",
-      }),
+      headers,
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const payload = await res.text();
       throw new Error(`gemini embeddings failed: ${res.status} ${payload}`);
     }
-    const payload = (await res.json()) as { embedding?: { values?: number[] } };
+    return (await res.json()) as {
+      embedding?: { values?: number[] };
+      embeddings?: Array<{ values?: number[] }>;
+    };
+  };
+
+  const embedQuery = async (text: string): Promise<number[]> => {
+    if (!text.trim()) {
+      return [];
+    }
+    const payload = await executeWithApiKeyRotation({
+      provider: "google",
+      apiKeys: client.apiKeys,
+      execute: (apiKey) =>
+        fetchWithGeminiAuth(apiKey, embedUrl, {
+          content: { parts: [{ text }] },
+          taskType: "RETRIEVAL_QUERY",
+        }),
+    });
     return payload.embedding?.values ?? [];
   };
 
@@ -102,16 +123,14 @@ export async function createGeminiEmbeddingProvider(
       content: { parts: [{ text }] },
       taskType: "RETRIEVAL_DOCUMENT",
     }));
-    const res = await fetch(batchUrl, {
-      method: "POST",
-      headers: client.headers,
-      body: JSON.stringify({ requests }),
+    const payload = await executeWithApiKeyRotation({
+      provider: "google",
+      apiKeys: client.apiKeys,
+      execute: (apiKey) =>
+        fetchWithGeminiAuth(apiKey, batchUrl, {
+          requests,
+        }),
     });
-    if (!res.ok) {
-      const payload = await res.text();
-      throw new Error(`gemini embeddings failed: ${res.status} ${payload}`);
-    }
-    const payload = (await res.json()) as { embeddings?: Array<{ values?: number[] }> };
     const embeddings = Array.isArray(payload.embeddings) ? payload.embeddings : [];
     return texts.map((_, index) => embeddings[index]?.values ?? []);
   };
@@ -152,9 +171,12 @@ export async function resolveGeminiEmbeddingClient(
   const headerOverrides = Object.assign({}, providerConfig?.headers, remote?.headers);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "x-goog-api-key": apiKey,
     ...headerOverrides,
   };
+  const apiKeys = collectProviderApiKeysForExecution({
+    provider: "google",
+    primaryApiKey: apiKey,
+  });
   const model = normalizeGeminiModel(options.model);
   const modelPath = buildGeminiModelPath(model);
   debugLog("memory embeddings: gemini client", {
@@ -165,5 +187,5 @@ export async function resolveGeminiEmbeddingClient(
     embedEndpoint: `${baseUrl}/${modelPath}:embedContent`,
     batchEndpoint: `${baseUrl}/${modelPath}:batchEmbedContents`,
   });
-  return { baseUrl, headers, model, modelPath };
+  return { baseUrl, headers, model, modelPath, apiKeys };
 }

@@ -20,6 +20,13 @@ apps/desktop/node_modules/
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# CI credential files (never commit actual credentials)
+ci/set-oss-env.local.ps1
 
 # OS files
 .DS_Store
@@ -123,6 +130,15 @@ docs/QUICK-START-AUTO-UPDATE.md
 
 # Git operations
 .git-rewrite/
+
+# Temporary upload/debug scripts (may contain credentials or sensitive URLs)
+_upload_to_oss.mjs
+_upload_mcp_index.mjs
+_fix_leaked_creds.mjs
+_trigger_sync.mjs
+
+# SQLite databases (may contain sensitive data)
+sqlite_mcp_server.db
 
 # Large assets
 assets/60ad649637d6797ad09120d309408d4c.png

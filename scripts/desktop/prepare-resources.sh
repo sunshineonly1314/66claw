@@ -475,7 +475,7 @@ log "  OK: package.json"
 # Generate install.json for auto-update system
 APP_VERSION=$(node -p "require('$PROJECT_ROOT/package.json').version" 2>/dev/null || echo "0.0.0")
 cat > "$RESOURCES_DIR/install.json" <<EOF
-{"installKind":"installer","updateServer":"https://dl.obplugins.cn","version":"$APP_VERSION"}
+{"installKind":"installer","updateServer":"https://www.obplugins.cn","version":"$APP_VERSION"}
 EOF
 log "  OK: install.json (version=$APP_VERSION)"
 

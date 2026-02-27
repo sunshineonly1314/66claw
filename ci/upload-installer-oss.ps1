@@ -1,17 +1,18 @@
-# Upload installer .exe to Aliyun OSS
-# Handles file lock by waiting/retrying
+# Upload installer .exe to server via SCP
+# Handles file lock by waiting/retrying via robocopy
 
 $ErrorActionPreference = 'Continue'
-$LOG = 'C:\Users\SunBin\upload-installer.log'
+$LOG = Join-Path $env:USERPROFILE 'upload-installer.log'
 Start-Transcript -Path $LOG -Force
-
-$env:OSS_ACCESS_KEY_ID = "LTAI5tGbuzYX98dppnUcs2tU"
-$env:OSS_ACCESS_KEY_SECRET = "1k2GQB7r3wNqsmxivnJWZ6D4PYr1da"
-$env:OSS_BUCKET = "chuhai-tecbin"
-$env:OSS_REGION = "oss-cn-hangzhou"
 
 $WORKSPACE = 'D:\cicd-workspace\openclawcn'
 Set-Location $WORKSPACE
+
+$server = $env:DEPLOY_SERVER
+if (-not $server) {
+    Write-Output "ERROR: DEPLOY_SERVER environment variable must be set."
+    Stop-Transcript; exit 1
+}
 
 $pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
 $VERSION = $pkgJson.version
@@ -66,63 +67,42 @@ if ($robocopyExit -lt 8) {
     $copiedFile = $installerFile.FullName
 }
 
-# Upload to OSS using ali-oss via inline node script
+# Upload to server via SCP
 Write-Output ""
-Write-Output "Uploading to OSS..."
+Write-Output "Uploading to server via SCP..."
 
-$nodeLog = 'C:\Users\SunBin\upload-installer-node.log'
-$ossKey = "releases/$VERSION/installers/$($installerFile.Name)"
-$uploadFile = $copiedFile -replace '\\', '/'
+$remoteDir = "/data/dl/releases/$VERSION/installers"
+Write-Output "  File: $copiedFile"
+Write-Output "  Remote: ${server}:${remoteDir}/"
 
-$uploadScript = @"
-import { createRequire } from "node:module";
-import fs from "node:fs";
-const require = createRequire(import.meta.url);
-globalThis.Buffer = globalThis.Buffer || require("buffer").Buffer;
-const OSS = require("ali-oss");
-const client = new OSS({
-  region: process.env.OSS_REGION,
-  accessKeyId: process.env.OSS_ACCESS_KEY_ID,
-  accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
-  bucket: process.env.OSS_BUCKET,
-});
-const localPath = "$uploadFile";
-const ossKey = "$ossKey";
-const size = fs.statSync(localPath).size;
-console.log("Uploading: " + localPath);
-console.log("  Size: " + (size / 1024 / 1024).toFixed(1) + " MB");
-console.log("  To: " + ossKey);
-const result = await client.multipartUpload(ossKey, localPath, {
-  progress: (p) => {
-    const pct = Math.round(p * 100);
-    if (pct % 10 === 0) process.stdout.write("  Progress: " + pct + "%\r\n");
-  },
-});
-console.log("Upload complete!");
-console.log("  URL: https://dl.obplugins.cn/" + ossKey);
-"@
-
-$tmpMjs = "$WORKSPACE\_upload-installer.mjs"
-$uploadScript | Out-File -FilePath $tmpMjs -Encoding UTF8
-
-cmd /c "node $tmpMjs > `"$nodeLog`" 2>&1"
+ssh $server "mkdir -p $remoteDir"
+scp $copiedFile "${server}:${remoteDir}/"
 $exitCode = $LASTEXITCODE
-
-Write-Output ""
-Write-Output "=== Upload Output ==="
-if (Test-Path $nodeLog) {
-    Get-Content $nodeLog | ForEach-Object { Write-Output $_ }
-}
-Write-Output "=== End Upload Output ==="
-
-Remove-Item $tmpMjs -ErrorAction SilentlyContinue
 
 if ($exitCode -eq 0) {
     Write-Output ""
     Write-Output "========================================="
     Write-Output "  Installer Upload SUCCESS"
     Write-Output "========================================="
-    Write-Output "Download: https://dl.obplugins.cn/$ossKey"
+    $domain = if ($env:DEPLOY_DOMAIN) { $env:DEPLOY_DOMAIN } else { "www.obplugins.cn" }
+    Write-Output "Download: https://$domain/releases/$VERSION/installers/$($installerFile.Name)"
+
+    # Post-upload integrity check
+    $localHash = (Get-FileHash -Path $copiedFile -Algorithm SHA256).Hash
+    Write-Output "  Local SHA256: $localHash"
+    Write-Output "  Verifying remote integrity..."
+    $remoteHash = ssh $server "sha256sum $remoteDir/$($installerFile.Name)" 2>$null
+    if ($remoteHash) {
+        $remoteHashValue = ($remoteHash -split '\s+')[0].ToUpper()
+        if ($remoteHashValue -eq $localHash) {
+            Write-Output "  Integrity OK: SHA256 matches"
+        } else {
+            Write-Output "  INTEGRITY MISMATCH! Local=$localHash Remote=$remoteHashValue"
+            $exitCode = 1
+        }
+    } else {
+        Write-Output "  WARNING: Could not verify remote hash (sha256sum not available on server)"
+    }
 } else {
     Write-Output ""
     Write-Output "========================================="

@@ -7,6 +7,7 @@ import {
   isSensitivePath,
   pathKey,
   resolveLabel,
+  resolveValueLabel,
   schemaType,
   type JsonSchema,
 } from "./config-form.shared";
@@ -96,7 +97,7 @@ export function renderNode(params: {
                 ?disabled=${disabled}
                 @click=${() => onPatch(path, lit)}
               >
-                ${String(lit)}
+                ${resolveValueLabel(path, lit)}
               </button>
             `)}
           </div>
@@ -155,7 +156,7 @@ export function renderNode(params: {
                 ?disabled=${disabled}
                 @click=${() => onPatch(path, opt)}
               >
-                ${String(opt)}
+                ${resolveValueLabel(path, opt)}
               </button>
             `)}
           </div>
@@ -362,7 +363,7 @@ function renderSelect(params: {
       >
         <option value=${unset}>${t("configForm.selectPlaceholder")}</option>
         ${options.map((opt, idx) => html`
-          <option value=${String(idx)}>${String(opt)}</option>
+          <option value=${String(idx)}>${resolveValueLabel(path, opt)}</option>
         `)}
       </select>
     </div>

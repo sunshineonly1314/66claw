@@ -1,4 +1,9 @@
 import type { OpenClawCNConfig, SkillConfig } from "../../config/config.js";
+import {
+  detectChinaRegion,
+  isSkillDeprioritizedInCn,
+  isSkillHiddenInCn,
+} from "../../config/region-cn.js";
 import type { SkillEligibilityContext, SkillEntry } from "./types.js";
 import {
   clearBinaryCache,
@@ -8,6 +13,9 @@ import {
   resolveRuntimePlatform,
 } from "../../shared/config-eval.js";
 import { resolveSkillKey } from "./frontmatter.js";
+
+/** Cached CN region detection (stable for process lifetime). */
+let _isCn: boolean | undefined;
 
 const DEFAULT_CONFIG_VALUES: Record<string, boolean> = {
   "browser.enabled": true,
@@ -75,16 +83,45 @@ export function shouldIncludeSkill(params: {
   const { entry, config, eligibility } = params;
   const skillKey = resolveSkillKey(entry.skill, entry);
   const skillConfig = resolveSkillConfig(config, skillKey);
-  const allowBundled = normalizeAllowlist(config?.skills?.allowBundled);
   const osList = entry.metadata?.os ?? [];
   const remotePlatforms = eligibility?.remote?.platforms ?? [];
 
+  // 1. Explicitly disabled — always wins
   if (skillConfig?.enabled === false) {
     return false;
   }
-  if (!isBundledSkillAllowed(entry, allowBundled)) {
+
+  // 2. CN hidden — cannot be overridden (not even by pinning)
+  if (_isCn === undefined) _isCn = detectChinaRegion();
+  if (_isCn) {
+    if (isSkillHiddenInCn(skillKey) || isSkillHiddenInCn(entry.skill.name)) {
+      return false;
+    }
+  }
+
+  // 3. Pinned skills (= core skills) bypass OS, bins, env, config, CN deprioritized checks.
+  //    pinnedSkills is the SINGLE source of truth for "what gets injected into prompt".
+  const pinnedSkills = config?.skills?.pinnedSkills ?? [];
+  const isPinned = pinnedSkills.includes(skillKey) || pinnedSkills.includes(entry.skill.name);
+  if (isPinned) {
+    return true;
+  }
+
+  // 4. CN deprioritized — unpinned overseas-dependent skills excluded from prompt in CN
+  if (_isCn) {
+    if (isSkillDeprioritizedInCn(skillKey) || isSkillDeprioritizedInCn(entry.skill.name)) {
+      return false;
+    }
+  }
+
+  // 5. Bundled skills: ONLY injected when pinned (step 3 above).
+  //    Unpinned bundled skills stay in "ready" tier but are NOT injected into prompt.
+  //    This replaced the legacy allowBundled whitelist — pinnedSkills is now the sole gate.
+  if (isBundledSkill(entry)) {
     return false;
   }
+
+  // 6. OS compatibility (only reached by managed/workspace/extra skills)
   if (
     osList.length > 0 &&
     !osList.includes(resolveRuntimePlatform()) &&
@@ -92,15 +129,13 @@ export function shouldIncludeSkill(params: {
   ) {
     return false;
   }
+
+  // 7. always — bypasses bins/env/config (but NOT OS, which was checked above)
   if (entry.metadata?.always === true) {
     return true;
   }
-  // Pinned skills bypass bins/env/config checks, same as always
-  const pinnedSkills = config?.skills?.pinnedSkills ?? [];
-  if (pinnedSkills.includes(skillKey) || pinnedSkills.includes(entry.skill.name)) {
-    return true;
-  }
 
+  // 8. Requirement checks: bins, anyBins, env, config
   const requiredBins = entry.metadata?.requires?.bins ?? [];
   if (requiredBins.length > 0) {
     for (const bin of requiredBins) {

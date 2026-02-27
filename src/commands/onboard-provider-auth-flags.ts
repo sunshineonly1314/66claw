@@ -21,6 +21,9 @@ type OnboardProviderAuthOptionKey = keyof Pick<
   | "xaiApiKey"
   | "litellmApiKey"
   | "qianfanApiKey"
+  | "aliyunCodeplanApiKey"
+  | "glmCodeplanApiKey"
+  | "minimaxCodeplanApiKey"
 >;
 
 export type OnboardProviderAuthFlag = {
@@ -165,5 +168,27 @@ export const ONBOARD_PROVIDER_AUTH_FLAGS: ReadonlyArray<OnboardProviderAuthFlag>
     cliFlag: "--qianfan-api-key",
     cliOption: "--qianfan-api-key <key>",
     description: "QIANFAN API key",
+  },
+  // Coding Plan providers
+  {
+    optionKey: "aliyunCodeplanApiKey",
+    authChoice: "aliyun-codeplan-api-key",
+    cliFlag: "--aliyun-codeplan-api-key",
+    cliOption: "--aliyun-codeplan-api-key <key>",
+    description: "Aliyun Coding Plan API key",
+  },
+  {
+    optionKey: "glmCodeplanApiKey",
+    authChoice: "glm-codeplan-api-key",
+    cliFlag: "--glm-codeplan-api-key",
+    cliOption: "--glm-codeplan-api-key <key>",
+    description: "GLM Coding Plan API key",
+  },
+  {
+    optionKey: "minimaxCodeplanApiKey",
+    authChoice: "minimax-codeplan-api-key",
+    cliFlag: "--minimax-codeplan-api-key",
+    cliOption: "--minimax-codeplan-api-key <key>",
+    description: "MiniMax Coding Plan API key",
   },
 ];

@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { AppViewState, McpMarketplaceItem } from "./app-view-state";
+import { generateUUID } from "./uuid";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 import {
   getTabGroups,
@@ -30,7 +31,8 @@ import type {
   SkillStatusReport,
   StatusSummary,
 } from "./types";
-import type { ChatQueueItem, CronFormState } from "./ui-types";
+import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types";
+import { handleComposePaste } from "./chat/compose-card.js";
 import { refreshChatAvatar } from "./app-chat";
 import { renderChat } from "./views/chat";
 import { renderConfig } from "./views/config";
@@ -60,6 +62,29 @@ import { renderSkills } from "./views/skills";
 import { renderPlayground } from "./views/playground";
 import "./views/model-config";
 import { renderExtensions } from "./views/extensions-page";
+import {
+  renderOrchestratorEntry,
+  renderOrchestrator,
+} from "../../../extensions/orchestrator/src/ui/orchestrator-view";
+import {
+  openOrchestrator,
+  closeOrchestrator,
+  handleTemplateClick as orchTemplateClick,
+  handleExampleClick as orchExampleClick,
+  handleInput as orchInput,
+  handleKeydown as orchKeydown,
+  handleSend as orchSend,
+  handleActionClick as orchActionClick,
+  handleAnswerQuestion as orchAnswerQuestion,
+  handleDeployProposal as orchDeployProposal,
+} from "./controllers/orchestrator";
+import { renderUpdateBanner } from "./views/update-banner";
+import { renderUpdateDialog } from "./views/update-dialog";
+import {
+  renderConversationSidebar,
+  renderSidebarToggle,
+} from "./views/conversation-sidebar";
+import { renderImageGallery } from "./chat/image-gallery";
 import { MCP_MAX_RUNNING } from "./views/mcp-shared.js";
 import {
   restartMcpServer,
@@ -164,8 +189,27 @@ import {
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity";
 import { loadAgentSkills } from "./controllers/agent-skills";
-import { loadAgents, createAgent, deleteAgent } from "./controllers/agents";
+import { loadAgents, createAgent, deleteAgent, loadDmScopeStatus } from "./controllers/agents";
+import {
+  loadTeamProjects,
+  selectProject,
+  pauseProject,
+  resumeProject,
+  deleteProject,
+  loadProjectStats,
+  loadSharedMemory,
+  clearSharedMemory,
+  stopProjectHealthPoll,
+} from "./controllers/team-projects";
 import { loadNodes } from "./controllers/nodes";
+import {
+  loadNetworkStatus,
+  discoverGateways,
+  probeGateway,
+  loadNetworkInterfaces,
+  configureNetworkMode,
+} from "./controllers/networking";
+import { renderNetworkCenter } from "./views/network-center";
 import { loadChatHistory } from "./controllers/chat";
 import {
   applyConfig,
@@ -194,10 +238,13 @@ import {
   createInitialDiscoveryState,
 } from "./controllers/capability-detect";
 
+// Module-scoped set tracking which team projects are collapsed in sidebar
+const _teamCollapsedProjects = new Set<string>();
+
 const AVATAR_DATA_RE = /^data:/i;
 const AVATAR_HTTP_RE = /^https?:\/\//i;
 const MCP_TOAST_DURATION_MS = 4000;
-const MCP_TOAST_ERROR_DURATION_MS = 8000;
+const MCP_TOAST_ERROR_DURATION_MS = 12000;
 
 /**
  * Show a toast notification for MCP install/uninstall/error actions.
@@ -420,6 +467,49 @@ function renderApiMonitor(state: AppViewState) {
   `;
 }
 
+/** Reset chat state and switch to a new session key. */
+function switchSession(state: AppViewState, key: string) {
+  state.sessionKey = key;
+  state.chatMessage = "";
+  state.chatAttachments = [];
+  state.chatStream = null;
+  state.chatStreamStartedAt = null;
+  state.chatRunId = null;
+  state.chatQueue = [];
+  // Clear stale assets for the new session
+  state.convSidebarAssets = [];
+  state.convSidebarAssetsSessionKey = "";
+  state.resetToolStream();
+  state.resetChatScroll();
+  state.applySettings({ ...state.settings, sessionKey: key, lastActiveSessionKey: key });
+  void state.loadAssistantIdentity();
+  void loadChatHistory(state);
+  void refreshChatAvatar(state);
+  void loadSidebarAssets(state);
+}
+
+/** Load assets (images/videos) for the conversation sidebar's "资源" tab. */
+async function loadSidebarAssets(state: AppViewState) {
+  if (!state.client || !state.connected || !state.sessionKey) return;
+  if (state.convSidebarAssetsLoading) return;
+  // Skip re-fetch if already loaded for this session
+  if (state.convSidebarAssetsSessionKey === state.sessionKey) return;
+  state.convSidebarAssetsLoading = true;
+  state.requestUpdate();
+  try {
+    const res = (await state.client.request("media.list", {
+      sessionKey: state.sessionKey,
+    })) as { assets?: Array<{ id: string; type: "image" | "video"; url: string; name: string; size?: number; createdAt: number; sessionKey?: string }> } | undefined;
+    state.convSidebarAssets = res?.assets ?? [];
+    state.convSidebarAssetsSessionKey = state.sessionKey;
+  } catch {
+    state.convSidebarAssets = [];
+  } finally {
+    state.convSidebarAssetsLoading = false;
+    state.requestUpdate();
+  }
+}
+
 export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
@@ -535,6 +625,7 @@ export function renderApp(state: AppViewState) {
       </aside>
       <main class="content ${isChat ? "content--chat" : ""}">
         ${state.tab !== "usage" ? html`
+        ${isChat ? nothing : html`
         <section class="content-header">
           <div>
             <div class="page-title">${titleForTab(state.tab)}</div>
@@ -544,9 +635,9 @@ export function renderApp(state: AppViewState) {
             ${state.lastError
               ? html`<div class="pill danger">${state.lastError}</div>`
               : nothing}
-            ${isChat ? renderChatControls(state) : nothing}
           </div>
         </section>
+        `}
         ` : nothing}
 
         ${state.tab === "overview"
@@ -586,21 +677,11 @@ export function renderApp(state: AppViewState) {
               securitySuccessMessage: state.securitySuccessMessage,
               onSettingsChange: (next) => state.applySettings(next),
               onPasswordChange: (next) => (state.password = next),
-              onSessionKeyChange: (next) => {
-                state.sessionKey = next;
-                state.chatMessage = "";
-                state.resetToolStream();
-                state.applySettings({
-                  ...state.settings,
-                  sessionKey: next,
-                  lastActiveSessionKey: next,
-                });
-                void state.loadAssistantIdentity();
-              },
+              onSessionKeyChange: (next) => switchSession(state, next),
               onConnect: () => state.connect(),
               onRefresh: () => state.loadOverview(),
               onNavigateToUsage: () => state.setTab("usage" as Tab),
-              onModelChange: (provider, model) => state.setModelPrimary(provider, model),
+              onModelChange: (provider: string, model: string) => state.setModelPrimary(provider, model),
               modelsPendingProvider: state.modelsPendingProvider,
               modelsPendingModel: state.modelsPendingModel,
               onModelPendingChange: (provider, model) => state.setModelPending(provider, model),
@@ -777,6 +858,18 @@ export function renderApp(state: AppViewState) {
                 agentSkillsError: state.agentSkillsError,
                 agentSkillsAgentId: state.agentSkillsAgentId,
                 skillsFilter: state.skillsFilter,
+                dmScopeStatus: state.dmScopeStatus,
+                onDmScopeApply: () => {
+                  if (!state.dmScopeStatus?.recommended) return;
+                  const recommended = state.dmScopeStatus.recommended;
+                  void (async () => {
+                    try {
+                      updateConfigFormValue(state, ["session", "dmScope"], recommended);
+                      await saveConfig(state);
+                      void loadDmScopeStatus(state);
+                    } catch { /* best-effort */ }
+                  })();
+                },
                 agentCreating: state.agentCreating,
                 agentCreateError: state.agentCreateError,
                 agentDeleting: state.agentDeleting,
@@ -787,10 +880,14 @@ export function renderApp(state: AppViewState) {
                   await loadAgents(state);
                   const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
                   if (agentIds.length > 0) void loadAgentIdentities(state, agentIds);
+                  void loadDmScopeStatus(state);
+                  void loadTeamProjects(state as any);
                 },
                 onSelectAgent: (agentId) => {
-                  if (state.agentsSelectedId === agentId) return;
+                  if (state.agentsSelectedId === agentId && !state.teamProjectSelectedId) return;
                   state.agentsSelectedId = agentId;
+                  state.teamProjectSelectedId = null; // Switch to agent view
+                  stopProjectHealthPoll();
                   state.agentDeleteError = null;
                   state.agentFilesList = null;
                   state.agentFilesError = null;
@@ -954,6 +1051,57 @@ export function renderApp(state: AppViewState) {
                   const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
                   if (agentIds.length > 0) void loadAgentIdentities(state, agentIds);
                 },
+                // Team Projects
+                teamProjects: state.teamProjectsList,
+                teamProjectSelectedId: state.teamProjectSelectedId,
+                teamProjectDetail: state.teamProjectDetail,
+                teamProjectDetailLoading: state.teamProjectDetailLoading,
+                teamProjectHealth: state.teamProjectHealth,
+                teamProjectStats: state.teamProjectStats,
+                teamProjectMemory: state.teamProjectMemory,
+                teamProjectTab: state.teamProjectTab,
+                teamProjectBusy: state.teamProjectBusy,
+                teamCollapsedProjects: _teamCollapsedProjects,
+                onSelectProject: (projectId: string) => {
+                  state.agentsSelectedId = null;
+                  void selectProject(state as any, projectId);
+                },
+                onSelectProjectTab: (tab) => {
+                  state.teamProjectTab = tab;
+                  const pid = state.teamProjectSelectedId;
+                  if (!pid) return;
+                  if (tab === "stats" && !state.teamProjectStats) void loadProjectStats(state as any, pid);
+                  if (tab === "memory" && !state.teamProjectMemory) void loadSharedMemory(state as any, pid);
+                },
+                onPauseProject: (projectId: string) => void pauseProject(state as any, projectId),
+                onResumeProject: (projectId: string) => void resumeProject(state as any, projectId),
+                onDeleteProject: (projectId: string) => void deleteProject(state as any, projectId),
+                onLoadProjectStats: (projectId: string) => void loadProjectStats(state as any, projectId),
+                onLoadProjectMemory: (projectId: string) => void loadSharedMemory(state as any, projectId),
+                onClearProjectMemory: (projectId: string) => void clearSharedMemory(state as any, projectId),
+                onToggleProjectCollapse: (projectId: string) => {
+                  if (_teamCollapsedProjects.has(projectId)) _teamCollapsedProjects.delete(projectId);
+                  else _teamCollapsedProjects.add(projectId);
+                  state.requestUpdate();
+                },
+                // OpenClawCN: Orchestrator entry & view
+                orchestratorEntryHtml: renderOrchestratorEntry(
+                  () => void openOrchestrator(state as any),
+                  t,
+                ),
+                orchestratorHtml: state.orchestratorOpen && state.orchestratorState
+                  ? renderOrchestrator(state.orchestratorState, {
+                      onClose: () => closeOrchestrator(state as any),
+                      onSend: () => void orchSend(state as any),
+                      onInput: (e: Event) => orchInput(state as any, e),
+                      onKeydown: (e: KeyboardEvent) => orchKeydown(state as any, e),
+                      onTemplateClick: (templateId: string) => void orchTemplateClick(state as any, templateId),
+                      onExampleClick: (text: string) => orchExampleClick(state as any, text),
+                      onActionClick: (action: string, data?: unknown) => orchActionClick(state as any, action, data),
+                      onAnswerQuestion: (qi: number, answer: string) => orchAnswerQuestion(state as any, qi, answer),
+                      onDeployProposal: (planId: string) => void orchDeployProposal(state as any, planId),
+                    }, t)
+                  : nothing,
               })
             : nothing
         }
@@ -1253,6 +1401,18 @@ export function renderApp(state: AppViewState) {
                   );
                   return;
                 }
+                // SSE security confirmation — remote services send data to third-party servers
+                const _itemExtras = item as McpMarketplaceItem & { sseUrl?: string; _overrides?: { sseUrl?: string } };
+                const _overrideSseUrl = _itemExtras._overrides?.sseUrl;
+                if (item.installMethod === "sse" || _overrideSseUrl) {
+                  const sseUrl = _overrideSseUrl || _itemExtras.sseUrl || "";
+                  let domain = "";
+                  try { domain = new URL(sseUrl).hostname; } catch { domain = sseUrl; }
+                  const msg = (t("extensions.store.sseInstallConfirm" as never) as string)
+                    .replace("{{name}}", item.friendlyName)
+                    .replace("{{url}}", domain || "unknown");
+                  if (!confirm(msg)) return;
+                }
                 // Token consumption warning — always show before install
                 const afterCount = installedCount + 1;
                 showMcpToast(
@@ -1293,7 +1453,11 @@ export function renderApp(state: AppViewState) {
                     void refreshCaps();
                     setTimeout(() => void refreshCaps(), 3000);
                   } else {
-                    showMcpToast(state, `${item.friendlyName} ${t("extensions.toast.error" as never)}`, "error");
+                    const errorDetail = result?.connectError;
+                    const toastMsg = errorDetail
+                      ? errorDetail
+                      : `${item.friendlyName} ${t("extensions.toast.error" as never)}`;
+                    showMcpToast(state, toastMsg, "error");
                   }
                 })();
               },
@@ -1566,6 +1730,150 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
 
+        ${state.tab === "network"
+          ? renderNetworkCenter({
+              activeTab: state.networkTab ?? "devices",
+              onTabChange: (tab) => { state.networkTab = tab; },
+              statusLoading: state.networkStatusLoading,
+              status: state.networkStatus,
+              statusError: state.networkStatusError,
+              onRefreshStatus: () => loadNetworkStatus(state),
+              presenceLoading: state.presenceLoading,
+              presenceEntries: state.presenceEntries,
+              presenceError: state.presenceError,
+              onRefreshPresence: () => loadPresence(state),
+              nodesProps: {
+                loading: state.nodesLoading,
+                nodes: state.nodes,
+                devicesLoading: state.devicesLoading,
+                devicesError: state.devicesError,
+                devicesList: state.devicesList,
+                configForm: state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null),
+                configLoading: state.configLoading,
+                configSaving: state.configSaving,
+                configDirty: state.configFormDirty,
+                configFormMode: state.configFormMode,
+                execApprovalsLoading: state.execApprovalsLoading,
+                execApprovalsSaving: state.execApprovalsSaving,
+                execApprovalsDirty: state.execApprovalsDirty,
+                execApprovalsSnapshot: state.execApprovalsSnapshot,
+                execApprovalsForm: state.execApprovalsForm,
+                execApprovalsSelectedAgent: state.execApprovalsSelectedAgent,
+                execApprovalsTarget: state.execApprovalsTarget,
+                execApprovalsTargetNodeId: state.execApprovalsTargetNodeId,
+                onRefresh: () => loadNodes(state),
+                onDevicesRefresh: () => loadDevices(state),
+                onDeviceApprove: (requestId) => approveDevicePairing(state, requestId),
+                onDeviceReject: (requestId) => rejectDevicePairing(state, requestId),
+                onDeviceRotate: (deviceId, role, scopes) =>
+                  rotateDeviceToken(state, { deviceId, role, scopes }),
+                onDeviceRevoke: (deviceId, role) =>
+                  revokeDeviceToken(state, { deviceId, role }),
+                onLoadConfig: () => loadConfig(state),
+                onLoadExecApprovals: () => {
+                  const target =
+                    state.execApprovalsTarget === "node" && state.execApprovalsTargetNodeId
+                      ? { kind: "node" as const, nodeId: state.execApprovalsTargetNodeId }
+                      : { kind: "gateway" as const };
+                  return loadExecApprovals(state, target);
+                },
+                onBindDefault: (nodeId) => {
+                  if (nodeId) {
+                    updateConfigFormValue(state, ["tools", "exec", "node"], nodeId);
+                  } else {
+                    removeConfigFormValue(state, ["tools", "exec", "node"]);
+                  }
+                },
+                onBindAgent: (agentIndex, nodeId) => {
+                  const basePath = ["agents", "list", agentIndex, "tools", "exec", "node"];
+                  if (nodeId) {
+                    updateConfigFormValue(state, basePath, nodeId);
+                  } else {
+                    removeConfigFormValue(state, basePath);
+                  }
+                },
+                onSaveBindings: () => saveConfig(state),
+                onExecApprovalsTargetChange: (kind, nodeId) => {
+                  state.execApprovalsTarget = kind;
+                  state.execApprovalsTargetNodeId = nodeId;
+                  state.execApprovalsSnapshot = null;
+                  state.execApprovalsForm = null;
+                  state.execApprovalsDirty = false;
+                  state.execApprovalsSelectedAgent = null;
+                },
+                onExecApprovalsSelectAgent: (agentId) => {
+                  state.execApprovalsSelectedAgent = agentId;
+                },
+                onExecApprovalsPatch: (path, value) =>
+                  updateExecApprovalsFormValue(state, path, value),
+                onExecApprovalsRemove: (path) =>
+                  removeExecApprovalsFormValue(state, path),
+                onSaveExecApprovals: () => {
+                  const target =
+                    state.execApprovalsTarget === "node" && state.execApprovalsTargetNodeId
+                      ? { kind: "node" as const, nodeId: state.execApprovalsTargetNodeId }
+                      : { kind: "gateway" as const };
+                  return saveExecApprovals(state, target);
+                },
+              },
+              discoveryLoading: state.networkDiscoveryLoading,
+              discoveredGateways: state.networkDiscoveredGateways,
+              discoveryError: state.networkDiscoveryError,
+              onDiscover: () => discoverGateways(state),
+              probeLoading: state.networkProbeLoading,
+              probeResult: state.networkProbeResult,
+              onProbe: (host) => probeGateway(state, host),
+              interfacesLoading: state.networkInterfacesLoading,
+              interfaces: state.networkInterfaces,
+              configureLoading: state.networkConfigureLoading,
+              configureError: state.networkConfigureError,
+              onConfigure: (params) => configureNetworkMode(state, params),
+            })
+          : nothing}
+
+        ${renderUpdateBanner(state.updateAvailable && !state.updateDialogOpen ? {
+            version: state.updateAvailable.version,
+            summary: state.updateAvailable.summary,
+            mandatory: state.updateAvailable.mandatory,
+            onView: () => { state.updateResult = null; state.updateProgress = null; state.updateDialogOpen = true; },
+            onDismiss: () => {
+              const ver = state.updateAvailable?.version;
+              state.updateAvailable = null;
+              if (ver && state.client) { void state.client.request("update.dismiss", { version: ver }).catch(() => {}); }
+            },
+          } : null)}
+
+        ${state.updateDialogOpen && state.updateAvailable ? renderUpdateDialog({
+            info: state.updateAvailable,
+            executing: state.updateExecuting,
+            progress: state.updateProgress,
+            result: state.updateResult,
+            onExecute: () => { void state.handleRunUpdate(); },
+            onDismiss: () => {
+              state.updateDialogOpen = false;
+              const ver = state.updateAvailable?.version;
+              state.updateAvailable = null;
+              if (ver && state.client) { void state.client.request("update.dismiss", { version: ver }).catch(() => {}); }
+            },
+            onClose: () => { state.updateDialogOpen = false; state.updateResult = null; state.updateProgress = null; },
+            onRetry: () => { state.updateResult = null; state.updateProgress = null; void state.handleRunUpdate(); },
+            onRestart: () => {
+              // S5-3: 通知服务端立即重启（取消 30s 自动重启定时器）
+              if (state.client) {
+                void state.client.request("update.restart", {}).catch(() => {});
+              }
+              // CR-11: Tauri 桌面端重启整个应用，Web 端 fallback 到 reload
+              try {
+                const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => void } };
+                if (w.__TAURI_INTERNALS__?.invoke) {
+                  w.__TAURI_INTERNALS__.invoke("restart");
+                  return;
+                }
+              } catch { /* not in Tauri */ }
+              window.location.reload();
+            },
+          }) : nothing}
+
         ${state.tab === "chat" && state.skillsBatch.batchPhase === "banner" && state.skillsBatch.batchCheckResult
           ? renderSkillsBatchBanner({
               missingSkills: state.skillsBatch.batchCheckResult.missing,
@@ -1577,27 +1885,90 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
         ${state.tab === "chat"
-          ? renderChat({
-              sessionKey: state.sessionKey,
-              onSessionKeyChange: (next) => {
-                state.sessionKey = next;
-                state.chatMessage = "";
-                state.chatAttachments = [];
-                state.chatStream = null;
-                state.chatStreamStartedAt = null;
-                state.chatRunId = null;
-                state.chatQueue = [];
-                state.resetToolStream();
-                state.resetChatScroll();
-                state.applySettings({
-                  ...state.settings,
-                  sessionKey: next,
-                  lastActiveSessionKey: next,
-                });
-                void state.loadAssistantIdentity();
-                void loadChatHistory(state);
-                void refreshChatAvatar(state);
+          ? html`
+            <div class="chat-with-sidebar">
+            ${renderConversationSidebar(
+              {
+                open: state.convSidebarOpen,
+                sessionKey: state.sessionKey,
+                sessionsResult: state.sessionsResult,
+                sessionsLoading: false,
+                connected: state.connected,
+                onToggle: () => { state.convSidebarOpen = !state.convSidebarOpen; },
+                onSelectSession: (key: string) => switchSession(state, key),
+                onNewChat: () => switchSession(state, generateUUID()),
+                onPinSession: (key: string, pinned: boolean) => {
+                  void state.client?.request("sessions.pin", { sessionKey: key, pinned });
+                },
+                onArchiveSession: (key: string) => {
+                  void state.client?.request("sessions.archive", { sessionKey: key });
+                },
+                onDeleteSession: (key: string) => {
+                  void state.client?.request("sessions.delete", { key, deleteTranscript: true })
+                    .then(() => loadSessions(state));
+                },
+                onRenameSession: (key: string, name: string) => {
+                  void state.client?.request("sessions.rename", { sessionKey: key, name });
+                },
+                onViewDetails: (key: string) => {
+                  state.sessionKey = key;
+                  state.setTab("sessions" as Tab);
+                },
+                onManageAll: () => { state.setTab("sessions" as Tab); },
+                lastError: isFirstStartup ? null : state.lastError,
+                assets: state.convSidebarAssets,
+                assetsLoading: state.convSidebarAssetsLoading,
+                onAssetsTabActivated: () => { void loadSidebarAssets(state); },
+                onViewAsset: (asset) => {
+                  if (asset.type === "image") {
+                    window.open(asset.url, "_blank");
+                  } else if (asset.type === "video") {
+                    window.open(asset.url, "_blank");
+                  }
+                },
               },
+              () => state.requestUpdate(),
+            )}
+            <div class="chat-content-area">
+            ${state.convSidebarOpen ? html`
+              <div class="chat-content-overlay" @click=${() => { state.convSidebarOpen = false; }}></div>
+            ` : nothing}
+            <div class="chat-content-toolbar">
+              ${!state.convSidebarOpen ? renderSidebarToggle(
+                false,
+                () => { state.convSidebarOpen = true; },
+              ) : nothing}
+              <div class="chat-header-center">
+                ${state.chatModelConfigured === false ? html`
+                  <div class="chat-header-banner">
+                    <span class="chat-header-banner__icon">🔑</span>
+                    <span class="chat-header-banner__text">
+                      聊天功能需要配置 AI 模型，请先前往模型设置完成配置
+                    </span>
+                    <button class="chat-header-banner__btn" type="button"
+                      @click=${() => { state.setTab("model-config" as Tab); }}>前往配置</button>
+                  </div>
+                ` : state.essentialProviderConfigured === false ? html`
+                  <div class="chat-header-banner chat-header-banner--warn">
+                    <span class="chat-header-banner__icon">⚡</span>
+                    <span class="chat-header-banner__text">
+                      记忆、推荐等功能需要 <strong>硅基流动</strong>，模型免费，建议配置
+                    </span>
+                    <button class="chat-header-banner__btn" type="button"
+                      @click=${() => { state.setTab("model-config" as Tab); }}>去配置</button>
+                  </div>
+                ` : nothing}
+                ${state.lastError
+                  ? html`<div class="pill danger">${state.lastError}</div>`
+                  : nothing}
+              </div>
+              <div class="chat-content-toolbar__right">
+                ${renderChatControls(state)}
+              </div>
+            </div>
+            ${renderChat({
+              sessionKey: state.sessionKey,
+              onSessionKeyChange: (next) => switchSession(state, next),
               thinkingLevel: state.chatThinkingLevel,
               showThinking,
               loading: state.chatLoading,
@@ -1636,8 +2007,7 @@ export function renderApp(state: AppViewState) {
               canAbort: Boolean(state.chatRunId),
               onAbort: () => void state.handleAbortChat(),
               onQueueRemove: (id) => state.removeQueuedMessage(id),
-              onNewSession: () =>
-                state.handleSendChat("/new", { restoreDraft: true }),
+              onNewSession: () => switchSession(state, generateUUID()),
               // Sidebar props for tool output viewing
               sidebarOpen: state.sidebarOpen,
               sidebarContent: state.sidebarContent,
@@ -1727,7 +2097,7 @@ export function renderApp(state: AppViewState) {
                 recordingState: state.voiceRecordingState,
                 error: state.voiceError,
                 onStartRecording: () => state.handleVoiceStartRecording(),
-                onStopRecording: () => state.handleVoiceStopRecording(),
+                onStopRecording: () => state.handleVoiceStopRecording({ autoSend: true }),
                 onDismiss: () => state.handleVoiceMascotDismiss(),
               } : null,
               // OpenClawCN: auto-failover banner
@@ -1736,7 +2106,97 @@ export function renderApp(state: AppViewState) {
               // OpenClawCN: 聊天模型配置状态
               chatModelConfigured: state.chatModelConfigured,
               onNavigateToModelConfig: () => { state.setTab("model-config" as Tab); },
-            })
+              // OpenClawCN: compose-card (豆包风格输入框)
+              composeCardProps: {
+                draft: state.chatMessage,
+                connected: state.connected,
+                sending: state.chatSending,
+                canAbort: Boolean(state.chatRunId),
+                hasStream: state.chatStream !== null,
+                placeholder: t("chat.sendMessage"),
+                attachments: state.chatAttachments,
+                onDraftChange: (next: string) => (state.chatMessage = next),
+                onSend: () => state.handleSendChat(),
+                onAbort: () => void state.handleAbortChat(),
+                onAttachmentsChange: (next: ChatAttachment[]) => (state.chatAttachments = next),
+                onPaste: (e: ClipboardEvent) => {
+                  void handleComposePaste(e, state.chatAttachments, (next: ChatAttachment[]) => { state.chatAttachments = next; });
+                },
+                voiceAvailable: state.voiceAsrAvailable === true,
+                voiceRecording: state.voiceRecordingState === "recording",
+                voiceProcessing: state.voiceRecordingState === "processing",
+                volumeLevel: state.voiceVolumeLevel,
+                onVoiceToggle: (opts?: { autoSend?: boolean }) => {
+                  if (state.voiceRecordingState === "recording") {
+                    void state.handleVoiceStopRecording(opts);
+                  } else {
+                    void state.handleVoiceStartRecording();
+                  }
+                },
+                onVoiceUnavailable: state.voiceAsrAvailable !== true
+                  ? () => {
+                      const msg = "语音识别尚未配置，请前往设置页面安装语音能力。";
+                      const anchor = document.querySelector(".chat-compose") as HTMLElement;
+                      if (!anchor) return;
+                      anchor.style.position = "relative";
+                      const el = document.createElement("div");
+                      el.textContent = msg;
+                      Object.assign(el.style, {
+                        position: "absolute", bottom: "-52px", left: "50%", transform: "translateX(-50%)",
+                        padding: "8px 18px", borderRadius: "10px", fontSize: "13px", fontWeight: "500",
+                        background: "rgba(0,0,0,0.8)", color: "#fff", zIndex: "99999", whiteSpace: "nowrap",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)", transition: "opacity 0.3s",
+                        pointerEvents: "none",
+                      });
+                      anchor.appendChild(el);
+                      setTimeout(() => { el.style.opacity = "0"; }, 2500);
+                      setTimeout(() => el.remove(), 3000);
+                    }
+                  : undefined,
+                voiceMode: state.voiceMode,
+                // [CN-PATCH] Hide voice-call (phone) button — feature not ready for production
+                // onVoiceModeToggle: () => { void state.toggleVoiceMode(); },
+                onToolSelect: (toolId: string) => {
+                  const prompts: Record<string, string> = {
+                    copywriting: "请帮我写一篇文案：",
+                    spreadsheet: "请帮我制作一个表格：",
+                    presentation: "请帮我制作一个PPT大纲：",
+                    imagegen: "请帮我生成一张图片：",
+                    videogen: "请帮我制作一个视频：",
+                  };
+                  const prompt = prompts[toolId];
+                  if (prompt) {
+                    state.chatMessage = prompt;
+                    // Focus textarea
+                    requestAnimationFrame(() => {
+                      const ta = document.querySelector(".cc-textarea") as HTMLTextAreaElement;
+                      if (ta) { ta.focus(); ta.setSelectionRange(prompt.length, prompt.length); }
+                    });
+                  }
+                },
+                // Image generation mode
+                imageGenMode: (state as unknown as { imageGenMode?: boolean }).imageGenMode,
+                // Screen share
+                screenShareActive: state.screenShareActive,
+                screenShareFrameCount: state.screenShareFrameCount,
+                screenShareModelName: state.screenShareModelName ?? undefined,
+                onScreenShareToggle: () => { void state.toggleScreenShare(); },
+              },
+              // OpenClawCN: intent-hint (智能意图提示)
+              intentHintProps: {
+                draft: state.chatMessage,
+                activeCapabilities: (state as unknown as { activeCapabilities?: string[] }).activeCapabilities ?? [],
+                hasImageAttachments: (state.chatAttachments ?? []).some(a => a.mimeType?.startsWith("image/")),
+                onNavigateToModelConfig: () => { state.setTab("model-config" as Tab); },
+              },
+            })}
+            ${state.imageGalleryOpen ? renderImageGallery({
+              images: state.imageGalleryImages ?? [],
+              onClose: () => { state.imageGalleryOpen = false; },
+            }) : nothing}
+            </div><!-- .chat-content-area -->
+            </div><!-- .chat-with-sidebar -->
+          `
           : nothing}
 
         ${state.tab === "config"

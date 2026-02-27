@@ -35,8 +35,12 @@ class TypewriterIndicatorDirective extends AsyncDirective {
   /** 每个字符应该在什么时间点（相对于阶段开始）显示 */
   private charTimings: number[] = [];
 
+  override render(_text: string, _phaseKey: string, _cssClass: string) {
+    return nothing;
+  }
+
   override update(
-    _part: import("lit/directive").Part,
+    _part: import("lit/directive.js").Part,
     [text, phaseKey, cssClass]: [string, string, string],
   ) {
     const isNewPhase = phaseKey !== this.phaseKey;

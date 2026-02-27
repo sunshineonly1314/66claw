@@ -24,11 +24,12 @@ import { resolveWorkspaceRoot } from "./workspace-dir.js";
 // ── [CN-PATCH] CN-only tool imports ──
 import { createOpenAppTool } from "./tools/open-app.js";
 import { createDesktopControlTool } from "./tools/desktop-control.js";
-// GUI automation tools removed from distribution (wechat-send/check/read, wecom-send/check/read/auto-reply/patrol/group-summary/broadcast)
-import { createWeComTicketTool } from "./tools/wecom-ticket.js";
-import { createWeComHandoffTool } from "./tools/wecom-handoff.js";
+// wechat/wecom tools moved to E:\openclawcn\privateskills\tools (private, not distributed)
 import { createImageGenTool } from "./tools/image-gen-tool.js";
+import { createVideoGenTool } from "./tools/video-gen-tool.js";
 import { createMcpInstallTool } from "./tools/mcp-install-tool.js";
+// [CN-PATCH:memory-L1] Structured memory tools (profile.json)
+import { createMemoryUpsertTool, createMemoryForgetTool } from "./tools/memory-upsert-tool.js";
 import { getMCPManagerSafe } from "../mcp/index.js";
 // applyToolHints removed — reordering is now done at the outer level in pi-tools.ts
 
@@ -97,12 +98,19 @@ export function createOpenClawCNTools(options?: {
   // ── [CN-PATCH] CN-only tools ──
   const openAppTool = createOpenAppTool();
   const desktopControlTool = createDesktopControlTool();
-  // GUI automation tools removed from distribution
-  const wecomTicketTool = createWeComTicketTool();
-  const wecomHandoffTool = createWeComHandoffTool();
+  // wechat/wecom tools removed from project (private)
   const imageGenTool = createImageGenTool({
     config: options?.config,
     agentDir: options?.agentDir,
+    sessionKey: options?.agentSessionKey,
+  });
+  // [CN-PATCH:memory-L1] Structured memory tools
+  const memoryUpsertTool = createMemoryUpsertTool({ config: options?.config, workspaceDir });
+  const memoryForgetTool = createMemoryForgetTool({ config: options?.config, workspaceDir });
+  const videoGenTool = createVideoGenTool({
+    config: options?.config,
+    agentDir: options?.agentDir,
+    sessionKey: options?.agentSessionKey,
   });
   const messageTool = options?.disableMessageTool
     ? null
@@ -191,10 +199,11 @@ export function createOpenClawCNTools(options?: {
     // ── [CN-PATCH] CN-only tools ──
     ...(openAppTool ? [openAppTool] : []),
     ...(desktopControlTool ? [desktopControlTool] : []),
-    // GUI automation tools removed from distribution
-    wecomTicketTool,
-    wecomHandoffTool,
+    // wechat/wecom tools removed from project
     imageGenTool,
+    videoGenTool,
+    ...(memoryUpsertTool ? [memoryUpsertTool] : []),
+    ...(memoryForgetTool ? [memoryForgetTool] : []),
     ...(options?.config?.toolDiscovery?.mcpOnDemand?.enabled !== false
       ? [createMcpInstallTool()]
       : []),

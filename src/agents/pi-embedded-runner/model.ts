@@ -141,7 +141,7 @@ export function resolveModel(
         provider,
         baseUrl: providerCfg?.baseUrl,
         reasoning: false,
-        input: ["text"],
+        input: matchingModelDef?.input ?? ["text"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: matchingModelDef?.contextWindow ?? DEFAULT_CONTEXT_TOKENS,
         maxTokens: matchingModelDef?.maxTokens ?? DEFAULT_CONTEXT_TOKENS,

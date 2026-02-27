@@ -26,6 +26,15 @@ import { diagnoseHandlers } from "./server-methods/diagnose.js";
 import { feedbackHandlers } from "./server-methods/feedback.js";
 import { logReportHandlers } from "./server-methods/log-report.js";
 import { licenseHandlers } from "./server-methods/license.js";
+import { asrHandlers } from "./server-methods/asr.js";
+import { asrStreamingHandlers } from "./server-methods/asr-streaming.js";
+import { voiceTierHandlers } from "./server-methods/voice-tier.js";
+import { imagegenTierHandlers } from "./server-methods/imagegen-tier.js";
+import { kwsStreamingHandlers } from "./server-methods/kws-streaming.js";
+import { capabilityMatrixHandlers } from "./server-methods/capability-matrix.js";
+import { localEngineHandlers } from "./server-methods/local-engine.js";
+import { updateExecuteHandlers } from "./server-methods/update-execute.js";
+import { networkingHandlers } from "./server-methods/networking.js";
 
 export const cnGatewayHandlers: GatewayRequestHandlers = {
   ...modalityCapabilityHandlers,
@@ -54,4 +63,31 @@ export const cnGatewayHandlers: GatewayRequestHandlers = {
 
   // License API (license.status, license.activate, etc.)
   ...licenseHandlers,
+
+  // Voice: ASR (offline transcription via sherpa-onnx)
+  ...asrHandlers,
+
+  // Voice: ASR Streaming (tier-aware: GPU / VAD / CPU backends)
+  ...asrStreamingHandlers,
+
+  // Voice: Tier detection, model install, GPU sidecar control
+  ...voiceTierHandlers,
+
+  // ImageGen: Tier detection, model install, sd.cpp sidecar control
+  ...imagegenTierHandlers,
+
+  // Voice: KWS wake word streaming detection
+  ...kwsStreamingHandlers,
+
+  // Capability Matrix: unified 10-dimension capability status for model settings UI
+  ...capabilityMatrixHandlers,
+
+  // Local AI Engine: unified local model hub (hardware detect + install + sidecar control)
+  ...localEngineHandlers,
+
+  // Smooth Update: check, status, execute, dismiss
+  ...updateExecuteHandlers,
+
+  // Networking Center: status, discover, probe, configure, interfaces
+  ...networkingHandlers,
 };

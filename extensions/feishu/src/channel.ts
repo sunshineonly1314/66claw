@@ -441,7 +441,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
 
             if (content) {
               if (msgType === "text") {
-                text = (content as FeishuTextContent).text ?? "";
+                text = (content as unknown as FeishuTextContent).text ?? "";
               } else if (msgType === "post") {
                 try {
                   const { text: postText, imageKeys } = extractPostContent(content as FeishuPostContent);

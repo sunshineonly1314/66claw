@@ -545,13 +545,14 @@ export async function installMarketplaceItem(
     console.error("[mcp-lifecycle] marketplace install failed:", item.serverId, err);
 
     // Rollback to error state (re-read to avoid overwriting concurrent changes)
+    const errorMsg = err instanceof Error ? err.message : String(err);
     const errorItems = getItems().map((i) =>
       i.serverId === item.serverId
-        ? { ...i, installStatus: "error" as const }
+        ? { ...i, installStatus: "error" as const, errorMessage: errorMsg }
         : i,
     );
     callbacks.onStateChange({ items: errorItems });
-    return { ok: false, connectError: err instanceof Error ? err.message : String(err) };
+    return { ok: false, connectError: errorMsg };
   }
 }
 

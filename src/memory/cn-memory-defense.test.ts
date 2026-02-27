@@ -30,7 +30,7 @@ function makeResult(overrides: Partial<MemorySearchResult> = {}): MemorySearchRe
     path: "memory/test.md",
     startLine: 1,
     endLine: 10,
-    score: 0.8,
+    score: 0.5,
     snippet: "测试内容",
     source: "memory",
     ...overrides,
@@ -48,7 +48,9 @@ function generateAgedResults(params: {
   noTimestamp?: number; // 无时间戳
 }): MemorySearchResult[] {
   const results: MemorySearchResult[] = [];
-  let scoreCounter = 0.99;
+  // 使用低于 HIGH_SCORE_PRESERVE_THRESHOLD(0.6) 的分数，确保时间分层测试
+  // 纯粹测试时间逻辑而非高分保护逻辑
+  let scoreCounter = 0.55;
   const push = (updatedAt: number | undefined, label: string) => {
     results.push(
       makeResult({
@@ -57,7 +59,7 @@ function generateAgedResults(params: {
         updatedAt,
       }),
     );
-    scoreCounter -= 0.01;
+    scoreCounter -= 0.001;
   };
 
   for (let i = 0; i < (params.hot ?? 0); i++) {
@@ -478,8 +480,13 @@ describe("防 Token 浪费 — BM25 评分精度", () => {
   });
 
   it("负 rank 值 abs 映射为正分数", () => {
-    // abs(-5) / (1 + abs(-5)) = 5/6 ≈ 0.833
-    expect(bm25RankToScore(-5)).toBeCloseTo(5 / 6);
+    // log(1+5) / log(1+5+100) = log(6)/log(106) ≈ 0.384
+    const score = bm25RankToScore(-5);
+    expect(score).toBeGreaterThan(0);
+    expect(score).toBeLessThan(1);
+    // 新 log 公式下 rank=-5 大约 0.38，验证合理范围
+    expect(score).toBeGreaterThan(0.3);
+    expect(score).toBeLessThan(0.5);
   });
 
   it("NaN rank 不产生 NaN score", () => {
@@ -786,11 +793,12 @@ describe("端到端 — 完整搜索链路模拟", () => {
     expect(fts).toBe('"会议记录总结"');
 
     // 模拟搜索结果（已按 score 排序）
+    // 旧结果使用低于 HIGH_SCORE_PRESERVE_THRESHOLD(0.6) 的分数，以验证时间分层过滤
     const searchResults: MemorySearchResult[] = [
       makeResult({ score: 0.9, updatedAt: NOW - 2 * DAY, path: "memory/meeting-2.md" }),
       makeResult({ score: 0.85, updatedAt: NOW - 5 * DAY, path: "memory/meeting-1.md" }),
-      makeResult({ score: 0.7, updatedAt: NOW - 45 * DAY, path: "memory/old-meeting.md" }),
-      makeResult({ score: 0.6, updatedAt: NOW - 150 * DAY, path: "memory/ancient-meeting.md" }),
+      makeResult({ score: 0.5, updatedAt: NOW - 45 * DAY, path: "memory/old-meeting.md" }),
+      makeResult({ score: 0.4, updatedAt: NOW - 150 * DAY, path: "memory/ancient-meeting.md" }),
     ];
 
     // 分层过滤

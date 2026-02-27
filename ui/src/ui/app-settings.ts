@@ -10,7 +10,7 @@ import {
 import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
-import { loadAgents } from "./controllers/agents.ts";
+import { loadAgents, loadDmScopeStatus } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
 import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
@@ -24,10 +24,16 @@ import {
   loadMarketplaceRecommendations,
   type McpLifecycleCallbacks,
 } from "./controllers/mcp-lifecycle.ts";
+import {
+  loadNetworkStatus,
+  discoverGateways,
+  loadNetworkInterfaces,
+} from "./controllers/networking.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { loadSkills } from "./controllers/skills.ts";
+import { loadTeamProjects } from "./controllers/team-projects.ts";
 import { loadUsage } from "./controllers/usage.ts";
 import {
   inferBasePathFromPathname,
@@ -50,16 +56,16 @@ type SettingsHost = {
   sessionKey: string;
   tab: Tab;
   connected: boolean;
-  chatHasAutoScrolled: boolean;
-  logsAtBottom: boolean;
+  chatHasAutoScrolled?: boolean;
+  logsAtBottom?: boolean;
   eventLog: unknown[];
-  eventLogBuffer: unknown[];
+  eventLogBuffer?: unknown[];
   basePath: string;
   agentsList?: AgentsListResult | null;
   agentsSelectedId?: string | null;
   agentsPanel?: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
-  themeMedia: MediaQueryList | null;
-  themeMediaHandler: ((event: MediaQueryListEvent) => void) | null;
+  themeMedia?: MediaQueryList | null;
+  themeMediaHandler?: ((event: MediaQueryListEvent) => void) | null;
   pendingGatewayUrl?: string | null;
 };
 
@@ -173,6 +179,12 @@ export function setTab(host: SettingsHost, next: Tab) {
   } else {
     stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
   }
+  // OpenClawCN: stop orchestrator polling when navigating away from agents tab
+  if (next !== "agents" && (host as unknown as { orchestratorOpen?: boolean }).orchestratorOpen) {
+    void import("./controllers/orchestrator.js").then(({ closeOrchestrator }) => {
+      closeOrchestrator(host as Parameters<typeof closeOrchestrator>[0]);
+    });
+  }
   void refreshActiveTab(host);
   syncUrlWithTab(host, next, false);
 }
@@ -212,7 +224,9 @@ export async function refreshActiveTab(host: SettingsHost) {
   }
   if (host.tab === "agents") {
     await loadAgents(host as unknown as OpenClawCNApp);
+    void loadTeamProjects(host as unknown as OpenClawCNApp);
     await loadConfig(host as unknown as OpenClawCNApp);
+    void loadDmScopeStatus(host as unknown as OpenClawCNApp);
     const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];
     if (agentIds.length > 0) {
       void loadAgentIdentities(host as unknown as OpenClawCNApp, agentIds);
@@ -237,6 +251,15 @@ export async function refreshActiveTab(host: SettingsHost) {
     await loadDevices(host as unknown as OpenClawCNApp);
     await loadConfig(host as unknown as OpenClawCNApp);
     await loadExecApprovals(host as unknown as OpenClawCNApp);
+  }
+  if (host.tab === "network") {
+    await loadNetworkStatus(host as unknown as OpenClawCNApp);
+    await loadNodes(host as unknown as OpenClawCNApp);
+    await loadDevices(host as unknown as OpenClawCNApp);
+    await loadConfig(host as unknown as OpenClawCNApp);
+    await loadExecApprovals(host as unknown as OpenClawCNApp);
+    void loadNetworkInterfaces(host as unknown as OpenClawCNApp);
+    void discoverGateways(host as unknown as OpenClawCNApp);
   }
   if (host.tab === "chat") {
     await refreshChat(host as unknown as Parameters<typeof refreshChat>[0]);
@@ -273,7 +296,7 @@ export async function refreshActiveTab(host: SettingsHost) {
   }
   if (host.tab === "debug") {
     await loadDebug(host as unknown as OpenClawCNApp);
-    host.eventLog = host.eventLogBuffer;
+    host.eventLog = host.eventLogBuffer ?? [];
   }
   if (host.tab === "logs") {
     host.logsAtBottom = true;

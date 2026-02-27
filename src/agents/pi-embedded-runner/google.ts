@@ -237,31 +237,79 @@ function findUnsupportedSchemaKeywords(schema: unknown, path: string): string[] 
   return violations;
 }
 
+/**
+ * Sanitize a tool name for Gemini's functionDeclarations API.
+ * Gemini requires: `^[a-zA-Z_][a-zA-Z0-9_]*$`, max 64 characters.
+ */
+function sanitizeToolNameForGemini(name: string): string {
+  let sanitized = name.replace(/[^a-zA-Z0-9_]/g, "_");
+  if (sanitized && /^[0-9]/.test(sanitized)) {
+    sanitized = `_${sanitized}`;
+  }
+  if (sanitized.length > 64) {
+    sanitized = sanitized.slice(0, 64);
+  }
+  return sanitized || "unknown_tool";
+}
+
+function isGoogleProvider(provider?: string, modelApi?: string | null): boolean {
+  if (provider === "google-antigravity" || provider === "google-gemini-cli") {
+    return true;
+  }
+  return isGoogleModelApi(modelApi);
+}
+
 export function sanitizeToolsForGoogle<
   TSchemaType extends TSchema = TSchema,
   TResult = unknown,
 >(params: {
   tools: AgentTool<TSchemaType, TResult>[];
   provider: string;
+  modelApi?: string | null;
 }): AgentTool<TSchemaType, TResult>[] {
-  if (params.provider !== "google-antigravity" && params.provider !== "google-gemini-cli") {
+  if (!isGoogleProvider(params.provider, params.modelApi)) {
     return params.tools;
   }
+  const usedNames = new Set<string>();
   return params.tools.map((tool) => {
-    if (!tool.parameters || typeof tool.parameters !== "object") {
+    let sanitizedName = sanitizeToolNameForGemini(tool.name);
+    // Deduplicate truncated names
+    if (usedNames.has(sanitizedName)) {
+      for (let i = 2; i < 100; i++) {
+        const suffix = `_${i}`;
+        const candidate = sanitizedName.slice(0, 64 - suffix.length) + suffix;
+        if (!usedNames.has(candidate)) {
+          sanitizedName = candidate;
+          break;
+        }
+      }
+    }
+    usedNames.add(sanitizedName);
+    const needsNameFix = sanitizedName !== tool.name;
+    const needsSchemaFix = tool.parameters && typeof tool.parameters === "object";
+    if (!needsNameFix && !needsSchemaFix) {
       return tool;
     }
     return {
       ...tool,
-      parameters: cleanToolSchemaForGemini(
-        tool.parameters as Record<string, unknown>,
-      ) as TSchemaType,
+      ...(needsNameFix ? { name: sanitizedName } : {}),
+      ...(needsSchemaFix
+        ? {
+            parameters: cleanToolSchemaForGemini(
+              tool.parameters as Record<string, unknown>,
+            ) as TSchemaType,
+          }
+        : {}),
     };
   });
 }
 
-export function logToolSchemasForGoogle(params: { tools: AgentTool[]; provider: string }) {
-  if (params.provider !== "google-antigravity" && params.provider !== "google-gemini-cli") {
+export function logToolSchemasForGoogle(params: {
+  tools: AgentTool[];
+  provider: string;
+  modelApi?: string | null;
+}) {
+  if (!isGoogleProvider(params.provider, params.modelApi)) {
     return;
   }
   const toolNames = params.tools.map((tool, index) => `${index}:${tool.name}`);

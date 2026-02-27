@@ -307,10 +307,72 @@ export const en = {
   "agents.skillMissing": "Missing:",
   "agents.skillReason": "Reason:",
   "agents.skillDisabled": "disabled",
-  "agents.skillBlockedByAllowlist": "blocked by allowlist",
+  "agents.skillBlockedByAllowlist": "not in core skill set",
   "agents.skillBundled": "bundled",
   "agents.skillEligible": "eligible",
   "agents.skillBlocked": "blocked",
+
+  // ── Session Isolation (dmScope) ──
+  "agents.sessionIsolation": "Session Isolation",
+  "agents.dmScopeOk": "Isolated",
+  "agents.dmScopeUpgradeNeeded": "Upgrade Suggested",
+  "agents.dmScopeWarningTitle": "Session isolation level is low",
+  "agents.dmScopeWarningBody":
+    "Currently \u201C{{current}}\u201D. Detected multi-user scenario in {{channels}} \u2014 recommend upgrading to \u201C{{recommended}}\u201D.",
+  "agents.dmScopeApply": "Apply recommended setting now",
+
+  // Team Projects
+  "team.projects": "Team Projects",
+  "team.standalone": "Standalone Agents",
+  "team.supervisor": "Supervisor",
+  "team.members": "Members",
+  "team.stats": "Stats",
+  "team.settings": "Settings",
+  "team.memory": "Shared Memory",
+  "team.noProjects": "No team projects",
+  "team.status.deploying": "Deploying",
+  "team.status.active": "Active",
+  "team.status.paused": "Paused",
+  "team.status.archived": "Archived",
+  "team.status.error": "Error",
+  "team.health.healthy": "Healthy",
+  "team.health.degraded": "Degraded",
+  "team.health.down": "Down",
+  "team.action.pause": "Pause",
+  "team.action.resume": "Resume",
+  "team.action.delete": "Delete",
+  "team.action.deleteConfirm": "Delete team project \"{{name}}\"? All routing and session affinities will be cleared.",
+  "team.detail.description": "Description",
+  "team.detail.visibility": "Visibility Mode",
+  "team.detail.hopLimit": "Max Routing Hops",
+  "team.detail.memberTimeout": "Member Timeout (s)",
+  "team.detail.supervisorFallback": "Supervisor Fallback",
+  "team.detail.memoryMode": "Memory Mode",
+  "team.detail.totalCalls": "Total Calls",
+  "team.detail.avgDuration": "Avg Duration",
+  "team.detail.callCount": "Call Count",
+  "team.detail.duration": "Total Duration",
+  "team.detail.lastCall": "Last Call",
+  "team.detail.successes": "Successes",
+  "team.detail.failures": "Failures",
+  "team.detail.status": "Status",
+  "team.detail.lastError": "Last Error",
+  "team.detail.noMemory": "No shared memory entries.",
+  "team.detail.clearMemory": "Clear Shared Memory",
+  "team.detail.selectProject": "Select a Team Project",
+  "team.detail.selectProjectHint": "Pick a team project on the left to view its member health and statistics.",
+
+  "dmScope.label.main": "Shared (all users share one session)",
+  "dmScope.label.per-peer": "Per User (each user gets own session)",
+  "dmScope.label.per-channel-peer":
+    "Per Channel+User (same user on different channels separated)",
+  "dmScope.label.per-account-channel-peer":
+    "Per Account+Channel+User (full isolation)",
+  "config.value.session.dmScope.main": "Shared",
+  "config.value.session.dmScope.per-peer": "Per User",
+  "config.value.session.dmScope.per-channel-peer": "Per Channel+User",
+  "config.value.session.dmScope.per-account-channel-peer":
+    "Per Account+Channel+User",
 
   // ============================================================================
   // 命令审批 (Exec Approval)
@@ -493,6 +555,35 @@ export const en = {
   "chat.placeholder.default": "Message (↩ to send, Shift+↩ for line breaks, paste images)",
   "chat.placeholder.withImages": "Add a message or paste more images...",
   "chat.placeholder.disconnected": "Connect to the gateway to start chatting...",
+
+  // Intent hints (能力缺失提示)
+  "chat.hint.imageGen": "Image generation is not configured yet",
+  "chat.hint.vision": "Image understanding is not configured yet",
+  "chat.hint.search": "Web search is not configured yet",
+  "chat.hint.videoGen": "Video generation is not configured yet",
+  "chat.hint.video": "Video understanding is not configured yet",
+  "chat.hint.memory": "Memory / embedding is not configured yet",
+  "chat.hint.configure": "Configure",
+
+  // Image generation result (生图结果)
+  "chat.imageGen.generating": "Generating image...",
+  "chat.imageGen.download": "Download",
+  "chat.imageGen.copy": "Copy",
+  "chat.imageGen.regenerate": "Regenerate",
+  "chat.imageGen.retry": "Retry",
+  "chat.imageGen.failed": "Image generation failed",
+  "chat.imageGen.expired": "Image expired",
+  "chat.imageGen.interrupted": "Image generation incomplete, tap to regenerate",
+  "chat.imageGen.copied": "Copied!",
+
+  // Video generation result
+  "chat.videoGen.generating": "Generating video...",
+  "chat.videoGen.download": "Download Video",
+  "chat.videoGen.regenerate": "Regenerate",
+  "chat.videoGen.failed": "Video generation failed",
+  "chat.videoGen.retry": "Retry",
+  "chat.videoGen.expired": "Video expired",
+  "chat.videoGen.interrupted": "Video generation incomplete, tap to regenerate",
 
   // ============================================================================
   // 渠道页 (Channels)
@@ -734,7 +825,7 @@ export const en = {
   "skills.missing": "Missing",
   "skills.noDescription": "Install to learn more",
   "skills.reason": "Reason",
-  "skills.blockedByAllowlist": "blocked by allowlist",
+  "skills.blockedByAllowlist": "not in core skill set (click to add)",
   // Skills help text
   "skills.help.title": "What are Skills?",
   "skills.help.description": "Skills are plugin modules that extend your AI assistant's capabilities. Each skill provides specific functionality like web search, code execution, file operations, etc.",
@@ -744,11 +835,17 @@ export const en = {
   "skills.help.apiKeyDesc": "Some skills (like search engines) require API keys from third-party services. Visit the service provider's website to obtain keys.",
   "skills.help.statusExplain": "Status Explanation",
   "skills.help.eligibleDesc": "Eligible - Skill is ready and can be invoked by the AI assistant",
-  "skills.help.blockedDesc": "Blocked - Skill is blocked due to allowlist restrictions or missing dependencies",
+  "skills.help.blockedDesc": "Needs config - Skill not in core set or missing dependencies. Click 'Add to Core' to enable",
   "skills.help.disabledDesc": "Disabled - Skill has been manually disabled",
+  // Skills groups
+  "skills.group.workspace": "Workspace Skills",
+  "skills.group.builtIn": "Built-in Skills",
+  "skills.group.installed": "Installed Skills",
+  "skills.group.extra": "Extension Skills",
+  "skills.group.other": "Other Skills",
   // Skills tabs
-  "skills.tab.local": "Local Skills",
-  "skills.tab.remote": "Skills Market",
+  "skills.tab.local": "Skills",
+  "skills.tab.remote": "Marketplace",
   "skills.tab.active": "Active",
   "skills.tab.library": "Library",
   "skills.active.emptyHint": "No active skills yet. Visit the Library to install some.",
@@ -886,8 +983,14 @@ export const en = {
   "skills.deps.missingBins": "Missing CLI tools",
   "skills.deps.missingEnv": "Missing env variables",
   "skills.deps.missingConfig": "Missing config",
-  "skills.tab.local": "Skills",
-  "skills.tab.remote": "Marketplace",
+  // ── Market cnBlocked enhancements ──
+  "skills.market.cnBlocked.reason": "This skill depends on overseas services unavailable in mainland China",
+  "skills.market.cnBlocked.vpnHint": "Install with VPN/proxy",
+  "skills.market.cnBlocked.alternative": "CN alternative: {alternative}",
+  "skills.market.cnBlocked.installAnyway": "Install anyway",
+  // ── allowBundled / bundled labels ──
+  "skills.allowBundled.addToCore": "Add to Core",
+  "skills.bundled.notInCore": "Built-in \u00B7 add to core to use in chats",
 
   // ============================================================================
   // 节点页 (Nodes)
@@ -1227,6 +1330,220 @@ export const en = {
   "nodes.noNodesFound": "No nodes found.",
   "nodes.unpaired": "unpaired",
   "nodes.offline": "offline",
+
+  // ============================================================================
+  // Network Center — OpenClawCN
+  // ============================================================================
+
+  // ── Navigation & page title ──
+  "nav.network": "Network",
+  "subtitle.network": "Manage your devices, network connections, and security settings.",
+
+  // ── Sub-tab labels ──
+  "network.tab.devices": "My Devices",
+  "network.tab.connection": "Connection",
+  "network.tab.security": "Security",
+
+  // ── Status bar ──
+  "network.statusBar.title": "Network Status",
+  "network.statusBar.loopback": "Loopback only",
+  "network.statusBar.lan": "LAN mode",
+  "network.statusBar.lanWithIp": "LAN mode · {ip}",
+  "network.statusBar.tailnet": "Remote · Tailscale",
+  "network.statusBar.devicesOnline": "{count} device(s) online",
+  "network.statusBar.noDevices": "No devices",
+  "network.statusBar.noRemote": "No remote access",
+  "network.statusBar.tailscaleServe": "Tailscale networking enabled",
+  "network.statusBar.tailscaleFunnel": "Public access enabled",
+  "network.statusBar.frpConnected": "FRP tunnel connected",
+  "network.statusBar.restarting": "Restarting...",
+  "network.statusBar.nodesOnline": "{count} node(s) online",
+
+  // ── Tab 1: My Devices ──
+  "network.devices.title": "Online Devices",
+  "network.devices.desc": "All devices and instances connected to the gateway.",
+  "network.devices.addDevice": "Add Device",
+  "network.devices.noDevices": "No devices connected.",
+  "network.devices.gateway": "Gateway",
+  "network.devices.webchat": "Control Panel",
+  "network.devices.node": "Client Node",
+  "network.devices.heartbeatOk": "Heartbeat OK",
+  "network.devices.heartbeatAgo": "Heartbeat {seconds}s ago",
+  "network.devices.lastInput": "Last input {time}",
+  "network.devices.online": "Online",
+  "network.devices.offline": "Offline",
+  "network.devices.discovered": "Discovered",
+  "network.devices.paired": "Paired",
+  "network.devices.connect": "Connect",
+  "network.devices.currentBrowser": "Current browser",
+
+  // Device pairing
+  "network.devices.pairing": "Device Pairing",
+  "network.devices.pendingApprovals": "Pending Approvals",
+  "network.devices.noPending": "No pending devices.",
+  "network.devices.pairedDevices": "Paired Devices",
+  "network.devices.noPaired": "No paired devices.",
+  "network.devices.approveConnect": "Approve",
+  "network.devices.rejectConnect": "Reject",
+  "network.devices.rotateKey": "Rotate Key",
+  "network.devices.unpair": "Unpair",
+  "network.devices.unpairConfirm": "Are you sure you want to unpair this device? The device will need to pair again to connect.",
+  "network.devices.newDeviceRequest": "New device requesting connection: {name}",
+  "network.devices.deviceId": "Device ID: {id}",
+  "network.devices.requestTime": "{time} ago",
+
+  // Add device dialog
+  "network.devices.addDialog.title": "Add Device",
+  "network.devices.addDialog.ipLabel": "IP Address",
+  "network.devices.addDialog.ipPlaceholder": "192.168.1.50",
+  "network.devices.addDialog.portLabel": "Port",
+  "network.devices.addDialog.portDefault": "(default)",
+  "network.devices.addDialog.passwordLabel": "Password",
+  "network.devices.addDialog.passwordHint": "Leave blank if none",
+  "network.devices.addDialog.testBtn": "Test Connection",
+  "network.devices.addDialog.testing": "Testing...",
+  "network.devices.addDialog.reachable": "Connected! Version {version}",
+  "network.devices.addDialog.unreachable": "Cannot reach: {error}",
+  "network.devices.addDialog.cancel": "Cancel",
+  "network.devices.addDialog.confirm": "Add to My Devices",
+
+  // Empty state
+  "network.devices.emptyState.title": "No other devices connected yet",
+  "network.devices.emptyState.desc": "Want your phone or another computer to connect to your AI assistant?",
+  "network.devices.emptyState.step1": "Switch network mode to \"LAN\"",
+  "network.devices.emptyState.step2": "Download the OpenClawCN App on your phone",
+  "network.devices.emptyState.step3": "The app will discover your computer automatically",
+  "network.devices.emptyState.goToConnection": "Go to network settings",
+  "network.devices.emptyState.remoteHint": "Not on the same Wi-Fi? Try remote tunneling",
+  "network.devices.emptyState.goToRemote": "Set up remote access",
+
+  // Windows hint
+  "network.devices.windowsHint": "Automatic device discovery is under development on Windows. You can click \"Add Device\" to manually enter the IP address. Good news: other devices (Mac/phones) can still discover your PC automatically.",
+
+  // Tutorial
+  "network.devices.tutorial.title": "How to add a new device",
+  "network.devices.tutorial.mobile": "Phone / Tablet:",
+  "network.devices.tutorial.mobileStep1": "Download the OpenClawCN App (search \"OpenClaw\" in app stores)",
+  "network.devices.tutorial.mobileStep2": "Open the app — it discovers gateways on the same Wi-Fi",
+  "network.devices.tutorial.mobileStep3": "Approve the connection in \"Pending Approvals\" above",
+  "network.devices.tutorial.desktop": "Another Computer:",
+  "network.devices.tutorial.desktopStep1": "Install OpenClawCN on the target computer",
+  "network.devices.tutorial.desktopStep2": "It will discover LAN gateways automatically",
+  "network.devices.tutorial.desktopStep3": "Or click \"Add Device\" above to enter the address manually",
+
+  // ── Tab 2: Connection ──
+  "network.connection.modeTitle": "Network Mode",
+  "network.connection.modeDesc": "Who can connect to your gateway?",
+  "network.connection.current": "Current",
+  "network.connection.save": "Save",
+  "network.connection.saving": "Saving...",
+  "network.connection.applying": "Applying configuration...",
+  "network.connection.restartNote": "The gateway will restart after saving. It takes about 3 seconds and the page will recover automatically.",
+
+  // Network modes
+  "network.connection.mode.loopback": "This machine only",
+  "network.connection.mode.loopbackDesc": "Most secure, for single-user use.",
+  "network.connection.mode.lan": "Same network",
+  "network.connection.mode.lanDesc": "Devices on the same Wi-Fi/LAN can connect.",
+  "network.connection.mode.tailnet": "Anywhere",
+  "network.connection.mode.tailnetDesc": "Requires a tunneling tool (Tailscale / FRP).",
+
+  // Password
+  "network.connection.password.title": "Connection Password",
+  "network.connection.password.desc": "Set a password to prevent unauthorized devices from connecting:",
+  "network.connection.password.autoGenerate": "Auto-generate one (recommended)",
+  "network.connection.password.custom": "Set my own",
+  "network.connection.password.placeholder": "Enter password...",
+
+  // Current address
+  "network.connection.currentAddress": "Current address",
+  "network.connection.lanIp": "Your LAN IP",
+
+  // Discovery
+  "network.connection.discovery.title": "Discover other Gateways",
+  "network.connection.discovery.desc": "Scan the local network for other OpenClawCN instances.",
+  "network.connection.discovery.scan": "Scan",
+  "network.connection.discovery.scanning": "Scanning...",
+  "network.connection.discovery.noGateways": "No other gateways found.",
+  "network.connection.discovery.found": "Found {count} gateway(s)",
+  "network.connection.discovery.probe": "Test Connection",
+  "network.connection.discovery.probing": "Testing...",
+  "network.connection.discovery.reachable": "Reachable · {ms}ms latency",
+  "network.connection.discovery.unreachable": "Unreachable: {error}",
+
+  // Interfaces
+  "network.connection.interfaces.title": "Network Interfaces",
+  "network.connection.interfaces.name": "Interface",
+  "network.connection.interfaces.address": "Address",
+  "network.connection.interfaces.tailnet": "Tailnet",
+
+  // Tunnel placeholders
+  "network.connection.tunnel.title": "Remote Tunneling",
+  "network.connection.tunnel.desc": "Not on the same network? Use these methods to connect remote devices:",
+  "network.connection.tunnel.comingSoon": "Tunneling features are under development.",
+
+  // Redis placeholder
+  "network.connection.redis.title": "Multi-Gateway Sync",
+  "network.connection.redis.desc": "If you have multiple computers each running a gateway, and want to share messages...",
+  "network.connection.redis.comingSoon": "This advanced feature is under development.",
+
+  // ── Tab 3: Security ──
+  "network.security.title": "Security Settings",
+  "network.security.desc": "Control AI assistant command permissions and execution locations.",
+  "network.security.guidance": "If you only use one device, the default settings are already fine — no changes needed.",
+
+  // Command permissions
+  "network.security.permissions.title": "Command Permissions",
+  "network.security.permissions.desc": "Control what operations the AI assistant can perform on devices. This is an important security setting to prevent dangerous actions.",
+  "network.security.permissions.target": "Target",
+  "network.security.permissions.targetGateway": "Gateway (local)",
+  "network.security.permissions.targetNode": "Select node",
+  "network.security.permissions.perAgent": "Per-agent settings",
+  "network.security.permissions.globalDefaults": "Global defaults",
+
+  // Permission levels
+  "network.security.level.title": "Permission Level",
+  "network.security.level.desc": "What can the AI assistant do on this device?",
+  "network.security.level.deny": "Deny all",
+  "network.security.level.denyDesc": "AI cannot execute any commands.",
+  "network.security.level.allowlist": "Allow listed commands only (recommended)",
+  "network.security.level.allowlistDesc": "Only approved commands can run.",
+  "network.security.level.full": "Allow all",
+  "network.security.level.fullDesc": "AI can execute any command (risky).",
+
+  // Unknown command handling
+  "network.security.ask.title": "When encountering unknown commands",
+  "network.security.ask.desc": "What should happen when the AI tries to run a command not on the list?",
+  "network.security.ask.off": "Deny without asking",
+  "network.security.ask.onMiss": "Ask only for unknown commands",
+  "network.security.ask.always": "Always ask",
+
+  // Ask fallback
+  "network.security.askFallback.title": "When prompts are unavailable",
+  "network.security.askFallback.desc": "If the UI is not open and prompts cannot be shown:",
+  "network.security.askFallback.deny": "Deny execution",
+  "network.security.askFallback.allow": "Allow execution",
+
+  // Auto-allow skills
+  "network.security.autoAllowSkills.title": "Auto-trust skill commands",
+  "network.security.autoAllowSkills.desc": "Executables declared by installed skills are automatically added to the allow list.",
+
+  // Allowlist
+  "network.security.allowlist.title": "Allowed Commands",
+  "network.security.allowlist.add": "Add Command",
+  "network.security.allowlist.pattern": "Command pattern",
+  "network.security.allowlist.lastUsed": "Last used",
+  "network.security.allowlist.never": "Never",
+  "network.security.allowlist.delete": "Delete",
+  "network.security.allowlist.wildcardHint": "Supports wildcard *, e.g. node* matches node, npm, npx, etc.",
+
+  // Bindings
+  "network.security.bindings.title": "Execution Location",
+  "network.security.bindings.desc": "Specify which device runs the AI assistant's commands. Default is the local gateway. If you have a remote server, you can point execution there.",
+  "network.security.bindings.default": "Default execution location",
+  "network.security.bindings.defaultDesc": "Agents without a specific binding run here:",
+  "network.security.bindings.gateway": "Local gateway",
+  "network.security.bindings.followDefault": "Follow default",
 
   // ============================================================================
   // 配置详细 (Config Details)
@@ -1850,6 +2167,21 @@ export const en = {
   // ============================================================================
   // Chat Welcome
   // ============================================================================
+  "chat.greeting.morning": "Good morning",
+  "chat.greeting.afternoon": "Good afternoon",
+  "chat.greeting.evening": "Good evening",
+  "chat.greeting.intro": "I'm your AI assistant, ",
+  "chat.greeting.introDefault": "I'm your AI assistant",
+  "chat.skill.imageGen": "Image Gen",
+  "chat.skill.imageGen.prompt": "Generate an image of: ",
+  "chat.skill.research": "Research",
+  "chat.skill.research.prompt": "Research this topic in depth: ",
+  "chat.skill.writing": "Writing",
+  "chat.skill.writing.prompt": "Help me write: ",
+  "chat.skill.videoGen": "Video Gen",
+  "chat.skill.videoGen.prompt": "Generate a video of: ",
+  "chat.skill.homework": "Q&A",
+  "chat.skill.homework.prompt": "Help me solve this problem: ",
   "chat.welcome.title": "Start a Conversation",
   "chat.welcome.subtitle": "I can help you with various tasks",
   "chat.welcome.tryAsk": "Try asking:",
@@ -2794,6 +3126,10 @@ export const en = {
   "extensions.store.newBadge": "New",
   "extensions.store.featured": "Featured",
   "extensions.store.securityScore": "Security",
+  "extensions.store.remoteService": "Remote",
+  "extensions.store.remoteServiceTip": "Connects to a third-party server — your prompts and data are sent to their server",
+  "extensions.store.highRisk": "Unverified Remote",
+  "extensions.store.highRiskTip": "This service connects to an unverified third-party server",
 
   // Extensions — Categories
   "extensions.category.all": "All",
@@ -2830,11 +3166,16 @@ export const en = {
   "extensions.detail.installThis": "Install this capability",
   "extensions.detail.installedManage": "Installed · Manage",
   "extensions.detail.needsKeyWarning": "This capability requires an API key",
+  "extensions.detail.requiredEnvVars": "Required environment variables",
   "extensions.detail.whatIsApiKey": "What is an API key?",
   "extensions.detail.apiKeyExplain": "An API key is like a pass that lets your AI assistant use an online service. Getting one is usually free — just register an account. Your key is stored only on your device and never shared.",
   "extensions.detail.auditPassed": "Passed",
   "extensions.detail.uninstall": "Uninstall",
   "extensions.detail.uninstallConfirm": "Are you sure you want to uninstall {{name}}? This will stop the server and remove its configuration.",
+  "extensions.detail.sseRiskTitle": "Remote Service Security Notice",
+  "extensions.detail.sseRiskBody": "This capability connects to a third-party server ({{domain}}). Your conversation content and tool parameters will be sent to their server. The service provider may log, store, or process your data in unknown ways.",
+  "extensions.detail.sseRiskUnverified": "This service has NOT been verified by the platform.",
+  "extensions.store.sseInstallConfirm": "{{name}} is a remote service that will connect to:\n\n{{url}}\n\nYour prompts and data will be sent to this third-party server. Continue?",
 
   // Extensions — Config wizard
   "extensions.config.title": "Configure {{name}}",
@@ -2857,6 +3198,11 @@ export const en = {
   "extensions.config.timeoutUnit": "seconds",
   "extensions.config.envVars": "Environment Variables",
   "extensions.config.addEnvVar": "Add Variable",
+  "extensions.config.needsEnvVars": "requires the following environment variables to work:",
+  "extensions.config.configAdvanced": "Add environment variables or adjust connection settings below",
+  "extensions.config.noEnvHint": "This service has no known environment variable requirements. If it fails to start, check the project docs for additional config. You can add env vars manually below.",
+  "extensions.config.required": "Required",
+  "extensions.config.optional": "Optional",
 
   // Extensions — Manual add dialog
   "extensions.manual.title": "Add Capability Manually",
@@ -3095,12 +3441,29 @@ export const en = {
   "voice.mascot.hint": "Speak to me!",
   "voice.startRecording": "Start voice input",
   "voice.stopRecording": "Stop recording",
+  "voice.clickToStart": "Click to start voice input",
+  "voice.clickToStop": "Click to stop recording",
+  "voice.setupRequired": "Voice model setup required",
+  "voice.voiceMode.start": "Voice chat",
+  "voice.voiceMode.stop": "End voice chat",
+  "voice.voiceMode.active": "Voice chat active...",
+  "voice.wakeWord.listening": "Wake word listening",
+  "voice.wakeWord.greeting": "Hello, I'm here. Go ahead.",
   "voice.processing": "Transcribing...",
   "voice.error.noMic": "Cannot access microphone",
   "voice.error.notSupported": "Browser does not support audio recording",
   "voice.error.recordingFailed": "Recording failed, please try again",
   "voice.error.encodingFailed": "Audio encoding failed",
   "voice.error.transcriptionFailed": "Transcription failed, please try again",
+  "voice.error.asrNoResponse": "ASR service not responding — check if the ASR model is running",
+
+  // Screen share
+  "screenShare.start": "Share Screen",
+  "screenShare.stop": "Stop Sharing",
+  "screenShare.active": "Screen Sharing",
+  "screenShare.analyzed": "Analyzed",
+  "screenShare.end": "End",
+  "screenShare.defaultPrompt": "Please look at my screen",
 
   // Skill translations (auto-synced from zh-CN)
   "skillName.1": "1",
@@ -6820,4 +7183,136 @@ export const en = {
   "gateway.urlConfirm.warning": "Only confirm if you trust this URL. Malicious URLs can compromise your system.",
   "gateway.urlConfirm.confirm": "Confirm",
   "gateway.urlConfirm.cancel": "Cancel",
+
+  // ============================================================================
+  // Orchestrator — extracted from bak5
+  // ============================================================================
+  "orch.back": "Back",
+  "orch.backToList": "Back to agent list",
+  "orch.createMore": "Create another team",
+  "orch.entrySub": "One-click AI assistant team building",
+  "orch.entryTitle": "Smart Teams",
+  "orch.errorBack": "Back",
+  "orch.errorRetry": "Retry",
+  "orch.guideLabel": "Try these to get started",
+  "orch.headerTitle": "Build Team",
+  "orch.inputPlaceholder": "Describe the team you want in one sentence...",
+  "orch.sectionCustom": "Want something else? Tell me",
+  "orch.sectionTemplates": "Popular Scenarios",
+  "orch.soulEdit": "Edit",
+  "orch.soulToggle": "Expand/Collapse",
+  "orch.startChat": "Start chat",
+  "orch.successSub": "\"{{team}}\" is ready.",
+  "orch.successTitle": "Team is ready!",
+  "orch.templateCount": "{{count}} assistants",
+  "orch.templateCreate": "Create now",
+  "orch.templateDeploy": "Deploy now",
+  "orch.thinking": "Thinking...",
+  "orch.welcomeSub": "Pick a scenario, ready in 30 seconds",
+  "orch.welcomeTitle": "Build your AI team",
+  "orch.gatheringTitle": "Let me understand your needs",
+  "orch.gatheringSub": "Answer a few questions so I can design the best team for you",
+  "orch.gatheringConfirm": "Looks good, plan my team",
+  "orch.deployNow": "Confirm and create",
+  "orch.adjustTeam": "I want to adjust",
+  "orch.communitySectionTitle": "Community",
+  "orch.communityDownloads": "uses",
+  "orch.communityLoadError": "Failed to load community templates",
+  "orch.communityRetry": "Retry",
+  "orch.deployTitle": "Creating your team...",
+  "orch.deployStatusPending": "Pending",
+  "orch.deployStatusCreating": "Creating",
+  "orch.deployStatusConfiguring": "Configuring",
+  "orch.deployStatusReady": "Ready",
+  "orch.deployStatusFailed": "Failed",
+
+  // ============================================================================
+  // Update — extracted from bak5
+  // ============================================================================
+  "update.banner.available": "v{version} available",
+  "update.banner.later": "Later",
+  "update.banner.view": "View",
+  "update.config.updateAvailable": "Update to v{version}",
+  "update.dialog.closeBtn": "Close",
+  "update.dialog.confirmBtn": "Update now",
+  "update.dialog.downloadBtn": "Download installer",
+  "update.dialog.laterBtn": "Later",
+  "update.dialog.mandatory": "Mandatory update",
+  "update.dialog.restartBtn": "Restart now",
+  "update.dialog.retryBtn": "Retry",
+  "update.dialog.title": "Software Update",
+  "update.dialog.typeDelta": "Delta update",
+  "update.dialog.typeFull": "Full update",
+  "update.dialog.typeInstaller": "Installer update",
+  "update.dialog.version": "New version: v{version}",
+  "update.progress.applying": "Applying update...",
+  "update.progress.checking": "Checking for updates...",
+  "update.progress.complete": "Update complete, restarting...",
+  "update.progress.downloading": "Downloading...",
+  "update.progress.error": "Update failed",
+  "update.progress.verifying": "Verifying integrity...",
+  "update.result.installerRedirect": "This version requires reinstall",
+  "update.result.installerRedirectDesc": "Large version gap, please download the latest installer",
+  "update.result.success": "Update successful, will take effect after restart",
+
+  // ============================================================================
+  // Conversation Sidebar — extracted from bak5
+  // ============================================================================
+  "sidebar.archive": "Archive",
+  "sidebar.copyKey": "Copy session key",
+  "sidebar.delete": "Delete",
+  "sidebar.deleteConfirm": "Are you sure you want to delete this conversation? This cannot be undone.",
+  "sidebar.manageAll": "Manage all sessions",
+  "sidebar.more": "More",
+  "sidebar.newChat": "New chat",
+  "sidebar.noConversations": "No conversations yet",
+  "sidebar.noSearchResults": "No matching conversations",
+  "sidebar.older": "Older",
+  "sidebar.past30days": "Last 30 days",
+  "sidebar.past7days": "Last 7 days",
+  "sidebar.pin": "Pin",
+  "sidebar.pinned": "Pinned",
+  "sidebar.rename": "Rename",
+  "sidebar.searchPlaceholder": "Search conversations...",
+  "sidebar.today": "Today",
+  "sidebar.toggleSidebar": "Toggle sidebar",
+  "sidebar.history": "History",
+  "sidebar.unarchive": "Unarchive",
+  "sidebar.unpin": "Unpin",
+  "sidebar.viewDetails": "View details",
+  "sidebar.yesterday": "Yesterday",
+
+  // ============================================================================
+  // Voice Tier — extracted from bak5
+  // ============================================================================
+  "voiceTier.asr": "Speech recognition",
+  "voiceTier.badge.bronze": "Basic",
+  "voiceTier.badge.gold": "Best",
+  "voiceTier.badge.silver": "Good",
+  "voiceTier.detecting": "Detecting hardware...",
+  "voiceTier.downloadSize": "Download size",
+  "voiceTier.gpu": "GPU",
+  "voiceTier.install": "One-click install",
+  "voiceTier.installComplete": "Install complete",
+  "voiceTier.installFailed": "Install failed",
+  "voiceTier.installed": "Installed",
+  "voiceTier.installing": "Installing...",
+  "voiceTier.notInstalled": "Not installed",
+  "voiceTier.ram": "RAM",
+  "voiceTier.redetect": "Re-detect hardware",
+  "voiceTier.sidecar.error": "Error",
+  "voiceTier.sidecar.running": "Running",
+  "voiceTier.sidecar.start": "Start GPU service",
+  "voiceTier.sidecar.stop": "Stop GPU service",
+  "voiceTier.sidecar.stopped": "Stopped",
+  "voiceTier.tier.cpuAsr": "CPU speech recognition",
+  "voiceTier.tier.cpuFull": "CPU full mode",
+  "voiceTier.tier.disabled": "Voice disabled",
+  "voiceTier.tier.gpuAsr": "GPU speech recognition",
+  "voiceTier.tier.gpuFull": "GPU full mode",
+  "voiceTier.title": "Voice Capabilities",
+  "voiceTier.tts": "Text-to-speech",
+  "voiceTier.backend.auto": "Auto (local)",
+  "voiceTier.backend.needKey": "API key required",
+  "voiceTier.vram": "VRAM",
 } as const;

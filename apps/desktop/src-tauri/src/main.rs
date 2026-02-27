@@ -5,7 +5,9 @@
 )]
 
 mod commands;
+mod offline_diag;
 mod platform;
+mod repair;
 mod sidecar;
 mod tray;
 
@@ -251,17 +253,41 @@ pub fn run() {
             commands::get_service_status,
             commands::check_needs_setup,
             commands::open_logs_directory,
+            commands::show_screen_border,
+            commands::hide_screen_border,
+            // Repair assistant
+            commands::repair_run_diagnostics,
+            commands::repair_discover_providers,
+            commands::repair_ai_chat,
+            commands::repair_apply_fix,
+            commands::upload_crash_logs,
+            commands::repair_ssh_check,
+            commands::repair_ssh_enable,
+            commands::repair_tunnel_start,
+            commands::repair_tunnel_stop,
+            commands::repair_tunnel_status,
         ])
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
-                    // Hide to tray instead of closing — service keeps running.
-                    // Only "退出" in the tray menu actually exits the app.
-                    let _ = window.hide();
-                    api.prevent_close();
+                    // Only intercept close for the main window (hide to tray).
+                    // Overlay windows (screen-share-border, etc.) should close normally.
+                    if window.label() == "main" {
+                        let _ = window.hide();
+                        api.prevent_close();
+                    }
                 }
                 tauri::WindowEvent::Destroyed => {
-                    sidecar::cleanup_on_exit();
+                    if window.label() == "main" {
+                        sidecar::cleanup_on_exit();
+                    }
+                    if window.label() == "repair-assistant" {
+                        // Best-effort: stop any active repair tunnel when the
+                        // repair-assistant window is closed via the title bar X button.
+                        if repair::remote_tunnel::is_tunnel_active() {
+                            let _ = repair::remote_tunnel::stop_tunnel();
+                        }
+                    }
                 }
                 _ => {}
             }

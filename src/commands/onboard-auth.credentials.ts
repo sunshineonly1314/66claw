@@ -366,6 +366,50 @@ export async function setModelscopeApiKey(key: string, agentDir?: string) {
   });
 }
 
+// ============================================================================
+// Coding Plan Providers
+// ============================================================================
+
+export const ALIYUN_CODEPLAN_DEFAULT_MODEL_REF = "aliyun-codeplan/qwen3-coder-plus";
+export const GLM_CODEPLAN_DEFAULT_MODEL_REF = "glm-codeplan/glm-4.7";
+export const MINIMAX_CODEPLAN_DEFAULT_MODEL_REF = "minimax-codeplan/MiniMax-M2.5";
+
+export async function setAliyunCodeplanApiKey(key: string, agentDir?: string) {
+  upsertAuthProfile({
+    profileId: "aliyun-codeplan:default",
+    credential: {
+      type: "api_key",
+      provider: "aliyun-codeplan",
+      key,
+    },
+    agentDir: resolveAuthAgentDir(agentDir),
+  });
+}
+
+export async function setGlmCodeplanApiKey(key: string, agentDir?: string) {
+  upsertAuthProfile({
+    profileId: "glm-codeplan:default",
+    credential: {
+      type: "api_key",
+      provider: "glm-codeplan",
+      key,
+    },
+    agentDir: resolveAuthAgentDir(agentDir),
+  });
+}
+
+export async function setMinimaxCodeplanApiKey(key: string, agentDir?: string) {
+  upsertAuthProfile({
+    profileId: "minimax-codeplan:default",
+    credential: {
+      type: "api_key",
+      provider: "minimax-codeplan",
+      key,
+    },
+    agentDir: resolveAuthAgentDir(agentDir),
+  });
+}
+
 export async function setOllamaApiKey(key: string, agentDir?: string) {
   upsertAuthProfile({
     profileId: "ollama:default",

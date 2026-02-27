@@ -1,4 +1,4 @@
-export type TtsProvider = "elevenlabs" | "openai" | "edge";
+export type TtsProvider = "local" | "elevenlabs" | "openai" | "edge";
 
 export type TtsMode = "final" | "all";
 

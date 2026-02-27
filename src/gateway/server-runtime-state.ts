@@ -80,6 +80,8 @@ export async function createGatewayRuntimeState(params: {
   chatRunState: ReturnType<typeof createChatRunState>;
   chatRunBuffers: Map<string, string>;
   chatDeltaSentAt: Map<string, number>;
+  chatTtsMediaUrls: Map<string, string>;
+  chatVoiceInputRuns: Map<string, boolean>;
   addChatRun: (sessionId: string, entry: ChatRunEntry) => void;
   removeChatRun: (
     sessionId: string,
@@ -188,6 +190,8 @@ export async function createGatewayRuntimeState(params: {
   const chatRunRegistry = chatRunState.registry;
   const chatRunBuffers = chatRunState.buffers;
   const chatDeltaSentAt = chatRunState.deltaSentAt;
+  const chatTtsMediaUrls = chatRunState.ttsMediaUrls;
+  const chatVoiceInputRuns = chatRunState.voiceInputRuns;
   const addChatRun = chatRunRegistry.add;
   const removeChatRun = chatRunRegistry.remove;
   const chatAbortControllers = new Map<string, ChatAbortControllerEntry>();
@@ -207,6 +211,8 @@ export async function createGatewayRuntimeState(params: {
     chatRunState,
     chatRunBuffers,
     chatDeltaSentAt,
+    chatTtsMediaUrls,
+    chatVoiceInputRuns,
     addChatRun,
     removeChatRun,
     chatAbortControllers,

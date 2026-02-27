@@ -361,6 +361,7 @@ function renderCoreTierSection(group: SkillGroup, props: SkillsProps, config: Ti
         e.preventDefault();
         const el = e.currentTarget as HTMLElement;
         el.style.borderColor = "transparent";
+        if (atLimit) return;
         const skillKey = e.dataTransfer?.getData("text/plain");
         const sourceTier = e.dataTransfer?.getData("application/x-skill-tier");
         if (skillKey && sourceTier === "ready") {
@@ -612,6 +613,17 @@ function renderSkillCardContent(skill: SkillStatusEntry, tier: TierGroupId, prop
               title="可拖拽移除">\u2630</span>`
             : nothing}
           ${tier === "incompatible" ? renderIncompatibleBadge(skill.requirements.os) : nothing}
+          ${skill.bundled && !skill.activeInPrompt && !skill.disabled && tier === "ready"
+            ? html`<span style="font-size:10px; padding:1px 6px; border-radius:4px;
+                background:rgba(251,191,36,0.1); color:#d97706;">
+                ${t("skills.bundled.notInCore" as never)}</span>`
+            : nothing}
+          ${skill.cnDeprioritized
+            ? html`<span style="font-size:10px; padding:1px 6px; border-radius:4px;
+                background:rgba(248,113,113,0.1); color:#f87171;"
+                title=${t("skills.market.cnBlocked.reason" as never)}
+              >${t("skills.market.cnBlocked.vpnHint" as never)}</span>`
+            : nothing}
           ${skill.disabled
             ? html`<span style="font-size:10px; padding:1px 6px; border-radius:4px;
                 background:rgba(239,68,68,0.1); color:#ef4444;">
@@ -1345,13 +1357,33 @@ function renderInstallButton(
     >`;
   }
   if (item.cnBlocked) {
-    return html`<span
-      style="
-        font-size:11px; padding:5px 14px; border-radius:6px;
-        background:rgba(248,113,113,0.1); color:#f87171; cursor:not-allowed;
-      "
-      >${t("skills.blocked" as never)}</span
-    >`;
+    return html`<div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+      <span style="font-size:10px; color:#f87171; line-height:1.3; text-align:right; max-width:220px;">
+        ${t("skills.market.cnBlocked.reason" as never)}
+      </span>
+      ${item.cnAlternative
+        ? html`<span style="font-size:10px; color:#f59e0b; line-height:1.3;">
+            ${(t("skills.market.cnBlocked.alternative" as never) as string).replace(
+              "{alternative}",
+              item.cnAlternative,
+            )}
+          </span>`
+        : nothing}
+      <button
+        @click=${() => props.onMarketInstall(item.name)}
+        style="
+          all:unset; cursor:pointer;
+          font-size:10px; font-weight:600;
+          padding:4px 12px; border-radius:6px;
+          background:rgba(248,113,113,0.15); color:#f87171;
+          border:1px solid rgba(248,113,113,0.3);
+          transition:opacity 150ms;
+        "
+        title=${t("skills.market.cnBlocked.vpnHint" as never)}
+      >
+        ${t("skills.market.cnBlocked.installAnyway" as never)}
+      </button>
+    </div>`;
   }
   if (progress) {
     const isDone = progress.stage === "done";

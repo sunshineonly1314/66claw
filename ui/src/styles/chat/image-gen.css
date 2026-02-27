@@ -1,0 +1,338 @@
+/* ============================================================
+ * Image Generation — shimmer, result card, grid, actions, error
+ * ============================================================ */
+
+/* --- Shimmer Placeholder (pending) --- */
+
+.image-gen-pending {
+  max-width: 480px;
+}
+
+.image-gen-shimmer {
+  background: var(--bg-tertiary, #1a1a2e);
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 480px;
+  min-height: 120px;
+}
+
+.image-gen-shimmer-inner {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary, #1a1a2e) 0%,
+    var(--bg-secondary, #252540) 40%,
+    var(--bg-tertiary, #1a1a2e) 80%
+  );
+  background-size: 200% 100%;
+  animation: image-gen-shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes image-gen-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.image-gen-pending-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.image-gen-pending-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-tertiary, #888);
+}
+
+.image-gen-pending-label svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+}
+
+.image-gen-pending-prompt {
+  font-size: 12px;
+  color: var(--text-quaternary, #666);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Result Card --- */
+
+.image-gen-result {
+  margin: 4px 0;
+  max-width: 520px;
+}
+
+.image-gen-result-image {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 480px;
+  line-height: 0;
+}
+
+.image-gen-result-image img {
+  width: 100%;
+  display: block;
+  cursor: zoom-in;
+  border-radius: 12px;
+  transition: filter 0.2s ease;
+}
+
+.image-gen-result-image:hover img {
+  filter: brightness(0.92);
+}
+
+.image-gen-result-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  cursor: zoom-in;
+  pointer-events: none;
+}
+
+.image-gen-result-image:hover .image-gen-result-overlay {
+  opacity: 1;
+}
+
+.image-gen-zoom-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.image-gen-zoom-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: white;
+  fill: none;
+}
+
+/* --- Multi-Image Grid --- */
+
+.image-gen-grid {
+  display: grid;
+  gap: 6px;
+  max-width: 480px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.image-gen-grid--2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.image-gen-grid--4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.image-gen-grid-item {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  line-height: 0;
+}
+
+.image-gen-grid-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  cursor: zoom-in;
+  transition: filter 0.2s ease;
+}
+
+.image-gen-grid-item:hover img {
+  filter: brightness(0.88);
+}
+
+.image-gen-grid-item.image-gen--load-failed {
+  display: none;
+}
+
+/* --- Meta Info --- */
+
+.image-gen-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary, #888);
+}
+
+.image-gen-meta-item::after {
+  content: "\00b7";
+  margin-left: 4px;
+  color: var(--text-quaternary, #666);
+}
+
+.image-gen-meta-item:last-child::after {
+  content: none;
+}
+
+/* --- Action Buttons --- */
+
+.image-gen-result-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.image-gen-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-primary, rgba(0, 0, 0, 0.18));
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.05));
+  color: var(--text-secondary, #555);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1.2;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.image-gen-action svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  flex-shrink: 0;
+}
+
+.image-gen-action:hover {
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.08));
+  color: var(--text-primary, #333);
+  border-color: var(--accent-color, #6366f1);
+}
+
+.image-gen-action:active {
+  transform: scale(0.96);
+}
+
+/* Primary action (download button) */
+.image-gen-action--primary {
+  background: var(--accent-color, #6366f1);
+  border-color: var(--accent-color, #6366f1);
+  color: #fff;
+}
+
+.image-gen-action--primary:hover {
+  background: var(--accent-hover, #4f46e5);
+  border-color: var(--accent-hover, #4f46e5);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  color: #fff;
+}
+
+.image-gen-action--success {
+  border-color: var(--color-success, #22c55e);
+  color: var(--color-success, #22c55e);
+}
+
+.image-gen-action--success:hover {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+/* --- Error State --- */
+
+.image-gen-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--color-warning-border, #fbbf2440);
+  background: var(--color-warning-bg, #fbbf240a);
+  max-width: 480px;
+}
+
+.image-gen-error-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: var(--color-warning, #f59e0b);
+  fill: none;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.image-gen-error-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.image-gen-error-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #eee);
+}
+
+.image-gen-error-detail {
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+  word-break: break-word;
+}
+
+/* --- Expired Image --- */
+
+.image-gen-expired {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 32px;
+  border-radius: 12px;
+  border: 1px dashed var(--border-primary, #333);
+  background: var(--bg-tertiary, #1a1a2e);
+  max-width: 320px;
+  text-align: center;
+}
+
+.image-gen-expired-icon svg {
+  width: 32px;
+  height: 32px;
+  stroke: var(--text-quaternary, #666);
+  fill: none;
+}
+
+.image-gen-expired-text {
+  font-size: 13px;
+  color: var(--text-tertiary, #888);
+}
+
+.image-gen-expired-prompt {
+  font-size: 12px;
+  color: var(--text-quaternary, #666);
+  font-style: italic;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

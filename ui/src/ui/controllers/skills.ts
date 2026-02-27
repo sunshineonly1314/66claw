@@ -3,7 +3,7 @@ import type { RemoteSkillsIndex, SkillStatusReport, SkillsMarketResponse } from 
 import { markInstallFinished } from "../app-gateway";
 import { t } from "../i18n/index.js";
 
-export type SkillsTab = "active" | "library" | "blocked" | "market";
+export type SkillsTab = "active" | "library" | "blocked" | "market" | "mcp-store";
 
 /** 目录浏览结果（skills.browse RPC） */
 export type BrowseResult = {
@@ -44,6 +44,7 @@ export type SkillsMarketSearchResult = {
     tier?: string;
     overallScore?: number;
     cnBlocked?: boolean;
+    cnAlternative?: string;
     installed?: boolean;
     path: string;
   }>;
@@ -317,8 +318,11 @@ export const CORE_SKILLS_MAX = 50;
 
 export function countCoreSkills(report: SkillStatusReport | null): number {
   if (!report) return 0;
+  // Only count user-pinned skills toward the 50 limit.
+  // `always` skills are system-controlled and don't consume the user's budget.
+  // This matches the server-side check which uses pinnedList.length.
   return report.skills.filter(
-    (s) => !s.disabled && s.missing.os.length === 0 && (s.always || s.pinned),
+    (s) => !s.disabled && s.missing.os.length === 0 && s.pinned && !s.always,
   ).length;
 }
 

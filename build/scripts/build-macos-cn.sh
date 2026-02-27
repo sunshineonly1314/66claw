@@ -614,7 +614,7 @@ BMETA
 log "build-meta.json: Node ${NODE_VERSION}, V8 ${NODE_V8_VERSION}, commit ${GIT_COMMIT}"
 
 # ── Install marker (for auto-update detection) ──
-UPDATE_SERVER="${OPENCLAWCN_UPDATE_SERVER:-https://dl.obplugins.cn}"
+UPDATE_SERVER="${OPENCLAWCN_UPDATE_SERVER:-https://www.obplugins.cn}"
 cat > "$APP_ROOT/install.json" <<INSTALL_MARKER
 {
   "version": "${VERSION}",

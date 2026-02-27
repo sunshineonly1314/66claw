@@ -508,7 +508,7 @@ describe("[CN-PATCH:memory-p0] updatedAt 全管道集成验证 (真实 SQLite)",
   describe("applyTimeTiering 冷热分层", () => {
     function makeResult(
       updatedAt: number | undefined,
-      score = 0.8,
+      score = 0.5,
     ): Parameters<typeof applyTimeTiering>[0][0] {
       return {
         path: `memory/${updatedAt}.md`,
@@ -628,13 +628,14 @@ describe("[CN-PATCH:memory-p0] updatedAt 全管道集成验证 (真实 SQLite)",
         id: "e2e-cold",
         text: "cold data alpha",
         updatedAt: coldTime,
-        embedding: mockEmbedding(0.6, 0.4),
+        // 低相似度 embedding，确保 score < HIGH_SCORE_PRESERVE_THRESHOLD(0.6)
+        embedding: mockEmbedding(0.3, 0.95),
       });
       insertChunk({
         id: "e2e-ancient",
         text: "ancient data alpha",
         updatedAt: ancientTime,
-        embedding: mockEmbedding(0.4, 0.6),
+        embedding: mockEmbedding(0.2, 0.98),
       });
 
       // Step 1: searchVector (fallback 路径)

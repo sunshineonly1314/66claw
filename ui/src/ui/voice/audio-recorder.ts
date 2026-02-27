@@ -35,7 +35,7 @@ export class AudioRecorder {
 	/** Check if browser supports audio recording. */
 	static isSupported(): boolean {
 		return Boolean(
-			navigator.mediaDevices?.getUserMedia &&
+			typeof navigator.mediaDevices?.getUserMedia === "function" &&
 				typeof MediaRecorder !== "undefined",
 		);
 	}

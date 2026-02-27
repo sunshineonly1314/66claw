@@ -26,13 +26,51 @@ export type McpConfigWizardProps = {
   testMessage?: string;
 };
 
+/* ── Collect env field values from the dynamic form ────── */
+
+function collectEnvFields(e: Event): Record<string, string> {
+  const dialog = (e.target as HTMLElement).closest("[role=dialog]");
+  if (!dialog) return {};
+  const env: Record<string, string> = {};
+  const inputs = dialog.querySelectorAll<HTMLInputElement>(".mcp-env-field");
+  inputs.forEach((input) => {
+    const key = input.dataset.envKey;
+    const val = input.value?.trim();
+    if (key && val) env[key] = val;
+  });
+  return env;
+}
+
 /* ── main render ───────────────────────────────────────── */
 
 export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResult {
   const { item, onClose, onSaveAndEnable, onTestConnection, testState, testMessage } = props;
 
-  // Use apiKeyName for the primary field; fallback to generic
-  const keyFieldName = item.apiKeyName ?? "API_KEY";
+  // Build the list of env fields to show:
+  // If envSchema exists, use it; otherwise fall back to single apiKeyName
+  const envFields: Array<{ key: string; description: string; placeholder: string; required: boolean }> = [];
+  if (item.envSchema && Object.keys(item.envSchema).length > 0) {
+    const requiredSet = new Set(item.envRequired ?? []);
+    // If envRequired is empty, treat credential-looking keys as required
+    const inferRequired = requiredSet.size === 0;
+    for (const [key, schema] of Object.entries(item.envSchema)) {
+      const looksRequired = inferRequired && /KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|AUTH|API/i.test(key);
+      envFields.push({
+        key,
+        description: schema.description ?? "",
+        placeholder: schema.placeholder ?? key,
+        required: requiredSet.has(key) || looksRequired,
+      });
+    }
+  } else if (item.apiKeyName || item.requiresApiKey) {
+    const keyFieldName = item.apiKeyName ?? "API_KEY";
+    envFields.push({
+      key: keyFieldName,
+      description: "",
+      placeholder: keyFieldName,
+      required: true,
+    });
+  }
 
   return html`
     <!-- Backdrop -->
@@ -55,7 +93,7 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
         position:fixed;
         top:50%; left:50%;
         transform:translate(-50%,-50%);
-        width:min(480px, calc(100vw - 48px));
+        width:min(520px, calc(100vw - 48px));
         max-height:85vh;
         overflow-y:auto;
         background:var(--bg, #0f0f0f);
@@ -86,7 +124,9 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
         ${t("extensions.config.title").replace("{{name}}", item.friendlyName)}
       </div>
       <div style="font-size:12px; color:var(--muted-strong, #6b7d91); margin-bottom:24px;">
-        ${t("extensions.config.steps").replace("{{name}}", item.friendlyName).replace("{{action}}", "")}
+        ${envFields.length > 0
+          ? html`${item.friendlyName} ${t("extensions.config.needsEnvVars" as never)}`
+          : html`${t("extensions.config.configAdvanced" as never)}`}
       </div>
 
       <!-- Install method override (shown only for items without install info) -->
@@ -177,119 +217,110 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
         </div>
       ` : nothing}
 
-      <!-- Step 1 -->
-      <div style="display:flex; gap:12px; margin-bottom:18px;">
-        <span style="
-          width:24px; height:24px; border-radius:50%;
-          background:var(--accent, #6366f1); color:#fff;
-          display:flex; align-items:center; justify-content:center;
-          font-size:12px; font-weight:700; flex-shrink:0;
-        ">1</span>
-        <div>
-          <div style="font-size:13px; font-weight:600; color:var(--fg);">
-            ${t("extensions.config.step1")}
-          </div>
-          ${item.apiKeyGuideUrl
-            ? html`
-                <a
-                  href=${item.apiKeyGuideUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style="
-                    font-size:12px;
-                    color:var(--accent-2, #20d5bc);
-                    text-decoration:none;
-                    display:inline-flex;
-                    align-items:center;
-                    gap:4px;
-                    margin-top:4px;
-                  "
-                >${t("extensions.config.step1Action")} \u2197</a>
-              `
-            : nothing}
-        </div>
-      </div>
-
-      <!-- Step 2 -->
-      <div style="display:flex; gap:12px; margin-bottom:18px;">
-        <span style="
-          width:24px; height:24px; border-radius:50%;
-          background:var(--accent, #6366f1); color:#fff;
-          display:flex; align-items:center; justify-content:center;
-          font-size:12px; font-weight:700; flex-shrink:0;
-        ">2</span>
-        <div style="font-size:13px; font-weight:600; color:var(--fg);">
-          ${t("extensions.config.step2")}
-        </div>
-      </div>
-
-      <!-- Step 3: key input -->
-      <div style="display:flex; gap:12px; margin-bottom:20px;">
-        <span style="
-          width:24px; height:24px; border-radius:50%;
-          background:var(--accent, #6366f1); color:#fff;
-          display:flex; align-items:center; justify-content:center;
-          font-size:12px; font-weight:700; flex-shrink:0;
-        ">3</span>
-        <div style="flex:1;">
-          <div style="font-size:13px; font-weight:600; color:var(--fg); margin-bottom:8px;">
-            ${t("extensions.config.step3")}
-          </div>
-          <div style="position:relative;">
-            <input
-              id="mcp-api-key-input"
-              type="password"
-              placeholder="${keyFieldName}"
-              autocomplete="off"
-              style="
-                width:100%;
-                box-sizing:border-box;
-                padding:10px 40px 10px 14px;
-                border:1px solid var(--border);
-                border-radius:8px;
-                background:var(--card);
-                color:var(--fg);
-                font-size:13px;
-                outline:none;
-                transition:border-color 150ms;
-              "
-              class="mcp-key-input"
-            />
-            <button
-              type="button"
-              @click=${(e: Event) => {
-                const btn = e.target as HTMLElement;
-                const container = btn.closest("div");
-                const input = container?.querySelector("#mcp-api-key-input") as HTMLInputElement | null;
-                if (!input) return;
-                const isPassword = input.type === "password";
-                input.type = isPassword ? "text" : "password";
-                btn.textContent = isPassword ? "\u{1F441}" : "\u{1F441}\u200D\u{1F5E8}";
-              }}
-              style="
-                all:unset; cursor:pointer;
-                position:absolute;
-                right:10px;
-                top:50%;
-                transform:translateY(-50%);
-                font-size:14px;
-                color:var(--muted-strong, #6b7d91);
-                padding:2px;
-                line-height:1;
-              "
-              title="${t("extensions.config.toggleVisibility" as never)}"
-            >\u{1F441}\u200D\u{1F5E8}</button>
-          </div>
+      <!-- API Key registration guide (when env fields exist and we have a guide URL or configHint) -->
+      ${envFields.length > 0 && (item.apiKeyGuideUrl || item.configHint || envFields.some(f => f.placeholder && /^https?:\/\//.test(f.placeholder)))
+        ? html`
           <div style="
-            font-size:11px;
-            color:var(--muted-strong, #6b7d91);
-            margin-top:6px;
-            display:flex; align-items:center; gap:4px;
+            background:rgba(251,191,36,0.04);
+            border:1px solid rgba(251,191,36,0.12);
+            border-radius:8px;
+            padding:12px 14px;
+            margin-bottom:16px;
+            font-size:12px;
+            color:var(--fg-secondary, #a0aec0);
+          ">
+            ${item.configHint
+              ? html`<div style="font-size:11px; line-height:1.5; margin-bottom:${item.apiKeyGuideUrl ? "8" : "0"}px;">
+                  ${item.configHint}
+                </div>`
+              : nothing}
+            ${(() => {
+              const guideUrl = item.apiKeyGuideUrl
+                || envFields.map(f => f.placeholder).find(p => p && /^https?:\/\//.test(p));
+              return guideUrl
+                ? html`<a
+                    href=${guideUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style="font-size:12px; color:var(--accent-2, #20d5bc); text-decoration:none; display:inline-flex; align-items:center; gap:4px;"
+                  >${t("extensions.config.step1Action")} \u2197</a>`
+                : nothing;
+            })()}
+          </div>
+        ` : nothing}
+
+      <!-- Dynamic env var form based on envSchema -->
+      ${envFields.length > 0 ? html`
+        <div style="
+          background:var(--card, #1a1a2e);
+          border:1px solid var(--border);
+          border-radius:8px;
+          padding:16px;
+          margin-bottom:20px;
+        ">
+          ${envFields.map((field, idx) => html`
+            <div style="margin-bottom:${idx < envFields.length - 1 ? "14px" : "0"};">
+              <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                <span style="
+                  font-size:12px; font-weight:600; color:var(--fg);
+                  font-family:monospace;
+                ">${field.key}</span>
+                ${field.required ? html`<span style="
+                  font-size:9px; padding:1px 6px; border-radius:3px;
+                  background:rgba(248,113,113,0.12); color:#f87171;
+                ">${t("extensions.config.required" as never)}</span>` : html`<span style="
+                  font-size:9px; padding:1px 6px; border-radius:3px;
+                  background:rgba(148,163,184,0.08); color:#6b7d91;
+                ">${t("extensions.config.optional" as never)}</span>`}
+              </div>
+              ${field.description ? html`<div style="
+                font-size:11px; color:var(--muted-strong, #6b7d91);
+                margin-bottom:6px; line-height:1.4;
+              ">${field.description}</div>` : nothing}
+              <input
+                class="mcp-env-field"
+                data-env-key="${field.key}"
+                type="password"
+                placeholder="${field.placeholder}"
+                autocomplete="off"
+                style="
+                  width:100%; box-sizing:border-box;
+                  padding:8px 12px;
+                  border:1px solid var(--border);
+                  border-radius:6px;
+                  background:transparent; color:var(--fg);
+                  font-size:12px; outline:none;
+                  transition:border-color 150ms;
+                "
+              />
+            </div>
+          `)}
+          <div style="
+            font-size:10px; color:var(--muted-strong, #6b7d91);
+            margin-top:10px; display:flex; align-items:center; gap:4px;
           ">
             \u{1F512} ${t("extensions.config.keyLocal")}
           </div>
         </div>
-      </div>
+      ` : html`
+        <!-- No env fields: show a hint that env vars can be added below -->
+        <div style="
+          font-size:12px; color:var(--muted-strong, #6b7d91);
+          margin-bottom:16px; line-height:1.5;
+          padding:10px 14px;
+          background:rgba(99,102,241,0.04);
+          border:1px solid rgba(99,102,241,0.1);
+          border-radius:8px;
+        ">
+          ${t("extensions.config.noEnvHint" as never)}
+          ${item.sourceUrl ? html`<br/><a
+            href=${item.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style="font-size:12px; color:var(--accent-2, #20d5bc); text-decoration:none; margin-top:4px; display:inline-block;"
+          >${t("extensions.store.viewSource" as never)} \u2197</a>` : nothing}
+        </div>
+      `}
 
       <!-- Test connection result -->
       ${testState !== "idle"
@@ -340,10 +371,9 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
       <!-- Action buttons -->
       <div style="display:flex; gap:12px; justify-content:flex-end; border-top:1px solid var(--border); padding-top:20px;">
         <button
-          @click=${() => {
-            const input = document.getElementById("mcp-api-key-input") as HTMLInputElement | null;
-            const val = input?.value?.trim() ?? "";
-            if (val) onTestConnection({ [keyFieldName]: val });
+          @click=${(e: Event) => {
+            const env = collectEnvFields(e);
+            if (Object.keys(env).length > 0) onTestConnection(env);
           }}
           style="
             all:unset; cursor:pointer;
@@ -357,24 +387,19 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
         >${t("extensions.config.testConnection")}</button>
 
         <button
-          @click=${() => {
-            const input = document.getElementById("mcp-api-key-input") as HTMLInputElement | null;
-            const val = input?.value?.trim() ?? "";
-            // API key is optional for manual-config items (installable === false)
-            if (!val && item.installable !== false) return;
-            // Collect extra env vars from advanced config
-            const env: Record<string, string> = {};
-            if (val) env[keyFieldName] = val;
+          @click=${(e: Event) => {
+            const env = collectEnvFields(e);
+            // For manual-config items, env is optional; otherwise need at least one value
+            if (Object.keys(env).length === 0 && item.installable !== false) return;
+            // Merge extra env vars from advanced config
             const extraContainer = document.getElementById("mcp-extra-env");
             if (extraContainer) {
-              // Template row (always present)
               const templateRow = extraContainer.querySelector(".mcp-env-row-template");
               if (templateRow) {
                 const k = (templateRow.querySelector(".mcp-env-key") as HTMLInputElement)?.value?.trim();
                 const v = (templateRow.querySelector(".mcp-env-val") as HTMLInputElement)?.value?.trim();
                 if (k && v) env[k] = v;
               }
-              // Dynamic rows
               const dynamicRows = extraContainer.querySelectorAll("#mcp-env-rows > div");
               dynamicRows.forEach((row) => {
                 const k = (row.querySelector(".mcp-env-key") as HTMLInputElement)?.value?.trim();

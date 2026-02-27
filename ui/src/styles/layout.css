@@ -1038,7 +1038,7 @@
 
 .content--chat {
   overflow: hidden;
-  padding-bottom: 0;
+  padding: 0;
 }
 
 /* Content header */
@@ -1088,20 +1088,76 @@
   gap: 8px;
 }
 
-/* Chat view header adjustments */
+/* Chat view header — [历史对话] [banner center] [mode switches right] */
 .content--chat .content-header {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
+  max-height: none;
 }
 
-.content--chat .content-header > div:first-child {
-  text-align: left;
+/* Center area grows to fill space between toggle and mode switches */
+.chat-header-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Inline warning banner in header */
+.chat-header-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-banner__icon {
+  flex-shrink: 0;
+}
+
+.chat-header-banner__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-banner__btn {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent, #6366f1);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+
+.chat-header-banner__btn:hover {
+  opacity: 0.85;
+}
+
+.chat-header-banner--warn {
+  background: rgba(139, 92, 246, 0.08);
+  border-color: rgba(139, 92, 246, 0.2);
 }
 
 .content--chat .page-meta {
-  justify-content: flex-start;
+  flex-shrink: 0;
 }
 
 .content--chat .chat-controls {

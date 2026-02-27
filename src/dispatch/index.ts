@@ -164,3 +164,17 @@ export type { ExecutionWorkspace, StepOutput, WorkspaceMetadata } from "./execut
 export { selectTools } from "./tool-selector.js";
 
 export type { ToolSelectionResult, ToolSelectionParams } from "./tool-selector.js";
+
+// Capability Registry — unified model capability matrix (CN-only)
+export {
+  getCapabilityMatrixSummary,
+  queryByCapability,
+  getProviderCapabilities,
+  getAllCards,
+  getAllCapabilityKeys,
+} from "./capability-registry.js";
+
+export type { CapabilityKey, RoutingPolicy, EnrichedCard } from "./capability-registry.js";
+
+// Capability Registry Remote — remote card fetching (CN-only)
+export { triggerRemoteFetch } from "./capability-registry-remote.js";

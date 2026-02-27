@@ -10,6 +10,7 @@ import {
   summarizeRestartSentinel,
 } from "../infra/restart-sentinel.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
+import { VERSION } from "../version.js";
 import { deliveryContextFromSession, mergeDeliveryContext } from "../utils/delivery-context.js";
 import { loadSessionEntry } from "./session-utils.js";
 
@@ -19,6 +20,17 @@ export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
     return;
   }
   const payload = sentinel.payload;
+
+  // S5-1: 更新重启后验证版本号是否真的变了
+  if (payload.kind === "update" && payload.stats?.after?.version) {
+    const expectedVersion = payload.stats.after.version as string;
+    if (VERSION !== expectedVersion) {
+      console.warn(
+        `[restart-sentinel] update version mismatch: expected v${expectedVersion}, running v${VERSION}. ` +
+          `Update may not have applied correctly.`,
+      );
+    }
+  }
 
   // Config-apply / config-patch restarts are routine operations triggered by
   // the user changing settings in the UI.  Injecting a "Gateway restart …"

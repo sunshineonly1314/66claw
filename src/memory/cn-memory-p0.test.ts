@@ -137,7 +137,10 @@ describe("applyTimeTiering [CN-PATCH:memory-p0]", () => {
       path: "memory/test.md",
       startLine: 1,
       endLine: 10,
-      score: 0.9,
+      // Default score 0.5 — below HIGH_SCORE_PRESERVE_THRESHOLD (0.6)
+      // so time-based filtering still works as expected in tests.
+      // Use score >= 0.6 explicitly when testing high-score preservation.
+      score: 0.5,
       snippet: "test content",
       source: "memory",
       ...overrides,

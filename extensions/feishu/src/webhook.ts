@@ -238,15 +238,15 @@ export async function resolveFeishuInboundMedia(params: {
     let originalFilename: string | undefined;
 
     if (messageType === "image") {
-      const imageKey = (content as FeishuImageContent).image_key;
+      const imageKey = (content as unknown as FeishuImageContent).image_key;
       if (!imageKey) return null;
       log?.info(`[feishu] 下载图片: image_key=${imageKey}`);
       const result = await downloadImageFeishu({ cfg: config, imageKey });
       buffer = result.buffer;
       contentType = result.contentType ?? "image/jpeg";
     } else if (messageType === "file") {
-      const fileKey = (content as FeishuFileContent).file_key;
-      const fileName = (content as FeishuFileContent).file_name;
+      const fileKey = (content as unknown as FeishuFileContent).file_key;
+      const fileName = (content as unknown as FeishuFileContent).file_name;
       if (!fileKey) return null;
       log?.info(`[feishu] 下载文件: file_key=${fileKey}, file_name=${fileName}`);
       const result = await downloadMessageResourceFeishu({ cfg: config, messageId, fileKey, type: "file" });
@@ -254,7 +254,7 @@ export async function resolveFeishuInboundMedia(params: {
       contentType = result.contentType;
       originalFilename = fileName;
     } else if (messageType === "audio") {
-      const fileKey = (content as FeishuAudioContent).file_key;
+      const fileKey = (content as unknown as FeishuAudioContent).file_key;
       if (!fileKey) return null;
       log?.info(`[feishu] 下载语音: file_key=${fileKey}`);
       const result = await downloadMessageResourceFeishu({ cfg: config, messageId, fileKey, type: "file" });
@@ -262,8 +262,8 @@ export async function resolveFeishuInboundMedia(params: {
       contentType = result.contentType ?? "audio/ogg";
       originalFilename = "voice.opus";
     } else if (messageType === "media") {
-      const fileKey = (content as FeishuMediaContent).file_key;
-      const fileName = (content as FeishuMediaContent).file_name;
+      const fileKey = (content as unknown as FeishuMediaContent).file_key;
+      const fileName = (content as unknown as FeishuMediaContent).file_name;
       if (!fileKey) return null;
       log?.info(`[feishu] 下载视频: file_key=${fileKey}`);
       const result = await downloadMessageResourceFeishu({ cfg: config, messageId, fileKey, type: "file" });
@@ -271,7 +271,7 @@ export async function resolveFeishuInboundMedia(params: {
       contentType = result.contentType ?? "video/mp4";
       originalFilename = fileName ?? "video.mp4";
     } else if (messageType === "sticker") {
-      const fileKey = (content as FeishuStickerContent).file_key;
+      const fileKey = (content as unknown as FeishuStickerContent).file_key;
       if (!fileKey) return null;
       log?.info(`[feishu] 下载表情: file_key=${fileKey}`);
       const result = await downloadMessageResourceFeishu({ cfg: config, messageId, fileKey, type: "image" });

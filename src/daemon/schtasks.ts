@@ -25,11 +25,90 @@ export function resolveTaskScriptPath(env: Record<string, string | undefined>): 
   return path.join(stateDir, scriptName);
 }
 
-function quoteCmdArg(value: string): string {
+// [CN-MERGE:dafe52e8cf] Escape CMD set assignment components (%, ^, !, ")
+function escapeCmdSetAssignmentComponent(value: string): string {
+  return value.replace(/\^/g, "^^").replace(/%/g, "%%").replace(/!/g, "^!").replace(/"/g, '^"');
+}
+
+function unescapeCmdSetAssignmentComponent(value: string): string {
+  let out = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
+    const next = value[i + 1];
+    if (ch === "^" && (next === "^" || next === '"' || next === "!")) {
+      out += next;
+      i += 1;
+      continue;
+    }
+    if (ch === "%" && next === "%") {
+      out += "%";
+      i += 1;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+function parseCmdSetAssignment(line: string): { key: string; value: string } | null {
+  const raw = line.trim();
+  if (!raw) {
+    return null;
+  }
+  const quoted = raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2;
+  const assignment = quoted ? raw.slice(1, -1) : raw;
+  const index = assignment.indexOf("=");
+  if (index <= 0) {
+    return null;
+  }
+  const key = assignment.slice(0, index).trim();
+  const value = assignment.slice(index + 1).trim();
+  if (!key) {
+    return null;
+  }
+  if (!quoted) {
+    return { key, value };
+  }
+  return {
+    key: unescapeCmdSetAssignmentComponent(key),
+    value: unescapeCmdSetAssignmentComponent(value),
+  };
+}
+
+function renderCmdSetAssignment(key: string, value: string): string {
+  const escapedKey = escapeCmdSetAssignmentComponent(key);
+  const escapedValue = escapeCmdSetAssignmentComponent(value);
+  return `set "${escapedKey}=${escapedValue}"`;
+}
+
+// [CN-MERGE:280c6b117b] Harden script quoting for cmd.exe special chars
+function assertNoCmdLineBreak(value: string, field: string): void {
+  if (/[\r\n]/.test(value)) {
+    throw new Error(`${field} cannot contain CR or LF in Windows task scripts.`);
+  }
+}
+
+function quoteSchtasksArg(value: string): string {
   if (!/[ \t"]/g.test(value)) {
     return value;
   }
   return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function quoteCmdScriptArg(value: string): string {
+  assertNoCmdLineBreak(value, "Command argument");
+  if (!value) {
+    return '""';
+  }
+  const escaped = value.replace(/"/g, '\\"').replace(/%/g, "%%").replace(/!/g, "^!");
+  if (!/[ \t"&|<>^()%!]/g.test(value)) {
+    return escaped;
+  }
+  return `"${escaped}"`;
+}
+
+function unescapeCmdScriptArg(value: string): string {
+  return value.replace(/\^!/g, "!").replace(/%%/g, "%");
 }
 
 function resolveTaskUser(env: Record<string, string | undefined>): string | null {
@@ -48,14 +127,14 @@ function resolveTaskUser(env: Record<string, string | undefined>): string | null
 }
 
 function parseCommandLine(value: string): string[] {
+  // `buildTaskScript` escapes quotes (`\"`) and cmd expansions (`%%`, `^!`).
+  // Keep all other backslashes literal so drive and UNC paths are preserved.
   const args: string[] = [];
   let current = "";
   let inQuotes = false;
 
   for (let i = 0; i < value.length; i++) {
     const char = value[i];
-    // `buildTaskScript` only escapes quotes (`\"`).
-    // Keep all other backslashes literal so drive and UNC paths are preserved.
     if (char === "\\" && i + 1 < value.length && value[i + 1] === '"') {
       current += value[i + 1];
       i++;
@@ -77,7 +156,7 @@ function parseCommandLine(value: string): string[] {
   if (current) {
     args.push(current);
   }
-  return args;
+  return args.map(unescapeCmdScriptArg);
 }
 
 export async function readScheduledTaskCommand(env: Record<string, string | undefined>): Promise<{
@@ -103,14 +182,9 @@ export async function readScheduledTaskCommand(env: Record<string, string | unde
         continue;
       }
       if (line.toLowerCase().startsWith("set ")) {
-        const assignment = line.slice(4).trim();
-        const index = assignment.indexOf("=");
-        if (index > 0) {
-          const key = assignment.slice(0, index).trim();
-          const value = assignment.slice(index + 1).trim();
-          if (key) {
-            environment[key] = value;
-          }
+        const assignment = parseCmdSetAssignment(line.slice(4));
+        if (assignment) {
+          environment[assignment.key] = assignment.value;
         }
         continue;
       }
@@ -170,21 +244,25 @@ function buildTaskScript({
   environment?: Record<string, string | undefined>;
 }): string {
   const lines: string[] = ["@echo off"];
-  if (description?.trim()) {
-    lines.push(`rem ${description.trim()}`);
+  const trimmedDescription = description?.trim();
+  if (trimmedDescription) {
+    assertNoCmdLineBreak(trimmedDescription, "Task description");
+    lines.push(`rem ${trimmedDescription}`);
   }
   if (workingDirectory) {
-    lines.push(`cd /d ${quoteCmdArg(workingDirectory)}`);
+    lines.push(`cd /d ${quoteCmdScriptArg(workingDirectory)}`);
   }
   if (environment) {
     for (const [key, value] of Object.entries(environment)) {
       if (!value) {
         continue;
       }
-      lines.push(`set ${key}=${value}`);
+      assertNoCmdLineBreak(key, "Environment variable name");
+      assertNoCmdLineBreak(value, "Environment variable value");
+      lines.push(renderCmdSetAssignment(key, value));
     }
   }
-  const command = programArguments.map(quoteCmdArg).join(" ");
+  const command = programArguments.map(quoteCmdScriptArg).join(" ");
   lines.push(command);
   return `${lines.join("\r\n")}\r\n`;
 }
@@ -231,7 +309,7 @@ export async function installScheduledTask({
   await fs.writeFile(scriptPath, script, "utf8");
 
   const taskName = resolveTaskName(env);
-  const quotedScript = quoteCmdArg(scriptPath);
+  const quotedScript = quoteSchtasksArg(scriptPath);
   const baseArgs = [
     "/Create",
     "/F",

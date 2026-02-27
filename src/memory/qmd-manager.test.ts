@@ -921,10 +921,22 @@ describe("QmdMemoryManager", () => {
     const target = path.join(workspaceDir, "target.md");
     await fs.writeFile(target, "ok", "utf-8");
     const link = path.join(workspaceDir, "link.md");
-    await fs.symlink(target, link);
-    await expect(manager.readFile({ relPath: "qmd/workspace/link.md" })).rejects.toThrow(
-      "path required",
-    );
+    let canSymlink = true;
+    try {
+      await fs.symlink(target, link);
+    } catch (err: unknown) {
+      // Windows non-admin cannot create symlinks (EPERM) — skip symlink assertion
+      if (process.platform === "win32" && (err as NodeJS.ErrnoException).code === "EPERM") {
+        canSymlink = false;
+      } else {
+        throw err;
+      }
+    }
+    if (canSymlink) {
+      await expect(manager.readFile({ relPath: "qmd/workspace/link.md" })).rejects.toThrow(
+        "path required",
+      );
+    }
 
     await manager.close();
   });

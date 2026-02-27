@@ -55,6 +55,7 @@ interface OllamaChatResponse {
   message: {
     role: "assistant";
     content: string;
+    reasoning?: string;
     tool_calls?: OllamaToolCall[];
   };
   done: boolean;
@@ -192,8 +193,11 @@ export function buildAssistantMessage(
 ): AssistantMessage {
   const content: (TextContent | ToolCall)[] = [];
 
-  if (response.message.content) {
-    content.push({ type: "text", text: response.message.content });
+  // Use content as the primary reply text. The `reasoning` field contains
+  // chain-of-thought which should NOT be exposed as the visible reply.
+  const text = response.message.content || "";
+  if (text) {
+    content.push({ type: "text", text });
   }
 
   const toolCalls = response.message.tool_calls;
@@ -349,6 +353,9 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           if (chunk.message?.content) {
             accumulatedContent += chunk.message.content;
           }
+          // Note: chunk.message.reasoning is chain-of-thought and is intentionally
+          // NOT accumulated into accumulatedContent to avoid exposing internal
+          // reasoning as the visible reply.
 
           // Ollama sends tool_calls in intermediate (done:false) chunks,
           // NOT in the final done:true chunk. Collect from all chunks.

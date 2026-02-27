@@ -46,6 +46,11 @@ export interface McpMarketplaceItem {
   apiKeyName?: string;
   /** Guide URL for obtaining the API key. */
   apiKeyGuideUrl?: string;
+  /** Environment variable schema from ModelScope env_schema.
+   *  Keys are env var names, values have description and optional placeholder. */
+  envSchema?: Record<string, { description?: string; placeholder?: string }>;
+  /** Required environment variable names (subset of envSchema keys). */
+  envRequired?: string[];
   /** Supported platforms. */
   platforms: string[];
   /** Official / verified badge. */
@@ -129,6 +134,71 @@ export interface McpMarketplaceItem {
     /** Prerequisite MCPs (must install first) */
     prerequisites?: string[];
   };
+}
+
+// ============================================================================
+// SSE URL credential sanitization
+// ============================================================================
+
+/** Query parameter names that commonly contain credentials. */
+const CRED_PARAM_PATTERNS = [
+  "key",
+  "apikey",
+  "api_key",
+  "token",
+  "api_token",
+  "secret",
+  "password",
+  "bearer",
+  "auth",
+  "authorization",
+  "access_token",
+  "hap-sign",
+  "hap-appkey",
+  "sessionid",
+];
+
+/** Values that are clearly placeholders (not real credentials). */
+const PLACEHOLDER_RE = /your[_\s-]*(api)?[_\s-]?key|YOUR_|你.*key|您.*key|\{\{|\$\{|<your/i;
+
+/**
+ * Strip embedded credentials from an SSE URL.
+ * Returns the sanitized URL, or the original if nothing changed.
+ */
+export function sanitizeSseUrl(url: string | undefined): string | undefined {
+  if (!url || typeof url !== "string") return url;
+  try {
+    const u = new URL(url);
+    const params = new URLSearchParams(u.search);
+    let changed = false;
+    for (const name of [...params.keys()]) {
+      const nameLower = name.toLowerCase();
+      const value = params.get(name) ?? "";
+      const isCred =
+        CRED_PARAM_PATTERNS.some((p) => nameLower === p) ||
+        nameLower.includes("key") ||
+        nameLower.includes("token") ||
+        nameLower.includes("secret") ||
+        nameLower.includes("sign") ||
+        nameLower.includes("auth");
+      if (
+        isCred &&
+        !PLACEHOLDER_RE.test(value) &&
+        value.length > 10 &&
+        /^[A-Za-z0-9+/=_-]+$/.test(value)
+      ) {
+        params.set(name, `YOUR_${name.toUpperCase()}`);
+        changed = true;
+      }
+    }
+    if (changed) {
+      u.search = params.toString();
+      return u.toString();
+    }
+  } catch {
+    /* invalid URL — return as-is */
+  }
+  return url;
 }
 
 // ============================================================================
