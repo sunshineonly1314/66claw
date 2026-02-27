@@ -133,7 +133,6 @@ pub async fn show_screen_border(app: AppHandle) -> Result<String, String> {
     .inner_size(width, height)
     .position(0.0, 0.0)
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
     .skip_taskbar(true)
     .focused(false)
