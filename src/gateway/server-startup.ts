@@ -128,6 +128,30 @@ export async function startGatewaySidecars(params: {
     params.log.warn(`session lock cleanup failed on startup: ${String(err)}`);
   }
 
+  // ── Proxy auto-discovery (best-effort, non-blocking) ────────────────
+  // Probe common local proxy ports (Clash, V2Ray, etc.) so international
+  // API calls work without users setting HTTPS_PROXY manually.
+  // Only activates when user has configured an international provider.
+  const INTERNATIONAL_PROVIDER_IDS = new Set([
+    "openai",
+    "anthropic",
+    "google",
+    "nvidia",
+    "openrouter",
+  ]);
+  const configuredProviders = Object.keys(params.cfg?.models?.providers ?? {});
+  const hasInternationalProvider = configuredProviders.some((id) =>
+    INTERNATIONAL_PROVIDER_IDS.has(id),
+  );
+  const proxyDiscoveryPromise = (async () => {
+    try {
+      const { initProxyDiscovery } = await import("../infra/net/proxy-fetch.js");
+      await initProxyDiscovery({ hasInternationalProvider });
+    } catch (err) {
+      params.log.warn(`proxy auto-discovery failed: ${String(err)}`);
+    }
+  })();
+
   // ── Independent tasks: run in parallel ──────────────────────────────
   // These subsystems have NO cross-dependencies and each has its own
   // try/catch so a failure in one does not affect the others.
@@ -336,6 +360,7 @@ export async function startGatewaySidecars(params: {
   const [browserControl, pluginServices] = await Promise.all([
     browserControlPromise,
     pluginServicesPromise,
+    proxyDiscoveryPromise,
   ]);
   await Promise.all([
     gmailPromise,

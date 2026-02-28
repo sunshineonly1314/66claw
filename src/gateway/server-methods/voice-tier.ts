@@ -271,7 +271,7 @@ export const voiceTierHandlers: GatewayRequestHandlers = {
             } catch {
               /* ignore */
             }
-            if (status === 403 && msg.includes("not granted")) {
+            if (status === 403 || msg.includes("not granted") || msg.includes("grant not found")) {
               msg = "ASR 服务未开通。请在火山引擎控制台开通「豆包流式语音识别模型2.0」";
             }
             resolve({ ok: false, error: msg });
