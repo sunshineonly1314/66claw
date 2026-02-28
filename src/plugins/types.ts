@@ -594,6 +594,10 @@ export type PluginHookHandlerMap = {
     event: PluginHookGatewayStopEvent,
     ctx: PluginHookGatewayContext,
   ) => Promise<void> | void;
+  resolve_agent: (
+    event: PluginHookResolveAgentEvent,
+    ctx: PluginHookResolveAgentContext,
+  ) => Promise<PluginHookResolveAgentResult | void> | PluginHookResolveAgentResult | void;
 };
 
 export type PluginHookRegistration<K extends PluginHookName = PluginHookName> = {

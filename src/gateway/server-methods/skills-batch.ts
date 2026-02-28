@@ -205,7 +205,10 @@ export const skillsBatchHandlers: GatewayRequestHandlers = {
         tier: getSkillTier(s.name),
       }));
 
-    const totalSizeBytes = missing.reduce((sum: number, s: { size_bytes: number }) => sum + s.size_bytes, 0);
+    const totalSizeBytes = missing.reduce(
+      (sum: number, s: { size_bytes: number }) => sum + s.size_bytes,
+      0,
+    );
 
     // Rough time estimate: assume ~2MB/s average download + 5s install per skill
     const estimatedSeconds = Math.max(
@@ -253,16 +256,47 @@ export const skillsBatchHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    // Validate each skill name: must be a non-empty string without path traversal characters
+    const validatedSkills: string[] = [];
+    for (const raw of p.skills) {
+      if (typeof raw !== "string") {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "each skill must be a string"),
+        );
+        return;
+      }
+      const trimmed = raw.trim();
+      if (!trimmed || trimmed.length > 200) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `invalid skill name: "${raw}"`),
+        );
+        return;
+      }
+      if (/[\/\\:*?"<>|]/.test(trimmed) || trimmed.includes("..")) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `unsafe skill name: "${trimmed}"`),
+        );
+        return;
+      }
+      validatedSkills.push(trimmed);
+    }
+
     const batchId = `batch-${Date.now()}`;
     const abortController = new AbortController();
     runningBatches.set(batchId, abortController);
 
     // Respond immediately with batch_id so client can track/cancel
-    respond(true, { batch_id: batchId, skills: p.skills, status: "started" }, undefined);
+    respond(true, { batch_id: batchId, skills: validatedSkills, status: "started" }, undefined);
 
     // Run batch in background (do not await in handler response path)
     batchInstall({
-      skills: p.skills,
+      skills: validatedSkills,
       concurrency: p.concurrency ?? 2,
       signal: abortController.signal,
       onProgress: (event) => {

@@ -93,6 +93,7 @@ export function renderChannelRouteSection(params: {
     return html`
       <div class="channel-route-section">
         <div class="channel-route-section__title">${t("channels.route")}</div>
+        <div class="channel-route-section__desc">${t("channels.route.desc") ?? ""}</div>
         ${accounts.map((account) => {
           const accountId = account.accountId;
           const label = account.name || accountId;
@@ -147,6 +148,7 @@ export function renderChannelRouteSection(params: {
   return html`
     <div class="channel-route-section">
       <div class="channel-route-section__title">${t("channels.route")}</div>
+      <div class="channel-route-section__desc">${t("channels.route.desc") ?? ""}</div>
       <div class="channel-route-section__row">
         <label class="channel-route-section__label">${t("channels.route.target")}</label>
         <select

@@ -13,7 +13,7 @@
  * - Score-based eviction: composite score from category weight + hits + recency
  * - Category protection: identity/correction entries have guaranteed minimum slots
  * - Hit reinforcement: re-extracted facts get hits+1 (turns dedup weakness into strength)
- * - Stale todo cleanup: 30-day-old zero-hit todos are auto-removed
+ * - Stale todo cleanup: 30-day-old low-hit todos are auto-removed (source-aware thresholds)
  * - Eviction archival: qualified evicted entries are appended to memory/profile-archive.md
  *   so the upstream SQLite file watcher can index them for semantic retrieval
  * - Human-readable: JSON file, can be manually inspected/edited
@@ -35,6 +35,7 @@ type ChangelogEntry = {
   oldValue: string | null;
   newValue: string | null;
   operation: "add" | "update" | "evict" | "merge" | "remove";
+  reason?: string;
 };
 
 // Per-workspace changelog buffer. Prevents cross-workspace pollution when
@@ -95,13 +96,24 @@ export function flushProfileChangelog(workspaceDir: string): void {
           created_at INTEGER NOT NULL
         );
       `);
+      // Migrate: add 'reason' column for databases created before this version
+      try {
+        const cols = db.prepare("PRAGMA table_info(profile_changelog)").all() as Array<{
+          name: string;
+        }>;
+        if (!cols.some((c) => c.name === "reason")) {
+          db.exec("ALTER TABLE profile_changelog ADD COLUMN reason TEXT");
+        }
+      } catch {
+        /* best-effort migration */
+      }
       const stmt = db.prepare(
-        `INSERT INTO profile_changelog (category, key, old_value, new_value, operation, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO profile_changelog (category, key, old_value, new_value, operation, reason, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
       const now = Date.now();
       for (const e of entries) {
-        stmt.run(e.category, e.key, e.oldValue, e.newValue, e.operation, now);
+        stmt.run(e.category, e.key, e.oldValue, e.newValue, e.operation, e.reason ?? null, now);
       }
     } finally {
       try {
@@ -176,9 +188,15 @@ export const PROTECTED_CATEGORY_MINIMUMS: Partial<Record<ProfileCategory, number
   correction: 5,
 };
 
-/** Stale todo cleanup: remove zero-hit todos older than this many days. */
+/** Stale todo cleanup: remove low-hit todos older than this many days. */
 const STALE_TODO_DAYS = 30;
 const STALE_TODO_MS = STALE_TODO_DAYS * 24 * 60 * 60 * 1000;
+// [CN-PATCH:memory-fix] Max hits threshold for stale todo cleanup.
+// Previously only zero-hit todos were cleaned, but the extraction LLM
+// re-extracts the same todos each turn (incrementing hits), so they never
+// reach hits=0 and persist forever. Todos with hits≤1 are still considered
+// "not manually reinforced" (1 hit = just the extraction LLM re-saw it once).
+const STALE_TODO_MAX_HITS = 1;
 
 // ── Archive Criteria ──
 // Evicted entries must pass these gates to be archived into profile-archive.md.
@@ -234,9 +252,17 @@ export interface ProfileEntry {
 }
 
 export interface UserProfile {
+  /** Schema version for forward-compatible migration. */
   version: number;
   entries: ProfileEntry[];
 }
+
+// [CN-PATCH:memory-fix] Current schema version.
+// Increment this when the profile format changes, and add migration logic
+// in migrateProfile() below. Version history:
+//   1: Initial format
+//   2: Added schema version awareness + stale todo threshold change
+const CURRENT_PROFILE_VERSION = 2;
 
 /** Result of upsert that also carries evicted entries for archival. */
 export interface UpsertResult {
@@ -245,7 +271,46 @@ export interface UpsertResult {
 }
 
 function emptyProfile(): UserProfile {
-  return { version: 1, entries: [] };
+  return { version: CURRENT_PROFILE_VERSION, entries: [] };
+}
+
+/**
+ * [CN-PATCH:memory-fix] Migrate profile from older schema versions.
+ * Each version bump should add a migration case here.
+ * Migrations are applied sequentially (v1→v2→v3→...).
+ */
+function migrateProfile(profile: UserProfile): UserProfile {
+  let { version } = profile;
+  if (!version || version < 1) version = 1;
+
+  // [CN-PATCH:memory-fix] Guard against future versions from newer code.
+  // If a newer version of the app wrote version > CURRENT, log a warning
+  // but return the profile as-is (forward-compatible read, no downgrade).
+  if (version > CURRENT_PROFILE_VERSION) {
+    logProfileWarning(
+      `[memory-safety] profile.json has version ${version} but this code only supports up to ${CURRENT_PROFILE_VERSION}. ` +
+        `Data will be read as-is but structural changes from the newer version may not be understood.`,
+    );
+    return profile;
+  }
+
+  // v1 → v2: No structural changes, just version stamp + createdAt backfill
+  if (version < 2) {
+    // Create shallow copies of entries to avoid mutating the original objects
+    const migratedEntries = profile.entries.map((entry) => {
+      if (!entry.createdAt) {
+        return { ...entry, createdAt: entry.updatedAt || Date.now() };
+      }
+      return entry;
+    });
+    version = 2;
+    return { ...profile, entries: migratedEntries, version };
+  }
+
+  // Future migrations go here:
+  // if (version < 3) { ... version = 3; }
+
+  return { ...profile, version };
 }
 
 export function resolveProfilePath(workspaceDir: string): string {
@@ -288,13 +353,13 @@ export function readProfile(workspaceDir: string, bypassCache = false): UserProf
     const raw = fs.readFileSync(profilePath, "utf-8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.entries)) {
-      const profile = parsed as UserProfile;
-      // Backfill createdAt for entries migrated from older versions
-      for (const entry of profile.entries) {
-        if (!entry.createdAt) {
-          entry.createdAt = entry.updatedAt;
-        }
-      }
+      // [CN-PATCH:memory-fix] Run schema migration (handles createdAt backfill, version stamp, etc.)
+      // Migration is idempotent and runs on every cold read. The migrated profile is cached
+      // in memory, so subsequent hot reads see the migrated version. The migration is
+      // persisted to disk on the next withProfileLock write (which reads, modifies, and writes).
+      // We intentionally do NOT call writeProfile() here — readProfile can be called outside
+      // withProfileLock, and an unsynchronized write would risk overwriting concurrent mutations.
+      const profile = migrateProfile(parsed as UserProfile);
       _profileCache.set(workspaceDir, { profile, cachedAt: Date.now() });
       // Return a copy so callers cannot mutate the cached object.
       return { ...profile, entries: profile.entries.map((e) => ({ ...e })) };
@@ -360,12 +425,84 @@ export function readProfile(workspaceDir: string, bypassCache = false): UserProf
   }
 }
 
+// [CN-PATCH:memory-fix] Periodic backup for profile.json.
+// Creates a snapshot every BACKUP_INTERVAL_MS (default: 1 hour) to prevent data loss
+// from corruption that survives the .tmp/.bak crash-safe write mechanism.
+// Keeps up to MAX_BACKUPS snapshots, rotating oldest first.
+const PROFILE_BACKUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const PROFILE_MAX_BACKUPS = 5;
+const _lastBackupTime = new Map<string, number>();
+
+/** Regex for backup filenames — strict ISO-style timestamp to avoid matching user files. */
+const BACKUP_FILENAME_RE = /^profile\.backup\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.json$/;
+
+function maybeCreateProfileBackup(workspaceDir: string, profilePath: string): void {
+  try {
+    const now = Date.now();
+    const lastBackup = _lastBackupTime.get(workspaceDir) ?? 0;
+
+    // [CN-PATCH:memory-fix] Clock backward guard: if system clock jumped backward
+    // (NTP correction, VM snapshot restore), reset the timer to avoid suppressing
+    // backups for an extended period.
+    if (now < lastBackup) {
+      _lastBackupTime.delete(workspaceDir);
+    } else if (now - lastBackup < PROFILE_BACKUP_INTERVAL_MS) {
+      return;
+    }
+
+    // Only backup if the file exists and has content
+    if (!fs.existsSync(profilePath)) return;
+    const stat = fs.statSync(profilePath);
+    if (stat.size < 10) return; // empty or near-empty, skip
+
+    // [CN-PATCH:memory-fix] Validate file content before backing up.
+    // Do NOT waste backup slots on corrupted data — preserve older good copies.
+    try {
+      const raw = fs.readFileSync(profilePath, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.entries)) return; // corrupted shape
+    } catch {
+      return; // unparseable JSON — skip backup to preserve good older backups
+    }
+
+    const dir = path.dirname(profilePath);
+    const backupName = `profile.backup.${new Date(now).toISOString().replace(/[:.]/g, "-").slice(0, 19)}.json`;
+    const backupPath = path.join(dir, backupName);
+    fs.copyFileSync(profilePath, backupPath);
+    _lastBackupTime.set(workspaceDir, now);
+
+    // Rotate: keep only the most recent MAX_BACKUPS
+    // Use strict regex to avoid matching user-created files
+    const backups = fs
+      .readdirSync(dir)
+      .filter((f) => BACKUP_FILENAME_RE.test(f))
+      .sort(); // lexicographic = oldest first (ISO date in name)
+    if (backups.length > PROFILE_MAX_BACKUPS) {
+      for (const old of backups.slice(0, backups.length - PROFILE_MAX_BACKUPS)) {
+        try {
+          fs.unlinkSync(path.join(dir, old));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  } catch (err) {
+    // [CN-PATCH:memory-fix] Log backup failures for observability (but never block writes)
+    logProfileWarning(
+      `[memory-backup] periodic backup failed for ${workspaceDir}: ${String(err).slice(0, 80)}`,
+    );
+  }
+}
+
 export function writeProfile(workspaceDir: string, profile: UserProfile): void {
   const profilePath = resolveProfilePath(workspaceDir);
   const dir = path.dirname(profilePath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+
+  // [CN-PATCH:memory-fix] Create periodic backup before overwriting
+  maybeCreateProfileBackup(workspaceDir, profilePath);
 
   const json = JSON.stringify(profile, null, 2);
 
@@ -407,6 +544,11 @@ export function writeProfile(workspaceDir: string, profile: UserProfile): void {
     /* fdatasync not critical — best-effort durability */
   }
 
+  // [CN-PATCH:memory-fix] Track whether the write actually reached disk.
+  // If all attempts fail, we must NOT update the in-memory cache — otherwise
+  // the cache diverges from disk: reads see phantom data for up to 5s (cache TTL),
+  // then revert to old data after cache expires.
+  let diskWriteSucceeded = true;
   try {
     fs.renameSync(tmpPath, profilePath);
   } catch {
@@ -443,22 +585,34 @@ export function writeProfile(workspaceDir: string, profile: UserProfile): void {
       try {
         fs.copyFileSync(tmpPath, profilePath);
       } catch {
-        /* truly failed */
+        // [CN-PATCH:memory-fix] ALL disk write attempts failed.
+        // Do NOT update the cache — disk still has old data.
+        diskWriteSucceeded = false;
+        logProfileWarning(
+          `[memory-safety] writeProfile: all disk write attempts failed for ${workspaceDir}. ` +
+            `Cache NOT updated to prevent divergence.`,
+        );
       }
     }
+    // Clean up .tmp and .tmp2 files
     try {
       fs.unlinkSync(tmpPath);
     } catch {
       /* ignore cleanup failure */
     }
+    try {
+      fs.unlinkSync(tmpPath2);
+    } catch {
+      /* ignore cleanup failure */
+    }
   }
-  // Immediately update the cache so subsequent reads see the fresh data.
-  // Deep-copy entries so callers who retain a reference to the written profile
-  // cannot mutate the cached copy.
-  _profileCache.set(workspaceDir, {
-    profile: { ...profile, entries: profile.entries.map((e) => ({ ...e })) },
-    cachedAt: Date.now(),
-  });
+  // Only update the cache if the write actually reached disk.
+  if (diskWriteSucceeded) {
+    _profileCache.set(workspaceDir, {
+      profile: { ...profile, entries: profile.entries.map((e) => ({ ...e })) },
+      cachedAt: Date.now(),
+    });
+  }
 }
 
 /** Visible for testing — clear ALL in-memory caches and safety state. */
@@ -468,6 +622,7 @@ export function _clearProfileCache(): void {
   _lastKnownEntryCount.clear();
   _lastRotationSlot.clear();
   _pendingChangelogsMap.clear();
+  _lastBackupTime.clear();
 }
 
 // ── Per-workspace write lock for read-modify-write atomicity ──
@@ -531,6 +686,7 @@ export async function withProfileLock<T>(
   const LOCK_TIMEOUT_MS = 30_000;
   let timedOut = false;
   let lockTimer: ReturnType<typeof setTimeout> | undefined;
+  const lockAcquireStart = Date.now(); // [CN-PATCH:memory-fix] Track lock wait time
   try {
     await Promise.race([
       prev.then(() => {
@@ -539,10 +695,21 @@ export async function withProfileLock<T>(
       new Promise<void>((_, reject) => {
         lockTimer = setTimeout(() => {
           timedOut = true;
-          reject(new Error("[memory-safety] withProfileLock timed out after 30s"));
+          reject(
+            new Error(`[memory-safety] withProfileLock timed out after 30s for ${workspaceDir}`),
+          );
         }, LOCK_TIMEOUT_MS);
       }),
     ]);
+
+    // [CN-PATCH:memory-fix] Monitor lock contention — log when wait time exceeds 5s
+    const lockWaitMs = Date.now() - lockAcquireStart;
+    if (lockWaitMs > 5000) {
+      logProfileWarning(
+        `[memory-perf] withProfileLock waited ${lockWaitMs}ms to acquire lock for ${workspaceDir}. ` +
+          `This indicates high contention or a slow mutation. Consider investigating.`,
+      );
+    }
 
     // Safety check: refuse to write if profile was detected as corrupted.
     // Self-healing: re-check the file — user may have replaced it with a valid copy.
@@ -644,7 +811,7 @@ export async function withProfileLock<T>(
 /**
  * Upsert a fact into the profile. Same category+key overwrites the old value.
  * - Existing entries get hits+1 (reinforcement on re-extraction)
- * - Stale zero-hit todos older than 30 days are auto-cleaned
+ * - Stale low-hit todos older than 30 days are auto-cleaned (source-aware thresholds)
  * - Score-based eviction with category protection when over limit
  * Returns the updated profile (backward-compatible wrapper).
  */
@@ -732,12 +899,22 @@ export function upsertProfileEntryFull(
   }
 
   // ── Stale todo cleanup ──
-  // Remove zero-hit todos older than STALE_TODO_DAYS to free valuable slots.
+  // Remove low-hit todos older than STALE_TODO_DAYS to free valuable slots.
+  // Tool-created todos (source="tool") use hits===0 threshold; LLM-extracted use hits≤1.
   // This runs on every upsert — zero extra I/O since we're already writing.
   // Cleaned-up entries are recorded in changelog and added to evicted for archival.
   const staleTodos: ProfileEntry[] = [];
+  // [CN-PATCH:memory-fix] Use real wall-clock time for stale checks, NOT the monotonic `now`.
+  // `now` = Math.max(Date.now(), maxExistingTimestamp+1), so if ANY entry has an updatedAt
+  // far in the future (clock skew, manual edit, NTP jump), `now` would be inflated to match.
+  // This inflated `now` makes `now - e.updatedAt > STALE_TODO_MS` true for ALL normal todos,
+  // causing mass deletion. Using Date.now() isolates stale checks from timestamp monotonicity.
+  const realNow = Date.now();
   entries = entries.filter((e) => {
-    if (e.category === "todo" && e.hits === 0 && now - e.updatedAt > STALE_TODO_MS) {
+    if (e.category !== "todo") return true;
+    const isTool = e.source === "tool";
+    const hitsThreshold = isTool ? 0 : STALE_TODO_MAX_HITS;
+    if (e.hits <= hitsThreshold && realNow - e.updatedAt > STALE_TODO_MS) {
       staleTodos.push(e);
       pushChangelog({
         category: e.category,
@@ -745,6 +922,7 @@ export function upsertProfileEntryFull(
         oldValue: e.value,
         newValue: null,
         operation: "remove",
+        reason: `stale todo: hits=${e.hits}, age=${Math.round((realNow - e.updatedAt) / 86400000)}d`,
       });
       return false;
     }

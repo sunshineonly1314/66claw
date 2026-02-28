@@ -593,6 +593,9 @@ export async function runEmbeddedAttempt(
         throw new Error("Embedded agent session missing");
       }
       const activeSession = session;
+      // Track the current system prompt locally to avoid reading SDK internals
+      // via unsafe type casts. Updated whenever we call setSystemPrompt().
+      let _trackedSystemPrompt = systemPromptText;
       const cacheTrace = createCacheTrace({
         cfg: params.config,
         env: process.env,
@@ -949,9 +952,9 @@ export async function runEmbeddedAttempt(
               // it as instructions rather than user speech. This prevents the
               // orchestrator prompt from appearing as chat content in the UI
               // and from confusing the model about who said what.
-              const currentSysPrompt = activeSession.agent.systemPrompt ?? "";
-              const updatedSysPrompt = currentSysPrompt + "\n\n" + hookResult.prependContext;
+              const updatedSysPrompt = _trackedSystemPrompt + "\n\n" + hookResult.prependContext;
               activeSession.agent.setSystemPrompt(updatedSysPrompt);
+              _trackedSystemPrompt = updatedSysPrompt;
               log.debug(
                 `hooks: injected context into system prompt (${hookResult.prependContext.length} chars)`,
               );

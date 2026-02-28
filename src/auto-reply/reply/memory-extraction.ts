@@ -167,6 +167,12 @@ function cleanupTurnCounters(): void {
   }
 }
 
+// Per-workspace dedup for "no provider" warnings — avoid spamming on every qualifying message.
+// [CN-PATCH:memory-fix] Cap size to prevent unbounded growth in long-running processes
+// with many workspaces cycling through. 200 workspaces × ~200 bytes ≈ 40KB max.
+const _noProviderWarned = new Set<string>();
+const _NO_PROVIDER_WARNED_MAX = 200;
+
 // ── Settings Resolution ──
 
 export function resolveMemoryExtractionSettings(
@@ -248,16 +254,28 @@ export function shouldRunMemoryExtraction(params: {
 }
 
 // ── Extraction Provider Fallback Chain ──
-// When the primary provider has no API key, try these alternatives.
-// Last resort: use the user's main model (more expensive but guarantees memory works).
+// Priority: configured → free preferred (longcat/bailing) → main chat model → free others.
+// Free preferred providers are fast & free; main model is the user's current chat model
+// which guarantees memory works even without any free provider configured.
 
 type ExtractionProviderOption = { provider: string; model: string };
 
-export const EXTRACTION_FALLBACK_CHAIN: ExtractionProviderOption[] = [
+/** Free providers that should be preferred over the main model (fast & free). */
+export const EXTRACTION_PREFERRED_FREE: ExtractionProviderOption[] = [
   { provider: "meituan-longcat", model: "longcat-flash-chat" },
   { provider: "ant-ling", model: "ling-1t" },
+];
+
+/** Free providers used as last resort after the main model. */
+export const EXTRACTION_OTHER_FREE: ExtractionProviderOption[] = [
   { provider: "siliconflow", model: "deepseek-ai/DeepSeek-V3" },
   { provider: "modelscope", model: "Qwen/Qwen3.5-397B-A17B" },
+];
+
+/** Full fallback chain (for backward compat). */
+export const EXTRACTION_FALLBACK_CHAIN: ExtractionProviderOption[] = [
+  ...EXTRACTION_PREFERRED_FREE,
+  ...EXTRACTION_OTHER_FREE,
 ];
 
 type ResolvedExtractionProvider = {
@@ -269,8 +287,14 @@ type ResolvedExtractionProvider = {
 };
 
 /**
- * Resolve the best available extraction provider+key, trying the fallback chain.
- * Returns null only if absolutely no provider is available (including main model).
+ * Resolve the best available extraction provider+key.
+ * Returns null only if absolutely no provider is available.
+ *
+ * Priority order:
+ *   1. User's explicit memoryExtraction config (provider + model)
+ *   2. Free preferred providers (longcat, bailing) — fast & free
+ *   3. User's main chat model — guarantees memory works with the model they're already paying for
+ *   4. Free other providers (siliconflow, modelscope) — last resort
  *
  * Main model fallback is restricted to OpenAI-compatible providers — the memory
  * pipeline sends raw fetch() to /chat/completions, which doesn't work for
@@ -297,13 +321,13 @@ function resolveExtractionProvider(
     }
   }
 
-  // 2. Try fallback chain (skip the primary, already tried)
-  for (const fb of EXTRACTION_FALLBACK_CHAIN) {
+  // 2. Try preferred free providers (longcat, bailing) — fast & free
+  for (const fb of EXTRACTION_PREFERRED_FREE) {
     if (fb.provider === settings.provider) continue;
     const key = resolveMemoryProviderApiKey(cfg, fb.provider);
     if (key) {
       const baseUrl = resolveMemoryProviderBaseUrl(cfg, fb.provider);
-      if (!baseUrl) continue; // Skip providers with no known base URL
+      if (!baseUrl) continue;
       return {
         provider: fb.provider,
         model: fb.model,
@@ -314,9 +338,8 @@ function resolveExtractionProvider(
     }
   }
 
-  // 3. Last resort: use the user's main model (costs tokens on their paid plan).
-  // Only works for OpenAI-compatible providers — Anthropic/Ollama/Bedrock use
-  // different wire formats that our raw fetch() can't handle.
+  // 3. User's main chat model — the model they're already using for conversation.
+  // Only works for OpenAI-compatible providers.
   if (mainProvider && mainModel && isOpenAICompatibleProvider(mainProvider)) {
     const mainKey = resolveMemoryProviderApiKey(cfg, mainProvider);
     const mainBaseUrl = resolveMemoryProviderBaseUrl(cfg, mainProvider);
@@ -331,14 +354,45 @@ function resolveExtractionProvider(
     }
   }
 
+  // 4. Other free providers as last resort (siliconflow, modelscope)
+  for (const fb of EXTRACTION_OTHER_FREE) {
+    if (fb.provider === settings.provider) continue;
+    const key = resolveMemoryProviderApiKey(cfg, fb.provider);
+    if (key) {
+      const baseUrl = resolveMemoryProviderBaseUrl(cfg, fb.provider);
+      if (!baseUrl) continue;
+      return {
+        provider: fb.provider,
+        model: fb.model,
+        apiKey: key,
+        baseUrl,
+        headers: resolveMemoryProviderHeaders(fb.provider),
+      };
+    }
+  }
+
   return null;
 }
 
 /**
  * 查询当前可用的记忆提取 provider（只检查 API key 是否存在，不发起 LLM 调用）。
  * 用于 UI 展示记忆提取模型状态。
+ *
+ * 优先级：
+ *   1. 用户显式配置的 memoryExtraction provider
+ *   2. 免费优先 (longcat / bailing) — 快速免费
+ *   3. 用户当前主聊天模型 — 保证记忆功能可用
+ *   4. 其他免费 (siliconflow / modelscope) — 最后兜底
+ *
+ * [CN-PATCH] 只检查用户明确配置的 provider（config apiKey + freeModels accounts），
+ * 跳过环境变量，防止 fallback 到用户未主动配置的服务商（如环境变量里碰巧有
+ * SILICONFLOW_API_KEY 就 fallback 到 deepseek-ai/DeepSeek-V3 的问题）。
  */
-export function getExtractionProviderStatus(cfg?: OpenClawCNConfig): {
+export function getExtractionProviderStatus(
+  cfg?: OpenClawCNConfig,
+  mainProvider?: string,
+  mainModel?: string,
+): {
   provider: string | null;
   model: string | null;
   status: "active" | "inactive";
@@ -346,17 +400,38 @@ export function getExtractionProviderStatus(cfg?: OpenClawCNConfig): {
   const settings = resolveMemoryExtractionSettings(cfg);
   if (!settings) return { provider: null, model: null, status: "inactive" };
 
+  const keyOpts = { skipEnvVar: true };
+
   // 1. 尝试配置的 primary provider
-  const primaryKey = resolveMemoryProviderApiKey(cfg, settings.provider);
+  const primaryKey = resolveMemoryProviderApiKey(cfg, settings.provider, keyOpts);
   if (primaryKey) {
     const baseUrl = resolveMemoryProviderBaseUrl(cfg, settings.provider);
     if (baseUrl) return { provider: settings.provider, model: settings.model, status: "active" };
   }
 
-  // 2. 遍历 fallback chain
-  for (const fb of EXTRACTION_FALLBACK_CHAIN) {
+  // 2. 免费优先 (longcat / bailing)
+  for (const fb of EXTRACTION_PREFERRED_FREE) {
     if (fb.provider === settings.provider) continue;
-    const key = resolveMemoryProviderApiKey(cfg, fb.provider);
+    const key = resolveMemoryProviderApiKey(cfg, fb.provider, keyOpts);
+    if (key) {
+      const baseUrl = resolveMemoryProviderBaseUrl(cfg, fb.provider);
+      if (baseUrl) return { provider: fb.provider, model: fb.model, status: "active" };
+    }
+  }
+
+  // 3. 用户主聊天模型 — 默认使用当前选择的模型
+  if (mainProvider && mainModel && isOpenAICompatibleProvider(mainProvider)) {
+    const mainKey = resolveMemoryProviderApiKey(cfg, mainProvider, keyOpts);
+    if (mainKey) {
+      const mainBaseUrl = resolveMemoryProviderBaseUrl(cfg, mainProvider);
+      if (mainBaseUrl) return { provider: mainProvider, model: mainModel, status: "active" };
+    }
+  }
+
+  // 4. 其他免费 (siliconflow / modelscope)
+  for (const fb of EXTRACTION_OTHER_FREE) {
+    if (fb.provider === settings.provider) continue;
+    const key = resolveMemoryProviderApiKey(cfg, fb.provider, keyOpts);
     if (key) {
       const baseUrl = resolveMemoryProviderBaseUrl(cfg, fb.provider);
       if (baseUrl) return { provider: fb.provider, model: fb.model, status: "active" };
@@ -529,23 +604,75 @@ function buildUserPrompt(commandBody: string, agentReplyText: string): string {
  * Used to skip unnecessary upserts when the extraction LLM re-extracts
  * an existing fact with near-identical wording.
  */
-function isSimilarValue(a: string, b: string): boolean {
+/** @internal Exported for testing. Check if two profile values are substantially the same. */
+export function _isSimilarValue(a: string, b: string): boolean {
   const normA = a.trim().toLowerCase();
   const normB = b.trim().toLowerCase();
   if (normA === normB) return true;
   // For very short values, require exact match
   if (normA.length < 5 || normB.length < 5) return normA === normB;
-  // Quick length-based reject: if lengths differ by >30%, likely different
   const shorter = Math.min(normA.length, normB.length);
   const longer = Math.max(normA.length, normB.length);
-  if (shorter / longer < 0.7) return false;
-  // Containment check: only "similar" if the shorter covers >80% of the longer.
-  // Without this threshold, "typescript" would match "typescript, not javascript"
-  // and suppress a legitimate value update (adding info).
-  if (shorter / longer > 0.8 && (normA.includes(normB) || normB.includes(normA))) {
+  // [CN-PATCH:memory-fix] Improved similarity detection to accept legitimate updates.
+  // Old logic: containment + >80% length ratio → "similar" (rejected update).
+  // Problem: "喜欢TypeScript" vs "喜欢TypeScript和Rust" was rejected because the
+  // old value is contained in the new one and ratio was high enough.
+  // New logic: When the new value is significantly longer (>20% longer), it likely
+  // carries additional information. Only treat as "similar" (reject) when:
+  // 1. Length ratio is very close (>90%) AND one contains the other, OR
+  // 2. Levenshtein-style character edit distance is very small (<10% of longer).
+  if (shorter / longer < 0.5) return false; // very different lengths → not similar
+
+  // High overlap containment: only "similar" when lengths are nearly equal (>90% ratio)
+  // and one string fully contains the other.
+  if (shorter / longer > 0.9 && (normA.includes(normB) || normB.includes(normA))) {
     return true;
   }
+
+  // Character-level edit distance — only for strings ≥30 chars where typo-level edits
+  // are unlikely to be semantically meaningful. For short strings (<30 chars), even a
+  // 1-2 char edit can completely change meaning (e.g., "Python 3.9" → "Python 3.10",
+  // "lives in Beijing" → "lives in Shanghai"). The containment check above already
+  // handles the near-identical short string case (>90% ratio + containment).
+  //
+  // Upper bound raised to PROFILE_MAX_VALUE_LENGTH (800 chars) — 800×800 = 640K
+  // iterations is still sub-millisecond on modern hardware.
+  if (longer >= 30 && longer <= PROFILE_MAX_VALUE_LENGTH) {
+    const dist = _levenshteinDistance(normA, normB);
+    // ≤8% of the longer string → "similar" (typo-level edits)
+    // For 30-char string: threshold = 3 (allows ~3 typo fixes)
+    // For 100-char string: threshold = 8
+    // For 800-char string: threshold = 64
+    if (dist <= Math.ceil(longer * 0.08)) return true;
+  }
+
   return false;
+}
+
+/**
+ * Compute Levenshtein edit distance between two strings.
+ * Uses single-row DP for O(min(m,n)) space.
+ */
+/** @internal Exported for testing. */
+export function _levenshteinDistance(a: string, b: string): number {
+  if (a.length > b.length) [a, b] = [b, a]; // ensure a is shorter
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+
+  let prev = new Array<number>(m + 1);
+  let curr = new Array<number>(m + 1);
+  for (let i = 0; i <= m; i++) prev[i] = i;
+
+  for (let j = 1; j <= n; j++) {
+    curr[0] = j;
+    for (let i = 1; i <= m; i++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[i] = Math.min(prev[i] + 1, curr[i - 1] + 1, prev[i - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[m];
 }
 
 // ── Extraction Queue (SQLite) ──
@@ -808,14 +935,29 @@ async function _processFileBacklog(params: {
     }
   }
 
-  // Rewrite file with unprocessed + remaining entries
+  // [CN-PATCH:memory-fix] Rewrite file with unprocessed + remaining entries.
+  // Race condition guard: `enqueueFailedExtraction` can appendFileSync new entries
+  // while we were processing (async LLM calls take seconds). If we blindly overwrite,
+  // those appended entries are lost. Solution: re-read the file and preserve any lines
+  // beyond our original snapshot.
   try {
     const unprocessed = toProcess.slice(processed);
-    const newContent =
-      [...unprocessed, ...remaining].join("\n") +
-      (remaining.length > 0 || unprocessed.length > 0 ? "\n" : "");
-    if (newContent.trim()) {
-      nodefs.writeFileSync(queuePath, newContent, "utf-8");
+    const ours = [...unprocessed, ...remaining];
+    // Re-read to detect entries appended during processing
+    let appended: string[] = [];
+    try {
+      const currentRaw = nodefs.readFileSync(queuePath, "utf-8");
+      const currentLines = currentRaw.split("\n").filter((l) => l.trim());
+      // Entries beyond our original line count were appended concurrently
+      if (currentLines.length > lines.length) {
+        appended = currentLines.slice(lines.length);
+      }
+    } catch {
+      /* file may have been deleted — no appended entries */
+    }
+    const finalContent = [...ours, ...appended];
+    if (finalContent.length > 0) {
+      nodefs.writeFileSync(queuePath, finalContent.join("\n") + "\n", "utf-8");
     } else {
       try {
         nodefs.unlinkSync(queuePath);
@@ -845,7 +987,7 @@ async function applyExtractedEntries(
         e.key.toLowerCase() === extracted.key.trim().toLowerCase(),
     );
     if (!existing) return true;
-    return !isSimilarValue(existing.value, extracted.value);
+    return !_isSimilarValue(existing.value, extracted.value);
   });
 
   if (preFiltered.length === 0) return;
@@ -934,7 +1076,21 @@ export async function runPostReplyMemoryExtraction(params: {
     params.followupRun.run.model,
   );
   if (!resolved) {
-    // No API key — enqueue for retry when a provider becomes available
+    // [CN-PATCH:memory-fix] Log a clear warning so the issue is diagnosable.
+    // Uses warn (not error) because "no provider configured" is the default state
+    // for users who haven't set up free model accounts — not a runtime error.
+    // Per-workspace dedup: only warn once per workspace to avoid log spam.
+    const mainProv = params.followupRun.run.provider;
+    if (mainProv && !_noProviderWarned.has(workspaceDir)) {
+      if (_noProviderWarned.size >= _NO_PROVIDER_WARNED_MAX) _noProviderWarned.clear();
+      _noProviderWarned.add(workspaceDir);
+      const isCompat = isOpenAICompatibleProvider(mainProv);
+      logVerbose(
+        `[MemoryExtraction] No compatible provider available. ` +
+          `Main model "${mainProv}" is ${isCompat ? "compatible but has no API key" : "NOT OpenAI-compatible (memory extraction requires /chat/completions)"}. ` +
+          `Configure agents.defaults.memoryExtraction.provider or add a free provider API key.`,
+      );
+    }
     enqueueFailedExtraction(workspaceDir, params.commandBody, params.agentReplyText);
     return;
   }

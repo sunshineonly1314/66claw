@@ -87,6 +87,7 @@ const CAPABILITY_DISPLAY_NAMES: Record<CapabilityKey, string> = {
   code: "代码生成",
   vision: "图片理解",
   imageGen: "图片生成",
+  imageEdit: "图片编辑",
   video: "视频理解",
   videoGen: "视频生成",
   audio: "语音识别",
@@ -101,6 +102,7 @@ const CAPABILITY_ICONS: Record<CapabilityKey, string> = {
   code: "code",
   vision: "eye",
   imageGen: "image",
+  imageEdit: "edit",
   video: "video",
   videoGen: "film",
   audio: "mic",
@@ -115,6 +117,7 @@ const CAPABILITY_DESCRIPTIONS: Record<CapabilityKey, string> = {
   code: "代码生成、调试、重构",
   vision: "图片和文档理解分析",
   imageGen: "文字生成图片",
+  imageEdit: "AI 图片编辑和修改",
   video: "视频内容理解分析",
   videoGen: "文字生成视频",
   audio: "语音识别转文字（ASR）",
@@ -127,7 +130,7 @@ const CAPABILITY_DESCRIPTIONS: Record<CapabilityKey, string> = {
  * Capabilities hidden from the UI in this release.
  * The underlying data/handlers are preserved; they are just filtered from API responses.
  */
-const HIDDEN_CAPABILITIES = new Set<CapabilityKey>(["tts"]);
+const HIDDEN_CAPABILITIES = new Set<CapabilityKey>(["imageEdit"]);
 
 export const capabilityMatrixHandlers: GatewayRequestHandlers = {
   /**
@@ -149,10 +152,44 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
       };
       const userChoices = cfg.modelCapability?.capabilities ?? {};
 
+      // Enrich audio/tts with volcengine voice credentials status
+      let volcVoiceConfigured = false;
+      try {
+        const { hasVolcengineVoiceCredentials } =
+          await import("../../voice/volcengine-credentials.js");
+        volcVoiceConfigured = hasVolcengineVoiceCredentials();
+      } catch {
+        /* ignore */
+      }
+
       const capabilities = allKeys.map((key) => {
         const available = summary.available.find((a) => a.capability === key);
         const unconfigured = summary.unconfigured.find((u) => u.capability === key);
         const isMissing = summary.missing.includes(key);
+
+        // Special: volcengine voice injects audio/tts as active
+        if ((key === "audio" || key === "tts") && !available && volcVoiceConfigured) {
+          return {
+            key,
+            name: CAPABILITY_DISPLAY_NAMES[key],
+            icon: CAPABILITY_ICONS[key],
+            description: CAPABILITY_DESCRIPTIONS[key],
+            status: "active" as const,
+            bestModel: {
+              provider: "volcengine-ark",
+              modelId: key === "audio" ? "bigmodel" : "BV005_streaming",
+              displayName: key === "audio" ? "火山引擎 ASR" : "火山引擎 TTS",
+              quality: 4,
+              costTier: "standard",
+              region: "domestic",
+              maxContextTokens: 0,
+              capabilities: { [key]: 4 },
+              strengthTier: "strong",
+              auto: true,
+            },
+            alternatives: 0,
+          };
+        }
 
         if (available) {
           // If user explicitly chose a model for this capability, use that instead of bestCard
@@ -195,7 +232,7 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
                 strengthTier: "moderate",
                 tags: [],
                 languages: [],
-                runtime: { configured: true, health: "unknown" as const, probeResults: {} },
+                runtime: { configured: true, health: "degraded" as const, probeResults: {} },
               } as EnrichedCard;
             }
           }
@@ -496,12 +533,15 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
    */
   "capability_matrix.provider.detect": async ({ params, respond, context, client }) => {
     try {
-      const { providerId, apiKey, customModel, baseUrl } = params as {
+      const { providerId, apiKey, customModel, baseUrl, volcAppId, volcAccessToken } = params as {
         providerId: string;
         apiKey: string;
         customModel?: string;
         baseUrl?: string;
+        volcAppId?: string;
+        volcAccessToken?: string;
       };
+
       if (!providerId || typeof providerId !== "string") {
         respond(
           false,
@@ -517,6 +557,17 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
           errorShape(ErrorCodes.INVALID_REQUEST, "Missing parameter: apiKey"),
         );
         return;
+      }
+      // Save volcengine voice credentials AFTER input validation passes
+      if (providerId === "volcengine-ark" && volcAppId && volcAccessToken) {
+        try {
+          const { saveVolcengineVoiceCredentials } =
+            await import("../../voice/volcengine-credentials.js");
+          await saveVolcengineVoiceCredentials(volcAppId, volcAccessToken);
+          log.info("Volcengine voice credentials saved during provider detect");
+        } catch (err) {
+          log.warn(`Failed to save volcengine voice credentials: ${err}`);
+        }
       }
       const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
       const totalModels = mapping
@@ -707,11 +758,25 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
   /**
    * 查询记忆提取 LLM 的当前状态（哪个 provider 可用）。
    * 用于 UI "记忆" 卡片中展示记忆提取模型信息。
+   *
+   * 传入当前主聊天模型（text 能力绑定），使 UI 状态与运行时优先级一致：
+   * longcat/bailing → 主聊天模型 → siliconflow/modelscope
    */
   "capability_matrix.extractionStatus": async ({ respond }) => {
     try {
       const cfg = loadConfig();
-      const status = _getExtractionProviderStatus(cfg);
+      // 获取当前主聊天模型 (text 能力) 的 provider/model
+      const capCfg = (
+        cfg as {
+          modelCapability?: {
+            capabilities?: Record<string, { providerId: string; modelId: string }>;
+          };
+        }
+      ).modelCapability;
+      const textBinding = capCfg?.capabilities?.["text"];
+      const mainProvider = textBinding?.providerId;
+      const mainModel = textBinding?.modelId;
+      const status = _getExtractionProviderStatus(cfg, mainProvider, mainModel);
       respond(true, status, undefined);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));

@@ -47,6 +47,21 @@ const CHANNEL_DESCRIPTIONS: Record<string, string> = {
   nostr: "Nostr 去中心化协议",
 };
 
+// 渠道头像缩写（用于 sidebar + detail 的方块头像）
+const CHANNEL_AVATARS: Record<string, string> = {
+  feishu: "飞", dingtalk: "钉", wecom: "企", qqbot: "Q", openclawwechat: "微",
+  whatsapp: "W", telegram: "T", discord: "D", googlechat: "G",
+  slack: "S", signal: "Si", imessage: "iM", nostr: "N",
+};
+
+// Feature tag 分类：根据关键词决定颜色
+function featureTagClass(feature: string): string {
+  if (/聊|消息|@|Thread|频道/.test(feature)) return "ch-detail__feature-tag--messaging";
+  if (/图片|文件|文档|视频|收发|Markdown/.test(feature)) return "ch-detail__feature-tag--media";
+  if (/加密|安全|抗审查/.test(feature)) return "ch-detail__feature-tag--security";
+  return "";
+}
+
 // 渠道特性列表
 const CHANNEL_FEATURES: Record<string, string[]> = {
   feishu: ["私聊消息", "群聊 @机器人", "图片/文件收发", "Markdown 卡片", "无需公网 IP", "文档读写"],
@@ -124,19 +139,30 @@ function renderSidebarItem(
   const label = CHANNEL_LABELS[key] ?? resolveChannelLabel(props.snapshot, key);
   const status = getChannelStatus(key, props);
   const isActive = props.channelsSelectedKey === key;
-  const dotClass = status.running
-    ? "status-dot--running"
+  const avatar = CHANNEL_AVATARS[key] ?? key.charAt(0).toUpperCase();
+  const avatarRunning = status.running ? " ch-sidebar-avatar--running" : "";
+
+  const statusText = status.running
+    ? t("common.running")
     : status.configured
-      ? "status-dot--configured"
-      : "status-dot--unconfigured";
+      ? t("common.stopped")
+      : t("channels.notConfigured");
+  const statusClass = status.running
+    ? "ch-sidebar-status ch-sidebar-status--running"
+    : status.configured
+      ? "ch-sidebar-status ch-sidebar-status--configured"
+      : "ch-sidebar-status";
 
   return html`
     <button
       class="ch-sidebar-item ${isActive ? "ch-sidebar-item--active" : ""}"
       @click=${() => props.onSelectChannel(key)}
     >
-      <span class="status-dot ${dotClass}"></span>
-      <span class="ch-sidebar-item__label">${label}</span>
+      <span class="ch-sidebar-avatar${avatarRunning}">${avatar}</span>
+      <span class="ch-sidebar-info">
+        <span class="ch-sidebar-name">${label}</span>
+        <span class="${statusClass}">${statusText}</span>
+      </span>
     </button>
   `;
 }
@@ -160,13 +186,26 @@ function renderChannelSidebar(props: ChannelsProps) {
   domestic.sort(sortFn);
   international.sort(sortFn);
 
+  const domesticActive = domestic.filter((c) => c.enabled).length;
+  const internationalActive = international.filter((c) => c.enabled).length;
+
   return html`
     <div class="ch-sidebar-group">
-      <div class="ch-sidebar-group__title">${t("channels.sidebar.domestic")}</div>
+      <div class="ch-sidebar-group__title">
+        ${t("channels.sidebar.domestic")}
+        ${domesticActive > 0
+          ? html`<span class="ch-sidebar-group__count">${domesticActive}/${domestic.length}</span>`
+          : nothing}
+      </div>
       ${domestic.map((c) => renderSidebarItem(c.key, props))}
     </div>
     <div class="ch-sidebar-group">
-      <div class="ch-sidebar-group__title">${t("channels.sidebar.international")}</div>
+      <div class="ch-sidebar-group__title">
+        ${t("channels.sidebar.international")}
+        ${internationalActive > 0
+          ? html`<span class="ch-sidebar-group__count">${internationalActive}/${international.length}</span>`
+          : nothing}
+      </div>
       ${international.map((c) => renderSidebarItem(c.key, props))}
     </div>
   `;
@@ -186,14 +225,18 @@ function renderChannelWelcome(props: ChannelsProps) {
 
   return html`
     <div class="ch-welcome">
-      <div class="ch-welcome__stats">
-        <div class="ch-welcome__stat">
+      <div class="ch-welcome__stats-row">
+        <div class="ch-welcome__stat-card ch-welcome__stat-card--ok">
           <div class="ch-welcome__stat-value">${runningCount}</div>
           <div class="ch-welcome__stat-label">${t("common.running")}</div>
         </div>
-        <div class="ch-welcome__stat">
+        <div class="ch-welcome__stat-card ch-welcome__stat-card--accent">
           <div class="ch-welcome__stat-value">${configuredCount}</div>
           <div class="ch-welcome__stat-label">${t("channels.configured")}</div>
+        </div>
+        <div class="ch-welcome__stat-card">
+          <div class="ch-welcome__stat-value">${ALL_SUPPORTED_CHANNELS.length}</div>
+          <div class="ch-welcome__stat-label">${t("channels.available") ?? "可用渠道"}</div>
         </div>
       </div>
       ${configuredCount === 0
@@ -298,6 +341,7 @@ function renderChannelDetail(key: ChannelKey, props: ChannelsProps) {
   const features = CHANNEL_FEATURES[key] ?? [];
   const status = getChannelStatus(key, props);
   const accounts = props.snapshot?.channelAccounts?.[key] ?? [];
+  const avatar = CHANNEL_AVATARS[key] ?? key.charAt(0).toUpperCase();
 
   // Status badge
   const statusBadge = status.running
@@ -308,20 +352,23 @@ function renderChannelDetail(key: ChannelKey, props: ChannelsProps) {
 
   return html`
     <div class="ch-detail">
-      <!-- Header -->
-      <div class="ch-detail__header">
-        <div class="ch-detail__title-row">
-          <h2 class="ch-detail__title">${label}</h2>
-          ${statusBadge}
+      <!-- Hero header -->
+      <div class="ch-detail__hero">
+        <span class="ch-sidebar-avatar ch-sidebar-avatar--lg${status.running ? " ch-sidebar-avatar--running" : ""}">${avatar}</span>
+        <div class="ch-detail__hero-body">
+          <div class="ch-detail__title-row">
+            <h2 class="ch-detail__title">${label}</h2>
+            ${statusBadge}
+          </div>
+          <p class="ch-detail__desc">${description}</p>
         </div>
-        <p class="ch-detail__desc">${description}</p>
       </div>
 
       <!-- Features -->
       ${features.length > 0
         ? html`
           <div class="ch-detail__features">
-            ${features.map((f) => html`<span class="ch-detail__feature-tag">${f}</span>`)}
+            ${features.map((f) => html`<span class="ch-detail__feature-tag ${featureTagClass(f)}">${f}</span>`)}
           </div>
         `
         : nothing}
@@ -342,8 +389,10 @@ function renderChannelDetail(key: ChannelKey, props: ChannelsProps) {
             </div>
           `
           : html`
-            <div class="ch-detail__empty">
-              <p>${t("channels.detail.noBots")}</p>
+            <div class="ch-detail__onboard">
+              <div class="ch-detail__onboard-icon">+</div>
+              <h4 class="ch-detail__onboard-title">${t("channels.detail.noBots")}</h4>
+              <p class="ch-detail__onboard-desc">${t("channels.welcome.desc")}</p>
               <button class="btn primary" @click=${() => props.onWizardOpen()}>
                 ${t("channels.detail.addBot")}
               </button>

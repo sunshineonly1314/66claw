@@ -183,7 +183,7 @@ describe("Attack: Boundary conditions", () => {
   it("readProfile on nonexistent workspace returns empty", () => {
     const result = readProfile("/nonexistent/workspace/path");
     expect(result.entries).toHaveLength(0);
-    expect(result.version).toBe(1);
+    expect(result.version).toBe(2);
   });
 
   it("readProfile on empty file returns empty profile", () => {

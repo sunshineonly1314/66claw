@@ -17,6 +17,7 @@ import type {
   TeamProjectStatsResult,
   TeamSharedMemoryEntry,
   TeamMemberHealthState,
+  TeamActivityEvent,
 } from "../types.js";
 import {
   normalizeAgentLabel,
@@ -25,7 +26,7 @@ import {
 
 // ── Types ───────────────────────────────────────────────────────────────
 
-export type ProjectDetailTab = "members" | "stats" | "settings" | "memory";
+export type ProjectDetailTab = "members" | "activity" | "stats" | "settings" | "memory";
 
 export type ProjectSidebarProps = {
   projects: TeamProjectSummary[] | null;
@@ -48,11 +49,14 @@ export type ProjectDetailProps = {
   health: TeamProjectHealthResult | null;
   stats: TeamProjectStatsResult | null;
   memory: TeamSharedMemoryEntry[] | null;
+  activity: TeamActivityEvent[] | null;
   tab: ProjectDetailTab;
   busy: boolean;
   agentIdentityById: Record<string, AgentIdentityResult>;
   /** All available agents for "add member" picker */
   allAgents?: AgentsListResult | null;
+  /** Error feedback for user-visible toast */
+  error?: string | null;
   onSelectTab: (tab: ProjectDetailTab) => void;
   onPause: (projectId: string) => void;
   onResume: (projectId: string) => void;
@@ -60,9 +64,12 @@ export type ProjectDetailProps = {
   onLoadStats: (projectId: string) => void;
   onLoadMemory: (projectId: string) => void;
   onClearMemory: (projectId: string) => void;
+  onLoadActivity: (projectId: string) => void;
   onUpdateSettings?: (projectId: string, updates: Record<string, unknown>) => void;
   onRemoveMember?: (projectId: string, agentId: string) => void;
+  onAddMember?: (projectId: string, agentId: string, name: string, role: string) => void;
   onSelectAgent?: (agentId: string) => void;
+  onDismissError?: () => void;
 };
 
 // ── Sidebar: Project Groups ─────────────────────────────────────────────
@@ -104,7 +111,7 @@ export function renderProjectSidebarGroups(props: ProjectSidebarProps): Template
 
   return html`
     ${projects.map((project) => renderProjectGroup(project, props))}
-    ${orchGroups.size > 0 ? [...orchGroups.entries()].map(([orchId, agents]) => html`
+    ${orchGroups.size > 0 ? [...orchGroups.entries()].map(([_orchId, agents]) => html`
       <div class="orch-group">
         <div class="orch-group-header">
           <span class="project-status-dot project-status-dot--warn"></span>
@@ -243,9 +250,18 @@ export function renderProjectDetail(props: ProjectDetailProps): TemplateResult {
   const project = props.detail.project;
 
   return html`
+    ${props.error ? html`
+      <div class="callout danger" style="margin-bottom: 8px;">
+        ${props.error}
+        ${props.onDismissError ? html`
+          <button class="btn btn--xs" style="margin-left: 8px;" @click=${props.onDismissError}>×</button>
+        ` : nothing}
+      </div>
+    ` : nothing}
     ${renderProjectHeader(project, props)}
     ${renderProjectTabs(props.tab, props.onSelectTab)}
     ${props.tab === "members" ? renderProjectMembers(project, props) : nothing}
+    ${props.tab === "activity" ? renderProjectActivityPanel(project, props) : nothing}
     ${props.tab === "stats" ? renderProjectStatsPanel(project, props) : nothing}
     ${props.tab === "settings" ? renderProjectSettings(project, props) : nothing}
     ${props.tab === "memory" ? renderProjectMemoryPanel(project, props) : nothing}
@@ -270,7 +286,7 @@ function renderProjectHeader(
         </div>
         <div>
           <div class="card-title" style="margin-bottom: 4px;">${project.name}</div>
-          <div class="card-sub">${project.description || "—"}</div>
+          <div class="card-sub">${project.description || "\u2014"}</div>
         </div>
       </div>
       <div class="agent-header-meta">
@@ -289,7 +305,7 @@ function renderProjectHeader(
           class="btn btn--sm btn--danger"
           ?disabled=${props.busy}
           @click=${() => {
-            if (confirm(t("team.action.deleteConfirm").replace("{{name}}", project.name))) {
+            if (confirm((t as (k: string, v?: Record<string, string>) => string)("team.action.deleteConfirm", { name: project.name }))) {
               props.onDelete(project.projectId);
             }
           }}
@@ -307,6 +323,7 @@ function renderProjectTabs(
 ): TemplateResult {
   const tabs: { id: ProjectDetailTab; label: string }[] = [
     { id: "members", label: t("team.members") },
+    { id: "activity", label: t("team.activity") },
     { id: "stats", label: t("team.stats") },
     { id: "settings", label: t("team.settings") },
     { id: "memory", label: t("team.memory") },
@@ -325,6 +342,19 @@ function renderProjectTabs(
   `;
 }
 
+// ── Tooltip helper ──────────────────────────────────────────────────────
+
+function helpIcon(key: string): TemplateResult {
+  return html`
+    <span class="team-help-icon" title="${t(key as any)}">
+      <svg viewBox="0 0 16 16" width="14" height="14" style="vertical-align: -2px; opacity: 0.5;">
+        <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <text x="8" y="12" text-anchor="middle" font-size="10" fill="currentColor">?</text>
+      </svg>
+    </span>
+  `;
+}
+
 // ── Members (Enhanced) Panel ───────────────────────────────────────────
 
 function renderProjectMembers(
@@ -334,9 +364,43 @@ function renderProjectMembers(
   const health = props.health;
   const members = project.members;
 
+  // Find agents not yet in this project (for "add member" picker)
+  const allAgentsList = props.allAgents?.agents ?? [];
+  const memberIdSet = new Set(project.memberIds);
+  const availableAgents = allAgentsList.filter((a) => !memberIdSet.has(a.id));
+
   return html`
     <div class="card">
-      <div class="card-title" style="margin-bottom: 12px;">${t("team.members")} (${members.length})</div>
+      <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+        <div class="card-title">${t("team.members")} (${members.length})</div>
+        ${props.onAddMember && availableAgents.length > 0 ? html`
+          <div class="project-add-member-row">
+            <select
+              class="input input--sm"
+              id="add-member-select"
+              ?disabled=${props.busy}
+            >
+              <option value="">${t("team.action.addMemberHint")}</option>
+              ${availableAgents.map((a) => html`
+                <option value="${a.id}">${normalizeAgentLabel(a)}</option>
+              `)}
+            </select>
+            <button
+              class="btn btn--sm"
+              ?disabled=${props.busy}
+              @click=${() => {
+                const sel = document.getElementById("add-member-select") as HTMLSelectElement | null;
+                if (!sel || !sel.value) return;
+                const agent = allAgentsList.find((a) => a.id === sel.value);
+                if (!agent) return;
+                const name = normalizeAgentLabel(agent);
+                props.onAddMember!(project.projectId, agent.id, name, "");
+                sel.value = "";
+              }}
+            >${t("team.action.addMember")}</button>
+          </div>
+        ` : nothing}
+      </div>
       <div class="project-members-cards">
         ${members.map((m) => {
           const h = health?.members.find((hm) => hm.agentId === m.id);
@@ -355,7 +419,7 @@ function renderProjectMembers(
                 <div class="project-member-card-info">
                   <div class="agent-title">
                     ${m.name}
-                    ${isSupervisor ? html`<span class="agent-pill ok" style="margin-left: 6px; font-size: 10px;">Supervisor</span>` : nothing}
+                    ${isSupervisor ? html`<span class="agent-pill ok" style="margin-left: 6px; font-size: 10px;">${t("team.supervisor")}</span>` : nothing}
                   </div>
                   <div class="agent-sub">${m.role}</div>
                 </div>
@@ -391,12 +455,92 @@ function renderProjectMembers(
                     class="btn btn--xs btn--danger"
                     ?disabled=${props.busy}
                     @click=${() => {
-                      if (confirm(t("team.action.removeMemberConfirm").replace("{{name}}", m.name))) {
+                      if (confirm((t as (k: string, v?: Record<string, string>) => string)("team.action.removeMemberConfirm", { name: m.name }))) {
                         props.onRemoveMember!(project.projectId, m.id);
                       }
                     }}
                   >${t("team.action.remove")}</button>
                 ` : nothing}
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
+// ── Activity Feed Panel ─────────────────────────────────────────────────
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function formatRouteMethod(method: string): string {
+  const key = `team.activity.routeMethod.${method === "supervisor-llm" ? "supervisorLlm" : method}` as any;
+  return t(key) || method;
+}
+
+function renderProjectActivityPanel(
+  project: TeamProjectDetail["project"],
+  props: ProjectDetailProps,
+): TemplateResult {
+  const events = props.activity;
+
+  if (events === null) {
+    return html`<div class="card"><div class="muted">${t("agents.loading")}</div></div>`;
+  }
+
+  if (events.length === 0) {
+    return html`
+      <div class="card">
+        <div class="muted">${t("team.activity.noEvents")}</div>
+      </div>
+    `;
+  }
+
+  return html`
+    <div class="card">
+      <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+        <div class="card-title">${t("team.activity")}</div>
+        <span class="team-activity-live">
+          <span class="team-activity-live-dot"></span>
+          ${t("team.activity.live")}
+        </span>
+      </div>
+      <div class="team-activity-feed">
+        ${events.map((ev) => {
+          const member = project.members.find((m) => m.id === ev.agentId);
+          const emoji = ev.agentEmoji || member?.emoji || "";
+          const name = ev.agentName || member?.name || ev.agentId;
+          const statusClass = ev.success === false ? "danger" : ev.error ? "warn" : "ok";
+          const statusText = ev.success === false
+            ? (ev.error ? t("team.activity.failed") : t("team.activity.timeout"))
+            : t("team.activity.success");
+
+          return html`
+            <div class="team-activity-event">
+              <div class="team-activity-event-time mono">${formatTime(ev.timestamp)}</div>
+              <div class="team-activity-event-line"></div>
+              <div class="team-activity-event-body">
+                <div class="team-activity-event-header">
+                  <span class="agent-avatar agent-avatar--xs">${emoji || name.slice(0, 1)}</span>
+                  <span class="agent-title" style="font-size: 13px;">${name}</span>
+                  <span class="agent-sub" style="margin-left: 4px;">${t("team.activity.replied")} ${ev.peerId ?? ""}</span>
+                </div>
+                ${ev.replySummary ? html`
+                  <div class="team-activity-event-summary">${ev.replySummary}</div>
+                ` : nothing}
+                <div class="team-activity-event-meta">
+                  <span class="keyword-chip">${formatRouteMethod(ev.method)}</span>
+                  ${ev.matchedPattern ? html`<span class="keyword-chip">"${ev.matchedPattern}"</span>` : nothing}
+                  <span class="keyword-chip">${(ev.confidence * 100).toFixed(0)}%</span>
+                  ${ev.durationMs != null ? html`<span class="mono" style="font-size: 11px; color: var(--muted);">${(ev.durationMs / 1000).toFixed(1)}s</span>` : nothing}
+                  <span class="agent-pill ${statusClass}" style="font-size: 10px;">${statusText}</span>
+                </div>
               </div>
             </div>
           `;
@@ -447,7 +591,7 @@ function renderProjectStatsPanel(
               <div class="project-stat-bar" style="width: ${pct}%;"></div>
             </div>
             <span class="project-stat-value mono">${m.callCount}</span>
-            <span class="agent-sub">${m.avgDurationMs}ms avg</span>
+            <span class="agent-sub">${m.avgDurationMs}ms ${t("team.detail.msAvg")}</span>
           </div>
         `;
       })}
@@ -455,7 +599,7 @@ function renderProjectStatsPanel(
   `;
 }
 
-// ── Settings Panel (Editable) ──────────────────────────────────────────
+// ── Settings Panel (Editable, with tooltips + new sections) ─────────────
 
 function renderProjectSettings(
   project: TeamProjectDetail["project"],
@@ -463,22 +607,92 @@ function renderProjectSettings(
 ): TemplateResult {
   const bindings = project.bindings ?? [];
   const canEdit = !!props.onUpdateSettings;
+  const constraints = (project as any).constraints as { brandRules?: { userAddress?: string; forbidden?: string[]; safetyRules?: string[] } } | undefined;
+  const fastPath = project.coordination.fastPath as { sessionAffinityEnabled?: boolean; affinityTimeoutMinutes?: number; keywordConfidenceThreshold?: number } | undefined;
 
   const handleSave = (field: string, value: unknown) => {
     if (!props.onUpdateSettings) return;
     // Backend expects nested objects for coordination/visibility fields
     const coordFields = ["supervisorStyle", "hopLimit", "memberTimeoutSeconds", "supervisorFallbackEnabled", "handoffStyle"];
+    const fastPathFields = ["sessionAffinityEnabled", "affinityTimeoutMinutes", "keywordConfidenceThreshold"];
     if (coordFields.includes(field)) {
       props.onUpdateSettings(project.projectId, { coordination: { [field]: value } });
+    } else if (fastPathFields.includes(field)) {
+      props.onUpdateSettings(project.projectId, { coordination: { fastPath: { [field]: value } } });
     } else if (field === "visibilityMode") {
       props.onUpdateSettings(project.projectId, { visibility: { mode: value } });
+    } else if (field === "displayName") {
+      props.onUpdateSettings(project.projectId, { visibility: { displayName: value } });
+    } else if (field === "displayEmoji") {
+      props.onUpdateSettings(project.projectId, { visibility: { displayEmoji: value } });
+    } else if (field === "description") {
+      props.onUpdateSettings(project.projectId, { description: value });
+    } else if (field === "userAddress") {
+      props.onUpdateSettings(project.projectId, { constraints: { brandRules: { userAddress: value } } });
+    } else if (field === "forbidden") {
+      props.onUpdateSettings(project.projectId, { constraints: { brandRules: { forbidden: value } } });
+    } else if (field === "safetyRules") {
+      props.onUpdateSettings(project.projectId, { constraints: { brandRules: { safetyRules: value } } });
     } else {
       props.onUpdateSettings(project.projectId, { [field]: value });
     }
   };
 
   return html`
+    <!-- Basic Info -->
     <div class="card">
+      <div class="card-title" style="margin-bottom: 12px;">${t("team.detail.description")}</div>
+      <div class="project-settings-grid">
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.displayName")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <input
+                type="text"
+                class="input input--sm"
+                .value=${project.visibility.displayName ?? ""}
+                placeholder="${project.name}"
+                @change=${(e: Event) => handleSave("displayName", (e.target as HTMLInputElement).value)}
+                ?disabled=${props.busy}
+              />
+            ` : html`<span>${project.visibility.displayName || project.name}</span>`}
+          </div>
+        </div>
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.displayEmoji")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <input
+                type="text"
+                class="input input--sm"
+                style="width: 60px;"
+                .value=${project.visibility.displayEmoji ?? ""}
+                @change=${(e: Event) => handleSave("displayEmoji", (e.target as HTMLInputElement).value)}
+                ?disabled=${props.busy}
+              />
+            ` : html`<span>${project.visibility.displayEmoji || "\u2014"}</span>`}
+          </div>
+        </div>
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.description")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <input
+                type="text"
+                class="input input--sm"
+                .value=${project.description ?? ""}
+                @change=${(e: Event) => handleSave("description", (e.target as HTMLInputElement).value)}
+                ?disabled=${props.busy}
+              />
+            ` : html`<span>${project.description || "\u2014"}</span>`}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Coordination -->
+    <div class="card" style="margin-top: 12px;">
+      <div class="card-title" style="margin-bottom: 12px;">${t("team.detail.coordinationStyle")}</div>
       <div class="project-settings-grid">
         <!-- Supervisor -->
         <div class="project-settings-row">
@@ -501,7 +715,7 @@ function renderProjectSettings(
 
         <!-- Visibility -->
         <div class="project-settings-row">
-          <label class="project-settings-label">${t("team.detail.visibility")}</label>
+          <label class="project-settings-label">${t("team.detail.visibility")} ${helpIcon("team.help.visibility")}</label>
           <div class="project-settings-value">
             ${canEdit ? html`
               <select
@@ -510,17 +724,17 @@ function renderProjectSettings(
                 @change=${(e: Event) => handleSave("visibilityMode", (e.target as HTMLSelectElement).value)}
                 ?disabled=${props.busy}
               >
-                <option value="unified" ?selected=${project.visibility.mode === "unified"}>unified</option>
-                <option value="team" ?selected=${project.visibility.mode === "team"}>team</option>
-                <option value="transparent" ?selected=${project.visibility.mode === "transparent"}>transparent</option>
+                <option value="unified" ?selected=${project.visibility.mode === "unified"}>${t("team.visibility.unified")}</option>
+                <option value="team" ?selected=${project.visibility.mode === "team"}>${t("team.visibility.team")}</option>
+                <option value="transparent" ?selected=${project.visibility.mode === "transparent"}>${t("team.visibility.transparent")}</option>
               </select>
-            ` : html`<span>${project.visibility.mode}</span>`}
+            ` : html`<span>${t(`team.visibility.${project.visibility.mode}` as any)}</span>`}
           </div>
         </div>
 
         <!-- Coordination Style -->
         <div class="project-settings-row">
-          <label class="project-settings-label">${t("team.detail.coordinationStyle")}</label>
+          <label class="project-settings-label">${t("team.detail.coordinationStyle")} ${helpIcon("team.help.coordination")}</label>
           <div class="project-settings-value">
             ${canEdit ? html`
               <select
@@ -529,16 +743,59 @@ function renderProjectSettings(
                 @change=${(e: Event) => handleSave("supervisorStyle", (e.target as HTMLSelectElement).value)}
                 ?disabled=${props.busy}
               >
-                <option value="concierge" ?selected=${project.coordination.supervisorStyle === "concierge"}>concierge</option>
-                <option value="delegate-only" ?selected=${project.coordination.supervisorStyle === "delegate-only"}>delegate-only</option>
+                <option value="concierge" ?selected=${project.coordination.supervisorStyle === "concierge"}>${t("team.coordination.concierge")}</option>
+                <option value="delegate-only" ?selected=${project.coordination.supervisorStyle === "delegate-only"}>${t("team.coordination.delegateOnly")}</option>
               </select>
-            ` : html`<span>${project.coordination.supervisorStyle}</span>`}
+            ` : html`<span>${t(`team.coordination.${project.coordination.supervisorStyle === "delegate-only" ? "delegateOnly" : project.coordination.supervisorStyle}` as any)}</span>`}
           </div>
         </div>
 
+        <!-- Handoff Style -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.handoffStyle")} ${helpIcon("team.help.handoff")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <select
+                class="input input--sm"
+                .value=${project.coordination.handoffStyle ?? "notify"}
+                @change=${(e: Event) => handleSave("handoffStyle", (e.target as HTMLSelectElement).value)}
+                ?disabled=${props.busy}
+              >
+                <option value="silent" ?selected=${project.coordination.handoffStyle === "silent"}>${t("team.handoff.silent")}</option>
+                <option value="notify" ?selected=${project.coordination.handoffStyle === "notify" || !project.coordination.handoffStyle}>${t("team.handoff.notify")}</option>
+                <option value="introduce" ?selected=${project.coordination.handoffStyle === "introduce"}>${t("team.handoff.introduce")}</option>
+              </select>
+            ` : html`<span>${t(`team.handoff.${project.coordination.handoffStyle ?? "notify"}` as any)}</span>`}
+          </div>
+        </div>
+
+        <!-- Memory Mode -->
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.memoryMode")} ${helpIcon("team.help.memoryMode")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <select
+                class="input input--sm"
+                .value=${project.memory.mode}
+                @change=${(e: Event) => handleSave("memoryMode", (e.target as HTMLSelectElement).value)}
+                ?disabled=${props.busy}
+              >
+                <option value="isolated" ?selected=${project.memory.mode === "isolated"}>${t("team.memory.isolated")}</option>
+                <option value="read-shared" ?selected=${project.memory.mode === "read-shared"}>${t("team.memory.readShared")}</option>
+              </select>
+            ` : html`<span>${t(`team.memory.${project.memory.mode === "read-shared" ? "readShared" : project.memory.mode}` as any)}</span>`}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Safety / Limits -->
+    <div class="card" style="margin-top: 12px;">
+      <div class="card-title" style="margin-bottom: 12px;">${t("team.detail.hopLimit")}</div>
+      <div class="project-settings-grid">
         <!-- Hop Limit -->
         <div class="project-settings-row">
-          <label class="project-settings-label">${t("team.detail.hopLimit")}</label>
+          <label class="project-settings-label">${t("team.detail.hopLimit")} ${helpIcon("team.help.hopLimit")}</label>
           <div class="project-settings-value">
             ${canEdit ? html`
               <input
@@ -556,7 +813,7 @@ function renderProjectSettings(
 
         <!-- Member Timeout -->
         <div class="project-settings-row">
-          <label class="project-settings-label">${t("team.detail.memberTimeout")}</label>
+          <label class="project-settings-label">${t("team.detail.memberTimeout")} ${helpIcon("team.help.memberTimeout")}</label>
           <div class="project-settings-value">
             ${canEdit ? html`
               <input
@@ -574,7 +831,7 @@ function renderProjectSettings(
 
         <!-- Supervisor Fallback -->
         <div class="project-settings-row">
-          <label class="project-settings-label">${t("team.detail.supervisorFallback")}</label>
+          <label class="project-settings-label">${t("team.detail.supervisorFallback")} ${helpIcon("team.help.fallback")}</label>
           <div class="project-settings-value">
             ${canEdit ? html`
               <label class="toggle-label">
@@ -589,45 +846,160 @@ function renderProjectSettings(
             ` : html`<span>${project.coordination.supervisorFallbackEnabled ? t("agents.yes") : t("agents.no")}</span>`}
           </div>
         </div>
+      </div>
+    </div>
 
-        <!-- Memory Mode -->
+    <!-- Fast Path / Routing Tuning -->
+    <div class="card" style="margin-top: 12px;">
+      <div class="card-title" style="margin-bottom: 12px;">${t("team.detail.fastPath")}</div>
+      <div class="project-settings-grid">
         <div class="project-settings-row">
-          <label class="project-settings-label">${t("team.detail.memoryMode")}</label>
+          <label class="project-settings-label">${t("team.detail.affinityEnabled")} ${helpIcon("team.help.affinity")}</label>
           <div class="project-settings-value">
             ${canEdit ? html`
-              <select
-                class="input input--sm"
-                .value=${project.memory.mode}
-                @change=${(e: Event) => handleSave("memoryMode", (e.target as HTMLSelectElement).value)}
-                ?disabled=${props.busy}
-              >
-                <option value="isolated" ?selected=${project.memory.mode === "isolated"}>isolated</option>
-                <option value="read-shared" ?selected=${project.memory.mode === "read-shared"}>read-shared</option>
-              </select>
-            ` : html`<span>${project.memory.mode}</span>`}
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  .checked=${fastPath?.sessionAffinityEnabled !== false}
+                  @change=${(e: Event) => handleSave("sessionAffinityEnabled", (e.target as HTMLInputElement).checked)}
+                  ?disabled=${props.busy}
+                />
+                <span>${(fastPath?.sessionAffinityEnabled !== false) ? t("agents.yes") : t("agents.no")}</span>
+              </label>
+            ` : html`<span>${(fastPath?.sessionAffinityEnabled !== false) ? t("agents.yes") : t("agents.no")}</span>`}
           </div>
         </div>
-
-        <!-- Handoff Style -->
         <div class="project-settings-row">
-          <label class="project-settings-label">${t("team.detail.handoffStyle")}</label>
+          <label class="project-settings-label">${t("team.detail.affinityTimeout")}</label>
           <div class="project-settings-value">
             ${canEdit ? html`
-              <select
+              <input
+                type="number"
                 class="input input--sm"
-                .value=${project.coordination.handoffStyle ?? "notify"}
-                @change=${(e: Event) => handleSave("handoffStyle", (e.target as HTMLSelectElement).value)}
+                style="width: 80px;"
+                .value=${String(fastPath?.affinityTimeoutMinutes ?? 30)}
+                min="1" max="1440"
+                @change=${(e: Event) => handleSave("affinityTimeoutMinutes", Number((e.target as HTMLInputElement).value))}
                 ?disabled=${props.busy}
-              >
-                <option value="silent" ?selected=${project.coordination.handoffStyle === "silent"}>silent</option>
-                <option value="notify" ?selected=${project.coordination.handoffStyle === "notify" || !project.coordination.handoffStyle}>notify</option>
-                <option value="introduce" ?selected=${project.coordination.handoffStyle === "introduce"}>introduce</option>
-              </select>
-            ` : html`<span>${project.coordination.handoffStyle ?? "notify"}</span>`}
+              />
+            ` : html`<span>${fastPath?.affinityTimeoutMinutes ?? 30}</span>`}
+          </div>
+        </div>
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.keywordThreshold")} ${helpIcon("team.help.confidence")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <input
+                type="number"
+                class="input input--sm"
+                style="width: 80px;"
+                .value=${String(fastPath?.keywordConfidenceThreshold ?? 0.15)}
+                min="0" max="1" step="0.05"
+                @change=${(e: Event) => handleSave("keywordConfidenceThreshold", Number((e.target as HTMLInputElement).value))}
+                ?disabled=${props.busy}
+              />
+            ` : html`<span>${fastPath?.keywordConfidenceThreshold ?? 0.15}</span>`}
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Brand Rules -->
+    <div class="card" style="margin-top: 12px;">
+      <div class="card-title" style="margin-bottom: 12px;">${t("team.detail.brandRules")}</div>
+      <div class="project-settings-grid">
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.userAddress")}</label>
+          <div class="project-settings-value">
+            ${canEdit ? html`
+              <input
+                type="text"
+                class="input input--sm"
+                style="width: 120px;"
+                .value=${constraints?.brandRules?.userAddress ?? ""}
+                placeholder="\u60a8"
+                @change=${(e: Event) => handleSave("userAddress", (e.target as HTMLInputElement).value)}
+                ?disabled=${props.busy}
+              />
+            ` : html`<span>${constraints?.brandRules?.userAddress || "\u2014"}</span>`}
+          </div>
+        </div>
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.forbidden")}</label>
+          <div class="project-settings-value">
+            <div class="project-tag-list">
+              ${(constraints?.brandRules?.forbidden ?? []).map((word, idx) => html`
+                <span class="keyword-chip">
+                  ${word}
+                  ${canEdit ? html`<button class="keyword-chip-remove" @click=${() => {
+                    const next = [...(constraints?.brandRules?.forbidden ?? [])];
+                    next.splice(idx, 1);
+                    handleSave("forbidden", next);
+                  }}>\u00d7</button>` : nothing}
+                </span>
+              `)}
+              ${canEdit ? html`
+                <input
+                  type="text"
+                  class="input input--sm"
+                  style="width: 100px;"
+                  placeholder="${t("team.detail.addItem")}"
+                  ?disabled=${props.busy}
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key === "Enter") {
+                      const inp = e.target as HTMLInputElement;
+                      const val = inp.value.trim();
+                      if (!val) return;
+                      const next = [...(constraints?.brandRules?.forbidden ?? []), val];
+                      handleSave("forbidden", next);
+                      inp.value = "";
+                    }
+                  }}
+                />
+              ` : nothing}
+            </div>
+          </div>
+        </div>
+        <div class="project-settings-row">
+          <label class="project-settings-label">${t("team.detail.safetyRules")}</label>
+          <div class="project-settings-value">
+            <div class="project-tag-list">
+              ${(constraints?.brandRules?.safetyRules ?? []).map((rule, idx) => html`
+                <span class="keyword-chip">
+                  ${rule}
+                  ${canEdit ? html`<button class="keyword-chip-remove" @click=${() => {
+                    const next = [...(constraints?.brandRules?.safetyRules ?? [])];
+                    next.splice(idx, 1);
+                    handleSave("safetyRules", next);
+                  }}>\u00d7</button>` : nothing}
+                </span>
+              `)}
+              ${canEdit ? html`
+                <input
+                  type="text"
+                  class="input input--sm"
+                  style="width: 200px;"
+                  placeholder="${t("team.detail.addItem")}"
+                  ?disabled=${props.busy}
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key === "Enter") {
+                      const inp = e.target as HTMLInputElement;
+                      const val = inp.value.trim();
+                      if (!val) return;
+                      const next = [...(constraints?.brandRules?.safetyRules ?? []), val];
+                      handleSave("safetyRules", next);
+                      inp.value = "";
+                    }
+                  }}
+                />
+              ` : nothing}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bound Channels -->
     <div class="card" style="margin-top: 12px;">
       <div class="card-title" style="margin-bottom: 12px;">${t("team.detail.boundChannels")}</div>
       ${bindings.length > 0
@@ -684,7 +1056,7 @@ function renderProjectMemoryPanel(
           <div class="project-memory-entry">
             <div class="project-memory-key mono">${entry.key}</div>
             <div class="project-memory-value">${entry.value}</div>
-            ${entry.agentId ? html`<div class="agent-sub">by ${entry.agentId}</div>` : nothing}
+            ${entry.agentId ? html`<div class="agent-sub">${t("team.detail.memoryBy")} ${entry.agentId}</div>` : nothing}
           </div>
         `)}
       </div>

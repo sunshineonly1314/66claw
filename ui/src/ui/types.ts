@@ -685,6 +685,22 @@ export type TeamSharedMemoryEntry = {
   updatedAt?: string;
 };
 
+export type TeamActivityEvent = {
+  id: string;
+  timestamp: number;
+  agentId: string;
+  agentName?: string;
+  agentEmoji?: string;
+  peerId?: string;
+  method: "affinity" | "keyword" | "supervisor-llm";
+  confidence: number;
+  matchedPattern?: string;
+  durationMs?: number;
+  success?: boolean;
+  error?: string;
+  replySummary?: string;
+};
+
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
 export type LogEntry = {

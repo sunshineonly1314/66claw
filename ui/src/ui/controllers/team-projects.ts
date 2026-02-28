@@ -13,6 +13,7 @@ import type {
   TeamProjectHealthResult,
   TeamProjectStatsResult,
   TeamSharedMemoryEntry,
+  TeamActivityEvent,
 } from "../types.js";
 
 // ── State Slice ─────────────────────────────────────────────────────────
@@ -29,7 +30,8 @@ export type TeamProjectsState = {
   teamProjectHealth: TeamProjectHealthResult | null;
   teamProjectStats: TeamProjectStatsResult | null;
   teamProjectMemory: TeamSharedMemoryEntry[] | null;
-  teamProjectTab: "members" | "stats" | "settings" | "memory";
+  teamProjectActivity: TeamActivityEvent[] | null;
+  teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory";
   teamProjectBusy: boolean;
 };
 
@@ -127,6 +129,27 @@ export async function loadProjectStats(
     // Prevent infinite re-render loop: set empty stats so view stops retrying
     if (state.teamProjectSelectedId === projectId) {
       state.teamProjectStats = { projectId, members: [], totalCalls: 0, avgDurationMs: 0 };
+    }
+  }
+}
+
+// ── Activity Feed ────────────────────────────────────────────────────────
+
+export async function loadProjectActivity(
+  state: TeamProjectsState,
+  projectId: string,
+): Promise<void> {
+  if (!state.client || !state.connected) return;
+  try {
+    const res = (await state.client.request("team.project.activity", { projectId, limit: 50 })) as
+      | { events: TeamActivityEvent[] }
+      | undefined;
+    if (state.teamProjectSelectedId === projectId) {
+      state.teamProjectActivity = res?.events ?? [];
+    }
+  } catch {
+    if (state.teamProjectSelectedId === projectId) {
+      state.teamProjectActivity = [];
     }
   }
 }
@@ -336,11 +359,13 @@ export async function selectProject(
   state.teamProjectHealth = null;
   state.teamProjectStats = null;
   state.teamProjectMemory = null;
+  state.teamProjectActivity = null;
 
-  // Load detail + health in parallel
+  // Load detail + health + activity in parallel
   await Promise.all([
     loadProjectDetail(state, projectId),
     loadProjectHealth(state, projectId),
+    loadProjectActivity(state, projectId),
   ]);
 
   // Start health polling

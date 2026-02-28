@@ -9,6 +9,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { t } from "../i18n/index.js";
 import type { McpMarketplaceItem } from "../app-view-state.js";
+import { CATEGORY_EMOJI } from "./mcp-shared.js";
 
 export type McpDetailModalProps = {
   item: McpMarketplaceItem;
@@ -21,19 +22,6 @@ export type McpDetailModalProps = {
 };
 
 /* ── helpers ────────────────────────────────────────────── */
-
-const CATEGORY_EMOJI: Record<string, string> = {
-  filesystem: "\u{1F4C1}",
-  database: "\u{1F5C3}\uFE0F",
-  search: "\u{1F50D}",
-  productivity: "\u26A1",
-  development: "\u{1F6E0}\uFE0F",
-  network: "\u{1F310}",
-  smarthome: "\u{1F3E0}",
-  ai: "\u{1F916}",
-  social: "\u{1F4F1}",
-  other: "\u{1F527}",
-};
 
 function badgePill(bg: string, fg: string, label: string): TemplateResult {
   return html`<span style="
@@ -297,7 +285,7 @@ export function renderMcpDetailModal(props: McpDetailModalProps): TemplateResult
           <div>${t("extensions.detail.source")}: <span style="color:var(--fg);">${item.installMethod ?? (item.npmPackage ? "npm" : item.sourceUrl ? "source" : "—")} &middot; ${item.npmPackage || item.sourceUrl || item.serverId}</span></div>
           <div>${t("extensions.detail.category")}: <span style="color:var(--fg);">${t(`extensions.category.${item.category}` as never)}</span></div>
           <div>${t("extensions.detail.platform")}: <span style="color:var(--fg);">${item.platforms.join(" / ")}</span></div>
-          <div>${t("extensions.detail.transport")}: <span style="color:var(--fg);">stdio</span></div>
+          <div>${t("extensions.detail.transport")}: <span style="color:var(--fg);">${item.installMethod === "sse" ? "SSE / StreamableHTTP" : "stdio"}</span></div>
           <div>${t("extensions.detail.toolCount")}: <span style="color:var(--fg);">${item.toolCount}</span></div>
           ${item.securityScore >= 60
             ? html`<div>${t("extensions.detail.securityAudit")}: <span style="color:${scoreColor};">${t("extensions.detail.auditPassed")} (${item.securityScore})</span></div>`

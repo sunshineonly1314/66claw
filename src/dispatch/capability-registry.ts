@@ -475,7 +475,7 @@ export const BUILTIN_CAPABILITY_CARDS: ModelCapabilityCard[] = [
     provider: "doubao",
     modelId: "doubao-seed-1-8-251228",
     displayName: "豆包 Seed 1.8",
-    capabilities: { text: 4, code: 3 },
+    capabilities: { text: 4, code: 3, vision: 3 },
     modelType: "chat",
     region: "domestic",
     costTier: "standard",

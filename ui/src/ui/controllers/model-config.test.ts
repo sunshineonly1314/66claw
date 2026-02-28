@@ -13,7 +13,6 @@ import {
   toggleProviderGroup,
   openModelSelector,
   closeModelSelector,
-  switchModel,
   openProviderConfig,
   closeProviderConfig,
   updateProviderApiKey,
@@ -402,70 +401,8 @@ describe("model-config Controller", () => {
   });
 
   // ==============================
-  // switchModel
+  // switchModel — 已移至 View 层 (_doSwitchModel)，controller 不再导出
   // ==============================
-  describe("switchModel", () => {
-    it("断开连接时应直接返回", async () => {
-      const host = disconnectedHost();
-      await switchModel(host, "openai", "gpt-4o");
-      expect(host.modelSelectorSwitching).toBe(false);
-    });
-
-    it("无 modelSelectorCapability 时应直接返回", async () => {
-      const host = connectedHost({ modelSelectorCapability: null });
-      await switchModel(host, "openai", "gpt-4o");
-      expect(host.modelSelectorSwitching).toBe(false);
-    });
-
-    it("切换成功时应关闭选择器并刷新", async () => {
-      const entries = [makeCapEntry("text", "active")];
-      const host = connectedHost(
-        { modelSelectorCapability: makeCap("text") },
-        {
-          "capability_matrix.switchModel": { success: true },
-          "capability_matrix.summary": { capabilities: entries },
-        },
-      );
-
-      await switchModel(host, "openai", "gpt-4o");
-
-      // 选择器应该关闭
-      expect(host.modelSelectorOpen).toBe(false);
-      // 能力应该刷新
-      expect(host.capabilities).toHaveLength(1);
-      expect(host.capabilities[0].capability).toBe("text");
-      expect(host.capabilities[0].status).toBe("active");
-      expect(host.modelSelectorSwitching).toBe(false);
-    });
-
-    it("切换失败时应设置错误", async () => {
-      const host = connectedHost(
-        { modelSelectorCapability: makeCap("text") },
-        {
-          "capability_matrix.switchModel": { success: false, error: "模型不兼容" },
-        },
-      );
-
-      await switchModel(host, "openai", "gpt-4o");
-
-      expect(host.modelConfigError).toBe("模型不兼容");
-      expect(host.modelSelectorSwitching).toBe(false);
-    });
-
-    it("请求异常时应设置错误", async () => {
-      const host = connectedHost(
-        { modelSelectorCapability: makeCap("text") },
-        {
-          "capability_matrix.switchModel": new Error("RPC error"),
-        },
-      );
-
-      await switchModel(host, "openai", "gpt-4o");
-
-      expect(host.modelConfigError).toContain("切换失败");
-      expect(host.modelSelectorSwitching).toBe(false);
-    });
-  });
 
   // ==============================
   // openProviderConfig / closeProviderConfig

@@ -474,7 +474,7 @@ async function handleGuidedDeploy(
 
 function handleTemplates(): AgentToolResult<unknown> {
   const templates = listTemplates();
-  const text = formatTemplateList(templates);
+  const text = formatTemplateList([...templates]);
   return textResult(text);
 }
 

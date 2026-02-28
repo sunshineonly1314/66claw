@@ -344,9 +344,14 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     name: "豆包",
     icon: "🔥",
     group: "cn-recommended",
-    tagline: "字节出品 · 响应极快 · 性价比高",
+    tagline: "字节出品 · 响应极快 · 性价比高 · 支持语音",
     apiKeyUrl: "https://console.volcengine.com/ark/",
-    apiKeyGuide: ["访问火山引擎控制台注册", "开通 Ark 模型服务", "创建 API Key 并复制"],
+    apiKeyGuide: [
+      "访问火山方舟控制台注册并登录",
+      "开通 Ark 模型服务",
+      "创建 API Key 并复制",
+      "语音服务 (ASR/TTS) 请切换到「语音服务」Tab 单独配置",
+    ],
     models: [
       // 文字对话 + 图片理解模型（豆包 1.8 支持 text/image/video）
       {
@@ -1130,6 +1135,7 @@ const REGISTRY_KEY_TO_LEGACY: Record<string, Capability | undefined> = {
   code: "text", // merged into text for v1
   vision: "image-understanding",
   imageGen: "image-generation",
+  imageEdit: "image-editing",
   video: "video",
   videoGen: "video-generation",
   embedding: "embedding",
@@ -1145,6 +1151,7 @@ const LEGACY_KEY_TO_REGISTRY: Record<string, CapabilityKey[]> = {
   text: ["text", "code"],
   "image-understanding": ["vision"],
   "image-generation": ["imageGen"],
+  "image-editing": ["imageEdit"],
   video: ["video"],
   "video-generation": ["videoGen"],
   embedding: ["embedding"],

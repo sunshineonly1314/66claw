@@ -415,6 +415,11 @@ describe("runReplyAgent memory flush", () => {
         commandBody: "hello",
       });
 
+      // [CN-PATCH:memory-fix] runMemoryFlushIfNeeded is fire-and-forget (void),
+      // so flush writes may not have completed when runReplyAgent returns.
+      // Allow microtasks + I/O callbacks to settle before asserting disk state.
+      await new Promise((r) => setTimeout(r, 200));
+
       const stored = JSON.parse(await fs.readFile(storePath, "utf-8"));
       expect(stored[sessionKey].compactionCount).toBe(2);
       expect(stored[sessionKey].memoryFlushCompactionCount).toBe(2);

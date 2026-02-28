@@ -25,15 +25,18 @@ import {
   getHealthStatusColor,
   openModelSelector,
   closeModelSelector,
-  switchModel,
   openProviderConfig,
   closeProviderConfig,
   updateProviderApiKey,
   updateProviderBaseUrl,
   updateProviderCustomModel,
+  updateProviderVolcAppId,
+  updateProviderVolcAccessToken,
+  switchProviderVolcTab,
   detectAndConfigureProvider,
   handleDetectProgressEvent,
   handleDetectCompleteEvent,
+  cancelDetection,
   providerConfigNextStep,
   providerConfigPrevStep,
   navigateToProviderConfig,
@@ -150,11 +153,11 @@ const USER_CAPABILITIES: UserCapDef[] = [
 /** 快速上手推荐的 provider */
 const QUICK_SETUP_PROVIDER = "kimi-code";
 /**
- * 必须配置的 provider（记忆系统核心依赖）
- * - siliconflow: 向量搜索 + 记忆存储（无替代）
- * - meituan-longcat: 记忆提取主力（免费额度）
- * - ant-ling: 记忆提取备选（免费额度）
- * 不配置这些，记忆提取/整理会消耗用户主力模型的付费额度。
+ * 推荐配置的 provider（记忆系统核心依赖）
+ * - siliconflow: 向量嵌入（embedding 能力，无替代）
+ * - meituan-longcat: 记忆提取首选（免费额度，优先于主模型）
+ * - ant-ling: 记忆提取备选（免费额度，优先于主模型）
+ * 不配置这些时，记忆提取会自动 fallback 到用户的主聊天模型。
  */
 const ESSENTIAL_PROVIDERS: readonly string[] = ["siliconflow", "meituan-longcat", "ant-ling"];
 
@@ -238,6 +241,23 @@ export class ModelConfigView extends LitElement {
     handleDetectCompleteEvent(h, payload);
     this._sync(h);
   };
+  /** 从聊天页话筒按钮触发：自动打开豆包语音配置 */
+  private _boundVoiceSetup = async () => {
+    // 确保数据已加载
+    if (!this._dataLoaded) {
+      await this._loadData();
+    }
+    const provider = this._s.providers.find(p => p.providerId === "volcengine-ark");
+    if (!provider) return;
+    const h = this._host();
+    openProviderConfig(h, provider);
+    // 跳过 guide 直接到 apikey，并切到语音 Tab
+    h.providerConfigStep = "apikey";
+    h.providerConfigVolcTab = "voice";
+    this._sync(h);
+    this._loadVolcCredsStatus();
+  };
+
   private _boundLeProgress = (e: Event) => {
     const payload = (e as CustomEvent).detail;
     if (!payload) return;
@@ -917,6 +937,87 @@ export class ModelConfigView extends LitElement {
     .add-model-msg--warn { background: rgba(251,191,36,.12); color: #fbbf24; }
     .add-model-msg--err { background: var(--danger-subtle, rgba(248,113,113,.15)); color: var(--danger, #f87171); }
 
+    /* ═══════ VOLCENGINE TABS ═══════ */
+    .volc-tabs {
+      display: flex; gap: 0; margin-bottom: 20px;
+      border-bottom: 2px solid var(--border, #2d3a4d);
+    }
+    .volc-tab {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 16px; border: none; background: none;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      color: var(--muted, #8b9caf);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.15s ease;
+    }
+    .volc-tab:hover { color: var(--text, #e8ecf1); }
+    .volc-tab.active {
+      color: var(--accent, #6c8cff);
+      border-bottom-color: var(--accent, #6c8cff);
+    }
+    .volc-tab__icon { font-size: 15px; }
+
+    /* ═══════ VOLCENGINE VOICE GUIDE ═══════ */
+    .volc-voice-guide {
+      margin-bottom: 20px; padding: 16px;
+      background: var(--bg-elevated, #1c242e);
+      border: 1px solid var(--border, #2d3a4d);
+      border-radius: var(--radius-md, 8px);
+    }
+    .volc-voice-guide__title {
+      font-size: 14px; font-weight: 700;
+      color: var(--text-strong, #fff);
+      margin-bottom: 12px;
+    }
+    .volc-voice-guide__steps {
+      list-style: none; counter-reset: vg-step;
+      margin: 0; padding: 0;
+    }
+    .volc-voice-guide__steps li {
+      counter-increment: vg-step;
+      position: relative; padding-left: 30px;
+      margin-bottom: 10px; font-size: 13px; line-height: 1.6;
+      color: var(--text, #e8ecf1);
+    }
+    .volc-voice-guide__steps li::before {
+      content: counter(vg-step);
+      position: absolute; left: 0; top: 1px;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--accent-subtle, rgba(108,140,255,.15));
+      color: var(--accent, #6c8cff);
+      font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .volc-voice-guide__steps a {
+      color: var(--accent, #6c8cff); text-decoration: none;
+    }
+    .volc-voice-guide__steps a:hover { text-decoration: underline; }
+    .volc-voice-guide__links {
+      display: flex; gap: 16px; margin-top: 14px;
+    }
+    .volc-voice-guide__links a {
+      font-size: 12px; font-weight: 600;
+      color: var(--accent, #6c8cff); text-decoration: none;
+    }
+    .volc-voice-guide__links a:hover { text-decoration: underline; }
+
+    .volc-voice-note {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 10px 14px; margin-top: 12px;
+      background: var(--accent-subtle, rgba(108,140,255,.08));
+      border: 1px solid rgba(108,140,255,.15);
+      border-radius: var(--radius-md, 8px);
+      font-size: 12px; color: var(--text, #e8ecf1); line-height: 1.5;
+    }
+    .volc-voice-note__icon { flex-shrink: 0; font-size: 14px; }
+
+    .alert--ok {
+      background: rgba(74,222,128,.12); color: var(--ok, #4ade80);
+      padding: 10px 14px; border-radius: var(--radius-md, 8px);
+      margin-top: 12px; font-size: 13px; font-weight: 500;
+    }
+
     /* ═══════ FOCUS-VISIBLE ═══════ */
     .btn:focus-visible, .modal-close:focus-visible, .guide-link:focus-visible,
     .prov-group-header:focus-visible, .prov-row__btn:focus-visible,
@@ -1117,6 +1218,7 @@ export class ModelConfigView extends LitElement {
     globalThis.addEventListener("openclawcn:detect-progress", this._boundDetectProgress);
     globalThis.addEventListener("openclawcn:detect-complete", this._boundDetectComplete);
     globalThis.addEventListener("openclawcn:local-engine-progress", this._boundLeProgress);
+    globalThis.addEventListener("openclawcn:voice-setup", this._boundVoiceSetup);
     if (this.client && this.connected) this._loadData();
   }
 
@@ -1125,9 +1227,19 @@ export class ModelConfigView extends LitElement {
     globalThis.removeEventListener("openclawcn:detect-progress", this._boundDetectProgress);
     globalThis.removeEventListener("openclawcn:detect-complete", this._boundDetectComplete);
     globalThis.removeEventListener("openclawcn:local-engine-progress", this._boundLeProgress);
+    globalThis.removeEventListener("openclawcn:voice-setup", this._boundVoiceSetup);
     if (this._switchToastTimer) {
       clearTimeout(this._switchToastTimer);
       this._switchToastTimer = null;
+    }
+    // 清理检测计时器，防止组件卸载后继续触发
+    if (this._s._detectElapsedTimer) {
+      clearInterval(this._s._detectElapsedTimer);
+      this._s._detectElapsedTimer = null;
+    }
+    if (this._s._detectTimeoutTimer) {
+      clearTimeout(this._s._detectTimeoutTimer);
+      this._s._detectTimeoutTimer = null;
     }
   }
 
@@ -1246,7 +1358,8 @@ export class ModelConfigView extends LitElement {
             const data = result as { models: ModelInfo[] };
             this._quickSwitchSubModels.set(sub.label, {
               cap,
-              models: (data.models ?? []).filter(m => m.configured),
+              // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+              models: (data.models ?? []).filter(m => m.configured && m.providerId !== "local"),
             });
           } catch {
             this._quickSwitchSubModels.set(sub.label, { cap, models: [] });
@@ -1275,7 +1388,8 @@ export class ModelConfigView extends LitElement {
           capability: matchedCap.capability,
         });
         const data = result as { models: ModelInfo[] };
-        this._quickSwitchModels = (data.models ?? []).filter(m => m.configured);
+        // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+        this._quickSwitchModels = (data.models ?? []).filter(m => m.configured && m.providerId !== "local");
       } catch {
         this._quickSwitchModels = [];
         this._quickSwitchError = "加载模型列表失败，请稍后重试";
@@ -1296,114 +1410,42 @@ export class ModelConfigView extends LitElement {
     }
   }
 
-  private async _onModelSelect(m: ModelInfo) {
-    if (!m.configured || this._s.modelSelectorSwitching) return;
-
-    // 检查是否真的切换了模型
-    const cap = this._s.modelSelectorCapability;
-    const oldModel = cap?.currentModel;
-    const oldKey = oldModel ? `${oldModel.providerId}/${oldModel.modelId}` : "";
-    const newKey = `${m.providerId}/${m.modelId}`;
-    if (oldKey === newKey) return;
-
+  /**
+   * 通用模型切换核心逻辑 — _onModelSelect / _onQuickSwitch / _onQuickSwitchSub 共用。
+   * @param capability 要切换的能力 key
+   * @param m 目标模型
+   * @param force 是否强制（跳过向量库重建确认）
+   * @param onSuccess 切换成功后的回调（关闭面板等）
+   * @param retryWithForce 需要重建确认时的重试函数
+   */
+  private async _doSwitchModel(
+    capability: string,
+    m: ModelInfo,
+    force: boolean,
+    onSuccess: () => Promise<void> | void,
+    retryWithForce: () => Promise<void>,
+  ) {
     this._switchingModelId = m.modelId;
-    const h = this._host();
-    await switchModel(h, m.providerId, m.modelId);
-    this._switchingModelId = null;
-    this._sync(h);
-
-    // 切换成功后显示提示
-    if (!this._s.modelConfigError) {
-      this._showSwitchToast(m.modelName || m.modelId, m.providerName || m.providerId);
-    }
-  }
-
-  /** 快速切换：在能力卡内直接选模型 */
-  private async _onQuickSwitch(userCap: UserCapDef, m: ModelInfo) {
-    if (!m.configured || this._switchingModelId) return;
-
-    const activeCap = userCap.caps
-      .map(c => this._s.capabilities.find(cap => cap.capability === c))
-      .find(c => c);
-    if (!activeCap || !this.client || !this.connected) return;
-
-    // 记录切换前的模型，用于判断是否真的切换了
-    const oldModel = activeCap.currentModel;
-    const oldKey = oldModel ? `${oldModel.providerId}/${oldModel.modelId}` : "";
-    const newKey = `${m.providerId}/${m.modelId}`;
-
-    // 如果选的就是当前模型，不做任何操作
-    if (oldKey === newKey) return;
-
-    this._switchingModelId = m.modelId;
-
     try {
-      const result = await this.client.request("capability_matrix.switchModel", {
-        capability: activeCap.capability,
-        providerId: m.providerId,
-        modelId: m.modelId,
-      });
-      const data = result as { success: boolean; error?: string };
-      if (data.success) {
-        // 切换成功，关闭快速面板并刷新
-        this._quickSwitchCap = null;
-        this._quickSwitchModels = [];
-        const h2 = this._host();
-        await loadCapabilities(h2);
-        this._sync(h2);
-
-        // 显示切换提示：首次响应可能稍慢
-        this._showSwitchToast(m.modelName || m.modelId, m.providerName || m.providerId);
-      } else {
-        const h = this._host();
-        h.modelConfigError = formatGeneralError(data.error, "模型切换").detail;
-        this._sync(h);
-      }
-    } catch (err) {
-      const h = this._host();
-      h.modelConfigError = formatGeneralError(String(err), "模型切换").detail;
-      this._sync(h);
-    } finally {
-      this._switchingModelId = null;
-    }
-  }
-
-  /** 快速切换：多子能力卡片内直接选模型（指定具体子能力） */
-  private async _onQuickSwitchSub(cap: Capability, m: ModelInfo, force = false) {
-    if (!m.configured || this._switchingModelId) return;
-    if (!this.client || !this.connected) return;
-
-    const oldKey = cap.currentModel ? `${cap.currentModel.providerId}/${cap.currentModel.modelId}` : "";
-    const newKey = `${m.providerId}/${m.modelId}`;
-    if (oldKey === newKey) return;
-
-    this._switchingModelId = m.modelId;
-
-    try {
-      const result = await this.client.request("capability_matrix.switchModel", {
-        capability: cap.capability,
+      const result = await this.client!.request("capability_matrix.switchModel", {
+        capability,
         providerId: m.providerId,
         modelId: m.modelId,
         force,
       });
       const data = result as { success: boolean; error?: string; requiresRebuild?: boolean };
+
       if (data.success) {
-        this._quickSwitchCap = null;
-        this._quickSwitchModels = [];
-        this._quickSwitchSubModels = new Map();
-        const h2 = this._host();
-        await loadCapabilities(h2);
-        this._sync(h2);
+        await onSuccess();
+
+        if (capability === "text") {
+          globalThis.dispatchEvent?.(new CustomEvent("openclawcn:silent-new"));
+        }
         this._showSwitchToast(m.modelName || m.modelId, m.providerName || m.providerId);
       } else if (data.requiresRebuild) {
-        // 向量库绑定冲突 — 弹出确认对话框
         this._switchingModelId = null;
-        const confirmed = confirm(
-          `${data.error}\n\n确认切换并重建向量库？`,
-        );
-        if (confirmed) {
-          await this._onQuickSwitchSub(cap, m, true);
-        }
+        const confirmed = confirm(`${data.error}\n\n确认切换并重建向量库？`);
+        if (confirmed) await retryWithForce();
         return;
       } else {
         const h = this._host();
@@ -1417,6 +1459,77 @@ export class ModelConfigView extends LitElement {
     } finally {
       this._switchingModelId = null;
     }
+  }
+
+  private async _onModelSelect(m: ModelInfo, force?: boolean) {
+    if (!m.configured || this._s.modelSelectorSwitching || !this.client) return;
+    if (this._s.providerConfigDetecting) return;
+
+    const cap = this._s.modelSelectorCapability;
+    if (!cap) return;
+    const oldKey = cap.currentModel ? `${cap.currentModel.providerId}/${cap.currentModel.modelId}` : "";
+    if (oldKey === `${m.providerId}/${m.modelId}`) return;
+
+    await this._doSwitchModel(
+      cap.capability, m, !!force,
+      async () => {
+        const h = this._host();
+        closeModelSelector(h);
+        await loadCapabilities(h);
+        this._sync(h);
+      },
+      () => this._onModelSelect(m, true),
+    );
+  }
+
+  /** 快速切换：在能力卡内直接选模型 */
+  private async _onQuickSwitch(userCap: UserCapDef, m: ModelInfo, force?: boolean) {
+    if (!m.configured || this._switchingModelId) return;
+    if (this._s.providerConfigDetecting) return;
+
+    const activeCap = userCap.caps
+      .map(c => this._s.capabilities.find(cap => cap.capability === c))
+      .find(c => c);
+    if (!activeCap || !this.client || !this.connected) return;
+
+    const oldKey = activeCap.currentModel ? `${activeCap.currentModel.providerId}/${activeCap.currentModel.modelId}` : "";
+    if (oldKey === `${m.providerId}/${m.modelId}`) return;
+
+    await this._doSwitchModel(
+      activeCap.capability, m, !!force,
+      async () => {
+        this._quickSwitchCap = null;
+        this._quickSwitchModels = [];
+        this._quickSwitchSubModels = new Map();
+        const h = this._host();
+        await loadCapabilities(h);
+        this._sync(h);
+      },
+      () => this._onQuickSwitch(userCap, m, true),
+    );
+  }
+
+  /** 快速切换：多子能力卡片内直接选模型（指定具体子能力） */
+  private async _onQuickSwitchSub(cap: Capability, m: ModelInfo, force = false) {
+    if (!m.configured || this._switchingModelId) return;
+    if (!this.client || !this.connected) return;
+    if (this._s.providerConfigDetecting) return;
+
+    const oldKey = cap.currentModel ? `${cap.currentModel.providerId}/${cap.currentModel.modelId}` : "";
+    if (oldKey === `${m.providerId}/${m.modelId}`) return;
+
+    await this._doSwitchModel(
+      cap.capability, m, force,
+      async () => {
+        this._quickSwitchCap = null;
+        this._quickSwitchModels = [];
+        this._quickSwitchSubModels = new Map();
+        const h = this._host();
+        await loadCapabilities(h);
+        this._sync(h);
+      },
+      () => this._onQuickSwitchSub(cap, m, true),
+    );
   }
 
   /** 从快速切换面板打开完整模型选择器弹窗 */
@@ -1451,6 +1564,14 @@ export class ModelConfigView extends LitElement {
     closeModelSelector(h);
     this._sync(h);
     this._modelSelectorUserCap = null;
+    // 重置所有筛选状态，避免下次打开时残留
+    this._modelSelectorSearch = "";
+    this._modelSelectorProviderFilter = null;
+    this._modelSelectorContextFilter = null;
+    this._modelSelectorStrengthFilter = null;
+    this._modelSelectorActiveSubIndex = 0;
+    this._msProviderDropdownOpen = false;
+    this._msUnconfiguredExpanded = false;
   }
 
   /** 模型选择器：切换子能力 tab */
@@ -1499,6 +1620,12 @@ export class ModelConfigView extends LitElement {
     }
   }
 
+  private _cancelDetection() {
+    const h = this._host();
+    cancelDetection(h);
+    this._sync(h);
+  }
+
   private _onApiKeyInput(e: Event) {
     const input = e.target as HTMLInputElement;
     const h = this._host();
@@ -1529,6 +1656,90 @@ export class ModelConfigView extends LitElement {
       const h = this._host();
       updateProviderApiKey(h, trimmed);
       this._sync(h);
+    }
+  }
+
+  private _onVolcAppIdInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const h = this._host();
+    updateProviderVolcAppId(h, input.value);
+    this._sync(h);
+  }
+
+  private _onVolcAccessTokenInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const h = this._host();
+    updateProviderVolcAccessToken(h, input.value);
+    this._sync(h);
+  }
+
+  private _onVolcTabSwitch(tab: "llm" | "voice") {
+    const h = this._host();
+    switchProviderVolcTab(h, tab);
+    this._sync(h);
+    // 切到语音 Tab 时加载已有凭证状态
+    if (tab === "voice") {
+      this._loadVolcCredsStatus();
+    }
+  }
+
+  /** 加载火山引擎已保存凭证的脱敏状态 */
+  private async _loadVolcCredsStatus() {
+    if (!this.client) return;
+    try {
+      const res = await this.client.request("voice.volcengine.credentialsStatus", {}) as {
+        configured: boolean; maskedAppId?: string; maskedToken?: string;
+      };
+      this._s = { ...this._s, providerConfigVolcCredsStatus: res };
+      this.requestUpdate();
+    } catch {
+      // 静默失败，不影响使用
+    }
+  }
+
+  /** 保存火山引擎语音凭证 */
+  private async _onSaveVolcVoiceCredentials() {
+    if (!this.client) return;
+    const { providerConfigVolcAppId: appId, providerConfigVolcAccessToken: token, providerConfigVolcSaving: saving } = this._s;
+    if (!appId?.trim() || !token?.trim() || saving) return;
+
+    // APP ID 格式校验
+    if (!/^\d+$/.test(appId.trim())) {
+      this._s = { ...this._s, providerConfigTestResult: { success: false, message: "APP ID 应为纯数字，请检查是否粘贴正确" } };
+      this.requestUpdate();
+      return;
+    }
+
+    // 设置 loading 状态
+    this._s = { ...this._s, providerConfigVolcSaving: true, providerConfigTestResult: null };
+    this.requestUpdate();
+
+    try {
+      await this.client.request("voice.volcengine.saveCredentials", {
+        appId: appId.trim(),
+        accessToken: token.trim(),
+      });
+      // 刷新能力卡片状态
+      const h = this._host();
+      await loadCapabilities(h);
+      this._sync(h);
+      // 通知 app 重新检测 ASR/TTS 可用性（更新话筒按钮状态）
+      globalThis.dispatchEvent(new CustomEvent("openclawcn:voice-credentials-changed"));
+      // 显示成功提示 + 更新凭证状态
+      this._s = {
+        ...this._s,
+        providerConfigVolcSaving: false,
+        providerConfigTestResult: { success: true, message: "语音凭证保存成功，ASR/TTS 已启用" },
+        providerConfigVolcCredsStatus: { configured: true },
+      };
+      this.requestUpdate();
+    } catch (err) {
+      this._s = {
+        ...this._s,
+        providerConfigVolcSaving: false,
+        providerConfigTestResult: { success: false, message: `保存失败: ${String(err)}` },
+      };
+      this.requestUpdate();
     }
   }
 
@@ -1745,6 +1956,7 @@ export class ModelConfigView extends LitElement {
 
   /** 手动添加模型 */
   private async _onAddModel(providerId: string) {
+    this._deleteConfirm = false; // 重置删除确认状态
     const modelId = this._addModelId.trim();
     if (!modelId || !this.client || !this.connected) return;
 
@@ -1774,6 +1986,9 @@ export class ModelConfigView extends LitElement {
         const h = this._host();
         await Promise.all([loadCapabilities(h), loadProviders(h)]);
         this._sync(h);
+      } else {
+        // [CN-PATCH] 服务端返回 success=false 但没抛异常 — 显示错误信息
+        this._addModelMsg = { type: "err", text: (result as { error?: string }).error || "添加失败，请稍后重试" };
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
@@ -1902,6 +2117,7 @@ export class ModelConfigView extends LitElement {
 
   /** 测试连接 */
   private async _onTestConnection(providerId: string) {
+    this._deleteConfirm = false; // 重置删除确认状态
     const h = this._host();
     await testProviderConnection(h, providerId);
     this._sync(h);
@@ -1951,7 +2167,8 @@ export class ModelConfigView extends LitElement {
 
   /** 模型选择器：应用搜索和筛选 */
   private _getFilteredModels(models: ModelInfo[]): ModelInfo[] {
-    let filtered = models;
+    // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+    let filtered = models.filter(m => m.providerId !== "local");
     const search = this._modelSelectorSearch.toLowerCase().trim();
     if (search) {
       filtered = filtered.filter(m =>
@@ -2050,10 +2267,8 @@ export class ModelConfigView extends LitElement {
         ${this._renderOnboarding()}
         ${this._renderCapabilities()}
 
-        ${this._le.status ? renderDeviceBar(this._le.status, {
-          onOpenManageModal: () => { this._leManageOpen = true; },
-          onInstallRecommended: () => this._leInstallRecommended(),
-        }) : html`<hr class="section-divider" />`}
+        ${/* [CN-PATCH] 本地模型暂时隐藏，后续版本恢复 */
+          html`<hr class="section-divider" />`}
 
         ${this._renderMyProviders()}
         ${this._renderEssentialBanner()}
@@ -2063,11 +2278,7 @@ export class ModelConfigView extends LitElement {
       ${this._s.modelSelectorOpen ? this._renderModelSelector() : nothing}
       ${this._s.providerConfigOpen ? this._renderProviderConfig() : nothing}
       ${this._s.providerManageOpen ? this._renderManageModal() : nothing}
-      ${this._leManageOpen && this._le.status ? renderLocalManageModal(
-        this._le.status,
-        this._le.installProgress,
-        { ...this._leActions, onClose: () => { this._leManageOpen = false; } },
-      ) : nothing}
+      ${/* [CN-PATCH] 本地模型管理弹窗暂时隐藏，后续版本恢复 */ nothing}
     `;
   }
 
@@ -2233,14 +2444,30 @@ export class ModelConfigView extends LitElement {
             const PROVIDER_NAMES: Record<string, string> = {
               "meituan-longcat": "美团", "ant-ling": "蚂蚁百灵",
               siliconflow: "硅基流动", modelscope: "魔搭",
+              deepseek: "深度求索", moonshot: "月之暗面",
+              "kimi-coding": "Kimi", "qwen-dashscope": "通义千问",
+              glm: "智谱", zhipu: "智谱", doubao: "豆包",
+              "tencent-hunyuan": "腾讯混元", openai: "OpenAI",
+              groq: "Groq", together: "Together",
             };
-            const provLabel = ext?.provider ? (PROVIDER_NAMES[ext.provider] ?? ext.provider) : "";
+            let modelLabel = "";
+            if (extActive && ext) {
+              const provLabel = PROVIDER_NAMES[ext.provider!] ?? ext.provider ?? "";
+              // 如果是主聊天模型（非免费提取专用 provider），显示"跟随主模型"
+              const FREE_EXTRACTION_PROVIDERS = new Set([
+                "meituan-longcat", "ant-ling", "siliconflow", "modelscope",
+              ]);
+              const isMainModel = ext.provider && !FREE_EXTRACTION_PROVIDERS.has(ext.provider);
+              modelLabel = isMainModel
+                ? `${ext.model}（跟随主模型）`
+                : `${ext.model}（${provLabel}）`;
+            }
             return html`
               <div class="cap-card__sub">
                 <span class="cap-card__sub-dot ${extActive ? 'on' : 'off'}"></span>
                 <span class="cap-card__sub-label">${sub.label}</span>
                 ${extActive
-                  ? html`<span class="cap-card__sub-model">${ext!.model} (${provLabel})</span>`
+                  ? html`<span class="cap-card__sub-model">${modelLabel}</span>`
                   : html`<span class="cap-card__sub-model cap-card__sub-model--off">未配置</span>`}
               </div>
             `;
@@ -2281,19 +2508,8 @@ export class ModelConfigView extends LitElement {
       ? this._renderMultiSubQuickSwitch(userCap)
       : this._renderSingleSubQuickSwitch(userCap, isActive);
 
-    // 本地模型 tab（只对有本地模型的能力组显示）
-    const leCapGroup = userCap.id; // "voice", "image" etc.
-    const hasLocalModels = this._le.status?.models[leCapGroup];
-    const localTab = hasLocalModels
-      ? html`
-        <div style="margin-top:8px; padding-top:8px; border-top: 1px solid var(--border, #2d3a4d);">
-          <div class="qs-sub-label">本地模型</div>
-          ${renderLocalModelTab(leCapGroup, this._le.status, this._le.installProgress, this._leActions)}
-        </div>
-      `
-      : nothing;
-
-    return html`${cloudPanel}${localTab}`;
+    // [CN-PATCH] 本地模型 tab 暂时隐藏，后续版本恢复
+    return html`${cloudPanel}`;
   }
 
   /** 单能力卡片的快速切换面板 */
@@ -2385,9 +2601,9 @@ export class ModelConfigView extends LitElement {
                 <div class="qs-sub-group">
                   <div class="qs-sub-label">${sub.label}</div>
                   <div style="padding:6px 0;font-size:12px;color:var(--muted,#8b9caf);line-height:1.5;">
-                    自动选择免费 LLM 提取长期记忆，保证 AI 记住你的偏好和习惯。<br>
-                    优先级: 美团 LongCat &rarr; 蚂蚁百灵 &rarr; 硅基流动 &rarr; 魔搭。<br>
-                    配置对应服务商 API Key 即可激活（全部免费）。
+                    自动提取长期记忆，保证 AI 记住你的偏好和习惯。<br>
+                    优先级: 美团 LongCat &rarr; 蚂蚁百灵 &rarr; 主聊天模型 &rarr; 硅基流动 &rarr; 魔搭。<br>
+                    默认跟随主聊天模型；配置 LongCat/百灵 API Key 可免费加速。
                   </div>
                 </div>
               `;
@@ -2408,6 +2624,7 @@ export class ModelConfigView extends LitElement {
                           class="qs-item ${isCurrent ? 'current' : ''} ${isSwitching ? 'switching' : ''}"
                           tabindex="0" role="button"
                           @click=${(e: Event) => { e.stopPropagation(); if (!isCurrent && entry.cap) this._onQuickSwitchSub(entry.cap, m); }}
+                          @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" && !isCurrent && entry.cap) { e.stopPropagation(); this._onQuickSwitchSub(entry.cap, m); } }}
                         >
                           <div class="qs-item__info">
                             <div class="qs-item__name">${m.modelName}</div>
@@ -2466,7 +2683,7 @@ export class ModelConfigView extends LitElement {
                 data-idx="${idx}"
                 @pointerdown=${(e: PointerEvent) => this._onPointerDragStart(e, idx)}
               >
-                <span class="drag-handle" title="拖拽排序">⠿</span>
+                <span class="drag-handle" title="拖拽排序" aria-label="拖拽调整服务商优先级">⠿</span>
                 <span class="prov-row__rank">${idx + 1}</span>
                 <div class="prov-row__icon">${p.icon}</div>
                 <div class="prov-row__info">
@@ -2576,9 +2793,9 @@ export class ModelConfigView extends LitElement {
     const userCap = this._modelSelectorUserCap;
     const hasMultiSubs = userCap ? userCap.subs.filter(s => !s.keys.includes("memoryExtraction")).length > 1 : false;
 
-    // 分离已配置 / 未配置
-    const configured = models.filter(m => m.configured);
-    const unconfigured = models.filter(m => !m.configured);
+    // 分离已配置 / 未配置 — [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+    const configured = models.filter(m => m.configured && m.providerId !== "local");
+    const unconfigured = models.filter(m => !m.configured && m.providerId !== "local");
     const filtered = this._getFilteredModels(configured);
 
     // 唯一服务商列表（用于筛选下拉）
@@ -2590,7 +2807,7 @@ export class ModelConfigView extends LitElement {
 
     return html`
       <div class="modal-overlay" @click=${() => this._closeModelSelector()} @keydown=${(e: KeyboardEvent) => this._onModalKeydown(e, () => this._closeModelSelector())}>
-        <div class="modal ms-modal" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="modal ms-modal" @click=${(e: Event) => { e.stopPropagation(); this._msProviderDropdownOpen = false; }}>
           <!-- Header -->
           <div class="modal-header">
             <span class="modal-title">选择「${cap.name}」模型</span>
@@ -2637,7 +2854,7 @@ export class ModelConfigView extends LitElement {
               <div style="position:relative">
                 <button
                   class="ms-filter-chip ${this._modelSelectorProviderFilter ? 'active' : ''}"
-                  @click=${() => { this._msProviderDropdownOpen = !this._msProviderDropdownOpen; }}
+                  @click=${(e: Event) => { e.stopPropagation(); this._msProviderDropdownOpen = !this._msProviderDropdownOpen; }}
                 >${this._modelSelectorProviderFilter
                     ? uniqueProviders.find(([id]) => id === this._modelSelectorProviderFilter)?.[1] ?? "服务商"
                     : "服务商"} ▾</button>
@@ -2829,7 +3046,27 @@ export class ModelConfigView extends LitElement {
     const { providerConfigApiKey: apiKey, providerConfigBaseUrl: baseUrl, providerConfigCustomModel: customModel, providerConfigTestResult: result, providerConfigDetecting: detecting } = this._s;
     const needsUrl = prov.needsBaseUrl;
     const keyOptional = prov.apiKeyOptional;
-    // 按钮禁用条件：需要 URL 时必须填 URL；Key 非可选时必须填 Key
+
+    // 火山引擎: tab 切换
+    const isVolcengine = prov.providerId === "volcengine-ark";
+    if (isVolcengine) {
+      const volcTab = this._s.providerConfigVolcTab;
+      return html`
+        <div class="volc-tabs">
+          <button class="volc-tab ${volcTab === 'llm' ? 'active' : ''}" @click=${() => this._onVolcTabSwitch("llm")}>
+            <span class="volc-tab__icon">💬</span> LLM 聊天
+          </button>
+          <button class="volc-tab ${volcTab === 'voice' ? 'active' : ''}" @click=${() => this._onVolcTabSwitch("voice")}>
+            <span class="volc-tab__icon">🎙️</span> 语音服务 (ASR/TTS)
+          </button>
+        </div>
+        ${volcTab === "llm"
+          ? this._renderVolcLlmForm(prov, apiKey, customModel, result, detecting, keyOptional)
+          : this._renderVolcVoiceForm(prov, result)}
+      `;
+    }
+
+    // 其他 provider — 原逻辑
     const canDetect = (!needsUrl || !!baseUrl?.trim()) && (keyOptional || !!apiKey);
     return html`
       ${needsUrl ? html`
@@ -2843,12 +3080,6 @@ export class ModelConfigView extends LitElement {
         <input type="password" class="form-input" placeholder=${keyOptional ? "本地服务可留空" : "粘贴你的 API Key"} .value=${apiKey} @input=${this._onApiKeyInput} @blur=${this._onApiKeyBlur} autocomplete="off" />
         <div class="form-hint">配置后会自动检测并开通所有可用功能</div>
       </div>
-      ${prov.providerId === "volcengine-ark" ? html`
-      <div class="form-group">
-        <label class="form-label">推理接入点 ID <span style="color:var(--text-muted);font-weight:normal;font-size:12px">(可选)</span></label>
-        <input type="text" class="form-input" placeholder="留空使用默认模型，或输入你的接入点 ID（ep-xxx）" .value=${customModel ?? ""} @input=${this._onCustomModelInput} autocomplete="off" />
-        <div class="form-hint">在火山方舟控制台「在线推理」创建的接入点 ID</div>
-      </div>` : nothing}
       ${prov.providerId === "openai-compatible" ? html`
       <div class="form-group">
         <label class="form-label">模型名称 <span style="color:var(--text-muted);font-weight:normal;font-size:12px">(可选)</span></label>
@@ -2865,9 +3096,108 @@ export class ModelConfigView extends LitElement {
     `;
   }
 
+  /** 火山引擎 LLM 聊天 Tab */
+  private _renderVolcLlmForm(prov: ProviderInfo, apiKey: string, customModel: string, result: { success: boolean; message: string } | null, detecting: boolean, keyOptional: boolean) {
+    const canDetect = keyOptional || !!apiKey;
+    return html`
+      <div class="form-group">
+        <label class="form-label">${prov.name} API Key${keyOptional ? html` <span style="color:var(--text-muted);font-weight:normal;font-size:12px">(可选)</span>` : nothing}</label>
+        <input type="password" class="form-input" placeholder=${keyOptional ? "本地服务可留空" : "粘贴你的 API Key"} .value=${apiKey} @input=${this._onApiKeyInput} @blur=${this._onApiKeyBlur} autocomplete="off" />
+        <div class="form-hint">配置后会自动检测并开通所有可用功能</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">推理接入点 ID <span style="color:var(--text-muted);font-weight:normal;font-size:12px">(可选)</span></label>
+        <input type="text" class="form-input" placeholder="留空使用默认模型，或输入你的接入点 ID（ep-xxx）" .value=${customModel ?? ""} @input=${this._onCustomModelInput} autocomplete="off" />
+        <div class="form-hint">在火山方舟控制台「在线推理」创建的接入点 ID</div>
+      </div>
+      ${result && !result.success ? html`<div class="alert alert--err">${result.message}</div>` : nothing}
+      <div class="btn-row">
+        ${prov.apiKeyGuide?.length > 0
+          ? html`<button class="btn btn--ghost" @click=${() => this._onConfigPrevStep()}>返回</button>`
+          : html`<button class="btn btn--ghost" @click=${() => this._closeProviderConfig()}>取消</button>`}
+        <button class="btn btn--primary" ?disabled=${!canDetect || detecting} @click=${() => this._onDetect()}>检测并保存</button>
+      </div>
+    `;
+  }
+
+  /** 火山引擎语音服务 Tab — ASR/TTS 凭证配置 + 教程 */
+  private _renderVolcVoiceForm(prov: ProviderInfo, result: { success: boolean; message: string } | null) {
+    const { providerConfigVolcAppId: appId, providerConfigVolcAccessToken: token, providerConfigVolcSaving: saving, providerConfigVolcCredsStatus: credsStatus } = this._s;
+    const canSave = !!appId?.trim() && !!token?.trim() && !saving;
+    return html`
+      ${credsStatus?.configured && !appId && !token ? html`
+      <div class="alert alert--ok" style="margin-bottom:12px">
+        语音凭证已配置${credsStatus.maskedAppId ? html`（APP ID: ${credsStatus.maskedAppId}）` : nothing}。如需更新请重新填写下方表单。
+      </div>` : nothing}
+
+      <div class="volc-voice-guide">
+        <div class="volc-voice-guide__title">如何获取语音服务凭证</div>
+        <ol class="volc-voice-guide__steps">
+          <li>
+            打开 <a href="https://console.volcengine.com/speech/service" target="_blank" rel="noopener">豆包语音控制台</a>，登录你的火山引擎账号
+          </li>
+          <li>
+            在左侧「应用管理」中点击「创建应用」，填写应用名称后提交；点击「编辑」勾选能力（流式语音识别、语音合成等），点击「确定」
+          </li>
+          <li>
+            在左侧「API服务中心」，进入以下两个服务页面，分别点击「开通」（试用包免费）：<br/>
+            · <strong>豆包流式语音识别模型2.0</strong>（ASR）<br/>
+            · <strong>豆包语音合成模型2.0</strong>（TTS）
+          </li>
+          <li>
+            在任一服务详情页底部「服务接口认证信息」区域，复制 <strong>APP ID</strong> 和 <strong>Access Token</strong>（所有服务共用同一组，填一次即可）
+          </li>
+        </ol>
+        <div class="volc-voice-guide__links">
+          <a href="https://console.volcengine.com/speech/service" target="_blank" rel="noopener">前往豆包语音控制台 ↗</a>
+          <a href="https://www.volcengine.com/docs/6561/97465" target="_blank" rel="noopener">查看官方文档 ↗</a>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">APP ID <span style="color:var(--accent-red,#e74c3c);font-weight:bold">*</span></label>
+        <input type="text" class="form-input" placeholder=${credsStatus?.maskedAppId ? `当前: ${credsStatus.maskedAppId}` : "纯数字，如 4069941412"} .value=${appId} @input=${this._onVolcAppIdInput} autocomplete="off" />
+        <div class="form-hint">在服务详情页底部「服务接口认证信息」中获取</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Access Token <span style="color:var(--accent-red,#e74c3c);font-weight:bold">*</span></label>
+        <input type="password" class="form-input" placeholder=${credsStatus?.maskedToken ? `当前: ${credsStatus.maskedToken}` : "粘贴你的 Access Token"} .value=${token} @input=${this._onVolcAccessTokenInput} autocomplete="off" />
+        <div class="form-hint">在服务详情页底部「服务接口认证信息」中获取，与 APP ID 同一位置</div>
+      </div>
+
+      <div class="volc-voice-note">
+        <span class="volc-voice-note__icon">ℹ️</span>
+        <span>APP ID / Access Token 是同一个应用下所有服务共用的，只需填一次。但 ASR（流式语音识别）和 TTS（语音合成）需要在控制台各自开通才能使用。</span>
+      </div>
+
+      ${result ? html`<div class="alert ${result.success ? 'alert--ok' : 'alert--err'}">${result.message}</div>` : nothing}
+
+      <div class="btn-row">
+        <button class="btn btn--ghost" ?disabled=${saving} @click=${() => this._onVolcTabSwitch("llm")}>返回 LLM 配置</button>
+        <button class="btn btn--primary" ?disabled=${!canSave} @click=${() => this._onSaveVolcVoiceCredentials()}>${saving ? "保存中..." : "保存语音凭证"}</button>
+      </div>
+    `;
+  }
+
   private _renderDetectingStep() {
     const provName = this._s.providerConfigProvider?.name ?? "";
-    return html`<div class="detecting-state"><div class="spinner"></div><div class="detecting-text">正在检测 ${provName} 可用模型...</div><div class="detecting-text" style="font-size:12px;opacity:0.6">验证 API Key 并扫描支持的能力</div></div>`;
+    const elapsed = this._s.providerConfigDetectElapsed;
+    const total = this._s.providerConfigDetectTotal;
+    const completed = this._s.providerConfigDetectCompleted;
+    const hasProgress = total > 0;
+    return html`
+      <div class="detecting-state">
+        <div class="spinner"></div>
+        <div class="detecting-text">正在检测 ${provName} 可用模型...</div>
+        <div class="detecting-text" style="font-size:12px;opacity:0.6">
+          ${hasProgress
+            ? `已完成 ${completed}/${total} 个模型（${elapsed}秒）`
+            : `验证 API Key 并扫描支持的能力（${elapsed}秒）`}
+        </div>
+        <button class="btn btn--ghost" style="margin-top:16px;font-size:12px;" @click=${() => this._cancelDetection()}>取消检测</button>
+      </div>
+    `;
   }
 
   private _renderResultStep(prov: ProviderInfo) {

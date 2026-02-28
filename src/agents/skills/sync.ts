@@ -140,7 +140,7 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
     // 拉取远程索引
     // 优先使用增量（sinceVersion + proxy），回退全量
     const proxyConfig = getDefaultProxyConfig();
-    const result =
+    let result =
       sinceVersion !== undefined && proxyConfig
         ? await fetchProxySkillsIndex(proxyConfig, sinceVersion)
         : await fetchRemoteSkillsIndex(registry ?? DEFAULT_GITEE_REGISTRY);
@@ -154,10 +154,28 @@ async function doSync(options: SyncOptions): Promise<SyncResult> {
       return { ok: true, synced: false, error };
     }
 
-    // 增量同步且无新数据时，跳过覆盖本地缓存（避免用空列表清空已有索引）
+    // 增量同步且无新数据时，检查本地 JSON 索引是否也为空。
+    // 如果本地 remote 列表也为空（数据不一致状态），回退到全量同步重建。
     if (sinceVersion !== undefined && result.index.skills.length === 0) {
-      logger.debug("Incremental sync returned no new skills, keeping local cache");
-      return { ok: true, synced: false };
+      const localIndex = await readLocalIndex();
+      const localRemoteCount = localIndex?.remote?.length ?? 0;
+      if (localRemoteCount > 0) {
+        logger.debug("Incremental sync returned no new skills, keeping local cache");
+        return { ok: true, synced: false };
+      }
+      // 本地 JSON 索引为空但 SQLite 有版本记录 —— 数据不一致，回退全量同步
+      logger.warn("Local JSON index is empty despite SQLite version, falling back to full sync", {
+        sinceVersion,
+        localRemoteCount,
+      });
+      const fullResult = await fetchProxySkillsIndex(proxyConfig!, 0);
+      if (fullResult.ok && fullResult.index.skills.length > 0) {
+        // 用全量结果替换，继续后续写入流程
+        result = fullResult;
+      } else {
+        logger.warn("Full sync fallback also returned empty or failed");
+        return { ok: true, synced: false };
+      }
     }
 
     // 获取本地已安装的技能列表

@@ -391,8 +391,9 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
             const env = collectEnvFields(e);
             // For manual-config items, env is optional; otherwise need at least one value
             if (Object.keys(env).length === 0 && item.installable !== false) return;
-            // Merge extra env vars from advanced config
-            const extraContainer = document.getElementById("mcp-extra-env");
+            // Merge extra env vars from advanced config — use dialog-relative lookup
+            const dialog = (e.target as HTMLElement).closest("[role=dialog]");
+            const extraContainer = dialog?.querySelector("#mcp-extra-env");
             if (extraContainer) {
               const templateRow = extraContainer.querySelector(".mcp-env-row-template");
               if (templateRow) {
@@ -407,12 +408,12 @@ export function renderMcpConfigWizard(props: McpConfigWizardProps): TemplateResu
                 if (k && v) env[k] = v;
               });
             }
-            // Collect install method overrides (for manual-config items)
+            // Collect install method overrides (for manual-config items) — dialog-relative
             const overrides: McpInstallOverrides = {};
-            const sseInput = document.getElementById("mcp-override-sse-input") as HTMLInputElement | null;
-            const npmInput = document.getElementById("mcp-override-npm-input") as HTMLInputElement | null;
-            const pypiInput = document.getElementById("mcp-override-pypi-input") as HTMLInputElement | null;
-            const selectedMethod = (document.querySelector('input[name="mcp-install-method"]:checked') as HTMLInputElement)?.value;
+            const sseInput = dialog?.querySelector("#mcp-override-sse-input") as HTMLInputElement | null;
+            const npmInput = dialog?.querySelector("#mcp-override-npm-input") as HTMLInputElement | null;
+            const pypiInput = dialog?.querySelector("#mcp-override-pypi-input") as HTMLInputElement | null;
+            const selectedMethod = (dialog?.querySelector('input[name="mcp-install-method"]:checked') as HTMLInputElement)?.value;
             if (selectedMethod === "sse" && sseInput?.value?.trim()) {
               overrides.sseUrl = sseInput.value.trim();
             } else if (selectedMethod === "npm" && npmInput?.value?.trim()) {

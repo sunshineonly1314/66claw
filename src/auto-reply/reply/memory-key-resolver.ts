@@ -79,6 +79,7 @@ const NON_OPENAI_COMPATIBLE_PROVIDERS = new Set([
 export function resolveMemoryProviderApiKey(
   cfg: OpenClawCNConfig | undefined,
   provider: string,
+  opts?: { skipEnvVar?: boolean },
 ): string | null {
   // 1. Explicit provider config (models.providers["ant-ling"].apiKey)
   const customKey = getCustomProviderApiKey(cfg, provider);
@@ -89,8 +90,12 @@ export function resolveMemoryProviderApiKey(
   if (freeModelKey) return freeModelKey;
 
   // 3. Environment variable (ANT_LING_API_KEY, LONGCAT_API_KEY, etc.)
-  const envResult = resolveEnvApiKey(provider);
-  if (envResult?.apiKey) return envResult.apiKey;
+  // [CN-PATCH] skipEnvVar: UI status check should only show explicitly configured providers,
+  // not providers that happen to have an env var set for other purposes.
+  if (!opts?.skipEnvVar) {
+    const envResult = resolveEnvApiKey(provider);
+    if (envResult?.apiKey) return envResult.apiKey;
+  }
 
   return null;
 }

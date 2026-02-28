@@ -336,7 +336,7 @@ const BUILTIN_PROFILES: ModelProfile[] = [
   {
     provider: "siliconflow",
     model: "Qwen/Qwen-Image-Edit",
-    capabilities: { imageGen: 4 },
+    capabilities: { imageEdit: 4 },
     costPer1M: 3.0,
     region: "domestic",
   },
@@ -483,6 +483,7 @@ const REQUIRED_CAPABILITY: Record<ModalityIntent, keyof ModelCapability> = {
   code: "code",
   image_understand: "vision",
   image_generate: "imageGen",
+  image_edit: "imageEdit",
   audio_understand: "audio",
   video_understand: "video",
   video_generate: "videoGen",

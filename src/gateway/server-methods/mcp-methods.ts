@@ -802,6 +802,15 @@ const mcpDisableHandler: GatewayRequestHandler = safeHandler(async ({ params, re
   }
   try {
     await manager.disableServer(id);
+
+    // Persist enabled=false to config file so it survives restart
+    const serverConfig = manager.registry.getServer(id);
+    if (serverConfig) {
+      persistMcpServerAdd({ ...serverConfig, enabled: false }).catch((err) => {
+        console.error("[mcp] Failed to persist disable state (non-fatal):", err);
+      });
+    }
+
     respond(true, { ok: true });
   } catch (err) {
     respond(false, undefined, mcpError(String(err)));
@@ -821,6 +830,15 @@ const mcpEnableHandler: GatewayRequestHandler = safeHandler(async ({ params, res
   }
   try {
     await manager.enableServer(id);
+
+    // Persist enabled=true to config file so it survives restart
+    const serverConfig = manager.registry.getServer(id);
+    if (serverConfig) {
+      persistMcpServerAdd({ ...serverConfig, enabled: true }).catch((err) => {
+        console.error("[mcp] Failed to persist enable state (non-fatal):", err);
+      });
+    }
+
     respond(true, { ok: true });
   } catch (err) {
     respond(false, undefined, mcpError(String(err)));

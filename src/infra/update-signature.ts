@@ -25,31 +25,14 @@ const log = createSubsystemLogger("infra:update-signature");
 /**
  * Ed25519 public key for update package verification.
  *
- * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- * !! PLACEHOLDER — MUST BE REPLACED BEFORE PRODUCTION RELEASE      !!
- * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- *
- * Current status: PLACEHOLDER key. All signature verification is BYPASSED
- * via `isUpdateSigningKeyConfigured()` returning false. This means update
- * packages are NOT cryptographically verified in the current build.
- *
- * To enable signature verification:
- *   1. Generate a keypair:
- *        openssl genpkey -algorithm Ed25519 -out update-signing.pem
- *        openssl pkey -in update-signing.pem -pubout -out update-signing.pub
- *   2. Replace the placeholder below with the contents of update-signing.pub
- *   3. Store the private key (update-signing.pem) as the CI secret
- *      UPDATE_SIGNING_PRIVATE_KEY — used by scripts/release-deploy.ts to sign artifacts
- *   4. NEVER commit the private key to the repository
- *
  * The corresponding private key is stored in CI secrets (UPDATE_SIGNING_PRIVATE_KEY)
- * and used by build scripts to sign delta packages and checksums.
+ * and used by scripts/release-deploy.ts to sign delta packages and checksums.
  *
  * IMPORTANT: Update this key when rotating signing keys.
  * Old clients will reject packages signed with new keys (intentional — forces upgrade).
  */
 const UPDATE_ED25519_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAplaceholder_replace_with_real_key_before_release000=
+MCowBQYDK2VwAyEAMoYC8hqWgz4whNhKwgaJVZxVYPiFUt0exaDThQRjjCM=
 -----END PUBLIC KEY-----`;
 
 /**
@@ -58,6 +41,25 @@ MCowBQYDK2VwAyEAplaceholder_replace_with_real_key_before_release000=
  */
 export function isUpdateSigningKeyConfigured(): boolean {
   return !UPDATE_ED25519_PUBLIC_KEY.includes("placeholder_replace_with_real_key");
+}
+
+let _placeholderWarningEmitted = false;
+
+/**
+ * Emit a one-time warning at startup if the Ed25519 signing key is still a placeholder.
+ * This helps operators notice that signature verification is BYPASSED in the current build.
+ * Should be called once during gateway initialization.
+ */
+export function emitPlaceholderKeyWarningOnce(): void {
+  if (_placeholderWarningEmitted) return;
+  _placeholderWarningEmitted = true;
+  if (!isUpdateSigningKeyConfigured()) {
+    log.warn("==========================================================================");
+    log.warn("  WARNING: Ed25519 update signing key is PLACEHOLDER — signature bypass!  ");
+    log.warn("  All update packages will be accepted WITHOUT cryptographic verification.");
+    log.warn("  For production: replace the key in update-signature.ts and set CI secret.");
+    log.warn("==========================================================================");
+  }
 }
 
 /**

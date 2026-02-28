@@ -202,6 +202,7 @@ import {
   loadProjectStats,
   loadSharedMemory,
   clearSharedMemory,
+  loadProjectActivity,
   stopProjectHealthPoll,
   updateProjectSettings,
   removeProjectMember,
@@ -1147,6 +1148,7 @@ export function renderApp(state: AppViewState) {
                 teamProjectHealth: state.teamProjectHealth,
                 teamProjectStats: state.teamProjectStats,
                 teamProjectMemory: state.teamProjectMemory,
+                teamProjectActivity: state.teamProjectActivity,
                 teamProjectTab: state.teamProjectTab,
                 teamProjectBusy: state.teamProjectBusy,
                 teamCollapsedProjects: _teamCollapsedProjects,
@@ -1159,6 +1161,7 @@ export function renderApp(state: AppViewState) {
                   const pid = state.teamProjectSelectedId;
                   if (!pid) return;
                   if (tab === "stats" && !state.teamProjectStats) void loadProjectStats(state as any, pid);
+                  if (tab === "activity" && !state.teamProjectActivity) void loadProjectActivity(state as any, pid);
                   if (tab === "memory" && !state.teamProjectMemory) void loadSharedMemory(state as any, pid);
                 },
                 onPauseProject: (projectId: string) => void pauseProject(state as any, projectId),
@@ -1166,6 +1169,7 @@ export function renderApp(state: AppViewState) {
                 onDeleteProject: (projectId: string) => void deleteProject(state as any, projectId),
                 onLoadProjectStats: (projectId: string) => void loadProjectStats(state as any, projectId),
                 onLoadProjectMemory: (projectId: string) => void loadSharedMemory(state as any, projectId),
+                onLoadProjectActivity: (projectId: string) => void loadProjectActivity(state as any, projectId),
                 onClearProjectMemory: (projectId: string) => void clearSharedMemory(state as any, projectId),
                 onToggleProjectCollapse: (projectId: string) => {
                   if (_teamCollapsedProjects.has(projectId)) _teamCollapsedProjects.delete(projectId);
@@ -1306,7 +1310,7 @@ export function renderApp(state: AppViewState) {
               marketCategory: state.skillsActiveCategory,
               installProgress: state.skillsInstallProgress,
               onMarketSearch: (keyword) => {
-                state.skillsFilter = keyword;
+                state.skillsMarketKeyword = keyword;
                 state.skillsMarketPage = 1;
                 void searchMarketSkills(state, { keyword: keyword || undefined, page: 1 });
               },
@@ -2307,22 +2311,44 @@ export function renderApp(state: AppViewState) {
                 },
                 onVoiceUnavailable: state.voiceAsrAvailable !== true
                   ? () => {
-                      const msg = "语音识别尚未配置，请前往设置页面安装语音能力。";
+                      // 移除已有的引导浮层（防止重复）
+                      document.querySelector(".voice-setup-popover")?.remove();
+
                       const anchor = document.querySelector(".chat-compose") as HTMLElement;
                       if (!anchor) return;
                       anchor.style.position = "relative";
+
                       const el = document.createElement("div");
-                      el.textContent = msg;
+                      el.className = "voice-setup-popover";
+                      el.innerHTML = `
+                        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#fff">语音功能需要配置后才能使用</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,0.7);margin-bottom:12px">推荐使用豆包语音服务，免费试用，一分钟即可完成配置。</div>
+                        <button data-action="volc" style="display:block;width:100%;padding:8px 0;border:none;border-radius:6px;background:#4f6ef7;color:#fff;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">配置豆包语音（推荐）</button>
+                        <button data-action="settings" style="display:block;width:100%;padding:6px 0;border:none;border-radius:6px;background:transparent;color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer">前往模型设置</button>
+                      `;
                       Object.assign(el.style, {
-                        position: "absolute", bottom: "-52px", left: "50%", transform: "translateX(-50%)",
-                        padding: "8px 18px", borderRadius: "10px", fontSize: "13px", fontWeight: "500",
-                        background: "rgba(0,0,0,0.8)", color: "#fff", zIndex: "99999", whiteSpace: "nowrap",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)", transition: "opacity 0.3s",
-                        pointerEvents: "none",
+                        position: "absolute", bottom: "-140px", left: "50%", transform: "translateX(-50%)",
+                        padding: "14px 18px", borderRadius: "12px", width: "260px",
+                        background: "rgba(0,0,0,0.88)", color: "#fff", zIndex: "99999",
+                        boxShadow: "0 8px 24px rgba(0,0,0,0.25)", textAlign: "center",
                       });
+
+                      const cleanup = () => { el.remove(); document.removeEventListener("pointerdown", outsideClick); };
+                      const outsideClick = (ev: PointerEvent) => { if (!el.contains(ev.target as Node)) cleanup(); };
+                      setTimeout(() => document.addEventListener("pointerdown", outsideClick), 0);
+
+                      el.querySelector('[data-action="volc"]')!.addEventListener("click", () => {
+                        cleanup();
+                        state.setTab("model-config");
+                        // 通知 model-config-view 自动打开豆包语音配置
+                        setTimeout(() => globalThis.dispatchEvent(new CustomEvent("openclawcn:voice-setup")), 300);
+                      });
+                      el.querySelector('[data-action="settings"]')!.addEventListener("click", () => {
+                        cleanup();
+                        state.setTab("model-config");
+                      });
+
                       anchor.appendChild(el);
-                      setTimeout(() => { el.style.opacity = "0"; }, 2500);
-                      setTimeout(() => el.remove(), 3000);
                     }
                   : undefined,
                 voiceMode: state.voiceMode,

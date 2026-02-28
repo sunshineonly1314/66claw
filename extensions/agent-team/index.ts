@@ -77,6 +77,48 @@ const agentToProject = new Map<string, string>();
 const healthCache = new Map<string, Map<string, MemberHealth>>();
 const statsCache = new Map<string, Map<string, MemberStats>>();
 
+// ── Activity Event Ring Buffer ──────────────────────────────────────────
+// Records routing decisions and agent completion events for the UI activity feed.
+// Keyed by projectId, each buffer holds the most recent MAX_ACTIVITY_EVENTS events.
+
+const ACTIVITY_BUFFER_MAX = 100;
+
+type ActivityEvent = {
+  id: string;
+  timestamp: number;
+  agentId: string;
+  peerId?: string;
+  method: "affinity" | "keyword" | "supervisor-llm";
+  confidence: number;
+  matchedPattern?: string;
+  durationMs?: number;
+  success?: boolean;
+  error?: string;
+  replySummary?: string;
+};
+
+const activityBuffers = new Map<string, ActivityEvent[]>();
+
+function pushActivityEvent(projectId: string, event: ActivityEvent): void {
+  let buf = activityBuffers.get(projectId);
+  if (!buf) {
+    buf = [];
+    activityBuffers.set(projectId, buf);
+  }
+  buf.push(event);
+  if (buf.length > ACTIVITY_BUFFER_MAX) {
+    buf.splice(0, buf.length - ACTIVITY_BUFFER_MAX);
+  }
+}
+
+/** Pending routing decisions awaiting agent_end completion. Key = agentId (most recent per agent). */
+const pendingRouteEvents = new Map<string, { projectId: string; event: Omit<ActivityEvent, "durationMs" | "success" | "error" | "replySummary">; startTime: number }>();
+
+let activityIdCounter = 0;
+function nextActivityId(): string {
+  return `act_${Date.now()}_${++activityIdCounter}`;
+}
+
 /**
  * Tracks the most recent agentId that handled a given peer.
  * Key: peerId, Value: agentId.
@@ -303,7 +345,7 @@ const plugin: OpenClawCNPluginDefinition = {
     // Returns null to let the message proceed to the Supervisor's LLM.
     api.on(
       "resolve_agent",
-      async (event, ctx) => {
+      async (event: { message: string; sessionKey: string }, ctx: { channelId?: string; accountId?: string; peerId?: string }) => {
         if (!event.message || !event.sessionKey) return;
 
         // Without peerId we cannot do deterministic routing — affinity
@@ -396,6 +438,23 @@ const plugin: OpenClawCNPluginDefinition = {
             `"${finalResult.matchedPattern ?? ""}" → ${finalResult.agentId} ` +
             `(${(finalResult.confidence * 100).toFixed(0)}%)`,
         );
+
+        // Record routing decision for the activity feed.
+        // Store as pending — agent_end will finalize with duration/success.
+        const routeEvent = {
+          id: nextActivityId(),
+          timestamp: Date.now(),
+          agentId: finalResult.agentId,
+          peerId: ctx.peerId,
+          method: finalResult.method as ActivityEvent["method"],
+          confidence: finalResult.confidence,
+          matchedPattern: finalResult.matchedPattern,
+        };
+        pendingRouteEvents.set(finalResult.agentId, {
+          projectId: project.projectId,
+          event: routeEvent,
+          startTime: Date.now(),
+        });
 
         return {
           sessionKey: newSessionKey,
@@ -492,6 +551,33 @@ const plugin: OpenClawCNPluginDefinition = {
 
       // NOTE: PluginHookAgentContext does NOT include peerId.
       // Peer→agent mapping is maintained by resolve_agent hook.
+
+      // Finalize pending activity event from resolve_agent
+      const pending = pendingRouteEvents.get(ctx.agentId);
+      if (pending) {
+        pendingRouteEvents.delete(ctx.agentId);
+        const finalEvent: ActivityEvent = {
+          ...pending.event,
+          durationMs: Date.now() - pending.startTime,
+          success: event.success ?? true,
+          error: event.error,
+          replySummary: undefined,
+        };
+        pushActivityEvent(pending.projectId, finalEvent);
+      } else {
+        // Supervisor LLM fallback — no fast-path routing happened
+        pushActivityEvent(project.projectId, {
+          id: nextActivityId(),
+          timestamp: Date.now(),
+          agentId: ctx.agentId,
+          method: "supervisor-llm",
+          confidence: 1,
+          durationMs: event.durationMs,
+          success: event.success ?? true,
+          error: event.error,
+          replySummary: undefined,
+        });
+      }
 
       // Persist state asynchronously (best-effort)
       const state: ProjectState = {
@@ -833,7 +919,7 @@ const plugin: OpenClawCNPluginDefinition = {
               typeof p.supervisorAgentId === "string"
                 ? p.supervisorAgentId
                 : undefined,
-            constraints: p.constraints as TeamConstraints | undefined,
+            constraints: extractConstraints(p.constraints),
             orchestratorStateDir,
           });
 
@@ -1092,11 +1178,16 @@ const plugin: OpenClawCNPluginDefinition = {
             }
           }
 
-          // Remove from disk + cache + affinity + route table + peer mapping
+          // Remove from disk + cache + affinity + route table + peer mapping + activity
           await deleteProject(projectId);
           projectCache.delete(projectId);
           healthCache.delete(projectId);
           statsCache.delete(projectId);
+          activityBuffers.delete(projectId);
+          // Clean pendingRouteEvents for agents belonging to this project
+          for (const [key, val] of pendingRouteEvents) {
+            if (val.projectId === projectId) pendingRouteEvents.delete(key);
+          }
           clearPeerAgentEntriesForProject(project);
           clearProjectAffinities(projectId);
           clearRouteTable(projectId);
@@ -1459,6 +1550,41 @@ const plugin: OpenClawCNPluginDefinition = {
       },
     );
 
+    // ── team.project.activity ──────────────────────────────────────────
+    api.registerGatewayMethod(
+      "team.project.activity",
+      async ({ params, respond }) => {
+        const p = params as Record<string, unknown>;
+        const projectId = String(p.projectId ?? "");
+        const limit = Math.min(Number(p.limit ?? 50), ACTIVITY_BUFFER_MAX);
+
+        const project = projectCache.get(projectId);
+        if (!project) {
+          respond(false, undefined, {
+            code: "NOT_FOUND",
+            message: `Project "${projectId}" not found`,
+          });
+          return;
+        }
+
+        const buf = activityBuffers.get(projectId) ?? [];
+        // Return latest events first (newest at index 0)
+        const events = buf.slice(-limit).reverse();
+
+        // Enrich events with agent names from the project's members list
+        const enriched = events.map((ev) => {
+          const member = project.members?.find((m) => m.id === ev.agentId);
+          return {
+            ...ev,
+            agentName: member?.name ?? ev.agentId,
+            agentEmoji: member?.emoji,
+          };
+        });
+
+        respond(true, { projectId, events: enriched }, undefined);
+      },
+    );
+
     // ── team.project.pause ────────────────────────────────────────────
     api.registerGatewayMethod(
       "team.project.pause",
@@ -1484,6 +1610,7 @@ const plugin: OpenClawCNPluginDefinition = {
 
         await saveProject(updated);
         projectCache.set(projectId, updated);
+        rebuildAgentIndex();
         respond(true, { project: updated }, undefined);
       },
     );
@@ -1513,6 +1640,7 @@ const plugin: OpenClawCNPluginDefinition = {
 
         await saveProject(updated);
         projectCache.set(projectId, updated);
+        rebuildAgentIndex();
         respond(true, { project: updated }, undefined);
       },
     );
@@ -1530,6 +1658,7 @@ const plugin: OpenClawCNPluginDefinition = {
       }> = [];
 
       for (const project of projectCache.values()) {
+        if (project.status !== "active") continue;
         for (const binding of project.bindings) {
           routes.push({
             channel: binding.channel,
@@ -1622,7 +1751,7 @@ const plugin: OpenClawCNPluginDefinition = {
     logger.info(
       `Agent Team plugin registered successfully (v0.5.0). ` +
         `Hooks: resolve_agent (federation cascade), before_agent_start, agent_end, message_sending, gateway_start. ` +
-        `Methods: team.project.{list,get,create,createFromPlan,update,delete,pause,resume,health,stats}, ` +
+        `Methods: team.project.{list,get,create,createFromPlan,update,delete,pause,resume,health,stats,activity}, ` +
         `team.federation.create, team.shared-memory.{list,clear}. ` +
         `Tools: memory_share (read-shared mode). ` +
         `Service: agent-team-health. Fast Path Router: affinity+keyword+federation.`,

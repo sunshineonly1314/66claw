@@ -107,9 +107,20 @@ let dailySyncTimer: ReturnType<typeof setInterval> | null = null;
  * If a sync is already running, returns the same Promise (dedup).
  */
 export async function syncMcpIndex(options: McpSyncOptions = {}): Promise<McpSyncResult> {
-  if (syncPromise && !options.force) {
-    logger.debug("MCP sync already in progress, waiting for existing sync");
-    return syncPromise;
+  if (syncPromise) {
+    if (!options.force) {
+      logger.debug("MCP sync already in progress, waiting for existing sync");
+      return syncPromise;
+    }
+    // force=true: wait for in-flight sync to finish first, then start a fresh one
+    // (prevents concurrent writes to mcp-index.json)
+    logger.debug("MCP sync force requested, waiting for in-flight sync to complete first");
+    await syncPromise.catch(() => {});
+    // Re-check: another force caller may have started a new sync while we awaited
+    if (syncPromise) {
+      logger.debug("MCP sync: another sync started while waiting, joining it");
+      return syncPromise;
+    }
   }
 
   syncPromise = doSync(options);

@@ -82,8 +82,10 @@ export type SkillsState = {
   skillsMarketPage: number;
   // Category filter
   skillsActiveCategory: string;
-  // Filter
+  // Filter — local tab only (not shared with marketplace search)
   skillsFilter: string;
+  // Marketplace search keyword — separate from local filter to avoid state pollution
+  skillsMarketKeyword: string;
   // Pagination — 每次显示多少条，点「加载更多」递增
   skillsVisibleCount: number;
   // 统一视图层级筛选
@@ -494,9 +496,9 @@ export async function installRemoteSkill(
     // 延迟清除进度状态，然后跳转到「我的技能」页面
     setTimeout(() => {
       setInstallProgress(state, skillName, null);
-      // 安装完成后自动跳转到「技能管理」tab，并用技能名搜索让用户立即看到
+      // 安装完成后自动跳转到「技能管理」tab
+      // 不设置 skillsFilter — 避免用户以为其他技能"消失了"
       state.skillsActiveTab = "active";
-      state.skillsFilter = skillName;
       // 确保切 tab 后拿到最新的 skills 列表
       void loadSkills(state);
     }, 1500);
@@ -617,7 +619,7 @@ export async function searchMarketSkills(
   state.skillsMarketError = null;
   try {
     const result = (await state.client.request("skills_marketplace.search", {
-      keyword: options?.keyword || state.skillsFilter || undefined,
+      keyword: options?.keyword ?? (state.skillsMarketKeyword || undefined),
       category: (options?.category || state.skillsActiveCategory || "all") === "all"
         ? undefined
         : (options?.category || state.skillsActiveCategory),
@@ -668,7 +670,7 @@ export async function loadMoreMarketSkills(state: SkillsState) {
   try {
     const nextPage = current.page + 1;
     const result = (await state.client?.request("skills_marketplace.search", {
-      keyword: state.skillsFilter || undefined,
+      keyword: state.skillsMarketKeyword || undefined,
       category: (state.skillsActiveCategory || "all") === "all"
         ? undefined
         : state.skillsActiveCategory,

@@ -64,13 +64,16 @@ const SCENARIO_TOOL_MAP: Record<string, { profile: string; also: string[] }> = {
 // ── Scenario → Skill Mapping ─────────────────────────────────────────────
 
 const SCENARIO_SKILL_MAP: Record<string, string[]> = {
-  customer_support: ["wechat-cs", "summarize", "self-troubleshoot"],
-  coding:           ["coding-agent", "github", "web-researcher"],
-  news:             ["ai-daily-news", "cctv-news", "news-aggregator"],
-  content:          ["xiaohongshu", "summarize", "web-researcher"],
-  finance:          ["nano-pdf"],
-  scheduling:       ["oracle"],
-  learning:         ["web-researcher", "summarize"],
+  customer_support: ["wechat-cs", "summarize", "self-troubleshoot", "faq-builder"],
+  coding:           ["coding-agent", "github", "web-researcher", "code-review", "git-helper"],
+  news:             ["ai-daily-news", "cctv-news", "news-aggregator", "rss-reader", "news-briefing"],
+  content:          ["xiaohongshu", "summarize", "web-researcher", "seo-helper", "copywriting"],
+  data_analysis:    ["nano-pdf", "csv-analyzer", "data-viz", "sql-helper"],
+  finance:          ["nano-pdf", "ledger", "budget-tracker"],
+  scheduling:       ["oracle", "calendar", "todo-tracker"],
+  learning:         ["web-researcher", "summarize", "flashcard", "quiz-maker"],
+  research:         ["web-researcher", "summarize", "nano-pdf", "arxiv-reader"],
+  general:          ["web-researcher", "summarize"],
 };
 
 // ── Main Inference Function ──────────────────────────────────────────────
@@ -226,7 +229,17 @@ function inferSkills(role: string, ctx: UserContext): string[] {
   // Role keyword → skills
   if (/新闻|news/i.test(role)) skills.push("ai-daily-news", "news-briefing");
   if (/小红书|xiaohongshu/i.test(role)) skills.push("xiaohongshu");
-  if (/总结|summarize/i.test(role)) skills.push("summarize");
+  if (/总结|summarize|摘要/i.test(role)) skills.push("summarize");
+  if (/代码|code|编程|program/i.test(role)) skills.push("coding-agent");
+  if (/翻译|translate/i.test(role)) skills.push("translator");
+  if (/搜索|search|调研|research/i.test(role)) skills.push("web-researcher");
+  if (/pdf|文档/i.test(role)) skills.push("nano-pdf");
+  if (/日程|calendar|日历/i.test(role)) skills.push("calendar");
+  if (/客服|support|接待/i.test(role)) skills.push("self-troubleshoot");
+  if (/写作|写文|copywrite|文案/i.test(role)) skills.push("copywriting");
+  if (/数据|data|分析|analy/i.test(role)) skills.push("csv-analyzer");
+  if (/图片|image|配图|画/i.test(role)) skills.push("image-helper");
+  if (/github|仓库|repo/i.test(role)) skills.push("github");
 
   return [...new Set(skills)];
 }
@@ -236,9 +249,32 @@ function inferSkills(role: string, ctx: UserContext): string[] {
 function inferMCPServers(role: string, resources: string[]): string[] {
   const servers: string[] = [];
 
+  // Database & SQL
   if (/数据库|数据分析|database|sql/i.test(role)) servers.push("mcp-server-sqlite");
+  // File system access
   if (/文件|文档|file|doc/i.test(role)) servers.push("@mcp/server-filesystem");
+  // Google Sheets
   if (resources.includes("google_sheets")) servers.push("@anthropic/mcp-google-sheets");
+  // GitHub integration
+  if (/github|代码仓库|仓库|repo/i.test(role) || resources.includes("github")) servers.push("@modelcontextprotocol/server-github");
+  // Git operations
+  if (/git|版本控制|version.*control/i.test(role)) servers.push("@modelcontextprotocol/server-git");
+  // Web search / browsing
+  if (/浏览器|爬虫|scrape|browser|crawl/i.test(role)) servers.push("@anthropic/mcp-puppeteer");
+  // Notion integration
+  if (/notion/i.test(role) || resources.includes("notion")) servers.push("@notionhq/mcp-server-notion");
+  // Slack messaging
+  if (/slack/i.test(role) || resources.includes("slack")) servers.push("@anthropic/mcp-slack");
+  // Memory / knowledge store
+  if (/知识库|knowledge.*base|向量|vector|rag/i.test(role)) servers.push("@anthropic/mcp-memory");
+  // PDF processing
+  if (/pdf|文档解析/i.test(role) || resources.includes("pdf")) servers.push("mcp-server-pdf");
+  // Docker / container management
+  if (/docker|容器|container/i.test(role)) servers.push("@anthropic/mcp-docker");
+  // PostgreSQL
+  if (/postgres|pg|关系.*数据/i.test(role)) servers.push("@modelcontextprotocol/server-postgres");
+  // Brave search
+  if (/搜索引擎|search.*engine/i.test(role)) servers.push("@anthropic/mcp-brave-search");
 
   return [...new Set(servers)];
 }

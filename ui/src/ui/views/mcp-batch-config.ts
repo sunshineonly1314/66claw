@@ -35,8 +35,13 @@ function isConfigured(
 ): boolean {
   const status = serverEnvStatus[item.serverId];
   if (!status) return false;
-  const keyName = item.apiKeyName ?? "API_KEY";
-  return !!status[keyName];
+  // Check all required env keys, not just one
+  const requiredKeys: string[] = item.envRequired && item.envRequired.length > 0
+    ? item.envRequired
+    : item.envSchema && Object.keys(item.envSchema).length > 0
+      ? Object.keys(item.envSchema)
+      : [item.apiKeyName ?? "API_KEY"];
+  return requiredKeys.every((key) => !!status[key]);
 }
 
 function collectUpdates(): Array<{ serverId: string; env: Record<string, string> }> {

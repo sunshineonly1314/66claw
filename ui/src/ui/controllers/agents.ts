@@ -39,30 +39,16 @@ export async function createAgent(
   state.agentCreating = true;
   state.agentCreateError = null;
   try {
-    // Step 1: Create agent using ASCII id as the "name" param.
-    // The gateway normalizeAgentId(name) will use it as the agent ID.
-    // We do NOT send an "id" field because older gateway builds reject unknown properties.
-    const createParams: { name: string; workspace: string } = {
-      name: params.id,
+    // Create agent with explicit id and display name in a single call.
+    const res = (await state.client.request("agents.create", {
+      id: params.id,
+      name: params.name || params.id,
       workspace: params.workspace,
-    };
-    const res = (await state.client.request("agents.create", createParams)) as
+    })) as
       | { ok: true; agentId: string }
       | undefined;
 
-    // Step 2: If the user specified a display name different from the ID,
-    // update the agent name via agents.update (which supports the "name" field).
     const agentId = res?.agentId ?? params.id;
-    if (params.name && params.name !== params.id) {
-      try {
-        await state.client.request("agents.update", {
-          agentId,
-          name: params.name,
-        });
-      } catch {
-        // Non-fatal: agent was created, just the display name wasn't set.
-      }
-    }
 
     await loadAgents(state);
     state.agentsSelectedId = agentId;

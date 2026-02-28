@@ -58,6 +58,16 @@ export type McpStoreSectionProps = {
   onUninstall: (serverId: string) => void;
   onOpenConfigWizard: (item: McpMarketplaceItem) => void;
   onCloseConfigWizard: () => void;
+  /** Update an installed marketplace item */
+  onUpdate?: (serverId: string) => void;
+  /** Send a prompt to chat (from detail modal "try saying") */
+  onTrySay?: (prompt: string) => void;
+  /** Test connection for config wizard */
+  onTestConnection?: (serverId: string, env: Record<string, string>) => void;
+  /** Test connection state (managed by parent) */
+  testConnectionState?: "idle" | "testing" | "success" | "error";
+  /** Test connection result message */
+  testConnectionMessage?: string;
   /** Load next page of marketplace items */
   onLoadMore?: () => void;
   /** Current running process count for limit guard */
@@ -307,8 +317,8 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
           onInstall: () => onInstall(marketplace.detailItem!),
           onUninstall: () => props.onUninstall(marketplace.detailItem!.serverId),
           onConfigInstall: () => onOpenConfigWizard(marketplace.detailItem!),
-          onUpdate: () => { /* no-op: update handled by store refresh */ },
-          onTrySay: () => { /* not available in shared context */ },
+          onUpdate: () => { props.onUpdate?.(marketplace.detailItem!.serverId); props.onCloseDetail(); },
+          onTrySay: (prompt: string) => { props.onTrySay?.(prompt); },
         })
       : nothing}
 
@@ -324,8 +334,11 @@ export function renderMcpStoreSection(props: McpStoreSectionProps): TemplateResu
             );
             props.onCloseConfigWizard();
           },
-          onTestConnection: () => { /* not wired in shared context */ },
-          testState: "idle",
+          onTestConnection: (env: Record<string, string>) => {
+            props.onTestConnection?.(marketplace.configTarget!.serverId, env);
+          },
+          testState: props.testConnectionState ?? "idle",
+          testMessage: props.testConnectionMessage,
         })
       : nothing}
 

@@ -143,7 +143,9 @@ async function downloadFile(
 
       // Stream to .partial file first (atomic download -- M15 fix)
       const partialPath = destPath + ".partial";
-      const nodeStream = Readable.fromWeb(resp.body as import("node:stream/web").ReadableStream);
+      const nodeStream = Readable.fromWeb(
+        resp.body as unknown as import("node:stream/web").ReadableStream,
+      );
       const writeStream = createWriteStream(partialPath);
 
       // Track progress
@@ -296,7 +298,9 @@ export async function installImageGenTier(
         if (!resp.ok || !resp.body) {
           throw new Error(`Download failed: ${resp.status}`);
         }
-        const nodeStream = Readable.fromWeb(resp.body as import("node:stream/web").ReadableStream);
+        const nodeStream = Readable.fromWeb(
+          resp.body as unknown as import("node:stream/web").ReadableStream,
+        );
         await pipeline(nodeStream, createWriteStream(archivePath));
 
         emit({
@@ -551,7 +555,9 @@ export async function installSingleImageGenModel(
         return { ok: false, error: `下载 sd.cpp 失败: HTTP ${resp.status}` };
       }
 
-      const nodeStream = Readable.fromWeb(resp.body as import("node:stream/web").ReadableStream);
+      const nodeStream = Readable.fromWeb(
+        resp.body as unknown as import("node:stream/web").ReadableStream,
+      );
       await pipeline(nodeStream, createWriteStream(archivePath));
 
       const { execFileSync } = await import("node:child_process");

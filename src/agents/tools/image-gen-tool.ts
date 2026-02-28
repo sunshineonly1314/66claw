@@ -534,12 +534,14 @@ export function createImageGenTool(options?: {
         }),
       ),
     }),
-    execute: async (_toolCallId, args) => {
+    execute: async (_toolCallId: string, args: unknown) => {
       const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       const prompt = typeof record.prompt === "string" ? record.prompt.trim() : "";
       if (!prompt) {
         return {
-          content: [{ type: "text", text: "Error: prompt is required for image generation." }],
+          content: [
+            { type: "text" as const, text: "Error: prompt is required for image generation." },
+          ],
           details: { error: "missing_prompt" },
         };
       }
@@ -580,7 +582,7 @@ export function createImageGenTool(options?: {
           }
         }
 
-        let results: ImageGenResult[];
+        let results: ImageGenResult[] = [];
 
         if (useLocal) {
           log.info(`Using local image gen endpoint: ${localBaseUrl}`);
@@ -678,7 +680,7 @@ export function createImageGenTool(options?: {
             return {
               content: [
                 {
-                  type: "text",
+                  type: "text" as const,
                   text:
                     "No image generation model configured. " +
                     "Please configure an image generation model (e.g., dall-e-3, wanx-v1, stable-diffusion-xl) " +
@@ -808,7 +810,7 @@ export function createImageGenTool(options?: {
         // so PI SDK persists it in the session JSONL. The UI's
         // extractImageGenDetails reads this back for inline rendering.
         const imageMetaBlock = {
-          type: "text",
+          type: "text" as const,
           text: `<!--OPENCLAWCN_IMAGE_GEN:${JSON.stringify({
             imageUrl: persistedUrls[0],
             imageUrls: persistedUrls,
@@ -825,7 +827,7 @@ export function createImageGenTool(options?: {
         };
 
         return {
-          content: [{ type: "text", text: lines.join("\n") }, imageMetaBlock],
+          content: [{ type: "text" as const, text: lines.join("\n") }, imageMetaBlock],
           details: {
             model: `${firstResult.provider}/${firstResult.model}`,
             provider: firstResult.provider,
@@ -847,7 +849,7 @@ export function createImageGenTool(options?: {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Image generation failed: ${errorMsg}`,
             },
           ],
@@ -980,13 +982,15 @@ export function createImageEditTool(options?: {
 
       if (!prompt) {
         return {
-          content: [{ type: "text", text: "Error: editing prompt is required." }],
+          content: [{ type: "text" as const, text: "Error: editing prompt is required." }],
           details: { error: "missing_prompt" },
         };
       }
       if (!image) {
         return {
-          content: [{ type: "text", text: "Error: source image is required for editing." }],
+          content: [
+            { type: "text" as const, text: "Error: source image is required for editing." },
+          ],
           details: { error: "missing_image" },
         };
       }
@@ -1121,7 +1125,7 @@ export function createImageEditTool(options?: {
         }
 
         const imageMetaBlock = {
-          type: "text",
+          type: "text" as const,
           text: `<!--OPENCLAWCN_IMAGE_GEN:${JSON.stringify({
             imageUrl: persistedUrls[0],
             imageUrls: persistedUrls,
@@ -1138,7 +1142,7 @@ export function createImageEditTool(options?: {
         };
 
         return {
-          content: [{ type: "text", text: lines.join("\n") }, imageMetaBlock],
+          content: [{ type: "text" as const, text: lines.join("\n") }, imageMetaBlock],
           details: {
             model: `${firstResult.provider}/${firstResult.model}`,
             provider: firstResult.provider,
@@ -1155,7 +1159,7 @@ export function createImageEditTool(options?: {
         log.error(`Image editing failed: ${errorMsg}`);
 
         return {
-          content: [{ type: "text", text: `Image editing failed: ${errorMsg}` }],
+          content: [{ type: "text" as const, text: `Image editing failed: ${errorMsg}` }],
           details: { error: errorMsg, prompt },
         };
       }

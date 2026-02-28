@@ -785,13 +785,15 @@ describe("过期 Todo 清理 (Stale Todo Cleanup)", () => {
   });
 
   it("有 hits 的 todo 即使超过 30 天也不被清理", () => {
+    // [CN-PATCH:memory-fix] hits≤1 are now cleaned (LLM re-extraction noise).
+    // hits≥2 means user-reinforced — should survive cleanup.
     const profile = makeProfile([
       makeEntry({
         category: "todo",
         key: "important-todo",
         value: "critical task",
         updatedAt: daysAgo(60),
-        hits: 1,
+        hits: 2,
       }),
     ]);
 

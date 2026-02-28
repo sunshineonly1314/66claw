@@ -114,6 +114,16 @@ export interface ModelConfigState {
   providerConfigApiKey: string;
   providerConfigBaseUrl: string;
   providerConfigCustomModel: string;
+  /** 火山引擎语音凭证 — App ID */
+  providerConfigVolcAppId: string;
+  /** 火山引擎语音凭证 — Access Token */
+  providerConfigVolcAccessToken: string;
+  /** 火山引擎配置 Tab：llm | voice */
+  providerConfigVolcTab: "llm" | "voice";
+  /** 火山引擎语音凭证保存中 */
+  providerConfigVolcSaving: boolean;
+  /** 火山引擎已配置凭证的脱敏信息 */
+  providerConfigVolcCredsStatus: { configured: boolean; maskedAppId?: string; maskedToken?: string } | null;
   providerConfigTesting: boolean;
   providerConfigTestResult: { success: boolean; message: string } | null;
   providerConfigDetecting: boolean;
@@ -125,6 +135,9 @@ export interface ModelConfigState {
   providerConfigDetectElapsed: number;
   /** 取消检测的 AbortController */
   providerConfigDetectAbort: AbortController | null;
+  /** 检测计时器句柄（用于清理，防止泄漏） */
+  _detectElapsedTimer: ReturnType<typeof setInterval> | null;
+  _detectTimeoutTimer: ReturnType<typeof setTimeout> | null;
   /** 并发检测：总模型数 */
   providerConfigDetectTotal: number;
   /** 并发检测：已完成数 */
@@ -181,6 +194,11 @@ export function createInitialModelConfigState(): ModelConfigState {
     providerConfigApiKey: "",
     providerConfigBaseUrl: "",
     providerConfigCustomModel: "",
+    providerConfigVolcAppId: "",
+    providerConfigVolcAccessToken: "",
+    providerConfigVolcTab: "llm",
+    providerConfigVolcSaving: false,
+    providerConfigVolcCredsStatus: null,
     providerConfigTesting: false,
     providerConfigTestResult: null,
     providerConfigDetecting: false,
@@ -189,6 +207,8 @@ export function createInitialModelConfigState(): ModelConfigState {
     providerConfigDetectPhase: "validating",
     providerConfigDetectElapsed: 0,
     providerConfigDetectAbort: null,
+    _detectElapsedTimer: null,
+    _detectTimeoutTimer: null,
     providerConfigDetectTotal: 0,
     providerConfigDetectCompleted: 0,
     providerConfigDetectModels: [],
@@ -326,6 +346,9 @@ interface CapMatrixModel {
   capabilities?: Record<string, number>;
 }
 
+// [CN-PATCH] 防止快速连续点击导致 stale response 覆盖
+let _modelSelectorSeq = 0;
+
 /**
  * 打开模型选择器 — 使用 v2 capability_matrix.models API
  */
@@ -335,6 +358,7 @@ export async function openModelSelector(
 ): Promise<void> {
   if (!host.client || !host.connected) return;
 
+  const seq = ++_modelSelectorSeq;
   host.modelSelectorOpen = true;
   host.modelSelectorCapability = capability;
   host.modelSelectorModels = [];
@@ -344,9 +368,12 @@ export async function openModelSelector(
     const result = await host.client.request("capability_matrix.models", {
       capability: capability.capability,
     });
+    // 如果在 await 期间又发起了新请求，丢弃旧响应
+    if (seq !== _modelSelectorSeq) return;
     const data = result as { models: ModelInfo[] };
     host.modelSelectorModels = data.models ?? [];
   } catch (err) {
+    if (seq !== _modelSelectorSeq) return;
     host.modelConfigError = `加载模型列表失败: ${String(err)}`;
     closeModelSelector(host);
   } finally {
@@ -363,46 +390,6 @@ export function closeModelSelector(host: ModelConfigHost): void {
   host.modelSelectorModels = [];
   host.modelSelectorLoading = false;
   host.modelSelectorSwitching = false;
-}
-
-/**
- * 切换模型
- */
-export async function switchModel(
-  host: ModelConfigHost,
-  providerId: string,
-  modelId: string
-): Promise<void> {
-  if (!host.client || !host.connected) return;
-  if (!host.modelSelectorCapability) return;
-
-  host.modelSelectorSwitching = true;
-
-  try {
-    const result = await host.client.request("capability_matrix.switchModel", {
-      capability: host.modelSelectorCapability.capability,
-      providerId,
-      modelId,
-    });
-
-    const data = result as { success: boolean; error?: string };
-
-    if (data.success) {
-      // text 能力切换后静默 /new，让新模型立即生效
-      const isText = host.modelSelectorCapability?.capability === "text";
-      closeModelSelector(host);
-      await loadCapabilities(host);
-      if (isText) {
-        globalThis.dispatchEvent?.(new CustomEvent("openclawcn:silent-new"));
-      }
-    } else {
-      host.modelConfigError = data.error ?? "切换失败";
-    }
-  } catch (err) {
-    host.modelConfigError = `切换失败: ${String(err)}`;
-  } finally {
-    host.modelSelectorSwitching = false;
-  }
 }
 
 /**
@@ -432,6 +419,11 @@ export function openProviderConfig(host: ModelConfigHost, provider: ProviderInfo
   host.providerConfigTestResult = null;
   host.providerConfigDetecting = false;
   host.providerConfigAutoEnabled = null;
+  host.providerConfigVolcAppId = "";
+  host.providerConfigVolcAccessToken = "";
+  host.providerConfigVolcTab = "llm";
+  host.providerConfigVolcSaving = false;
+  host.providerConfigVolcCredsStatus = null;
   // 有引导步骤则先显示引导,否则直接到 API Key 输入
   host.providerConfigStep = (provider.apiKeyGuide && provider.apiKeyGuide.length > 0) ? "guide" : "apikey";
 }
@@ -445,6 +437,11 @@ export function closeProviderConfig(host: ModelConfigHost): void {
   host.providerConfigApiKey = "";
   host.providerConfigBaseUrl = "";
   host.providerConfigCustomModel = "";
+  host.providerConfigVolcAppId = "";
+  host.providerConfigVolcAccessToken = "";
+  host.providerConfigVolcTab = "llm";
+  host.providerConfigVolcSaving = false;
+  host.providerConfigVolcCredsStatus = null;
   host.providerConfigTesting = false;
   host.providerConfigTestResult = null;
   host.providerConfigDetecting = false;
@@ -477,6 +474,29 @@ export function updateProviderBaseUrl(host: ModelConfigHost, baseUrl: string): v
 export function updateProviderCustomModel(host: ModelConfigHost, customModel: string): void {
   host.providerConfigCustomModel = customModel;
   host.providerConfigTestResult = null;
+}
+
+/**
+ * 更新火山引擎语音 App ID
+ */
+export function updateProviderVolcAppId(host: ModelConfigHost, volcAppId: string): void {
+  host.providerConfigVolcAppId = volcAppId;
+  host.providerConfigTestResult = null;
+}
+
+/**
+ * 更新火山引擎语音 Access Token
+ */
+export function updateProviderVolcAccessToken(host: ModelConfigHost, volcAccessToken: string): void {
+  host.providerConfigVolcAccessToken = volcAccessToken;
+  host.providerConfigTestResult = null;
+}
+
+/**
+ * 切换火山引擎配置 Tab（llm / voice）
+ */
+export function switchProviderVolcTab(host: ModelConfigHost, tab: "llm" | "voice"): void {
+  host.providerConfigVolcTab = tab;
 }
 
 /**
@@ -535,26 +555,27 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
   host.providerConfigDetectCompleted = 0;
   host.providerConfigDetectModels = [];
 
-  // 耗时计时器 — 每秒更新
+  // 耗时计时器 — 每秒更新（存到 host 上，防止 broadcast 路径泄漏）
   const startTime = Date.now();
   const elapsedTimer = setInterval(() => {
     host.providerConfigDetectElapsed = Math.floor((Date.now() - startTime) / 1000);
   }, 1000);
+  host._detectElapsedTimer = elapsedTimer;
 
-  // 超时保护
+  // 超时保护（同样存到 host 上）
   const timeoutTimer = setTimeout(() => {
     if (host.providerConfigDetecting) {
-      _finishDetection(host, elapsedTimer, {
+      _finishDetection(host, {
         success: false,
         message: "检测超时，请检查网络后重试",
       });
     }
   }, DETECT_TIMEOUT_MS);
+  host._detectTimeoutTimer = timeoutTimer;
 
   // 取消监听
   abort.signal.addEventListener("abort", () => {
-    clearTimeout(timeoutTimer);
-    _finishDetection(host, elapsedTimer, null); // null = 用户取消
+    _finishDetection(host, null); // null = 用户取消
   });
 
   try {
@@ -563,6 +584,8 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
       apiKey: host.providerConfigApiKey,
       ...(host.providerConfigBaseUrl ? { baseUrl: host.providerConfigBaseUrl.trim() } : {}),
       ...(host.providerConfigCustomModel ? { customModel: host.providerConfigCustomModel.trim() } : {}),
+      ...(host.providerConfigVolcAppId ? { volcAppId: host.providerConfigVolcAppId.trim() } : {}),
+      ...(host.providerConfigVolcAccessToken ? { volcAccessToken: host.providerConfigVolcAccessToken.trim() } : {}),
     });
 
     const data = result as { started?: boolean; total?: number };
@@ -575,7 +598,6 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
       // 此时不知道模型名，留空 — progress 事件会填充
     } else {
       // 兼容旧版 Gateway（直接返回完整结果）
-      clearTimeout(timeoutTimer);
       const legacyData = result as {
         success: boolean;
         error?: string;
@@ -583,36 +605,36 @@ export async function detectAndConfigureProvider(host: ModelConfigHost): Promise
       };
       if (legacyData.success) {
         const enabledCount = Object.keys(legacyData.autoEnabled ?? {}).length;
-        _finishDetection(host, elapsedTimer, {
+        _finishDetection(host, {
           success: true,
           message: `配置完成！已自动启用 ${enabledCount} 个能力`,
           autoEnabled: legacyData.autoEnabled as Record<string, string>,
         });
       } else {
-        _finishDetection(host, elapsedTimer, {
+        _finishDetection(host, {
           success: false,
           message: translateProviderError(legacyData.error ?? "配置失败"),
         });
       }
     }
   } catch (err) {
-    clearTimeout(timeoutTimer);
     const errStr = String(err);
     const isTimeout = errStr.includes("DETECT_TIMEOUT") || errStr.includes("timeout");
-    _finishDetection(host, elapsedTimer, {
+    _finishDetection(host, {
       success: false,
       message: isTimeout ? "检测超时，请检查网络后重试" : `配置失败: ${errStr}`,
     });
   }
 }
 
-/** 内部：结束检测流程 */
+/** 内部：结束检测流程 — 统一清理 timers，防止泄漏 */
 function _finishDetection(
   host: ModelConfigState,
-  elapsedTimer: ReturnType<typeof setInterval> | null,
   outcome: { success: boolean; message: string; autoEnabled?: Record<string, string> } | null,
 ): void {
-  if (elapsedTimer) clearInterval(elapsedTimer);
+  // 清理所有检测相关的 timers
+  if (host._detectElapsedTimer) { clearInterval(host._detectElapsedTimer); host._detectElapsedTimer = null; }
+  if (host._detectTimeoutTimer) { clearTimeout(host._detectTimeoutTimer); host._detectTimeoutTimer = null; }
   host.providerConfigDetecting = false;
   host.providerConfigDetectAbort = null;
 
@@ -650,11 +672,14 @@ export function handleDetectProgressEvent(
   host.providerConfigDetectCompleted = payload.completed;
   host.providerConfigDetectTotal = payload.total;
 
-  // 更新或添加模型条目
+  // 更新或添加模型条目 — 用新数组替换，确保触发 Lit re-render
   const existing = host.providerConfigDetectModels.find(m => m.modelId === payload.modelId);
   if (existing) {
-    existing.status = payload.status;
-    existing.message = payload.message;
+    host.providerConfigDetectModels = host.providerConfigDetectModels.map(m =>
+      m.modelId === payload.modelId
+        ? { ...m, status: payload.status, message: payload.message }
+        : m,
+    );
   } else {
     host.providerConfigDetectModels = [
       ...host.providerConfigDetectModels,
@@ -695,13 +720,13 @@ export function handleDetectCompleteEvent(
 
   if (payload.success) {
     const enabledCount = Object.keys(payload.autoEnabled).length;
-    _finishDetection(host, null, {
+    _finishDetection(host, {
       success: true,
       message: `配置完成！${payload.availableCount} 个模型可用${payload.failedCount > 0 ? `，${payload.failedCount} 个不可用` : ""}，已自动启用 ${enabledCount} 个能力`,
       autoEnabled: payload.autoEnabled,
     });
   } else {
-    _finishDetection(host, null, {
+    _finishDetection(host, {
       success: false,
       message: translateProviderError(payload.error ?? "配置失败"),
     });
@@ -763,8 +788,8 @@ export async function deleteProviderConfig(host: ModelConfigHost, providerId: st
   try {
     await host.client.request("capability_matrix.provider.delete", { providerId });
     closeProviderManage(host);
-    // 刷新数据
-    await Promise.all([loadCapabilities(host), loadProviders(host)]);
+    // 刷新数据（含 health 和 priority，清理已删除服务商的残留状态）
+    await Promise.all([loadCapabilities(host), loadProviders(host), loadProviderHealth(host), loadProviderPriority(host)]);
   } catch (err) {
     host.providerManageDeleting = false;
     host.providerManageError = `删除失败: ${String(err)}`;

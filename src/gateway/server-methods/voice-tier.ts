@@ -185,22 +185,101 @@ export const voiceTierHandlers: GatewayRequestHandlers = {
     try {
       const { collectProviderApiKeys } = await import("../../agents/live-auth-keys.js");
 
+      // Check volcengine voice credentials
+      let volcVoiceConfigured = false;
+      try {
+        const { hasVolcengineVoiceCredentials } =
+          await import("../../voice/volcengine-credentials.js");
+        volcVoiceConfigured = hasVolcengineVoiceCredentials();
+      } catch {
+        /* ignore */
+      }
+
       const asrProviders = [
         { id: "openai", label: "OpenAI Whisper", defaultModel: "gpt-4o-mini-transcribe" },
         { id: "groq", label: "Groq (免费)", defaultModel: "whisper-large-v3-turbo" },
         { id: "deepgram", label: "Deepgram", defaultModel: "nova-3" },
         { id: "google", label: "Google Gemini", defaultModel: "gemini-3-flash-preview" },
         { id: "dashscope", label: "DashScope (阿里)", defaultModel: "fun-asr-realtime" },
-        { id: "volcengine", label: "火山引擎 (豆包)", defaultModel: "asr" },
+        { id: "volcengine", label: "火山引擎 (豆包)", defaultModel: "bigmodel" },
       ].map((p) => ({
         ...p,
-        configured: collectProviderApiKeys(p.id).length > 0,
+        configured:
+          p.id === "volcengine"
+            ? volcVoiceConfigured || collectProviderApiKeys(p.id).length > 0
+            : collectProviderApiKeys(p.id).length > 0,
       }));
 
       // TTS hidden in this release
       const ttsProviders: unknown[] = [];
 
       respond(true, { asrProviders, ttsProviders });
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
+    }
+  },
+
+  /**
+   * Save Volcengine voice credentials (App ID + Access Token).
+   * Persists to settings/volcengine-voice.json AND sets process.env for immediate use.
+   */
+  "voice.volcengine.saveCredentials": async ({ params, respond }) => {
+    try {
+      const appId = typeof params.appId === "string" ? params.appId.trim() : "";
+      const accessToken = typeof params.accessToken === "string" ? params.accessToken.trim() : "";
+
+      if (!appId || !accessToken) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_ARGUMENT, "App ID 和 Access Token 不能为空"),
+        );
+        return;
+      }
+      if (appId.length > 500 || accessToken.length > 500) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_ARGUMENT, "凭据长度超出限制"));
+        return;
+      }
+
+      const { saveVolcengineVoiceCredentials } =
+        await import("../../voice/volcengine-credentials.js");
+      await saveVolcengineVoiceCredentials(appId, accessToken);
+
+      // 清除 ASR 可用性缓存，确保下次检查立即生效
+      try {
+        const { resetVolcengineAvailabilityCache } = await import("./asr-streaming-volcengine.js");
+        resetVolcengineAvailabilityCache();
+      } catch {
+        /* ignore */
+      }
+
+      respond(true, { saved: true });
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
+    }
+  },
+
+  /**
+   * Get Volcengine voice credentials status (configured or not, masked values).
+   */
+  "voice.volcengine.credentialsStatus": async ({ respond }) => {
+    try {
+      const { getVolcengineVoiceCredentials } =
+        await import("../../voice/volcengine-credentials.js");
+      const creds = await getVolcengineVoiceCredentials();
+      if (creds) {
+        const maskedAppId =
+          creds.appId.length > 4
+            ? `${creds.appId.slice(0, 2)}${"*".repeat(Math.min(creds.appId.length - 4, 8))}${creds.appId.slice(-2)}`
+            : "****";
+        const maskedToken =
+          creds.accessToken.length > 8
+            ? `${creds.accessToken.slice(0, 4)}${"*".repeat(12)}${creds.accessToken.slice(-4)}`
+            : "****";
+        respond(true, { configured: true, maskedAppId, maskedToken });
+      } else {
+        respond(true, { configured: false });
+      }
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
     }

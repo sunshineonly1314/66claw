@@ -16,6 +16,7 @@ import {
 import { extractUpdateContent } from "./update-content.js";
 import { setAvailableUpdate } from "./update-state.js";
 import { getDeviceId } from "../license/device-id.js";
+import { emitPlaceholderKeyWarningOnce } from "./update-signature.js";
 
 type UpdateCheckState = {
   lastCheckedAt?: string;
@@ -65,6 +66,9 @@ export async function runGatewayUpdateCheck(params: {
   if (params.isNixMode) {
     return;
   }
+  // Emit a one-time warning if signature key is placeholder (before any update work)
+  emitPlaceholderKeyWarningOnce();
+
   if (params.cfg.update?.checkOnStart === false) {
     return;
   }
@@ -183,7 +187,10 @@ export async function runGatewayUpdateCheck(params: {
             await setAvailableUpdate({
               version: ver,
               updateType: check.updateType ?? "delta",
-              changelog: check.latest?.changelog ?? { "zh-CN": "", "en-US": "" },
+              changelog: {
+                "zh-CN": check.latest?.changelog?.["zh-CN"] ?? "",
+                "en-US": check.latest?.changelog?.["en-US"] ?? "",
+              },
               checkedAt: new Date().toISOString(),
               dismissed: false,
               mandatory: check.mandatory,

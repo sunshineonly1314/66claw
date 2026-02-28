@@ -457,7 +457,8 @@ export class ClawdbotApp extends LitElement {
   @state() teamProjectHealth: import("./types").TeamProjectHealthResult | null = null;
   @state() teamProjectStats: import("./types").TeamProjectStatsResult | null = null;
   @state() teamProjectMemory: import("./types").TeamSharedMemoryEntry[] | null = null;
-  @state() teamProjectTab: "members" | "stats" | "settings" | "memory" = "members";
+  @state() teamProjectActivity: import("./types").TeamActivityEvent[] | null = null;
+  @state() teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory" = "members";
   @state() teamProjectBusy = false;
 
   @state() sessionsLoading = false;
@@ -502,6 +503,8 @@ export class ClawdbotApp extends LitElement {
   @state() skillsMarketError: string | null = null;
   // 技能分类筛选
   @state() skillsActiveCategory = "all";
+  // 技能市场搜索关键词（与本地 skillsFilter 分离）
+  @state() skillsMarketKeyword = "";
   // 技能市场搜索结果（SQLite FTS5 分页）
   @state() skillsMarketSearchResult: import("./controllers/skills").SkillsMarketSearchResult | null = null;
   @state() skillsMarketPage = 1;
@@ -728,6 +731,7 @@ export class ClawdbotApp extends LitElement {
   private _contextMenuDismissCleanup: (() => void) | null = null;
   private _orchNavigateHandler: ((e: Event) => void) | null = null;
   private _orchAgentsChangedHandler: (() => void) | null = null;
+  private _voiceCredsChangedHandler: (() => void) | null = null;
 
   private handleDocsKeydown = (e: KeyboardEvent) => {
     // ⌘K or Ctrl+K to open docs search
@@ -806,6 +810,11 @@ export class ClawdbotApp extends LitElement {
       void loadTeamProjects(this as any);
     };
     globalThis.addEventListener("orch:agents-changed", this._orchAgentsChangedHandler);
+    // OpenClawCN: 语音凭证变更后重新检测 ASR/TTS 可用性
+    this._voiceCredsChangedHandler = () => {
+      void this.checkVoiceCapabilities();
+    };
+    globalThis.addEventListener("openclawcn:voice-credentials-changed", this._voiceCredsChangedHandler);
     // HTTP fallback: 立即获取运维二维码（不依赖 WebSocket 连接）
     this._fetchFallbackQrcode();
   }
@@ -847,6 +856,9 @@ export class ClawdbotApp extends LitElement {
     }
     if (this._orchAgentsChangedHandler) {
       globalThis.removeEventListener("orch:agents-changed", this._orchAgentsChangedHandler);
+    }
+    if (this._voiceCredsChangedHandler) {
+      globalThis.removeEventListener("openclawcn:voice-credentials-changed", this._voiceCredsChangedHandler);
     }
     if (this._contextMenuDismissCleanup) {
       this._contextMenuDismissCleanup();

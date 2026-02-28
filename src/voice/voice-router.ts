@@ -302,6 +302,38 @@ async function apiSynthesize(
     return { ok: false, error: `Unknown TTS provider: ${provider}` };
   }
 
+  // Volcengine TTS uses dedicated WebSocket binary protocol
+  // Auth via unified credentials store or VOLC_APP_ID + VOLC_ACCESS_TOKEN env vars
+  if (provider === "volcengine") {
+    const { hasVolcengineVoiceCredentials } = await import("./volcengine-credentials.js");
+    if (!hasVolcengineVoiceCredentials()) {
+      return {
+        ok: false,
+        error: "未配置火山引擎语音凭证 — 请在模型设置 → 豆包 → 语音服务 Tab 中配置",
+      };
+    }
+    try {
+      const { volcengineTtsSynthesize } =
+        await import("../gateway/server-methods/tts-volcengine.js");
+      const result = await volcengineTtsSynthesize({
+        text,
+        voice: voice || "zh_female_tianmeixiaoyuan_moon_bigtts",
+      });
+      return {
+        ok: true,
+        audioBase64: result.audioBase64,
+        format: result.format,
+        backend: "api-volcengine",
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Volcengine TTS failed: ${(err as Error).message}`,
+        backend: "api-volcengine",
+      };
+    }
+  }
+
   const keys = collectProviderApiKeys(keyProvider);
   if (keys.length === 0) {
     return { ok: false, error: `No API key for TTS provider: ${provider}` };
@@ -454,14 +486,28 @@ export async function getVoiceSystemStatus(): Promise<VoiceSystemStatus> {
     ttsBackend = "edge-tts";
   }
 
+  // Load volcengine voice credentials (also populates process.env)
+  let volcVoiceConfigured = false;
+  try {
+    const { getVolcengineVoiceCredentials } = await import("./volcengine-credentials.js");
+    const creds = await getVolcengineVoiceCredentials();
+    volcVoiceConfigured = !!creds;
+  } catch {
+    /* ignore */
+  }
+
   // Check API availability
   let apiAsrAvailable = false;
   let apiTtsAvailable = false;
   try {
     const { collectProviderApiKeys } = await import("../agents/live-auth-keys.js");
     if (isApiAsrProvider(prefs.asrProvider)) {
-      const keys = collectProviderApiKeys(prefs.asrProvider!);
-      apiAsrAvailable = keys.length > 0;
+      if (prefs.asrProvider === "volcengine") {
+        apiAsrAvailable = volcVoiceConfigured;
+      } else {
+        const keys = collectProviderApiKeys(prefs.asrProvider!);
+        apiAsrAvailable = keys.length > 0;
+      }
       if (apiAsrAvailable) {
         asrAvailable = true;
         asrBackend = "api";
@@ -470,6 +516,8 @@ export async function getVoiceSystemStatus(): Promise<VoiceSystemStatus> {
     if (isApiTtsProvider(prefs.ttsProvider)) {
       if (prefs.ttsProvider === "edge") {
         apiTtsAvailable = true;
+      } else if (prefs.ttsProvider === "volcengine") {
+        apiTtsAvailable = volcVoiceConfigured;
       } else {
         const keys = collectProviderApiKeys(prefs.ttsProvider!);
         apiTtsAvailable = keys.length > 0;
@@ -481,6 +529,18 @@ export async function getVoiceSystemStatus(): Promise<VoiceSystemStatus> {
     }
   } catch {
     // API check failed, continue with local-only status
+  }
+
+  // Volcengine voice: even without explicit prefs, mark as available for capability card
+  if (volcVoiceConfigured && !asrAvailable) {
+    asrAvailable = true;
+    asrBackend = "api";
+    apiAsrAvailable = true;
+  }
+  if (volcVoiceConfigured && !ttsAvailable) {
+    ttsAvailable = true;
+    ttsBackend = "api";
+    apiTtsAvailable = true;
   }
 
   return {

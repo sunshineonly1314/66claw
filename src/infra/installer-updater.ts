@@ -715,7 +715,10 @@ export async function runInstallerUpdate(params: {
       downloadedBytes,
       filesChanged,
       durationMs: Date.now() - startedAt,
-      changelog: latest.changelog,
+      changelog: {
+        "zh-CN": latest.changelog?.["zh-CN"] ?? "",
+        "en-US": latest.changelog?.["en-US"] ?? "",
+      },
     };
     // 上报成功
     void reportUpdateResult({

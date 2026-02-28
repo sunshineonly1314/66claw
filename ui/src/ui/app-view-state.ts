@@ -27,6 +27,7 @@ import type {
   TeamProjectHealthResult,
   TeamProjectStatsResult,
   TeamSharedMemoryEntry,
+  TeamActivityEvent,
 } from "./types";
 import type {
   ChannelRouteEntry,
@@ -250,7 +251,8 @@ export type AppViewState = {
   teamProjectHealth: TeamProjectHealthResult | null;
   teamProjectStats: TeamProjectStatsResult | null;
   teamProjectMemory: TeamSharedMemoryEntry[] | null;
-  teamProjectTab: "members" | "stats" | "settings" | "memory";
+  teamProjectActivity: TeamActivityEvent[] | null;
+  teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory";
   teamProjectBusy: boolean;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
@@ -290,6 +292,8 @@ export type AppViewState = {
   skillsMarketError: string | null;
   // 技能分类筛选
   skillsActiveCategory: string;
+  // 技能市场搜索关键词（与本地 skillsFilter 分离）
+  skillsMarketKeyword: string;
   // 技能市场搜索结果（SQLite FTS5 分页）
   skillsMarketSearchResult: import("./controllers/skills").SkillsMarketSearchResult | null;
   skillsMarketPage: number;

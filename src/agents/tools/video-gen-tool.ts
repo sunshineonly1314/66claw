@@ -738,9 +738,7 @@ export function createVideoGenTool(options?: {
         // The setup wizard doesn't write video models into models.json, but the
         // user may have a valid API key for a provider that supports them.
         if (!videoGenModel) {
-          const providers =
-            registry?.providers ?? new Map<string, { baseUrl?: string; apiKey?: string }>();
-          // Also read from models.json raw providers section
+          // Read from models.json raw providers section to find configured providers
           let rawProviders: Record<
             string,
             { baseUrl?: string; apiKey?: string; models?: unknown[] }
@@ -760,7 +758,7 @@ export function createVideoGenTool(options?: {
               id: "Wan-AI/Wan2.2-T2V-A14B",
               provider: "siliconflow",
               baseUrl: sfProvider.baseUrl || "https://api.siliconflow.cn/v1",
-            } as typeof videoGenModel;
+            } as unknown as typeof videoGenModel;
             log.info("Video model not in models.json; using SiliconFlow Wan2.2 (fallback)");
           }
 
@@ -772,7 +770,7 @@ export function createVideoGenTool(options?: {
                 id: "cogvideox-flash",
                 provider: "zhipu",
                 baseUrl: zhipuProvider.baseUrl || "https://open.bigmodel.cn",
-              } as typeof videoGenModel;
+              } as unknown as typeof videoGenModel;
               log.info("Video model not in models.json; using Zhipu CogVideoX-Flash (fallback)");
             }
           }

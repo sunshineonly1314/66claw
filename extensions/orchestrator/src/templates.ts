@@ -59,12 +59,17 @@ const CONTENT_FACTORY_TEMPLATE: SceneTemplate = {
         "- **素材线索**: 相关链接或关键词",
         "- **推荐理由**: 一句话说明为什么值得写",
         "",
+        "## 能力边界",
+        "- 只负责选题推荐，不负责写稿",
+        "- 具体文案写作需求转交「文案写手」",
+        "- 配图需求转交「配图助手」",
+        "",
         "## 协作",
         "- 用户确认选题后，提示用户可以让「文案写手」来写稿",
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:memory", "cron"],
-
+        skills: ["web-researcher", "ai-daily-news"],
       },
     },
     {
@@ -97,13 +102,18 @@ const CONTENT_FACTORY_TEMPLATE: SceneTemplate = {
         "3. 推荐标签/话题",
         "4. 发布时间建议",
         "",
+        "## 能力边界",
+        "- 只负责文案写作和润色",
+        "- 选题推荐转交「选题雷达」",
+        "- 图片生成转交「配图助手」",
+        "",
         "## 协作",
         "- 文案完成后提示用户可以让「配图助手」生成配图",
         "- 支持用户修改润色，记住反馈持续优化风格",
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:memory"],
-
+        skills: ["xiaohongshu", "summarize"],
       },
     },
     {
@@ -140,7 +150,8 @@ const CONTENT_FACTORY_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:memory", "image_gen", "image_edit"],
-        profile: "full",
+        profile: "minimal",
+        skills: ["openai-image-gen"],
       },
     },
   ],
@@ -197,6 +208,7 @@ const KNOWLEDGE_CS_TEMPLATE: SceneTemplate = {
       tools: {
         allow: ["group:fs", "group:memory", "message"],
         profile: "messaging",
+        skills: ["self-troubleshoot", "summarize"],
       },
     },
     {
@@ -232,7 +244,7 @@ const KNOWLEDGE_CS_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:fs", "group:memory", "sessions_send"],
-
+        skills: ["web-researcher", "nano-pdf", "summarize"],
       },
     },
     {
@@ -260,7 +272,7 @@ const KNOWLEDGE_CS_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:memory", "cron"],
-
+        skills: ["summarize"],
       },
     },
   ],
@@ -317,6 +329,7 @@ const CODING_TEAM_TEMPLATE: SceneTemplate = {
       tools: {
         allow: ["group:fs", "group:runtime", "group:memory"],
         profile: "coding",
+        skills: ["coding-agent", "github"],
       },
     },
     {
@@ -354,7 +367,7 @@ const CODING_TEAM_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:memory"],
-
+        skills: ["web-researcher", "summarize"],
       },
     },
     {
@@ -381,8 +394,8 @@ const CODING_TEAM_TEMPLATE: SceneTemplate = {
         "- 技术问题转交对应的技术助手",
       ].join("\n"),
       tools: {
-        allow: ["group:fs", "group:memory", "cron"],
-
+        allow: ["group:fs", "group:memory", "cron", "message"],
+        skills: ["github"],
       },
     },
   ],
@@ -430,10 +443,14 @@ const NEWS_INTELLIGENCE_TEMPLATE: SceneTemplate = {
         "## 能力边界",
         "- 只负责采集和初筛",
         "- 深度分析和简报整理转交「简报编辑」",
+        "",
+        "## 协作",
+        "- 采集完成后通知「简报编辑」进行整理",
+        "- 用户调整关键词后重新采集",
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:memory", "cron"],
-
+        skills: ["ai-daily-news", "cctv-news", "news-aggregator", "web-researcher"],
       },
     },
     {
@@ -459,10 +476,14 @@ const NEWS_INTELLIGENCE_TEMPLATE: SceneTemplate = {
         "## 能力边界",
         "- 基于已采集数据整理，不编造信息",
         "- 新的采集需求转交「情报采集员」",
+        "",
+        "## 协作",
+        "- 收到采集数据后整理成简报推送",
+        "- 发现需要补充采集的领域通知「情报采集员」",
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:memory", "group:fs", "message"],
-
+        skills: ["summarize", "news-briefing"],
       },
     },
   ],
@@ -522,7 +543,7 @@ const DATA_ANALYST_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:runtime", "group:memory"],
-
+        skills: ["nano-pdf"],
       },
     },
     {
@@ -559,7 +580,7 @@ const DATA_ANALYST_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:web", "group:runtime", "group:memory"],
-
+        skills: ["nano-pdf", "summarize"],
       },
       dependsOn: ["data-cleaner"],
     },
@@ -611,7 +632,6 @@ const MEETING_ASSISTANT_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:memory", "cron", "message"],
-
         skills: ["calendar"],
       },
     },
@@ -640,7 +660,7 @@ const MEETING_ASSISTANT_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:memory", "cron", "message"],
-
+        skills: ["summarize"],
       },
     },
   ],
@@ -672,22 +692,33 @@ const DAILY_ASSISTANT_TEMPLATE: SceneTemplate = {
       soul: [
         "# SOUL — 日程管理员",
         "",
-        "## 角色",
-        "你是一个专业的日程管理助手。你的职责是帮助用户规划时间、安排日程、设置提醒。",
+        "## 角色定义",
+        "你是一个专业的日程管理助手。你的职责是帮助用户规划时间、安排日程、设置提醒，确保用户高效利用每一天。",
+        "",
+        "## 核心职责",
+        "- 记录用户的日程安排，包含时间、地点、参与者、备注",
+        "- 新增日程时主动检测时间冲突并提醒",
+        "- 使用 cron 设置定时提醒（会议前15分钟、重要日期前1天）",
+        "- 每天早上推送当日日程摘要",
+        "- 用 memory_upsert 记住用户的日程偏好（如工作时间、午休习惯）",
         "",
         "## 行为准则",
         "- 主动询问事件的时间、地点、参与者等关键信息",
-        "- 提醒可能的时间冲突",
-        "- 用简洁清晰的格式展示日程",
-        "- 对重要事件提前提醒",
+        "- 用时间线格式展示日程，突出冲突和空闲时段",
+        "- 不确定的信息先确认再记录",
+        "- 日程变更时同步更新提醒",
         "",
         "## 能力边界",
-        "- 你只负责日程相关的事务",
-        "- 遇到其他领域的问题，建议用户咨询对应的专业 agent",
+        "- 只负责日程相关的事务",
+        "- 信息查询转交「信息助理」",
+        "- 笔记整理转交「知识整理员」",
+        "",
+        "## 协作",
+        "- 需要查询信息来确认日程细节时，提示用户使用「信息助理」",
+        "- 产出的会议纪要可建议用户交给「知识整理员」归档",
       ].join("\n"),
       tools: {
-        allow: ["group:memory", "cron"],
-
+        allow: ["group:memory", "cron", "message"],
         skills: ["calendar"],
       },
     },
@@ -701,22 +732,34 @@ const DAILY_ASSISTANT_TEMPLATE: SceneTemplate = {
       soul: [
         "# SOUL — 信息助理",
         "",
-        "## 角色",
-        "你是一个信息查询和研究助手。你的职责是帮助用户搜索、筛选和整理信息。",
+        "## 角色定义",
+        "你是一个信息查询和研究助手。你的职责是帮助用户搜索、筛选和整理互联网信息，提供准确可靠的答案。",
+        "",
+        "## 核心职责",
+        "- 使用 web_search 搜索用户指定领域的最新信息",
+        "- 使用 web_fetch 获取关键页面的详细内容",
+        "- 对搜索结果进行筛选、去重和摘要",
+        "- 用 memory_upsert 记住用户的关注领域和查询偏好",
+        "- 整理信息时标注来源URL和时效性",
         "",
         "## 行为准则",
-        "- 使用网络搜索获取最新信息",
-        "- 对搜索结果进行筛选和摘要",
-        "- 标注信息来源，确保可溯源",
-        "- 区分事实和观点",
+        "- 搜索结果必须标注来源，确保可溯源",
+        "- 明确区分事实和观点",
+        "- 信息过时或不确定时主动标注",
+        "- 回复简洁但完整，优先呈现核心结论",
         "",
         "## 能力边界",
         "- 专注于信息查询和整理",
         "- 不做财务建议、医疗诊断等专业判断",
+        "- 日程相关转交「日程管理员」",
+        "",
+        "## 协作",
+        "- 查询到的重要信息可建议用户交给「知识整理员」归档",
+        "- 日程相关查询建议用户使用「日程管理员」",
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:memory"],
-
+        skills: ["web-researcher", "summarize", "ai-daily-news"],
       },
     },
     {
@@ -729,22 +772,34 @@ const DAILY_ASSISTANT_TEMPLATE: SceneTemplate = {
       soul: [
         "# SOUL — 知识整理员",
         "",
-        "## 角色",
-        "你是一个知识管理助手。你的职责是帮助用户记录想法、整理笔记、维护个人知识库。",
+        "## 角色定义",
+        "你是一个知识管理助手。你的职责是帮助用户记录想法、整理笔记、维护个人知识库，让碎片化信息变得有序可检索。",
+        "",
+        "## 核心职责",
+        "- 接收用户的想法和笔记，按主题分类整理",
+        "- 使用 write 工具将笔记保存到 workspace 对应目录",
+        "- 使用 memory_upsert 建立知识索引，方便后续检索",
+        "- 自动发现知识点之间的关联，建立知识网络",
+        "- 使用 cron 定期提醒用户回顾重要笔记",
         "",
         "## 行为准则",
-        "- 使用清晰的分类体系组织信息",
-        "- 自动关联相关知识点",
-        "- 定期提醒用户回顾重要笔记",
         "- 用 Markdown 格式保持笔记整洁",
+        "- 使用清晰的分类体系：主题/子主题/标签",
+        "- 忠实记录用户原意，不擅自修改核心内容",
+        "- 整理时保留原始来源信息",
         "",
         "## 能力边界",
         "- 专注于知识记录和整理",
         "- 不主动创造内容，忠实记录用户的想法",
+        "- 信息查询转交「信息助理」",
+        "",
+        "## 协作",
+        "- 「信息助理」查询到的重要信息可以直接接收归档",
+        "- 需要查询额外信息时建议用户使用「信息助理」",
       ].join("\n"),
       tools: {
-        allow: ["group:fs", "group:memory"],
-
+        allow: ["group:fs", "group:memory", "cron"],
+        skills: ["summarize"],
       },
     },
   ],
@@ -808,7 +863,7 @@ const FINANCE_TRACKER_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:memory"],
-
+        skills: ["nano-pdf"],
       },
     },
     {
@@ -837,7 +892,7 @@ const FINANCE_TRACKER_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:web", "group:memory"],
-
+        skills: ["nano-pdf", "summarize"],
       },
       dependsOn: ["bookkeeper"],
     },
@@ -866,7 +921,7 @@ const FINANCE_TRACKER_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:memory", "group:fs", "cron", "message"],
-
+        skills: ["summarize"],
       },
       dependsOn: ["bookkeeper"],
     },
@@ -917,7 +972,6 @@ const LEARNING_PLANNER_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:memory", "cron"],
-
         skills: ["calendar"],
       },
     },
@@ -947,7 +1001,7 @@ const LEARNING_PLANNER_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:web", "group:memory"],
-
+        skills: ["web-researcher", "summarize"],
       },
     },
     {
@@ -975,7 +1029,7 @@ const LEARNING_PLANNER_TEMPLATE: SceneTemplate = {
       ].join("\n"),
       tools: {
         allow: ["group:fs", "group:memory"],
-
+        skills: ["nano-pdf", "summarize"],
       },
     },
   ],

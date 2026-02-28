@@ -37,7 +37,13 @@ import { getDeviceId } from "../../license/device-id.js";
 /** 防止并发执行更新（双击/重试竞态会损坏安装） */
 let updateExecuteInProgress = false;
 
-/** S5-3: 更新成功后等待用户点击重启（30s 后自动重启） */
+/**
+ * S5-3: 更新成功后等待用户点击重启。
+ * 延长到 120s 后自动重启（避免用户正在操作时被意外中断）。
+ * daemon 无 UI 场景下 120s 足够用户收到通知并作出反应。
+ */
+const AUTO_RESTART_DELAY_MS = 120_000;
+
 let pendingUpdateRestart: {
   sentinelPath: string | null;
   sentinelPayload: RestartSentinelPayload;
@@ -76,7 +82,10 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
       });
 
       if (check.hasUpdate && check.version) {
-        const changelog = check.latest?.changelog ?? { "zh-CN": "", "en-US": "" };
+        const changelog = {
+          "zh-CN": check.latest?.changelog?.["zh-CN"] ?? "",
+          "en-US": check.latest?.changelog?.["en-US"] ?? "",
+        };
         const content = check.latest ? extractUpdateContent(check.latest) : null;
         const updateState = {
           version: check.version,
@@ -141,6 +150,8 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
         mandatory: state.mandatory ?? false,
         dismissed: state.dismissed,
         installerUrl: state.installerUrl,
+        // 告知 UI 是否有待重启的更新（用户刷新页面后恢复重启提示）
+        pendingRestart: pendingUpdateRestart !== null,
       });
     } catch (err) {
       respond(true, {
@@ -304,27 +315,49 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
           preCheckResult: state.checkResult,
         });
 
-        // delta 失败/跳过，且有 full 包 → 自动级联到 full 热更新
-        if (result.status !== "ok" && state.checkResult.latest?.url?.full) {
-          context.broadcast(
-            "update.progress",
-            {
-              stage: "downloading",
-              percent: 5,
-              message: "增量更新失败，切换到全量更新...",
-            },
-            { dropIfSlow: true },
-          );
+        // delta 失败/跳过 → 自动级联到 full 热更新
+        if (result.status !== "ok") {
+          // 先尝试已有的 full URL；如果 API 模式下没有 full URL（空字符串），
+          // 则重新查询静态文件 latest.json 获取 full 包信息
+          let fullLatest = state.checkResult.latest;
+          if (!fullLatest?.url?.full) {
+            try {
+              const freshCheck = await checkInstallerUpdate({
+                updateServerUrl,
+                currentVersion: VERSION,
+                licenseKey,
+                deviceId,
+                timeoutMs: 10_000,
+              });
+              if (freshCheck.latest?.url?.full) {
+                fullLatest = freshCheck.latest;
+              }
+            } catch {
+              // 静态文件查询失败，跳过级联
+            }
+          }
 
-          result = await runFullTarUpdate({
-            root,
-            latest: state.checkResult.latest,
-            currentVersion: VERSION,
-            updateServerUrl,
-            licenseKey,
-            deviceId,
-            progress,
-          });
+          if (fullLatest?.url?.full) {
+            context.broadcast(
+              "update.progress",
+              {
+                stage: "downloading",
+                percent: 5,
+                message: "增量更新失败，切换到全量更新...",
+              },
+              { dropIfSlow: true },
+            );
+
+            result = await runFullTarUpdate({
+              root,
+              latest: fullLatest,
+              currentVersion: VERSION,
+              updateServerUrl,
+              licenseKey,
+              deviceId,
+              progress,
+            });
+          }
         }
       } else if (state.updateType === "full" && state.checkResult.latest) {
         result = await runFullTarUpdate({
@@ -380,17 +413,21 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
         }
 
         // S5-3: 不再立即自动重启，等待用户点击"立即重启"（update.restart RPC）。
-        // 30s 后若无用户操作则自动重启（兼容无 UI 的 daemon 场景）。
+        // 120s 后若无用户操作则自动重启（兼容无 UI 的 daemon 场景）。
+        // 延长到 120s 避免用户正在操作时被意外中断（30s 太短，用户可能正在对话中）。
+        const fallbackTimer = setTimeout(() => {
+          scheduleGatewaySigusr1Restart({
+            delayMs: 500,
+            reason: `update.execute (auto-restart fallback after ${AUTO_RESTART_DELAY_MS / 1000}s)`,
+          });
+          pendingUpdateRestart = null;
+        }, AUTO_RESTART_DELAY_MS);
+        // Allow clean gateway shutdown without waiting for the 120s fallback timer
+        fallbackTimer.unref?.();
         pendingUpdateRestart = {
           sentinelPath,
           sentinelPayload: payload,
-          fallbackTimer: setTimeout(() => {
-            scheduleGatewaySigusr1Restart({
-              delayMs: 500,
-              reason: "update.execute (auto-restart fallback after 30s)",
-            });
-            pendingUpdateRestart = null;
-          }, 30_000),
+          fallbackTimer,
         };
 
         respond(true, {

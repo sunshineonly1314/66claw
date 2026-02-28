@@ -56,6 +56,8 @@ type OrchestratorPlanAgent = {
   modelTier?: string;
   /** Routing keywords from template */
   routingKeywords?: string[];
+  /** When present, the orchestrator already wrote full config (tools, model, heartbeat, etc.) */
+  inferredCapabilities?: Record<string, unknown>;
 };
 
 type OrchestratorPlan = {
@@ -130,7 +132,7 @@ export async function createProjectFromPlan(
   const deployedIdMap = new Map<string, string>();
   for (const agent of state.agents) {
     if (agent.status === "ready") {
-      const deployedId = `${planId}--${agent.blueprintId}`;
+      const deployedId = agent.agentId || `${planId}--${agent.blueprintId}`;
       deployedIdMap.set(agent.blueprintId, deployedId);
     }
   }
@@ -246,11 +248,26 @@ export async function createProjectFromPlan(
 
   let toolPoliciesWritten = 0;
 
-  // Build tool config patches from blueprint tool recommendations
+  // Build tool config patches from blueprint tool recommendations.
+  // Skip agents whose inferredCapabilities were already written by the orchestrator
+  // (buildFullConfigPatch handles tools + model + heartbeat + skills in one patch).
+  // Writing blueprint tools on top would create allow+alsoAllow conflict.
   const configPatches: Array<{ agentId: string; tools: Record<string, unknown> }> = [];
   for (const bp of plan.agents) {
     const deployedId = deployedIdMap.get(bp.id);
     if (!deployedId || !bp.tools) continue;
+
+    if (bp.inferredCapabilities) {
+      // Orchestrator already wrote full config for this agent — skip
+      const report = agentReports.find((r) => r.agentId === deployedId);
+      report?.steps.push({
+        step: "tool-policy",
+        status: "ok",
+        detail: "Tool policy applied by orchestrator (inferred capabilities)",
+      });
+      toolPoliciesWritten++;
+      continue;
+    }
 
     const toolsCfg: Record<string, unknown> = {};
     if (bp.tools.profile) toolsCfg.profile = bp.tools.profile;

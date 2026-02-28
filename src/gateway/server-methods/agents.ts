@@ -202,6 +202,45 @@ function sanitizeIdentityLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Upsert `- Key: Value` entries in an IDENTITY.md file.
+ * Existing lines whose key matches are replaced in-place; new keys are appended.
+ * This prevents duplicate lines from accumulating on repeated register/update calls.
+ */
+async function upsertIdentityEntries(
+  identityPath: string,
+  entries: Record<string, string>,
+): Promise<void> {
+  let existing = "";
+  try {
+    existing = await fs.readFile(identityPath, "utf-8");
+  } catch {
+    // File may not exist yet — that's fine.
+  }
+
+  const lines = existing.split("\n");
+  const keysToSet = new Map(Object.entries(entries));
+  const seen = new Set<string>();
+
+  // Replace existing matching lines in-place.
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^- (\w+):\s/);
+    if (m && keysToSet.has(m[1])) {
+      lines[i] = `- ${m[1]}: ${keysToSet.get(m[1])}`;
+      seen.add(m[1]);
+    }
+  }
+
+  // Append any keys that weren't already present.
+  for (const [key, value] of keysToSet) {
+    if (!seen.has(key)) {
+      lines.push(`- ${key}: ${value}`);
+    }
+  }
+
+  await fs.writeFile(identityPath, lines.join("\n"), "utf-8");
+}
+
 function resolveOptionalStringParam(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -304,14 +343,10 @@ export const agentsHandlers: GatewayRequestHandlers = {
     const emoji = resolveOptionalStringParam(params.emoji);
     const avatar = resolveOptionalStringParam(params.avatar);
     const identityPath = path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME);
-    const lines = [
-      "",
-      `- Name: ${safeName}`,
-      ...(emoji ? [`- Emoji: ${sanitizeIdentityLine(emoji)}`] : []),
-      ...(avatar ? [`- Avatar: ${sanitizeIdentityLine(avatar)}`] : []),
-      "",
-    ];
-    await fs.appendFile(identityPath, lines.join("\n"), "utf-8");
+    const identityEntries: Record<string, string> = { Name: safeName };
+    if (emoji) identityEntries.Emoji = sanitizeIdentityLine(emoji);
+    if (avatar) identityEntries.Avatar = sanitizeIdentityLine(avatar);
+    await upsertIdentityEntries(identityPath, identityEntries);
 
     respond(true, { ok: true, agentId, name: rawName, workspace: workspaceDir }, undefined);
   },
@@ -369,7 +404,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       const workspace = workspaceDir ?? resolveAgentWorkspaceDir(nextConfig, agentId);
       await fs.mkdir(workspace, { recursive: true });
       const identityPath = path.join(workspace, DEFAULT_IDENTITY_FILENAME);
-      await fs.appendFile(identityPath, `\n- Avatar: ${sanitizeIdentityLine(avatar)}\n`, "utf-8");
+      await upsertIdentityEntries(identityPath, { Avatar: sanitizeIdentityLine(avatar) });
     }
 
     respond(true, { ok: true, agentId }, undefined);

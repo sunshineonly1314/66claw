@@ -273,10 +273,12 @@ export async function getCapabilityModels(params: { capability: Capability | str
         (m) => m.providerId === card.provider && m.modelId === card.modelId,
       );
       if (!alreadyInList) {
+        // [CN-PATCH] providerName 应取 provider 的显示名，不是 model 的 displayName
+        const staticMapping = PROVIDER_CAPABILITY_MAPPINGS[card.provider];
         models.push({
           providerId: card.provider,
-          providerName: card.displayName,
-          providerIcon: "",
+          providerName: staticMapping?.name ?? card.provider,
+          providerIcon: staticMapping?.icon ?? "",
           modelId: card.modelId,
           modelName: card.displayName,
           pricing: { type: card.costTier === "free" ? ("free" as const) : ("paid" as const) },
@@ -993,13 +995,14 @@ export async function deleteProviderConfig(params: { providerId: string }) {
       delete config.models.providers[providerId];
     }
 
-    // 2. 清理使用该 provider 的 capability 绑定
+    // 2. 清理使用该 provider 的 capability 绑定（含别名展开）
     const configWithCapability = config as { modelCapability?: ModelCapabilityConfig };
     if (configWithCapability.modelCapability?.capabilities) {
+      const deleteAliases = new Set(getProviderAliases(providerId));
       for (const [cap, binding] of Object.entries(
         configWithCapability.modelCapability.capabilities,
       )) {
-        if (binding?.providerId === providerId) {
+        if (binding?.providerId && deleteAliases.has(binding.providerId)) {
           delete configWithCapability.modelCapability.capabilities[cap];
         }
       }
@@ -1066,8 +1069,8 @@ async function probeModel(
     "Content-Type": "application/json",
     Authorization: `Bearer ${apiKey}`,
   };
-  // Kimi 需要 User-Agent
-  if (providerId === "kimi-code") {
+  // Kimi 需要 User-Agent (内部 provider ID 是 "kimi-coding"，不是 "kimi-code")
+  if (providerId === "kimi-coding") {
     headers["User-Agent"] = "KimiCLI/0.77";
   }
 

@@ -29,6 +29,7 @@ import {
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
 import { diffConfigPaths, buildGatewayReloadPlan } from "../config-reload.js";
+import { runConfigSafetyCheck } from "./config-safety-check.js";
 import { loadOpenClawCNPlugins } from "../../plugins/loader.js";
 import {
   ErrorCodes,
@@ -380,6 +381,15 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    // [CN-PATCH:safety-check] Advisory pre-write safety check.
+    // Wrapped in try-catch so it never blocks config writes.
+    let safetyCheck: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
+    try {
+      safetyCheck = runConfigSafetyCheck(validated.config, snapshot.config, "patch");
+    } catch {
+      /* advisory only — never block writes */
+    }
+
     await writeConfigFile(validated.config, writeOptions);
 
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
@@ -420,6 +430,7 @@ export const configHandlers: GatewayRequestHandlers = {
         config: redactConfigObject(validated.config, schemaPatch.uiHints),
         restart,
         sentinel: sentinelPath ? { path: sentinelPath } : undefined,
+        ...(safetyCheck.warnings.length > 0 ? { safetyWarnings: safetyCheck.warnings } : {}),
       },
       undefined,
     );
@@ -478,6 +489,15 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    // [CN-PATCH:safety-check] Advisory pre-write safety check.
+    // Never blocks the write — warnings are attached to the success response.
+    let safetyCheck: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
+    try {
+      safetyCheck = runConfigSafetyCheck(validated.config, snapshot.config, "apply");
+    } catch {
+      /* advisory only — never block writes */
+    }
+
     await writeConfigFile(validated.config, writeOptions);
 
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
@@ -518,6 +538,7 @@ export const configHandlers: GatewayRequestHandlers = {
         config: redactConfigObject(validated.config, schemaApply.uiHints),
         restart,
         sentinel: sentinelPath ? { path: sentinelPath } : undefined,
+        ...(safetyCheck.warnings.length > 0 ? { safetyWarnings: safetyCheck.warnings } : {}),
       },
       undefined,
     );

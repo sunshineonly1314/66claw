@@ -197,7 +197,7 @@ async function doStart(
   };
 
   try {
-    const env: Record<string, string> = { ...process.env };
+    const env: Record<string, string | undefined> = { ...process.env };
     // Prevent model re-downloading
     env.HF_HUB_OFFLINE = "1";
     env.TRANSFORMERS_OFFLINE = "1";

@@ -56,12 +56,17 @@ const BLOCKED_PATH_PATTERNS =
 
 function isPathBlocked(targetPath: string): boolean {
   const normalized = targetPath.replace(/\\/g, "/");
-  // Block paths that look like SSH/credential directories
-  if (/[/\\]\.ssh([/\\]|$)/.test(normalized)) return true;
-  if (/[/\\]\.gnupg([/\\]|$)/.test(normalized)) return true;
-  if (/[/\\]\.aws([/\\]|$)/.test(normalized)) return true;
+  // Block paths that look like SSH/credential directories (case-insensitive for Windows)
+  if (/\/\.ssh(\/|$)/i.test(normalized)) return true;
+  if (/\/\.gnupg(\/|$)/i.test(normalized)) return true;
+  if (/\/\.aws(\/|$)/i.test(normalized)) return true;
+  if (/\/\.kube(\/|$)/i.test(normalized)) return true;
+  if (/\/\.docker(\/|$)/i.test(normalized)) return true;
+  if (/\/\.azure(\/|$)/i.test(normalized)) return true;
+  // Check platform-specific patterns against BOTH original and normalized paths
+  // to prevent bypass via forward-slash paths on Windows
   for (const re of BLOCKED_PATH_PATTERNS) {
-    if (re.test(targetPath)) return true;
+    if (re.test(targetPath) || re.test(normalized)) return true;
   }
   return false;
 }
@@ -201,7 +206,28 @@ async function _skillsUpdateInner(params: unknown, respond: RespondFn): Promise<
       }
       // Note: allowBundled sync removed. pinnedSkills is the sole gate for prompt injection.
     } else {
-      const idx = pinnedList.indexOf(p.skillKey);
+      // Unpin: try both p.skillKey and the canonical key to handle name vs skillKey mismatch.
+      // The pinnedList may store the canonical key (resolved during pin), but the UI
+      // may send the skill name instead.
+      let idx = pinnedList.indexOf(p.skillKey);
+      if (idx === -1) {
+        // Resolve canonical key by scanning loaded entries
+        const defaultAgentId = resolveDefaultAgentId(cfg);
+        const workspaceDir = resolveAgentWorkspaceDir(cfg, defaultAgentId);
+        const allEntries = loadWorkspaceSkillEntries(workspaceDir, { config: cfg });
+        const matchedEntry = allEntries.find((e) => {
+          const key = resolveSkillKey(e.skill, e);
+          return key === p.skillKey || e.skill.name === p.skillKey;
+        });
+        if (matchedEntry) {
+          const canonicalKey = resolveSkillKey(matchedEntry.skill, matchedEntry);
+          idx = pinnedList.indexOf(canonicalKey);
+          if (idx === -1) {
+            // Also try the raw name in case pinnedList stored it by name
+            idx = pinnedList.indexOf(matchedEntry.skill.name);
+          }
+        }
+      }
       if (idx !== -1) {
         pinnedList.splice(idx, 1);
       }

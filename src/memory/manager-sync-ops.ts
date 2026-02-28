@@ -292,6 +292,38 @@ class MemoryManagerSyncOps {
       this.fts.loadError = result.ftsError;
       log.warn(`fts unavailable: ${result.ftsError}`);
     }
+    // [CN-PATCH:memory-fix] Act on integrity check results instead of ignoring them.
+    // If corruption is detected, back up the corrupted DB file for forensics.
+    if (result.integrityOk === false) {
+      const dbPath = resolveUserPath(this.settings.store.path);
+      log.warn(
+        `[memory-safety] SQLite integrity check FAILED for ${dbPath}. ` +
+          `Database may be corrupted. Attempting to back up for forensics.`,
+      );
+      try {
+        // [CN-PATCH:memory-fix] In WAL mode, a SQLite database consists of 3 files:
+        // .sqlite, .sqlite-wal (write-ahead log), .sqlite-shm (shared memory index).
+        // copyFileSync only copies the main file, losing uncommitted WAL data.
+        // We copy all 3 files for a complete forensic backup.
+        const ts = Date.now();
+        const backupPath = `${dbPath}.corrupt-${ts}`;
+        fsSync.copyFileSync(dbPath, backupPath);
+        // Also copy WAL and SHM files if they exist (best-effort)
+        for (const ext of ["-wal", "-shm"]) {
+          try {
+            const srcFile = `${dbPath}${ext}`;
+            if (fsSync.existsSync(srcFile)) {
+              fsSync.copyFileSync(srcFile, `${backupPath}${ext}`);
+            }
+          } catch {
+            /* WAL/SHM backup non-fatal */
+          }
+        }
+        log.warn(`[memory-safety] Corrupted DB backed up to: ${backupPath}`);
+      } catch {
+        // Backup failed — continue anyway, the schema DDL above may have recovered
+      }
+    }
   }
 
   private ensureWatcher() {

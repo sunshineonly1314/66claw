@@ -76,7 +76,7 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", state);
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
@@ -89,19 +89,20 @@ describe("deploy-bridge", () => {
       expect(project.description).toBe("Customer support team for product inquiries");
     });
 
-    it("uses deployed ID format orch-{planId}-{blueprintId}", async () => {
+    it("uses deployed agentId from orchestrator state", async () => {
       await writePlan("plan-001", makePlan());
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.memberIds).toContain("orch-plan-001-bp-supervisor");
-      expect(project.memberIds).toContain("orch-plan-001-bp-sales");
-      expect(project.memberIds).toContain("orch-plan-001-bp-tech");
+      // Uses agentId from state (e.g. "a1") or falls back to "{planId}--{blueprintId}"
+      expect(project.memberIds).toContain("a1");
+      expect(project.memberIds).toContain("a2");
+      expect(project.memberIds).toContain("a3");
     });
 
     it("preserves member info (name, role, emoji)", async () => {
@@ -109,12 +110,12 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
 
-      const salesMember = project.members.find(m => m.id === "orch-plan-001-bp-sales");
+      const salesMember = project.members.find(m => m.id === "a2");
       expect(salesMember).toBeDefined();
       expect(salesMember!.name).toBe("Sales");
       expect(salesMember!.role).toBe("Sales agent");
@@ -126,12 +127,12 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.supervisorId).toBe("orch-plan-001-bp-supervisor");
+      expect(project.supervisorId).toBe("a1");
     });
 
     it("uses explicit supervisorAgentId when provided and valid", async () => {
@@ -139,13 +140,13 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
-        supervisorAgentId: "orch-plan-001-bp-sales",
+        supervisorAgentId: "a2",
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.supervisorId).toBe("orch-plan-001-bp-sales");
+      expect(project.supervisorId).toBe("a2");
     });
 
     it("falls back to first agent when supervisorAgentId not in members", async () => {
@@ -153,13 +154,13 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         supervisorAgentId: "nonexistent-agent",
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.supervisorId).toBe("orch-plan-001-bp-supervisor");
+      expect(project.supervisorId).toBe("a1");
     });
 
     it("saves project to disk", async () => {
@@ -167,7 +168,7 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
@@ -188,7 +189,7 @@ describe("deploy-bridge", () => {
       });
 
       expect(callGateway).toHaveBeenCalledWith("agents.files.set", {
-        agentId: "orch-plan-001-bp-supervisor",
+        agentId: "a1",
         name: "SOUL.md",
         content: expect.stringContaining("Identity"),
       });
@@ -199,7 +200,7 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
@@ -215,7 +216,7 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         name: "My Custom Team",
         orchestratorStateDir: orchDir,
@@ -230,7 +231,7 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
@@ -243,7 +244,7 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
@@ -319,13 +320,13 @@ describe("deploy-bridge", () => {
       }));
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
 
       expect(project.memberIds).toHaveLength(2);
-      expect(project.memberIds).not.toContain("orch-plan-001-bp-sales");
+      expect(project.memberIds).not.toContain("a2");
     });
 
     it("continues if SOUL.md gateway call fails (non-fatal)", async () => {
@@ -333,7 +334,7 @@ describe("deploy-bridge", () => {
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockRejectedValue(new Error("gateway down"));
-      const project = await createProjectFromPlan(callGateway, {
+      const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });

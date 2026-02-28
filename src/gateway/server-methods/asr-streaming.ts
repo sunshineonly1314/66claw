@@ -34,6 +34,11 @@ import {
   cleanupDashscopeSessionsForConn,
   isDashscopeStreamAvailable,
 } from "./asr-streaming-dashscope.js";
+import {
+  volcengineStreamHandlers,
+  cleanupVolcengineSessionsForConn,
+  isVolcengineStreamAvailable,
+} from "./asr-streaming-volcengine.js";
 import { cleanupKwsSessionsForConn } from "./kws-streaming.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import { formatForLog } from "../ws-log.js";
@@ -41,8 +46,10 @@ import type { GatewayRequestHandlers } from "./types.js";
 
 // ─── Session type tracking ────────────────────────────────────────────
 
-type SessionBackend = "gpu" | "vad" | "cpu" | "api" | "dashscope-stream";
+type SessionBackend = "gpu" | "vad" | "cpu" | "api" | "dashscope-stream" | "volcengine-stream";
 const sessionTypes = new Map<string, SessionBackend>();
+/** Maps sessionId → connId for cleanup when a connection drops. */
+const sessionConnMap = new Map<string, string>();
 
 /** Clean up all streaming sessions for a disconnected connection. */
 export function cleanupSessionsForConn(connId: string): void {
@@ -51,7 +58,15 @@ export function cleanupSessionsForConn(connId: string): void {
   cleanupCpuSessionsForConn(connId);
   cleanupApiSessionsForConn(connId);
   cleanupDashscopeSessionsForConn(connId);
+  cleanupVolcengineSessionsForConn(connId);
   cleanupKwsSessionsForConn(connId);
+  // Purge sessionTypes entries belonging to this connection
+  for (const [sid, cid] of sessionConnMap) {
+    if (cid === connId) {
+      sessionTypes.delete(sid);
+      sessionConnMap.delete(sid);
+    }
+  }
 }
 
 // ─── Backend resolution ───────────────────────────────────────────────
@@ -68,7 +83,10 @@ async function resolveBackend(): Promise<SessionBackend | null> {
   // 0. CPU true streaming takes priority — real incremental decoding, no text deletion
   if (detectCpuStreamingModel()) return "cpu";
 
-  // 1. DashScope Fun-ASR real-time WebSocket — true streaming cloud ASR
+  // 1. Volcengine bigmodel real-time WebSocket — true streaming cloud ASR
+  if (isVolcengineStreamAvailable()) return "volcengine-stream";
+
+  // 1b. DashScope Fun-ASR real-time WebSocket — true streaming cloud ASR
   if (isDashscopeStreamAvailable()) return "dashscope-stream";
 
   // 2. User-selected API ASR provider (accumulate at end)
@@ -96,6 +114,8 @@ function getHandlers(backend: SessionBackend): GatewayRequestHandlers {
       return apiStreamHandlers;
     case "dashscope-stream":
       return dashscopeStreamHandlers;
+    case "volcengine-stream":
+      return volcengineStreamHandlers;
   }
 }
 
@@ -113,6 +133,8 @@ function getBackendLabel(backend: SessionBackend): string {
       return "API ASR (cloud)";
     case "dashscope-stream":
       return "Fun-ASR (阿里云百炼)";
+    case "volcengine-stream":
+      return "Seed-ASR (火山引擎)";
   }
 }
 
@@ -136,11 +158,13 @@ export const asrStreamingHandlers: GatewayRequestHandlers = {
                 ? "vad+qwen3-asr"
                 : backend === "dashscope-stream"
                   ? "dashscope-realtime"
-                  : backend === "api"
-                    ? "api-cloud"
-                    : detectCpuStreamingModel()
-                      ? "cpu-streaming"
-                      : "cpu-offline",
+                  : backend === "volcengine-stream"
+                    ? "volcengine-realtime"
+                    : backend === "api"
+                      ? "api-cloud"
+                      : detectCpuStreamingModel()
+                        ? "cpu-streaming"
+                        : "cpu-offline",
           streamingMode: backend,
         });
       } else {
@@ -173,13 +197,15 @@ export const asrStreamingHandlers: GatewayRequestHandlers = {
       }
 
       const handlers = getHandlers(backend);
-      // Wrap respond to capture sessionId and record backend type
+      // Wrap respond to capture sessionId and record backend + connId
       const originalRespond = respond;
+      const connId = ctx.client?.connId;
       const wrappedCtx = {
         ...ctx,
         respond: (ok: boolean, data?: any, error?: any) => {
           if (ok && data?.sessionId) {
             sessionTypes.set(data.sessionId, backend);
+            if (connId) sessionConnMap.set(data.sessionId, connId);
           }
           originalRespond(ok, data, error);
         },
@@ -213,6 +239,7 @@ export const asrStreamingHandlers: GatewayRequestHandlers = {
     const sessionId = typeof ctx.params.sessionId === "string" ? ctx.params.sessionId : "";
     const backend = sessionTypes.get(sessionId);
     sessionTypes.delete(sessionId);
+    sessionConnMap.delete(sessionId);
 
     if (!backend) {
       ctx.respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "session not found"));

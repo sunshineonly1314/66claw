@@ -368,7 +368,7 @@ describe("Attack: memory_upsert injection content", () => {
     });
     _clearProfileCache();
     const profile = readProfile(workspace);
-    expect(profile.version).toBe(1); // not 999
+    expect(profile.version).toBe(2); // not 999
     expect(profile.entries).toHaveLength(1);
     expect(profile.entries[0].key).toBe("json-inject");
   });

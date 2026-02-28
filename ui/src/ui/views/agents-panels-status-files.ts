@@ -331,7 +331,7 @@ export function renderAgentCron(params: {
           <div class="stat">
             <div class="stat-label">${t("agents.schedulerEnabled")}</div>
             <div class="stat-value">
-              ${params.status ? (params.status.enabled ? "Yes" : "No") : "n/a"}
+              ${params.status ? (params.status.enabled ? t("agents.yes") : t("agents.no")) : "n/a"}
             </div>
           </div>
           <div class="stat">
@@ -502,6 +502,8 @@ export function renderAgentFiles(params: {
                             <span>${t("agents.content")}</span>
                             <textarea
                               .value=${draft}
+                              rows="12"
+                              style="min-height: 200px; font-family: inherit; line-height: 1.6;"
                               @input=${(e: Event) =>
                                 params.onFileDraftChange(
                                   activeEntry.name,

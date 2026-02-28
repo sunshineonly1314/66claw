@@ -13,6 +13,7 @@ import type {
   TeamProjectHealthResult,
   TeamProjectStatsResult,
   TeamSharedMemoryEntry,
+  TeamActivityEvent,
 } from "../types.ts";
 import {
   renderAgentFiles,
@@ -130,6 +131,7 @@ export type AgentsProps = {
   teamProjectHealth: TeamProjectHealthResult | null;
   teamProjectStats: TeamProjectStatsResult | null;
   teamProjectMemory: TeamSharedMemoryEntry[] | null;
+  teamProjectActivity: TeamActivityEvent[] | null;
   teamProjectTab: ProjectDetailTab;
   teamProjectBusy: boolean;
   teamCollapsedProjects: Set<string>;
@@ -140,6 +142,7 @@ export type AgentsProps = {
   onDeleteProject: (projectId: string) => void;
   onLoadProjectStats: (projectId: string) => void;
   onLoadProjectMemory: (projectId: string) => void;
+  onLoadProjectActivity: (projectId: string) => void;
   onClearProjectMemory: (projectId: string) => void;
   onToggleProjectCollapse: (projectId: string) => void;
   onDeleteOrchGroup?: (agentIds: string[]) => void;
@@ -256,6 +259,7 @@ export function renderAgents(props: AgentsProps) {
                 health: props.teamProjectHealth,
                 stats: props.teamProjectStats,
                 memory: props.teamProjectMemory,
+                activity: props.teamProjectActivity,
                 tab: props.teamProjectTab,
                 busy: props.teamProjectBusy,
                 agentIdentityById: props.agentIdentityById,
@@ -266,6 +270,7 @@ export function renderAgents(props: AgentsProps) {
                 onDelete: props.onDeleteProject,
                 onLoadStats: props.onLoadProjectStats,
                 onLoadMemory: props.onLoadProjectMemory,
+                onLoadActivity: props.onLoadProjectActivity,
                 onClearMemory: props.onClearProjectMemory,
                 onUpdateSettings: props.onUpdateProjectSettings,
                 onRemoveMember: props.onRemoveProjectMember,
@@ -611,20 +616,36 @@ function renderAgentOverview(params: {
     <section class="card">
       <div class="card-title">${t("agents.identityTitle")}</div>
       <div class="card-sub">${t("agents.identitySub")}</div>
-      <label class="field" style="margin-top: 12px;">
-        <span>${t("agents.identityName")}</span>
-        <input
-          type="text"
-          .value=${overviewIdentity.name}
-          placeholder=${t("agents.identityNamePlaceholder")}
-          style="box-sizing: border-box; width: 100%;"
-          @input=${(e: Event) => {
-            overviewIdentity.name = (e.target as HTMLInputElement).value;
-            overviewIdentity.dirty = true;
-            requestUpdate();
-          }}
-        />
-      </label>
+      <div class="row" style="gap: 12px; flex-wrap: wrap; margin-top: 12px;">
+        <label class="field" style="flex: 1; min-width: 200px;">
+          <span>${t("agents.identityName")}</span>
+          <input
+            type="text"
+            .value=${overviewIdentity.name}
+            placeholder=${t("agents.identityNamePlaceholder")}
+            style="box-sizing: border-box; width: 100%;"
+            @input=${(e: Event) => {
+              overviewIdentity.name = (e.target as HTMLInputElement).value;
+              overviewIdentity.dirty = true;
+              requestUpdate();
+            }}
+          />
+        </label>
+        <label class="field" style="width: 100px; flex-shrink: 0;">
+          <span>Emoji</span>
+          <input
+            type="text"
+            .value=${overviewIdentity.emoji}
+            placeholder="🤖"
+            style="box-sizing: border-box; width: 100%; text-align: center; font-size: 18px;"
+            @input=${(e: Event) => {
+              overviewIdentity.emoji = (e.target as HTMLInputElement).value;
+              overviewIdentity.dirty = true;
+              requestUpdate();
+            }}
+          />
+        </label>
+      </div>
       ${identityDirty && params.onIdentityUpdate
         ? html`
           <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 8px;">

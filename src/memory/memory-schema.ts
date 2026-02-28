@@ -2,12 +2,41 @@ import type { DatabaseSync } from "node:sqlite";
 // [CN-PATCH:memory-p0] 导入 CN 区域检测，用于决定 FTS5 tokenizer 类型
 import { detectChinaRegion } from "../config/region-cn.js";
 
+// [CN-PATCH:memory-fix] Run SQLite integrity check on startup.
+// Detects corruption early so it can be reported and (if needed) auto-rebuilt.
+// Uses quick_check (faster than full integrity_check) — returns 'ok' if healthy.
+export function checkDatabaseIntegrity(db: DatabaseSync): {
+  ok: boolean;
+  error?: string;
+} {
+  try {
+    const result = db.prepare("PRAGMA quick_check").get() as {
+      quick_check?: string;
+      integrity_check?: string;
+    } | null;
+    const status = result?.quick_check ?? result?.integrity_check ?? "unknown";
+    if (status === "ok") return { ok: true };
+    return { ok: false, error: `integrity check failed: ${status}` };
+  } catch (err) {
+    return { ok: false, error: `integrity check error: ${String(err).slice(0, 200)}` };
+  }
+}
+
 export function ensureMemoryIndexSchema(params: {
   db: DatabaseSync;
   embeddingCacheTable: string;
   ftsTable: string;
   ftsEnabled: boolean;
-}): { ftsAvailable: boolean; ftsError?: string } {
+}): { ftsAvailable: boolean; ftsError?: string; integrityOk?: boolean } {
+  // [CN-PATCH:memory-fix] Run integrity check before schema operations
+  const integrity = checkDatabaseIntegrity(params.db);
+  if (!integrity.ok) {
+    // Log warning but continue — the DB may still be partially usable
+    console.warn(
+      `[memory-safety] SQLite integrity check failed: ${integrity.error}. ` +
+        `Database may be corrupted. Consider backing up and rebuilding.`,
+    );
+  }
   params.db.exec(`
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
@@ -137,7 +166,11 @@ export function ensureMemoryIndexSchema(params: {
     `CREATE INDEX IF NOT EXISTS idx_changelog_key ON profile_changelog(category, key);`,
   );
 
-  return { ftsAvailable, ...(ftsError ? { ftsError } : {}) };
+  return {
+    ftsAvailable,
+    ...(ftsError ? { ftsError } : {}),
+    integrityOk: integrity.ok,
+  };
 }
 
 function ensureColumn(
@@ -172,8 +205,15 @@ function migrateFtsToTrigram(db: DatabaseSync, ftsTable: string): void {
     db.exec(`DROP TABLE IF EXISTS ${ftsTable}`);
     // 新表由调用方的 CREATE VIRTUAL TABLE 创建（带 trigram）
     // 创建后需要从 chunks 表回填数据，见 backfillFtsFromChunks
-  } catch {
-    // 迁移检测失败，静默跳过，后续 CREATE IF NOT EXISTS 会保留旧表
+  } catch (err) {
+    // [CN-PATCH:memory-fix] Log migration failure instead of silently swallowing.
+    // A silent failure here means the user stays on unicode61 tokenizer (broken for CJK)
+    // with no indication of the problem.
+    console.warn(
+      `[memory-fts] FTS trigram migration failed for table "${ftsTable}": ` +
+        `${err instanceof Error ? err.message : String(err).slice(0, 200)}. ` +
+        `CJK search may not work correctly. Will retry on next startup.`,
+    );
   }
 }
 

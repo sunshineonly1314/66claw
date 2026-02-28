@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { defaultRuntime } from "../../runtime.js";
 import type { ExecToolDefaults } from "../../agents/bash-tools.js";
 import type { OpenClawCNConfig } from "../../config/config.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
@@ -38,8 +39,11 @@ import {
   type VerboseLevel,
 } from "../thinking.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
+import { resolveTtsAutoMode, resolveTtsConfig, resolveTtsPrefsPath } from "../../tts/tts.js";
 import { runMultiAgentOrchestration } from "../../dispatch/orchestrator.js";
 import { runReplyAgent } from "./agent-runner.js";
+// [CN-PATCH:memory-fix] Import memory extraction for orchestration path
+import { runPostReplyMemoryExtraction } from "./memory-extraction.js";
 import { applySessionHints } from "./body.js";
 import { buildGroupIntro } from "./groups.js";
 import { buildInboundMetaSystemPrompt, buildInboundUserContextPrefix } from "./inbound-meta.js";
@@ -202,12 +206,18 @@ export async function runPreparedReply(
     }
     extraSystemPrompt = [extraSystemPrompt, summaryPrompt].filter(Boolean).join("\n\n");
   }
-  // ── [CN-PATCH:voice-mode] 语音对话模式：注入口语化提示词 ──
-  // Trigger on voiceInput (MediaType=audio, i.e. TTS will play) OR explicit voiceMode.
-  const isVoiceResponse = ctx.VoiceMode || ctx.MediaType === "audio";
+  // ── [CN-PATCH:voice-mode] 语音对话模式：动态注入口语化提示词 ──
+  // Trigger conditions (any of):
+  //   1. Explicit VoiceMode toggle from UI
+  //   2. Voice input detected (MediaType=audio → TTS will play the response)
+  //   3. TTS auto mode is "always" (every response gets TTS, so must avoid emoji etc.)
+  const ttsConfig = resolveTtsConfig(cfg);
+  const ttsPrefsPath = resolveTtsPrefsPath(ttsConfig);
+  const ttsAutoMode = resolveTtsAutoMode({ config: ttsConfig, prefsPath: ttsPrefsPath });
+  const isVoiceResponse = ctx.VoiceMode || ctx.MediaType === "audio" || ttsAutoMode === "always";
   if (isVoiceResponse) {
     logVerbose(
-      `[get-reply-run] voice prompt injected (VoiceMode=${!!ctx.VoiceMode}, MediaType=${ctx.MediaType})`,
+      `[get-reply-run] voice prompt injected (VoiceMode=${!!ctx.VoiceMode}, MediaType=${ctx.MediaType}, ttsAuto=${ttsAutoMode})`,
     );
     const voiceModePrompt = [
       "## Voice Conversation Mode",
@@ -488,6 +498,28 @@ export async function runPreparedReply(
         opts,
       });
       if (orchestrationResult !== undefined) {
+        // [CN-PATCH:memory-fix] Fire-and-forget memory extraction for orchestration results.
+        // Without this, successful orchestration responses bypass runReplyAgent() and
+        // no memory extraction occurs — user facts/preferences are silently lost.
+        const orchReplyText = Array.isArray(orchestrationResult)
+          ? orchestrationResult
+              .filter((p) => p.text)
+              .map((p) => p.text!)
+              .join("\n")
+              .slice(0, 2000)
+          : (orchestrationResult.text ?? "").slice(0, 2000);
+        void runPostReplyMemoryExtraction({
+          commandBody: prefixedCommandBody,
+          agentReplyText: orchReplyText,
+          followupRun,
+          cfg,
+          sessionKey,
+          isHeartbeat,
+        }).catch((err) =>
+          defaultRuntime.error(
+            `[MemoryExtraction] Orchestration path extraction failed: ${String(err).slice(0, 200)}`,
+          ),
+        );
         typing.cleanup();
         return orchestrationResult;
       }

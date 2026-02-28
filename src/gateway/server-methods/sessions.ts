@@ -564,7 +564,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       respond(true, recommendation);
     } catch (err) {
       respond(false, undefined, {
-        code: ErrorCodes.InternalError,
+        code: ErrorCodes.INTERNAL_ERROR,
         message: `dmScope status check failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     }

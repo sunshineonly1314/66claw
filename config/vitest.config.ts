@@ -39,6 +39,7 @@ export default defineConfig({
       "dist/**",
       "apps/macos/**",
       "apps/macos/.build/**",
+      "apps/desktop/src-tauri/target/**",
       "**/node_modules/**",
       "**/vendor/**",
       "dist/OpenClawCN.app/**",
