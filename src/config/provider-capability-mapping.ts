@@ -163,7 +163,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "kimi-for-coding",
         modelName: "Kimi for Coding",
-        capabilities: ["text", "image-understanding"],
+        capabilities: ["text", "code", "image-understanding"],
         pricing: { type: "paid", details: "代码+文字+图片理解,262K 超长上下文" },
         contextWindow: 262144,
         maxTokens: 8192,
@@ -184,7 +184,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "qwen3.5-plus",
         modelName: "Qwen3.5-Plus",
-        capabilities: ["text", "image-understanding"],
+        capabilities: ["text", "code", "image-understanding"],
         pricing: { type: "paid", details: "推荐 · 图片理解" },
         contextWindow: 131072,
         maxTokens: 8192,
@@ -192,15 +192,15 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "kimi-k2.5",
         modelName: "Kimi-K2.5",
-        capabilities: ["text", "image-understanding"],
-        pricing: { type: "paid", details: "图片理解" },
+        capabilities: ["text", "code"],
+        pricing: { type: "paid" },
         contextWindow: 131072,
         maxTokens: 8192,
       },
       {
         modelId: "glm-5",
         modelName: "GLM-5",
-        capabilities: ["text"],
+        capabilities: ["text", "code"],
         pricing: { type: "paid" },
         contextWindow: 128000,
         maxTokens: 8192,
@@ -208,7 +208,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "MiniMax-M2.5",
         modelName: "MiniMax-M2.5",
-        capabilities: ["text"],
+        capabilities: ["text", "code", "image-understanding"],
         pricing: { type: "paid" },
         contextWindow: 200000,
         maxTokens: 8192,
@@ -216,7 +216,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "qwen3-coder-plus",
         modelName: "Qwen3-Coder-Plus",
-        capabilities: ["text"],
+        capabilities: ["text", "code"],
         pricing: { type: "paid", details: "Coding Plan 代码专用" },
         contextWindow: 131072,
         maxTokens: 8192,
@@ -224,7 +224,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "qwen3-coder-next",
         modelName: "Qwen3-Coder-Next",
-        capabilities: ["text"],
+        capabilities: ["text", "code"],
         pricing: { type: "paid", details: "下一代预览" },
         contextWindow: 131072,
         maxTokens: 8192,
@@ -248,7 +248,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "glm-5",
         modelName: "GLM-5",
-        capabilities: ["text"],
+        capabilities: ["text", "code", "image-understanding"],
         pricing: { type: "paid", details: "Coding Plan 代码专用" },
         contextWindow: 128000,
         maxTokens: 8192,
@@ -256,7 +256,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "glm-4.7",
         modelName: "GLM-4.7",
-        capabilities: ["text"],
+        capabilities: ["text", "code"],
         pricing: { type: "paid" },
         contextWindow: 128000,
         maxTokens: 4096,
@@ -276,7 +276,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       {
         modelId: "MiniMax-M2.5",
         modelName: "MiniMax-M2.5",
-        capabilities: ["text"],
+        capabilities: ["text", "code", "image-understanding"],
         pricing: { type: "paid", details: "Coding Plan 订阅专属" },
         contextWindow: 200000,
         maxTokens: 8192,
@@ -353,12 +353,45 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       "语音服务 (ASR/TTS) 请切换到「语音服务」Tab 单独配置",
     ],
     models: [
-      // 文字对话 + 图片理解模型（豆包 1.8 支持 text/image/video）
+      // ── Seed 2.0 系列 ──
+      {
+        modelId: "doubao-seed-2-0-pro-260215",
+        modelName: "豆包 2.0 Pro",
+        capabilities: ["text", "image-understanding", "video"],
+        pricing: { type: "paid", details: "最新旗舰 · 多模态" },
+        contextWindow: 256000,
+        maxTokens: 32768,
+      },
+      {
+        modelId: "doubao-seed-2-0-lite-260215",
+        modelName: "豆包 2.0 Lite",
+        capabilities: ["text", "image-understanding", "video"],
+        pricing: { type: "paid", details: "均衡型 · 兼顾质量与速度" },
+        contextWindow: 256000,
+        maxTokens: 32768,
+      },
+      {
+        modelId: "doubao-seed-2-0-mini-260215",
+        modelName: "豆包 2.0 Mini",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "轻量 · 低时延高并发 · 256K" },
+        contextWindow: 256000,
+        maxTokens: 32768,
+      },
+      {
+        modelId: "doubao-seed-2-0-code-preview-260215",
+        modelName: "豆包 2.0 Code",
+        capabilities: ["text", "code"],
+        pricing: { type: "paid", details: "代码专用" },
+        contextWindow: 256000,
+        maxTokens: 32768,
+      },
+      // ── Seed 1.x 系列 ──
       {
         modelId: "doubao-seed-1-8-251228",
         modelName: "豆包 1.8",
         capabilities: ["text", "image-understanding"],
-        pricing: { type: "paid", details: "最新旗舰 · 响应极快" },
+        pricing: { type: "paid", details: "服务暂停中" },
         contextWindow: 256000,
         maxTokens: 32768,
       },
@@ -948,7 +981,32 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     apiKeyUrl: "https://aistudio.google.com/apikey",
     apiKeyGuide: ["访问 Google AI Studio", "登录 Google 账号", "创建 API Key 并复制"],
     models: [
-      // 文字对话模型
+      // ── Gemini 3 系列 ──
+      {
+        modelId: "gemini-3.1-pro-preview",
+        modelName: "Gemini 3.1 Pro",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "最新旗舰 · 1M上下文" },
+        contextWindow: 1000000,
+        maxTokens: 65536,
+      },
+      {
+        modelId: "gemini-3-pro-preview",
+        modelName: "Gemini 3 Pro",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid" },
+        contextWindow: 200000,
+        maxTokens: 65536,
+      },
+      {
+        modelId: "gemini-3-flash-preview",
+        modelName: "Gemini 3 Flash",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "free", details: "免费额度充足" },
+        contextWindow: 1000000,
+        maxTokens: 65536,
+      },
+      // ── Gemini 2.5 系列 ──
       {
         modelId: "gemini-2.5-flash",
         modelName: "Gemini 2.5 Flash",
@@ -1022,7 +1080,23 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         maxTokens: 8192,
       },
       {
-        modelId: "google/gemini-2.5-flash-preview",
+        modelId: "google/gemini-3.1-pro-preview",
+        modelName: "Gemini 3.1 Pro",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid" },
+        contextWindow: 1000000,
+        maxTokens: 65536,
+      },
+      {
+        modelId: "google/gemini-3-flash-preview",
+        modelName: "Gemini 3 Flash",
+        capabilities: ["text", "image-understanding"],
+        pricing: { type: "paid", details: "低价" },
+        contextWindow: 1000000,
+        maxTokens: 65536,
+      },
+      {
+        modelId: "google/gemini-2.5-flash",
         modelName: "Gemini 2.5 Flash",
         capabilities: ["text", "image-understanding"],
         pricing: { type: "paid", details: "低价" },
@@ -1038,12 +1112,28 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         maxTokens: 4096,
       },
       {
-        modelId: "deepseek/deepseek-chat-v3-0324",
-        modelName: "DeepSeek V3",
+        modelId: "deepseek/deepseek-v3.2",
+        modelName: "DeepSeek V3.2",
         capabilities: ["text"],
         pricing: { type: "paid", details: "低价" },
         contextWindow: 128000,
         maxTokens: 8192,
+      },
+      {
+        modelId: "deepseek/deepseek-chat-v3-0324",
+        modelName: "DeepSeek V3 0324",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "低价" },
+        contextWindow: 128000,
+        maxTokens: 8192,
+      },
+      {
+        modelId: "bytedance-seed/seed-2.0-mini",
+        modelName: "豆包 Seed 2.0 Mini",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "低价" },
+        contextWindow: 256000,
+        maxTokens: 32768,
       },
     ],
   },

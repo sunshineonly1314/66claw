@@ -1615,7 +1615,7 @@ export function renderBodyContent(
               </div>
 
               <!-- 金色购买按钮 -->
-              <a href="https://m.tb.cn/h.7Jaij2B?tk=FT4gU7cFsKQ" target="_blank" class="premium-buy-btn">
+              <a href="https://m.tb.cn/h.i0WWBLA?tk=yOQqUrspXvy" target="_blank" class="premium-buy-btn">
                 <span class="material-icons">shopping_cart</span>
                 <span class="premium-buy-text">立即获取服务凭证</span>
                 <span class="premium-buy-arrow">→</span>

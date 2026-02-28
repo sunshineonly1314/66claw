@@ -341,14 +341,59 @@ export async function handleDeployProposal(
 
 // ── Community Templates ──────────────────────────────────────────────────
 
+/** Built-in fallback templates shown when the gateway call fails (e.g. plugin not loaded). */
+const FALLBACK_COMMUNITY_TEMPLATES: import("../../../../extensions/orchestrator/src/ui/orchestrator-state").CommunityTemplate[] = [
+  {
+    id: "community-social-crm",
+    name: "社群运营助手",
+    description: "自动管理微信群、欢迎新成员、定期推送内容日历",
+    category: "social",
+    author: "社区贡献者",
+    downloads: 0,
+    agents: [
+      { name: "群管家", role: "管理群消息和新成员欢迎" },
+      { name: "日历编辑", role: "维护社群内容日历和定期推送" },
+    ],
+    highlights: ["自动欢迎新成员", "内容日历管理", "违规消息过滤"],
+  },
+  {
+    id: "community-ecommerce-ops",
+    name: "电商运营全家桶",
+    description: "竞品监控、评论分析、营销文案，一站式电商运营",
+    category: "ecommerce",
+    author: "社区贡献者",
+    downloads: 0,
+    agents: [
+      { name: "竞品雷达", role: "监控竞品价格和上新动态" },
+      { name: "评论分析师", role: "分析买家评论提取改进建议" },
+      { name: "文案写手", role: "撰写商品详情和营销文案" },
+    ],
+    highlights: ["竞品实时监控", "评论情感分析", "爆款文案生成"],
+  },
+  {
+    id: "community-legal-assistant",
+    name: "法律文书助手",
+    description: "合同审查、法规检索、文书模板，法务工作加速",
+    category: "legal",
+    author: "社区贡献者",
+    downloads: 0,
+    agents: [
+      { name: "合同审查员", role: "自动检查合同关键条款和风险点" },
+      { name: "法规检索", role: "快速查找相关法规和案例" },
+    ],
+    highlights: ["合同风险检查", "法规智能检索", "文书模板生成"],
+  },
+];
+
 async function loadCommunityTemplates(state: OrchestratorControllerState): Promise<void> {
   dispatch(state, { type: "SET_COMMUNITY_LOADING", loading: true });
   try {
     const gw = callGateway(state);
     const templates = await fetchCommunityTemplates(gw);
-    dispatch(state, { type: "SET_COMMUNITY_TEMPLATES", templates });
-  } catch (err) {
-    dispatch(state, { type: "SET_COMMUNITY_ERROR", error: String(err) });
+    dispatch(state, { type: "SET_COMMUNITY_TEMPLATES", templates: templates.length > 0 ? templates : FALLBACK_COMMUNITY_TEMPLATES });
+  } catch {
+    // Gateway call failed (plugin not loaded, not connected, etc.) — use local fallback
+    dispatch(state, { type: "SET_COMMUNITY_TEMPLATES", templates: FALLBACK_COMMUNITY_TEMPLATES });
   }
 }
 

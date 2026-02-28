@@ -334,7 +334,8 @@ export function renderFeedbackModal(props: FeedbackViewProps) {
   if (!props.state.showModal) return nothing;
 
   const handleOverlayClick = (e: Event) => {
-    if ((e.target as HTMLElement).classList.contains("fb-sheet-overlay")) {
+    // 点击 overlay 背景（非弹框内容区）即关闭
+    if (e.target === e.currentTarget) {
       props.onCloseModal();
     }
   };

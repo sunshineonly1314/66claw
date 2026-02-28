@@ -64,6 +64,7 @@ import {
 } from "./src/shared-profile-store.js";
 import { createMemoryShareTool } from "./src/memory-share-tool.js";
 import { autoPromoteEntries } from "./src/auto-promote.js";
+import { formatActivitySummary } from "./src/conversation-compactor.js";
 import {
   createInitialMemberStats,
   recordMemberCall,
@@ -79,6 +80,29 @@ const projectCache = new Map<string, Project>();
 const agentToProject = new Map<string, string>();
 const healthCache = new Map<string, Map<string, MemberHealth>>();
 const statsCache = new Map<string, Map<string, MemberStats>>();
+
+/**
+ * Readiness gate: resolves once gateway_start has finished loading projects
+ * from disk. Gateway methods that read projectCache should await this to
+ * avoid returning empty results due to a race condition.
+ */
+let cacheReadyResolve: () => void;
+const cacheReady = new Promise<void>((r) => { cacheReadyResolve = r; });
+
+/** Cached agentId → display name maps, rebuilt when project version changes. */
+const memberNameMapCache = new Map<string, { version: number; map: Map<string, string> }>();
+
+/** Get or create a cached member name map for a project. */
+function getMemberNameMap(project: Project): Map<string, string> {
+  const cached = memberNameMapCache.get(project.projectId);
+  if (cached && cached.version === project.version) return cached.map;
+  const map = new Map<string, string>();
+  for (const m of project.members) {
+    map.set(m.id, m.emoji ? `${m.emoji} ${m.name}` : m.name);
+  }
+  memberNameMapCache.set(project.projectId, { version: project.version, map });
+  return map;
+}
 
 // ── Activity Event Ring Buffer ──────────────────────────────────────────
 // Records routing decisions and agent completion events for the UI activity feed.
@@ -98,6 +122,10 @@ type ActivityEvent = {
   success?: boolean;
   error?: string;
   replySummary?: string;
+  /** Classified task type for supervisor visibility */
+  taskType?: "routing" | "sub-task" | "direct-reply" | "fallback";
+  /** Structured outcome (richer than boolean success) */
+  outcome?: "success" | "failure" | "timeout" | "partial";
 };
 
 const activityBuffers = new Map<string, ActivityEvent[]>();
@@ -549,7 +577,21 @@ const plugin: OpenClawCNPluginDefinition = {
           }
         }
 
-        // 3. Template workflow detection (supervisor only)
+        // 3. Activity summary for supervisor (team situational awareness)
+        // Injected before workflow instructions so supervisor sees team
+        // state before deciding on decomposition strategy.
+        if (isSupervisor(project, ctx.agentId)) {
+          const buf = activityBuffers.get(project.projectId);
+          if (buf && buf.length > 0) {
+            const nameMap = getMemberNameMap(project);
+            const summary = formatActivitySummary(buf, nameMap);
+            if (summary) {
+              parts.push(`<team-status>\n${summary}\n</team-status>`);
+            }
+          }
+        }
+
+        // 4. Template workflow detection (supervisor only)
         // When the supervisor's resolve_agent saw no fast-path match,
         // it cached the user message. If it matches a template workflow,
         // inject decomposition instructions (zero LLM cost for recognition).
@@ -615,18 +657,29 @@ const plugin: OpenClawCNPluginDefinition = {
 
       // Finalize pending activity event from resolve_agent
       const pending = pendingRouteEvents.get(ctx.agentId);
+      const isSuccess = event.success ?? true;
+      const outcome: ActivityEvent["outcome"] = isSuccess
+        ? "success"
+        : (event.durationMs != null &&
+            event.durationMs >= (project.coordination.memberTimeoutSeconds * 1000))
+          ? "timeout"
+          : "failure";
+
       if (pending) {
         pendingRouteEvents.delete(ctx.agentId);
         const finalEvent: ActivityEvent = {
           ...pending.event,
           durationMs: Date.now() - pending.startTime,
-          success: event.success ?? true,
+          success: isSuccess,
           error: event.error,
           replySummary: undefined,
+          taskType: "routing",
+          outcome,
         };
         pushActivityEvent(pending.projectId, finalEvent);
       } else {
         // Supervisor LLM fallback — no fast-path routing happened
+        const isSup = isSupervisor(project, ctx.agentId);
         pushActivityEvent(project.projectId, {
           id: nextActivityId(),
           timestamp: Date.now(),
@@ -634,9 +687,11 @@ const plugin: OpenClawCNPluginDefinition = {
           method: "supervisor-llm",
           confidence: 1,
           durationMs: event.durationMs,
-          success: event.success ?? true,
+          success: isSuccess,
           error: event.error,
           replySummary: undefined,
+          taskType: isSup ? "direct-reply" : "fallback",
+          outcome,
         });
       }
 
@@ -768,6 +823,9 @@ const plugin: OpenClawCNPluginDefinition = {
         );
       } catch (err) {
         logger.error(`Failed to load projects on startup: ${err}`);
+      } finally {
+        // Signal that projectCache is populated — gateway methods can proceed.
+        cacheReadyResolve();
       }
     });
 
@@ -776,7 +834,8 @@ const plugin: OpenClawCNPluginDefinition = {
     // ═══════════════════════════════════════════════════════════════════
 
     // ── team.project.list ─────────────────────────────────────────────
-    api.registerGatewayMethod("team.project.list", ({ respond }) => {
+    api.registerGatewayMethod("team.project.list", async ({ respond }) => {
+      await cacheReady;
       const projects = [...projectCache.values()].map((p) => ({
         projectId: p.projectId,
         name: p.name,
@@ -799,10 +858,22 @@ const plugin: OpenClawCNPluginDefinition = {
     api.registerGatewayMethod(
       "team.project.get",
       async ({ params, respond }) => {
+        await cacheReady;
         const p = params as Record<string, unknown>;
         const projectId = String(p.projectId ?? "");
 
-        const project = projectCache.get(projectId);
+        let project = projectCache.get(projectId);
+
+        // Fallback: try loading from disk if not in cache (e.g. newly deployed)
+        if (!project) {
+          const fromDisk = await loadProject(projectId);
+          if (fromDisk) {
+            projectCache.set(fromDisk.projectId, fromDisk);
+            rebuildAgentIndex();
+            project = fromDisk;
+          }
+        }
+
         if (!project) {
           respond(false, undefined, {
             code: "NOT_FOUND",
@@ -1302,6 +1373,7 @@ const plugin: OpenClawCNPluginDefinition = {
           projectCache.delete(projectId);
           healthCache.delete(projectId);
           statsCache.delete(projectId);
+          memberNameMapCache.delete(projectId);
           activityBuffers.delete(projectId);
           const pendingSaveTimer = activitySaveTimers.get(projectId);
           if (pendingSaveTimer) {

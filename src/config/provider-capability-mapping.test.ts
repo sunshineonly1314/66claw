@@ -305,9 +305,15 @@ describe("PROVIDER_CAPABILITY_MAPPINGS static data", () => {
       "text",
       "image-understanding",
       "image-generation",
+      "image-editing",
       "video",
       "video-generation",
       "embedding",
+      "code",
+      "videoGen",
+      "audio",
+      "tts",
+      "toolCall",
     ];
     for (const [pid, mapping] of Object.entries(PROVIDER_CAPABILITY_MAPPINGS)) {
       for (const model of mapping.models) {

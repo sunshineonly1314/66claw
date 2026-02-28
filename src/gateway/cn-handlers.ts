@@ -34,6 +34,7 @@ import { capabilityMatrixHandlers } from "./server-methods/capability-matrix.js"
 import { localEngineHandlers } from "./server-methods/local-engine.js";
 import { updateExecuteHandlers } from "./server-methods/update-execute.js";
 import { networkingHandlers } from "./server-methods/networking.js";
+import { orchestratorHandlers } from "./server-methods/orchestrator.js";
 
 export const cnGatewayHandlers: GatewayRequestHandlers = {
   ...modalityCapabilityHandlers,
@@ -88,4 +89,7 @@ export const cnGatewayHandlers: GatewayRequestHandlers = {
 
   // Networking Center: status, discover, probe, configure, interfaces
   ...networkingHandlers,
+
+  // Orchestrator: templates, community, deploy, plans, agents
+  ...orchestratorHandlers,
 };

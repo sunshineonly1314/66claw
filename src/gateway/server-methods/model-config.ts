@@ -559,6 +559,95 @@ function capabilitiesToInput(capabilities: Capability[]): Array<"text" | "image"
 }
 
 /**
+ * 将 v1 Capability[] 转换为 v2 CapabilityScores，用于动态注入 capability card。
+ * text/code 默认给分；vision 仅在 probeVision 验证通过时才给分。
+ */
+function capabilitiesToScores(caps: Capability[], visionVerified: boolean): Record<string, number> {
+  const scores: Record<string, number> = {};
+  for (const c of caps) {
+    switch (c) {
+      case "text":
+        scores.text = 3;
+        scores.code = 2;
+        break;
+      case "image-understanding":
+        if (visionVerified) scores.vision = 3;
+        break;
+      case "image-generation":
+        scores.imageGen = 3;
+        break;
+      case "video":
+        scores.video = 3;
+        break;
+      case "video-generation":
+        scores.videoGen = 3;
+        break;
+      case "embedding":
+        scores.embedding = 3;
+        break;
+    }
+  }
+  if (scores.text && !scores.code) scores.code = 2;
+  return scores;
+}
+
+/**
+ * 在 gateway 启动时，根据已保存的 `config.models.providers` 自动为已配置的 provider 注入 capability card。
+ *
+ * `upsertUserCard()` 是纯内存操作，gateway 重启后丢失。此函数从磁盘配置恢复 card，
+ * 确保已配置的 Coding Plan 等无 builtin card 的 provider 在启动后能正确显示能力卡片。
+ *
+ * 应在 `initCapabilityRegistry()` 之后调用。
+ */
+export function injectCardsForConfiguredProviders(cfg: OpenClawCNConfig): void {
+  const providers = cfg.models?.providers;
+  if (!providers) return;
+
+  let injected = 0;
+  for (const [providerId, providerCfg] of Object.entries(providers)) {
+    if (!providerCfg?.apiKey || !providerCfg.models?.length) continue;
+
+    const aliases = getProviderAliases(providerId);
+    const isDomestic = aliases.some((a) => !!CN_PROVIDERS[a]);
+
+    for (const model of providerCfg.models) {
+      // 从 ModelDefinitionConfig.input 推断 v2 capability scores
+      // input 在类型上是 required，但磁盘配置可能有旧数据缺失，做防御性处理
+      const inputTypes = Array.isArray(model.input) ? model.input : ["text"];
+      const scores: Record<string, number> = {};
+      if (inputTypes.includes("text")) {
+        scores.text = 3;
+        scores.code = 2;
+      }
+      if (inputTypes.includes("image")) {
+        scores.vision = 3;
+      }
+      if (inputTypes.includes("video")) {
+        scores.video = 3;
+      }
+      if (Object.keys(scores).length === 0) continue;
+
+      upsertUserCard({
+        provider: providerId,
+        modelId: model.id,
+        displayName: model.name,
+        capabilities: scores,
+        modelType: "chat",
+        region: isDomestic ? "domestic" : "international",
+        costTier: "standard",
+        costPer1M: 0,
+        maxContextTokens: model.contextWindow ?? 32768,
+      });
+      injected++;
+    }
+  }
+
+  if (injected > 0) {
+    log.info(`capability-card: injected ${injected} cards from saved provider config at startup`);
+  }
+}
+
+/**
  * 并发探测 Provider 下所有模型，通过 broadcast 实时报告进度。
  *
  * 流程：
@@ -654,6 +743,9 @@ export async function detectProviderModelsWithProgress(
     message?: string;
   }> = [];
 
+  // vision 探测结果：modelId → 是否通过 base64 图片探测
+  const visionResults = new Map<string, boolean>();
+
   const tasks = allModels.map((model) => async () => {
     // 如果是第一阶段已验证过的 chat 模型，直接标记成功
     let result: Awaited<ReturnType<typeof probeModelByType>>;
@@ -663,12 +755,22 @@ export async function detectProviderModelsWithProgress(
       result = await probeModelByType(providerId, model, apiKey, userBaseUrl);
     }
 
+    // 对声明了 image-understanding 的模型，额外探测 vision（base64 图片）
+    if (result.ok && model.capabilities.includes("image-understanding")) {
+      const vr = await probeVision(providerId, model.modelId, apiKey, userBaseUrl);
+      visionResults.set(model.modelId, vr.ok);
+    }
+
     completed++;
+    const visionStatus = visionResults.get(model.modelId);
+    const visionMsg =
+      visionStatus === true ? "图片理解: ✓" : visionStatus === false ? "图片理解: ✗" : undefined;
+    const baseMsg = result.ok ? undefined : (result as { message?: string }).message;
     const entry = {
       modelId: model.modelId,
       modelName: model.modelName,
       status: result.status,
-      message: result.ok ? undefined : (result as { message?: string }).message,
+      message: [baseMsg, visionMsg].filter(Boolean).join(" | ") || undefined,
     };
     modelResults.push(entry);
 
@@ -764,6 +866,41 @@ export async function detectProviderModelsWithProgress(
       refreshProviderConfigured((p) => hasUserConfiguredProvider(p, updatedConfig, authStore));
     } catch {
       // 非关键 — registry 在下次 gateway 重启时会自行刷新
+    }
+
+    // ── 为所有检测通过的模型注入 capability card ──
+    // Coding Plan 等 provider 可能没有 builtin card，需要动态注入以驱动能力卡片显示。
+    // 对于已有 builtin card 的 provider，upsertUserCard 会用相同分数覆盖，不影响行为。
+    try {
+      const cardAliases = getProviderAliases(providerId);
+      const isDomesticCard = cardAliases.some((a) => !!CN_PROVIDERS[a]);
+      for (const m of availableModels) {
+        const visionOk = visionResults.get(m.modelId) ?? false;
+        const scores = capabilitiesToScores(m.capabilities, visionOk);
+        if (Object.keys(scores).length === 0) continue;
+        upsertUserCard({
+          provider: providerId,
+          modelId: m.modelId,
+          displayName: m.modelName,
+          capabilities: scores,
+          modelType: "chat",
+          region: isDomesticCard ? "domestic" : "international",
+          costTier: "standard",
+          costPer1M: 0,
+          maxContextTokens: m.contextWindow ?? 32768,
+        });
+      }
+      log.info(
+        `capability-card: injected ${availableModels.length} cards for ${providerId} ` +
+          `(vision verified: ${
+            [...visionResults.entries()]
+              .filter(([, v]) => v)
+              .map(([k]) => k)
+              .join(", ") || "none"
+          })`,
+      );
+    } catch (cardErr) {
+      log.warn(`capability-card injection failed (non-critical): ${cardErr}`);
     }
 
     // 立即刷新 models.json，让新检测到的模型对 agent 运行时可见
@@ -1223,6 +1360,63 @@ async function probeModelByType(
   const result = await probeModel(providerId, model.modelId, apiKey, baseUrlOverride);
   if (result.ok) return { ok: true, status: "ok" };
   return { ok: false, status: "failed", fatal: result.fatal, message: result.message };
+}
+
+/** 1x1 transparent PNG, ~67 bytes — 最低成本的 vision 探测图片 */
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+/**
+ * 用 base64 图片探测模型是否支持 vision（图片理解）。
+ * 发送 OpenAI-compatible multimodal 格式请求，仅消耗 ~1-2 token。
+ */
+async function probeVision(
+  providerId: string,
+  modelId: string,
+  apiKey: string,
+  baseUrlOverride?: string,
+): Promise<{ ok: boolean }> {
+  const cnProvider = CN_PROVIDERS[providerId];
+  const baseUrl = baseUrlOverride?.trim() || cnProvider?.apiEndpoint;
+  if (!baseUrl) return { ok: false };
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (providerId === "kimi-coding") {
+    headers["User-Agent"] = "KimiCLI/0.77";
+  }
+
+  try {
+    const resp = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: modelId,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "hi" },
+              {
+                type: "image_url",
+                image_url: { url: `data:image/png;base64,${TINY_PNG_BASE64}` },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!resp.ok) return { ok: false };
+    const body = await resp.json().catch(() => null);
+    // 有 choices 说明模型正常处理了图片
+    return { ok: !!(body as Record<string, unknown>)?.choices };
+  } catch {
+    return { ok: false };
+  }
 }
 
 /**

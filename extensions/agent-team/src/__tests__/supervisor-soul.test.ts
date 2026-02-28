@@ -237,6 +237,50 @@ describe("supervisor-soul", () => {
     });
   });
 
+  describe("structured context in handoff protocol", () => {
+    it("includes INTENT/PRIOR/CONSTRAINT priority structure", () => {
+      const soul = generateSupervisorSoul(makeProject(), members);
+      expect(soul).toContain("[INTENT]");
+      expect(soul).toContain("[PRIOR]");
+      expect(soul).toContain("[CONSTRAINT]");
+    });
+
+    it("includes a concrete example for LLM guidance", () => {
+      const soul = generateSupervisorSoul(makeProject(), members);
+      expect(soul).toContain("Example:");
+      expect(soul).toContain("product comparison table");
+    });
+
+    it("specifies max 3 sentences total", () => {
+      const soul = generateSupervisorSoul(makeProject(), members);
+      expect(soul).toContain("max 3 sentences total");
+    });
+
+    it("structured context is present in all visibility modes", () => {
+      for (const mode of ["unified", "team", "transparent"] as const) {
+        const soul = generateSupervisorSoul(
+          makeProject({ visibility: { mode } }),
+          members,
+        );
+        expect(soul).toContain("[INTENT]");
+        expect(soul).toContain("[PRIOR]");
+        expect(soul).toContain("[CONSTRAINT]");
+      }
+    });
+
+    it("structured context is present in all handoff styles", () => {
+      for (const style of ["silent", "notify", "introduce"] as const) {
+        const soul = generateSupervisorSoul(
+          makeProject({
+            coordination: { ...makeProject().coordination, handoffStyle: style },
+          }),
+          members,
+        );
+        expect(soul).toContain("[INTENT]");
+      }
+    });
+  });
+
   describe("generateRoutingTable", () => {
     it("creates routing table with all members", () => {
       const table = generateRoutingTable(members);

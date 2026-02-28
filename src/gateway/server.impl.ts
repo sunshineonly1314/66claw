@@ -69,6 +69,7 @@ import {
   initCapabilityRegistry,
   extractCapabilityCardOverrides,
 } from "../dispatch/capability-registry.js";
+import { injectCardsForConfiguredProviders } from "./server-methods/model-config.js";
 import { initRemoteUpdates } from "../dispatch/capability-registry-remote.js";
 import { hasUserConfiguredProvider } from "../agents/model-auth.js";
 import { loadAuthProfileStore } from "../agents/auth-profiles/store.js";
@@ -527,6 +528,13 @@ export async function startGatewayServer(
     });
   } catch (err) {
     log.warn(`capability-registry init failed: ${err}`);
+  }
+
+  // 从已保存的 provider 配置恢复 capability card（补偿 upsertUserCard 的内存丢失）
+  try {
+    injectCardsForConfiguredProviders(cfgAtStart);
+  } catch (err) {
+    log.warn(`capability-card startup injection failed: ${err}`);
   }
 
   // Load remote capability cards (from obplugins.cn / cache)

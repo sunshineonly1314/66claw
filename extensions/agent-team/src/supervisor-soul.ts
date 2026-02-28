@@ -186,7 +186,11 @@ function generateHandoffProtocol(project: Project): string {
     `When routing a message to a team member, use the \`sessions_send\` tool with:`,
     `- **target**: the member's agent ID`,
     `- **message**: the user's original message`,
-    `- **context**: a brief summary of relevant conversation history (max 3 sentences)`,
+    `- **context**: a structured summary using these priorities (max 3 sentences total):`,
+    `  1. **[INTENT]** The user's core intent (always include, 1 sentence)`,
+    `  2. **[PRIOR]** What has been tried or discussed before (if any, 1 sentence)`,
+    `  3. **[CONSTRAINT]** User-specified constraints or preferences (if any, 1 sentence)`,
+    `  Example: "[INTENT] User wants a product comparison table. [PRIOR] Already discussed pricing. [CONSTRAINT] Must be in Chinese."`,
     ``,
   ];
 

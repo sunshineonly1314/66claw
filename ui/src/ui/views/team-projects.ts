@@ -197,7 +197,11 @@ export function renderProjectSidebarGroups(props: ProjectSidebarProps): Template
 
 function renderProjectGroup(project: TeamProjectSummary, props: ProjectSidebarProps): TemplateResult {
   const allAgents = props.agents?.agents ?? [];
-  const memberAgents = allAgents.filter((a) => project.memberIds.includes(a.id));
+  const agentMap = new Map(allAgents.map((a) => [a.id, a]));
+  // Left join: show all memberIds, even if the agent hasn't appeared in agents.list yet
+  const memberAgents = project.memberIds.map((id) =>
+    agentMap.get(id) ?? { id, name: id },
+  );
   const isCollapsed = props.collapsedProjects.has(project.projectId);
   const isSelected = props.selectedProjectId === project.projectId;
 
