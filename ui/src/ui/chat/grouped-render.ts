@@ -6,6 +6,8 @@ import { toSanitizedMarkdownHtml } from "../markdown";
 import { typewriterStream } from "./typewriter-stream";
 import { typewriterIndicator } from "./typewriter-indicator";
 import type { MessageGroup } from "../types/chat-types";
+import type { ChatQueueItem } from "../ui-types";
+import { t } from "../i18n/index.js";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown";
 import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer";
 import {
@@ -580,7 +582,7 @@ function renderMessageImages(images: ImageBlock[]) {
             src=${img.url}
             alt=${img.alt ?? "Attached image"}
             class="chat-message-image chat-message-image--clickable"
-            loading="lazy"
+            loading="eager"
             decoding="async"
             @click=${() => openImageLightbox(img.url)}
             @error=${handleImageError}
@@ -784,5 +786,78 @@ function renderGroupedMessage(
       ${renderToolCardGroup(toolCards, onOpenSidebar)}
       ${showActions ? renderMessageActions(markdown, opts.isStreaming, opts.justCompleted) : nothing}
     </div>` : nothing}
+  `;
+}
+
+// ============ 排队消息气泡 ============
+
+export function renderQueuedMessage(
+  queueItem: ChatQueueItem,
+  onRemove: (id: string) => void,
+) {
+  const timestamp = new Date(queueItem.createdAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  const displayText =
+    queueItem.text ||
+    (queueItem.attachments?.length
+      ? t("chat.queuedAttachments" as Parameters<typeof t>[0], {
+          count: String(queueItem.attachments.length),
+        })
+      : "");
+
+  return html`
+    <div class="chat-group user">
+      ${renderAvatar("user")}
+      <div class="chat-group-messages">
+        <div class="chat-bubble chat-bubble--queued fade-in">
+          <div class="chat-bubble--queued__header">
+            <span class="chat-bubble--queued__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </span>
+            <span class="chat-bubble--queued__label">${t("chat.queuedPending" as Parameters<typeof t>[0])}</span>
+            <button
+              class="chat-bubble--queued__cancel"
+              type="button"
+              aria-label="${t("chat.queuedCancel" as Parameters<typeof t>[0])}"
+              @click=${() => onRemove(queueItem.id)}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+              </svg>
+            </button>
+          </div>
+          ${displayText
+            ? html`<div class="chat-text">${displayText}</div>`
+            : nothing}
+          ${queueItem.attachments?.length
+            ? html`
+                <div class="chat-message-images chat-message-images--queued">
+                  ${queueItem.attachments.map((att) =>
+                    (att.category === "image" ||
+                      att.mimeType?.startsWith("image/"))
+                      ? html`<img
+                          src="${att.dataUrl}"
+                          alt="${att.fileName ?? "image"}"
+                          class="chat-message-image chat-message-image--queued"
+                        />`
+                      : html`<span class="chat-bubble--queued__file"
+                          >\u{1F4CE} ${att.fileName ?? "file"}</span
+                        >`,
+                  )}
+                </div>
+              `
+            : nothing}
+        </div>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">You</span>
+          <span class="chat-group-timestamp">${timestamp}</span>
+        </div>
+      </div>
+    </div>
   `;
 }

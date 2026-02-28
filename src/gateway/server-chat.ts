@@ -682,6 +682,29 @@ export function createAgentEventHandler({
       if (!isToolEvent || toolVerbose !== "off") {
         nodeSendToSession(sessionKey, "agent", isToolEvent ? toolPayload : agentPayload);
       }
+      // [CN-PATCH:media-tool-heartbeat] When a long-running media generation tool
+      // (video_gen / image_gen) starts executing, inject a marker into the chat delta
+      // stream. This prevents the frontend from triggering the 90s timeout warning
+      // and allows it to render the appropriate pending shimmer card immediately.
+      if (
+        !isAborted &&
+        isToolEvent &&
+        typeof evt.data?.name === "string" &&
+        typeof evt.data?.phase === "string"
+      ) {
+        const toolName = evt.data.name as string;
+        const toolPhase = evt.data.phase as string;
+        if (
+          (toolName === "video_gen" || toolName === "image_gen" || toolName === "image_edit") &&
+          toolPhase === "start"
+        ) {
+          const toolArgs = evt.data.input ?? evt.data.args ?? {};
+          const marker = `<!--MEDIA_TOOL_ACTIVE:${JSON.stringify({ tool: toolName, args: toolArgs })}-->`;
+          const currentBuffer = chatRunState.buffers.get(clientRunId) ?? "";
+          emitChatDelta(sessionKey, clientRunId, evt.seq, currentBuffer + marker);
+        }
+      }
+
       if (!isAborted && evt.stream === "assistant" && typeof evt.data?.text === "string") {
         emitChatDelta(sessionKey, clientRunId, evt.seq, evt.data.text);
       } else if (!isAborted && (lifecyclePhase === "end" || lifecyclePhase === "error")) {

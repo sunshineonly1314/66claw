@@ -186,17 +186,33 @@ async function handleRobotMessage(
 
   // 提取文本内容
   let text = "";
-  if (event.msgtype === "text" && event.text?.content) {
-    text = event.text.content.trim();
-  } else if (event.msgtype === "richText" && event.richText?.richTextList) {
-    // 合并富文本中的文字
-    text = event.richText.richTextList
-      .filter((item) => item.type === "text" && item.text)
-      .map((item) => item.text)
-      .join("");
-  } else {
-    log?.info(`钉钉收到非文本消息: ${event.msgtype}`);
-    return;
+  switch (event.msgtype) {
+    case "text":
+      text = event.text?.content?.trim() || "";
+      break;
+    case "richText":
+      text = (event.richText?.richTextList || [])
+        .filter((item) => item.type === "text" && item.text)
+        .map((item) => item.text)
+        .join("");
+      break;
+    case "audio": {
+      const recognition = event.audio?.recognition;
+      text = recognition ? `[语音消息] 识别内容: ${recognition}` : "[语音消息]";
+      break;
+    }
+    case "picture":
+      text = "[图片]";
+      break;
+    case "video":
+      text = "[视频]";
+      break;
+    case "file":
+      text = `[文件: ${event.file?.fileName || "文件"}]`;
+      break;
+    default:
+      log?.info(`钉钉收到未知类型消息: ${event.msgtype}`);
+      return;
   }
 
   if (!text) {

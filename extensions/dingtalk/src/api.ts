@@ -204,6 +204,98 @@ export async function sendDingtalkMessage(
   return { processQueryKey: data.processQueryKey };
 }
 
+// ============================================================================
+// 媒体消息发送
+// ============================================================================
+
+/** 钉钉媒体消息类型 */
+export type DingtalkMediaMsgType = "image" | "audio" | "video" | "file";
+
+/**
+ * 通过机器人 API 发送媒体消息（图片/语音/视频/文件）
+ */
+export async function sendDingtalkMediaMessage(
+  config: DingtalkChannelConfig,
+  userIds: string[],
+  mediaType: DingtalkMediaMsgType,
+  mediaId: string,
+  options?: {
+    fileName?: string;
+    fileType?: string;
+    duration?: string;
+  },
+): Promise<{ processQueryKey?: string }> {
+  const appKey = config.app?.appKey;
+  const appSecret = config.app?.appSecret;
+  const robotCode = config.app?.robotCode;
+
+  if (!appKey || !appSecret) {
+    throw new Error("钉钉 AppKey 或 AppSecret 未配置");
+  }
+  if (!robotCode) {
+    throw new Error("钉钉 RobotCode 未配置 (批量发送需要)");
+  }
+
+  const token = await getDingtalkAccessToken(appKey, appSecret);
+
+  const msgKeyMap: Record<DingtalkMediaMsgType, string> = {
+    image: "sampleImageMsg",
+    audio: "sampleAudio",
+    video: "sampleVideo",
+    file: "sampleFile",
+  };
+
+  const msgParamMap: Record<DingtalkMediaMsgType, () => string> = {
+    image: () => JSON.stringify({ photoURL: mediaId }),
+    audio: () => JSON.stringify({
+      mediaId,
+      duration: options?.duration ?? "0",
+    }),
+    video: () => JSON.stringify({
+      mediaId,
+      duration: options?.duration ?? "0",
+      videoType: "mp4",
+    }),
+    file: () => JSON.stringify({
+      mediaId,
+      fileName: options?.fileName ?? "file",
+      fileType: options?.fileType ?? "unknown",
+    }),
+  };
+
+  const response = await fetch("https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-acs-dingtalk-access-token": token,
+    },
+    body: JSON.stringify({
+      robotCode,
+      userIds,
+      msgKey: msgKeyMap[mediaType],
+      msgParam: msgParamMap[mediaType](),
+    }),
+    signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`发送钉钉媒体消息 HTTP 错误: ${response.status} ${errText}`);
+  }
+
+  const data = (await response.json()) as {
+    processQueryKey?: string;
+    code?: string;
+    message?: string;
+  };
+
+  if (data.code) {
+    throw new Error(`发送钉钉媒体消息失败: ${data.message || data.code}`);
+  }
+
+  return { processQueryKey: data.processQueryKey };
+}
+
 /**
  * 探测钉钉连接
  */

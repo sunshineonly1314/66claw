@@ -14,6 +14,7 @@ import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
+  renderQueuedMessage,
 } from "../chat/grouped-render";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
 import { t } from "../i18n/index.js";
@@ -22,8 +23,8 @@ import {
   renderWelcomeDiscovery,
   type WelcomeDiscoveryProps,
 } from "./welcome-discovery";
-import { extractImageGenDetails } from "../chat/image-gen-result";
-import { extractVideoGenDetails } from "../chat/video-gen-result";
+import { extractImageGenDetails, renderImageGenPending } from "../chat/image-gen-result";
+import { extractVideoGenDetails, renderVideoGenPending } from "../chat/video-gen-result";
 import {
   renderVoiceMascot,
   type VoiceMascotProps,
@@ -80,6 +81,8 @@ export type ChatProps = {
   stream: string | null;
   justCompleted?: boolean;
   streamStartedAt: number | null;
+  /** Active media generation tool detected in stream (video_gen / image_gen) */
+  mediaToolActive?: { tool: string; args?: Record<string, unknown> } | null;
   assistantAvatarUrl?: string | null;
   draft: string;
   queue: ChatQueueItem[];
@@ -545,6 +548,15 @@ export function renderChat(props: ChatProps) {
             return renderReadingIndicatorGroup(assistantIdentity, item.startedAt, props.error);
           }
 
+          // [CN-PATCH:media-tool-heartbeat] Show media generation pending shimmer
+          if (item.kind === "media-pending") {
+            const args = item.args as Record<string, unknown> | undefined;
+            if (item.tool === "video_gen") {
+              return html`<div class="chat-group chat-group--assistant">${renderVideoGenPending(args)}</div>`;
+            }
+            return html`<div class="chat-group chat-group--assistant">${renderImageGenPending(args)}</div>`;
+          }
+
           if (item.kind === "stream") {
             return renderStreamingGroup(
               item.text,
@@ -553,6 +565,10 @@ export function renderChat(props: ChatProps) {
               assistantIdentity,
               item.key,
             );
+          }
+
+          if (item.kind === "queued") {
+            return renderQueuedMessage(item.queueItem, props.onQueueRemove);
           }
 
           if (item.kind === "group") {
@@ -727,36 +743,6 @@ export function renderChat(props: ChatProps) {
         </div>
       ` : nothing}
 
-      ${props.queue.length
-        ? html`
-            <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__title">Queued (${props.queue.length})</div>
-              <div class="chat-queue__list">
-                ${props.queue.map(
-                  (item) => html`
-                    <div class="chat-queue__item">
-                      <div class="chat-queue__text">
-                        ${item.text ||
-                        (item.attachments?.length
-                          ? `Image (${item.attachments.length})`
-                          : "")}
-                      </div>
-                      <button
-                        class="btn chat-queue__remove"
-                        type="button"
-                        aria-label="Remove queued message"
-                        @click=${() => props.onQueueRemove(item.id)}
-                      >
-                        ${icons.x}
-                      </button>
-                    </div>
-                  `,
-                )}
-              </div>
-            </div>
-          `
-        : nothing}
-
       <div class="chat-compose">
         ${props.voiceMascot ? renderVoiceMascot(props.voiceMascot) : nothing}
         ${props.intentHintProps ? renderIntentHint(props.intentHintProps) : nothing}
@@ -830,12 +816,18 @@ export function renderChat(props: ChatProps) {
                     ${icons.paperclip}
                   </button>
                 ` : nothing}
+                ${canAbort ? html`<button
+                  class="btn"
+                  @click=${props.onAbort}
+                >
+                  ${t("chat.stop")}
+                </button>` : nothing}
                 <button
                   class="btn"
-                  ?disabled=${!props.connected || (!canAbort && props.sending)}
-                  @click=${canAbort ? props.onAbort : props.onNewSession}
+                  ?disabled=${!props.connected}
+                  @click=${props.onNewSession}
                 >
-                  ${canAbort ? t("chat.stop") : t("chat.newSession")}
+                  ${t("chat.newSession")}
                 </button>
                 <button
                   class="btn primary"
@@ -974,21 +966,36 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     // [CN-FIX:interrupted-gen] When loading from history with no active stream,
     // unresolved image_gen/video_gen tool calls are stale (page was closed mid-
     // generation). Mark them so the renderer shows "interrupted" instead of shimmer.
+    // BUT: if the unresolved tool call is in the LAST assistant message of the
+    // history, it's likely still executing in the backend (e.g. video_gen takes
+    // 1-2 min) — keep it as "pending" shimmer, not "interrupted" grey.
     const isLiveSession = props.stream !== null || props.sending;
     if (
       !isLiveSession &&
       !resolvedToolCallIndices.has(i) &&
       normalized.role.toLowerCase() === "assistant"
     ) {
-      const contentArr = Array.isArray(raw.content) ? raw.content as Array<Record<string, unknown>> : [];
-      const hasMediaToolUse = contentArr.some((block) => {
-        const kind = String(block.type ?? "").toLowerCase();
-        if (!["tool_use", "tooluse", "toolcall", "tool_call"].includes(kind)) return false;
-        const name = String(block.name ?? "");
-        return name === "image_gen" || name === "image_edit" || name === "video_gen";
-      });
-      if (hasMediaToolUse) {
-        message = Object.assign({}, message as Record<string, unknown>, { __staleMediaTools: true });
+      // Check if this is the last assistant message (no later user/assistant messages after it)
+      let isLastAssistant = true;
+      for (let k = i + 1; k < history.length; k++) {
+        const laterRole = normalizeMessage(history[k]).role.toLowerCase();
+        if (laterRole === "user" || laterRole === "assistant") {
+          isLastAssistant = false;
+          break;
+        }
+      }
+
+      if (!isLastAssistant) {
+        const contentArr = Array.isArray(raw.content) ? raw.content as Array<Record<string, unknown>> : [];
+        const hasMediaToolUse = contentArr.some((block) => {
+          const kind = String(block.type ?? "").toLowerCase();
+          if (!["tool_use", "tooluse", "toolcall", "tool_call"].includes(kind)) return false;
+          const name = String(block.name ?? "");
+          return name === "image_gen" || name === "image_edit" || name === "video_gen";
+        });
+        if (hasMediaToolUse) {
+          message = Object.assign({}, message as Record<string, unknown>, { __staleMediaTools: true });
+        }
       }
     }
 
@@ -1037,11 +1044,32 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         text: props.stream,
         startedAt: props.streamStartedAt ?? Date.now(),
       });
+    } else if (props.mediaToolActive) {
+      // [CN-PATCH:media-tool-heartbeat] When a media generation tool (video_gen /
+      // image_gen) is actively running, show its pending shimmer card instead of the
+      // generic reading indicator + timeout warning.
+      items.push({
+        kind: "media-pending",
+        key,
+        tool: props.mediaToolActive.tool,
+        args: props.mediaToolActive.args,
+      });
     } else {
       items.push({
         kind: "reading-indicator",
         key,
         startedAt: props.streamStartedAt ?? Date.now(),
+      });
+    }
+  }
+
+  // Inject queued messages as inline items at the end of the thread
+  if (props.queue.length > 0) {
+    for (const qItem of props.queue) {
+      items.push({
+        kind: "queued",
+        key: `queued:${qItem.id}`,
+        queueItem: qItem,
       });
     }
   }

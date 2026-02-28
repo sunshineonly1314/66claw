@@ -18,6 +18,7 @@ export const DEFAULT_TOOLS_CONFIG: Required<FeishuToolsConfig> = {
   drive: true,   // 云空间操作
   perm: false,   // 权限管理 (默认禁用，敏感)
   scopes: true,  // 应用权限诊断
+  task: true,    // 任务管理
 };
 
 /**
@@ -35,5 +36,6 @@ export function resolveToolsConfig(userConfig?: FeishuToolsConfig): Required<Fei
     drive: userConfig.drive ?? DEFAULT_TOOLS_CONFIG.drive,
     perm: userConfig.perm ?? DEFAULT_TOOLS_CONFIG.perm,
     scopes: userConfig.scopes ?? DEFAULT_TOOLS_CONFIG.scopes,
+    task: userConfig.task ?? DEFAULT_TOOLS_CONFIG.task,
   };
 }

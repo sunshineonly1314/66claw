@@ -111,6 +111,8 @@ export type OrchestrationPlan = {
   templateId?: string;
   /** The agent blueprints */
   agents: AgentBlueprint[];
+  /** Short team name (e.g. template name or "定制团队") */
+  teamName?: string;
   /** Overall description of what this team does */
   teamDescription: string;
   /** Estimated total token budget per turn */

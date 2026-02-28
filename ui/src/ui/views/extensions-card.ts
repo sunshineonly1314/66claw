@@ -20,6 +20,8 @@ export type ExtensionsCardProps = {
   onConfigClick: (id: string) => void;
   onTrySay: (prompt: string) => void;
   onUninstall?: (id: string) => void;
+  /** When set to this capability's id, button shows a loading spinner */
+  enablingId?: string | null;
 };
 
 /* ── status visual helpers ───────────────────────────────────── */
@@ -58,7 +60,8 @@ function statusLabel(status: McpCapabilityStatus): string {
 /* ── main render ─────────────────────────────────────────────── */
 
 export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult {
-  const { capability: cap, onConfigClick, onTrySay, onUninstall } = props;
+  const { capability: cap, onConfigClick, onTrySay, onUninstall, enablingId } = props;
+  const isEnabling = enablingId === cap.id;
   const dotColor = STATUS_DOT_COLORS[cap.status];
   const bgColor = STATUS_BG[cap.status];
 
@@ -165,23 +168,39 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
       <!-- Footer: config button + uninstall + "try saying" — compact -->
       <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:auto; padding-top:2px;">
         <div style="display:flex; align-items:center; gap:6px;">
-          ${cap.status === "needs_config"
+          ${cap.status === "needs_config" || isEnabling
             ? html`
                 <button
-                  @click=${() => onConfigClick(cap.id)}
+                  @click=${() => { if (!isEnabling) onConfigClick(cap.id); }}
+                  ?disabled=${isEnabling}
                   style="
                     all:unset;
-                    cursor:pointer;
+                    cursor:${isEnabling ? "default" : "pointer"};
                     font-size:12px;
                     font-weight:600;
                     padding:7px 18px;
                     border-radius:var(--radius-sm, 6px);
                     background:linear-gradient(135deg, #fbbf24, #f59e0b);
                     color:#000;
+                    opacity:${isEnabling ? "0.75" : "1"};
                     transition: opacity 150ms, transform 100ms;
+                    display:inline-flex;
+                    align-items:center;
+                    gap:6px;
                   "
                 >
-                  ${t("extensions.configAndEnable")}
+                  ${isEnabling
+                    ? html`<span style="
+                        width:12px; height:12px;
+                        border:2px solid rgba(0,0,0,0.3);
+                        border-top-color:#000;
+                        border-radius:50%;
+                        animation:extCardSpin 0.8s linear infinite;
+                        display:inline-block;
+                        flex-shrink:0;
+                      "></span>`
+                    : nothing}
+                  ${isEnabling ? t("extensions.status.enabling" as never) : t("extensions.configAndEnable")}
                 </button>
               `
             : nothing}
@@ -209,29 +228,37 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
             : nothing}
         </div>
 
-        <button
-          @click=${() => onTrySay(cap.examplePrompt)}
-          style="
-            all:unset;
-            cursor:pointer;
-            font-size:12px;
-            color:var(--accent-2, #20d5bc);
-            display:flex;
-            align-items:center;
-            gap:4px;
-            transition: opacity 150ms, color 150ms;
-            padding:4px 8px;
-            border-radius:var(--radius-sm, 6px);
-            overflow:hidden;
-            text-overflow:ellipsis;
-            white-space:nowrap;
-            max-width:100%;
-          "
-          title="${cap.examplePrompt}"
-        >
-          <span style="font-size:11px; color:var(--muted-strong, #6b7d91); flex-shrink:0;">${t("extensions.trySay")}</span>
-          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${cap.examplePrompt}"</span>
-        </button>
+        ${(() => {
+          const prompt = cap.examplePrompt
+            || t("extensions.trySayFallback" as never).replace("{{name}}", cap.friendlyName);
+          return html`
+            <button
+              class="ext-try-say-btn"
+              @click=${() => onTrySay(prompt)}
+              style="
+                all:unset;
+                cursor:pointer;
+                font-size:12px;
+                color:var(--accent-2, #20d5bc);
+                display:inline-flex;
+                align-items:center;
+                gap:5px;
+                transition: opacity 150ms, color 150ms, background 150ms;
+                padding:5px 12px;
+                border-radius:var(--radius-full, 9999px);
+                background:rgba(32,213,188,0.08);
+                border:1px solid rgba(32,213,188,0.15);
+                overflow:hidden;
+                max-width:100%;
+              "
+              title="${prompt}"
+            >
+              <span style="flex-shrink:0;">&#x1F4AC;</span>
+              <span style="font-size:11px; color:var(--muted-strong, #6b7d91); flex-shrink:0;">${t("extensions.trySayBtn" as never)}</span>
+              <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">"${prompt}"</span>
+            </button>
+          `;
+        })()}
       </div>
     </div>
 
@@ -251,6 +278,14 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
       .ext-cap-card button:active {
         opacity: 0.65;
         transform: scale(0.97);
+      }
+      .ext-cap-card .ext-try-say-btn:hover {
+        opacity: 1 !important;
+        background: rgba(32,213,188,0.14) !important;
+        border-color: rgba(32,213,188,0.3) !important;
+      }
+      @keyframes extCardSpin {
+        to { transform: rotate(360deg); }
       }
     </style>
   `;

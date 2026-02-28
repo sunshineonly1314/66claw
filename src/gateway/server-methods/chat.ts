@@ -712,6 +712,27 @@ export const chatHandlers: GatewayRequestHandlers = {
 
       recordPerfMeasurement(clientRunId, "dispatch_start", { agentId });
 
+      // Safety flag: tracks whether the dispatch pipeline completed (final/error sent).
+      // If the pipeline hangs silently, a safety timeout sends an error to the frontend
+      // so the user doesn't see "thinking dots" spinning forever.
+      let dispatchCompleted = false;
+      const safetyTimeoutMs = timeoutMs + 15_000; // agent timeout + 15s grace
+      const safetyTimer = setTimeout(() => {
+        if (!dispatchCompleted) {
+          context.logGateway.error(
+            `[DEBUG-CHAT] SAFETY TIMEOUT: runId=${clientRunId} did not complete within ${safetyTimeoutMs}ms`,
+          );
+          broadcastChatError({
+            context,
+            runId: clientRunId,
+            sessionKey: rawSessionKey,
+            errorMessage: "请求超时，请重试。如果持续出现此问题，请检查 AI 模型配置。",
+          });
+          context.chatAbortControllers.delete(clientRunId);
+          context.chatVoiceInputRuns.delete(clientRunId);
+        }
+      }, safetyTimeoutMs);
+
       void dispatchInboundMessage({
         ctx,
         cfg,
@@ -757,6 +778,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         },
       })
         .then(() => {
+          dispatchCompleted = true;
           recordPerfMeasurement(clientRunId, "agent_run_complete");
           // 🔍 DEBUG: 日志5 - dispatchInboundMessage 执行完成
           context.logGateway.info(
@@ -840,6 +862,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .catch((err) => {
+          dispatchCompleted = true;
           // 🔍 DEBUG: 日志7 - dispatchInboundMessage 捕获到错误
           context.logGateway.error(
             `[DEBUG-CHAT] dispatchInboundMessage CATCH ERROR: runId=${clientRunId}, error=${String(err)}, stack=${err instanceof Error ? err.stack : "N/A"}`,
@@ -870,6 +893,8 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .finally(() => {
+          dispatchCompleted = true;
+          clearTimeout(safetyTimer);
           // 🔍 完成性能追踪
           completePerfTrace(clientRunId, { completed: true });
           // 🔍 DEBUG: 日志9 - finally 块执行，清理资源
@@ -881,6 +906,12 @@ export const chatHandlers: GatewayRequestHandlers = {
           context.chatVoiceInputRuns.delete(clientRunId);
         });
     } catch (err) {
+      // Clear safety timer if it was set before the error occurred
+      try {
+        clearTimeout(safetyTimer);
+      } catch {
+        /* safetyTimer may not be declared yet */
+      }
       // 🔍 DEBUG: 日志10 - 外层 try-catch 捕获到同步错误
       context.logGateway.error(
         `[DEBUG-CHAT] OUTER TRY-CATCH ERROR: runId=${clientRunId}, error=${String(err)}, stack=${err instanceof Error ? err.stack : "N/A"}`,

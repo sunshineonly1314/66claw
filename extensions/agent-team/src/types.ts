@@ -77,6 +77,15 @@ export type ProjectCoordinationConfig = {
   handoffStyle?: HandoffStyle;
 };
 
+// ── Task Coordination Config ────────────────────────────────────────────
+
+export type TaskCoordinationConfig = {
+  /** Max concurrent sub-tasks per user request (default: 3) */
+  maxConcurrentSubTasks?: number;
+  /** Enable template workflow matching for zero-token decomposition */
+  templateWorkflowsEnabled?: boolean;
+};
+
 // ── Project Visibility ──────────────────────────────────────────────────
 
 export type VisibilityMode = "unified" | "team" | "transparent";
@@ -163,6 +172,14 @@ export type Project = {
   constraints?: TeamConstraints;
   budget?: ProjectBudget;
   bindings: ProjectBinding[];
+
+  // ── Supervisor ──
+  /** Whether the supervisor was auto-created (independent, not a worker agent) */
+  autoSupervisor?: boolean;
+
+  // ── Task Coordination ──
+  /** Task coordination config for multi-step task decomposition */
+  taskCoordination?: TaskCoordinationConfig;
 
   // ── Provenance ──
   /** Orchestrator plan ID if created from orchestrator deploy */

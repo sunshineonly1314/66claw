@@ -51,7 +51,7 @@ let cachedConfig: { appId: string; appSecret: string; domain: FeishuDomain } | n
 export function resolveFeishuCredentials(cfg?: FeishuChannelConfig): FeishuCredentials | null {
   if (!cfg) return null;
 
-  // 优先使用新版扁平配置，其次使用旧版嵌套配置
+  // 优先使用扁平配置，兼容旧版嵌套 app 对象
   const appId = cfg.appId?.trim() || cfg.app?.appId?.trim();
   const appSecret = cfg.appSecret?.trim() || cfg.app?.appSecret?.trim();
 

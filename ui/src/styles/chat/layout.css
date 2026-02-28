@@ -1098,26 +1098,32 @@
 .chat--empty .chat-compose {
   position: static;
   width: 100%;
-  max-width: 680px;
+  max-width: 780px;
 }
 
 .chat-empty-center {
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
   padding: 0 24px;
+}
+
+/* In empty state, give the compose card a slightly larger presence */
+.chat--empty .cc-card {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
 .chat-greeting {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 32px;
+  margin-bottom: 40px;
   animation: rise 0.4s var(--ease-out);
 }
 
 .chat-greeting__text {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--text-strong);
   margin: 0;

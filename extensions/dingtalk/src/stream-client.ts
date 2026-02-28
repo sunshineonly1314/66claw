@@ -12,12 +12,22 @@ import { DWClient, TOPIC_ROBOT } from "dingtalk-stream";
 
 import { createAICard, finishAICard, streamAICard } from "./ai-card.js";
 import { sendDingtalkMessageViaWebhook } from "./api.js";
+import { archiveInboundMedia, startArchivalCleanup } from "./media-archival.js";
+import {
+  downloadDingTalkFile,
+  downloadRichTextImages,
+  extractMediaFromMessage,
+  extractRichTextImageCodes,
+} from "./media-download.js";
 import { buildMediaSystemPrompt, getOapiAccessToken, processLocalImages } from "./media-upload.js";
+import { getDingtalkRuntime } from "./runtime.js";
+import { startScheduler } from "./scheduler.js";
 import { DEFAULT_SESSION_TIMEOUT, getSessionKey, isNewSessionCommand } from "./session-manager.js";
 import type {
   AICardContext,
   DingtalkChannelConfig,
   DingtalkRobotMessageEvent,
+  MediaDownloadResult,
   StreamMessageParams,
 } from "./types.js";
 
@@ -172,30 +182,144 @@ async function* streamFromGateway(options: GatewayOptions): AsyncGenerator<strin
 }
 
 // ============================================================================
+// Markdown 表格转换
+// ============================================================================
+
+/**
+ * 将 Markdown 表格转换为钉钉兼容格式
+ * 钉钉 Markdown 不支持标准表格语法，默认转为列表格式
+ */
+function applyMarkdownTableConversion(text: string, config: DingtalkChannelConfig): string {
+  const tableMode = config.markdown?.tables ?? "bullets";
+  if (tableMode === "off") return text;
+
+  try {
+    const runtime = getDingtalkRuntime();
+    return runtime.channel.text.convertMarkdownTables(text, tableMode);
+  } catch {
+    // runtime 未就绪时跳过转换
+    return text;
+  }
+}
+
+// ============================================================================
 // 消息内容提取
 // ============================================================================
 
-function extractMessageContent(data: DingtalkRobotMessageEvent): { text: string; messageType: string } {
+interface ExtractedContent {
+  text: string;
+  messageType: string;
+  mediaFiles?: MediaDownloadResult[];
+}
+
+async function extractMessageContent(
+  data: DingtalkRobotMessageEvent,
+  config: DingtalkChannelConfig,
+  log?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void },
+): Promise<ExtractedContent> {
   const msgtype = data.msgtype || "text";
+  const enableDownload = config.media?.enableDownload !== false;
+
   switch (msgtype) {
     case "text":
       return { text: data.text?.content?.trim() || "", messageType: "text" };
+
     case "richText": {
       const parts = data.richText?.richTextList || [];
-      const text = parts
+      let text = parts
         .filter((p) => p.type === "text")
         .map((p) => p.text)
         .join("");
+
+      // 下载富文本中的图片
+      if (enableDownload) {
+        const imageCodes = extractRichTextImageCodes(data);
+        if (imageCodes.length > 0) {
+          log?.info?.(`[DingTalk] 富文本包含 ${imageCodes.length} 张图片，开始下载...`);
+          const downloaded = await downloadRichTextImages(config, imageCodes, log);
+          if (downloaded.length > 0) {
+            const imageRefs = downloaded.map((d) => `![图片](file://${d.filePath})`).join("\n");
+            text = text ? `${text}\n${imageRefs}` : imageRefs;
+            return { text: text || "[富文本消息]", messageType: "richText", mediaFiles: downloaded };
+          }
+        }
+      }
+
       return { text: text || "[富文本消息]", messageType: "richText" };
     }
-    case "picture":
+
+    case "picture": {
+      if (enableDownload) {
+        const media = extractMediaFromMessage(data);
+        if (media.length > 0) {
+          const result = await downloadDingTalkFile(config, media[0].downloadCode, "picture", { log });
+          if (result) {
+            return {
+              text: `![图片](file://${result.filePath})`,
+              messageType: "picture",
+              mediaFiles: [result],
+            };
+          }
+        }
+      }
       return { text: "[图片]", messageType: "picture" };
-    case "audio":
-      return { text: "[语音消息]", messageType: "audio" };
-    case "video":
+    }
+
+    case "audio": {
+      const recognition = data.audio?.recognition;
+      let text = recognition ? `[语音消息] 识别内容: ${recognition}` : "[语音消息]";
+
+      if (enableDownload) {
+        const media = extractMediaFromMessage(data);
+        if (media.length > 0) {
+          const result = await downloadDingTalkFile(config, media[0].downloadCode, "audio", { log });
+          if (result) {
+            text += ` (文件: ${result.filePath})`;
+            return { text, messageType: "audio", mediaFiles: [result] };
+          }
+        }
+      }
+      return { text, messageType: "audio" };
+    }
+
+    case "video": {
+      if (enableDownload) {
+        const media = extractMediaFromMessage(data);
+        if (media.length > 0) {
+          const result = await downloadDingTalkFile(config, media[0].downloadCode, "video", { log });
+          if (result) {
+            return {
+              text: `[视频] (文件: ${result.filePath})`,
+              messageType: "video",
+              mediaFiles: [result],
+            };
+          }
+        }
+      }
       return { text: "[视频]", messageType: "video" };
-    case "file":
-      return { text: `[文件: ${data.file?.fileName || "文件"}]`, messageType: "file" };
+    }
+
+    case "file": {
+      const fileName = data.file?.fileName || "文件";
+      if (enableDownload) {
+        const media = extractMediaFromMessage(data);
+        if (media.length > 0) {
+          const result = await downloadDingTalkFile(config, media[0].downloadCode, "file", {
+            fileName,
+            log,
+          });
+          if (result) {
+            return {
+              text: `[文件: ${fileName}] (已下载: ${result.filePath})`,
+              messageType: "file",
+              mediaFiles: [result],
+            };
+          }
+        }
+      }
+      return { text: `[文件: ${fileName}]`, messageType: "file" };
+    }
+
     default:
       return { text: data.text?.content?.trim() || `[${msgtype}消息]`, messageType: msgtype };
   }
@@ -215,7 +339,7 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
     log?.warn?.(`[DingTalk] 消息缺少 sessionWebhook，无法回复 (sender=${data.senderNick})`);
   }
 
-  const content = extractMessageContent(data);
+  const content = await extractMessageContent(data, dingtalkConfig, log);
   if (!content.text) return;
 
   const isDirect = data.conversationType === "1";
@@ -223,6 +347,20 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
   const senderName = data.senderNick || "Unknown";
 
   log?.info?.(`[DingTalk] 收到消息: from=${senderName} text="${content.text.slice(0, 50)}..."`);
+
+  // ===== 媒体归档 =====
+  if (content.mediaFiles?.length && dingtalkConfig.media?.archival?.enabled) {
+    for (const file of content.mediaFiles) {
+      archiveInboundMedia(dingtalkConfig, file, {
+        senderId,
+        senderNick: senderName,
+        conversationId: data.conversationId,
+        msgId: data.msgId,
+      }, log).catch((err) => {
+        log?.warn?.(`[DingTalk] 媒体归档失败 (非阻塞): ${err}`);
+      });
+    }
+  }
 
   // ===== Session 管理 =====
   const streamConfig = dingtalkConfig.stream || {};
@@ -303,8 +441,9 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
           }
         }
 
-        // 后处理：上传本地图片
+        // 后处理：上传本地图片 + Markdown 表格转换
         accumulated = await processLocalImages(accumulated, oapiToken, log);
+        accumulated = applyMarkdownTableConversion(accumulated, dingtalkConfig);
 
         // 完成
         await finishAICard(card, accumulated, log);
@@ -338,8 +477,9 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
       fullResponse += chunk;
     }
 
-    // 后处理：上传本地图片
+    // 后处理：上传本地图片 + Markdown 表格转换
     fullResponse = await processLocalImages(fullResponse, oapiToken, log);
+    fullResponse = applyMarkdownTableConversion(fullResponse, dingtalkConfig);
 
     if (sessionWebhook) {
       await sendDingtalkMessageViaWebhook(sessionWebhook, {
@@ -447,13 +587,25 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
   const MAX_CONSECUTIVE_ERRORS = 20;
   let circuitBreakerOpen = false;
   let circuitBreakerResetTimer: ReturnType<typeof setTimeout> | undefined;
-  const CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟
+  let circuitBreakerAttempt = 0;
+
+  /**
+   * 计算指数退避时间 (带 ±20% 随机抖动)
+   * base × 2^attempt, 限制在 [1s, 60s] 范围
+   */
+  function calculateBackoff(attempt: number, baseMs: number = 1000): number {
+    const exponential = baseMs * Math.pow(2, attempt);
+    const clamped = Math.min(Math.max(exponential, 1000), 60_000);
+    const jitter = clamped * (0.8 + Math.random() * 0.4); // ±20%
+    return Math.round(jitter);
+  }
 
   // 监听连接事件（用于观察重连行为）
   client.on('connect', () => {
     // 连接成功，重置熔断状态
     consecutiveErrors = 0;
     circuitBreakerOpen = false;
+    circuitBreakerAttempt = 0;
     log?.info?.(`[${accountId}] 钉钉 Stream 连接已建立`);
   });
 
@@ -479,8 +631,10 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
     // 熔断：连续错误过多时停止重连，避免无限刷日志
     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS && !circuitBreakerOpen) {
       circuitBreakerOpen = true;
+      const backoffMs = calculateBackoff(circuitBreakerAttempt);
+      circuitBreakerAttempt++;
       log?.error?.(
-        `[${accountId}] 钉钉连接熔断：连续 ${consecutiveErrors} 次失败，暂停 ${CIRCUIT_BREAKER_COOLDOWN_MS / 1000}s 后自动恢复`,
+        `[${accountId}] 钉钉连接熔断：连续 ${consecutiveErrors} 次失败，暂停 ${(backoffMs / 1000).toFixed(1)}s 后自动恢复 (第 ${circuitBreakerAttempt} 次熔断)`,
       );
       try {
         client.disconnect();
@@ -491,13 +645,23 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
       circuitBreakerResetTimer = setTimeout(() => {
         circuitBreakerOpen = false;
         consecutiveErrors = 0;
-        log?.info?.(`[${accountId}] 钉钉连接熔断恢复，尝试重新连接...`);
+        log?.info?.(`[${accountId}] 钉钉连接熔断恢复，尝试重新连接... (退避 ${(backoffMs / 1000).toFixed(1)}s)`);
         client.connect().catch((err: unknown) => {
           log?.error?.(`[${accountId}] 熔断恢复后重连失败: ${err instanceof Error ? err.message : String(err)}`);
         });
-      }, CIRCUIT_BREAKER_COOLDOWN_MS);
+      }, backoffMs);
     }
   });
+
+  // 启动归档清理定时器 (如果归档已启用)
+  const archivalCleanup = config.media?.archival?.enabled
+    ? startArchivalCleanup(config, log)
+    : null;
+
+  // 启动定时消息调度器 (如果有定时任务配置)
+  const scheduler = config.scheduledTasks?.length
+    ? startScheduler(config, log)
+    : null;
 
   await client.connect();
   log?.info?.(`[${accountId}] 钉钉 Stream 客户端已连接`);
@@ -510,6 +674,10 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
       if (stopped) return;
       stopped = true;
       log?.info?.(`[${accountId}] 钉钉 Stream 客户端正在停止...`);
+
+      // 停止归档清理定时器和定时消息调度器
+      archivalCleanup?.stop();
+      scheduler?.stop();
 
       // 清理熔断定时器
       if (circuitBreakerResetTimer) {

@@ -83,6 +83,19 @@ pub fn collect_system_info() -> SystemInfo {
 #[cfg(target_os = "windows")]
 fn get_total_memory_mb() -> u64 {
     use std::process::Command;
+    // Use PowerShell + Get-CimInstance (wmic is deprecated/removed on Win11 24H2+)
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command",
+            "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"])
+        .creation_flags(0x08000000u32)
+        .output();
+    if let Ok(output) = output {
+        let text = String::from_utf8_lossy(&output.stdout);
+        if let Ok(bytes) = text.trim().parse::<u64>() {
+            return bytes / (1024 * 1024);
+        }
+    }
+    // Fallback: try wmic for older Windows versions
     let output = Command::new("cmd")
         .args(["/C", "wmic ComputerSystem get TotalPhysicalMemory /value"])
         .creation_flags(0x08000000u32)
@@ -135,6 +148,22 @@ fn get_disk_free_mb(path: &std::path::Path) -> u64 {
         .chars()
         .next()
         .unwrap_or('C');
+    // Use PowerShell + Get-CimInstance (wmic is deprecated/removed on Win11 24H2+)
+    let ps_cmd = format!(
+        "(Get-CimInstance Win32_LogicalDisk -Filter \"DeviceID='{}:'\").FreeSpace",
+        drive
+    );
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &ps_cmd])
+        .creation_flags(0x08000000u32)
+        .output();
+    if let Ok(output) = output {
+        let text = String::from_utf8_lossy(&output.stdout);
+        if let Ok(bytes) = text.trim().parse::<u64>() {
+            return bytes / (1024 * 1024);
+        }
+    }
+    // Fallback: try wmic for older Windows versions
     let output = Command::new("cmd")
         .args(["/C", &format!("wmic LogicalDisk where DeviceID='{}:' get FreeSpace /value", drive)])
         .creation_flags(0x08000000u32)

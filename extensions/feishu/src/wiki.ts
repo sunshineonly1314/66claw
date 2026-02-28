@@ -175,7 +175,7 @@ export function registerFeishuWikiTools(api: ClawdbotPluginApi) {
     return;
   }
 
-  const toolsCfg = resolveToolsConfig(feishuCfg.tools);
+  const toolsCfg = resolveToolsConfig(feishuCfg.advanced?.tools);
   if (!toolsCfg.wiki) {
     api.logger.debug?.("[feishu_wiki] wiki 工具已在配置中禁用");
     return;

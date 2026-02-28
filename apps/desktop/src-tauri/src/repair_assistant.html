@@ -131,15 +131,15 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     <span class="status-dot red" id="status-dot" title="Gateway 未运行"></span>
   </h1>
   <div class="header-actions">
-    <button class="btn btn-sm" onclick="uploadLogs()">上传日志</button>
-    <button class="btn btn-sm" onclick="goBack()">关闭</button>
+    <button class="btn btn-sm" id="btn-upload-logs">上传日志</button>
+    <button class="btn btn-sm" id="btn-close">关闭</button>
   </div>
 </div>
 
 <!-- Tab bar -->
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('manual')">检修</button>
-  <button class="tab-btn" onclick="switchTab('remote')">远程修复</button>
+  <button class="tab-btn active" id="tab-btn-manual">检修</button>
+  <button class="tab-btn" id="tab-btn-remote">远程修复</button>
 </div>
 
 <!-- Tab: Manual -->
@@ -148,10 +148,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <!-- Left: Diagnostics -->
   <div class="panel-left">
     <div class="panel-header">
-      <span>诊断 &amp; 修复</span>
+      <span>系统诊断</span>
       <div style="display:flex;gap:6px;align-items:center">
-        <button class="btn btn-repair" id="btn-one-click" onclick="oneClickRepair()">一键检修</button>
-        <button class="btn btn-sm" id="btn-recheck" onclick="runFullScan()">重新扫描</button>
+        <button class="btn btn-repair" id="btn-one-click">一键检修</button>
+        <button class="btn btn-sm" id="btn-recheck">重新扫描</button>
       </div>
     </div>
     <div class="repair-progress" id="repair-progress">
@@ -174,21 +174,25 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     <div class="chat-messages" id="chat-messages">
       <div class="msg">
         <div class="msg-role assistant">检修助手</div>
-        <div class="msg-content">你好，我是 ClawdbotCN 检修助手。
+        <div class="msg-content">你好！我是 ClawdbotCN 检修助手。
 
-正在自动扫描系统状态，完成后会显示诊断结果。
+使用方法：
+1. 左侧面板会自动扫描系统状态（绿色=正常，红色=异常，黄色=警告）
+2. 点击左上角「一键检修」可自动修复所有检测到的问题
+3. 修复不了的问题可以在下方输入框描述，我来帮你分析
+4. 也可以点击「AI 自动诊断」让我分析所有扫描结果
 
-点击左侧「一键检修」可自动修复所有检测到的问题。</div>
+正在自动扫描中，请稍候...</div>
       </div>
     </div>
     <div class="chat-input-area">
       <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="btn btn-primary" style="flex:1;padding:8px 16px;font-size:13px" id="btn-auto-diag" onclick="autoDiagnose()">AI 自动诊断</button>
+        <button class="btn btn-primary" style="flex:1;padding:8px 16px;font-size:13px" id="btn-auto-diag">AI 自动诊断</button>
       </div>
       <div class="chat-input-row">
-        <textarea id="chat-input" placeholder="或者在这里描述你遇到的问题..." onkeydown="handleChatKey(event)"></textarea>
+        <textarea id="chat-input" placeholder="或者在这里描述你遇到的问题..."></textarea>
         <div style="display:flex;flex-direction:column;gap:4px">
-          <button class="btn btn-primary" id="btn-send" onclick="sendMessage()">发送</button>
+          <button class="btn btn-primary" id="btn-send">发送</button>
         </div>
       </div>
     </div>
@@ -210,8 +214,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
       <span id="ssh-status-text">正在检查...</span>
     </div>
     <div id="ssh-user-info" style="font-size:11px;color:var(--text2);margin-bottom:8px"></div>
-    <button class="btn btn-primary" id="btn-enable-ssh" style="display:none" onclick="enableSsh()">开启 SSH 服务</button>
-    <button class="btn btn-sm" onclick="checkSsh()">重新检查</button>
+    <button class="btn btn-primary" id="btn-enable-ssh" style="display:none">开启 SSH 服务</button>
+    <button class="btn btn-sm" id="btn-recheck-ssh">重新检查</button>
   </div>
 
   <!-- Problem Description -->
@@ -225,8 +229,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
   <div class="remote-section">
     <h3>3. 开始远程修复</h3>
     <p>点击下方按钮，将自动建立安全隧道。修复工程师将通过 SSH 远程诊断和修复你的问题。</p>
-    <button class="btn-primary btn" id="btn-start-remote" style="padding:10px 28px;font-size:14px;font-weight:600" onclick="startRemoteRepair()">建立隧道，开始远程修复</button>
-    <button class="btn" id="btn-stop-remote" style="display:none;padding:10px 28px" onclick="stopRemoteRepair()">关闭隧道</button>
+    <button class="btn-primary btn" id="btn-start-remote" style="padding:10px 28px;font-size:14px;font-weight:600">建立隧道，开始远程修复</button>
+    <button class="btn" id="btn-stop-remote" style="display:none;padding:10px 28px">关闭隧道</button>
   </div>
 
   <!-- Tunnel Status -->
@@ -282,10 +286,29 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     function init() {
         if (initDone) return;
         initDone = true;
+        bindEvents();
         discoverProviders();
         setupTokenListener();
         // Auto-start full scan on open
         runFullScan();
+    }
+
+    // ── Bind all button events (CSP blocks inline onclick) ────
+    function bindEvents() {
+        var $ = function(id) { return document.getElementById(id); };
+        $('btn-upload-logs').addEventListener('click', function() { uploadLogs(); });
+        $('btn-close').addEventListener('click', function() { goBack(); });
+        $('tab-btn-manual').addEventListener('click', function() { switchTab('manual'); });
+        $('tab-btn-remote').addEventListener('click', function() { switchTab('remote'); });
+        $('btn-one-click').addEventListener('click', function() { oneClickRepair(); });
+        $('btn-recheck').addEventListener('click', function() { runFullScan(); });
+        $('btn-auto-diag').addEventListener('click', function() { autoDiagnose(); });
+        $('btn-send').addEventListener('click', function() { sendMessage(); });
+        $('chat-input').addEventListener('keydown', function(e) { handleChatKey(e); });
+        $('btn-enable-ssh').addEventListener('click', function() { enableSsh(); });
+        $('btn-recheck-ssh').addEventListener('click', function() { checkSsh(); });
+        $('btn-start-remote').addEventListener('click', function() { startRemoteRepair(); });
+        $('btn-stop-remote').addEventListener('click', function() { stopRemoteRepair(); });
     }
 
     // Wait for Tauri IPC to be ready
@@ -297,6 +320,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     }, 200);
     setTimeout(function() {
         clearInterval(initTimer);
+        if (!getInvoke()) {
+            document.getElementById("checks-list").innerHTML =
+                '<div style="padding:20px;color:var(--yellow);line-height:1.8">' +
+                'Tauri IPC 尚未就绪，部分功能可能不可用。<br>' +
+                '请尝试关闭此窗口后重新打开检修助手。</div>';
+        }
         init();
     }, 2000);
 
@@ -466,12 +495,23 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         // System info
         if (diagnosticResult) {
             var si = diagnosticResult.system_info;
+            var memText = si.memory_total_mb > 0
+                ? (si.memory_total_mb >= 1024
+                    ? (si.memory_total_mb / 1024).toFixed(1) + ' GB'
+                    : si.memory_total_mb + ' MB')
+                : '检测中...';
+            var diskText = si.disk_free_mb > 0
+                ? (si.disk_free_mb >= 1024
+                    ? (si.disk_free_mb / 1024).toFixed(1) + ' GB 可用'
+                    : si.disk_free_mb + ' MB 可用')
+                : '检测中...';
+            var gwColor = si.sidecar_running ? 'var(--green)' : 'var(--red)';
+            var gwText = si.sidecar_running ? '运行中' : '未运行';
             document.getElementById("sys-info").innerHTML =
                 '系统: <span>' + escapeHtml(si.os) + '</span> | ' +
-                '内存: <span>' + si.memory_total_mb + ' MB</span> | ' +
-                '磁盘: <span>' + si.disk_free_mb + ' MB</span> | ' +
-                'Gateway: <span>' + (si.sidecar_running ? '运行中' : '未运行') + '</span> | ' +
-                '端口: <span>' + si.gateway_port + '</span>';
+                '内存: <span>' + memText + '</span> | ' +
+                '磁盘: <span>' + diskText + '</span> | ' +
+                '服务状态: <span style="color:' + gwColor + '">' + gwText + '</span>';
         }
 
         // Phase 1: Rust quick checks
@@ -496,7 +536,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
             // Raw output toggle
             html += '<div class="doctor-raw">';
-            html += '<div class="doctor-raw-toggle" onclick="toggleDoctorRaw(this)">';
+            html += '<div class="doctor-raw-toggle" data-action="toggle-doctor-raw">';
             html += '<span class="arrow">&#9654;</span> Doctor 原始输出';
             html += '</div>';
             html += '<div class="doctor-raw-content" id="doctor-raw-content">' +
@@ -518,6 +558,13 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                     applyFix(btn.getAttribute('data-fix-id'));
                 });
             })(fixBtns[k]);
+        }
+        // Bind doctor raw toggle
+        var toggleBtns = checksList.querySelectorAll('[data-action="toggle-doctor-raw"]');
+        for (var t = 0; t < toggleBtns.length; t++) {
+            (function(el) {
+                el.addEventListener('click', function() { toggleDoctorRaw(el); });
+            })(toggleBtns[t]);
         }
     }
 

@@ -426,7 +426,7 @@ const NEWS_INTELLIGENCE_TEMPLATE: SceneTemplate = {
       role: "定时搜索指定关键词，过滤去重，采集原始信息",
       emoji: "📡",
       modelTier: "mid",
-      routingKeywords: ["搜索", "采集", "抓取", "监控", "关键词", "search", "collect", "monitor"],
+      routingKeywords: ["搜索", "采集", "抓取", "监控", "关键词", "新闻", "资讯", "热点", "search", "collect", "monitor", "news"],
       soul: [
         "# SOUL — 情报采集员",
         "",
@@ -552,7 +552,7 @@ const DATA_ANALYST_TEMPLATE: SceneTemplate = {
       role: "统计分析、趋势检测、异常发现、生成分析报告",
       emoji: "📈",
       modelTier: "mid",
-      routingKeywords: ["分析", "统计", "趋势", "报表", "异常", "图表", "analyze", "chart", "report"],
+      routingKeywords: ["分析", "统计", "趋势", "报表", "异常", "图表", "CSV", "Excel", "数据", "analyze", "chart", "report", "data"],
       soul: [
         "# SOUL — 分析师",
         "",

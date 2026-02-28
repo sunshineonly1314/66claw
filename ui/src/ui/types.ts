@@ -600,7 +600,10 @@ export type TeamProjectSummary = {
   createdAt: string;
   updatedAt: string;
   version: number;
+  autoSupervisor?: boolean;
   bindings?: TeamProjectBinding[];
+  isFederation?: boolean;
+  parentProjectId?: string;
 };
 
 export type TeamMemberInfo = {
@@ -623,6 +626,7 @@ export type TeamProjectDetail = {
     memberIds: string[];
     members: TeamMemberInfo[];
     version: number;
+    autoSupervisor?: boolean;
     visibility: { mode: string; displayName?: string };
     coordination: {
       supervisorStyle?: string;

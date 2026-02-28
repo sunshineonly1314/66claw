@@ -332,8 +332,9 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     // Ensure workspace & transcripts exist BEFORE writing config so a failure
     // here does not leave a broken config entry behind.
-    const skipBootstrap = Boolean(nextConfig.agents?.defaults?.skipBootstrap);
-    await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: !skipBootstrap });
+    // Always bootstrap new agents — defaults.skipBootstrap only governs the
+    // main/default agent's workspace, not freshly-created sub-agents.
+    await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: true });
     await fs.mkdir(resolveSessionTranscriptsDirForAgent(agentId), { recursive: true });
 
     await writeConfigFile(nextConfig);
@@ -396,7 +397,10 @@ export const agentsHandlers: GatewayRequestHandlers = {
     await writeConfigFile(nextConfig);
 
     if (workspaceDir) {
-      const skipBootstrap = Boolean(nextConfig.agents?.defaults?.skipBootstrap);
+      // defaults.skipBootstrap only applies to the main/default agent.
+      // Non-default agents always get bootstrap files when their workspace changes.
+      const isDefault = listAgentEntries(nextConfig).some((e) => e.id === agentId && e.default);
+      const skipBootstrap = isDefault && Boolean(nextConfig.agents?.defaults?.skipBootstrap);
       await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: !skipBootstrap });
     }
 

@@ -31,18 +31,6 @@ const RenderModeSchema = z.enum(["auto", "raw", "card"]);
 // ============================================================================
 
 /**
- * 飞书应用配置 Schema (兼容旧版嵌套结构)
- */
-const FeishuAppSchema = z
-  .object({
-    appId: z.string().optional().describe("飞书应用 App ID"),
-    appSecret: z.string().optional().describe("飞书应用 App Secret"),
-    verificationToken: z.string().optional().describe("事件订阅 Verification Token"),
-    encryptKey: z.string().optional().describe("事件订阅 Encrypt Key (可选)"),
-  })
-  .strict();
-
-/**
  * 飞书群聊配置 Schema
  */
 export const FeishuGroupSchema = z
@@ -75,6 +63,34 @@ const FeishuToolsConfigSchema = z
     drive: z.boolean().optional().describe("云空间操作 (默认: true)"),
     perm: z.boolean().optional().describe("权限管理 (默认: false, 敏感)"),
     scopes: z.boolean().optional().describe("应用权限诊断 (默认: true)"),
+    task: z.boolean().optional().describe("任务管理 (默认: true)"),
+  })
+  .strict()
+  .optional();
+
+/**
+ * 高级配置 Schema
+ * 在 UI 中自动渲染为可折叠的高级选项区域
+ */
+const FeishuAdvancedConfigSchema = z
+  .object({
+    streaming: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        "启用流式卡片渲染 — 实时 AI 输出（默认: false）。" +
+        "开启前需要在飞书开放平台为应用添加 cardkit:card 权限（路径：应用管理 → 权限管理 → 搜索 cardkit:card → 开通）",
+      ),
+    allowMentionlessInMultiBotGroup: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        "多机器人群中是否允许不 @本机器人就响应（默认: false，安全模式）。" +
+        "关闭时，当群内有多个机器人时必须 @本机器人才会回复，防止机器人之间互相触发造成消息风暴",
+      ),
+    tools: FeishuToolsConfigSchema.describe("工具功能开关 — 控制各飞书工具的启用/禁用"),
   })
   .strict()
   .optional();
@@ -85,24 +101,16 @@ const FeishuToolsConfigSchema = z
 
 /**
  * 飞书渠道配置 Schema
- *
- * 支持两种配置风格:
- * 1. 旧版嵌套风格 (app.appId, app.appSecret)
- * 2. 新版扁平风格 (appId, appSecret) - 推荐
  */
 export const FeishuConfigSchema = z
   .object({
     // ========== 基础配置 ==========
     enabled: z.boolean().optional().default(true).describe("是否启用"),
 
-    // 新版扁平配置 (推荐)
-    appId: z.string().optional().describe("飞书应用 App ID"),
-    appSecret: z.string().optional().describe("飞书应用 App Secret"),
-    encryptKey: z.string().optional().describe("事件订阅 Encrypt Key"),
-    verificationToken: z.string().optional().describe("事件订阅 Verification Token"),
-
-    // 旧版嵌套配置 (兼容)
-    app: FeishuAppSchema.optional().describe("应用配置 (旧版, 建议使用扁平配置)"),
+    appId: z.string().optional().describe("飞书应用 App ID (简写)"),
+    appSecret: z.string().optional().describe("飞书应用 App Secret (简写)"),
+    encryptKey: z.string().optional().describe("事件订阅 Encrypt Key (兼容简写)"),
+    verificationToken: z.string().optional().describe("事件订阅 Verification Token (兼容简写)"),
 
     // ========== 连接配置 ==========
     domain: FeishuDomainSchema.optional().default("feishu").describe("域名: feishu (国内) / lark (国际)"),
@@ -131,10 +139,10 @@ export const FeishuConfigSchema = z
     // ========== 媒体配置 ==========
     mediaMaxMb: z.number().positive().optional().default(30).describe("媒体最大大小 (MB)"),
 
-    // ========== 工具配置 ==========
-    tools: FeishuToolsConfigSchema.describe("工具功能开关"),
+    // ========== 高级配置 ==========
+    advanced: FeishuAdvancedConfigSchema.describe("高级配置 — 流式卡片、多机器人安全、工具开关等"),
   })
-  .strict()
+  .passthrough()
   .superRefine((value, ctx) => {
     // 验证 dmPolicy="open" 需要 allowFrom 包含 "*"
     if (value.dmPolicy === "open") {

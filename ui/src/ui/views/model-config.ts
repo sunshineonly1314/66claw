@@ -1733,6 +1733,8 @@ export class ModelConfigView extends LitElement {
         providerConfigVolcCredsStatus: { configured: true },
       };
       this.requestUpdate();
+      // 短暂展示成功提示后自动关闭弹窗
+      setTimeout(() => { this._closeProviderConfig(); }, 1200);
     } catch (err) {
       this._s = {
         ...this._s,
@@ -2147,14 +2149,16 @@ export class ModelConfigView extends LitElement {
   }
 
   private _isUserCapActive(userCap: UserCapDef): boolean {
-    return this._getUserCapModels(userCap).some(c => c.status === "active");
+    // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+    return this._getUserCapModels(userCap).some(c => c.status === "active" && c.currentModel?.providerId !== "local");
   }
 
   /** 获取当前激活模型的 strengthTier（用于卡片边框颜色） */
   private _getCapStrengthTier(userCap: UserCapDef): string | undefined {
     for (const sub of userCap.subs) {
       const cap = this._resolveSubCap(sub);
-      if (cap?.status === "active" && cap.currentModel?.strengthTier) {
+      // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+      if (cap?.status === "active" && cap.currentModel?.strengthTier && cap.currentModel.providerId !== "local") {
         return cap.currentModel.strengthTier;
       }
     }
@@ -2408,7 +2412,8 @@ export class ModelConfigView extends LitElement {
   /** 单能力卡片的状态渲染（聊天、编程、推荐） */
   private _renderSingleSubStatus(userCap: UserCapDef) {
     const cap = this._resolveSubCap(userCap.subs[0]);
-    if (cap?.status === "active" && cap.currentModel) {
+    // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+    if (cap?.status === "active" && cap.currentModel && cap.currentModel.providerId !== "local") {
       const tier = cap.currentModel.strengthTier;
       return html`
         <div class="cap-card__model">${cap.currentModel.modelName}</div>
@@ -2473,7 +2478,8 @@ export class ModelConfigView extends LitElement {
             `;
           }
           const cap = this._resolveSubCap(sub);
-          const subActive = cap?.status === "active" && cap.currentModel;
+          // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持
+          const subActive = cap?.status === "active" && cap.currentModel && cap.currentModel.providerId !== "local";
           return html`
             <div class="cap-card__sub">
               <span class="cap-card__sub-dot ${subActive ? 'on' : 'off'}"></span>

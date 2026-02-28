@@ -23,8 +23,20 @@ import {
   type ClawdbotConfig,
 } from "openclawcn/plugin-sdk";
 
+import { dingtalkOnboardingAdapter } from "./onboarding.js";
 import { getDingtalkRuntime } from "./runtime.js";
-import { sendDingtalkMessage, sendDingtalkMessageViaWebhook, probeDingtalkConnection } from "./api.js";
+import {
+  sendDingtalkMessage,
+  sendDingtalkMediaMessage,
+  sendDingtalkMessageViaWebhook,
+  probeDingtalkConnection,
+} from "./api.js";
+import {
+  getOapiAccessToken,
+  uploadToDingTalk,
+  detectUploadMediaType,
+} from "./media-upload.js";
+import type { UploadMediaType } from "./media-upload.js";
 import { createDingtalkWebhookHandler } from "./webhook.js";
 import { createStreamClient } from "./stream-client.js";
 import { DingtalkConfigSchema } from "./config-schema.js";
@@ -175,6 +187,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
     media: true,
   },
   reload: { configPrefixes: ["channels.dingtalk"] },
+  onboarding: dingtalkOnboardingAdapter,
   configSchema: buildChannelConfigSchema(DingtalkConfigSchema),
   config: {
     listAccountIds: () => [DEFAULT_ACCOUNT_ID],
@@ -294,7 +307,52 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       });
       return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
     },
-    sendMedia: async ({ to, text, cfg }) => {
+    sendMedia: async ({ to, text, cfg, mediaPath }) => {
+      const channelConfig = cfg.channels?.dingtalk as DingtalkChannelConfig;
+
+      // 如果有媒体文件路径，尝试上传并作为媒体消息发送
+      if (mediaPath) {
+        try {
+          const oapiToken = await getOapiAccessToken(channelConfig);
+          if (oapiToken) {
+            const uploadType = detectUploadMediaType(mediaPath);
+            const mediaId = await uploadToDingTalk(mediaPath, oapiToken, uploadType);
+            if (mediaId) {
+              // 将 upload type 映射到 send type
+              const sendTypeMap: Record<UploadMediaType, "image" | "audio" | "video" | "file"> = {
+                image: "image",
+                voice: "audio",
+                video: "video",
+                file: "file",
+              };
+              const result = await sendDingtalkMediaMessage(
+                channelConfig,
+                [to],
+                sendTypeMap[uploadType],
+                mediaId,
+                { fileName: mediaPath.split(/[\\/]/).pop() },
+              );
+              // 同时发送文本描述（如果有）
+              if (text) {
+                const cachedWebhook = getCachedSessionWebhook(to);
+                if (cachedWebhook) {
+                  await sendDingtalkMessageViaWebhook(cachedWebhook, {
+                    msgtype: "text",
+                    text: { content: text },
+                  });
+                } else {
+                  await sendDingtalkMessage(channelConfig, [to], text);
+                }
+              }
+              return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
+            }
+          }
+        } catch {
+          // 媒体发送失败，fallback 到文本
+        }
+      }
+
+      // Fallback: 作为纯文本发送
       const cachedWebhook = getCachedSessionWebhook(to);
       if (cachedWebhook) {
         await sendDingtalkMessageViaWebhook(cachedWebhook, {
@@ -304,7 +362,6 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         return { channel: DINGTALK_CHANNEL_ID, messageId: "" };
       }
 
-      const channelConfig = cfg.channels?.dingtalk as DingtalkChannelConfig;
       const result = await sendDingtalkMessage(channelConfig, [to], text);
       return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
     },

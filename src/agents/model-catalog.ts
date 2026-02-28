@@ -128,6 +128,61 @@ export async function loadModelCatalog(params?: {
       }
       applyOpenAICodexSparkFallback(models);
 
+      // [CN-PATCH:models-json-fallback] The PI SDK's ModelRegistry may not return
+      // non-chat models (image-generation, image-editing) because its schema
+      // validation is designed for coding-agent chat models. Read models.json
+      // directly and merge any models that the registry missed, so that modality
+      // capability checks (e.g. supportsImageGeneration) can find them.
+      try {
+        const fs = await import("node:fs");
+        const modelsJsonPath = join(agentDir, "models.json");
+        const raw = fs.readFileSync(modelsJsonPath, "utf8");
+        const parsed = JSON.parse(raw) as {
+          providers?: Record<
+            string,
+            {
+              models?: Array<{
+                id?: string;
+                name?: string;
+                input?: string[];
+                contextWindow?: number;
+                reasoning?: boolean;
+              }>;
+            }
+          >;
+        };
+        if (parsed?.providers) {
+          const seenIds = new Set(models.map((m) => `${m.provider}/${m.id}`.toLowerCase()));
+          for (const [providerKey, providerCfg] of Object.entries(parsed.providers)) {
+            if (!Array.isArray(providerCfg?.models)) continue;
+            for (const modelDef of providerCfg.models) {
+              const mid = String(modelDef?.id ?? "").trim();
+              if (!mid) continue;
+              const compositeKey = `${providerKey}/${mid}`.toLowerCase();
+              if (seenIds.has(compositeKey)) continue;
+              seenIds.add(compositeKey);
+              models.push({
+                id: mid,
+                name: String(modelDef.name ?? mid).trim() || mid,
+                provider: providerKey,
+                contextWindow:
+                  typeof modelDef.contextWindow === "number" && modelDef.contextWindow > 0
+                    ? modelDef.contextWindow
+                    : undefined,
+                reasoning: typeof modelDef.reasoning === "boolean" ? modelDef.reasoning : undefined,
+                input: Array.isArray(modelDef.input)
+                  ? (modelDef.input.filter((v: string) => v === "text" || v === "image") as Array<
+                      "text" | "image"
+                    >)
+                  : undefined,
+              });
+            }
+          }
+        }
+      } catch {
+        // models.json missing or unreadable — proceed with registry results
+      }
+
       if (models.length === 0) {
         // If we found nothing, don't cache this result so we can try again.
         modelCatalogPromise = null;

@@ -437,6 +437,16 @@ export async function installProxySkill(
       return { ok: false, error: downloadResult.error };
     }
 
+    // 空 zip 检测：服务端索引中有该技能的元数据，但实际文件不存在
+    // 空 ZIP 文件固定为 22 字节（仅包含 end-of-central-directory 记录）
+    if (downloadResult.buffer.length <= 22) {
+      logger.warn("Downloaded empty zip for skill (server has no file)", { name: skillName });
+      return {
+        ok: false,
+        error: `技能 "${skillName}" 在服务端暂无可用文件，请稍后重试或联系技能作者`,
+      };
+    }
+
     // 如果目标目录已存在，先删除
     if (fs.existsSync(skillDir)) {
       await fs.promises.rm(skillDir, { recursive: true, force: true });
@@ -557,7 +567,10 @@ export async function installProxySkillsBatch(
         if (fs.existsSync(skillMdPath)) {
           installed.push(name);
         } else {
-          failed.push({ name, error: "SKILL.md not found after extraction" });
+          failed.push({
+            name,
+            error: `技能 "${name}" 在服务端暂无可用文件，请稍后重试`,
+          });
         }
       }
     } catch (err) {

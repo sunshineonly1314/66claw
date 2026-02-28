@@ -3,6 +3,7 @@
  * Previously ZERO test coverage. This is the most critical gap.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -53,7 +54,7 @@ async function writeState(planId: string, state: unknown) {
 }
 
 beforeEach(async () => {
-  tmpDir = path.join(os.tmpdir(), `deploy-bridge-test-${Date.now()}`);
+  tmpDir = path.join(os.tmpdir(), `deploy-bridge-test-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`);
   stateDir = path.join(tmpDir, "state");
   orchDir = path.join(tmpDir, "orchestrator");
   await fs.mkdir(stateDir, { recursive: true });
@@ -83,10 +84,12 @@ describe("deploy-bridge", () => {
 
       expect(project.projectId).toMatch(/^proj-\d{8}-[a-f0-9]{8}$/);
       expect(project.status).toBe("active");
-      expect(project.memberIds).toHaveLength(3);
-      expect(project.members).toHaveLength(3);
+      // 3 workers + 1 auto-created supervisor = 4 members
+      expect(project.memberIds).toHaveLength(4);
+      expect(project.members).toHaveLength(4);
       expect(project.sourcePlanId).toBe("plan-001");
       expect(project.description).toBe("Customer support team for product inquiries");
+      expect(project.autoSupervisor).toBe(true);
     });
 
     it("uses deployed agentId from orchestrator state", async () => {
@@ -99,10 +102,12 @@ describe("deploy-bridge", () => {
         orchestratorStateDir: orchDir,
       });
 
-      // Uses agentId from state (e.g. "a1") or falls back to "{planId}--{blueprintId}"
-      expect(project.memberIds).toContain("a1");
-      expect(project.memberIds).toContain("a2");
-      expect(project.memberIds).toContain("a3");
+      // Worker members use "{planId}--{blueprintId}" format
+      expect(project.memberIds).toContain("plan-001--bp-supervisor");
+      expect(project.memberIds).toContain("plan-001--bp-sales");
+      expect(project.memberIds).toContain("plan-001--bp-tech");
+      // Auto-created supervisor
+      expect(project.memberIds).toContain("plan-001--supervisor");
     });
 
     it("preserves member info (name, role, emoji)", async () => {
@@ -115,14 +120,14 @@ describe("deploy-bridge", () => {
         orchestratorStateDir: orchDir,
       });
 
-      const salesMember = project.members.find(m => m.id === "a2");
+      const salesMember = project.members.find(m => m.id === "plan-001--bp-sales");
       expect(salesMember).toBeDefined();
       expect(salesMember!.name).toBe("Sales");
       expect(salesMember!.role).toBe("Sales agent");
       expect(salesMember!.emoji).toBe("💰");
     });
 
-    it("defaults supervisor to first deployed agent", async () => {
+    it("auto-creates independent supervisor agent", async () => {
       await writePlan("plan-001", makePlan());
       await writeState("plan-001", makeState());
 
@@ -132,35 +137,27 @@ describe("deploy-bridge", () => {
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.supervisorId).toBe("a1");
+      // Supervisor is auto-created with "{planId}--supervisor" ID
+      expect(project.supervisorId).toBe("plan-001--supervisor");
+      expect(project.autoSupervisor).toBe(true);
+
+      // agents.create should have been called for supervisor
+      expect(callGateway).toHaveBeenCalledWith("agents.create", expect.objectContaining({
+        id: "plan-001--supervisor",
+      }));
     });
 
-    it("uses explicit supervisorAgentId when provided and valid", async () => {
+    it("supervisor is always first in memberIds", async () => {
       await writePlan("plan-001", makePlan());
       await writeState("plan-001", makeState());
 
       const callGateway = vi.fn().mockResolvedValue(undefined);
       const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
-        supervisorAgentId: "a2",
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.supervisorId).toBe("a2");
-    });
-
-    it("falls back to first agent when supervisorAgentId not in members", async () => {
-      await writePlan("plan-001", makePlan());
-      await writeState("plan-001", makeState());
-
-      const callGateway = vi.fn().mockResolvedValue(undefined);
-      const { project } = await createProjectFromPlan(callGateway, {
-        planId: "plan-001",
-        supervisorAgentId: "nonexistent-agent",
-        orchestratorStateDir: orchDir,
-      });
-
-      expect(project.supervisorId).toBe("a1");
+      expect(project.memberIds[0]).toBe("plan-001--supervisor");
     });
 
     it("saves project to disk", async () => {
@@ -189,13 +186,13 @@ describe("deploy-bridge", () => {
       });
 
       expect(callGateway).toHaveBeenCalledWith("agents.files.set", {
-        agentId: "a1",
+        agentId: "plan-001--supervisor",
         name: "SOUL.md",
         content: expect.stringContaining("Identity"),
       });
     });
 
-    it("uses default configs (memory=isolated, visibility=team, supervisorStyle=concierge)", async () => {
+    it("uses default configs (memory=read-shared, visibility=team, supervisorStyle=concierge)", async () => {
       await writePlan("plan-001", makePlan());
       await writeState("plan-001", makeState());
 
@@ -205,7 +202,7 @@ describe("deploy-bridge", () => {
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.memory.mode).toBe("isolated");
+      expect(project.memory.mode).toBe("read-shared");
       expect(project.visibility.mode).toBe("team");
       expect(project.coordination.supervisorStyle).toBe("concierge");
       expect(project.coordination.maxMembers).toBe(8);
@@ -325,23 +322,83 @@ describe("deploy-bridge", () => {
         orchestratorStateDir: orchDir,
       });
 
-      expect(project.memberIds).toHaveLength(2);
-      expect(project.memberIds).not.toContain("a2");
+      // 2 ready workers + 1 auto-supervisor = 3
+      expect(project.memberIds).toHaveLength(3);
+      expect(project.memberIds).not.toContain("plan-001--bp-sales");
     });
 
-    it("continues if SOUL.md gateway call fails (non-fatal)", async () => {
+    it("throws when SOUL.md write fails (mandatory)", async () => {
       await writePlan("plan-001", makePlan());
       await writeState("plan-001", makeState());
 
-      const callGateway = vi.fn().mockRejectedValue(new Error("gateway down"));
+      // agents.create succeeds, but files.set fails
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") return Promise.resolve(undefined);
+        if (method === "agents.files.set") return Promise.reject(new Error("gateway down"));
+        return Promise.resolve(undefined);
+      });
+
+      await expect(
+        createProjectFromPlan(callGateway, {
+          planId: "plan-001",
+          orchestratorStateDir: orchDir,
+        }),
+      ).rejects.toThrow("Failed to write supervisor SOUL.md");
+    });
+
+    it("proceeds if agents.create returns 'already exists' (idempotent re-deploy)", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") {
+          return Promise.reject(new Error("Agent already exists"));
+        }
+        return Promise.resolve(undefined);
+      });
       const { project } = await createProjectFromPlan(callGateway, {
         planId: "plan-001",
         orchestratorStateDir: orchDir,
       });
 
-      // Project should still be created despite SOUL.md failure
       expect(project.projectId).toBeDefined();
-      expect(project.memberIds).toHaveLength(3);
+      expect(project.autoSupervisor).toBe(true);
+    });
+
+    it("throws when agents.create fails with non-exists error", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") {
+          return Promise.reject(new Error("Permission denied"));
+        }
+        return Promise.resolve(undefined);
+      });
+
+      await expect(
+        createProjectFromPlan(callGateway, {
+          planId: "plan-001",
+          orchestratorStateDir: orchDir,
+        }),
+      ).rejects.toThrow("Failed to create supervisor agent");
+    });
+
+    it("returns a structured deploy report", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockResolvedValue(undefined);
+      const { report } = await createProjectFromPlan(callGateway, {
+        planId: "plan-001",
+        orchestratorStateDir: orchDir,
+      });
+
+      expect(report.projectId).toBeDefined();
+      expect(report.projectName).toBeDefined();
+      expect(report.agents).toBeInstanceOf(Array);
+      expect(report.agents.length).toBeGreaterThan(0);
+      expect(report.summary.totalAgents).toBeGreaterThan(0);
     });
 
     it("rejects planId with path traversal characters", async () => {

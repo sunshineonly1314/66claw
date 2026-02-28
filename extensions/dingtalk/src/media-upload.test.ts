@@ -176,4 +176,62 @@ describe("media-upload", () => {
       // 实际测试需要 mock fs 和 fetch
     });
   });
+
+  describe("detectUploadMediaType", () => {
+    let detectUploadMediaType: (filePath: string) => string;
+
+    beforeEach(async () => {
+      const mod = await import("./media-upload.js");
+      detectUploadMediaType = mod.detectUploadMediaType;
+    });
+
+    it("图片扩展名返回 image", () => {
+      expect(detectUploadMediaType("/tmp/photo.jpg")).toBe("image");
+      expect(detectUploadMediaType("/tmp/photo.jpeg")).toBe("image");
+      expect(detectUploadMediaType("/tmp/photo.png")).toBe("image");
+      expect(detectUploadMediaType("/tmp/photo.gif")).toBe("image");
+      expect(detectUploadMediaType("/tmp/photo.bmp")).toBe("image");
+      expect(detectUploadMediaType("/tmp/photo.webp")).toBe("image");
+    });
+
+    it("大写扩展名也正确识别", () => {
+      expect(detectUploadMediaType("/tmp/photo.JPG")).toBe("image");
+      expect(detectUploadMediaType("/tmp/photo.PNG")).toBe("image");
+      expect(detectUploadMediaType("/tmp/audio.MP3")).toBe("voice");
+    });
+
+    it("语音扩展名返回 voice", () => {
+      expect(detectUploadMediaType("/tmp/audio.mp3")).toBe("voice");
+      expect(detectUploadMediaType("/tmp/audio.wav")).toBe("voice");
+      expect(detectUploadMediaType("/tmp/audio.amr")).toBe("voice");
+      expect(detectUploadMediaType("/tmp/audio.ogg")).toBe("voice");
+      expect(detectUploadMediaType("/tmp/audio.m4a")).toBe("voice");
+    });
+
+    it("视频扩展名返回 video", () => {
+      expect(detectUploadMediaType("/tmp/video.mp4")).toBe("video");
+      expect(detectUploadMediaType("/tmp/video.mov")).toBe("video");
+      expect(detectUploadMediaType("/tmp/video.avi")).toBe("video");
+      expect(detectUploadMediaType("/tmp/video.mkv")).toBe("video");
+      expect(detectUploadMediaType("/tmp/video.webm")).toBe("video");
+    });
+
+    it("未知扩展名返回 file", () => {
+      expect(detectUploadMediaType("/tmp/report.xlsx")).toBe("file");
+      expect(detectUploadMediaType("/tmp/document.pdf")).toBe("file");
+      expect(detectUploadMediaType("/tmp/data.csv")).toBe("file");
+      expect(detectUploadMediaType("/tmp/archive.zip")).toBe("file");
+      expect(detectUploadMediaType("/tmp/script.js")).toBe("file");
+    });
+
+    it("无扩展名返回 file", () => {
+      expect(detectUploadMediaType("/tmp/noext")).toBe("file");
+      expect(detectUploadMediaType("Makefile")).toBe("file");
+    });
+
+    it("Windows 路径正确处理", () => {
+      expect(detectUploadMediaType("C:\\Users\\test\\photo.jpg")).toBe("image");
+      expect(detectUploadMediaType("D:\\media\\audio.mp3")).toBe("voice");
+    });
+  });
 });

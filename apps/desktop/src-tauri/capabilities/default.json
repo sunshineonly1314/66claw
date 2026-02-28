@@ -1,9 +1,10 @@
 {
   "identifier": "default",
   "description": "Default capabilities for ClawdbotCN desktop",
-  "windows": ["main"],
+  "windows": ["main", "repair-assistant", "screen-share-border"],
   "permissions": [
     "core:default",
+    "core:event:default",
     "shell:allow-open"
   ]
 }

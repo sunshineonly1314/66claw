@@ -8,7 +8,7 @@
 import type { GatewayBrowserClient } from "../gateway";
 
 /** 与后端 src/agents/modality-capability-checker.ts 中的类型保持同步 */
-export type ModalityCapability = "image-analysis" | "image-generation" | "video-analysis";
+export type ModalityCapability = "image-analysis" | "image-generation" | "image-editing" | "video-analysis";
 
 export type ConfigGuideOptions = {
   client: GatewayBrowserClient;
@@ -21,12 +21,14 @@ export type ConfigGuideOptions = {
 const CAPABILITY_LABELS: Record<ModalityCapability, string> = {
   "image-analysis": "图片分析",
   "image-generation": "图片生成",
+  "image-editing": "图像编辑",
   "video-analysis": "视频分析",
 };
 
 const CAPABILITY_ICONS: Record<ModalityCapability, string> = {
   "image-analysis": "🖼️",
   "image-generation": "🎨",
+  "image-editing": "✏️",
   "video-analysis": "🎬",
 };
 

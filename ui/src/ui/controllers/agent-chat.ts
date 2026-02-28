@@ -64,6 +64,8 @@ function buildAdapter(host: AgentChatHost): ChatState {
     set chatStreamStartedAt(v) { host.agentChatStreamStartedAt = v; },
     get chatStreamJustCompleted() { return false; },
     set chatStreamJustCompleted(_v) { /* ignore */ },
+    get chatMediaToolActive() { return null; },
+    set chatMediaToolActive(_v) { /* ignore for agent chat */ },
     get lastError() { return host.agentChatError; },
     set lastError(v) { host.agentChatError = v; },
     get failoverBanner() { return null; },

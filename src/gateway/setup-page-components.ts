@@ -180,7 +180,7 @@ export function renderBodyContent(
             <div class="provider-card-icon">🧠</div>
             <div class="provider-card-name">GLM Code</div>
             <div class="provider-card-desc">GLM-5 · 智谱 Coding Plan · 代码专用</div>
-            <a href="https://open.bigmodel.cn" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
+            <a href="https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI" target="_blank" class="provider-card-link" onclick="event.stopPropagation()">
               <span class="material-icons">rocket_launch</span>
               注册获取 Coding Plan Key
             </a>
@@ -2382,7 +2382,7 @@ export function renderScriptContent(ctx: SetupPageContext): string {
         'moonshot': '在 <a href="https://platform.moonshot.cn/console/api-keys" target="_blank">Kimi 开放平台</a> 获取 API Key',
         'kimi-code': '在 <a href="https://www.kimi.com/code/docs/" target="_blank">Kimi Code 文档</a> 获取 API Key（代码专用，262K 超长上下文）',
         'aliyun-codeplan': '在 <a href="https://www.aliyun.com/benefit/ai/aistar?userCode=xsngby7y&clubBiz=subTask..12414078..10263.." target="_blank">阿里云 AI Star</a> 注册获取 Coding Plan API Key（代码专用，与百炼 Key 不同）',
-        'glm-codeplan': '在 <a href="https://open.bigmodel.cn" target="_blank">智谱开放平台</a> 获取 Coding Plan API Key（代码专用，与通用 GLM Key 不同）',
+        'glm-codeplan': '在 <a href="https://www.bigmodel.cn/glm-coding?ic=ZPADWSX0SI" target="_blank">智谱开放平台</a> 获取 Coding Plan API Key（代码专用，与通用 GLM Key 不同）',
         'minimax-codeplan': '在 <a href="https://platform.minimaxi.com/subscribe/coding-plan?code=I5REQrAnfL&source=link" target="_blank">MiniMax 平台</a> 订阅 Coding Plan 获取专用 API Key',
         'volcengine-ark': '在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank">火山引擎控制台</a> 获取 API Key，需先在 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement" target="_blank">开通管理</a> 开通模型 <button class="tutorial-help-btn" onclick="openDoubaoTutorial()"><span class="material-icons">help_outline</span>新手教程</button>',
         'tencent-hunyuan': '在 <a href="https://console.cloud.tencent.com/hunyuan" target="_blank">腾讯云混元控制台</a> 获取 Secret ID 和 Secret Key',

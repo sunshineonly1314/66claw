@@ -159,6 +159,7 @@ export class ClawdbotApp extends LitElement {
   @state() chatToolMessages: unknown[] = [];
   @state() chatStream: string | null = null;
   @state() chatStreamStartedAt: number | null = null;
+  @state() chatMediaToolActive: { tool: string; args?: Record<string, unknown> } | null = null;
   @state() chatRunId: string | null = null;
   @state() chatStreamJustCompleted = false;
   /** 计时器 ID，用于 justCompleted 自动清除（app-gateway / app-chat 需要访问） */
@@ -577,6 +578,7 @@ export class ClawdbotApp extends LitElement {
   };
   @state() mcpTestingServerId: string | null = null;
   @state() mcpTestResults: Record<string, "success" | "failed"> = {};
+  @state() mcpEnablingServerId: string | null = null;
   @state() mcpManualFormTrigger = 0;
   /** Timer for auto-clearing MCP toast notifications */
   _mcpToastTimer: number | null = null;

@@ -235,6 +235,7 @@ export const modalityCapabilityHandlers: GatewayRequestHandlers = {
           requiredCapabilities: uniqueCapabilities,
           results,
           needsConfiguration: missingCapabilities.length > 0,
+          missingCapabilities,
           suggestions,
         },
         undefined,

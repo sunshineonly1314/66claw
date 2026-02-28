@@ -533,6 +533,25 @@ export function createGatewayHttpServer(opts: {
         return;
       }
 
+      // Local-only endpoint for Tauri desktop to fetch the gateway auth token.
+      // Only responds to loopback requests. Returns the decrypted token so the
+      // WebView can authenticate via #token= hash parameter.
+      if (healthPath === "/api/local-token") {
+        const remoteIp = req.socket.remoteAddress ?? "";
+        const isLocal =
+          remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1";
+        if (!isLocal) {
+          res.writeHead(403);
+          res.end(JSON.stringify({ error: "forbidden" }));
+          return;
+        }
+        const tokenConfig = loadConfig();
+        const token = tokenConfig.gateway?.auth?.token ?? "";
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ token }));
+        return;
+      }
+
       // OpenClawCN: Support QR code endpoint -- no auth, returns QR code base64 for topbar.
       // Used as HTTP fallback when WebSocket is disconnected so the support button always shows.
       if (healthPath === "/api/support/qrcode") {

@@ -1835,21 +1835,25 @@ export function getCapabilityMatrixSummary(): CapabilityMatrixSummary {
     // healthyOnly: false — summary shows *configuration* status, not real-time health.
     // A temporarily degraded/down provider should still show as "active" (configured).
     const configuredResults = queryByCapability(cap, { configuredOnly: true, healthyOnly: false });
-    if (configuredResults.length > 0) {
+    // [CN-PATCH] 过滤掉本地模型（provider=local），本版本暂不支持本地模型
+    const cloudConfigured = configuredResults.filter((c) => c.provider !== "local");
+    if (cloudConfigured.length > 0) {
       available.push({
         capability: cap,
-        bestCard: configuredResults[0]!,
-        alternatives: configuredResults.length - 1,
+        bestCard: cloudConfigured[0]!,
+        alternatives: cloudConfigured.length - 1,
       });
       continue;
     }
 
     // Check if there are unconfigured models that could provide this
     const allResults = queryByCapability(cap, { healthyOnly: false });
-    if (allResults.length > 0) {
+    // [CN-PATCH] 过滤掉本地模型（provider=local）
+    const cloudAll = allResults.filter((c) => c.provider !== "local");
+    if (cloudAll.length > 0) {
       unconfigured.push({
         capability: cap,
-        recommendation: allResults[0]!,
+        recommendation: cloudAll[0]!,
       });
     } else {
       missing.push(cap);

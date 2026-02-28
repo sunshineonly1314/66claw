@@ -206,6 +206,8 @@ export async function handleSendChat(
     if (messageOverride == null) {
       host.chatAttachments = [];
     }
+    // 入队后滚动到底部，让用户看到排队消息
+    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
     return;
   }
 

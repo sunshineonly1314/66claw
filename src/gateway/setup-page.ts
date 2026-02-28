@@ -593,10 +593,15 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     }
     .provider-recommended-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 16px;
     }
-    @media (max-width: 900px) {
+    @media (max-width: 1100px) {
+      .provider-recommended-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    @media (max-width: 600px) {
       .provider-recommended-grid {
         grid-template-columns: 1fr;
       }
@@ -607,14 +612,14 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       background: var(--bg-tertiary);
       border: 2px solid var(--border-default);
       border-radius: var(--radius-xl);
-      padding: 20px;
+      padding: 16px;
       cursor: pointer;
       transition: all 0.25s ease;
       position: relative;
       text-align: center;
       display: flex;
       flex-direction: column;
-      min-height: 220px;
+      min-height: 200px;
     }
     .provider-card-desc {
       flex: 1;
@@ -646,13 +651,13 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       white-space: nowrap;
     }
     .provider-card-icon {
-      font-size: 2.5em;
-      margin-bottom: 12px;
+      font-size: 2em;
+      margin-bottom: 8px;
     }
     .provider-card-name {
-      font-size: 1.15em;
+      font-size: 1.05em;
       font-weight: 600;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .provider-card-desc {
       font-size: 0.85em;
@@ -664,13 +669,13 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 6px;
       width: 100%;
-      font-size: 0.95em;
+      font-size: 0.85em;
       font-weight: 600;
       color: #1a1a1a;
       text-decoration: none;
-      padding: 12px 20px;
+      padding: 10px 12px;
       background: linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FF8C00 100%);
       border-radius: var(--radius-md);
       transition: all 0.3s ease;

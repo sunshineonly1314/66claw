@@ -21,6 +21,7 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
     chatStream: null,
     chatStreamStartedAt: null,
     chatStreamJustCompleted: false,
+    chatMediaToolActive: null,
     lastError: null,
     failoverBanner: null,
     ...overrides,

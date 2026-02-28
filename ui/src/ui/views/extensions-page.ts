@@ -71,6 +71,8 @@ export type ExtensionsPageProps = {
   testingServerId: string | null;
   /** Last test result per server id */
   testResults: Record<string, "success" | "failed">;
+  /** Server currently being enabled (shows spinner on card button) */
+  enablingServerId?: string | null;
   // — new (Tab switch + marketplace) —
   activeTab: McpExtensionsTab;
   onTabChange: (tab: McpExtensionsTab) => void;
@@ -396,6 +398,7 @@ function renderMyCapabilities(props: ExtensionsPageProps): TemplateResult {
                 onConfigClick,
                 onTrySay,
                 onUninstall: !cap.isBuiltin ? (id) => props.onUninstall(id) : undefined,
+                enablingId: props.enablingServerId,
               }),
             )}
           </div>

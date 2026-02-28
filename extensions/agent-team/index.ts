@@ -31,6 +31,8 @@ import {
   loadAllProjects,
   saveProjectState,
   loadProjectState,
+  saveActivity,
+  loadActivity,
 } from "./src/state.js";
 import { generateProjectId } from "./src/project-id.js";
 import {
@@ -39,8 +41,9 @@ import {
   recordMemberFailure,
   isRoutable,
 } from "./src/member-health.js";
-import { buildTeamContextBlock, isTeamMember } from "./src/system-prompt.js";
+import { buildTeamContextBlock, isSupervisor } from "./src/system-prompt.js";
 import { generateSupervisorSoul } from "./src/supervisor-soul.js";
+import { matchWorkflow, generateWorkflowInstructions } from "./src/task-coordinator.js";
 import { createProjectFromPlan } from "./src/deploy-bridge.js";
 import { buildRoutesFromMembers } from "./src/keyword-router.js";
 import {
@@ -98,6 +101,7 @@ type ActivityEvent = {
 };
 
 const activityBuffers = new Map<string, ActivityEvent[]>();
+const activitySaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function pushActivityEvent(projectId: string, event: ActivityEvent): void {
   let buf = activityBuffers.get(projectId);
@@ -109,10 +113,31 @@ function pushActivityEvent(projectId: string, event: ActivityEvent): void {
   if (buf.length > ACTIVITY_BUFFER_MAX) {
     buf.splice(0, buf.length - ACTIVITY_BUFFER_MAX);
   }
+  // Debounced persist — write at most once every 2 seconds per project
+  if (!activitySaveTimers.has(projectId)) {
+    activitySaveTimers.set(
+      projectId,
+      setTimeout(() => {
+        activitySaveTimers.delete(projectId);
+        const current = activityBuffers.get(projectId);
+        if (current) {
+          saveActivity(projectId, current).catch(() => {/* best-effort */});
+        }
+      }, 2000),
+    );
+  }
 }
 
 /** Pending routing decisions awaiting agent_end completion. Key = agentId (most recent per agent). */
 const pendingRouteEvents = new Map<string, { projectId: string; event: Omit<ActivityEvent, "durationMs" | "success" | "error" | "replySummary">; startTime: number }>();
+
+/**
+ * Caches the last user message seen by the supervisor's resolve_agent hook.
+ * Key: supervisorId, Value: user message text.
+ * Used by before_agent_start to match template workflows (zero-token decomposition).
+ * Bounded: one entry per active supervisor, cleaned on project delete.
+ */
+const lastSupervisorMessage = new Map<string, string>();
 
 let activityIdCounter = 0;
 function nextActivityId(): string {
@@ -375,7 +400,15 @@ const plugin: OpenClawCNPluginDefinition = {
           healthMap,
         });
 
-        if (!result) return; // No deterministic match → Supervisor LLM
+        if (!result) {
+          // No deterministic match → Supervisor LLM handles the message.
+          // Cache the message so before_agent_start can match template workflows.
+          // Only cache if template workflows are enabled (avoids orphaned entries).
+          if (project.taskCoordination?.templateWorkflowsEnabled !== false) {
+            lastSupervisorMessage.set(currentAgentId, event.message);
+          }
+          return;
+        }
 
         // ── Federation: two-level cascade ──────────────────────────────
         // If the first-level result points to an agent that is ALSO a
@@ -513,6 +546,34 @@ const plugin: OpenClawCNPluginDefinition = {
             logger.warn?.(
               `[SharedMemory] Failed to read shared profile: ${err}`,
             );
+          }
+        }
+
+        // 3. Template workflow detection (supervisor only)
+        // When the supervisor's resolve_agent saw no fast-path match,
+        // it cached the user message. If it matches a template workflow,
+        // inject decomposition instructions (zero LLM cost for recognition).
+        if (
+          isSupervisor(project, ctx.agentId) &&
+          (project.taskCoordination?.templateWorkflowsEnabled !== false)
+        ) {
+          const cachedMessage = lastSupervisorMessage.get(ctx.agentId);
+          if (cachedMessage) {
+            lastSupervisorMessage.delete(ctx.agentId); // Consume once
+            const workflow = matchWorkflow(cachedMessage);
+            if (workflow) {
+              const nonSupervisorMembers = project.members.filter(
+                (m) => m.id !== project.supervisorId,
+              );
+              const instructions = generateWorkflowInstructions(
+                workflow,
+                nonSupervisorMembers,
+              );
+              parts.push(instructions);
+              logger.info?.(
+                `[TaskCoordinator] Matched workflow "${workflow.id}" for supervisor ${ctx.agentId}`,
+              );
+            }
           }
         }
 
@@ -694,6 +755,12 @@ const plugin: OpenClawCNPluginDefinition = {
             }
             statsCache.set(p.projectId, sMap);
           }
+
+          // Restore persisted activity events
+          const saved = await loadActivity(p.projectId);
+          if (saved.length > 0) {
+            activityBuffers.set(p.projectId, saved as ActivityEvent[]);
+          }
         }
         rebuildAgentIndex();
         logger.info(
@@ -722,6 +789,8 @@ const plugin: OpenClawCNPluginDefinition = {
         updatedAt: p.updatedAt,
         version: p.version,
         bindings: p.bindings,
+        isFederation: p.isFederation ?? false,
+        parentProjectId: p.parentProjectId,
       }));
       respond(true, { projects }, undefined);
     });
@@ -915,10 +984,6 @@ const plugin: OpenClawCNPluginDefinition = {
           const { project, report } = await createProjectFromPlan(callGateway, {
             planId,
             name: typeof p.name === "string" ? p.name : undefined,
-            supervisorAgentId:
-              typeof p.supervisorAgentId === "string"
-                ? p.supervisorAgentId
-                : undefined,
             constraints: extractConstraints(p.constraints),
             orchestratorStateDir,
           });
@@ -990,6 +1055,22 @@ const plugin: OpenClawCNPluginDefinition = {
           if (c.handoffStyle === "silent" || c.handoffStyle === "notify" || c.handoffStyle === "introduce") {
             coordPatch.handoffStyle = c.handoffStyle;
           }
+          // FastPath sub-object
+          if (typeof c.fastPath === "object" && c.fastPath) {
+            const fp = c.fastPath as Record<string, unknown>;
+            const existingFp = project.coordination.fastPath ?? { affinityTimeoutMinutes: 30 };
+            const fpPatch: Record<string, unknown> = { ...existingFp };
+            if (typeof fp.sessionAffinityEnabled === "boolean") {
+              fpPatch.sessionAffinityEnabled = fp.sessionAffinityEnabled;
+            }
+            if (typeof fp.affinityTimeoutMinutes === "number" && fp.affinityTimeoutMinutes > 0) {
+              fpPatch.affinityTimeoutMinutes = Math.min(fp.affinityTimeoutMinutes, 1440);
+            }
+            if (typeof fp.keywordConfidenceThreshold === "number") {
+              fpPatch.keywordConfidenceThreshold = Math.max(0, Math.min(1, fp.keywordConfidenceThreshold));
+            }
+            coordPatch.fastPath = fpPatch as typeof existingFp;
+          }
         }
 
         // Explicitly extract allowed visibility fields
@@ -1034,6 +1115,31 @@ const plugin: OpenClawCNPluginDefinition = {
           }
         }
 
+        // Merge constraints instead of replacing — so updating one field
+        // (e.g. userAddress) doesn't erase the others (forbidden, safetyRules).
+        let updatedConstraints = project.constraints;
+        if (p.constraints !== undefined) {
+          const patch = extractConstraints(p.constraints);
+          if (patch) {
+            const existingBr = project.constraints?.brandRules ?? {};
+            updatedConstraints = {
+              brandRules: { ...existingBr, ...patch.brandRules },
+            };
+          }
+        }
+
+        // memberIds / members update (used by addProjectMember / removeProjectMember)
+        let updatedMemberIds = project.memberIds;
+        let updatedMembers = project.members;
+        if (Array.isArray(p.memberIds)) {
+          updatedMemberIds = (p.memberIds as string[]).filter(
+            (v) => typeof v === "string" && v.trim() !== "",
+          );
+        }
+        if (Array.isArray(p.members)) {
+          updatedMembers = (p.members as MemberInfo[]);
+        }
+
         const updated: Project = {
           ...project,
           name:
@@ -1042,11 +1148,10 @@ const plugin: OpenClawCNPluginDefinition = {
             typeof p.description === "string"
               ? p.description
               : project.description,
+          memberIds: updatedMemberIds,
+          members: updatedMembers,
           supervisorId: updatedSupervisorId,
-          constraints:
-            p.constraints !== undefined
-              ? extractConstraints(p.constraints)
-              : project.constraints,
+          constraints: updatedConstraints,
           memory: updatedMemory,
           coordination: { ...project.coordination, ...coordPatch },
           visibility: { ...project.visibility, ...visPatch },
@@ -1114,9 +1219,23 @@ const plugin: OpenClawCNPluginDefinition = {
         }
 
         try {
-          // Optionally delete member agents
+          // Always delete auto-created supervisor (it was created by deploy-bridge,
+          // not by the user). User-created worker agents are only deleted if requested.
+          if (project.autoSupervisor) {
+            try {
+              await callGateway("agents.remove", {
+                agentId: project.supervisorId,
+              });
+            } catch {
+              // Best-effort: supervisor may already be deleted
+            }
+          }
+
+          // Optionally delete member agents (worker agents)
           if (deleteAgents) {
             for (const memberId of project.memberIds) {
+              // Skip supervisor if already deleted above
+              if (project.autoSupervisor && memberId === project.supervisorId) continue;
               try {
                 await callGateway("agents.remove", {
                   agentId: memberId,
@@ -1184,10 +1303,17 @@ const plugin: OpenClawCNPluginDefinition = {
           healthCache.delete(projectId);
           statsCache.delete(projectId);
           activityBuffers.delete(projectId);
+          const pendingSaveTimer = activitySaveTimers.get(projectId);
+          if (pendingSaveTimer) {
+            clearTimeout(pendingSaveTimer);
+            activitySaveTimers.delete(projectId);
+          }
           // Clean pendingRouteEvents for agents belonging to this project
           for (const [key, val] of pendingRouteEvents) {
             if (val.projectId === projectId) pendingRouteEvents.delete(key);
           }
+          // Clean cached supervisor message
+          lastSupervisorMessage.delete(project.supervisorId);
           clearPeerAgentEntriesForProject(project);
           clearProjectAffinities(projectId);
           clearRouteTable(projectId);

@@ -30,6 +30,7 @@ function stripNotificationMarkers(text: string): string {
   return text
     .replace(/<!--CLAWDBOT_FAILOVER_NOTIFICATION:.+?-->/g, "")
     .replace(/<!--(?:CLAWDBOT|OPENCLAWCN)_FREE_MODEL_NOTIFICATION:.+?-->/g, "")
+    .replace(/<!--MEDIA_TOOL_ACTIVE:.+?-->/g, "")
     .trim();
 }
 

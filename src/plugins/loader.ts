@@ -49,17 +49,15 @@ const resolvePluginSdkAliasFile = (params: {
 }): string | null => {
   try {
     const modulePath = fileURLToPath(import.meta.url);
-    const isProduction = process.env.NODE_ENV === "production";
-    const isTest = process.env.VITEST || process.env.NODE_ENV === "test";
     let cursor = path.dirname(modulePath);
     for (let i = 0; i < 6; i += 1) {
       const srcCandidate = path.join(cursor, "src", "plugin-sdk", params.srcFile);
       const distCandidate = path.join(cursor, "dist", "plugin-sdk", params.distFile);
-      const orderedCandidates = isProduction
-        ? isTest
-          ? [distCandidate, srcCandidate]
-          : [distCandidate]
-        : [srcCandidate, distCandidate];
+      // Always prefer source (.ts) when available — the bundled dist has chunk
+      // references that don't resolve correctly when loaded through jiti.
+      // The order [src, dist] must survive dead-code elimination by the bundler,
+      // so we avoid env-gated branches that the bundler could optimize away.
+      const orderedCandidates = [srcCandidate, distCandidate];
       for (const candidate of orderedCandidates) {
         if (fs.existsSync(candidate)) {
           return candidate;

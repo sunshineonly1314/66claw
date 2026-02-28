@@ -77,6 +77,8 @@ export type AppViewState = {
   chatToolMessages: unknown[];
   chatStream: string | null;
   chatStreamStartedAt: number | null;
+  /** Active media generation tool (video_gen / image_gen) detected in stream */
+  chatMediaToolActive: { tool: string; args?: Record<string, unknown> } | null;
   chatRunId: string | null;
   chatAvatarUrl: string | null;
   chatThinkingLevel: string | null;
@@ -328,6 +330,8 @@ export type AppViewState = {
   mcpProcesses: McpProcessInfo[];
   mcpTestingServerId: string | null;
   mcpTestResults: Record<string, "success" | "failed">;
+  /** Server currently being enabled (shows spinner on card button) */
+  mcpEnablingServerId: string | null;
   mcpManualFormTrigger: number;
   // MCP 市场状态
   mcpExtTab: McpExtensionsTab;

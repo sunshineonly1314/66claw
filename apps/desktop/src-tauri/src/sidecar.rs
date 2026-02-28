@@ -573,30 +573,74 @@ pub fn gateway_token() -> String {
 
 /// Try to read gateway.auth.token from the config file.
 /// In dev mode, also checks ~/.openclawcn-dev/ config.
+/// Respects OPENCLAWCN_HOME env var for custom home directory.
 fn read_config_token() -> Option<String> {
-    let home = dirs::home_dir()?;
+    // Determine home directory: OPENCLAWCN_HOME env var takes priority
+    let openclawcn_home = std::env::var("OPENCLAWCN_HOME").ok().map(PathBuf::from);
+    let home = dirs::home_dir();
 
-    // Try dev config first in dev mode
+    // Build list of candidate config paths (highest priority first)
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
     if is_dev_mode() {
-        let dev_path = home.join(".openclawcn-dev").join("openclawcn.json");
-        if let Some(token) = read_token_from_file(&dev_path) {
+        if let Some(ref oh) = openclawcn_home {
+            candidates.push(oh.join(".openclawcn-dev").join("openclawcn.json"));
+        }
+        if let Some(ref h) = home {
+            candidates.push(h.join(".openclawcn-dev").join("openclawcn.json"));
+        }
+    }
+
+    if let Some(ref oh) = openclawcn_home {
+        candidates.push(oh.join(".openclawcn").join("openclawcn.json"));
+    }
+    if let Some(ref h) = home {
+        candidates.push(h.join(".openclawcn").join("openclawcn.json"));
+    }
+
+    for path in candidates {
+        if let Some(token) = read_token_from_file(&path) {
             return Some(token);
         }
     }
 
-    let config_path = home.join(".openclawcn").join("openclawcn.json");
-    read_token_from_file(&config_path)
+    // Dev mode fallback: try to fetch token from gateway HTTP API
+    if is_dev_mode() {
+        if let Some(token) = fetch_token_from_gateway() {
+            return Some(token);
+        }
+    }
+
+    None
+}
+
+/// Fetch gateway token from the running gateway's /api/local-token endpoint.
+/// This handles cases where the config file token is encrypted (ENC{...}).
+fn fetch_token_from_gateway() -> Option<String> {
+    let port = gateway_port();
+    let url = format!("http://127.0.0.1:{}/api/local-token", port);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok()?;
+    let resp = client.get(&url).send().ok()?;
+    let body: serde_json::Value = resp.json().ok()?;
+    body.get("token")?.as_str().map(|s| s.to_string())
 }
 
 fn read_token_from_file(path: &Path) -> Option<String> {
     let contents = std::fs::read_to_string(path).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&contents).ok()?;
-    parsed
+    let token = parsed
         .get("gateway")?
         .get("auth")?
         .get("token")?
-        .as_str()
-        .map(|s| s.to_string())
+        .as_str()?;
+    // Skip encrypted tokens (ENC{...}) — Rust side cannot decrypt them
+    if token.starts_with("ENC{") {
+        return None;
+    }
+    Some(token.to_string())
 }
 
 /// Returns the gateway port number.

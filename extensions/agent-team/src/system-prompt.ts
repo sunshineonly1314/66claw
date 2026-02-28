@@ -18,12 +18,13 @@ import { generateRoutingTable } from "./supervisor-soul.js";
 /**
  * Escape XML special characters to prevent injection via user-controlled strings.
  */
-function escapeXml(s: string): string {
+export function escapeXml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ function buildSupervisorContext(project: Project): string {
   } else {
     // team / transparent: reveal team identity
     sections.push(`You are the Supervisor of team "${escapeXml(project.name)}".`);
-    sections.push(`Team: ${project.description}`);
+    sections.push(`Team: ${escapeXml(project.description)}`);
     sections.push(``);
 
     // Members list
@@ -95,7 +96,7 @@ function buildSupervisorContext(project: Project): string {
     for (const m of project.members) {
       if (m.id === project.supervisorId) continue;
       const emoji = m.emoji ? `${m.emoji} ` : "";
-      sections.push(`  - ${emoji}${m.name} (@${m.id}): ${m.role}`);
+      sections.push(`  - ${emoji}${escapeXml(m.name)} (@${escapeXml(m.id)}): ${escapeXml(m.role)}`);
     }
     sections.push(``);
   }
@@ -160,14 +161,14 @@ function buildMemberContext(project: Project, agentId: string): string {
     // Transparent: member speaks as themselves, no team branding overlay
     sections.push(`You are "${escapeXml(selfName)}".`);
     if (self?.role) {
-      sections.push(`Your role: ${self.role}`);
+      sections.push(`Your role: ${escapeXml(self.role)}`);
     }
   } else {
     // team (default): member of a named team
     sections.push(
       `You are "${escapeXml(selfName)}", a member of team "${escapeXml(project.name)}".`,
     );
-    sections.push(`Your supervisor is @${project.supervisorId}.`);
+    sections.push(`Your supervisor is @${escapeXml(project.supervisorId)}.`);
   }
 
   // List teammates (team and transparent modes only)
@@ -177,18 +178,36 @@ function buildMemberContext(project: Project, agentId: string): string {
       sections.push(`Your teammates:`);
       for (const t of teammates) {
         const emoji = t.emoji ? `${t.emoji} ` : "";
-        const role = t.id === project.supervisorId ? "Supervisor" : t.role;
-        sections.push(`  - ${emoji}${t.name} (@${t.id}): ${role}`);
+        const role = t.id === project.supervisorId ? "Supervisor" : escapeXml(t.role);
+        sections.push(`  - ${emoji}${escapeXml(t.name)} (@${escapeXml(t.id)}): ${role}`);
       }
     }
   }
 
-  // Shared memory hint
+  // Team collaboration instructions (mode-aware)
+  sections.push(``);
+  sections.push(`Collaboration rules:`);
+  sections.push(`  - When you receive a task via sessions_send, focus on completing it`);
+  sections.push(`  - Return results directly in your reply — do not redirect the user`);
+  if (mode === "unified") {
+    sections.push(`  - If a task is outside your capability, indicate that you cannot handle it`);
+  } else {
+    sections.push(`  - If a task is outside your expertise, explain why and suggest which teammate can help`);
+    sections.push(`  - You can use sessions_send to ask teammates or the Supervisor for help`);
+  }
+
+  // Shared memory hint (avoid "teammates" in unified mode)
   if (project.memory.mode === "read-shared") {
     sections.push(``);
-    sections.push(
-      `You have access to shared team memory. Use the memory_share tool to share important user information (name, preferences, key facts) with your teammates.`,
-    );
+    if (mode === "unified") {
+      sections.push(
+        `You have access to shared memory. Use the memory_share tool to share important user information (name, preferences, key facts).`,
+      );
+    } else {
+      sections.push(
+        `You have access to shared team memory. Use the memory_share tool to share important user information (name, preferences, key facts) with your teammates.`,
+      );
+    }
   }
 
   // Brand constraints
@@ -206,16 +225,16 @@ function buildConstraintsBlock(constraints: TeamConstraints): string {
   const lines: string[] = [`Brand constraints:`];
 
   if (constraints.brandRules?.userAddress) {
-    lines.push(`  - Address users as: "${constraints.brandRules.userAddress}"`);
+    lines.push(`  - Address users as: "${escapeXml(constraints.brandRules.userAddress)}"`);
   }
   if (constraints.brandRules?.forbidden?.length) {
     lines.push(
-      `  - Never use: ${constraints.brandRules.forbidden.map((w) => `"${w}"`).join(", ")}`,
+      `  - Never use: ${constraints.brandRules.forbidden.map((w) => `"${escapeXml(w)}"`).join(", ")}`,
     );
   }
   if (constraints.brandRules?.safetyRules?.length) {
     for (const rule of constraints.brandRules.safetyRules) {
-      lines.push(`  - ${rule}`);
+      lines.push(`  - ${escapeXml(rule)}`);
     }
   }
 

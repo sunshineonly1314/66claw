@@ -10,15 +10,50 @@ import type { GatewayRequestHandlers } from "./types.js";
 
 export const asrHandlers: GatewayRequestHandlers = {
   /**
-   * Check whether an ASR model is installed (filesystem-only, no native module loaded).
+   * Check whether any ASR backend is available (local model OR cloud API).
    */
   "asr.status": async ({ respond }) => {
     try {
+      // 1. Check local sherpa-onnx model
       const model = detectInstalledModel();
-      respond(true, {
-        available: model !== null,
-        model: model?.label ?? null,
-      });
+      if (model) {
+        respond(true, { available: true, model: model.label });
+        return;
+      }
+
+      // 2. Check cloud ASR backends (volcengine, dashscope, API providers)
+      try {
+        const { isVolcengineStreamAvailable } = await import("./asr-streaming-volcengine.js");
+        if (isVolcengineStreamAvailable()) {
+          respond(true, { available: true, model: "Seed-ASR (火山引擎)" });
+          return;
+        }
+      } catch {
+        /* module not available */
+      }
+
+      try {
+        const { isDashscopeStreamAvailable } = await import("./asr-streaming-dashscope.js");
+        if (isDashscopeStreamAvailable()) {
+          respond(true, { available: true, model: "Fun-ASR (阿里云百炼)" });
+          return;
+        }
+      } catch {
+        /* module not available */
+      }
+
+      try {
+        const { isApiAsrAvailable } = await import("./asr-streaming-api.js");
+        if (await isApiAsrAvailable()) {
+          respond(true, { available: true, model: "API ASR (cloud)" });
+          return;
+        }
+      } catch {
+        /* module not available */
+      }
+
+      // No ASR backend available
+      respond(true, { available: false, model: null });
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
     }

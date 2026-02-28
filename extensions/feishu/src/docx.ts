@@ -423,7 +423,7 @@ export function registerFeishuDocTools(api: ClawdbotPluginApi) {
     return;
   }
 
-  const toolsCfg = resolveToolsConfig(feishuCfg.tools);
+  const toolsCfg = resolveToolsConfig(feishuCfg.advanced?.tools);
   const mediaMaxBytes = (feishuCfg?.mediaMaxMb ?? 30) * 1024 * 1024;
   const getClient = () => createFeishuClient(feishuCfg);
   const registered: string[] = [];

@@ -85,7 +85,7 @@ export function renderImageGallery(props: ImageGalleryProps): TemplateResult {
                     <img
                       src=${img.url}
                       alt=${img.prompt ?? "Generated image"}
-                      loading="lazy"
+                      loading="eager"
                       decoding="async"
                       @error=${(e: Event) => {
                         (e.target as HTMLElement).closest(".image-gallery__item")?.classList.add("image-gallery__item--failed");

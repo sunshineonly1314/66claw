@@ -481,6 +481,12 @@ function renderApiMonitor(state: AppViewState) {
 
 /** Reset chat state and switch to a new session key. */
 function switchSession(state: AppViewState, key: string) {
+  // Abort the current chat run (if any) before switching — fire-and-forget so
+  // the UI switches instantly while the backend tears down the old run.
+  if (state.chatRunId) {
+    void state.handleAbortChat();
+  }
+
   state.sessionKey = key;
   state.chatMessage = "";
   state.chatAttachments = [];
@@ -1187,8 +1193,25 @@ export function renderApp(state: AppViewState) {
                 onRemoveProjectMember: (projectId: string, agentId: string) =>
                   void removeProjectMember(state as any, projectId, agentId),
                 onSelectAgentFromProject: (agentId: string) => {
+                  // Reuse the same agent-selection logic as sidebar click
                   state.agentsSelectedId = agentId;
                   state.teamProjectSelectedId = null;
+                  stopProjectHealthPoll();
+                  state.agentDeleteError = null;
+                  state.agentFilesList = null;
+                  state.agentFilesError = null;
+                  state.agentFilesLoading = false;
+                  state.agentFileActive = null;
+                  state.agentFileContents = {};
+                  state.agentFileDrafts = {};
+                  state.agentSkillsReport = null;
+                  state.agentSkillsError = null;
+                  state.agentSkillsAgentId = null;
+                  void loadAgentIdentity(state, agentId);
+                  // Switch to chat panel and init chat session
+                  state.agentsPanel = "chat";
+                  resetAgentChatState(state as any, `agent:${agentId}:main`);
+                  void loadAgentChatHistory(state as any);
                 },
                 // Overview: inline identity & SOUL.md editing
                 requestUpdate: () => state.requestUpdate(),
@@ -1382,6 +1405,7 @@ export function renderApp(state: AppViewState) {
                 }
                 // No config needed — enable/restart the server directly.
                 const name = cap?.friendlyName ?? id;
+                state.mcpEnablingServerId = id;
                 showMcpToast(state, `${name} — ${t("extensions.advanced.restarting" as never)}`, "info");
                 void enableMcpServer(state.client, id, {
                   onStateChange: (patch: Partial<McpLifecycleState>) => {
@@ -1390,10 +1414,13 @@ export function renderApp(state: AppViewState) {
                     if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
                   },
                 }).then(() => {
+                  state.mcpEnablingServerId = null;
                   const updated = state.mcpCapabilities.find((c) => c.id === id);
                   if (updated?.status === "ready") {
                     showMcpToast(state, `${name} — ${t("extensions.status.ready")}`, "success");
                   }
+                }).catch(() => {
+                  state.mcpEnablingServerId = null;
                 });
               },
               onTrySay: (prompt) => {
@@ -1434,12 +1461,17 @@ export function renderApp(state: AppViewState) {
                 });
               },
               onEnable: (id) => {
+                state.mcpEnablingServerId = id;
                 void enableMcpServer(state.client, id, {
                   onStateChange: (patch: Partial<McpLifecycleState>) => {
                     if (patch.capabilities !== undefined) state.mcpCapabilities = patch.capabilities;
                     if (patch.processes !== undefined) state.mcpProcesses = patch.processes;
                     if (patch.updateNotice !== undefined) state.mcpUpdateNotice = patch.updateNotice;
                   },
+                }).then(() => {
+                  state.mcpEnablingServerId = null;
+                }).catch(() => {
+                  state.mcpEnablingServerId = null;
                 });
               },
               onTest: (id, env) => {
@@ -1477,6 +1509,7 @@ export function renderApp(state: AppViewState) {
               },
               testingServerId: state.mcpTestingServerId,
               testResults: state.mcpTestResults,
+              enablingServerId: state.mcpEnablingServerId,
               onCheckUpdate: () => {
                 void checkMcpUpdate(state.client, {
                   onStateChange: (patch: Partial<McpLifecycleState>) => {
@@ -1701,6 +1734,7 @@ export function renderApp(state: AppViewState) {
               },
               onUpdateServerEnv: (serverId, env) => {
                 const name = state.mcpCapabilities.find((c) => c.id === serverId)?.friendlyName ?? serverId;
+                state.mcpEnablingServerId = serverId;
                 showMcpToast(state, `${name} — ${t("extensions.advanced.restarting" as never)}`, "info");
                 void (async () => {
                   try {
@@ -1720,6 +1754,8 @@ export function renderApp(state: AppViewState) {
                     }
                   } catch {
                     showMcpToast(state, `${name} — ${t("extensions.advanced.restartFailed" as never)}`, "error");
+                  } finally {
+                    state.mcpEnablingServerId = null;
                   }
                 })();
               },
@@ -2156,6 +2192,7 @@ export function renderApp(state: AppViewState) {
               stream: state.chatStream,
               justCompleted: state.chatStreamJustCompleted,
               streamStartedAt: state.chatStreamStartedAt,
+              mediaToolActive: state.chatMediaToolActive,
               draft: state.chatMessage,
               queue: state.chatQueue,
               connected: state.connected,
@@ -2312,30 +2349,38 @@ export function renderApp(state: AppViewState) {
                 onVoiceUnavailable: state.voiceAsrAvailable !== true
                   ? () => {
                       // 移除已有的引导浮层（防止重复）
-                      document.querySelector(".voice-setup-popover")?.remove();
+                      document.querySelector(".voice-setup-popover-overlay")?.remove();
 
-                      const anchor = document.querySelector(".chat-compose") as HTMLElement;
-                      if (!anchor) return;
-                      anchor.style.position = "relative";
+                      // 创建全屏遮罩 + 居中弹窗
+                      const overlay = document.createElement("div");
+                      overlay.className = "voice-setup-popover-overlay";
+                      Object.assign(overlay.style, {
+                        position: "fixed", top: "0", left: "0", width: "100vw", height: "100vh",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: "rgba(0,0,0,0.18)", zIndex: "99999",
+                      });
 
                       const el = document.createElement("div");
                       el.className = "voice-setup-popover";
                       el.innerHTML = `
-                        <div style="font-size:13px;font-weight:600;margin-bottom:8px;color:#fff">语音功能需要配置后才能使用</div>
-                        <div style="font-size:12px;color:rgba(255,255,255,0.7);margin-bottom:12px">推荐使用豆包语音服务，免费试用，一分钟即可完成配置。</div>
-                        <button data-action="volc" style="display:block;width:100%;padding:8px 0;border:none;border-radius:6px;background:#4f6ef7;color:#fff;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px">配置豆包语音（推荐）</button>
-                        <button data-action="settings" style="display:block;width:100%;padding:6px 0;border:none;border-radius:6px;background:transparent;color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer">前往模型设置</button>
+                        <div style="font-size:14px;font-weight:600;margin-bottom:8px;color:#7c4d28">语音功能需要配置后才能使用</div>
+                        <div style="font-size:12px;color:#a07050;margin-bottom:14px">推荐使用豆包语音服务，免费试用，一分钟即可完成配置。</div>
+                        <button data-action="volc" style="display:block;width:100%;padding:9px 0;border:none;border-radius:8px;background:linear-gradient(135deg,#e8915a,#d4703c);color:#fff;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px;transition:opacity .15s">配置豆包语音（推荐）</button>
+                        <button data-action="settings" style="display:block;width:100%;padding:6px 0;border:none;border-radius:6px;background:transparent;color:#b08060;font-size:12px;cursor:pointer">前往模型设置</button>
                       `;
                       Object.assign(el.style, {
-                        position: "absolute", bottom: "-140px", left: "50%", transform: "translateX(-50%)",
-                        padding: "14px 18px", borderRadius: "12px", width: "260px",
-                        background: "rgba(0,0,0,0.88)", color: "#fff", zIndex: "99999",
-                        boxShadow: "0 8px 24px rgba(0,0,0,0.25)", textAlign: "center",
+                        padding: "20px 22px", borderRadius: "14px", width: "280px",
+                        background: "linear-gradient(145deg, #fff7f0, #fff1e6)",
+                        border: "1px solid rgba(210,150,100,0.25)",
+                        boxShadow: "0 12px 36px rgba(180,120,60,0.15), 0 2px 8px rgba(180,120,60,0.1)",
+                        textAlign: "center",
+                        animation: "voice-popover-in 0.25s ease-out",
                       });
 
-                      const cleanup = () => { el.remove(); document.removeEventListener("pointerdown", outsideClick); };
-                      const outsideClick = (ev: PointerEvent) => { if (!el.contains(ev.target as Node)) cleanup(); };
-                      setTimeout(() => document.addEventListener("pointerdown", outsideClick), 0);
+                      overlay.appendChild(el);
+
+                      const cleanup = () => { overlay.remove(); };
+                      overlay.addEventListener("pointerdown", (ev) => { if (ev.target === overlay) cleanup(); });
 
                       el.querySelector('[data-action="volc"]')!.addEventListener("click", () => {
                         cleanup();
@@ -2348,7 +2393,7 @@ export function renderApp(state: AppViewState) {
                         state.setTab("model-config");
                       });
 
-                      anchor.appendChild(el);
+                      document.body.appendChild(overlay);
                     }
                   : undefined,
                 voiceMode: state.voiceMode,

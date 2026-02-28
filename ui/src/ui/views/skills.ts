@@ -1407,7 +1407,8 @@ function renderSkillMarketCard(item: MarketItem, props: SkillsProps) {
   const displayDesc = item.descriptionCn || item.description;
   const emoji = item.emoji || categoryEmoji(item.category);
   const isInstalled = item.installed === true;
-  const progress = props.installProgress[item.name];
+  const installKey = item.skillId || item.name;
+  const progress = props.installProgress[installKey];
 
   return html`
     <div
@@ -1516,6 +1517,8 @@ function renderInstallButton(
   progress: InstallProgress | undefined,
   props: SkillsProps,
 ) {
+  // 用 skillId 作为安装标识（proxy 下载 API 需要 skillId，不是 name）
+  const installKey = item.skillId || item.name;
   if (item.installed) {
     return html`<span
       style="
@@ -1523,6 +1526,16 @@ function renderInstallButton(
         border-radius:6px; background:rgba(52,211,153,0.1); color:#34d399;
       "
       >\u2713 ${t("skills.remote.alreadyInstalled" as never)}</span
+    >`;
+  }
+  // availability-dict 来源的技能只有元数据，没有实际的 SKILL.md 文件
+  // bundled 和 proxy 都不会有这些技能，安装必然失败，所以不显示安装按钮
+  if (item.source === "availability-dict") {
+    return html`<span
+      style="
+        font-size:10px; color:var(--muted-strong, #6b7d91); padding:5px 14px;
+      "
+      >${t("skills.market.notAvailable" as never)}</span
     >`;
   }
   if (item.cnBlocked) {
@@ -1539,7 +1552,7 @@ function renderInstallButton(
           </span>`
         : nothing}
       <button
-        @click=${() => props.onMarketInstall(item.name)}
+        @click=${() => props.onMarketInstall(installKey)}
         style="
           all:unset; cursor:pointer;
           font-size:10px; font-weight:600;
@@ -1582,7 +1595,7 @@ function renderInstallButton(
     </span>`;
   }
   return html`<button
-    @click=${() => props.onMarketInstall(item.name)}
+    @click=${() => props.onMarketInstall(installKey)}
     style="
       all:unset; cursor:pointer;
       font-size:11px; font-weight:600;

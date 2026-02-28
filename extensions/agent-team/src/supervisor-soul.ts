@@ -16,6 +16,7 @@
 
 import type { MemberInfo, Project, TeamConstraints } from "./types.js";
 import { extractKeywordsFromRole } from "./keyword-router.js";
+import { escapeXml } from "./system-prompt.js";
 
 /**
  * Generate the complete SOUL.md content for the Supervisor agent.
@@ -41,8 +42,14 @@ export function generateSupervisorSoul(
   // ── 3. Routing Table ──
   sections.push(generateRoutingTable(members));
 
-  // ── 4. Handoff Protocol ──
+  // ── 3b. Task Decomposition Protocol ──
+  sections.push(generateTaskDecompositionProtocol(project));
+
+  // ── 4. Handoff Protocol (how to use sessions_send) ──
   sections.push(generateHandoffProtocol(project));
+
+  // ── 4b. Result Collection Protocol (how to handle responses) ──
+  sections.push(generateResultCollectionProtocol(project));
 
   // ── 5. Brand Constraints ──
   if (project.constraints) {
@@ -73,16 +80,16 @@ function generateIdentitySection(project: Project): string {
   if (mode === "unified") {
     // Unified: supervisor presents as the single persona
     lines.push(
-      `You are "${displayName}".`,
+      `You are "${escapeXml(displayName)}".`,
       `You present as a single, seamless assistant to the user.`,
-      `Team description: ${project.description}`,
+      `Team description: ${escapeXml(project.description)}`,
       ``,
     );
   } else {
     // team / transparent: reveal supervisor role
     lines.push(
-      `You are the Supervisor of team "${project.name}".`,
-      `Team description: ${project.description}`,
+      `You are the Supervisor of team "${escapeXml(project.name)}".`,
+      `Team description: ${escapeXml(project.description)}`,
       ``,
     );
   }
@@ -114,7 +121,7 @@ function generateMembersSection(members: MemberInfo[]): string {
 
   for (const m of members) {
     const emoji = m.emoji ? `${m.emoji} ` : "";
-    lines.push(`- **${emoji}${m.name}** (ID: \`${m.id}\`): ${m.role}`);
+    lines.push(`- **${emoji}${escapeXml(m.name)}** (ID: \`${escapeXml(m.id)}\`): ${escapeXml(m.role)}`);
   }
 
   return lines.join("\n");
@@ -133,7 +140,7 @@ function generateMembersSectionMinimal(members: MemberInfo[]): string {
   ];
 
   for (const m of members) {
-    lines.push(`- \`${m.id}\`: ${m.role}`);
+    lines.push(`- \`${escapeXml(m.id)}\`: ${escapeXml(m.role)}`);
   }
 
   return lines.join("\n");
@@ -157,7 +164,7 @@ export function generateRoutingTable(members: MemberInfo[]): string {
     const keywords = extractKeywordsFromRole(m.role);
     if (keywords.length === 0) continue;
     const kwStr = keywords.slice(0, 6).join(", ");
-    lines.push(`| ${kwStr} | ${m.name} | \`${m.id}\` |`);
+    lines.push(`| ${kwStr} | ${escapeXml(m.name)} | \`${escapeXml(m.id)}\` |`);
   }
 
   lines.push(
@@ -208,8 +215,16 @@ function generateHandoffProtocol(project: Project): string {
   lines.push(
     ``,
     `When a member's response comes back:`,
-    `- Forward it to the user as-is (Router mode)`,
+    `- For single-member routing: forward it to the user as-is`,
+    `- For multi-member tasks: collect all responses, then synthesize (see Result Collection Protocol)`,
     `- Do NOT modify, summarize, or add your own commentary unless the response is clearly wrong`,
+    ``,
+    `### Sending Sub-Tasks to Members`,
+    ``,
+    `When dispatching a sub-task via \`sessions_send\`:`,
+    `- **target**: the member's agent ID (from routing table)`,
+    `- **message**: a clear instruction with expected output format, NOT the raw user message`,
+    `- Wait for the member's reply before proceeding to dependent steps`,
     ``,
     `**Session Affinity**: Once a user's question has been routed to a specific member,`,
     `continue routing follow-up questions in the same topic to that same member.`,
@@ -247,13 +262,13 @@ function generateConstraintsSection(constraints: TeamConstraints): string {
 
   if (constraints.brandRules?.userAddress) {
     lines.push(
-      `- **Address users as**: "${constraints.brandRules.userAddress}"`,
+      `- **Address users as**: "${escapeXml(constraints.brandRules.userAddress)}"`,
     );
   }
 
   if (constraints.brandRules?.forbidden?.length) {
     const forbidden = constraints.brandRules.forbidden
-      .map((w) => `"${w}"`)
+      .map((w) => `"${escapeXml(w)}"`)
       .join(", ");
     lines.push(`- **Never use these words/phrases**: ${forbidden}`);
   }
@@ -261,7 +276,7 @@ function generateConstraintsSection(constraints: TeamConstraints): string {
   if (constraints.brandRules?.safetyRules?.length) {
     lines.push(`- **Safety rules**:`);
     for (const rule of constraints.brandRules.safetyRules) {
-      lines.push(`  - ${rule}`);
+      lines.push(`  - ${escapeXml(rule)}`);
     }
   }
 
@@ -274,10 +289,83 @@ function generateResponseStyleSection(project: Project): string {
   return [
     `## Response Style`,
     ``,
-    `Always respond as "${displayName}". Never reveal internal team structure,`,
+    `Always respond as "${escapeXml(displayName)}". Never reveal internal team structure,`,
     `agent names, routing decisions, or that you are a multi-agent system.`,
     `The user must perceive a single, unified assistant at all times.`,
   ].join("\n");
+}
+
+function generateTaskDecompositionProtocol(project: Project): string {
+  const maxSubTasks = project.taskCoordination?.maxConcurrentSubTasks ?? 3;
+  const timeout = project.coordination.memberTimeoutSeconds;
+  const isDelegateOnly = project.coordination.supervisorStyle === "delegate-only";
+
+  const lines = [
+    `## Task Decomposition Protocol`,
+    ``,
+    `When a user request requires input from multiple team members:`,
+    ``,
+    `1. **Analyze**: Identify if the request touches multiple domains/specialties`,
+    `2. **Single-domain**: Route to ONE member (standard handoff — no decomposition needed)`,
+    `3. **Multi-domain**: Decompose into sub-tasks:`,
+    `   - Send each sub-task to the appropriate member via \`sessions_send\``,
+    `   - Include clear instructions and expected output format`,
+    `   - Wait for responses (timeout: ${timeout}s per sub-task)`,
+    `   - Collect all results`,
+    `4. **Synthesize**: Combine results into one coherent response for the user`,
+    ``,
+    `### Rules`,
+    `- Maximum ${maxSubTasks} concurrent sub-tasks per request`,
+    `- Each sub-task message must be a clear instruction, not the raw user message`,
+  ];
+
+  if (isDelegateOnly) {
+    lines.push(`- If a sub-task fails or times out, report the partial results and inform the user`);
+  } else {
+    lines.push(`- If a sub-task fails or times out, report partial results to the user`);
+  }
+
+  lines.push(`- For ambiguous requests, ask the user to clarify before decomposing`);
+  return lines.join("\n");
+}
+
+function generateResultCollectionProtocol(project: Project): string {
+  const mode = project.visibility.mode;
+  const style = project.coordination.supervisorStyle;
+  const isDelegateOnly = style === "delegate-only";
+
+  const lines = [
+    `## Result Collection Protocol`,
+    ``,
+    `After dispatching sub-tasks to members:`,
+    ``,
+    `1. **Track**: Remember which members were given which sub-tasks`,
+    `2. **Wait**: Read the \`reply\` field from each \`sessions_send\` result`,
+    `3. **Validate**: Check that each response addresses the original sub-task`,
+    `4. **Merge**: Combine responses in a logical order:`,
+    `   - Lead with the primary deliverable (e.g., the article, the analysis)`,
+    `   - Append supporting materials (images, data, references)`,
+    `   - Add a brief summary if the combined result is long`,
+  ];
+
+  if (mode === "team" || mode === "transparent") {
+    lines.push(`5. **Attribute**: Note which member contributed what`);
+  } else {
+    lines.push(`5. **Seamless**: Present as a single unified response (no attribution)`);
+  }
+
+  lines.push(``, `### Handling Failures`);
+  lines.push(`- **Timeout**: Report partial results — present what you have so far and note what is pending`);
+
+  if (isDelegateOnly) {
+    lines.push(`- **Error**: Try a fallback member if available, otherwise report the failure to the user`);
+    lines.push(`- **All fail**: Inform the user that the specialists are currently unavailable`);
+  } else {
+    lines.push(`- **Error**: Try a fallback member if available, otherwise handle it yourself`);
+    lines.push(`- **All fail**: Handle the request yourself as best you can`);
+  }
+
+  return lines.join("\n");
 }
 
 function generateOperatingRules(project: Project): string {
@@ -285,15 +373,25 @@ function generateOperatingRules(project: Project): string {
   const timeout = project.coordination.memberTimeoutSeconds;
   const fallback = project.coordination.supervisorFallbackEnabled;
 
+  const style = project.coordination.supervisorStyle;
+  const isDelegateOnly = style === "delegate-only";
+
+  const fallbackAction = isDelegateOnly
+    ? `inform the user that the specialist is unavailable`
+    : fallback
+      ? `you should handle the request yourself as a fallback`
+      : `inform the user that the specialist is unavailable`;
+
+  const errorAction = isDelegateOnly
+    ? `If a member fails, note the error and try another member or inform the user`
+    : `If a member fails, note the error and try another member or handle it yourself`;
+
   return [
     `## Operating Rules`,
     ``,
     `- **Max routing hops**: ${hopLimit} per conversation (to prevent loops)`,
-    `- **Member timeout**: ${timeout} seconds — if a member doesn't respond, ` +
-      (fallback
-        ? `you should handle the request yourself as a fallback`
-        : `inform the user that the specialist is unavailable`),
-    `- **Error handling**: If a member fails, note the error and try another member or handle it yourself`,
+    `- **Member timeout**: ${timeout} seconds — if a member doesn't respond, ${fallbackAction}`,
+    `- **Error handling**: ${errorAction}`,
     `- **Never expose internal**: Don't tell users about agent IDs, routing tables, or team internals`,
   ].join("\n");
 }

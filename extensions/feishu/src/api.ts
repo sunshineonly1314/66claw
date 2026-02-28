@@ -288,6 +288,72 @@ export async function probeFeishuConnection(
 }
 
 // ============================================================================
+// 多机器人安全
+// ============================================================================
+
+/**
+ * 群机器人数量缓存
+ * 避免每条消息都查询 API，缓存 5 分钟
+ */
+const groupBotCountCache = new Map<string, { count: number; ts: number }>();
+const BOT_COUNT_CACHE_TTL = 5 * 60 * 1000; // 5 分钟
+
+/**
+ * 获取群内机器人数量
+ * 用于多机器人群安全模式：当群里有多个机器人时，需要 @本机器人才响应
+ */
+export async function countGroupBots(
+  config: FeishuChannelConfig,
+  chatId: string,
+): Promise<number> {
+  // 检查缓存
+  const cached = groupBotCountCache.get(chatId);
+  if (cached && Date.now() - cached.ts < BOT_COUNT_CACHE_TTL) {
+    return cached.count;
+  }
+
+  try {
+    const client = createFeishuClient(config);
+    let botCount = 0;
+    let pageToken: string | undefined;
+    let hasMore = true;
+
+    // 分页遍历群成员（最多查 200 条避免大群超时）
+    while (hasMore) {
+      const res = await client.im.chatMembers.get({
+        path: { chat_id: chatId },
+        params: {
+          member_id_type: "open_id",
+          page_size: 100,
+          ...(pageToken && { page_token: pageToken }),
+        },
+      });
+
+      if (res.code !== 0) break;
+
+      const members = (res.data as any)?.items ?? [];
+      for (const member of members) {
+        if (member.member_type === "bot") {
+          botCount++;
+        }
+      }
+
+      hasMore = (res.data as any)?.has_more ?? false;
+      pageToken = (res.data as any)?.page_token;
+
+      // 安全限制：最多查 2 页，避免大群导致超时
+      if (botCount > 1) break;
+    }
+
+    groupBotCountCache.set(chatId, { count: botCount, ts: Date.now() });
+    return botCount;
+  } catch {
+    // 查询失败时保守返回 1（即不触发多机器人限制）
+    return 1;
+  }
+}
+
+// ============================================================================
 // 清除缓存
 // ============================================================================
 

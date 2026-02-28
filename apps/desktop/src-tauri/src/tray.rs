@@ -50,6 +50,8 @@ fn open_repair_assistant(app: &tauri::AppHandle) {
         return;
     }
 
+    // repair-assistant.html is copied into frontendDist by build.rs so
+    // WebviewUrl::App can resolve it correctly.
     match WebviewWindowBuilder::new(
         app,
         "repair-assistant",

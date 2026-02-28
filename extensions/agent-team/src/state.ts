@@ -154,6 +154,33 @@ export async function loadAllProjects(): Promise<Project[]> {
   return projects;
 }
 
+// ── Activity Persistence ──────────────────────────────────────────────────
+
+function activityPath(projectId: string): string {
+  return path.join(projectDir(projectId), "activity.json");
+}
+
+/**
+ * Save activity events to disk.
+ */
+export async function saveActivity(projectId: string, events: unknown[]): Promise<void> {
+  await atomicWriteJson(activityPath(projectId), events);
+}
+
+/**
+ * Load activity events from disk. Returns empty array if not found.
+ */
+export async function loadActivity(projectId: string): Promise<unknown[]> {
+  try {
+    const raw = await fs.readFile(activityPath(projectId), "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err: unknown) {
+    if (isFileNotFound(err)) return [];
+    return [];
+  }
+}
+
 // ── Runtime State ────────────────────────────────────────────────────────
 
 /**

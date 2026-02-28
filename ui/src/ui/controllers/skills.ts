@@ -48,6 +48,7 @@ export type SkillsMarketSearchResult = {
     cnAlternative?: string;
     installed?: boolean;
     path: string;
+    source?: string;
   }>;
   total: number;
   page: number;

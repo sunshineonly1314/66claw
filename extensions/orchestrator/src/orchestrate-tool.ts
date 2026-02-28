@@ -196,6 +196,7 @@ async function handleQuickDeploy(
     requirement,
     templateId: template.id,
     agents: blueprints,
+    teamName: template.name,
     teamDescription: template.description,
     mode: "template",
     userContext: defaultContext,
@@ -985,6 +986,109 @@ async function detectConflicts(
  *   - Deploy job tracking with AbortController for rollback interlock (S1-5)
  *   - Plan-level onAgentFail policy (S1-7)
  */
+
+// ── Team-specific Workspace Content Generators ───────────────────────────
+
+/**
+ * Generate a team-specific AGENTS.md for a sub-agent.
+ * Describes the agent's role within the team and how to collaborate with teammates.
+ */
+function generateTeamAgentsMd(
+  bp: AgentBlueprint,
+  plan: OrchestrationPlan,
+): string {
+  const teammates = plan.agents.filter(a => a.id !== bp.id);
+  const teammateLines = teammates.map(
+    t => `- **${t.name}** (${t.emoji ?? ""}): ${t.role}`,
+  );
+
+  return [
+    `# AGENTS.md — ${bp.name}`,
+    "",
+    `> 你是「${plan.teamName ?? "智能团队"}」的成员。`,
+    "",
+    "## 你的职责",
+    "",
+    bp.role,
+    "",
+    "## 每次对话",
+    "",
+    "1. 读取 `SOUL.md` — 你的完整行为准则",
+    "2. 读取 `TOOLS.md` — 你可用的工具说明",
+    "3. 专注于自己的职责范围，不要越界",
+    "",
+    "## 团队成员",
+    "",
+    ...teammateLines,
+    "",
+    "## 协作规则",
+    "",
+    "- 遇到超出自己职责范围的请求，明确告知用户应该找哪个队友",
+    "- 不要尝试完成其他队友的任务",
+    "- 保持回复简洁，专注于你擅长的领域",
+    "",
+    "## 协作通信",
+    "",
+    "- 当 Supervisor 通过 `sessions_send` 给你发任务时，专注完成并直接回复结果",
+    "- 如果任务超出你的能力，说明原因并建议转交给哪个队友",
+    "- 你可以使用 `sessions_send` 工具向队友或 Supervisor 发消息",
+    "- 完成任务后，简洁地汇报结果，不要重复任务描述",
+    "- 如果你需要其他队友的输入才能完成任务，直接发消息给他们",
+    "",
+  ].join("\n");
+}
+
+/**
+ * Generate a team-specific TOOLS.md for a sub-agent.
+ * Lists the allowed tools and skills based on the blueprint.
+ */
+function generateTeamToolsMd(bp: AgentBlueprint): string {
+  const sections: string[] = [
+    `# TOOLS.md — ${bp.name} 工具说明`,
+    "",
+  ];
+
+  if (bp.tools.allow?.length) {
+    sections.push("## 可用工具组");
+    sections.push("");
+    for (const tool of bp.tools.allow) {
+      sections.push(`- \`${tool}\``);
+    }
+    sections.push("");
+  }
+
+  if (bp.tools.skills?.length) {
+    sections.push("## 已启用技能");
+    sections.push("");
+    for (const skill of bp.tools.skills) {
+      sections.push(`- \`${skill}\``);
+    }
+    sections.push("");
+  }
+
+  if (bp.tools.deny?.length) {
+    sections.push("## 禁用工具");
+    sections.push("");
+    for (const tool of bp.tools.deny) {
+      sections.push(`- \`${tool}\``);
+    }
+    sections.push("");
+  }
+
+  if (bp.tools.profile) {
+    sections.push(`## 工具配置`);
+    sections.push("");
+    sections.push(`预设: \`${bp.tools.profile}\``);
+    sections.push("");
+  }
+
+  sections.push("---");
+  sections.push("");
+  sections.push("具体工具的使用方法请参考对应技能的 SKILL.md。");
+
+  return sections.join("\n");
+}
+
 async function executeDeploySequence(
   plan: OrchestrationPlan,
   initialState: OrchestrationState,
@@ -1093,7 +1197,7 @@ async function executeDeploySequenceInner(
         });
         agentCreated = true;
 
-        // Step 2: Write SOUL.md
+        // Step 2: Write prompt files (SOUL.md + team-specific AGENTS.md, TOOLS.md)
         state = updateAgentStatus(state, bp.id, "writing_soul");
         await saveState(state);
         await callGateway("agents.files.set", {
@@ -1101,6 +1205,27 @@ async function executeDeploySequenceInner(
           name: "SOUL.md",
           content: bp.soul,
         });
+        // Write team-customized workspace files (overwrites generic templates)
+        await Promise.all([
+          callGateway("agents.files.set", {
+            agentId: did,
+            name: "AGENTS.md",
+            content: generateTeamAgentsMd(bp, plan),
+          }),
+          callGateway("agents.files.set", {
+            agentId: did,
+            name: "TOOLS.md",
+            content: generateTeamToolsMd(bp),
+          }),
+          // Team agents don't need first-run onboarding — their identity is
+          // already defined by the blueprint.  Overwrite with a no-op stub
+          // so the workspace doesn't trigger the BOOTSTRAP flow.
+          callGateway("agents.files.set", {
+            agentId: did,
+            name: "BOOTSTRAP.md",
+            content: `# 已由智能组队自动配置\n\n此 agent 由「${plan.teamName ?? "智能团队"}」编排器创建，无需手动引导。\n`,
+          }),
+        ]);
 
         // Step 3 deferred: collect config patch for batch application (S1-4)
         state = updateAgentStatus(state, bp.id, "configuring");
@@ -1699,6 +1824,7 @@ export async function performQuickDeploy(
     requirement,
     templateId: template.id,
     agents: blueprints,
+    teamName: template.name,
     teamDescription: template.description,
     mode: "template",
     userContext: defaultContext,
@@ -1806,12 +1932,14 @@ export async function performGuidedPropose(
 
   // 4. Save as draft
   const planId = generatePlanId();
+  const teamName = template?.name ?? "定制团队";
   const plan: OrchestrationPlan = {
     planId,
     createdAt: new Date().toISOString(),
     requirement,
     templateId: template?.id,
     agents: blueprints,
+    teamName,
     teamDescription,
     mode: "guided",
     userContext,
@@ -1827,7 +1955,7 @@ export async function performGuidedPropose(
 
   return {
     planId,
-    teamName: template?.name ?? "定制团队",
+    teamName,
     teamDescription,
     agents: blueprints.map(bp => ({
       id: bp.id,

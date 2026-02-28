@@ -176,7 +176,7 @@ function calculateTextScore(
   if (keywords.length === 0) return { score: 0, matchedTerms: [] };
 
   const lowerTarget = targetText.toLowerCase();
-  const lowerTags = (targetTags || []).map((t) => t.toLowerCase());
+  const lowerTags = (Array.isArray(targetTags) ? targetTags : []).map((t) => t.toLowerCase());
 
   let matched = 0;
   const matchedTerms: string[] = [];

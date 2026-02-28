@@ -393,6 +393,15 @@ export function attachGatewayWsMessageHandler(params: {
         let authOk = authResult.ok;
         let authMethod =
           authResult.method ?? (resolvedAuth.mode === "password" ? "password" : "token");
+
+        // Dev profile + local connection: skip all token auth to avoid
+        // ENC{} token mismatch between Rust sidecar and Node gateway.
+        const isDevProfile = (process.env.OPENCLAWCN_PROFILE ?? "").toLowerCase() === "dev";
+        if (!authOk && isDevProfile && isLocalClient) {
+          authOk = true;
+          authMethod = "dev-local-bypass";
+          logWsControl.info(`dev-local-bypass: skipping token auth for local conn=${connId}`);
+        }
         const sharedAuthResult = hasSharedAuth
           ? await authorizeGatewayConnect({
               auth: { ...resolvedAuth, allowTailscale: false },

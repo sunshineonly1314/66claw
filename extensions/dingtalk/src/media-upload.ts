@@ -106,14 +106,51 @@ function toLocalPath(raw: string): string {
   return p;
 }
 
+/** 支持的上传媒体类型 */
+export type UploadMediaType = "image" | "voice" | "video" | "file";
+
+/**
+ * 根据文件扩展名推断上传类型
+ */
+export function detectUploadMediaType(filePath: string): UploadMediaType {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".jpg": case ".jpeg": case ".png": case ".gif": case ".bmp": case ".webp":
+      return "image";
+    case ".mp3": case ".wav": case ".amr": case ".ogg": case ".m4a":
+      return "voice";
+    case ".mp4": case ".mov": case ".avi": case ".mkv": case ".webm":
+      return "video";
+    default:
+      return "file";
+  }
+}
+
 /**
  * 上传本地文件到钉钉，返回 media_id
+ *
+ * @param filePath - 本地文件路径
+ * @param oapiToken - OAPI Access Token
+ * @param mediaType - 媒体类型 (image/voice/video/file)，默认自动检测
  */
 export async function uploadToDingTalk(
   filePath: string,
   oapiToken: string,
-  log?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void },
+  mediaTypeOrLog?: UploadMediaType | { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void },
+  logArg?: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void },
 ): Promise<string | null> {
+  // 兼容旧签名: uploadToDingTalk(path, token, log) 和新签名: uploadToDingTalk(path, token, type, log)
+  let mediaType: UploadMediaType;
+  let log: { info?: (msg: string) => void; warn?: (msg: string) => void; error?: (msg: string) => void } | undefined;
+
+  if (typeof mediaTypeOrLog === "string") {
+    mediaType = mediaTypeOrLog;
+    log = logArg;
+  } else {
+    mediaType = detectUploadMediaType(filePath);
+    log = mediaTypeOrLog;
+  }
+
   try {
     const absPath = toLocalPath(filePath);
     if (!fs.existsSync(absPath)) {
@@ -134,9 +171,9 @@ export async function uploadToDingTalk(
     const formData = new FormData();
     formData.append("media", new Blob([fileBuffer]), fileName);
 
-    log?.info?.(`[DingTalk][Media] 上传图片: ${absPath} (${(stat.size / 1024).toFixed(1)}KB)`);
+    log?.info?.(`[DingTalk][Media] 上传${mediaType}: ${absPath} (${(stat.size / 1024).toFixed(1)}KB)`);
     const resp = await fetch(
-      `https://oapi.dingtalk.com/media/upload?access_token=${oapiToken}&type=image`,
+      `https://oapi.dingtalk.com/media/upload?access_token=${oapiToken}&type=${mediaType}`,
       {
         method: "POST",
         body: formData,

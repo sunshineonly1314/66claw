@@ -88,7 +88,7 @@ export async function volcengineTtsSynthesize(
     voice = "BV005_streaming",
     encoding = "mp3",
     sampleRate = 24000,
-    speedRatio = 1.5,
+    speedRatio = 1.8,
   } = params;
 
   // Read from unified credentials store first, then env vars

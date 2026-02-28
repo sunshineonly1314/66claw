@@ -685,10 +685,9 @@ export function createVideoGenTool(options?: {
     label: "Video Generation",
     name: "video_gen",
     description:
-      "Generate short video clips from text descriptions. " +
-      "Use this tool when the user asks to create, produce, or generate a video, animation, or short clip. " +
-      "Provide a detailed prompt describing the desired video content. " +
-      "Video generation takes 30 seconds to 3 minutes. The result is a video URL.",
+      "Generate short video clips from text descriptions (takes 30s-3min). " +
+      "If the user's request is vague (e.g. '帮我生成个视频'), briefly ask what they want before calling. " +
+      "If the user already described specific content, call directly.",
     parameters: Type.Object({
       prompt: Type.String({
         description: "Detailed text description of the video to generate",

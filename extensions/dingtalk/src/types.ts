@@ -53,6 +53,69 @@ export interface DingtalkStreamConfig {
 }
 
 /**
+ * Markdown 渲染配置
+ */
+export interface DingtalkMarkdownConfig {
+  /** 表格转换模式: off=不转换, bullets=转为列表, code=转为代码块 */
+  tables?: "off" | "bullets" | "code";
+}
+
+/**
+ * 媒体下载与归档配置
+ */
+export interface DingtalkMediaConfig {
+  /** 启用入站媒体下载 */
+  enableDownload?: boolean;
+  /** 分类型大小限制 (MB) */
+  sizeLimits?: {
+    picture?: number;
+    audio?: number;
+    video?: number;
+    file?: number;
+  };
+  /** 媒体归档设置 */
+  archival?: {
+    enabled?: boolean;
+    retentionDays?: number;
+    basePath?: string;
+  };
+}
+
+/**
+ * 定时任务配置
+ */
+export interface DingtalkScheduledTask {
+  /** 任务 ID */
+  id: string;
+  /** Cron 表达式 (分 时 日 月 周) */
+  cron: string;
+  /** 目标用户 ID 列表 */
+  targets: string[];
+  /** 消息模板 (支持 {date}, {time}, {weekday} 变量) */
+  messageTemplate: string;
+  /** 使用 Markdown 格式 */
+  markdown?: boolean;
+  /** 是否启用 */
+  enabled?: boolean;
+}
+
+/**
+ * 媒体下载结果
+ */
+export interface MediaDownloadResult {
+  /** 本地文件路径 */
+  filePath: string;
+  /** 文件大小 (bytes) */
+  fileSize: number;
+  /** Content-Type */
+  contentType?: string;
+  /** 原始文件名 */
+  fileName?: string;
+  /** 媒体类型 */
+  mediaType: string;
+}
+
+/**
  * 钉钉渠道配置
  */
 export interface DingtalkChannelConfig {
@@ -76,6 +139,12 @@ export interface DingtalkChannelConfig {
   groupPolicy?: "open" | "allowlist";
   /** 群聊配置 */
   groups?: Record<string, DingtalkGroupConfig>;
+  /** Markdown 渲染设置 */
+  markdown?: DingtalkMarkdownConfig;
+  /** 媒体下载与归档配置 */
+  media?: DingtalkMediaConfig;
+  /** 定时消息任务 */
+  scheduledTasks?: DingtalkScheduledTask[];
 }
 
 /**
@@ -188,6 +257,8 @@ export interface DingtalkRobotMessageEvent {
   audio?: {
     downloadCode: string;
     duration?: number;
+    /** 语音识别文本 (钉钉自动转写) */
+    recognition?: string;
   };
   /** 视频内容 */
   video?: {

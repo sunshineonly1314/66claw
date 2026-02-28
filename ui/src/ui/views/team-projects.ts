@@ -75,7 +75,9 @@ export type ProjectDetailProps = {
 // ── Sidebar: Project Groups ─────────────────────────────────────────────
 
 export function renderProjectSidebarGroups(props: ProjectSidebarProps): TemplateResult | typeof nothing {
-  const projects = props.projects;
+  // Filter out federation meta-projects — they are invisible wrappers and
+  // should never appear as separate entries in the sidebar.
+  const projects = props.projects?.filter((p) => !p.isFederation) ?? null;
   const allAgents = props.agents?.agents ?? [];
   if (!projects || projects.length === 0) {
     // No projects — render all agents as standalone (handled by caller)
@@ -93,6 +95,15 @@ export function renderProjectSidebarGroups(props: ProjectSidebarProps): Template
   // Standalone agents = not in any project
   const standaloneAgents = allAgents.filter((a) => !assignedAgentIds.has(a.id));
 
+  // Collect orch prefixes that are already represented by a project.
+  // If any project member has the same orch prefix, the orphan agents
+  // with that prefix belong to the project and should not be shown separately.
+  const assignedOrchPrefixes = new Set<string>();
+  for (const id of assignedAgentIds) {
+    const m = /^(orch-[^-]+-[^-]+)--/.exec(id);
+    if (m) assignedOrchPrefixes.add(m[1]);
+  }
+
   // Further split standalone agents: group orchestrator agents by orch prefix,
   // truly standalone agents are those without an orch- prefix.
   const orchGroups = new Map<string, typeof standaloneAgents>();
@@ -101,6 +112,10 @@ export function renderProjectSidebarGroups(props: ProjectSidebarProps): Template
     const orchMatch = /^(orch-[^-]+-[^-]+)--/.exec(agent.id);
     if (orchMatch) {
       const orchId = orchMatch[1];
+      // If this orch prefix is already used by agents in a project, skip —
+      // these agents logically belong to the project and should not show
+      // as orphans.
+      if (assignedOrchPrefixes.has(orchId)) continue;
       let group = orchGroups.get(orchId);
       if (!group) { group = []; orchGroups.set(orchId, group); }
       group.push(agent);
@@ -192,8 +207,27 @@ function renderProjectGroup(project: TeamProjectSummary, props: ProjectSidebarPr
         class="project-group-header"
         role="button"
         tabindex="0"
-        @click=${() => props.onSelectProject(project.projectId)}
-        @keydown=${(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onSelectProject(project.projectId); } }}
+        @click=${() => {
+          if (isSelected) {
+            // Already selected — toggle collapse
+            props.onToggleCollapse(project.projectId);
+          } else {
+            // Selecting a different project — select and ensure expanded
+            props.onSelectProject(project.projectId);
+            if (isCollapsed) props.onToggleCollapse(project.projectId);
+          }
+        }}
+        @keydown=${(e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (isSelected) {
+              props.onToggleCollapse(project.projectId);
+            } else {
+              props.onSelectProject(project.projectId);
+              if (isCollapsed) props.onToggleCollapse(project.projectId);
+            }
+          }
+        }}
       >
         <span class="project-status-dot project-status-dot--${project.status}"></span>
         <span class="project-group-icon">${icons.users}</span>
@@ -223,7 +257,7 @@ function renderProjectGroup(project: TeamProjectSummary, props: ProjectSidebarPr
               <div class="agent-info">
                 <div class="agent-title">${normalizeAgentLabel(agent)}</div>
               </div>
-              ${isSupervisor ? html`<span class="agent-pill">${t("team.supervisor")}</span>` : nothing}
+              ${isSupervisor ? html`<span class="agent-pill ${project.autoSupervisor ? 'auto-supervisor' : ''}">${project.autoSupervisor ? '🎯 ' : ''}${t("team.supervisor")}</span>` : nothing}
             </button>
           `;
         })}
@@ -419,7 +453,7 @@ function renderProjectMembers(
                 <div class="project-member-card-info">
                   <div class="agent-title">
                     ${m.name}
-                    ${isSupervisor ? html`<span class="agent-pill ok" style="margin-left: 6px; font-size: 10px;">${t("team.supervisor")}</span>` : nothing}
+                    ${isSupervisor ? html`<span class="agent-pill ${project.autoSupervisor ? 'auto-supervisor' : ''}" style="margin-left: 6px;">${project.autoSupervisor ? '🎯 ' : ''}${t("team.supervisor")}</span>` : nothing}
                   </div>
                   <div class="agent-sub">${m.role}</div>
                 </div>
@@ -1028,6 +1062,19 @@ function renderProjectMemoryPanel(
   props: ProjectDetailProps,
 ): TemplateResult {
   const memory = props.memory;
+  const memoryMode = project.memory?.mode ?? "isolated";
+
+  // Show clear explanation when memory mode is isolated
+  if (memoryMode !== "read-shared") {
+    return html`
+      <div class="card">
+        <div class="callout" style="text-align: center;">
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">${t("team.detail.memoryIsolated")}</div>
+          <div class="muted" style="font-size: 12px;">${t("team.detail.memoryIsolatedHint")}</div>
+        </div>
+      </div>
+    `;
+  }
 
   if (memory === null) {
     return html`<div class="card"><div class="muted">${t("agents.loading")}</div></div>`;

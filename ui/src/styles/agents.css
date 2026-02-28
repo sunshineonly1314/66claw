@@ -114,6 +114,7 @@
 .agent-row.active {
   background: var(--accent-subtle);
   border-color: rgba(var(--accent-rgb), 0.25);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 /* ---- Agent Avatar ---- */
@@ -733,7 +734,12 @@
 
 .project-group--selected > .project-group-header {
   background: var(--accent-subtle);
-  border-color: rgba(var(--accent-rgb), 0.25);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.project-group--selected > .project-group-header .project-group-name {
+  color: var(--accent);
 }
 
 .project-group-header {
@@ -974,6 +980,12 @@
 .agent-pill.danger {
   background: rgba(248, 113, 113, 0.12);
   color: var(--danger);
+}
+
+.agent-pill.auto-supervisor {
+  background: rgba(139, 92, 246, 0.15);
+  color: rgb(139, 92, 246);
+  border: 1px solid rgba(139, 92, 246, 0.25);
 }
 
 /* ---- Outline button variant ---- */

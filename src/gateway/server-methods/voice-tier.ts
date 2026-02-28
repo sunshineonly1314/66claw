@@ -241,6 +241,62 @@ export const voiceTierHandlers: GatewayRequestHandlers = {
         return;
       }
 
+      // 保存前验证凭据：尝试建立 ASR WebSocket 连接
+      const WebSocket = (await import("ws")).default;
+      const verifyResult = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+        const ws = new WebSocket("wss://openspeech.bytedance.com/api/v3/sauc/bigmodel", {
+          headers: {
+            "X-Api-App-Key": appId,
+            "X-Api-Access-Key": accessToken,
+            "X-Api-Resource-Id": "volc.bigasr.sauc.duration",
+            "X-Api-Connect-Id": `verify-${Date.now()}`,
+          },
+          handshakeTimeout: 8_000,
+        });
+        ws.on("open", () => {
+          ws.close();
+          resolve({ ok: true });
+        });
+        ws.on("unexpected-response", (_req: unknown, res: import("http").IncomingMessage) => {
+          let body = "";
+          res.on("data", (c: Buffer) => {
+            body += c;
+          });
+          res.on("end", () => {
+            const status = res.statusCode ?? 0;
+            let msg = `HTTP ${status}`;
+            try {
+              const parsed = JSON.parse(body);
+              if (parsed.error) msg = String(parsed.error);
+            } catch {
+              /* ignore */
+            }
+            if (status === 403 && msg.includes("not granted")) {
+              msg = "ASR 服务未开通。请在火山引擎控制台开通「豆包流式语音识别模型2.0」";
+            }
+            resolve({ ok: false, error: msg });
+          });
+        });
+        ws.on("error", (e: Error) => {
+          resolve({ ok: false, error: e.message });
+        });
+        setTimeout(() => {
+          try {
+            ws.close();
+          } catch {}
+          resolve({ ok: false, error: "连接超时" });
+        }, 10_000);
+      });
+
+      if (!verifyResult.ok) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_ARGUMENT, `凭据验证失败: ${verifyResult.error}`),
+        );
+        return;
+      }
+
       const { saveVolcengineVoiceCredentials } =
         await import("../../voice/volcengine-credentials.js");
       await saveVolcengineVoiceCredentials(appId, accessToken);

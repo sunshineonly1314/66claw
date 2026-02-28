@@ -559,12 +559,43 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
         return;
       }
       // Save volcengine voice credentials AFTER input validation passes
+      // Verify ASR connectivity before saving — only save if credentials actually work
       if (providerId === "volcengine-ark" && volcAppId && volcAccessToken) {
         try {
-          const { saveVolcengineVoiceCredentials } =
-            await import("../../voice/volcengine-credentials.js");
-          await saveVolcengineVoiceCredentials(volcAppId, volcAccessToken);
-          log.info("Volcengine voice credentials saved during provider detect");
+          const WebSocket = (await import("ws")).default;
+          const verifyOk = await new Promise<boolean>((resolve) => {
+            const ws = new WebSocket("wss://openspeech.bytedance.com/api/v3/sauc/bigmodel", {
+              headers: {
+                "X-Api-App-Key": String(volcAppId),
+                "X-Api-Access-Key": String(volcAccessToken),
+                "X-Api-Resource-Id": "volc.bigasr.sauc.duration",
+                "X-Api-Connect-Id": `verify-${Date.now()}`,
+              },
+              handshakeTimeout: 8_000,
+            });
+            ws.on("open", () => {
+              ws.close();
+              resolve(true);
+            });
+            ws.on("unexpected-response", () => resolve(false));
+            ws.on("error", () => resolve(false));
+            setTimeout(() => {
+              try {
+                ws.close();
+              } catch {}
+              resolve(false);
+            }, 10_000);
+          });
+          if (verifyOk) {
+            const { saveVolcengineVoiceCredentials } =
+              await import("../../voice/volcengine-credentials.js");
+            await saveVolcengineVoiceCredentials(String(volcAppId), String(volcAccessToken));
+            log.info("Volcengine voice credentials verified and saved during provider detect");
+          } else {
+            log.warn(
+              "Volcengine voice credentials verification failed (ASR service not granted). Credentials NOT saved.",
+            );
+          }
         } catch (err) {
           log.warn(`Failed to save volcengine voice credentials: ${err}`);
         }

@@ -237,7 +237,7 @@ export function registerFeishuDriveTools(api: ClawdbotPluginApi) {
     return;
   }
 
-  const toolsCfg = resolveToolsConfig(feishuCfg.tools);
+  const toolsCfg = resolveToolsConfig(feishuCfg.advanced?.tools);
   if (!toolsCfg.drive) {
     api.logger.debug?.("[feishu_drive] drive 工具已在配置中禁用");
     return;

@@ -24,12 +24,13 @@ import {
 } from "openclawcn/plugin-sdk";
 
 import { getFeishuRuntime } from "./runtime.js";
-import { sendFeishuMessage, probeFeishuConnection, sendMarkdownCardFeishu } from "./api.js";
+import { sendFeishuMessage, probeFeishuConnection, sendMarkdownCardFeishu, countGroupBots } from "./api.js";
 import { createFeishuWebhookHandler, resolveFeishuInboundMedia, feishuMediaPlaceholder, extractPostContent } from "./webhook.js";
 import { monitorFeishuProvider, getCurrentBotOpenId } from "./monitor.js";
 import { sendMediaFeishu } from "./media.js";
 import { resolveFeishuCredentials } from "./client.js";
 import { normalizeFeishuTarget, looksLikeFeishuId } from "./targets.js";
+import { MessageDedup } from "./dedup.js";
 import { FeishuConfigSchema } from "./config-schema.js";
 import type {
   FeishuChannelConfig,
@@ -332,9 +333,9 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       ctx.setStatus({ accountId: ctx.accountId, running: true, lastStartAt: Date.now(), port });
 
       // 消息处理函数 (WebSocket 和 Webhook 共用)
-      // 消息去重缓存：防止飞书 WebSocket/Webhook 超时重试导致重复处理
-      const recentMessageIds = new Set<string>();
-      const DEDUPE_TTL_MS = 5 * 60_000; // 5 分钟过期
+      // 消息去重：Map + TTL + LRU 淘汰，防止飞书超时重试导致重复处理
+      const dedup = new MessageDedup();
+      dedup.start();
 
       const handleMessage = async (msg: {
         messageId: string;
@@ -346,14 +347,35 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         text: string;
         mediaPath?: string;
         mediaType?: string;
+        /** 本机器人是否被 @ 提及 */
+        mentionedBot?: boolean;
       }) => {
-        // 扩展层去重：相同 messageId 在 5 分钟内只处理一次
-        if (recentMessageIds.has(msg.messageId)) {
+        // 扩展层去重：相同 messageId 在 TTL 内只处理一次（带作用域隔离 + LRU 淘汰）
+        if (!dedup.tryRecord(msg.messageId, msg.chatId)) {
           ctx.log?.info(`[feishu] 跳过重复消息: messageId=${msg.messageId}`);
           return;
         }
-        recentMessageIds.add(msg.messageId);
-        setTimeout(() => recentMessageIds.delete(msg.messageId), DEDUPE_TTL_MS);
+
+        // 多机器人群聊安全检查：当群里有多个机器人时，必须 @本机器人才响应
+        // 防止机器人之间互相触发造成消息风暴
+        if (
+          msg.chatType === "group" &&
+          !msg.mentionedBot &&
+          !(channelConfig?.advanced?.allowMentionlessInMultiBotGroup ?? false)
+        ) {
+          try {
+            const botCount = await countGroupBots(channelConfig ?? {}, msg.chatId);
+            if (botCount > 1) {
+              ctx.log?.info(
+                `[feishu] 多机器人群 (${botCount} bots) 未 @本机器人，跳过: chatId=${msg.chatId}`,
+              );
+              return;
+            }
+          } catch (err) {
+            ctx.log?.warn?.(`[feishu] 查询群机器人数量失败: ${err}`);
+            // 查询失败时不阻断消息处理
+          }
+        }
 
         ctx.log?.info(`[feishu] 收到消息: chatType=${msg.chatType}, from=${msg.senderId}`);
 
@@ -480,11 +502,13 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
               }
             }
 
-            // 移除 @ 机器人的占位符
+            // 检测是否 @本机器人 & 移除 @ 机器人的占位符
             const botOpenId = getCurrentBotOpenId();
+            let mentionedBot = false;
             if (event.message.mentions) {
               for (const m of event.message.mentions) {
                 if (botOpenId && m.id.open_id === botOpenId) {
+                  mentionedBot = true;
                   text = text.replace(m.key, "").trim();
                 }
               }
@@ -499,6 +523,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
               text,
               mediaPath,
               mediaType,
+              mentionedBot,
             });
           },
         });
@@ -511,6 +536,10 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         config: channelConfig ?? {},
         log: ctx.log,
         onMessage: async (msg) => {
+          // Webhook 模式下，mentions 不为空说明有 @，但我们无法精确判断是否 @本机器人
+          // 飞书 webhook handler 已在 handleMessageEvent 中移除了 @本机器人的占位符
+          // 简化判断：有 mentions 就认为是 @本机器人（因为 webhook.ts 只处理与本机器人相关的事件）
+          const mentionedBot = (msg.mentions && msg.mentions.length > 0) || false;
           await handleMessage({
             messageId: msg.messageId,
             chatId: msg.chatId,
@@ -520,6 +549,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
             text: msg.text,
             mediaPath: msg.mediaPath,
             mediaType: msg.mediaType,
+            mentionedBot,
           });
         },
       });
@@ -537,6 +567,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       return new Promise<void>((resolve) => {
         ctx.abortSignal.addEventListener("abort", () => {
           unregister();
+          dedup.stop();
           ctx.log?.info(`[feishu] 飞书渠道已停止 (账户: ${ctx.accountId})`);
           ctx.setStatus({ accountId: ctx.accountId, running: false, lastStopAt: Date.now() });
           resolve();

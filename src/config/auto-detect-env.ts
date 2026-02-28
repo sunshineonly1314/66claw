@@ -19,6 +19,7 @@ export const ENV_PREFIX = "OPENCLAWCN_";
 /**
  * 渠道环境变量映射
  * 格式: OPENCLAWCN_{CHANNEL}_{FIELD}
+ * 兼容旧前缀: CLAWDBOT_{CHANNEL}_{FIELD}
  */
 export const CHANNEL_ENV_MAPPING = {
   // 飞书 (Feishu)
@@ -26,12 +27,22 @@ export const CHANNEL_ENV_MAPPING = {
   OPENCLAWCN_FEISHU_APP_SECRET: "channels.feishu.appSecret",
   OPENCLAWCN_FEISHU_MODE: "channels.feishu.connectionMode",
   OPENCLAWCN_FEISHU_DOMAIN: "channels.feishu.domain",
+  // 飞书 - legacy CLAWDBOT_ prefix
+  CLAWDBOT_FEISHU_APP_ID: "channels.feishu.appId",
+  CLAWDBOT_FEISHU_APP_SECRET: "channels.feishu.appSecret",
+  CLAWDBOT_FEISHU_MODE: "channels.feishu.connectionMode",
+  CLAWDBOT_FEISHU_DOMAIN: "channels.feishu.domain",
 
   // 钉钉 (DingTalk)
   OPENCLAWCN_DINGTALK_APP_KEY: "channels.dingtalk.app.appKey",
   OPENCLAWCN_DINGTALK_APP_SECRET: "channels.dingtalk.app.appSecret",
   OPENCLAWCN_DINGTALK_ROBOT_CODE: "channels.dingtalk.app.robotCode",
   OPENCLAWCN_DINGTALK_MODE: "channels.dingtalk.mode",
+  // 钉钉 - legacy CLAWDBOT_ prefix
+  CLAWDBOT_DINGTALK_APP_KEY: "channels.dingtalk.app.appKey",
+  CLAWDBOT_DINGTALK_APP_SECRET: "channels.dingtalk.app.appSecret",
+  CLAWDBOT_DINGTALK_ROBOT_CODE: "channels.dingtalk.app.robotCode",
+  CLAWDBOT_DINGTALK_MODE: "channels.dingtalk.mode",
 
   // 企业微信 (WeCom)
   OPENCLAWCN_WECOM_CORP_ID: "channels.wecom.app.corpId",
@@ -82,26 +93,31 @@ const TYPE_CONVERSIONS: Record<string, "boolean" | "number" | "string"> = {
 export function detectChannelsFromEnv(env: NodeJS.ProcessEnv): Record<string, unknown> {
   const channels: Record<string, unknown> = {};
 
-  // 飞书
-  if (env.OPENCLAWCN_FEISHU_APP_ID && env.OPENCLAWCN_FEISHU_APP_SECRET) {
+  // 飞书 (OPENCLAWCN_ 优先, CLAWDBOT_ 兼容)
+  const feishuAppId = env.OPENCLAWCN_FEISHU_APP_ID || env.CLAWDBOT_FEISHU_APP_ID;
+  const feishuAppSecret = env.OPENCLAWCN_FEISHU_APP_SECRET || env.CLAWDBOT_FEISHU_APP_SECRET;
+  if (feishuAppId && feishuAppSecret) {
     channels.feishu = {
       enabled: true,
-      appId: env.OPENCLAWCN_FEISHU_APP_ID,
-      appSecret: env.OPENCLAWCN_FEISHU_APP_SECRET,
-      connectionMode: env.OPENCLAWCN_FEISHU_MODE || "websocket",
-      domain: env.OPENCLAWCN_FEISHU_DOMAIN || "feishu",
+      appId: feishuAppId,
+      appSecret: feishuAppSecret,
+      connectionMode: env.OPENCLAWCN_FEISHU_MODE || env.CLAWDBOT_FEISHU_MODE || "websocket",
+      domain: env.OPENCLAWCN_FEISHU_DOMAIN || env.CLAWDBOT_FEISHU_DOMAIN || "feishu",
     };
   }
 
-  // 钉钉
-  if (env.OPENCLAWCN_DINGTALK_APP_KEY && env.OPENCLAWCN_DINGTALK_APP_SECRET) {
+  // 钉钉 (OPENCLAWCN_ 优先, CLAWDBOT_ 兼容)
+  const dingtalkAppKey = env.OPENCLAWCN_DINGTALK_APP_KEY || env.CLAWDBOT_DINGTALK_APP_KEY;
+  const dingtalkAppSecret = env.OPENCLAWCN_DINGTALK_APP_SECRET || env.CLAWDBOT_DINGTALK_APP_SECRET;
+  if (dingtalkAppKey && dingtalkAppSecret) {
     channels.dingtalk = {
       enabled: true,
-      mode: env.OPENCLAWCN_DINGTALK_MODE || "stream",
+      mode: env.OPENCLAWCN_DINGTALK_MODE || env.CLAWDBOT_DINGTALK_MODE || "stream",
       app: {
-        appKey: env.OPENCLAWCN_DINGTALK_APP_KEY,
-        appSecret: env.OPENCLAWCN_DINGTALK_APP_SECRET,
-        robotCode: env.OPENCLAWCN_DINGTALK_ROBOT_CODE || env.OPENCLAWCN_DINGTALK_APP_KEY,
+        appKey: dingtalkAppKey,
+        appSecret: dingtalkAppSecret,
+        robotCode:
+          env.OPENCLAWCN_DINGTALK_ROBOT_CODE || env.CLAWDBOT_DINGTALK_ROBOT_CODE || dingtalkAppKey,
       },
     };
   }
@@ -227,11 +243,17 @@ export function getEnvConfigSummary(env: NodeJS.ProcessEnv): EnvConfigSummary {
     }
   }
 
-  // 检测渠道
-  if (env.OPENCLAWCN_FEISHU_APP_ID && env.OPENCLAWCN_FEISHU_APP_SECRET) {
+  // 检测渠道 (OPENCLAWCN_ 优先, CLAWDBOT_ 兼容)
+  if (
+    (env.OPENCLAWCN_FEISHU_APP_ID || env.CLAWDBOT_FEISHU_APP_ID) &&
+    (env.OPENCLAWCN_FEISHU_APP_SECRET || env.CLAWDBOT_FEISHU_APP_SECRET)
+  ) {
     channels.push("feishu");
   }
-  if (env.OPENCLAWCN_DINGTALK_APP_KEY && env.OPENCLAWCN_DINGTALK_APP_SECRET) {
+  if (
+    (env.OPENCLAWCN_DINGTALK_APP_KEY || env.CLAWDBOT_DINGTALK_APP_KEY) &&
+    (env.OPENCLAWCN_DINGTALK_APP_SECRET || env.CLAWDBOT_DINGTALK_APP_SECRET)
+  ) {
     channels.push("dingtalk");
   }
   if (env.OPENCLAWCN_WECOM_CORP_ID && env.OPENCLAWCN_WECOM_AGENT_SECRET) {
@@ -243,7 +265,11 @@ export function getEnvConfigSummary(env: NodeJS.ProcessEnv): EnvConfigSummary {
 
   return {
     hasChannels: channels.length > 0,
-    hasGateway: Boolean(env.OPENCLAWCN_GATEWAY_TOKEN || env.OPENCLAWCN_GATEWAY_PASSWORD || env.OPENCLAWCN_GATEWAY_PORT),
+    hasGateway: Boolean(
+      env.OPENCLAWCN_GATEWAY_TOKEN ||
+      env.OPENCLAWCN_GATEWAY_PASSWORD ||
+      env.OPENCLAWCN_GATEWAY_PORT,
+    ),
     hasModels: Boolean(env.OPENCLAWCN_API_KEY || env.OPENCLAWCN_BASE_URL),
     channels,
     detectedVars,
@@ -328,6 +354,7 @@ export function generateEnvExample(): string {
 
 # ============================================================================
 # 飞书配置 (Feishu Configuration)
+# 也支持 CLAWDBOT_FEISHU_* 前缀 (兼容旧版)
 # ============================================================================
 
 # 飞书 App ID
@@ -344,6 +371,7 @@ export function generateEnvExample(): string {
 
 # ============================================================================
 # 钉钉配置 (DingTalk Configuration)
+# 也支持 CLAWDBOT_DINGTALK_* 前缀 (兼容旧版)
 # ============================================================================
 
 # 钉钉 App Key (Client ID)

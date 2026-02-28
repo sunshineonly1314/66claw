@@ -62,6 +62,7 @@ type OrchestratorPlanAgent = {
 
 type OrchestratorPlan = {
   planId: string;
+  teamName?: string;
   teamDescription: string;
   agents: OrchestratorPlanAgent[];
   templateId?: string;
@@ -83,7 +84,6 @@ type OrchestratorState = {
 export type CreateFromPlanParams = {
   planId: string;
   name?: string;
-  supervisorAgentId?: string;
   constraints?: TeamConstraints;
   orchestratorStateDir: string;
 };
@@ -129,11 +129,15 @@ export async function createProjectFromPlan(
   }
 
   // Build deployed ID mapping: blueprintId → deployedAgentId
+  // The orchestrator state stores blueprint IDs in agent.agentId (e.g. "topic-radar"),
+  // but the actual deployed agent uses a namespaced ID (e.g. "orch-20260228-abc--topic-radar").
+  // Always construct the namespaced ID from planId + blueprintId.
   const deployedIdMap = new Map<string, string>();
   for (const agent of state.agents) {
     if (agent.status === "ready") {
-      const deployedId = agent.agentId || `${planId}--${agent.blueprintId}`;
-      deployedIdMap.set(agent.blueprintId, deployedId);
+      const blueprintId = agent.blueprintId || agent.agentId;
+      const deployedId = `${planId}--${blueprintId}`;
+      deployedIdMap.set(blueprintId, deployedId);
     }
   }
 
@@ -179,19 +183,56 @@ export async function createProjectFromPlan(
     throw new Error(`No successfully deployed agents found in plan "${planId}"`);
   }
 
-  // ── Step 3: Determine supervisor and create Project ──
+  // ── Step 3: Auto-create independent Supervisor + create Project ──
 
-  const supervisorId =
-    params.supervisorAgentId && memberIds.includes(params.supervisorAgentId)
-      ? params.supervisorAgentId
-      : memberIds[0];
+  // Plan B: Auto-create an independent supervisor agent.
+  // This preserves all worker agents' original personas (SOUL.md not overwritten).
+  // The supervisor uses a cheap model and minimal tools — purely for routing/coordination.
+  const supervisorId = `${planId}--supervisor`;
+
+  try {
+    await callGateway("agents.create", {
+      name: `${plan.teamName ?? "Team"} Supervisor`,
+      id: supervisorId,
+      emoji: "🎯",
+    });
+  } catch (err) {
+    // If the supervisor agent already exists (e.g. re-deploy), proceed
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("already exists")) {
+      throw new Error(`Failed to create supervisor agent: ${msg}`);
+    }
+  }
+
+  // Add supervisor to member lists (supervisor is always the first entry)
+  const supervisorMember: MemberInfo = {
+    id: supervisorId,
+    name: `${plan.teamName ?? "Team"} Supervisor`,
+    role: "Team coordinator and message router",
+    emoji: "🎯",
+    toolProfile: "minimal",
+    modelTier: "cheap",
+  };
+  memberIds.unshift(supervisorId);
+  members.unshift(supervisorMember);
+
+  // Initialize supervisor deploy report
+  agentReports.unshift({
+    agentId: supervisorId,
+    name: supervisorMember.name,
+    role: supervisorMember.role,
+    emoji: supervisorMember.emoji,
+    modelTier: supervisorMember.modelTier,
+    toolProfile: supervisorMember.toolProfile,
+    steps: [],
+  });
 
   const projectId = generateProjectId();
   const now = new Date().toISOString();
 
   const project: Project = {
     projectId,
-    name: params.name ?? truncateCJKSafe(plan.teamDescription, 50),
+    name: params.name ?? plan.teamName ?? truncateCJKSafe(plan.teamDescription, 50),
     description: plan.teamDescription,
     status: "active",
     version: 1,
@@ -200,6 +241,7 @@ export async function createProjectFromPlan(
     supervisorId,
     memberIds,
     members,
+    autoSupervisor: true,
     memory: defaultMemoryConfig(),
     coordination: defaultCoordinationConfig(),
     visibility: defaultVisibility(),
@@ -236,29 +278,92 @@ export async function createProjectFromPlan(
       status: "fail",
       detail: `Supervisor SOUL.md write failed: ${msg}`,
     });
-    // MANDATORY: update project status to reflect the problem
+    // MANDATORY: SOUL.md is critical for supervisor function — fail the deploy
     project.status = "error";
     await saveProject(project);
-    console.error(
-      `[agent-team] CRITICAL: Failed to write supervisor SOUL.md for ${supervisorId}: ${msg}`,
+    throw new Error(
+      `Failed to write supervisor SOUL.md for ${supervisorId}: ${msg}`,
     );
   }
 
-  // ── Step 5: Write tool policy for each agent ──
+  // ── Step 4b: Write Supervisor auxiliary files + config patch ──
+
+  // AGENTS.md — supervisor-specific guidelines
+  const supervisorAgentsMd = generateSupervisorAgentsMd(project, nonSupervisorMembers);
+  try {
+    await callGateway("agents.files.set", {
+      agentId: supervisorId,
+      name: "AGENTS.md",
+      content: supervisorAgentsMd,
+    });
+  } catch {
+    // Non-critical: supervisor can still function without AGENTS.md
+  }
+
+  // TOOLS.md — sessions tools only
+  const supervisorToolsMd = [
+    `# TOOLS.md — ${supervisorMember.name}`,
+    ``,
+    `> 你的核心工具是团队通信和协调。`,
+    ``,
+    `## 可用工具`,
+    ``,
+    `- **sessions_send** — 向团队成员发送消息或任务指令，并接收回复`,
+    `- **sessions_list** — 查看当前活跃的会话列表`,
+    `- **sessions_history** — 查看某个会话的历史消息`,
+    `- **memory_share** — 将重要用户信息共享给团队成员`,
+    `- **session_status** — 查看会话状态`,
+    ``,
+    `## 使用原则`,
+    ``,
+    `- 使用 sessions_send 时，message 应该是清晰的任务指令，而非原始用户消息`,
+    `- 等待成员回复后再进行下一步操作`,
+    `- 如果成员超时未响应，尝试其他成员或自行处理`,
+  ].join("\n");
+  try {
+    await callGateway("agents.files.set", {
+      agentId: supervisorId,
+      name: "TOOLS.md",
+      content: supervisorToolsMd,
+    });
+  } catch {
+    // Non-critical
+  }
+
+  // BOOTSTRAP.md — no-op stub (supervisor has no startup tasks)
+  try {
+    await callGateway("agents.files.set", {
+      agentId: supervisorId,
+      name: "BOOTSTRAP.md",
+      content: "# BOOTSTRAP\n\n> Supervisor agent — no startup tasks required.\n",
+    });
+  } catch {
+    // Non-critical
+  }
+
+  // ── Step 5: Build unified config patch ──
+  // Merges supervisor config, worker tool policies, and A2A settings
+  // into a SINGLE config.get + config.patch round-trip to avoid race conditions.
 
   let toolPoliciesWritten = 0;
 
-  // Build tool config patches from blueprint tool recommendations.
-  // Skip agents whose inferredCapabilities were already written by the orchestrator
-  // (buildFullConfigPatch handles tools + model + heartbeat + skills in one patch).
-  // Writing blueprint tools on top would create allow+alsoAllow conflict.
-  const configPatches: Array<{ agentId: string; tools: Record<string, unknown> }> = [];
+  // 5a. Supervisor config entry
+  const allAgentEntries: Array<{ id: string; tools: Record<string, unknown> }> = [
+    {
+      id: supervisorId,
+      tools: {
+        profile: "minimal",
+        alsoAllow: ["group:sessions", "memory_share"],
+      },
+    },
+  ];
+
+  // 5b. Worker tool policies from blueprint recommendations
   for (const bp of plan.agents) {
     const deployedId = deployedIdMap.get(bp.id);
     if (!deployedId || !bp.tools) continue;
 
     if (bp.inferredCapabilities) {
-      // Orchestrator already wrote full config for this agent — skip
       const report = agentReports.find((r) => r.agentId === deployedId);
       report?.steps.push({
         step: "tool-policy",
@@ -275,50 +380,94 @@ export async function createProjectFromPlan(
     if (bp.tools.deny?.length) toolsCfg.deny = bp.tools.deny;
 
     if (Object.keys(toolsCfg).length > 0) {
-      configPatches.push({ agentId: deployedId, tools: toolsCfg });
+      allAgentEntries.push({ id: deployedId, tools: toolsCfg });
+      toolPoliciesWritten++;
     }
   }
 
-  if (configPatches.length > 0) {
-    const mergedList = configPatches.map(({ agentId, tools }) => ({
-      id: agentId,
-      tools,
-    }));
-
-    try {
-      const snapshot = (await callGateway("config.get", {})) as
-        | Record<string, unknown>
-        | undefined;
-      const baseHash = (snapshot as Record<string, unknown> | undefined)
-        ?.hash as string | undefined;
-
-      await callGateway("config.patch", {
-        raw: JSON.stringify({ agents: { list: mergedList } }),
-        ...(baseHash ? { baseHash } : {}),
+  // 5c. Worker A2A communication: add sessions_send + memory_share to alsoAllow
+  const workerIds = memberIds.filter((id) => id !== supervisorId);
+  for (const id of workerIds) {
+    // Check if already in the list from 5b
+    const existing = allAgentEntries.find((e) => e.id === id);
+    if (existing) {
+      // Merge alsoAllow into existing entry
+      const prev = (existing.tools.alsoAllow as string[] | undefined) ?? [];
+      existing.tools.alsoAllow = [...new Set([...prev, "sessions_send", "memory_share"])];
+    } else {
+      allAgentEntries.push({
+        id,
+        tools: { alsoAllow: ["sessions_send", "memory_share"] },
       });
-      toolPoliciesWritten = configPatches.length;
+    }
+  }
 
-      // Record success in reports
-      for (const { agentId } of configPatches) {
-        const report = agentReports.find((r) => r.agentId === agentId);
-        report?.steps.push({
-          step: "tool-policy",
-          status: "ok",
-          detail: "Tool policy written to config",
-        });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[agent-team] Failed to write tool policies: ${msg}`);
-      // Record failure in reports
-      for (const { agentId } of configPatches) {
-        const report = agentReports.find((r) => r.agentId === agentId);
-        report?.steps.push({
-          step: "tool-policy",
-          status: "warn",
-          detail: `Tool policy write failed: ${msg}`,
-        });
-      }
+  // Single config.get + config.patch
+  try {
+    const snapshot = (await callGateway("config.get", {})) as
+      | Record<string, unknown>
+      | undefined;
+    const baseHash = (snapshot as Record<string, unknown> | undefined)
+      ?.hash as string | undefined;
+
+    await callGateway("config.patch", {
+      raw: JSON.stringify({
+        tools: {
+          agentToAgent: {
+            enabled: true,
+            allow: [`${planId}--*`],
+          },
+        },
+        agents: { list: allAgentEntries },
+      }),
+      ...(baseHash ? { baseHash } : {}),
+    });
+
+    // Record success
+    supervisorReport?.steps.push({
+      step: "config",
+      status: "ok",
+      detail: "Supervisor config patch applied (minimal profile + sessions)",
+    });
+    for (const entry of allAgentEntries) {
+      if (entry.id === supervisorId) continue;
+      const report = agentReports.find((r) => r.agentId === entry.id);
+      report?.steps.push({
+        step: "tool-policy",
+        status: "ok",
+        detail: "Tool policy written to config",
+      });
+    }
+    for (const report of agentReports) {
+      report.steps.push({
+        step: "a2a",
+        status: "ok",
+        detail: `A2A communication enabled (allow: ${planId}--*)`,
+      });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[agent-team] Failed to apply unified config patch: ${msg}`);
+    supervisorReport?.steps.push({
+      step: "config",
+      status: "warn",
+      detail: `Config patch failed: ${msg}`,
+    });
+    for (const entry of allAgentEntries) {
+      if (entry.id === supervisorId) continue;
+      const report = agentReports.find((r) => r.agentId === entry.id);
+      report?.steps.push({
+        step: "tool-policy",
+        status: "warn",
+        detail: `Tool policy write failed: ${msg}`,
+      });
+    }
+    for (const report of agentReports) {
+      report.steps.push({
+        step: "a2a",
+        status: "warn",
+        detail: `A2A auto-config failed: ${msg}`,
+      });
     }
   }
 
@@ -369,7 +518,8 @@ export async function createProjectFromPlan(
 
 function defaultMemoryConfig(): ProjectMemoryConfig {
   return {
-    mode: "isolated",
+    mode: "read-shared",
+    sharedCategories: ["fact", "identity", "preference"],
   };
 }
 
@@ -424,4 +574,50 @@ async function readOrchestratorState(
   } catch {
     return null;
   }
+}
+
+// ── Supervisor AGENTS.md Generator ──────────────────────────────────────
+
+function generateSupervisorAgentsMd(
+  project: Project,
+  workerMembers: MemberInfo[],
+): string {
+  const lines: string[] = [
+    `# AGENTS.md — ${project.name} Supervisor`,
+    ``,
+    `> 你是团队「${project.name}」的协调者。`,
+    ``,
+    `## 你的职责`,
+    ``,
+    `- 接收用户消息，判断应由哪个团队成员处理`,
+    `- 对于跨领域任务，分解为子任务分发给多个成员`,
+    `- 收集成员结果，合成最终回复交付给用户`,
+    `- 监控成员响应状态，处理超时和错误`,
+    ``,
+    `## 团队成员`,
+    ``,
+  ];
+
+  for (const m of workerMembers) {
+    const emoji = m.emoji ? `${m.emoji} ` : "";
+    lines.push(`- ${emoji}**${m.name}** (\`${m.id}\`): ${m.role}`);
+  }
+
+  lines.push(
+    ``,
+    `## 每次对话`,
+    ``,
+    `1. 读取 \`SOUL.md\` — 路由表、任务分解协议、结果收集协议`,
+    `2. 读取 \`TOOLS.md\` — 你可用的通信工具`,
+    `3. 判断用户意图，路由到正确的成员`,
+    ``,
+    `## 行为规范`,
+    ``,
+    `- 简单单领域请求：路由到 1 个成员，转发其回复`,
+    `- 跨领域复杂请求：分解子任务，分发给多个成员，合成结果`,
+    `- 不要自己回答专业问题，交给专业成员处理`,
+    `- 不要暴露内部路由逻辑、agent ID 或团队结构给用户`,
+  );
+
+  return lines.join("\n");
 }

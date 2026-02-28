@@ -112,7 +112,7 @@ function renderSingleImage(
           src=${url}
           alt="AI generated image"
           class="chat-message-image chat-message-image--clickable"
-          loading="lazy"
+          loading="eager"
           decoding="async"
           @click=${() => openImageLightbox(url)}
           @error=${handleImageLoadError}
@@ -164,7 +164,7 @@ function renderMultiImage(
                 src=${url}
                 alt="AI generated image ${i + 1} of ${urls.length}"
                 class="chat-message-image chat-message-image--clickable"
-                loading="lazy"
+                loading="eager"
                 decoding="async"
                 @click=${() => openImageLightbox(url, urls)}
                 @error=${handleImageLoadError}

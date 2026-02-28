@@ -36,6 +36,8 @@ export type ChatState = {
   chatStream: string | null;
   chatStreamStartedAt: number | null;
   chatStreamJustCompleted?: boolean;
+  /** Active media generation tool (video_gen / image_gen / image_edit) detected in stream */
+  chatMediaToolActive: { tool: string; args?: Record<string, unknown> } | null;
   lastError: string | null;
   /** OpenClawCN: auto-failover notification banner */
   failoverBanner: {
@@ -163,6 +165,7 @@ export async function sendChatMessage(
 
   state.chatSending = true;
   state.lastError = null;
+  state.chatMediaToolActive = null;
   const runId = generateUUID();
   state.chatRunId = runId;
   state.chatStream = "";
@@ -203,7 +206,8 @@ export async function sendChatMessage(
     state.chatRunId = null;
     state.chatStream = null;
     state.chatStreamStartedAt = null;
-    
+    state.chatMediaToolActive = null;
+
     // 检测是否为授权错误 - 如果是，返回特殊标记而不是设置 lastError
     // 这样可以触发激活弹框而不是显示红色错误
     const isLicenseError = error.includes("授权无效") || 
@@ -293,6 +297,15 @@ export function handleChatEvent(
     if (rawText && /<!--CLAWDBOT_FREE_MODEL_NOTIFICATION:/.test(rawText)) {
       freeModelSwitchRuns.add(payload.runId);
     }
+    // [CN-PATCH:media-tool-heartbeat] Detect media generation tool marker
+    if (rawText && /<!--MEDIA_TOOL_ACTIVE:/.test(rawText)) {
+      const mtMatch = rawText.match(/<!--MEDIA_TOOL_ACTIVE:(.+?)-->/);
+      if (mtMatch) {
+        try {
+          state.chatMediaToolActive = JSON.parse(mtMatch[1]) as { tool: string; args?: Record<string, unknown> };
+        } catch { /* ignore */ }
+      }
+    }
     // OpenClawCN: detect failover notification in raw stream text
     if (rawText && /<!--CLAWDBOT_FAILOVER_NOTIFICATION:/.test(rawText)) {
       const match = rawText.match(/<!--CLAWDBOT_FAILOVER_NOTIFICATION:(.+?)-->/);
@@ -343,6 +356,7 @@ export function handleChatEvent(
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    state.chatMediaToolActive = null;
     // Return special indicator so gateway can auto-create new session
     if (hadModelSwitch) return "final_model_switch";
     if (failoverInfo) return "final_failover";
@@ -350,10 +364,12 @@ export function handleChatEvent(
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    state.chatMediaToolActive = null;
   } else if (payload.state === "error") {
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    state.chatMediaToolActive = null;
     const errorMsg = payload.errorMessage ?? "聊天请求失败";
     state.lastError = errorMsg;
 

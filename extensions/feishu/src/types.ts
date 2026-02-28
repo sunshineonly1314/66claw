@@ -28,35 +28,25 @@ export type FeishuIdType = "open_id" | "user_id" | "union_id" | "chat_id";
 // ============================================================================
 
 /**
- * 飞书应用配置 (旧版嵌套结构，保持兼容)
- */
-export interface FeishuAppConfig {
-  /** 应用 App ID */
-  appId: string;
-  /** 应用 App Secret */
-  appSecret: string;
-  /** 事件订阅 Verification Token (可选) */
-  verificationToken?: string;
-  /** 事件订阅 Encrypt Key (可选，用于加密) */
-  encryptKey?: string;
-}
-
-/**
  * 飞书渠道配置
- * 支持两种风格：旧版嵌套 (app.appId) 和新版扁平 (appId)
  */
 export interface FeishuChannelConfig {
   /** 是否启用 */
   enabled?: boolean;
 
-  // 新版扁平配置 (推荐)
+  // 应用凭证
   appId?: string;
   appSecret?: string;
   encryptKey?: string;
   verificationToken?: string;
 
-  // 旧版嵌套配置 (兼容)
-  app?: FeishuAppConfig;
+  // 旧版嵌套配置 (运行时兼容，UI 不再渲染)
+  app?: {
+    appId?: string;
+    appSecret?: string;
+    encryptKey?: string;
+    verificationToken?: string;
+  };
 
   // 连接配置
   domain?: FeishuDomain;
@@ -88,8 +78,8 @@ export interface FeishuChannelConfig {
   // 媒体配置
   mediaMaxMb?: number;
 
-  // 工具配置
-  tools?: FeishuToolsConfig;
+  // 高级配置 (流式卡片、多机器人安全、工具开关)
+  advanced?: FeishuAdvancedConfig;
 }
 
 /**
@@ -117,6 +107,20 @@ export interface FeishuToolsConfig {
   drive?: boolean;
   perm?: boolean;
   scopes?: boolean;
+  task?: boolean;
+}
+
+/**
+ * 飞书高级配置
+ * UI 中渲染为可折叠的高级选项区域
+ */
+export interface FeishuAdvancedConfig {
+  /** 是否启用流式卡片渲染 (默认 false，需要 cardkit:card 权限) */
+  streaming?: boolean;
+  /** 多机器人群中是否允许不 @本机器人就响应 (默认 false) */
+  allowMentionlessInMultiBotGroup?: boolean;
+  /** 工具功能开关 */
+  tools?: FeishuToolsConfig;
 }
 
 // ============================================================================
