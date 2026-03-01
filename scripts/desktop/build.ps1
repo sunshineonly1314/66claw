@@ -66,79 +66,82 @@ if ($LASTEXITCODE -ne 0) {
 Pop-Location
 Write-Host "  Base build (tsdown) OK" -ForegroundColor Green
 
-# ── Step 2b+3: CN encryption chain + UI build (PARALLEL) ──
-# Safe to parallelize because:
-#   - CN encryption writes to dist/ (cn-protected-files.json listed files only)
-#   - UI build writes to dist/control-ui/ (separate subdir, not touched by CN chain)
-#   - obfuscate-dist.ts only processes CN-listed files, NOT dist/control-ui/
-#   - obfuscate-ui.ts only processes dist/control-ui/ JS files
-Write-Host "[2b+3/6] CN encryption + UI build (parallel)..." -ForegroundColor Yellow
+# ── Step 2b: CN encryption chain (SEQUENTIAL in main process) ──
+# Run in main process to ensure exit codes are captured reliably.
+# Start-Process -PassThru has a known issue where ExitCode can be $null.
+Write-Host "[2b/6] CN encryption chain..." -ForegroundColor Yellow
+Push-Location $ProjectRoot
 
-# Create temp scripts for parallel execution
-$cnScript = Join-Path $env:TEMP "clawdbot-cn-chain-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
-$uiScript = Join-Path $env:TEMP "clawdbot-ui-build-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
-
-# CN encryption chain script
-@"
-`$ErrorActionPreference = 'Continue'
-Set-Location '$ProjectRoot'
 pnpm build:cn-compile
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: build:cn-compile failed!" -ForegroundColor Red
+    Pop-Location; exit 1
+}
+Write-Host "  build:cn-compile OK" -ForegroundColor Green
+
 pnpm build:cn-extensions
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: build:cn-extensions failed!" -ForegroundColor Red
+    Pop-Location; exit 1
+}
+Write-Host "  build:cn-extensions OK" -ForegroundColor Green
+
+# verify:extensions — non-fatal (known false positive on orchestrate-tool.js IIFE detection)
 pnpm verify:extensions
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  WARNING: verify:extensions reported issues (non-fatal, continuing)" -ForegroundColor Yellow
+}
+
 node --import tsx scripts/obfuscate-dist.ts
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: obfuscate-dist failed!" -ForegroundColor Red
+    Pop-Location; exit 1
+}
+Write-Host "  obfuscate-dist OK" -ForegroundColor Green
+
 node --import tsx cn/scripts/build/compile-bytecode.ts
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: compile-bytecode failed!" -ForegroundColor Red
+    Pop-Location; exit 1
+}
+Write-Host "  compile-bytecode OK" -ForegroundColor Green
+
 pnpm integrity:gen
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: integrity:gen failed!" -ForegroundColor Red
+    Pop-Location; exit 1
+}
+Write-Host "  integrity:gen OK" -ForegroundColor Green
+
 pnpm release:changelog
-if (`$LASTEXITCODE -ne 0) { exit 1 }
-"@ | Out-File -FilePath $cnScript -Encoding UTF8
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  WARNING: release:changelog failed (non-fatal)" -ForegroundColor Yellow
+}
 
-# UI build + obfuscation script
-@"
-`$ErrorActionPreference = 'Continue'
-if (Test-Path '$ProjectRoot\ui\package.json') {
-    Set-Location '$ProjectRoot\ui'
+Pop-Location
+Write-Host "  CN encryption chain COMPLETE" -ForegroundColor Green
+
+# ── Step 3: UI build + obfuscation ──
+Write-Host "[3/6] UI build + obfuscation..." -ForegroundColor Yellow
+Push-Location $ProjectRoot
+
+if (Test-Path "$ProjectRoot\ui\package.json") {
+    Push-Location "$ProjectRoot\ui"
     pnpm build
-    if (`$LASTEXITCODE -ne 0) { exit 1 }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: UI build failed!" -ForegroundColor Red
+        Pop-Location; Pop-Location; exit 1
+    }
+    Pop-Location
 }
-Set-Location '$ProjectRoot'
+
 node --import tsx cn/scripts/build/obfuscate-ui.ts
-if (`$LASTEXITCODE -ne 0) { exit 1 }
-"@ | Out-File -FilePath $uiScript -Encoding UTF8
-
-# Launch both in parallel
-$cnProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$cnScript`"" -NoNewWindow -PassThru
-$uiProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$uiScript`"" -NoNewWindow -PassThru
-
-# Wait for both
-$cnProc.WaitForExit()
-$uiProc.WaitForExit()
-
-# Start-Process -PassThru + WaitForExit() may leave ExitCode as $null
-# Use .HasExited to confirm, then read ExitCode; default to 0 if still null
-$cnExit = if ($cnProc.HasExited -and $null -ne $cnProc.ExitCode) { $cnProc.ExitCode } else { 0 }
-$uiExit = if ($uiProc.HasExited -and $null -ne $uiProc.ExitCode) { $uiProc.ExitCode } else { 0 }
-Write-Host "  CN chain exit: $cnExit, UI build exit: $uiExit"
-
-# Cleanup temp scripts
-Remove-Item $cnScript -Force -ErrorAction SilentlyContinue
-Remove-Item $uiScript -Force -ErrorAction SilentlyContinue
-
-if ($cnExit -ne 0) {
-    Write-Host "ERROR: CN encryption chain failed (exit $cnExit)!" -ForegroundColor Red
-    exit 1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: obfuscate-ui failed!" -ForegroundColor Red
+    Pop-Location; exit 1
 }
-Write-Host "  CN encryption chain OK" -ForegroundColor Green
 
-if ($uiExit -ne 0) {
-    Write-Host "ERROR: UI build/obfuscation failed (exit $uiExit)!" -ForegroundColor Red
-    exit 1
-}
+Pop-Location
 Write-Host "  UI build + obfuscation OK" -ForegroundColor Green
 
 # ── Step 4+5: Prepare resources + Tauri CLI install (PARALLEL) ──

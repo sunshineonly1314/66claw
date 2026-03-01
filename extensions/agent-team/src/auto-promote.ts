@@ -9,7 +9,7 @@
  * This is fire-and-forget — errors do not affect the main flow.
  */
 
-import { readProfile } from "../../../src/memory/profile-store.js";
+import { readProfile } from "../../../dist/memory/profile-store.js";
 import type { SharedCategory } from "./types.js";
 import {
   withSharedProfileLock,

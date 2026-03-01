@@ -316,7 +316,8 @@
     "directories": [
       "extensions/openclawwechat/",
       "extensions/agent-team/",
-      "extensions/orchestrator/"
+      "extensions/orchestrator/",
+      "extensions/memory-core/"
     ]
   },
 
