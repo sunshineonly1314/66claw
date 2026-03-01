@@ -533,9 +533,34 @@ if [[ -d "$ROOT_DIR/extensions" ]]; then
 fi
 
 # ── Copy skills ──
-if [[ -d "$ROOT_DIR/skills" ]]; then
-  log "Copying skills..."
-  cp -R "$ROOT_DIR/skills" "$APP_ROOT/skills"
+SKILLS_SRC=""
+for try_skills in "$ROOT_DIR/skills-merged" "$ROOT_DIR/skills"; do
+  if [[ -d "$try_skills" ]]; then
+    SKILLS_SRC="$try_skills"
+    break
+  fi
+done
+if [[ -n "$SKILLS_SRC" ]]; then
+  log "Copying skills from $SKILLS_SRC..."
+  mkdir -p "$APP_ROOT/skills"
+  # Exclude private desktop automation skills
+  for skill_dir in "$SKILLS_SRC"/*/; do
+    skill_name=$(basename "$skill_dir")
+    case "$skill_name" in
+      wechat-desktop|wecom-desktop) log "  Excluded: $skill_name"; continue ;;
+    esac
+    cp -R "$skill_dir" "$APP_ROOT/skills/$skill_name"
+  done
+  SKILLS_COUNT=$(find "$APP_ROOT/skills" -maxdepth 1 -type d | wc -l | tr -d ' ')
+  SKILLS_COUNT=$((SKILLS_COUNT - 1))
+  log "Skills bundled: $SKILLS_COUNT"
+  if [[ "$SKILLS_COUNT" -lt 500 ]]; then
+    err "Only $SKILLS_COUNT skills found — expected 500+. Check git push completeness."
+    exit 1
+  fi
+else
+  err "skills/ directory not found! Skills page will be empty."
+  exit 1
 fi
 
 # ── Verify UI dist (built by pnpm ui:build into dist/control-ui/, already copied with dist/) ──
@@ -555,25 +580,53 @@ if [[ -d "$ROOT_DIR/assets" ]]; then
   cp -R "$ROOT_DIR/assets" "$APP_ROOT/" 2>/dev/null || true
 fi
 
-# ── Copy data (MCP index) ──
+# ── Copy data (MCP index) — whitelist mode, never copy secrets ──
+# SECURITY: data/ contains clawdbot.json (API keys), agents/ (auth-profiles),
+#           identity/ (device tokens). Only copy seed data for distribution.
 mkdir -p "$APP_ROOT/data"
-if [[ -d "$ROOT_DIR/data" ]]; then
-  cp -R "$ROOT_DIR/data/"* "$APP_ROOT/data/" 2>/dev/null || true
-fi
-# Verify mcp-index data was bundled (CI uploads data/ via SCP before build).
-# Without it, MCP marketplace will be empty until runtime sync.
+SEED_FILES=(
+  "mcp-index.db"
+  "mcp-index.json"
+  "tool-index.sqlite"
+  "skill-availability-dictionary.json"
+  "skill-availability-schema.json"
+  "skill-verification-needed.json"
+  "skills-availability-dictionary.json"
+  "skills-availability-dictionary-enriched.json"
+  "README-skill-availability.md"
+)
+SEED_DIRS=("subagents" "qrcodes")
+for f in "${SEED_FILES[@]}"; do
+  [[ -f "$ROOT_DIR/data/$f" ]] && cp "$ROOT_DIR/data/$f" "$APP_ROOT/data/$f"
+done
+# Copy mcp-index-enhanced (any version: v4, v5, etc.)
+for enhanced in "$ROOT_DIR"/data/mcp-index-enhanced*.json; do
+  [[ -f "$enhanced" ]] && cp "$enhanced" "$APP_ROOT/data/$(basename "$enhanced")"
+done
+for d in "${SEED_DIRS[@]}"; do
+  [[ -d "$ROOT_DIR/data/$d" ]] && cp -R "$ROOT_DIR/data/$d" "$APP_ROOT/data/$d"
+done
+
+# Verify MCP index was bundled with enough items
 if [[ -f "$APP_ROOT/data/mcp-index.json" ]]; then
   MCP_ITEMS=$(node -pe "JSON.parse(require('fs').readFileSync('$APP_ROOT/data/mcp-index.json','utf8')).items?.length||0" 2>/dev/null || echo 0)
   log "MCP index bundled: $MCP_ITEMS items"
-  if [[ -f "$APP_ROOT/data/mcp-index-enhanced.json" ]]; then
-    log "MCP enhanced index bundled (with Chinese translations)"
+  if [[ "$MCP_ITEMS" -lt 1000 ]]; then
+    err "MCP index only has $MCP_ITEMS items — expected 1000+. MCP page will be nearly empty!"
+    err "Ensure data/mcp-index.json is populated before build."
+    exit 1
+  fi
+  # Check enhanced index
+  ENHANCED_COUNT=$(ls "$APP_ROOT"/data/mcp-index-enhanced*.json 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$ENHANCED_COUNT" -gt 0 ]]; then
+    log "MCP enhanced index bundled ($ENHANCED_COUNT files)"
+  else
+    warn "No mcp-index-enhanced*.json found — Chinese translations will be missing"
   fi
 else
-  warn "mcp-index.json not found in data/ — MCP marketplace will be empty on first launch!"
-  warn "Ensure CI uploads data/ files before build (ci/build-macos.sh handles this)."
-  # Create minimal fallback so Gateway doesn't error on startup
-  echo '{"items":[],"generated":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","seed":true}' \
-    > "$APP_ROOT/data/mcp-index.json"
+  err "mcp-index.json not found in data/ — MCP marketplace will be empty!"
+  err "Ensure CI uploads data/ files before build."
+  exit 1
 fi
 
 # ── Uninstall helper ──

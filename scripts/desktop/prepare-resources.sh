@@ -404,7 +404,15 @@ for skills_src in "$PROJECT_ROOT/skills-merged" "$PROJECT_ROOT/skills"; do
 done
 # NOTE: skills-private/ is intentionally NOT copied (contains wechat-desktop, wecom-desktop)
 if [[ "$SKILLS_FOUND" != "true" ]]; then
-  warn "skills not found. Skills will be unavailable."
+  err "skills/ directory not found! Skills page will be empty."
+  exit 1
+fi
+# Verify minimum skills count
+BUNDLED_SKILLS=$(find "$RESOURCES_DIR/skills" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+BUNDLED_SKILLS=$((BUNDLED_SKILLS - 1))
+if [[ "$BUNDLED_SKILLS" -lt 500 ]]; then
+  err "Only $BUNDLED_SKILLS skills bundled — expected 500+. Check git push completeness."
+  exit 1
 fi
 
 # ── 6. Data & docs ──
@@ -421,7 +429,6 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
   SEED_FILES=(
     "mcp-index.db"
     "mcp-index.json"
-    "mcp-index-enhanced.json"
     "tool-index.sqlite"
     "skill-availability-dictionary.json"
     "skill-availability-schema.json"
@@ -436,6 +443,10 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
       cp "$PROJECT_ROOT/data/$f" "$RESOURCES_DIR/data/$f"
     fi
   done
+  # Copy mcp-index-enhanced (any version: v4, v5, etc.)
+  for enhanced in "$PROJECT_ROOT"/data/mcp-index-enhanced*.json; do
+    [[ -f "$enhanced" ]] && cp "$enhanced" "$RESOURCES_DIR/data/$(basename "$enhanced")"
+  done
   for d in "${SEED_DIRS[@]}"; do
     if [[ -d "$PROJECT_ROOT/data/$d" ]]; then
       cp -R "$PROJECT_ROOT/data/$d" "$RESOURCES_DIR/data/$d"
@@ -448,6 +459,16 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
     echo '{"items":[],"generated":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","seed":true}' \
       > "$RESOURCES_DIR/data/mcp-index.json"
   fi
+  # Verify MCP index has enough items
+  MCP_ITEMS=$(node -pe "JSON.parse(require('fs').readFileSync('$RESOURCES_DIR/data/mcp-index.json','utf8')).items?.length||0" 2>/dev/null || echo 0)
+  if [[ "$MCP_ITEMS" -lt 1000 ]]; then
+    err "MCP index only has $MCP_ITEMS items — expected 1000+. MCP page will be nearly empty!"
+    exit 1
+  fi
+  log "  MCP index: $MCP_ITEMS items"
+  # Check enhanced index
+  ENHANCED_COUNT=$(ls "$RESOURCES_DIR"/data/mcp-index-enhanced*.json 2>/dev/null | wc -l | tr -d ' ')
+  [[ "$ENHANCED_COUNT" -gt 0 ]] && log "  MCP enhanced index: $ENHANCED_COUNT files" || warn "  No mcp-index-enhanced*.json — Chinese translations missing"
   DATA_SIZE=$(du -sh "$RESOURCES_DIR/data" 2>/dev/null | cut -f1)
   log "  OK: data/ ($DATA_SIZE, seed data only)"
 fi

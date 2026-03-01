@@ -404,7 +404,14 @@ foreach ($src in $skillsSources) {
 }
 # NOTE: skills-private/ is intentionally NOT copied (contains wechat-desktop, wecom-desktop)
 if (-not $skillsFound) {
-    Write-Host "  WARNING: skills not found. Skills will be unavailable." -ForegroundColor Yellow
+    Write-Host "  ERROR: skills/ directory not found! Skills page will be empty." -ForegroundColor Red
+    exit 1
+}
+# Verify minimum skills count
+$bundledSkillsCount = (Get-ChildItem "$ResourcesDir\skills" -Directory -ErrorAction SilentlyContinue).Count
+if ($bundledSkillsCount -lt 500) {
+    Write-Host "  ERROR: Only $bundledSkillsCount skills bundled — expected 500+. Check git push completeness." -ForegroundColor Red
+    exit 1
 }
 
 # ── 6. Bundled tool binaries (CN users cannot access GitHub to download) ──
@@ -448,7 +455,6 @@ if (Test-Path "$ProjectRoot\data") {
     $seedFiles = @(
         "mcp-index.db",
         "mcp-index.json",
-        "mcp-index-enhanced.json",
         "tool-index.sqlite",
         "skill-availability-dictionary.json",
         "skill-availability-schema.json",
@@ -464,6 +470,10 @@ if (Test-Path "$ProjectRoot\data") {
             Copy-Item $src "$dataResDir\$f" -Force
         }
     }
+    # Copy mcp-index-enhanced (any version: v4, v5, etc.)
+    Get-ChildItem "$ProjectRoot\data\mcp-index-enhanced*.json" -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName "$dataResDir\$($_.Name)" -Force
+    }
     foreach ($d in $seedDirs) {
         $src = Join-Path "$ProjectRoot\data" $d
         if (Test-Path $src) {
@@ -478,17 +488,31 @@ if (Test-Path "$ProjectRoot\data") {
         $seedJson = '{"items":[],"generated":"' + (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ") + '","seed":true}'
         Set-Content -Path $mcpIndexPath -Value $seedJson -Encoding UTF8
     }
+    # Verify MCP index has enough items
+    $mcpItems = 0
+    try {
+        $mcpData = Get-Content $mcpIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $mcpItems = $mcpData.items.Count
+    } catch { }
+    if ($mcpItems -lt 1000) {
+        Write-Host "  ERROR: MCP index only has $mcpItems items — expected 1000+. MCP page will be nearly empty!" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  MCP index: $mcpItems items"
+    # Check enhanced index
+    $enhancedCount = (Get-ChildItem "$dataResDir\mcp-index-enhanced*.json" -ErrorAction SilentlyContinue).Count
+    if ($enhancedCount -gt 0) {
+        Write-Host "  MCP enhanced index: $enhancedCount files"
+    } else {
+        Write-Host "  WARNING: No mcp-index-enhanced*.json — Chinese translations missing" -ForegroundColor Yellow
+    }
     $dataSize = [math]::Round(((Get-ChildItem $dataResDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB), 1)
     Write-Host "  OK: data/ ($dataSize MB, seed data only)"
 } else {
-    Write-Host "  WARNING: data/ not found at $ProjectRoot\data" -ForegroundColor Yellow
-    Write-Host "  The installer will start without pre-loaded index data." -ForegroundColor Yellow
-    # Still create minimal seed even when data/ directory is missing
-    New-Item -ItemType Directory -Force -Path $dataResDir | Out-Null
-    $mcpIndexPath = Join-Path $dataResDir "mcp-index.json"
-    $seedJson = '{"items":[],"generated":"' + (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ") + '","seed":true}'
-    Set-Content -Path $mcpIndexPath -Value $seedJson -Encoding UTF8
-    Write-Host "  Created minimal mcp-index.json seed"
+    Write-Host "  ERROR: data/ not found at $ProjectRoot\data" -ForegroundColor Red
+    Write-Host "  MCP marketplace and Skills pages will be empty!" -ForegroundColor Red
+    Write-Host "  Ensure data/mcp-index.json is populated before build." -ForegroundColor Red
+    exit 1
 }
 # 🔥 P0 修复: 先复制 docs/reference/templates/ 作为 base，再用 CN 版本覆盖
 # 之前只从 docs-cn/ 复制（目录只有 .gitkeep），导致模板缺失，chat 无法使用
