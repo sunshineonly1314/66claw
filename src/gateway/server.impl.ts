@@ -38,7 +38,9 @@ import { startHeartbeatRunner, type HeartbeatRunner } from "../infra/heartbeat-r
 import { getMachineDisplayName } from "../infra/machine-name.js";
 import { ensureOpenClawCNCliOnPath } from "../infra/path-env.js";
 import { setGatewaySigusr1RestartPolicy, setPreRestartDeferralCheck } from "../infra/restart.js";
+import { autoMigrateLegacyDirs } from "../infra/state-migration-legacy-dirs.js";
 import { autoMigrateToPortable } from "../infra/state-migration-portable.js";
+import { autoMigrateLegacyState } from "../infra/state-migrations.js";
 import { initStateStore, closeStateStore } from "../infra/state-store/index.js";
 import type { StateStoreConfig } from "../infra/state-store/index.js";
 import { initDistributedBroadcast } from "./distributed-broadcast.js";
@@ -221,6 +223,25 @@ export async function startGatewayServer(
     }
   }
 
+  // [CN-PATCH:legacy-dir-migration] Cross-platform migration from legacy state
+  // dirs (.clawdbotcn, .clawdbot, .moldbot, .moltbot) into .openclawcn.
+  // Handles workspace memory merge, config merge, credentials copy, and
+  // additional directory copy. Runs before config is read so merged config
+  // is available for migrateLegacyConfig() field-name transformation.
+  const legacyDirMigration = autoMigrateLegacyDirs();
+  if (legacyDirMigration.migrated) {
+    const migLog = createSubsystemLogger("legacy-dir-migration");
+    migLog.info(
+      `Migrated data from legacy dirs:\n` +
+        legacyDirMigration.changes.map((c) => `  - ${c}`).join("\n"),
+    );
+    if (legacyDirMigration.warnings.length > 0) {
+      migLog.warn(
+        `Migration warnings:\n` + legacyDirMigration.warnings.map((w) => `  - ${w}`).join("\n"),
+      );
+    }
+  }
+
   let configSnapshot = await readConfigFileSnapshot();
   if (configSnapshot.legacyIssues.length > 0) {
     if (isNixMode) {
@@ -288,6 +309,30 @@ export async function startGatewayServer(
   }
 
   const cfgAtStart = loadConfig();
+
+  // [CN-PATCH:legacy-dir-migration] Step 2: Agent-level migration (needs config).
+  // Canonicalizes session keys, moves agent/ → agents/{id}/agent/,
+  // migrates WhatsApp auth files. Idempotent, safe on every startup.
+  try {
+    const legacyState = await autoMigrateLegacyState({ cfg: cfgAtStart });
+    if (legacyState.migrated) {
+      log.info(
+        `gateway: auto-migrated legacy agent state:\n${legacyState.changes
+          .map((c) => `- ${c}`)
+          .join("\n")}`,
+      );
+    }
+    if (legacyState.warnings.length > 0) {
+      log.warn(
+        `gateway: legacy state migration warnings:\n${legacyState.warnings
+          .map((w) => `- ${w}`)
+          .join("\n")}`,
+      );
+    }
+  } catch (err) {
+    log.warn(`gateway: legacy state migration failed (non-fatal): ${String(err)}`);
+  }
+
   const diagnosticsEnabled = isDiagnosticsEnabled(cfgAtStart);
   if (diagnosticsEnabled) {
     startDiagnosticHeartbeat();

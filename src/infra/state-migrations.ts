@@ -427,7 +427,7 @@ function isLegacyDirSymlinkMirror(legacyDir: string, targetDir: string): boolean
  * covering workspace memory, config files, and other critical data.
  * Called when both dirs exist simultaneously.
  */
-function mergeLegacyIntoTarget(
+export function mergeLegacyIntoTarget(
   legacyDir: string,
   targetDir: string,
 ): { changes: string[]; warnings: string[] } {

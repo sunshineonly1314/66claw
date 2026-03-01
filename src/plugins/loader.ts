@@ -1,5 +1,6 @@
 import { createJiti } from "jiti";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OpenClawCNConfig } from "../config/config.js";
@@ -175,6 +176,18 @@ function pushDiagnostics(diagnostics: PluginDiagnostic[], append: PluginDiagnost
   diagnostics.push(...append);
 }
 
+/**
+ * Check if a plugin entry file is a V8 bytecode CJS loader stub.
+ * Bytecode extensions have a corresponding .jsc file next to the .js entry.
+ * These must be loaded via native require() instead of jiti, because
+ * bytenode's Module._extensions hook doesn't work inside jiti's sandbox.
+ */
+function isBytecodeEntry(source: string): boolean {
+  if (!source.endsWith(".js")) return false;
+  const jscPath = source.replace(/\.js$/, ".jsc");
+  return fs.existsSync(jscPath);
+}
+
 export function loadOpenClawCNPlugins(options: PluginLoadOptions = {}): PluginRegistry {
   // Test env: default-disable plugins unless explicitly configured.
   // This keeps unit/gateway suites fast and avoids loading heavyweight plugin deps by accident.
@@ -310,7 +323,15 @@ export function loadOpenClawCNPlugins(options: PluginLoadOptions = {}): PluginRe
 
     let mod: OpenClawCNPluginModule | null = null;
     try {
-      mod = jiti(candidate.source) as OpenClawCNPluginModule;
+      if (isBytecodeEntry(candidate.source)) {
+        // Bytecode extensions use bytenode CJS loader stubs that require
+        // native Node.js Module._extensions support. jiti cannot execute
+        // these correctly, so we use createRequire() for direct loading.
+        const nativeRequire = createRequire(import.meta.url);
+        mod = nativeRequire(candidate.source) as OpenClawCNPluginModule;
+      } else {
+        mod = jiti(candidate.source) as OpenClawCNPluginModule;
+      }
     } catch (err) {
       logger.error(`[plugins] ${record.id} failed to load from ${record.source}: ${String(err)}`);
       record.status = "error";
