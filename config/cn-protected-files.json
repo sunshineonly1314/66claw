@@ -332,7 +332,9 @@
         "src/dispatch/",
         "src/license/",
         "src/security/",
-        "src/memory/"
+        "src/memory/",
+        "extensions/agent-team/",
+        "extensions/orchestrator/"
       ],
       "files": [
         "src/gateway/cn-handlers.ts",

@@ -5,6 +5,7 @@ import type { SessionsListResult } from "../types";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
 import type { LicenseUiState } from "../license/types";
+import { isCN } from "../edition";
 import { icons } from "../icons";
 import {
   normalizeMessage,
@@ -709,6 +710,7 @@ export function renderChat(props: ChatProps) {
       ${isTestUser ? html`
         <!-- 试用用户常驻浮条：输入框与聊天之间 -->
         <div class="chat-trial-bar">
+          ${isCN ? html`
           <div class="chat-trial-bar__left">
             <div class="chat-trial-bar__support-trigger">
               <span class="chat-trial-bar__icon">💬</span>
@@ -731,6 +733,7 @@ export function renderChat(props: ChatProps) {
               <span>${t("support.upgradePro")}</span>
             </button>
           </div>
+          ` : nothing}
           <div class="chat-trial-bar__right">
             <button
               class="chat-trial-bar__activate-trigger"

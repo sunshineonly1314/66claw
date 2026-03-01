@@ -35,10 +35,13 @@ const resolveCommit = () => {
 const version = readPackageVersion();
 const commit = resolveCommit();
 
+const edition = process.env.VITE_EDITION === "overseas" ? "overseas" : "cn";
+
 const buildInfo = {
   version,
   commit,
   builtAt: new Date().toISOString(),
+  edition,
 };
 
 fs.mkdirSync(distDir, { recursive: true });

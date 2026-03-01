@@ -747,12 +747,14 @@ ${learningCtx}
           return;
         }
         try {
+          console.log(`[agent-team] createFromPlan called with planId="${planId}", orchestratorStateDir="${orchestratorStateDir}"`);
           const { project, report } = await createProjectFromPlan(callGateway, {
             planId,
             name: typeof p.name === "string" ? p.name : void 0,
             constraints: extractConstraints(p.constraints),
             orchestratorStateDir
           });
+          console.log(`[agent-team] createFromPlan SUCCESS: projectId="${project.projectId}", members=${project.memberIds.length}`);
           projectCache.set(project.projectId, project);
           rebuildAgentIndex();
           getOrCreateHealthMap(
@@ -761,6 +763,8 @@ ${learningCtx}
           );
           respond(true, { project, report }, void 0);
         } catch (err) {
+          console.error(`[agent-team] createFromPlan FAILED: ${err instanceof Error ? err.message : String(err)}`);
+          console.error(`[agent-team] createFromPlan stack:`, err instanceof Error ? err.stack : "no stack");
           respond(false, void 0, {
             code: "CREATE_FROM_PLAN_FAILED",
             message: err instanceof Error ? err.message : String(err)

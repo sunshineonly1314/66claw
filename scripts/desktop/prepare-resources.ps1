@@ -30,7 +30,8 @@ Write-Host "[1/9] Copying Node.js runtime..." -ForegroundColor Green
 $nodeDir = Join-Path $ResourcesDir "node"
 New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
 
-$NodeVersion = if ($env:NODE_VERSION) { $env:NODE_VERSION } else { "22.16.0" }
+# PINNED: must match bytecode compilation Node version exactly (V8 bytecode is version-specific)
+$NodeVersion = "22.16.0"
 $nodeSources = @(
     "$ProjectRoot\scripts\windows\node-portable\node.exe",
     "$ProjectRoot\scripts\windows\node\node.exe"
@@ -447,15 +448,19 @@ Write-Host "[5/9] Copying skills/..." -ForegroundColor Green
 $excludedSkills = @("wechat-desktop", "wecom-desktop")
 $skillsSources = @(
     "$ProjectRoot\skills-merged",
-    "$ProjectRoot\skills"
+    "$ProjectRoot\skills",
+    "E:\clawdbuild\full-skills"
 )
 $skillsFound = $false
+New-Item -ItemType Directory -Force -Path "$ResourcesDir\skills" | Out-Null
 foreach ($src in $skillsSources) {
     if (Test-Path $src) {
-        # Copy all skill directories except excluded ones
-        New-Item -ItemType Directory -Force -Path "$ResourcesDir\skills" | Out-Null
+        # Copy all skill directories except excluded ones (merge from all sources)
         Get-ChildItem $src -Directory | Where-Object { $_.Name -notin $excludedSkills } | ForEach-Object {
-            Copy-Item $_.FullName "$ResourcesDir\skills\$($_.Name)" -Recurse -Force
+            $destSkillDir = "$ResourcesDir\skills\$($_.Name)"
+            if (-not (Test-Path $destSkillDir)) {
+                Copy-Item $_.FullName $destSkillDir -Recurse -Force
+            }
         }
         # Also copy any top-level files (README, index, etc.)
         Get-ChildItem $src -File -ErrorAction SilentlyContinue | ForEach-Object {
@@ -463,12 +468,12 @@ foreach ($src in $skillsSources) {
         }
         $skillsCount = (Get-ChildItem "$ResourcesDir\skills" -Directory -ErrorAction SilentlyContinue).Count
         $skippedList = ($excludedSkills | Where-Object { Test-Path "$src\$_" }) -join ", "
-        Write-Host "  OK: skills/ ($skillsCount skills) from $src [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+        Write-Host "  OK: skills/ ($skillsCount skills total) merged from $src [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
         if ($skippedList) {
             Write-Host "  Excluded: $skippedList" -ForegroundColor Yellow
         }
         $skillsFound = $true
-        break
+        # Continue to merge from next source (no break)
     }
 }
 # NOTE: skills-private/ is intentionally NOT copied (contains wechat-desktop, wecom-desktop)
@@ -557,11 +562,10 @@ if (Test-Path "$ProjectRoot\data") {
         $seedJson = '{"items":[],"generated":"' + (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ") + '","seed":true}'
         Set-Content -Path $mcpIndexPath -Value $seedJson -Encoding UTF8
     }
-    # Verify MCP index has enough items
+    # Verify MCP index has enough items (use node to avoid PowerShell 5.x JSON/encoding bugs)
     $mcpItems = 0
     try {
-        $mcpData = Get-Content $mcpIndexPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $mcpItems = $mcpData.items.Count
+        $mcpItems = [int](node -e "const d=require('$($mcpIndexPath -replace '\\','/')');process.stdout.write(String((d.items||[]).length))" 2>$null)
     } catch { }
     if ($mcpItems -lt 1000) {
         Write-Host "  ERROR: MCP index only has $mcpItems items — expected 1000+. MCP page will be nearly empty!" -ForegroundColor Red

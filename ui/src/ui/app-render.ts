@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 
+import { isCN } from "./edition";
 import { formatGeneralError } from "./chat/error-hints";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { AppViewState, McpMarketplaceItem } from "./app-view-state";
@@ -342,6 +343,7 @@ function renderQrcodePopover(
  * 预加载：进入 chat 页面时已主动拉取，hover 时立即显示
  */
 function renderTopbarSupportButtons(state: AppViewState) {
+  if (!isCN) return nothing;
   const license = state.licenseState?.license;
   const isLoading = state.qrcodePreloading ?? false;
 
@@ -576,6 +578,7 @@ export function renderApp(state: AppViewState) {
           >
             <span class="nav-collapse-toggle__icon">${icons.menu}</span>
           </button>
+          ${isCN ? html`
           <div class="brand">
             <div class="brand-logo">
               <img src="/logo.png" alt="ClawbotCN" />
@@ -585,15 +588,18 @@ export function renderApp(state: AppViewState) {
               <div class="brand-sub">- <strong>全栈国内运行</strong></div>
             </div>
           </div>
+          ` : nothing}
         </div>
         <div class="topbar-status">
           ${renderTopbarSupportButtons(state)}
+          ${isCN ? html`
           <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="topbar-promo">
             <span class="topbar-promo__dot"></span>
             <span class="topbar-promo__brand">TecbinAI</span>
             <span class="topbar-promo__sep"></span>
             <span class="topbar-promo__desc">及时追踪AI · 解锁更多玩法</span>
           </a>
+          ` : nothing}
           ${renderApiMonitor(state)}
           <div class="pill">
             <span class="statusDot ${state.connected ? "ok" : isFirstStartup ? "" : ""}"></span>
@@ -639,6 +645,7 @@ export function renderApp(state: AppViewState) {
             ${renderTab(state, "docs")}
           </div>
         </div>
+        ${isCN ? html`
         <!-- tecbinai Footer Link -->
         <div class="nav-footer">
           <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="nav-footer-link">
@@ -649,6 +656,7 @@ export function renderApp(state: AppViewState) {
             </span>
           </a>
         </div>
+        ` : nothing}
       </aside>
       <main class="content ${isChat ? "content--chat" : ""}">
         ${state.tab !== "usage" ? html`
@@ -2655,7 +2663,7 @@ export function renderApp(state: AppViewState) {
       ${renderLicenseDialogs(state)}
       ${renderFeedbackModal(buildFeedbackProps(state))}
       ${renderSkillsBatchOverlays(state)}
-      ${state.showAdaptationNotice
+      ${isCN && state.showAdaptationNotice
           && state.tab === "chat"
           && !state.showLicenseDialog
           && !state.showOfflineBanner

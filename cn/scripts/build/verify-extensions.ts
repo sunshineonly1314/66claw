@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { transformSync } from "esbuild";
+import { loadCnEncryptionConfig } from "./resolve-cn-targets.js";
 
 const ROOT_DIR = path.resolve(process.cwd());
 
@@ -53,6 +54,27 @@ function loadExtensionDirs(): string[] {
 }
 
 const CN_EXTENSION_DIRS = loadExtensionDirs();
+
+/**
+ * Load extension directories that are protected by bytecode compilation.
+ * These directories are listed in cn_encryption.bytecode.directories and will have
+ * their .js files replaced with bytecode loaders at build time, so they should NOT
+ * be verified against their TS source (the verification would always fail).
+ */
+function loadBytecodeProtectedExtDirs(): Set<string> {
+  try {
+    const config = loadCnEncryptionConfig(ROOT_DIR);
+    return new Set(
+      config.bytecode.directories
+        .filter((d) => d.startsWith("extensions/"))
+        .map((d) => d.replace(/\/$/, "")),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+const BYTECODE_PROTECTED_EXT_DIRS = loadBytecodeProtectedExtDirs();
 
 const SKIP_PATTERNS = [
   /\.test\.ts$/,
@@ -136,6 +158,15 @@ function main(): void {
 
   for (const extRel of CN_EXTENSION_DIRS) {
     const absDir = path.join(ROOT_DIR, extRel);
+
+    // Skip extensions that are protected by bytecode compilation.
+    // Their .js files will be replaced with bytecode loaders at build time,
+    // so source-matching verification is not applicable.
+    if (BYTECODE_PROTECTED_EXT_DIRS.has(extRel)) {
+      console.log(`   🔒 ${extRel} — bytecode-protected, skipping verification`);
+      skippedExt++;
+      continue;
+    }
 
     if (!fs.existsSync(absDir)) {
       console.log(`   ⚠ ${extRel} — directory not found, skipping`);

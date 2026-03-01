@@ -240,8 +240,10 @@ export function resolveEncryptionTargets(rootDir: string): EncryptionTargets {
   const encryption = loadCnEncryptionConfig(rootDir);
   const distDir = path.join(rootDir, "dist");
 
-  // Bytecode tier: only src/ files that go into dist/
-  const bytecode = resolveTier(encryption.bytecode, rootDir, distDir);
+  // Bytecode tier: src/ files (→ dist/) + extension directories (→ extensions/)
+  const bytecodeSrc = resolveTier(encryption.bytecode, rootDir, distDir);
+  const bytecodeExt = resolveExtensionTier(encryption.bytecode, rootDir);
+  const bytecode = [...bytecodeSrc, ...bytecodeExt];
 
   // Obfuscate tier: src/ files + extension directories
   const obfuscateSrc = resolveTier(encryption.obfuscate, rootDir, distDir);
@@ -296,12 +298,27 @@ export function getBytecodeDirs(
  * integrity hashes.
  *
  * Returns relative paths under dist/ (e.g. "dispatch/", "license/", "security/").
+ * NOTE: extensions/ directories are NOT included here — they live outside dist/
+ * and are handled separately by getExplicitBytecodeExtensionDirs().
  */
 export function getExplicitBytecodeDirs(rootDir: string): string[] {
   const config = loadCnEncryptionConfig(rootDir);
   return config.bytecode.directories
     .filter((d) => d.startsWith("src/"))
     .map((d) => d.slice("src/".length))
+    .sort();
+}
+
+/**
+ * Return explicitly declared bytecode directories under extensions/.
+ * These live outside dist/ and need separate CJS package.json handling.
+ *
+ * Returns relative paths from project root (e.g. "extensions/agent-team/").
+ */
+export function getExplicitBytecodeExtensionDirs(rootDir: string): string[] {
+  const config = loadCnEncryptionConfig(rootDir);
+  return config.bytecode.directories
+    .filter((d) => d.startsWith("extensions/"))
     .sort();
 }
 
@@ -335,4 +352,17 @@ export function isInExplicitBytecodeDir(
   const rel = path.relative(distDir, filePath).replace(/\\/g, "/");
   const explicitDirs = getExplicitBytecodeDirs(rootDir);
   return explicitDirs.some((d) => rel.startsWith(d));
+}
+
+/**
+ * Check if a file path is inside one of the explicit bytecode extension directories.
+ * Extension dirs live at project root level (e.g. extensions/agent-team/), not in dist/.
+ */
+export function isInExplicitBytecodeExtensionDir(
+  filePath: string,
+  rootDir: string,
+): boolean {
+  const rel = path.relative(rootDir, filePath).replace(/\\/g, "/");
+  const extDirs = getExplicitBytecodeExtensionDirs(rootDir);
+  return extDirs.some((d) => rel.startsWith(d));
 }

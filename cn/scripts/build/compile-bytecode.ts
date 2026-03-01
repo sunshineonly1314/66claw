@@ -39,7 +39,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { transformSync } from "esbuild";
-import { resolveEncryptionTargets, getExplicitBytecodeDirs, isInExplicitBytecodeDir } from "./resolve-cn-targets.js";
+import { resolveEncryptionTargets, getExplicitBytecodeDirs, getExplicitBytecodeExtensionDirs, isInExplicitBytecodeDir, isInExplicitBytecodeExtensionDir } from "./resolve-cn-targets.js";
 
 // bytenode is CJS-only, use createRequire to load it from ESM context
 const require = createRequire(import.meta.url);
@@ -371,15 +371,15 @@ async function processFile(
 }
 
 /**
- * Write {"type": "commonjs"} package.json to ONLY the explicit bytecode directories.
+ * Write {"type": "commonjs"} package.json to explicit bytecode directories.
  *
- * Only dispatch/, license/, security/ get CJS overrides — these are CN-only dirs
- * where ALL .js files are bytecode loaders. Individual bytecode files in mixed
- * dirs (gateway/, agents/, etc.) use ESM loaders instead (no CJS override needed).
+ * Handles both dist/ directories (dispatch/, license/, security/, memory/) and
+ * extension directories (extensions/agent-team/, extensions/orchestrator/).
  *
  * This prevents breaking upstream ESM code in shared directories like gateway/.
  */
-function writeCjsPackageJson(explicitDirs: string[]): void {
+function writeCjsPackageJson(explicitDirs: string[], explicitExtDirs: string[]): void {
+  // dist/ directories
   for (const dir of explicitDirs) {
     const dirPath = path.join(DIST_DIR, dir);
     if (!fs.existsSync(dirPath)) continue;
@@ -393,6 +393,41 @@ function writeCjsPackageJson(explicitDirs: string[]): void {
     // Never overwrite existing package.json — it may contain important settings.
     const subdirs = fs.readdirSync(dirPath, { withFileTypes: true })
       .filter(e => e.isDirectory());
+    for (const sub of subdirs) {
+      const subPkgPath = path.join(dirPath, sub.name, "package.json");
+      if (!fs.existsSync(subPkgPath)) {
+        fs.writeFileSync(subPkgPath, '{ "type": "commonjs" }\n', "utf-8");
+      }
+    }
+  }
+
+  // Extension directories (live at project root, outside dist/)
+  // These have existing package.json with metadata (name, version, etc.) — merge
+  // instead of overwriting, and also update "main" from .ts to .js for runtime.
+  for (const extDir of explicitExtDirs) {
+    const dirPath = path.join(ROOT_DIR, extDir);
+    if (!fs.existsSync(dirPath)) continue;
+
+    const pkgPath = path.join(dirPath, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const existing = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        existing.type = "commonjs";
+        // Update main entry from .ts to .js (bytecode loader is a .js file)
+        if (typeof existing.main === "string" && existing.main.endsWith(".ts")) {
+          existing.main = existing.main.replace(/\.ts$/, ".js");
+        }
+        fs.writeFileSync(pkgPath, JSON.stringify(existing, null, 2) + "\n", "utf-8");
+      } catch {
+        fs.writeFileSync(pkgPath, '{ "type": "commonjs" }\n', "utf-8");
+      }
+    } else {
+      fs.writeFileSync(pkgPath, '{ "type": "commonjs" }\n', "utf-8");
+    }
+    console.log(`   + ${extDir}package.json (CJS override — extension)`);
+
+    const subdirs = fs.readdirSync(dirPath, { withFileTypes: true })
+      .filter(e => e.isDirectory() && e.name !== "node_modules" && e.name !== "__tests__");
     for (const sub of subdirs) {
       const subPkgPath = path.join(dirPath, sub.name, "package.json");
       if (!fs.existsSync(subPkgPath)) {
@@ -421,15 +456,18 @@ async function main(): Promise<void> {
   const targets = resolveEncryptionTargets(ROOT_DIR);
   const targetFiles = targets.bytecode;
   const explicitDirs = getExplicitBytecodeDirs(ROOT_DIR);
+  const explicitExtDirs = getExplicitBytecodeExtensionDirs(ROOT_DIR);
 
   console.log(`   Explicit bytecode dirs (CJS override): ${explicitDirs.join(", ")}`);
-  console.log(`   Individual files in ESM dirs: ${targetFiles.length - targetFiles.filter(f => isInExplicitBytecodeDir(f, ROOT_DIR)).length} files (ESM loader)`);
+  console.log(`   Explicit extension dirs (CJS override): ${explicitExtDirs.join(", ") || "(none)"}`);
+  const cjsDirFileCount = targetFiles.filter(f => isInExplicitBytecodeDir(f, ROOT_DIR) || isInExplicitBytecodeExtensionDir(f, ROOT_DIR)).length;
+  console.log(`   Individual files in ESM dirs: ${targetFiles.length - cjsDirFileCount} files (ESM loader)`);
 
-  // Phase 0: Write {"type": "commonjs"} ONLY to explicit bytecode directories.
+  // Phase 0: Write {"type": "commonjs"} to explicit bytecode directories (dist/ + extensions/).
   // Individual bytecode files in mixed dirs (gateway/, agents/) use ESM loaders
   // instead — no CJS override needed, which avoids breaking upstream ESM code.
   console.log("   Phase 0: Setting up CJS module type overrides...");
-  writeCjsPackageJson(explicitDirs);
+  writeCjsPackageJson(explicitDirs, explicitExtDirs);
   console.log("");
 
   console.log(`   Found ${targetFiles.length} files to compile`);
@@ -459,9 +497,11 @@ async function main(): Promise<void> {
   const errors: { file: string; error: string }[] = [];
 
   for (const file of targetFiles) {
-    const relativePath = path.relative(DIST_DIR, file);
+    // Extension files are relative to ROOT_DIR, dist files to DIST_DIR
+    const isExtFile = isInExplicitBytecodeExtensionDir(file, ROOT_DIR);
+    const relativePath = isExtFile ? path.relative(ROOT_DIR, file) : path.relative(DIST_DIR, file);
     const entry = prescan.get(file)!;
-    const inExplicitDir = isInExplicitBytecodeDir(file, ROOT_DIR);
+    const inExplicitDir = isInExplicitBytecodeDir(file, ROOT_DIR) || isExtFile;
 
     if (entry.skip) {
       // Small files (< 200 chars) are not worth compiling to bytecode.

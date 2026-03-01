@@ -29,7 +29,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-NODE_VERSION="${NODE_VERSION:-22.16.0}"
+# PINNED: must match bytecode compilation Node version exactly (V8 bytecode is version-specific)
+NODE_VERSION="22.16.0"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 warn() { echo "WARN: $*" >&2; }

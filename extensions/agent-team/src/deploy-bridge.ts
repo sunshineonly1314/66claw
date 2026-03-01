@@ -171,6 +171,7 @@ export async function createProjectFromPlan(
   params: CreateFromPlanParams,
 ): Promise<CreateFromPlanResult> {
   const { planId, orchestratorStateDir } = params;
+  console.log(`[deploy-bridge] createProjectFromPlan START planId="${planId}" stateDir="${orchestratorStateDir}"`);
 
   // Prevent path traversal via planId (reuses projectId validation regex)
   sanitizeProjectId(planId);
@@ -178,14 +179,20 @@ export async function createProjectFromPlan(
   // ── Step 1: Read orchestrator plan + state ──
 
   const plan = await readOrchestratorPlan(orchestratorStateDir, planId);
+  console.log(`[deploy-bridge] plan loaded: ${plan ? `teamName="${plan.teamName}", agents=${plan.agents?.length}` : "NULL"}`);
   if (!plan) {
     throw new Error(`Orchestrator plan "${planId}" not found`);
   }
 
   const state = await readOrchestratorState(orchestratorStateDir, planId);
-  if (!state || state.status !== "deployed") {
+  console.log(`[deploy-bridge] state loaded: ${state ? `status="${state.status}", agents=${state.agents?.length}` : "NULL"}`);
+  // Accept both "deploying" (called before status transition) and "deployed"
+  // (called after, or on re-deploy). The orchestrator intentionally calls
+  // createFromPlan BEFORE writing status="deployed" to avoid a race with the
+  // UI, so "deploying" is the normal happy-path status here.
+  if (!state || (state.status !== "deployed" && state.status !== "deploying")) {
     throw new Error(
-      `Orchestrator plan "${planId}" is not in deployed state (status: ${state?.status ?? "not found"})`,
+      `Orchestrator plan "${planId}" is not in deployed/deploying state (status: ${state?.status ?? "not found"})`,
     );
   }
 

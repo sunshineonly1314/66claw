@@ -1118,12 +1118,14 @@ const plugin: OpenClawCNPluginDefinition = {
         }
 
         try {
+          console.log(`[agent-team] createFromPlan called with planId="${planId}", orchestratorStateDir="${orchestratorStateDir}"`);
           const { project, report } = await createProjectFromPlan(callGateway, {
             planId,
             name: typeof p.name === "string" ? p.name : undefined,
             constraints: extractConstraints(p.constraints),
             orchestratorStateDir,
           });
+          console.log(`[agent-team] createFromPlan SUCCESS: projectId="${project.projectId}", members=${project.memberIds.length}`);
 
           // Update caches
           projectCache.set(project.projectId, project);
@@ -1135,6 +1137,8 @@ const plugin: OpenClawCNPluginDefinition = {
 
           respond(true, { project, report }, undefined);
         } catch (err) {
+          console.error(`[agent-team] createFromPlan FAILED: ${err instanceof Error ? err.message : String(err)}`);
+          console.error(`[agent-team] createFromPlan stack:`, err instanceof Error ? err.stack : "no stack");
           respond(false, undefined, {
             code: "CREATE_FROM_PLAN_FAILED",
             message:

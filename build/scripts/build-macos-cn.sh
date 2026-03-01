@@ -29,8 +29,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="$ROOT_DIR/build/output"
 BUILD_LOG="$OUTPUT_DIR/build.log"
 
-# Node.js version (must match the version used in CI and Windows builds)
-NODE_VERSION="${NODE_VERSION:-22.16.0}"
+# PINNED: must match bytecode compilation Node version exactly (V8 bytecode is version-specific)
+NODE_VERSION="22.16.0"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 

@@ -1451,9 +1451,13 @@ async function executeDeploySequenceInner(
   let willBeDeployed = false;
   if (latestState && latestState.status === "deploying") {
     const allReady = latestState.agents.every(a => a.status === "ready");
+    console.log(`[orchestrator] latestState.status="deploying", allReady=${allReady}, agents=${JSON.stringify(latestState.agents.map(a => ({id:a.agentId,status:a.status})))}`);
     if (allReady) willBeDeployed = true;
   } else if (latestState && latestState.status === "deployed") {
     willBeDeployed = true;
+    console.log(`[orchestrator] latestState.status="deployed", willBeDeployed=true`);
+  } else {
+    console.log(`[orchestrator] latestState.status="${latestState?.status}", willBeDeployed=false`);
   }
 
   const readyCount = results.filter(r => r.status === "ready").length;
@@ -1464,6 +1468,8 @@ async function executeDeploySequenceInner(
     registerOrchestratedAgents(plan, readyIds);
   }
 
+  console.log(`[orchestrator] willBeDeployed=${willBeDeployed}, readyCount=${readyCount}, planId="${plan.planId}"`);
+
   // Auto-create team project from deployed plan (bridge orchestrator → agent-team)
   // IMPORTANT: Must happen BEFORE setting status to "deployed", because the UI
   // polls deploy.status and triggers loadTeamProjects() immediately when it sees
@@ -1473,8 +1479,10 @@ async function executeDeploySequenceInner(
     let projectCreated = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
+        console.log(`[orchestrator] calling team.project.createFromPlan attempt ${attempt}/3 planId="${plan.planId}"`);
         const createResult = await callGateway("team.project.createFromPlan", { planId: plan.planId }) as
           { project?: unknown; report?: unknown } | undefined;
+        console.log(`[orchestrator] createFromPlan SUCCESS: ${JSON.stringify((createResult?.report as any)?.summary ?? "no report")}`);
         projectCreated = true;
         // Persist the deploy report so orchestrator.deploy.report can serve it
         if (createResult?.report) {
@@ -1487,6 +1495,8 @@ async function executeDeploySequenceInner(
         }
         break;
       } catch (err) {
+        console.error(`[orchestrator] createFromPlan FAILED attempt ${attempt}/3: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(`[orchestrator] createFromPlan stack:`, err instanceof Error ? err.stack : "no stack");
         emitDiagnosticEvent({
           type: "orchestrator.deploy",
           planId: plan.planId,
@@ -1499,6 +1509,7 @@ async function executeDeploySequenceInner(
       }
     }
     if (!projectCreated) {
+      console.error(`[orchestrator] createFromPlan EXHAUSTED: All 3 attempts failed for planId="${plan.planId}"`);
       emitDiagnosticEvent({
         type: "orchestrator.deploy",
         planId: plan.planId,
@@ -1506,6 +1517,8 @@ async function executeDeploySequenceInner(
         error: "All 3 attempts to create team project failed",
       });
     }
+  } else {
+    console.log(`[orchestrator] SKIPPED createFromPlan: willBeDeployed=false`);
   }
 
   // NOW mark deploy status as "deployed" — project is already in cache

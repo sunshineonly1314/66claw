@@ -90,7 +90,13 @@ pnpm verify:extensions
 if (`$LASTEXITCODE -ne 0) { exit 1 }
 node --import tsx scripts/obfuscate-dist.ts
 if (`$LASTEXITCODE -ne 0) { exit 1 }
-node --import tsx cn/scripts/build/compile-bytecode.ts
+# Use the bundled Node v22.16.0 for bytecode compilation so .jsc matches the runtime
+`$bytecodeNode = '$ProjectRoot\scripts\windows\node-portable\node.exe'
+if (Test-Path `$bytecodeNode) {
+    & `$bytecodeNode --import tsx cn/scripts/build/compile-bytecode.ts
+} else {
+    node --import tsx cn/scripts/build/compile-bytecode.ts
+}
 if (`$LASTEXITCODE -ne 0) { exit 1 }
 pnpm integrity:gen
 if (`$LASTEXITCODE -ne 0) { exit 1 }

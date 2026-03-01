@@ -4,6 +4,7 @@
  */
 
 import { html, nothing, type TemplateResult } from "lit";
+import { isCN } from "../edition";
 import type {
   LicenseUiState,
   LicenseNotification,
@@ -133,9 +134,11 @@ export function renderActivationDialog(
               </button>
             </div>
           </form>
+          ${isCN ? html`
           <p class="license-help">
             还没有授权码？<a href="#" @click=${(e: Event) => { e.preventDefault(); void openPurchaseOrRenewUrl(null); }} style="font-size:16px;font-weight:600;">立即购买</a>
           </p>
+          ` : nothing}
         </div>
       </div>
     </div>
@@ -168,9 +171,11 @@ export function renderExpiredDialog(
             <button class="license-btn license-btn-secondary" @click=${onClose}>
               稍后处理
             </button>
+            ${isCN ? html`
             <button class="license-btn license-btn-primary" @click=${handleRenew}>
               立即续费
             </button>
+            ` : nothing}
           </div>
         </div>
       </div>
@@ -209,9 +214,11 @@ export function renderRenewalReminderDialog(
             <button class="license-btn license-btn-secondary" @click=${onDismiss}>
               稍后提醒
             </button>
+            ${isCN ? html`
             <button class="license-btn license-btn-primary" @click=${handleRenew}>
               立即续费
             </button>
+            ` : nothing}
           </div>
         </div>
       </div>

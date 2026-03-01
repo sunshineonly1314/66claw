@@ -43,15 +43,18 @@ function selectSupervisorModel(plan) {
 }
 async function createProjectFromPlan(callGateway, params) {
   const { planId, orchestratorStateDir } = params;
+  console.log(`[deploy-bridge] createProjectFromPlan START planId="${planId}" stateDir="${orchestratorStateDir}"`);
   sanitizeProjectId(planId);
   const plan = await readOrchestratorPlan(orchestratorStateDir, planId);
+  console.log(`[deploy-bridge] plan loaded: ${plan ? `teamName="${plan.teamName}", agents=${plan.agents?.length}` : "NULL"}`);
   if (!plan) {
     throw new Error(`Orchestrator plan "${planId}" not found`);
   }
   const state = await readOrchestratorState(orchestratorStateDir, planId);
-  if (!state || state.status !== "deployed") {
+  console.log(`[deploy-bridge] state loaded: ${state ? `status="${state.status}", agents=${state.agents?.length}` : "NULL"}`);
+  if (!state || (state.status !== "deployed" && state.status !== "deploying")) {
     throw new Error(
-      `Orchestrator plan "${planId}" is not in deployed state (status: ${state?.status ?? "not found"})`
+      `Orchestrator plan "${planId}" is not in deployed/deploying state (status: ${state?.status ?? "not found"})`
     );
   }
   const deployedIdMap = /* @__PURE__ */ new Map();
