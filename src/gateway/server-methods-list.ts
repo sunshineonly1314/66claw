@@ -93,6 +93,8 @@ const BASE_METHODS = [
   "cron.runs",
   "system-presence",
   "system-event",
+  "route.getChannelAgents",
+  "route.setChannelAgent",
   "send",
   "agent",
   "agent.identity.get",

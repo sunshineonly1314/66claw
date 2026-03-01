@@ -749,7 +749,9 @@ export function renderApp(state: AppViewState) {
               nostrProfileAccountId: state.nostrProfileAccountId,
               routeSummary: state.channelRouteSummary,
               routeProjects: state.channelRouteProjects,
+              routeAgents: state.channelRouteAgents,
               routeSaving: state.channelRouteSaving,
+              routeSavedHint: state.channelRouteSavedHint,
               onRefresh: (probe) => loadChannels(state, probe),
               onWhatsAppStart: (force) => state.handleWhatsAppStart(force),
               onWhatsAppWait: () => state.handleWhatsAppWait(),
@@ -765,8 +767,8 @@ export function renderApp(state: AppViewState) {
               onNostrProfileSave: () => state.handleNostrProfileSave(),
               onNostrProfileImport: () => state.handleNostrProfileImport(),
               onNostrProfileToggleAdvanced: () => state.handleNostrProfileToggleAdvanced(),
-              onRouteChange: (channel, accountId, projectId) =>
-                updateChannelRoute(state, channel, accountId, projectId),
+              onRouteChange: (channel, accountId, targetId, targetType) =>
+                updateChannelRoute(state, channel, accountId, targetId, targetType),
               channelsSelectedKey: state.channelsSelectedKey ?? null,
               onSelectChannel: (key) => {
                 state.channelsSelectedKey = key;

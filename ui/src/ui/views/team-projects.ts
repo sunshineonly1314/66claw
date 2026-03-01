@@ -258,7 +258,7 @@ function renderProjectGroup(project: TeamProjectSummary, props: ProjectSidebarPr
           return html`
             <button
               type="button"
-              class="agent-row agent-row--nested ${isAgentSelected ? "active" : ""}"
+              class="agent-row agent-row--nested ${isSupervisor ? "agent-row--supervisor" : ""} ${isAgentSelected ? "active" : ""}"
               @click=${() => props.onSelectAgent(agent.id)}
             >
               <div class="agent-avatar agent-avatar--sm">${emoji || normalizeAgentLabel(agent).slice(0, 1)}</div>
@@ -446,69 +446,84 @@ function renderProjectMembers(
         ` : nothing}
       </div>
       <div class="project-members-cards">
-        ${members.map((m) => {
-          const h = health?.members.find((hm) => hm.agentId === m.id);
-          const state: TeamMemberHealthState = h?.state ?? "healthy";
-          const identity = props.agentIdentityById[m.id];
-          const emoji = m.emoji || identity?.emoji || "";
-          const isSupervisor = m.id === project.supervisorId;
-          const toolProfile = m.toolProfile ?? "";
-          const modelTier = m.modelTier ?? "";
-          const keywords = m.keywords ?? [];
+        ${(() => {
+          const supervisor = members.find((m) => m.id === project.supervisorId);
+          const workers = members.filter((m) => m.id !== project.supervisorId);
+
+          const renderMemberCard = (m: typeof members[0], isSupervisor: boolean) => {
+            const h = health?.members.find((hm) => hm.agentId === m.id);
+            const state: TeamMemberHealthState = h?.state ?? "healthy";
+            const identity = props.agentIdentityById[m.id];
+            const emoji = m.emoji || identity?.emoji || "";
+            const toolProfile = m.toolProfile ?? "";
+            const modelTier = m.modelTier ?? "";
+            const keywords = m.keywords ?? [];
+
+            return html`
+              <div class="project-member-card ${isSupervisor ? "project-member-card--supervisor" : ""}">
+                <div class="project-member-card-header">
+                  <div class="agent-avatar agent-avatar--sm">${emoji || m.name.slice(0, 1)}</div>
+                  <div class="project-member-card-info">
+                    <div class="agent-title">
+                      ${m.name}
+                      ${isSupervisor ? html`<span class="agent-pill ${project.autoSupervisor ? 'auto-supervisor' : ''}" style="margin-left: 6px;">${project.autoSupervisor ? '🎯 ' : ''}${t("team.supervisor")}</span>` : nothing}
+                    </div>
+                    <div class="agent-sub">${m.role}</div>
+                  </div>
+                  <span class="project-health-badge project-health-badge--${state}">
+                    <span class="project-status-dot project-status-dot--${state === "healthy" ? "active" : state === "degraded" ? "paused" : "error"}"></span>
+                    ${t(`team.health.${state}` as any)}
+                  </span>
+                </div>
+                <div class="project-member-card-meta">
+                  ${modelTier ? html`<span class="agent-pill" title="${t("team.detail.modelTier")}">${modelTier}</span>` : nothing}
+                  ${toolProfile ? html`<span class="agent-pill" title="${t("team.detail.toolProfile")}">${toolProfile}</span>` : nothing}
+                  ${(h?.totalSuccesses ?? 0) > 0 || (h?.totalFailures ?? 0) > 0 ? html`
+                    <span class="mono" style="font-size: 11px; color: var(--muted);">
+                      ${h?.totalSuccesses ?? 0}/${(h?.totalSuccesses ?? 0) + (h?.totalFailures ?? 0)}
+                    </span>
+                  ` : nothing}
+                </div>
+                ${keywords.length > 0 ? html`
+                  <div class="project-member-card-keywords">
+                    ${keywords.slice(0, 6).map((kw) => html`<span class="keyword-chip">${kw}</span>`)}
+                    ${keywords.length > 6 ? html`<span class="keyword-chip">+${keywords.length - 6}</span>` : nothing}
+                  </div>
+                ` : nothing}
+                ${h?.lastError ? html`
+                  <div class="agent-sub" style="margin-top: 4px; color: var(--danger); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${h.lastError}">${h.lastError}</div>
+                ` : nothing}
+                <div class="project-member-card-actions">
+                  ${props.onSelectAgent ? html`
+                    <button class="btn btn--xs btn--outline" @click=${() => props.onSelectAgent!(m.id)}>${t("team.action.chat")}</button>
+                  ` : nothing}
+                  ${!isSupervisor && props.onRemoveMember ? html`
+                    <button
+                      class="btn btn--xs btn--danger"
+                      ?disabled=${props.busy}
+                      @click=${() => {
+                        if (confirm((t as (k: string, v?: Record<string, string>) => string)("team.action.removeMemberConfirm", { name: m.name }))) {
+                          props.onRemoveMember!(project.projectId, m.id);
+                        }
+                      }}
+                    >${t("team.action.remove")}</button>
+                  ` : nothing}
+                </div>
+              </div>
+            `;
+          };
 
           return html`
-            <div class="project-member-card">
-              <div class="project-member-card-header">
-                <div class="agent-avatar agent-avatar--sm">${emoji || m.name.slice(0, 1)}</div>
-                <div class="project-member-card-info">
-                  <div class="agent-title">
-                    ${m.name}
-                    ${isSupervisor ? html`<span class="agent-pill ${project.autoSupervisor ? 'auto-supervisor' : ''}" style="margin-left: 6px;">${project.autoSupervisor ? '🎯 ' : ''}${t("team.supervisor")}</span>` : nothing}
-                  </div>
-                  <div class="agent-sub">${m.role}</div>
-                </div>
-                <span class="project-health-badge project-health-badge--${state}">
-                  <span class="project-status-dot project-status-dot--${state === "healthy" ? "active" : state === "degraded" ? "paused" : "error"}"></span>
-                  ${t(`team.health.${state}` as any)}
-                </span>
-              </div>
-              <div class="project-member-card-meta">
-                ${modelTier ? html`<span class="agent-pill" title="${t("team.detail.modelTier")}">${modelTier}</span>` : nothing}
-                ${toolProfile ? html`<span class="agent-pill" title="${t("team.detail.toolProfile")}">${toolProfile}</span>` : nothing}
-                ${(h?.totalSuccesses ?? 0) > 0 || (h?.totalFailures ?? 0) > 0 ? html`
-                  <span class="mono" style="font-size: 11px; color: var(--muted);">
-                    ${h?.totalSuccesses ?? 0}/${(h?.totalSuccesses ?? 0) + (h?.totalFailures ?? 0)}
-                  </span>
-                ` : nothing}
-              </div>
-              ${keywords.length > 0 ? html`
-                <div class="project-member-card-keywords">
-                  ${keywords.slice(0, 6).map((kw) => html`<span class="keyword-chip">${kw}</span>`)}
-                  ${keywords.length > 6 ? html`<span class="keyword-chip">+${keywords.length - 6}</span>` : nothing}
-                </div>
-              ` : nothing}
-              ${h?.lastError ? html`
-                <div class="agent-sub" style="margin-top: 4px; color: var(--danger); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${h.lastError}">${h.lastError}</div>
-              ` : nothing}
-              <div class="project-member-card-actions">
-                ${props.onSelectAgent ? html`
-                  <button class="btn btn--xs btn--outline" @click=${() => props.onSelectAgent!(m.id)}>${t("team.action.chat")}</button>
-                ` : nothing}
-                ${!isSupervisor && props.onRemoveMember ? html`
-                  <button
-                    class="btn btn--xs btn--danger"
-                    ?disabled=${props.busy}
-                    @click=${() => {
-                      if (confirm((t as (k: string, v?: Record<string, string>) => string)("team.action.removeMemberConfirm", { name: m.name }))) {
-                        props.onRemoveMember!(project.projectId, m.id);
-                      }
-                    }}
-                  >${t("team.action.remove")}</button>
-                ` : nothing}
-              </div>
-            </div>
+            ${supervisor ? html`
+              <div class="project-members-divider">${t("team.supervisor")}</div>
+              ${renderMemberCard(supervisor, true)}
+            ` : nothing}
+            ${workers.length > 0 ? html`
+              <div class="project-members-divider">${t("team.members")}</div>
+              ${workers.map((m) => renderMemberCard(m, false))}
+            ` : nothing}
           `;
-        })}
+        })()}
       </div>
     </div>
   `;

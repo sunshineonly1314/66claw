@@ -94,6 +94,8 @@ export function extractKeywordsFromRole(roleDescription: string): string[] {
 /**
  * Build keyword routes from team member info.
  * Each member's role is decomposed into keywords that route to that member.
+ * Pre-defined keywords from deploy-bridge (member.keywords) take higher
+ * priority than auto-extracted keywords from the role description.
  */
 export function buildRoutesFromMembers(members: MemberInfo[]): KeywordRoute[] {
   const routes: KeywordRoute[] = [];
@@ -108,14 +110,31 @@ export function buildRoutesFromMembers(members: MemberInfo[]): KeywordRoute[] {
       });
     }
 
-    // Extract keywords from role description
+    // Pre-defined keywords from blueprint/learning (higher priority than auto-extracted)
+    const preDefinedSet = new Set<string>();
+    if (Array.isArray(member.keywords)) {
+      for (const kw of member.keywords) {
+        if (kw && kw.length >= 2) {
+          routes.push({
+            pattern: kw,
+            agentId: member.id,
+            priority: 30,
+          });
+          preDefinedSet.add(kw.toLowerCase());
+        }
+      }
+    }
+
+    // Auto-extract keywords from role description (lower priority, skip duplicates)
     const keywords = extractKeywordsFromRole(member.role);
     for (const kw of keywords) {
-      routes.push({
-        pattern: kw,
-        agentId: member.id,
-        priority: 50,
-      });
+      if (!preDefinedSet.has(kw.toLowerCase())) {
+        routes.push({
+          pattern: kw,
+          agentId: member.id,
+          priority: 50,
+        });
+      }
     }
   }
 

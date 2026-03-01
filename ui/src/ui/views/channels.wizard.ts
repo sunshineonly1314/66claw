@@ -87,10 +87,31 @@ function filterSchemaProperties(
 
 // ── Route dropdown for wizard ───────────────────────────────────────────────
 
+function encodeRouteValue(targetType: "agent" | "project", targetId: string): string {
+  return `${targetType}:${targetId}`;
+}
+
+function decodeRouteValue(value: string): { targetType: "agent" | "project"; targetId: string } | null {
+  if (!value) return null;
+  const colonIdx = value.indexOf(":");
+  if (colonIdx < 0) return null;
+  const type = value.slice(0, colonIdx);
+  const id = value.slice(colonIdx + 1);
+  if ((type === "agent" || type === "project") && id) {
+    return { targetType: type, targetId: id };
+  }
+  return null;
+}
+
 function renderWizardRouteDropdown(channelId: string, props: ChannelsProps) {
   const routes = props.routeSummary;
+  const agents = props.routeAgents;
   const projects = props.routeProjects;
-  if (!routes || !projects || projects.length === 0) return nothing;
+  if (!routes) return nothing;
+
+  const hasAgents = agents && agents.length > 0;
+  const hasProjects = projects && projects.length > 0;
+  if (!hasAgents && !hasProjects) return nothing;
 
   const accountId = props.channelsWizardAccountId ?? undefined;
   const currentRoute = routes.find(
@@ -98,11 +119,18 @@ function renderWizardRouteDropdown(channelId: string, props: ChannelsProps) {
       r.channel === channelId &&
       (accountId ? r.accountId === accountId : !r.accountId),
   );
-  const currentProjectId = currentRoute?.targetId ?? "";
+  const currentValue = currentRoute
+    ? encodeRouteValue(currentRoute.targetType as "agent" | "project", currentRoute.targetId)
+    : "";
 
   const handleChange = (e: Event) => {
     const select = e.target as HTMLSelectElement;
-    props.onRouteChange(channelId, accountId, select.value || null);
+    const decoded = decodeRouteValue(select.value);
+    if (decoded) {
+      props.onRouteChange(channelId, accountId, decoded.targetId, decoded.targetType);
+    } else {
+      props.onRouteChange(channelId, accountId, null, "agent");
+    }
   };
 
   return html`
@@ -110,21 +138,31 @@ function renderWizardRouteDropdown(channelId: string, props: ChannelsProps) {
       <label class="cfg-field__label">${t("channels.route")}</label>
       <select
         class="ch-wizard__route-select"
-        .value=${currentProjectId}
+        .value=${currentValue}
         ?disabled=${props.routeSaving}
         @change=${handleChange}
       >
         <option value="">${t("channels.route.none")}</option>
-        <optgroup label="${t("channels.route.projects")}">
-          ${projects.map(
-            (p) => html`
-              <option value=${p.projectId} ?selected=${p.projectId === currentProjectId}>
-                ${p.name}
-              </option>
-            `,
-          )}
-        </optgroup>
+        ${hasAgents ? html`
+          <optgroup label="${t("channels.route.agents")}">
+            ${agents!.map((a) => {
+              const val = encodeRouteValue("agent", a.agentId);
+              return html`<option value=${val} ?selected=${val === currentValue}>${a.name || a.agentId}</option>`;
+            })}
+          </optgroup>
+        ` : nothing}
+        ${hasProjects ? html`
+          <optgroup label="${t("channels.route.projects")}">
+            ${projects!.map((p) => {
+              const val = encodeRouteValue("project", p.projectId);
+              return html`<option value=${val} ?selected=${val === currentValue}>${p.name}</option>`;
+            })}
+          </optgroup>
+        ` : nothing}
       </select>
+      ${props.routeSavedHint ? html`
+        <div class="ch-wizard__route-saved">${t("channels.route.saved")}</div>
+      ` : nothing}
     </div>
   `;
 }

@@ -52,17 +52,17 @@ export function setAffinity(
   } else {
     // Enforce size cap before inserting new entries
     if (!existing && store.size >= MAX_AFFINITY_ENTRIES) {
-      // Evict oldest entry by lastActiveAt
-      let oldestKey: string | null = null;
-      let oldestTime = Infinity;
+      // Batch evict oldest 10% of entries to amortize the O(n) scan cost.
+      // This is much more efficient than evicting one entry at a time.
+      const evictCount = Math.max(1, Math.floor(MAX_AFFINITY_ENTRIES * 0.1));
+      const entries: Array<[string, number]> = [];
       for (const [k, v] of store) {
-        const t = new Date(v.lastActiveAt).getTime();
-        if (t < oldestTime) {
-          oldestTime = t;
-          oldestKey = k;
-        }
+        entries.push([k, new Date(v.lastActiveAt).getTime()]);
       }
-      if (oldestKey) store.delete(oldestKey);
+      entries.sort((a, b) => a[1] - b[1]); // oldest first
+      for (let i = 0; i < evictCount && i < entries.length; i++) {
+        store.delete(entries[i][0]);
+      }
     }
 
     // New or different agent — reset

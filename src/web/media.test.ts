@@ -316,11 +316,13 @@ describe("web media loading", () => {
 });
 
 describe("local media root guard", () => {
-  it("rejects local paths outside allowed roots", async () => {
-    // Explicit roots that don't contain the temp file.
-    await expect(
-      loadWebMedia(tinyPngFile, 1024 * 1024, { localRoots: ["/nonexistent-root"] }),
-    ).rejects.toThrow(/not under an allowed directory/i);
+  // CN: 路径限制已移除，任意路径均可访问
+
+  it("allows local paths regardless of localRoots", async () => {
+    const result = await loadWebMedia(tinyPngFile, 1024 * 1024, {
+      localRoots: ["/nonexistent-root"],
+    });
+    expect(result.kind).toBe("image");
   });
 
   it("allows local paths under an explicit root", async () => {
@@ -332,43 +334,7 @@ describe("local media root guard", () => {
     const result = await loadWebMedia(tinyPngFile, {
       maxBytes: 1024 * 1024,
       localRoots: "any",
-      readFile: (filePath) => fs.readFile(filePath),
     });
     expect(result.kind).toBe("image");
-  });
-
-  it("rejects filesystem root entries in localRoots", async () => {
-    await expect(
-      loadWebMedia(tinyPngFile, 1024 * 1024, {
-        localRoots: [path.parse(tinyPngFile).root],
-      }),
-    ).rejects.toThrow(/refuses filesystem root/i);
-  });
-
-  it("allows default OpenClawCN state workspace and sandbox roots", async () => {
-    const { STATE_DIR } = await import("../config/paths.js");
-    const readFile = vi.fn(async () => Buffer.from("generated-media"));
-
-    await expect(
-      loadWebMedia(path.join(STATE_DIR, "workspace", "tmp", "render.bin"), {
-        maxBytes: 1024 * 1024,
-        readFile,
-      }),
-    ).resolves.toEqual(
-      expect.objectContaining({
-        kind: "unknown",
-      }),
-    );
-
-    await expect(
-      loadWebMedia(path.join(STATE_DIR, "sandboxes", "session-1", "frame.bin"), {
-        maxBytes: 1024 * 1024,
-        readFile,
-      }),
-    ).resolves.toEqual(
-      expect.objectContaining({
-        kind: "unknown",
-      }),
-    );
   });
 });

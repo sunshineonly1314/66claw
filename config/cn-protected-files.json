@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$comment": "Machine-readable CN protection list. Source of truth for .gitattributes merge rules, CI validation, and merge scripts. Regenerate .gitattributes via: bash scripts/generate-gitattributes-merge.sh",
-  "lastUpdated": "2026-02-21",
+  "lastUpdated": "2026-03-01",
 
   "section1_cn_only": {
     "description": "CN-only files. Upstream does not have these. Strategy: merge=ours (always keep CN version).",
@@ -103,10 +103,6 @@
       "src/agents/skills/marketplace/db.test.ts",
       "src/gateway/server-methods/skills-marketplace-search.ts",
       "src/gateway/server-methods/skills-marketplace-search.test.ts",
-      "src/memory/search-tiering-cn.ts",
-      "src/memory/memory-schema.ts",
-      "src/security/delayed-enforcement.ts",
-      "src/security/extension-signature.ts",
       "src/gateway/server-methods/model-config.ts",
       "src/mcp/marketplace-sync.ts",
       "src/mcp/marketplace-index.ts",
@@ -143,11 +139,12 @@
     ],
     "directories": [
       "src/dispatch/",
-      "extensions/feishu/",
-      "extensions/dingtalk/",
-      "extensions/wecom/",
-      "extensions/qqbot/",
+      "src/license/",
+      "src/security/",
+      "src/memory/",
       "extensions/openclawwechat/",
+      "extensions/agent-team/",
+      "extensions/orchestrator/",
       "cn/",
       "apps/desktop/",
       "scripts/autopipeline/",
@@ -317,11 +314,9 @@
   "cn_extension_build": {
     "description": "CN channel extensions compiled from TS via esbuild (no obfuscation). CI verifies committed .js files exactly match esbuild output. See verify-extensions.ts (HIGH-04 fix).",
     "directories": [
-      "extensions/dingtalk/",
-      "extensions/feishu/",
       "extensions/openclawwechat/",
-      "extensions/qqbot/",
-      "extensions/wecom/"
+      "extensions/agent-team/",
+      "extensions/orchestrator/"
     ]
   },
 
@@ -333,7 +328,8 @@
       "directories": [
         "src/dispatch/",
         "src/license/",
-        "src/security/"
+        "src/security/",
+        "src/memory/"
       ],
       "files": [
         "src/gateway/cn-handlers.ts",
@@ -362,8 +358,6 @@
         "src/mcp/marketplace/modelscope-source.ts",
         "src/mcp/marketplace/ai-enhancer.ts",
         "src/config/provider-capability-mapping.ts",
-        "src/memory/search-tiering-cn.ts",
-        "src/memory/memory-schema.ts",
         "src/gateway/license-check.ts",
 
         "src/agents/skills/gitee-registry.ts",

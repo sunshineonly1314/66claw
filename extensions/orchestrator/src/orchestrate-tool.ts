@@ -1444,25 +1444,19 @@ async function executeDeploySequenceInner(
     }
   }
 
-  // Ensure terminal status is set: if all agents are ready but status is still
-  // "deploying" (can happen on retry with 0 failed agents), transition to "deployed"
+  // Determine terminal status before writing it — we need to create the
+  // team project BEFORE marking status as "deployed" so that the UI polling
+  // (which fires on status === "deployed") sees the project in the cache.
   const latestState = await loadState(plan.planId);
+  let willBeDeployed = false;
   if (latestState && latestState.status === "deploying") {
     const allReady = latestState.agents.every(a => a.status === "ready");
-    if (allReady) {
-      await saveState({ ...latestState, status: "deployed", deployFinishedAt: new Date().toISOString() });
-    }
+    if (allReady) willBeDeployed = true;
+  } else if (latestState && latestState.status === "deployed") {
+    willBeDeployed = true;
   }
 
-  const finalStatus = (await loadState(plan.planId))?.status ?? "failed";
   const readyCount = results.filter(r => r.status === "ready").length;
-  emitDiagnosticEvent({
-    type: "orchestrator.deploy",
-    planId: plan.planId,
-    phase: finalStatus === "deployed" ? "complete" : "failed",
-    agentCount: readyCount,
-    error: finalStatus !== "deployed" ? `${results.length - readyCount} agent(s) failed` : undefined,
-  });
 
   // S2-4: Register deployed agents in the in-memory registry
   if (readyCount > 0) {
@@ -1471,8 +1465,11 @@ async function executeDeploySequenceInner(
   }
 
   // Auto-create team project from deployed plan (bridge orchestrator → agent-team)
-  // Retry up to 3 times with delay to handle Windows atomic-write race
-  if (finalStatus === "deployed") {
+  // IMPORTANT: Must happen BEFORE setting status to "deployed", because the UI
+  // polls deploy.status and triggers loadTeamProjects() immediately when it sees
+  // "deployed". If project hasn't been created yet, agents appear ungrouped.
+  // Retry up to 3 times with delay to handle Windows atomic-write race.
+  if (willBeDeployed) {
     let projectCreated = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -1510,6 +1507,20 @@ async function executeDeploySequenceInner(
       });
     }
   }
+
+  // NOW mark deploy status as "deployed" — project is already in cache
+  if (willBeDeployed && latestState && latestState.status === "deploying") {
+    await saveState({ ...latestState, status: "deployed", deployFinishedAt: new Date().toISOString() });
+  }
+
+  const finalStatus = (await loadState(plan.planId))?.status ?? "failed";
+  emitDiagnosticEvent({
+    type: "orchestrator.deploy",
+    planId: plan.planId,
+    phase: finalStatus === "deployed" ? "complete" : "failed",
+    agentCount: readyCount,
+    error: finalStatus !== "deployed" ? `${results.length - readyCount} agent(s) failed` : undefined,
+  });
 
   return { planId: plan.planId, agents: results, finalStatus };
 }
@@ -2118,76 +2129,147 @@ export async function performGuidedPropose(
  */
 function generateDefaultTeam(requirement: string, userContext: UserContext): AgentBlueprint[] {
   const lower = requirement.toLowerCase();
+
+  // ── Role Definitions ──
+  // Each candidate has: regex trigger, priority (lower = more important when cap hit),
+  // and a function to extract context-aware role from the requirement.
+  type RoleCandidate = {
+    name: string;
+    id: string;
+    pattern: RegExp;
+    priority: number; // lower = higher priority when cap truncates
+    baseRole: string;
+    modelTier: "cheap" | "mid" | "sota";
+    tools: { allow: string[]; profile?: string };
+  };
+
+  const ROLE_CANDIDATES: RoleCandidate[] = [
+    {
+      name: "文案写手", id: "copywriter",
+      pattern: /写|文案|内容|创作|copy|writing|content/i,
+      priority: 20, baseRole: "撰写和优化各类文案内容",
+      modelTier: "mid", tools: { allow: ["group:web", "group:memory"] },
+    },
+    {
+      name: "编程助手", id: "code-assistant",
+      pattern: /代码|开发|编程|code|dev|program/i,
+      priority: 15, baseRole: "编写、审查和调试代码",
+      modelTier: "mid", tools: { allow: ["group:web", "group:fs", "group:memory"], profile: "coding" },
+    },
+    {
+      name: "数据分析师", id: "data-analyst",
+      pattern: /数据|分析|报表|data|analy|统计/i,
+      priority: 25, baseRole: "分析数据、生成报表和可视化",
+      modelTier: "mid", tools: { allow: ["group:web", "group:memory", "group:fs"] },
+    },
+    {
+      name: "客服专员", id: "support-agent",
+      pattern: /客服|support|答疑|咨询|接待|helpdesk/i,
+      priority: 20, baseRole: "自动回答客户常见问题，处理咨询",
+      modelTier: "cheap", tools: { allow: ["group:web", "group:memory"] },
+    },
+    {
+      name: "研究员", id: "researcher",
+      pattern: /研究|调研|research|报告|论文|paper/i,
+      priority: 20, baseRole: "搜索资料、整理信息、撰写研究报告",
+      modelTier: "mid", tools: { allow: ["group:web", "group:memory"] },
+    },
+    {
+      name: "翻译专员", id: "translator",
+      pattern: /翻译|translate|双语|多语|本地化|locali[sz]/i,
+      priority: 25, baseRole: "翻译和本地化各类文档内容",
+      modelTier: "mid", tools: { allow: ["group:web", "group:memory"] },
+    },
+    {
+      name: "配图助手", id: "image-helper",
+      pattern: /配图|图片|封面|插图|image|illustrat|画图|设计图/i,
+      priority: 30, baseRole: "生成配图、封面和视觉素材",
+      modelTier: "mid", tools: { allow: ["group:web", "group:memory"] },
+    },
+    {
+      name: "新闻采编", id: "news-editor",
+      pattern: /新闻|资讯|热点|简报|news|briefing|早报/i,
+      priority: 25, baseRole: "采集新闻资讯、编辑简报",
+      modelTier: "mid", tools: { allow: ["group:web", "group:memory"] },
+    },
+    {
+      name: "日程管家", id: "scheduler",
+      pattern: /日程|日历|提醒|预约|schedule|calendar|remind|会议/i,
+      priority: 30, baseRole: "管理日程安排和定时提醒",
+      modelTier: "cheap", tools: { allow: ["group:memory"] },
+    },
+  ];
+
+  // ── Match candidates against requirement ──
+  const matched: Array<RoleCandidate & { contextRole: string }> = [];
+  for (const candidate of ROLE_CANDIDATES) {
+    if (candidate.pattern.test(lower)) {
+      // Extract matched keyword to make role description context-aware
+      const kwMatch = lower.match(candidate.pattern);
+      const contextHint = kwMatch ? kwMatch[0] : "";
+      // Enrich the base role with requirement context (first 30 chars around match)
+      const contextRole = enrichRoleFromRequirement(candidate.baseRole, requirement, contextHint);
+      matched.push({ ...candidate, contextRole });
+    }
+  }
+
+  // Sort by priority (lower number = higher importance, kept first)
+  matched.sort((a, b) => a.priority - b.priority);
+
+  // ── Build team ──
   const team: AgentBlueprint[] = [];
 
-  // Always add a primary assistant
-  team.push({
-    name: "主力助手",
-    id: "primary-assistant",
-    role: "核心任务处理，负责响应用户需求和执行主要工作",
-    soul: buildMinimalSoul("主力助手", "核心任务处理，负责响应用户需求和执行主要工作"),
-    modelTier: userContext.budget === "cheap" ? "cheap" : "mid",
-    tools: { allow: ["group:web", "group:memory"], profile: "minimal" },
-  });
-
-  // Add scenario-specific agents
-  if (/写|文案|内容|创作|copy|writing|content/i.test(lower)) {
+  if (matched.length === 0) {
+    // No specific roles matched — add generic primary assistant
     team.push({
-      name: "文案写手",
-      id: "copywriter",
-      role: "撰写和优化各类文案内容",
-      soul: buildMinimalSoul("文案写手", "撰写和优化各类文案内容"),
-      modelTier: "mid",
-      tools: { allow: ["group:web", "group:memory"] },
+      name: "主力助手",
+      id: "primary-assistant",
+      role: "核心任务处理，负责响应用户需求和执行主要工作",
+      soul: buildMinimalSoul("主力助手", "核心任务处理，负责响应用户需求和执行主要工作"),
+      modelTier: userContext.budget === "cheap" ? "cheap" : "mid",
+      tools: { allow: ["group:web", "group:memory"], profile: "minimal" },
     });
+  } else {
+    // Add matched roles directly (no wasted primary-assistant slot)
+    for (const m of matched) {
+      team.push({
+        name: m.name,
+        id: m.id,
+        role: m.contextRole,
+        soul: buildMinimalSoul(m.name, m.contextRole),
+        modelTier: userContext.budget === "cheap" && m.modelTier === "mid" ? "cheap" : m.modelTier,
+        tools: m.tools,
+      });
+    }
   }
 
-  if (/数据|分析|报表|data|analy/i.test(lower)) {
-    team.push({
-      name: "数据分析师",
-      id: "data-analyst",
-      role: "分析数据、生成报表和可视化",
-      soul: buildMinimalSoul("数据分析师", "分析数据、生成报表和可视化"),
-      modelTier: "mid",
-      tools: { allow: ["group:web", "group:memory", "group:fs"], profile: "minimal" },
-    });
-  }
+  // Dynamic cap: 1-6 agents based on matched count (never over 6 to keep Supervisor manageable)
+  const maxAgents = Math.min(6, Math.max(1, matched.length));
+  return team.slice(0, maxAgents);
+}
 
-  if (/客服|support|服务|答疑|咨询/i.test(lower)) {
-    team.push({
-      name: "客服专员",
-      id: "support-agent",
-      role: "自动回答客户常见问题，处理咨询",
-      soul: buildMinimalSoul("客服专员", "自动回答客户常见问题，处理咨询"),
-      modelTier: "cheap",
-      tools: { allow: ["group:web", "group:memory"] },
-    });
-  }
+/**
+ * Enrich a generic role description with context from the user's requirement.
+ * Extracts a short phrase around the matched keyword to make the role specific.
+ */
+function enrichRoleFromRequirement(baseRole: string, requirement: string, keyword: string): string {
+  if (!keyword || requirement.length < 10) return baseRole;
 
-  if (/代码|开发|编程|code|dev|program/i.test(lower)) {
-    team.push({
-      name: "编程助手",
-      id: "code-assistant",
-      role: "编写、审查和调试代码",
-      soul: buildMinimalSoul("编程助手", "编写、审查和调试代码"),
-      modelTier: "mid",
-      tools: { allow: ["group:web", "group:fs", "group:memory"], profile: "coding" },
-    });
-  }
+  // Find keyword position and extract surrounding context (up to 15 chars on each side)
+  const idx = requirement.toLowerCase().indexOf(keyword.toLowerCase());
+  if (idx === -1) return baseRole;
 
-  if (/研究|调研|research|报告/i.test(lower)) {
-    team.push({
-      name: "研究员",
-      id: "researcher",
-      role: "搜索资料、整理信息、撰写研究报告",
-      soul: buildMinimalSoul("研究员", "搜索资料、整理信息、撰写研究报告"),
-      modelTier: "mid",
-      tools: { allow: ["group:web", "group:memory"] },
-    });
-  }
+  const start = Math.max(0, idx - 15);
+  const end = Math.min(requirement.length, idx + keyword.length + 15);
+  let context = requirement.slice(start, end).trim();
 
-  // Cap at 4 agents maximum for auto-generated teams
-  return team.slice(0, 4);
+  // Remove leading/trailing punctuation
+  context = context.replace(/^[，。、；：！？\s,.:;!?]+|[，。、；：！？\s,.:;!?]+$/g, "");
+
+  if (context.length < 4 || context === keyword) return baseRole;
+
+  // Append context to base role: "撰写和优化各类文案内容" → "撰写和优化各类文案内容（用户需求：跨境电商文案）"
+  return `${baseRole}（用户需求：${context}）`;
 }
 
 function buildMinimalSoul(name: string, role: string): string {

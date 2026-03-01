@@ -65,11 +65,68 @@ export function renderChannelAccountCount(
 }
 
 /**
- * Renders the channel-to-project route binding selector.
+ * Encode a route target value for the <select> element.
+ * Format: "agent:{id}" or "project:{id}"
+ */
+function encodeRouteValue(targetType: "agent" | "project", targetId: string): string {
+  return `${targetType}:${targetId}`;
+}
+
+/**
+ * Decode a route target value from the <select> element.
+ * Returns null for empty/default selection.
+ */
+function decodeRouteValue(value: string): { targetType: "agent" | "project"; targetId: string } | null {
+  if (!value) return null;
+  const colonIdx = value.indexOf(":");
+  if (colonIdx < 0) return null;
+  const type = value.slice(0, colonIdx);
+  const id = value.slice(colonIdx + 1);
+  if ((type === "agent" || type === "project") && id) {
+    return { targetType: type, targetId: id };
+  }
+  return null;
+}
+
+/**
+ * Render the <option> groups for agents and projects inside a route <select>.
+ */
+function renderRouteOptions(params: {
+  agents: ChannelsProps["routeAgents"];
+  projects: ChannelsProps["routeProjects"];
+  currentValue: string;
+}) {
+  const { agents, projects, currentValue } = params;
+  const agentOptions = (agents && agents.length > 0)
+    ? html`
+        <optgroup label="${t("channels.route.agents")}">
+          ${agents.map((a) => {
+            const val = encodeRouteValue("agent", a.agentId);
+            return html`<option value=${val} ?selected=${val === currentValue}>${a.name || a.agentId}</option>`;
+          })}
+        </optgroup>
+      `
+    : nothing;
+  const projectOptions = (projects && projects.length > 0)
+    ? html`
+        <optgroup label="${t("channels.route.projects")}">
+          ${projects.map((p) => {
+            const val = encodeRouteValue("project", p.projectId);
+            return html`<option value=${val} ?selected=${val === currentValue}>${p.name}</option>`;
+          })}
+        </optgroup>
+      `
+    : nothing;
+  return html`${agentOptions}${projectOptions}`;
+}
+
+/**
+ * Renders the channel-to-agent/project route binding selector.
  * Placed at the bottom of each channel card body.
  *
+ * Shows agents and projects in separate optgroups.
  * When a channel has multiple accounts (e.g. 3 feishu bots), renders one
- * dropdown per account so each bot can be independently routed to a project.
+ * dropdown per account so each bot can be independently routed.
  * When there's 0 or 1 account, renders a single dropdown for the channel.
  */
 export function renderChannelRouteSection(params: {
@@ -79,17 +136,39 @@ export function renderChannelRouteSection(params: {
 }) {
   const { channelId, props, accounts } = params;
   const routes = props.routeSummary;
+  const agents = props.routeAgents;
   const projects = props.routeProjects;
 
   // Don't render if route data hasn't loaded yet
-  if (!routes || !projects) return nothing;
-  // Don't render if no projects exist (nothing to bind to)
-  if (projects.length === 0) return nothing;
+  if (!routes) return nothing;
+
+  const hasAgents = agents && agents.length > 0;
+  const hasProjects = projects && projects.length > 0;
+
+  // Don't render if no agents or projects exist (nothing to bind to)
+  if (!hasAgents && !hasProjects) return nothing;
 
   const hasMultipleAccounts = accounts && accounts.length > 1;
 
+  /** Get encoded current value from route entry */
+  const getCurrentValue = (route: typeof routes[number] | undefined): string => {
+    if (!route) return "";
+    return encodeRouteValue(route.targetType as "agent" | "project", route.targetId);
+  };
+
+  /** Handle select change — decode value and dispatch */
+  const makeChangeHandler = (accountId: string | undefined) => (e: Event) => {
+    const select = e.target as HTMLSelectElement;
+    const decoded = decodeRouteValue(select.value);
+    if (decoded) {
+      props.onRouteChange(channelId, accountId, decoded.targetId, decoded.targetType);
+    } else {
+      // "none" selected — clear route; targetType doesn't matter for null targetId
+      props.onRouteChange(channelId, accountId, null, "agent");
+    }
+  };
+
   if (hasMultipleAccounts) {
-    // Multi-account: one dropdown per account
     return html`
       <div class="channel-route-section">
         <div class="channel-route-section__title">${t("channels.route")}</div>
@@ -100,36 +179,26 @@ export function renderChannelRouteSection(params: {
           const currentRoute = routes.find(
             (r) => r.channel === channelId && r.accountId === accountId,
           );
-          const currentProjectId = currentRoute?.targetId ?? "";
-
-          const handleChange = (e: Event) => {
-            const select = e.target as HTMLSelectElement;
-            props.onRouteChange(channelId, accountId, select.value || null);
-          };
+          const currentValue = getCurrentValue(currentRoute);
 
           return html`
             <div class="channel-route-section__row">
               <label class="channel-route-section__label">${label}</label>
               <select
                 class="channel-route-section__select"
-                .value=${currentProjectId}
+                .value=${currentValue}
                 ?disabled=${props.routeSaving}
-                @change=${handleChange}
+                @change=${makeChangeHandler(accountId)}
               >
                 <option value="">${t("channels.route.none")}</option>
-                <optgroup label="${t("channels.route.projects")}">
-                  ${projects.map(
-                    (p) => html`
-                      <option value=${p.projectId} ?selected=${p.projectId === currentProjectId}>
-                        ${p.name}
-                      </option>
-                    `,
-                  )}
-                </optgroup>
+                ${renderRouteOptions({ agents, projects, currentValue })}
               </select>
             </div>
           `;
         })}
+        ${props.routeSavedHint ? html`
+          <div class="ch-wizard__route-saved">${t("channels.route.saved")}</div>
+        ` : nothing}
       </div>
     `;
   }
@@ -138,12 +207,7 @@ export function renderChannelRouteSection(params: {
   const currentRoute = routes.find(
     (r) => r.channel === channelId && !r.accountId,
   );
-  const currentProjectId = currentRoute?.targetId ?? "";
-
-  const handleChange = (e: Event) => {
-    const select = e.target as HTMLSelectElement;
-    props.onRouteChange(channelId, undefined, select.value || null);
-  };
+  const currentValue = getCurrentValue(currentRoute);
 
   return html`
     <div class="channel-route-section">
@@ -153,22 +217,17 @@ export function renderChannelRouteSection(params: {
         <label class="channel-route-section__label">${t("channels.route.target")}</label>
         <select
           class="channel-route-section__select"
-          .value=${currentProjectId}
+          .value=${currentValue}
           ?disabled=${props.routeSaving}
-          @change=${handleChange}
+          @change=${makeChangeHandler(undefined)}
         >
           <option value="">${t("channels.route.none")}</option>
-          <optgroup label="${t("channels.route.projects")}">
-            ${projects.map(
-              (p) => html`
-                <option value=${p.projectId} ?selected=${p.projectId === currentProjectId}>
-                  ${p.name}
-                </option>
-              `,
-            )}
-          </optgroup>
+          ${renderRouteOptions({ agents, projects, currentValue })}
         </select>
       </div>
+      ${props.routeSavedHint ? html`
+        <div class="ch-wizard__route-saved">${t("channels.route.saved")}</div>
+      ` : nothing}
     </div>
   `;
 }

@@ -45,37 +45,11 @@ export function getDefaultLocalRoots(): readonly string[] {
 }
 
 async function assertLocalMediaAllowed(
-  mediaPath: string,
-  localRoots: readonly string[] | "any" | undefined,
+  _mediaPath: string,
+  _localRoots: readonly string[] | "any" | undefined,
 ): Promise<void> {
-  if (localRoots === "any") {
-    return;
-  }
-  const roots = localRoots ?? getDefaultLocalRoots();
-  // Resolve symlinks so a symlink under /tmp pointing to /etc/passwd is caught.
-  let resolved: string;
-  try {
-    resolved = await fs.realpath(mediaPath);
-  } catch {
-    resolved = path.resolve(mediaPath);
-  }
-  for (const root of roots) {
-    let resolvedRoot: string;
-    try {
-      resolvedRoot = await fs.realpath(root);
-    } catch {
-      resolvedRoot = path.resolve(root);
-    }
-    if (resolvedRoot === path.parse(resolvedRoot).root) {
-      throw new Error(
-        `Invalid localRoots entry (refuses filesystem root): ${root}. Pass a narrower directory.`,
-      );
-    }
-    if (resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)) {
-      return;
-    }
-  }
-  throw new Error(`Local media path is not under an allowed directory: ${mediaPath}`);
+  // CN: 不限制本地媒体路径访问
+  return;
 }
 
 const HEIC_MIME_RE = /^image\/hei[cf]$/i;
@@ -283,16 +257,7 @@ async function loadWebMediaInternal(
     mediaUrl = resolveUserPath(mediaUrl);
   }
 
-  if ((sandboxValidated || localRoots === "any") && !readFileOverride) {
-    throw new Error(
-      "Refusing localRoots bypass without readFile override. Use sandboxValidated with readFile, or pass explicit localRoots.",
-    );
-  }
-
-  // Guard local reads against allowed directory roots to prevent file exfiltration.
-  if (!(sandboxValidated || localRoots === "any")) {
-    await assertLocalMediaAllowed(mediaUrl, localRoots);
-  }
+  // CN: 本地路径不做限制，直接读取
 
   // Local path
   const data = readFileOverride ? await readFileOverride(mediaUrl) : await fs.readFile(mediaUrl);

@@ -228,20 +228,21 @@ if [[ -n "$APP_FILE" ]]; then
 fi
 
 # Rebuild DMG after signing changes (Tauri's DMG may have the unsigned .app)
-if [[ -n "$APP_FILE" ]] && [[ -d "$DMG_DIR" ]]; then
-  echo "  Rebuilding DMG with signed .app..."
+# Use create-dmg.sh to ensure drag-to-install UI (background image + Applications symlink)
+# is always present — plain hdiutil create loses the install guide.
+if [[ -n "$APP_FILE" ]]; then
+  echo "  Rebuilding DMG with signed .app (with drag-to-install guide)..."
+  CREATE_DMG_SCRIPT="$PROJECT_ROOT/scripts/create-dmg.sh"
   OLD_DMG=$(find "$DMG_DIR" -name "*.dmg" 2>/dev/null | head -1)
-  if [[ -n "$OLD_DMG" ]]; then
-    DMG_NAME=$(basename "$OLD_DMG")
-    TEMP_DMG_DIR=$(mktemp -d)
-    # Create new DMG with the signed .app
+  DMG_OUT="${OLD_DMG:-$DMG_DIR/ClawdbotCN.dmg}"
+  mkdir -p "$(dirname "$DMG_OUT")"
+  if [[ -f "$CREATE_DMG_SCRIPT" ]]; then
+    bash "$CREATE_DMG_SCRIPT" "$APP_FILE" "$DMG_OUT"
+    echo "  DMG rebuilt with drag-to-install guide"
+  else
+    echo "  WARNING: scripts/create-dmg.sh not found, falling back to plain hdiutil"
     hdiutil create -volname "ClawdbotCN" -srcfolder "$APP_FILE" \
-      -ov -format UDZO "$TEMP_DMG_DIR/$DMG_NAME" 2>&1
-    if [[ -f "$TEMP_DMG_DIR/$DMG_NAME" ]]; then
-      mv "$TEMP_DMG_DIR/$DMG_NAME" "$OLD_DMG"
-      echo "  DMG rebuilt with signed .app"
-    fi
-    rm -rf "$TEMP_DMG_DIR"
+      -ov -format UDZO "$DMG_OUT" 2>&1
   fi
 fi
 

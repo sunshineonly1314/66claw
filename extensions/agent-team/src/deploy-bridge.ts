@@ -82,11 +82,15 @@ type OrchestratorState = {
 // ── Supervisor Model Selection ────────────────────────────────────────────
 
 /**
- * Select the best available SOTA-tier model for the Supervisor agent.
- * The Supervisor needs the strongest available model for intelligent routing,
- * task decomposition, quality validation, and team coordination.
+ * Select the best available model for the Supervisor agent.
  *
- * Priority: claude-opus-4-6 > o3 > claude-sonnet-4-5 > gpt-4o > deepseek-reasoner
+ * Strategy (aligned with capability-inference.ts):
+ *   1. If the orchestrator already inferred a model for a supervisor blueprint, use it
+ *      (this respects the user's global text model — see capability-inference selectModel).
+ *   2. Otherwise, pick the best model from providers already used in the plan.
+ *   3. Fallback to a sensible default.
+ *
+ * This ensures the model shown during planning matches the model deployed.
  */
 const SUPERVISOR_MODEL_PRIORITY = [
   "anthropic/claude-opus-4-6",
@@ -96,10 +100,12 @@ const SUPERVISOR_MODEL_PRIORITY = [
   "deepseek/deepseek-reasoner",
   "zhipu/glm-5",
   "qwen/qwen-max",
+  "deepseek/deepseek-chat",
 ];
 
-function selectSotaModel(plan: OrchestratorPlan): string {
-  // 1. If orchestrator already assigned a model to the supervisor blueprint, use it
+function selectSupervisorModel(plan: OrchestratorPlan): string {
+  // 1. If orchestrator already assigned a model to the supervisor blueprint, use it.
+  //    This path respects the user's configured global text model (from capability-inference).
   for (const bp of plan.agents) {
     const caps = bp.inferredCapabilities as Record<string, unknown> | undefined;
     const model = caps?.model as { primary?: string } | string | undefined;
@@ -260,7 +266,7 @@ export async function createProjectFromPlan(
   }
 
   // Add supervisor to member lists (supervisor is always the first entry)
-  // Supervisor MUST use SOTA-tier model for intelligent routing and coordination.
+  // Supervisor uses the best available model (respects user's configured provider).
   const supervisorMember: MemberInfo = {
     id: supervisorId,
     name: `${plan.teamName ?? "Team"} Supervisor`,
@@ -412,7 +418,7 @@ export async function createProjectFromPlan(
   };
 
   // Select the best available SOTA model for the supervisor
-  const supervisorModel = selectSotaModel(plan);
+  const supervisorModel = selectSupervisorModel(plan);
 
   const allAgentEntries: AgentPatchEntry[] = [
     {

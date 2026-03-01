@@ -922,7 +922,7 @@ function renderAddAgentForm(props: AgentsProps) {
                 }}
               />
               ${showIdHint
-                ? html`<div class="muted" style="font-size: 11px; margin-top: 2px;">${t("agents.addAgentIdHint")}</div>`
+                ? html`<div class="field-hint-danger">${t("agents.addAgentIdHint")}</div>`
                 : nothing}
             </label>
             <label class="field">

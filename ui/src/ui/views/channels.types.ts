@@ -109,7 +109,7 @@ export type OpenclawwechatStatus = {
 export type ChannelRouteEntry = {
   channel: string;
   accountId?: string;
-  targetType: "project";
+  targetType: "project" | "agent";
   targetId: string;
   targetName: string;
 };
@@ -123,6 +123,11 @@ export type ChannelRouteProjectOption = {
   status?: string;
   memberCount?: number;
   memberIds?: string[];
+};
+
+export type ChannelRouteAgentOption = {
+  agentId: string;
+  name: string;
 };
 
 export type ChannelsProps = {
@@ -143,10 +148,12 @@ export type ChannelsProps = {
   configFormDirty: boolean;
   nostrProfileFormState: NostrProfileFormState | null;
   nostrProfileAccountId: string | null;
-  // Channel-to-project route binding
+  // Channel-to-agent/project route binding
   routeSummary: ChannelRouteEntry[] | null;
   routeProjects: ChannelRouteProjectOption[] | null;
+  routeAgents: ChannelRouteAgentOption[] | null;
   routeSaving: boolean;
+  routeSavedHint: boolean;
   onRefresh: (probe: boolean) => void;
   onWhatsAppStart: (force: boolean) => void;
   onWhatsAppWait: () => void;
@@ -160,7 +167,7 @@ export type ChannelsProps = {
   onNostrProfileSave: () => void;
   onNostrProfileImport: () => void;
   onNostrProfileToggleAdvanced: () => void;
-  onRouteChange: (channel: string, accountId: string | undefined, projectId: string | null) => void;
+  onRouteChange: (channel: string, accountId: string | undefined, targetId: string | null, targetType: "project" | "agent") => void;
   // Master-detail layout state
   channelsSelectedKey: ChannelKey | null;
   onSelectChannel: (key: ChannelKey) => void;

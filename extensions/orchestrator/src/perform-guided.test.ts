@@ -93,7 +93,7 @@ describe("performGuidedPropose", () => {
     const result = await performGuidedPropose(gw, "random unrelated request xyzzy", "{}");
 
     expect(result.planId).toBeTruthy();
-    // Default team always has at least the primary assistant
+    // Default team always has at least one agent (primary-assistant for no-match)
     expect(result.agents.length).toBeGreaterThanOrEqual(1);
     expect(result.agents[0].id).toBe("primary-assistant");
   });
@@ -105,7 +105,7 @@ describe("performGuidedPropose", () => {
     const result = await performGuidedPropose(gw, "xyzzy project: 写文案 and research调研", "{}");
 
     const ids = result.agents.map(a => a.id);
-    expect(ids).toContain("primary-assistant");
+    // With the new logic, matching roles are added directly (no primary-assistant placeholder)
     expect(ids).toContain("copywriter");
     expect(ids).toContain("researcher");
   });
@@ -120,7 +120,7 @@ describe("performGuidedPropose", () => {
     const result = await performGuidedPropose(gw, "random request xyzzy", ctx);
 
     expect(result.planId).toBeTruthy();
-    // Primary assistant should use cheap tier when budget is cheap
+    // With no keyword match, primary-assistant is used; cheap budget → cheap tier
     const primary = result.agents.find(a => a.id === "primary-assistant");
     expect(primary?.modelTier).toBe("cheap");
   });
@@ -153,16 +153,17 @@ describe("performGuidedPropose", () => {
     expect(savedState.status).toBe("draft");
   });
 
-  it("caps auto-generated teams at 4 agents", async () => {
+  it("caps auto-generated teams at 6 agents", async () => {
     const gw = makeGateway() as unknown as CallGatewayFn;
-    // Trigger all possible keyword categories
+    // Trigger as many keyword categories as possible
     const result = await performGuidedPropose(
       gw,
-      "写文案 数据分析 客服 编程 research 调研",
+      "写文案 数据分析 客服 编程 research调研 翻译 配图 新闻 日程提醒",
       "{}",
     );
 
-    expect(result.agents.length).toBeLessThanOrEqual(4);
+    expect(result.agents.length).toBeLessThanOrEqual(6);
+    expect(result.agents.length).toBeGreaterThanOrEqual(3);
   });
 
   it("returns agent details with modelTier and tools", async () => {

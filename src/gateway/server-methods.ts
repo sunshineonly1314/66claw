@@ -26,6 +26,7 @@ import { voicewakeHandlers } from "./server-methods/voicewake.js";
 import { webHandlers } from "./server-methods/web.js";
 import { wizardHandlers } from "./server-methods/wizard.js";
 import { mcpHandlers } from "./server-methods/mcp-methods.js";
+import { routeHandlers } from "./server-methods/route.js";
 
 const ADMIN_SCOPE = "operator.admin";
 const READ_SCOPE = "operator.read";
@@ -208,6 +209,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...agentsHandlers,
   ...browserHandlers,
   ...mcpHandlers,
+  ...routeHandlers,
 };
 
 export async function handleGatewayRequest(

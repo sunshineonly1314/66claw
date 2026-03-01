@@ -1,6 +1,6 @@
 import type { ChannelsStatusSnapshot, TeamProjectSummary } from "../types";
 import type { ChannelsState } from "./channels.types";
-import type { ChannelRouteEntry, ChannelRouteProjectOption } from "../views/channels.types";
+import type { ChannelRouteAgentOption, ChannelRouteEntry, ChannelRouteProjectOption } from "../views/channels.types";
 
 export type { ChannelsState };
 
@@ -81,15 +81,25 @@ export async function logoutWhatsApp(state: ChannelsState) {
 export async function loadChannelRoutes(state: ChannelsState) {
   if (!state.client || !state.connected) return;
   try {
-    const [routeRes, projectRes] = await Promise.all([
+    const [routeRes, projectRes, agentsRes, agentRoutesRes] = await Promise.all([
       state.client.request("team.route.summary", {}) as Promise<{
         routes: ChannelRouteEntry[];
       } | undefined>,
       state.client.request("team.project.list", {}) as Promise<{
         projects: TeamProjectSummary[];
       } | undefined>,
+      state.client.request("agents.list", {}) as Promise<{
+        agents: Array<{ id: string; name?: string }>;
+        defaultId?: string;
+      } | undefined>,
+      state.client.request("route.getChannelAgents", {}) as Promise<{
+        routes: ChannelRouteEntry[];
+      } | undefined>,
     ]);
-    state.channelRouteSummary = routeRes?.routes ?? [];
+    // Merge project routes and direct agent routes into one summary
+    const projectRoutes = routeRes?.routes ?? [];
+    const agentRoutes = agentRoutesRes?.routes ?? [];
+    state.channelRouteSummary = [...projectRoutes, ...agentRoutes];
     state.channelRouteProjects =
       projectRes?.projects?.map((p): ChannelRouteProjectOption => ({
         projectId: p.projectId,
@@ -101,6 +111,11 @@ export async function loadChannelRoutes(state: ChannelsState) {
         memberCount: p.memberCount,
         memberIds: p.memberIds,
       })) ?? [];
+    state.channelRouteAgents =
+      agentsRes?.agents?.map((a): ChannelRouteAgentOption => ({
+        agentId: a.id,
+        name: a.name || a.id,
+      })) ?? [];
   } catch {
     // Route data is non-critical; silently ignore failures
   }
@@ -110,14 +125,15 @@ export async function updateChannelRoute(
   state: ChannelsState,
   channel: string,
   accountId: string | undefined,
-  projectId: string | null,
+  targetId: string | null,
+  targetType: "project" | "agent",
 ) {
   if (!state.client || !state.connected || state.channelRouteSaving) return;
   state.channelRouteSaving = true;
   try {
     const projects = state.channelRouteProjects ?? [];
 
-    // Remove this channel binding from ALL projects first
+    // Always remove existing project bindings for this channel/account
     for (const proj of projects) {
       const bindings = proj.bindings ?? [];
       const hasBinding = bindings.some(
@@ -140,33 +156,50 @@ export async function updateChannelRoute(
       }
     }
 
-    // Add binding to the target project (if not "none")
-    if (projectId) {
-      const targetProject = projects.find((p) => p.projectId === projectId);
-      if (targetProject) {
-        // Filter out any stale binding for this channel from the local snapshot
-        // (the removal loop above already sent the update to the server, but
-        // `projects` is a pre-loop snapshot so targetProject.bindings may be stale).
-        const cleanedBindings = (targetProject.bindings ?? []).filter(
-          (b) =>
-            !(
-              b.channel === channel &&
-              (accountId ? b.accountId === accountId : !b.accountId)
-            ),
-        );
-        const newBinding = {
+    // Always clear any existing direct agent binding for this channel/account
+    await state.client.request("route.setChannelAgent", {
+      channel,
+      ...(accountId ? { accountId } : {}),
+      agentId: null,
+    });
+
+    // Set the new binding
+    if (targetId) {
+      if (targetType === "project") {
+        const targetProject = projects.find((p) => p.projectId === targetId);
+        if (targetProject) {
+          const cleanedBindings = (targetProject.bindings ?? []).filter(
+            (b) =>
+              !(
+                b.channel === channel &&
+                (accountId ? b.accountId === accountId : !b.accountId)
+              ),
+          );
+          const newBinding = {
+            channel,
+            ...(accountId ? { accountId } : {}),
+          };
+          await state.client.request("team.project.update", {
+            projectId: targetId,
+            bindings: [...cleanedBindings, newBinding],
+          });
+        }
+      } else {
+        // targetType === "agent"
+        await state.client.request("route.setChannelAgent", {
           channel,
           ...(accountId ? { accountId } : {}),
-        };
-        await state.client.request("team.project.update", {
-          projectId,
-          bindings: [...cleanedBindings, newBinding],
+          agentId: targetId,
         });
       }
     }
 
     // Reload route data
     await loadChannelRoutes(state);
+
+    // Show "saved" hint for 2 seconds
+    state.channelRouteSavedHint = true;
+    setTimeout(() => { state.channelRouteSavedHint = false; }, 2000);
   } catch {
     // Best effort
   } finally {

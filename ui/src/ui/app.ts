@@ -28,7 +28,7 @@ import type {
 } from "./types";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types";
 import type { EventLogEntry } from "./app-events";
-import type { ChannelRouteEntry, ChannelRouteProjectOption } from "./views/channels.types";
+import type { ChannelRouteAgentOption, ChannelRouteEntry, ChannelRouteProjectOption } from "./views/channels.types";
 import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults";
 import type {
   ExecApprovalsFile,
@@ -398,7 +398,9 @@ export class ClawdbotApp extends LitElement {
   @state() whatsappBusy = false;
   @state() channelRouteSummary: ChannelRouteEntry[] | null = null;
   @state() channelRouteProjects: ChannelRouteProjectOption[] | null = null;
+  @state() channelRouteAgents: ChannelRouteAgentOption[] | null = null;
   @state() channelRouteSaving = false;
+  @state() channelRouteSavedHint = false;
   @state() channelsSelectedKey: string | null = null;
   @state() channelsWizardOpen = false;
   @state() channelsWizardAccountId: string | null = null;
@@ -816,27 +818,28 @@ export class ClawdbotApp extends LitElement {
     globalThis.addEventListener("orch:navigate-to-agent", this._orchNavigateHandler);
     // OpenClawCN: 智能组队 — 部署完成后刷新 agent 列表
     // Use force=true to ensure a fresh fetch even if a previous load is in-flight.
-    // Retry after delays to handle the race where createFromPlan hasn't finished
-    // yet when orchestrator.deploy.status returns "deployed" (project creation
-    // happens AFTER the status is written to disk).
+    // The backend now creates the team project BEFORE marking status as "deployed",
+    // so the first fetch should normally succeed. Retries are kept as a safety net.
     this._orchAgentsChangedHandler = () => {
       void (async () => {
+        const prevCount = (this as any).teamProjectsList?.length ?? 0;
         await Promise.all([
           loadAgents(this as any),
           loadTeamProjects(this as any, true),
         ]);
-        // Retry: project creation may still be in progress during the first fetch.
-        // createFromPlan can take 2-8s (3 retry attempts × 1-3s delay each).
+        // Safety net: retry if the new project hasn't appeared yet.
+        // Check by comparing project count — a new deploy should increase it.
         const self = this as any;
-        const retryIfEmpty = (delayMs: number) => {
+        const retryIfNoNewProject = (delayMs: number) => {
           setTimeout(() => {
-            if (!self.teamProjectsList || self.teamProjectsList.length === 0) {
+            const currentCount = self.teamProjectsList?.length ?? 0;
+            if (currentCount <= prevCount) {
               void loadTeamProjects(self, true);
             }
           }, delayMs);
         };
-        retryIfEmpty(2000);
-        retryIfEmpty(5000);
+        retryIfNoNewProject(2000);
+        retryIfNoNewProject(5000);
       })();
     };
     globalThis.addEventListener("orch:agents-changed", this._orchAgentsChangedHandler);

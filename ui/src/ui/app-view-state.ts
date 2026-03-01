@@ -31,6 +31,7 @@ import type {
   ProjectWorkspaceFilesResult,
 } from "./types";
 import type {
+  ChannelRouteAgentOption,
   ChannelRouteEntry,
   ChannelRouteProjectOption,
 } from "./views/channels.types";
@@ -185,7 +186,9 @@ export type AppViewState = {
   // Channel route binding
   channelRouteSummary: ChannelRouteEntry[] | null;
   channelRouteProjects: ChannelRouteProjectOption[] | null;
+  channelRouteAgents: ChannelRouteAgentOption[] | null;
   channelRouteSaving: boolean;
+  channelRouteSavedHint: boolean;
   // Channel master-detail layout
   channelsSelectedKey: string | null;
   // Channel config wizard

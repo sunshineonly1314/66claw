@@ -175,9 +175,6 @@ versionrecord.md
  merge=ours
 skills/version-record/SKILL.md
  merge=ours
-src/memory/search-tiering-cn.ts merge=ours
-src/memory/memory-schema.ts merge=ours
-src/security/delayed-enforcement.ts merge=ours
 src/gateway/server-methods/model-config.ts merge=ours
 src/mcp/marketplace-sync.ts merge=ours
 src/mcp/marketplace-index.ts merge=ours
@@ -191,11 +188,12 @@ ui/src/styles/chat/image-lightbox.css merge=ours
 # --- Section II: CN-Only Directories ---
 # Git pathspec: dir/** matches all files under dir recursively
 src/dispatch/** merge=ours
-extensions/feishu/** merge=ours
-extensions/dingtalk/** merge=ours
-extensions/wecom/** merge=ours
-extensions/qqbot/** merge=ours
+src/license/** merge=ours
+src/security/** merge=ours
+src/memory/** merge=ours
 extensions/openclawwechat/** merge=ours
+extensions/agent-team/** merge=ours
+extensions/orchestrator/** merge=ours
 cn/** merge=ours
 apps/desktop/** merge=ours
 scripts/autopipeline/** merge=ours

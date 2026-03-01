@@ -527,22 +527,29 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     // ── Bind all button events (CSP blocks inline onclick) ────
     function bindEvents() {
         var $ = function(id) { return document.getElementById(id); };
-        $('btn-upload-logs').addEventListener('click', function() { uploadLogs(); });
-        $('btn-close').addEventListener('click', function() { goBack(); });
-        $('tab-btn-manual').addEventListener('click', function() { switchTab('manual'); });
-        $('tab-btn-remote').addEventListener('click', function() { switchTab('remote'); });
-        $('btn-one-click').addEventListener('click', function() { oneClickRepair(); });
-        $('btn-recheck').addEventListener('click', function() { runFullScan(); });
-        $('btn-auto-diag').addEventListener('click', function() { autoDiagnose(); });
-        $('btn-send').addEventListener('click', function() { sendMessage(); });
-        $('chat-input').addEventListener('keydown', function(e) { handleChatKey(e); });
-        $('btn-enable-ssh').addEventListener('click', function() { enableSsh(); });
-        $('btn-recheck-ssh').addEventListener('click', function() { checkSsh(); });
-        $('btn-start-remote').addEventListener('click', function() { startRemoteRepair(); });
-        $('btn-stop-remote').addEventListener('click', function() { stopRemoteRepair(); });
-        $('timeline-detail-toggle').addEventListener('click', function() { toggleTimelineDetail(); });
+        // Null-safe event binding: if an element is missing, skip it
+        // instead of crashing and breaking all subsequent bindings.
+        var on = function(id, event, handler) {
+            var el = $(id);
+            if (el) { el.addEventListener(event, handler); }
+            else { console.warn('[bindEvents] element not found:', id); }
+        };
+        on('btn-upload-logs', 'click', function() { uploadLogs(); });
+        on('btn-close', 'click', function() { goBack(); });
+        on('tab-btn-manual', 'click', function() { switchTab('manual'); });
+        on('tab-btn-remote', 'click', function() { switchTab('remote'); });
+        on('btn-one-click', 'click', function() { oneClickRepair(); });
+        on('btn-recheck', 'click', function() { runFullScan(); });
+        on('btn-auto-diag', 'click', function() { autoDiagnose(); });
+        on('btn-send', 'click', function() { sendMessage(); });
+        on('chat-input', 'keydown', function(e) { handleChatKey(e); });
+        on('btn-enable-ssh', 'click', function() { enableSsh(); });
+        on('btn-recheck-ssh', 'click', function() { checkSsh(); });
+        on('btn-start-remote', 'click', function() { startRemoteRepair(); });
+        on('btn-stop-remote', 'click', function() { stopRemoteRepair(); });
+        on('timeline-detail-toggle', 'click', function() { toggleTimelineDetail(); });
         // Textarea input activates step 2
-        $('remote-desc').addEventListener('input', function() {
+        on('remote-desc', 'input', function() {
             updateStepState(2);
         });
 
@@ -550,35 +557,34 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         var descEl = $('remote-desc');
         var screenshotArea = $('screenshot-area');
 
-        // Ctrl+V paste image
-        descEl.addEventListener('paste', handleImagePaste);
-        screenshotArea.addEventListener('paste', handleImagePaste);
-
-        // Drag and drop
-        screenshotArea.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            screenshotArea.classList.add('drag-over');
-        });
-        screenshotArea.addEventListener('dragleave', function(e) {
-            e.preventDefault();
-            screenshotArea.classList.remove('drag-over');
-        });
-        screenshotArea.addEventListener('drop', function(e) {
-            e.preventDefault();
-            screenshotArea.classList.remove('drag-over');
-            var files = e.dataTransfer && e.dataTransfer.files;
-            if (files) {
-                for (var i = 0; i < files.length; i++) {
-                    if (files[i].type.startsWith('image/')) {
-                        addScreenshotFile(files[i]);
+        if (descEl) { descEl.addEventListener('paste', handleImagePaste); }
+        if (screenshotArea) {
+            screenshotArea.addEventListener('paste', handleImagePaste);
+            screenshotArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                screenshotArea.classList.add('drag-over');
+            });
+            screenshotArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                screenshotArea.classList.remove('drag-over');
+            });
+            screenshotArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                screenshotArea.classList.remove('drag-over');
+                var files = e.dataTransfer && e.dataTransfer.files;
+                if (files) {
+                    for (var i = 0; i < files.length; i++) {
+                        if (files[i].type.startsWith('image/')) {
+                            addScreenshotFile(files[i]);
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
 
         // Click hint to trigger file picker
-        $('screenshot-hint').addEventListener('click', function() {
+        on('screenshot-hint', 'click', function() {
             triggerScreenshotFilePicker();
         });
     }
@@ -1050,11 +1056,13 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 currentAssistantMsg.appendChild(errEl);
                 chatBusy = false;
                 updateSendBtn();
+                updateAutoDiagBtn();
                 return;
             }
             if (payload.done) {
                 chatBusy = false;
                 updateSendBtn();
+                updateAutoDiagBtn();
                 processFixMarkers(contentEl);
                 return;
             }
@@ -1092,11 +1100,15 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             }
             chatBusy = false;
             updateSendBtn();
+            updateAutoDiagBtn();
         });
     };
 
     window.autoDiagnose = function() {
-        if (chatBusy) return;
+        if (chatBusy) {
+            appendChat("system", "AI 正在响应中，请等待当前对话完成。");
+            return;
+        }
         if (!selectedProvider) {
             appendChat("system", "当前没有可用的 AI 模型，无法进行 AI 诊断。\n你仍然可以使用左侧的诊断和修复功能。");
             return;
@@ -1107,7 +1119,24 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         }
 
         var invoke = getInvoke();
-        if (!invoke) return;
+        if (!invoke) {
+            appendChat("system", "Tauri IPC 未就绪，请稍后重试。");
+            return;
+        }
+
+        // Disable the button to give visual feedback
+        var diagBtn = document.getElementById('btn-auto-diag');
+        if (diagBtn) { diagBtn.disabled = true; diagBtn.textContent = 'AI 诊断中...'; }
+
+        // Safety timeout: if chatBusy is still true after 2 minutes, reset it
+        var safetyTimer = setTimeout(function() {
+            if (chatBusy) {
+                chatBusy = false;
+                updateSendBtn();
+                updateAutoDiagBtn();
+                appendChat("system", "AI 响应超时，请重试。");
+            }
+        }, 120000);
 
         // Refresh logs before sending to AI for up-to-date context
         appendChat("system", "正在读取最新日志...");
@@ -1124,6 +1153,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 providerId: selectedProvider
             });
         }).catch(function(e) {
+            clearTimeout(safetyTimer);
             if (currentAssistantMsg) {
                 var errEl = document.createElement("div");
                 errEl.className = "msg-error";
@@ -1132,8 +1162,14 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             }
             chatBusy = false;
             updateSendBtn();
+            updateAutoDiagBtn();
         });
     };
+
+    function updateAutoDiagBtn() {
+        var btn = document.getElementById('btn-auto-diag');
+        if (btn) { btn.disabled = false; btn.textContent = 'AI 自动诊断'; }
+    }
 
     function startAssistantResponse() {
         chatBusy = true;
