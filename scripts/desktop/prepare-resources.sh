@@ -607,6 +607,7 @@ else
   BUILD_NODE_VERSION=$(node -e "process.stdout.write(process.version)" 2>/dev/null || echo "unknown")
   BUILD_V8_VERSION=$(node -e "process.stdout.write(process.versions.v8)" 2>/dev/null || echo "unknown")
 fi
+mkdir -p "$RESOURCES_DIR/dist"
 cat > "$RESOURCES_DIR/dist/build-meta.json" <<EOF
 {"nodeVersion":"$BUILD_NODE_VERSION","v8Version":"$BUILD_V8_VERSION","buildTime":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')","appVersion":"$APP_VERSION"}
 EOF
