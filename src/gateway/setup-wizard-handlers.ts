@@ -530,18 +530,24 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
       signal: AbortSignal.timeout(15000),
     });
 
+    // 服务商中文名称（用于错误提示）
+    const pName = providerConfig.name || provider;
+
     if (response.ok) {
-      sendJson(res, 200, { ok: true, data: { valid: true, message: "API Key 验证成功" } });
+      sendJson(res, 200, {
+        ok: true,
+        data: { valid: true, message: `${pName}: API Key 验证成功` },
+      });
     } else {
       const errorText = await response.text();
-      let errorMessage = "API Key 无效";
+      let errorMessage = `${pName}: API Key 无效`;
 
       try {
         const errorJson = JSON.parse(errorText);
         if (errorJson.error?.message) {
-          errorMessage = errorJson.error.message;
+          errorMessage = `${pName}: ${errorJson.error.message}`;
         } else if (errorJson.message) {
-          errorMessage = errorJson.message;
+          errorMessage = `${pName}: ${errorJson.message}`;
         }
 
         // 火山引擎特殊错误处理：模型未开通
@@ -553,25 +559,25 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
             errorMessage.includes("invalid model"))
         ) {
           errorMessage =
-            "模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
+            "豆包: 模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
         }
       } catch {
         // JSON 解析失败，通过 HTTP 状态码判断错误类型
         if (response.status === 401) {
-          errorMessage = "API Key 无效或已过期";
+          errorMessage = `${pName}: API Key 无效或已过期，请检查密钥配置`;
         } else if (response.status === 403) {
-          errorMessage = "API Key 权限不足";
+          errorMessage = `${pName}: API Key 权限不足`;
         } else if (response.status === 429) {
-          errorMessage = "请求频率超限，请稍后重试";
+          errorMessage = `${pName}: 请求频率超限，请稍后重试`;
         } else if (
           provider === "volcengine-ark" &&
           (response.status === 404 || response.status === 400)
         ) {
           errorMessage =
-            "模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
+            "豆包: 模型未开通！请先访问火山方舟控制台「开通管理」页面开通该模型：https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement";
         } else if (errorText) {
           // 即使 JSON 解析失败，也展示原始错误文本（截断到 200 字符）
-          errorMessage = `验证失败 (${response.status}): ${errorText.slice(0, 200)}`;
+          errorMessage = `${pName}: 验证失败 (HTTP ${response.status}): ${errorText.slice(0, 200)}`;
         }
       }
 
@@ -579,13 +585,17 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
+    const pNameFallback = CN_PROVIDERS[provider]?.name || provider;
     if (errorMsg.includes("timeout") || errorMsg.includes("ETIMEDOUT")) {
       sendJson(res, 200, {
         ok: true,
-        data: { valid: false, error: "连接超时，请检查网络或稍后重试" },
+        data: { valid: false, error: `${pNameFallback}: 连接超时，请检查网络或稍后重试` },
       });
     } else {
-      sendJson(res, 200, { ok: true, data: { valid: false, error: `验证失败: ${errorMsg}` } });
+      sendJson(res, 200, {
+        ok: true,
+        data: { valid: false, error: `${pNameFallback}: 验证失败: ${errorMsg}` },
+      });
     }
   }
 }

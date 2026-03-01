@@ -128,7 +128,8 @@ describe("model-config API", () => {
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("不支持该能力");
+      expect(result.error).toContain("不支持");
+      expect(result.error).toContain("能力");
     });
 
     it("有效模型应该切换成功", async () => {

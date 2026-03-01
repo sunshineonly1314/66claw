@@ -260,10 +260,15 @@ function getCurrentPhase(elapsedMs: number) {
 /**
  * 渲染超时/错误提示卡片
  * 简洁提示：模型响应异常，请检查模型接口
+ * 如果有 provider/model 信息，会显示错误来源
  */
 function renderTimeoutHintCard(errorInfo: FormattedError | null) {
   const friendlyMessage = errorInfo?.friendlyMessage ?? "模型响应异常，请检查模型接口配置";
   const rawError = errorInfo?.rawError;
+  const provider = errorInfo?.provider;
+  const model = errorInfo?.model;
+  const hasSource = provider || model;
+  const sourceLabel = provider && model ? `${provider} / ${model}` : provider || model || "";
 
   return html`
     <div class="chat-error-hint-card hint-card-enter">
@@ -273,6 +278,14 @@ function renderTimeoutHintCard(errorInfo: FormattedError | null) {
           ${typewriterIndicator(friendlyMessage, `err-${friendlyMessage.length}`, "tw--warning")}
         </span>
       </div>
+      ${hasSource
+        ? html`
+            <div class="chat-error-hint-card__raw hint-raw-enter">
+              <span class="chat-error-hint-card__raw-label">来源：</span>
+              <span class="chat-error-hint-card__raw-text">${sourceLabel}</span>
+            </div>
+          `
+        : nothing}
       ${rawError
         ? html`
             <div class="chat-error-hint-card__raw hint-raw-enter">

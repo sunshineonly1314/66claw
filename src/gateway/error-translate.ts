@@ -278,17 +278,40 @@ function classifyByMessage(message: string): ErrorCategory | null {
 
 // ─── 核心导出 ────────────────────────────────────────────
 
+/** 可选的错误上下文：服务商和模型信息，用于生成更清晰的提示。 */
+export type ErrorContext = {
+  provider?: string;
+  model?: string;
+};
+
+/** 根据上下文给 userMessage 注入服务商/模型前缀。 */
+function enrichUserMessage(base: string, context?: ErrorContext): string {
+  if (!context?.provider) return base;
+  const label = context.model ? `${context.provider}（${context.model}）` : context.provider;
+  return `${label}: ${base}`;
+}
+
 /**
  * 对原始错误进行分类并翻译为中文友好提示。
+ * @param context 可选的服务商/模型上下文，会注入到 userMessage 前缀中。
  */
-export function translateError(err: unknown): TranslatedError {
+export function translateError(err: unknown, context?: ErrorContext): TranslatedError {
   let category: ErrorCategory = "unknown";
 
   // 1. FailoverError.reason
   if (isFailoverErrorLike(err)) {
     const reason = getReason(err)!;
     category = FAILOVER_REASON_MAP[reason] ?? "unknown";
-    return { category, userMessage: USER_MESSAGES[category], retryable: RETRYABLE[category] };
+    // FailoverError 自带 provider/model，优先用 context 覆盖
+    const foCtx: ErrorContext = {
+      provider: context?.provider ?? (err as { provider?: string }).provider,
+      model: context?.model ?? (err as { model?: string }).model,
+    };
+    return {
+      category,
+      userMessage: enrichUserMessage(USER_MESSAGES[category], foCtx),
+      retryable: RETRYABLE[category],
+    };
   }
 
   // 2. HTTP status code
@@ -297,7 +320,7 @@ export function translateError(err: unknown): TranslatedError {
   if (byStatus) {
     return {
       category: byStatus,
-      userMessage: USER_MESSAGES[byStatus],
+      userMessage: enrichUserMessage(USER_MESSAGES[byStatus], context),
       retryable: RETRYABLE[byStatus],
     };
   }
@@ -306,13 +329,25 @@ export function translateError(err: unknown): TranslatedError {
   const code = getCode(err);
   if (code) {
     if (TIMEOUT_ERRNO_CODES.has(code)) {
-      return { category: "timeout", userMessage: USER_MESSAGES.timeout, retryable: true };
+      return {
+        category: "timeout",
+        userMessage: enrichUserMessage(USER_MESSAGES.timeout, context),
+        retryable: true,
+      };
     }
     if (NETWORK_ERRNO_CODES.has(code)) {
-      return { category: "network", userMessage: USER_MESSAGES.network, retryable: true };
+      return {
+        category: "network",
+        userMessage: enrichUserMessage(USER_MESSAGES.network, context),
+        retryable: true,
+      };
     }
     if (code === "INVALID_CONFIG" || code === "MISSING_API_KEY" || code === "MISSING_CREDENTIALS") {
-      return { category: "config", userMessage: USER_MESSAGES.config, retryable: false };
+      return {
+        category: "config",
+        userMessage: enrichUserMessage(USER_MESSAGES.config, context),
+        retryable: false,
+      };
     }
   }
 
@@ -322,7 +357,7 @@ export function translateError(err: unknown): TranslatedError {
   if (byMessage) {
     return {
       category: byMessage,
-      userMessage: USER_MESSAGES[byMessage],
+      userMessage: enrichUserMessage(USER_MESSAGES[byMessage], context),
       retryable: RETRYABLE[byMessage],
     };
   }
@@ -331,12 +366,16 @@ export function translateError(err: unknown): TranslatedError {
   if (err && typeof err === "object" && "cause" in err) {
     const cause = (err as { cause?: unknown }).cause;
     if (cause && cause !== err) {
-      const fromCause = translateError(cause);
+      const fromCause = translateError(cause, context);
       if (fromCause.category !== "unknown") return fromCause;
     }
   }
 
-  return { category, userMessage: USER_MESSAGES[category], retryable: RETRYABLE[category] };
+  return {
+    category,
+    userMessage: enrichUserMessage(USER_MESSAGES[category], context),
+    retryable: RETRYABLE[category],
+  };
 }
 
 /**

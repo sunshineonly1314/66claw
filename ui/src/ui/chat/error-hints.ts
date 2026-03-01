@@ -29,6 +29,10 @@ export type FormattedError = {
   suggestions: ErrorSuggestion[];
   canRetry: boolean;
   showConfigLink: boolean;
+  /** 出错的服务商（如 "硅基流动"） */
+  provider?: string;
+  /** 出错的模型（如 "BAAI/bge-m3"） */
+  model?: string;
 };
 
 /** 网关返回的结构化错误（ErrorShape 的 UI 侧子集） */
@@ -326,16 +330,25 @@ export function formatErrorHint(errorMessage: string | null | undefined): {
   };
 }
 
+/** 错误上下文：出错的服务商和模型 */
+export type ErrorSourceContext = {
+  provider?: string;
+  model?: string;
+};
+
 /**
  * 格式化错误提示（完整版）
  * 包含友好提示、原始错误、解决建议等
  *
  * 优先使用网关返回的结构化 ErrorShape（含 userMessage/category），
  * 降级为 regex 分类。
+ *
+ * @param context 可选的服务商/模型上下文，会附加到结果中供 UI 展示。
  */
 export function formatErrorHintFull(
   errorMessage: string | null | undefined,
   errorShape?: ErrorShapeHint | null,
+  context?: ErrorSourceContext | null,
 ): FormattedError {
   // 优先使用网关返回的结构化信息
   if (errorShape?.userMessage) {
@@ -349,6 +362,8 @@ export function formatErrorHintFull(
       suggestions: ERROR_SUGGESTIONS[cat] || ERROR_SUGGESTIONS.unknown,
       canRetry: errorShape.retryable ?? CAN_RETRY[cat] ?? true,
       showConfigLink: SHOW_CONFIG_LINK[cat] ?? false,
+      provider: context?.provider,
+      model: context?.model,
     };
   }
 
@@ -361,6 +376,8 @@ export function formatErrorHintFull(
     suggestions: ERROR_SUGGESTIONS[category] || ERROR_SUGGESTIONS.unknown,
     canRetry: CAN_RETRY[category] ?? true,
     showConfigLink: SHOW_CONFIG_LINK[category] ?? false,
+    provider: context?.provider,
+    model: context?.model,
   };
 }
 

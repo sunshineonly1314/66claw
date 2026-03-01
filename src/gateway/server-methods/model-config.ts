@@ -37,6 +37,13 @@ import { ensureOpenClawCNModelsJson } from "../../agents/models-config.js";
 
 const log = createSubsystemLogger("gateway/model-config");
 
+/** 解析 provider 的中文显示名（用于错误消息）。 */
+function resolveProviderDisplayName(providerId: string): string {
+  return (
+    CN_PROVIDERS[providerId]?.name ?? PROVIDER_CAPABILITY_MAPPINGS[providerId]?.name ?? providerId
+  );
+}
+
 /** Build `provider/model` ref without double-prefixing when modelId already starts with `provider/`. */
 function buildModelRef(providerId: string, modelId: string): string {
   if (modelId.startsWith(`${providerId}/`)) return modelId;
@@ -493,9 +500,10 @@ export async function switchCapabilityModel(params: {
   }
 
   if (!targetModel) {
+    const pName = resolveProviderDisplayName(providerId);
     return {
       success: false,
-      error: `模型 ${modelId} 不支持该能力`,
+      error: `${pName}: 模型 ${modelId} 不支持「${capability}」能力`,
     };
   }
 
@@ -1247,14 +1255,24 @@ async function probeModel(
       /No available model/i,
     ];
 
+    const pName = resolveProviderDisplayName(providerId);
+
     // 即使 HTTP 200，也要检查响应体是否有错误
     if (resp.ok) {
       // 某些 API 返回 200 但 body 里有 error
       if (respJson && (respJson as any).error) {
         if (notFoundPatterns.some((p) => p.test(respMsg))) {
-          return { ok: false, fatal: true, message: `模型 "${modelId}" 不存在或该 Key 无权访问` };
+          return {
+            ok: false,
+            fatal: true,
+            message: `${pName}: 模型 "${modelId}" 不存在或该 Key 无权访问`,
+          };
         }
-        return { ok: false, fatal: true, message: `模型验证失败: ${respMsg.substring(0, 100)}` };
+        return {
+          ok: false,
+          fatal: true,
+          message: `${pName}: 模型 "${modelId}" 验证失败: ${respMsg.substring(0, 100)}`,
+        };
       }
       // 检查是否有正常的 choices 响应
       if (respJson && (respJson as any).choices) {
@@ -1265,34 +1283,47 @@ async function probeModel(
     }
 
     if (resp.status === 404 || notFoundPatterns.some((p) => p.test(respMsg))) {
-      return { ok: false, fatal: true, message: `模型 "${modelId}" 不存在或该 Key 无权访问` };
+      return {
+        ok: false,
+        fatal: true,
+        message: `${pName}: 模型 "${modelId}" 不存在或该 Key 无权访问`,
+      };
     }
 
     // 认证失败
     if (resp.status === 401 || resp.status === 403) {
-      return { ok: false, fatal: true, message: "API Key 无效或已过期，请先更换 Key" };
+      return { ok: false, fatal: true, message: `${pName}: API Key 无效或已过期，请检查密钥配置` };
     }
 
     // 限流/余额不足等临时问题 — 允许添加但警告
     if (resp.status === 429) {
-      return { ok: false, fatal: false, message: "请求频率受限，无法验证模型可用性" };
+      return {
+        ok: false,
+        fatal: false,
+        message: `${pName}: 请求频率受限，无法验证模型 "${modelId}"`,
+      };
     }
     if (resp.status === 402) {
-      return { ok: false, fatal: false, message: "账户余额不足，无法验证模型可用性" };
+      return {
+        ok: false,
+        fatal: false,
+        message: `${pName}: 账户余额不足，无法验证模型 "${modelId}"`,
+      };
     }
 
     return {
       ok: false,
       fatal: true,
-      message: `验证未通过 (HTTP ${resp.status})，模型不可用或不存在`,
+      message: `${pName}: 验证未通过 (HTTP ${resp.status})，模型 "${modelId}" 不可用`,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const pName = resolveProviderDisplayName(providerId);
     // 超时或网络问题 — 拒绝添加，避免添加无效模型
     return {
       ok: false,
       fatal: true,
-      message: `连接验证失败（${msg.includes("timed out") || msg.includes("timeout") ? "超时" : "网络异常"}），请检查网络后重试`,
+      message: `${pName}: 连接验证失败（${msg.includes("timed out") || msg.includes("timeout") ? "超时" : "网络异常"}），请检查网络后重试`,
     };
   }
 }
@@ -1323,6 +1354,7 @@ async function probeModelByType(
     const baseUrl = baseUrlOverride?.trim() || cnProvider?.apiEndpoint;
     if (!baseUrl) return { ok: true, status: "skipped" };
 
+    const pName = resolveProviderDisplayName(providerId);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
@@ -1340,20 +1372,42 @@ async function probeModelByType(
           ok: false,
           status: "failed",
           fatal: true,
-          message: `模型 "${model.modelId}" 不存在`,
+          message: `${pName}: 模型 "${model.modelId}" 不存在`,
         };
       if (resp.status === 401 || resp.status === 403)
-        return { ok: false, status: "failed", fatal: true, message: "API Key 无效" };
+        return {
+          ok: false,
+          status: "failed",
+          fatal: true,
+          message: `${pName}: API Key 无效或已过期，请检查密钥配置`,
+        };
       if (resp.status === 429)
-        return { ok: false, status: "failed", fatal: false, message: "请求频率受限" };
-      return { ok: false, status: "failed", fatal: true, message: `HTTP ${resp.status}` };
+        return {
+          ok: false,
+          status: "failed",
+          fatal: false,
+          message: `${pName}: 请求频率受限，无法验证模型 "${model.modelId}"`,
+        };
+      if (resp.status === 402)
+        return {
+          ok: false,
+          status: "failed",
+          fatal: false,
+          message: `${pName}: 账户余额不足，无法验证模型 "${model.modelId}"`,
+        };
+      return {
+        ok: false,
+        status: "failed",
+        fatal: true,
+        message: `${pName}: 验证未通过 (HTTP ${resp.status})，模型 "${model.modelId}" 不可用`,
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return {
         ok: false,
         status: "failed",
         fatal: true,
-        message: msg.includes("timeout") ? "超时" : msg,
+        message: `${pName}: ${msg.includes("timeout") ? "连接超时" : msg}`,
       };
     }
   }
@@ -1523,7 +1577,7 @@ export async function addCustomModel(params: {
     const probe = await probeModel(providerId, modelId, providerConfig.apiKey);
     if (!probe.ok) {
       // API Key 明确无效 — 仍然阻止
-      if (probe.fatal && /API Key 无效|已过期/.test(probe.message)) {
+      if (probe.fatal && /API Key 无效|已过期|密钥配置/.test(probe.message)) {
         throw new Error(probe.message);
       }
       // 其余错误（模型不存在、验证未通过等）降级为警告

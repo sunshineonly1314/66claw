@@ -17,6 +17,18 @@ export function formatBillingErrorMessage(provider?: string, model?: string): st
 
 export const BILLING_ERROR_USER_MESSAGE = formatBillingErrorMessage();
 
+// [CN-MERGE] Include provider and model name in auth error message
+export function formatAuthErrorMessage(provider?: string, model?: string): string {
+  const providerName = provider?.trim();
+  const modelName = model?.trim();
+  const providerLabel =
+    providerName && modelName ? `${providerName} (${modelName})` : providerName || undefined;
+  if (providerLabel) {
+    return `⚠️ ${providerLabel}: API Key 无效或已过期，请检查模型配置`;
+  }
+  return "⚠️ API Key 无效或已过期，请检查模型配置";
+}
+
 const RATE_LIMIT_ERROR_USER_MESSAGE = "⚠️ API rate limit reached. Please try again later.";
 const OVERLOADED_ERROR_USER_MESSAGE =
   "The AI service is temporarily overloaded. Please try again in a moment.";
@@ -490,6 +502,10 @@ export function formatAssistantErrorText(
 
   if (isBillingErrorMessage(raw)) {
     return formatBillingErrorMessage(opts?.provider, opts?.model ?? msg.model);
+  }
+
+  if (isAuthErrorMessage(raw)) {
+    return formatAuthErrorMessage(opts?.provider, opts?.model ?? msg.model);
   }
 
   if (isLikelyHttpErrorText(raw) || isRawApiErrorPayload(raw)) {
