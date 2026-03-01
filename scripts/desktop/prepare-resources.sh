@@ -184,6 +184,22 @@ if [[ -d "$DIST_SOURCE" ]]; then
     [[ -f "$dts_target" ]] && rm -f "$dts_target"
   done
   log "  Removed $GUI_REMOVED private GUI automation files from dist/"
+
+  # ── 2a. Fix rolldown chunk circular dependency in plugin-sdk ──
+  # rolldown splits dist/plugin-sdk/index.js into index.js + pi-model-discovery-*.js
+  # The chunk file imports { t as __exportAll } from "./index.js", but index.js
+  # imports the chunk as a side-effect on line 1.  In ESM, `var __exportAll`
+  # (line 63 of index.js) is hoisted as `undefined` during the circular evaluation,
+  # causing "TypeError: __exportAll is not a function".
+  # Fix: inline __exportAll definition directly in the chunk file so it does
+  # not depend on index.js's var being initialized first.
+  PLUGIN_SDK_DIR="$RESOURCES_DIR/dist/plugin-sdk"
+  CHUNK_FILE=$(ls "$PLUGIN_SDK_DIR"/pi-model-discovery-*.js 2>/dev/null | head -1)
+  if [[ -n "$CHUNK_FILE" ]] && grep -q 'import { t as __exportAll } from "./index.js"' "$CHUNK_FILE" 2>/dev/null; then
+    sed -i '' 's|import { t as __exportAll } from "./index.js";|var __defProp = Object.defineProperty; var __exportAll = (all, no_symbols) => { let target = {}; for (var name in all) { __defProp(target, name, { get: all[name], enumerable: true }); } if (!no_symbols) { __defProp(target, Symbol.toStringTag, { value: "Module" }); } return target; };|' "$CHUNK_FILE" 2>/dev/null \
+      || sed -i 's|import { t as __exportAll } from "./index.js";|var __defProp = Object.defineProperty; var __exportAll = (all, no_symbols) => { let target = {}; for (var name in all) { __defProp(target, name, { get: all[name], enumerable: true }); } if (!no_symbols) { __defProp(target, Symbol.toStringTag, { value: "Module" }); } return target; };|' "$CHUNK_FILE"
+    log "  Fixed plugin-sdk chunk circular dependency (inlined __exportAll)"
+  fi
 else
   err "dist/ not found. Run 'pnpm build' first."
   exit 1

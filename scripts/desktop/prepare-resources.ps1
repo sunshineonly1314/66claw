@@ -141,6 +141,26 @@ if (Test-Path $distSource) {
         if (Test-Path $mapTarget) { Remove-Item $mapTarget -Force }
     }
     Write-Host "  Removed $guiRemoved private GUI automation files from dist/" -ForegroundColor Yellow
+
+    # ── 2a. Fix rolldown chunk circular dependency in plugin-sdk ──
+    # rolldown splits dist/plugin-sdk/index.js into index.js + pi-model-discovery-*.js
+    # The chunk file imports { t as __exportAll } from "./index.js", but index.js
+    # imports the chunk as a side-effect on line 1.  In ESM, `var __exportAll`
+    # (line 63 of index.js) is hoisted as `undefined` during the circular evaluation,
+    # causing "TypeError: __exportAll is not a function".
+    # Fix: inline __exportAll definition directly in the chunk file.
+    $pluginSdkDir = Join-Path $ResourcesDir "dist\plugin-sdk"
+    $chunkFile = Get-ChildItem $pluginSdkDir -Filter "pi-model-discovery-*.js" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($chunkFile) {
+        $chunkContent = Get-Content $chunkFile.FullName -Raw -Encoding UTF8
+        $oldImport = 'import { t as __exportAll } from "./index.js";'
+        $inlinedDef = 'var __defProp = Object.defineProperty; var __exportAll = (all, no_symbols) => { let target = {}; for (var name in all) { __defProp(target, name, { get: all[name], enumerable: true }); } if (!no_symbols) { __defProp(target, Symbol.toStringTag, { value: "Module" }); } return target; };'
+        if ($chunkContent.Contains($oldImport)) {
+            $chunkContent = $chunkContent.Replace($oldImport, $inlinedDef)
+            Set-Content $chunkFile.FullName -Value $chunkContent -Encoding UTF8 -NoNewline
+            Write-Host "  Fixed plugin-sdk chunk circular dependency (inlined __exportAll)"
+        }
+    }
 } else {
     Write-Host "  ERROR: dist/ not found. Run 'pnpm build' first." -ForegroundColor Red
     exit 1
