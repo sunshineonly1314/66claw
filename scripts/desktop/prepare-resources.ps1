@@ -318,6 +318,33 @@ if (Test-Path $extSource) {
     $extCount = (Get-ChildItem "$ResourcesDir\extensions" -Directory -ErrorAction SilentlyContinue).Count
     Write-Host "  OK: extensions/ ($extCount extensions) [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
 
+    # ── 4a. Remove .ts source files from compiled extensions ──
+    # Extensions listed in cn_extension_build have pre-compiled .js files.
+    # If .ts files remain, the plugin discovery (index.ts > index.js priority)
+    # will load the .ts via jiti, which fails in the packaged environment because
+    # the bundled openclawcn/plugin-sdk uses chunk references that jiti cannot resolve.
+    $cnExtDirs = node -e "
+        const cfg = require('$($ProjectRoot -replace '\\','/')/config/cn-protected-files.json');
+        (cfg.cn_extension_build?.directories || []).forEach(d => console.log(d));
+    " 2>$null
+    $tsRemoved = 0
+    if ($cnExtDirs) {
+        foreach ($extRel in ($cnExtDirs -split "`n")) {
+            $extRel = $extRel.Trim()
+            if (-not $extRel) { continue }
+            $extAbs = Join-Path $ResourcesDir $extRel
+            if (Test-Path $extAbs) {
+                Get-ChildItem $extAbs -Recurse -Filter "*.ts" -File | Where-Object { $_.Name -notmatch '\.d\.ts$' } | ForEach-Object {
+                    Remove-Item $_.FullName -Force
+                    $tsRemoved++
+                }
+            }
+        }
+    }
+    if ($tsRemoved -gt 0) {
+        Write-Host "  Removed $tsRemoved .ts source files from compiled extensions (keeps .js only)"
+    }
+
     # ── 4b. Install extension-specific dependencies into bundled node_modules ──
     # Extensions have their own package.json with dependencies (e.g. dingtalk-stream,
     # qq-bot-sdk) that are NOT in the main package.json. We must install them into

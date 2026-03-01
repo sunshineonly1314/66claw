@@ -317,7 +317,9 @@
       "extensions/openclawwechat/",
       "extensions/agent-team/",
       "extensions/orchestrator/",
-      "extensions/memory-core/"
+      "extensions/memory-core/",
+      "extensions/dingtalk/",
+      "extensions/feishu/"
     ]
   },
 

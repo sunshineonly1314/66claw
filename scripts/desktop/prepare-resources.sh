@@ -319,6 +319,30 @@ if [[ -d "$EXT_SOURCE" ]]; then
   EXT_COUNT=$((EXT_COUNT - 1))  # subtract the directory itself
   log "  OK: extensions/ ($EXT_COUNT extensions) [$(( $(date +%s) - STEP_START ))s]"
 
+  # ── 4a. Remove .ts source files from compiled extensions ──
+  # Extensions listed in cn_extension_build have pre-compiled .js files.
+  # If .ts files remain, the plugin discovery (index.ts > index.js priority)
+  # will load the .ts via jiti, which fails in the packaged environment because
+  # the bundled openclawcn/plugin-sdk uses chunk references that jiti cannot resolve.
+  CN_EXT_DIRS=$(node -e "
+    const cfg = require('$PROJECT_ROOT/config/cn-protected-files.json');
+    (cfg.cn_extension_build?.directories || []).forEach(d => console.log(d));
+  " 2>/dev/null || true)
+  TS_REMOVED=0
+  while IFS= read -r ext_rel; do
+    [[ -z "$ext_rel" ]] && continue
+    ext_abs="$RESOURCES_DIR/$ext_rel"
+    if [[ -d "$ext_abs" ]]; then
+      while IFS= read -r ts_file; do
+        rm -f "$ts_file"
+        TS_REMOVED=$((TS_REMOVED + 1))
+      done < <(find "$ext_abs" -name '*.ts' -not -name '*.d.ts' 2>/dev/null)
+    fi
+  done <<< "$CN_EXT_DIRS"
+  if [[ "$TS_REMOVED" -gt 0 ]]; then
+    log "  Removed $TS_REMOVED .ts source files from compiled extensions (keeps .js only)"
+  fi
+
   # ── 4b. Install extension-specific dependencies into bundled node_modules ──
   # Extensions have their own package.json with deps (e.g. dingtalk-stream,
   # qq-bot-sdk) not in the main package.json. Install them into the shared
