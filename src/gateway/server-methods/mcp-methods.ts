@@ -29,6 +29,7 @@ import {
   getNpmMirrors,
   getPipMirrors,
 } from "../../config/cn-mirrors.js";
+import { installUvDependency } from "../../agents/skills-install.js";
 
 function mcpError(message: string) {
   return errorShape(ErrorCodes.INVALID_REQUEST, message);
@@ -349,7 +350,24 @@ async function tryInstallWithMirrorFallback(params: {
 
   // ── Step 0: Pre-flight check — is the required command available? ──
   const baseCommand = type === "npm" ? "npx" : "uvx";
-  const preflightError = checkCommandAvailability(baseCommand);
+  let preflightError = checkCommandAvailability(baseCommand);
+
+  // Auto-install uv if missing (CN mirrors, pip → winget → PowerShell/curl)
+  if (preflightError && (baseCommand === "uvx" || baseCommand === "uv")) {
+    console.log(`[mcp] uvx/uv not found, auto-installing for ${serverId}...`);
+    const uvResult = await installUvDependency(60_000);
+    if (uvResult.ok) {
+      console.log(`[mcp] uv auto-install succeeded: ${uvResult.message}`);
+      preflightError = checkCommandAvailability(baseCommand);
+    } else {
+      console.warn(`[mcp] uv auto-install failed: ${uvResult.message}`);
+      return {
+        ok: false,
+        error: `自动安装 Python 工具 (uv) 失败：${uvResult.message}\n请手动安装后重试：https://docs.astral.sh/uv/`,
+      };
+    }
+  }
+
   if (preflightError) {
     console.warn(`[mcp] Pre-flight failed for ${serverId}: ${preflightError}`);
     return { ok: false, error: preflightError };

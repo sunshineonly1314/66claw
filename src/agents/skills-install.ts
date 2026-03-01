@@ -1834,7 +1834,7 @@ function canInstallFromHKServer(toolName: string): boolean {
 // OpenClawCN: Auto-install dependencies (uv, Go, Node.js)
 // ============================================================================
 
-async function installUvDependency(
+export async function installUvDependency(
   timeoutMs: number,
   brewExe?: string,
 ): Promise<SkillInstallResult> {
