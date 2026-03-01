@@ -8,7 +8,7 @@
  * The main codebase only needs to load this plugin directory.
  */
 
-import type { OpenClawCNPluginDefinition, OpenClawCNPluginApi } from "../../src/plugins/types.js";
+import type { OpenClawCNPluginDefinition, OpenClawCNPluginApi } from "../../dist/plugins/types.js";
 import { createOrchestrateTool, performQuickDeploy, performGuidedPropose, performGuidedDeploy, deployAgentId, listOrchestratedAgents, type CallGatewayFn } from "./src/orchestrate-tool.js";
 import { getOrchestratorPromptBlock } from "./src/system-prompt.js";
 import { getTemplate, listTemplates, matchTemplate } from "./src/templates.js";
@@ -32,7 +32,7 @@ const plugin: OpenClawCNPluginDefinition = {
     // The plugin uses a lazy-import pattern to avoid hard dependency on
     // the gateway call module at load time.
     const callGateway: CallGatewayFn = async (method, params) => {
-      const { callGateway: gwCall } = await import("../../src/gateway/call.js");
+      const { callGateway: gwCall } = await import("../../dist/gateway/call.js");
       return gwCall({
         method,
         params,

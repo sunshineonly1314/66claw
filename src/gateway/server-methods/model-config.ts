@@ -797,7 +797,8 @@ export async function detectProviderModelsWithProgress(
 
   // 保存配置（复用现有的写入逻辑）
   const trimmedKey = apiKey.trim();
-  const cnProvider = CN_PROVIDERS[providerId];
+  const aliases = getProviderAliases(providerId);
+  const cnProvider = aliases.map((a) => CN_PROVIDERS[a]).find(Boolean);
   const baseUrl = userBaseUrl?.trim() || cnProvider?.apiEndpoint || "";
 
   if (!baseUrl) {

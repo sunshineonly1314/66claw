@@ -386,7 +386,7 @@ const plugin: OpenClawCNPluginDefinition = {
     // ── Build gateway call function (lazy import, same as orchestrator) ──
     const callGateway: CallGatewayFn = async (method, params) => {
       const { callGateway: gwCall } = await import(
-        "../../src/gateway/call.js"
+        "../../dist/gateway/call.js"
       );
       return gwCall({
         method,

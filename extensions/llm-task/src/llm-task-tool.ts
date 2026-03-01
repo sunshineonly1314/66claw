@@ -17,7 +17,7 @@ type RunEmbeddedPiAgentFn = (params: Record<string, unknown>) => Promise<unknown
 async function loadRunEmbeddedPiAgent(): Promise<RunEmbeddedPiAgentFn> {
   // Source checkout (tests/dev)
   try {
-    const mod = await import("../../../src/agents/pi-embedded-runner.js");
+    const mod = await import("../../../dist/agents/pi-embedded-runner.js");
     if (typeof (mod as any).runEmbeddedPiAgent === "function") return (mod as any).runEmbeddedPiAgent;
   } catch {
     // ignore

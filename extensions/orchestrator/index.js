@@ -13,7 +13,7 @@ const plugin = {
     const stateDir = api.resolvePath("~/.openclawcn/orchestrator");
     initStateDir(stateDir);
     const callGateway = async (method, params) => {
-      const { callGateway: gwCall } = await import("../../src/gateway/call.js");
+      const { callGateway: gwCall } = await import("../../dist/gateway/call.js");
       return gwCall({
         method,
         params,

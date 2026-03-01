@@ -73,7 +73,7 @@ export function invalidateDiscoveryCache(): void {
 async function discoverInstalledSkills(workspaceDir?: string): Promise<DiscoveredSkill[]> {
   if (!workspaceDir) return [];
   try {
-    const { loadWorkspaceSkillEntries } = await import("../../../../src/agents/skills.js");
+    const { loadWorkspaceSkillEntries } = await import("../../../../dist/agents/skills.js");
     const entries = loadWorkspaceSkillEntries(workspaceDir);
     return entries.map((entry) => ({
       name: entry.skill.name ?? "",
@@ -94,7 +94,7 @@ async function discoverInstalledSkills(workspaceDir?: string): Promise<Discovere
  */
 async function discoverMCPServers(): Promise<DiscoveredMCPServer[]> {
   try {
-    const { getMCPManagerSafe } = await import("../../../../src/mcp/index.js");
+    const { getMCPManagerSafe } = await import("../../../../dist/mcp/index.js");
     const manager = getMCPManagerSafe();
     if (!manager) return [];
 
