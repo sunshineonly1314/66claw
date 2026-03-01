@@ -890,7 +890,7 @@ export class ModelConfigView extends LitElement {
     .result-cap { display: flex; align-items: center; gap: 4px; padding: 4px 12px; background: var(--ok-subtle, rgba(52,211,153,.1)); border: 1px solid rgba(52,211,153,.2); border-radius: var(--radius-sm, 6px); font-size: 12px; color: var(--ok, #34d399); }
 
     .btn-row { display: flex; gap: 8px; margin-top: 20px; }
-    .btn { flex: 1; padding: 9px 16px; border: none; border-radius: var(--radius-md, 8px); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.12s; }
+    .btn { flex: 1; padding: 9px 16px; border: none; border-radius: var(--radius-md, 8px); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.12s; text-decoration: none; text-align: center; display: inline-block; box-sizing: border-box; }
     .btn--primary { background: var(--text-strong, #fff); color: var(--bg, #0f1419); }
     .btn--primary:hover { opacity: 0.9; }
     .btn--primary:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -1947,8 +1947,6 @@ export class ModelConfigView extends LitElement {
     if (provider) {
       const h = this._host();
       openProviderConfig(h, provider);
-      // 跳过 guide，直接到 apikey 步骤
-      h.providerConfigStep = "apikey";
       this._sync(h);
     }
   }
@@ -3158,9 +3156,11 @@ export class ModelConfigView extends LitElement {
       </div>` : nothing}
       ${result && !result.success ? html`<div class="alert alert--err">${result.message}</div>` : nothing}
       <div class="btn-row">
-        ${prov.apiKeyGuide?.length > 0
-          ? html`<button class="btn btn--ghost" @click=${() => this._onConfigPrevStep()}>返回</button>`
-          : html`<button class="btn btn--ghost" @click=${() => this._closeProviderConfig()}>取消</button>`}
+        ${prov.apiKeyUrl
+          ? html`<a class="btn btn--ghost" href="${prov.apiKeyUrl}" target="_blank" rel="noopener">获取 API Key ↗</a>`
+          : prov.apiKeyGuide?.length > 0
+            ? html`<button class="btn btn--ghost" @click=${() => this._onConfigPrevStep()}>返回</button>`
+            : html`<button class="btn btn--ghost" @click=${() => this._closeProviderConfig()}>取消</button>`}
         <button class="btn btn--primary" ?disabled=${!canDetect || detecting} @click=${() => this._onDetect()}>检测并保存</button>
       </div>
     `;
@@ -3182,9 +3182,11 @@ export class ModelConfigView extends LitElement {
       </div>
       ${result && !result.success ? html`<div class="alert alert--err">${result.message}</div>` : nothing}
       <div class="btn-row">
-        ${prov.apiKeyGuide?.length > 0
-          ? html`<button class="btn btn--ghost" @click=${() => this._onConfigPrevStep()}>返回</button>`
-          : html`<button class="btn btn--ghost" @click=${() => this._closeProviderConfig()}>取消</button>`}
+        ${prov.apiKeyUrl
+          ? html`<a class="btn btn--ghost" href="${prov.apiKeyUrl}" target="_blank" rel="noopener">获取 API Key ↗</a>`
+          : prov.apiKeyGuide?.length > 0
+            ? html`<button class="btn btn--ghost" @click=${() => this._onConfigPrevStep()}>返回</button>`
+            : html`<button class="btn btn--ghost" @click=${() => this._closeProviderConfig()}>取消</button>`}
         <button class="btn btn--primary" ?disabled=${!canDetect || detecting} @click=${() => this._onDetect()}>检测并保存</button>
       </div>
     `;
