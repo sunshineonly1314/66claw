@@ -79,7 +79,7 @@ echo "[2b+3/6] CN encryption + UI build (parallel)..."
 (cd "$PROJECT_ROOT" && \
   pnpm build:cn-compile && \
   pnpm build:cn-extensions && \
-  pnpm verify:extensions; echo VERIFY_WARN && \
+  (pnpm verify:extensions || echo "WARN: verify:extensions non-fatal, continuing") && \
   node --import tsx scripts/obfuscate-dist.ts && \
   node --import tsx cn/scripts/build/compile-bytecode.ts && \
   pnpm integrity:gen && \
