@@ -194,6 +194,7 @@ const plugin = {
       }
       respond(true, { plan, state }, void 0);
     });
+    const projectEnsureAttempted = /* @__PURE__ */ new Set();
     api.registerGatewayMethod("orchestrator.deploy.status", async ({ params, respond }) => {
       const planId = String(params.planId ?? "");
       const state = await loadState(planId);
@@ -205,6 +206,18 @@ const plugin = {
       const total = state.agents.length;
       const completed = state.agents.filter((a) => a.status === "ready").length;
       const failed = state.agents.filter((a) => a.status === "failed").length;
+      if (state.status === "deployed" && !projectEnsureAttempted.has(planId)) {
+        projectEnsureAttempted.add(planId);
+        void (async () => {
+          try {
+            console.log(`[orchestrator] deploy.status compensating createFromPlan for planId="${planId}"`);
+            await callGateway("team.project.createFromPlan", { planId });
+            console.log(`[orchestrator] deploy.status compensating createFromPlan SUCCESS for planId="${planId}"`);
+          } catch (err) {
+            console.error(`[orchestrator] deploy.status compensating createFromPlan FAILED for planId="${planId}":`, err instanceof Error ? err.message : String(err));
+          }
+        })();
+      }
       respond(true, {
         planId,
         status: state.status,

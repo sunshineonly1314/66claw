@@ -2010,7 +2010,9 @@ export async function performQuickDeploy(
   // Fire-and-forget: deploy runs in background, UI polls via deploy.status
   void (async () => {
     try {
+      console.log(`[orchestrator] performQuickDeploy background deploy START for planId="${planId}"`);
       await executeDeploySequence(plan, state, callGw);
+      console.log(`[orchestrator] performQuickDeploy background deploy DONE for planId="${planId}"`);
 
       const usageGuide = generateUsageGuide(plan);
       plan.usageGuide = usageGuide;

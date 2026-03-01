@@ -1438,7 +1438,9 @@ async function performQuickDeploy(callGw, opts) {
   }
   void (async () => {
     try {
+      console.log(`[orchestrator] performQuickDeploy background deploy START for planId="${planId}"`);
       await executeDeploySequence(plan, state, callGw);
+      console.log(`[orchestrator] performQuickDeploy background deploy DONE for planId="${planId}"`);
       const usageGuide = generateUsageGuide(plan);
       plan.usageGuide = usageGuide;
       await savePlan(plan);

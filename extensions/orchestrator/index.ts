@@ -249,6 +249,10 @@ const plugin: OpenClawCNPluginDefinition = {
 
     // ── Gateway methods: Deploy Status (for UI polling) ─────────────────
 
+    // Track which planIds we've already attempted compensating project creation for.
+    // This prevents repeated gateway calls on every poll.
+    const projectEnsureAttempted = new Set<string>();
+
     api.registerGatewayMethod("orchestrator.deploy.status", async ({ params, respond }) => {
       const planId = String((params as Record<string, unknown>).planId ?? "");
       const state = await loadState(planId);
@@ -262,6 +266,24 @@ const plugin: OpenClawCNPluginDefinition = {
       const total = state.agents.length;
       const completed = state.agents.filter(a => a.status === "ready").length;
       const failed = state.agents.filter(a => a.status === "failed").length;
+
+      // Compensating project creation: when status is "deployed" and we haven't
+      // already tried for this planId, fire-and-forget a createFromPlan call.
+      // The handler is idempotent (checks sourcePlanId), so this is safe even if
+      // the project was already created by executeDeploySequence.
+      if (state.status === "deployed" && !projectEnsureAttempted.has(planId)) {
+        projectEnsureAttempted.add(planId);
+        void (async () => {
+          try {
+            console.log(`[orchestrator] deploy.status compensating createFromPlan for planId="${planId}"`);
+            await callGateway("team.project.createFromPlan", { planId });
+            console.log(`[orchestrator] deploy.status compensating createFromPlan SUCCESS for planId="${planId}"`);
+          } catch (err) {
+            console.error(`[orchestrator] deploy.status compensating createFromPlan FAILED for planId="${planId}":`,
+              err instanceof Error ? err.message : String(err));
+          }
+        })();
+      }
 
       respond(true, {
         planId,
