@@ -415,16 +415,25 @@ if [[ -d "$EXT_SOURCE" ]]; then
     log "  Missing extension deps: ${UNIQUE_DEPS[*]}"
     (
       cd "$RESOURCES_DIR"
-      # Use the real package.json so npm doesn't prune existing production deps
-      cp "$PROJECT_ROOT/package.json" "$RESOURCES_DIR/package.json"
-      npm install "${UNIQUE_DEPS[@]}" --no-save --ignore-scripts --no-audit --no-fund \
-          --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tail -5
-      if [[ $? -eq 0 ]]; then
+      # Use a sanitized package.json: remove deps with git:// sub-deps
+      # (e.g. @whiskeysockets/baileys → libsignal-node via git+ssh://github.com)
+      node -e "
+        const fs = require('fs');
+        const p = JSON.parse(fs.readFileSync('$PROJECT_ROOT/package.json', 'utf8'));
+        const gitDeps = ['@whiskeysockets/baileys'];
+        gitDeps.forEach(d => { delete (p.dependencies||{})[d]; delete (p.optionalDependencies||{})[d]; });
+        if (p.pnpm && p.pnpm.onlyBuiltDependencies) {
+          p.pnpm.onlyBuiltDependencies = p.pnpm.onlyBuiltDependencies.filter(d => !gitDeps.includes(d));
+        }
+        fs.writeFileSync('$RESOURCES_DIR/package.json', JSON.stringify(p, null, 2) + '\n');
+      "
+      if npm install "${UNIQUE_DEPS[@]}" --no-save --ignore-scripts --no-audit --no-fund \
+          --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tail -5; then
         log "  OK: installed ${#UNIQUE_DEPS[@]} extension deps"
       else
-        warn "npm install for extension deps failed"
+        warn "npm install for extension deps failed (non-fatal, continuing)"
       fi
-    )
+    ) || warn "Extension dependency install subshell failed (non-fatal)"
   else
     log "  All extension deps already present in node_modules"
   fi
