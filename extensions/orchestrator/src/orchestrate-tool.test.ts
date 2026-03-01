@@ -427,11 +427,17 @@ describe("orchestrate-tool", () => {
       // Workspace uses namespaced ID
       expect(createCall![1].workspace).toContain("plan-1--a1");
 
-      // Verify SOUL.md is written with namespaced agentId
+      // Verify workspace files are written with namespaced agentId
+      // Deploy writes: SOUL.md, AGENTS.md, TOOLS.md, BOOTSTRAP.md
       const filesSetCalls = mockGateway.mock.calls.filter((c: any) => c[0] === "agents.files.set");
-      expect(filesSetCalls).toHaveLength(1);
-      expect(filesSetCalls[0][1].name).toBe("SOUL.md");
-      expect(filesSetCalls[0][1].agentId).toBe("plan-1--a1");
+      expect(filesSetCalls.length).toBeGreaterThanOrEqual(1);
+      const soulCall = filesSetCalls.find((c: any) => c[1].name === "SOUL.md");
+      expect(soulCall).toBeTruthy();
+      expect(soulCall![1].agentId).toBe("plan-1--a1");
+      // All file writes should target the same namespaced agent
+      for (const call of filesSetCalls) {
+        expect(call[1].agentId).toBe("plan-1--a1");
+      }
 
       // Verify config.patch is batched at end (S1-4) and includes baseHash
       const patchCall = mockGateway.mock.calls.find((c: any) => c[0] === "config.patch");

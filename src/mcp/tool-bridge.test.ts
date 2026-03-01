@@ -2,12 +2,7 @@
  * MCP Tool Bridge unit tests.
  */
 import { describe, it, expect, vi } from "vitest";
-import {
-  isMCPToolName,
-  parseMCPToolName,
-  getMCPToolMeta,
-  bridgeMCPTools,
-} from "./tool-bridge.js";
+import { isMCPToolName, parseMCPToolName, getMCPToolMeta, bridgeMCPTools } from "./tool-bridge.js";
 import { buildBridgedName } from "./mcp-client.js";
 import { MCP_TOOL_PREFIX, MCP_MAX_RESULT_BYTES } from "./types.js";
 import type { MCPRuntimeManager } from "./runtime-manager.js";
@@ -46,8 +41,9 @@ function mockRuntimeManager(
 // ============================================================================
 
 describe("isMCPToolName", () => {
-  it("returns true for mcp_ prefixed names", () => {
-    expect(isMCPToolName("mcp_fs_read")).toBe(true);
+  it("returns true for mcp_ prefixed names (both formats)", () => {
+    expect(isMCPToolName("mcp_fs__read")).toBe(true);
+    expect(isMCPToolName("mcp_fs_read")).toBe(true); // legacy
   });
 
   it("returns false for non-mcp names", () => {
@@ -62,7 +58,14 @@ describe("isMCPToolName", () => {
 // ============================================================================
 
 describe("parseMCPToolName", () => {
-  it("parses valid tool name", () => {
+  it("parses double-underscore delimited name (primary format)", () => {
+    expect(parseMCPToolName("mcp_filesystem__read_file")).toEqual({
+      serverId: "filesystem",
+      toolName: "read_file",
+    });
+  });
+
+  it("parses legacy single-underscore name (backward compat)", () => {
     expect(parseMCPToolName("mcp_filesystem_read_file")).toEqual({
       serverId: "filesystem",
       toolName: "read_file",
@@ -73,8 +76,9 @@ describe("parseMCPToolName", () => {
     expect(parseMCPToolName("bash_exec")).toBeNull();
   });
 
-  it("returns null for empty serverId (mcp__tool)", () => {
-    expect(parseMCPToolName("mcp__tool")).toBeNull();
+  it("returns null for empty serverId in double-underscore format (mcp___tool)", () => {
+    // rest = "__tool", dblIdx = 0 → skips, fallback "_" idx=0 → null
+    expect(parseMCPToolName("mcp___tool")).toBeNull();
   });
 
   it("returns null for empty toolName (mcp_server_)", () => {
@@ -82,7 +86,7 @@ describe("parseMCPToolName", () => {
   });
 
   it("returns null for no underscore after prefix (mcp_nounder)", () => {
-    // "mcp_nounder" → rest = "nounder", indexOf("_") = -1 → null
+    // "mcp_nounder" → rest = "nounder", no "__" or "_" → null
     expect(parseMCPToolName("mcp_nounder")).toBeNull();
   });
 
@@ -90,7 +94,12 @@ describe("parseMCPToolName", () => {
     expect(parseMCPToolName("mcp_")).toBeNull();
   });
 
-  it("handles multi-underscore tool names", () => {
+  it("handles double-underscore with multi-underscore tool names", () => {
+    const result = parseMCPToolName("mcp_git__commit_message_update");
+    expect(result).toEqual({ serverId: "git", toolName: "commit_message_update" });
+  });
+
+  it("handles legacy multi-underscore tool names (fallback)", () => {
     const result = parseMCPToolName("mcp_git_commit_message_update");
     expect(result).toEqual({ serverId: "git", toolName: "commit_message_update" });
   });
@@ -101,12 +110,12 @@ describe("parseMCPToolName", () => {
 // ============================================================================
 
 describe("buildBridgedName", () => {
-  it("creates namespaced name", () => {
-    expect(buildBridgedName("filesystem", "read_file")).toBe("mcp_filesystem_read_file");
+  it("creates namespaced name with double-underscore delimiter", () => {
+    expect(buildBridgedName("filesystem", "read_file")).toBe("mcp_filesystem__read_file");
   });
 
   it("sanitizes special characters", () => {
-    expect(buildBridgedName("my-server", "read.file")).toBe("mcp_my_server_read_file");
+    expect(buildBridgedName("my-server", "read.file")).toBe("mcp_my_server__read_file");
   });
 });
 
@@ -126,9 +135,9 @@ describe("bridgeMCPTools", () => {
     const bridged = bridgeMCPTools(rm);
 
     expect(bridged).toHaveLength(2);
-    expect(bridged[0].name).toBe("mcp_fs_read");
+    expect(bridged[0].name).toBe("mcp_fs__read");
     expect(bridged[0].label).toBe("MCP: fs/read");
-    expect(bridged[1].name).toBe("mcp_fs_write");
+    expect(bridged[1].name).toBe("mcp_fs__write");
   });
 
   it("attaches MCPToolMeta to bridged tools", () => {

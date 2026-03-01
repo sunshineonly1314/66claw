@@ -4,7 +4,7 @@ description: Local speech-to-text with the Whisper CLI (no API key).
 nameZh: "语音转文字"
 descriptionZh: "使用Whisper将音频转换为文字"
 homepage: https://openai.com/research/whisper
-metadata: {"openclawcn":{"emoji":"🎙️","requires":{"bins":["whisper"]},"install":[{"id":"brew","kind":"brew","formula":"openai-whisper","bins":["whisper"],"label":"Install OpenAI Whisper (brew)"},{"id":"pip","kind":"pip","package":"openai-whisper","bins":["whisper"],"label":"Install OpenAI Whisper (pip)"}]}}
+metadata: {"openclawcn":{"emoji":"🎙️","requires":{"bins":["whisper"]},"install":[{"id":"brew","kind":"brew","formula":"openai-whisper","bins":["whisper"],"label":"Install OpenAI Whisper (brew)"},{"id":"pip","kind":"uv","package":"openai-whisper","bins":["whisper"],"label":"Install OpenAI Whisper (uv/pip)"}]}}
 ---
 
 # Whisper (CLI)

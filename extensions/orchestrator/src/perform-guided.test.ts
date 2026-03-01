@@ -275,4 +275,258 @@ describe("performGuidedDeploy", () => {
     const calls = (gw as ReturnType<typeof vi.fn>).mock.calls.map((c: any) => c[0]);
     expect(calls).toContain("agents.create");
   });
+
+  // ── Retry Failed Tests ──────────────────────────────────────────────────
+
+  async function seedPlanWithFailedAgent(planId: string) {
+    const plan = {
+      planId,
+      createdAt: new Date().toISOString(),
+      requirement: "test retry",
+      agents: [
+        {
+          name: "AgentA",
+          id: "agent-a",
+          role: "Already deployed",
+          soul: "# SOUL\n\n## 角色\nA\n\n## 核心职责\n- Work\n\n## 行为准则\n- Good\n\n## 能力边界\n- All\n\n## 协作指令\n- Cooperate",
+          modelTier: "mid",
+          tools: { allow: ["group:web"] },
+        },
+        {
+          name: "AgentB",
+          id: "agent-b",
+          role: "Failed during deploy",
+          soul: "# SOUL\n\n## 角色\nB\n\n## 核心职责\n- Work\n\n## 行为准则\n- Good\n\n## 能力边界\n- All\n\n## 协作指令\n- Cooperate",
+          modelTier: "cheap",
+          tools: { allow: ["group:fs"] },
+        },
+      ],
+      teamDescription: "Retry test team",
+      mode: "guided",
+    };
+    stateModule.__plans.set(planId, JSON.parse(JSON.stringify(plan)));
+
+    const state = {
+      planId,
+      status: "failed",
+      agents: [
+        { agentId: "agent-a", blueprintId: "agent-a", status: "ready", readyAt: new Date().toISOString() },
+        { agentId: "agent-b", blueprintId: "agent-b", status: "failed", error: "connection refused" },
+      ],
+      error: "connection refused",
+    };
+    stateModule.__states.set(planId, JSON.parse(JSON.stringify(state)));
+  }
+
+  it("accepts plan in failed status when retryFailed=true", async () => {
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    await seedPlanWithFailedAgent("retry-ok");
+    const result = await performGuidedDeploy(gw, "retry-ok", true);
+    expect(result).toHaveProperty("planId", "retry-ok");
+    expect(result).toHaveProperty("status", "deploying");
+  });
+
+  it("rejects plan in failed status when retryFailed is not set", async () => {
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    await seedPlanWithFailedAgent("retry-blocked");
+    const result = await performGuidedDeploy(gw, "retry-blocked");
+    expect(result).toHaveProperty("error");
+    expect((result as any).error).toContain("failed");
+  });
+
+  it("resets failed agent status to pending before retry", async () => {
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    await seedPlanWithFailedAgent("retry-reset");
+    await performGuidedDeploy(gw, "retry-reset", true);
+
+    // The first saveState call should have reset agent-b from "failed" to "pending"
+    const savedState = (saveState as any).mock.calls[0][0];
+    expect(savedState.status).toBe("deploying");
+    const agentB = savedState.agents.find((a: any) => a.agentId === "agent-b");
+    expect(agentB.status).toBe("pending");
+    expect(agentB.error).toBeUndefined();
+    // agent-a should remain ready
+    const agentA = savedState.agents.find((a: any) => a.agentId === "agent-a");
+    expect(agentA.status).toBe("ready");
+  });
+
+  it("only deploys failed agents on retry, preserving ready ones", async () => {
+    // Gateway mock: agent-a already exists
+    const gw = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      if (method === "config.get") return { hash: "test-hash" };
+      if (method === "agents.list") {
+        return [{ id: "retry-selective--agent-a" }]; // agent-a already deployed
+      }
+      return {};
+    }) as unknown as CallGatewayFn;
+
+    await seedPlanWithFailedAgent("retry-selective");
+    await performGuidedDeploy(gw, "retry-selective", true);
+
+    // Let background deploy flush
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const gwFn = gw as ReturnType<typeof vi.fn>;
+
+    // agents.create should only be called for agent-b (not agent-a)
+    const createCalls = gwFn.mock.calls.filter((c: any) => c[0] === "agents.create");
+    expect(createCalls.length).toBe(1);
+    expect(createCalls[0][1].id).toContain("agent-b");
+
+    // agents.remove should NOT be called for agent-a (already ready, preserved)
+    const removeCalls = gwFn.mock.calls.filter((c: any) => c[0] === "agents.remove");
+    expect(removeCalls.length).toBe(0);
+  });
+
+  // ── Boundary: retry with 0 failed agents (all already ready) ─────────
+
+  it("handles retry when all agents are already ready", async () => {
+    // Seed a plan where ALL agents are ready but status is "failed" (edge case: overall
+    // status was set to failed by config.patch error, agents are individually ready)
+    const plan = {
+      planId: "all-ready",
+      createdAt: new Date().toISOString(),
+      requirement: "test boundary",
+      agents: [
+        {
+          name: "A",
+          id: "a",
+          role: "role",
+          soul: "# SOUL\n\n## 角色\nA\n\n## 核心职责\n- Work\n\n## 行为准则\n- Good\n\n## 能力边界\n- All\n\n## 协作指令\n- Cooperate",
+          modelTier: "mid",
+          tools: { allow: ["group:web"] },
+        },
+      ],
+      teamDescription: "Boundary test",
+      mode: "guided",
+    };
+    stateModule.__plans.set("all-ready", JSON.parse(JSON.stringify(plan)));
+    stateModule.__states.set("all-ready", JSON.parse(JSON.stringify({
+      planId: "all-ready",
+      status: "failed",
+      agents: [{ agentId: "a", blueprintId: "a", status: "ready", readyAt: new Date().toISOString() }],
+      error: "config patch failed",
+    })));
+
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    const result = await performGuidedDeploy(gw, "all-ready", true);
+
+    expect(result).toHaveProperty("planId", "all-ready");
+    expect(result).toHaveProperty("status", "deploying");
+
+    // Let background deploy flush
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // No agents.create should be called (0 agents to retry)
+    const gwFn = gw as ReturnType<typeof vi.fn>;
+    const createCalls = gwFn.mock.calls.filter((c: any) => c[0] === "agents.create");
+    expect(createCalls.length).toBe(0);
+  });
+
+  // ── Boundary: retry with ALL agents failed ────────────────────────────
+
+  it("retries all agents when all are failed", async () => {
+    const plan = {
+      planId: "all-failed",
+      createdAt: new Date().toISOString(),
+      requirement: "test all failed",
+      agents: [
+        {
+          name: "A",
+          id: "a",
+          role: "role a",
+          soul: "# SOUL\n\n## 角色\nA\n\n## 核心职责\n- Work\n\n## 行为准则\n- Good\n\n## 能力边界\n- All\n\n## 协作指令\n- Cooperate",
+          modelTier: "mid",
+          tools: { allow: [] },
+        },
+        {
+          name: "B",
+          id: "b",
+          role: "role b",
+          soul: "# SOUL\n\n## 角色\nB\n\n## 核心职责\n- Work\n\n## 行为准则\n- Good\n\n## 能力边界\n- All\n\n## 协作指令\n- Cooperate",
+          modelTier: "cheap",
+          tools: { allow: [] },
+        },
+      ],
+      teamDescription: "All failed test",
+      mode: "guided",
+    };
+    stateModule.__plans.set("all-failed", JSON.parse(JSON.stringify(plan)));
+    stateModule.__states.set("all-failed", JSON.parse(JSON.stringify({
+      planId: "all-failed",
+      status: "failed",
+      agents: [
+        { agentId: "a", blueprintId: "a", status: "failed", error: "timeout" },
+        { agentId: "b", blueprintId: "b", status: "failed", error: "timeout" },
+      ],
+      error: "timeout",
+    })));
+
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    const result = await performGuidedDeploy(gw, "all-failed", true);
+    expect(result).toHaveProperty("status", "deploying");
+
+    // The saved state should reset both agents to pending
+    const savedState = (saveState as any).mock.calls[0][0];
+    expect(savedState.agents.every((a: any) => a.status === "pending")).toBe(true);
+    expect(savedState.error).toBeUndefined();
+
+    // Let background deploy flush
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Both agents should be created
+    const gwFn = gw as ReturnType<typeof vi.fn>;
+    const createCalls = gwFn.mock.calls.filter((c: any) => c[0] === "agents.create");
+    expect(createCalls.length).toBe(2);
+  });
+
+  // ── Boundary: preserves original deployStartedAt on retry ─────────────
+
+  it("preserves original deployStartedAt on retry", async () => {
+    const originalStart = "2026-01-15T10:00:00.000Z";
+    const plan = {
+      planId: "ts-preserve",
+      createdAt: new Date().toISOString(),
+      requirement: "test timestamp",
+      agents: [{
+        name: "A", id: "a", role: "r",
+        soul: "# SOUL\n\n## 角色\nA\n\n## 核心职责\n- Work\n\n## 行为准则\n- Good\n\n## 能力边界\n- All\n\n## 协作指令\n- Cooperate",
+        modelTier: "mid", tools: { allow: [] },
+      }],
+      teamDescription: "Timestamp test",
+      mode: "guided",
+    };
+    stateModule.__plans.set("ts-preserve", JSON.parse(JSON.stringify(plan)));
+    stateModule.__states.set("ts-preserve", JSON.parse(JSON.stringify({
+      planId: "ts-preserve",
+      status: "failed",
+      deployStartedAt: originalStart,
+      agents: [{ agentId: "a", blueprintId: "a", status: "failed", error: "err" }],
+      error: "err",
+    })));
+
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    await performGuidedDeploy(gw, "ts-preserve", true);
+
+    const savedState = (saveState as any).mock.calls[0][0];
+    expect(savedState.deployStartedAt).toBe(originalStart);
+  });
+
+  // ── Boundary: empty planId ─────────────────────────────────────────────
+
+  it("returns error for empty planId", async () => {
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    const result = await performGuidedDeploy(gw, "");
+    expect(result).toHaveProperty("error");
+  });
+
+  // ── Boundary: retryFailed on a "deploying" plan ────────────────────────
+
+  it("rejects retry on an actively deploying plan", async () => {
+    const gw = makeGateway() as unknown as CallGatewayFn;
+    await seedPlan("deploying-plan", "deploying");
+    const result = await performGuidedDeploy(gw, "deploying-plan", true);
+    expect(result).toHaveProperty("error");
+    expect((result as any).error).toContain("deploying");
+  });
 });

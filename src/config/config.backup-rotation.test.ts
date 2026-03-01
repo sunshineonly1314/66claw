@@ -6,7 +6,7 @@ import { rotateConfigBackups } from "./backup-rotation.js";
 import { withTempHome } from "./test-helpers.js";
 
 describe("config backup rotation", () => {
-  it("keeps a 5-deep backup ring for config writes", async () => {
+  it("keeps a 3-deep backup ring for config writes", async () => {
     await withTempHome(async () => {
       const stateDir = process.env.OPENCLAWCN_STATE_DIR?.trim();
       if (!stateDir) {
@@ -44,9 +44,7 @@ describe("config backup rotation", () => {
       await expect(readName(".bak")).resolves.toBe("v5");
       await expect(readName(".bak.1")).resolves.toBe("v4");
       await expect(readName(".bak.2")).resolves.toBe("v3");
-      await expect(readName(".bak.3")).resolves.toBe("v2");
-      await expect(readName(".bak.4")).resolves.toBe("v1");
-      await expect(fs.stat(`${configPath}.bak.5`)).rejects.toThrow();
+      await expect(fs.stat(`${configPath}.bak.3`)).rejects.toThrow();
     });
   });
 });

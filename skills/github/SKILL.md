@@ -3,7 +3,7 @@ name: github
 description: "Interact with GitHub using the `gh` CLI. Use `gh issue`, `gh pr`, `gh run`, and `gh api` for issues, PRs, CI runs, and advanced queries."
 nameZh: "GitHub"
 descriptionZh: "管理GitHub仓库、Issue和PR"
-metadata: {"openclawcn":{"emoji":"🐙","requires":{"bins":["gh"]},"install":[{"id":"brew","kind":"brew","formula":"gh","bins":["gh"],"label":"Install GitHub CLI (brew)"},{"id":"apt","kind":"apt","package":"gh","bins":["gh"],"label":"Install GitHub CLI (apt)"},{"id":"download","kind":"download","url":"https://github.com/cli/cli/releases/latest","bins":["gh"],"label":"Download GitHub CLI binary","os":["win32"]}]}}
+metadata: {"openclawcn":{"emoji":"🐙","requires":{"bins":["gh"]},"install":[{"id":"brew","kind":"brew","formula":"gh","bins":["gh"],"label":"Install GitHub CLI (brew)"},{"id":"apt","kind":"download","url":"https://github.com/cli/cli/releases/latest","bins":["gh"],"label":"Install GitHub CLI (apt/manual)"},{"id":"download","kind":"download","url":"https://github.com/cli/cli/releases/latest","bins":["gh"],"label":"Download GitHub CLI binary","os":["win32"]}]}}
 ---
 
 # GitHub Skill
