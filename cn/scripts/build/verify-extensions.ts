@@ -184,9 +184,11 @@ function main(): void {
       const committedJs = fs.readFileSync(jsFile, "utf-8");
 
       // Detect obfuscated JS (contains RC4 patterns)
+      // NOTE: require 10+ consecutive \xHH to avoid false positives from esbuild
+      //       (legitimate code like regex char classes may contain a few \xHH)
       const isObfuscated =
         committedJs.includes("_0x") ||
-        /\\x[0-9a-fA-F]{2}\\x[0-9a-fA-F]{2}/.test(committedJs) ||
+        /(\\x[0-9a-fA-F]{2}){10,}/.test(committedJs) ||
         committedJs.includes("javascript-obfuscator") ||
         // RC4 self-defending code pattern
         /\(function\s*\(\s*\w+\s*,\s*\w+\s*\)\s*\{/.test(committedJs.slice(0, 500));
