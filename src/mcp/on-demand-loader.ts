@@ -148,17 +148,26 @@ async function verifyMCPFromMarketplace(
       const { getDatabase } = await import("./marketplace/db.js");
       const db = getDatabase();
 
-      // 安全查询：server_id 精确匹配 + tags 参数化 LIKE（ESCAPE 转义通配符）
-      const safePkg = npmPackage
-        .replace(/\\/g, "\\\\") // 先转义反斜杠本身
-        .replace(/%/g, "\\%") // 转义 % 通配符
-        .replace(/_/g, "\\_"); // 转义 _ 通配符
-      const stmt = db.prepare(`
+      // 🔒 SECURITY FIX: 分步查询，优先精确匹配 server_id。
+      // 旧版 OR tags LIKE 可能匹配到无关行（如 npm 包名 "filesystem"
+      // 匹配到 tags 含 "uses filesystem" 的非官方 MCP），导致 is_official
+      // 判断基于错误的行。
+      const stmtExact = db.prepare(`
         SELECT is_official, requires_vpn, china_friendly_score
         FROM mcp_items
-        WHERE server_id = ? OR tags LIKE ? ESCAPE '\\'
+        WHERE server_id = ?
       `);
-      const row = stmt.get(serverId, `%${safePkg}%`) as any;
+      let row = stmtExact.get(serverId) as any;
+
+      // 仅当精确匹配失败时，尝试 npm_package 精确匹配（不再使用 tags LIKE）
+      if (!row) {
+        const stmtNpm = db.prepare(`
+          SELECT is_official, requires_vpn, china_friendly_score
+          FROM mcp_items
+          WHERE npm_package = ?
+        `);
+        row = stmtNpm.get(npmPackage) as any;
+      }
 
       if (!row) {
         return {
@@ -314,12 +323,10 @@ async function doLoadMCP(suggestion: McpSuggestion): Promise<OnDemandLoadResult>
       return { success: false, serverId, error: "mcp_manager_not_initialized" };
     }
 
-    // 检查是否已经注册
-    const existingTools = manager.getAvailableTools();
-    const alreadyLoaded = existingTools.some((t) => t.name.startsWith(`mcp_${serverId}_`));
-    if (alreadyLoaded) {
-      const toolCount = existingTools.filter((t) => t.name.startsWith(`mcp_${serverId}_`)).length;
-      return { success: true, serverId, toolCount };
+    // 检查是否已经注册（使用 runtime state 而非字符串前缀匹配，更可靠）
+    const existingState = manager.runtime.getServerState(serverId);
+    if (existingState && existingState.status === "running") {
+      return { success: true, serverId, toolCount: existingState.tools.length };
     }
 
     // 🔒 安全验证：从 Marketplace 验证 MCP 是否可信
@@ -359,11 +366,45 @@ async function doLoadMCP(suggestion: McpSuggestion): Promise<OnDemandLoadResult>
       return { success: false, serverId, error: "no_install_method" };
     }
 
-    // 等待启动完成，获取工具数
-    const tools = manager.getAvailableTools();
-    const serverTools = tools.filter((t) => t.name.startsWith(`mcp_${serverId}_`));
+    // 等待启动完成，轮询 server 状态直到 running 或超时
+    // FIX H2: addServer 后 server 可能还在 initializing，立即查工具列表会返回 0
+    const pollStart = Date.now();
+    const pollTimeout = sseUrl ? 15_000 : 30_000;
+    const pollInterval = 500;
+    let finalToolCount = 0;
 
-    return { success: true, serverId, toolCount: serverTools.length };
+    while (Date.now() - pollStart < pollTimeout) {
+      const state = manager.runtime.getServerState(serverId);
+      if (!state) break; // server disappeared
+
+      if (state.status === "running") {
+        finalToolCount = state.tools.length;
+        break;
+      }
+
+      // Bail early on terminal states
+      if (state.status === "error" || state.status === "circuit_open") {
+        return {
+          success: false,
+          serverId,
+          error: state.error ?? `Server entered ${state.status} state`,
+        };
+      }
+
+      await new Promise((r) => setTimeout(r, pollInterval));
+    }
+
+    // If poll loop ended without reaching "running" state, report failure
+    const finalState = manager.runtime.getServerState(serverId);
+    if (!finalState || finalState.status !== "running") {
+      return {
+        success: false,
+        serverId,
+        error: finalState?.error ?? "Server failed to reach running state within timeout",
+      };
+    }
+
+    return { success: true, serverId, toolCount: finalToolCount };
   } catch (err) {
     // FIX R3-8: addServer 失败时清理 registry/runtime 中的残留条目，
     // 防止"幽灵"服务器阻止后续重试（alreadyLoaded 检测会误判为已加载）

@@ -9,7 +9,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import crypto from "node:crypto";
-import type { WecomChannelConfig, WecomMessageEvent, WecomTextMessageEvent } from "./types.js";
+import type { WecomChannelConfig, WecomMessageEvent } from "./types.js";
 
 export interface WecomWebhookContext {
   config: WecomChannelConfig;
@@ -406,57 +406,92 @@ async function handleWecomMessage(
 
   log?.info(`[wecom] 收到消息: type=${msgType}, from=${fromUser}, chatType=${chatType}, chatId=${chatId ?? "N/A"}, agentId=${agentId}`);
 
-  // 处理文本消息
-  if (msgType === "text") {
-    const content = msgData["Content"] ?? "";
+  // 根据消息类型提取文本内容
+  let content = "";
 
-    if (!content.trim()) {
-      log?.info("[wecom] 文本消息内容为空，跳过");
+  switch (msgType) {
+    case "text":
+      content = msgData["Content"] ?? "";
+      break;
+
+    case "image":
+      // 图片消息: 提取图片 URL
+      content = msgData["PicUrl"]
+        ? `[图片: ${msgData["PicUrl"]}]`
+        : "[图片消息]";
+      break;
+
+    case "voice":
+      // 语音消息: 如果有识别结果使用识别文本，否则标记为语音
+      content = msgData["Recognition"]?.trim()
+        || "[语音消息]";
+      break;
+
+    case "video":
+      content = "[视频消息]";
+      break;
+
+    case "location":
+      // 位置消息
+      content = msgData["Label"]
+        ? `[位置: ${msgData["Label"]}]`
+        : `[位置: ${msgData["Location_X"] ?? ""},${msgData["Location_Y"] ?? ""}]`;
+      break;
+
+    case "link":
+      // 链接消息
+      content = msgData["Title"]
+        ? `[链接: ${msgData["Title"]}] ${msgData["Url"] ?? ""}`
+        : `[链接: ${msgData["Url"] ?? ""}]`;
+      break;
+
+    case "event": {
+      // 处理事件消息 (关注/取消关注等)
+      const eventName = msgData["Event"];
+      log?.info(`[wecom] 收到事件: ${eventName}`);
+      if (eventName === "subscribe") {
+        log?.info(`[wecom] 用户 ${fromUser} 关注了应用`);
+      } else if (eventName === "unsubscribe") {
+        log?.info(`[wecom] 用户 ${fromUser} 取消关注了应用`);
+      }
+      return; // 事件消息不分发到 AI
+    }
+
+    default:
+      log?.info(`[wecom] 收到未处理的消息类型: ${msgType}`);
       return;
-    }
+  }
 
-    const event: WecomTextMessageEvent = {
-      MsgType: "text",
-      MsgId: msgId,
-      ToUserName: toUser,
-      FromUserName: fromUser,
-      CreateTime: createTime,
-      Content: content,
-      AgentID: agentId,
-      ChatId: chatId,
-      ChatType: isGroup ? "group" : "single",
-    };
-
-    await onMessage({
-      msgId,
-      userId: fromUser,
-      agentId,
-      msgType: "text",
-      text: content,
-      createTime,
-      chatType,
-      chatId,
-      rawEvent: event,
-    });
+  if (!content.trim()) {
+    log?.info(`[wecom] 消息内容为空 (type=${msgType})，跳过`);
     return;
   }
 
-  // 处理事件消息 (关注/取消关注等)
-  if (msgType === "event") {
-    const event = msgData["Event"];
-    log?.info(`[wecom] 收到事件: ${event}`);
+  // All message types are normalized to text-like shape for downstream processing.
+  // Cast to WecomMessageEvent since rawEvent expects the union type.
+  const event = {
+    MsgType: msgType,
+    MsgId: msgId,
+    ToUserName: toUser,
+    FromUserName: fromUser,
+    CreateTime: createTime,
+    Content: content,
+    AgentID: agentId,
+    ChatId: chatId,
+    ChatType: isGroup ? "group" : "single",
+  } as WecomMessageEvent;
 
-    // 可以根据需要处理不同的事件
-    if (event === "subscribe") {
-      log?.info(`[wecom] 用户 ${fromUser} 关注了应用`);
-    } else if (event === "unsubscribe") {
-      log?.info(`[wecom] 用户 ${fromUser} 取消关注了应用`);
-    }
-    return;
-  }
-
-  // 其他消息类型暂不处理
-  log?.info(`[wecom] 收到未处理的消息类型: ${msgType}`);
+  await onMessage({
+    msgId,
+    userId: fromUser,
+    agentId,
+    msgType,
+    text: content,
+    createTime,
+    chatType,
+    chatId,
+    rawEvent: event,
+  });
 }
 
 /**

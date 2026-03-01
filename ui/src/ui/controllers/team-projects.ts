@@ -14,6 +14,7 @@ import type {
   TeamProjectStatsResult,
   TeamSharedMemoryEntry,
   TeamActivityEvent,
+  ProjectWorkspaceFilesResult,
 } from "../types.js";
 
 // ── State Slice ─────────────────────────────────────────────────────────
@@ -31,7 +32,8 @@ export type TeamProjectsState = {
   teamProjectStats: TeamProjectStatsResult | null;
   teamProjectMemory: TeamSharedMemoryEntry[] | null;
   teamProjectActivity: TeamActivityEvent[] | null;
-  teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory";
+  teamProjectFiles: ProjectWorkspaceFilesResult | null;
+  teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory" | "files";
   teamProjectBusy: boolean;
 };
 
@@ -57,21 +59,45 @@ export function stopProjectHealthPoll(): void {
 
 // ── List ─────────────────────────────────────────────────────────────────
 
-export async function loadTeamProjects(state: TeamProjectsState): Promise<void> {
+/** Pending load promise so callers that arrive while a load is in-flight
+ *  can wait for the same result instead of being silently discarded. */
+let _pendingLoad: Promise<void> | null = null;
+
+export async function loadTeamProjects(state: TeamProjectsState, force = false): Promise<void> {
   if (!state.client || !state.connected) return;
-  if (state.teamProjectsLoading) return;
+
+  // If a load is already in-flight, wait for it to finish, then re-fetch
+  // when `force` is set (e.g. after deploying a new team).
+  if (state.teamProjectsLoading && _pendingLoad) {
+    if (force) {
+      await _pendingLoad;
+      // Re-check client after awaiting — it may have disconnected
+      if (!state.client || !state.connected) return;
+      // Fall through to do another fetch below
+    } else {
+      return _pendingLoad;
+    }
+  }
+
+  const client = state.client;
   state.teamProjectsLoading = true;
   state.teamProjectsError = null;
-  try {
-    const res = (await state.client.request("team.project.list", {})) as
-      | { projects: TeamProjectSummary[] }
-      | undefined;
-    state.teamProjectsList = res?.projects ?? [];
-  } catch (err) {
-    state.teamProjectsError = String(err);
-  } finally {
-    state.teamProjectsLoading = false;
-  }
+
+  _pendingLoad = (async () => {
+    try {
+      const res = (await client.request("team.project.list", {})) as
+        | { projects: TeamProjectSummary[] }
+        | undefined;
+      state.teamProjectsList = res?.projects ?? [];
+    } catch (err) {
+      state.teamProjectsError = String(err);
+    } finally {
+      state.teamProjectsLoading = false;
+      _pendingLoad = null;
+    }
+  })();
+
+  return _pendingLoad;
 }
 
 // ── Detail ──────────────────────────────────────────────────────────────
@@ -187,6 +213,36 @@ export async function clearSharedMemory(
   }
 }
 
+// ── Workspace Files ─────────────────────────────────────────────────────
+
+let _pendingFilesLoad: Promise<void> | null = null;
+
+export async function loadProjectFiles(
+  state: TeamProjectsState,
+  projectId: string,
+): Promise<void> {
+  if (!state.client || !state.connected) return;
+  // Deduplicate in-flight requests — prevent rapid tab switching from spawning concurrent loads
+  if (_pendingFilesLoad) return _pendingFilesLoad;
+  _pendingFilesLoad = (async () => {
+    try {
+      const res = (await state.client!.request("team.project.files.list", { projectId })) as
+        | ProjectWorkspaceFilesResult
+        | undefined;
+      if (res && state.teamProjectSelectedId === projectId) {
+        state.teamProjectFiles = res;
+      }
+    } catch {
+      if (state.teamProjectSelectedId === projectId) {
+        state.teamProjectFiles = { projectId, members: [] };
+      }
+    } finally {
+      _pendingFilesLoad = null;
+    }
+  })();
+  return _pendingFilesLoad;
+}
+
 // ── Pause / Resume ──────────────────────────────────────────────────────
 
 export async function pauseProject(
@@ -243,6 +299,8 @@ export async function deleteProject(
       state.teamProjectHealth = null;
       state.teamProjectStats = null;
       state.teamProjectMemory = null;
+      state.teamProjectActivity = null;
+      state.teamProjectFiles = null;
       stopProjectHealthPoll();
     }
     await loadTeamProjects(state);
@@ -360,6 +418,7 @@ export async function selectProject(
   state.teamProjectStats = null;
   state.teamProjectMemory = null;
   state.teamProjectActivity = null;
+  state.teamProjectFiles = null;
 
   // Load detail + health + activity in parallel
   await Promise.all([

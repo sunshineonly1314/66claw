@@ -93,8 +93,14 @@ export type GuidedProposeResponse = {
     emoji?: string;
     modelTier: string;
     tools: string[];
+    abilities?: string[];
+    skills?: string[];
+    modelName?: string;
   }>;
   costEstimate?: string;
+  coverageScore?: number;
+  feasibilityScore?: number;
+  refinementSummary?: string;
 };
 
 /**

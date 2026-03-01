@@ -46,32 +46,54 @@ import {
 } from "../../infra/perf-tracker.js";
 import { resolveChatImagePath, loadChatImages } from "../../media/chat-image-store.js";
 import { resolveChatVideoPath, loadChatVideos } from "../../media/chat-video-store.js";
+import {
+  queryBySession as queryMediaBySession,
+  queryByIds as queryMediaByIds,
+} from "../../media/media-db.js";
 
 /**
  * Rehydrate image URLs in tool result messages.
  * Checks if local image files still exist and marks them accordingly.
+ *
+ * [CN-FEAT:media-sqlite] Pre-builds a file existence cache from SQLite to
+ * minimize N×existsSync disk lookups. Falls back to per-file existsSync
+ * for files not found in the cache (backward compat with pre-SQLite data).
  */
 function rehydrateGeneratedImages(messages: unknown[], sessionKey: string): void {
   const safeSK = sessionKey.replace(/[^a-zA-Z0-9_\-.]/g, "_");
+
+  // Build a cache of known files from SQLite for this session
+  const knownFiles = new Set<string>();
+  try {
+    const rows = queryMediaBySession(sessionKey);
+    for (const r of rows) knownFiles.add(r.file);
+  } catch {
+    // SQLite unavailable — will fall through to per-file existsSync
+  }
+
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;
     const m = msg as Record<string, unknown>;
 
     // Check top-level details (tool result messages)
-    rehydrateDetails(m.details, safeSK);
+    rehydrateDetails(m.details, safeSK, knownFiles);
 
     // Check content array for tool_result blocks
     if (Array.isArray(m.content)) {
       for (const block of m.content) {
         if (!block || typeof block !== "object") continue;
         const b = block as Record<string, unknown>;
-        rehydrateDetails(b.details, safeSK);
+        rehydrateDetails(b.details, safeSK, knownFiles);
       }
     }
   }
 }
 
-function rehydrateDetails(details: unknown, fallbackSessionKey: string): void {
+function rehydrateDetails(
+  details: unknown,
+  fallbackSessionKey: string,
+  knownFiles: Set<string>,
+): void {
   if (!details || typeof details !== "object") return;
   const d = details as Record<string, unknown>;
 
@@ -79,17 +101,19 @@ function rehydrateDetails(details: unknown, fallbackSessionKey: string): void {
   if (typeof d.imageUrl === "string") {
     const url = d.imageUrl as string;
     if (url.includes("/api/media/chat-images/")) {
-      // Extract session key and image file from URL path:
-      // /api/media/chat-images/<sessionKey>/<imageFile>
       const parts = url.split("/");
       const imageFile = parts[parts.length - 1];
-      // The session key in the URL may differ from the top-level sessionKey
-      // (e.g. "agent:main:uuid" vs "main"). Use the URL's key for lookup.
       const urlSessionKey = parts.length >= 2 ? parts[parts.length - 2] : undefined;
       const effectiveKey = urlSessionKey || fallbackSessionKey;
       if (imageFile) {
-        const localPath = resolveChatImagePath(effectiveKey, imageFile);
-        d.imageAvailable = localPath !== null;
+        // Fast path: check SQLite cache first
+        if (knownFiles.has(imageFile) || knownFiles.has(decodeURIComponent(imageFile))) {
+          d.imageAvailable = true;
+        } else {
+          // Slow path: disk check for pre-SQLite data
+          const localPath = resolveChatImagePath(effectiveKey, imageFile);
+          d.imageAvailable = localPath !== null;
+        }
       }
     }
   }
@@ -103,9 +127,13 @@ function rehydrateDetails(details: unknown, fallbackSessionKey: string): void {
         const imageFile = parts[parts.length - 1];
         const urlSK = parts.length >= 2 ? parts[parts.length - 2] : undefined;
         const effectiveKey = urlSK || fallbackSessionKey;
-        if (imageFile && !resolveChatImagePath(effectiveKey, imageFile)) {
-          allAvailable = false;
-          break;
+        if (imageFile) {
+          const inCache =
+            knownFiles.has(imageFile) || knownFiles.has(decodeURIComponent(imageFile));
+          if (!inCache && !resolveChatImagePath(effectiveKey, imageFile)) {
+            allAvailable = false;
+            break;
+          }
         }
       }
     }
@@ -120,8 +148,13 @@ function rehydrateDetails(details: unknown, fallbackSessionKey: string): void {
       const videoFile = parts[parts.length - 1];
       if (videoFile) {
         const urlSK = parts.length >= 2 ? parts[parts.length - 2] : undefined;
-        const localPath = resolveChatVideoPath(urlSK || fallbackSessionKey, videoFile);
-        d.videoAvailable = localPath !== null;
+        // Fast path: check SQLite cache
+        if (knownFiles.has(videoFile) || knownFiles.has(decodeURIComponent(videoFile))) {
+          d.videoAvailable = true;
+        } else {
+          const localPath = resolveChatVideoPath(urlSK || fallbackSessionKey, videoFile);
+          d.videoAvailable = localPath !== null;
+        }
       }
     }
   }
@@ -591,6 +624,8 @@ export const chatHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    // Declare outside try so catch block can safely clear it
+    let safetyTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       // 🔍 Performance Tracking 开始
       startPerfTrace(clientRunId, {
@@ -717,7 +752,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       // so the user doesn't see "thinking dots" spinning forever.
       let dispatchCompleted = false;
       const safetyTimeoutMs = timeoutMs + 15_000; // agent timeout + 15s grace
-      const safetyTimer = setTimeout(() => {
+      safetyTimer = setTimeout(() => {
         if (!dispatchCompleted) {
           context.logGateway.error(
             `[DEBUG-CHAT] SAFETY TIMEOUT: runId=${clientRunId} did not complete within ${safetyTimeoutMs}ms`,
@@ -907,11 +942,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         });
     } catch (err) {
       // Clear safety timer if it was set before the error occurred
-      try {
-        clearTimeout(safetyTimer);
-      } catch {
-        /* safetyTimer may not be declared yet */
-      }
+      if (safetyTimer) clearTimeout(safetyTimer);
       // 🔍 DEBUG: 日志10 - 外层 try-catch 捕获到同步错误
       context.logGateway.error(
         `[DEBUG-CHAT] OUTER TRY-CATCH ERROR: runId=${clientRunId}, error=${String(err)}, stack=${err instanceof Error ? err.stack : "N/A"}`,
@@ -1013,11 +1044,42 @@ export const chatHandlers: GatewayRequestHandlers = {
     const { canonicalKey } = loadSessionEntry(rawSessionKey);
     const sessionKey = canonicalKey || rawSessionKey;
     try {
+      // [CN-FEAT:media-sqlite] Try SQLite first for fast indexed query
+      let assets: Array<{
+        id: string;
+        type: "image" | "video";
+        url: string;
+        name: string;
+        size: number;
+        createdAt: number;
+        sessionKey: string;
+      }> = [];
+      try {
+        const rows = queryMediaBySession(sessionKey);
+        if (rows.length > 0) {
+          assets = rows.map((r) => ({
+            id: r.id,
+            type: r.type,
+            url: r.url,
+            name: r.file,
+            size: r.size_bytes ?? 0,
+            createdAt: new Date(r.created_at).getTime(),
+            sessionKey,
+          }));
+          // Already sorted DESC by created_at from query
+          respond(true, { assets });
+          return;
+        }
+      } catch {
+        // SQLite unavailable — fall through to manifest
+      }
+
+      // Fallback: read from manifest files (backward compatibility)
       const [images, videos] = await Promise.all([
         loadChatImages(sessionKey),
         loadChatVideos(sessionKey),
       ]);
-      const assets = [
+      assets = [
         ...images.map((img) => ({
           id: img.id,
           type: "image" as const,
@@ -1039,6 +1101,44 @@ export const chatHandlers: GatewayRequestHandlers = {
       ];
       // Sort by creation time descending (newest first)
       assets.sort((a, b) => b.createdAt - a.createdAt);
+      respond(true, { assets });
+    } catch {
+      respond(true, { assets: [] });
+    }
+  },
+
+  // [CN-FEAT:media-sqlite] Query media asset details by ID(s)
+  "media.details": async ({ params, respond }) => {
+    const ids = Array.isArray(params.ids) ? (params.ids as string[]) : [];
+    const id = typeof params.id === "string" ? params.id : null;
+    if (ids.length === 0 && !id) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "id or ids required"));
+      return;
+    }
+    try {
+      const queryIds = id ? [id] : ids;
+      const rows = queryMediaByIds(queryIds);
+      const assets = rows.map((r) => ({
+        id: r.id,
+        sessionKey: r.session_key,
+        type: r.type,
+        file: r.file,
+        url: r.url,
+        mimeType: r.mime_type,
+        sizeBytes: r.size_bytes,
+        source: r.source,
+        prompt: r.prompt,
+        revisedPrompt: r.revised_prompt,
+        model: r.model,
+        provider: r.provider,
+        imageSize: r.image_size,
+        style: r.style,
+        seed: r.seed,
+        durationMs: r.duration_ms,
+        durationSecs: r.duration_secs,
+        coverUrl: r.cover_url,
+        createdAt: new Date(r.created_at).getTime(),
+      }));
       respond(true, { assets });
     } catch {
       respond(true, { assets: [] });

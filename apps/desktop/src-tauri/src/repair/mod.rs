@@ -1,4 +1,5 @@
 pub mod ai_client;
+pub mod content_vault;
 pub mod diagnostics;
 pub mod provider_discovery;
 pub mod remote_tunnel;

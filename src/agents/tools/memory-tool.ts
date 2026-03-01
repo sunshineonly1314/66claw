@@ -10,6 +10,9 @@ import { resolveSessionAgentId } from "../agent-scope.js";
 import { resolveMemorySearchConfig } from "../memory-search.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 
+/** Minimum chars for a clamped snippet to still be useful. */
+const MIN_CLAMP_SNIPPET_CHARS = 30;
+
 const MemorySearchSchema = Type.Object({
   query: Type.String(),
   maxResults: Type.Optional(Type.Number()),
@@ -181,8 +184,32 @@ function clampResultsByInjectedChars(
       clamped.push(entry);
       remaining -= snippet.length;
     } else {
-      const trimmed = snippet.slice(0, Math.max(0, remaining));
-      clamped.push({ ...entry, snippet: trimmed });
+      // [CN-PATCH:memory-fix] Avoid mid-sentence truncation.
+      // Try to break at the last sentence boundary (. ! ? 。！？) within budget,
+      // falling back to last space if no sentence boundary found.
+      // This prevents unreadable half-sentences in agent context.
+      const slice = snippet.slice(0, Math.max(0, remaining));
+      const sentenceEnd = Math.max(
+        slice.lastIndexOf(". "),
+        slice.lastIndexOf("。"),
+        slice.lastIndexOf("! "),
+        slice.lastIndexOf("！"),
+        slice.lastIndexOf("? "),
+        slice.lastIndexOf("？"),
+      );
+      let breakAt: number;
+      if (sentenceEnd > slice.length * 0.3) {
+        // Found a sentence boundary past 30% of the slice — use it
+        breakAt = sentenceEnd + 1;
+      } else {
+        // No good sentence boundary — try last space
+        const lastSpace = slice.lastIndexOf(" ");
+        breakAt = lastSpace > slice.length * 0.3 ? lastSpace : slice.length;
+      }
+      const trimmed = snippet.slice(0, breakAt).trimEnd();
+      if (trimmed.length >= MIN_CLAMP_SNIPPET_CHARS) {
+        clamped.push({ ...entry, snippet: trimmed + "..." });
+      }
       break;
     }
   }

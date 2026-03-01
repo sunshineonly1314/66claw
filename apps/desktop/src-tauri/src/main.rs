@@ -362,6 +362,7 @@ pub fn run() {
             commands::repair_discover_providers,
             commands::repair_ai_chat,
             commands::repair_apply_fix,
+            commands::repair_get_recent_logs,
             commands::upload_crash_logs,
             commands::repair_ssh_check,
             commands::repair_ssh_enable,

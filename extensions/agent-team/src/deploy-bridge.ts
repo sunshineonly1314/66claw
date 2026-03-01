@@ -79,6 +79,61 @@ type OrchestratorState = {
   }>;
 };
 
+// ── Supervisor Model Selection ────────────────────────────────────────────
+
+/**
+ * Select the best available SOTA-tier model for the Supervisor agent.
+ * The Supervisor needs the strongest available model for intelligent routing,
+ * task decomposition, quality validation, and team coordination.
+ *
+ * Priority: claude-opus-4-6 > o3 > claude-sonnet-4-5 > gpt-4o > deepseek-reasoner
+ */
+const SUPERVISOR_MODEL_PRIORITY = [
+  "anthropic/claude-opus-4-6",
+  "openai/o3",
+  "anthropic/claude-sonnet-4-5",
+  "openai/gpt-4o",
+  "deepseek/deepseek-reasoner",
+  "zhipu/glm-5",
+  "qwen/qwen-max",
+];
+
+function selectSotaModel(plan: OrchestratorPlan): string {
+  // 1. If orchestrator already assigned a model to the supervisor blueprint, use it
+  for (const bp of plan.agents) {
+    const caps = bp.inferredCapabilities as Record<string, unknown> | undefined;
+    const model = caps?.model as { primary?: string } | string | undefined;
+    const isSup = /supervisor|分发|路由|调度|协调|管理|总管/i.test(bp.role) ||
+                  /supervisor/i.test(bp.id);
+    if (isSup && model) {
+      const primary = typeof model === "string" ? model : model?.primary;
+      if (primary) return primary;
+    }
+  }
+
+  // 2. Check which providers have agents already deployed (heuristic: plan agents have models)
+  const usedProviders = new Set<string>();
+  for (const bp of plan.agents) {
+    const caps = bp.inferredCapabilities as Record<string, unknown> | undefined;
+    const model = caps?.model as { primary?: string } | string | undefined;
+    const primary = typeof model === "string" ? model : model?.primary;
+    if (primary && primary.includes("/")) {
+      usedProviders.add(primary.split("/")[0]);
+    }
+  }
+
+  // 3. Walk priority list, prefer providers the user is already using
+  if (usedProviders.size > 0) {
+    for (const candidate of SUPERVISOR_MODEL_PRIORITY) {
+      const provider = candidate.split("/")[0];
+      if (usedProviders.has(provider)) return candidate;
+    }
+  }
+
+  // 4. Fallback to top priority
+  return SUPERVISOR_MODEL_PRIORITY[0];
+}
+
 // ── Public API ───────────────────────────────────────────────────────────
 
 export type CreateFromPlanParams = {
@@ -205,13 +260,14 @@ export async function createProjectFromPlan(
   }
 
   // Add supervisor to member lists (supervisor is always the first entry)
+  // Supervisor MUST use SOTA-tier model for intelligent routing and coordination.
   const supervisorMember: MemberInfo = {
     id: supervisorId,
     name: `${plan.teamName ?? "Team"} Supervisor`,
     role: "Team coordinator and message router",
     emoji: "🎯",
     toolProfile: "minimal",
-    modelTier: "cheap",
+    modelTier: "sota",
   };
   memberIds.unshift(supervisorId);
   members.unshift(supervisorMember);
@@ -243,7 +299,7 @@ export async function createProjectFromPlan(
     members,
     autoSupervisor: true,
     memory: defaultMemoryConfig(),
-    coordination: defaultCoordinationConfig(),
+    coordination: defaultCoordinationConfig(templateIdToCategory(plan.templateId)),
     visibility: defaultVisibility(),
     constraints: params.constraints,
     bindings: [],
@@ -347,10 +403,22 @@ export async function createProjectFromPlan(
 
   let toolPoliciesWritten = 0;
 
-  // 5a. Supervisor config entry
-  const allAgentEntries: Array<{ id: string; tools: Record<string, unknown> }> = [
+  // 5a. Supervisor config entry — SOTA model, no skills (pure routing/coordination)
+  type AgentPatchEntry = {
+    id: string;
+    tools: Record<string, unknown>;
+    skills?: string[];
+    model?: string | { primary: string; fallbacks?: string[] };
+  };
+
+  // Select the best available SOTA model for the supervisor
+  const supervisorModel = selectSotaModel(plan);
+
+  const allAgentEntries: AgentPatchEntry[] = [
     {
       id: supervisorId,
+      skills: [],  // Supervisor is a pure router — no skills
+      model: supervisorModel,
       tools: {
         profile: "minimal",
         alsoAllow: ["group:sessions", "memory_share"],
@@ -358,31 +426,45 @@ export async function createProjectFromPlan(
     },
   ];
 
-  // 5b. Worker tool policies from blueprint recommendations
+  // 5b. Worker tool policies + skills whitelist from blueprint recommendations
   for (const bp of plan.agents) {
     const deployedId = deployedIdMap.get(bp.id);
-    if (!deployedId || !bp.tools) continue;
-
-    if (bp.inferredCapabilities) {
-      const report = agentReports.find((r) => r.agentId === deployedId);
-      report?.steps.push({
-        step: "tool-policy",
-        status: "ok",
-        detail: "Tool policy applied by orchestrator (inferred capabilities)",
-      });
-      toolPoliciesWritten++;
-      continue;
-    }
+    if (!deployedId) continue;
 
     const toolsCfg: Record<string, unknown> = {};
-    if (bp.tools.profile) toolsCfg.profile = bp.tools.profile;
-    if (bp.tools.allow?.length) toolsCfg.allow = bp.tools.allow;
-    if (bp.tools.deny?.length) toolsCfg.deny = bp.tools.deny;
+    let skills: string[] = [];
+    let workerModel: string | { primary: string; fallbacks?: string[] } | undefined;
 
-    if (Object.keys(toolsCfg).length > 0) {
-      allAgentEntries.push({ id: deployedId, tools: toolsCfg });
-      toolPoliciesWritten++;
+    const caps = bp.inferredCapabilities as Record<string, unknown> | undefined;
+    if (caps) {
+      // Use orchestrator-inferred capabilities (from runtime-discovery + capability-inference)
+      const capsTools = caps.tools as Record<string, unknown> | undefined;
+      if (capsTools?.profile) toolsCfg.profile = capsTools.profile;
+      if (Array.isArray(capsTools?.allow) && (capsTools.allow as string[]).length) toolsCfg.allow = capsTools.allow;
+      if (Array.isArray(capsTools?.alsoAllow) && (capsTools.alsoAllow as string[]).length) toolsCfg.alsoAllow = capsTools.alsoAllow;
+      if (Array.isArray(capsTools?.deny) && (capsTools.deny as string[]).length) toolsCfg.deny = capsTools.deny;
+
+      // Skills from inferredCapabilities (already limited to MAX_SKILLS_PER_AGENT)
+      const capsSkills = caps.skills;
+      if (Array.isArray(capsSkills) && capsSkills.length > 0) {
+        skills = capsSkills as string[];
+      }
+
+      // Model from inferredCapabilities
+      const capsModel = caps.model as typeof workerModel;
+      if (capsModel) workerModel = capsModel;
+    } else {
+      // Fallback to blueprint-level tool recommendations
+      if (bp.tools?.profile) toolsCfg.profile = bp.tools.profile;
+      if (bp.tools?.allow?.length) toolsCfg.allow = bp.tools.allow;
+      if (bp.tools?.deny?.length) toolsCfg.deny = bp.tools.deny;
+      skills = bp.tools?.skills?.length ? bp.tools.skills : [];
     }
+
+    const entry: AgentPatchEntry = { id: deployedId, tools: toolsCfg, skills };
+    if (workerModel) entry.model = workerModel;
+    allAgentEntries.push(entry);
+    toolPoliciesWritten++;
   }
 
   // 5c. Worker A2A communication: add sessions_send + memory_share to alsoAllow
@@ -397,6 +479,7 @@ export async function createProjectFromPlan(
     } else {
       allAgentEntries.push({
         id,
+        skills: [],  // Prevent loading all global skills
         tools: { alsoAllow: ["sessions_send", "memory_share"] },
       });
     }
@@ -523,12 +606,56 @@ function defaultMemoryConfig(): ProjectMemoryConfig {
   };
 }
 
-function defaultCoordinationConfig(): ProjectCoordinationConfig {
+/** Map well-known templateId → category so coordination defaults can vary. */
+function templateIdToCategory(templateId?: string): string | undefined {
+  if (!templateId) return undefined;
+  const map: Record<string, string> = {
+    "content-factory": "content",
+    "knowledge-cs": "customer_support",
+    "coding-team": "coding",
+    "news-intelligence": "research",
+    "data-analyst": "data_analysis",
+    "meeting-assistant": "scheduling",
+    "daily-assistant": "lifestyle",
+    "finance-tracker": "finance",
+    "learning-planner": "education",
+  };
+  return map[templateId];
+}
+
+function defaultCoordinationConfig(category?: string): ProjectCoordinationConfig {
+  // Per-category timeout and hopLimit based on real-world agent response times
+  let hopLimit = 8;
+  let memberTimeoutSeconds = 45;
+  let supervisorStyle: "concierge" | "delegate-only" = "concierge";
+
+  switch (category) {
+    case "coding":
+    case "data_analysis":
+      memberTimeoutSeconds = 120; // code review & data analysis need more time
+      break;
+    case "education":
+      memberTimeoutSeconds = 60; // sota reasoning can be slow
+      break;
+    case "customer_support":
+    case "scheduling":
+      memberTimeoutSeconds = 45;
+      break;
+    default:
+      memberTimeoutSeconds = 45;
+      break;
+  }
+
+  // data_analysis should not let supervisor self-answer
+  if (category === "data_analysis") {
+    supervisorStyle = "delegate-only";
+  }
+
   return {
-    supervisorStyle: "concierge",
+    supervisorStyle,
     maxMembers: 8,
-    hopLimit: 5,
-    memberTimeoutSeconds: 30,
+    hopLimit,
+    memberTimeoutSeconds,
     supervisorFallbackEnabled: true,
   };
 }

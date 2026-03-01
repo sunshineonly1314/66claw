@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { resolveConfigDir } from "../utils.js";
+import { insertMediaAsset, queryBySession, type MediaAssetRow } from "./media-db.js";
 
 const CHAT_VIDEOS_SUBDIR = "chat-videos";
 const MANIFEST_FILENAME = "_manifest.json";
@@ -145,6 +146,35 @@ export async function saveGeneratedVideo(params: {
       await writeManifest(sessionKey, manifest);
     }
 
+    // [CN-FEAT:media-sqlite] Dual-write: persist metadata to SQLite for fast querying
+    try {
+      insertMediaAsset({
+        id,
+        session_key: sessionKey,
+        type: "video",
+        file,
+        url: `/api/media/videos/${sessionKey}/${file}`,
+        mime_type: mimeType,
+        size_bytes: buf.length,
+        source: "generated",
+        prompt: meta.prompt,
+        revised_prompt: null,
+        model: meta.model,
+        provider: meta.provider,
+        image_size: meta.size,
+        style: null,
+        seed: null,
+        duration_ms: null,
+        duration_secs: meta.durationSeconds ?? null,
+        cover_url: meta.coverImageUrl ?? null,
+        message_text: meta.prompt.slice(0, 100),
+        created_at: entry.createdAt,
+        expires_at: new Date(Date.now() + VIDEO_RETENTION_DAYS * 86400000).toISOString(),
+      });
+    } catch {
+      // Non-fatal: SQLite write failure should not block video save
+    }
+
     return entry;
   } catch {
     return null;
@@ -170,10 +200,42 @@ export function resolveChatVideoPath(sessionKey: string, videoFile: string): str
 
 /**
  * Load all video entries for a session (metadata only, no file content).
+ * Prefers SQLite; falls back to manifest for backward compatibility.
  */
 export async function loadChatVideos(sessionKey: string): Promise<ChatVideoEntry[]> {
+  // [CN-FEAT:media-sqlite] Try SQLite first
+  try {
+    const rows = queryBySession(sessionKey).filter((r) => r.type === "video");
+    if (rows.length > 0) {
+      return rows.map(sqliteRowToVideoEntry);
+    }
+  } catch {
+    // SQLite unavailable — fall through to manifest
+  }
   const manifest = await readManifest(sessionKey);
   return manifest.videos;
+}
+
+/** Convert a SQLite MediaAssetRow to a ChatVideoEntry. */
+function sqliteRowToVideoEntry(row: MediaAssetRow): ChatVideoEntry {
+  return {
+    id: row.id,
+    file: row.file,
+    mimeType: row.mime_type ?? "video/mp4",
+    sizeBytes: row.size_bytes ?? 0,
+    timestamp: new Date(row.created_at).getTime(),
+    messageText: row.message_text ?? "",
+    createdAt: row.created_at,
+    source: "generated",
+    generationMeta: {
+      prompt: row.prompt ?? "",
+      model: row.model ?? "",
+      provider: row.provider ?? "",
+      size: row.image_size ?? "",
+      durationSeconds: row.duration_secs ?? undefined,
+      coverImageUrl: row.cover_url ?? undefined,
+    },
+  };
 }
 
 /**

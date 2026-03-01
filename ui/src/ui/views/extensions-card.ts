@@ -165,8 +165,9 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
           `
         : nothing}
 
-      <!-- Footer: config button + uninstall + "try saying" — compact -->
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-top:auto; padding-top:2px;">
+      <!-- Footer: action buttons + "try saying" — stacked layout -->
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto; padding-top:2px;">
+        <!-- Action buttons row -->
         <div style="display:flex; align-items:center; gap:6px;">
           ${cap.status === "needs_config" || isEnabling
             ? html`
@@ -228,6 +229,7 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
             : nothing}
         </div>
 
+        <!-- Try-say suggestion — always below buttons, full width, left aligned -->
         ${(() => {
           const prompt = cap.examplePrompt
             || t("extensions.trySayFallback" as never).replace("{{name}}", cap.friendlyName);
@@ -240,16 +242,17 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
                 cursor:pointer;
                 font-size:12px;
                 color:var(--accent-2, #20d5bc);
-                display:inline-flex;
+                display:flex;
                 align-items:center;
                 gap:5px;
                 transition: opacity 150ms, color 150ms, background 150ms;
-                padding:5px 12px;
-                border-radius:var(--radius-full, 9999px);
-                background:rgba(32,213,188,0.08);
-                border:1px solid rgba(32,213,188,0.15);
+                padding:6px 12px;
+                border-radius:var(--radius-md, 8px);
+                background:rgba(32,213,188,0.06);
+                border:1px solid rgba(32,213,188,0.12);
                 overflow:hidden;
-                max-width:100%;
+                width:100%;
+                box-sizing:border-box;
               "
               title="${prompt}"
             >
@@ -281,8 +284,8 @@ export function renderExtensionsCard(props: ExtensionsCardProps): TemplateResult
       }
       .ext-cap-card .ext-try-say-btn:hover {
         opacity: 1 !important;
-        background: rgba(32,213,188,0.14) !important;
-        border-color: rgba(32,213,188,0.3) !important;
+        background: rgba(32,213,188,0.12) !important;
+        border-color: rgba(32,213,188,0.25) !important;
       }
       @keyframes extCardSpin {
         to { transform: rotate(360deg); }

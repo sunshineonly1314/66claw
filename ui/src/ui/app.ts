@@ -427,6 +427,13 @@ export class ClawdbotApp extends LitElement {
   @state() agentFileDrafts: Record<string, string> = {};
   @state() agentFileActive: string | null = null;
   @state() agentFileSaving = false;
+  // Agent outputs (workspace files)
+  @state() agentOutputsLoading = false;
+  @state() agentOutputsError: string | null = null;
+  @state() agentOutputsList: import("./types").AgentOutputsListResult | null = null;
+  @state() agentOutputActive: string | null = null;
+  @state() agentOutputContent: string | null = null;
+  @state() agentOutputContentLoading = false;
   @state() agentIdentityLoading = false;
   @state() agentIdentityError: string | null = null;
   @state() agentIdentityById: Record<string, import("./types").AgentIdentityResult> = {};
@@ -459,7 +466,8 @@ export class ClawdbotApp extends LitElement {
   @state() teamProjectStats: import("./types").TeamProjectStatsResult | null = null;
   @state() teamProjectMemory: import("./types").TeamSharedMemoryEntry[] | null = null;
   @state() teamProjectActivity: import("./types").TeamActivityEvent[] | null = null;
-  @state() teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory" = "members";
+  @state() teamProjectFiles: import("./types").ProjectWorkspaceFilesResult | null = null;
+  @state() teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory" | "files" = "members";
   @state() teamProjectBusy = false;
 
   @state() sessionsLoading = false;
@@ -807,9 +815,29 @@ export class ClawdbotApp extends LitElement {
     };
     globalThis.addEventListener("orch:navigate-to-agent", this._orchNavigateHandler);
     // OpenClawCN: 智能组队 — 部署完成后刷新 agent 列表
+    // Use force=true to ensure a fresh fetch even if a previous load is in-flight.
+    // Retry after delays to handle the race where createFromPlan hasn't finished
+    // yet when orchestrator.deploy.status returns "deployed" (project creation
+    // happens AFTER the status is written to disk).
     this._orchAgentsChangedHandler = () => {
-      void loadAgents(this as any);
-      void loadTeamProjects(this as any);
+      void (async () => {
+        await Promise.all([
+          loadAgents(this as any),
+          loadTeamProjects(this as any, true),
+        ]);
+        // Retry: project creation may still be in progress during the first fetch.
+        // createFromPlan can take 2-8s (3 retry attempts × 1-3s delay each).
+        const self = this as any;
+        const retryIfEmpty = (delayMs: number) => {
+          setTimeout(() => {
+            if (!self.teamProjectsList || self.teamProjectsList.length === 0) {
+              void loadTeamProjects(self, true);
+            }
+          }, delayMs);
+        };
+        retryIfEmpty(2000);
+        retryIfEmpty(5000);
+      })();
     };
     globalThis.addEventListener("orch:agents-changed", this._orchAgentsChangedHandler);
     // OpenClawCN: 语音凭证变更后重新检测 ASR/TTS 可用性

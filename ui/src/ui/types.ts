@@ -377,6 +377,54 @@ export type AgentsFilesSetResult = {
   file: AgentFileEntry;
 };
 
+// ── Agent Outputs (workspace files created by agents) ─────────────────────
+
+/** Entry in the agent outputs listing */
+export type AgentOutputEntry = {
+  /** Relative path from workspace (e.g., "drafts/report.md") */
+  name: string;
+  /** Absolute path on disk */
+  path: string;
+  /** File size in bytes */
+  size: number;
+  /** Last modified timestamp (ms) */
+  updatedAtMs: number;
+  /** True if this entry is a directory */
+  isDirectory: boolean;
+};
+
+/** Result shape for agents.outputs.list */
+export type AgentOutputsListResult = {
+  agentId: string;
+  workspace: string;
+  entries: AgentOutputEntry[];
+};
+
+/** Result shape for agents.outputs.get */
+export type AgentOutputsGetResult = {
+  agentId: string;
+  workspace: string;
+  entry: AgentOutputEntry & { content?: string };
+};
+
+/** A workspace file entry for a team project member. */
+export type ProjectWorkspaceFileEntry = {
+  name: string;
+  size?: number;
+  updatedAtMs?: number;
+};
+
+/** Result shape for team.project.files.list */
+export type ProjectWorkspaceFilesResult = {
+  projectId: string;
+  members: {
+    agentId: string;
+    agentName: string;
+    agentEmoji?: string;
+    files: ProjectWorkspaceFileEntry[];
+  }[];
+};
+
 export type GatewaySessionRow = {
   key: string;
   kind: "direct" | "group" | "global" | "unknown";

@@ -25,6 +25,7 @@ import {
 } from "./welcome-discovery";
 import { extractImageGenDetails, renderImageGenPending } from "../chat/image-gen-result";
 import { extractVideoGenDetails, renderVideoGenPending } from "../chat/video-gen-result";
+import { extractFileWriteFromToolCall, type FileWriteDetails } from "../chat/file-write-card";
 import {
   renderVoiceMascot,
   type VoiceMascotProps,
@@ -991,7 +992,7 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
           const kind = String(block.type ?? "").toLowerCase();
           if (!["tool_use", "tooluse", "toolcall", "tool_call"].includes(kind)) return false;
           const name = String(block.name ?? "");
-          return name === "image_gen" || name === "image_edit" || name === "video_gen";
+          return name === "image_gen" || name === "image_edit" || name === "video_gen" || name === "write" || name === "edit";
         });
         if (hasMediaToolUse) {
           message = Object.assign({}, message as Record<string, unknown>, { __staleMediaTools: true });
@@ -1002,6 +1003,8 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     // [CN-FIX:image-display] Image/video gen toolResult messages are always
     // skipped above. Attach their data to this assistant message so the image
     // renders inline in the assistant bubble (no separate "tool" group).
+    // [CN-FEAT:file-card] Also extract file write details from tool results
+    // and from tool_call args in the assistant message itself.
     if (normalized.role.toLowerCase() === "assistant") {
       for (let j = i - 1; j >= historyStart; j--) {
         const prev = normalizeMessage(history[j]);
@@ -1015,6 +1018,18 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         if (vidDetails) {
           message = Object.assign({}, message as Record<string, unknown>, { __videoGenDetails: vidDetails });
           break;
+        }
+      }
+      // [CN-FEAT:file-card] Extract file write details from the assistant's
+      // own tool_call blocks (args contain path + content).
+      // Only inject as result cards when tool calls are RESOLVED, to avoid
+      // showing both a completed-looking card AND a pending shimmer.
+      if (resolvedToolCallIndices.has(i)) {
+        const fileWrites = extractFileWriteFromToolCall(message);
+        if (fileWrites.length > 0) {
+          message = Object.assign({}, message as Record<string, unknown>, {
+            __fileCardDetails: fileWrites,
+          });
         }
       }
     }

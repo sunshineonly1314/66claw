@@ -22,6 +22,7 @@ import { formatErrorHintFull, type FormattedError } from "./error-hints";
 import { openImageLightbox } from "./image-lightbox";
 import { extractImageGenDetails, renderImageGenResult, renderImageGenPending } from "./image-gen-result";
 import { extractVideoGenDetails, renderVideoGenResult } from "./video-gen-result";
+import { renderFileWriteResult, type FileWriteDetails } from "./file-write-card";
 
 // 思考过程折叠阈值（字符数）
 const THINKING_COLLAPSE_THRESHOLD = 200;
@@ -416,9 +417,9 @@ function hasRenderableContent(message: unknown): boolean {
   const images = extractImages(message);
   if (images.length > 0) return true;
 
-  // Injected image/video gen data counts as renderable content
+  // Injected image/video/file gen data counts as renderable content
   const m = message as Record<string, unknown>;
-  if (m.__imageGenDetails || m.__videoGenDetails) return true;
+  if (m.__imageGenDetails || m.__videoGenDetails || m.__fileCardDetails) return true;
 
   return false;
 }
@@ -760,19 +761,22 @@ function renderGroupedMessage(
 
   // [CN-FIX:image-display] Render image/video gen results injected from preceding
   // toolResult messages (attached by buildChatItems as __imageGenDetails/__videoGenDetails).
+  // [CN-FEAT:file-card] Also render file write cards injected as __fileCardDetails.
   const injectedImageGen = isAssistant ? (m.__imageGenDetails as import("./image-gen-result").ImageGenDetails | undefined) : undefined;
   const injectedVideoGen = isAssistant ? (m.__videoGenDetails as Record<string, unknown> | undefined) : undefined;
+  const injectedFileCards = isAssistant ? (m.__fileCardDetails as FileWriteDetails[] | undefined) : undefined;
 
-  if (!markdown && !hasToolCards && !hasImages && !freeModelNotification && !injectedImageGen && !injectedVideoGen) return nothing;
+  if (!markdown && !hasToolCards && !hasImages && !freeModelNotification && !injectedImageGen && !injectedVideoGen && !injectedFileCards?.length) return nothing;
 
   // Determine if the bubble has any visible inner content (text, images, visible tool cards).
-  // If the only content is injected image/video gen (rendered OUTSIDE the bubble), skip the empty bubble div.
+  // If the only content is injected image/video/file gen (rendered OUTSIDE the bubble), skip the empty bubble div.
   const hasBubbleContent = Boolean(markdown) || hasImages || hasToolCards || Boolean(reasoningMarkdown);
 
   return html`
     ${freeModelNotification ? renderFreeModelNotificationCard(freeModelNotification) : nothing}
     ${injectedImageGen ? renderImageGenResult(injectedImageGen) : nothing}
     ${injectedVideoGen ? renderVideoGenResult(injectedVideoGen as any) : nothing}
+    ${injectedFileCards?.length ? injectedFileCards.map((fc) => renderFileWriteResult(fc)) : nothing}
     ${hasBubbleContent ? html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}

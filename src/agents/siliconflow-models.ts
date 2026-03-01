@@ -84,24 +84,6 @@ export const SILICONFLOW_RECOMMENDED_MODELS: ModelDefinitionConfig[] = [
     contextWindow: 4096,
     maxTokens: 1024,
   },
-  {
-    id: "black-forest-labs/FLUX.1-schnell",
-    name: "FLUX.1-schnell (免费)",
-    reasoning: false,
-    input: ["text"] as ModelDefinitionConfig["input"],
-    cost: SILICONFLOW_DEFAULT_COST,
-    contextWindow: 4096,
-    maxTokens: 1024,
-  },
-  {
-    id: "stabilityai/stable-diffusion-3-5-large",
-    name: "Stable Diffusion 3.5 Large",
-    reasoning: false,
-    input: ["text"] as ModelDefinitionConfig["input"],
-    cost: SILICONFLOW_DEFAULT_COST,
-    contextWindow: 4096,
-    maxTokens: 1024,
-  },
   // ── 文本对话模型 ──
   // Kimi-K2.5 Pro (硅基流动首选)
   {

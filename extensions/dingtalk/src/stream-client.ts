@@ -343,10 +343,26 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
   if (!content.text) return;
 
   const isDirect = data.conversationType === "1";
+  const isGroupChat = data.conversationType === "2";
   const senderId = data.senderStaffId || data.senderId;
   const senderName = data.senderNick || "Unknown";
 
   log?.info?.(`[DingTalk] 收到消息: from=${senderName} text="${content.text.slice(0, 50)}..."`);
+
+  // ========================================
+  // 群聊 requireMention 检查 (P1-5 修复)
+  // ========================================
+  if (isGroupChat) {
+    const conversationId = data.conversationId;
+    const groupConfig = dingtalkConfig.groups?.[conversationId];
+    // 优先使用群维度配置，其次默认 true (群聊必须 @机器人)
+    const requireMention = groupConfig?.requireMention ?? true;
+
+    if (requireMention && !data.isAtMe) {
+      log?.info?.(`[DingTalk] 群聊消息未 @机器人 (requireMention=true, isAtMe=${data.isAtMe})，跳过`);
+      return;
+    }
+  }
 
   // ===== 媒体归档 =====
   if (content.mediaFiles?.length && dingtalkConfig.media?.archival?.enabled) {

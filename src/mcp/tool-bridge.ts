@@ -33,15 +33,29 @@ export function isMCPToolName(name: string): boolean {
   return name.startsWith(MCP_TOOL_PREFIX);
 }
 
-/** Parse an MCP tool name into serverId and original name. */
+/**
+ * Parse an MCP tool name into serverId and original name.
+ * Uses "__" (double underscore) as the primary delimiter.
+ * Falls back to single "_" for backward compatibility with legacy names.
+ */
 export function parseMCPToolName(name: string): { serverId: string; toolName: string } | null {
   if (!name.startsWith(MCP_TOOL_PREFIX)) return null;
   const rest = name.slice(MCP_TOOL_PREFIX.length);
+
+  // Primary: split on "__" (double underscore — unambiguous even with hyphenated serverIds)
+  const dblIdx = rest.indexOf("__");
+  if (dblIdx > 0) {
+    const serverId = rest.slice(0, dblIdx);
+    const toolName = rest.slice(dblIdx + 2);
+    if (toolName) return { serverId, toolName };
+  }
+
+  // Fallback: split on first "_" (legacy single-underscore names)
   const idx = rest.indexOf("_");
-  if (idx <= 0) return null; // idx === 0 means empty serverId
+  if (idx <= 0) return null;
   const serverId = rest.slice(0, idx);
   const toolName = rest.slice(idx + 1);
-  if (!toolName) return null; // empty toolName
+  if (!toolName) return null;
   return { serverId, toolName };
 }
 
@@ -109,11 +123,7 @@ function createBridgedTool(
       }
 
       try {
-        const result = await client.callTool(
-          name,
-          (args ?? {}) as Record<string, unknown>,
-          signal,
-        );
+        const result = await client.callTool(name, (args ?? {}) as Record<string, unknown>, signal);
 
         // Format the result content for the Agent
         const contentItems = formatMCPContent(result.content);

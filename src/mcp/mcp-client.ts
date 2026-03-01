@@ -27,12 +27,15 @@ export type MCPClientEvents = {
 
 /** Sanitize an MCP tool name segment for use in an Agent tool name. */
 function sanitizeSegment(s: string): string {
-  return s.replace(/[^a-zA-Z0-9]/g, "_");
+  // Replace runs of non-alphanumeric chars with a single underscore.
+  // This guarantees "__" (double underscore) never appears WITHIN a segment,
+  // allowing it to serve as a reliable delimiter between serverId and toolName.
+  return s.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "");
 }
 
-/** Build a bridged tool name: mcp_{serverId}_{toolName} */
+/** Build a bridged tool name: mcp_{serverId}__{toolName} (double underscore delimiter) */
 export function buildBridgedName(serverId: string, toolName: string): string {
-  return `${MCP_TOOL_PREFIX}${sanitizeSegment(serverId)}_${sanitizeSegment(toolName)}`;
+  return `${MCP_TOOL_PREFIX}${sanitizeSegment(serverId)}__${sanitizeSegment(toolName)}`;
 }
 
 /**

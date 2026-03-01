@@ -189,6 +189,70 @@ async function listAgentFiles(workspaceDir: string, agentId: string) {
   return files;
 }
 
+/**
+ * Recursively scan workspace for agent-generated output files.
+ * Excludes bootstrap files (SOUL.md, IDENTITY.md, etc.) and hidden directories.
+ */
+async function listAgentOutputs(
+  workspaceDir: string,
+  maxDepth = 3,
+  maxFiles = 200,
+): Promise<
+  Array<{ name: string; path: string; size: number; updatedAtMs: number; isDirectory: boolean }>
+> {
+  const results: Array<{
+    name: string;
+    path: string;
+    size: number;
+    updatedAtMs: number;
+    isDirectory: boolean;
+  }> = [];
+
+  async function scan(dir: string, relativePrefix: string, depth: number) {
+    if (depth > maxDepth || results.length >= maxFiles) return;
+    let entries: import("fs").Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // directory may not exist
+    }
+    for (const entry of entries) {
+      if (results.length >= maxFiles) break;
+      if (entry.name.startsWith(".")) continue; // skip hidden
+      if (entry.isSymbolicLink()) continue; // skip symlinks for security
+      const fullPath = path.join(dir, entry.name);
+      const relativeName = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
+
+      if (entry.isDirectory()) {
+        results.push({
+          name: relativeName,
+          path: fullPath,
+          size: 0,
+          updatedAtMs: 0,
+          isDirectory: true,
+        });
+        await scan(fullPath, relativeName, depth + 1);
+      } else {
+        // Skip bootstrap/config files at root level
+        if (!relativePrefix && ALLOWED_FILE_NAMES.has(entry.name)) continue;
+        const meta = await statFile(fullPath);
+        if (meta) {
+          results.push({
+            name: relativeName,
+            path: fullPath,
+            size: meta.size,
+            updatedAtMs: meta.updatedAtMs,
+            isDirectory: false,
+          });
+        }
+      }
+    }
+  }
+
+  await scan(workspaceDir, "", 0);
+  return results;
+}
+
 function resolveAgentIdOrError(agentIdRaw: string, cfg: ReturnType<typeof loadConfig>) {
   const agentId = normalizeAgentId(agentIdRaw);
   const allowed = new Set(listAgentIds(cfg));
@@ -576,6 +640,99 @@ export const agentsHandlers: GatewayRequestHandlers = {
           missing: false,
           size: meta?.size,
           updatedAtMs: meta?.updatedAtMs,
+          content,
+        },
+      },
+      undefined,
+    );
+  },
+
+  // ── Agent Output Files ────────────────────────────────────────────────
+
+  "agents.outputs.list": async ({ params, respond }) => {
+    const agentIdRaw = String(params?.agentId ?? "");
+    const cfg = loadConfig();
+    const agentId = resolveAgentIdOrError(agentIdRaw, cfg);
+    if (!agentId) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown agent id"));
+      return;
+    }
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const entries = await listAgentOutputs(workspaceDir);
+    respond(true, { agentId, workspace: workspaceDir, entries }, undefined);
+  },
+
+  "agents.outputs.get": async ({ params, respond }) => {
+    const agentIdRaw = String(params?.agentId ?? "");
+    const filePath = String(params?.path ?? "");
+    if (!filePath || filePath.includes("\0")) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid path"));
+      return;
+    }
+    const cfg = loadConfig();
+    const agentId = resolveAgentIdOrError(agentIdRaw, cfg);
+    if (!agentId) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown agent id"));
+      return;
+    }
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    // Security: use path.relative to prevent startsWith prefix collision
+    // (e.g., workspace="C:\ws" must not match "C:\ws-evil\secret.txt")
+    const resolved = path.resolve(filePath);
+    const workspaceResolved = path.resolve(workspaceDir);
+    const rel = path.relative(workspaceResolved, resolved);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "path outside workspace"));
+      return;
+    }
+    const meta = await statFile(resolved);
+    const relativeName = rel.replace(/\\/g, "/");
+    if (!meta) {
+      respond(
+        true,
+        {
+          agentId,
+          workspace: workspaceDir,
+          entry: {
+            name: relativeName,
+            path: resolved,
+            size: 0,
+            updatedAtMs: 0,
+            isDirectory: false,
+            missing: true,
+          },
+        },
+        undefined,
+      );
+      return;
+    }
+    // Limit file read to 100KB — use bounded read to avoid OOM on huge files
+    const MAX_READ = 100 * 1024;
+    let content: string;
+    try {
+      const fd = await fs.open(resolved, "r");
+      try {
+        const buf = Buffer.alloc(Math.min(MAX_READ, meta.size + 1));
+        const { bytesRead } = await fd.read(buf, 0, buf.length, 0);
+        content = buf.toString("utf-8", 0, bytesRead);
+        if (meta.size > MAX_READ) content += "\n... [truncated]";
+      } finally {
+        await fd.close();
+      }
+    } catch {
+      content = "[unable to read file]";
+    }
+    respond(
+      true,
+      {
+        agentId,
+        workspace: workspaceDir,
+        entry: {
+          name: relativeName,
+          path: resolved,
+          size: meta.size,
+          updatedAtMs: meta.updatedAtMs,
+          isDirectory: false,
           content,
         },
       },

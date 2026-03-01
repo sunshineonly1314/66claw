@@ -28,6 +28,7 @@ import type {
   TeamProjectStatsResult,
   TeamSharedMemoryEntry,
   TeamActivityEvent,
+  ProjectWorkspaceFilesResult,
 } from "./types";
 import type {
   ChannelRouteEntry,
@@ -206,7 +207,7 @@ export type AppViewState = {
   agentDeleting: boolean;
   agentDeleteError: string | null;
   agentAddFormOpen: boolean;
-  agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" | "chat";
+  agentsPanel: "overview" | "outputs" | "files" | "tools" | "skills" | "channels" | "cron" | "chat";
   agentFilesLoading: boolean;
   agentFilesError: string | null;
   agentFilesList: AgentsFilesListResult | null;
@@ -214,6 +215,13 @@ export type AppViewState = {
   agentFileDrafts: Record<string, string>;
   agentFileActive: string | null;
   agentFileSaving: boolean;
+  // Agent outputs (workspace files)
+  agentOutputsLoading: boolean;
+  agentOutputsError: string | null;
+  agentOutputsList: import("./types").AgentOutputsListResult | null;
+  agentOutputActive: string | null;
+  agentOutputContent: string | null;
+  agentOutputContentLoading: boolean;
   agentIdentityLoading: boolean;
   agentIdentityError: string | null;
   agentIdentityById: Record<string, AgentIdentityResult>;
@@ -254,7 +262,8 @@ export type AppViewState = {
   teamProjectStats: TeamProjectStatsResult | null;
   teamProjectMemory: TeamSharedMemoryEntry[] | null;
   teamProjectActivity: TeamActivityEvent[] | null;
-  teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory";
+  teamProjectFiles: ProjectWorkspaceFilesResult | null;
+  teamProjectTab: "members" | "activity" | "stats" | "settings" | "memory" | "files";
   teamProjectBusy: boolean;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;

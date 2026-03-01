@@ -10,6 +10,7 @@ import {
 } from "./server-constants.js";
 import { formatError } from "./server-utils.js";
 import { setBroadcastHealthUpdate } from "./server/health-state.js";
+import { runMediaDbMaintenance } from "../media/media-db.js";
 
 export function startGatewayMaintenanceTimers(params: {
   broadcast: (
@@ -41,6 +42,7 @@ export function startGatewayMaintenanceTimers(params: {
   tickInterval: ReturnType<typeof setInterval>;
   healthInterval: ReturnType<typeof setInterval>;
   dedupeCleanup: ReturnType<typeof setInterval>;
+  mediaCleanup: ReturnType<typeof setInterval>;
 } {
   setBroadcastHealthUpdate((snap: HealthSummary) => {
     params.broadcast("health", snap, {
@@ -129,5 +131,16 @@ export function startGatewayMaintenanceTimers(params: {
     }
   }, 60_000);
 
-  return { tickInterval, healthInterval, dedupeCleanup };
+  // [CN-FEAT:media-sqlite] Daily media metadata cleanup — delete expired + cap at 1000 rows
+  const mediaCleanup = setInterval(
+    () => {
+      runMediaDbMaintenance();
+    },
+    24 * 60 * 60_000,
+  ); // 每 24 小时
+
+  // 启动时也跑一次（延迟 30 秒，不阻塞启动）
+  setTimeout(() => runMediaDbMaintenance(), 30_000);
+
+  return { tickInterval, healthInterval, dedupeCleanup, mediaCleanup };
 }

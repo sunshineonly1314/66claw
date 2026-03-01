@@ -16,6 +16,7 @@ import type {
 } from "../../src/plugins/types.js";
 import type {
   CallGatewayFn,
+  FastPathConfig,
   MemberHealth,
   MemberInfo,
   Project,
@@ -72,6 +73,16 @@ import {
 } from "./src/member-stats.js";
 import type { SharedCategory, MemberStats } from "./src/types.js";
 import { rewriteOutboundMessage } from "./src/visibility-rewriter.js";
+import {
+  analyzeLearningOpportunities,
+  applyAutoOptimizations,
+  generateLearningHints,
+  formatLearningReport,
+  shouldTriggerLearning,
+  LEARNING_CYCLE_THRESHOLD,
+} from "./src/learning-engine.js";
+import type { LearningAnalysis } from "./src/learning-engine.js";
+import { buildSupervisorLearningContext } from "./src/soul-optimizer.js";
 
 // ── In-Memory Cache ──────────────────────────────────────────────────────
 // Hot-path lookup for before_agent_start hook (runs on every LLM call).
@@ -91,6 +102,11 @@ const cacheReady = new Promise<void>((r) => { cacheReadyResolve = r; });
 
 /** Cached agentId → display name maps, rebuilt when project version changes. */
 const memberNameMapCache = new Map<string, { version: number; map: Map<string, string> }>();
+
+/** Learning analysis cache per project (keyed by projectId). */
+const learningCache = new Map<string, LearningAnalysis>();
+/** Events since last learning cycle per project. */
+const eventsSinceLastLearning = new Map<string, number>();
 
 /** Get or create a cached member name map for a project. */
 function getMemberNameMap(project: Project): Map<string, string> {
@@ -591,7 +607,18 @@ const plugin: OpenClawCNPluginDefinition = {
           }
         }
 
-        // 4. Template workflow detection (supervisor only)
+        // 4. Learning context for supervisor (data-driven routing guidance)
+        if (isSupervisor(project, ctx.agentId)) {
+          const analysis = learningCache.get(project.projectId);
+          const sMap = getOrCreateStatsMap(project.projectId, project.memberIds);
+          const hMap = getOrCreateHealthMap(project.projectId, project.memberIds);
+          const learningCtx = buildSupervisorLearningContext(project, analysis, sMap, hMap);
+          if (learningCtx) {
+            parts.push(`<team-learning>\n${learningCtx}\n</team-learning>`);
+          }
+        }
+
+        // 5. Template workflow detection (supervisor only)
         // When the supervisor's resolve_agent saw no fast-path match,
         // it cached the user message. If it matches a template workflow,
         // inject decomposition instructions (zero LLM cost for recognition).
@@ -726,6 +753,44 @@ const plugin: OpenClawCNPluginDefinition = {
           );
         });
       }
+
+      // Learning cycle trigger (fire-and-forget)
+      if (project.status === "active") {
+        const count = (eventsSinceLastLearning.get(project.projectId) ?? 0) + 1;
+        eventsSinceLastLearning.set(project.projectId, count);
+
+        if (shouldTriggerLearning(count)) {
+          try {
+            // Snapshot the buffer to avoid concurrent mutation during analysis
+            const buf = [...(activityBuffers.get(project.projectId) ?? [])];
+            const analysis = analyzeLearningOpportunities(
+              project.projectId,
+              buf,
+              healthMap,
+              sMap,
+              project,
+            );
+            learningCache.set(project.projectId, analysis);
+
+            // Apply safe auto-optimizations (keyword routing only)
+            if (analysis.insights.length > 0) {
+              const { updatedProject, appliedChanges } = applyAutoOptimizations(project, analysis);
+              if (appliedChanges.length > 0) {
+                await saveProject(updatedProject);
+                projectCache.set(project.projectId, updatedProject);
+                logger.info?.(
+                  `[Learning] Auto-optimized "${project.name}": ${appliedChanges.join("; ")}`,
+                );
+              }
+            }
+          } catch (err) {
+            logger.warn?.(`[Learning] Analysis failed for "${project.name}": ${err}`);
+          } finally {
+            // Reset counter in finally — ensures reset even if analysis throws
+            eventsSinceLastLearning.set(project.projectId, 0);
+          }
+        }
+      }
     });
 
     // ── message_sending: rewrite outbound messages for visibility mode ──
@@ -844,6 +909,7 @@ const plugin: OpenClawCNPluginDefinition = {
         memberCount: p.memberIds.length,
         memberIds: p.memberIds,
         supervisorId: p.supervisorId,
+        autoSupervisor: p.autoSupervisor ?? false,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
         version: p.version,
@@ -1129,8 +1195,12 @@ const plugin: OpenClawCNPluginDefinition = {
           // FastPath sub-object
           if (typeof c.fastPath === "object" && c.fastPath) {
             const fp = c.fastPath as Record<string, unknown>;
-            const existingFp = project.coordination.fastPath ?? { affinityTimeoutMinutes: 30 };
-            const fpPatch: Record<string, unknown> = { ...existingFp };
+            const existingFp: FastPathConfig = project.coordination.fastPath ?? {
+              sessionAffinityEnabled: false,
+              affinityTimeoutMinutes: 30,
+              keywordConfidenceThreshold: 0.6,
+            };
+            const fpPatch: FastPathConfig = { ...existingFp };
             if (typeof fp.sessionAffinityEnabled === "boolean") {
               fpPatch.sessionAffinityEnabled = fp.sessionAffinityEnabled;
             }
@@ -1140,7 +1210,7 @@ const plugin: OpenClawCNPluginDefinition = {
             if (typeof fp.keywordConfidenceThreshold === "number") {
               fpPatch.keywordConfidenceThreshold = Math.max(0, Math.min(1, fp.keywordConfidenceThreshold));
             }
-            coordPatch.fastPath = fpPatch as typeof existingFp;
+            coordPatch.fastPath = fpPatch;
           }
         }
 
@@ -1783,6 +1853,106 @@ const plugin: OpenClawCNPluginDefinition = {
       },
     );
 
+    // ── team.project.files.list ──────────────────────────────────────
+    api.registerGatewayMethod(
+      "team.project.files.list",
+      async ({ params, respond }) => {
+        await cacheReady;
+        const p = params as Record<string, unknown>;
+        const projectId = String(p.projectId ?? "");
+
+        const project = projectCache.get(projectId);
+        if (!project) {
+          respond(false, undefined, {
+            code: "NOT_FOUND",
+            message: `Project "${projectId}" not found`,
+          });
+          return;
+        }
+
+        // Top-level imports (cached by Node module system after first call)
+        const fsP = await import("node:fs/promises");
+        const pathMod = await import("node:path");
+
+        const SCAN_EXTENSIONS = new Set([
+          ".md", ".csv", ".json", ".txt", ".png", ".jpg", ".jpeg",
+          ".html", ".pdf", ".xlsx", ".docx", ".log",
+        ]);
+        const SYSTEM_FILES = new Set([
+          "SOUL.md", "IDENTITY.md", "MEMORY.md", "MEMORY.jsonl",
+          "CONFIG.yaml", "CONFIG.json",
+        ]);
+        const MAX_FILES_PER_AGENT = 50;
+        const MAX_DEPTH = 2;
+
+        type FileEntry = { name: string; size?: number; updatedAtMs?: number };
+
+        /** Recursively scan a directory for user-created files. */
+        const scanWorkspace = async (workspaceDir: string): Promise<FileEntry[]> => {
+          const files: FileEntry[] = [];
+          const scanDir = async (dir: string, depth: number) => {
+            if (depth >= MAX_DEPTH || files.length >= MAX_FILES_PER_AGENT) return;
+            let entries;
+            try { entries = await fsP.readdir(dir, { withFileTypes: true }); } catch { return; }
+            for (const entry of entries) {
+              if (files.length >= MAX_FILES_PER_AGENT) break;
+              // Skip symlinks to prevent infinite loops
+              if (entry.isSymbolicLink()) continue;
+              const fullPath = pathMod.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+                await scanDir(fullPath, depth + 1);
+              } else if (entry.isFile()) {
+                const ext = pathMod.extname(entry.name).toLowerCase();
+                if (depth === 0 && (SYSTEM_FILES.has(entry.name) || entry.name.startsWith("."))) continue;
+                if (SCAN_EXTENSIONS.has(ext)) {
+                  try {
+                    const st = await fsP.stat(fullPath);
+                    files.push({
+                      name: depth === 0 ? entry.name : pathMod.relative(workspaceDir, fullPath).replace(/\\/g, "/"),
+                      size: st.size,
+                      updatedAtMs: st.mtimeMs,
+                    });
+                  } catch {
+                    files.push({ name: entry.name });
+                  }
+                }
+              }
+            }
+          };
+          await scanDir(workspaceDir, 0);
+          files.sort((a, b) => (b.updatedAtMs ?? 0) - (a.updatedAtMs ?? 0));
+          return files;
+        };
+
+        // Scan all members in parallel
+        const members = await Promise.all(
+          project.members.map(async (member) => {
+            let files: FileEntry[] = [];
+            try {
+              const res = (await callGateway("agents.files.list", { agentId: member.id })) as
+                | { workspace?: string }
+                | undefined;
+              const workspaceDir = res?.workspace;
+              if (workspaceDir && typeof workspaceDir === "string") {
+                files = await scanWorkspace(workspaceDir);
+              }
+            } catch {
+              // Graceful degradation — member shows with empty files
+            }
+            return {
+              agentId: member.id,
+              agentName: member.name,
+              agentEmoji: member.emoji,
+              files,
+            };
+          }),
+        );
+
+        respond(true, { projectId, members }, undefined);
+      },
+    );
+
     // ── team.project.pause ────────────────────────────────────────────
     api.registerGatewayMethod(
       "team.project.pause",
@@ -1840,6 +2010,89 @@ const plugin: OpenClawCNPluginDefinition = {
         projectCache.set(projectId, updated);
         rebuildAgentIndex();
         respond(true, { project: updated }, undefined);
+      },
+    );
+
+    // ── team.project.learning ───────────────────────────────────────
+    // Returns learning analysis for a project (insights, routing patterns, specializations).
+    api.registerGatewayMethod(
+      "team.project.learning",
+      async ({ params, respond }) => {
+        await cacheReady;
+        const p = params as Record<string, unknown>;
+        const projectId = String(p.projectId ?? "");
+        if (!projectId) {
+          respond(false, undefined, { code: "INVALID_PARAMS", message: "projectId is required" });
+          return;
+        }
+
+        const project = projectCache.get(projectId);
+        if (!project) {
+          respond(false, undefined, { code: "NOT_FOUND", message: `Project "${projectId}" not found` });
+          return;
+        }
+
+        // Use cached analysis or run fresh one
+        let analysis = learningCache.get(projectId);
+        if (!analysis) {
+          const buf = activityBuffers.get(projectId) ?? [];
+          const hMap = getOrCreateHealthMap(projectId, project.memberIds);
+          const sMap = getOrCreateStatsMap(projectId, project.memberIds);
+          analysis = analyzeLearningOpportunities(projectId, buf, hMap, sMap, project);
+          learningCache.set(projectId, analysis);
+        }
+
+        respond(true, {
+          analysis,
+          report: formatLearningReport(analysis),
+        }, undefined);
+      },
+    );
+
+    // ── team.project.optimize ────────────────────────────────────────
+    // Manually trigger a learning cycle and apply safe optimizations.
+    api.registerGatewayMethod(
+      "team.project.optimize",
+      async ({ params, respond }) => {
+        await cacheReady;
+        const p = params as Record<string, unknown>;
+        const projectId = String(p.projectId ?? "");
+        if (!projectId) {
+          respond(false, undefined, { code: "INVALID_PARAMS", message: "projectId is required" });
+          return;
+        }
+
+        const project = projectCache.get(projectId);
+        if (!project) {
+          respond(false, undefined, { code: "NOT_FOUND", message: `Project "${projectId}" not found` });
+          return;
+        }
+
+        const buf = activityBuffers.get(projectId) ?? [];
+        const hMap = getOrCreateHealthMap(projectId, project.memberIds);
+        const sMap = getOrCreateStatsMap(projectId, project.memberIds);
+
+        const analysis = analyzeLearningOpportunities(projectId, buf, hMap, sMap, project);
+        learningCache.set(projectId, analysis);
+        eventsSinceLastLearning.set(projectId, 0);
+
+        // Apply safe auto-optimizations
+        const { updatedProject, appliedChanges } = applyAutoOptimizations(project, analysis);
+
+        if (appliedChanges.length > 0) {
+          await saveProject(updatedProject);
+          projectCache.set(projectId, updatedProject);
+          rebuildAgentIndex();
+          logger.info?.(
+            `[Learning] Manual optimize "${project.name}": ${appliedChanges.join("; ")}`,
+          );
+        }
+
+        respond(true, {
+          analysis,
+          report: formatLearningReport(analysis),
+          appliedChanges,
+        }, undefined);
       },
     );
 

@@ -190,6 +190,7 @@ import {
   type SkillMessage,
 } from "./controllers/skills";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files";
+import { loadAgentOutputs, loadAgentOutputContent } from "./controllers/agent-outputs";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity";
 import { loadAgentSkills } from "./controllers/agent-skills";
 import { loadAgents, createAgent, deleteAgent, loadDmScopeStatus } from "./controllers/agents";
@@ -203,6 +204,7 @@ import {
   loadSharedMemory,
   clearSharedMemory,
   loadProjectActivity,
+  loadProjectFiles,
   stopProjectHealthPoll,
   updateProjectSettings,
   removeProjectMember,
@@ -483,7 +485,13 @@ function renderApiMonitor(state: AppViewState) {
 function switchSession(state: AppViewState, key: string) {
   // Abort the current chat run (if any) before switching — fire-and-forget so
   // the UI switches instantly while the backend tears down the old run.
-  if (state.chatRunId) {
+  // [CN-FIX:media-gen-switch] Skip abort when a media generation tool (image_gen /
+  // video_gen) is actively running. Aborting mid-generation causes the agent to
+  // stop before persisting the final assistant message, so when the user switches
+  // back the entire conversation appears lost. By letting the run complete in the
+  // background, the server persists both the user message and the generated result
+  // to the transcript; loadChatHistory will recover them on return.
+  if (state.chatRunId && !state.chatMediaToolActive) {
     void state.handleAbortChat();
   }
 
@@ -494,6 +502,7 @@ function switchSession(state: AppViewState, key: string) {
   state.chatStreamStartedAt = null;
   state.chatRunId = null;
   state.chatQueue = [];
+  state.chatMediaToolActive = null;
   // Clear stale assets for the new session
   state.convSidebarAssets = [];
   state.convSidebarAssetsSessionKey = "";
@@ -897,6 +906,15 @@ export function renderApp(state: AppViewState) {
                 agentFileContents: state.agentFileContents,
                 agentFileDrafts: state.agentFileDrafts,
                 agentFileSaving: state.agentFileSaving,
+                agentOutputsLoading: state.agentOutputsLoading,
+                agentOutputsError: state.agentOutputsError,
+                agentOutputsList: state.agentOutputsList,
+                agentOutputActive: state.agentOutputActive,
+                agentOutputContent: state.agentOutputContent,
+                agentOutputContentLoading: state.agentOutputContentLoading,
+                onLoadOutputs: (agentId: string) => loadAgentOutputs(state as any, agentId),
+                onSelectOutput: (agentId: string, filePath: string, relativeName: string) =>
+                  loadAgentOutputContent(state as any, agentId, filePath, relativeName),
                 agentIdentityLoading: state.agentIdentityLoading,
                 agentIdentityError: state.agentIdentityError,
                 agentIdentityById: state.agentIdentityById,
@@ -928,7 +946,7 @@ export function renderApp(state: AppViewState) {
                   const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
                   if (agentIds.length > 0) void loadAgentIdentities(state, agentIds);
                   void loadDmScopeStatus(state);
-                  void loadTeamProjects(state as any);
+                  void loadTeamProjects(state as any, true);
                 },
                 onSelectAgent: (agentId) => {
                   if (state.agentsSelectedId === agentId && !state.teamProjectSelectedId) return;
@@ -945,7 +963,13 @@ export function renderApp(state: AppViewState) {
                   state.agentSkillsReport = null;
                   state.agentSkillsError = null;
                   state.agentSkillsAgentId = null;
+                  // Reset outputs state
+                  state.agentOutputsList = null;
+                  state.agentOutputsError = null;
+                  state.agentOutputActive = null;
+                  state.agentOutputContent = null;
                   void loadAgentIdentity(state, agentId);
+                  if (state.agentsPanel === "outputs") void loadAgentOutputs(state as any, agentId);
                   if (state.agentsPanel === "files") void loadAgentFiles(state, agentId);
                   if (state.agentsPanel === "skills") void loadAgentSkills(state, agentId);
                   if (state.agentsPanel === "chat") {
@@ -963,6 +987,15 @@ export function renderApp(state: AppViewState) {
                       state.agentFileContents = {};
                       state.agentFileDrafts = {};
                       void loadAgentFiles(state, resolvedAgentId);
+                    }
+                  }
+                  if (panel === "outputs" && resolvedAgentId) {
+                    if (state.agentOutputsList?.agentId !== resolvedAgentId) {
+                      state.agentOutputsList = null;
+                      state.agentOutputsError = null;
+                      state.agentOutputActive = null;
+                      state.agentOutputContent = null;
+                      void loadAgentOutputs(state as any, resolvedAgentId);
                     }
                   }
                   if (panel === "skills" && resolvedAgentId) void loadAgentSkills(state, resolvedAgentId);
@@ -1155,6 +1188,7 @@ export function renderApp(state: AppViewState) {
                 teamProjectStats: state.teamProjectStats,
                 teamProjectMemory: state.teamProjectMemory,
                 teamProjectActivity: state.teamProjectActivity,
+                teamProjectFiles: state.teamProjectFiles,
                 teamProjectTab: state.teamProjectTab,
                 teamProjectBusy: state.teamProjectBusy,
                 teamCollapsedProjects: _teamCollapsedProjects,
@@ -1169,6 +1203,7 @@ export function renderApp(state: AppViewState) {
                   if (tab === "stats" && !state.teamProjectStats) void loadProjectStats(state as any, pid);
                   if (tab === "activity" && !state.teamProjectActivity) void loadProjectActivity(state as any, pid);
                   if (tab === "memory" && !state.teamProjectMemory) void loadSharedMemory(state as any, pid);
+                  if (tab === "files" && !state.teamProjectFiles) void loadProjectFiles(state as any, pid);
                 },
                 onPauseProject: (projectId: string) => void pauseProject(state as any, projectId),
                 onResumeProject: (projectId: string) => void resumeProject(state as any, projectId),
@@ -1176,6 +1211,10 @@ export function renderApp(state: AppViewState) {
                 onLoadProjectStats: (projectId: string) => void loadProjectStats(state as any, projectId),
                 onLoadProjectMemory: (projectId: string) => void loadSharedMemory(state as any, projectId),
                 onLoadProjectActivity: (projectId: string) => void loadProjectActivity(state as any, projectId),
+                onLoadProjectFiles: (projectId: string) => {
+                  state.teamProjectFiles = null;
+                  void loadProjectFiles(state as any, projectId);
+                },
                 onClearProjectMemory: (projectId: string) => void clearSharedMemory(state as any, projectId),
                 onToggleProjectCollapse: (projectId: string) => {
                   if (_teamCollapsedProjects.has(projectId)) _teamCollapsedProjects.delete(projectId);

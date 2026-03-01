@@ -185,12 +185,28 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
   security: {
     collectWarnings: ({ cfg }) => {
       const channelConfig = cfg.channels?.feishu as FeishuChannelConfig | undefined;
+      if (!channelConfig || channelConfig.enabled === false) return [];
+
+      const warnings: string[] = [];
+
+      // 签名验证缺失警告
+      const verificationToken =
+        channelConfig.verificationToken?.trim() || channelConfig.app?.verificationToken?.trim();
+      if (!verificationToken) {
+        warnings.push(
+          `- 飞书: 未配置 verificationToken，Webhook 回调将跳过签名验证。建议在飞书开放平台获取 Verification Token 并设置 channels.feishu.verificationToken。`,
+        );
+      }
+
       const defaultGroupPolicy = cfg.channels?.defaults?.groupPolicy;
-      const groupPolicy = channelConfig?.groupPolicy ?? defaultGroupPolicy ?? "allowlist";
-      if (groupPolicy !== "open") return [];
-      return [
-        `- 飞书群聊: groupPolicy="open" 允许任何群成员触发 (需要 @机器人)。设置 channels.feishu.groupPolicy="allowlist" + channels.feishu.groups 来限制。`,
-      ];
+      const groupPolicy = channelConfig.groupPolicy ?? defaultGroupPolicy ?? "allowlist";
+      if (groupPolicy === "open") {
+        warnings.push(
+          `- 飞书群聊: groupPolicy="open" 允许任何群成员触发 (需要 @机器人)。设置 channels.feishu.groupPolicy="allowlist" + channels.feishu.groups 来限制。`,
+        );
+      }
+
+      return warnings;
     },
   },
   messaging: {

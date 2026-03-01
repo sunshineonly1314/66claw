@@ -686,12 +686,31 @@ class MemoryManagerEmbeddingOps {
     options: { source: MemorySource; content?: string },
   ) {
     const content = options.content ?? (await fs.readFile(entry.absPath, "utf-8"));
-    const chunks = enforceEmbeddingMaxInputTokens(
-      this.provider,
-      chunkMarkdown(content, this.settings.chunking).filter(
-        (chunk) => chunk.text.trim().length > 0,
-      ),
-    );
+    // [CN-PATCH:memory-fix] Chunk quality filter: ensure only semantically meaningful
+    // content enters the vector store.
+    // - Empty / whitespace-only / too short / pure punctuation → discard
+    // - YAML frontmatter → discard (metadata, no semantic value)
+    // - Base64 / hex dumps → discard (binary noise)
+    // - JSON blocks → extract string values as prose (keep useful info, drop structure)
+    const MIN_CHUNK_CHARS = 8;
+    const NOISE_PATTERN = /^[\s\-#*>`~|_=+\[\](){}!@$%^&\\/:;,.<>?'"]+$/;
+    const rawChunks = chunkMarkdown(content, this.settings.chunking);
+    const cleanedChunks: MemoryChunk[] = [];
+    for (const chunk of rawChunks) {
+      const trimmed = chunk.text.trim();
+      if (trimmed.length < MIN_CHUNK_CHARS) continue;
+      if (NOISE_PATTERN.test(trimmed)) continue;
+      const cleaned = cleanChunkText(trimmed);
+      if (cleaned === null) continue;
+      if (cleaned !== trimmed) {
+        // Text was transformed (e.g. JSON → extracted values); update chunk
+        if (cleaned.length < MIN_CHUNK_CHARS) continue;
+        cleanedChunks.push({ ...chunk, text: cleaned, hash: hashText(cleaned) });
+      } else {
+        cleanedChunks.push(chunk);
+      }
+    }
+    const chunks = enforceEmbeddingMaxInputTokens(this.provider, cleanedChunks);
     if (options.source === "sessions" && "lineMap" in entry) {
       remapChunkLines(chunks, entry.lineMap);
     }
@@ -766,7 +785,11 @@ class MemoryManagerEmbeddingOps {
             JSON.stringify(embedding),
             now,
           );
-        if (vectorReady && embedding.length > 0) {
+        // [CN-PATCH:memory-fix] Only insert non-zero embeddings into the vector table.
+        // Zero-vectors (all zeros) can occur when the embedding provider errors silently
+        // or returns a degenerate result. Inserting them pollutes cosine similarity search
+        // because they have zero norm → NaN distance, causing unpredictable ranking.
+        if (vectorReady && embedding.length > 0 && embedding.some((v) => v !== 0)) {
           try {
             this.db.prepare(`DELETE FROM ${VECTOR_TABLE} WHERE id = ?`).run(id);
           } catch {}
@@ -815,6 +838,192 @@ class MemoryManagerEmbeddingOps {
       throw err;
     }
   }
+}
+
+/**
+ * [CN-PATCH:memory-fix] Clean chunk text before embedding.
+ *
+ * Returns:
+ * - null → discard this chunk entirely (pure noise)
+ * - original text → keep as-is
+ * - transformed text → cleaned version to embed instead
+ *
+ * Strategy:
+ * - YAML frontmatter: discard (metadata like tags/dates, no semantic value for search)
+ * - Base64 / hex dumps: discard (binary noise)
+ * - JSON blocks: extract string values as natural language prose, discard structure
+ *   e.g. {"name":"张三","city":"北京"} → "张三 北京"
+ * - Mixed prose+JSON: keep as-is (the prose part has semantic value)
+ */
+function cleanChunkText(text: string): string | null {
+  // 1. YAML frontmatter: must have opening "---" AND closing "---" delimiter.
+  // [CN-PATCH:memory-fix] 旧版只检查开头 "---" + key:value 模式，会误伤水平分割线后的正文。
+  // 改为要求完整的 frontmatter 结构：^---\n...key:value...\n---
+  // 只匹配 chunk 开头的 frontmatter（chunk 可能是文件开头，也可能是 chunkMarkdown 切出的片段）。
+  if (/^---[ \t]*\n/.test(text)) {
+    const closingIdx = text.indexOf("\n---", 4); // 找 closing ---（跳过开头的 ---）
+    if (closingIdx > 0) {
+      // 在 opening 和 closing --- 之间检查是否有 key: value 模式
+      const between = text.slice(4, closingIdx);
+      const yamlLines = between.split(/\n/).filter((l) => /^\w[\w\s.-]*:\s/.test(l.trim()));
+      if (yamlLines.length >= 2) return null;
+    }
+  }
+
+  // 2. Base64-dominant: 60+ consecutive base64 chars with mixed case + digits + base64 special chars.
+  // [CN-PATCH:memory-fix] 提高阈值 40→60，且要求包含 +、/、= 中至少一个（base64 特征字符），
+  // 避免长驼峰变量名（如 calculateTotalRevenueForFiscalYear2024）被误判。
+  {
+    const b64Match = text.match(/[A-Za-z0-9+/=]{60,}/);
+    if (b64Match) {
+      const m = b64Match[0];
+      const hasMixedCase = /[A-Z]/.test(m) && /[a-z]/.test(m) && /\d/.test(m);
+      const hasBase64Special = /[+/=]/.test(m);
+      if (hasMixedCase && hasBase64Special) {
+        return null;
+      }
+    }
+  }
+
+  // 3. Hex dumps or hash-like strings: 32+ hex chars dominant
+  if (
+    /[0-9a-f]{32,}/i.test(text) &&
+    text.replace(/[0-9a-fA-F\s:.-]/g, "").length < text.length * 0.3
+  ) {
+    return null;
+  }
+
+  // 4. JSON blocks: extract meaningful string values instead of discarding
+  // [CN-PATCH:memory-fix] 只有成功 JSON.parse 证实是合法 JSON 时才替换/丢弃。
+  // 如果 parse 失败，说明是以 { 或 [ 开头的普通文本（如 "[Discussion] ..." ），
+  // 此时应保留原文而非丢弃。避免误伤引号密集的对话内容。
+  if (/^\s*[{\[]/.test(text)) {
+    const jsonChars = text.replace(/[^{}\[\]":,]/g, "").length;
+    if (jsonChars / text.length > 0.3) {
+      const extracted = extractJsonStringValues(text);
+      if (extracted === KEEP_ORIGINAL) return text; // 非合法 JSON，保留原文
+      if (extracted !== null) return extracted; // 合法 JSON，提取成功
+      return null; // 合法 JSON 无有用值，丢弃
+    }
+  }
+
+  return text; // keep as-is
+}
+
+/**
+ * Extract meaningful "key: value" pairs from a JSON-like text block.
+ * Preserves key names for context (industry best practice, similar to
+ * LlamaIndex JSONReader's key-value flattening approach).
+ *
+ * Example: {"name":"张三","age":30,"bio":"喜欢编程"}
+ *        → "name: 张三\nbio: 喜欢编程"
+ *
+ * Keys provide important context — without them, "工程部" could be a
+ * department, a location, or a product name. With the key "department",
+ * the embedding captures the full meaning.
+ *
+ * Returns:
+ * - extracted string → valid JSON with useful values extracted
+ * - null → valid JSON but no useful string values (caller should discard)
+ * - KEEP_ORIGINAL sentinel → not valid JSON, caller should keep original text
+ */
+const KEEP_ORIGINAL = Symbol("keep");
+type ExtractResult = string | null | typeof KEEP_ORIGINAL;
+
+function extractJsonStringValues(text: string): ExtractResult {
+  const pairs: string[] = [];
+  let isValidJson = false;
+
+  // Try JSON.parse first for accurate extraction
+  try {
+    const parsed = JSON.parse(text.trim());
+    isValidJson = true;
+    collectKeyValuePairs(parsed, pairs, "");
+  } catch {
+    // [CN-PATCH:memory-fix] 正则降级需处理转义引号。
+    // 旧正则 [^"] 在 \" 处截断，提取出损坏的片段。
+    // 改用 (?:[^"\\]|\\.)* 正确跳过转义序列。
+    const re = /"((?:[^"\\]|\\.)*)"\s*:\s*"((?:[^"\\]|\\.){2,})"/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const key = m[1]!.replace(/\\"/g, '"').trim();
+      const val = m[2]!.replace(/\\"/g, '"').trim();
+      if (isUsefulStringValue(val) && !isNoiseKey(key)) {
+        pairs.push(`${key}: ${val}`);
+      }
+    }
+  }
+
+  if (pairs.length === 0) {
+    // 合法 JSON 无有用值 → 丢弃；非合法 JSON → 保留原文
+    return isValidJson ? null : KEEP_ORIGINAL;
+  }
+
+  // Deduplicate and join with newlines — each key:value is a self-contained
+  // semantic unit, newlines help embedding models treat them as separate facts
+  const unique = [...new Set(pairs)];
+  return unique.join("\n").trim() || (isValidJson ? null : KEEP_ORIGINAL);
+}
+
+/**
+ * Recursively collect "key: value" pairs from a parsed JSON structure.
+ * Only collects string values that pass the usefulness check.
+ * Nested keys are flattened with dot notation for context.
+ */
+function collectKeyValuePairs(obj: unknown, out: string[], prefix: string, depth = 0): void {
+  if (obj === null || obj === undefined) return;
+  // Guard against extremely deep / circular structures
+  if (depth > 20) return;
+
+  if (typeof obj === "string") {
+    const trimmed = obj.trim();
+    if (isUsefulStringValue(trimmed) && prefix) {
+      out.push(`${prefix}: ${trimmed}`);
+    }
+    return;
+  }
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      collectKeyValuePairs(item, out, prefix, depth + 1);
+    }
+    return;
+  }
+
+  if (typeof obj === "object") {
+    for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
+      if (isNoiseKey(key)) continue;
+      const fullKey = prefix ? `${prefix}.${key}` : key;
+      collectKeyValuePairs(val, out, fullKey, depth + 1);
+    }
+  }
+}
+
+/** Keys that are metadata/structural and don't carry semantic value. */
+function isNoiseKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  return /^(id|_id|uuid|uid|key|hash|token|timestamp|created_at|updated_at|deleted_at|etag|version|rev|__\w+)$/.test(
+    lower,
+  );
+}
+
+/** Check if a string value is useful prose (not a UUID, URL, hash, etc.). */
+function isUsefulStringValue(val: string): boolean {
+  if (val.length < 2) return false;
+  // Skip UUIDs: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)) return false;
+  // Skip URLs
+  if (/^https?:\/\//i.test(val)) return false;
+  // Skip pure hex hashes (32+ hex chars)
+  if (/^[0-9a-f]{32,}$/i.test(val)) return false;
+  // Skip base64 blobs (40+ chars, mixed case + digits)
+  if (/^[A-Za-z0-9+/=]{40,}$/.test(val) && /[A-Z]/.test(val) && /[a-z]/.test(val) && /\d/.test(val))
+    return false;
+  // Skip ISO timestamps like 2024-01-15T10:30:00Z
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(val)) return false;
+  // Skip pure numbers/booleans stored as strings
+  if (/^-?\d+\.?\d*$/.test(val)) return false;
+  return true;
 }
 
 export const memoryManagerEmbeddingOps = MemoryManagerEmbeddingOps.prototype;

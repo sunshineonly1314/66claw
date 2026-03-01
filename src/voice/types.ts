@@ -96,6 +96,12 @@ export interface VoicePrefs {
   ttsProvider?: VoiceTtsProvider;
   ttsModel?: string;
   ttsVoice?: string;
+  /** TTS 语速 (0.2–3.0, 默认 1.0). */
+  ttsSpeedRatio?: number;
+  /** TTS 音调 (0.1–3.0, 默认 1.0). */
+  ttsPitchRatio?: number;
+  /** TTS 情感风格 (如 "happy", "pleased", "sorry", "professional", "serious"). */
+  ttsEmotion?: string;
 }
 
 export interface VoiceModelDownloadSource {

@@ -31,7 +31,7 @@ import {
   type CapabilityKey,
   type ModelCapabilityCard,
 } from "../../dispatch/capability-registry.js";
-import { getVecBindingStatus } from "../../dispatch/tool-index.js";
+import { getVecBindingStatus, isEmbeddingFallenBackToPro } from "../../dispatch/tool-index.js";
 import { getProviderAliases } from "../../agents/model-selection.js";
 import { ensureOpenClawCNModelsJson } from "../../agents/models-config.js";
 
@@ -169,8 +169,9 @@ export function getEmbeddingBindingStatus(): {
   vecModel: string | null;
   vecDims: number | null;
   vecCount: number;
+  fallenBackToPro: boolean;
 } {
-  return getVecBindingStatus();
+  return { ...getVecBindingStatus(), fallenBackToPro: isEmbeddingFallenBackToPro() };
 }
 
 /**

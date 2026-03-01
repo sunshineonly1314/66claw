@@ -5,7 +5,7 @@
  * - memory_upsert: save or update a user fact/preference/correction
  * - memory_forget: remove an outdated or incorrect memory entry
  *
- * Facts are stored in memory/profile.json (≤200 entries) and injected into
+ * Facts are stored in memory/profile.json (≤80 entries) and injected into
  * every system prompt. The Agent decides autonomously what to remember.
  */
 

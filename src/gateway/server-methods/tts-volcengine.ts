@@ -74,6 +74,8 @@ export interface VolcengineTtsParams {
   encoding?: string;
   sampleRate?: number;
   speedRatio?: number;
+  pitchRatio?: number;
+  emotion?: string;
 }
 
 /**
@@ -85,10 +87,12 @@ export async function volcengineTtsSynthesize(
 ): Promise<{ audioBase64: string; format: string }> {
   const {
     text,
-    voice = "BV005_streaming",
+    voice = "BV405_streaming",
     encoding = "mp3",
     sampleRate = 24000,
-    speedRatio = 1.8,
+    speedRatio = 1.0,
+    pitchRatio,
+    emotion = "happy",
   } = params;
 
   // Read from unified credentials store first, then env vars
@@ -145,7 +149,7 @@ export async function volcengineTtsSynthesize(
 
     ws.on("open", () => {
       // Send full_client_request with TTS parameters
-      const request = {
+      const request: Record<string, unknown> = {
         appid: appId,
         token: accessToken,
         reqid,
@@ -156,6 +160,8 @@ export async function volcengineTtsSynthesize(
         sample_rate: sampleRate,
         speed_ratio: speedRatio,
       };
+      if (pitchRatio !== undefined) request.pitch_ratio = pitchRatio;
+      if (emotion) request.emotion = emotion;
 
       const jsonBuf = Buffer.from(JSON.stringify(request), "utf8");
       // message_type=1 (full_client_request), flags=0, serialization=1 (JSON), compression=0 (none)

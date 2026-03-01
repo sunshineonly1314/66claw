@@ -56,10 +56,19 @@ export function generateSupervisorSoul(
     sections.push(generateConstraintsSection(project.constraints));
   }
 
-  // ── 6. Operating Rules ──
+  // ── 6. Performance Monitoring ──
+  sections.push(generatePerformanceMonitoringSection());
+
+  // ── 7. Adaptive Routing ──
+  sections.push(generateAdaptiveRoutingSection());
+
+  // ── 8. Quality Gates ──
+  sections.push(generateQualityGatesSection(project));
+
+  // ── 9. Operating Rules ──
   sections.push(generateOperatingRules(project));
 
-  // ── 7. Response Style (unified visibility) ──
+  // ── 10. Response Style (unified visibility) ──
   if (project.visibility.mode === "unified") {
     sections.push(generateResponseStyleSection(project));
   }
@@ -368,6 +377,63 @@ function generateResultCollectionProtocol(project: Project): string {
     lines.push(`- **Error**: Try a fallback member if available, otherwise handle it yourself`);
     lines.push(`- **All fail**: Handle the request yourself as best you can`);
   }
+
+  return lines.join("\n");
+}
+
+function generatePerformanceMonitoringSection(): string {
+  return [
+    `## Performance Monitoring`,
+    ``,
+    `Continuously observe team performance to optimize routing:`,
+    ``,
+    `- **Track response quality**: Note if a member's response fully addresses the user's request`,
+    `- **Track response time**: Be aware when members take unusually long to respond`,
+    `- **Detect patterns**: If a member repeatedly fails or produces low-quality output for certain task types, avoid routing those tasks to them`,
+    `- **Load awareness**: Avoid overloading a single member — distribute tasks across the team when possible`,
+    `- **Escalation**: If a member produces an obviously wrong or harmful response, do NOT forward it. Instead, try a different member or handle it yourself`,
+  ].join("\n");
+}
+
+function generateAdaptiveRoutingSection(): string {
+  return [
+    `## Adaptive Routing`,
+    ``,
+    `Use these routing strategies beyond the keyword table:`,
+    ``,
+    `- **Prefer proven performers**: If you know from previous interactions that a member handles a topic well, route to them even if keywords suggest another member`,
+    `- **Try alternatives on failure**: When a member fails or times out, note it and prefer a different member for similar future requests in this conversation`,
+    `- **Context-aware routing**: Consider the full conversation context, not just the latest message. A follow-up question about code should go to the coding member even if it doesn't contain coding keywords`,
+    `- **Complexity matching**: Route simple tasks (greetings, FAQs, status checks) to faster/simpler members. Route complex multi-step tasks to more capable members`,
+    `- **Fallback chain**: For each domain, mentally maintain a primary and secondary member. If primary fails, try secondary before handling it yourself`,
+  ].join("\n");
+}
+
+function generateQualityGatesSection(project: Project): string {
+  const isDelegateOnly = project.coordination.supervisorStyle === "delegate-only";
+
+  const lines = [
+    `## Quality Gates`,
+    ``,
+    `Before forwarding a member's response to the user, validate it:`,
+    ``,
+    `1. **Relevance**: Does the response address the user's actual question? If not, ask the member to redo it with clearer instructions`,
+    `2. **Completeness**: Is the response complete or does it end abruptly? If incomplete, ask the member to continue`,
+    `3. **Safety**: Does the response contain harmful, offensive, or inappropriate content? If so, do NOT forward it`,
+    `4. **Format**: Is the response well-structured and readable? Minor formatting issues are OK to pass through`,
+  ];
+
+  if (!isDelegateOnly) {
+    lines.push(
+      `5. **Enhancement**: For critical tasks, you may add a brief introduction or summary to the member's response to improve user experience`,
+    );
+  }
+
+  lines.push(
+    ``,
+    `**Important**: Quality gates should be quick mental checks, not lengthy re-analysis.`,
+    `Only block responses that clearly fail the above criteria.`,
+  );
 
   return lines.join("\n");
 }

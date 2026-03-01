@@ -1360,6 +1360,62 @@ async function verifyWecomCredentials(
 }
 
 /**
+ * 验证 QQ 机器人凭证
+ * 通过获取 access_token 并查询 /users/@me 来验证
+ */
+async function verifyQqbotCredentials(
+  appId: string,
+  appSecret: string,
+  sandbox?: boolean,
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    // Step 1: 获取 access_token
+    const tokenUrl = "https://bots.qq.com/app/getAppAccessToken";
+    const tokenResp = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appId, clientSecret: appSecret }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!tokenResp.ok) {
+      return { valid: false, error: `Token 请求失败: HTTP ${tokenResp.status}` };
+    }
+
+    const tokenData = (await tokenResp.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      code?: number;
+      message?: string;
+    };
+
+    if (!tokenData.access_token) {
+      const errMsg = tokenData.message || "获取 Token 失败";
+      return { valid: false, error: `AppID 或 AppSecret 不正确: ${errMsg}` };
+    }
+
+    // Step 2: 调用 /users/@me 验证 Token 有效性
+    const baseUrl = sandbox ? "https://sandbox.api.sgroup.qq.com" : "https://api.sgroup.qq.com";
+    const meResp = await fetch(`${baseUrl}/users/@me`, {
+      headers: { Authorization: `QQBot ${tokenData.access_token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!meResp.ok) {
+      return { valid: false, error: `凭证验证失败: API 返回 ${meResp.status}` };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes("timeout") || msg.includes("Timeout")) {
+      return { valid: false, error: "连接 QQ 开放平台超时，请检查网络" };
+    }
+    return { valid: false, error: `验证失败: ${msg}` };
+  }
+}
+
+/**
  * POST /api/setup/verify-channel - 验证渠道凭证
  */
 export async function handleVerifyChannel(
@@ -1412,8 +1468,11 @@ export async function handleVerifyChannel(
         });
         return;
       }
-      // TODO: 实现 verifyQqbotCredentials 函数
-      result = { valid: true };
+      result = await verifyQqbotCredentials(
+        credentials.appId,
+        credentials.appSecret,
+        credentials.sandbox === "true",
+      );
     } else {
       sendJson(res, 200, { ok: true, data: { valid: true, message: "该渠道暂不支持在线验证" } });
       return;
@@ -1534,9 +1593,21 @@ export async function handleConfigureChannels(
 
     // 处理 QQ 机器人配置
     if (body?.qqbot?.appId && body?.qqbot?.appSecret) {
-      // TODO: 实现 verifyQqbotCredentials 函数，暂时跳过验证
-      const qqbotResult = { valid: true };
+      const qqbotResult = await verifyQqbotCredentials(
+        body.qqbot.appId,
+        body.qqbot.appSecret,
+        body.qqbot.sandbox,
+      );
       verificationResults.qqbot = qqbotResult;
+
+      if (!qqbotResult.valid) {
+        sendJson(res, 200, {
+          ok: false,
+          error: `QQ 机器人凭证验证失败: ${qqbotResult.error}`,
+          data: { verificationResults },
+        });
+        return;
+      }
 
       channelsConfig.qqbot = {
         enabled: true,

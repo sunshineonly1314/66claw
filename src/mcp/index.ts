@@ -9,6 +9,7 @@ import type { AnyAgentTool } from "../agents/tools/common.js";
 import { MCPRegistry } from "./registry.js";
 import { MCPRuntimeManager } from "./runtime-manager.js";
 import { bridgeMCPTools, isMCPToolName, parseMCPToolName, getMCPToolMeta } from "./tool-bridge.js";
+import { MCP_MAX_SERVERS } from "./types.js";
 import type { MCPConfig, MCPServerConfig, MCPServerState, MCPToolInfo } from "./types.js";
 
 // Re-export useful types and utilities
@@ -114,6 +115,16 @@ export class MCPManager {
 
   /** Add a server dynamically. */
   async addServer(config: MCPServerConfig): Promise<void> {
+    // FIX M1: Enforce MCP_MAX_SERVERS limit at the backend level.
+    // The UI enforces a softer limit, but the backend must be the source of truth.
+    const currentCount = this.runtime.getAllStates().length;
+    if (currentCount >= MCP_MAX_SERVERS && !this.runtime.getServerState(config.id)) {
+      throw new Error(
+        `Cannot add server "${config.id}": maximum ${MCP_MAX_SERVERS} servers reached. ` +
+          `Remove unused servers first.`,
+      );
+    }
+
     this.registry.addServer(config);
     this.runtime.register(config);
     if (config.enabled && config.autoStart) {

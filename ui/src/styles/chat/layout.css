@@ -309,27 +309,26 @@
   display: none;
 }
 
-/* Override .field textarea min-height (180px) from components.css */
-/* 输入框增大，提升用户体验 */
+/* Override .field textarea min-height (160px) from components.css */
+/* 输入框增大，提升用户体验；保持与 cc-textarea (compose-card) 一致 */
 .chat-compose .chat-compose__field textarea {
   width: 100%;
-  height: 52px;
-  min-height: 52px;
-  max-height: 200px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  resize: vertical;
+  min-height: 100px;
+  max-height: min(320px, 40vh);
+  padding: 20px 22px;
+  border-radius: 14px;
+  resize: none;
   white-space: pre-wrap;
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.5;
-  border: 2px solid var(--border);
+  font-size: 16px;
+  line-height: 1.6;
+  border: 1.5px solid var(--border);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .chat-compose .chat-compose__field textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
+  box-shadow: none;
   outline: none;
 }
 
@@ -1098,7 +1097,7 @@
 .chat--empty .chat-compose {
   position: static;
   width: 100%;
-  max-width: 780px;
+  max-width: 860px;
 }
 
 .chat-empty-center {
@@ -1109,9 +1108,15 @@
   padding: 0 24px;
 }
 
-/* In empty state, give the compose card a slightly larger presence */
+/* In empty state, give the compose card a larger, more inviting presence */
 .chat--empty .cc-card {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.chat--empty .cc-textarea {
+  min-height: 110px;
+  font-size: 16px;
+  padding: 22px 24px 14px;
 }
 
 .chat-greeting {

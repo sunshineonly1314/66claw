@@ -315,9 +315,13 @@ async function apiSynthesize(
     try {
       const { volcengineTtsSynthesize } =
         await import("../gateway/server-methods/tts-volcengine.js");
+      const userPrefs = getVoicePrefsSync();
       const result = await volcengineTtsSynthesize({
         text,
-        voice: voice || "zh_female_tianmeixiaoyuan_moon_bigtts",
+        voice: voice || userPrefs.ttsVoice || "BV405_streaming",
+        speedRatio: userPrefs.ttsSpeedRatio,
+        pitchRatio: userPrefs.ttsPitchRatio,
+        emotion: userPrefs.ttsEmotion,
       });
       return {
         ok: true,
@@ -352,7 +356,7 @@ async function apiSynthesize(
     openai: "alloy",
     elevenlabs: "pMsXgVXv3BLzUgSXRplE",
     dashscope: "longxiaochun",
-    volcengine: "zh_female_tianmeixiaoyuan_moon_bigtts",
+    volcengine: "BV405_streaming",
     minimax: "male-qn-qingse",
   };
 

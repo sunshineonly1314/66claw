@@ -14,6 +14,8 @@ import type {
   ModelTier,
   UserContext,
 } from "../types.js";
+import type { DiscoveryResult } from "./runtime-discovery.js";
+import { matchCapabilitiesToRole, mergeWithStaticInference, MAX_SKILLS_PER_AGENT, MAX_MCP_PER_AGENT } from "./runtime-discovery.js";
 
 // ── Model Tier → Candidate Models ────────────────────────────────────────
 
@@ -84,22 +86,68 @@ const SCENARIO_SKILL_MAP: Record<string, string[]> = {
  * @param bp - The agent blueprint (name, role, tier, etc.)
  * @param userCtx - Structured user context from guided questionnaire
  * @param pluginConfig - Config object from plugin context (to read configured providers)
+ * @param discoveryResult - Runtime discovery of installed skills and MCP servers (optional)
  */
 export function inferAgentCapabilities(
   bp: AgentBlueprint,
   userCtx: UserContext,
   pluginConfig?: Record<string, unknown>,
+  discoveryResult?: DiscoveryResult,
 ): InferredCapabilities {
+  const staticSkills = inferSkills(bp.role, userCtx);
+  const staticMCP = inferMCPServers(bp.role, userCtx.resources);
+
+  // If runtime discovery is available, use it for intelligent matching
+  let finalSkills: string[];
+  let finalMCP: string[];
+
+  if (discoveryResult && (discoveryResult.skills.length > 0 || discoveryResult.mcpServers.length > 0)) {
+    const runtimeMatch = matchCapabilitiesToRole(bp.role, userCtx.scenario, discoveryResult);
+    const merged = mergeWithStaticInference(runtimeMatch, staticSkills, staticMCP);
+    finalSkills = merged.skills;
+    finalMCP = merged.mcpServers;
+  } else {
+    // Fallback: use static inference with hard limits
+    finalSkills = staticSkills.slice(0, MAX_SKILLS_PER_AGENT);
+    finalMCP = staticMCP.slice(0, MAX_MCP_PER_AGENT);
+  }
+
   return {
-    model: selectModel(bp.modelTier, userCtx, pluginConfig),
+    model: selectModel(bp.modelTier, userCtx, pluginConfig, bp.role, bp.id),
     tools: inferTools(bp.role, userCtx),
-    skills: inferSkills(bp.role, userCtx),
-    mcpHints: inferMCPServers(bp.role, userCtx.resources),
+    skills: finalSkills,
+    mcpHints: finalMCP,
     memorySearch: inferMemorySearch(bp.role, userCtx),
     identity: { name: bp.name, emoji: bp.emoji },
     subagents: inferSubagents(bp.role),
     heartbeat: inferHeartbeat(bp.role, userCtx),
   };
+}
+
+// ── Role Complexity Estimation ────────────────────────────────────────────
+
+const SIMPLE_ROLE_PATTERNS = /转发|提醒|通知|监控|打卡|签到|forward|remind|notify|monitor|alert|schedule|定时/i;
+const COMPLEX_ROLE_PATTERNS = /代码|编程|分析|研究|推理|调研|策划|架构|设计|规划|选型|code|program|analy|research|reason|architect|debug|review|design|plan/i;
+const SUPERVISOR_PATTERNS = /supervisor|分发|路由|调度|协调|管理|总管|coordinator|orchestrat|dispatch|manager/i;
+
+/**
+ * Estimate role complexity to guide model tier selection.
+ * - "simple": forwarding, reminding, monitoring — can use cheap models
+ * - "moderate": content creation, search, summarization
+ * - "complex": coding, analysis, research, multi-step reasoning
+ */
+export function estimateRoleComplexity(role: string): "simple" | "moderate" | "complex" {
+  if (COMPLEX_ROLE_PATTERNS.test(role)) return "complex";
+  if (SIMPLE_ROLE_PATTERNS.test(role)) return "simple";
+  return "moderate";
+}
+
+/**
+ * Detect if a role description indicates a supervisor/coordinator agent.
+ */
+export function isSupervisorRole(role: string, agentId?: string): boolean {
+  if (agentId && /supervisor/i.test(agentId)) return true;
+  return SUPERVISOR_PATTERNS.test(role);
 }
 
 // ── Model Selection ──────────────────────────────────────────────────────
@@ -108,6 +156,8 @@ function selectModel(
   tier: ModelTier,
   ctx: UserContext,
   pluginConfig?: Record<string, unknown>,
+  role?: string,
+  agentId?: string,
 ): InferredCapabilities["model"] {
   const configured = getConfiguredProviders(pluginConfig);
   const scenario = ctx.scenario || "general";
@@ -116,6 +166,24 @@ function selectModel(
   let effectiveTier = tier;
   if (ctx.budget === "cheap" && tier === "mid") effectiveTier = "cheap";
   if (ctx.budget === "premium" && tier === "cheap") effectiveTier = "mid";
+
+  // Supervisor: use the user's configured global text model (not forced SOTA).
+  // Chinese users typically use kimi, qwen, deepseek — not claude/openai.
+  if (role && isSupervisorRole(role, agentId)) {
+    const userModel = getGlobalTextModel(pluginConfig);
+    if (userModel) {
+      return { primary: userModel };
+    }
+    // No user-configured model: pick the best available from configured providers
+    effectiveTier = configured.length > 0 ? "mid" : "sota";
+  }
+  // Simple role downgrade: use cheap model to save cost (unless user wants premium)
+  else if (role && ctx.budget !== "premium") {
+    const complexity = estimateRoleComplexity(role);
+    if (complexity === "simple" && effectiveTier !== "cheap") {
+      effectiveTier = "cheap";
+    }
+  }
 
   // Filter by tier and availability
   let candidates = MODEL_CANDIDATES
@@ -165,12 +233,21 @@ function getGlobalTextModel(config?: Record<string, unknown>): string | undefine
 
 function getConfiguredProviders(config?: Record<string, unknown>): string[] {
   try {
+    // Check config.models.providers (primary location)
     const models = config?.models as Record<string, unknown> | undefined;
-    const providers = models?.providers;
+    let providers = models?.providers;
+
+    // Fallback: check config.gateway.providers (alternative config structure)
+    if (!providers || typeof providers !== "object") {
+      const gateway = config?.gateway as Record<string, unknown> | undefined;
+      providers = gateway?.providers;
+    }
+
     if (!providers || typeof providers !== "object") return [];
-    // providers is Record<string, ProviderConfig> (object keyed by provider ID), not an array
+
+    // providers may be Record<string, ProviderConfig> (object keyed by provider ID) or an array
     if (Array.isArray(providers)) {
-      return providers.map(p => String(p.id ?? "")).filter(Boolean);
+      return providers.map(p => String(p.id ?? p.name ?? "")).filter(Boolean);
     }
     return Object.keys(providers as Record<string, unknown>).filter(Boolean);
   } catch {
@@ -215,33 +292,42 @@ function inferTools(
 
 function inferSkills(role: string, ctx: UserContext): string[] {
   const scenario = ctx.scenario || "general";
-  const skills: string[] = [...(SCENARIO_SKILL_MAP[scenario] ?? [])];
+
+  // Role-specific skills first (higher priority — directly relevant to this agent's role)
+  const roleSkills: string[] = [];
+  if (/新闻|news/i.test(role)) roleSkills.push("ai-daily-news", "news-briefing");
+  if (/小红书|xiaohongshu/i.test(role)) roleSkills.push("xiaohongshu");
+  if (/总结|summarize|摘要/i.test(role)) roleSkills.push("summarize");
+  if (/代码|code|编程|program/i.test(role)) roleSkills.push("coding-agent");
+  if (/翻译|translate|双语/i.test(role)) roleSkills.push("translator");
+  if (/搜索|search|调研|research/i.test(role)) roleSkills.push("web-researcher");
+  if (/pdf|文档/i.test(role)) roleSkills.push("nano-pdf");
+  if (/日程|calendar|日历/i.test(role)) roleSkills.push("calendar");
+  if (/客服|support|接待/i.test(role)) roleSkills.push("self-troubleshoot");
+  if (/写作|写文|copywrite|文案|撰写|创作/i.test(role)) roleSkills.push("copywriting");
+  if (/数据|data|分析|analy|统计|画像/i.test(role)) roleSkills.push("csv-analyzer");
+  if (/图片|image|配图|画|封面/i.test(role)) roleSkills.push("image-helper");
+  if (/github|仓库|repo/i.test(role)) roleSkills.push("github");
 
   // Resource → skills
   for (const res of ctx.resources) {
     switch (res) {
-      case "pdf":       skills.push("nano-pdf"); break;
-      case "github":    skills.push("github"); break;
-      case "notion":    skills.push("notion"); break;
+      case "pdf":       roleSkills.push("nano-pdf"); break;
+      case "github":    roleSkills.push("github"); break;
+      case "notion":    roleSkills.push("notion"); break;
     }
   }
 
-  // Role keyword → skills
-  if (/新闻|news/i.test(role)) skills.push("ai-daily-news", "news-briefing");
-  if (/小红书|xiaohongshu/i.test(role)) skills.push("xiaohongshu");
-  if (/总结|summarize|摘要/i.test(role)) skills.push("summarize");
-  if (/代码|code|编程|program/i.test(role)) skills.push("coding-agent");
-  if (/翻译|translate/i.test(role)) skills.push("translator");
-  if (/搜索|search|调研|research/i.test(role)) skills.push("web-researcher");
-  if (/pdf|文档/i.test(role)) skills.push("nano-pdf");
-  if (/日程|calendar|日历/i.test(role)) skills.push("calendar");
-  if (/客服|support|接待/i.test(role)) skills.push("self-troubleshoot");
-  if (/写作|写文|copywrite|文案/i.test(role)) skills.push("copywriting");
-  if (/数据|data|分析|analy/i.test(role)) skills.push("csv-analyzer");
-  if (/图片|image|配图|画/i.test(role)) skills.push("image-helper");
-  if (/github|仓库|repo/i.test(role)) skills.push("github");
+  // Scenario base skills (lower priority — generic to the scenario)
+  const scenarioSkills: string[] = [...(SCENARIO_SKILL_MAP[scenario] ?? [])];
 
-  return [...new Set(skills)];
+  // Merge: role-specific first, then fill with scenario skills (respects MAX limit downstream)
+  const merged = [...roleSkills];
+  for (const s of scenarioSkills) {
+    if (!merged.includes(s)) merged.push(s);
+  }
+
+  return [...new Set(merged)];
 }
 
 // ── MCP Server Inference ─────────────────────────────────────────────────
@@ -250,7 +336,7 @@ function inferMCPServers(role: string, resources: string[]): string[] {
   const servers: string[] = [];
 
   // Database & SQL
-  if (/数据库|数据分析|database|sql/i.test(role)) servers.push("mcp-server-sqlite");
+  if (/数据库|数据分析|database|sql/i.test(role) || resources.includes("database")) servers.push("mcp-server-sqlite");
   // File system access
   if (/文件|文档|file|doc/i.test(role)) servers.push("@mcp/server-filesystem");
   // Google Sheets

@@ -281,6 +281,60 @@ export function buildMediaSystemPrompt(): string {
 直接输出本地路径即可，系统会自动上传到钉钉。`;
 }
 
+/** Result of downloadMediaToTempFile — carries `isTemp` so the caller knows
+ *  whether it is safe to delete the file after use. */
+export type DownloadResult = { path: string; isTemp: boolean };
+
+/** Regex matching private / loopback IP ranges (SSRF protection). */
+const PRIVATE_HOST_RE =
+  /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|169\.254\.|fc00:|fd|::1|localhost)/i;
+
+/** Maximum download size (50 MB). */
+const MAX_DOWNLOAD_SIZE = 50 * 1024 * 1024;
+
+/**
+ * 从 mediaUrl（HTTP/本地路径）下载到临时文件，返回下载结果。
+ * 如果 mediaUrl 已经是本地路径且文件存在，返回 `{ path, isTemp: false }`
+ * 以防止调用方误删原始文件。
+ */
+export async function downloadMediaToTempFile(mediaUrl: string): Promise<DownloadResult | null> {
+  // 如果是本地路径直接返回，标记 isTemp=false 避免误删
+  if (!mediaUrl.startsWith("http://") && !mediaUrl.startsWith("https://") && !mediaUrl.startsWith("/api/")) {
+    if (fs.existsSync(mediaUrl)) return { path: mediaUrl, isTemp: false };
+    return null;
+  }
+
+  try {
+    // SSRF 防护：阻止访问内网地址
+    const parsed = new URL(mediaUrl);
+    if (PRIVATE_HOST_RE.test(parsed.hostname)) {
+      return null;
+    }
+
+    const { tmpdir } = await import("node:os");
+    const { writeFile } = await import("node:fs/promises");
+    const { randomUUID } = await import("node:crypto");
+    const response = await fetch(mediaUrl, { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) return null;
+
+    // 检查 Content-Length 防止过大文件
+    const contentLength = Number(response.headers.get("content-length") || 0);
+    if (contentLength > MAX_DOWNLOAD_SIZE) return null;
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > MAX_DOWNLOAD_SIZE) return null;
+
+    // 从 URL 推断扩展名（去掉查询参数）
+    const urlPath = mediaUrl.split("?")[0] ?? "";
+    const ext = path.extname(urlPath) || ".bin";
+    const tempPath = path.join(tmpdir(), `dingtalk-upload-${randomUUID()}${ext}`);
+    await writeFile(tempPath, buffer);
+    return { path: tempPath, isTemp: true };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 清除 OAPI Token 缓存 (用于测试)
  */

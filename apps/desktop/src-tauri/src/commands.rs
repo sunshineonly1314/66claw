@@ -204,9 +204,21 @@ pub async fn repair_apply_fix(app: AppHandle, fix_id: String) -> Result<repair::
 }
 
 /// Upload crash logs to the remote support server.
+/// `attachments`: optional base64 data-URL encoded screenshots (max 3).
 #[tauri::command]
-pub async fn upload_crash_logs(description: String) -> Result<offline_diag::UploadResult, String> {
-    offline_diag::upload_crash_logs(description).await
+pub async fn upload_crash_logs(
+    description: String,
+    attachments: Option<Vec<String>>,
+) -> Result<offline_diag::UploadResult, String> {
+    offline_diag::upload_crash_logs(description, attachments.unwrap_or_default()).await
+}
+
+/// Get recent log entries for AI-assisted diagnosis.
+/// Reads app.jsonl, crash.log, desktop-debug.log and returns a summary
+/// filtered to error/warn lines, truncated to ~4KB for LLM context.
+#[tauri::command]
+pub async fn repair_get_recent_logs() -> Result<String, String> {
+    Ok(offline_diag::get_recent_logs_summary())
 }
 
 /// Check SSH server status on this machine.

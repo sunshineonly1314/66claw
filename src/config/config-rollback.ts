@@ -4,8 +4,8 @@
  * Provides the ability to list available config backups, inspect their version
  * metadata, and atomically restore a previous config version.
  *
- * The backup rotation system (backup-rotation.ts) already maintains up to 5
- * historical config versions as `.bak`, `.bak.1`, ..., `.bak.4`. This module
+ * The backup rotation system (backup-rotation.ts) already maintains up to 3
+ * historical config versions as `.bak`, `.bak.1`, `.bak.2`. This module
  * adds a structured API on top of that mechanism.
  */
 
@@ -232,10 +232,7 @@ export async function rollbackConfig(
 
     // Write to temp file first, then rename (atomic on most OS)
     const dir = path.dirname(configPath);
-    const tmpFile = path.join(
-      dir,
-      `${path.basename(configPath)}.rollback.${process.pid}.tmp`,
-    );
+    const tmpFile = path.join(dir, `${path.basename(configPath)}.rollback.${process.pid}.tmp`);
     await fs.promises.writeFile(tmpFile, backupRaw, {
       encoding: "utf-8",
       mode: 0o600,
@@ -256,9 +253,7 @@ export async function rollbackConfig(
       }
     }
 
-    log.info(
-      `config rolled back from ${backupFile} (version=${version ?? "unknown"})`,
-    );
+    log.info(`config rolled back from ${backupFile} (version=${version ?? "unknown"})`);
 
     return {
       ok: true,

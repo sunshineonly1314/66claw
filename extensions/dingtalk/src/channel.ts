@@ -233,12 +233,27 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
   security: {
     collectWarnings: ({ cfg }) => {
       const channelConfig = cfg.channels?.dingtalk as DingtalkChannelConfig | undefined;
+      if (!channelConfig || channelConfig.enabled === false) return [];
+
+      const warnings: string[] = [];
+
+      // 签名验证缺失警告
+      const signSecret = channelConfig.app?.signSecret?.trim();
+      if (!signSecret) {
+        warnings.push(
+          `- 钉钉: 未配置 signSecret，Webhook 回调将跳过签名验证。建议在钉钉开放平台设置消息加签密钥并配置 channels.dingtalk.app.signSecret。`,
+        );
+      }
+
       const defaultGroupPolicy = cfg.channels?.defaults?.groupPolicy;
-      const groupPolicy = channelConfig?.groupPolicy ?? defaultGroupPolicy ?? "allowlist";
-      if (groupPolicy !== "open") return [];
-      return [
-        `- 钉钉群聊: groupPolicy="open" 允许任何群成员触发 (需要 @机器人)。设置 channels.dingtalk.groupPolicy="allowlist" + channels.dingtalk.groups 来限制。`,
-      ];
+      const groupPolicy = channelConfig.groupPolicy ?? defaultGroupPolicy ?? "allowlist";
+      if (groupPolicy === "open") {
+        warnings.push(
+          `- 钉钉群聊: groupPolicy="open" 允许任何群成员触发 (需要 @机器人)。设置 channels.dingtalk.groupPolicy="allowlist" + channels.dingtalk.groups 来限制。`,
+        );
+      }
+
+      return warnings;
     },
   },
   messaging: {
@@ -288,7 +303,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
     deliveryMode: "direct",
     chunker: (text, limit) => getDingtalkRuntime().channel.text.chunkMarkdownText(text, limit),
     chunkerMode: "markdown",
-    textChunkLimit: 2048,
+    textChunkLimit: 680, // 钉钉文本消息限制 2048 字节，CJK 每字符 3 字节，保守取 floor(2048/3)=682
     sendText: async ({ to, text, cfg }) => {
       // 优先使用缓存的 Session Webhook
       const cachedWebhook = getCachedSessionWebhook(to);
@@ -307,44 +322,59 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       });
       return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
     },
-    sendMedia: async ({ to, text, cfg, mediaPath }) => {
+    sendMedia: async ({ to, text, cfg, mediaUrl }) => {
       const channelConfig = cfg.channels?.dingtalk as DingtalkChannelConfig;
 
-      // 如果有媒体文件路径，尝试上传并作为媒体消息发送
-      if (mediaPath) {
+      // 如果有媒体 URL，先下载到本地临时文件，再上传到钉钉
+      if (mediaUrl) {
         try {
           const oapiToken = await getOapiAccessToken(channelConfig);
           if (oapiToken) {
-            const uploadType = detectUploadMediaType(mediaPath);
-            const mediaId = await uploadToDingTalk(mediaPath, oapiToken, uploadType);
-            if (mediaId) {
-              // 将 upload type 映射到 send type
-              const sendTypeMap: Record<UploadMediaType, "image" | "audio" | "video" | "file"> = {
-                image: "image",
-                voice: "audio",
-                video: "video",
-                file: "file",
-              };
-              const result = await sendDingtalkMediaMessage(
-                channelConfig,
-                [to],
-                sendTypeMap[uploadType],
-                mediaId,
-                { fileName: mediaPath.split(/[\\/]/).pop() },
-              );
-              // 同时发送文本描述（如果有）
-              if (text) {
-                const cachedWebhook = getCachedSessionWebhook(to);
-                if (cachedWebhook) {
-                  await sendDingtalkMessageViaWebhook(cachedWebhook, {
-                    msgtype: "text",
-                    text: { content: text },
-                  });
-                } else {
-                  await sendDingtalkMessage(channelConfig, [to], text);
+            // 从 mediaUrl 下载到临时文件
+            const { downloadMediaToTempFile } = await import("./media-upload.js");
+            const downloadResult = await downloadMediaToTempFile(mediaUrl);
+            if (downloadResult) {
+              try {
+                const uploadType = detectUploadMediaType(downloadResult.path);
+                const mediaId = await uploadToDingTalk(downloadResult.path, oapiToken, uploadType);
+                if (mediaId) {
+                  // 将 upload type 映射到 send type
+                  const sendTypeMap: Record<UploadMediaType, "image" | "audio" | "video" | "file"> = {
+                    image: "image",
+                    voice: "audio",
+                    video: "video",
+                    file: "file",
+                  };
+                  // 从 URL 中提取文件名，去掉查询参数
+                  const rawFileName = mediaUrl.split(/[\\/]/).pop() ?? "";
+                  const fileName = rawFileName.split("?")[0] || rawFileName;
+                  const result = await sendDingtalkMediaMessage(
+                    channelConfig,
+                    [to],
+                    sendTypeMap[uploadType],
+                    mediaId,
+                    { fileName },
+                  );
+                  // 同时发送文本描述（如果有）
+                  if (text) {
+                    const cachedWebhook = getCachedSessionWebhook(to);
+                    if (cachedWebhook) {
+                      await sendDingtalkMessageViaWebhook(cachedWebhook, {
+                        msgtype: "text",
+                        text: { content: text },
+                      });
+                    } else {
+                      await sendDingtalkMessage(channelConfig, [to], text);
+                    }
+                  }
+                  return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
+                }
+              } finally {
+                // 仅清理临时下载文件，不删除本地原始文件
+                if (downloadResult.isTemp) {
+                  try { const { unlink } = await import("node:fs/promises"); await unlink(downloadResult.path); } catch { /* ignore */ }
                 }
               }
-              return { channel: DINGTALK_CHANNEL_ID, messageId: "", ...result };
             }
           }
         } catch {
@@ -457,7 +487,24 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
           recentDingtalkMsgIds.add(msg.msgId);
           setTimeout(() => recentDingtalkMsgIds.delete(msg.msgId), 5 * 60_000);
 
-          ctx.log?.info(`[dingtalk] 收到消息: type=${msg.conversationType === "1" ? "单聊" : "群聊"}, from=${msg.senderNick}`);
+          const isGroupChat = msg.conversationType === "2";
+          ctx.log?.info(`[dingtalk] 收到消息: type=${isGroupChat ? "群聊" : "单聊"}, from=${msg.senderNick}`);
+
+          // ========================================
+          // 群聊 requireMention 检查 (P1-5 修复)
+          // ========================================
+          if (isGroupChat) {
+            const conversationId = msg.conversationId;
+            // 获取群维度配置
+            const groupConfig = channelConfig?.groups?.[conversationId];
+            // 优先使用群维度配置，其次使用全局 requireMention (默认 true — 群聊必须 @机器人)
+            const requireMention = groupConfig?.requireMention ?? true;
+
+            if (requireMention && !msg.isAtMe) {
+              ctx.log?.info(`[dingtalk] 群聊消息未 @机器人 (requireMention=true, isAtMe=${msg.isAtMe})，跳过`);
+              return;
+            }
+          }
 
           // 缓存 Session Webhook (用于回复)
           if (msg.sessionWebhook && msg.sessionWebhookExpiredTime) {

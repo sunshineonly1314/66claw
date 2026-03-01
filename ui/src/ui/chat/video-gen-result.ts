@@ -30,6 +30,8 @@ export interface VideoGenDetails {
   error?: string;
   videoAvailable?: boolean;
   mediaType?: string;
+  /** [CN-FEAT:media-sqlite] SQLite media asset ID for querying via media.details API. */
+  mediaId?: string | null;
 }
 
 // ---------------------------------------------------------------------------

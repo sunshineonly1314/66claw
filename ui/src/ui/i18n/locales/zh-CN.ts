@@ -181,6 +181,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "agents.selectAgentHint": "选择一个智能体来查看其工作区和工具。",
   "agents.defaultSubtitle": "智能体工作区和路由配置。",
   "agents.tabOverview": "概览",
+  "agents.tabOutputs": "输出文件",
   "agents.tabFiles": "提示词文件",
   "agents.tabTools": "工具",
   "agents.tabSkills": "技能",
@@ -292,6 +293,14 @@ export const zhCN: Record<keyof typeof en, string> = {
   "agents.content": "内容",
   "agents.missing": "缺失",
 
+  // 智能体输出文件面板 (Agent Outputs)
+  "agents.outputFiles": "输出文件",
+  "agents.outputFilesSub": "Agent 工作产出的文件（文案、报表、笔记等）。",
+  "agents.loadOutputsHint": "点击刷新以加载此智能体的工作产出文件。",
+  "agents.noOutputs": "暂无输出文件。智能体在工作中生成的文件将显示在这里。",
+  "agents.selectOutputHint": "选择一个文件以预览内容。",
+  "agents.outputCopy": "复制",
+
   // 智能体工具面板 (Agent Tools)
   "agents.toolAccess": "工具权限",
   "agents.toolAccessSub": "此智能体的工具配置和单项覆盖。",
@@ -349,6 +358,14 @@ export const zhCN: Record<keyof typeof en, string> = {
   "team.stats": "统计",
   "team.settings": "设置",
   "team.memory": "共享记忆",
+  "team.files": "成果物",
+  "team.files.refresh": "刷新",
+  "team.files.empty": "暂无工作区文件",
+  "team.files.noFiles": "(暂无文件)",
+  "team.files.justNow": "刚刚",
+  "team.files.minAgo": "{{count}} 分钟前",
+  "team.files.hoursAgo": "{{count}} 小时前",
+  "team.files.daysAgo": "{{count}} 天前",
   "team.noProjects": "暂无团队项目",
   "team.status.deploying": "部署中",
   "team.status.active": "运行中",
@@ -687,6 +704,17 @@ export const zhCN: Record<keyof typeof en, string> = {
   "chat.videoGen.retry": "重试",
   "chat.videoGen.expired": "视频已过期",
   "chat.videoGen.interrupted": "视频生成未完成，可点击重新生成",
+
+  // ── 文件写入卡片 ──
+  "chat.fileCard.writing": "正在写入文件...",
+  "chat.fileCard.writingHint": "通常瞬间完成",
+  "chat.fileCard.created": "已创建",
+  "chat.fileCard.updated": "已更新",
+  "chat.fileCard.copy": "复制",
+  "chat.fileCard.copied": "已复制！",
+  "chat.fileCard.viewFull": "查看完整内容",
+  "chat.fileCard.interrupted": "文件写入未完成",
+  "chat.fileCard.failed": "文件写入失败",
 
   // ============================================================================
   // 指挥渠道页 (Channels)
@@ -7285,6 +7313,36 @@ export const zhCN: Record<keyof typeof en, string> = {
   "orch.stepSoul": "人设",
   "orch.stepToolPolicy": "工具",
   "orch.stepKeywords": "关键词",
+
+  // ── Orchestrator UI 优化 (Phase 11) ──
+  "orch.abilitiesLabel": "能做什么",
+  "orch.skillsLabel": "技能",
+  "orch.coverageScore": "需求覆盖率",
+  "orch.feasibilityScore": "可行性",
+  "orch.supervisorDesc": "你发消息时，它会自动判断该由谁处理，然后把任务分给最合适的成员。你不需要管它。",
+  "orch.proposingTitle": "正在为你组建团队...",
+  "orch.retryFailed": "重试失败的成员",
+  "orch.retryingFailed": "重试中...",
+  "orch.skipFailed": "跳过，先用",
+  "orch.tryItLabel": "试一试：发送你的第一条消息",
+  "orch.tryItPlaceholder": "例：帮我写一篇关于春季穿搭的小红书文案",
+  "orch.tryItSend": "发送",
+  "orch.noProviderTitle": "还没有配置 AI 模型",
+  "orch.noProviderDesc": "智能组队需要至少配置一个模型才能正常工作。",
+  "orch.noProviderAction": "去配置模型",
+  "orch.helpSkills": "技能是 Agent 可以调用的工具包，比如写文案、搜新闻、分析数据",
+  "orch.helpSupervisor": "团队管理员，负责把你的消息分配给合适的成员处理",
+  "orch.helpMCP": "MCP 让 Agent 能连接外部服务，比如数据库、GitHub、网页搜索等",
+  "orch.errPermission": "权限不足，请检查工作目录权限",
+  "orch.errTimeout": "操作超时，请检查网络后重试",
+  "orch.errNotFound": "配置或文件未找到",
+  "orch.errConflict": "与已有智能体冲突，请先清理后重试",
+  "orch.errConnection": "模型连接失败，请检查 API 密钥是否正确",
+  "orch.errApiKey": "API 密钥无效或已过期，请去模型设置检查",
+  "orch.errorDetails": "查看技术详情",
+  "orch.errorHint1": "检查模型设置中的 API 密钥是否正确",
+  "orch.errorHint2": "检查网络连接是否稳定",
+  "orch.errorCheckConfig": "去模型设置",
 
   // ============================================================================
   // 软件更新 (Update) — 从 bak5 提取

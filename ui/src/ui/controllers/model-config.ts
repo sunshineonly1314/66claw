@@ -124,6 +124,16 @@ export interface ModelConfigState {
   providerConfigVolcSaving: boolean;
   /** 火山引擎已配置凭证的脱敏信息 */
   providerConfigVolcCredsStatus: { configured: boolean; maskedAppId?: string; maskedToken?: string } | null;
+  /** TTS 音色选择 */
+  providerConfigVolcTtsVoice: string;
+  /** TTS 语速 */
+  providerConfigVolcTtsSpeed: number;
+  /** TTS 情感风格 */
+  providerConfigVolcTtsEmotion: string;
+  /** TTS 音调 */
+  providerConfigVolcTtsPitch: number;
+  /** TTS 偏好设置已加载 */
+  providerConfigVolcTtsPrefsLoaded: boolean;
   providerConfigTesting: boolean;
   providerConfigTestResult: { success: boolean; message: string } | null;
   providerConfigDetecting: boolean;
@@ -199,6 +209,11 @@ export function createInitialModelConfigState(): ModelConfigState {
     providerConfigVolcTab: "llm",
     providerConfigVolcSaving: false,
     providerConfigVolcCredsStatus: null,
+    providerConfigVolcTtsVoice: "BV405_streaming",
+    providerConfigVolcTtsSpeed: 2.0,
+    providerConfigVolcTtsEmotion: "happy",
+    providerConfigVolcTtsPitch: 1.0,
+    providerConfigVolcTtsPrefsLoaded: false,
     providerConfigTesting: false,
     providerConfigTestResult: null,
     providerConfigDetecting: false,
@@ -424,6 +439,11 @@ export function openProviderConfig(host: ModelConfigHost, provider: ProviderInfo
   host.providerConfigVolcTab = "llm";
   host.providerConfigVolcSaving = false;
   host.providerConfigVolcCredsStatus = null;
+  host.providerConfigVolcTtsVoice = "BV405_streaming";
+  host.providerConfigVolcTtsSpeed = 2.0;
+  host.providerConfigVolcTtsEmotion = "happy";
+  host.providerConfigVolcTtsPitch = 1.0;
+  host.providerConfigVolcTtsPrefsLoaded = false;
   // 有引导步骤则先显示引导,否则直接到 API Key 输入
   host.providerConfigStep = (provider.apiKeyGuide && provider.apiKeyGuide.length > 0) ? "guide" : "apikey";
 }
@@ -442,6 +462,7 @@ export function closeProviderConfig(host: ModelConfigHost): void {
   host.providerConfigVolcTab = "llm";
   host.providerConfigVolcSaving = false;
   host.providerConfigVolcCredsStatus = null;
+  host.providerConfigVolcTtsPrefsLoaded = false;
   host.providerConfigTesting = false;
   host.providerConfigTestResult = null;
   host.providerConfigDetecting = false;

@@ -13,6 +13,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { resolveConfigDir } from "../utils.js";
 import { extensionForMime } from "./mime.js";
+import { insertMediaAsset, queryBySession, type MediaAssetRow } from "./media-db.js";
 
 const CHAT_IMAGES_SUBDIR = "chat-images";
 const MANIFEST_FILENAME = "_manifest.json";
@@ -152,6 +153,35 @@ export async function saveChatImage(params: {
       await writeManifest(sessionKey, manifest);
     }
 
+    // [CN-FEAT:media-sqlite] Dual-write: persist metadata to SQLite for fast querying
+    try {
+      insertMediaAsset({
+        id,
+        session_key: sessionKey,
+        type: "image",
+        file,
+        url: `/api/media/chat-images/${sessionKey}/${file}`,
+        mime_type: mimeType,
+        size_bytes: buf.length,
+        source: "upload",
+        prompt: null,
+        revised_prompt: null,
+        model: null,
+        provider: null,
+        image_size: null,
+        style: null,
+        seed: null,
+        duration_ms: null,
+        duration_secs: null,
+        cover_url: null,
+        message_text: (params.messageText ?? "").slice(0, 100),
+        created_at: entry.createdAt,
+        expires_at: new Date(Date.now() + DEFAULT_RETENTION_DAYS * 86400000).toISOString(),
+      });
+    } catch {
+      // Non-fatal: SQLite write failure should not block image save
+    }
+
     return entry;
   } catch {
     // Non-fatal: image persistence is best-effort
@@ -205,6 +235,35 @@ export async function saveGeneratedImage(params: {
       await writeManifest(sessionKey, manifest);
     }
 
+    // [CN-FEAT:media-sqlite] Dual-write: persist metadata to SQLite for fast querying
+    try {
+      insertMediaAsset({
+        id,
+        session_key: sessionKey,
+        type: "image",
+        file,
+        url: `/api/media/chat-images/${sessionKey}/${file}`,
+        mime_type: mimeType,
+        size_bytes: buf.length,
+        source: "generated",
+        prompt: meta.prompt,
+        revised_prompt: meta.revisedPrompt ?? null,
+        model: meta.model,
+        provider: meta.provider,
+        image_size: meta.size,
+        style: meta.style ?? null,
+        seed: meta.seed ?? null,
+        duration_ms: meta.durationMs ?? null,
+        duration_secs: null,
+        cover_url: null,
+        message_text: meta.prompt.slice(0, 100),
+        created_at: entry.createdAt,
+        expires_at: new Date(Date.now() + GENERATED_RETENTION_DAYS * 86400000).toISOString(),
+      });
+    } catch {
+      // Non-fatal: SQLite write failure should not block image save
+    }
+
     return entry;
   } catch {
     return null;
@@ -239,10 +298,47 @@ export function resolveChatImagePath(sessionKey: string, imageId: string): strin
 
 /**
  * Load all image entries for a session (metadata only, no file content).
+ * Prefers SQLite; falls back to manifest for backward compatibility.
  */
 export async function loadChatImages(sessionKey: string): Promise<ChatImageEntry[]> {
+  // [CN-FEAT:media-sqlite] Try SQLite first
+  try {
+    const rows = queryBySession(sessionKey).filter((r) => r.type === "image");
+    if (rows.length > 0) {
+      return rows.map(sqliteRowToImageEntry);
+    }
+  } catch {
+    // SQLite unavailable — fall through to manifest
+  }
   const manifest = await readManifest(sessionKey);
   return manifest.images;
+}
+
+/** Convert a SQLite MediaAssetRow to a ChatImageEntry. */
+function sqliteRowToImageEntry(row: MediaAssetRow): ChatImageEntry {
+  const entry: ChatImageEntry = {
+    id: row.id,
+    file: row.file,
+    mimeType: row.mime_type ?? "image/png",
+    sizeBytes: row.size_bytes ?? 0,
+    timestamp: new Date(row.created_at).getTime(),
+    messageText: row.message_text ?? "",
+    createdAt: row.created_at,
+    source: row.source as "upload" | "generated" | undefined,
+  };
+  if (row.source === "generated" && row.model) {
+    entry.generationMeta = {
+      prompt: row.prompt ?? "",
+      revisedPrompt: row.revised_prompt ?? undefined,
+      model: row.model,
+      provider: row.provider ?? "",
+      size: row.image_size ?? "",
+      style: row.style ?? undefined,
+      seed: row.seed ?? undefined,
+      durationMs: row.duration_ms ?? undefined,
+    };
+  }
+  return entry;
 }
 
 /**

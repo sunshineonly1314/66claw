@@ -81,6 +81,8 @@ export type AgentBlueprint = {
   inferredCapabilities?: InferredCapabilities;
   /** Routing keywords for fast-path keyword matching in agent-team */
   routingKeywords?: string[];
+  /** Human-readable ability descriptions for UI preview cards */
+  abilities?: string[];
 };
 
 export type AgentToolRecommendation = {
@@ -125,6 +127,12 @@ export type OrchestrationPlan = {
   usageGuide?: string;
   /** Policy when a single agent fails during deploy: "continue" keeps going, "abort" stops the sequence */
   onAgentFail?: "continue" | "abort";
+  /** Scene verification result from scene-verifier */
+  verification?: {
+    overallPass: boolean;
+    score: number;
+    report: string;
+  };
 };
 
 // ── Orchestration State (runtime tracking) ───────────────────────────────
@@ -227,7 +235,8 @@ export type OrchestrateAction =
   | "guided_refine"
   | "guided_deploy"
   // Validation
-  | "validate";
+  | "validate"
+  | "scene_verify";
 
 // ── Deploy Result (internal) ─────────────────────────────────────────────
 

@@ -79,7 +79,11 @@ const DEFAULT_WATCH_DEBOUNCE_MS = 1500;
 const DEFAULT_SESSION_DELTA_BYTES = 100_000;
 const DEFAULT_SESSION_DELTA_MESSAGES = 50;
 const DEFAULT_MAX_RESULTS = 6;
-const DEFAULT_MIN_SCORE = 0.35;
+// [CN-PATCH:memory-fix] Raised from 0.35 to 0.45.
+// 0.35 was too permissive — cosine similarity of 0.35 means only ~35% semantic overlap,
+// allowing noisy/tangentially related results to pollute agent context.
+// 0.45 keeps genuinely relevant results while filtering out low-confidence matches.
+const DEFAULT_MIN_SCORE = 0.45;
 const DEFAULT_HYBRID_ENABLED = true;
 const DEFAULT_HYBRID_VECTOR_WEIGHT = 0.7;
 const DEFAULT_HYBRID_TEXT_WEIGHT = 0.3;
@@ -143,7 +147,10 @@ function mergeConfig(
     provider === "voyage" ||
     provider === "auto";
   const batch = {
-    enabled: overrideRemote?.batch?.enabled ?? defaultRemote?.batch?.enabled ?? (provider === "openai" || provider === "gemini" || provider === "voyage"),
+    enabled:
+      overrideRemote?.batch?.enabled ??
+      defaultRemote?.batch?.enabled ??
+      (provider === "openai" || provider === "gemini" || provider === "voyage"),
     wait: overrideRemote?.batch?.wait ?? defaultRemote?.batch?.wait ?? true,
     concurrency: Math.max(
       1,

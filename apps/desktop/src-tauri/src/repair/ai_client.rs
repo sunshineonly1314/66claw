@@ -124,6 +124,9 @@ pub async fn stream_chat(
         ApiType::AnthropicMessages => {
             stream_anthropic(app, provider, &full_message).await
         }
+        ApiType::GoogleGemini => {
+            stream_google_gemini(app, provider, &full_message).await
+        }
     }
 }
 
@@ -208,7 +211,7 @@ async fn stream_openai_compat(
                 let _ = app.emit("repair-ai-token", TokenPayload {
                     text: String::new(), done: true, error: Some(msg),
                 });
-                break;
+                return Ok(()); // already emitted done:true with error
             }
         };
 
@@ -248,7 +251,7 @@ async fn stream_openai_compat(
         }
     }
 
-    // Final done signal
+    // Final done signal (stream ended without [DONE] marker)
     let _ = app.emit("repair-ai-token", TokenPayload {
         text: String::new(), done: true, error: None,
     });
@@ -332,7 +335,7 @@ async fn stream_anthropic(
                 let _ = app.emit("repair-ai-token", TokenPayload {
                     text: String::new(), done: true, error: Some(msg),
                 });
-                break;
+                return Ok(()); // already emitted done:true with error
             }
         };
 
@@ -373,6 +376,171 @@ async fn stream_anthropic(
         }
     }
 
+    // Final done signal (stream ended without message_stop)
+    let _ = app.emit("repair-ai-token", TokenPayload {
+        text: String::new(), done: true, error: None,
+    });
+
+    Ok(())
+}
+
+// ── Google Gemini types ───────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct GeminiRequest {
+    contents: Vec<GeminiContent>,
+    #[serde(rename = "systemInstruction")]
+    system_instruction: GeminiContent,
+}
+
+#[derive(Serialize)]
+struct GeminiContent {
+    role: String,
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Serialize)]
+struct GeminiPart {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct GeminiStreamChunk {
+    candidates: Option<Vec<GeminiCandidate>>,
+}
+
+#[derive(Deserialize)]
+struct GeminiCandidate {
+    content: Option<GeminiResponseContent>,
+}
+
+#[derive(Deserialize)]
+struct GeminiResponseContent {
+    parts: Option<Vec<GeminiResponsePart>>,
+}
+
+#[derive(Deserialize)]
+struct GeminiResponsePart {
+    text: Option<String>,
+}
+
+async fn stream_google_gemini(
+    app: &AppHandle,
+    provider: &DiscoveredProvider,
+    user_message: &str,
+) -> Result<(), String> {
+    let base = provider.base_url.trim_end_matches('/');
+    let url = format!(
+        "{}/models/{}:streamGenerateContent?alt=sse",
+        base, provider.default_model
+    );
+
+    let request_body = GeminiRequest {
+        contents: vec![GeminiContent {
+            role: "user".to_string(),
+            parts: vec![GeminiPart {
+                text: user_message.to_string(),
+            }],
+        }],
+        system_instruction: GeminiContent {
+            role: "user".to_string(),
+            parts: vec![GeminiPart {
+                text: SYSTEM_PROMPT.to_string(),
+            }],
+        },
+    };
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
+    // Google Gemini uses x-goog-api-key for authentication
+    if let Ok(val) = provider.api_key.parse() {
+        headers.insert("x-goog-api-key", val);
+    }
+    for (key, value) in &provider.extra_headers {
+        if let (Ok(k), Ok(v)) = (key.parse::<reqwest::header::HeaderName>(), value.parse()) {
+            headers.insert(k, v);
+        }
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("HTTP 客户端错误: {}", e))?;
+
+    let response = client
+        .post(&url)
+        .headers(headers)
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| {
+            let msg = format!("AI 服务连接失败: {}", e);
+            let _ = app.emit("repair-ai-token", TokenPayload {
+                text: String::new(), done: true, error: Some(msg.clone()),
+            });
+            msg
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let msg = format!("AI 服务返回错误 ({}): {}", status, truncate_str(&body, 200));
+        let _ = app.emit("repair-ai-token", TokenPayload {
+            text: String::new(), done: true, error: Some(msg.clone()),
+        });
+        return Err(msg);
+    }
+
+    // Parse SSE stream (Gemini format)
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = match chunk_result {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = format!("流式读取中断: {}", e);
+                let _ = app.emit("repair-ai-token", TokenPayload {
+                    text: String::new(), done: true, error: Some(msg),
+                });
+                return Ok(()); // already emitted done:true with error
+            }
+        };
+
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(newline_pos) = buffer.find('\n') {
+            let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
+            buffer = buffer[newline_pos + 1..].to_string();
+
+            if line.is_empty() || line.starts_with(':') {
+                continue;
+            }
+
+            if let Some(data) = line.strip_prefix("data: ") {
+                if let Ok(parsed) = serde_json::from_str::<GeminiStreamChunk>(data) {
+                    if let Some(text) = parsed.candidates
+                        .and_then(|c| c.into_iter().next())
+                        .and_then(|c| c.content)
+                        .and_then(|c| c.parts)
+                        .and_then(|p| p.into_iter().next())
+                        .and_then(|p| p.text)
+                    {
+                        if !text.is_empty() {
+                            let _ = app.emit("repair-ai-token", TokenPayload {
+                                text, done: false, error: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Final done signal (stream ended normally)
     let _ = app.emit("repair-ai-token", TokenPayload {
         text: String::new(), done: true, error: None,
     });

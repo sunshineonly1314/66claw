@@ -163,6 +163,76 @@ export async function buildFileEntry(
   };
 }
 
+/**
+ * [CN-PATCH:memory-fix] Split a long line at the best available semantic boundary.
+ *
+ * Priority: sentence end (。.！!？?) > comma/semicolon (，；,;) > space/word boundary > force cut.
+ * Scans backwards from maxLen to find the best boundary within [minLen, maxLen].
+ * minLen = maxLen × 0.5 to avoid producing tiny fragments.
+ */
+function splitLongLine(line: string, maxLen: number, out: string[]): void {
+  let pos = 0;
+  const minCut = Math.max(32, Math.floor(maxLen * 0.5));
+  while (pos < line.length) {
+    const remaining = line.length - pos;
+    if (remaining <= maxLen) {
+      out.push(line.slice(pos));
+      break;
+    }
+    // Scan backwards from maxLen to find the best split point
+    let bestPos = -1;
+    let bestPriority = 0; // higher = better
+    const windowEnd = pos + maxLen;
+    const windowStart = pos + minCut;
+    for (let i = windowEnd; i >= windowStart; i -= 1) {
+      const ch = line[i - 1]; // character before split point
+      const priority = splitPriority(ch);
+      if (priority > bestPriority) {
+        bestPriority = priority;
+        bestPos = i;
+        if (priority >= 4) break; // sentence boundary is good enough, stop early
+      }
+    }
+    if (bestPos <= pos) {
+      // No boundary found — force cut at maxLen
+      bestPos = pos + maxLen;
+    }
+    out.push(line.slice(pos, bestPos));
+    pos = bestPos;
+  }
+}
+
+function splitPriority(ch: string | undefined): number {
+  if (!ch) return 0;
+  // Sentence terminators (highest priority)
+  if (ch === "。" || ch === "." || ch === "！" || ch === "!" || ch === "？" || ch === "?") return 4;
+  // Clause separators
+  if (ch === "，" || ch === "," || ch === "；" || ch === ";" || ch === "、") return 3;
+  // Parentheses / brackets close
+  if (ch === "）" || ch === ")" || ch === "】" || ch === "]" || ch === "」") return 3;
+  // Whitespace / word boundary
+  if (ch === " " || ch === "\t") return 2;
+  // CJK character boundary (each character is a word in CJK)
+  if (ch.charCodeAt(0) >= 0x4e00 && ch.charCodeAt(0) <= 0x9fff) return 1;
+  return 0;
+}
+
+/**
+ * [CN-PATCH:memory-fix] Semantic-boundary-aware markdown chunking.
+ *
+ * Respects two types of semantic boundaries:
+ * 1. Markdown headings (#, ##, ###, etc.) — always start a new chunk
+ * 2. Session turn markers ("User: " / "Assistant: ") — keep Q&A pairs atomic
+ *
+ * The key insight for personal assistant long-term memory:
+ * - A chunk should contain ONE coherent topic or ONE complete Q&A exchange
+ * - Splitting a question from its answer destroys retrieval quality
+ * - Splitting across markdown sections mixes unrelated topics in one embedding
+ *
+ * When a semantic unit exceeds maxChars, it is split at the best available
+ * boundary (paragraph break > sentence end > word boundary) rather than
+ * at an arbitrary character position.
+ */
 export function chunkMarkdown(
   content: string,
   chunking: { tokens: number; overlap: number },
@@ -175,7 +245,14 @@ export function chunkMarkdown(
   const overlapChars = Math.max(0, chunking.overlap * 4);
   const chunks: MemoryChunk[] = [];
 
-  let current: Array<{ line: string; lineNo: number }> = [];
+  // --- Detect semantic boundaries ---
+  // A "boundary" is a line index where a new semantic unit starts.
+  // We always flush the current chunk at a boundary.
+  const HEADING_RE = /^#{1,6}\s/;
+  const SESSION_TURN_RE = /^(User|Assistant):\s/;
+
+  type LineEntry = { line: string; lineNo: number };
+  let current: LineEntry[] = [];
   let currentChars = 0;
 
   const flush = () => {
@@ -205,7 +282,7 @@ export function chunkMarkdown(
       return;
     }
     let acc = 0;
-    const kept: Array<{ line: string; lineNo: number }> = [];
+    const kept: LineEntry[] = [];
     for (let i = current.length - 1; i >= 0; i -= 1) {
       const entry = current[i];
       if (!entry) {
@@ -224,13 +301,44 @@ export function chunkMarkdown(
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
     const lineNo = i + 1;
+
+    // Check if this line is a semantic boundary
+    const isBoundary = HEADING_RE.test(line) || SESSION_TURN_RE.test(line);
+
+    // For session turns: "User:" starts a new Q&A pair, but "Assistant:" is
+    // part of the same pair. Only flush on "User:" (which starts a new exchange),
+    // unless the current chunk is already large.
+    const isNewExchange = /^User:\s/.test(line);
+    const isAssistantContinuation = /^Assistant:\s/.test(line);
+
+    // Flush on heading boundary (always) or new User turn (new Q&A pair)
+    if (isBoundary && current.length > 0) {
+      if (HEADING_RE.test(line) || isNewExchange) {
+        flush();
+        // [CN-PATCH:memory-fix] Heading 和 User: 是硬语义边界。
+        // 跨 heading 的 overlap 会把上一个话题的文本混入新话题的 embedding，
+        // 直接破坏语义分割的设计初衷。硬边界处不 carry overlap。
+        current = [];
+        currentChars = 0;
+      } else if (isAssistantContinuation && currentChars > maxChars * 0.8) {
+        // Assistant turn and chunk already 80%+ full: flush to avoid overflow.
+        // Assistant 续接不是硬边界，可以 carry overlap 保持上下文连贯。
+        flush();
+        carryOverlap();
+      }
+      // Otherwise (Assistant turn with room): keep in same chunk as User question
+    }
+
     const segments: string[] = [];
     if (line.length === 0) {
       segments.push("");
+    } else if (line.length <= maxChars) {
+      segments.push(line);
     } else {
-      for (let start = 0; start < line.length; start += maxChars) {
-        segments.push(line.slice(start, start + maxChars));
-      }
+      // [CN-PATCH:memory-fix] Smart boundary splitting for long lines.
+      // 按语义边界分割而非纯字符截断：句子结束 > 段落断点 > 词边界 > 强制截断。
+      // 避免在词中间或 CJK 语义单元中间断开。
+      splitLongLine(line, maxChars, segments);
     }
     for (const segment of segments) {
       const lineSize = segment.length + 1;

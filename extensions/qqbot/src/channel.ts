@@ -17,9 +17,10 @@ import {
   type ClawdbotConfig,
 } from "openclawcn/plugin-sdk";
 
-import { sendQqbotMessage, probeQqbotConnection } from "./api.js";
+import { sendQqbotMessage, probeQqbotConnection, clearTokenCache } from "./api.js";
 import { createQqbotWebhookHandler } from "./webhook.js";
 import { QqbotConfigSchema } from "./config-schema.js";
+import { getQqbotRuntime } from "./runtime.js";
 import type {
   QqbotChannelConfig,
   ResolvedQqbotAccount,
@@ -32,6 +33,24 @@ import type {
 
 const QQBOT_CHANNEL_ID = "qqbot";
 const DEFAULT_WEBHOOK_PATH = "/qqbot/webhook";
+
+// 消息去重缓存 (防止 QQ 平台重试导致重复处理)
+const recentMsgIds = new Map<string, number>();
+const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 分钟
+const DEDUP_MAX_SIZE = 2000;
+
+function isDuplicateMessage(msgId: string): boolean {
+  const now = Date.now();
+  // 清理过期条目
+  if (recentMsgIds.size > DEDUP_MAX_SIZE) {
+    for (const [id, ts] of recentMsgIds) {
+      if (now - ts > DEDUP_TTL_MS) recentMsgIds.delete(id);
+    }
+  }
+  if (recentMsgIds.has(msgId)) return true;
+  recentMsgIds.set(msgId, now);
+  return false;
+}
 
 // ============================================================================
 // 元数据 (Metadata)
@@ -114,7 +133,7 @@ export const qqbotPlugin: ChannelPlugin<ResolvedQqbotAccount> = {
   },
   capabilities: {
     chatTypes: ["direct", "group"],
-    media: true,
+    media: false, // QQ 机器人媒体消息需要先上传到腾讯服务器，暂未实现
   },
   reload: { configPrefixes: ["channels.qqbot"] },
   configSchema: buildChannelConfigSchema(QqbotConfigSchema),
@@ -162,15 +181,27 @@ export const qqbotPlugin: ChannelPlugin<ResolvedQqbotAccount> = {
   security: {
     collectWarnings: ({ cfg }) => {
       const channelConfig = cfg.channels?.qqbot as QqbotChannelConfig | undefined;
+      if (!channelConfig || channelConfig.enabled === false) return [];
+
       const warnings: string[] = [];
 
-      if (channelConfig?.enabled !== false) {
-        if (channelConfig?.dmPolicy === "open") {
-          warnings.push("QQ Bot DM policy is set to 'open' - anyone can message the bot");
-        }
-        if (channelConfig?.groupPolicy === "open") {
-          warnings.push("QQ Bot group policy is set to 'open' - bot responds to all groups");
-        }
+      // 签名验证缺失警告
+      const publicKey = channelConfig.app?.publicKey?.trim();
+      if (!publicKey) {
+        warnings.push(
+          `- QQ 机器人: 未配置 publicKey，Webhook 回调将跳过 Ed25519 签名验证。建议在 QQ 开放平台获取公钥并设置 channels.qqbot.app.publicKey。`,
+        );
+      }
+
+      if (channelConfig.dmPolicy === "open") {
+        warnings.push(
+          `- QQ 机器人: dmPolicy="open" 允许任何用户发送消息。建议设置 channels.qqbot.dmPolicy="allowlist" + channels.qqbot.allowFrom 来限制。`,
+        );
+      }
+      if (channelConfig.groupPolicy === "open") {
+        warnings.push(
+          `- QQ 机器人群聊: groupPolicy="open" 允许任何群触发。建议设置 channels.qqbot.groupPolicy="allowlist" + channels.qqbot.groups 来限制。`,
+        );
       }
 
       return warnings;
@@ -293,18 +324,132 @@ export const qqbotPlugin: ChannelPlugin<ResolvedQqbotAccount> = {
       // 设置运行状态 - use setStatus instead of runtime.running etc.
       setStatus({ ...getStatus(), accountId, running: true, lastStartAt: Date.now(), lastError: null });
 
+      const runtime = getQqbotRuntime();
+
       // 创建 Webhook 处理器
       const webhookPath = channelConfig.webhookPath || DEFAULT_WEBHOOK_PATH;
       const webhookHandler = createQqbotWebhookHandler({
         config: channelConfig,
-        onMessage: async (_event: QqbotMessageEvent, _messageType: "direct" | "group" | "channel") => {
-          // Update lastInboundAt via setStatus
+        onMessage: async (event: QqbotMessageEvent, messageType: "direct" | "group" | "channel") => {
+          // 更新最后收到消息时间
           setStatus({ ...getStatus(), lastInboundAt: Date.now() });
 
-          // Note: full inbound message dispatch should be handled via the plugin runtime
-          // message ingestion pipeline, not directly here. This webhook handler
-          // receives the raw QQ event and the gateway context routes it through
-          // the standard inbound path.
+          // 消息去重
+          if (isDuplicateMessage(event.id)) {
+            logger.info(`[qqbot] 跳过重复消息: ${event.id}`);
+            return;
+          }
+
+          // 过滤机器人自身消息 (防止无限循环)
+          if (event.author?.bot) {
+            logger.info(`[qqbot] 跳过机器人自身消息: ${event.id}`);
+            return;
+          }
+
+          const content = (event.content ?? "").trim();
+          if (!content) {
+            logger.info(`[qqbot] 消息内容为空，跳过: ${event.id}`);
+            return;
+          }
+
+          // ========================================
+          // 访问策略检查
+          // ========================================
+          const dmPolicy = channelConfig.dmPolicy ?? "pairing";
+          const groupPolicy = channelConfig.groupPolicy ?? "allowlist";
+          const allowFrom = channelConfig.allowFrom ?? [];
+
+          if (messageType === "direct") {
+            // DM 策略检查
+            if (dmPolicy === "allowlist") {
+              const senderId = event.author?.id ?? "";
+              const isAllowed = allowFrom.includes("*") || allowFrom.includes(senderId);
+              if (!isAllowed) {
+                logger.info(`[qqbot] 用户 ${senderId} 不在 DM 白名单中，跳过`);
+                return;
+              }
+            }
+          } else if (messageType === "group") {
+            // 群聊策略检查
+            const groupId = event.group_openid ?? event.group_id ?? "";
+            if (groupPolicy === "allowlist" && groupId) {
+              const groupConfig = channelConfig.groups?.[groupId];
+              const groupAllowFrom = groupConfig?.allowFrom ?? [];
+              // 群级别发送者白名单
+              if (groupAllowFrom.length > 0) {
+                const senderId = event.author?.id ?? "";
+                const isAllowed = groupAllowFrom.includes("*") || groupAllowFrom.includes(senderId);
+                if (!isAllowed) {
+                  logger.info(`[qqbot] 用户 ${senderId} 不在群 ${groupId} 白名单中，跳过`);
+                  return;
+                }
+              }
+            }
+          }
+
+          // ========================================
+          // 构建入站消息上下文并分发
+          // ========================================
+          const senderId = event.author?.id ?? "unknown";
+          const senderName = event.author?.username ?? senderId;
+          const chatType = messageType === "direct" ? "direct" as const : "group" as const;
+
+          // 构建回复目标
+          let replyTarget: string;
+          if (messageType === "group") {
+            const groupId = event.group_openid ?? event.group_id ?? "";
+            if (!groupId) {
+              logger.warn(`[qqbot] 群消息缺少 group_openid/group_id，跳过`);
+              return;
+            }
+            replyTarget = `group:${groupId}`;
+          } else if (messageType === "channel") {
+            const channelId = event.channel_id ?? "";
+            if (!channelId) {
+              logger.warn(`[qqbot] 频道消息缺少 channel_id，跳过`);
+              return;
+            }
+            replyTarget = `channel:${channelId}`;
+          } else {
+            replyTarget = `c2c:${senderId}`;
+          }
+
+          const inboundCtx = {
+            Channel: QQBOT_CHANNEL_ID,
+            AccountId: accountId,
+            MessageId: event.id,
+            From: replyTarget,
+            SenderId: senderId,
+            SenderName: senderName,
+            Body: content,
+            RawBody: content,
+            ChatType: chatType,
+            ChatId: event.group_openid ?? event.group_id ?? event.channel_id ?? undefined,
+            To: replyTarget,
+            Timestamp: event.timestamp ? new Date(event.timestamp).getTime() : Date.now(),
+          };
+
+          try {
+            await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+              ctx: inboundCtx,
+              cfg,
+              dispatcherOptions: {
+                deliver: async (payload) => {
+                  const text = payload.text ?? "";
+                  if (text) {
+                    await sendQqbotMessage(channelConfig, replyTarget, text, event.id);
+                    logger.info(`[qqbot] 已回复消息到 ${replyTarget}`);
+                  }
+                },
+                onError: (err) => {
+                  logger.error(`[qqbot] 回复错误: ${err}`);
+                },
+              },
+              replyOptions: {},
+            });
+          } catch (err) {
+            logger.error(`[qqbot] 处理消息失败: ${err}`);
+          }
         },
         logger,
       });

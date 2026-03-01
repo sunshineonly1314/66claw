@@ -42,6 +42,25 @@ import { isVoiceTierProgressEvent } from "./controllers/voice-tier.ts";
 import { isImageGenTierProgressEvent } from "./controllers/imagegen-tier.ts";
 import { isLocalEngineProgressEvent } from "./controllers/local-engine.ts";
 
+// [CN-FIX:assets-refresh] Inline helper to reload sidebar assets after media
+// generation completes. Avoids circular dependency with app-render.ts where the
+// primary loadSidebarAssets lives.
+async function refreshSidebarAssetsInline(app: OpenClawCNApp) {
+  if (!app.client || !app.connected || !app.sessionKey) return;
+  if (app.convSidebarAssetsLoading) return;
+  // Skip if cache is still valid (another caller already refreshed)
+  if (app.convSidebarAssetsSessionKey === app.sessionKey) return;
+  try {
+    const res = (await app.client.request("media.list", {
+      sessionKey: app.sessionKey,
+    })) as { assets?: Array<{ id: string; type: "image" | "video"; url: string; name: string; size?: number; createdAt: number; sessionKey?: string }> } | undefined;
+    app.convSidebarAssets = res?.assets ?? [];
+    app.convSidebarAssetsSessionKey = app.sessionKey;
+  } catch {
+    // Silently ignore — non-critical UI refresh
+  }
+}
+
 type GatewayHost = {
   settings: UiSettings;
   password: string;
@@ -336,9 +355,12 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         shouldReloadHistoryForFinalEvent(evt.payload as import("./controllers/chat.ts").ChatEventPayload)) {
       setTimeout(() => {
         void loadChatHistory(host as unknown as OpenClawCNApp);
-        // Refresh sidebar assets after tool use (image/video gen may have produced new files)
+        // [CN-FIX:assets-refresh] Invalidate sidebar assets cache AND proactively
+        // reload so newly generated images/videos appear in the "资源" tab without
+        // requiring the user to manually click the tab again.
         const app = host as unknown as OpenClawCNApp;
         app.convSidebarAssetsSessionKey = "";
+        void refreshSidebarAssetsInline(app);
       }, 600);
     }
     // [CN-PATCH:voice] Auto-play TTS audio on chat final (one-shot fallback)

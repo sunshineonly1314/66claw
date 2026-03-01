@@ -45,6 +45,8 @@ export type MemoryProviderStatus = {
     extensionPath?: string;
     loadError?: string;
     dims?: number;
+    /** [CN-PATCH:memory-fix] True when brute-force fallback had to truncate chunks (recall may be incomplete). */
+    bruteForceTruncated?: boolean;
   };
   batch?: {
     enabled: boolean;

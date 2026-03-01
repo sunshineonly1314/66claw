@@ -645,6 +645,28 @@ function semverLessThan(a: string, b: string): boolean {
   return pa[2] < pb[2];
 }
 
+/**
+ * Sanitize an env object from client input.
+ * Ensures all values are strings (coerces non-strings, drops non-primitives).
+ */
+function sanitizeEnvObject(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof key !== "string") continue;
+    // Block prototype pollution keys
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
+    // Only allow primitive values, coerce to string
+    if (typeof value === "string") {
+      result[key] = value;
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      result[key] = String(value);
+    }
+    // Skip objects, arrays, null, undefined — potential prototype pollution vectors
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 /** Wrap a handler with top-level error boundary to prevent gateway crashes. */
 function safeHandler(handler: GatewayRequestHandler): GatewayRequestHandler {
   return async (opts) => {
@@ -919,10 +941,7 @@ const mcpServersAddHandler: GatewayRequestHandler = safeHandler(async ({ params,
       args: Array.isArray(params.args)
         ? params.args.filter((a): a is string => typeof a === "string")
         : undefined,
-      env:
-        params.env && typeof params.env === "object"
-          ? (params.env as Record<string, string>)
-          : undefined,
+      env: sanitizeEnvObject(params.env),
       transport,
       url,
       headers:
@@ -998,10 +1017,7 @@ const mcpServersUpdateEnvHandler: GatewayRequestHandler = safeHandler(
       respond(false, undefined, mcpError("id required"));
       return;
     }
-    const env =
-      params.env && typeof params.env === "object" && !Array.isArray(params.env)
-        ? (params.env as Record<string, string>)
-        : undefined;
+    const env = sanitizeEnvObject(params.env);
     if (!env || Object.keys(env).length === 0) {
       respond(false, undefined, mcpError("env required (non-empty object)"));
       return;
@@ -1389,10 +1405,7 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
       const rawVersion = String(item.version ?? "");
       const version = rawVersion && rawVersion !== "0.0.0" ? rawVersion : "";
       const sseUrl = overrideSseUrl || realItemSseUrl;
-      const env =
-        params.env && typeof params.env === "object"
-          ? (params.env as Record<string, string>)
-          : undefined;
+      const env = sanitizeEnvObject(params.env);
 
       // Security: validate package names and version to prevent command injection
       if (npmPackage && !isValidPackageName(npmPackage)) {
@@ -1460,11 +1473,24 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
         };
 
         await manager.addServer(serverConfig);
-        await new Promise((r) => setTimeout(r, 3000));
-        const postStatus = manager.getStatus();
-        const serverStatus = postStatus.servers.find((s) => s.config.id === serverId);
 
-        if (serverStatus?.status !== "running") {
+        // FIX: Poll for server to reach running state (up to 15s for SSE)
+        // instead of fixed 3s sleep which causes false failures on slow networks
+        const pollStart = Date.now();
+        const pollTimeout = 15_000;
+        const pollInterval = 500;
+        let serverStatus: ReturnType<typeof manager.getStatus>["servers"][number] | undefined;
+
+        while (Date.now() - pollStart < pollTimeout) {
+          const postStatus = manager.getStatus();
+          serverStatus = postStatus.servers.find((s) => s.config.id === serverId);
+          if (!serverStatus) break;
+          if (serverStatus.status === "running") break;
+          if (serverStatus.status === "error" || serverStatus.status === "circuit_open") break;
+          await new Promise((r) => setTimeout(r, pollInterval));
+        }
+
+        if (!serverStatus || serverStatus.status !== "running") {
           const errorMsg = serverStatus?.error ?? "SSE 连接失败";
           try {
             await manager.removeServer(serverId);
@@ -1896,7 +1922,17 @@ const mcpMarketplaceTestConnectionHandler: GatewayRequestHandler = safeHandler(
       const state = manager.runtime.getServerState(serverId);
       const running = state?.status === "running";
       const toolCount = state?.tools.length ?? 0;
-      respond(true, { ok: running, serverId, toolCount });
+      // FIX M3: Include error message when test fails so UI can display diagnosis
+      if (running) {
+        respond(true, { ok: true, serverId, toolCount });
+      } else {
+        respond(true, {
+          ok: false,
+          serverId,
+          toolCount: 0,
+          error: state?.error ?? `Server status: ${state?.status ?? "unknown"}`,
+        });
+      }
     } catch (err) {
       respond(true, { ok: false, serverId, error: String(err) });
     }

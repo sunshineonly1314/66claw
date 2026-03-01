@@ -258,7 +258,7 @@ export function renderImageGenTierCard(props: ImageGenTierCardProps): TemplateRe
 			${tier.tier === "api-only" ? html`
 				<div style="padding: 8px 16px 12px; font-size: 13px; color: var(--fg-muted);">
 					可通过设置 DashScope / SiliconFlow 等 API Key 来使用云端生图。
-					SiliconFlow SDXL 提供免费额度。
+					SiliconFlow Kolors 提供免费额度。
 				</div>
 			` : nothing}
 		</div>

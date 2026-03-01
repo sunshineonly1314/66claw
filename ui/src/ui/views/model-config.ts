@@ -191,6 +191,7 @@ export class ModelConfigView extends LitElement {
   /** 向量库 embedding 绑定状态 */
   @state() private _embeddingBinding: {
     bound: boolean; vecModel: string | null; vecDims: number | null; vecCount: number;
+    fallenBackToPro?: boolean;
   } | null = null;
   /** 记忆提取 LLM 状态 */
   @state() private _extractionStatus: {
@@ -1677,9 +1678,10 @@ export class ModelConfigView extends LitElement {
     const h = this._host();
     switchProviderVolcTab(h, tab);
     this._sync(h);
-    // 切到语音 Tab 时加载已有凭证状态
+    // 切到语音 Tab 时加载已有凭证状态 + TTS 偏好
     if (tab === "voice") {
       this._loadVolcCredsStatus();
+      this._loadVolcTtsPrefs();
     }
   }
 
@@ -1741,6 +1743,63 @@ export class ModelConfigView extends LitElement {
         providerConfigVolcSaving: false,
         providerConfigTestResult: { success: false, message: `保存失败: ${String(err)}` },
       };
+      this.requestUpdate();
+    }
+  }
+
+  /** 加载已保存的 TTS 偏好设置 */
+  private async _loadVolcTtsPrefs() {
+    if (!this.client || this._s.providerConfigVolcTtsPrefsLoaded) return;
+    try {
+      const res = await this.client.request("voice.prefs.get", {}) as {
+        ttsVoice?: string; ttsSpeedRatio?: number; ttsPitchRatio?: number; ttsEmotion?: string;
+      };
+      this._s = {
+        ...this._s,
+        providerConfigVolcTtsPrefsLoaded: true,
+        ...(res.ttsVoice ? { providerConfigVolcTtsVoice: res.ttsVoice } : {}),
+        ...(res.ttsSpeedRatio != null ? { providerConfigVolcTtsSpeed: res.ttsSpeedRatio } : {}),
+        ...(res.ttsPitchRatio != null ? { providerConfigVolcTtsPitch: res.ttsPitchRatio } : {}),
+        ...(res.ttsEmotion ? { providerConfigVolcTtsEmotion: res.ttsEmotion } : {}),
+      };
+      this.requestUpdate();
+    } catch { /* ignore */ }
+  }
+
+  /** TTS 音色切换 */
+  private _onVolcTtsVoiceChange(voiceId: string) {
+    this._s = { ...this._s, providerConfigVolcTtsVoice: voiceId, providerConfigVolcTtsEmotion: "happy" };
+    this.requestUpdate();
+  }
+
+  /** TTS 文本字段变更 */
+  private _onVolcTtsFieldChange(field: string, value: string) {
+    this._s = { ...this._s, [field]: value };
+    this.requestUpdate();
+  }
+
+  /** TTS 数值字段变更 (slider) */
+  private _onVolcTtsNumChange(field: string, value: string) {
+    this._s = { ...this._s, [field]: parseFloat(value) || 1.0 };
+    this.requestUpdate();
+  }
+
+  /** 保存 TTS 偏好设置 */
+  private async _onSaveVolcTtsPrefs() {
+    if (!this.client) return;
+    const { providerConfigVolcTtsVoice: voice, providerConfigVolcTtsSpeed: speed, providerConfigVolcTtsEmotion: emotion, providerConfigVolcTtsPitch: pitch } = this._s;
+    try {
+      await this.client.request("voice.prefs.set", {
+        ttsVoice: voice,
+        ttsSpeedRatio: speed,
+        ttsPitchRatio: pitch,
+        ttsEmotion: emotion,
+        ttsProvider: "volcengine",
+      });
+      this._s = { ...this._s, providerConfigTestResult: { success: true, message: "语音风格已保存" } };
+      this.requestUpdate();
+    } catch (err) {
+      this._s = { ...this._s, providerConfigTestResult: { success: false, message: `保存失败: ${String(err)}` } };
       this.requestUpdate();
     }
   }
@@ -2595,6 +2654,11 @@ export class ModelConfigView extends LitElement {
     return html`
       <div class="qs-panel">
         <div class="qs-scroll">
+          ${userCap.id === "embedding" && this._embeddingBinding?.fallenBackToPro ? html`
+            <div style="background:rgba(251,191,36,0.12);padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px;color:var(--warning,#fbbf24);line-height:1.5;">
+              ⚠️ 免费嵌入模型 BAAI/bge-m3 连续失败，已自动切换为收费版 <b>Pro/BAAI/bge-m3</b>。恢复后将自动切回。
+            </div>
+          ` : nothing}
           ${userCap.id === "embedding" && this._embeddingBinding?.bound ? html`
             <div style="background:rgba(251,191,36,0.1);padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px;color:var(--warning,#fbbf24);">
               向量库已绑定 <b>${this._embeddingBinding.vecModel}</b>（${this._embeddingBinding.vecDims ?? "?"}维，${this._embeddingBinding.vecCount} 条向量）。切换模型需清空重建，耗时较长。
@@ -3182,6 +3246,73 @@ export class ModelConfigView extends LitElement {
       <div class="btn-row">
         <button class="btn btn--ghost" ?disabled=${saving} @click=${() => this._onVolcTabSwitch("llm")}>返回 LLM 配置</button>
         <button class="btn btn--primary" ?disabled=${!canSave} @click=${() => this._onSaveVolcVoiceCredentials()}>${saving ? "保存中..." : "保存语音凭证"}</button>
+      </div>
+
+      ${credsStatus?.configured ? this._renderVolcTtsConfig() : nothing}
+    `;
+  }
+
+  /** 火山引擎 TTS 语音风格配置区 */
+  private _renderVolcTtsConfig() {
+    const { providerConfigVolcTtsVoice: voice, providerConfigVolcTtsSpeed: speed, providerConfigVolcTtsEmotion: emotion, providerConfigVolcTtsPitch: pitch } = this._s;
+
+    const voices = [
+      { id: "BV405_streaming", name: "甜美小源", emotions: ["happy", "sad", "angry", "sorry", "professional", "serious"] },
+      { id: "BV007_streaming", name: "亲切女声", emotions: [] },
+      { id: "BV009_streaming", name: "知性女声", emotions: ["happy", "sad", "angry", "sorry", "professional", "serious"] },
+      { id: "BV419_streaming", name: "诚诚", emotions: [] },
+      { id: "BV415_streaming", name: "童童", emotions: [] },
+      { id: "BV008_streaming", name: "亲切男声", emotions: ["happy", "sad", "angry", "sorry", "professional", "serious"] },
+      { id: "BV001_streaming", name: "通用女声", emotions: [] },
+      { id: "BV002_streaming", name: "通用男声", emotions: [] },
+    ];
+
+    const emotionLabels: Record<string, string> = {
+      "happy": "愉悦",
+      "sad": "悲伤",
+      "angry": "愤怒",
+      "sorry": "抱歉",
+      "professional": "专业",
+      "serious": "严肃",
+    };
+
+    const currentVoice = voices.find(v => v.id === voice);
+    const availableEmotions = currentVoice?.emotions ?? [];
+
+    return html`
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e0e0e0)">
+        <div style="font-weight:600;font-size:14px;margin-bottom:12px">TTS 语音风格配置</div>
+
+        <div class="form-group">
+          <label class="form-label">音色</label>
+          <select class="form-input" .value=${voice} @change=${(e: Event) => this._onVolcTtsVoiceChange((e.target as HTMLSelectElement).value)}>
+            ${voices.map(v => html`<option value=${v.id} ?selected=${v.id === voice}>${v.name}（${v.id}）</option>`)}
+          </select>
+        </div>
+
+        ${availableEmotions.length > 0 ? html`
+        <div class="form-group">
+          <label class="form-label">情感风格</label>
+          <select class="form-input" .value=${emotion} @change=${(e: Event) => this._onVolcTtsFieldChange("providerConfigVolcTtsEmotion", (e.target as HTMLSelectElement).value)}>
+            ${availableEmotions.map(em => html`<option value=${em} ?selected=${em === emotion}>${emotionLabels[em] ?? em}</option>`)}
+          </select>
+        </div>` : nothing}
+
+        <div class="form-group">
+          <label class="form-label">语速 <span style="font-weight:normal;opacity:0.7">(${speed.toFixed(1)}x)</span></label>
+          <input type="range" min="0.5" max="3.0" step="0.1" .value=${String(speed)} @input=${(e: Event) => this._onVolcTtsNumChange("providerConfigVolcTtsSpeed", (e.target as HTMLInputElement).value)} style="width:100%" />
+          <div style="display:flex;justify-content:space-between;font-size:11px;opacity:0.5"><span>慢 0.5x</span><span>正常 1.0x</span><span>快 3.0x</span></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">音调 <span style="font-weight:normal;opacity:0.7">(${pitch.toFixed(1)}x)</span></label>
+          <input type="range" min="0.5" max="2.0" step="0.1" .value=${String(pitch)} @input=${(e: Event) => this._onVolcTtsNumChange("providerConfigVolcTtsPitch", (e.target as HTMLInputElement).value)} style="width:100%" />
+          <div style="display:flex;justify-content:space-between;font-size:11px;opacity:0.5"><span>低 0.5x</span><span>正常 1.0x</span><span>高 2.0x</span></div>
+        </div>
+
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn btn--primary" @click=${() => this._onSaveVolcTtsPrefs()}>保存语音风格</button>
+        </div>
       </div>
     `;
   }

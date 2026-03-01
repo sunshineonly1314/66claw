@@ -46,6 +46,9 @@ import {
   updateAgentStatus,
 } from "./state.js";
 import { inferAgentCapabilities } from "./guided/capability-inference.js";
+import { discoverAll } from "./guided/runtime-discovery.js";
+import { verifyScene, formatVerificationReport } from "./guided/scene-verifier.js";
+import { executePlanningPipeline, formatPipelineReport } from "./guided/planning-pipeline.js";
 import { validateSoulStructure, buildSoulGenerationPrompt } from "./guided/soul-validator.js";
 import { estimateTeamDailyCost, formatCostRange } from "./guided/cost-estimator.js";
 import { generateUsageGuide } from "./guided/usage-guide.js";
@@ -65,6 +68,7 @@ const ORCHESTRATE_ACTIONS = [
   "guided_refine",
   "guided_deploy",
   "validate",
+  "scene_verify",
 ] as const;
 
 const OrchestrateToolSchema = Type.Object({
@@ -106,6 +110,7 @@ export function createOrchestrateTool(
       '  "status"           — Check deployment status. Params: planId',
       '  "rollback"         — Delete agents from a plan. Params: planId',
       '  "validate"         — Dry-run validation before deploy. Params: planId',
+      '  "scene_verify"     — Verify team completeness against requirements. Params: planId',
       "",
       "Recommended workflow: quick_deploy (for templates) or guided_propose → guided_refine → guided_deploy",
     ].join("\n"),
@@ -139,6 +144,8 @@ export function createOrchestrateTool(
           return handleRollback(params, callGateway);
         case "validate":
           return handleValidate(params, callGateway);
+        case "scene_verify":
+          return handleSceneVerify(params, ctx);
         default:
           return textResult(
             `Unknown action: "${action}". Valid actions: ${ORCHESTRATE_ACTIONS.join(", ")}`,
@@ -175,7 +182,7 @@ async function handleQuickDeploy(
   // 2. Deep clone blueprints
   const blueprints = deepCloneBlueprints(template.agents);
 
-  // 3. Infer capabilities for each agent
+  // 3. Infer capabilities for each agent (with runtime discovery)
   const defaultContext: UserContext = {
     scenario: template.category ?? "general",
     channels: [],
@@ -184,8 +191,9 @@ async function handleQuickDeploy(
     budget: "balanced",
   };
   const pluginConfig = ctx.config as Record<string, unknown> | undefined;
+  const discoveryResult = await discoverAll(ctx.workspaceDir).catch(() => undefined);
   for (const bp of blueprints) {
-    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext, pluginConfig);
+    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext, pluginConfig, discoveryResult);
   }
 
   // 4. Create plan (merged plan+confirm+deploy)
@@ -273,29 +281,39 @@ async function handleGuidedPropose(
   const validationError = validateBlueprints(blueprints);
   if (validationError) return textResult(validationError);
 
-  // 4. Infer capabilities
+  // 4. Multi-round planning pipeline (Plan→Verify→Refine→Finalize)
   const pluginConfig = ctx.config as Record<string, unknown> | undefined;
-  for (const bp of blueprints) {
-    bp.inferredCapabilities = inferAgentCapabilities(bp, userContext, pluginConfig);
-    // Also fill basic tool recommendations if empty
-    if (!bp.tools || !bp.tools.allow || bp.tools.allow.length === 0) {
-      bp.tools = recommendToolsForRole(bp.role, bp.name);
-    }
-  }
+  const guidedDiscovery = await discoverAll(ctx.workspaceDir).catch(() => undefined);
 
-  // 5. Save as draft
+  const pipelineResult = executePlanningPipeline({
+    blueprints,
+    requirement,
+    userCtx: userContext,
+    pluginConfig,
+    discovery: guidedDiscovery,
+  });
+
+  // Use refined blueprints from pipeline
+  const refinedBlueprints = pipelineResult.blueprints;
+
+  // 5. Save as draft (include verification + pipeline scores)
   const planId = generatePlanId();
   const plan: OrchestrationPlan = {
     planId,
     createdAt: new Date().toISOString(),
     requirement,
-    agents: blueprints,
+    agents: refinedBlueprints,
     teamDescription: requirement,
     mode: "guided",
     userContext,
-    estimatedTokensPerTurn: blueprints.reduce(
+    estimatedTokensPerTurn: refinedBlueprints.reduce(
       (sum, bp) => sum + estimateToolTokens(bp.tools), 0,
     ),
+    verification: {
+      overallPass: pipelineResult.verification.overallPass,
+      score: pipelineResult.verification.score,
+      report: formatVerificationReport(pipelineResult.verification),
+    },
   };
   await savePlan(plan);
 
@@ -303,8 +321,13 @@ async function handleGuidedPropose(
   state.status = "draft";
   await saveState(state);
 
-  // 6. Format proposal for user (no technical details)
-  return textResult(formatProposalForUser(plan));
+  // 6. Format proposal for user (include pipeline report + verification)
+  let proposal = formatProposalForUser(plan);
+  proposal += "\n\n---\n" + formatPipelineReport(pipelineResult);
+  if (plan.verification) {
+    proposal += "\n\n" + plan.verification.report;
+  }
+  return textResult(proposal);
 }
 
 // ── guided_refine ────────────────────────────────────────────────────────
@@ -454,6 +477,40 @@ async function handleGuidedDeploy(
     );
   }
 
+  // Re-infer capabilities (may have changed during guided_refine)
+  const pluginConfig = ctx.config as Record<string, unknown> | undefined;
+  const deployDiscovery = await discoverAll(ctx.workspaceDir).catch(() => undefined);
+  for (const bp of plan.agents) {
+    bp.inferredCapabilities = inferAgentCapabilities(
+      bp,
+      plan.userContext ?? { scenario: "general", channels: [], resources: [], volume: "medium" as const, budget: "balanced" as const },
+      pluginConfig,
+      deployDiscovery,
+    );
+  }
+
+  // Scene verification gate — block deploy if critical checks fail
+  const sceneCheck = verifyScene({
+    requirement: plan.requirement,
+    blueprints: plan.agents,
+    userCtx: plan.userContext ?? { scenario: "general", channels: [], resources: [], volume: "medium", budget: "balanced" },
+    discovery: deployDiscovery,
+  });
+  plan.verification = {
+    overallPass: sceneCheck.overallPass,
+    score: sceneCheck.score,
+    report: formatVerificationReport(sceneCheck),
+  };
+  await savePlan(plan);
+
+  if (!sceneCheck.overallPass) {
+    return textResult(
+      `部署前校验未通过，存在关键问题需要先解决：\n\n` +
+      plan.verification.report +
+      `\n\n请调用 guided_refine 修复上述问题后重试部署。`,
+    );
+  }
+
   // Transition to deploying
   state = { ...state, status: "deploying", deployStartedAt: new Date().toISOString() };
   await saveState(state);
@@ -467,6 +524,41 @@ async function handleGuidedDeploy(
   await savePlan(plan);
 
   return textResult(formatGuidedDeployResult(plan, deployResult, usageGuide));
+}
+
+// ── scene_verify ──────────────────────────────────────────────────────────
+
+async function handleSceneVerify(
+  params: Record<string, unknown>,
+  ctx: OpenClawCNPluginToolContext,
+): Promise<AgentToolResult<unknown>> {
+  const planId = String(params.planId ?? "").trim();
+  if (!planId) return textResult("需要提供 planId 参数。");
+
+  const plan = await loadPlan(planId);
+  if (!plan) return textResult(`找不到方案 "${planId}"。`);
+
+  const discovery = await discoverAll(ctx.workspaceDir).catch(() => undefined);
+  const userCtx = plan.userContext ?? {
+    scenario: "general", channels: [], resources: [], volume: "medium" as const, budget: "balanced" as const,
+  };
+
+  const result = verifyScene({
+    requirement: plan.requirement,
+    blueprints: plan.agents,
+    userCtx,
+    discovery,
+  });
+
+  // Persist verification result
+  plan.verification = {
+    overallPass: result.overallPass,
+    score: result.score,
+    report: formatVerificationReport(result),
+  };
+  await savePlan(plan);
+
+  return textResult(plan.verification.report);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1093,13 +1185,14 @@ async function executeDeploySequence(
   plan: OrchestrationPlan,
   initialState: OrchestrationState,
   callGateway: CallGatewayFn,
+  retryFailed: boolean = false,
 ): Promise<DeployResult> {
   // S1-5: Register this deploy job for interlock
   const abortCtrl = new AbortController();
   activeDeployJobs.set(plan.planId, abortCtrl);
 
   try {
-    return await executeDeploySequenceInner(plan, initialState, callGateway, abortCtrl.signal);
+    return await executeDeploySequenceInner(plan, initialState, callGateway, abortCtrl.signal, retryFailed);
   } finally {
     activeDeployJobs.delete(plan.planId);
   }
@@ -1110,21 +1203,46 @@ async function executeDeploySequenceInner(
   initialState: OrchestrationState,
   callGateway: CallGatewayFn,
   signal: AbortSignal,
+  retryFailed: boolean = false,
 ): Promise<DeployResult> {
   let state = initialState;
   const results: AgentDeployResult[] = [];
   const deployed = new Set<string>();
-  const agentQueue = [...plan.agents];
+
+  // On retry, identify already-ready agents so we can:
+  // 1. Skip them in the deploy queue
+  // 2. Preserve them during conflict cleanup
+  // 3. Include their config patches in the final merge
+  const alreadyReadyIds = new Set<string>();
+  if (retryFailed) {
+    for (const a of state.agents) {
+      if (a.status === "ready") {
+        alreadyReadyIds.add(a.agentId);
+        deployed.add(a.agentId); // pre-populate for dependency resolution
+      }
+    }
+  }
+
+  const agentQueue = retryFailed
+    ? plan.agents.filter(bp => !alreadyReadyIds.has(bp.id))
+    : [...plan.agents];
   let maxIterations = agentQueue.length * 2;
 
   // S2-1: Emit deploy start event
   emitDiagnosticEvent({ type: "orchestrator.deploy", planId: plan.planId, phase: "start", agentCount: plan.agents.length });
 
   // S1-2: Pre-deploy conflict detection — auto-remove stale orchestrator agents
+  // On retry, skip already-ready agents (they are supposed to exist)
   const conflicts = await detectConflicts(plan, callGateway);
-  if (conflicts.length > 0) {
-    emitDiagnosticEvent({ type: "orchestrator.deploy", planId: plan.planId, phase: "conflict-cleanup", agents: conflicts.join(",") });
-    for (const conflictId of conflicts) {
+  const conflictsToRemove = retryFailed
+    ? conflicts.filter(cid => {
+        const localId = cid.split("--").slice(1).join("--");
+        return !alreadyReadyIds.has(localId);
+      })
+    : conflicts;
+  if (conflictsToRemove.length > 0) {
+    emitDiagnosticEvent({ type: "orchestrator.deploy", planId: plan.planId, phase: "conflict-cleanup", agents: conflictsToRemove.join(",") });
+    for (const conflictId of conflictsToRemove) {
       try {
         await callGateway("agents.remove", { agentId: conflictId });
       } catch {
@@ -1142,6 +1260,17 @@ async function executeDeploySequenceInner(
 
   // S1-4: Collect all successful agents' config patches, apply once at the end
   const pendingConfigPatches: Array<{ bp: AgentBlueprint; deployedId: string }> = [];
+
+  // On retry, seed with already-ready agents so the final config.patch includes all
+  if (retryFailed) {
+    for (const bp of plan.agents) {
+      if (alreadyReadyIds.has(bp.id)) {
+        pendingConfigPatches.push({ bp, deployedId: deployAgentId(plan.planId, bp.id) });
+        results.push({ agentId: bp.id, name: bp.name, status: "ready" });
+      }
+    }
+  }
+
   let aborted = false;
 
   while (agentQueue.length > 0 && maxIterations-- > 0) {
@@ -1304,12 +1433,24 @@ async function executeDeploySequenceInner(
         // Find and update the result
         const idx = results.findIndex(r => r.agentId === bp.id && r.status === "ready");
         if (idx >= 0) results[idx] = { agentId: bp.id, name: bp.name, status: "failed", error: msg };
-        // Compensation: delete the half-configured agent
-        try {
-          await callGateway("agents.delete", { agentId: deployedId, deleteFiles: true });
-        } catch { /* compensation best-effort */ }
+        // Compensation: only delete agents created in THIS deploy, not already-ready ones
+        if (!alreadyReadyIds.has(bp.id)) {
+          try {
+            await callGateway("agents.delete", { agentId: deployedId, deleteFiles: true });
+          } catch { /* compensation best-effort */ }
+        }
       }
       await saveState(state);
+    }
+  }
+
+  // Ensure terminal status is set: if all agents are ready but status is still
+  // "deploying" (can happen on retry with 0 failed agents), transition to "deployed"
+  const latestState = await loadState(plan.planId);
+  if (latestState && latestState.status === "deploying") {
+    const allReady = latestState.agents.every(a => a.status === "ready");
+    if (allReady) {
+      await saveState({ ...latestState, status: "deployed", deployFinishedAt: new Date().toISOString() });
     }
   }
 
@@ -1813,8 +1954,9 @@ export async function performQuickDeploy(
     volume: "medium",
     budget: "balanced",
   };
+  const legacyDiscovery = await discoverAll(process.cwd()).catch(() => undefined);
   for (const bp of blueprints) {
-    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext);
+    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext, undefined, legacyDiscovery);
   }
 
   const planId = generatePlanId();
@@ -1922,9 +2064,10 @@ export async function performGuidedPropose(
     teamDescription = requirement;
   }
 
-  // 3. Infer capabilities
+  // 3. Infer capabilities (with runtime discovery)
+  const confirmDiscovery = await discoverAll(process.cwd()).catch(() => undefined);
   for (const bp of blueprints) {
-    bp.inferredCapabilities = inferAgentCapabilities(bp, userContext);
+    bp.inferredCapabilities = inferAgentCapabilities(bp, userContext, undefined, confirmDiscovery);
     if (!bp.tools || !bp.tools.allow || bp.tools.allow.length === 0) {
       bp.tools = recommendToolsForRole(bp.role, bp.name);
     }
@@ -2080,6 +2223,7 @@ function buildMinimalSoul(name: string, role: string): string {
 export async function performGuidedDeploy(
   callGw: CallGatewayFn,
   planId: string,
+  retryFailed: boolean = false,
 ): Promise<{ planId: string; status: string } | { error: string }> {
   const plan = await loadPlan(planId);
   if (!plan) return { error: `Plan "${planId}" not found` };
@@ -2087,8 +2231,11 @@ export async function performGuidedDeploy(
   let state = await loadState(planId);
   if (!state) return { error: "Plan state not found" };
 
-  if (state.status !== "draft" && state.status !== "confirming") {
-    return { error: `Plan status is "${state.status}", expected draft or confirming` };
+  const allowedStatuses = retryFailed
+    ? ["draft", "confirming", "failed"]
+    : ["draft", "confirming"];
+  if (!allowedStatuses.includes(state.status)) {
+    return { error: `Plan status is "${state.status}", expected ${allowedStatuses.join(" or ")}` };
   }
 
   // S2-2: Idempotency — reject if deploy already in progress
@@ -2096,14 +2243,27 @@ export async function performGuidedDeploy(
     return { planId, status: "deploying" };
   }
 
-  // Transition to deploying
-  state = { ...state, status: "deploying", deployStartedAt: new Date().toISOString() };
+  // When retrying, reset failed agents to "pending" so they get re-queued
+  if (retryFailed) {
+    state = {
+      ...state,
+      agents: state.agents.map(a =>
+        a.status === "failed"
+          ? { ...a, status: "pending" as const, error: undefined }
+          : a,
+      ),
+      error: undefined,
+    };
+  }
+
+  // Transition to deploying (preserve original start time on retry)
+  state = { ...state, status: "deploying", deployStartedAt: state.deployStartedAt ?? new Date().toISOString() };
   await saveState(state);
 
   // Fire-and-forget: deploy runs in background, UI polls via deploy.status
   void (async () => {
     try {
-      await executeDeploySequence(plan, state!, callGw);
+      await executeDeploySequence(plan, state!, callGw, retryFailed);
 
       const usageGuide = generateUsageGuide(plan);
       plan.usageGuide = usageGuide;

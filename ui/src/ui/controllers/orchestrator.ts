@@ -76,6 +76,17 @@ export async function openOrchestrator(state: OrchestratorControllerState): Prom
 
   const gw = callGateway(state);
 
+  // Check provider availability (non-blocking)
+  void (async () => {
+    try {
+      const res = await gw("config.get", { key: "agents.defaults.model" }) as { value?: string } | undefined;
+      dispatch(state, { type: "SET_HAS_PROVIDER", has: !!res?.value });
+    } catch {
+      // Can't check — assume OK
+      dispatch(state, { type: "SET_HAS_PROVIDER", has: true });
+    }
+  })();
+
   // Fetch builtin templates in background
   try {
     const templates = await fetchTemplates(gw);
@@ -291,9 +302,50 @@ export async function handleSubmitAnswers(
   });
   dispatch(state, { type: "SET_PHASE", phase: "proposing" });
 
+  // Animated proposing steps (frontend simulation)
+  dispatch(state, {
+    type: "SET_PROPOSING_STEPS",
+    steps: [
+      { label: "理解你的需求", status: "active" },
+      { label: "匹配团队能力", status: "pending" },
+      { label: "检查并优化", status: "pending" },
+    ],
+  });
+
   try {
     const gw = callGateway(state);
+
+    // Step 1 → done (simulate ~500ms)
+    await new Promise(r => setTimeout(r, 500));
+    dispatch(state, { type: "UPDATE_PROPOSING_STEP", index: 0, step: { status: "done", detail: `场景分析完成` } });
+    dispatch(state, { type: "UPDATE_PROPOSING_STEP", index: 1, step: { status: "active" } });
+
+    // Actually call the gateway
     const result = await proposeTeam(gw, _userRequirement, answers);
+
+    // Step 2 → done
+    dispatch(state, {
+      type: "UPDATE_PROPOSING_STEP",
+      index: 1,
+      step: { status: "done", detail: `为 ${result.agents.length} 个成员匹配了技能` },
+    });
+    dispatch(state, { type: "UPDATE_PROPOSING_STEP", index: 2, step: { status: "active" } });
+
+    // Step 3 → done (brief pause for visual)
+    await new Promise(r => setTimeout(r, 400));
+    dispatch(state, {
+      type: "UPDATE_PROPOSING_STEP",
+      index: 2,
+      step: {
+        status: "done",
+        detail: result.coverageScore != null
+          ? `覆盖率 ${result.coverageScore}%，可行性 ${result.feasibilityScore ?? "-"}%`
+          : "优化完成",
+      },
+    });
+
+    // Brief pause to show completed steps before revealing proposal
+    await new Promise(r => setTimeout(r, 300));
 
     dispatch(state, {
       type: "SET_PROPOSAL",
@@ -303,6 +355,9 @@ export async function handleSubmitAnswers(
         teamDescription: result.teamDescription,
         agents: result.agents,
         costEstimate: result.costEstimate,
+        coverageScore: result.coverageScore,
+        feasibilityScore: result.feasibilityScore,
+        refinementSummary: result.refinementSummary,
       },
     });
     dispatch(state, {
@@ -478,6 +533,79 @@ export function handleActionClick(
       void loadCommunityTemplates(state);
       break;
 
+    case "retry-failed": {
+      // Retry all failed agents by re-triggering deploy with the same planId
+      if (state.orchestratorState?.retryingFailed) break; // guard: ignore rapid clicks
+      const planId = state.orchestratorState?.currentPlanId;
+      if (!planId) break;
+      dispatch(state, { type: "SET_RETRYING_FAILED", retrying: true });
+      void (async () => {
+        try {
+          const gw = callGateway(state);
+          await gw("orchestrator.guided_deploy", { planId, retryFailed: true });
+          await startPolling(state, planId);
+          // retryingFailed is reset by polling when it detects a terminal state
+        } catch (err) {
+          dispatch(state, { type: "SET_RETRYING_FAILED", retrying: false });
+          dispatch(state, { type: "DEPLOY_ERROR", error: String(err) });
+        }
+      })();
+      break;
+    }
+
+    case "skip-failed": {
+      // Treat current state as success (skip failed agents, keep ready ones)
+      const orch2 = state.orchestratorState;
+      if (orch2?.deployProgress) {
+        const readyAgents = orch2.deployProgress.agents.filter(a => a.status === "ready");
+        if (readyAgents.length === 0) break; // Nothing to skip to — all agents failed
+        const proposal = orch2.proposal;
+        const proposalAgents = proposal?.agents ?? [];
+        dispatch(state, {
+          type: "DEPLOY_SUCCESS",
+          data: {
+            teamDescription: proposal?.teamDescription ?? "",
+            agents: readyAgents.map(a => {
+              const proposalAgent = proposalAgents.find(pa => pa.id === a.id);
+              return {
+                id: a.id,
+                name: a.name,
+                role: proposalAgent?.role ?? "",
+                emoji: proposalAgent?.emoji,
+                modelTier: proposalAgent?.modelTier,
+              };
+            }),
+            usageGuide: "",
+          },
+        });
+        if (typeof globalThis.dispatchEvent === "function") {
+          globalThis.dispatchEvent(new CustomEvent("orch:agents-changed"));
+        }
+      }
+      break;
+    }
+
+    case "try-it-send": {
+      // Send first message to the team's first agent
+      const agentId = state.orchestratorState?.successData?.agents[0]?.id;
+      if (agentId && typeof _data === "string") {
+        closeOrchestrator(state);
+        if (typeof globalThis.dispatchEvent === "function") {
+          globalThis.dispatchEvent(
+            new CustomEvent("orch:navigate-to-agent", { detail: { agentId, message: _data } }),
+          );
+        }
+      }
+      break;
+    }
+
+    case "goto-model-config":
+      closeOrchestrator(state);
+      if (typeof globalThis.dispatchEvent === "function") {
+        globalThis.dispatchEvent(new CustomEvent("orch:navigate-to-view", { detail: { view: "model-config" } }));
+      }
+      break;
+
     case "deploy-community": {
       // Treat community template click like a user requirement — enter guided flow
       const communityId = typeof _data === "string" ? _data : undefined;
@@ -565,6 +693,7 @@ async function startPolling(
     // Guard: timeout — prevent infinite polling
     if (Date.now() - startedAt > DEPLOY_TIMEOUT_MS) {
       stopPolling();
+      dispatch(state, { type: "SET_RETRYING_FAILED", retrying: false });
       dispatch(state, { type: "DEPLOY_ERROR", error: "部署超时（超过 5 分钟未完成），请检查日志后重试" });
       return;
     }
@@ -581,6 +710,7 @@ async function startPolling(
       // Check for terminal states
       if (response.status === "deployed") {
         stopPolling();
+        dispatch(state, { type: "SET_RETRYING_FAILED", retrying: false });
 
         // Try to fetch the deploy report from the project bridge
         let report: { agents: unknown[]; summary: unknown } | undefined;
@@ -620,16 +750,25 @@ async function startPolling(
         }
       } else if (response.status === "failed") {
         stopPolling();
-        const failedAgent = response.agents.find(a => a.error);
-        dispatch(state, {
-          type: "DEPLOY_ERROR",
-          error: failedAgent?.error ?? "Deployment failed",
-        });
+        dispatch(state, { type: "SET_RETRYING_FAILED", retrying: false });
+        const hasReady = response.agents.some(a => a.status === "ready");
+        if (hasReady) {
+          // Partial failure: keep deploy progress view so retry/skip buttons stay visible
+          // SET_DEPLOY_PROGRESS already dispatched above, just stop polling
+        } else {
+          // Total failure: show error page
+          const failedAgent = response.agents.find(a => a.error);
+          dispatch(state, {
+            type: "DEPLOY_ERROR",
+            error: failedAgent?.error ?? "Deployment failed",
+          });
+        }
       }
     } catch (err) {
       // Re-check guard after async error
       if (activePollPlanId !== planId || !state.orchestratorState) return;
       stopPolling();
+      dispatch(state, { type: "SET_RETRYING_FAILED", retrying: false });
       dispatch(state, { type: "DEPLOY_ERROR", error: String(err) });
     }
   };

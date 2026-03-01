@@ -298,13 +298,62 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       "https://www.aliyun.com/daily-act/ecs/activity_selection?source=5176.29345612&userCode=xsngby7y",
     apiKeyGuide: ["免费注册阿里云，领取额度", "进入百炼控制台开通服务", "创建 API Key 并复制"],
     models: [
-      // 文字对话模型
+      // ── Qwen 3.5 系列 (多模态) ──
+      {
+        modelId: "qwen3.5-plus",
+        modelName: "Qwen3.5-Plus",
+        capabilities: ["text", "code", "image-understanding"],
+        pricing: { type: "paid", details: "旗舰多模态 · 百万上下文" },
+        contextWindow: 1000000,
+        maxTokens: 16384,
+      },
+      {
+        modelId: "qwen3.5-flash",
+        modelName: "Qwen3.5-Flash",
+        capabilities: ["text", "code", "image-understanding"],
+        pricing: { type: "paid", details: "快速多模态 · 百万上下文" },
+        contextWindow: 1000000,
+        maxTokens: 16384,
+      },
+      {
+        modelId: "qwen3.5-397b-a17b",
+        modelName: "Qwen3.5-397B-A17B",
+        capabilities: ["text", "code", "image-understanding"],
+        pricing: { type: "paid", details: "MoE 旗舰 · 397B 参数" },
+        contextWindow: 262144,
+        maxTokens: 16384,
+      },
+      {
+        modelId: "qwen3.5-122b-a10b",
+        modelName: "Qwen3.5-122B-A10B",
+        capabilities: ["text", "code", "image-understanding"],
+        pricing: { type: "paid", details: "MoE · 122B 参数" },
+        contextWindow: 262144,
+        maxTokens: 16384,
+      },
+      {
+        modelId: "qwen3.5-35b-a3b",
+        modelName: "Qwen3.5-35B-A3B",
+        capabilities: ["text", "code", "image-understanding"],
+        pricing: { type: "paid", details: "MoE 轻量 · 35B 参数" },
+        contextWindow: 262144,
+        maxTokens: 16384,
+      },
+      {
+        modelId: "qwen3.5-27b",
+        modelName: "Qwen3.5-27B",
+        capabilities: ["text", "code", "image-understanding"],
+        pricing: { type: "paid", details: "Dense 27B 参数" },
+        contextWindow: 262144,
+        maxTokens: 16384,
+      },
+      // ── Qwen 经典系列 ──
       {
         modelId: "qwen-plus",
         modelName: "Qwen-Plus",
         capabilities: ["text"],
         pricing: { type: "paid", details: "送100万Token" },
-        contextWindow: 32768,
+        contextWindow: 131072,
         maxTokens: 8192,
       },
       {
@@ -328,6 +377,88 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         capabilities: ["image-understanding"],
         pricing: { type: "paid" },
       },
+      // ── 图片生成模型 ──
+      {
+        modelId: "qwen-image-max",
+        modelName: "Qwen-Image-Max",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid", details: "旗舰画图" },
+      },
+      {
+        modelId: "qwen-image-plus-2026-01-09",
+        modelName: "Qwen-Image-Plus",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "z-image-turbo",
+        modelName: "Z-Image-Turbo",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid", details: "快速画图" },
+      },
+      // ── 图生视频模型 ──
+      {
+        modelId: "wan2.6-i2v",
+        modelName: "Wan2.6 图生视频",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid", details: "高质量图生视频" },
+      },
+      {
+        modelId: "wan2.6-i2v-flash",
+        modelName: "Wan2.6 图生视频 Flash",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid", details: "快速图生视频" },
+      },
+      // ── 语音合成 (TTS) ──
+      {
+        modelId: "qwen3-tts-instruct-flash",
+        modelName: "Qwen3 TTS Flash",
+        capabilities: ["tts"],
+        pricing: { type: "paid", details: "快速语音合成" },
+      },
+      {
+        modelId: "qwen3-tts-instruct-flash-realtime",
+        modelName: "Qwen3 TTS Flash 流式",
+        capabilities: ["tts"],
+        pricing: { type: "paid", details: "流式语音合成" },
+      },
+      {
+        modelId: "qwen3-tts-vd-realtime-2026-01-15",
+        modelName: "Qwen3 TTS-VD 流式",
+        capabilities: ["tts"],
+        pricing: { type: "paid", details: "声音设计 · 流式" },
+      },
+      {
+        modelId: "qwen3-tts-vd-2026-01-26",
+        modelName: "Qwen3 TTS-VD",
+        capabilities: ["tts"],
+        pricing: { type: "paid", details: "声音设计" },
+      },
+      {
+        modelId: "qwen3-tts-vc-realtime-2026-01-15",
+        modelName: "Qwen3 TTS-VC 流式",
+        capabilities: ["tts"],
+        pricing: { type: "paid", details: "声音克隆 · 流式" },
+      },
+      {
+        modelId: "qwen-voice-design",
+        modelName: "Qwen Voice Design",
+        capabilities: ["tts"],
+        pricing: { type: "paid", details: "声音定制" },
+      },
+      // ── 语音识别 (ASR) ──
+      {
+        modelId: "qwen3-asr-flash",
+        modelName: "Qwen3 ASR Flash",
+        capabilities: ["audio"],
+        pricing: { type: "paid", details: "语音识别" },
+      },
+      {
+        modelId: "fun-asr-flash-8k-realtime",
+        modelName: "FunASR Flash 8K",
+        capabilities: ["audio"],
+        pricing: { type: "paid", details: "流式语音识别" },
+      },
       // Embedding 模型
       {
         modelId: "text-embedding-v3",
@@ -344,7 +475,7 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
     name: "豆包",
     icon: "🔥",
     group: "cn-recommended",
-    tagline: "字节出品 · 响应极快 · 性价比高 · 支持语音",
+    tagline: "字节出品 · 响应极快 · 支持画图/视频/语音",
     apiKeyUrl: "https://console.volcengine.com/ark/",
     apiKeyGuide: [
       "访问火山方舟控制台注册并登录",
@@ -415,6 +546,44 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         capabilities: ["text"],
         pricing: { type: "paid" },
       },
+      // ── Seedream 图片生成 ──
+      {
+        modelId: "doubao-seedream-5-0-260128",
+        modelName: "豆包 Seedream 5.0",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid", details: "最新旗舰画图" },
+      },
+      {
+        modelId: "doubao-seedream-4-5-251128",
+        modelName: "豆包 Seedream 4.5",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid", details: "高质量画图" },
+      },
+      {
+        modelId: "doubao-seedream-4-0-250828",
+        modelName: "豆包 Seedream 4.0",
+        capabilities: ["image-generation"],
+        pricing: { type: "paid" },
+      },
+      // ── Seedance 视频生成 ──
+      {
+        modelId: "doubao-seedance-1-5-pro-251215",
+        modelName: "豆包 Seedance 1.5 Pro",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid", details: "原生音视频联合生成" },
+      },
+      {
+        modelId: "doubao-seedance-1-0-pro-250528",
+        modelName: "豆包 Seedance 1.0 Pro",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid", details: "高质量 · 1080P" },
+      },
+      {
+        modelId: "doubao-seedance-1-0-pro-fast-251015",
+        modelName: "豆包 Seedance 1.0 Pro Fast",
+        capabilities: ["video-generation"],
+        pricing: { type: "paid", details: "3倍速 · 低成本" },
+      },
     ],
   },
 
@@ -476,27 +645,9 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       },
       // 图片生成模型
       {
-        modelId: "black-forest-labs/FLUX.1-schnell",
-        modelName: "FLUX.1-schnell",
-        capabilities: ["image-generation"],
-        pricing: { type: "free" },
-      },
-      {
-        modelId: "stabilityai/stable-diffusion-3-5-large",
-        modelName: "SD 3.5 Large",
-        capabilities: ["image-generation"],
-        pricing: { type: "paid" },
-      },
-      {
         modelId: "Qwen/Qwen-Image",
         modelName: "Qwen-Image (通义生图)",
         capabilities: ["image-generation"],
-        pricing: { type: "paid" },
-      },
-      {
-        modelId: "Qwen/Qwen-Image-Edit",
-        modelName: "Qwen-Image-Edit (图像编辑，需提供原图)",
-        capabilities: ["image-editing"],
         pricing: { type: "paid" },
       },
       {
@@ -504,6 +655,19 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelName: "Kolors (可图)",
         capabilities: ["image-generation"],
         pricing: { type: "free" },
+      },
+      // 图片编辑模型
+      {
+        modelId: "Qwen/Qwen-Image-Edit-2509",
+        modelName: "Qwen-Image-Edit-2509 (图像编辑)",
+        capabilities: ["image-editing"],
+        pricing: { type: "paid" },
+      },
+      {
+        modelId: "Qwen/Qwen-Image-Edit",
+        modelName: "Qwen-Image-Edit (图像编辑)",
+        capabilities: ["image-editing"],
+        pricing: { type: "paid" },
       },
       // 视频理解模型
       {
@@ -525,18 +689,19 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         capabilities: ["video-generation"],
         pricing: { type: "paid" },
       },
-      {
-        modelId: "Pro/THUDM/CogVideoX-5B",
-        modelName: "CogVideoX-5B (视频)",
-        capabilities: ["video-generation"],
-        pricing: { type: "paid" },
-      },
       // Embedding 模型 (必需!)
       {
         modelId: "BAAI/bge-m3",
-        modelName: "BGE-M3",
+        modelName: "BGE-M3 (免费)",
         capabilities: ["embedding"],
         pricing: { type: "free", details: "智能推荐必需" },
+        testEndpoint: "/embeddings",
+      },
+      {
+        modelId: "Pro/BAAI/bge-m3",
+        modelName: "BGE-M3 Pro (收费)",
+        capabilities: ["embedding"],
+        pricing: { type: "paid", details: "免费版失效时自动切换" },
         testEndpoint: "/embeddings",
       },
     ],

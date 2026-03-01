@@ -200,8 +200,14 @@ export class MCPRuntimeManager {
     return [...this.states.values()];
   }
 
-  /** Unregister a server entirely (removes state). Call stopServer first. */
+  /** Unregister a server entirely (removes state and client). Call stopServer first. */
   unregister(id: string): void {
+    // Shut down the client before removing the reference to prevent resource leaks
+    const client = this.clients.get(id);
+    if (client) {
+      void client.shutdown().catch(() => {});
+    }
+    this.clients.delete(id);
     this.states.delete(id);
     this.healthFailures.delete(id);
     this.circuitOpenAt.delete(id);

@@ -18,6 +18,16 @@ export class MCPRegistry {
       // SSE servers don't need a command, stdio servers do
       if (!entry.id) continue;
       if (entry.transport !== "sse" && !entry.command) continue;
+
+      // FIX: Enforce MCP_MAX_SERVERS even when loading from config file
+      if (this.servers.size >= MCP_MAX_SERVERS) {
+        console.warn(
+          `[MCP Registry] Config file has more than ${MCP_MAX_SERVERS} servers. ` +
+            `Ignoring "${entry.id}" and subsequent entries.`,
+        );
+        break;
+      }
+
       const config: MCPServerConfig = {
         id: entry.id,
         command: entry.command ?? "",

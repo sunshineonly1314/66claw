@@ -1,4 +1,4 @@
-export const CONFIG_BACKUP_COUNT = 5;
+export const CONFIG_BACKUP_COUNT = 3;
 
 export async function rotateConfigBackups(
   configPath: string,

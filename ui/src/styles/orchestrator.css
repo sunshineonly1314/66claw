@@ -1738,3 +1738,327 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Phase 11: UI Enhancements ──────────────────────────────────────────── */
+
+/* Provider warning */
+.orch-provider-warn {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+  border-radius: 10px;
+  background: var(--warning-bg, rgba(250, 176, 5, 0.08));
+  border: 1px solid var(--warning-border, rgba(250, 176, 5, 0.2));
+}
+.orch-provider-warn-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.orch-provider-warn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.orch-provider-warn-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg);
+}
+.orch-provider-warn-desc {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Proposing Steps (animated progress) */
+.orch-proposing-steps {
+  padding: 24px;
+  animation: orch-fade-in 0.3s ease;
+}
+.orch-proposing-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 16px;
+}
+.orch-proposing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.orch-proposing-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--bg-card, rgba(255, 255, 255, 0.03));
+  transition: background 0.3s ease, opacity 0.3s ease;
+}
+.orch-proposing-step--pending {
+  opacity: 0.45;
+}
+.orch-proposing-step--active {
+  background: var(--accent-bg, rgba(99, 102, 241, 0.08));
+  border: 1px solid var(--accent-border, rgba(99, 102, 241, 0.15));
+}
+.orch-proposing-step--done {
+  opacity: 0.85;
+}
+.orch-proposing-step-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.orch-proposing-step-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--success, #22c55e);
+}
+.orch-proposing-step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+.orch-proposing-step-body {
+  flex: 1;
+  min-width: 0;
+}
+.orch-proposing-step-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.orch-proposing-step-detail {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+/* Ability Preview Cards */
+.orch-ability-card {
+  padding-bottom: 14px !important;
+}
+.orch-ability-section {
+  padding: 0 14px;
+  margin-top: 8px;
+}
+.orch-ability-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.orch-ability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.orch-ability-item {
+  font-size: 11px;
+  color: var(--fg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-bg, rgba(99, 102, 241, 0.06));
+}
+.orch-skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.orch-skill-chip {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--fg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-card, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+/* Score Badges */
+.orch-preview-scores {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.orch-score-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--success-bg, rgba(34, 197, 94, 0.08));
+  color: var(--success, #22c55e);
+  font-weight: 500;
+}
+
+/* Supervisor Note */
+.orch-supervisor-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  margin: 8px 0;
+  border-radius: 8px;
+  background: var(--bg-card, rgba(255, 255, 255, 0.03));
+  border: 1px dashed var(--border, rgba(255, 255, 255, 0.08));
+}
+.orch-supervisor-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.orch-supervisor-body {
+  flex: 1;
+}
+.orch-supervisor-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.orch-supervisor-desc {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Info tooltip icon */
+.orch-info-tip {
+  display: inline-flex;
+  cursor: help;
+}
+.orch-info-icon {
+  font-size: 12px;
+  color: var(--muted);
+  cursor: help;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.orch-info-icon:hover {
+  opacity: 1;
+}
+
+/* Deploy: humanized errors + retry bar */
+.orch-deploy-stat {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.orch-deploy-card-error-box {
+  padding: 6px 10px;
+  margin-top: 6px;
+  border-radius: 6px;
+  background: var(--error-bg, rgba(239, 68, 68, 0.06));
+  border: 1px solid var(--error-border, rgba(239, 68, 68, 0.12));
+}
+.orch-deploy-card-error-msg {
+  font-size: 11px;
+  color: var(--error, #ef4444);
+}
+.orch-deploy-retry-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+}
+
+/* Error: enhanced layout */
+.orch-error-icon {
+  font-size: 28px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.orch-error-hints {
+  margin: 12px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.orch-error-hint {
+  font-size: 12px;
+  color: var(--muted);
+  padding-left: 12px;
+  position: relative;
+}
+.orch-error-hint::before {
+  content: "·";
+  position: absolute;
+  left: 0;
+}
+.orch-error-details {
+  margin: 8px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.orch-error-details summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--muted);
+}
+.orch-error-details code {
+  display: block;
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--bg-card, rgba(0, 0, 0, 0.2));
+  word-break: break-all;
+  font-size: 10px;
+}
+
+/* Try-it-out in success page */
+.orch-tryit {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--accent-bg, rgba(99, 102, 241, 0.06));
+  border: 1px solid var(--accent-border, rgba(99, 102, 241, 0.12));
+}
+.orch-tryit-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 8px;
+}
+.orch-tryit-input-row {
+  display: flex;
+  gap: 8px;
+}
+.orch-tryit-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: var(--bg, #1a1a2e);
+  color: var(--fg);
+  font-size: 13px;
+  outline: none;
+}
+.orch-tryit-input:focus {
+  border-color: var(--accent, #6366f1);
+}
+.orch-tryit-input::placeholder {
+  color: var(--muted);
+}
+
+@keyframes orch-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}

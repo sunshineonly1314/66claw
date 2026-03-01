@@ -90,6 +90,16 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 .loading{display:inline-block;width:14px;height:14px;border:2px solid rgba(74,108,247,0.2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px}
 
+/* All-pass summary banner */
+.all-pass-banner{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px 24px;text-align:center;background:linear-gradient(180deg,rgba(74,222,128,0.06) 0%,transparent 100%);border-bottom:1px solid rgba(74,222,128,0.15)}
+.all-pass-icon{width:72px;height:72px;border-radius:50%;background:rgba(74,222,128,0.12);border:2.5px solid var(--green);display:flex;align-items:center;justify-content:center;margin-bottom:14px;animation:pass-pop 0.5s cubic-bezier(0.34,1.56,0.64,1) both}
+.all-pass-icon svg{width:40px;height:40px;color:var(--green)}
+.all-pass-title{font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px}
+.all-pass-subtitle{font-size:12px;color:var(--text2)}
+@keyframes pass-pop{0%{transform:scale(0.3);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes pass-check{0%{stroke-dashoffset:30}100%{stroke-dashoffset:0}}
+.all-pass-icon svg path{stroke-dasharray:30;stroke-dashoffset:30;animation:pass-check 0.4s 0.3s ease-out forwards}
+
 /* Inline fix button in AI response */
 .inline-fix{display:inline-block;margin:2px 4px;padding:2px 8px;background:rgba(74,222,128,0.15);color:var(--green);border:1px solid rgba(74,222,128,0.3);border-radius:4px;cursor:pointer;font-size:11px}
 .inline-fix:hover{background:rgba(74,222,128,0.3)}
@@ -103,22 +113,138 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .tab-content.active{display:flex}
 
 /* Remote repair panel */
-.remote-panel{flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:24px;gap:20px}
-.remote-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px}
-.remote-section h3{font-size:14px;font-weight:600;margin-bottom:8px}
-.remote-section p{color:var(--text2);font-size:12px;line-height:1.6;margin-bottom:12px}
-.status-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.status-indicator{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.status-indicator.green{background:var(--green)}
-.status-indicator.red{background:var(--red)}
-.status-indicator.yellow{background:var(--yellow)}
-.status-indicator.gray{background:#555}
-.remote-log{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-family:monospace;font-size:11px;line-height:1.6;max-height:200px;overflow-y:auto;color:var(--text2)}
-.remote-log .log-info{color:var(--text2)}
-.remote-log .log-action{color:var(--accent)}
-.remote-log .log-result{color:var(--green)}
-.remote-log .log-error{color:var(--red)}
-.remote-timer{font-size:12px;color:var(--yellow);margin-top:8px}
+.remote-panel{flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:20px;gap:16px}
+
+/* 安全说明横幅 */
+.remote-safety-banner{display:flex;align-items:flex-start;gap:14px;padding:16px 20px;background:linear-gradient(135deg,rgba(74,108,247,0.08),rgba(74,222,128,0.06));border:1px solid rgba(74,108,247,0.2);border-radius:var(--radius)}
+.safety-icon{flex-shrink:0;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:rgba(74,222,128,0.12);border-radius:50%;color:var(--green)}
+.safety-icon svg{width:20px;height:20px}
+.safety-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+.safety-desc{font-size:12px;color:var(--text2);line-height:1.6}
+
+/* 步骤指示器 */
+.step-indicator{display:flex;align-items:center;justify-content:center;padding:16px 0 4px;gap:0}
+.step-dot{width:32px;height:32px;border-radius:50%;background:var(--bg3);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;transition:all 0.4s ease;position:relative}
+.step-dot.active{border-color:var(--accent);background:rgba(74,108,247,0.15)}
+.step-dot.done{border-color:var(--green);background:rgba(74,222,128,0.15)}
+.step-dot.done .step-num{display:none}
+.step-dot.done::after{content:'\2713';color:var(--green);font-size:14px;font-weight:bold}
+.step-num{font-size:12px;font-weight:600;color:var(--text2);transition:color 0.3s}
+.step-dot.active .step-num{color:var(--accent)}
+.step-line{width:60px;height:2px;background:var(--border);transition:background 0.4s ease}
+.step-line.done{background:var(--green)}
+
+/* 步骤卡片 */
+.step-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:all 0.4s ease;opacity:1;pointer-events:auto}
+.step-card.active{border-color:rgba(74,108,247,0.3);box-shadow:0 0 0 1px rgba(74,108,247,0.1)}
+.step-card.done{opacity:0.7;border-color:rgba(74,222,128,0.2)}
+.step-card-header{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,0.04)}
+.step-card-icon{width:40px;height:40px;border-radius:10px;background:rgba(74,108,247,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--accent)}
+.step-card-icon svg{width:20px;height:20px}
+.step-card.done .step-card-icon{background:rgba(74,222,128,0.1);color:var(--green)}
+.step-card-title{flex:1}
+.step-card-title h3{font-size:14px;font-weight:600;margin:0 0 2px}
+.step-subtitle{font-size:12px;color:var(--text2);margin:0;line-height:1.4}
+.step-card-status{flex-shrink:0}
+.step-card-body{padding:14px 20px}
+.step-card-actions{display:flex;gap:8px;margin-top:10px;align-items:center}
+
+/* 状态药丸 */
+.status-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;background:var(--bg3);border-radius:20px;font-size:12px}
+.status-pill-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.status-pill-dot.green{background:var(--green)}
+.status-pill-dot.red{background:var(--red)}
+.status-pill-dot.yellow{background:var(--yellow)}
+.status-pill-dot.gray{background:#555}
+
+/* Ghost按钮 */
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text2)}
+.btn-ghost:hover{background:rgba(255,255,255,0.05);color:var(--text)}
+
+/* 步骤2 textarea */
+.step-card-body textarea#remote-desc{width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:14px;font-size:13px;resize:vertical;min-height:140px;max-height:300px;font-family:inherit;line-height:1.6;transition:border-color 0.2s}
+.step-card-body textarea#remote-desc:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,108,247,0.1)}
+.step-card-body textarea#remote-desc::placeholder{color:#555;line-height:1.6}
+.textarea-hint{font-size:11px;color:var(--text2);margin-top:6px;opacity:0.7}
+
+/* 大号连接按钮 */
+.btn-connect{display:flex;align-items:center;gap:14px;width:100%;padding:16px 24px;background:linear-gradient(135deg,#4a6cf7,#7c3aed);border:none;border-radius:12px;color:#fff;cursor:pointer;transition:all 0.3s;text-align:left}
+.btn-connect:hover:not(:disabled){background:linear-gradient(135deg,#3b5de7,#6d28d9);transform:translateY(-1px);box-shadow:0 4px 16px rgba(74,108,247,0.3)}
+.btn-connect:disabled{opacity:0.4;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-connect-icon{width:40px;height:40px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.btn-connect-icon svg{width:20px;height:20px;color:#fff}
+.btn-connect-text{font-size:15px;font-weight:600;display:block}
+.btn-connect-hint{display:block;font-size:11px;opacity:0.7;margin-top:2px}
+.connect-tip{display:flex;align-items:flex-start;gap:6px;margin-top:12px;font-size:11px;color:var(--text2);line-height:1.5}
+.connect-tip svg{flex-shrink:0;margin-top:1px;color:var(--text2)}
+
+/* 自动准备进度 */
+.auto-setup-progress{margin-top:12px;padding:12px 16px;background:var(--bg3);border-radius:var(--radius);display:flex;flex-direction:column;gap:8px}
+.setup-step-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text2)}
+.setup-step-icon{width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.setup-step-icon .loading{width:12px;height:12px;border-width:1.5px}
+.setup-step-icon.done{color:var(--green);font-weight:bold;font-size:14px}
+.setup-step-icon.fail{color:var(--red);font-weight:bold;font-size:14px}
+.setup-step-row.done .setup-step-text{color:var(--text)}
+.setup-step-row.fail .setup-step-text{color:var(--red)}
+
+@keyframes connect-pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.btn-connect.connecting{background:linear-gradient(135deg,rgba(74,108,247,0.5),rgba(124,58,237,0.5));pointer-events:none}
+.btn-connect.connecting .btn-connect-text{animation:connect-pulse 1.5s ease-in-out infinite}
+
+/* 已连接面板 */
+.connected-panel{background:var(--bg2);border:1px solid rgba(74,222,128,0.2);border-radius:12px;padding:20px}
+.connected-header{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.pulse-ring{width:40px;height:40px;border-radius:50%;background:rgba(74,222,128,0.1);display:flex;align-items:center;justify-content:center;position:relative}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,0.4)}70%{box-shadow:0 0 0 10px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+.pulse-dot{width:12px;height:12px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.connected-title{font-size:14px;font-weight:600;color:var(--green)}
+.connected-subtitle{font-size:12px;color:var(--text2);margin-top:2px}
+.connected-meta{display:flex;gap:20px;padding:12px 16px;background:var(--bg3);border-radius:var(--radius);margin-bottom:16px}
+.meta-item{display:flex;flex-direction:column;gap:2px}
+.meta-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px}
+.meta-value{font-size:13px;font-weight:500;color:var(--text)}
+.btn-disconnect{display:inline-flex;align-items:center;gap:6px;background:rgba(248,113,113,0.1);color:var(--red);border:1px solid rgba(248,113,113,0.2);padding:8px 16px;border-radius:var(--radius);font-size:12px;cursor:pointer;transition:all 0.2s}
+.btn-disconnect:hover{background:rgba(248,113,113,0.2)}
+
+/* 修复时间线 */
+.repair-timeline{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px 20px}
+.timeline-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:14px;color:var(--text)}
+.timeline-title svg{color:var(--accent)}
+.timeline-entries{display:flex;flex-direction:column;gap:0;max-height:240px;overflow-y:auto;padding-left:20px;border-left:2px solid var(--border)}
+.timeline-entry{position:relative;padding:8px 0 8px 16px;font-size:12px;line-height:1.5;color:var(--text2);animation:entry-fade 0.3s ease}
+@keyframes entry-fade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.timeline-entry::before{content:'';position:absolute;left:-6px;top:12px;width:10px;height:10px;border-radius:50%;background:var(--bg3);border:2px solid var(--border)}
+.timeline-entry.entry-info::before{border-color:var(--text2)}
+.timeline-entry.entry-action::before{border-color:var(--accent);background:rgba(74,108,247,0.2)}
+.timeline-entry.entry-result::before{border-color:var(--green);background:rgba(74,222,128,0.2)}
+.timeline-entry.entry-error::before{border-color:var(--red);background:rgba(248,113,113,0.2)}
+.timeline-entry-time{font-size:10px;color:#555;margin-right:6px}
+.timeline-entry.entry-result .timeline-entry-msg{color:var(--green)}
+.timeline-entry.entry-error .timeline-entry-msg{color:var(--red)}
+.timeline-entry.entry-action .timeline-entry-msg{color:var(--accent)}
+.timeline-detail-toggle{margin-top:10px;padding:6px 0;font-size:11px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:4px;user-select:none}
+.timeline-detail-toggle:hover{color:var(--text)}
+.timeline-detail-toggle .arrow{transition:transform 0.2s;display:inline-block;font-size:9px}
+.timeline-detail-toggle.open .arrow{transform:rotate(90deg)}
+.timeline-raw{margin-top:6px;padding:10px;background:var(--bg);border-radius:var(--radius);font-family:monospace;font-size:11px;color:var(--text2);max-height:150px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+
+/* 截图区域 */
+.screenshot-area{margin-top:8px;border:1px dashed var(--border);border-radius:var(--radius);padding:10px;transition:all 0.2s;min-height:44px}
+.screenshot-area.drag-over{border-color:var(--accent);background:rgba(74,108,247,0.06)}
+.screenshot-hint{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
+.screenshot-hint svg{flex-shrink:0;color:var(--text2)}
+.screenshot-hint:hover{color:var(--text)}
+.screenshot-hint:hover svg{color:var(--accent)}
+.screenshot-previews{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.screenshot-item{position:relative;width:120px;height:90px;border-radius:6px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);flex-shrink:0}
+.screenshot-item img{width:100%;height:100%;object-fit:cover}
+.screenshot-item .remove-btn{position:absolute;top:4px;right:4px;width:20px;height:20px;background:rgba(0,0,0,0.7);color:#fff;border:none;border-radius:50%;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.2s}
+.screenshot-item:hover .remove-btn{opacity:1}
+.screenshot-item .remove-btn:hover{background:var(--red)}
+.screenshot-count{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px}
+.screenshot-add-more{display:flex;align-items:center;justify-content:center;width:120px;height:90px;border-radius:6px;border:1px dashed var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;font-size:22px;transition:all 0.2s;flex-shrink:0}
+.screenshot-add-more:hover{border-color:var(--accent);color:var(--accent);background:rgba(74,108,247,0.05)}
 
 </style>
 </head>
@@ -205,49 +331,134 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 <div class="tab-content" id="tab-remote">
 <div class="remote-panel">
 
-  <!-- SSH Status -->
-  <div class="remote-section">
-    <h3>1. SSH 服务状态</h3>
-    <p>远程修复需要开启 SSH 服务，以便我们的修复工程师安全连接到你的电脑。</p>
-    <div class="status-row">
-      <span class="status-indicator gray" id="ssh-indicator"></span>
-      <span id="ssh-status-text">正在检查...</span>
+  <!-- 安全说明横幅 -->
+  <div class="remote-safety-banner">
+    <div class="safety-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
     </div>
-    <div id="ssh-user-info" style="font-size:11px;color:var(--text2);margin-bottom:8px"></div>
-    <button class="btn btn-primary" id="btn-enable-ssh" style="display:none">开启 SSH 服务</button>
-    <button class="btn btn-sm" id="btn-recheck-ssh">重新检查</button>
-  </div>
-
-  <!-- Problem Description -->
-  <div class="remote-section">
-    <h3>2. 描述问题</h3>
-    <p>简单描述你遇到的问题，帮助修复工程师更快定位。</p>
-    <textarea id="remote-desc" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:10px;font-size:13px;resize:none;height:80px;font-family:inherit" placeholder="例如：启动后白屏、配置丢失、无法连接模型..."></textarea>
-  </div>
-
-  <!-- Start Tunnel -->
-  <div class="remote-section">
-    <h3>3. 开始远程修复</h3>
-    <p>点击下方按钮，将自动建立安全隧道。修复工程师将通过 SSH 远程诊断和修复你的问题。</p>
-    <button class="btn-primary btn" id="btn-start-remote" style="padding:10px 28px;font-size:14px;font-weight:600">建立隧道，开始远程修复</button>
-    <button class="btn" id="btn-stop-remote" style="display:none;padding:10px 28px">关闭隧道</button>
-  </div>
-
-  <!-- Tunnel Status -->
-  <div class="remote-section" id="tunnel-status-section" style="display:none">
-    <h3>隧道状态</h3>
-    <div class="status-row">
-      <span class="status-indicator green" id="tunnel-indicator"></span>
-      <span id="tunnel-status-text">隧道活跃</span>
+    <div class="safety-text">
+      <div class="safety-title">安全远程协助</div>
+      <div class="safety-desc">技术人员仅在你授权期间可以访问你的电脑，协助完成后连接将自动断开。全程加密传输，你可以随时中断。</div>
     </div>
-    <div id="tunnel-info" style="font-size:12px;color:var(--text2);line-height:1.8"></div>
-    <div class="remote-timer" id="tunnel-timer"></div>
   </div>
 
-  <!-- Repair Log -->
-  <div class="remote-section" id="repair-log-section" style="display:none">
-    <h3>修复日志</h3>
-    <div class="remote-log" id="repair-log"></div>
+  <!-- 步骤指示器（2步） -->
+  <div class="step-indicator">
+    <div class="step-dot active" id="step-dot-1"><span class="step-num">1</span></div>
+    <div class="step-line" id="step-line-1"></div>
+    <div class="step-dot" id="step-dot-2"><span class="step-num">2</span></div>
+  </div>
+
+  <!-- 步骤 1: 描述问题 -->
+  <div class="step-card active" id="step-card-1">
+    <div class="step-card-header">
+      <div class="step-card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </div>
+      <div class="step-card-title">
+        <h3>描述你的问题</h3>
+        <p class="step-subtitle">告诉我们哪里出了问题，方便技术人员更快帮你解决</p>
+      </div>
+    </div>
+    <div class="step-card-body">
+      <textarea id="remote-desc" placeholder="请描述你遇到的问题，比如：&#10;&#10;- 打开软件后一直白屏&#10;- 配置好的模型突然不能用了&#10;- 聊天时总是报错"></textarea>
+      <div class="screenshot-area" id="screenshot-area">
+        <div class="screenshot-hint" id="screenshot-hint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span>粘贴截图 (Ctrl+V) 、拖拽图片到这里、或点击选择文件</span>
+        </div>
+        <div class="screenshot-previews" id="screenshot-previews"><!-- JS renders here --></div>
+      </div>
+      <div class="textarea-hint">写得越详细，技术人员能越快帮你解决（也可以不填，直接点下方按钮）。<strong>建议截图</strong>贴上错误信息！</div>
+    </div>
+  </div>
+
+  <!-- 步骤 2: 一键连接（SSH检查/安装全自动） -->
+  <div class="step-card active" id="step-card-2">
+    <div class="step-card-header">
+      <div class="step-card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+      </div>
+      <div class="step-card-title">
+        <h3>请求技术支持</h3>
+        <p class="step-subtitle">一键连接，全自动准备环境，无需任何手动操作</p>
+      </div>
+    </div>
+    <div class="step-card-body" id="step2-body">
+      <div class="connect-action-area" id="connect-action-area">
+        <button class="btn-connect" id="btn-start-remote">
+          <span class="btn-connect-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg></span>
+          <div>
+            <span class="btn-connect-text">连接技术支持</span>
+            <span class="btn-connect-hint">自动准备环境，通常等待 1-3 分钟</span>
+          </div>
+        </button>
+      </div>
+      <!-- 自动准备进度（点击后显示） -->
+      <div class="auto-setup-progress" id="auto-setup-progress" style="display:none">
+        <div class="setup-step-row" id="setup-step-env">
+          <span class="setup-step-icon"><span class="loading"></span></span>
+          <span class="setup-step-text">正在准备远程连接环境...</span>
+        </div>
+        <div class="setup-step-row" id="setup-step-ticket" style="display:none">
+          <span class="setup-step-icon"><span class="loading"></span></span>
+          <span class="setup-step-text">正在提交你的问题...</span>
+        </div>
+        <div class="setup-step-row" id="setup-step-tunnel" style="display:none">
+          <span class="setup-step-icon"><span class="loading"></span></span>
+          <span class="setup-step-text">正在建立安全连接...</span>
+        </div>
+      </div>
+      <div class="connect-tip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        连接后技术人员可以查看和操作你的电脑来修复问题。你可以随时点击「断开连接」中止。
+      </div>
+    </div>
+  </div>
+
+  <!-- SSH 相关隐藏元素（保持 bindEvents 兼容） -->
+  <div style="display:none"><span id="ssh-indicator"></span><span id="ssh-status-text"></span><span id="ssh-user-info"></span><button id="btn-enable-ssh"></button><button id="btn-recheck-ssh"></button></div>
+
+  <!-- 已连接面板 -->
+  <div class="connected-panel" id="connected-panel" style="display:none">
+    <div class="connected-header">
+      <div class="pulse-ring"><div class="pulse-dot"></div></div>
+      <div class="connected-info">
+        <div class="connected-title" id="connected-title">已连接，等待技术人员...</div>
+        <div class="connected-subtitle" id="connected-subtitle">技术人员收到你的请求后会尽快接入</div>
+      </div>
+    </div>
+    <div class="connected-meta">
+      <div class="meta-item">
+        <span class="meta-label">连接码</span>
+        <span class="meta-value" id="display-session-code">--</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">已连接</span>
+        <span class="meta-value" id="display-elapsed">0 分钟</span>
+      </div>
+      <div class="meta-item" id="meta-remaining" style="display:none">
+        <span class="meta-label">剩余时间</span>
+        <span class="meta-value" id="display-remaining">--</span>
+      </div>
+    </div>
+    <button class="btn btn-disconnect" id="btn-stop-remote" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+      断开连接
+    </button>
+  </div>
+
+  <!-- 修复进度时间线 -->
+  <div class="repair-timeline" id="repair-timeline" style="display:none">
+    <h3 class="timeline-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      修复进度
+    </h3>
+    <div class="timeline-entries" id="repair-log"></div>
+    <div class="timeline-detail-toggle" id="timeline-detail-toggle" style="display:none">
+      <span class="arrow">&#9654;</span> 查看技术细节
+    </div>
+    <div class="timeline-raw" id="timeline-raw" style="display:none"></div>
   </div>
 
 </div>
@@ -272,6 +483,23 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 window.__TAURI_INTERNALS__.event.listen);
     }
 
+    // ── Fetch with timeout (prevents infinite pending on network down) ──
+    function fetchWithTimeout(url, options, timeoutMs) {
+        timeoutMs = timeoutMs || 15000;
+        return new Promise(function(resolve, reject) {
+            var timer = setTimeout(function() {
+                reject(new Error('网络请求超时，请检查网络连接后重试'));
+            }, timeoutMs);
+            fetch(url, options).then(function(r) {
+                clearTimeout(timer);
+                resolve(r);
+            }).catch(function(e) {
+                clearTimeout(timer);
+                reject(e);
+            });
+        });
+    }
+
     // ── State ──────────────────────────────────────────────────
     var diagnosticResult = null;
     var doctorOutput = null;
@@ -280,6 +508,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     var chatBusy = false;
     var currentAssistantMsg = null;
     var repairInProgress = false;
+    var cachedLogs = "";
+    var screenshotImages = []; // Array of { dataUrl, file, id }
 
     // ── Init ───────────────────────────────────────────────────
     var initDone = false;
@@ -289,6 +519,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         bindEvents();
         discoverProviders();
         setupTokenListener();
+        fetchRecentLogs();
         // Auto-start full scan on open
         runFullScan();
     }
@@ -309,6 +540,47 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         $('btn-recheck-ssh').addEventListener('click', function() { checkSsh(); });
         $('btn-start-remote').addEventListener('click', function() { startRemoteRepair(); });
         $('btn-stop-remote').addEventListener('click', function() { stopRemoteRepair(); });
+        $('timeline-detail-toggle').addEventListener('click', function() { toggleTimelineDetail(); });
+        // Textarea input activates step 2
+        $('remote-desc').addEventListener('input', function() {
+            updateStepState(2);
+        });
+
+        // ── Screenshot paste / drag-drop ────────────────────────
+        var descEl = $('remote-desc');
+        var screenshotArea = $('screenshot-area');
+
+        // Ctrl+V paste image
+        descEl.addEventListener('paste', handleImagePaste);
+        screenshotArea.addEventListener('paste', handleImagePaste);
+
+        // Drag and drop
+        screenshotArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            screenshotArea.classList.add('drag-over');
+        });
+        screenshotArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            screenshotArea.classList.remove('drag-over');
+        });
+        screenshotArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            screenshotArea.classList.remove('drag-over');
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (files) {
+                for (var i = 0; i < files.length; i++) {
+                    if (files[i].type.startsWith('image/')) {
+                        addScreenshotFile(files[i]);
+                    }
+                }
+            }
+        });
+
+        // Click hint to trigger file picker
+        $('screenshot-hint').addEventListener('click', function() {
+            triggerScreenshotFilePicker();
+        });
     }
 
     // Wait for Tauri IPC to be ready
@@ -514,6 +786,23 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 '服务状态: <span style="color:' + gwColor + '">' + gwText + '</span>';
         }
 
+        // Determine if everything passed
+        var allRustPass = diagnosticResult && diagnosticResult.checks.every(function(c) { return c.status === 'Pass'; });
+        var doctorOk = doctorOutput && doctorOutput.success;
+        var doctorChecks = doctorOutput ? parseDoctorOutput(doctorOutput.message) : [];
+        var allDoctorPass = doctorChecks.length === 0 || doctorChecks.every(function(c) { return c.status === 'Pass'; });
+        var everythingPassed = allRustPass && doctorOk && allDoctorPass;
+
+        // All-pass banner
+        if (everythingPassed) {
+            var total = (diagnosticResult ? diagnosticResult.checks.length : 0) + doctorChecks.length;
+            html += '<div class="all-pass-banner">';
+            html += '<div class="all-pass-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></div>';
+            html += '<div class="all-pass-title">系统一切正常</div>';
+            html += '<div class="all-pass-subtitle">全部 ' + total + ' 项检查已通过</div>';
+            html += '</div>';
+        }
+
         // Phase 1: Rust quick checks
         if (diagnosticResult) {
             html += '<div class="section-header">快速检查</div>';
@@ -528,8 +817,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 (doctorOutput.success ? '<span style="color:var(--green)">PASS</span>' :
                  '<span style="color:var(--red)">FAIL</span>') + '</div>';
 
-            // Parse doctor output into individual check items
-            var doctorChecks = parseDoctorOutput(doctorOutput.message);
+            // Render parsed doctor check items
             for (var j = 0; j < doctorChecks.length; j++) {
                 html += renderCheckItem(doctorChecks[j]);
             }
@@ -658,15 +946,22 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         var dot = document.getElementById("status-dot");
         var hasError = result.checks.some(function(c) { return c.status === 'Fail'; });
         var hasWarn = result.checks.some(function(c) { return c.status === 'Warn'; });
-        if (result.system_info.sidecar_running) {
+        var allPass = !hasError && !hasWarn && result.system_info.sidecar_running;
+        if (doctorOutput) {
+            allPass = allPass && doctorOutput.success;
+        }
+        if (allPass) {
+            dot.className = 'status-dot green';
+            dot.title = '系统一切正常';
+        } else if (result.system_info.sidecar_running && !hasError) {
             dot.className = 'status-dot green';
             dot.title = 'Gateway 运行中';
         } else if (hasError) {
             dot.className = 'status-dot red';
-            dot.title = 'Gateway 未运行，存在错误';
+            dot.title = '存在错误';
         } else if (hasWarn) {
             dot.className = 'status-dot yellow';
-            dot.title = 'Gateway 未运行，存在警告';
+            dot.title = '存在警告';
         } else {
             dot.className = 'status-dot red';
             dot.title = 'Gateway 未运行';
@@ -695,16 +990,43 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             selectedProvider = "";
             return;
         }
+        var preferredIdx = 0;
         for (var i = 0; i < providerList.length; i++) {
             var p = providerList[i];
             var opt = document.createElement("option");
             opt.value = p.id;
-            opt.textContent = p.name + ' (' + p.key_preview + ')';
+            var label = p.name;
+            if (p.default_model && p.default_model !== 'default') {
+                label += ' / ' + p.default_model;
+            }
+            if (p.is_preferred) {
+                label = '\u2605 ' + label;
+                preferredIdx = i;
+            }
+            label += ' (' + p.key_preview + ')';
+            opt.textContent = label;
             sel.appendChild(opt);
         }
-        selectedProvider = providerList[0].id;
-        status.innerHTML = '<span style="color:var(--green);font-size:11px">就绪</span>';
+        sel.selectedIndex = preferredIdx;
+        selectedProvider = providerList[preferredIdx].id;
+        var preferredName = providerList[preferredIdx].name;
+        var preferredModel = providerList[preferredIdx].default_model;
+        var statusText = preferredModel && preferredModel !== 'default'
+            ? preferredName + ' / ' + preferredModel
+            : preferredName;
+        status.innerHTML = '<span style="color:var(--green);font-size:11px">\u2605 ' + escapeHtml(statusText) + '</span>';
         sel.onchange = function() { selectedProvider = sel.value; };
+    }
+
+    // ── Fetch recent logs for AI context ─────────────────────
+    function fetchRecentLogs() {
+        var invoke = getInvoke();
+        if (!invoke) return;
+        invoke("repair_get_recent_logs").then(function(result) {
+            cachedLogs = result || "";
+        }).catch(function() {
+            cachedLogs = "";
+        });
     }
 
     // ── AI Chat ────────────────────────────────────────────────
@@ -783,17 +1105,24 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             appendChat("system", "请等待诊断完成。");
             return;
         }
-        var msg = "请分析以下诊断结果，告诉我问题出在哪里以及如何修复。";
-        appendChat("user", msg);
-        startAssistantResponse();
 
-        var context = buildContext();
         var invoke = getInvoke();
         if (!invoke) return;
-        invoke("repair_ai_chat", {
-            message: msg,
-            context: context,
-            providerId: selectedProvider
+
+        // Refresh logs before sending to AI for up-to-date context
+        appendChat("system", "正在读取最新日志...");
+        invoke("repair_get_recent_logs").then(function(logs) {
+            cachedLogs = logs || "";
+            var msg = "请分析以下诊断结果和日志，告诉我问题出在哪里以及如何修复。";
+            appendChat("user", msg);
+            startAssistantResponse();
+
+            var context = buildContext();
+            return invoke("repair_ai_chat", {
+                message: msg,
+                context: context,
+                providerId: selectedProvider
+            });
         }).catch(function(e) {
             if (currentAssistantMsg) {
                 var errEl = document.createElement("div");
@@ -876,6 +1205,11 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             var doctorText = doctorOutput.message || '';
             if (doctorText.length > 2000) doctorText = doctorText.substring(0, 2000) + '...(truncated)';
             lines.push(doctorText);
+        }
+        if (cachedLogs) {
+            lines.push("");
+            lines.push("=== 最近日志 ===");
+            lines.push(cachedLogs);
         }
         return lines.join("\n");
     }
@@ -1051,108 +1385,299 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         document.getElementById('tab-' + tabId).classList.add('active');
         var idx = tabId === 'manual' ? 0 : 1;
         btns[idx].classList.add('active');
-        if (tabId === 'remote') checkSsh();
+        if (tabId === 'remote') {
+            updateStepState(1);
+        }
     };
+
+    // ── Screenshot functions ──────────────────────────────────
+    var screenshotIdCounter = 0;
+    var MAX_SCREENSHOTS = 3;
+    var MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB per image (base64 expands ~33%)
+
+    function handleImagePaste(e) {
+        var items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                e.preventDefault();
+                var file = items[i].getAsFile();
+                if (file) addScreenshotFile(file);
+                return;
+            }
+        }
+    }
+
+    function addScreenshotFile(file) {
+        if (screenshotImages.length >= MAX_SCREENSHOTS) {
+            alert('最多添加 ' + MAX_SCREENSHOTS + ' 张截图');
+            return;
+        }
+        if (file.size > 8 * 1024 * 1024) {
+            alert('图片太大（超过 8MB），请裁剪后再试');
+            return;
+        }
+        // Compress image via canvas to keep payload small
+        compressImage(file, 1280, 0.8, function(dataUrl) {
+            if (!dataUrl || !/^data:image\//.test(dataUrl)) return;
+            var id = 'ss-' + (++screenshotIdCounter);
+            screenshotImages.push({ id: id, dataUrl: dataUrl, name: file.name || 'screenshot.png' });
+            renderScreenshotPreviews();
+            updateStepState(2);
+        });
+    }
+
+    function compressImage(file, maxDim, quality, callback) {
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+        img.onload = function() {
+            var w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+                if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+                else { w = Math.round(w * maxDim / h); h = maxDim; }
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            var dataUrl = canvas.toDataURL('image/jpeg', quality);
+            // If compressed result is still > MAX_IMAGE_SIZE, try lower quality
+            if (dataUrl.length > MAX_IMAGE_SIZE * 1.37) {
+                dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+            }
+            URL.revokeObjectURL(url);
+            callback(dataUrl);
+        };
+        img.onerror = function() {
+            URL.revokeObjectURL(url);
+            // Fallback: read as-is but validate size
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                var result = ev.target.result;
+                if (result && result.length > MAX_IMAGE_SIZE * 1.37) {
+                    alert('图片无法压缩且体积过大，请手动裁剪后重试');
+                    return;
+                }
+                callback(result);
+            };
+            reader.readAsDataURL(file);
+        };
+        img.src = url;
+    }
+
+    function renderScreenshotPreviews() {
+        var container = document.getElementById('screenshot-previews');
+        var hint = document.getElementById('screenshot-hint');
+        if (!container) return;
+        var html = '';
+        for (var i = 0; i < screenshotImages.length; i++) {
+            var img = screenshotImages[i];
+            html += '<div class="screenshot-item" data-ss-id="' + img.id + '">';
+            html += '<img src="' + img.dataUrl + '" alt="截图">';
+            html += '<button class="remove-btn" data-remove-ss="' + img.id + '" title="删除">&times;</button>';
+            html += '</div>';
+        }
+        if (screenshotImages.length > 0 && screenshotImages.length < MAX_SCREENSHOTS) {
+            html += '<div class="screenshot-add-more" id="screenshot-add-more" title="继续添加截图">+</div>';
+        }
+        container.innerHTML = html;
+
+        // Show/hide hint
+        if (hint) hint.style.display = screenshotImages.length > 0 ? 'none' : 'flex';
+
+        // Bind remove buttons
+        var removeBtns = container.querySelectorAll('[data-remove-ss]');
+        for (var j = 0; j < removeBtns.length; j++) {
+            (function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    removeScreenshot(btn.getAttribute('data-remove-ss'));
+                });
+            })(removeBtns[j]);
+        }
+        // Bind add-more button
+        var addMoreBtn = document.getElementById('screenshot-add-more');
+        if (addMoreBtn) {
+            addMoreBtn.addEventListener('click', function() { triggerScreenshotFilePicker(); });
+        }
+    }
+
+    function removeScreenshot(id) {
+        screenshotImages = screenshotImages.filter(function(s) { return s.id !== id; });
+        renderScreenshotPreviews();
+    }
+
+    function triggerScreenshotFilePicker() {
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.multiple = true;
+        input.style.display = 'none';
+        input.addEventListener('change', function() {
+            if (input.files) {
+                for (var i = 0; i < input.files.length; i++) {
+                    if (input.files[i].type.startsWith('image/')) {
+                        addScreenshotFile(input.files[i]);
+                    }
+                }
+            }
+            input.remove();
+        });
+        document.body.appendChild(input);
+        input.click();
+    }
+
+    function getScreenshotDataUrls() {
+        return screenshotImages.map(function(s) { return s.dataUrl; });
+    }
 
     // ── Remote repair ────────────────────────────────────────
     var tunnelSession = null;
     var tunnelPollTimer = null;
+    var elapsedTimer = null;
+    var tunnelStartTime = null;
+    var remoteRepairInProgress = false;
     var REPAIR_API = 'https://www.obplugins.cn/api/v1/repair';
 
-    window.checkSsh = function() {
-        var invoke = getInvoke();
-        if (!invoke) return;
-        document.getElementById('ssh-status-text').textContent = '正在检查...';
-        document.getElementById('ssh-indicator').className = 'status-indicator gray';
-
-        invoke('repair_ssh_check').then(function(s) {
-            var ind = document.getElementById('ssh-indicator');
-            var txt = document.getElementById('ssh-status-text');
-            var btn = document.getElementById('btn-enable-ssh');
-            var info = document.getElementById('ssh-user-info');
-
-            info.textContent = 'SSH 用户: ' + s.username + '  |  端口: ' + s.port;
-
-            if (s.running) {
-                ind.className = 'status-indicator green';
-                txt.textContent = s.message;
-                btn.style.display = 'none';
-            } else if (s.installed) {
-                ind.className = 'status-indicator yellow';
-                txt.textContent = s.message;
-                btn.style.display = 'inline-block';
-                btn.textContent = '启动 SSH 服务';
-            } else {
-                ind.className = 'status-indicator red';
-                txt.textContent = s.message;
-                btn.style.display = 'inline-block';
-                btn.textContent = '安装并启动 SSH';
+    // ── Step state management (2 steps) ──────────────────────
+    // Both steps are always accessible (user can skip description).
+    // "currentStep" controls visual emphasis only.
+    function updateStepState(currentStep) {
+        for (var s = 1; s <= 2; s++) {
+            var dot = document.getElementById('step-dot-' + s);
+            var card = document.getElementById('step-card-' + s);
+            if (!dot || !card) continue;
+            dot.classList.remove('active', 'done');
+            card.classList.remove('active', 'done');
+            if (s < currentStep) {
+                dot.classList.add('done');
+                card.classList.add('done');
+            } else if (s === currentStep) {
+                dot.classList.add('active');
+                card.classList.add('active');
             }
-        }).catch(function(e) {
-            document.getElementById('ssh-indicator').className = 'status-indicator red';
-            document.getElementById('ssh-status-text').textContent = '检查失败: ' + String(e);
-        });
-    };
+            // Always keep cards interactive
+            card.style.opacity = '';
+            card.style.pointerEvents = '';
+        }
+        var line = document.getElementById('step-line-1');
+        if (line) {
+            if (currentStep > 1) line.classList.add('done');
+            else line.classList.remove('done');
+        }
+    }
 
-    window.enableSsh = function() {
-        var invoke = getInvoke();
-        if (!invoke) return;
-        var btn = document.getElementById('btn-enable-ssh');
-        btn.disabled = true;
-        btn.textContent = '正在安装...';
+    // ── Setup step progress helpers ─────────────────────────
+    function markSetupStep(stepId, status, text) {
+        var row = document.getElementById(stepId);
+        if (!row) return;
+        row.style.display = 'flex';
+        var iconEl = row.querySelector('.setup-step-icon');
+        var textEl = row.querySelector('.setup-step-text');
+        if (text) textEl.textContent = text;
+        row.classList.remove('done', 'fail');
+        if (status === 'done') {
+            row.classList.add('done');
+            iconEl.className = 'setup-step-icon done';
+            iconEl.innerHTML = '\u2713';
+        } else if (status === 'fail') {
+            row.classList.add('fail');
+            iconEl.className = 'setup-step-icon fail';
+            iconEl.innerHTML = '\u2717';
+        } else {
+            iconEl.className = 'setup-step-icon';
+            iconEl.innerHTML = '<span class="loading"></span>';
+        }
+    }
 
-        invoke('repair_ssh_enable').then(function() {
-            btn.disabled = false;
-            checkSsh();
-        }).catch(function(e) {
-            btn.disabled = false;
-            btn.textContent = '安装失败，重试';
-            document.getElementById('ssh-status-text').textContent = '启用失败: ' + String(e);
+    // checkSsh / enableSsh kept for IPC compat but not exposed in UI
+    window.checkSsh = function() {};
+    window.enableSsh = function() {};
+
+    // ── Auto SSH ensure (called internally) ─────────────────
+    function ensureSshReady(invoke) {
+        return invoke('repair_ssh_check').then(function(s) {
+            if (s.running) return true;
+            // Not running — try to enable automatically
+            markSetupStep('setup-step-env', 'loading',
+                s.installed ? '正在启动远程连接服务...' : '正在安装远程连接组件（可能弹出授权确认框，请点击"是"）...');
+            return invoke('repair_ssh_enable').then(function() {
+                // Verify it's actually running now
+                return invoke('repair_ssh_check').then(function(s2) {
+                    return s2.running;
+                });
+            });
         });
-    };
+    }
 
     window.startRemoteRepair = function() {
+        if (remoteRepairInProgress) return;
         var invoke = getInvoke();
         if (!invoke) return;
 
+        remoteRepairInProgress = true;
         var desc = (document.getElementById('remote-desc').value || '').trim() || '需要远程修复帮助';
         var startBtn = document.getElementById('btn-start-remote');
         startBtn.disabled = true;
-        startBtn.textContent = '正在建立隧道...';
-        addRemoteLog('info', '正在创建修复工单...');
+        startBtn.classList.add('connecting');
+        var textEl = startBtn.querySelector('.btn-connect-text');
+        if (textEl) textEl.textContent = '正在连接...';
 
-        fetch(REPAIR_API + '/ticket', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+        // Show progress steps
+        var progressEl = document.getElementById('auto-setup-progress');
+        progressEl.style.display = 'flex';
+        markSetupStep('setup-step-env', 'loading', '正在准备远程连接环境...');
+
+        // Phase 1: Auto-ensure SSH
+        ensureSshReady(invoke).then(function(ready) {
+            if (!ready) {
+                throw new Error('远程连接环境准备失败，请尝试以管理员身份运行本程序后重试');
+            }
+            markSetupStep('setup-step-env', 'done', '远程连接环境已就绪');
+
+            // Phase 2: Create ticket
+            markSetupStep('setup-step-ticket', 'loading');
+            var ticketBody = {
                 description: desc,
                 product: 'openclawcn',
                 os: navigator.platform
-            })
-        }).then(function(r) { return r.json(); }).then(function(ticket) {
+            };
+            return fetchWithTimeout(REPAIR_API + '/ticket', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ticketBody)
+            }, 20000).then(function(r) {
+                if (!r.ok) throw new Error('服务器响应异常（HTTP ' + r.status + '），请稍后重试');
+                return r.json();
+            });
+        }).then(function(ticket) {
             if (!ticket.ticketId || !ticket.sshPublicKey) {
-                throw new Error(ticket.message || '创建工单失败');
+                throw new Error(ticket.message || '提交失败，请稍后重试');
             }
-
             tunnelSession = {
                 ticketId: ticket.ticketId,
                 publicKey: ticket.sshPublicKey
             };
-            addRemoteLog('info', '工单已创建: ' + ticket.ticketId);
+            markSetupStep('setup-step-ticket', 'done', '已收到你的问题');
 
             if (ticket.status === 'payment_required' && ticket.paymentUrl) {
                 var payUrl = String(ticket.paymentUrl);
                 if (!/^https?:\/\//i.test(payUrl)) {
-                    throw new Error('付费链接格式无效（仅支持 http/https）');
+                    throw new Error('付费链接格式无效');
                 }
                 addRemoteLog('info', '需要付费，正在打开付费页面...');
                 window.open(payUrl, '_blank');
                 startBtn.disabled = false;
-                startBtn.textContent = '已付费，继续';
+                startBtn.classList.remove('connecting');
+                if (textEl) textEl.textContent = '已付费，点击继续';
+                progressEl.style.display = 'none';
+                remoteRepairInProgress = false;
                 return;
             }
 
-            addRemoteLog('action', '正在建立 SSH 隧道...');
+            // Phase 3: Start tunnel
+            markSetupStep('setup-step-tunnel', 'loading');
             return invoke('repair_tunnel_start', {
                 sessionId: ticket.ticketId,
                 publicKey: ticket.sshPublicKey,
@@ -1160,22 +1685,47 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             });
         }).then(function(info) {
             if (!info) return;
+            markSetupStep('setup-step-tunnel', 'done', '安全连接已建立');
+            addRemoteLog('result', '连接成功');
 
-            addRemoteLog('result', '隧道已建立! 远程端口: ' + info.remote_port);
-
-            return fetch(REPAIR_API + '/ticket/' + encodeURIComponent(tunnelSession.ticketId) + '/tunnel-ready', {
+            return fetchWithTimeout(REPAIR_API + '/ticket/' + encodeURIComponent(tunnelSession.ticketId) + '/tunnel-ready', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tunnelPort: info.remote_port })
-            }).then(function() {
-                addRemoteLog('info', '等待修复工程师连接...');
+            }, 15000).then(function(resp) {
+                if (!resp.ok) {
+                    addRemoteLog('error', '通知服务器失败（HTTP ' + resp.status + '），技术人员可能无法收到你的请求。请稍后重试。');
+                }
+                addRemoteLog('info', '技术人员收到了你的请求，请稍候...');
                 showTunnelStatus(info);
                 startTunnelPolling();
+
+                // Upload screenshots + logs via our own log-report channel (fire-and-forget)
+                var images = getScreenshotDataUrls();
+                if (images.length > 0 || desc.length >= 5) {
+                    var uploadDesc = '[远程修复] ' + desc;
+                    invoke('upload_crash_logs', {
+                        description: uploadDesc.length >= 5 ? uploadDesc : '远程修复协助请求',
+                        attachments: images.length > 0 ? images : null
+                    }).catch(function() { /* non-critical */ });
+                }
             });
         }).catch(function(e) {
-            addRemoteLog('error', '错误: ' + String(e));
+            var errMsg = String(e).replace(/^Error:\s*/, '');
+            // Mark the current in-progress step as failed
+            var steps = ['setup-step-env', 'setup-step-ticket', 'setup-step-tunnel'];
+            for (var i = 0; i < steps.length; i++) {
+                var row = document.getElementById(steps[i]);
+                if (row && row.style.display !== 'none' && !row.classList.contains('done')) {
+                    markSetupStep(steps[i], 'fail');
+                    break;
+                }
+            }
+            addRemoteLog('error', '连接失败：' + errMsg);
             startBtn.disabled = false;
-            startBtn.textContent = '建立隧道，开始远程修复';
+            startBtn.classList.remove('connecting');
+            if (textEl) textEl.textContent = '重新连接';
+            remoteRepairInProgress = false;
         });
     };
 
@@ -1189,32 +1739,66 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         }
 
         invoke('repair_tunnel_stop', { sessionId: tunnelSession.ticketId }).then(function() {
-            addRemoteLog('info', '隧道已关闭，密钥已清理。');
+            addRemoteLog('info', '远程连接已断开');
             hideTunnelStatus();
             tunnelSession = null;
+            remoteRepairInProgress = false;
         }).catch(function(e) {
-            addRemoteLog('error', '关闭隧道失败: ' + String(e));
+            addRemoteLog('error', '断开连接时出错，请稍后再试');
+            remoteRepairInProgress = false;
         });
     };
 
     function showTunnelStatus(info) {
-        document.getElementById('tunnel-status-section').style.display = 'block';
-        document.getElementById('repair-log-section').style.display = 'block';
-        document.getElementById('btn-start-remote').style.display = 'none';
-        document.getElementById('btn-stop-remote').style.display = 'inline-block';
+        // Hide step 2 body, show connected panel
+        document.getElementById('step2-body').style.display = 'none';
+        document.getElementById('connected-panel').style.display = 'block';
+        document.getElementById('btn-stop-remote').style.display = 'inline-flex';
+        document.getElementById('repair-timeline').style.display = 'block';
 
-        document.getElementById('tunnel-info').innerHTML =
-            '会话 ID: <span style="color:var(--text)">' + escapeHtml(info.session_id) + '</span><br>' +
-            '本地端口: <span style="color:var(--text)">' + info.local_port + '</span><br>' +
-            '远程端口: <span style="color:var(--text)">' + info.remote_port + '</span>';
+        // Show session code (last 6 chars)
+        var code = (info.session_id || '').slice(-6).toUpperCase();
+        document.getElementById('display-session-code').textContent = code || '--';
+
+        // Start elapsed timer
+        tunnelStartTime = Date.now();
+        if (elapsedTimer) clearInterval(elapsedTimer);
+        elapsedTimer = setInterval(function() {
+            var elapsed = Math.floor((Date.now() - tunnelStartTime) / 1000);
+            var min = Math.floor(elapsed / 60);
+            var sec = elapsed % 60;
+            document.getElementById('display-elapsed').textContent =
+                min > 0 ? (min + ' 分 ' + sec + ' 秒') : (sec + ' 秒');
+        }, 1000);
+
+        updateStepState(2);
     }
 
     function hideTunnelStatus() {
-        document.getElementById('tunnel-status-section').style.display = 'none';
-        document.getElementById('btn-start-remote').style.display = 'inline-block';
-        document.getElementById('btn-start-remote').disabled = false;
-        document.getElementById('btn-start-remote').textContent = '建立隧道，开始远程修复';
+        document.getElementById('connected-panel').style.display = 'none';
+        document.getElementById('step2-body').style.display = 'block';
         document.getElementById('btn-stop-remote').style.display = 'none';
+
+        // Restore connect button and hide progress
+        var startBtn = document.getElementById('btn-start-remote');
+        startBtn.disabled = false;
+        startBtn.classList.remove('connecting');
+        var textEl = startBtn.querySelector('.btn-connect-text');
+        if (textEl) textEl.textContent = '连接技术支持';
+        document.getElementById('auto-setup-progress').style.display = 'none';
+
+        // Clear elapsed timer
+        if (elapsedTimer) {
+            clearInterval(elapsedTimer);
+            elapsedTimer = null;
+        }
+        tunnelStartTime = null;
+
+        // Clear screenshots (already submitted)
+        screenshotImages = [];
+        renderScreenshotPreviews();
+
+        updateStepState(1);
     }
 
     function startTunnelPolling() {
@@ -1226,34 +1810,38 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
             invoke('repair_tunnel_status').then(function(status) {
                 if (!status.active) {
-                    addRemoteLog('info', '隧道已断开。');
+                    addRemoteLog('info', '远程连接已断开');
                     clearInterval(tunnelPollTimer);
                     tunnelPollTimer = null;
                     hideTunnelStatus();
+                    remoteRepairInProgress = false;
                     return;
                 }
                 if (status.remaining_secs !== null && status.remaining_secs !== undefined) {
                     var min = Math.floor(status.remaining_secs / 60);
-                    var sec = status.remaining_secs % 60;
-                    document.getElementById('tunnel-timer').textContent =
-                        '剩余时间: ' + min + ' 分 ' + sec + ' 秒';
+                    document.getElementById('meta-remaining').style.display = 'flex';
+                    document.getElementById('display-remaining').textContent = min + ' 分钟';
                 }
             });
 
             if (tunnelSession && tunnelSession.ticketId) {
-                fetch(REPAIR_API + '/ticket/' + encodeURIComponent(tunnelSession.ticketId))
+                fetchWithTimeout(REPAIR_API + '/ticket/' + encodeURIComponent(tunnelSession.ticketId), {}, 10000)
                     .then(function(r) { return r.json(); })
                     .then(function(t) {
                         if (t.log && t.log.length > 0) {
                             renderTicketLogs(t.log);
                         }
                         if (t.status === 'completed') {
-                            addRemoteLog('result', '修复完成: ' + (t.summary || ''));
+                            addRemoteLog('result', '修复已完成！' + (t.summary ? ' ' + t.summary : ''));
+                            document.getElementById('connected-title').textContent = '修复已完成';
+                            document.getElementById('connected-subtitle').textContent = '连接将在几秒后自动断开';
+                            var pulseDot = document.querySelector('.pulse-dot');
+                            if (pulseDot) pulseDot.style.animation = 'none';
                             clearInterval(tunnelPollTimer);
                             tunnelPollTimer = null;
                             setTimeout(function() { stopRemoteRepair(); }, 5000);
                         } else if (t.status === 'failed') {
-                            addRemoteLog('error', '修复失败: ' + (t.summary || ''));
+                            addRemoteLog('error', '修复未能完成' + (t.summary ? '：' + t.summary : '，技术人员会提供进一步建议'));
                         }
                     }).catch(function() { /* ignore poll errors */ });
             }
@@ -1271,14 +1859,33 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 
     function addRemoteLog(type, message) {
         var logEl = document.getElementById('repair-log');
-        document.getElementById('repair-log-section').style.display = 'block';
-        var line = document.createElement('div');
-        line.className = 'log-' + type;
+        document.getElementById('repair-timeline').style.display = 'block';
+
+        // Timeline entry
+        var entry = document.createElement('div');
+        entry.className = 'timeline-entry entry-' + type;
         var now = new Date();
-        var ts = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ':' + ('0' + now.getSeconds()).slice(-2);
-        line.textContent = '[' + ts + '] ' + message;
-        logEl.appendChild(line);
+        var ts = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+        entry.innerHTML = '<span class="timeline-entry-time">' + ts + '</span><span class="timeline-entry-msg">' + escapeHtml(message) + '</span>';
+        logEl.appendChild(entry);
         logEl.scrollTop = logEl.scrollHeight;
+
+        // Also append raw text to hidden detail area
+        var rawEl = document.getElementById('timeline-raw');
+        rawEl.textContent += '[' + ts + ':' + ('0' + now.getSeconds()).slice(-2) + '] [' + type + '] ' + message + '\n';
+
+        // Show detail toggle if there are entries
+        var toggle = document.getElementById('timeline-detail-toggle');
+        if (toggle) toggle.style.display = 'flex';
+    }
+
+    // ── Toggle timeline raw detail ──────────────────────────
+    function toggleTimelineDetail() {
+        var toggle = document.getElementById('timeline-detail-toggle');
+        var raw = document.getElementById('timeline-raw');
+        if (!toggle || !raw) return;
+        toggle.classList.toggle('open');
+        raw.style.display = raw.style.display === 'block' ? 'none' : 'block';
     }
 
     // ── Cleanup tunnel on window close ─────────────────────────
@@ -1289,9 +1896,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 invoke('repair_tunnel_stop', { sessionId: tunnelSession.ticketId });
             }
         }
-        if (tunnelPollTimer) {
-            clearInterval(tunnelPollTimer);
-        }
+        if (tunnelPollTimer) clearInterval(tunnelPollTimer);
+        if (elapsedTimer) clearInterval(elapsedTimer);
     });
 
     // ── Utilities ──────────────────────────────────────────────

@@ -30,6 +30,7 @@ import { isMemoryPath, normalizeExtraMemoryPaths } from "./internal.js";
 import { memoryManagerEmbeddingOps } from "./manager-embedding-ops.js";
 import { searchKeyword, searchVector } from "./manager-search.js";
 import { memoryManagerSyncOps } from "./manager-sync-ops.js";
+import { truncateUtf16Safe } from "../utils.js";
 const SNIPPET_MAX_CHARS = 700;
 const VECTOR_TABLE = "chunks_vec";
 const FTS_TABLE = "chunks_fts";
@@ -261,20 +262,51 @@ export class MemoryIndexManager implements MemorySearchManager {
       // [CN-PATCH:memory-p0] Reindex 降级：当前 model 无结果但 DB 有旧 model 数据时，
       // 用 FTS keyword-only 搜索（不带 model 过滤）提供降级结果。
       // 场景：用户切换 embedding provider 后 reindex 尚未完成，避免"把事都忘了"的体验。
+      let isDegraded = false;
       if (tiered.length === 0 && this.fts.enabled && this.fts.available) {
         const degraded = await this.searchKeywordDegraded(cleaned, candidates).catch(() => []);
         if (degraded.length > 0) {
           tiered = applyTimeTiering(degraded);
+          isDegraded = true;
         }
       }
-      return tiered.filter((entry) => entry.score >= minScore).slice(0, maxResults);
+      // [CN-PATCH:memory-fix] 降级搜索时保证至少返回 top-1 结果。
+      // 降级搜索的 score 已经减半 (×0.5)，如果 minScore 过高会把所有结果过滤掉，
+      // 导致"明明搜到了但不显示"的体验。降级时至少保留最高分结果。
+      // [CN-PATCH:memory-fix] M5: 自适应 minScore — 当最高分整体偏低（local 模型场景），
+      // 自动降低阈值到 maxScore×0.6，避免高分保护被 minScore 一刀切全部过滤。
+      const effectiveMinScore = adaptiveMinScore(tiered, minScore);
+      const filtered = tiered.filter((entry) => entry.score >= effectiveMinScore);
+      if (isDegraded && filtered.length === 0 && tiered.length > 0) {
+        return tiered.slice(0, Math.min(1, maxResults));
+      }
+      // [CN-PATCH:memory-fix] M6: vector-only 模式也应用 coalesce，与 hybrid 一致。
+      const coalesced = coalesceAdjacentResults(filtered);
+      return coalesced.slice(0, maxResults);
+    }
+
+    // [CN-PATCH:memory-fix] Query-length adaptive weight: short CJK queries benefit
+    // from keyword matching (exact token hit), long queries from vector semantics.
+    // Default: 0.7 vector / 0.3 text. Adjustment:
+    //   - Short (≤6 chars, e.g. "数据库优化"): 0.45v / 0.55t (keyword dominant)
+    //   - Medium (7-20 chars): default weights (balanced)
+    //   - Long (>20 chars, full sentence): 0.85v / 0.15t (semantic dominant)
+    const queryLen = cleaned.length;
+    let adaptiveVectorWeight = hybrid.vectorWeight;
+    let adaptiveTextWeight = hybrid.textWeight;
+    if (queryLen <= 6) {
+      adaptiveVectorWeight = 0.45;
+      adaptiveTextWeight = 0.55;
+    } else if (queryLen > 20) {
+      adaptiveVectorWeight = 0.85;
+      adaptiveTextWeight = 0.15;
     }
 
     const merged = this.mergeHybridResults({
       vector: vectorResults,
       keyword: keywordResults,
-      vectorWeight: hybrid.vectorWeight,
-      textWeight: hybrid.textWeight,
+      vectorWeight: adaptiveVectorWeight,
+      textWeight: adaptiveTextWeight,
     });
 
     // [CN-PATCH:memory-p0] 冷热分层过滤：优先返回近期记忆，减少 token 消耗
@@ -283,14 +315,27 @@ export class MemoryIndexManager implements MemorySearchManager {
     // [CN-PATCH:memory-p0] Reindex 降级：hybrid 模式下也检查。
     // vector 搜索因 model 不匹配返回空，keyword 因 model filter 也为空时，
     // 降级到不带 model 过滤的 FTS 纯文本搜索。
+    let isDegradedHybrid = false;
     if (tiered.length === 0 && this.fts.enabled && this.fts.available) {
       const degraded = await this.searchKeywordDegraded(cleaned, candidates).catch(() => []);
       if (degraded.length > 0) {
         tiered = applyTimeTiering(degraded);
+        isDegradedHybrid = true;
       }
     }
 
-    return tiered.filter((entry) => entry.score >= minScore).slice(0, maxResults);
+    // [CN-PATCH:memory-fix] 降级搜索时保证至少返回 top-1 结果（同 vector-only 模式）。
+    const effectiveMinScoreHybrid = adaptiveMinScore(tiered, minScore);
+    const filteredHybrid = tiered.filter((entry) => entry.score >= effectiveMinScoreHybrid);
+    if (isDegradedHybrid && filteredHybrid.length === 0 && tiered.length > 0) {
+      return tiered.slice(0, Math.min(1, maxResults));
+    }
+
+    // [CN-PATCH:memory-fix] Merge adjacent chunks from the same file.
+    // When a long answer is split across 2-3 chunks, search may hit multiple
+    // fragments. Merging them saves token budget and provides better context.
+    const coalesced = coalesceAdjacentResults(filteredHybrid);
+    return coalesced.slice(0, maxResults);
   }
 
   private async searchVector(
@@ -578,6 +623,12 @@ export class MemoryIndexManager implements MemorySearchManager {
         extensionPath: this.vector.extensionPath,
         loadError: this.vector.loadError,
         dims: this.vector.dims,
+        // [CN-PATCH:memory-fix] Warn when brute-force fallback would truncate search results.
+        // If sqlite-vec is unavailable and chunk count > 2000, recall is silently degraded.
+        bruteForceTruncated:
+          this.vector.enabled && this.vector.available === false && (chunks?.c ?? 0) > 2000
+            ? true
+            : undefined,
       },
       batch: {
         enabled: this.batch.enabled,
@@ -656,3 +707,96 @@ function applyPrototypeMixins(target: object, ...sources: object[]): void {
 }
 
 applyPrototypeMixins(MemoryIndexManager.prototype, memoryManagerSyncOps, memoryManagerEmbeddingOps);
+
+/**
+ * [CN-PATCH:memory-fix] M5: Adaptive minScore for low-scoring embedding models.
+ *
+ * 当 embedding 模型整体打分偏低（如 local GGUF 模型 maxScore 只有 0.3-0.5），
+ * 固定 minScore=0.45 会把所有结果都过滤掉，导致搜索永远无结果。
+ *
+ * 策略：如果 top-1 score < minScore（说明模型分数范围低），自动降低到
+ * max(maxScore × 0.6, minScore × 0.5)。这样：
+ * - 正常模型(maxScore=0.8): 0.8 > 0.45 → 不调整
+ * - 低分模型(maxScore=0.35): 0.35 < 0.45 → effectiveMin = max(0.21, 0.225) = 0.225
+ * - 极低分(maxScore=0.15): effectiveMin = max(0.09, 0.225) = 0.225
+ */
+function adaptiveMinScore(results: MemorySearchResult[], configMinScore: number): number {
+  if (results.length === 0) return configMinScore;
+  const maxScore = Math.max(...results.map((r) => r.score));
+  if (!Number.isFinite(maxScore)) return configMinScore; // NaN/Infinity 防御
+  if (maxScore >= configMinScore) return configMinScore; // 正常模型，不调整
+  return Math.max(maxScore * 0.6, configMinScore * 0.5);
+}
+
+/**
+ * [CN-PATCH:memory-fix] Merge adjacent chunks from the same source file.
+ *
+ * When a long answer spans 2-3 chunks, search may return multiple fragments
+ * from the same file with overlapping or adjacent line ranges. Merging them:
+ * - Saves token budget (one merged snippet vs 2-3 separate snippets)
+ * - Provides better context (complete answer instead of fragments)
+ * - Takes the highest score among merged chunks
+ *
+ * Two chunks are "adjacent" if they're from the same path+source and their
+ * line ranges overlap or are within 3 lines of each other.
+ */
+function coalesceAdjacentResults(results: MemorySearchResult[]): MemorySearchResult[] {
+  if (results.length <= 1) return results;
+
+  // Group by path+source
+  const groups = new Map<string, MemorySearchResult[]>();
+  for (const r of results) {
+    const key = `${r.path}:${r.source ?? ""}`;
+    const group = groups.get(key);
+    if (group) {
+      group.push(r);
+    } else {
+      groups.set(key, [r]);
+    }
+  }
+
+  const merged: MemorySearchResult[] = [];
+  const GAP_TOLERANCE = 3; // merge if within 3 lines of each other
+
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      merged.push(group[0]);
+      continue;
+    }
+
+    // Sort by startLine within group
+    group.sort((a, b) => a.startLine - b.startLine);
+
+    let current = { ...group[0] };
+    for (let i = 1; i < group.length; i++) {
+      const next = group[i];
+      // Check if adjacent or overlapping
+      if (next.startLine <= current.endLine + GAP_TOLERANCE) {
+        // Merge: extend line range, concat snippets, take max score
+        // [CN-PATCH:memory-fix] Cap merged snippet to 2× SNIPPET_MAX_CHARS.
+        // 原来无上限，合并 3+ 个 chunk 可超 2000 字符，浪费 token 预算。
+        const mergedSnippet = current.snippet + "\n" + next.snippet;
+        const updatedAtMerged =
+          current.updatedAt != null || next.updatedAt != null
+            ? Math.max(current.updatedAt ?? 0, next.updatedAt ?? 0)
+            : undefined;
+        current = {
+          ...current,
+          endLine: Math.max(current.endLine, next.endLine),
+          snippet: truncateUtf16Safe(mergedSnippet, SNIPPET_MAX_CHARS * 2),
+          score: Math.max(current.score, next.score),
+          updatedAt: updatedAtMerged,
+        };
+      } else {
+        // Not adjacent — emit current, start new
+        merged.push(current);
+        current = { ...next };
+      }
+    }
+    merged.push(current);
+  }
+
+  // Re-sort by score (merging may have changed relative order)
+  merged.sort((a, b) => b.score - a.score);
+  return merged;
+}

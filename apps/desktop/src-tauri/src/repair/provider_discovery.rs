@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 pub enum ApiType {
     OpenAiCompat,
     AnthropicMessages,
+    GoogleGemini,
 }
 
 /// A discovered AI provider with everything needed to make API calls.
@@ -46,6 +47,8 @@ pub struct ProviderInfo {
     /// Masked key like "sk-abc...***"
     pub key_preview: String,
     pub default_model: String,
+    /// Whether this is the user's preferred text model provider
+    pub is_preferred: bool,
 }
 
 impl DiscoveredProvider {
@@ -57,6 +60,7 @@ impl DiscoveredProvider {
             source: self.source.clone(),
             key_preview: mask_key(&self.api_key),
             default_model: self.default_model.clone(),
+            is_preferred: false,
         }
     }
 }
@@ -181,6 +185,24 @@ const KNOWN_PROVIDERS: &[KnownProvider] = &[
         extra_headers: &[],
         default_model: "google/gemini-flash-1.5",
     },
+    KnownProvider {
+        id: "google",
+        name: "Google Gemini",
+        base_url: "https://generativelanguage.googleapis.com/v1beta",
+        api_type: ApiType::GoogleGemini,
+        env_vars: &["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+        extra_headers: &[],
+        default_model: "gemini-2.5-flash",
+    },
+    KnownProvider {
+        id: "aliyun-codeplan",
+        name: "阿里云 CodePlan",
+        base_url: "https://coding.dashscope.aliyuncs.com/v1",
+        api_type: ApiType::OpenAiCompat,
+        env_vars: &["ALIYUN_CODEPLAN_API_KEY"],
+        extra_headers: &[],
+        default_model: "qwen3.5-plus",
+    },
 ];
 
 // ── Discovery ────────────────────────────────────────────────────────────────
@@ -275,8 +297,14 @@ fn discover_from_config(
 
         let api_type = if api_type_str.contains("anthropic") {
             ApiType::AnthropicMessages
+        } else if base_url.contains("generativelanguage.googleapis.com") {
+            ApiType::GoogleGemini
         } else {
-            ApiType::OpenAiCompat
+            // Also check KNOWN_PROVIDERS for api_type match
+            KNOWN_PROVIDERS.iter()
+                .find(|k| k.id == normalize_provider_id(id))
+                .map(|k| k.api_type.clone())
+                .unwrap_or(ApiType::OpenAiCompat)
         };
 
         // Try to find a model ID from the config
@@ -444,6 +472,10 @@ fn decrypt_auth_profiles(
 // ── Utility ──────────────────────────────────────────────────────────────────
 
 fn resolve_env_substitution(value: &str) -> String {
+    // Handle ENC{...} encrypted values
+    if super::content_vault::is_encrypted_value(value) {
+        return super::content_vault::decrypt_enc_value(value).unwrap_or_default();
+    }
     // Handle ${ENV_VAR} pattern
     if value.starts_with("${") && value.ends_with('}') {
         let var_name = &value[2..value.len() - 1];
@@ -477,11 +509,74 @@ static PROVIDER_CACHE: std::sync::Mutex<Option<Vec<DiscoveredProvider>>> =
     std::sync::Mutex::new(None);
 
 /// Discover providers and cache them in memory for AI chat use.
+/// Reads `modelCapability.capabilities.text` from config to determine the
+/// user's preferred text model provider, and sorts it to the front.
 pub fn discover_and_cache() -> Vec<ProviderInfo> {
-    let providers = discover_providers();
-    let infos: Vec<ProviderInfo> = providers.iter().map(|p| p.to_info()).collect();
+    let mut providers = discover_providers();
+
+    // Read the user's preferred text model from config
+    let state_dir = resolve_state_dir();
+    let config_path = state_dir.join("openclawcn.json");
+    let preferred = if let Ok(content) = fs::read_to_string(&config_path) {
+        if let Ok(val) = json5::from_str::<serde_json::Value>(&content) {
+            read_preferred_text_provider(&val)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // If we found a preferred provider, update its default_model and sort it first
+    let preferred_id = preferred.as_ref().map(|(pid, _)| normalize_provider_id(pid));
+    let preferred_model = preferred.as_ref().map(|(_, mid)| mid.clone());
+
+    if let Some(ref pid) = preferred_id {
+        if let Some(p) = providers.iter_mut().find(|p| &p.id == pid) {
+            // Override default_model with the user's configured text model
+            if let Some(ref model) = preferred_model {
+                if !model.is_empty() {
+                    p.default_model = model.clone();
+                }
+            }
+        }
+        // Sort preferred provider to front
+        providers.sort_by(|a, b| {
+            let a_pref = &a.id == pid;
+            let b_pref = &b.id == pid;
+            b_pref.cmp(&a_pref)
+        });
+    }
+
+    let mut infos: Vec<ProviderInfo> = providers.iter().map(|p| p.to_info()).collect();
+
+    // Mark the preferred provider
+    if let Some(ref pid) = preferred_id {
+        if let Some(info) = infos.iter_mut().find(|i| &i.id == pid) {
+            info.is_preferred = true;
+        }
+    }
+
     *PROVIDER_CACHE.lock().unwrap() = Some(providers);
     infos
+}
+
+/// Read `modelCapability.capabilities.text` from config to get the user's
+/// preferred text model. Returns (providerId, modelId) if found.
+fn read_preferred_text_provider(config: &serde_json::Value) -> Option<(String, String)> {
+    let text_cap = config
+        .get("modelCapability")
+        .and_then(|mc| mc.get("capabilities"))
+        .and_then(|caps| caps.get("text"))?;
+
+    let provider_id = text_cap.get("providerId").and_then(|v| v.as_str())?;
+    let model_id = text_cap.get("modelId").and_then(|v| v.as_str()).unwrap_or("");
+
+    if provider_id.is_empty() {
+        return None;
+    }
+
+    Some((provider_id.to_string(), model_id.to_string()))
 }
 
 /// Get a cached provider by ID (for making AI calls without re-reading disk).

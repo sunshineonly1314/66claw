@@ -311,6 +311,8 @@ struct SubmitRequest {
     description: String,
     #[serde(rename = "logEntries")]
     log_entries: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    attachments: Vec<String>,
     context: SubmitContext,
     #[serde(rename = "createdAt")]
     created_at: String,
@@ -431,11 +433,87 @@ pub struct PollResult {
     pub message: String,
 }
 
+/// Get a summary of recent logs suitable for AI-assisted diagnosis.
+/// Filters to error/warn/fatal lines, truncated to ~4KB for LLM context.
+pub fn get_recent_logs_summary() -> String {
+    let logs_dir = resolve_logs_dir();
+    let sources = [
+        ("app.jsonl", logs_dir.join("app.jsonl")),
+        ("crash.log", logs_dir.join("crash.log")),
+        ("desktop-debug.log", logs_dir.join("desktop-debug.log")),
+    ];
+
+    const MAX_SUMMARY_BYTES: usize = 4 * 1024; // ~4KB budget
+    const MAX_READ_BYTES: usize = 50 * 1024; // read last 50KB from each file
+
+    let mut result_lines: Vec<String> = Vec::new();
+    let mut total_bytes: usize = 0;
+
+    for (label, path) in &sources {
+        let lines = read_tail_lines(path, MAX_READ_BYTES);
+        if lines.is_empty() {
+            continue;
+        }
+
+        // Filter to error/warn/fatal lines (case-insensitive)
+        let important: Vec<&String> = lines.iter().filter(|line| {
+            let lower = line.to_lowercase();
+            lower.contains("error") || lower.contains("warn") || lower.contains("fatal")
+                || lower.contains("fail") || lower.contains("crash") || lower.contains("panic")
+                || lower.contains("exception")
+        }).collect();
+
+        let selected = if important.is_empty() {
+            // No important lines — take the last few lines as context
+            let start = lines.len().saturating_sub(5);
+            lines[start..].iter().collect::<Vec<_>>()
+        } else {
+            // Take the most recent important lines
+            let start = important.len().saturating_sub(20);
+            important[start..].to_vec()
+        };
+
+        if selected.is_empty() {
+            continue;
+        }
+
+        let header = format!("=== {} ===", label);
+        let header_bytes = header.len() + 1;
+        if total_bytes + header_bytes > MAX_SUMMARY_BYTES {
+            break;
+        }
+        result_lines.push(header);
+        total_bytes += header_bytes;
+
+        for line in selected {
+            let sanitized = basic_sanitize(line);
+            let line_bytes = sanitized.len() + 1;
+            if total_bytes + line_bytes > MAX_SUMMARY_BYTES {
+                result_lines.push("[...truncated...]".to_string());
+                total_bytes += 20;
+                break;
+            }
+            result_lines.push(sanitized);
+            total_bytes += line_bytes;
+        }
+    }
+
+    if result_lines.is_empty() {
+        return "[无可用日志]".to_string();
+    }
+
+    result_lines.join("\n")
+}
+
 /// Collect local logs, sanitize, truncate to ≤100KB, and POST to the remote
 /// log-report API. This works even when Gateway is down.
 ///
 /// `description`: user-provided problem description (5-2000 chars).
-pub async fn upload_crash_logs(description: String) -> Result<UploadResult, String> {
+/// `attachments`: optional base64 data-URL encoded screenshots (max 3).
+pub async fn upload_crash_logs(
+    description: String,
+    attachments: Vec<String>,
+) -> Result<UploadResult, String> {
     // Validate description (use char count, not byte length, for CJK text)
     let desc = description.trim().to_string();
     if desc.chars().count() < 5 {
@@ -458,11 +536,19 @@ pub async fn upload_crash_logs(description: String) -> Result<UploadResult, Stri
     let hostname_raw = get_hostname();
     let hostname_anon = format!("host-{}", &hex_hash(&hostname_raw)[..6]);
 
+    // Validate & limit attachments (max 3, must start with data:image/)
+    let safe_attachments: Vec<String> = attachments
+        .into_iter()
+        .filter(|a| a.starts_with("data:image/"))
+        .take(3)
+        .collect();
+
     let request = SubmitRequest {
         id: report_id.clone(),
         device_id: device_id.clone(),
         description: basic_sanitize(&desc),
         log_entries,
+        attachments: safe_attachments,
         context: SubmitContext {
             version: env!("CARGO_PKG_VERSION").to_string(),
             platform: std::env::consts::OS.to_string(),

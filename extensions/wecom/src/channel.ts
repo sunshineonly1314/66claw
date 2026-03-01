@@ -19,7 +19,7 @@ import {
 } from "openclawcn/plugin-sdk";
 
 import { getWecomRuntime } from "./runtime.js";
-import { sendWecomMessage, probeWecomConnection } from "./api.js";
+import { sendWecomMessage, sendWecomGroupMessage, probeWecomConnection } from "./api.js";
 import { createWecomWebhookHandler } from "./webhook.js";
 import { WecomConfigSchema } from "./config-schema.js";
 import type {
@@ -356,9 +356,20 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
   security: {
     collectWarnings: ({ cfg }) => {
       const channelConfig = cfg.channels?.wecom as WecomChannelConfig | undefined;
-      const dmPolicy = channelConfig?.dmPolicy ?? "allowlist";
-      const groupPolicy = channelConfig?.groupPolicy ?? "allowlist";
+      if (!channelConfig || channelConfig.enabled === false) return [];
+
+      const dmPolicy = channelConfig.dmPolicy ?? "allowlist";
+      const groupPolicy = channelConfig.groupPolicy ?? "allowlist";
       const warnings: string[] = [];
+
+      // 签名验证缺失警告
+      const token = channelConfig.app?.token?.trim();
+      const encodingAESKey = channelConfig.app?.encodingAESKey?.trim();
+      if (!token || !encodingAESKey) {
+        warnings.push(
+          `- 企业微信: 未配置 token 或 encodingAESKey，Webhook 回调无法解密消息。请在企业微信管理后台获取回调 Token 和 EncodingAESKey 并设置 channels.wecom.app.token / channels.wecom.app.encodingAESKey。`,
+        );
+      }
 
       if (dmPolicy === "open") {
         warnings.push(
@@ -433,7 +444,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
     deliveryMode: "direct",
     chunker: (text, limit) => getWecomRuntime().channel.text.chunkMarkdownText(text, limit),
     chunkerMode: "markdown",
-    textChunkLimit: 2048, // 企业微信文本消息限制
+    textChunkLimit: 680, // 企业微信文本消息限制 2048 字节，CJK 每字符 3 字节，保守取 floor(2048/3)=682
     sendText: async ({ to, text, cfg }) => {
       const channelConfig = cfg.channels?.wecom as WecomChannelConfig;
       const result = await sendWecomMessage(channelConfig, to, text, {
@@ -495,6 +506,24 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
         log: ctx.log,
         onMessage: async (msg) => {
           ctx.log?.info(`[wecom] 收到消息: from=${msg.userId}, type=${msg.msgType}, chatType=${msg.chatType}, chatId=${msg.chatId ?? "N/A"}`);
+
+          // ========================================
+          // DM 策略检查 (P0-4 修复)
+          // ========================================
+          if (msg.chatType === "direct") {
+            const dmPolicy = channelConfig?.dmPolicy ?? "allowlist";
+            const allowFrom = channelConfig?.allowFrom ?? [];
+
+            if (dmPolicy === "allowlist") {
+              const isAllowed = allowFrom.includes("*") || allowFrom.includes(msg.userId);
+              if (!isAllowed) {
+                ctx.log?.info(`[wecom] 用户 ${msg.userId} 不在 DM 白名单中 (dmPolicy=allowlist)，跳过`);
+                return;
+              }
+            }
+            // dmPolicy === "open" 不检查
+            // dmPolicy === "pairing" 由框架 pairing 机制处理
+          }
 
           // ========================================
           // 群聊策略检查
@@ -582,11 +611,21 @@ export const wecomPlugin: ChannelPlugin<ResolvedWecomAccount> = {
                 deliver: async (payload) => {
                   const text = payload.text ?? "";
                   if (text && channelConfig) {
-                    // 群聊回复: 回复到群 (目前企业微信应用消息不直接支持群聊回复，需要通过其他方式)
-                    // 私聊回复: 回复到用户
-                    const target = msg.chatType === "group" && msg.chatId ? msg.chatId : msg.userId;
-                    await sendWecomMessage(channelConfig, target, text);
-                    ctx.log?.info(`[wecom] 已回复消息到 ${target}`);
+                    if (msg.chatType === "group" && msg.chatId) {
+                      // 群聊回复: 使用 /appchat/send 接口发送到群聊
+                      try {
+                        await sendWecomGroupMessage(channelConfig, msg.chatId, text);
+                        ctx.log?.info(`[wecom] 已回复群聊消息到 chatId=${msg.chatId}`);
+                      } catch (groupErr) {
+                        // 群聊 API 可能因权限等原因失败，降级为发送给用户
+                        ctx.log?.warn(`[wecom] 群聊回复失败 (${groupErr})，降级为私聊回复用户 ${msg.userId}`);
+                        await sendWecomMessage(channelConfig, msg.userId, text);
+                      }
+                    } else {
+                      // 私聊回复: 回复到用户
+                      await sendWecomMessage(channelConfig, msg.userId, text);
+                      ctx.log?.info(`[wecom] 已回复私聊消息到 ${msg.userId}`);
+                    }
                   }
                 },
                 onError: (err) => {

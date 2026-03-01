@@ -754,20 +754,155 @@ function setCachedQueryVec(text: string, model: string, vec: number[]): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * 免费 ↔ 收费 自动故障转移 + 活性探测。
+ *
+ * 流程：
+ *   1. 正常使用免费 BAAI/bge-m3
+ *   2. 连续失败 3 次 → 自动切到 Pro/BAAI/bge-m3（收费），立刻重试当前请求
+ *   3. 切到 Pro 后启动活性探测定时器，每 5 分钟用一条轻量文本探测免费模型
+ *   4. 免费模型恢复 → 自动切回，停止探测定时器
+ *
+ * 模块级别共享 — 同一进程内所有 client 实例共用状态。
+ */
+const FREE_MODEL = "BAAI/bge-m3";
+const PRO_MODEL = "Pro/BAAI/bge-m3";
+const FALLBACK_FAILURE_THRESHOLD = 3;
+/** 活性探测间隔（ms）：5 分钟 */
+const PROBE_INTERVAL_MS = 5 * 60 * 1000;
+/** 活性探测超时（ms） */
+const PROBE_TIMEOUT_MS = 8000;
+/** 探测用的轻量文本 */
+const PROBE_TEXT = "health check";
+
+let _freeModelFailureCount = 0;
+let _fallbackToPro = false;
+/** 活性探测定时器句柄 */
+let _probeTimer: ReturnType<typeof setInterval> | null = null;
+/** 最近一次用于探测的 baseUrl + apiKey（启动探测时快照） */
+let _probeBaseUrl = "";
+let _probeApiKey = "";
+
+/** 外部可查询：当前是否已从免费版切换到收费版 */
+export function isEmbeddingFallenBackToPro(): boolean {
+  return _fallbackToPro;
+}
+
+/**
+ * 向免费模型发一条轻量 embedding 请求，成功则切回免费版。
+ * 后台静默执行，不影响业务请求。
+ */
+async function probeFreeModel(): Promise<void> {
+  if (!_fallbackToPro || !_probeApiKey) return;
+
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+
+  try {
+    const resp = await fetch(`${_probeBaseUrl}/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${_probeApiKey}`,
+      },
+      body: JSON.stringify({ model: FREE_MODEL, input: [PROBE_TEXT] }),
+      signal: controller.signal,
+    });
+    clearTimeout(tid);
+
+    if (resp.ok) {
+      // 免费模型恢复了 → 切回
+      _fallbackToPro = false;
+      _freeModelFailureCount = 0;
+      stopProbeTimer();
+      console.info(`[tool-index] 活性探测成功：免费嵌入模型 ${FREE_MODEL} 已恢复，自动切回`);
+    }
+  } catch {
+    clearTimeout(tid);
+    // 探测失败 → 继续使用 Pro，下一轮再探
+  }
+}
+
+/** 启动活性探测定时器（幂等：已运行时不会重复启动） */
+function startProbeTimer(baseUrl: string, apiKey: string): void {
+  if (_probeTimer) return; // 已在运行
+  _probeBaseUrl = baseUrl;
+  _probeApiKey = apiKey;
+  _probeTimer = setInterval(() => {
+    probeFreeModel().catch(() => {
+      /* 静默 */
+    });
+  }, PROBE_INTERVAL_MS);
+  // 不阻止进程退出
+  if (_probeTimer && typeof _probeTimer === "object" && "unref" in _probeTimer) {
+    (_probeTimer as { unref: () => void }).unref();
+  }
+}
+
+/** 停止活性探测定时器 */
+function stopProbeTimer(): void {
+  if (_probeTimer) {
+    clearInterval(_probeTimer);
+    _probeTimer = null;
+  }
+}
+
+/**
  * 创建独立的 embedding client（OpenAI 兼容协议）。
  * 内置查询向量 LRU 缓存 — 相同文本不会重复调 API。
  * 与 Memory 的 EmbeddingProvider 完全隔离。
+ *
+ * 当配置模型为 BAAI/bge-m3（免费）时，连续失败 3 次后
+ * 自动切换到 Pro/BAAI/bge-m3（收费），维度不变（均为 1024）。
+ * 切换后启动后台活性探测，免费模型恢复时自动切回。
  */
 export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig): {
   embed: (texts: string[]) => Promise<number[][]>;
   model: string;
   dims: number;
 } {
-  const model = config.model ?? "BAAI/bge-m3";
+  const configModel = config.model ?? FREE_MODEL;
   const baseUrl = (config.baseUrl ?? "https://api.siliconflow.cn/v1").replace(/\/$/, "");
   const apiKey = config.apiKey ?? "";
   const dims = config.dimensions ?? 1024;
   const timeout = config.timeout ?? 15000;
+
+  /** 获取当前应该使用的模型（实时读取 _fallbackToPro） */
+  function resolveActiveModel(): string {
+    return configModel === FREE_MODEL && _fallbackToPro ? PRO_MODEL : configModel;
+  }
+
+  async function embedWithModel(texts: string[], useModel: string): Promise<number[][]> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const resp = await fetch(`${baseUrl}/embeddings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model: useModel, input: texts }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(`Embedding API error ${resp.status}: ${text.slice(0, 200)}`);
+      }
+
+      const json = (await resp.json()) as { data: Array<{ embedding: number[] }> };
+      return json.data.map((d) => d.embedding);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error(`Embedding API timeout after ${timeout}ms`);
+      }
+      throw err;
+    }
+  }
 
   async function embed(texts: string[]): Promise<number[][]> {
     if (!apiKey) throw new Error("Tool discovery embedding apiKey not configured");
@@ -777,8 +912,11 @@ export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig):
     const uncachedIndices: number[] = [];
     const uncachedTexts: string[] = [];
 
+    // 当前实际使用的模型（每次调用实时判断，探测恢复后立即生效）
+    const activeModel = resolveActiveModel();
+
     for (let i = 0; i < texts.length; i++) {
-      const cached = getCachedQueryVec(texts[i], model);
+      const cached = getCachedQueryVec(texts[i], activeModel);
       if (cached) {
         results[i] = cached;
       } else {
@@ -793,51 +931,66 @@ export function createToolEmbeddingClient(config: ToolDiscoveryEmbeddingConfig):
     }
 
     // 调 API 获取未缓存的向量
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
+    let embeddings: number[][];
     try {
-      const resp = await fetch(`${baseUrl}/embeddings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({ model, input: uncachedTexts }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => "");
-        throw new Error(`Embedding API error ${resp.status}: ${text.slice(0, 200)}`);
+      embeddings = await embedWithModel(uncachedTexts, activeModel);
+      // 成功 → 重置失败计数（仅当使用免费模型时）
+      if (activeModel === FREE_MODEL) {
+        _freeModelFailureCount = 0;
       }
-
-      const json = (await resp.json()) as { data: Array<{ embedding: number[] }> };
-      const embeddings = json.data.map((d) => d.embedding);
-
-      // 写入缓存 + 填充结果
-      for (let i = 0; i < uncachedIndices.length; i++) {
-        const vec = embeddings[i];
-        if (vec) {
-          const origIdx = uncachedIndices[i];
-          results[origIdx] = vec;
-          setCachedQueryVec(uncachedTexts[i], model, vec);
-        }
-      }
-
-      return results as number[][];
     } catch (err) {
-      clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`Embedding API timeout after ${timeout}ms`);
+      // 仅对免费模型计数失败次数
+      if (activeModel === FREE_MODEL && configModel === FREE_MODEL) {
+        _freeModelFailureCount++;
+        if (_freeModelFailureCount >= FALLBACK_FAILURE_THRESHOLD) {
+          _fallbackToPro = true;
+          console.warn(
+            `[tool-index] 免费嵌入模型 ${FREE_MODEL} 连续失败 ${_freeModelFailureCount} 次，` +
+              `自动切换到收费版 ${PRO_MODEL}，启动活性探测`,
+          );
+          // 启动后台探测定时器
+          startProbeTimer(baseUrl, apiKey);
+          // 立刻用收费模型重试当前请求
+          try {
+            embeddings = await embedWithModel(uncachedTexts, PRO_MODEL);
+          } catch (proErr) {
+            // 收费版也失败 → 抛出原始错误
+            throw err;
+          }
+          // Pro 成功 → 写入缓存并返回
+          for (let i = 0; i < uncachedIndices.length; i++) {
+            const vec = embeddings![i];
+            if (vec) {
+              const origIdx = uncachedIndices[i];
+              results[origIdx] = vec;
+              setCachedQueryVec(uncachedTexts[i], PRO_MODEL, vec);
+            }
+          }
+          return results as number[][];
+        }
       }
       throw err;
     }
+
+    // 写入缓存 + 填充结果
+    for (let i = 0; i < uncachedIndices.length; i++) {
+      const vec = embeddings[i];
+      if (vec) {
+        const origIdx = uncachedIndices[i];
+        results[origIdx] = vec;
+        setCachedQueryVec(uncachedTexts[i], activeModel, vec);
+      }
+    }
+
+    return results as number[][];
   }
 
-  return { embed, model, dims };
+  // 如果已在 fallback 状态，确保探测定时器运行
+  if (configModel === FREE_MODEL && _fallbackToPro && apiKey) {
+    startProbeTimer(baseUrl, apiKey);
+  }
+
+  return { embed, model: resolveActiveModel(), dims };
 }
 
 /**

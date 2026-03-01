@@ -6,6 +6,7 @@ import type { ToolCard } from "../types/chat-types";
 import { TOOL_INLINE_THRESHOLD } from "./constants";
 import { renderImageGenPending, renderImageGenInterrupted } from "./image-gen-result";
 import { renderVideoGenPending, renderVideoGenInterrupted } from "./video-gen-result";
+import { renderFileWritePending, renderFileWriteInterrupted } from "./file-write-card";
 import {
   formatToolOutputForSidebar,
   getTruncatedPreview,
@@ -126,6 +127,10 @@ export function renderToolCardSidebar(
   if (isInterrupted && card.name === "video_gen") {
     return renderVideoGenInterrupted(card.args as Record<string, unknown> | undefined);
   }
+  // [CN-FEAT:file-card] Interrupted file write
+  if (isInterrupted && (card.name === "write" || card.name === "edit")) {
+    return renderFileWriteInterrupted(card.args as Record<string, unknown> | undefined);
+  }
 
   // OpenClawCN: Specialized shimmer placeholder for image_gen/image_edit tool calls in progress
   if (isPending && (card.name === "image_gen" || card.name === "image_edit")) {
@@ -134,6 +139,10 @@ export function renderToolCardSidebar(
   // OpenClawCN: Specialized shimmer placeholder for video_gen tool calls in progress
   if (isPending && card.name === "video_gen") {
     return renderVideoGenPending(card.args as Record<string, unknown> | undefined);
+  }
+  // [CN-FEAT:file-card] Specialized shimmer placeholder for write/edit tool calls in progress
+  if (isPending && (card.name === "write" || card.name === "edit")) {
+    return renderFileWritePending(card.args as Record<string, unknown> | undefined);
   }
 
   return html`

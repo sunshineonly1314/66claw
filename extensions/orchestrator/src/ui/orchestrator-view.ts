@@ -6,8 +6,12 @@
  */
 
 import { html, nothing, type TemplateResult } from "lit";
-import type { CommunityTemplate, DeployReportAgent, DeployReportSummary, OrchestratorState, TeamProposal } from "./orchestrator-state.js";
+import type { CommunityTemplate, DeployReportAgent, DeployReportSummary, OrchestratorState, ProposingStep, TeamProposal } from "./orchestrator-state.js";
 import type { SceneTemplate } from "../types.js";
+
+// ── Tooltip Icon ────────────────────────────────────────────────────────
+
+const infoIcon = html`<span class="orch-info-icon" title="">ⓘ</span>`;
 
 // ── Handler Types ────────────────────────────────────────────────────────
 
@@ -62,11 +66,11 @@ export function renderOrchestrator(
           ? renderTeamProposal(state.proposal, handlers, t) : nothing}
         ${state.phase === "previewing" && state.previewTemplate
           ? renderTemplatePreview(state.previewTemplate, handlers, t) : nothing}
-        ${state.phase === "deploying" ? renderDeployProgress(state, t) : nothing}
+        ${state.phase === "deploying" ? renderDeployProgress(state, handlers, t) : nothing}
         ${state.phase === "success" ? renderSuccess(state, handlers, t) : nothing}
         ${state.phase === "error" ? renderError(state, handlers, t) : nothing}
         ${state.phase === "proposing" || state.phase === "refining"
-          ? renderThinking(t)
+          ? (state.proposingSteps.length > 0 ? renderProposingSteps(state.proposingSteps, t) : renderThinking(t))
           : nothing}
       </div>
       ${renderCompose(state, handlers, t)}
@@ -108,6 +112,19 @@ function renderWelcome(
     <div class="orch-welcome">
       <div class="orch-welcome-title">${t("orch.welcomeTitle")}</div>
       <div class="orch-welcome-sub">${t("orch.welcomeSub")}</div>
+
+      ${state.hasProvider === false ? html`
+        <div class="orch-provider-warn">
+          <div class="orch-provider-warn-icon">⚠️</div>
+          <div class="orch-provider-warn-body">
+            <div class="orch-provider-warn-title">${t("orch.noProviderTitle")}</div>
+            <div class="orch-provider-warn-desc">${t("orch.noProviderDesc")}</div>
+            <button class="btn btn--sm primary" @click=${() => handlers.onActionClick("goto-model-config")}>
+              ${t("orch.noProviderAction")}
+            </button>
+          </div>
+        </div>
+      ` : nothing}
 
       ${state.templates.length > 0 ? html`
         <div class="orch-section">
@@ -302,9 +319,9 @@ function renderProposalWidget(
       <div class="orch-proposal-list">
         ${proposal.agents.map((agent, i) => html`
           <div class="orch-agent-row">
-            <div class="orch-avatar orch-avatar--${i % 6}">${agent.name.charAt(0)}</div>
+            <div class="orch-avatar orch-avatar--${i % 6}">${(agent.name || "?").charAt(0)}</div>
             <div class="orch-agent-body">
-              <div class="orch-agent-name">${agent.name}</div>
+              <div class="orch-agent-name">${agent.name || "?"}</div>
               <div class="orch-agent-desc">${agent.role}</div>
             </div>
           </div>
@@ -390,9 +407,9 @@ function renderSoulPreviewWidget(
         }}>
           <div class="orch-soul-head-left">
             <div class="orch-avatar orch-avatar--${i % 6}" style="width:28px;height:28px;font-size:13px;">
-              ${agent.name.charAt(0)}
+              ${(agent.name || "?").charAt(0)}
             </div>
-            <span class="orch-soul-head-name">${agent.name}</span>
+            <span class="orch-soul-head-name">${agent.name || "?"}</span>
           </div>
           <span class="orch-soul-toggle">${t("orch.soulToggle")}</span>
         </div>
@@ -469,39 +486,78 @@ function renderTeamProposal(
       <div class="orch-preview-header">
         <div class="orch-preview-title">${proposal.teamName}</div>
         <div class="orch-preview-desc">${proposal.teamDescription}</div>
+        ${proposal.coverageScore != null || proposal.feasibilityScore != null ? html`
+          <div class="orch-preview-scores">
+            ${proposal.coverageScore != null ? html`
+              <span class="orch-score-badge">${t("orch.coverageScore")}: ${proposal.coverageScore}%</span>
+            ` : nothing}
+            ${proposal.feasibilityScore != null ? html`
+              <span class="orch-score-badge">${t("orch.feasibilityScore")}: ${proposal.feasibilityScore}%</span>
+            ` : nothing}
+          </div>
+        ` : nothing}
       </div>
 
       <div class="orch-preview-agents">
         ${proposal.agents.map((agent, i) => html`
-          <div class="orch-preview-agent">
+          <div class="orch-preview-agent orch-ability-card">
             <div class="orch-preview-agent-top">
               <div class="orch-avatar orch-avatar--${i % 6}" style="width:36px;height:36px;font-size:14px;">
-                ${agent.name.charAt(0)}
+                ${agent.emoji ?? (agent.name || "?").charAt(0)}
               </div>
               <div class="orch-preview-agent-info">
-                <div class="orch-preview-agent-name">${agent.name}</div>
+                <div class="orch-preview-agent-name">${agent.name || "?"}</div>
                 <div class="orch-preview-agent-role">${agent.role}</div>
               </div>
             </div>
+
+            ${agent.abilities?.length ? html`
+              <div class="orch-ability-section">
+                <div class="orch-ability-label">${t("orch.abilitiesLabel")}</div>
+                <div class="orch-ability-list">
+                  ${agent.abilities.map(a => html`<span class="orch-ability-item">${a}</span>`)}
+                </div>
+              </div>
+            ` : nothing}
+
+            ${agent.skills?.length ? html`
+              <div class="orch-ability-section">
+                <div class="orch-ability-label">
+                  ${t("orch.skillsLabel")}
+                  <span class="orch-info-tip" title="${t("orch.helpSkills")}">${infoIcon}</span>
+                </div>
+                <div class="orch-skill-list">
+                  ${agent.skills.map(skill => html`
+                    <span class="orch-skill-chip">${skill}</span>
+                  `)}
+                </div>
+              </div>
+            ` : nothing}
+
             <div class="orch-preview-agent-tags">
               <span class="orch-preview-tag orch-preview-tag--tier">${
-                agent.modelTier === "sota" ? t("orch.tierSota")
-                : agent.modelTier === "mid" ? t("orch.tierMid")
-                : t("orch.tierCheap")
+                agent.modelName ?? (
+                  agent.modelTier === "sota" ? t("orch.tierSota")
+                  : agent.modelTier === "mid" ? t("orch.tierMid")
+                  : t("orch.tierCheap")
+                )
               }</span>
               ${agent.tools.slice(0, 3).map(tool => html`
                 <span class="orch-preview-tag">${formatToolName(tool)}</span>
               `)}
             </div>
-            ${i < proposal.agents.length - 1 ? html`
-              <div class="orch-preview-connector">
-                <svg width="12" height="20" viewBox="0 0 12 20">
-                  <path d="M6 0 L6 14 M2 10 L6 14 L10 10" stroke="var(--muted)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-                </svg>
-              </div>
-            ` : nothing}
           </div>
         `)}
+      </div>
+
+      <div class="orch-supervisor-note">
+        <span class="orch-supervisor-icon">👑</span>
+        <div class="orch-supervisor-body">
+          <div class="orch-supervisor-title">Supervisor
+            <span class="orch-info-tip" title="${t("orch.helpSupervisor")}">${infoIcon}</span>
+          </div>
+          <div class="orch-supervisor-desc">${t("orch.supervisorDesc")}</div>
+        </div>
       </div>
 
       ${proposal.costEstimate ? html`
@@ -567,10 +623,10 @@ function renderTemplatePreview(
           <div class="orch-preview-agent">
             <div class="orch-preview-agent-top">
               <div class="orch-avatar orch-avatar--${i % 6}" style="width:36px;height:36px;font-size:14px;">
-                ${agent.emoji ?? agent.name.charAt(0)}
+                ${agent.emoji ?? (agent.name || "?").charAt(0)}
               </div>
               <div class="orch-preview-agent-info">
-                <div class="orch-preview-agent-name">${agent.name}</div>
+                <div class="orch-preview-agent-name">${agent.name || "?"}</div>
                 <div class="orch-preview-agent-role">${agent.role}</div>
               </div>
             </div>
@@ -636,14 +692,17 @@ const STATUS_I18N_KEYS: Record<string, string> = {
 
 function renderDeployProgress(
   state: OrchestratorState,
+  handlers: OrchestratorHandlers,
   t: (key: string, params?: Record<string, string | number>) => string,
 ): TemplateResult {
   const progress = state.deployProgress;
-  if (!progress) return html``;
+  if (!progress?.agents || !Array.isArray(progress.agents)) return html``;
 
   const pct = progress.total > 0
     ? Math.round((progress.completed / progress.total) * 100)
     : 0;
+
+  const hasFailed = progress.agents.some(a => a.status === "failed");
 
   return html`
     <div class="orch-deploy">
@@ -651,6 +710,7 @@ function renderDeployProgress(
       <div class="orch-deploy-bar">
         <div class="orch-deploy-fill" style="width: ${pct}%"></div>
       </div>
+      <div class="orch-deploy-stat">${progress.completed}/${progress.total}</div>
       <div class="orch-deploy-cards">
         ${progress.agents.map((agent, i) => {
           const cls = agent.status === "ready" ? "done"
@@ -662,7 +722,7 @@ function renderDeployProgress(
           return html`
             <div class="orch-deploy-card orch-deploy-card--${cls}" style="animation-delay: ${i * 0.1}s">
               <div class="orch-deploy-card-avatar orch-avatar--${i % 6}">
-                ${agent.name.charAt(0)}
+                ${(agent.name || "?").charAt(0)}
               </div>
               <div class="orch-deploy-card-name">${agent.name}</div>
               <div class="orch-deploy-card-status">
@@ -671,13 +731,45 @@ function renderDeployProgress(
                 ${cls === "failed" ? html`<span class="orch-deploy-card-fail">!</span>` : nothing}
                 <span>${label}</span>
               </div>
-              ${agent.error ? html`<div class="orch-deploy-card-error">${agent.error}</div>` : nothing}
+              ${agent.error ? html`
+                <div class="orch-deploy-card-error-box">
+                  <div class="orch-deploy-card-error-msg">${humanizeDeployError(agent.error, t)}</div>
+                </div>
+              ` : nothing}
             </div>
           `;
         })}
       </div>
+      ${hasFailed ? html`
+        <div class="orch-deploy-retry-bar">
+          <button
+            class="btn btn--sm primary"
+            ?disabled=${state.retryingFailed}
+            @click=${() => handlers.onActionClick("retry-failed")}
+          >
+            ${state.retryingFailed ? t("orch.retryingFailed") : t("orch.retryFailed")}
+          </button>
+          <button class="btn btn--sm" @click=${() => handlers.onActionClick("skip-failed")}>
+            ${t("orch.skipFailed")}
+          </button>
+        </div>
+      ` : nothing}
     </div>
   `;
+}
+
+/** Map technical deploy errors to user-friendly messages */
+function humanizeDeployError(
+  error: string,
+  t: (key: string) => string,
+): string {
+  if (/permission|EACCES/i.test(error)) return t("orch.errPermission");
+  if (/timeout|ETIMEDOUT/i.test(error)) return t("orch.errTimeout");
+  if (/not found|ENOENT/i.test(error)) return t("orch.errNotFound");
+  if (/conflict|冲突/i.test(error)) return t("orch.errConflict");
+  if (/connection|ECONNREFUSED/i.test(error)) return t("orch.errConnection");
+  if (/API key|apikey|unauthorized|401/i.test(error)) return t("orch.errApiKey");
+  return error;
 }
 
 // ── Success ──────────────────────────────────────────────────────────────
@@ -709,9 +801,9 @@ function renderSuccess(
             <div class="orch-deployed-card">
               <div class="orch-deployed-card-head">
                 <div class="orch-avatar orch-avatar--${i % 6}">
-                  ${agent.emoji ?? agent.name.charAt(0)}
+                  ${agent.emoji ?? (agent.name || "?").charAt(0)}
                 </div>
-                <span class="orch-deployed-card-name">${agent.name}</span>
+                <span class="orch-deployed-card-name">${agent.name || "?"}</span>
               </div>
               <div class="orch-deployed-card-desc">${agent.role}</div>
               ${agent.modelTier || agent.toolProfile ? html`
@@ -738,6 +830,29 @@ function renderSuccess(
             </div>
           `;
         })}
+      </div>
+
+      <div class="orch-tryit">
+        <div class="orch-tryit-label">${t("orch.tryItLabel")}</div>
+        <div class="orch-tryit-input-row">
+          <input
+            class="orch-tryit-input"
+            placeholder=${t("orch.tryItPlaceholder")}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key === "Enter") {
+                const val = (e.target as HTMLInputElement).value.trim();
+                if (val) handlers.onActionClick("try-it-send", val);
+              }
+            }}
+          />
+          <button class="btn btn--sm primary" @click=${(e: Event) => {
+            const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
+            const val = input?.value?.trim();
+            if (val) handlers.onActionClick("try-it-send", val);
+          }}>
+            ${t("orch.tryItSend")}
+          </button>
+        </div>
       </div>
 
       ${data.usageGuide ? html`
@@ -826,12 +941,30 @@ function renderError(
   handlers: OrchestratorHandlers,
   t: (key: string) => string,
 ): TemplateResult {
+  const rawError = state.error ?? "Unknown error";
+  const friendlyError = humanizeDeployError(rawError, t);
+  const showRaw = friendlyError !== rawError;
+
   return html`
     <div class="orch-error">
-      <div class="orch-error-text">${state.error ?? "Unknown error"}</div>
+      <div class="orch-error-icon">⚠️</div>
+      <div class="orch-error-text">${friendlyError}</div>
+      ${showRaw ? html`
+        <details class="orch-error-details">
+          <summary>${t("orch.errorDetails")}</summary>
+          <code>${rawError}</code>
+        </details>
+      ` : nothing}
+      <div class="orch-error-hints">
+        <div class="orch-error-hint">${t("orch.errorHint1")}</div>
+        <div class="orch-error-hint">${t("orch.errorHint2")}</div>
+      </div>
       <div class="orch-error-actions">
-        <button class="btn btn--sm" @click=${() => handlers.onActionClick("retry")}>
+        <button class="btn btn--sm primary" @click=${() => handlers.onActionClick("retry")}>
           ${t("orch.errorRetry")}
+        </button>
+        <button class="btn btn--sm" @click=${() => handlers.onActionClick("goto-model-config")}>
+          ${t("orch.errorCheckConfig")}
         </button>
         <button class="btn btn--sm" @click=${handlers.onClose}>
           ${t("orch.errorBack")}
@@ -852,6 +985,36 @@ function renderThinking(
         <div class="orch-thinking-bar-inner"></div>
       </div>
       <span class="orch-thinking-text">${t("orch.thinking")}</span>
+    </div>
+  `;
+}
+
+// ── Proposing Steps (animated progress) ─────────────────────────────────
+
+function renderProposingSteps(
+  steps: ProposingStep[],
+  t: (key: string) => string,
+): TemplateResult {
+  return html`
+    <div class="orch-proposing-steps">
+      <div class="orch-proposing-title">${t("orch.proposingTitle")}</div>
+      <div class="orch-proposing-list">
+        ${steps.map((step, i) => html`
+          <div class="orch-proposing-step orch-proposing-step--${step.status}">
+            <div class="orch-proposing-step-icon">
+              ${step.status === "done" ? checkIcon
+                : step.status === "active" ? html`<div class="orch-deploy-card-spinner"></div>`
+                : html`<span class="orch-proposing-step-num">${i + 1}</span>`}
+            </div>
+            <div class="orch-proposing-step-body">
+              <div class="orch-proposing-step-label">${step.label}</div>
+              ${step.detail ? html`
+                <div class="orch-proposing-step-detail">${step.detail}</div>
+              ` : nothing}
+            </div>
+          </div>
+        `)}
+      </div>
     </div>
   `;
 }

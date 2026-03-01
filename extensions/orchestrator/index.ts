@@ -194,10 +194,12 @@ const plugin: OpenClawCNPluginDefinition = {
     });
 
     api.registerGatewayMethod("orchestrator.guided_deploy", async ({ params, respond }) => {
-      const planId = String((params as Record<string, unknown>).planId ?? "");
+      const p = params as Record<string, unknown>;
+      const planId = String(p.planId ?? "");
+      const retryFailed = p.retryFailed === true;
 
       try {
-        const result = await performGuidedDeploy(callGateway, planId);
+        const result = await performGuidedDeploy(callGateway, planId, retryFailed);
         if ("error" in result) {
           respond(false, undefined, { code: "DEPLOY_FAILED", message: result.error });
         } else {

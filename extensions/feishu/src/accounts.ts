@@ -2,9 +2,9 @@ import type { ClawdbotConfig } from "openclawcn/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclawcn/plugin-sdk/account-id";
 import type {
   FeishuChannelConfig,
-  FeishuDomain,
   ResolvedFeishuAccount,
 } from "./types.js";
+import { resolveFeishuCredentials } from "./client.js";
 
 /**
  * Multi-account config: extends FeishuChannelConfig with an accounts map.
@@ -84,30 +84,6 @@ function mergeFeishuAccountConfig(cfg: ClawdbotConfig, accountId: string): Feish
 
   // Merge: account config overrides base config
   return { ...base, ...account } as FeishuConfig;
-}
-
-/**
- * Resolve Feishu credentials from a config.
- */
-export function resolveFeishuCredentials(cfg?: FeishuChannelConfig): {
-  appId: string;
-  appSecret: string;
-  encryptKey?: string;
-  verificationToken?: string;
-  domain: FeishuDomain;
-} | null {
-  const appId = cfg?.appId?.trim();
-  const appSecret = cfg?.appSecret?.trim();
-  if (!appId || !appSecret) {
-    return null;
-  }
-  return {
-    appId,
-    appSecret,
-    encryptKey: cfg?.encryptKey?.trim() || undefined,
-    verificationToken: cfg?.verificationToken?.trim() || undefined,
-    domain: cfg?.domain ?? "feishu",
-  };
 }
 
 /**

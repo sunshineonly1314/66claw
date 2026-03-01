@@ -18,6 +18,7 @@ import type {
   TeamSharedMemoryEntry,
   TeamMemberHealthState,
   TeamActivityEvent,
+  ProjectWorkspaceFilesResult,
 } from "../types.js";
 import {
   normalizeAgentLabel,
@@ -26,7 +27,7 @@ import {
 
 // ── Types ───────────────────────────────────────────────────────────────
 
-export type ProjectDetailTab = "members" | "activity" | "stats" | "settings" | "memory";
+export type ProjectDetailTab = "members" | "activity" | "stats" | "settings" | "memory" | "files";
 
 export type ProjectSidebarProps = {
   projects: TeamProjectSummary[] | null;
@@ -70,6 +71,9 @@ export type ProjectDetailProps = {
   onAddMember?: (projectId: string, agentId: string, name: string, role: string) => void;
   onSelectAgent?: (agentId: string) => void;
   onDismissError?: () => void;
+  /** Workspace files grouped by member agent */
+  files?: ProjectWorkspaceFilesResult | null;
+  onLoadFiles?: (projectId: string) => void;
 };
 
 // ── Sidebar: Project Groups ─────────────────────────────────────────────
@@ -303,6 +307,7 @@ export function renderProjectDetail(props: ProjectDetailProps): TemplateResult {
     ${props.tab === "stats" ? renderProjectStatsPanel(project, props) : nothing}
     ${props.tab === "settings" ? renderProjectSettings(project, props) : nothing}
     ${props.tab === "memory" ? renderProjectMemoryPanel(project, props) : nothing}
+    ${props.tab === "files" ? renderProjectFilesPanel(project, props) : nothing}
   `;
 }
 
@@ -365,6 +370,7 @@ function renderProjectTabs(
     { id: "stats", label: t("team.stats") },
     { id: "settings", label: t("team.settings") },
     { id: "memory", label: t("team.memory") },
+    { id: "files", label: t("team.files") },
   ];
 
   return html`
@@ -1111,6 +1117,75 @@ function renderProjectMemoryPanel(
           </div>
         `)}
       </div>
+    </div>
+  `;
+}
+
+// ── Files Panel ─────────────────────────────────────────────────────────
+
+function formatFileSize(bytes: number | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function formatRelativeTime(ms: number | undefined): string {
+  if (ms == null) return "—";
+  const diff = Date.now() - ms;
+  if (diff < 0) return t("team.files.justNow");
+  if (diff < 60_000) return t("team.files.justNow");
+  if (diff < 3_600_000) return (t as (k: string, v?: Record<string, string | number>) => string)("team.files.minAgo", { count: Math.floor(diff / 60_000) });
+  if (diff < 86_400_000) return (t as (k: string, v?: Record<string, string | number>) => string)("team.files.hoursAgo", { count: Math.floor(diff / 3_600_000) });
+  return (t as (k: string, v?: Record<string, string | number>) => string)("team.files.daysAgo", { count: Math.floor(diff / 86_400_000) });
+}
+
+function renderProjectFilesPanel(
+  project: TeamProjectDetail["project"],
+  props: ProjectDetailProps,
+): TemplateResult {
+  const data = props.files;
+
+  if (data === undefined || data === null) {
+    return html`<div class="card"><div class="muted">${t("agents.loading")}</div></div>`;
+  }
+
+  const memberList = data.members ?? [];
+  const totalFiles = memberList.reduce((n, m) => n + m.files.length, 0);
+
+  return html`
+    <div class="card">
+      <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+        <div class="card-title">${t("team.files")} (${totalFiles})</div>
+        <button
+          class="btn btn--sm btn--outline"
+          ?disabled=${props.busy}
+          @click=${() => props.onLoadFiles?.(project.projectId)}
+        >${t("team.files.refresh")}</button>
+      </div>
+      ${totalFiles === 0
+        ? html`<div class="muted">${t("team.files.empty")}</div>`
+        : memberList.map((member) => html`
+          <div class="project-files-group" style="margin-bottom: 16px;">
+            <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">
+              ${member.agentEmoji ? html`<span style="margin-right: 4px;">${member.agentEmoji}</span>` : nothing}${member.agentName}
+            </div>
+            ${member.files.length === 0
+              ? html`<div class="muted" style="font-size: 12px; padding-left: 8px;">${t("team.files.noFiles")}</div>`
+              : html`
+                <div class="agent-files-list" style="font-size: 12px;">
+                  ${member.files.map((f) => html`
+                    <div class="agent-files-row" style="display: flex; align-items: center; gap: 12px; padding: 4px 8px; border-bottom: 1px solid var(--border-color, #eee);">
+                      <span class="mono" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${f.name}</span>
+                      <span class="muted" style="white-space: nowrap;">${formatFileSize(f.size)}</span>
+                      <span class="muted" style="white-space: nowrap;">${formatRelativeTime(f.updatedAtMs)}</span>
+                    </div>
+                  `)}
+                </div>
+              `}
+          </div>
+        `)}
     </div>
   `;
 }

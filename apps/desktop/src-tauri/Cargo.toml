@@ -28,3 +28,5 @@ futures = "0.3"
 aes-gcm = "0.10"
 base64 = "0.22"
 json5 = "0.4"
+sha2 = "0.10"
+cbc = { version = "0.1", features = ["alloc"] }

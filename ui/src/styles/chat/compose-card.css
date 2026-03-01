@@ -40,16 +40,16 @@
   border: none !important;
   border-bottom: none !important;
   background: transparent;
-  padding: 16px 18px 10px;
-  min-height: 64px;
-  max-height: 240px;
+  padding: 20px 22px 12px;
+  min-height: 100px;
+  max-height: min(320px, 40vh);
   resize: none;
   overflow-y: auto;
   outline: none !important;
   box-shadow: none !important;
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.6;
   color: var(--text);
 }
 
@@ -707,9 +707,9 @@
   }
 
   .cc-textarea {
-    min-height: 44px;
-    font-size: 14px;
-    padding: 12px 14px 6px;
+    min-height: 64px;
+    font-size: 16px; /* ≥16px prevents iOS Safari auto-zoom on focus */
+    padding: 14px 16px 8px;
   }
 
   .cc-toolbar {

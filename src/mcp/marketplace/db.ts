@@ -225,19 +225,19 @@ function rowToItem(row: Record<string, any>): McpMarketplaceItem {
       requiresVPN: Boolean(row.requires_vpn),
     };
     if (row.china_block_reasons) {
-      item.availability.chinaBlockReasons = JSON.parse(row.china_block_reasons);
+      item.availability.chinaBlockReasons = parseJsonSafe(row.china_block_reasons, []);
     }
   }
 
   if (row.runtime_deps || row.system_deps || row.platform_notes) {
     item.requirements = {};
-    if (row.runtime_deps) item.requirements.runtimeDeps = JSON.parse(row.runtime_deps);
-    if (row.system_deps) item.requirements.systemDeps = JSON.parse(row.system_deps);
+    if (row.runtime_deps) item.requirements.runtimeDeps = parseJsonSafe(row.runtime_deps, []);
+    if (row.system_deps) item.requirements.systemDeps = parseJsonSafe(row.system_deps, []);
     if (row.platform_notes) item.requirements.platformNotes = row.platform_notes;
   }
 
   if (row.category_enhanced) {
-    item.categoryEnhanced = JSON.parse(row.category_enhanced);
+    item.categoryEnhanced = parseJsonSafe(row.category_enhanced, undefined);
   }
 
   // AI 元数据

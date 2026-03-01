@@ -125,6 +125,10 @@ export async function sendWecomMessage(
   const data = (await response.json()) as WecomSendMessageResponse;
 
   if (data.errcode !== 0) {
+    // errcode=42001 表示 token 过期，清除缓存以便下次刷新
+    if (data.errcode === 42001 && corpId && agentSecret) {
+      clearWecomTokenCacheFor(corpId, agentSecret);
+    }
     // 包含更多错误信息
     const details = [];
     if (data.invaliduser) details.push(`invaliduser=${data.invaliduser}`);
@@ -136,6 +140,68 @@ export async function sendWecomMessage(
   }
 
   return { msgid: data.msgid };
+}
+
+/**
+ * 发送企业微信群聊消息 (应用发送到群聊)
+ *
+ * 使用 /cgi-bin/appchat/send 接口发送到群聊
+ * 文档: https://developer.work.weixin.qq.com/document/path/90248
+ *
+ * @param config - 渠道配置
+ * @param chatId - 群聊 ID
+ * @param text - 消息文本
+ * @param options - 可选配置
+ * @returns 发送结果
+ */
+export async function sendWecomGroupMessage(
+  config: WecomChannelConfig,
+  chatId: string,
+  text: string,
+  options?: { msgType?: "text" | "markdown" },
+): Promise<{ errcode?: number; errmsg?: string }> {
+  const corpId = config.app?.corpId;
+  const agentSecret = config.app?.agentSecret;
+
+  if (!corpId || !agentSecret) {
+    throw new Error("企业微信 CorpID 或 AgentSecret 未配置");
+  }
+
+  const token = await getWecomAccessToken(corpId, agentSecret);
+  const msgType = options?.msgType ?? "text";
+
+  const message: Record<string, unknown> = {
+    chatid: chatId,
+    msgtype: msgType,
+    safe: 0,
+  };
+
+  if (msgType === "markdown") {
+    message.markdown = { content: text };
+  } else {
+    message.text = { content: text };
+  }
+
+  const url = new URL("https://qyapi.weixin.qq.com/cgi-bin/appchat/send");
+  url.searchParams.set("access_token", token);
+
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(message),
+  });
+
+  const data = (await response.json()) as { errcode: number; errmsg?: string };
+
+  if (data.errcode !== 0) {
+    // errcode=42001 表示 token 过期，清除缓存
+    if (data.errcode === 42001) {
+      clearWecomTokenCacheFor(corpId, agentSecret);
+    }
+    throw new Error(`发送企业微信群聊消息失败: ${data.errmsg || `errcode=${data.errcode}`}`);
+  }
+
+  return data;
 }
 
 /**

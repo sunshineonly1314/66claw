@@ -58,7 +58,7 @@ export async function retrieveColdMemories(params: {
   minScore?: number;
 }): Promise<string> {
   const { manager } = params;
-  const minScore = params.minScore ?? 0.35;
+  const minScore = params.minScore ?? 0.45;
 
   // Short-query enrichment: if the raw message is too short (e.g. "好的", "继续"),
   // FTS5 keyword search will return garbage. Use recent context as the query instead.

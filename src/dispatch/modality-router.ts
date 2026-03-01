@@ -233,6 +233,50 @@ const BUILTIN_PROFILES: ModelProfile[] = [
     costPer1M: 6.27,
     region: "domestic",
   },
+  // ── Qwen 3.5 系列 ──
+  {
+    provider: "qwen",
+    model: "qwen3.5-plus",
+    capabilities: { text: 5, code: 4, vision: 4 },
+    costPer1M: 2.4,
+    region: "domestic",
+  },
+  {
+    provider: "qwen",
+    model: "qwen3.5-flash",
+    capabilities: { text: 4, code: 4, vision: 4 },
+    costPer1M: 0.4,
+    region: "domestic",
+  },
+  {
+    provider: "qwen",
+    model: "qwen3.5-397b-a17b",
+    capabilities: { text: 5, code: 5, vision: 4 },
+    costPer1M: 3.5,
+    region: "domestic",
+  },
+  {
+    provider: "qwen",
+    model: "qwen3.5-122b-a10b",
+    capabilities: { text: 4, code: 4, vision: 4 },
+    costPer1M: 1.6,
+    region: "domestic",
+  },
+  {
+    provider: "qwen",
+    model: "qwen3.5-35b-a3b",
+    capabilities: { text: 4, code: 3, vision: 3 },
+    costPer1M: 0.4,
+    region: "domestic",
+  },
+  {
+    provider: "qwen",
+    model: "qwen3.5-27b",
+    capabilities: { text: 4, code: 3, vision: 3 },
+    costPer1M: 0.8,
+    region: "domestic",
+  },
+  // ── Qwen 经典系列 ──
   {
     provider: "qwen",
     model: "qwen-vl-max",
@@ -314,22 +358,15 @@ const BUILTIN_PROFILES: ModelProfile[] = [
   },
   {
     provider: "siliconflow",
-    model: "stabilityai/stable-diffusion-xl-base-1.0",
-    capabilities: { imageGen: 3 },
-    costPer1M: 0.0,
-    region: "domestic",
-  },
-  {
-    provider: "siliconflow",
-    model: "black-forest-labs/FLUX.1-schnell",
-    capabilities: { imageGen: 4 },
-    costPer1M: 0.5,
-    region: "domestic",
-  },
-  {
-    provider: "siliconflow",
     model: "Qwen/Qwen-Image",
     capabilities: { imageGen: 4 },
+    costPer1M: 3.0,
+    region: "domestic",
+  },
+  {
+    provider: "siliconflow",
+    model: "Qwen/Qwen-Image-Edit-2509",
+    capabilities: { imageEdit: 5 },
     costPer1M: 3.0,
     region: "domestic",
   },
@@ -355,7 +392,74 @@ const BUILTIN_PROFILES: ModelProfile[] = [
     region: "domestic",
   },
 
+  // ── Image Generation — DashScope Qwen-Image ──
+  {
+    provider: "dashscope",
+    model: "qwen-image-max",
+    capabilities: { imageGen: 5 },
+    costPer1M: 3.0,
+    region: "domestic",
+  },
+  {
+    provider: "dashscope",
+    model: "qwen-image-plus-2026-01-09",
+    capabilities: { imageGen: 4 },
+    costPer1M: 1.5,
+    region: "domestic",
+  },
+  {
+    provider: "dashscope",
+    model: "z-image-turbo",
+    capabilities: { imageGen: 3 },
+    costPer1M: 0.5,
+    region: "domestic",
+  },
+
+  // ── Image Generation — Volcengine Seedream ──
+  {
+    provider: "volcengine-ark",
+    model: "doubao-seedream-5-0-260128",
+    capabilities: { imageGen: 5 },
+    costPer1M: 10.0,
+    region: "domestic",
+  },
+  {
+    provider: "volcengine-ark",
+    model: "doubao-seedream-4-5-251128",
+    capabilities: { imageGen: 5 },
+    costPer1M: 8.0,
+    region: "domestic",
+  },
+  {
+    provider: "volcengine-ark",
+    model: "doubao-seedream-4-0-250828",
+    capabilities: { imageGen: 4 },
+    costPer1M: 5.0,
+    region: "domestic",
+  },
+
   // ── Video Generation Models ──
+  {
+    provider: "volcengine-ark",
+    model: "doubao-seedance-1-5-pro-251215",
+    capabilities: { videoGen: 5 },
+    costPer1M: 15.0,
+    region: "domestic",
+  },
+  {
+    provider: "volcengine-ark",
+    model: "doubao-seedance-1-0-pro-250528",
+    capabilities: { videoGen: 4 },
+    costPer1M: 15.0,
+    region: "domestic",
+  },
+  {
+    provider: "volcengine-ark",
+    model: "doubao-seedance-1-0-pro-fast-251015",
+    capabilities: { videoGen: 4 },
+    costPer1M: 5.0,
+    region: "domestic",
+  },
   {
     provider: "zhipu",
     model: "cogvideox-flash",
@@ -384,11 +488,19 @@ const BUILTIN_PROFILES: ModelProfile[] = [
     costPer1M: 6.0,
     region: "domestic",
   },
+  // ── DashScope Wan2.6 (图生视频) ──
   {
-    provider: "siliconflow",
-    model: "Pro/THUDM/CogVideoX-5B",
-    capabilities: { videoGen: 3 },
-    costPer1M: 8.0,
+    provider: "dashscope",
+    model: "wan2.6-i2v",
+    capabilities: { videoGen: 5 },
+    costPer1M: 4.0,
+    region: "domestic",
+  },
+  {
+    provider: "dashscope",
+    model: "wan2.6-i2v-flash",
+    capabilities: { videoGen: 4 },
+    costPer1M: 1.5,
     region: "domestic",
   },
 

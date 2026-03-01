@@ -4,6 +4,7 @@
  * Supports:
  *   - Zhipu CogVideoX (via zhipuai async API)
  *   - SiliconFlow video models (via OpenAI-compatible async API)
+ *   - Volcengine Doubao Seedance (via /api/v3/contents/generations/tasks async API)
  *
  * All video generation APIs are asynchronous (submit → poll → download).
  * The tool handles the full lifecycle internally and returns the video URL.
@@ -112,7 +113,7 @@ async function downloadVideoToLocal(remoteUrl: string, prompt: string): Promise<
 
 interface PendingVideoTask {
   requestId: string;
-  provider: "siliconflow" | "zhipu";
+  provider: "siliconflow" | "zhipu" | "volcengine-ark";
   modelId: string;
   prompt: string;
   baseUrl: string;
@@ -339,6 +340,88 @@ export async function recoverPendingVideoTasks(): Promise<RecoveredVideoResult[]
           if (pollData.status === "Failed") {
             log.info(`Recovered task ${task.requestId} had failed`);
             // Write an error tool_result so frontend shows failure not shimmer
+            if (task.toolCallId && task.sessionKey) {
+              await writeExpiredToolResultToTranscript(task);
+            }
+            break;
+          }
+
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+        }
+      } else if (task.provider === "volcengine-ark") {
+        // Volcengine Seedance recovery: GET /api/v3/contents/generations/tasks/{id}
+        const resultUrl = `${task.baseUrl}/api/v3/contents/generations/tasks/${task.requestId}`;
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < MAX_POLL_TIME) {
+          const pollResponse = await fetch(resultUrl, {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${task.apiKey}`,
+            },
+          });
+
+          if (!pollResponse.ok) {
+            if (pollResponse.status === 401 || pollResponse.status === 403) break;
+            await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+            continue;
+          }
+
+          const pollData = (await pollResponse.json()) as {
+            status?: string;
+            content?: { video_url?: string };
+            error?: { code?: string; message?: string };
+          };
+
+          if (pollData.status === "succeeded") {
+            const videoUrl = pollData.content?.video_url;
+            if (videoUrl) {
+              const dlResp = await fetch(videoUrl);
+              if (dlResp.ok) {
+                const videoBuf = Buffer.from(await dlResp.arrayBuffer());
+                if (videoBuf.length >= 1024) {
+                  const sessionKey = task.sessionKey || `default-${task.submittedAt}`;
+                  const entry = await saveGeneratedVideo({
+                    sessionKey,
+                    data: videoBuf,
+                    mimeType: "video/mp4",
+                    meta: {
+                      prompt: task.prompt,
+                      model: `${task.provider}/${task.modelId}`,
+                      provider: task.provider,
+                      size: "1280x720",
+                    },
+                  });
+                  if (entry) {
+                    const savedUrl = `/api/media/videos/${sessionKey}/${entry.file}`;
+                    log.info(
+                      `Recovered Volcengine video task ${task.requestId} → ${entry.file} (${(videoBuf.length / 1024 / 1024).toFixed(1)} MB)`,
+                    );
+                    recovered.push({
+                      sessionKey,
+                      videoUrl: savedUrl,
+                      prompt: task.prompt,
+                      model: task.modelId,
+                      provider: task.provider,
+                    });
+                    await writeToolResultToTranscript(task, savedUrl, entry.file);
+                  } else {
+                    const filename = await downloadVideoToLocal(videoUrl, task.prompt);
+                    if (filename) {
+                      await writeToolResultToTranscript(
+                        task,
+                        `/api/media/videos/${filename}`,
+                        filename,
+                      );
+                    }
+                  }
+                }
+              }
+            }
+            break;
+          }
+          if (pollData.status === "failed") {
+            log.info(`Recovered Volcengine task ${task.requestId} had failed`);
             if (task.toolCallId && task.sessionKey) {
               await writeExpiredToolResultToTranscript(task);
             }
@@ -641,6 +724,144 @@ const generateWithSiliconFlow: VideoGenProviderHandler = async ({
   throw new Error(`SiliconFlow video generation timed out (${MAX_POLL_TIME / 1000}s)`);
 };
 
+/**
+ * Volcengine Doubao Seedance (豆包) video generation.
+ *
+ * Async API: POST /api/v3/contents/generations/tasks → poll GET /api/v3/contents/generations/tasks/{id}
+ * Models: doubao-seedance-1-5-pro-251215, doubao-seedance-1-0-pro-250528, doubao-seedance-1-0-pro-fast-251015
+ *
+ * Uses inline text parameters (--ratio, --dur, --rs) appended to the prompt.
+ */
+const generateWithVolcengine: VideoGenProviderHandler = async ({
+  apiKey,
+  prompt,
+  imageUrl,
+  size,
+  modelId,
+  sessionKey,
+  toolCallId,
+}) => {
+  const baseUrl = "https://ark.cn-beijing.volces.com";
+  const submitUrl = `${baseUrl}/api/v3/contents/generations/tasks`;
+
+  // Map size param to --ratio
+  let ratio = "16:9";
+  if (size === "720x1280") ratio = "9:16";
+  else if (size === "960x960") ratio = "1:1";
+
+  // Build prompt with inline parameters
+  let fullPrompt = prompt;
+  if (!prompt.includes("--ratio")) fullPrompt += ` --ratio ${ratio}`;
+  if (!prompt.includes("--dur")) fullPrompt += ` --dur 5`;
+
+  // Build content array
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: fullPrompt }];
+  if (imageUrl) {
+    content.push({
+      type: "image_url",
+      image_url: { url: imageUrl },
+    });
+  }
+
+  const submitResponse = await fetch(submitUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model: modelId, content }),
+  });
+
+  if (!submitResponse.ok) {
+    const errorText = await submitResponse.text().catch(() => "unknown error");
+    throw new Error(
+      `Volcengine Seedance video submit failed (${submitResponse.status}): ${errorText}`,
+    );
+  }
+
+  const submitData = (await submitResponse.json()) as { id?: string };
+  const taskId = submitData.id;
+  if (!taskId) {
+    throw new Error("Volcengine Seedance returned no task ID for video generation");
+  }
+
+  log.info(`Volcengine Seedance video task submitted: ${taskId}`);
+
+  // Persist task for recovery
+  await addPendingTask({
+    requestId: taskId,
+    provider: "volcengine-ark",
+    modelId,
+    prompt,
+    baseUrl,
+    apiKey,
+    submittedAt: Date.now(),
+    sessionKey,
+    toolCallId,
+  });
+
+  // Poll for result
+  const resultUrl = `${baseUrl}/api/v3/contents/generations/tasks/${taskId}`;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < MAX_POLL_TIME) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+
+    const pollResponse = await fetch(resultUrl, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!pollResponse.ok) {
+      if (pollResponse.status === 401 || pollResponse.status === 403) {
+        throw new Error(`Volcengine Seedance video poll auth failed (${pollResponse.status})`);
+      }
+      if (pollResponse.status === 404) {
+        throw new Error(`Volcengine Seedance video task not found: ${taskId}`);
+      }
+      log.debug(`Volcengine Seedance video poll returned ${pollResponse.status}, retrying...`);
+      continue;
+    }
+
+    const pollData = (await pollResponse.json()) as {
+      status?: string;
+      content?: { video_url?: string };
+      error?: { code?: string; message?: string };
+    };
+    const status = pollData.status;
+
+    if (status === "succeeded") {
+      await removePendingTask(taskId);
+      const videoUrl = pollData.content?.video_url;
+      if (!videoUrl) {
+        throw new Error("Volcengine Seedance video generation returned no video URL");
+      }
+
+      return {
+        videoUrl,
+        model: modelId,
+        provider: "volcengine-ark",
+      };
+    }
+
+    if (status === "failed") {
+      await removePendingTask(taskId);
+      const errMsg = pollData.error?.message || "unknown error";
+      throw new Error(`Volcengine Seedance video generation failed: ${errMsg}`);
+    }
+
+    // submitted / running — continue polling
+    log.debug(
+      `Volcengine Seedance video task ${taskId}: ${status}, elapsed=${Date.now() - startTime}ms`,
+    );
+  }
+
+  // Don't remove pending task on timeout — recovery can still pick it up
+  throw new Error(`Volcengine Seedance video generation timed out (${MAX_POLL_TIME / 1000}s)`);
+};
+
 // ---------------------------------------------------------------------------
 // Provider resolver
 // ---------------------------------------------------------------------------
@@ -652,6 +873,9 @@ function resolveVideoGenProvider(provider: string, modelId: string): VideoGenPro
   }
   if (provider === "siliconflow") {
     return generateWithSiliconFlow;
+  }
+  if (provider === "volcengine-ark" || provider === "doubao" || modelId.includes("seedance")) {
+    return generateWithVolcengine;
   }
   // Default to Zhipu (most widely accessible in CN)
   return generateWithZhipu;
@@ -759,6 +983,21 @@ export function createVideoGenTool(options?: {
               baseUrl: sfProvider.baseUrl || "https://api.siliconflow.cn/v1",
             } as unknown as typeof videoGenModel;
             log.info("Video model not in models.json; using SiliconFlow Wan2.2 (fallback)");
+          }
+
+          // Try Volcengine Seedance (high quality video gen)
+          if (!videoGenModel) {
+            const volcProvider = rawProviders["volcengine-ark"] || rawProviders["doubao"];
+            if (volcProvider?.apiKey) {
+              videoGenModel = {
+                id: "doubao-seedance-1-0-pro-fast-251015",
+                provider: "volcengine-ark",
+                baseUrl: volcProvider.baseUrl || "https://ark.cn-beijing.volces.com",
+              } as unknown as typeof videoGenModel;
+              log.info(
+                "Video model not in models.json; using Volcengine Seedance 1.0 Pro Fast (fallback)",
+              );
+            }
           }
 
           // Try Zhipu
@@ -889,6 +1128,7 @@ export function createVideoGenTool(options?: {
             size,
             mediaType: "video",
             localFilename,
+            mediaId: entry?.id ?? null,
           },
         };
       } catch (err) {

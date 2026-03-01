@@ -4,7 +4,8 @@
  * Supports:
  *   - OpenAI DALL-E 3 / GPT-Image-1 (via /v1/images/generations)
  *   - Aliyun Wanx / 通义万相 (via DashScope API)
- *   - SiliconFlow image models (Flux, SDXL, Midjourney, etc.)
+ *   - SiliconFlow image models (Qwen-Image, Kolors, etc.)
+ *   - Volcengine Doubao Seedream (via /api/v3/images/generations)
  *   - Local sd.cpp sidecar (OpenAI-compatible API on localhost)
  *   - External local models (A1111/ComfyUI/Forge via user-configured endpoint)
  *
@@ -242,7 +243,7 @@ const generateWithSiliconFlow: ImageGenProviderHandler = async ({
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
-  // Qwen-Image models use different parameters than FLUX/SD/Kolors.
+  // Qwen-Image models use different parameters than Kolors.
   // Qwen-Image: num_inference_steps + cfg (NO image_size, NO batch_size)
   // Others: image_size + batch_size
   const isQwenImage = /qwen[/-]image/i.test(modelId) && !/edit/i.test(modelId);
@@ -288,6 +289,86 @@ const generateWithSiliconFlow: ImageGenProviderHandler = async ({
 
   if (results.length === 0) {
     throw new Error("SiliconFlow returned empty image data");
+  }
+  return results;
+};
+
+/**
+ * Volcengine Doubao Seedream (豆包) image generation.
+ *
+ * Synchronous API: POST /api/v3/images/generations → returns image URL directly.
+ * Models: doubao-seedream-5-0-260128, doubao-seedream-4-5-251128, doubao-seedream-4-0-250828
+ * Note: Seedream 4.5+ requires minimum 3686400 pixels (e.g. 1920x1920).
+ */
+const generateWithVolcengine: ImageGenProviderHandler = async ({
+  apiKey,
+  prompt,
+  size,
+  n,
+  modelId,
+}) => {
+  const baseUrl = "https://ark.cn-beijing.volces.com";
+  const url = `${baseUrl}/api/v3/images/generations`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+
+  // Seedream 4.5+ requires minimum 3686400 pixels; auto-upscale small sizes
+  const isHighResModel = /seedream-(?:4-5|5-0)/.test(modelId);
+  let resolvedSize = size || "1024x1024";
+  if (isHighResModel) {
+    const [w, h] = resolvedSize.split("x").map(Number);
+    if (w && h && w * h < 3686400) {
+      // Upscale to 1920x1920 (minimum for 4.5+) or 2048x2048
+      resolvedSize = "2048x2048";
+      log.info(`Seedream ${modelId} requires ≥3686400px, upscaling ${size} → ${resolvedSize}`);
+    }
+  }
+
+  const body: Record<string, unknown> = {
+    model: modelId,
+    prompt,
+    size: resolvedSize,
+    response_format: "url",
+    watermark: false,
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  });
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "unknown error");
+    throw new Error(
+      `Volcengine Seedream image generation failed (${response.status}): ${errorText}`,
+    );
+  }
+
+  const data = (await response.json()) as {
+    data?: Array<{ url?: string; b64_json?: string; revised_prompt?: string; size?: string }>;
+  };
+
+  const results: ImageGenResult[] = [];
+  for (const item of data.data ?? []) {
+    const imageUrl = item.b64_json ? `data:image/png;base64,${item.b64_json}` : (item.url ?? "");
+    if (imageUrl) {
+      results.push({
+        imageUrl,
+        revisedPrompt: item.revised_prompt,
+        model: modelId,
+        provider: "volcengine-ark",
+      });
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error("Volcengine Seedream returned empty image data");
   }
   return results;
 };
@@ -377,6 +458,9 @@ function resolveImageGenProvider(provider: string, modelId: string): ImageGenPro
     return generateWithDashScope;
   }
   if (provider === "siliconflow") return generateWithSiliconFlow;
+  if (provider === "volcengine-ark" || provider === "doubao" || modelId.includes("seedream")) {
+    return generateWithVolcengine;
+  }
   if (modelId.includes("dall-e") || modelId.includes("gpt-image") || provider === "openai") {
     return generateWithOpenAI;
   }
@@ -671,7 +755,8 @@ export function createImageGenTool(options?: {
                 id.includes("playground") ||
                 id.includes("kolors") ||
                 id.includes("qwen-image") ||
-                id.includes("cogview")
+                id.includes("cogview") ||
+                id.includes("seedream")
               );
             });
           }
@@ -703,11 +788,7 @@ export function createImageGenTool(options?: {
 
           // [CN-FIX] Fallback chain: if the primary model fails with 400/404,
           // try well-known alternatives from the same provider before giving up.
-          const SILICONFLOW_FALLBACKS = [
-            "Qwen/Qwen-Image",
-            "black-forest-labs/FLUX.1-schnell",
-            "Kwai-Kolors/Kolors",
-          ];
+          const SILICONFLOW_FALLBACKS = ["Qwen/Qwen-Image", "Kwai-Kolors/Kolors"];
 
           let lastError: Error | undefined;
           const modelsToTry = [imageGenModel.id];
@@ -764,6 +845,7 @@ export function createImageGenTool(options?: {
         // --- Persist images to disk ---
         const persistedUrls: string[] = [];
         const persistedPaths: string[] = [];
+        const persistedIds: string[] = [];
         for (const result of results) {
           try {
             const { buffer, mimeType } = await resolveImageBuffer(result.imageUrl);
@@ -786,6 +868,7 @@ export function createImageGenTool(options?: {
               // URL path that media server will serve
               persistedUrls.push(`/api/media/chat-images/${sessionKey}/${entry.file}`);
               persistedPaths.push(entry.file);
+              persistedIds.push(entry.id);
             } else {
               // Fallback: use the original URL/data URL
               persistedUrls.push(result.imageUrl);
@@ -815,6 +898,7 @@ export function createImageGenTool(options?: {
             imageUrl: persistedUrls[0],
             imageUrls: persistedUrls,
             imageFiles: persistedPaths,
+            mediaIds: persistedIds,
             imageCount: results.length,
             model: `${firstResult.provider}/${firstResult.model}`,
             provider: firstResult.provider,
@@ -834,6 +918,7 @@ export function createImageGenTool(options?: {
             imageUrl: persistedUrls[0],
             imageUrls: persistedUrls,
             imageFiles: persistedPaths,
+            mediaIds: persistedIds,
             imageCount: results.length,
             prompt,
             size,
@@ -1047,15 +1132,15 @@ export function createImageEditTool(options?: {
           });
         }
 
-        // Final fallback: default to Qwen-Image-Edit on siliconflow
+        // Final fallback: default to Qwen-Image-Edit-2509 on siliconflow
         if (!editModel) {
           editModel = {
-            id: "Qwen/Qwen-Image-Edit",
+            id: "Qwen/Qwen-Image-Edit-2509",
             provider: "siliconflow",
             baseUrl: "",
           } as (typeof models)[number];
           log.info(
-            "No image-editing model configured, defaulting to siliconflow/Qwen/Qwen-Image-Edit",
+            "No image-editing model configured, defaulting to siliconflow/Qwen/Qwen-Image-Edit-2509",
           );
         }
 

@@ -21,6 +21,7 @@ import {
   renderAgentCron,
 } from "./agents-panels-status-files.ts";
 import { renderAgentTools, renderAgentSkills } from "./agents-panels-tools-skills.ts";
+import { renderAgentOutputs } from "./agents-panels-outputs.ts";
 import {
   agentBadgeText,
   buildAgentContext,
@@ -41,7 +42,7 @@ import {
 } from "./team-projects.ts";
 import { renderAgentChatPanel, type AgentChatPanelProps } from "./agent-chat-panel.ts";
 
-export type AgentsPanel = "overview" | "files" | "tools" | "skills" | "channels" | "cron" | "chat";
+export type AgentsPanel = "overview" | "outputs" | "files" | "tools" | "skills" | "channels" | "cron" | "chat";
 
 export type AgentsProps = {
   loading: boolean;
@@ -68,6 +69,15 @@ export type AgentsProps = {
   agentFileContents: Record<string, string>;
   agentFileDrafts: Record<string, string>;
   agentFileSaving: boolean;
+  // Agent outputs (workspace files)
+  agentOutputsLoading: boolean;
+  agentOutputsError: string | null;
+  agentOutputsList: import("../types.ts").AgentOutputsListResult | null;
+  agentOutputActive: string | null;
+  agentOutputContent: string | null;
+  agentOutputContentLoading: boolean;
+  onLoadOutputs: (agentId: string) => void;
+  onSelectOutput: (agentId: string, filePath: string, relativeName: string) => void;
   agentIdentityLoading: boolean;
   agentIdentityError: string | null;
   agentIdentityById: Record<string, AgentIdentityResult>;
@@ -132,6 +142,7 @@ export type AgentsProps = {
   teamProjectStats: TeamProjectStatsResult | null;
   teamProjectMemory: TeamSharedMemoryEntry[] | null;
   teamProjectActivity: TeamActivityEvent[] | null;
+  teamProjectFiles: import("../types.js").ProjectWorkspaceFilesResult | null;
   teamProjectTab: ProjectDetailTab;
   teamProjectBusy: boolean;
   teamCollapsedProjects: Set<string>;
@@ -143,6 +154,7 @@ export type AgentsProps = {
   onLoadProjectStats: (projectId: string) => void;
   onLoadProjectMemory: (projectId: string) => void;
   onLoadProjectActivity: (projectId: string) => void;
+  onLoadProjectFiles: (projectId: string) => void;
   onClearProjectMemory: (projectId: string) => void;
   onToggleProjectCollapse: (projectId: string) => void;
   onDeleteOrchGroup?: (agentIds: string[]) => void;
@@ -260,6 +272,7 @@ export function renderAgents(props: AgentsProps) {
                 stats: props.teamProjectStats,
                 memory: props.teamProjectMemory,
                 activity: props.teamProjectActivity,
+                files: props.teamProjectFiles,
                 tab: props.teamProjectTab,
                 busy: props.teamProjectBusy,
                 agentIdentityById: props.agentIdentityById,
@@ -271,6 +284,7 @@ export function renderAgents(props: AgentsProps) {
                 onLoadStats: props.onLoadProjectStats,
                 onLoadMemory: props.onLoadProjectMemory,
                 onLoadActivity: props.onLoadProjectActivity,
+                onLoadFiles: props.onLoadProjectFiles,
                 onClearMemory: props.onClearProjectMemory,
                 onUpdateSettings: props.onUpdateProjectSettings,
                 onRemoveMember: props.onRemoveProjectMember,
@@ -290,7 +304,11 @@ export function renderAgents(props: AgentsProps) {
                   props.agentIdentityById[selectedAgent.id] ?? null,
                   props,
                 )}
-                ${renderAgentTabs(props.activePanel, (panel) => props.onSelectPanel(panel))}
+                ${renderAgentTabs(
+                  props.activePanel,
+                  (panel) => props.onSelectPanel(panel),
+                  { hideChannels: isTeamChildAgent(selectedAgent.id, defaultId, props.teamProjects) },
+                )}
                 ${
                   props.activePanel === "overview"
                     ? renderAgentOverview({
@@ -375,6 +393,7 @@ export function renderAgents(props: AgentsProps) {
                 }
                 ${
                   props.activePanel === "channels"
+                  && !isTeamChildAgent(selectedAgent.id, defaultId, props.teamProjects)
                     ? renderAgentChannels({
                         context: buildAgentContext(
                           selectedAgent,
@@ -414,6 +433,22 @@ export function renderAgents(props: AgentsProps) {
                     : nothing
                 }
                 ${
+                  props.activePanel === "outputs"
+                    ? renderAgentOutputs({
+                        agentId: selectedAgent.id,
+                        agentOutputsList: props.agentOutputsList,
+                        agentOutputsLoading: props.agentOutputsLoading,
+                        agentOutputsError: props.agentOutputsError,
+                        agentOutputActive: props.agentOutputActive,
+                        agentOutputContent: props.agentOutputContent,
+                        agentOutputContentLoading: props.agentOutputContentLoading,
+                        onLoadOutputs: props.onLoadOutputs,
+                        onSelectOutput: props.onSelectOutput,
+                        requestUpdate: props.requestUpdate ?? (() => {}),
+                      })
+                    : nothing
+                }
+                ${
                   props.activePanel === "chat" && props.agentChatProps
                     ? renderAgentChatPanel({
                         agentId: selectedAgent.id,
@@ -433,6 +468,24 @@ export function renderAgents(props: AgentsProps) {
 
 function hasTeamProjects(projects: TeamProjectSummary[] | null): boolean {
   return !!projects && projects.length > 0;
+}
+
+/**
+ * Check if an agent is a child member of a team project (not a supervisor
+ * and not the default agent). Child members should not have their own
+ * channel bindings — messages reach them via their Supervisor.
+ */
+function isTeamChildAgent(
+  agentId: string,
+  defaultId: string | null,
+  projects: TeamProjectSummary[] | null,
+): boolean {
+  if (!projects || projects.length === 0) return false;
+  if (agentId === defaultId) return false;
+  // If this agent is a supervisor in ANY project, it needs channel access
+  if (projects.some((p) => p.supervisorId === agentId)) return false;
+  // Otherwise, if it's a member of any project, it's a child agent
+  return projects.some((p) => p.memberIds.includes(agentId));
 }
 
 function renderAgentHeader(
@@ -488,14 +541,19 @@ function renderAgentHeader(
   `;
 }
 
-function renderAgentTabs(active: AgentsPanel, onSelect: (panel: AgentsPanel) => void) {
+function renderAgentTabs(
+  active: AgentsPanel,
+  onSelect: (panel: AgentsPanel) => void,
+  opts?: { hideChannels?: boolean },
+) {
   const tabs: Array<{ id: AgentsPanel; label: string }> = [
     { id: "overview", label: t("agents.tabOverview") },
     { id: "chat", label: t("agents.tabChat") },
     { id: "tools", label: t("agents.tabTools") },
     { id: "skills", label: t("agents.tabSkills") },
-    { id: "channels", label: t("agents.tabChannels") },
+    ...(opts?.hideChannels ? [] : [{ id: "channels" as AgentsPanel, label: t("agents.tabChannels") }]),
     { id: "cron", label: t("agents.tabCron") },
+    { id: "outputs", label: t("agents.tabOutputs") },
     { id: "files", label: t("agents.tabFiles") },
   ];
   return html`

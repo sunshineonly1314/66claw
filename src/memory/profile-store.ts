@@ -1,7 +1,7 @@
 /**
  * [CN-PATCH:memory-profile] User Profile Facts Store
  *
- * A lightweight structured memory that stores ≤200 key facts about the user.
+ * A lightweight structured memory that stores ≤80 key facts about the user.
  * Inspired by ChatGPT's memory design (which uses ~33 facts to serve 100M+ users)
  * and Mem0/MemGPT's importance scoring + decay mechanisms.
  *
@@ -141,7 +141,7 @@ export function flushProfileChangelog(workspaceDir: string): void {
   }
 }
 
-export const PROFILE_MAX_ENTRIES = 200;
+export const PROFILE_MAX_ENTRIES = 80;
 export const PROFILE_FILENAME = "profile.json";
 export const PROFILE_ARCHIVE_FILENAME = "profile-archive.md";
 export const PROFILE_MAX_KEY_LENGTH = 100;
@@ -1195,7 +1195,7 @@ export function formatProfileForSystemPrompt(
 }
 
 // ── Eviction Archival ──
-// When entries are evicted from the hot profile (200-slot cap), qualified ones
+// When entries are evicted from the hot profile (80-slot cap), qualified ones
 // are appended to memory/profile-archive.md. The upstream SQLite file watcher
 // (chokidar on memory/**/*.md) auto-indexes this file, enabling semantic
 // retrieval of "forgotten" facts via the memory_search tool.

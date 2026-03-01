@@ -76,8 +76,20 @@ export type TeamProposal = {
     emoji?: string;
     modelTier: string;
     tools: string[];
+    /** Human-readable ability descriptions */
+    abilities?: string[];
+    /** Skill names assigned to this agent */
+    skills?: string[];
+    /** Actual model name (e.g. "qwen-max") */
+    modelName?: string;
   }>;
   costEstimate?: string;
+  /** Coverage score from scene verifier (0-100) */
+  coverageScore?: number;
+  /** Feasibility score from pipeline (0-100) */
+  feasibilityScore?: number;
+  /** Refinement summary log */
+  refinementSummary?: string;
 };
 
 // ── Community Template ───────────────────────────────────────────────────
@@ -121,6 +133,13 @@ export type DeployReportSummary = {
   soulsWritten: number;
 };
 
+/** Animated step state for proposing phase */
+export type ProposingStep = {
+  label: string;
+  detail?: string;
+  status: "pending" | "active" | "done";
+};
+
 export type OrchestratorState = {
   phase: OrchestratorPhase;
   messages: OrchestratorMessage[];
@@ -135,6 +154,12 @@ export type OrchestratorState = {
   proposal: TeamProposal | null;
   previewTemplate: SceneTemplate | null;
   deployProgress: DeployProgress | null;
+  /** Animated steps for proposing phase (frontend simulation) */
+  proposingSteps: ProposingStep[];
+  /** Whether we are retrying failed agents during deploy */
+  retryingFailed: boolean;
+  /** Provider pre-check: false if no provider configured */
+  hasProvider: boolean | null;
   successData: {
     teamDescription: string;
     agents: Array<{ id: string; name: string; role: string; emoji?: string; modelTier?: string; toolProfile?: string }>;
@@ -168,6 +193,10 @@ export type OrchestratorAction =
   | { type: "SET_COMMUNITY_TEMPLATES"; templates: CommunityTemplate[] }
   | { type: "SET_COMMUNITY_LOADING"; loading: boolean }
   | { type: "SET_COMMUNITY_ERROR"; error: string }
+  | { type: "SET_PROPOSING_STEPS"; steps: ProposingStep[] }
+  | { type: "UPDATE_PROPOSING_STEP"; index: number; step: Partial<ProposingStep> }
+  | { type: "SET_RETRYING_FAILED"; retrying: boolean }
+  | { type: "SET_HAS_PROVIDER"; has: boolean }
   | { type: "RESET" };
 
 // ── Initial State ────────────────────────────────────────────────────────
@@ -187,6 +216,9 @@ export function createInitialOrchestratorState(): OrchestratorState {
     proposal: null,
     previewTemplate: null,
     deployProgress: null,
+    proposingSteps: [],
+    retryingFailed: false,
+    hasProvider: null,
     successData: null,
     error: null,
   };
@@ -286,6 +318,22 @@ export function orchestratorReducer(
 
     case "SET_COMMUNITY_ERROR":
       return { ...state, communityLoading: false, communityError: action.error };
+
+    case "SET_PROPOSING_STEPS":
+      return { ...state, proposingSteps: action.steps };
+
+    case "UPDATE_PROPOSING_STEP": {
+      const steps = state.proposingSteps.map((s, i) =>
+        i === action.index ? { ...s, ...action.step } : s,
+      );
+      return { ...state, proposingSteps: steps };
+    }
+
+    case "SET_RETRYING_FAILED":
+      return { ...state, retryingFailed: action.retrying };
+
+    case "SET_HAS_PROVIDER":
+      return { ...state, hasProvider: action.has };
 
     case "RESET":
       return createInitialOrchestratorState();

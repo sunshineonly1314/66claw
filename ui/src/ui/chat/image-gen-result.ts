@@ -33,6 +33,8 @@ export interface ImageGenDetails {
   revisedPrompt?: string;
   error?: string;
   imageAvailable?: boolean;
+  /** [CN-FEAT:media-sqlite] SQLite media asset IDs for querying via media.details API. */
+  mediaIds?: string[];
 }
 
 // ---------------------------------------------------------------------------

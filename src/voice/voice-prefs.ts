@@ -87,6 +87,11 @@ async function writeJSONAtomic(filePath: string, value: unknown): Promise<void> 
 // Sanitization
 // ---------------------------------------------------------------------------
 
+function clampNumber(v: unknown, min: number, max: number): number | undefined {
+  if (typeof v !== "number" || Number.isNaN(v)) return undefined;
+  return Math.round(Math.max(min, Math.min(max, v)) * 100) / 100;
+}
+
 function sanitize(raw: Partial<VoicePrefs> | null | undefined): VoicePrefs {
   const prefs: VoicePrefs = {};
 
@@ -104,6 +109,13 @@ function sanitize(raw: Partial<VoicePrefs> | null | undefined): VoicePrefs {
   }
   if (typeof raw?.ttsVoice === "string" && raw.ttsVoice.trim()) {
     prefs.ttsVoice = raw.ttsVoice.trim();
+  }
+  const sr = clampNumber(raw?.ttsSpeedRatio, 0.2, 3.0);
+  if (sr !== undefined) prefs.ttsSpeedRatio = sr;
+  const pr = clampNumber(raw?.ttsPitchRatio, 0.1, 3.0);
+  if (pr !== undefined) prefs.ttsPitchRatio = pr;
+  if (typeof raw?.ttsEmotion === "string" && raw.ttsEmotion.trim()) {
+    prefs.ttsEmotion = raw.ttsEmotion.trim();
   }
 
   return prefs;

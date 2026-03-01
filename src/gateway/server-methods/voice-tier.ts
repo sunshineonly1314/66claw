@@ -167,6 +167,9 @@ export const voiceTierHandlers: GatewayRequestHandlers = {
       if (typeof params.ttsProvider === "string") patch.ttsProvider = params.ttsProvider;
       if (typeof params.ttsModel === "string") patch.ttsModel = params.ttsModel;
       if (typeof params.ttsVoice === "string") patch.ttsVoice = params.ttsVoice;
+      if (typeof params.ttsSpeedRatio === "number") patch.ttsSpeedRatio = params.ttsSpeedRatio;
+      if (typeof params.ttsPitchRatio === "number") patch.ttsPitchRatio = params.ttsPitchRatio;
+      if (typeof params.ttsEmotion === "string") patch.ttsEmotion = params.ttsEmotion;
       const prefs = await setVoicePrefs(patch);
 
       // Return updated status so UI can refresh

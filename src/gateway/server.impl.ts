@@ -73,6 +73,7 @@ import { injectCardsForConfiguredProviders } from "./server-methods/model-config
 import { initRemoteUpdates } from "../dispatch/capability-registry-remote.js";
 import { hasUserConfiguredProvider } from "../agents/model-auth.js";
 import { loadAuthProfileStore } from "../agents/auth-profiles/store.js";
+import { migrateManifestsToSqlite } from "../media/media-db.js";
 import { cnGatewayHandlers } from "./cn-handlers.js";
 import { coreGatewayHandlers } from "./server-methods.js";
 import { createExecApprovalHandlers } from "./server-methods/exec-approval.js";
@@ -296,6 +297,19 @@ export async function startGatewayServer(
     () => getTotalQueueSize() + getTotalPendingReplies() + getActiveEmbeddedRunCount(),
   );
   initSubagentRegistry();
+
+  // [CN-FEAT:media-sqlite] Migrate existing manifest data to SQLite (fire-and-forget, non-blocking)
+  void migrateManifestsToSqlite()
+    .then((result) => {
+      if (result.images > 0 || result.videos > 0) {
+        log.info(
+          `gateway: migrated media manifests to SQLite — ${result.images} images, ${result.videos} videos`,
+        );
+      }
+    })
+    .catch((err) => {
+      log.warn(`gateway: media manifest migration failed (non-fatal): ${String(err)}`);
+    });
 
   // Initialize distributed state store (memory or redis)
   const stateStoreConfig: StateStoreConfig = cfgAtStart.stateStore ?? { backend: "memory" };
