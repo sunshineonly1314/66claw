@@ -416,7 +416,8 @@ if [[ -d "$EXT_SOURCE" ]]; then
     (
       cd "$RESOURCES_DIR"
       # Use a sanitized package.json: remove deps with git:// sub-deps
-      # (e.g. @whiskeysockets/baileys → libsignal-node via git+ssh://github.com)
+      # (e.g. @whiskeysockets/baileys → libsignal-node via git+ssh://github.com,
+      #        @vector-im/matrix-bot-sdk → @niceboybao/libsignal-protocol via git+ssh)
       node -e "
         const fs = require('fs');
         const p = JSON.parse(fs.readFileSync('$PROJECT_ROOT/package.json', 'utf8'));
@@ -427,11 +428,35 @@ if [[ -d "$EXT_SOURCE" ]]; then
         }
         fs.writeFileSync('$RESOURCES_DIR/package.json', JSON.stringify(p, null, 2) + '\n');
       "
-      if npm install "${UNIQUE_DEPS[@]}" --no-save --ignore-scripts --no-audit --no-fund \
-          --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tail -5; then
-        log "  OK: installed ${#UNIQUE_DEPS[@]} extension deps"
+      # Ensure git uses HTTPS for github.com (no SSH key available in CI)
+      git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" 2>/dev/null || true
+      # Filter out deps that have git+ssh sub-dependencies (cause npm install to fail)
+      FILTERED_DEPS=()
+      GIT_SSH_DEPS="@vector-im/matrix-bot-sdk @matrix-org/matrix-sdk-crypto-nodejs"
+      for dep in "${UNIQUE_DEPS[@]}"; do
+        dep_name="${dep%%@[0-9]*}"
+        dep_name="${dep_name%%@^*}"
+        skip=false
+        for git_dep in $GIT_SSH_DEPS; do
+          if [[ "$dep_name" == "$git_dep" ]]; then
+            log "  Skipping $dep (has git+ssh sub-deps)"
+            skip=true
+            break
+          fi
+        done
+        if [[ "$skip" == "false" ]]; then
+          FILTERED_DEPS+=("$dep")
+        fi
+      done
+      if [[ ${#FILTERED_DEPS[@]} -gt 0 ]]; then
+        if npm install "${FILTERED_DEPS[@]}" --no-save --ignore-scripts --no-audit --no-fund \
+            --legacy-peer-deps --registry "$NPM_REGISTRY" 2>&1 | tail -5; then
+          log "  OK: installed ${#FILTERED_DEPS[@]} extension deps"
+        else
+          warn "npm install for extension deps failed (non-fatal, continuing)"
+        fi
       else
-        warn "npm install for extension deps failed (non-fatal, continuing)"
+        log "  All filtered deps skipped (git+ssh sub-deps)"
       fi
     ) || warn "Extension dependency install subshell failed (non-fatal)"
   else
