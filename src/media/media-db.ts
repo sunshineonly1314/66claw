@@ -17,6 +17,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { requireNodeSqlite } from "../memory/sqlite.js";
 import { resolveConfigDir } from "../utils.js";
+import { runDbMigrations, type DbMigration } from "../db/migrate.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -64,35 +65,45 @@ let _dbPath: string | null = null;
 // Schema
 // ---------------------------------------------------------------------------
 
+const MEDIA_DB_MIGRATIONS: DbMigration[] = [
+  {
+    version: 1,
+    label: "media_assets table + indexes",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ${TABLE} (
+          id            TEXT PRIMARY KEY,
+          session_key   TEXT NOT NULL,
+          type          TEXT NOT NULL,
+          file          TEXT NOT NULL,
+          url           TEXT NOT NULL,
+          mime_type     TEXT,
+          size_bytes    INTEGER,
+          source        TEXT DEFAULT 'generated',
+          prompt        TEXT,
+          revised_prompt TEXT,
+          model         TEXT,
+          provider      TEXT,
+          image_size    TEXT,
+          style         TEXT,
+          seed          INTEGER,
+          duration_ms   INTEGER,
+          duration_secs REAL,
+          cover_url     TEXT,
+          message_text  TEXT,
+          created_at    TEXT NOT NULL,
+          expires_at    TEXT
+        );
+      `);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_media_session ON ${TABLE}(session_key);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_media_created ON ${TABLE}(created_at);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_media_type    ON ${TABLE}(type);`);
+    },
+  },
+];
+
 function ensureSchema(db: DatabaseSync): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ${TABLE} (
-      id            TEXT PRIMARY KEY,
-      session_key   TEXT NOT NULL,
-      type          TEXT NOT NULL,
-      file          TEXT NOT NULL,
-      url           TEXT NOT NULL,
-      mime_type     TEXT,
-      size_bytes    INTEGER,
-      source        TEXT DEFAULT 'generated',
-      prompt        TEXT,
-      revised_prompt TEXT,
-      model         TEXT,
-      provider      TEXT,
-      image_size    TEXT,
-      style         TEXT,
-      seed          INTEGER,
-      duration_ms   INTEGER,
-      duration_secs REAL,
-      cover_url     TEXT,
-      message_text  TEXT,
-      created_at    TEXT NOT NULL,
-      expires_at    TEXT
-    );
-  `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_media_session ON ${TABLE}(session_key);`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_media_created ON ${TABLE}(created_at);`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_media_type    ON ${TABLE}(type);`);
+  runDbMigrations(db, MEDIA_DB_MIGRATIONS);
 }
 
 // ---------------------------------------------------------------------------

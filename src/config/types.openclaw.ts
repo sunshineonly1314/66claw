@@ -32,6 +32,8 @@ export type OpenClawCNConfig = {
     lastTouchedVersion?: string;
     /** ISO timestamp when this config was last written. */
     lastTouchedAt?: string;
+    /** Config schema version for migration gating. */
+    schemaVersion?: number;
   };
   auth?: AuthConfig;
   env?: {

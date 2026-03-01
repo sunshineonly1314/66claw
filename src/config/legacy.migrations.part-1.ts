@@ -10,6 +10,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "bindings.match.provider->bindings.match.channel",
     describe: "Move bindings[].match.provider to bindings[].match.channel",
+    since: 1,
     apply: (raw, changes) => {
       const bindings = Array.isArray(raw.bindings) ? raw.bindings : null;
       if (!bindings) {
@@ -47,6 +48,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "bindings.match.accountID->bindings.match.accountId",
     describe: "Move bindings[].match.accountID to bindings[].match.accountId",
+    since: 1,
     apply: (raw, changes) => {
       const bindings = Array.isArray(raw.bindings) ? raw.bindings : null;
       if (!bindings) {
@@ -85,6 +87,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "session.sendPolicy.rules.match.provider->match.channel",
     describe: "Move session.sendPolicy.rules[].match.provider to match.channel",
+    since: 1,
     apply: (raw, changes) => {
       const session = getRecord(raw.session);
       if (!session) {
@@ -132,6 +135,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "messages.queue.byProvider->byChannel",
     describe: "Move messages.queue.byProvider to messages.queue.byChannel",
+    since: 1,
     apply: (raw, changes) => {
       const messages = getRecord(raw.messages);
       if (!messages) {
@@ -158,6 +162,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "providers->channels",
     describe: "Move provider config sections to channels.*",
+    since: 1,
     apply: (raw, changes) => {
       const legacyKeys = [
         "whatsapp",
@@ -194,6 +199,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "routing.allowFrom->channels.whatsapp.allowFrom",
     describe: "Move routing.allowFrom to channels.whatsapp.allowFrom",
+    since: 1,
     apply: (raw, changes) => {
       const routing = raw.routing;
       if (!routing || typeof routing !== "object") {
@@ -233,6 +239,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "routing.groupChat.requireMention->groups.*.requireMention",
     describe: "Move routing.groupChat.requireMention to channels.whatsapp/telegram/imessage groups",
+    since: 1,
     apply: (raw, changes) => {
       const routing = raw.routing;
       if (!routing || typeof routing !== "object") {
@@ -304,6 +311,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "gateway.token->gateway.auth.token",
     describe: "Move gateway.token to gateway.auth.token",
+    since: 1,
     apply: (raw, changes) => {
       const gateway = raw.gateway;
       if (!gateway || typeof gateway !== "object") {
@@ -338,6 +346,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_1: LegacyConfigMigration[] = [
   {
     id: "telegram.requireMention->channels.telegram.groups.*.requireMention",
     describe: "Move telegram.requireMention to channels.telegram.groups.*.requireMention",
+    since: 1,
     apply: (raw, changes) => {
       const channels = ensureRecord(raw, "channels");
       const telegram = channels.telegram;

@@ -36,7 +36,7 @@ import {
 import { applyConfigEnvVars } from "./env-vars.js";
 import { ConfigIncludeError, resolveConfigIncludes } from "./includes.js";
 import { applyProfileOverlay } from "./profile-overlay.js";
-import { findLegacyConfigIssues } from "./legacy.js";
+import { findLegacyConfigIssues, CURRENT_SCHEMA_VERSION } from "./legacy.js";
 import { applyMergePatch } from "./merge-patch.js";
 import { normalizeConfigPaths } from "./normalize-paths.js";
 import { resolveConfigPath, resolveDefaultConfigCandidates, resolveStateDir } from "./paths.js";
@@ -471,6 +471,7 @@ function stampConfigVersion(cfg: OpenClawCNConfig): OpenClawCNConfig {
       ...cfg.meta,
       lastTouchedVersion: VERSION,
       lastTouchedAt: now,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
     },
   };
 }

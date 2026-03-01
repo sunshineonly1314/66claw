@@ -38,6 +38,8 @@ export type OpenClawCNConfig = {
     lastTouchedAt?: string;
     /** AI assistant performance profile (economy/balanced/power). */
     performanceProfile?: PerformanceProfile;
+    /** Config schema version for migration gating. */
+    schemaVersion?: number;
   };
   auth?: AuthConfig;
   env?: {

@@ -3,6 +3,8 @@
  * CN-ONLY FILE - 完全独立实现，不影响上游 OpenClaw
  */
 
+import { runDbMigrations, type DbMigration } from "../../db/migrate.js";
+
 export const MCP_DB_SCHEMA = {
   // 主表：存储所有 MCP 元数据
   items: `
@@ -114,61 +116,57 @@ export const MCP_DB_SCHEMA = {
 /** Whether FTS5 search index was successfully created */
 export let mcpFtsAvailable = false;
 
+const MCP_DB_MIGRATIONS: DbMigration[] = [
+  {
+    version: 1,
+    label: "mcp_items + sync_meta + indexes",
+    up: (db) => {
+      db.exec(MCP_DB_SCHEMA.items);
+      db.exec(MCP_DB_SCHEMA.syncMeta);
+      for (const index of MCP_DB_SCHEMA.indexes) {
+        db.exec(index);
+      }
+      // Install columns (idempotent for existing databases)
+      const newColumns = ["npm_package TEXT", "pypi_package TEXT", "sse_url TEXT"];
+      for (const colDef of newColumns) {
+        try {
+          db.exec(`ALTER TABLE mcp_items ADD COLUMN ${colDef}`);
+        } catch {
+          // Column already exists — ignore
+        }
+      }
+    },
+  },
+  {
+    version: 2,
+    label: "FTS5 mcp_search + triggers",
+    noTransaction: true,
+    up: (db) => {
+      try {
+        db.exec(MCP_DB_SCHEMA.searchIndex);
+        for (const trigger of MCP_DB_SCHEMA.searchTriggers) {
+          db.exec(trigger);
+        }
+        mcpFtsAvailable = true;
+      } catch {
+        mcpFtsAvailable = false;
+        // Clean up residual FTS5 triggers/tables to prevent INSERT errors
+        try {
+          db.exec("DROP TRIGGER IF EXISTS mcp_search_insert");
+          db.exec("DROP TRIGGER IF EXISTS mcp_search_update");
+          db.exec("DROP TRIGGER IF EXISTS mcp_search_delete");
+          db.exec("DROP TABLE IF EXISTS mcp_search");
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    },
+  },
+];
+
 /**
  * 初始化数据库（创建所有表和索引）
  */
 export function initializeSchema(db: any) {
-  // 1. 创建主表
-  db.prepare(MCP_DB_SCHEMA.items).run();
-
-  // 2. 创建 FTS5 搜索表（FTS5 可能不可用，降级到 LIKE 搜索）
-  try {
-    db.prepare(MCP_DB_SCHEMA.searchIndex).run();
-
-    // 3. 创建触发器（仅 FTS5 可用时）
-    for (const trigger of MCP_DB_SCHEMA.searchTriggers) {
-      db.prepare(trigger).run();
-    }
-    mcpFtsAvailable = true;
-  } catch {
-    // FTS5 不可用（node:sqlite 未编译 FTS5 扩展），跳过搜索索引
-    // 搜索功能将降级到 LIKE 查询
-    mcpFtsAvailable = false;
-    // 清理可能残留的旧 FTS5 触发器和虚拟表（旧 Node 版本创建的），
-    // 否则 INSERT 到 mcp_items 时触发器会尝试写入不存在的 mcp_search 而报错
-    try {
-      db.exec("DROP TRIGGER IF EXISTS mcp_search_insert");
-      db.exec("DROP TRIGGER IF EXISTS mcp_search_update");
-      db.exec("DROP TRIGGER IF EXISTS mcp_search_delete");
-      db.exec("DROP TABLE IF EXISTS mcp_search");
-    } catch {
-      // best-effort cleanup
-    }
-  }
-
-  // 4. 创建同步元数据表
-  db.prepare(MCP_DB_SCHEMA.syncMeta).run();
-
-  // 5. 创建索引
-  for (const index of MCP_DB_SCHEMA.indexes) {
-    db.prepare(index).run();
-  }
-
-  // 6. 迁移：为已有数据库添加安装方式字段
-  migrateInstallColumns(db);
-}
-
-/**
- * Add npm_package, pypi_package, sse_url columns to existing databases.
- * Uses ALTER TABLE ADD COLUMN which is idempotent-safe (ignores if exists).
- */
-function migrateInstallColumns(db: any) {
-  const newColumns = ["npm_package TEXT", "pypi_package TEXT", "sse_url TEXT"];
-  for (const colDef of newColumns) {
-    try {
-      db.prepare(`ALTER TABLE mcp_items ADD COLUMN ${colDef}`).run();
-    } catch {
-      // Column already exists — ignore
-    }
-  }
+  runDbMigrations(db, MCP_DB_MIGRATIONS);
 }

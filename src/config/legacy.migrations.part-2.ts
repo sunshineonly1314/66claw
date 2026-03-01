@@ -14,6 +14,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_2: LegacyConfigMigration[] = [
     id: "agent.model-config-v2",
     describe:
       "Migrate legacy agent.model/allowedModels/modelAliases/modelFallbacks/imageModelFallbacks to agent.models + model lists",
+    since: 1,
     apply: (raw, changes) => {
       const agentRoot = getRecord(raw.agent);
       const defaults = getRecord(getRecord(raw.agents)?.defaults);
@@ -179,6 +180,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_2: LegacyConfigMigration[] = [
   {
     id: "routing.agents-v2",
     describe: "Move routing.agents/defaultAgentId to agents.list",
+    since: 1,
     apply: (raw, changes) => {
       const routing = getRecord(raw.routing);
       if (!routing) {
@@ -275,6 +277,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_2: LegacyConfigMigration[] = [
   {
     id: "routing.config-v2",
     describe: "Move routing bindings/groupChat/queue/agentToAgent/transcribeAudio",
+    since: 1,
     apply: (raw, changes) => {
       const routing = getRecord(raw.routing);
       if (!routing) {
@@ -382,6 +385,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_2: LegacyConfigMigration[] = [
   {
     id: "audio.transcription-v2",
     describe: "Move audio.transcription to tools.media.audio.models",
+    since: 1,
     apply: (raw, changes) => {
       const audio = getRecord(raw.audio);
       if (audio?.transcription === undefined) {

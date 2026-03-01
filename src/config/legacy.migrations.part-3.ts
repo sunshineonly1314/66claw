@@ -17,6 +17,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_3: LegacyConfigMigration[] = [
   {
     id: "memorySearch->agents.defaults.memorySearch",
     describe: "Move top-level memorySearch to agents.defaults.memorySearch",
+    since: 1,
     apply: (raw, changes) => {
       const legacyMemorySearch = getRecord(raw.memorySearch);
       if (!legacyMemorySearch) {
@@ -47,6 +48,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_3: LegacyConfigMigration[] = [
   {
     id: "auth.anthropic-claude-cli-mode-oauth",
     describe: "Switch anthropic:claude-cli auth profile mode to oauth",
+    since: 1,
     apply: (raw, changes) => {
       const auth = getRecord(raw.auth);
       const profiles = getRecord(auth?.profiles);
@@ -68,6 +70,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_3: LegacyConfigMigration[] = [
   {
     id: "tools.bash->tools.exec",
     describe: "Move tools.bash to tools.exec",
+    since: 1,
     apply: (raw, changes) => {
       const tools = ensureRecord(raw, "tools");
       const bash = getRecord(tools.bash);
@@ -86,6 +89,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_3: LegacyConfigMigration[] = [
   {
     id: "messages.tts.enabled->auto",
     describe: "Move messages.tts.enabled to messages.tts.auto",
+    since: 1,
     apply: (raw, changes) => {
       const messages = getRecord(raw.messages);
       const tts = getRecord(messages?.tts);
@@ -110,6 +114,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_3: LegacyConfigMigration[] = [
   {
     id: "agent.defaults-v2",
     describe: "Move agent config to agents.defaults and tools",
+    since: 1,
     apply: (raw, changes) => {
       const agent = getRecord(raw.agent);
       if (!agent) {
@@ -197,6 +202,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_3: LegacyConfigMigration[] = [
   {
     id: "identity->agents.list",
     describe: "Move identity to agents.list[].identity",
+    since: 1,
     apply: (raw, changes) => {
       const identity = getRecord(raw.identity);
       if (!identity) {

@@ -101,6 +101,7 @@ export const OpenClawCNSchema = z
         lastTouchedVersion: z.string().optional(),
         lastTouchedAt: z.string().optional(),
         performanceProfile: z.enum(["economy", "balanced", "power"]).optional(),
+        schemaVersion: z.number().int().nonnegative().optional(),
       })
       .strict()
       .optional(),

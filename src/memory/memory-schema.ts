@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 // [CN-PATCH:memory-p0] 导入 CN 区域检测，用于决定 FTS5 tokenizer 类型
 import { detectChinaRegion } from "../config/region-cn.js";
+import { runDbMigrations, type DbMigration } from "../db/migrate.js";
 
 // [CN-PATCH:memory-fix] Run SQLite integrity check on startup.
 // Detects corruption early so it can be reported and (if needed) auto-rebuilt.
@@ -22,6 +23,159 @@ export function checkDatabaseIntegrity(db: DatabaseSync): {
   }
 }
 
+/**
+ * Build versioned migration list for the memory database.
+ * Uses a factory function because table names are parameterized.
+ */
+function buildMemoryMigrations(params: {
+  embeddingCacheTable: string;
+  ftsTable: string;
+  ftsEnabled: boolean;
+  ftsResult: { ftsAvailable: boolean; ftsError?: string };
+}): DbMigration[] {
+  return [
+    {
+      version: 1,
+      label: "core tables (meta, files, chunks, embedding_cache)",
+      up: (db) => {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          );
+        `);
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS files (
+            path TEXT PRIMARY KEY,
+            source TEXT NOT NULL DEFAULT 'memory',
+            hash TEXT NOT NULL,
+            mtime INTEGER NOT NULL,
+            size INTEGER NOT NULL
+          );
+        `);
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS chunks (
+            id TEXT PRIMARY KEY,
+            path TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'memory',
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            hash TEXT NOT NULL,
+            model TEXT NOT NULL,
+            text TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+        `);
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS ${params.embeddingCacheTable} (
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            provider_key TEXT NOT NULL,
+            hash TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            dims INTEGER,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (provider, model, provider_key, hash)
+          );
+        `);
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_embedding_cache_updated_at ON ${params.embeddingCacheTable}(updated_at);`,
+        );
+      },
+    },
+    {
+      version: 2,
+      label: "extraction_queue + profile_changelog",
+      up: (db) => {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS extraction_queue (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_msg    TEXT NOT NULL,
+            agent_reply TEXT NOT NULL,
+            created_at  INTEGER NOT NULL,
+            attempts    INTEGER NOT NULL DEFAULT 0,
+            last_error  TEXT,
+            status      TEXT NOT NULL DEFAULT 'pending'
+          );
+        `);
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_eq_status ON extraction_queue(status, created_at);`,
+        );
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS profile_changelog (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            category    TEXT NOT NULL,
+            key         TEXT NOT NULL,
+            old_value   TEXT,
+            new_value   TEXT,
+            operation   TEXT NOT NULL,
+            reason      TEXT,
+            created_at  INTEGER NOT NULL
+          );
+        `);
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_changelog_key ON profile_changelog(category, key);`,
+        );
+      },
+    },
+    {
+      version: 3,
+      label: "FTS5 chunks_fts",
+      noTransaction: true,
+      up: (db) => {
+        if (!params.ftsEnabled) {
+          return;
+        }
+        const useTrigram = detectChinaRegion();
+        if (useTrigram) {
+          migrateFtsToTrigram(db, params.ftsTable);
+        }
+        try {
+          const tokenizeClause = useTrigram ? `,\n  tokenize='trigram'` : "";
+          db.exec(
+            `CREATE VIRTUAL TABLE IF NOT EXISTS ${params.ftsTable} USING fts5(\n` +
+              `  text,\n` +
+              `  id UNINDEXED,\n` +
+              `  path UNINDEXED,\n` +
+              `  source UNINDEXED,\n` +
+              `  model UNINDEXED,\n` +
+              `  start_line UNINDEXED,\n` +
+              `  end_line UNINDEXED\n` +
+              `${tokenizeClause});`,
+          );
+          params.ftsResult.ftsAvailable = true;
+          if (useTrigram) {
+            const ftsCount = (
+              db.prepare(`SELECT count(*) AS cnt FROM ${params.ftsTable}`).get() as {
+                cnt: number;
+              }
+            ).cnt;
+            if (ftsCount === 0) {
+              backfillFtsFromChunks(db, params.ftsTable);
+            }
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          params.ftsResult.ftsAvailable = false;
+          params.ftsResult.ftsError = message;
+        }
+      },
+    },
+    {
+      version: 4,
+      label: "ensureColumn source + indexes",
+      up: (db) => {
+        ensureColumn(db, "files", "source", "TEXT NOT NULL DEFAULT 'memory'");
+        ensureColumn(db, "chunks", "source", "TEXT NOT NULL DEFAULT 'memory'");
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);`);
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);`);
+        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_files_path_source ON files(path, source);`);
+      },
+    },
+  ];
+}
+
 export function ensureMemoryIndexSchema(params: {
   db: DatabaseSync;
   embeddingCacheTable: string;
@@ -31,144 +185,28 @@ export function ensureMemoryIndexSchema(params: {
   // [CN-PATCH:memory-fix] Run integrity check before schema operations
   const integrity = checkDatabaseIntegrity(params.db);
   if (!integrity.ok) {
-    // Log warning but continue — the DB may still be partially usable
     console.warn(
       `[memory-safety] SQLite integrity check failed: ${integrity.error}. ` +
         `Database may be corrupted. Consider backing up and rebuilding.`,
     );
   }
-  params.db.exec(`
-    CREATE TABLE IF NOT EXISTS meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
-  params.db.exec(`
-    CREATE TABLE IF NOT EXISTS files (
-      path TEXT PRIMARY KEY,
-      source TEXT NOT NULL DEFAULT 'memory',
-      hash TEXT NOT NULL,
-      mtime INTEGER NOT NULL,
-      size INTEGER NOT NULL
-    );
-  `);
-  params.db.exec(`
-    CREATE TABLE IF NOT EXISTS chunks (
-      id TEXT PRIMARY KEY,
-      path TEXT NOT NULL,
-      source TEXT NOT NULL DEFAULT 'memory',
-      start_line INTEGER NOT NULL,
-      end_line INTEGER NOT NULL,
-      hash TEXT NOT NULL,
-      model TEXT NOT NULL,
-      text TEXT NOT NULL,
-      embedding TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-  `);
-  params.db.exec(`
-    CREATE TABLE IF NOT EXISTS ${params.embeddingCacheTable} (
-      provider TEXT NOT NULL,
-      model TEXT NOT NULL,
-      provider_key TEXT NOT NULL,
-      hash TEXT NOT NULL,
-      embedding TEXT NOT NULL,
-      dims INTEGER,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (provider, model, provider_key, hash)
-    );
-  `);
-  params.db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_embedding_cache_updated_at ON ${params.embeddingCacheTable}(updated_at);`,
-  );
 
-  let ftsAvailable = false;
-  let ftsError: string | undefined;
-  if (params.ftsEnabled) {
-    // [CN-PATCH:memory-p0] 中国区使用 trigram tokenizer 支持 CJK 子串搜索
-    // 上游使用默认 unicode61 tokenizer（对中文完全无效，连续汉字合并为单 token）
-    // trigram 将文本拆为3字符滑动窗口，天然支持任意子串匹配（含中文）
-    const useTrigram = detectChinaRegion();
-    if (useTrigram) {
-      migrateFtsToTrigram(params.db, params.ftsTable);
-    }
-    try {
-      const tokenizeClause = useTrigram ? `,\n  tokenize='trigram'` : "";
-      params.db.exec(
-        `CREATE VIRTUAL TABLE IF NOT EXISTS ${params.ftsTable} USING fts5(\n` +
-          `  text,\n` +
-          `  id UNINDEXED,\n` +
-          `  path UNINDEXED,\n` +
-          `  source UNINDEXED,\n` +
-          `  model UNINDEXED,\n` +
-          `  start_line UNINDEXED,\n` +
-          `  end_line UNINDEXED\n` +
-          `${tokenizeClause});`,
-      );
-      ftsAvailable = true;
-      // [CN-PATCH:memory-p0] 迁移后回填：FTS 表为空但 chunks 表有数据时，从 chunks 回填
-      if (useTrigram) {
-        const ftsCount = (
-          params.db.prepare(`SELECT count(*) AS cnt FROM ${params.ftsTable}`).get() as {
-            cnt: number;
-          }
-        ).cnt;
-        if (ftsCount === 0) {
-          backfillFtsFromChunks(params.db, params.ftsTable);
-        }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      ftsAvailable = false;
-      ftsError = message;
-    }
-  }
+  const ftsResult: { ftsAvailable: boolean; ftsError?: string } = {
+    ftsAvailable: false,
+  };
 
-  ensureColumn(params.db, "files", "source", "TEXT NOT NULL DEFAULT 'memory'");
-  ensureColumn(params.db, "chunks", "source", "TEXT NOT NULL DEFAULT 'memory'");
-  params.db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);`);
-  params.db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source);`);
-  // Unique index on (path, source) prevents cross-source overwrites.
-  // The original PRIMARY KEY is path alone, but different sources (memory vs sessions)
-  // can produce identical relative paths. This index ensures both are tracked independently.
-  params.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_files_path_source ON files(path, source);`);
+  const migrations = buildMemoryMigrations({
+    embeddingCacheTable: params.embeddingCacheTable,
+    ftsTable: params.ftsTable,
+    ftsEnabled: params.ftsEnabled,
+    ftsResult,
+  });
 
-  // [CN-PATCH:memory-v2] Extraction queue — caches failed extractions for retry
-  params.db.exec(`
-    CREATE TABLE IF NOT EXISTS extraction_queue (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_msg    TEXT NOT NULL,
-      agent_reply TEXT NOT NULL,
-      created_at  INTEGER NOT NULL,
-      attempts    INTEGER NOT NULL DEFAULT 0,
-      last_error  TEXT,
-      status      TEXT NOT NULL DEFAULT 'pending'
-    );
-  `);
-  params.db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_eq_status ON extraction_queue(status, created_at);`,
-  );
-
-  // [CN-PATCH:memory-v2] Profile changelog — audit trail for all profile mutations
-  params.db.exec(`
-    CREATE TABLE IF NOT EXISTS profile_changelog (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      category    TEXT NOT NULL,
-      key         TEXT NOT NULL,
-      old_value   TEXT,
-      new_value   TEXT,
-      operation   TEXT NOT NULL,
-      reason      TEXT,
-      created_at  INTEGER NOT NULL
-    );
-  `);
-  params.db.exec(
-    `CREATE INDEX IF NOT EXISTS idx_changelog_key ON profile_changelog(category, key);`,
-  );
+  runDbMigrations(params.db, migrations);
 
   return {
-    ftsAvailable,
-    ...(ftsError ? { ftsError } : {}),
+    ftsAvailable: ftsResult.ftsAvailable,
+    ...(ftsResult.ftsError ? { ftsError: ftsResult.ftsError } : {}),
     integrityOk: integrity.ok,
   };
 }

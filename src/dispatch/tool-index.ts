@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { requireNodeSqlite } from "../memory/sqlite.js";
+import { runDbMigrations, type DbMigration } from "../db/migrate.js";
 import type {
   ToolDiscoveryEmbeddingConfig,
   ToolIndexEntry,
@@ -150,54 +151,65 @@ export function closeToolIndex(): void {
 // Schema
 // ---------------------------------------------------------------------------
 
+const TOOL_INDEX_MIGRATIONS: DbMigration[] = [
+  {
+    version: 1,
+    label: "tools + tool_meta + FTS5",
+    noTransaction: true,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ${TOOLS_TABLE} (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          description_cn TEXT NOT NULL DEFAULT '',
+          tags TEXT NOT NULL DEFAULT '',
+          metadata_json TEXT NOT NULL DEFAULT '{}'
+        );
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ${META_TABLE} (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+      `);
+      // FTS5 with trigram tokenizer (CJK support)
+      try {
+        db.exec(
+          `CREATE VIRTUAL TABLE IF NOT EXISTS ${FTS_TABLE} USING fts5(\n` +
+            `  name,\n` +
+            `  description,\n` +
+            `  description_cn,\n` +
+            `  tags,\n` +
+            `  id UNINDEXED,\n` +
+            `  type UNINDEXED,\n` +
+            `  tokenize='trigram'\n` +
+            `);`,
+        );
+      } catch {
+        // FTS5 trigram unavailable — fall back to unicode61
+        try {
+          db.exec(
+            `CREATE VIRTUAL TABLE IF NOT EXISTS ${FTS_TABLE} USING fts5(\n` +
+              `  name,\n` +
+              `  description,\n` +
+              `  description_cn,\n` +
+              `  tags,\n` +
+              `  id UNINDEXED,\n` +
+              `  type UNINDEXED\n` +
+              `);`,
+          );
+        } catch {
+          /* FTS5 completely unavailable */
+        }
+      }
+    },
+  },
+];
+
 function ensureSchema(db: DatabaseSync): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ${TOOLS_TABLE} (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      description_cn TEXT NOT NULL DEFAULT '',
-      tags TEXT NOT NULL DEFAULT '',
-      metadata_json TEXT NOT NULL DEFAULT '{}'
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ${META_TABLE} (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
-  // FTS5 with trigram tokenizer (CJK support)
-  try {
-    db.exec(
-      `CREATE VIRTUAL TABLE IF NOT EXISTS ${FTS_TABLE} USING fts5(\n` +
-        `  name,\n` +
-        `  description,\n` +
-        `  description_cn,\n` +
-        `  tags,\n` +
-        `  id UNINDEXED,\n` +
-        `  type UNINDEXED,\n` +
-        `  tokenize='trigram'\n` +
-        `);`,
-    );
-  } catch {
-    // FTS5 trigram 不可用时退回 unicode61
-    try {
-      db.exec(
-        `CREATE VIRTUAL TABLE IF NOT EXISTS ${FTS_TABLE} USING fts5(\n` +
-          `  name,\n` +
-          `  description,\n` +
-          `  description_cn,\n` +
-          `  tags,\n` +
-          `  id UNINDEXED,\n` +
-          `  type UNINDEXED\n` +
-          `);`,
-      );
-    } catch {
-      /* FTS5 完全不可用 */
-    }
-  }
+  runDbMigrations(db, TOOL_INDEX_MIGRATIONS);
 }
 
 // ---------------------------------------------------------------------------

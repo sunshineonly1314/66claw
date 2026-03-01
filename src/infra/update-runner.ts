@@ -30,6 +30,7 @@ import {
 } from "./installer-updater.js";
 import { loadConfig } from "../config/config.js";
 import { getDeviceId } from "../license/device-id.js";
+import { saveUpgradeSnapshots } from "./upgrade-snapshot-trigger.js";
 
 export type UpdateStepResult = {
   name: string;
@@ -417,6 +418,8 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
     });
     const beforeSha = beforeShaResult.stdout.trim() || null;
     const beforeVersion = await readPackageVersion(gitRoot);
+    // Snapshot config + key DBs before upgrade (no-op for patch-only bumps)
+    await saveUpgradeSnapshots(beforeVersion).catch(() => {});
     const channel: UpdateChannel = opts.channel ?? "dev";
     const branch = channel === "dev" ? await readBranchName(runCommand, gitRoot, timeoutMs) : null;
     const needsCheckoutMain = channel === "dev" && branch !== DEV_BRANCH;
@@ -870,6 +873,7 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
   const installKind = detectInstallKind(pkgRoot);
   if (installKind === "installer") {
     const beforeVersion = await readPackageVersion(pkgRoot);
+    await saveUpgradeSnapshots(beforeVersion).catch(() => {});
     const updateServerUrl = resolveUpdateServerUrl(pkgRoot);
     if (!updateServerUrl) {
       return {
@@ -998,6 +1002,7 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
   }
 
   const beforeVersion = await readPackageVersion(pkgRoot);
+  await saveUpgradeSnapshots(beforeVersion).catch(() => {});
   const globalManager = await detectGlobalInstallManagerForRoot(runCommand, pkgRoot, timeoutMs);
   if (globalManager) {
     const packageName = (await readPackageName(pkgRoot)) ?? DEFAULT_PACKAGE_NAME;

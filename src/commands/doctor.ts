@@ -46,6 +46,7 @@ import { maybeRepairSandboxImages, noteSandboxScopeWarnings } from "./doctor-san
 import { noteSecurityWarnings } from "./doctor-security.js";
 import { noteSessionLockHealth } from "./doctor-session-locks.js";
 import { noteStateIntegrity, noteWorkspaceBackupTip } from "./doctor-state-integrity.js";
+import { noteUpgradeStability } from "./doctor-upgrade-stability.js";
 import {
   detectLegacyStateMigrations,
   runLegacyStateMigrations,
@@ -268,6 +269,8 @@ export async function doctorCommand(
   await doctorShellCompletion(runtime, prompter, {
     nonInteractive: options.nonInteractive,
   });
+
+  await noteUpgradeStability();
 
   const { healthOk } = await checkGatewayHealth({
     runtime,

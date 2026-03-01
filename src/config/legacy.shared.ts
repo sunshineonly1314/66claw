@@ -7,6 +7,8 @@ export type LegacyConfigRule = {
 export type LegacyConfigMigration = {
   id: string;
   describe: string;
+  /** Schema version when this migration was introduced. Used for version gating. */
+  since: number;
   apply: (raw: Record<string, unknown>, changes: string[]) => void;
 };
 

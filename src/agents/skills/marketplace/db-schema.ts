@@ -3,6 +3,8 @@
  * CN-ONLY FILE - 完全独立实现，不影响上游 OpenClaw
  */
 
+import { runDbMigrations, type DbMigration } from "../../../db/migrate.js";
+
 export const SKILLS_DB_SCHEMA = {
   // 主表：存储所有 skill 元数据
   items: `
@@ -99,43 +101,44 @@ export const SKILLS_DB_SCHEMA = {
 /** Whether FTS5 search index was successfully created */
 export let skillsFtsAvailable = false;
 
+const SKILLS_DB_MIGRATIONS: DbMigration[] = [
+  {
+    version: 1,
+    label: "skills + sync_meta + indexes + FTS5",
+    noTransaction: true,
+    up: (db) => {
+      // Core tables + indexes (idempotent)
+      db.exec(SKILLS_DB_SCHEMA.items);
+      db.exec(SKILLS_DB_SCHEMA.syncMeta);
+      for (const index of SKILLS_DB_SCHEMA.indexes) {
+        db.exec(index);
+      }
+
+      // FTS5 search (may not be available)
+      try {
+        db.exec(SKILLS_DB_SCHEMA.searchIndex);
+        for (const trigger of SKILLS_DB_SCHEMA.searchTriggers) {
+          db.exec(trigger);
+        }
+        skillsFtsAvailable = true;
+      } catch {
+        skillsFtsAvailable = false;
+        try {
+          db.exec("DROP TRIGGER IF EXISTS skills_search_insert");
+          db.exec("DROP TRIGGER IF EXISTS skills_search_update");
+          db.exec("DROP TRIGGER IF EXISTS skills_search_delete");
+          db.exec("DROP TABLE IF EXISTS skills_search");
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    },
+  },
+];
+
 /**
  * 初始化数据库（创建所有表和索引）
  */
 export function initializeSchema(db: any) {
-  // 1. 创建主表
-  db.prepare(SKILLS_DB_SCHEMA.items).run();
-
-  // 2. 创建同步元数据表
-  db.prepare(SKILLS_DB_SCHEMA.syncMeta).run();
-
-  // 3. 创建 FTS5 搜索表（FTS5 可能不可用，降级到 LIKE 搜索）
-  try {
-    db.prepare(SKILLS_DB_SCHEMA.searchIndex).run();
-
-    // 4. 创建触发器（仅 FTS5 可用时）
-    for (const trigger of SKILLS_DB_SCHEMA.searchTriggers) {
-      db.prepare(trigger).run();
-    }
-    skillsFtsAvailable = true;
-  } catch {
-    // FTS5 不可用（node:sqlite 未编译 FTS5 扩展），跳过搜索索引
-    // 搜索功能将降级到 LIKE 查询
-    skillsFtsAvailable = false;
-    // 清理可能残留的旧 FTS5 触发器和虚拟表（旧 Node 版本创建的），
-    // 否则 INSERT 到 skills 时触发器会尝试写入不存在的 skills_search 而报错
-    try {
-      db.exec("DROP TRIGGER IF EXISTS skills_search_insert");
-      db.exec("DROP TRIGGER IF EXISTS skills_search_update");
-      db.exec("DROP TRIGGER IF EXISTS skills_search_delete");
-      db.exec("DROP TABLE IF EXISTS skills_search");
-    } catch {
-      // best-effort cleanup
-    }
-  }
-
-  // 5. 创建索引
-  for (const index of SKILLS_DB_SCHEMA.indexes) {
-    db.prepare(index).run();
-  }
+  runDbMigrations(db, SKILLS_DB_MIGRATIONS);
 }
