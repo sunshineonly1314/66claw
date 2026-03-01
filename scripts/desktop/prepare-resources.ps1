@@ -345,6 +345,28 @@ if (Test-Path $extSource) {
         Write-Host "  Removed $tsRemoved .ts source files from compiled extensions (keeps .js only)"
     }
 
+    # Also rewrite package.json "extensions" entries from .ts to .js
+    # so that plugin discovery resolves to the compiled .js files.
+    $pkgRewritten = 0
+    if ($cnExtDirs) {
+        foreach ($extRel in ($cnExtDirs -split "`n")) {
+            $extRel = $extRel.Trim()
+            if (-not $extRel) { continue }
+            $extPkgPath = Join-Path $ResourcesDir ($extRel + "package.json")
+            if (Test-Path $extPkgPath) {
+                $content = Get-Content $extPkgPath -Raw -Encoding UTF8
+                if ($content -match '\.ts"') {
+                    $content = $content -replace '\.ts"', '.js"'
+                    Set-Content $extPkgPath -Value $content -Encoding UTF8 -NoNewline
+                    $pkgRewritten++
+                }
+            }
+        }
+    }
+    if ($pkgRewritten -gt 0) {
+        Write-Host "  Rewrote $pkgRewritten package.json files (.ts -> .js references)"
+    }
+
     # ── 4b. Install extension-specific dependencies into bundled node_modules ──
     # Extensions have their own package.json with dependencies (e.g. dingtalk-stream,
     # qq-bot-sdk) that are NOT in the main package.json. We must install them into

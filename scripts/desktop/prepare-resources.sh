@@ -343,6 +343,23 @@ if [[ -d "$EXT_SOURCE" ]]; then
     log "  Removed $TS_REMOVED .ts source files from compiled extensions (keeps .js only)"
   fi
 
+  # Also rewrite package.json "extensions" entries from .ts to .js
+  # so that plugin discovery resolves to the compiled .js files.
+  PKG_REWRITTEN=0
+  while IFS= read -r ext_rel; do
+    [[ -z "$ext_rel" ]] && continue
+    ext_pkg="$RESOURCES_DIR/${ext_rel}package.json"
+    if [[ -f "$ext_pkg" ]]; then
+      if grep -q '\.ts"' "$ext_pkg" 2>/dev/null; then
+        sed -i '' 's/\.ts"/\.js"/g' "$ext_pkg" 2>/dev/null || sed -i 's/\.ts"/\.js"/g' "$ext_pkg"
+        PKG_REWRITTEN=$((PKG_REWRITTEN + 1))
+      fi
+    fi
+  done <<< "$CN_EXT_DIRS"
+  if [[ "$PKG_REWRITTEN" -gt 0 ]]; then
+    log "  Rewrote $PKG_REWRITTEN package.json files (.ts → .js references)"
+  fi
+
   # ── 4b. Install extension-specific dependencies into bundled node_modules ──
   # Extensions have their own package.json with deps (e.g. dingtalk-stream,
   # qq-bot-sdk) not in the main package.json. Install them into the shared
