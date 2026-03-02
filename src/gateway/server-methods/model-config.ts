@@ -231,6 +231,61 @@ function checkEmbeddingCompatibility(
 }
 
 /**
+ * 根据模型的 input 字段 + v2 registry card + 名称启发式判断是否匹配指定 capability。
+ * 供 getCapabilityModels 和 switchCapabilityModel 共用，保证列表展示与切换验证的一致性。
+ */
+function matchesCapabilityByInputHeuristic(
+  providerId: string,
+  modelDef: { id: string; input?: Array<"text" | "image" | "video"> },
+  capability: Capability | string,
+): boolean {
+  const modelInput = modelDef.input ?? ["text"];
+  const mId = (modelDef.id ?? "").toLowerCase();
+
+  if (capability === "text" && modelInput.includes("text")) return true;
+  if (capability === "image-understanding" && modelInput.includes("image")) return true;
+  if (capability === "image-generation") {
+    const card = findCard(providerId, modelDef.id);
+    if (card?.capabilities?.imageGen) return true;
+    if (
+      mId.includes("image-edit") ||
+      mId.includes("image_edit") ||
+      mId.includes("qwen-image") ||
+      mId.includes("kolors") ||
+      mId.includes("flux") ||
+      mId.includes("stable-diffusion") ||
+      mId.includes("dall-e") ||
+      mId.includes("dalle")
+    )
+      return true;
+  }
+  if (capability === "video" && modelInput.includes("video")) return true;
+  if (capability === "embedding" && mId.includes("embed")) return true;
+  if (capability === "code" && modelInput.includes("text")) {
+    const card = findCard(providerId, modelDef.id);
+    if (card?.capabilities?.code) return true;
+    if (mId.includes("coder") || mId.includes("coding")) return true;
+  }
+  if (capability === "videoGen") {
+    const card = findCard(providerId, modelDef.id);
+    if (card?.capabilities?.videoGen) return true;
+  }
+  if (capability === "audio") {
+    const card = findCard(providerId, modelDef.id);
+    if (card?.capabilities?.audio) return true;
+  }
+  if (capability === "tts") {
+    const card = findCard(providerId, modelDef.id);
+    if (card?.capabilities?.tts) return true;
+  }
+  if (capability === "toolCall" && modelInput.includes("text")) {
+    const card = findCard(providerId, modelDef.id);
+    if (card?.capabilities?.toolCall) return true;
+  }
+  return false;
+}
+
+/**
  * API: 获取某个能力的所有可用模型
  */
 export async function getCapabilityModels(params: { capability: Capability | string }) {
@@ -313,56 +368,7 @@ export async function getCapabilityModels(params: { capability: Capability | str
       const provName = mapping?.name ?? pid;
       const provIcon = mapping?.icon ?? "";
       for (const m of provCfg.models) {
-        // 根据模型 input 字段 + v2 registry card + 名称启发式推断是否匹配当前 capability
-        const modelInput = m.input ?? ["text"];
-        const mId = (m.id ?? "").toLowerCase();
-        let matchesCap = false;
-        if (capability === "text" && modelInput.includes("text")) matchesCap = true;
-        if (capability === "image-understanding" && modelInput.includes("image")) matchesCap = true;
-        if (capability === "image-generation") {
-          // input: ["image"] is ambiguous (both understanding & generation).
-          // Use v2 registry card (imageGen score) or name heuristics.
-          const card = findCard(pid, m.id);
-          if (card?.capabilities?.imageGen) {
-            matchesCap = true;
-          } else if (
-            mId.includes("image-edit") ||
-            mId.includes("image_edit") ||
-            mId.includes("qwen-image") ||
-            mId.includes("kolors") ||
-            mId.includes("flux") ||
-            mId.includes("stable-diffusion") ||
-            mId.includes("dall-e") ||
-            mId.includes("dalle")
-          ) {
-            matchesCap = true;
-          }
-        }
-        if (capability === "video" && modelInput.includes("video")) matchesCap = true;
-        if (capability === "embedding" && mId.includes("embed")) matchesCap = true;
-        // Extended v1 capability keys (stored by v2 auto-assign)
-        if (capability === "code" && modelInput.includes("text")) {
-          const card = findCard(pid, m.id);
-          if (card?.capabilities?.code) matchesCap = true;
-          else if (mId.includes("coder") || mId.includes("coding")) matchesCap = true;
-        }
-        if (capability === "videoGen") {
-          const card = findCard(pid, m.id);
-          if (card?.capabilities?.videoGen) matchesCap = true;
-        }
-        if (capability === "audio") {
-          const card = findCard(pid, m.id);
-          if (card?.capabilities?.audio) matchesCap = true;
-        }
-        if (capability === "tts") {
-          const card = findCard(pid, m.id);
-          if (card?.capabilities?.tts) matchesCap = true;
-        }
-        if (capability === "toolCall" && modelInput.includes("text")) {
-          const card = findCard(pid, m.id);
-          if (card?.capabilities?.toolCall) matchesCap = true;
-        }
-        if (!matchesCap) continue;
+        if (!matchesCapabilityByInputHeuristic(pid, m, capability)) continue;
 
         const alreadyInList = models.some((e) => e.providerId === pid && e.modelId === m.id);
         if (alreadyInList) continue;
@@ -496,6 +502,41 @@ export async function switchCapabilityModel(params: {
       }
     } catch {
       /* v2 not available, stick with v1 result */
+    }
+  }
+
+  // v1 + v2 都未找到时，从 config.models.providers 查找
+  // （与 getCapabilityModels 第3重逻辑保持一致，确保列表中出现的模型都能被切换）
+  if (!targetModel) {
+    try {
+      const userConfig = await loadConfig();
+      const userProviders = userConfig.models?.providers ?? {};
+      for (const [pid, provCfg] of Object.entries(userProviders)) {
+        if (targetModel) break;
+        if (!provCfg.models?.length) continue;
+        if (!switchAliases.includes(pid)) continue;
+
+        for (const m of provCfg.models) {
+          if (m.id !== modelId) continue;
+          if (!matchesCapabilityByInputHeuristic(pid, m, capability)) continue;
+
+          const mapping = PROVIDER_CAPABILITY_MAPPINGS[pid];
+          targetModel = {
+            providerId: pid,
+            providerName: mapping?.name ?? pid,
+            providerIcon: mapping?.icon ?? "",
+            model: {
+              modelId: m.id,
+              modelName: m.name ?? m.id,
+              capabilities: [capability],
+              pricing: { type: "paid" as const },
+            },
+          };
+          break;
+        }
+      }
+    } catch {
+      /* 非关键 — 用户配置读取失败时跳过，沿用 v1+v2 结果 */
     }
   }
 
@@ -864,6 +905,16 @@ export async function detectProviderModelsWithProgress(
           auto: true,
         };
       }
+      // 同步 agents.defaults.model.primary — 与 capability 绑定保持一致
+      if (!config.agents) config.agents = {};
+      if (!config.agents.defaults) config.agents.defaults = {};
+      const newPrimary = buildModelRef(providerId, customModel);
+      const modelField = config.agents.defaults.model;
+      if (typeof modelField === "object" && modelField !== null) {
+        (modelField as Record<string, unknown>).primary = newPrimary;
+      } else {
+        config.agents.defaults.model = { primary: newPrimary };
+      }
     }
 
     await writeConfigFile(config);
@@ -938,6 +989,67 @@ export async function detectProviderModelsWithProgress(
       }
     } catch (assignErr) {
       log.warn(`autoAssign: v2 assignment failed (non-critical): ${assignErr}`);
+    }
+
+    // ── 保底：确保 agents.defaults.model.primary 被设置 ──
+    // autoAssign 在 try-catch 中执行，如果静默失败（如 registry 未就绪、writeConfigFile 验证失败等），
+    // agents.defaults.model.primary 可能未被写入配置，导致运行时 fallback 到 anthropic/claude-opus-4-6。
+    // 此处读取最终配置，如果 primary 仍为空，用当前 provider 的第一个 text-capable 模型补上。
+    try {
+      const guardCfg = structuredClone(await loadConfig());
+      const currentPrimary = (() => {
+        const m = guardCfg.agents?.defaults?.model;
+        if (typeof m === "string") return m.trim();
+        if (typeof m === "object" && m !== null)
+          return (m as { primary?: string }).primary?.trim() ?? "";
+        return "";
+      })();
+      if (!currentPrimary) {
+        // primary 未设置 — 从 text capability binding 或当前 provider 的模型列表中取
+        const textCap = (guardCfg as { modelCapability?: ModelCapabilityConfig }).modelCapability
+          ?.capabilities?.["text" as Capability] as CapabilityModelConfig | undefined;
+        let fallbackProvider = textCap?.providerId ?? providerId;
+        let fallbackModel = textCap?.modelId;
+        if (!fallbackModel) {
+          // 从 PROVIDER_CAPABILITY_MAPPINGS 或 config.models.providers 中取第一个 text 模型
+          const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
+          const textM = mapping?.models?.find((m) => m.capabilities.includes("text"));
+          if (textM) {
+            fallbackModel = textM.modelId;
+          } else {
+            fallbackModel =
+              customModel || guardCfg.models?.providers?.[providerId]?.models?.[0]?.id;
+          }
+        }
+        if (fallbackModel) {
+          if (!guardCfg.agents) guardCfg.agents = {};
+          if (!guardCfg.agents.defaults) guardCfg.agents.defaults = {};
+          const newPrimary = buildModelRef(fallbackProvider, fallbackModel);
+          guardCfg.agents.defaults.model = {
+            ...(typeof guardCfg.agents.defaults.model === "object"
+              ? guardCfg.agents.defaults.model
+              : {}),
+            primary: newPrimary,
+          };
+          // 同时确保 modelCapability.capabilities.text 也被设置
+          const gcWithCap = guardCfg as { modelCapability?: ModelCapabilityConfig };
+          if (!gcWithCap.modelCapability) gcWithCap.modelCapability = { capabilities: {} };
+          if (!gcWithCap.modelCapability.capabilities["text" as Capability]) {
+            gcWithCap.modelCapability.capabilities["text" as Capability] = {
+              providerId: fallbackProvider,
+              modelId: fallbackModel,
+              auto: true,
+            };
+          }
+          await writeConfigFile(guardCfg);
+          await updateSessionModelOverrides(fallbackProvider, fallbackModel);
+          log.info(
+            `detect-guard: agents.defaults.model.primary → ${newPrimary} (fallback after autoAssign)`,
+          );
+        }
+      }
+    } catch (guardErr) {
+      log.warn(`detect-guard: failed to ensure primary model (non-critical): ${guardErr}`);
     }
 
     // 如果有自定义模型，注入 capability registry
@@ -2041,18 +2153,30 @@ async function autoAssignBestModelsForAllCapabilities(config: OpenClawCNConfig):
   }
 
   // 同步 text → agents.defaults.model.primary
+  // 与 syncModelSelectionsFromPriority 保持一致：只要 textBinding 存在且 primary 不一致就同步，
+  // 而非仅在本次 autoAssign 升级了 text 时才同步。这修复了首次配置 provider 后
+  // agents.defaults.model.primary 未被设置的问题（textChanged 可能为 false 但 primary 为空）。
   const textBinding = caps["text" as Capability] as CapabilityModelConfig | undefined;
-  if (textBinding && textChanged) {
+  if (textBinding) {
     if (!config.agents) config.agents = {};
     if (!config.agents.defaults) config.agents.defaults = {};
     const newPrimary = buildModelRef(textBinding.providerId, textBinding.modelId);
-    const modelField = config.agents.defaults.model;
-    if (typeof modelField === "object" && modelField !== null) {
-      (modelField as Record<string, unknown>).primary = newPrimary;
-    } else {
-      config.agents.defaults.model = { primary: newPrimary };
+    const currentPrimary = (() => {
+      const m = config.agents.defaults.model;
+      if (typeof m === "string") return m.trim();
+      if (typeof m === "object" && m !== null)
+        return (m as { primary?: string }).primary?.trim() ?? "";
+      return "";
+    })();
+    if (currentPrimary !== newPrimary) {
+      const modelField = config.agents.defaults.model;
+      if (typeof modelField === "object" && modelField !== null) {
+        (modelField as Record<string, unknown>).primary = newPrimary;
+      } else {
+        config.agents.defaults.model = { primary: newPrimary };
+      }
+      log.info(`autoAssign: agents.defaults.model.primary → ${newPrimary}`);
     }
-    log.info(`autoAssign: agents.defaults.model.primary → ${newPrimary}`);
   }
 }
 
