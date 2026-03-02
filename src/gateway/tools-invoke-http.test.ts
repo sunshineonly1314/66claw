@@ -324,9 +324,22 @@ describe("POST /tools/invoke", () => {
     });
     expect(denyRes.status).toBe(404);
 
-    allowAgentsListForMain();
+    // Note: tools.profile="minimal" is silently upgraded to full access for
+    // the "main" agent (CN-FIX:main-agent-minimal), so we test profile
+    // blocking on a non-main agent instead.
     cfg = {
       ...cfg,
+      agents: {
+        list: [
+          {
+            id: "ops",
+            default: true,
+            tools: {
+              allow: ["agents_list"],
+            },
+          },
+        ],
+      },
       tools: { profile: "minimal" },
     };
 

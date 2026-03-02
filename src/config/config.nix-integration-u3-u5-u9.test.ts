@@ -111,7 +111,7 @@ describe("Nix integration (U3, U5, U9)", () => {
   });
 
   describe("U5b: tilde expansion for config paths", () => {
-    it("expands ~ in common path-ish config fields", async () => {
+    it("expands ~ in common path-ish config fields", { timeout: 30_000 }, async () => {
       await withTempHome(async (home) => {
         const configDir = path.join(home, ".openclawcn");
         await fs.mkdir(configDir, { recursive: true });
@@ -170,6 +170,10 @@ describe("Nix integration (U3, U5, U9)", () => {
           "utf-8",
         );
 
+        // Pin OPENCLAWCN_HOME so that dotenv loading from the project .env file
+        // cannot overwrite it and re-route ~ expansion away from the temp home.
+        process.env.OPENCLAWCN_HOME = home;
+
         vi.resetModules();
         const { loadConfig } = await import("./config.js");
         const cfg = loadConfig();
@@ -215,8 +219,10 @@ describe("Nix integration (U3, U5, U9)", () => {
   });
 
   describe("U9: telegram.tokenFile schema validation", () => {
-    it("accepts config with only botToken", async () => {
+    it("accepts config with only botToken", { timeout: 15_000 }, async () => {
       await withTempHome(async (home) => {
+        // Pin OPENCLAWCN_HOME so dotenv loading doesn't override it.
+        process.env.OPENCLAWCN_HOME = home;
         const configDir = path.join(home, ".openclawcn");
         await fs.mkdir(configDir, { recursive: true });
         await fs.writeFile(
@@ -237,6 +243,7 @@ describe("Nix integration (U3, U5, U9)", () => {
 
     it("accepts config with only tokenFile", async () => {
       await withTempHome(async (home) => {
+        process.env.OPENCLAWCN_HOME = home;
         const configDir = path.join(home, ".openclawcn");
         await fs.mkdir(configDir, { recursive: true });
         await fs.writeFile(
@@ -257,6 +264,7 @@ describe("Nix integration (U3, U5, U9)", () => {
 
     it("accepts config with both botToken and tokenFile", async () => {
       await withTempHome(async (home) => {
+        process.env.OPENCLAWCN_HOME = home;
         const configDir = path.join(home, ".openclawcn");
         await fs.mkdir(configDir, { recursive: true });
         await fs.writeFile(

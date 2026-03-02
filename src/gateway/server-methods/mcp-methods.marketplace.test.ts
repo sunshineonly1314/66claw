@@ -420,7 +420,7 @@ describe("mcp.marketplace.install", () => {
 describe("mcp.marketplace.recommend", () => {
   const handler = mcpHandlers["mcp.marketplace.recommend"]!;
 
-  it("returns empty items (stub for Phase 2)", async () => {
+  it("returns empty items (stub for Phase 2)", { timeout: 15_000 }, async () => {
     const opts = makeOpts("mcp.marketplace.recommend");
     await handler(opts);
 

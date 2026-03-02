@@ -91,13 +91,13 @@ describe("node registration rejection at MAX_NODES", () => {
     expect(registry.connectedCount).toBe(MAX_CONNECTED_NODES);
   });
 
-  it("re-registering existing nodeId with new connId still triggers limit check", () => {
-    // The size check happens before the set, so even though the nodeId exists
-    // (and would be replaced), the check sees size=MAX and rejects.
-    // This is correct behavior — a node should unregister first.
+  it("re-registering existing nodeId with new connId is allowed at node limit", () => {
+    // The limit check skips nodes that already exist (re-registration replaces
+    // the session in-place), so this should NOT throw.
     expect(() => {
       registry.register(makeFakeClient("n0", "c0-new"), {});
-    }).toThrow(/node limit reached/);
+    }).not.toThrow();
+    expect(registry.connectedCount).toBe(MAX_CONNECTED_NODES);
   });
 
   it("re-register works after unregistering the old session first", () => {

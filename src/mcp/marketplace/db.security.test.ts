@@ -4,10 +4,20 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { searchItems, insertItems, clearAllItems, getDatabase, closeDatabase } from "./db.js";
+import {
+  searchItems,
+  insertItems,
+  clearAllItems,
+  getDatabase,
+  closeDatabase,
+  _setDefaultPathForTesting,
+} from "./db.js";
 import type { McpMarketplaceItem } from "./types.js";
 
 const TEST_DB_PATH = ":memory:";
+
+// Ensure bare getDatabase() calls use in-memory DB (parallel-safe).
+_setDefaultPathForTesting(TEST_DB_PATH);
 
 beforeEach(() => {
   closeDatabase();

@@ -207,11 +207,14 @@ describe("评分衰减曲线 (Score Decay Curves)", () => {
 describe("淘汰行为压力测试 (Eviction Behavior)", () => {
   const now = Date.now();
 
-  it("200 条满容量 + 50 条新增 → 应淘汰 50 条最低分", () => {
+  it("满容量 + 新增 → 应淘汰最低分条目", () => {
     const entries: ProfileEntry[] = [];
 
-    // 先填满 200 条: 50 identity + 50 correction + 100 fact
-    for (let i = 0; i < 50; i++) {
+    // Fill to PROFILE_MAX_ENTRIES: 5 identity + 5 correction + rest fact
+    const idCount = 5;
+    const corrCount = 5;
+    const factCount = PROFILE_MAX_ENTRIES - idCount - corrCount;
+    for (let i = 0; i < idCount; i++) {
       entries.push(
         makeEntry({
           category: "identity",
@@ -222,7 +225,7 @@ describe("淘汰行为压力测试 (Eviction Behavior)", () => {
         }),
       );
     }
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < corrCount; i++) {
       entries.push(
         makeEntry({
           category: "correction",
@@ -233,22 +236,23 @@ describe("淘汰行为压力测试 (Eviction Behavior)", () => {
         }),
       );
     }
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < factCount; i++) {
       entries.push(
         makeEntry({
           category: "fact",
           key: `fact-${i}`,
           value: `fact ${i}`,
-          updatedAt: now - (i + 30) * DAY_MS, // 30-129 天前
+          updatedAt: now - (i + 30) * DAY_MS, // 30+ days ago
           hits: 0,
         }),
       );
     }
 
-    expect(entries.length).toBe(200);
+    expect(entries.length).toBe(PROFILE_MAX_ENTRIES);
 
-    // 再加 50 条新 todo
-    for (let i = 0; i < 50; i++) {
+    // Add 20 new todo entries to trigger eviction
+    const newCount = 20;
+    for (let i = 0; i < newCount; i++) {
       entries.push(
         makeEntry({
           category: "todo",
@@ -260,22 +264,22 @@ describe("淘汰行为压力测试 (Eviction Behavior)", () => {
       );
     }
 
-    expect(entries.length).toBe(250);
+    expect(entries.length).toBe(PROFILE_MAX_ENTRIES + newCount);
 
     const evicted = evictByScore(entries, now);
 
     expect(entries.length).toBe(PROFILE_MAX_ENTRIES);
-    expect(evicted.length).toBe(50);
+    expect(evicted.length).toBe(newCount);
 
-    // 被淘汰的应该主要是旧的零 hits fact (分数最低)
+    // Evicted should be mostly old zero-hit facts (lowest score)
     const evictedFacts = evicted.filter((e) => e.category === "fact");
-    expect(evictedFacts.length).toBeGreaterThanOrEqual(45); // 几乎全是 fact
+    expect(evictedFacts.length).toBeGreaterThanOrEqual(newCount - 5);
 
-    // identity 和 correction 全部存活
+    // All identity and correction entries survive (protected)
     const survivingIds = entries.filter((e) => e.category === "identity");
     const survivingCorrs = entries.filter((e) => e.category === "correction");
-    expect(survivingIds.length).toBe(50);
-    expect(survivingCorrs.length).toBe(50);
+    expect(survivingIds.length).toBe(idCount);
+    expect(survivingCorrs.length).toBe(corrCount);
   });
 
   it("极端: 210 个 identity 条目 → 保护机制不会让数组无限增长", () => {
@@ -299,21 +303,23 @@ describe("淘汰行为压力测试 (Eviction Behavior)", () => {
   it("混合分类大规模淘汰 — 验证保护最小值生效", () => {
     const entries: ProfileEntry[] = [];
 
-    // 15 个很老的 identity (刚好在保护线)
-    for (let i = 0; i < 15; i++) {
+    // 6 very old identity entries (above protection minimum of 5)
+    const idCount = 6;
+    for (let i = 0; i < idCount; i++) {
       entries.push(
         makeEntry({
           category: "identity",
           key: `id-${i}`,
           value: `identity ${i}`,
-          updatedAt: now - 365 * DAY_MS, // 1 年前
+          updatedAt: now - 365 * DAY_MS, // 1 year ago
           hits: 0,
         }),
       );
     }
 
-    // 15 个很老的 correction (刚好在保护线)
-    for (let i = 0; i < 15; i++) {
+    // 6 very old correction entries (above protection minimum of 5)
+    const corrCount = 6;
+    for (let i = 0; i < corrCount; i++) {
       entries.push(
         makeEntry({
           category: "correction",
@@ -325,8 +331,9 @@ describe("淘汰行为压力测试 (Eviction Behavior)", () => {
       );
     }
 
-    // 200 个新 todo (制造巨大淘汰压力)
-    for (let i = 0; i < 200; i++) {
+    // Fill remaining with new todo entries to create eviction pressure
+    const todoCount = PROFILE_MAX_ENTRIES + 30;
+    for (let i = 0; i < todoCount; i++) {
       entries.push(
         makeEntry({
           category: "todo",
@@ -338,21 +345,23 @@ describe("淘汰行为压力测试 (Eviction Behavior)", () => {
       );
     }
 
-    expect(entries.length).toBe(230);
+    const totalBefore = idCount + corrCount + todoCount;
+    expect(entries.length).toBe(totalBefore);
     evictByScore(entries, now);
     expect(entries.length).toBe(PROFILE_MAX_ENTRIES);
 
-    // 所有 15 个 identity 必须存活 (protected)
+    // All identity entries must survive (protected, min 5 slots)
     const ids = entries.filter((e) => e.category === "identity");
-    expect(ids.length).toBe(15);
+    expect(ids.length).toBe(idCount);
 
-    // 所有 15 个 correction 必须存活 (protected)
+    // All correction entries must survive (protected, min 5 slots)
     const corrs = entries.filter((e) => e.category === "correction");
-    expect(corrs.length).toBe(15);
+    expect(corrs.length).toBe(corrCount);
 
-    // todo 被淘汰掉 30 个
+    // Remaining slots filled by todo entries
+    const expectedTodos = PROFILE_MAX_ENTRIES - idCount - corrCount;
     const todos = entries.filter((e) => e.category === "todo");
-    expect(todos.length).toBe(170);
+    expect(todos.length).toBe(expectedTodos);
   });
 
   it("淘汰顺序应严格按评分从低到高", () => {
@@ -541,9 +550,10 @@ describe("记忆保持率 (Memory Retention Rate)", () => {
   });
 
   it("零 hits 的 fact 在满容量下的半衰期", () => {
-    // 创建 200 条 fact，从 0 天前到 199 天前
+    // Create PROFILE_MAX_ENTRIES facts, from 0 days ago to (MAX-1) days ago.
+    // With MAX=80, the oldest is 79 days ago.
     const entries: ProfileEntry[] = [];
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < PROFILE_MAX_ENTRIES; i++) {
       entries.push(
         makeEntry({
           category: "fact",
@@ -557,19 +567,21 @@ describe("记忆保持率 (Memory Retention Rate)", () => {
 
     let profile = makeProfile(entries);
 
-    // 插入 1 条新条目触发淘汰
+    // Insert 1 new entry to trigger eviction of 1 entry
     profile = upsertProfileEntry(profile, "fact", "trigger", "trigger value");
 
-    // 存活的最老的 fact 是多少天前的？
+    // Find the oldest surviving fact
     const oldestSurvivor = profile.entries
       .filter((e) => e.key.startsWith("fact-"))
       .reduce((oldest, e) => (e.updatedAt < oldest.updatedAt ? e : oldest));
 
     const oldestAgeDays = (now - oldestSurvivor.updatedAt) / DAY_MS;
 
-    // 在纯 fact + 零 hits 的情况下，淘汰只看 recency
-    // 最老的被淘汰，但应该还有很老的存活 (因为只淘汰 1 条)
-    expect(oldestAgeDays).toBeGreaterThan(190);
+    // With pure fact + zero hits, eviction targets the lowest-scoring (oldest) entry.
+    // Only 1 entry is evicted, so the second-oldest should survive.
+    // The oldest original fact was at (PROFILE_MAX_ENTRIES - 1) days ago.
+    // After evicting the oldest, the surviving oldest should be at (MAX-2) days ago.
+    expect(oldestAgeDays).toBeGreaterThan(PROFILE_MAX_ENTRIES - 3);
     expect(profile.entries.length).toBe(PROFILE_MAX_ENTRIES);
   });
 });

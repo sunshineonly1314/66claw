@@ -21,6 +21,7 @@ import os from "node:os";
 import {
   getDatabase,
   closeDatabase,
+  _setDefaultPathForTesting,
   insertItems,
   getItemById,
   getItemCount,
@@ -39,11 +40,7 @@ function createTempPackageRoot(items: McpMarketplaceItem[]): string {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-sync-test-"));
   const dataDir = path.join(tmpDir, "data");
   fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(dataDir, "mcp-index.json"),
-    JSON.stringify(items, null, 2),
-    "utf-8",
-  );
+  fs.writeFileSync(path.join(dataDir, "mcp-index.json"), JSON.stringify(items, null, 2), "utf-8");
   return tmpDir;
 }
 
@@ -92,11 +89,16 @@ function makeItem(id: string, overrides: Partial<McpMarketplaceItem> = {}): McpM
 
 // ========== Test Setup ==========
 
+const TEST_DB_PATH = ":memory:";
+
+// Ensure bare getDatabase() calls use in-memory DB (parallel-safe).
+_setDefaultPathForTesting(TEST_DB_PATH);
+
 const tempDirs: string[] = [];
 
 beforeEach(() => {
   closeDatabase();
-  getDatabase(":memory:");
+  getDatabase(TEST_DB_PATH);
   clearAllItems();
   // Also clear sync_meta
   const db = getDatabase();
@@ -203,18 +205,14 @@ describe("ensureMcpBaseline — Incremental Sync", () => {
   // ---- 5. File changed: items updated ----
 
   it("should update existing items when metadata changes", () => {
-    const root = makeTempRoot([
-      makeItem("a", { friendlyName: "Original Name", version: "1.0.0" }),
-    ]);
+    const root = makeTempRoot([makeItem("a", { friendlyName: "Original Name", version: "1.0.0" })]);
 
     ensureMcpBaseline(root);
     expect(getItemById("a")?.friendlyName).toBe("Original Name");
     expect(getItemById("a")?.version).toBe("1.0.0");
 
     // Update file: change metadata for item "a"
-    updateIndexFile(root, [
-      makeItem("a", { friendlyName: "Updated Name", version: "2.0.0" }),
-    ]);
+    updateIndexFile(root, [makeItem("a", { friendlyName: "Updated Name", version: "2.0.0" })]);
 
     const result = ensureMcpBaseline(root);
     expect(result).toBeGreaterThan(0);
@@ -360,9 +358,9 @@ describe("ensureMcpBaseline — Incremental Sync", () => {
     // FTS5 search should not return the deleted item
     // (triggers on mcp_items DELETE should have cleaned up mcp_search)
     const db = getDatabase();
-    const ftsCount = db
-      .prepare("SELECT COUNT(*) as count FROM mcp_search")
-      .get() as { count: number };
+    const ftsCount = db.prepare("SELECT COUNT(*) as count FROM mcp_search").get() as {
+      count: number;
+    };
     expect(ftsCount.count).toBe(1);
   });
 
@@ -446,9 +444,9 @@ describe("sync_meta state tracking", () => {
     ensureMcpBaseline(root);
 
     const db = getDatabase();
-    const hashRow = db
-      .prepare("SELECT value FROM sync_meta WHERE key = 'baseline_hash'")
-      .get() as { value: string } | undefined;
+    const hashRow = db.prepare("SELECT value FROM sync_meta WHERE key = 'baseline_hash'").get() as
+      | { value: string }
+      | undefined;
 
     expect(hashRow).toBeDefined();
     expect(hashRow!.value).toMatch(/^[0-9a-f]{64}$/); // SHA-256 hex
@@ -496,9 +494,9 @@ describe("sync_meta state tracking", () => {
     ensureMcpBaseline(root);
 
     const db = getDatabase();
-    const atRow = db
-      .prepare("SELECT value FROM sync_meta WHERE key = 'baseline_at'")
-      .get() as { value: string };
+    const atRow = db.prepare("SELECT value FROM sync_meta WHERE key = 'baseline_at'").get() as {
+      value: string;
+    };
 
     expect(atRow).toBeDefined();
     // Should be a valid ISO timestamp >= before

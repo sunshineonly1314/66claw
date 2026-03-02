@@ -25,11 +25,14 @@ const mocks = vi.hoisted(() => ({
   fsAccess: vi.fn(async () => {}),
   fsMkdir: vi.fn(async () => undefined),
   fsAppendFile: vi.fn(async () => {}),
+  fsReadFile: vi.fn(async () => ""),
+  fsWriteFile: vi.fn(async () => {}),
 }));
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: () => mocks.loadConfigReturn,
   writeConfigFile: mocks.writeConfigFile,
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock("../../commands/agents.config.js", () => ({
@@ -81,6 +84,8 @@ vi.mock("node:fs/promises", async () => {
     access: mocks.fsAccess,
     mkdir: mocks.fsMkdir,
     appendFile: mocks.fsAppendFile,
+    readFile: mocks.fsReadFile,
+    writeFile: mocks.fsWriteFile,
   };
   return { ...patched, default: patched };
 });
@@ -212,7 +217,7 @@ describe("agents.create", () => {
     });
     await promise;
 
-    expect(mocks.fsAppendFile).toHaveBeenCalledWith(
+    expect(mocks.fsWriteFile).toHaveBeenCalledWith(
       expect.stringContaining("IDENTITY.md"),
       expect.stringContaining("- Name: Plain Agent"),
       "utf-8",
@@ -228,7 +233,7 @@ describe("agents.create", () => {
     });
     await promise;
 
-    expect(mocks.fsAppendFile).toHaveBeenCalledWith(
+    expect(mocks.fsWriteFile).toHaveBeenCalledWith(
       expect.stringContaining("IDENTITY.md"),
       expect.stringMatching(/- Name: Fancy Agent[\s\S]*- Emoji: 🤖[\s\S]*- Avatar:/),
       "utf-8",

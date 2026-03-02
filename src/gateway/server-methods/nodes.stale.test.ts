@@ -27,6 +27,7 @@ vi.mock("../../infra/node-pairing.js", () => ({
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: vi.fn(() => ({})),
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 // Import after mocks

@@ -80,6 +80,7 @@ vi.mock("../../dispatch/index.js", () => ({
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: (...a: unknown[]) => mockLoadConfig(...a),
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock("../../agents/model-selection.js", () => ({
@@ -1050,6 +1051,8 @@ describe("capability-matrix v2 API", () => {
       "capability_matrix.provider.testConnection",
       "capability_matrix.priority.save",
       "capability_matrix.priority.get",
+      "capability_matrix.embeddingBinding",
+      "capability_matrix.extractionStatus",
     ];
 
     it.each(EXPECTED_METHODS)("%s 应已注册", (method) => {

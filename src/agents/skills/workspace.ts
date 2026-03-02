@@ -270,7 +270,7 @@ export function buildWorkspaceSkillSnapshot(
   const prompt = [remoteNote, formatSkillsForPrompt(resolvedSkills)].filter(Boolean).join("\n");
   return {
     prompt,
-    skills: promptEntries.map((entry) => ({
+    skills: eligible.map((entry) => ({
       name: entry.skill.name,
       primaryEnv: entry.metadata?.primaryEnv,
     })),

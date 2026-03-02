@@ -91,9 +91,15 @@ export function readSessionMessages(
         continue;
       }
 
-      // Silently skip compaction entries — no visible indicator to users.
-      // Compaction happens transparently in the background.
+      // Emit a synthetic system marker for compaction entries so the UI
+      // can display a visual separator / info pill in the message timeline.
       if (parsed?.type === "compaction") {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "Compaction" }],
+          __openclawcn: { kind: "compaction", id: parsed.id ?? undefined },
+          timestamp: parsed.timestamp ? new Date(parsed.timestamp).getTime() : undefined,
+        });
         continue;
       }
     } catch {

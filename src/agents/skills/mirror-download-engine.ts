@@ -95,8 +95,9 @@ export class MirrorSelector {
             url,
             latency_ms: Date.now() - start,
             // 405 (Method Not Allowed) means the server exists but rejects HEAD — still usable.
-            // 403 (Forbidden) likely means geo-block or IP ban — skip to avoid wasted download attempt.
-            available: response.ok || response.status === 405,
+            // 403 (Forbidden) on HEAD probe often means CDN/WAF protection — the server
+            // is alive and actual GET downloads typically succeed, so treat as available.
+            available: response.ok || response.status === 405 || response.status === 403,
           };
         } catch {
           return { url, latency_ms: Date.now() - start, available: false };

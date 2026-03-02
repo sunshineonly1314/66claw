@@ -97,7 +97,10 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
     }
     const stateDir = await fs.mkdtemp(path.join(tempHome, prefix));
     process.env.OPENCLAWCN_STATE_DIR = stateDir;
-    delete process.env.OPENCLAWCN_CONFIG_PATH;
+    // Explicitly set CONFIG_PATH so writeConfigFile resolves to a deterministic
+    // location inside the freshly-created state dir (avoids stale-module-cache
+    // issues where the path resolves to a different directory).
+    process.env.OPENCLAWCN_CONFIG_PATH = path.join(stateDir, "openclawcn.json");
     return stateDir;
   };
 
@@ -154,7 +157,9 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
 
     const { resolveConfigPath } = await import("../config/paths.js");
     const configPath = resolveConfigPath(process.env, stateDir);
-    const cfg = JSON.parse(await fs.readFile(configPath, "utf8")) as {
+    const { decryptConfigFields } = await import("../config/field-encrypt.js");
+    const rawCfg = JSON.parse(await fs.readFile(configPath, "utf8"));
+    const cfg = decryptConfigFields(rawCfg) as {
       gateway?: { auth?: { mode?: string; token?: string } };
       agents?: { defaults?: { workspace?: string } };
     };
@@ -191,7 +196,9 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
     );
 
     const { resolveConfigPath } = await import("../config/config.js");
-    const cfg = JSON.parse(await fs.readFile(resolveConfigPath(), "utf8")) as {
+    const { decryptConfigFields } = await import("../config/field-encrypt.js");
+    const rawCfg = JSON.parse(await fs.readFile(resolveConfigPath(), "utf8"));
+    const cfg = decryptConfigFields(rawCfg) as {
       gateway?: { mode?: string; remote?: { url?: string; token?: string } };
     };
 
@@ -248,7 +255,9 @@ describe("onboard (non-interactive): gateway and remote auth", () => {
 
     const { resolveConfigPath } = await import("../config/paths.js");
     const configPath = resolveConfigPath(process.env, stateDir);
-    const cfg = JSON.parse(await fs.readFile(configPath, "utf8")) as {
+    const { decryptConfigFields } = await import("../config/field-encrypt.js");
+    const rawCfg = JSON.parse(await fs.readFile(configPath, "utf8"));
+    const cfg = decryptConfigFields(rawCfg) as {
       gateway?: {
         bind?: string;
         port?: number;

@@ -187,6 +187,7 @@ describe("subagent registry persistence", () => {
     process.env.OPENCLAWCN_STATE_DIR = tempStateDir;
 
     const registryPath = path.join(tempStateDir, "subagents", "runs.json");
+    const now = Date.now();
     const persisted = {
       version: 2,
       runs: {
@@ -197,9 +198,9 @@ describe("subagent registry persistence", () => {
           requesterDisplayKey: "main",
           task: "retry announce",
           cleanup: "keep",
-          createdAt: 1,
-          startedAt: 1,
-          endedAt: 2,
+          createdAt: now - 10_000,
+          startedAt: now - 10_000,
+          endedAt: now - 5_000,
         },
       },
     };
@@ -209,8 +210,12 @@ describe("subagent registry persistence", () => {
     announceSpy.mockResolvedValueOnce(false);
     vi.resetModules();
     const mod1 = await import("./subagent-registry.js");
+    vi.useFakeTimers();
     mod1.initSubagentRegistry();
-    await new Promise((r) => setTimeout(r, 0));
+    // Advance past the RESUME_DELAY_MS (5 000 ms) used by restoreSubagentRunsOnce
+    // so that the deferred resume loop fires.
+    await vi.advanceTimersByTimeAsync(6_000);
+    vi.useRealTimers();
 
     expect(announceSpy).toHaveBeenCalledTimes(1);
     const afterFirst = JSON.parse(await fs.readFile(registryPath, "utf8")) as {
@@ -222,8 +227,10 @@ describe("subagent registry persistence", () => {
     announceSpy.mockResolvedValueOnce(true);
     vi.resetModules();
     const mod2 = await import("./subagent-registry.js");
+    vi.useFakeTimers();
     mod2.initSubagentRegistry();
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.advanceTimersByTimeAsync(6_000);
+    vi.useRealTimers();
 
     expect(announceSpy).toHaveBeenCalledTimes(2);
     const afterSecond = JSON.parse(await fs.readFile(registryPath, "utf8")) as {

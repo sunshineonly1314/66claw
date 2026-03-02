@@ -1,8 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { buildWorkspaceSkillsPrompt } from "./skills.js";
+
+// Prevent CN-region skill filtering from affecting test expectations.
+beforeAll(() => {
+  process.env.OPENCLAWCN_REGION = "global";
+});
 
 async function writeSkill(params: {
   dir: string;
@@ -52,6 +57,7 @@ describe("buildWorkspaceSkillsPrompt", () => {
     const prompt = buildWorkspaceSkillsPrompt(workspaceDir, {
       managedSkillsDir: path.join(workspaceDir, ".managed"),
       bundledSkillsDir: bundledDir,
+      config: { skills: { pinnedSkills: ["peekaboo"] } },
     });
     expect(prompt).toContain("peekaboo");
     expect(prompt).toContain("Capture UI");

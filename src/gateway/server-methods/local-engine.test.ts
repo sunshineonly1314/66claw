@@ -381,13 +381,18 @@ describe("buildStatus - hardware availability", () => {
     expect(asr.unavailableReason).toContain("NVIDIA GPU");
   });
 
-  it("marks GPU TTS as not_available with low VRAM (<6.3GB effective)", async () => {
+  it("marks GPU ASR as not_available with low VRAM (<6.3GB effective)", async () => {
     getHardwareSnapshotMock.mockReturnValue(MOCK_HW_LOW_VRAM);
 
     const { respond } = await callHandler("local_engine.status");
     const [, status] = respond.mock.calls[0];
-    const tts = status.models.voice.find((m: { id: string }) => m.id === "qwen3-tts-0.6b");
-    expect(tts.status).toBe("not_available");
+    // TTS models are hidden in buildStatus (not ready for production), so we
+    // verify the VRAM gate on the GPU ASR model instead.  With 4000 MB total
+    // VRAM the effective threshold (4000*0.7 = 2800) is below the 3500 MB
+    // requirement, so ASR should be not_available as well.
+    const asr = status.models.voice.find((m: { id: string }) => m.id === "qwen3-asr-0.6b");
+    expect(asr).toBeDefined();
+    expect(asr.status).toBe("not_available");
   });
 
   it("shows ASR as running when sidecar is up and asrReady", async () => {

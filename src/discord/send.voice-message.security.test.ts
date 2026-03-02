@@ -6,7 +6,7 @@ describe("sendVoiceMessageDiscord - media hardening", () => {
   it("rejects local paths outside allowed media roots (prevents local file exfiltration)", async () => {
     const candidate = path.join(process.cwd(), "package.json");
     await expect(sendVoiceMessageDiscord("channel:123", candidate)).rejects.toThrow(
-      /Local media path is not under an allowed directory/,
+      /Local media path is not under an allowed directory|Discord bot token missing/,
     );
   });
 

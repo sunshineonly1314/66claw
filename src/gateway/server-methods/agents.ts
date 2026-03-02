@@ -25,7 +25,7 @@ import {
   listAgentEntries,
   pruneAgentConfig,
 } from "../../commands/agents.config.js";
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import { resolveSessionTranscriptsDirForAgent } from "../../config/sessions/paths.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
@@ -302,6 +302,7 @@ async function upsertIdentityEntries(
     }
   }
 
+  await fs.mkdir(path.dirname(identityPath), { recursive: true });
   await fs.writeFile(identityPath, lines.join("\n"), "utf-8");
 }
 
@@ -358,7 +359,6 @@ export const agentsHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    const cfg = loadConfig();
     const rawName = String(params.name ?? "").trim();
     const explicitId = params.id ? String(params.id).trim() : "";
     const idSource = explicitId || rawName;
@@ -373,47 +373,52 @@ export const agentsHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    if (findAgentEntryIndex(listAgentEntries(cfg), agentId) >= 0) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" already exists`),
-      );
-      return;
-    }
-
     const workspaceDir = resolveUserPath(String(params.workspace ?? "").trim());
 
-    // Resolve agentDir against the config we're about to persist (vs the pre-write config),
-    // so subsequent resolutions can't disagree about the agent's directory.
-    let nextConfig = applyAgentConfig(cfg, {
-      agentId,
-      name: rawName,
-      workspace: workspaceDir,
+    // FIX: Use shared config write lock to prevent concurrent read-modify-write races
+    await withConfigWriteLock(async () => {
+      const cfg = loadConfig();
+
+      if (findAgentEntryIndex(listAgentEntries(cfg), agentId) >= 0) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" already exists`),
+        );
+        return;
+      }
+
+      // Resolve agentDir against the config we're about to persist (vs the pre-write config),
+      // so subsequent resolutions can't disagree about the agent's directory.
+      let nextConfig = applyAgentConfig(cfg, {
+        agentId,
+        name: rawName,
+        workspace: workspaceDir,
+      });
+      const agentDir = resolveAgentDir(nextConfig, agentId);
+      nextConfig = applyAgentConfig(nextConfig, { agentId, agentDir });
+
+      // Ensure workspace & transcripts exist BEFORE writing config so a failure
+      // here does not leave a broken config entry behind.
+      // Always bootstrap new agents — defaults.skipBootstrap only governs the
+      // main/default agent's workspace, not freshly-created sub-agents.
+      await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: true });
+      await fs.mkdir(resolveSessionTranscriptsDirForAgent(agentId), { recursive: true });
+
+      await writeConfigFile(nextConfig);
+
+      // Always write Name to IDENTITY.md; optionally include emoji/avatar.
+      const safeName = sanitizeIdentityLine(rawName);
+      const emoji = resolveOptionalStringParam(params.emoji);
+      const avatar = resolveOptionalStringParam(params.avatar);
+      const identityPath = path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME);
+      const identityEntries: Record<string, string> = { Name: safeName };
+      if (emoji) identityEntries.Emoji = sanitizeIdentityLine(emoji);
+      if (avatar) identityEntries.Avatar = sanitizeIdentityLine(avatar);
+      await upsertIdentityEntries(identityPath, identityEntries);
+
+      respond(true, { ok: true, agentId, name: rawName, workspace: workspaceDir }, undefined);
     });
-    const agentDir = resolveAgentDir(nextConfig, agentId);
-    nextConfig = applyAgentConfig(nextConfig, { agentId, agentDir });
-
-    // Ensure workspace & transcripts exist BEFORE writing config so a failure
-    // here does not leave a broken config entry behind.
-    // Always bootstrap new agents — defaults.skipBootstrap only governs the
-    // main/default agent's workspace, not freshly-created sub-agents.
-    await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: true });
-    await fs.mkdir(resolveSessionTranscriptsDirForAgent(agentId), { recursive: true });
-
-    await writeConfigFile(nextConfig);
-
-    // Always write Name to IDENTITY.md; optionally include emoji/avatar.
-    const safeName = sanitizeIdentityLine(rawName);
-    const emoji = resolveOptionalStringParam(params.emoji);
-    const avatar = resolveOptionalStringParam(params.avatar);
-    const identityPath = path.join(workspaceDir, DEFAULT_IDENTITY_FILENAME);
-    const identityEntries: Record<string, string> = { Name: safeName };
-    if (emoji) identityEntries.Emoji = sanitizeIdentityLine(emoji);
-    if (avatar) identityEntries.Avatar = sanitizeIdentityLine(avatar);
-    await upsertIdentityEntries(identityPath, identityEntries);
-
-    respond(true, { ok: true, agentId, name: rawName, workspace: workspaceDir }, undefined);
   },
   "agents.update": async ({ params, respond }) => {
     if (!validateAgentsUpdateParams(params)) {
@@ -430,52 +435,57 @@ export const agentsHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    const cfg = loadConfig();
     const agentId = normalizeAgentId(String(params.agentId ?? ""));
-    if (findAgentEntryIndex(listAgentEntries(cfg), agentId) < 0) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" not found`),
-      );
-      return;
-    }
 
-    const workspaceDir =
-      typeof params.workspace === "string" && params.workspace.trim()
-        ? resolveUserPath(params.workspace.trim())
-        : undefined;
+    // FIX: Use shared config write lock to prevent concurrent read-modify-write races
+    await withConfigWriteLock(async () => {
+      const cfg = loadConfig();
 
-    const model = resolveOptionalStringParam(params.model);
-    const avatar = resolveOptionalStringParam(params.avatar);
+      if (findAgentEntryIndex(listAgentEntries(cfg), agentId) < 0) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" not found`),
+        );
+        return;
+      }
 
-    const nextConfig = applyAgentConfig(cfg, {
-      agentId,
-      ...(typeof params.name === "string" && params.name.trim()
-        ? { name: params.name.trim() }
-        : {}),
-      ...(workspaceDir ? { workspace: workspaceDir } : {}),
-      ...(model ? { model } : {}),
+      const workspaceDir =
+        typeof params.workspace === "string" && params.workspace.trim()
+          ? resolveUserPath(params.workspace.trim())
+          : undefined;
+
+      const model = resolveOptionalStringParam(params.model);
+      const avatar = resolveOptionalStringParam(params.avatar);
+
+      const nextConfig = applyAgentConfig(cfg, {
+        agentId,
+        ...(typeof params.name === "string" && params.name.trim()
+          ? { name: params.name.trim() }
+          : {}),
+        ...(workspaceDir ? { workspace: workspaceDir } : {}),
+        ...(model ? { model } : {}),
+      });
+
+      await writeConfigFile(nextConfig);
+
+      if (workspaceDir) {
+        // defaults.skipBootstrap only applies to the main/default agent.
+        // Non-default agents always get bootstrap files when their workspace changes.
+        const isDefault = listAgentEntries(nextConfig).some((e) => e.id === agentId && e.default);
+        const skipBootstrap = isDefault && Boolean(nextConfig.agents?.defaults?.skipBootstrap);
+        await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: !skipBootstrap });
+      }
+
+      if (avatar) {
+        const workspace = workspaceDir ?? resolveAgentWorkspaceDir(nextConfig, agentId);
+        await fs.mkdir(workspace, { recursive: true });
+        const identityPath = path.join(workspace, DEFAULT_IDENTITY_FILENAME);
+        await upsertIdentityEntries(identityPath, { Avatar: sanitizeIdentityLine(avatar) });
+      }
+
+      respond(true, { ok: true, agentId }, undefined);
     });
-
-    await writeConfigFile(nextConfig);
-
-    if (workspaceDir) {
-      // defaults.skipBootstrap only applies to the main/default agent.
-      // Non-default agents always get bootstrap files when their workspace changes.
-      const isDefault = listAgentEntries(nextConfig).some((e) => e.id === agentId && e.default);
-      const skipBootstrap = isDefault && Boolean(nextConfig.agents?.defaults?.skipBootstrap);
-      await ensureAgentWorkspace({ dir: workspaceDir, ensureBootstrapFiles: !skipBootstrap });
-    }
-
-    if (avatar) {
-      const workspace = workspaceDir ?? resolveAgentWorkspaceDir(nextConfig, agentId);
-      await fs.mkdir(workspace, { recursive: true });
-      const identityPath = path.join(workspace, DEFAULT_IDENTITY_FILENAME);
-      await upsertIdentityEntries(identityPath, { Avatar: sanitizeIdentityLine(avatar) });
-    }
-
-    respond(true, { ok: true, agentId }, undefined);
   },
   "agents.delete": async ({ params, respond }) => {
     if (!validateAgentsDeleteParams(params)) {
@@ -492,7 +502,6 @@ export const agentsHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    const cfg = loadConfig();
     const agentId = normalizeAgentId(String(params.agentId ?? ""));
     if (agentId === DEFAULT_AGENT_ID) {
       respond(
@@ -502,32 +511,44 @@ export const agentsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    if (findAgentEntryIndex(listAgentEntries(cfg), agentId) < 0) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" not found`),
-      );
-      return;
-    }
 
+    // FIX: Use shared config write lock to prevent concurrent read-modify-write races
     const deleteFiles = typeof params.deleteFiles === "boolean" ? params.deleteFiles : true;
-    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-    const agentDir = resolveAgentDir(cfg, agentId);
-    const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId);
 
-    const result = pruneAgentConfig(cfg, agentId);
-    await writeConfigFile(result.config);
+    const lockResult = await withConfigWriteLock(async () => {
+      const cfg = loadConfig();
+
+      if (findAgentEntryIndex(listAgentEntries(cfg), agentId) < 0) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `agent "${agentId}" not found`),
+        );
+        return null;
+      }
+
+      const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+      const agentDir = resolveAgentDir(cfg, agentId);
+      const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId);
+
+      const result = pruneAgentConfig(cfg, agentId);
+      await writeConfigFile(result.config);
+
+      return { workspaceDir, agentDir, sessionsDir, removedBindings: result.removedBindings };
+    });
+
+    // Early return inside lock already called respond(false)
+    if (!lockResult) return;
 
     if (deleteFiles) {
       await Promise.all([
-        moveToTrashBestEffort(workspaceDir),
-        moveToTrashBestEffort(agentDir),
-        moveToTrashBestEffort(sessionsDir),
+        moveToTrashBestEffort(lockResult.workspaceDir),
+        moveToTrashBestEffort(lockResult.agentDir),
+        moveToTrashBestEffort(lockResult.sessionsDir),
       ]);
     }
 
-    respond(true, { ok: true, agentId, removedBindings: result.removedBindings }, undefined);
+    respond(true, { ok: true, agentId, removedBindings: lockResult.removedBindings }, undefined);
   },
   "agents.files.list": async ({ params, respond }) => {
     if (!validateAgentsFilesListParams(params)) {

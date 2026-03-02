@@ -133,9 +133,11 @@ describe("retrieveColdMemories — time decay", () => {
     const result = await retrieveColdMemories({
       manager,
       query: "what is the important memory from earlier",
+      // After ~110 days excess, factor = 0.5^(110/90) ≈ 0.43
+      // Decayed score ≈ 0.95 * 0.43 ≈ 0.41
+      // Use explicit minScore to test decay behavior independently of default threshold
+      minScore: 0.35,
     });
-    // After ~110 days excess, factor = 0.5^(110/90) ≈ 0.46
-    // Decayed score ≈ 0.95 * 0.46 ≈ 0.44 > 0.35 -> passes
     expect(result).toContain("important old memory");
   });
 });

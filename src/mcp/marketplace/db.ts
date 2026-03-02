@@ -12,7 +12,25 @@ import type { McpMarketplaceItem } from "./types.js";
 
 // ========== 配置 ==========
 
-const DEFAULT_DB_PATH = path.join(process.cwd(), "data", "mcp-index.db");
+let DEFAULT_DB_PATH = path.join(process.cwd(), "data", "mcp-index.db");
+
+/**
+ * Override the default database path (for testing only).
+ *
+ * When test files call `getDatabase()` without an explicit path, the singleton
+ * falls through to DEFAULT_DB_PATH which points at a real file on disk.
+ * Multiple parallel vitest workers hitting the same file causes
+ * "database is locked" errors.
+ *
+ * Call this once in `beforeAll()` to make the implicit `getDatabase()` calls
+ * in each test file hit an isolated in-memory (or per-file temp) database
+ * instead of the shared on-disk file.
+ *
+ * @internal Exported for tests only — not part of the public API.
+ */
+export function _setDefaultPathForTesting(dbPath: string): void {
+  DEFAULT_DB_PATH = dbPath;
+}
 
 // ========== 数据库连接管理 ==========
 

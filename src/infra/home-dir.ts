@@ -101,16 +101,19 @@ export function resolveRequiredHomeDir(
     return effective;
   }
 
+  // Final fallback: cwd (guarded against root).
+  // We check cwd BEFORE safeHomedir because if the caller explicitly provided
+  // a homedir that fails, we should not silently fall back to os.homedir()
+  // via safeHomedir — cwd is more predictable in that case.
+  const cwd = path.resolve(process.cwd());
+  if (!isFsRootPath(cwd)) {
+    return cwd;
+  }
+
   // effective is missing or resolves to a filesystem root — use safe fallback
   const safe = safeHomedir(env);
   if (!isFsRootPath(safe)) {
     return safe;
-  }
-
-  // Final fallback: cwd (guarded against root)
-  const cwd = path.resolve(process.cwd());
-  if (!isFsRootPath(cwd)) {
-    return cwd;
   }
 
   // Absolute last resort: tmpdir

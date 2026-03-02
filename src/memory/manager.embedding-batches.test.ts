@@ -109,6 +109,10 @@ describe("memory embedding batches", () => {
   });
 
   beforeEach(async () => {
+    // Use unsafe reindex path to avoid temp-DB file swap overhead in tests.
+    vi.stubEnv("OPENCLAWCN_TEST_FAST", "1");
+    vi.stubEnv("OPENCLAWCN_TEST_MEMORY_UNSAFE_REINDEX", "1");
+
     embedBatch.mockClear();
     embedQuery.mockClear();
     embedBatch.mockImplementation(async (texts: string[]) => texts.map(() => [0, 1, 0]));
@@ -121,7 +125,8 @@ describe("memory embedding batches", () => {
   it("splits large files across multiple embedding batches", async () => {
     // Keep this small but above the embedding batch byte threshold (8k) so we
     // exercise multi-batch behavior without generating lots of chunks/DB rows.
-    const line = "a".repeat(4200);
+    // Use prose-like content to avoid the hex dump filter in cleanChunkText.
+    const line = "The quick brown fox jumps over the lazy dog repeatedly. ".repeat(75);
     const content = [line, line].join("\n");
     await fs.writeFile(path.join(memoryDir, "2026-01-03.md"), content);
     resetManagerForTest(managerLarge);
@@ -147,7 +152,7 @@ describe("memory embedding batches", () => {
   });
 
   it("keeps small files in a single embedding batch", async () => {
-    const line = "b".repeat(120);
+    const line = "User prefers dark mode and uses TypeScript for all projects. ";
     const content = Array.from({ length: 4 }, () => line).join("\n");
     await fs.writeFile(path.join(memoryDir, "2026-01-04.md"), content);
     resetManagerForTest(managerSmall);
@@ -160,7 +165,7 @@ describe("memory embedding batches", () => {
   });
 
   it("retries embeddings on transient rate limit and 5xx errors", async () => {
-    const line = "d".repeat(120);
+    const line = "Memory system handles retry logic for transient embedding errors gracefully. ";
     const content = Array.from({ length: 4 }, () => line).join("\n");
     await fs.writeFile(path.join(memoryDir, "2026-01-06.md"), content);
 

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertWebChannel,
   CONFIG_DIR,
@@ -153,9 +153,9 @@ describe("shortenHomePath", () => {
     vi.stubEnv("OPENCLAWCN_HOME", "/srv/openclawcn-home");
     vi.stubEnv("HOME", "/home/other");
 
-    expect(shortenHomePath(`${path.resolve("/srv/openclawcn-home")}/.openclawcn/openclawcn.json`)).toBe(
-      "$OPENCLAWCN_HOME/.openclawcn/openclawcn.json",
-    );
+    expect(
+      shortenHomePath(`${path.resolve("/srv/openclawcn-home")}/.openclawcn/openclawcn.json`),
+    ).toBe("$OPENCLAWCN_HOME/.openclawcn/openclawcn.json");
 
     vi.unstubAllEnvs();
   });
@@ -167,7 +167,9 @@ describe("shortenHomeInString", () => {
     vi.stubEnv("HOME", "/home/other");
 
     expect(
-      shortenHomeInString(`config: ${path.resolve("/srv/openclawcn-home")}/.openclawcn/openclawcn.json`),
+      shortenHomeInString(
+        `config: ${path.resolve("/srv/openclawcn-home")}/.openclawcn/openclawcn.json`,
+      ),
     ).toBe("config: $OPENCLAWCN_HOME/.openclawcn/openclawcn.json");
 
     vi.unstubAllEnvs();
@@ -193,6 +195,20 @@ describe("resolveJidToE164", () => {
 });
 
 describe("resolveUserPath", () => {
+  const savedOpenclawcnHome = process.env.OPENCLAWCN_HOME;
+
+  beforeEach(() => {
+    delete process.env.OPENCLAWCN_HOME;
+  });
+
+  afterEach(() => {
+    if (savedOpenclawcnHome !== undefined) {
+      process.env.OPENCLAWCN_HOME = savedOpenclawcnHome;
+    } else {
+      delete process.env.OPENCLAWCN_HOME;
+    }
+  });
+
   it("expands ~ to home dir", () => {
     expect(resolveUserPath("~")).toBe(path.resolve(os.homedir()));
   });
@@ -209,7 +225,9 @@ describe("resolveUserPath", () => {
     vi.stubEnv("OPENCLAWCN_HOME", "/srv/openclawcn-home");
     vi.stubEnv("HOME", "/home/other");
 
-    expect(resolveUserPath("~/openclawcn")).toBe(path.resolve("/srv/openclawcn-home", "openclawcn"));
+    expect(resolveUserPath("~/openclawcn")).toBe(
+      path.resolve("/srv/openclawcn-home", "openclawcn"),
+    );
 
     vi.unstubAllEnvs();
   });

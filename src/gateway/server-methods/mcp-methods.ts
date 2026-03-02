@@ -1397,10 +1397,23 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
         return;
       }
 
-      const manager = getMCPManagerSafe();
+      let manager = getMCPManagerSafe();
       if (!manager) {
-        respond(false, undefined, mcpError("MCP not initialized"));
-        return;
+        // MCP not yet initialized — attempt on-demand init (same pattern as mcp.sync).
+        // This covers the case where no MCP servers existed at startup, so
+        // initMCPManagerIfNeeded() skipped initialization, but the user is now
+        // installing their first marketplace server.
+        try {
+          const cfg = loadConfig();
+          manager = await initMCPManager(cfg.mcp);
+        } catch (err) {
+          respond(false, undefined, mcpError("MCP initialization failed: " + String(err)));
+          return;
+        }
+        if (!manager) {
+          respond(false, undefined, mcpError("MCP manager not initialized"));
+          return;
+        }
       }
 
       // Build server config from marketplace item, with user override support

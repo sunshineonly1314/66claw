@@ -78,6 +78,7 @@ describe("memory index", () => {
   beforeEach(async () => {
     // Perf: most suites don't need atomic swap behavior for full reindexes.
     // Keep atomic reindex tests on the safe path.
+    vi.stubEnv("OPENCLAWCN_TEST_FAST", "1");
     vi.stubEnv("OPENCLAWCN_TEST_MEMORY_UNSAFE_REINDEX", "1");
     embedBatchCalls = 0;
 

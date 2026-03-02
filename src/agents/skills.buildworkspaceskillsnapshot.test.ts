@@ -1,8 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { buildWorkspaceSkillSnapshot } from "./skills.js";
+
+// Prevent CN-region skill filtering from affecting test expectations.
+beforeAll(() => {
+  process.env.OPENCLAWCN_REGION = "global";
+});
 
 async function _writeSkill(params: {
   dir: string;

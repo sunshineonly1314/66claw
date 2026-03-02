@@ -194,13 +194,21 @@ export async function handleToolExecutionEnd(
   ctx.state.toolSummaryById.delete(toolCallId);
   if (isToolError) {
     const errorMessage = extractToolErrorMessage(sanitizedResult);
-    ctx.state.lastToolError = {
+    const newError = {
       toolName,
       meta,
       error: errorMessage,
       mutatingAction: callSummary?.mutatingAction,
       actionFingerprint: callSummary?.actionFingerprint,
     };
+    // Preserve an existing mutating error when the incoming error is non-mutating.
+    // Only a newer mutating error (or a successful retry of the same action) should
+    // replace/clear a mutating error.
+    const shouldPreserveMutating =
+      ctx.state.lastToolError?.mutatingAction && !newError.mutatingAction;
+    if (!shouldPreserveMutating) {
+      ctx.state.lastToolError = newError;
+    }
   } else if (ctx.state.lastToolError) {
     // Keep unresolved mutating failures until the same action succeeds.
     if (ctx.state.lastToolError.mutatingAction) {

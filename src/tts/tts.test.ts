@@ -399,7 +399,7 @@ describe("tts", () => {
       }
     };
 
-    it("prefers OpenAI when no provider is configured and API key exists", () => {
+    it("returns local when no provider is configured (local-first priority)", () => {
       withEnv(
         {
           OPENAI_API_KEY: "test-openai-key",
@@ -409,12 +409,12 @@ describe("tts", () => {
         () => {
           const config = resolveTtsConfig(baseCfg);
           const provider = getTtsProvider(config, "/tmp/tts-prefs-openai.json");
-          expect(provider).toBe("openai");
+          expect(provider).toBe("local");
         },
       );
     });
 
-    it("prefers ElevenLabs when OpenAI is missing and ElevenLabs key exists", () => {
+    it("returns local when only ElevenLabs key exists (local-first priority)", () => {
       withEnv(
         {
           OPENAI_API_KEY: undefined,
@@ -424,12 +424,12 @@ describe("tts", () => {
         () => {
           const config = resolveTtsConfig(baseCfg);
           const provider = getTtsProvider(config, "/tmp/tts-prefs-elevenlabs.json");
-          expect(provider).toBe("elevenlabs");
+          expect(provider).toBe("local");
         },
       );
     });
 
-    it("falls back to Edge when no API keys are present", () => {
+    it("returns local when no API keys are present (local-first priority)", () => {
       withEnv(
         {
           OPENAI_API_KEY: undefined,
@@ -439,7 +439,7 @@ describe("tts", () => {
         () => {
           const config = resolveTtsConfig(baseCfg);
           const provider = getTtsProvider(config, "/tmp/tts-prefs-edge.json");
-          expect(provider).toBe("edge");
+          expect(provider).toBe("local");
         },
       );
     });

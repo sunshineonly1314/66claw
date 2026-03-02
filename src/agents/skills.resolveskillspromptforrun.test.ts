@@ -1,7 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { resolveSkillsPromptForRun } from "./skills.js";
+import type { SkillEntry } from "./skills.js";
+
+// Prevent CN-region skill filtering from affecting test expectations.
+beforeAll(() => {
+  process.env.OPENCLAWCN_REGION = "global";
+});
 
 async function _writeSkill(params: {
   dir: string;
@@ -40,7 +46,8 @@ describe("resolveSkillsPromptForRun", () => {
         description: "Demo",
         filePath: "/app/skills/demo-skill/SKILL.md",
         baseDir: "/app/skills/demo-skill",
-        source: "openclawcn-bundled",
+        source: "openclawcn-workspace",
+        disableModelInvocation: false,
       },
       frontmatter: {},
     };

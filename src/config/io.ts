@@ -602,6 +602,10 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       if (typeof resolvedConfig !== "object" || resolvedConfig === null) {
         return {};
       }
+      // Expand tilde (~) paths BEFORE validation so that plugin manifests,
+      // agent dirs, etc. can be located by their real absolute paths.
+      normalizeConfigPaths(resolvedConfig as OpenClawCNConfig);
+
       const preValidationDuplicates = findDuplicateAgentDirs(resolvedConfig as OpenClawCNConfig, {
         env: deps.env,
         homedir: deps.homedir,

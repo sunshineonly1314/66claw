@@ -27,7 +27,9 @@ describe("tool mutation helpers", () => {
     expect(writeFingerprint).toContain("tool=write");
     expect(writeFingerprint).toContain("path=/tmp/demo.txt");
     expect(writeFingerprint).toContain("id=42");
-    expect(writeFingerprint).toContain("meta=write /tmp/demo.txt");
+    // When stable target keys (path, id) are present, meta is omitted from
+    // the fingerprint to avoid volatile details affecting match stability.
+    expect(writeFingerprint).not.toContain("meta=");
 
     const readFingerprint = buildToolActionFingerprint("read", { path: "/tmp/demo.txt" });
     expect(readFingerprint).toBeUndefined();

@@ -9,6 +9,7 @@ import path from "node:path";
 import {
   getDatabase,
   closeDatabase,
+  _setDefaultPathForTesting,
   insertItem,
   insertItems,
   getItemById,
@@ -94,6 +95,11 @@ const mockItem3: McpMarketplaceItem = {
 };
 
 // ========== 测试前清理 ==========
+
+// Ensure that bare getDatabase() calls within tests hit the in-memory DB
+// instead of the shared on-disk file (prevents "database is locked" when
+// multiple test files run in parallel).
+_setDefaultPathForTesting(TEST_DB_PATH);
 
 beforeEach(() => {
   // 使用内存数据库，每次测试前重新初始化

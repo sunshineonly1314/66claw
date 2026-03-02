@@ -204,6 +204,53 @@ export function ensureMemoryIndexSchema(params: {
 
   runDbMigrations(params.db, migrations);
 
+  // [CN-PATCH:memory-p0] Post-migration trigram check.
+  // The migration system only runs each version once (keyed by user_version).
+  // If the DB was first created in global mode (unicode61 FTS) and later
+  // switches to CN mode, migration v3 won't re-run. We need to check and
+  // migrate the FTS tokenizer unconditionally on every ensureSchema call.
+  if (params.ftsEnabled && detectChinaRegion()) {
+    try {
+      const row = params.db
+        .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`)
+        .get(params.ftsTable) as { sql: string } | undefined;
+      if (row?.sql && !row.sql.toLowerCase().includes("trigram")) {
+        // Existing FTS table uses unicode61 — needs migration to trigram
+        migrateFtsToTrigram(params.db, params.ftsTable);
+        // Recreate with trigram tokenizer
+        const tokenizeClause = `,\n  tokenize='trigram'`;
+        params.db.exec(
+          `CREATE VIRTUAL TABLE IF NOT EXISTS ${params.ftsTable} USING fts5(\n` +
+            `  text,\n` +
+            `  id UNINDEXED,\n` +
+            `  path UNINDEXED,\n` +
+            `  source UNINDEXED,\n` +
+            `  model UNINDEXED,\n` +
+            `  start_line UNINDEXED,\n` +
+            `  end_line UNINDEXED\n` +
+            `${tokenizeClause});`,
+        );
+        ftsResult.ftsAvailable = true;
+        // Backfill from chunks if FTS is empty after migration
+        const ftsCount = (
+          params.db.prepare(`SELECT count(*) AS cnt FROM ${params.ftsTable}`).get() as {
+            cnt: number;
+          }
+        ).cnt;
+        if (ftsCount === 0) {
+          backfillFtsFromChunks(params.db, params.ftsTable);
+        }
+      } else if (row?.sql) {
+        // Already trigram — mark as available
+        ftsResult.ftsAvailable = true;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      ftsResult.ftsAvailable = false;
+      ftsResult.ftsError = message;
+    }
+  }
+
   return {
     ftsAvailable: ftsResult.ftsAvailable,
     ...(ftsResult.ftsError ? { ftsError: ftsResult.ftsError } : {}),
