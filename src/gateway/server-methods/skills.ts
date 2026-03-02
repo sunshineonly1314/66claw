@@ -31,7 +31,7 @@ import {
 } from "../../agents/skills/sync.js";
 import { parseFrontmatter, resolveSkillKey } from "../../agents/skills/frontmatter.js";
 import { bumpSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
@@ -71,10 +71,9 @@ function isPathBlocked(targetPath: string): boolean {
   return false;
 }
 
-// Mutex for skills.update to prevent TOCTOU race on pinnedSkills count check.
-// Two concurrent pin requests could both pass the CORE_SKILLS_MAX check before
-// either writes, exceeding the limit.  This serializes pin operations.
-let _updateMutex: Promise<void> = Promise.resolve();
+// FIX: Use shared config write lock instead of local mutex.
+// The local mutex only serialized skill operations, but skills.update writes to the
+// same openclawcn.json as agents/routes/model-config, creating cross-module races.
 
 function listWorkspaceDirs(cfg: OpenClawCNConfig): string[] {
   const dirs = new Set<string>();
@@ -122,9 +121,15 @@ function collectSkillBins(entries: SkillEntry[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// skills.update inner logic (extracted for mutex serialization)
+// skills.update inner logic (uses shared config write lock for cross-module safety)
 // ---------------------------------------------------------------------------
 async function _skillsUpdateInner(params: unknown, respond: RespondFn): Promise<void> {
+  await withConfigWriteLock(async () => {
+    await _skillsUpdateInnerLocked(params, respond);
+  });
+}
+
+async function _skillsUpdateInnerLocked(params: unknown, respond: RespondFn): Promise<void> {
   const p = params as {
     skillKey: string;
     enabled?: boolean;
@@ -503,18 +508,9 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    // Serialize update operations to prevent TOCTOU race on pinnedSkills count
-    let releaseMutex: () => void;
-    const prev = _updateMutex;
-    _updateMutex = new Promise<void>((r) => {
-      releaseMutex = r;
-    });
-    await prev;
-    try {
-      await _skillsUpdateInner(params, respond);
-    } finally {
-      releaseMutex!();
-    }
+    // FIX: _skillsUpdateInner now uses shared withConfigWriteLock internally,
+    // which serializes both skill operations and cross-module config writes.
+    await _skillsUpdateInner(params, respond);
   },
   "skills.remote.list": async ({ params, respond }) => {
     const result = await fetchRemoteSkillsIndex();
@@ -696,24 +692,27 @@ export const skillsHandlers: GatewayRequestHandlers = {
 
     if (mode === "reference") {
       // 引用模式: 添加到 extraDirs
-      const cfg = loadConfig();
-      const skills = cfg.skills ? { ...cfg.skills } : {};
-      const load = skills.load ? { ...skills.load } : {};
-      const extraDirs = load.extraDirs ? [...load.extraDirs] : [];
+      // FIX: Use shared config write lock
+      await withConfigWriteLock(async () => {
+        const cfg = loadConfig();
+        const skills = cfg.skills ? { ...cfg.skills } : {};
+        const load = skills.load ? { ...skills.load } : {};
+        const extraDirs = load.extraDirs ? [...load.extraDirs] : [];
 
-      // 如果目录本身是一个技能（包含 SKILL.md），则添加其父目录
-      // 因为 loadSkillsFromDir 扫描的是子目录
-      const dirToAdd =
-        foundSkills.length === 1 && foundSkills[0].dir === targetPath
-          ? path.dirname(targetPath)
-          : targetPath;
+        // 如果目录本身是一个技能（包含 SKILL.md），则添加其父目录
+        // 因为 loadSkillsFromDir 扫描的是子目录
+        const dirToAdd =
+          foundSkills.length === 1 && foundSkills[0].dir === targetPath
+            ? path.dirname(targetPath)
+            : targetPath;
 
-      if (!extraDirs.includes(dirToAdd)) {
-        extraDirs.push(dirToAdd);
-        load.extraDirs = extraDirs;
-        skills.load = load;
-        await writeConfigFile({ ...cfg, skills });
-      }
+        if (!extraDirs.includes(dirToAdd)) {
+          extraDirs.push(dirToAdd);
+          load.extraDirs = extraDirs;
+          skills.load = load;
+          await writeConfigFile({ ...cfg, skills });
+        }
+      });
       clearBinaryCache();
       invalidateSkillEntriesCache();
       bumpSkillsSnapshotVersion({ reason: "manual" });
@@ -727,6 +726,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
       const managedDir = getManagedSkillsDir();
       const imported: string[] = [];
       for (const skill of foundSkills) {
+        // 安全校验：skill.name 不允许包含路径分隔符或 ..，防止路径遍历
+        if (skill.name.includes("/") || skill.name.includes("\\") || skill.name.includes("..")) {
+          log.warn("Skipping skill with unsafe name", { name: skill.name });
+          continue;
+        }
         const destDir = path.join(managedDir, skill.name);
         fs.cpSync(skill.dir, destDir, { recursive: true, force: true });
         imported.push(skill.name);

@@ -4,16 +4,21 @@
  */
 
 import { ErrorCodes, errorShape } from "../protocol/index.js";
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import { CN_DEFAULT_SECURITY_CONFIG } from "../../config/region-cn.js";
 import type { OpenClawCNConfig } from "../../config/config.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 /**
- * 安全模式类型
- * - trust: 完全信任，无任何限制（危险）
- * - standard: 正常使用，推荐模式
- * - full: 只聊天，绝对安全
+ * 安全模式类型（UI 层面的安全级别，不同于 config.tools.exec.security 的值）
+ *
+ * 注意命名区分：
+ *   SecurityMode "full"  → 只聊天（最严格），对应 exec.security = "deny"
+ *   exec.security "full" → 允许执行任何命令（最宽松），对应 SecurityMode "trust"
+ *
+ * - trust:    完全信任，无任何限制（危险）— exec.security="full"
+ * - standard: 正常使用，推荐模式        — exec.security 白名单
+ * - full:     只聊天，绝对安全          — exec.security="deny"
  */
 export type SecurityMode = "trust" | "standard" | "full";
 
@@ -296,10 +301,13 @@ export const securityHandlers: GatewayRequestHandlers = {
         return;
       }
 
-      // 应用安全模式
-      const config = loadConfig();
-      const nextConfig = applySecurityMode(config, p.mode);
-      await writeConfigFile(nextConfig);
+      // FIX: Use shared config write lock to prevent concurrent read-modify-write races
+      const mode = p.mode;
+      await withConfigWriteLock(async () => {
+        const config = loadConfig();
+        const nextConfig = applySecurityMode(config, mode);
+        await writeConfigFile(nextConfig);
+      });
 
       respond(
         true,

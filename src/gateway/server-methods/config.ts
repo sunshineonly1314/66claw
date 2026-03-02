@@ -11,6 +11,7 @@ import {
   readConfigFileSnapshotForWrite,
   resolveConfigSnapshotHash,
   validateConfigObjectWithPlugins,
+  withConfigWriteLock,
   writeConfigFile,
 } from "../../config/config.js";
 import { applyLegacyMigrations } from "../../config/legacy.js";
@@ -288,7 +289,9 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    await writeConfigFile(validated.config, writeOptions);
+    await withConfigWriteLock(async () => {
+      await writeConfigFile(validated.config, writeOptions);
+    });
     respond(
       true,
       {
@@ -390,7 +393,9 @@ export const configHandlers: GatewayRequestHandlers = {
       /* advisory only — never block writes */
     }
 
-    await writeConfigFile(validated.config, writeOptions);
+    await withConfigWriteLock(async () => {
+      await writeConfigFile(validated.config, writeOptions);
+    });
 
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
@@ -498,7 +503,9 @@ export const configHandlers: GatewayRequestHandlers = {
       /* advisory only — never block writes */
     }
 
-    await writeConfigFile(validated.config, writeOptions);
+    await withConfigWriteLock(async () => {
+      await writeConfigFile(validated.config, writeOptions);
+    });
 
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
