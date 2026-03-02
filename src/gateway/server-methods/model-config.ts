@@ -5,7 +5,7 @@
  * 由 capability-matrix.ts 的 v2 gateway handler 调用，不再直接注册 gateway 路由。
  */
 
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import {
   PROVIDER_CAPABILITY_MAPPINGS,
   getModelsByCapability,
@@ -82,9 +82,9 @@ async function getModelCapabilityConfig(): Promise<ModelCapabilityConfig> {
 
 /**
  * FIX BUG-R2-8: 串行化 read-modify-write 操作，防止并发写入导致配置丢失。
- * 使用 Promise 链式锁确保 loadConfig → 修改 → writeConfigFile 原子化。
+ * 现在使用 withConfigWriteLock 共享锁，确保跨模块写入也是原子化的。
+ * 保留本地变量供向后兼容（内部函数引用），但实际锁由 withConfigWriteLock 提供。
  */
-let _modelConfigWriteLock: Promise<void> = Promise.resolve();
 
 /**
  * 获取所有 Provider 的配置状态
@@ -548,14 +548,8 @@ export async function switchCapabilityModel(params: {
     };
   }
 
-  // 更新配置（使用写锁保证原子性）
-  const prev = _modelConfigWriteLock;
-  let release: () => void;
-  _modelConfigWriteLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  try {
-    await prev;
+  // 更新配置（使用共享写锁保证原子性，防止跨模块并发写入）
+  await withConfigWriteLock(async () => {
     const config = structuredClone(await loadConfig());
     const configWithCap = config as { modelCapability?: ModelCapabilityConfig };
     if (!configWithCap.modelCapability) configWithCap.modelCapability = { capabilities: {} };
@@ -576,9 +570,7 @@ export async function switchCapabilityModel(params: {
     }
 
     await writeConfigFile(config);
-  } finally {
-    release!();
-  }
+  });
 
   // 切换 text 能力时，更新所有 session 的模型覆盖，使当前会话立即生效
   if (capability === "text") {
@@ -764,22 +756,69 @@ export async function detectProviderModelsWithProgress(
     }
   }
 
-  // ── 第一阶段：快速 API Key 验证 ──
-  // 找一个 chat 模型做快速验证，确认 key 有效
-  const chatModel = allModels.find((m) => m.capabilities.includes("text")) ?? allModels[0];
-  if (chatModel) {
-    const keyCheck = await probeModel(providerId, chatModel.modelId, apiKey, userBaseUrl);
-    if (!keyCheck.ok && keyCheck.fatal) {
-      // Key 无效 — 不进入逐模型探测
-      broadcast("modelConfig.detect.complete", {
-        success: false,
-        models: [],
-        autoEnabled: {},
-        availableCount: 0,
-        failedCount: 0,
-        error: keyCheck.message,
-      });
-      return;
+  // ── 第一阶段：快速 API Key 验证（并发竞争） ──
+  // 从 text 模型中取最多 3 个并发 probe，任一成功即确认 Key 有效。
+  // 如果全部失败，按 reason 分类：auth_failed / network → 立即终止；
+  // 全部 model_not_found → 终止并提示；transient → 跳过本阶段，进入逐模型探测。
+  const textModels = allModels.filter((m) => m.capabilities.includes("text"));
+  const chatCandidates = textModels.length > 0 ? textModels.slice(0, 3) : allModels.slice(0, 1);
+  let chatModel: (typeof allModels)[number] | undefined;
+
+  if (chatCandidates.length > 0) {
+    // 并发探测所有候选模型
+    const probeEntries = chatCandidates.map(async (candidate) => {
+      const result = await probeModel(providerId, candidate.modelId, apiKey, userBaseUrl);
+      return { candidate, result };
+    });
+    const settled = await Promise.allSettled(probeEntries);
+
+    // 收集结果
+    const results: Array<{ candidate: (typeof allModels)[number]; result: ProbeResult }> = [];
+    for (const s of settled) {
+      if (s.status === "fulfilled") results.push(s.value);
+    }
+
+    // 任一成功 → 选为 chatModel
+    const success = results.find((r) => r.result.ok);
+    if (success) {
+      chatModel = success.candidate;
+    } else {
+      // 全部失败：按 reason 分类决策
+      const reasons = results.map((r) => (r.result as { reason: ProbeFailReason }).reason);
+
+      // auth_failed / network → Key 级别错误，立即终止
+      const fatalEntry = results.find(
+        (r) => !r.result.ok && (r.result.reason === "auth_failed" || r.result.reason === "network"),
+      );
+      if (fatalEntry && !fatalEntry.result.ok) {
+        broadcast("modelConfig.detect.complete", {
+          success: false,
+          models: [],
+          autoEnabled: {},
+          availableCount: 0,
+          failedCount: 0,
+          error: fatalEntry.result.message,
+        });
+        return;
+      }
+
+      // 全部 model_not_found / other → 所有模型都不可用
+      if (reasons.every((r) => r === "model_not_found" || r === "other")) {
+        const lastFailed = results[results.length - 1];
+        broadcast("modelConfig.detect.complete", {
+          success: false,
+          models: [],
+          autoEnabled: {},
+          availableCount: 0,
+          failedCount: 0,
+          error: !lastFailed.result.ok
+            ? lastFailed.result.message
+            : "所有模型验证失败，请检查 API Key 权限",
+        });
+        return;
+      }
+      // 含 transient（限流/余额不足）→ 跳过快速验证，进入逐模型探测
+      // chatModel 保持 undefined，第二阶段会正常探测每个模型
     }
   }
 
@@ -862,216 +901,215 @@ export async function detectProviderModelsWithProgress(
     return;
   }
 
-  const prev = _modelConfigWriteLock;
-  let release: () => void;
-  _modelConfigWriteLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  // FIX: Use shared config write lock for cross-module safety
   try {
-    await prev;
-    const config = structuredClone(await loadConfig());
-    if (!config.models) config.models = { providers: {} };
-    if (!config.models.providers) config.models.providers = {};
+    await withConfigWriteLock(async () => {
+      const config = structuredClone(await loadConfig());
+      if (!config.models) config.models = { providers: {} };
+      if (!config.models.providers) config.models.providers = {};
 
-    const modelDefinitions: ModelDefinitionConfig[] = availableModels.map((m) => ({
-      id: m.modelId,
-      name: m.modelName,
-      contextWindow: m.contextWindow ?? 32768,
-      maxTokens: m.maxTokens ?? 4096,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      input: capabilitiesToInput(m.capabilities),
-      reasoning: false,
-    }));
+      const modelDefinitions: ModelDefinitionConfig[] = availableModels.map((m) => ({
+        id: m.modelId,
+        name: m.modelName,
+        contextWindow: m.contextWindow ?? 32768,
+        maxTokens: m.maxTokens ?? 4096,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        input: capabilitiesToInput(m.capabilities),
+        reasoning: false,
+      }));
 
-    config.models.providers[providerId] = {
-      ...config.models.providers[providerId],
-      baseUrl,
-      apiKey: trimmedKey,
-      models: modelDefinitions,
-    };
+      config.models.providers[providerId] = {
+        ...config.models.providers[providerId],
+        baseUrl,
+        apiKey: trimmedKey,
+        models: modelDefinitions,
+      };
 
-    // 如果用户指定了自定义模型，先为 text 能力设置它（customModel 优先）
-    if (customModel) {
-      const configWithCapability = config as { modelCapability?: ModelCapabilityConfig };
-      if (!configWithCapability.modelCapability)
-        configWithCapability.modelCapability = { capabilities: {} };
-      const existing = configWithCapability.modelCapability.capabilities["text" as Capability] as
-        | CapabilityModelConfig
-        | undefined;
-      if (!existing || existing.auto !== false) {
-        configWithCapability.modelCapability.capabilities["text" as Capability] = {
-          providerId,
-          modelId: customModel,
-          auto: true,
-        };
-      }
-      // 同步 agents.defaults.model.primary — 与 capability 绑定保持一致
-      if (!config.agents) config.agents = {};
-      if (!config.agents.defaults) config.agents.defaults = {};
-      const newPrimary = buildModelRef(providerId, customModel);
-      const modelField = config.agents.defaults.model;
-      if (typeof modelField === "object" && modelField !== null) {
-        (modelField as Record<string, unknown>).primary = newPrimary;
-      } else {
-        config.agents.defaults.model = { primary: newPrimary };
-      }
-    }
-
-    await writeConfigFile(config);
-
-    // 刷新 capability registry 的 isProviderConfigured 回调，
-    // 让 capability_matrix API 立即反映新保存的凭据。
-    try {
-      const updatedConfig = await loadConfig();
-      const authStore = loadAuthProfileStore();
-      refreshProviderConfigured((p) => hasUserConfiguredProvider(p, updatedConfig, authStore));
-    } catch {
-      // 非关键 — registry 在下次 gateway 重启时会自行刷新
-    }
-
-    // ── 为所有检测通过的模型注入 capability card ──
-    // Coding Plan 等 provider 可能没有 builtin card，需要动态注入以驱动能力卡片显示。
-    // 对于已有 builtin card 的 provider，upsertUserCard 会用相同分数覆盖，不影响行为。
-    try {
-      const cardAliases = getProviderAliases(providerId);
-      const isDomesticCard = cardAliases.some((a) => !!CN_PROVIDERS[a]);
-      for (const m of availableModels) {
-        const visionOk = visionResults.get(m.modelId) ?? false;
-        const scores = capabilitiesToScores(m.capabilities, visionOk);
-        if (Object.keys(scores).length === 0) continue;
-        upsertUserCard({
-          provider: providerId,
-          modelId: m.modelId,
-          displayName: m.modelName,
-          capabilities: scores,
-          modelType: "chat",
-          region: isDomesticCard ? "domestic" : "international",
-          costTier: "standard",
-          costPer1M: 0,
-          maxContextTokens: m.contextWindow ?? 32768,
-        });
-      }
-      log.info(
-        `capability-card: injected ${availableModels.length} cards for ${providerId} ` +
-          `(vision verified: ${
-            [...visionResults.entries()]
-              .filter(([, v]) => v)
-              .map(([k]) => k)
-              .join(", ") || "none"
-          })`,
-      );
-    } catch (cardErr) {
-      log.warn(`capability-card injection failed (non-critical): ${cardErr}`);
-    }
-
-    // 立即刷新 models.json，让新检测到的模型对 agent 运行时可见
-    try {
-      const refreshedConfig = await loadConfig();
-      await ensureOpenClawCNModelsJson(refreshedConfig);
-      log.info(`models.json refreshed after detecting ${providerId}`);
-    } catch (mjErr) {
-      log.warn(`models.json refresh failed (non-critical): ${mjErr}`);
-    }
-
-    // ── v2 自动分配：基于能力注册表为所有 10 个能力维度分配最强模型 ──
-    // registry 已刷新，新 provider 已可见，此时可以跨全部 provider 比较质量分
-    try {
-      const freshConfig = structuredClone(await loadConfig());
-      await autoAssignBestModelsForAllCapabilities(freshConfig);
-      await writeConfigFile(freshConfig);
-      log.info(`autoAssign: v2 best-model assignment completed after detecting ${providerId}`);
-
-      // 如果 text 能力变更了，同步 session overrides
-      const textBinding = (freshConfig as { modelCapability?: ModelCapabilityConfig })
-        .modelCapability?.capabilities?.["text" as Capability] as CapabilityModelConfig | undefined;
-      if (textBinding) {
-        await updateSessionModelOverrides(textBinding.providerId, textBinding.modelId);
-      }
-    } catch (assignErr) {
-      log.warn(`autoAssign: v2 assignment failed (non-critical): ${assignErr}`);
-    }
-
-    // ── 保底：确保 agents.defaults.model.primary 被设置 ──
-    // autoAssign 在 try-catch 中执行，如果静默失败（如 registry 未就绪、writeConfigFile 验证失败等），
-    // agents.defaults.model.primary 可能未被写入配置，导致运行时 fallback 到 anthropic/claude-opus-4-6。
-    // 此处读取最终配置，如果 primary 仍为空，用当前 provider 的第一个 text-capable 模型补上。
-    try {
-      const guardCfg = structuredClone(await loadConfig());
-      const currentPrimary = (() => {
-        const m = guardCfg.agents?.defaults?.model;
-        if (typeof m === "string") return m.trim();
-        if (typeof m === "object" && m !== null)
-          return (m as { primary?: string }).primary?.trim() ?? "";
-        return "";
-      })();
-      if (!currentPrimary) {
-        // primary 未设置 — 从 text capability binding 或当前 provider 的模型列表中取
-        const textCap = (guardCfg as { modelCapability?: ModelCapabilityConfig }).modelCapability
-          ?.capabilities?.["text" as Capability] as CapabilityModelConfig | undefined;
-        let fallbackProvider = textCap?.providerId ?? providerId;
-        let fallbackModel = textCap?.modelId;
-        if (!fallbackModel) {
-          // 从 PROVIDER_CAPABILITY_MAPPINGS 或 config.models.providers 中取第一个 text 模型
-          const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
-          const textM = mapping?.models?.find((m) => m.capabilities.includes("text"));
-          if (textM) {
-            fallbackModel = textM.modelId;
-          } else {
-            fallbackModel =
-              customModel || guardCfg.models?.providers?.[providerId]?.models?.[0]?.id;
-          }
-        }
-        if (fallbackModel) {
-          if (!guardCfg.agents) guardCfg.agents = {};
-          if (!guardCfg.agents.defaults) guardCfg.agents.defaults = {};
-          const newPrimary = buildModelRef(fallbackProvider, fallbackModel);
-          guardCfg.agents.defaults.model = {
-            ...(typeof guardCfg.agents.defaults.model === "object"
-              ? guardCfg.agents.defaults.model
-              : {}),
-            primary: newPrimary,
+      // 如果用户指定了自定义模型，先为 text 能力设置它（customModel 优先）
+      if (customModel) {
+        const configWithCapability = config as { modelCapability?: ModelCapabilityConfig };
+        if (!configWithCapability.modelCapability)
+          configWithCapability.modelCapability = { capabilities: {} };
+        const existing = configWithCapability.modelCapability.capabilities["text" as Capability] as
+          | CapabilityModelConfig
+          | undefined;
+        if (!existing || existing.auto !== false) {
+          configWithCapability.modelCapability.capabilities["text" as Capability] = {
+            providerId,
+            modelId: customModel,
+            auto: true,
           };
-          // 同时确保 modelCapability.capabilities.text 也被设置
-          const gcWithCap = guardCfg as { modelCapability?: ModelCapabilityConfig };
-          if (!gcWithCap.modelCapability) gcWithCap.modelCapability = { capabilities: {} };
-          if (!gcWithCap.modelCapability.capabilities["text" as Capability]) {
-            gcWithCap.modelCapability.capabilities["text" as Capability] = {
-              providerId: fallbackProvider,
-              modelId: fallbackModel,
-              auto: true,
-            };
-          }
-          await writeConfigFile(guardCfg);
-          await updateSessionModelOverrides(fallbackProvider, fallbackModel);
-          log.info(
-            `detect-guard: agents.defaults.model.primary → ${newPrimary} (fallback after autoAssign)`,
-          );
+        }
+        // 同步 agents.defaults.model.primary — 与 capability 绑定保持一致
+        if (!config.agents) config.agents = {};
+        if (!config.agents.defaults) config.agents.defaults = {};
+        const newPrimary = buildModelRef(providerId, customModel);
+        const modelField = config.agents.defaults.model;
+        if (typeof modelField === "object" && modelField !== null) {
+          (modelField as Record<string, unknown>).primary = newPrimary;
+        } else {
+          config.agents.defaults.model = { primary: newPrimary };
         }
       }
-    } catch (guardErr) {
-      log.warn(`detect-guard: failed to ensure primary model (non-critical): ${guardErr}`);
-    }
 
-    // 如果有自定义模型，注入 capability registry
-    if (customModel) {
+      await writeConfigFile(config);
+
+      // 刷新 capability registry 的 isProviderConfigured 回调，
+      // 让 capability_matrix API 立即反映新保存的凭据。
       try {
-        const aliases = getProviderAliases(providerId);
-        const isDomestic = aliases.some((a) => !!CN_PROVIDERS[a]);
-        upsertUserCard({
-          provider: providerId,
-          modelId: customModel,
-          displayName: customModel,
-          capabilities: { text: 3, code: 2 },
-          modelType: "chat",
-          region: isDomestic ? "domestic" : "international",
-          costTier: "standard",
-          costPer1M: 0,
-          maxContextTokens: 32768,
-        });
+        const updatedConfig = await loadConfig();
+        const authStore = loadAuthProfileStore();
+        refreshProviderConfigured((p) => hasUserConfiguredProvider(p, updatedConfig, authStore));
       } catch {
-        /* 非关键 */
+        // 非关键 — registry 在下次 gateway 重启时会自行刷新
       }
-    }
+
+      // ── 为所有检测通过的模型注入 capability card ──
+      // Coding Plan 等 provider 可能没有 builtin card，需要动态注入以驱动能力卡片显示。
+      // 对于已有 builtin card 的 provider，upsertUserCard 会用相同分数覆盖，不影响行为。
+      try {
+        const cardAliases = getProviderAliases(providerId);
+        const isDomesticCard = cardAliases.some((a) => !!CN_PROVIDERS[a]);
+        for (const m of availableModels) {
+          const visionOk = visionResults.get(m.modelId) ?? false;
+          const scores = capabilitiesToScores(m.capabilities, visionOk);
+          if (Object.keys(scores).length === 0) continue;
+          upsertUserCard({
+            provider: providerId,
+            modelId: m.modelId,
+            displayName: m.modelName,
+            capabilities: scores,
+            modelType: "chat",
+            region: isDomesticCard ? "domestic" : "international",
+            costTier: "standard",
+            costPer1M: 0,
+            maxContextTokens: m.contextWindow ?? 32768,
+          });
+        }
+        log.info(
+          `capability-card: injected ${availableModels.length} cards for ${providerId} ` +
+            `(vision verified: ${
+              [...visionResults.entries()]
+                .filter(([, v]) => v)
+                .map(([k]) => k)
+                .join(", ") || "none"
+            })`,
+        );
+      } catch (cardErr) {
+        log.warn(`capability-card injection failed (non-critical): ${cardErr}`);
+      }
+
+      // 立即刷新 models.json，让新检测到的模型对 agent 运行时可见
+      try {
+        const refreshedConfig = await loadConfig();
+        await ensureOpenClawCNModelsJson(refreshedConfig);
+        log.info(`models.json refreshed after detecting ${providerId}`);
+      } catch (mjErr) {
+        log.warn(`models.json refresh failed (non-critical): ${mjErr}`);
+      }
+
+      // ── v2 自动分配：基于能力注册表为所有 10 个能力维度分配最强模型 ──
+      // registry 已刷新，新 provider 已可见，此时可以跨全部 provider 比较质量分
+      try {
+        const freshConfig = structuredClone(await loadConfig());
+        await autoAssignBestModelsForAllCapabilities(freshConfig);
+        await writeConfigFile(freshConfig);
+        log.info(`autoAssign: v2 best-model assignment completed after detecting ${providerId}`);
+
+        // 如果 text 能力变更了，同步 session overrides
+        const textBinding = (freshConfig as { modelCapability?: ModelCapabilityConfig })
+          .modelCapability?.capabilities?.["text" as Capability] as
+          | CapabilityModelConfig
+          | undefined;
+        if (textBinding) {
+          await updateSessionModelOverrides(textBinding.providerId, textBinding.modelId);
+        }
+      } catch (assignErr) {
+        log.warn(`autoAssign: v2 assignment failed (non-critical): ${assignErr}`);
+      }
+
+      // ── 保底：确保 agents.defaults.model.primary 被设置 ──
+      // autoAssign 在 try-catch 中执行，如果静默失败（如 registry 未就绪、writeConfigFile 验证失败等），
+      // agents.defaults.model.primary 可能未被写入配置，导致运行时 fallback 到 anthropic/claude-opus-4-6。
+      // 此处读取最终配置，如果 primary 仍为空，用当前 provider 的第一个 text-capable 模型补上。
+      try {
+        const guardCfg = structuredClone(await loadConfig());
+        const currentPrimary = (() => {
+          const m = guardCfg.agents?.defaults?.model;
+          if (typeof m === "string") return m.trim();
+          if (typeof m === "object" && m !== null)
+            return (m as { primary?: string }).primary?.trim() ?? "";
+          return "";
+        })();
+        if (!currentPrimary) {
+          // primary 未设置 — 从 text capability binding 或当前 provider 的模型列表中取
+          const textCap = (guardCfg as { modelCapability?: ModelCapabilityConfig }).modelCapability
+            ?.capabilities?.["text" as Capability] as CapabilityModelConfig | undefined;
+          let fallbackProvider = textCap?.providerId ?? providerId;
+          let fallbackModel = textCap?.modelId;
+          if (!fallbackModel) {
+            // 从 PROVIDER_CAPABILITY_MAPPINGS 或 config.models.providers 中取第一个 text 模型
+            const mapping = PROVIDER_CAPABILITY_MAPPINGS[providerId];
+            const textM = mapping?.models?.find((m) => m.capabilities.includes("text"));
+            if (textM) {
+              fallbackModel = textM.modelId;
+            } else {
+              fallbackModel =
+                customModel || guardCfg.models?.providers?.[providerId]?.models?.[0]?.id;
+            }
+          }
+          if (fallbackModel) {
+            if (!guardCfg.agents) guardCfg.agents = {};
+            if (!guardCfg.agents.defaults) guardCfg.agents.defaults = {};
+            const newPrimary = buildModelRef(fallbackProvider, fallbackModel);
+            guardCfg.agents.defaults.model = {
+              ...(typeof guardCfg.agents.defaults.model === "object"
+                ? guardCfg.agents.defaults.model
+                : {}),
+              primary: newPrimary,
+            };
+            // 同时确保 modelCapability.capabilities.text 也被设置
+            const gcWithCap = guardCfg as { modelCapability?: ModelCapabilityConfig };
+            if (!gcWithCap.modelCapability) gcWithCap.modelCapability = { capabilities: {} };
+            if (!gcWithCap.modelCapability.capabilities["text" as Capability]) {
+              gcWithCap.modelCapability.capabilities["text" as Capability] = {
+                providerId: fallbackProvider,
+                modelId: fallbackModel,
+                auto: true,
+              };
+            }
+            await writeConfigFile(guardCfg);
+            await updateSessionModelOverrides(fallbackProvider, fallbackModel);
+            log.info(
+              `detect-guard: agents.defaults.model.primary → ${newPrimary} (fallback after autoAssign)`,
+            );
+          }
+        }
+      } catch (guardErr) {
+        log.warn(`detect-guard: failed to ensure primary model (non-critical): ${guardErr}`);
+      }
+
+      // 如果有自定义模型，注入 capability registry
+      if (customModel) {
+        try {
+          const aliases = getProviderAliases(providerId);
+          const isDomestic = aliases.some((a) => !!CN_PROVIDERS[a]);
+          upsertUserCard({
+            provider: providerId,
+            modelId: customModel,
+            displayName: customModel,
+            capabilities: { text: 3, code: 2 },
+            modelType: "chat",
+            region: isDomestic ? "domestic" : "international",
+            costTier: "standard",
+            costPer1M: 0,
+            maxContextTokens: 32768,
+          });
+        } catch {
+          /* 非关键 */
+        }
+      }
+    }); // end withConfigWriteLock
   } catch (writeErr) {
     broadcast("modelConfig.detect.complete", {
       success: false,
@@ -1082,8 +1120,6 @@ export async function detectProviderModelsWithProgress(
       error: `配置保存失败: ${writeErr instanceof Error ? writeErr.message : String(writeErr)}`,
     });
     return;
-  } finally {
-    release!();
   }
 
   const availableCount = modelResults.filter(
@@ -1240,13 +1276,8 @@ export async function getProviderConfig(params: { providerId: string }) {
 export async function deleteProviderConfig(params: { providerId: string }) {
   const { providerId } = params;
 
-  const prev = _modelConfigWriteLock;
-  let release: () => void;
-  _modelConfigWriteLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  try {
-    await prev;
+  // FIX: Use shared config write lock for cross-module safety
+  await withConfigWriteLock(async () => {
     const config = structuredClone(await loadConfig());
 
     // 1. 删除 provider 配置
@@ -1287,9 +1318,7 @@ export async function deleteProviderConfig(params: { providerId: string }) {
     } catch {
       /* 非关键 */
     }
-  } finally {
-    release!();
-  }
+  });
 
   return { success: true };
 }
@@ -1299,18 +1328,36 @@ export async function deleteProviderConfig(params: { providerId: string }) {
  *
  * 用于添加枚举库中没有的新模型（如服务商新上线的模型）。
  */
+/** MiniMax 系列 provider（使用 Anthropic Messages 兼容 API，非 OpenAI chat/completions） */
+const MINIMAX_PROVIDERS = new Set(["minimax", "minimax-codeplan", "minimax-cn"]);
+
+/**
+ * probeModel 失败时的原因分类（结构化，避免靠字符串匹配判断错误类型）
+ *  - model_not_found: 模型不存在或该 Key 无权访问此模型（Key 本身可能有效）
+ *  - auth_failed:     Key 无效 / 过期 / 权限不足（所有模型都会失败）
+ *  - transient:       限流、余额不足等临时性问题
+ *  - network:         超时、连接失败等网络问题
+ *  - other:           其他未识别的 fatal 错误
+ */
+type ProbeFailReason = "model_not_found" | "auth_failed" | "transient" | "network" | "other";
+
+type ProbeResult =
+  | { ok: true }
+  | { ok: false; fatal: boolean; reason: ProbeFailReason; message: string };
+
 /**
  * 探测模型是否可用（轻量级 chat completions 请求，max_tokens=1）
- * 返回: { ok: true } 或 { ok: false, fatal: boolean, message: string }
- *  - fatal=true: 模型确定不存在（404 / model_not_found），应拒绝添加
- *  - fatal=false: 临时性错误（超时、限流等），允许添加但警告
+ * 返回: { ok: true } 或 { ok: false, fatal, reason, message }
+ *  - fatal=true + reason=auth_failed:     Key 无效，所有模型都会失败
+ *  - fatal=true + reason=model_not_found: 仅该模型不可用，Key 可能仍有效
+ *  - fatal=false + reason=transient:      临时性问题，允许添加但警告
  */
 async function probeModel(
   providerId: string,
   modelId: string,
   apiKey: string,
   baseUrlOverride?: string,
-): Promise<{ ok: true } | { ok: false; fatal: boolean; message: string }> {
+): Promise<ProbeResult> {
   const cnProvider = CN_PROVIDERS[providerId];
   const baseUrl = baseUrlOverride?.trim() || cnProvider?.apiEndpoint;
   if (!baseUrl) {
@@ -1324,17 +1371,30 @@ async function probeModel(
     return { ok: true };
   }
 
+  // MiniMax 使用 Anthropic Messages 兼容 API，需要不同的端点和认证方式
+  const isMinimax = MINIMAX_PROVIDERS.has(providerId);
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
   };
-  // Kimi 需要 User-Agent (内部 provider ID 是 "kimi-coding"，不是 "kimi-code")
-  if (providerId === "kimi-coding") {
+
+  if (isMinimax) {
+    headers["x-api-key"] = apiKey;
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["anthropic-version"] = "2023-06-01";
+  } else {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
+  // Kimi 需要 User-Agent（region-cn 用 "kimi-code"，内部路由用 "kimi-coding"，两个都要匹配）
+  if (providerId === "kimi-code" || providerId === "kimi-coding") {
     headers["User-Agent"] = "KimiCLI/0.77";
   }
 
+  const probeUrl = isMinimax ? `${baseUrl}/v1/messages` : `${baseUrl}/chat/completions`;
+
   try {
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
+    const resp = await fetch(probeUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -1377,17 +1437,19 @@ async function probeModel(
           return {
             ok: false,
             fatal: true,
+            reason: "model_not_found",
             message: `${pName}: 模型 "${modelId}" 不存在或该 Key 无权访问`,
           };
         }
         return {
           ok: false,
           fatal: true,
+          reason: "other",
           message: `${pName}: 模型 "${modelId}" 验证失败: ${respMsg.substring(0, 100)}`,
         };
       }
-      // 检查是否有正常的 choices 响应
-      if (respJson && (respJson as any).choices) {
+      // 检查是否有正常的 choices 响应（OpenAI）或 content 响应（Anthropic Messages）
+      if (respJson && ((respJson as any).choices || (respJson as any).content)) {
         return { ok: true };
       }
       // 200 但没有 choices 也没有 error，可能有问题，但不阻止
@@ -1398,13 +1460,19 @@ async function probeModel(
       return {
         ok: false,
         fatal: true,
+        reason: "model_not_found",
         message: `${pName}: 模型 "${modelId}" 不存在或该 Key 无权访问`,
       };
     }
 
-    // 认证失败
+    // 认证失败（Key 无效 — 所有模型都会失败，无需继续尝试）
     if (resp.status === 401 || resp.status === 403) {
-      return { ok: false, fatal: true, message: `${pName}: API Key 无效或已过期，请检查密钥配置` };
+      return {
+        ok: false,
+        fatal: true,
+        reason: "auth_failed",
+        message: `${pName}: API Key 无效或已过期，请检查密钥配置`,
+      };
     }
 
     // 限流/余额不足等临时问题 — 允许添加但警告
@@ -1412,6 +1480,7 @@ async function probeModel(
       return {
         ok: false,
         fatal: false,
+        reason: "transient",
         message: `${pName}: 请求频率受限，无法验证模型 "${modelId}"`,
       };
     }
@@ -1419,6 +1488,7 @@ async function probeModel(
       return {
         ok: false,
         fatal: false,
+        reason: "transient",
         message: `${pName}: 账户余额不足，无法验证模型 "${modelId}"`,
       };
     }
@@ -1426,6 +1496,7 @@ async function probeModel(
     return {
       ok: false,
       fatal: true,
+      reason: "other",
       message: `${pName}: 验证未通过 (HTTP ${resp.status})，模型 "${modelId}" 不可用`,
     };
   } catch (err) {
@@ -1435,6 +1506,7 @@ async function probeModel(
     return {
       ok: false,
       fatal: true,
+      reason: "network",
       message: `${pName}: 连接验证失败（${msg.includes("timed out") || msg.includes("timeout") ? "超时" : "网络异常"}），请检查网络后重试`,
     };
   }
@@ -1548,40 +1620,63 @@ async function probeVision(
   const baseUrl = baseUrlOverride?.trim() || cnProvider?.apiEndpoint;
   if (!baseUrl) return { ok: false };
 
+  const isMinimax = MINIMAX_PROVIDERS.has(providerId);
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
   };
-  if (providerId === "kimi-coding") {
+  if (isMinimax) {
+    headers["x-api-key"] = apiKey;
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["anthropic-version"] = "2023-06-01";
+  } else {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+  if (providerId === "kimi-code" || providerId === "kimi-coding") {
     headers["User-Agent"] = "KimiCLI/0.77";
   }
 
+  // MiniMax (Anthropic Messages) 用 image content block 格式
+  // OpenAI 兼容 API 用 image_url 格式
+  const probeUrl = isMinimax ? `${baseUrl}/v1/messages` : `${baseUrl}/chat/completions`;
+  const messages = isMinimax
+    ? [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "hi" },
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: TINY_PNG_BASE64 },
+            },
+          ],
+        },
+      ]
+    : [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "hi" },
+            {
+              type: "image_url",
+              image_url: { url: `data:image/png;base64,${TINY_PNG_BASE64}` },
+            },
+          ],
+        },
+      ];
+
   try {
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
+    const resp = await fetch(probeUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        model: modelId,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "hi" },
-              {
-                type: "image_url",
-                image_url: { url: `data:image/png;base64,${TINY_PNG_BASE64}` },
-              },
-            ],
-          },
-        ],
-        max_tokens: 1,
-      }),
+      body: JSON.stringify({ model: modelId, messages, max_tokens: 1 }),
       signal: AbortSignal.timeout(15000),
     });
     if (!resp.ok) return { ok: false };
     const body = await resp.json().catch(() => null);
-    // 有 choices 说明模型正常处理了图片
-    return { ok: !!(body as Record<string, unknown>)?.choices };
+    const b = body as Record<string, unknown>;
+    // OpenAI 返回 choices，Anthropic Messages 返回 content
+    return { ok: !!(b?.choices || b?.content) };
   } catch {
     return { ok: false };
   }
@@ -1660,14 +1755,9 @@ export async function addCustomModel(params: {
     }
   }
 
-  const prev = _modelConfigWriteLock;
-  let release: () => void;
-  _modelConfigWriteLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  // FIX: Use shared config write lock for cross-module safety
   let probeWarning: string | undefined;
-  try {
-    await prev;
+  await withConfigWriteLock(async () => {
     const config = structuredClone(await loadConfig());
 
     // 确保 provider 已配置
@@ -1688,11 +1778,11 @@ export async function addCustomModel(params: {
     // 探测必然失败，但模型确实存在。只有 API Key 无效才阻止。
     const probe = await probeModel(providerId, modelId, providerConfig.apiKey);
     if (!probe.ok) {
-      // API Key 明确无效 — 仍然阻止
-      if (probe.fatal && /API Key 无效|已过期|密钥配置/.test(probe.message)) {
+      // API Key 明确无效 — 阻止添加
+      if (probe.reason === "auth_failed") {
         throw new Error(probe.message);
       }
-      // 其余错误（模型不存在、验证未通过等）降级为警告
+      // 其余错误（模型不存在、网络问题等）降级为警告
       probeWarning = probe.message;
     }
 
@@ -1762,9 +1852,7 @@ export async function addCustomModel(params: {
     } catch {
       /* 非关键 — registry 未初始化时跳过 */
     }
-  } finally {
-    release!();
-  }
+  });
 
   return { success: true, modelId, probeWarning };
 }
@@ -2413,13 +2501,8 @@ export async function saveProviderPriority(params: {
     throw new Error("Each priority entry must be a non-empty string");
   }
 
-  const prev = _modelConfigWriteLock;
-  let release: () => void;
-  _modelConfigWriteLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  try {
-    await prev;
+  // FIX: Use shared config write lock for cross-module safety
+  await withConfigWriteLock(async () => {
     const config = structuredClone(await loadConfig());
     config.providerPriority = priority;
     // 拖拽优先级只影响 auto=true 的自动分配，保留用户手动选择 (auto=false)
@@ -2433,9 +2516,7 @@ export async function saveProviderPriority(params: {
     if (textBinding) {
       await updateSessionModelOverrides(textBinding.providerId, textBinding.modelId);
     }
-  } finally {
-    release!();
-  }
+  });
 
   return { success: true };
 }

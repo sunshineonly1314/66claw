@@ -892,7 +892,15 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
       "创建密钥并复制",
     ],
     models: [
-      // 文字对话模型
+      // 文字对话模型（M2.1 排在前面——更多用户有权限，用于快速 API Key 验证）
+      {
+        modelId: "MiniMax-M2.1",
+        modelName: "MiniMax-M2.1",
+        capabilities: ["text"],
+        pricing: { type: "paid", details: "Agent/代码专家" },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
       {
         modelId: "MiniMax-M2.5",
         modelName: "MiniMax-M2.5",
@@ -906,14 +914,6 @@ export const PROVIDER_CAPABILITY_MAPPINGS: Record<string, ProviderCapabilityMapp
         modelName: "MiniMax-M2.5-Highspeed",
         capabilities: ["text"],
         pricing: { type: "paid" },
-        contextWindow: 200000,
-        maxTokens: 8192,
-      },
-      {
-        modelId: "MiniMax-M2.1",
-        modelName: "MiniMax-M2.1",
-        capabilities: ["text"],
-        pricing: { type: "paid", details: "Agent/代码专家" },
         contextWindow: 200000,
         maxTokens: 8192,
       },
