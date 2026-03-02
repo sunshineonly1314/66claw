@@ -10,6 +10,7 @@ import os from "node:os";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { OpenClawCNConfig } from "../config/config.js";
 import { loadConfig, writeConfigFile } from "../config/config.js";
+import { withConfigWriteLock } from "../config/config-write-lock.js";
 import type { ChannelId } from "../channels/plugins/types.js";
 import {
   CN_PROVIDERS,
@@ -218,7 +219,7 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
           } else if (response.status === 404) {
             errorMessage = "API 端点不存在，请检查地址是否正确";
           } else if (response.status === 429) {
-            errorMessage = "请求频率超限，请稍后重试";
+            errorMessage = "[E1001] 请求频率超限，请稍后重试";
           }
         }
         sendJson(res, 200, { ok: true, data: { valid: false, error: errorMessage } });
@@ -568,7 +569,7 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
         } else if (response.status === 403) {
           errorMessage = `${pName}: API Key 权限不足`;
         } else if (response.status === 429) {
-          errorMessage = `${pName}: 请求频率超限，请稍后重试`;
+          errorMessage = `${pName}: [E1001] 请求频率超限，请稍后重试`;
         } else if (
           provider === "volcengine-ark" &&
           (response.status === 404 || response.status === 400)
@@ -633,59 +634,61 @@ export async function handleConfigureProvider(
       // 自定义提供商的 model ref 使用 custom-openai 命名空间
       const modelRef = `custom-openai/${defaultModel}`;
 
-      const config = loadConfig();
-      const nextConfig: OpenClawCNConfig = {
-        ...config,
-        auth: {
-          ...config.auth,
-          profiles: {
-            ...config.auth?.profiles,
-            "openai:default": {
-              provider: "openai",
-              mode: "api_key",
+      const nextConfig = await withConfigWriteLock(async () => {
+        const config = loadConfig();
+        const cfg: OpenClawCNConfig = {
+          ...config,
+          auth: {
+            ...config.auth,
+            profiles: {
+              ...config.auth?.profiles,
+              "openai:default": {
+                provider: "openai",
+                mode: "api_key",
+              },
+            },
+            order: {
+              ...config.auth?.order,
+              openai: ["openai:default"],
             },
           },
-          order: {
-            ...config.auth?.order,
-            openai: ["openai:default"],
-          },
-        },
-        agents: {
-          ...config.agents,
-          defaults: {
-            ...config.agents?.defaults,
-            model: {
-              ...config.agents?.defaults?.model,
-              primary: modelRef,
+          agents: {
+            ...config.agents,
+            defaults: {
+              ...config.agents?.defaults,
+              model: {
+                ...config.agents?.defaults?.model,
+                primary: modelRef,
+              },
             },
           },
-        },
-        // 将自定义 endpoint 写入 models.providers 配置
-        models: {
-          ...config.models,
-          providers: {
-            ...config.models?.providers,
-            "custom-openai": {
-              baseUrl,
-              api: "openai-completions",
-              apiKey: trimmedKey,
-              models: [
-                {
-                  id: defaultModel,
-                  name: defaultModel,
-                  reasoning: false,
-                  input: ["text"],
-                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                  contextWindow: 128000,
-                  maxTokens: 4096,
-                },
-              ],
+          // 将自定义 endpoint 写入 models.providers 配置
+          models: {
+            ...config.models,
+            providers: {
+              ...config.models?.providers,
+              "custom-openai": {
+                baseUrl,
+                api: "openai-completions",
+                apiKey: trimmedKey,
+                models: [
+                  {
+                    id: defaultModel,
+                    name: defaultModel,
+                    reasoning: false,
+                    input: ["text"],
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    contextWindow: 128000,
+                    maxTokens: 4096,
+                  },
+                ],
+              },
             },
           },
-        },
-      };
-
-      await writeConfigFile(nextConfig);
+        };
+        await writeConfigFile(cfg);
+        return cfg;
+      });
 
       // 立即刷新 models.json，使自定义模型对 agent 运行时和模型设置页可见
       // 自定义提供商的 apiKey 已内联到 nextConfig.models.providers 中，
@@ -751,7 +754,6 @@ export async function handleConfigureProvider(
     }
 
     // 更新配置
-    const config = loadConfig();
     const providerConfig = CN_PROVIDERS[provider];
     const defaultModel = model || providerConfig?.models[0]?.id;
     // 🔥 P0 修复: 使用 normalizeProviderId 确保 model ref 一致
@@ -765,56 +767,59 @@ export async function handleConfigureProvider(
         : `${normalizedProvider}/${defaultModel}`
       : undefined;
 
-    const nextConfig: OpenClawCNConfig = {
-      ...config,
-      auth: {
-        ...config.auth,
-        profiles: {
-          ...config.auth?.profiles,
-          [`${normalizedProvider}:default`]: {
-            provider: normalizedProvider,
-            mode: "api_key",
+    const nextConfig = await withConfigWriteLock(async () => {
+      const config = loadConfig();
+      const cfg: OpenClawCNConfig = {
+        ...config,
+        auth: {
+          ...config.auth,
+          profiles: {
+            ...config.auth?.profiles,
+            [`${normalizedProvider}:default`]: {
+              provider: normalizedProvider,
+              mode: "api_key",
+            },
+          },
+          order: {
+            ...config.auth?.order,
+            [normalizedProvider]: [`${normalizedProvider}:default`],
           },
         },
-        order: {
-          ...config.auth?.order,
-          [normalizedProvider]: [`${normalizedProvider}:default`],
+        agents: {
+          ...config.agents,
+          defaults: {
+            ...config.agents?.defaults,
+            model: modelRef
+              ? {
+                  ...config.agents?.defaults?.model,
+                  primary: modelRef,
+                }
+              : config.agents?.defaults?.model,
+          },
         },
-      },
-      agents: {
-        ...config.agents,
-        defaults: {
-          ...config.agents?.defaults,
-          model: modelRef
-            ? {
-                ...config.agents?.defaults?.model,
-                primary: modelRef,
-              }
-            : config.agents?.defaults?.model,
-        },
-      },
-      // 同步写入 modelCapability.capabilities.text，使 chat 页能力检测可识别已配置的模型。
-      // 若不写入，UI 调用 modelConfig.capabilities.list 时会返回 status:"inactive"，
-      // 导致 chat 页显示"未配置"横幅，尽管后台实际可正常调用模型。
-      ...(defaultModel
-        ? {
-            modelCapability: {
-              ...((config as { modelCapability?: { capabilities: Record<string, unknown> } })
-                .modelCapability ?? { capabilities: {} }),
-              capabilities: {
+        // 同步写入 modelCapability.capabilities.text，使 chat 页能力检测可识别已配置的模型。
+        // 若不写入，UI 调用 modelConfig.capabilities.list 时会返回 status:"inactive"，
+        // 导致 chat 页显示"未配置"横幅，尽管后台实际可正常调用模型。
+        ...(defaultModel
+          ? {
+              modelCapability: {
                 ...((config as { modelCapability?: { capabilities: Record<string, unknown> } })
-                  .modelCapability?.capabilities ?? {}),
-                text: {
-                  providerId: normalizedProvider,
-                  modelId: defaultModel,
+                  .modelCapability ?? { capabilities: {} }),
+                capabilities: {
+                  ...((config as { modelCapability?: { capabilities: Record<string, unknown> } })
+                    .modelCapability?.capabilities ?? {}),
+                  text: {
+                    providerId: normalizedProvider,
+                    modelId: defaultModel,
+                  },
                 },
               },
-            },
-          }
-        : {}),
-    };
-
-    await writeConfigFile(nextConfig);
+            }
+          : {}),
+      };
+      await writeConfigFile(cfg);
+      return cfg;
+    });
 
     // 立即刷新 models.json，使新配置的提供商模型对 agent 运行时和模型设置页可见
     // 传入 authStore 并注入刚写入的凭据，避免加密模式下异步写入未完成导致读到旧数据
@@ -1036,24 +1041,26 @@ export async function handleConfigureWorkspace(
     }
 
     // 更新配置
-    const config = loadConfig();
-    const nextConfig: OpenClawCNConfig = {
-      ...config,
-      agents: {
-        ...config.agents,
-        defaults: {
-          ...config.agents?.defaults,
-          workspace,
+    await withConfigWriteLock(async () => {
+      const config = loadConfig();
+      const nextConfig: OpenClawCNConfig = {
+        ...config,
+        agents: {
+          ...config.agents,
+          defaults: {
+            ...config.agents?.defaults,
+            workspace,
+          },
         },
-      },
-    };
+      };
 
-    // 如果有额外的授权目录，添加到配置中
-    if (additionalDirs && additionalDirs.length > 0) {
-      // TODO: 实现目录授权配置
-    }
+      // 如果有额外的授权目录，添加到配置中
+      if (additionalDirs && additionalDirs.length > 0) {
+        // TODO: 实现目录授权配置
+      }
 
-    await writeConfigFile(nextConfig);
+      await writeConfigFile(nextConfig);
+    });
 
     updateSetupState({
       step: 3,
@@ -1085,125 +1092,127 @@ export async function handleConfigureSecurity(
   const { mode, trustedDirs } = body;
 
   try {
-    const config = loadConfig();
-    let nextConfig: OpenClawCNConfig = { ...config };
+    await withConfigWriteLock(async () => {
+      const config = loadConfig();
+      let nextConfig: OpenClawCNConfig = { ...config };
 
-    if (mode === "standard") {
-      // 转换信任目录为 Docker binds 格式
-      const binds =
-        trustedDirs && trustedDirs.length > 0
-          ? trustedDirs.map((dir) => formatDockerBind(dir))
-          : undefined;
+      if (mode === "standard") {
+        // 转换信任目录为 Docker binds 格式
+        const binds =
+          trustedDirs && trustedDirs.length > 0
+            ? trustedDirs.map((dir) => formatDockerBind(dir))
+            : undefined;
 
-      // 根据部署环境选择 exec 权限策略：
-      // - CN 区 / Windows 打包模式：full + off（最大能力释放，小白无需确认）
-      // - 其他环境（macOS 在线等）：allowlist + on-miss（未知命令询问用户）
-      const isCn = detectChinaRegion();
-      const execSecurity = isCn ? ("full" as const) : ("allowlist" as const);
-      const execAsk = isCn ? ("off" as const) : ("on-miss" as const);
+        // 根据部署环境选择 exec 权限策略：
+        // - CN 区 / Windows 打包模式：full + off（最大能力释放，小白无需确认）
+        // - 其他环境（macOS 在线等）：allowlist + on-miss（未知命令询问用户）
+        const isCn = detectChinaRegion();
+        const execSecurity = isCn ? ("full" as const) : ("allowlist" as const);
+        const execAsk = isCn ? ("off" as const) : ("on-miss" as const);
 
-      // 预置常用命令白名单（Windows + Linux + 开发工具）
-      const safeBins = [
-        // Windows 常用
-        "notepad",
-        "explorer",
-        "calc",
-        "mspaint",
-        "code",
-        // [HIGH-07] cmd/powershell 已移除：配合 ask:"off" 时可执行任意命令，
-        // 等同于无限制 shell 访问。用户如需要可自行加入白名单。
-        "start",
-        "where",
-        "dir",
-        "type",
-        "echo",
-        "set",
-        "cd",
-        "mkdir",
-        "copy",
-        // 开发工具 - 通用
-        "python",
-        "python3",
-        "pip",
-        "pip3",
-        "node",
-        "npm",
-        "pnpm",
-        "yarn",
-        "bun",
-        "git",
-        "curl",
-        "wget",
-        // 开发工具 - Java
-        "java",
-        "javac",
-        "mvn",
-        "gradle",
-        // 开发工具 - 其他语言
-        "go",
-        "cargo",
-        "dotnet",
-        // 压缩工具
-        "tar",
-        "zip",
-        "unzip",
-        // Linux 基础
-        "ls",
-        "cat",
-        "grep",
-        "find",
-        "head",
-        "tail",
-        "wc",
-        "sort",
-        "uniq",
-        "jq",
-        "cp",
-        "mv",
-        "mkdir",
-        "touch",
-        "chmod",
-        "pwd",
-        "which",
-        "env",
-        // 浏览器
-        "chrome",
-        "msedge",
-        "firefox",
-      ];
+        // 预置常用命令白名单（Windows + Linux + 开发工具）
+        const safeBins = [
+          // Windows 常用
+          "notepad",
+          "explorer",
+          "calc",
+          "mspaint",
+          "code",
+          // [HIGH-07] cmd/powershell 已移除：配合 ask:"off" 时可执行任意命令，
+          // 等同于无限制 shell 访问。用户如需要可自行加入白名单。
+          "start",
+          "where",
+          "dir",
+          "type",
+          "echo",
+          "set",
+          "cd",
+          "mkdir",
+          "copy",
+          // 开发工具 - 通用
+          "python",
+          "python3",
+          "pip",
+          "pip3",
+          "node",
+          "npm",
+          "pnpm",
+          "yarn",
+          "bun",
+          "git",
+          "curl",
+          "wget",
+          // 开发工具 - Java
+          "java",
+          "javac",
+          "mvn",
+          "gradle",
+          // 开发工具 - 其他语言
+          "go",
+          "cargo",
+          "dotnet",
+          // 压缩工具
+          "tar",
+          "zip",
+          "unzip",
+          // Linux 基础
+          "ls",
+          "cat",
+          "grep",
+          "find",
+          "head",
+          "tail",
+          "wc",
+          "sort",
+          "uniq",
+          "jq",
+          "cp",
+          "mv",
+          "mkdir",
+          "touch",
+          "chmod",
+          "pwd",
+          "which",
+          "env",
+          // 浏览器
+          "chrome",
+          "msedge",
+          "firefox",
+        ];
 
-      // 应用推荐的安全配置
-      nextConfig = {
-        ...nextConfig,
-        agents: {
-          ...nextConfig.agents,
-          defaults: {
-            ...nextConfig.agents?.defaults,
-            sandbox: {
-              ...CN_DEFAULT_SECURITY_CONFIG.sandbox,
-              docker: binds
-                ? {
-                    ...nextConfig.agents?.defaults?.sandbox?.docker,
-                    binds,
-                  }
-                : nextConfig.agents?.defaults?.sandbox?.docker,
+        // 应用推荐的安全配置
+        nextConfig = {
+          ...nextConfig,
+          agents: {
+            ...nextConfig.agents,
+            defaults: {
+              ...nextConfig.agents?.defaults,
+              sandbox: {
+                ...CN_DEFAULT_SECURITY_CONFIG.sandbox,
+                docker: binds
+                  ? {
+                      ...nextConfig.agents?.defaults?.sandbox?.docker,
+                      binds,
+                    }
+                  : nextConfig.agents?.defaults?.sandbox?.docker,
+              },
             },
           },
-        },
-        tools: {
-          ...nextConfig.tools,
-          exec: {
-            ...nextConfig.tools?.exec,
-            security: execSecurity,
-            ask: execAsk,
-            safeBins,
+          tools: {
+            ...nextConfig.tools,
+            exec: {
+              ...nextConfig.tools?.exec,
+              security: execSecurity,
+              ask: execAsk,
+              safeBins,
+            },
           },
-        },
-      };
-    }
-    // mode === "trust" 时不添加额外限制
+        };
+      }
+      // mode === "trust" 时不添加额外限制
 
-    await writeConfigFile(nextConfig);
+      await writeConfigFile(nextConfig);
+    });
 
     updateSetupState({
       step: 4,
@@ -1646,45 +1655,51 @@ export async function handleConfigureChannels(
     // 合并到现有配置
     // 注：渠道插件默认启用（BUNDLED_ENABLED_BY_DEFAULT），无需设置 plugins.entries
     // channels.* 配置变更会触发热更新，自动重启对应渠道
-    const nextConfig: OpenClawCNConfig = {
-      ...config,
-      channels: channelsConfig as OpenClawCNConfig["channels"],
-    };
+    const nextConfig = await withConfigWriteLock(async () => {
+      // 重新加载以获取最新配置，防止与其他模块的写入竞态
+      const freshConfig = loadConfig();
+      const cfg: OpenClawCNConfig = {
+        ...freshConfig,
+        channels: channelsConfig as OpenClawCNConfig["channels"],
+      };
 
-    // 持久化到磁盘
-    await writeConfigFile(nextConfig);
+      // 持久化到磁盘
+      await writeConfigFile(cfg);
 
-    // ── dmScope 自动检测 ──────────────────────────────────────────────
-    // 写完渠道配置后,如果 dmScope 未显式设置且检测建议升级,自动应用推荐值
-    try {
-      const { getActivePluginRegistry } = await import("../plugins/runtime.js");
-      const registry = getActivePluginRegistry();
-      const channelPlugins = (registry?.channels ?? []).map((c) => c.plugin);
-      if (channelPlugins.length > 0) {
-        const { recommendDmScope } = await import("../session/dm-scope-auto.js");
-        const recommendation = recommendDmScope({
-          cfg: nextConfig,
-          plugins: channelPlugins,
-        });
-        if (!recommendation.isExplicit && recommendation.shouldUpgrade) {
-          const patched: OpenClawCNConfig = {
-            ...nextConfig,
-            session: {
-              ...(nextConfig.session ?? {}),
-              dmScope: recommendation.recommended,
-            } as OpenClawCNConfig["session"],
-          };
-          await writeConfigFile(patched);
-          log.info(
-            `dmScope auto-set to "${recommendation.recommended}" (reason: ${recommendation.reason})`,
-          );
+      // ── dmScope 自动检测 ──────────────────────────────────────────────
+      // 写完渠道配置后,如果 dmScope 未显式设置且检测建议升级,自动应用推荐值
+      try {
+        const { getActivePluginRegistry } = await import("../plugins/runtime.js");
+        const registry = getActivePluginRegistry();
+        const channelPlugins = (registry?.channels ?? []).map((c) => c.plugin);
+        if (channelPlugins.length > 0) {
+          const { recommendDmScope } = await import("../session/dm-scope-auto.js");
+          const recommendation = recommendDmScope({
+            cfg,
+            plugins: channelPlugins,
+          });
+          if (!recommendation.isExplicit && recommendation.shouldUpgrade) {
+            const patched: OpenClawCNConfig = {
+              ...cfg,
+              session: {
+                ...(cfg.session ?? {}),
+                dmScope: recommendation.recommended,
+              } as OpenClawCNConfig["session"],
+            };
+            await writeConfigFile(patched);
+            log.info(
+              `dmScope auto-set to "${recommendation.recommended}" (reason: ${recommendation.reason})`,
+            );
+            return patched;
+          }
         }
+      } catch (err) {
+        log.warn(
+          `dmScope auto-detection skipped: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-    } catch (err) {
-      log.warn(
-        `dmScope auto-detection skipped: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+      return cfg;
+    });
 
     // 立即启动配置的渠道（热更新，无需重启 Gateway）
     const startedChannels: string[] = [];
@@ -1754,15 +1769,18 @@ export async function handleGetQrcode(_req: IncomingMessage, res: ServerResponse
  */
 export async function handleComplete(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
-    const config = loadConfig();
-    const nextConfig = {
-      ...config,
-      setup: {
-        ...config.setup,
-        completedAt: new Date().toISOString(),
-      },
-    };
-    await writeConfigFile(nextConfig);
+    const nextConfig = await withConfigWriteLock(async () => {
+      const config = loadConfig();
+      const cfg = {
+        ...config,
+        setup: {
+          ...config.setup,
+          completedAt: new Date().toISOString(),
+        },
+      };
+      await writeConfigFile(cfg);
+      return cfg;
+    });
 
     // Setup 完成时确保 models.json 已包含所有已配置的提供商模型
     // handleComplete 不写入新凭据，此时加密写入已完成，直接从磁盘读取即可
@@ -1843,37 +1861,39 @@ export async function handleValidateLicense(
 
     if (result.valid) {
       // 验证成功，保存许可证状态到配置（包含 keyType 等完整字段，与 license.activate 保持一致）
-      const config = loadConfig();
-      const nextConfig = {
-        ...config,
-        license: {
-          ...config.license,
-          key,
-          status: result.license?.tier ?? "basic",
-          expiresAt: result.license?.expiresAt ?? undefined,
-          validatedAt: new Date().toISOString(),
-          tier: result.license?.tier,
-          tierName: result.license?.tierName,
-          daysRemaining: result.license?.daysRemaining,
-          keyType: result.license?.keyType,
-          features: result.license?.features,
-          deviceId: result.device?.deviceId,
-          deviceLimit: result.device?.deviceLimit,
-          boundDevices: result.device?.boundDevices,
-          // [HIGH-08] 存储服务端签名载荷，启动/离线时重新验证防篡改
-          signedPayload:
-            result.signature && result.serverTime
-              ? {
-                  signature: result.signature,
-                  valid: result.valid,
-                  tier: result.license?.tier ?? null,
-                  expiresAt: result.license?.expiresAt ?? null,
-                  serverTime: result.serverTime,
-                }
-              : undefined,
-        },
-      };
-      await writeConfigFile(nextConfig);
+      await withConfigWriteLock(async () => {
+        const config = loadConfig();
+        const nextConfig = {
+          ...config,
+          license: {
+            ...config.license,
+            key,
+            status: result.license?.tier ?? "basic",
+            expiresAt: result.license?.expiresAt ?? undefined,
+            validatedAt: new Date().toISOString(),
+            tier: result.license?.tier,
+            tierName: result.license?.tierName,
+            daysRemaining: result.license?.daysRemaining,
+            keyType: result.license?.keyType,
+            features: result.license?.features,
+            deviceId: result.device?.deviceId,
+            deviceLimit: result.device?.deviceLimit,
+            boundDevices: result.device?.boundDevices,
+            // [HIGH-08] 存储服务端签名载荷，启动/离线时重新验证防篡改
+            signedPayload:
+              result.signature && result.serverTime
+                ? {
+                    signature: result.signature,
+                    valid: result.valid,
+                    tier: result.license?.tier ?? null,
+                    expiresAt: result.license?.expiresAt ?? null,
+                    serverTime: result.serverTime,
+                  }
+                : undefined,
+          },
+        };
+        await writeConfigFile(nextConfig);
+      });
 
       // 同步更新 Gateway 全局 License 状态（使用真实的验证响应数据）
       updateGatewayLicenseState({
@@ -2007,17 +2027,19 @@ export async function handleValidateLicense(
 
     if (isDev) {
       // 开发模式：允许跳过验证
-      const config = loadConfig();
-      const nextConfig = {
-        ...config,
-        license: {
-          key,
-          status: "dev",
-          expiresAt: undefined,
-          validatedAt: new Date().toISOString(),
-        },
-      };
-      await writeConfigFile(nextConfig);
+      await withConfigWriteLock(async () => {
+        const config = loadConfig();
+        const nextConfig = {
+          ...config,
+          license: {
+            key,
+            status: "dev",
+            expiresAt: undefined,
+            validatedAt: new Date().toISOString(),
+          },
+        };
+        await writeConfigFile(nextConfig);
+      });
 
       // 同步更新 Gateway 全局 License 状态
       updateGatewayLicenseState({
@@ -2088,26 +2110,28 @@ export async function handleSwitchDevice(req: IncomingMessage, res: ServerRespon
 
     if (result.valid) {
       // 切换成功，更新配置（包含 keyType 等完整字段，与 license.switch 保持一致）
-      const config = loadConfig();
-      const nextConfig = {
-        ...config,
-        license: {
-          ...config.license,
-          key,
-          status: result.license?.tier ?? "basic",
-          expiresAt: result.license?.expiresAt,
-          validatedAt: new Date().toISOString(),
-          tier: result.license?.tier,
-          tierName: result.license?.tierName,
-          daysRemaining: result.license?.daysRemaining,
-          keyType: result.license?.keyType,
-          features: result.license?.features,
-          deviceId: result.device?.deviceId,
-          deviceLimit: result.device?.deviceLimit,
-          boundDevices: result.device?.boundDevices,
-        },
-      };
-      await writeConfigFile(nextConfig);
+      await withConfigWriteLock(async () => {
+        const config = loadConfig();
+        const nextConfig = {
+          ...config,
+          license: {
+            ...config.license,
+            key,
+            status: result.license?.tier ?? "basic",
+            expiresAt: result.license?.expiresAt,
+            validatedAt: new Date().toISOString(),
+            tier: result.license?.tier,
+            tierName: result.license?.tierName,
+            daysRemaining: result.license?.daysRemaining,
+            keyType: result.license?.keyType,
+            features: result.license?.features,
+            deviceId: result.device?.deviceId,
+            deviceLimit: result.device?.deviceLimit,
+            boundDevices: result.device?.boundDevices,
+          },
+        };
+        await writeConfigFile(nextConfig);
+      });
 
       // 更新 Gateway 全局 License 状态
       updateGatewayLicenseState({
@@ -2416,8 +2440,6 @@ export async function handleConfigureFreeModels(
   }
 
   try {
-    const config = await loadConfig();
-
     // 构建免费模型配置
     const freeModelsConfig: FreeModelsConfig = {
       ...DEFAULT_FREE_MODELS_CONFIG,
@@ -2437,8 +2459,11 @@ export async function handleConfigureFreeModels(
     };
 
     // 保存到配置
-    (config as { freeModels?: FreeModelsConfig }).freeModels = freeModelsConfig;
-    await writeConfigFile(config);
+    await withConfigWriteLock(async () => {
+      const config = loadConfig();
+      (config as { freeModels?: FreeModelsConfig }).freeModels = freeModelsConfig;
+      await writeConfigFile(config);
+    });
 
     sendJson(res, 200, { ok: true });
   } catch (error) {

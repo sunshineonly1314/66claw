@@ -20,12 +20,15 @@ import {
   writeConfigFile,
   validateConfigObjectWithPlugins,
 } from "../../config/config.js";
+import { withConfigWriteLock } from "../../config/config-write-lock.js";
 import { applyMergePatch } from "../../config/merge-patch.js";
 import { discoverGatewayBeacons } from "../../infra/bonjour-discovery.js";
 import { findTailscaleBinary } from "../../infra/tailscale.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import { diffConfigPaths, buildGatewayReloadPlan } from "../config-reload.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
+import { fetchWithSsrFGuard } from "../../infra/net/fetch-guard.js";
+import { SsrFBlockedError } from "../../infra/net/ssrf.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -169,6 +172,9 @@ export const networkingHandlers: GatewayRequestHandlers = {
   /**
    * gateway.network.probe — Test if a remote gateway is reachable.
    * Sends an HTTP health check to the target.
+   *
+   * [HIGH-03 FIX] SSRF protection: block requests to private/internal IPs
+   * (loopback, link-local, RFC1918, cloud metadata endpoints).
    */
   "gateway.network.probe": async ({ params, respond }) => {
     const targetHost = String(params?.targetHost ?? "").trim();
@@ -177,15 +183,81 @@ export const networkingHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    // [HIGH-03 FIX] Extract hostname (strip port) and validate against SSRF targets
+    const hostOnly = targetHost.includes(":") ? targetHost.split(":")[0] : targetHost;
+
+    // Block cloud metadata endpoints
+    const BLOCKED_HOSTS = [
+      "169.254.169.254", // AWS/GCP/Azure metadata
+      "metadata.google.internal",
+      "metadata.google",
+      "100.100.100.200", // Alibaba Cloud metadata
+    ];
+    if (BLOCKED_HOSTS.includes(hostOnly)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "target host is blocked (metadata endpoint)"),
+      );
+      return;
+    }
+
+    // Block private/internal IP ranges
+    const parts = hostOnly.split(".").map(Number);
+    const isIPv4 = parts.length === 4 && parts.every((p) => !isNaN(p) && p >= 0 && p <= 255);
+    if (isIPv4) {
+      const [a, b] = parts;
+      const isPrivate =
+        a === 127 || // Loopback
+        a === 10 || // RFC1918
+        (a === 172 && b >= 16 && b <= 31) || // RFC1918
+        (a === 192 && b === 168) || // RFC1918
+        a === 0 || // "This" network
+        (a === 169 && b === 254) || // Link-local
+        (a === 100 && b >= 64 && b <= 127); // CGNAT (Tailscale excluded via isTailnetAddress separately)
+      if (isPrivate) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "target host is a private/internal IP address"),
+        );
+        return;
+      }
+    }
+
+    // Block localhost variants
+    if (
+      hostOnly === "localhost" ||
+      hostOnly === "0.0.0.0" ||
+      hostOnly === "::1" ||
+      hostOnly === "[::]"
+    ) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "target host is a loopback address"),
+      );
+      return;
+    }
+
     const start = Date.now();
     try {
       // Try HTTPS first, then HTTP
       const protocol = targetHost.includes(":443") ? "https" : "http";
       const url = `${protocol}://${targetHost}/health`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+
+      // [HIGH-03 FIX v2] Use fetchWithSsrFGuard instead of bare fetch().
+      // This adds DNS pinning (prevents DNS rebinding TOCTOU attacks),
+      // per-hop redirect validation (blocks redirect → private IP),
+      // and reuses the project's standard SSRF infrastructure.
+      const result = await fetchWithSsrFGuard({
+        url,
+        timeoutMs: 5000,
+        maxRedirects: 0, // Probe should not follow redirects
+        auditContext: "gateway.network.probe",
+      });
       try {
-        const res = await fetch(url, { signal: controller.signal });
+        const res = result.response;
         const latencyMs = Date.now() - start;
         let gatewayVersion: string | undefined;
         try {
@@ -201,9 +273,18 @@ export const networkingHandlers: GatewayRequestHandlers = {
           gatewayVersion: gatewayVersion || undefined,
         });
       } finally {
-        clearTimeout(timeout);
+        await result.release();
       }
     } catch (err) {
+      // SSRF guard blocks resolve to specific error type
+      if (err instanceof SsrFBlockedError) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, "target host is blocked (SSRF protection)"),
+        );
+        return;
+      }
       respond(true, {
         targetHost,
         reachable: false,
@@ -290,42 +371,49 @@ export const networkingHandlers: GatewayRequestHandlers = {
       }
 
       // Read → merge → validate → write (same flow as config.patch)
-      const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
-      if (!snapshot.valid) {
-        respond(
-          false,
-          undefined,
-          errorShape(
-            ErrorCodes.INVALID_REQUEST,
-            "Config file is invalid; fix before changing network settings.",
-          ),
-        );
-        return;
-      }
+      const result = await withConfigWriteLock(async () => {
+        const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
+        if (!snapshot.valid) {
+          return {
+            ok: false as const,
+            error: "Config file is invalid; fix before changing network settings.",
+          };
+        }
 
-      const merged = applyMergePatch(snapshot.config, mergePatch, {
-        mergeObjectArraysById: true,
+        const merged = applyMergePatch(snapshot.config, mergePatch, {
+          mergeObjectArraysById: true,
+        });
+        const validated = validateConfigObjectWithPlugins(merged);
+        if (!validated.ok) {
+          return {
+            ok: false as const,
+            error: "Invalid config after merge",
+            issues: validated.issues,
+          };
+        }
+
+        await writeConfigFile(validated.config, writeOptions);
+
+        const paths = diffConfigPaths(snapshot.config, validated.config);
+        return {
+          ok: true as const,
+          changedPaths: paths,
+          needsRestart: paths.length > 0 && buildGatewayReloadPlan(paths).restartGateway,
+        };
       });
-      const validated = validateConfigObjectWithPlugins(merged);
-      if (!validated.ok) {
+
+      if (!result.ok) {
         respond(
           false,
           undefined,
-          errorShape(ErrorCodes.INVALID_REQUEST, "Invalid config after merge", {
-            details: { issues: validated.issues },
+          errorShape(ErrorCodes.INVALID_REQUEST, result.error, {
+            ...("issues" in result ? { details: { issues: result.issues } } : {}),
           }),
         );
         return;
       }
 
-      await writeConfigFile(validated.config, writeOptions);
-
-      // Determine if restart is needed
-      const changedPaths = diffConfigPaths(snapshot.config, validated.config);
-      const needsRestart =
-        changedPaths.length > 0 && buildGatewayReloadPlan(changedPaths).restartGateway;
-
-      if (needsRestart) {
+      if (result.needsRestart) {
         scheduleGatewaySigusr1Restart({
           delayMs: 500,
           reason: "gateway.network.configure",
@@ -334,8 +422,8 @@ export const networkingHandlers: GatewayRequestHandlers = {
 
       respond(true, {
         applied,
-        restartRequired: needsRestart,
-        restartScheduledMs: needsRestart ? 500 : undefined,
+        restartRequired: result.needsRestart,
+        restartScheduledMs: result.needsRestart ? 500 : undefined,
       });
     });
   },
