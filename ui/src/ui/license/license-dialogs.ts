@@ -1,10 +1,11 @@
 /**
- * Clawdbot License UI - Dialog Rendering
+ * License UI - Dialog Rendering
  * 授权相关弹窗渲染
  */
 
 import { html, nothing, type TemplateResult } from "lit";
 import { isCN } from "../edition";
+import { brand } from "../brand";
 import type {
   LicenseUiState,
   LicenseNotification,
@@ -68,7 +69,7 @@ function getUrgencyIcon(urgency: "info" | "warning" | "critical" | null): string
 
 /**
  * 渲染授权激活弹窗
- * 前端校验：激活码必须以 "claw" 开头
+ * 前端校验：激活码前缀由 brand.activationPrefix 控制
  */
 export function renderActivationDialog(
   onActivate: (key: string) => void,
@@ -76,6 +77,8 @@ export function renderActivationDialog(
   error: string | null = null,
   loading: boolean = false,
 ): TemplateResult {
+  const prefix = brand.activationPrefix;
+
   const handleSubmit = (e: Event) => {
     e.preventDefault();
     const form = e.target as HTMLFormElement;
@@ -84,10 +87,10 @@ export function renderActivationDialog(
     const value = input?.value?.trim();
     if (!value) return;
 
-    // 前端校验：必须以 claw 开头
-    if (!value.toLowerCase().startsWith("claw")) {
+    // 前端校验：若配置了前缀则校验
+    if (prefix && !value.toLowerCase().startsWith(prefix)) {
       if (errorEl) {
-        errorEl.textContent = "激活码必须以 claw 开头";
+        errorEl.textContent = brand.activationPrefixError;
         errorEl.style.display = "block";
       }
       input.focus();
@@ -101,7 +104,7 @@ export function renderActivationDialog(
     const input = e.target as HTMLInputElement;
     const form = input.closest("form");
     const errorEl = form?.querySelector(".license-prefix-error") as HTMLElement | null;
-    if (errorEl && input.value.toLowerCase().startsWith("claw")) {
+    if (prefix && errorEl && input.value.toLowerCase().startsWith(prefix)) {
       errorEl.style.display = "none";
     }
   };
@@ -113,12 +116,12 @@ export function renderActivationDialog(
           <h2>🔑 激活授权</h2>
         </div>
         <div class="license-dialog-content">
-          <p>请输入您的授权码以激活 Clawdbot</p>
+          <p>${brand.activationDialogText}</p>
           <form @submit=${handleSubmit}>
             <input
               type="text"
               class="license-input"
-              placeholder="请输入授权码 (如: claw-xxx-xxx)"
+              placeholder="${brand.activationPlaceholder}"
               ?disabled=${loading}
               @input=${handleInput}
               autofocus
@@ -134,7 +137,7 @@ export function renderActivationDialog(
               </button>
             </div>
           </form>
-          ${isCN ? html`
+          ${brand.showPurchaseEntry ? html`
           <p class="license-help">
             还没有授权码？<a href="#" @click=${(e: Event) => { e.preventDefault(); void openPurchaseOrRenewUrl(null); }} style="font-size:16px;font-weight:600;">立即购买</a>
           </p>
@@ -171,7 +174,7 @@ export function renderExpiredDialog(
             <button class="license-btn license-btn-secondary" @click=${onClose}>
               稍后处理
             </button>
-            ${isCN ? html`
+            ${brand.showPurchaseEntry ? html`
             <button class="license-btn license-btn-primary" @click=${handleRenew}>
               立即续费
             </button>
@@ -214,7 +217,7 @@ export function renderRenewalReminderDialog(
             <button class="license-btn license-btn-secondary" @click=${onDismiss}>
               稍后提醒
             </button>
-            ${isCN ? html`
+            ${brand.showPurchaseEntry ? html`
             <button class="license-btn license-btn-primary" @click=${handleRenew}>
               立即续费
             </button>

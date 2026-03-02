@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 
 import { isCN } from "./edition";
+import { brand } from "./brand";
 import { formatGeneralError } from "./chat/error-hints";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { AppViewState, McpMarketplaceItem } from "./app-view-state";
@@ -343,7 +344,7 @@ function renderQrcodePopover(
  * 预加载：进入 chat 页面时已主动拉取，hover 时立即显示
  */
 function renderTopbarSupportButtons(state: AppViewState) {
-  if (!isCN) return nothing;
+  if (!brand.showSupportQrcode && !brand.showPurchaseEntry) return nothing;
   const license = state.licenseState?.license;
   const isLoading = state.qrcodePreloading ?? false;
 
@@ -578,26 +579,24 @@ export function renderApp(state: AppViewState) {
           >
             <span class="nav-collapse-toggle__icon">${icons.menu}</span>
           </button>
-          ${isCN ? html`
           <div class="brand">
             <div class="brand-logo">
-              <img src="/logo.png" alt="ClawbotCN" />
+              <img src="${brand.logoPath}" alt="${brand.logoAlt}" />
             </div>
             <div class="brand-text">
-              <div class="brand-title">ClawbotCN</div>
-              <div class="brand-sub">- <strong>全栈国内运行</strong></div>
+              <div class="brand-title">${brand.productName}</div>
+              ${brand.tagline ? html`<div class="brand-sub">- <strong>${brand.tagline}</strong></div>` : nothing}
             </div>
           </div>
-          ` : nothing}
         </div>
         <div class="topbar-status">
           ${renderTopbarSupportButtons(state)}
-          ${isCN ? html`
-          <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="topbar-promo">
+          ${brand.promoUrl ? html`
+          <a href="${brand.promoUrl}" target="_blank" rel="noreferrer" class="topbar-promo">
             <span class="topbar-promo__dot"></span>
-            <span class="topbar-promo__brand">TecbinAI</span>
+            <span class="topbar-promo__brand">${brand.promoName}</span>
             <span class="topbar-promo__sep"></span>
-            <span class="topbar-promo__desc">及时追踪AI · 解锁更多玩法</span>
+            <span class="topbar-promo__desc">${brand.promoDesc}</span>
           </a>
           ` : nothing}
           ${renderApiMonitor(state)}
@@ -645,14 +644,13 @@ export function renderApp(state: AppViewState) {
             ${renderTab(state, "docs")}
           </div>
         </div>
-        ${isCN ? html`
-        <!-- tecbinai Footer Link -->
+        ${brand.promoUrl ? html`
         <div class="nav-footer">
-          <a href="https://www.obplugins.cn" target="_blank" rel="noreferrer" class="nav-footer-link">
+          <a href="${brand.promoUrl}" target="_blank" rel="noreferrer" class="nav-footer-link">
             <span class="nav-footer-icon">🚀</span>
             <span class="nav-footer-text">
-              <span class="nav-footer-title">tecbinai</span>
-              <span class="nav-footer-desc">及时追踪 AI 内容</span>
+              <span class="nav-footer-title">${brand.promoName}</span>
+              <span class="nav-footer-desc">${brand.promoDesc}</span>
             </span>
           </a>
         </div>
@@ -1817,7 +1815,7 @@ export function renderApp(state: AppViewState) {
                 });
               },
               onDismissFirstVisit: () => {
-                localStorage.setItem("clawdbot.mcp.firstVisitSeen", "1");
+                localStorage.setItem(`${brand.storagePrefix}mcp.firstVisitSeen`, "1");
                 state.mcpMarketplace = { ...state.mcpMarketplace, showFirstVisit: false };
               },
               onDismissRecommendation: () => {
@@ -2435,7 +2433,7 @@ export function renderApp(state: AppViewState) {
                         cleanup();
                         state.setTab("model-config");
                         // 通知 model-config-view 自动打开豆包语音配置
-                        setTimeout(() => globalThis.dispatchEvent(new CustomEvent("openclawcn:voice-setup")), 300);
+                        setTimeout(() => globalThis.dispatchEvent(new CustomEvent(`${brand.eventPrefix}voice-setup`)), 300);
                       });
                       el.querySelector('[data-action="settings"]')!.addEventListener("click", () => {
                         cleanup();
@@ -2663,7 +2661,7 @@ export function renderApp(state: AppViewState) {
       ${renderLicenseDialogs(state)}
       ${renderFeedbackModal(buildFeedbackProps(state))}
       ${renderSkillsBatchOverlays(state)}
-      ${isCN && state.showAdaptationNotice
+      ${brand.showAdaptationNotice && state.showAdaptationNotice
           && state.tab === "chat"
           && !state.showLicenseDialog
           && !state.showOfflineBanner
@@ -2681,7 +2679,7 @@ export function renderApp(state: AppViewState) {
               <div class="adaptation-notice__body">
                 <p>Windows 版本正在快速迭代中，每一天都在向更完善的体验靠近。</p>
                 <p>我们正在全力拓展更多场景 —— <strong>电商客服、个人助理、资料收集、智能问答</strong>……更多能力持续上线中！</p>
-                <p>感谢你的陪伴，一起见证 Clawdbot 的成长 ✨</p>
+                <p>感谢你的陪伴，一起见证 ${brand.productShortName} 的成长 ✨</p>
               </div>
               <button class="adaptation-notice__cta" @click=${() => state.dismissAdaptationNotice()}>好的，继续探索 →</button>
             </div>

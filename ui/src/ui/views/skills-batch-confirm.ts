@@ -7,6 +7,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import type { BatchCheckResult } from "../controllers/skills-batch.js";
 import { formatBytes, formatEstimate } from "../controllers/skills-batch.js";
 import { t } from "../i18n/index.js";
+import { brand } from "../brand";
 
 type MissingSkill = BatchCheckResult["missing"][number];
 type InstalledSkill = NonNullable<BatchCheckResult["installed"]>[number];
@@ -310,7 +311,7 @@ export function renderSkillsBatchConfirm(props: {
         <div style="margin:16px 32px 0;display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <span style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:var(--ok-subtle);border:1px solid rgba(52,211,153,0.2);border-radius:var(--radius-full, 9999px);font-size:13px;color:var(--ok);">
             <span style="width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;"></span>
-            ${t("batch.confirm.mirrorBadge")}
+            ${brand.batchMirrorBadge || t("batch.confirm.mirrorBadge")}
           </span>
           <span style="font-size:13px;color:var(--muted);">${t("batch.confirm.mirrorHint")}</span>
         </div>

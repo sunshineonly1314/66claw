@@ -4,10 +4,3 @@ export const EDITION: "cn" | "overseas" =
 
 export const isCN = EDITION === "cn";
 export const isOverseas = EDITION === "overseas";
-
-// 外销模式：初始化时清理 HTML 中的品牌信息
-if (isOverseas) {
-  document.title = "AI Assistant Console";
-  const meta = document.querySelector('meta[name="description"]');
-  if (meta) meta.setAttribute("content", "AI Assistant Console");
-}

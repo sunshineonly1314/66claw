@@ -2350,6 +2350,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   // ============================================================================
   // 品牌与页脚 (Branding & Footer)
   // ============================================================================
+  // brand.* keys 已迁移到 ui/src/ui/brand.ts，以下保留用于向后兼容
   "brand.name": "ClawbotCN",
   "brand.tagline": "智能 AI 助手，让工作更轻松",
   "brand.poweredBy": "由 tecbinai 提供技术支持",
@@ -2454,6 +2455,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "support.purchaseOnXianyu": "去闲鱼购买正式版",
   "support.clickToPurchase": "点击购买",
   "support.hasActivationCode": "已有激活码？",
+  // activationPlaceholder / activationPrefixError 已迁移到 brand.ts，以下保留兼容
   "support.activationPlaceholder": "输入 claw 开头的激活码",
   "support.activationPrefixError": "激活码必须以 claw 开头",
   "support.activateNow": "立即激活",
@@ -2534,13 +2536,14 @@ export const zhCN: Record<keyof typeof en, string> = {
   "skillInstall.deps.config": "配置项",
   "skillInstall.installSteps": "安装步骤",
   "skillInstall.estimatedTime": "预计耗时",
+  // mirrorHint 已迁移到 brand.ts (brand.skillMirrorHint)
   "skillInstall.mirrorHint": "🇨🇳 ClawdbotCN 专属：使用国内高速镜像，一键安装所有依赖",
   "skillInstall.installAndContinue": "一键安装并继续",
   "skillInstall.installOnly": "仅安装",
   "skillInstall.installing": "安装中...",
   "skillInstall.cancel": "取消",
 
-  // ClawdbotCN 专属功能
+  // cnExclusive 已迁移到 brand.ts (brand.skillExclusiveTitle)
   "skillInstall.cnExclusive": "🇨🇳 ClawdbotCN 专属功能",
   "skillInstall.cnExclusive.autoInstall": "自动安装所有依赖，无需手动配置",
   "skillInstall.cnExclusive.fastMirror": "使用国内高速镜像，下载速度更快",

@@ -399,7 +399,8 @@
         "src/gateway/server-methods/support-qrcode.ts",
         "src/gateway/skill-install-approval-manager.ts",
         "src/gateway/skill-install-callbacks.ts",
-        "src/infra/installer-updater.ts"
+        "src/infra/installer-updater.ts",
+        "src/infra/update-signature.ts"
       ]
     },
 

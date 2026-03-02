@@ -6,6 +6,7 @@ import type { ChatAttachment, ChatQueueItem } from "../ui-types";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
 import type { LicenseUiState } from "../license/types";
 import { isCN } from "../edition";
+import { brand } from "../brand";
 import { icons } from "../icons";
 import {
   normalizeMessage,
@@ -710,8 +711,9 @@ export function renderChat(props: ChatProps) {
       ${isTestUser ? html`
         <!-- 试用用户常驻浮条：输入框与聊天之间 -->
         <div class="chat-trial-bar">
-          ${isCN ? html`
+          ${brand.showSupportQrcode || brand.showPurchaseEntry ? html`
           <div class="chat-trial-bar__left">
+            ${brand.showSupportQrcode ? html`
             <div class="chat-trial-bar__support-trigger">
               <span class="chat-trial-bar__icon">💬</span>
               <span class="chat-trial-bar__label">${t("support.getExclusiveSupport")}</span>
@@ -724,6 +726,8 @@ export function renderChat(props: ChatProps) {
                 </div>
               ` : nothing}
             </div>
+            ` : nothing}
+            ${brand.showPurchaseEntry ? html`
             <button
               class="chat-trial-bar__purchase chat-trial-bar__purchase--gold"
               type="button"
@@ -732,6 +736,7 @@ export function renderChat(props: ChatProps) {
               <span class="chat-trial-bar__purchase-icon">👑</span>
               <span>${t("support.upgradePro")}</span>
             </button>
+            ` : nothing}
           </div>
           ` : nothing}
           <div class="chat-trial-bar__right">

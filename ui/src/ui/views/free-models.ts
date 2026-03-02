@@ -6,6 +6,7 @@
  */
 import { html, nothing } from "lit";
 import { t } from "../i18n/index.js";
+import { brand } from "../brand";
 
 /* ===========================================
    类型定义
@@ -210,7 +211,7 @@ function renderSavingsHero(
       <div class="fm-hero__top">
         <div class="fm-hero__badge">
           <span>✨</span>
-          <span>${t("freeModels.eyebrow")}</span>
+          <span>${brand.freeModelsEyebrow || t("freeModels.eyebrow")}</span>
         </div>
         <label class="fm-switch fm-switch--sm" title="${t("freeModels.toggle.title")}">
           <input

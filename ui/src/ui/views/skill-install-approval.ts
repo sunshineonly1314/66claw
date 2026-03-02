@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 
 import type { AppViewState } from "../app-view-state.js";
 import { t } from "../i18n/index.js";
+import { brand } from "../brand";
 
 /**
  * 技能安装请求类型
@@ -153,10 +154,12 @@ export function renderSkillInstallApproval(state: AppViewState) {
             </div>`
           : nothing}
 
+        ${brand.skillMirrorHint ? html`
         <div class="skill-install-mirror-hint">
           <span class="skill-install-mirror-icon">🚀</span>
-          <span>${t("skillInstall.mirrorHint")}</span>
+          <span>${brand.skillMirrorHint}</span>
         </div>
+        ` : nothing}
 
         ${state.skillInstallError
           ? html`<div class="skill-install-error">${state.skillInstallError}</div>`

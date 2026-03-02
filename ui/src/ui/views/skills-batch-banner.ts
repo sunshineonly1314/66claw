@@ -7,6 +7,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import type { BatchCheckResult } from "../controllers/skills-batch.js";
 import { formatBytes, formatEstimate } from "../controllers/skills-batch.js";
 import { t } from "../i18n/index.js";
+import { brand } from "../brand";
 
 const SKILL_FRIENDLY_NAMES: Record<string, string> = {
   // Core & recommended
@@ -152,10 +153,12 @@ export function renderSkillsBatchBanner(props: {
       <div class="batch-banner__subtitle">${t("batch.banner.subtitle")}</div>
 
       <!-- Mirror badge -->
+      ${brand.batchMirrorBadge ? html`
       <div class="batch-banner__mirror">
         <span class="batch-banner__mirror-dot"></span>
-        ${t("batch.banner.mirrorBadge")}
+        ${brand.batchMirrorBadge}
       </div>
+      ` : nothing}
 
       <!-- Stats -->
       <div class="batch-banner__stats">
