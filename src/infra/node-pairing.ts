@@ -59,6 +59,19 @@ type NodePairingStateFile = {
 
 const PENDING_TTL_MS = 5 * 60 * 1000;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const STALE_THRESHOLD_MS = 90 * DAY_MS;
+
+/**
+ * A paired node is "stale" when it has not connected for more than 90 days.
+ * Uses `lastConnectedAtMs` if available, otherwise falls back to `approvedAtMs`.
+ */
+export function isNodeStale(node: NodePairingPairedNode, nowMs?: number): boolean {
+  const now = nowMs ?? Date.now();
+  const lastSeen = node.lastConnectedAtMs ?? node.approvedAtMs;
+  return now - lastSeen > STALE_THRESHOLD_MS;
+}
+
 const withLock = createAsyncLock();
 
 async function loadState(baseDir?: string): Promise<NodePairingStateFile> {

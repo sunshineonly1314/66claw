@@ -20,10 +20,7 @@ import {
   resolveModelRefFromString,
 } from "./model-selection.js";
 // ===== OpenClawCN: Provider 健康状态追踪 =====
-import {
-  recordProviderSuccess,
-  recordProviderFailure,
-} from "../dispatch/provider-health.js";
+import { recordProviderSuccess, recordProviderFailure } from "../dispatch/provider-health.js";
 // ===== END =====
 // ===== OpenClawCN: Provider 能力映射（用于筛选 text 模型）=====
 import { PROVIDER_CAPABILITY_MAPPINGS } from "../config/provider-capability-mapping.js";
@@ -240,18 +237,19 @@ function resolveFallbackCandidates(params: {
   // Use PROVIDER_CAPABILITY_MAPPINGS to select the first text-capable model per provider.
   // Falls back to models[0] for custom/unknown providers without a mapping.
   if (params.includeConfiguredProviders && params.cfg?.models?.providers) {
-    const providers = params.cfg.models.providers as Record<string, {
-      apiKey?: string;
-      models?: Array<{ id?: string }>;
-    }>;
+    const providers = params.cfg.models.providers as Record<
+      string,
+      {
+        apiKey?: string;
+        models?: Array<{ id?: string }>;
+      }
+    >;
     for (const [pid, pCfg] of Object.entries(providers)) {
       if (!pCfg.apiKey) continue;
 
       // Prefer a text-capable model from the static capability mapping
       const mapping = PROVIDER_CAPABILITY_MAPPINGS[pid];
-      const textModel = mapping?.models?.find(
-        (m) => m.capabilities.includes("text"),
-      );
+      const textModel = mapping?.models?.find((m) => m.capabilities.includes("text"));
       if (textModel) {
         addCandidate({ provider: pid, model: textModel.modelId }, false);
         continue;
@@ -345,18 +343,14 @@ export async function runWithModelFallback<T>(params: {
         continue;
       }
     }
-    // ===== OpenClawCN: 凭据预检 — 跳过没有任何 API key 的 provider =====
+    // ===== OpenClawCN: 凭据预检 — 仅做 debug 日志，不跳过 candidate =====
+    // 不再 skip candidate：run() 可能通过交互式 auth、keychain、proxy 等
+    // 机制获取凭据，预检覆盖不到这些来源。跳过会导致用户看到
+    // "All models failed" 而非 run() 产生的真实 auth 错误。
     if (!hasProviderCredentials(candidate.provider, params.cfg, authStore ?? undefined)) {
       log.debug(
-        `[${i + 1}/${candidates.length}] skipping ${candidate.provider}/${candidate.model} — no credentials`,
+        `[${i + 1}/${candidates.length}] ${candidate.provider}/${candidate.model} — no local credentials detected, attempting anyway`,
       );
-      attempts.push({
-        provider: candidate.provider,
-        model: candidate.model,
-        error: `No credentials for provider "${candidate.provider}" (skipped)`,
-        reason: "auth",
-      });
-      continue;
     }
     // ===== END =====
     try {
@@ -499,10 +493,7 @@ export async function runWithImageModelFallback<T>(params: {
       }
       lastError = err;
       // ===== OpenClawCN: 记录失败 =====
-      recordProviderFailure(
-        candidate.provider,
-        err instanceof Error ? err.message : String(err),
-      );
+      recordProviderFailure(candidate.provider, err instanceof Error ? err.message : String(err));
       // ===== END =====
       attempts.push({
         provider: candidate.provider,
