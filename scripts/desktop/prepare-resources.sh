@@ -323,6 +323,42 @@ fi
 
 rm -rf "$TEMP_INSTALL_DIR"
 
+# ── 3a. Inject stub modules for packages removed above ──
+# The plugin-sdk bundle still has require("@whiskeysockets/baileys") calls
+# (WhatsApp onboarding adapter). Without a stub, ALL plugins fail to load
+# with "Cannot find module '@whiskeysockets/baileys'" even though they have
+# nothing to do with WhatsApp.
+STUB_PACKAGES=("@whiskeysockets/baileys")
+for stub_pkg in "${STUB_PACKAGES[@]}"; do
+  stub_dir="$RESOURCES_DIR/node_modules/$stub_pkg"
+  if [[ ! -d "$stub_dir" ]]; then
+    mkdir -p "$stub_dir"
+    cat > "$stub_dir/package.json" <<'STUBPKG'
+{"name":"@whiskeysockets/baileys","version":"0.0.0-stub","main":"index.js","description":"Stub: WhatsApp channel not available in desktop builds"}
+STUBPKG
+    cat > "$stub_dir/index.js" <<'STUBJS'
+// Stub module — @whiskeysockets/baileys is not bundled in desktop builds.
+// This file prevents "Cannot find module" crashes when plugin-sdk is loaded.
+// WhatsApp channel features are unavailable; all exported symbols are no-ops.
+// The recursive Proxy handles any depth of property access (e.g.
+// DisconnectReason.loggedOut) and returns no-ops for function calls.
+function noop() {}
+const handler = {
+  get(_, prop) {
+    if (prop === Symbol.toPrimitive) return () => "";
+    if (prop === Symbol.iterator) return undefined;
+    if (prop === "then") return undefined;          // not thenable
+    if (prop === "default") return module.exports;  // ESM interop
+    return new Proxy(noop, handler);
+  },
+  apply() { return undefined; },
+};
+module.exports = new Proxy(noop, handler);
+STUBJS
+    log "  Injected stub module: $stub_pkg"
+  fi
+done
+
 # ── 4. Extensions ──
 STEP_START=$(date +%s)
 log "[4/7] Copying extensions/..."

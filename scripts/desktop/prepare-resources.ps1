@@ -233,6 +233,26 @@ try {
         Copy-Item "$ProjectRoot\.npmrc" "$tempInstallDir\.npmrc" -Force
     }
 
+    # Remove dependencies with git:// sub-deps (unreachable from CN network).
+    # @whiskeysockets/baileys depends on libsignal-node via git+https://github.com/
+    # which requires github.com access for git ls-remote. WhatsApp channel is not
+    # needed in the desktop app, so we remove it before npm install.
+    $gitDepPackages = @("@whiskeysockets/baileys")
+    foreach ($pkg in $gitDepPackages) {
+        Write-Host "  Removing git-dep package from temp package.json: $pkg"
+        $pkgJson = Get-Content "$tempInstallDir\package.json" -Raw | ConvertFrom-Json
+        if ($pkgJson.dependencies.PSObject.Properties[$pkg]) {
+            $pkgJson.dependencies.PSObject.Properties.Remove($pkg)
+        }
+        if ($pkgJson.optionalDependencies -and $pkgJson.optionalDependencies.PSObject.Properties[$pkg]) {
+            $pkgJson.optionalDependencies.PSObject.Properties.Remove($pkg)
+        }
+        if ($pkgJson.pnpm -and $pkgJson.pnpm.onlyBuiltDependencies) {
+            $pkgJson.pnpm.onlyBuiltDependencies = @($pkgJson.pnpm.onlyBuiltDependencies | Where-Object { $_ -ne $pkg })
+        }
+        $pkgJson | ConvertTo-Json -Depth 10 | Set-Content "$tempInstallDir\package.json" -Encoding UTF8
+    }
+
     # Run npm install with production deps only
     Write-Host "  Running npm install --omit=dev (registry: $NpmRegistry)..."
     Push-Location $tempInstallDir
@@ -325,6 +345,42 @@ try {
     }
 }
 } # end if (-not $skipNpmInstall)
+
+# ── 3a. Inject stub modules for packages removed above ──
+# The plugin-sdk bundle still has require("@whiskeysockets/baileys") calls
+# (WhatsApp onboarding adapter). Without a stub, ALL plugins fail to load
+# with "Cannot find module '@whiskeysockets/baileys'" even though they have
+# nothing to do with WhatsApp.
+$stubPackages = @("@whiskeysockets/baileys")
+foreach ($stubPkg in $stubPackages) {
+    $stubDir = Join-Path $ResourcesDir "node_modules\$stubPkg"
+    if (-not (Test-Path $stubDir)) {
+        New-Item -ItemType Directory -Force -Path $stubDir | Out-Null
+        @'
+{"name":"@whiskeysockets/baileys","version":"0.0.0-stub","main":"index.js","description":"Stub: WhatsApp channel not available in desktop builds"}
+'@ | Set-Content "$stubDir\package.json" -Encoding UTF8
+        @'
+// Stub module — @whiskeysockets/baileys is not bundled in desktop builds.
+// This file prevents "Cannot find module" crashes when plugin-sdk is loaded.
+// WhatsApp channel features are unavailable; all exported symbols are no-ops.
+// The recursive Proxy handles any depth of property access (e.g.
+// DisconnectReason.loggedOut) and returns no-ops for function calls.
+function noop() {}
+const handler = {
+  get(_, prop) {
+    if (prop === Symbol.toPrimitive) return () => "";
+    if (prop === Symbol.iterator) return undefined;
+    if (prop === "then") return undefined;          // not thenable
+    if (prop === "default") return module.exports;  // ESM interop
+    return new Proxy(noop, handler);
+  },
+  apply() { return undefined; },
+};
+module.exports = new Proxy(noop, handler);
+'@ | Set-Content "$stubDir\index.js" -Encoding UTF8
+        Write-Host "  Injected stub module: $stubPkg"
+    }
+}
 
 # ── 4. Extensions ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
