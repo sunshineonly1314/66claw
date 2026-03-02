@@ -39,17 +39,45 @@ vi.mock("../config/config.js", () => ({
 }));
 
 vi.mock("../security/index.js", () => ({
+  // anti-debug
   startAntiDebug: vi.fn(),
   stopAntiDebug: vi.fn(),
+  checkDebuggerNow: vi.fn().mockReturnValue(false),
+  // integrity
   checkIntegrityOnStartup: vi.fn().mockResolvedValue(true),
   startIntegrityPatrol: vi.fn(),
   stopIntegrityPatrol: vi.fn(),
+  isNativeAddonAvailable: vi.fn().mockReturnValue(true),
+  initIntegrityCheck: vi.fn(),
+  verifyIntegrity: vi.fn().mockResolvedValue({ ok: true }),
+  // ai tamper protection
   initAiTamperProtection: vi.fn(),
   verifyCheckpoint: vi.fn().mockImplementation((_name: string, fn: () => boolean) => fn()),
   registerProtectedFunction: vi.fn(),
+  verifyProtectedFunctions: vi.fn().mockReturnValue(true),
   reportSecurityViolation: vi.fn(),
+  getCheckpointStatus: vi.fn().mockReturnValue({}),
+  setApiToken: vi.fn(),
+  validateApiAction: vi.fn().mockReturnValue(true),
+  createHoneypot: vi.fn(),
+  performSecuritySelfCheck: vi.fn().mockReturnValue(true),
+  // delayed enforcement
   recordViolation: vi.fn(),
-  isNativeAddonAvailable: vi.fn().mockReturnValue(true),
+  getEnforcementDelay: vi.fn().mockReturnValue(0),
+  shouldBlockService: vi.fn().mockReturnValue(false),
+  applyEnforcementDelay: vi.fn().mockResolvedValue(undefined),
+  getEnforcementStatus: vi.fn().mockReturnValue({ violations: 0 }),
+  // runtime hardening (Knife 8)
+  initRuntimeHardening: vi.fn(),
+  lockdownEnvVars: vi.fn(),
+  freezeRequireChain: vi.fn(),
+  freezePrototypes: vi.fn(),
+  startEnvPatrol: vi.fn(),
+  stopEnvPatrol: vi.fn(),
+  // process integrity
+  checkProcessIntegrity: vi.fn().mockResolvedValue({ ok: true }),
+  startProcessIntegrityMonitor: vi.fn(),
+  stopProcessIntegrityMonitor: vi.fn(),
 }));
 
 vi.mock("../logging/subsystem.js", () => ({

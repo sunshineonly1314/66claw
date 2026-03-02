@@ -22,6 +22,9 @@ describe("buildEmbeddedRunPayloads", () => {
       ...overrides,
     }) as AssistantMessage;
 
+  // CN version: overloaded_error maps to Chinese user message
+  const EXPECTED_OVERLOADED_MSG = "⚠️ [E1002] 模型服务暂时过载，请稍后再试";
+
   it("suppresses raw API error JSON when the assistant errored", () => {
     const lastAssistant = makeAssistant({});
     const payloads = buildEmbeddedRunPayloads({
@@ -35,9 +38,7 @@ describe("buildEmbeddedRunPayloads", () => {
     });
 
     expect(payloads).toHaveLength(1);
-    expect(payloads[0]?.text).toBe(
-      "The AI service is temporarily overloaded. Please try again in a moment.",
-    );
+    expect(payloads[0]?.text).toBe(EXPECTED_OVERLOADED_MSG);
     expect(payloads[0]?.isError).toBe(true);
     expect(payloads.some((payload) => payload.text === errorJson)).toBe(false);
   });
@@ -55,9 +56,7 @@ describe("buildEmbeddedRunPayloads", () => {
     });
 
     expect(payloads).toHaveLength(1);
-    expect(payloads[0]?.text).toBe(
-      "The AI service is temporarily overloaded. Please try again in a moment.",
-    );
+    expect(payloads[0]?.text).toBe(EXPECTED_OVERLOADED_MSG);
     expect(payloads.some((payload) => payload.text === errorJsonPretty)).toBe(false);
   });
 
@@ -74,9 +73,7 @@ describe("buildEmbeddedRunPayloads", () => {
     });
 
     expect(payloads).toHaveLength(1);
-    expect(payloads[0]?.text).toBe(
-      "The AI service is temporarily overloaded. Please try again in a moment.",
-    );
+    expect(payloads[0]?.text).toBe(EXPECTED_OVERLOADED_MSG);
     expect(payloads.some((payload) => payload.text?.includes("request_id"))).toBe(false);
   });
 

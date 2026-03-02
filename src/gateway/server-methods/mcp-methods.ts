@@ -14,7 +14,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import { getMCPManagerSafe, initMCPManager } from "../../mcp/index.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { buildWorkspaceSkillStatus, type SkillStatusEntry } from "../../agents/skills-status.js";
@@ -1537,6 +1537,7 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
         respond(true, { ok: true, serverId });
       } else if (npmPackage) {
         // npm: multi-mirror fallback (3 CN mirrors auto-switch)
+        const waitMs = typeof params.waitMs === "number" ? params.waitMs : undefined;
         const result = await tryInstallWithMirrorFallback({
           manager,
           serverId,
@@ -1544,6 +1545,7 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
           packageStr: npmPackage,
           version,
           userEnv: env,
+          waitMs,
         });
 
         if (!result.ok) {
@@ -1562,6 +1564,7 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
         respond(true, { ok: true, serverId, mirror: result.usedMirror });
       } else if (pypiPackage) {
         // pypi: multi-mirror fallback (3 CN mirrors auto-switch)
+        const waitMs = typeof params.waitMs === "number" ? params.waitMs : undefined;
         const result = await tryInstallWithMirrorFallback({
           manager,
           serverId,
@@ -1569,6 +1572,7 @@ const mcpMarketplaceInstallHandler: GatewayRequestHandler = safeHandler(
           packageStr: pypiPackage,
           version,
           userEnv: env,
+          waitMs,
         });
 
         if (!result.ok) {
@@ -1977,24 +1981,8 @@ const mcpMarketplaceSyncHandler: GatewayRequestHandler = safeHandler(async ({ re
 });
 
 // ============================================================================
-// Config persistence helpers (with mutex to prevent concurrent write races)
+// Config persistence helpers (using shared config write lock for cross-module safety)
 // ============================================================================
-
-/** Simple async mutex for serializing config file writes. */
-let _configWriteLock: Promise<void> = Promise.resolve();
-
-function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
-  const prev = _configWriteLock;
-  let release: () => void;
-  _configWriteLock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  // Wait for previous lock to release (catch prevents dead lock if prev somehow rejects)
-  return prev
-    .catch(() => {})
-    .then(fn)
-    .finally(() => release!());
-}
 
 /**
  * Persist a server addition/update to the config file.
@@ -2002,7 +1990,7 @@ function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
  * Serialized via mutex to prevent concurrent read-modify-write races.
  */
 async function persistMcpServerAdd(serverConfig: MCPServerConfig): Promise<void> {
-  return withConfigLock(async () => {
+  return withConfigWriteLock(async () => {
     try {
       const cfg = loadConfig();
       if (!cfg.mcp) cfg.mcp = { servers: [] };
@@ -2037,7 +2025,7 @@ async function persistMcpServerAdd(serverConfig: MCPServerConfig): Promise<void>
  * Serialized via mutex to prevent concurrent read-modify-write races.
  */
 async function persistMcpServerRemove(id: string): Promise<void> {
-  return withConfigLock(async () => {
+  return withConfigWriteLock(async () => {
     try {
       const cfg = loadConfig();
       if (!cfg.mcp?.servers) return;

@@ -322,11 +322,12 @@ describe("Data Integrity", () => {
     insertItem(mockItem1);
     const retrieved = getItemById(mockItem1.serverId);
 
+    // rowToItem() prefers CN name/description for display (friendlyNameCn || friendlyName)
     expect(retrieved).toMatchObject({
       serverId: mockItem1.serverId,
-      friendlyName: mockItem1.friendlyName,
+      friendlyName: mockItem1.friendlyNameCn ?? mockItem1.friendlyName,
       friendlyNameCn: mockItem1.friendlyNameCn,
-      description: mockItem1.description,
+      description: mockItem1.descriptionCn ?? mockItem1.description,
       descriptionCn: mockItem1.descriptionCn,
       category: mockItem1.category,
       version: mockItem1.version,

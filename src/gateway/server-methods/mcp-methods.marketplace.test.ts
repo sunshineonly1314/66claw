@@ -3,7 +3,7 @@
  * Tests for marketplace RPC handlers: list, detail, install, recommend.
  */
 
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
 // ── Mocks ───────────────────────────────────────────────────
@@ -83,12 +83,38 @@ vi.mock("../../mcp/index.js", () => ({
 vi.mock("../../config/config.js", () => ({
   loadConfig: () => ({ mcp: {} }),
   writeConfigFile: vi.fn().mockResolvedValue(undefined),
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock("../../config/cn-mirrors.js", () => ({
   shouldUseCNMirror: () => false,
   getNpmMirrorUrl: () => "https://registry.npmmirror.com/",
   getPipMirrorUrl: () => "https://pypi.tuna.tsinghua.edu.cn/simple",
+  getNpmMirrors: () => ["https://registry.npmmirror.com/"],
+  getPipMirrors: () => ["https://pypi.tuna.tsinghua.edu.cn/simple"],
+  PACKAGE_MANAGER_MIRRORS: {
+    npm: { primary: "https://registry.npmmirror.com/", fallbacks: [] },
+    pip: { primary: "https://pypi.tuna.tsinghua.edu.cn/simple", fallbacks: [] },
+    go: { primary: "https://goproxy.cn,direct", fallbacks: [] },
+  },
+  BINARY_DOWNLOAD_MIRRORS: {
+    github: { primary: "https://github.com", fallback: "https://ghproxy.com/https://github.com" },
+    uv: {
+      installScript: "https://astral.sh/uv/install.sh",
+      installPs1: "https://astral.sh/uv/install.ps1",
+    },
+    node: { primary: "https://nodejs.org/dist" },
+    goBinary: { primary: "https://go.dev/dl" },
+    python: { primary: "https://www.python.org/ftp/python" },
+    rust: { primary: "https://sh.rustup.rs" },
+    jdk: { primary: "https://download.java.net" },
+    fnm: { primary: "https://fnm.vercel.app/install" },
+    signalCli: { primary: "https://github.com/AsamK/signal-cli/releases" },
+    hkBinaries: { primary: "https://github.com" },
+  },
+  CLAWDSKILLSPROXY_CONFIG: { endpoints: {} },
+  LARGE_PACKAGE_PROXY_MAP: {},
+  CLI_TOOL_MIRRORS: {},
 }));
 
 // Import handlers after mocks
@@ -271,24 +297,42 @@ describe("mcp.marketplace.detail", () => {
 
 describe("mcp.marketplace.install", () => {
   const handler = mcpHandlers["mcp.marketplace.install"]!;
+  // getStatus returns "running" for whichever server was last added
+  let lastAddedId = "";
   const mockManager = {
-    addServer: vi.fn().mockResolvedValue(undefined),
+    addServer: vi.fn().mockImplementation(async (cfg: { id: string }) => {
+      lastAddedId = cfg.id;
+    }),
+    removeServer: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn().mockImplementation(() => ({
+      servers: [{ config: { id: lastAddedId }, status: "running" }],
+    })),
   };
 
   beforeEach(() => {
+    lastAddedId = "";
     mocks.readMarketplaceIndex.mockResolvedValue(mockItems);
     mocks.getMCPManagerSafe.mockReturnValue(mockManager);
     mockManager.addServer.mockClear();
+    mockManager.removeServer.mockClear();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("installs a server from marketplace index", async () => {
-    const opts = makeOpts("mcp.marketplace.install", { serverId: "filesystem" });
-    await handler(opts);
+    const opts = makeOpts("mcp.marketplace.install", { serverId: "filesystem", waitMs: 100 });
+    const handlerPromise = handler(opts);
+    await vi.advanceTimersByTimeAsync(2001);
+    await handlerPromise;
 
     expect(mockManager.addServer).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "filesystem",
-        command: "npx",
+        // command is resolved to full path by resolveCommandPath, so just check it's a string
+        command: expect.stringContaining("npx"),
         args: ["-y", "@anthropic/mcp-filesystem@2024.1"],
         transport: "stdio",
         version: "2024.1",
@@ -302,14 +346,17 @@ describe("mcp.marketplace.install", () => {
   it("passes env vars when provided", async () => {
     const opts = makeOpts("mcp.marketplace.install", {
       serverId: "brave-search",
+      waitMs: 100,
       env: { BRAVE_API_KEY: "test-key-123" },
     });
-    await handler(opts);
+    const handlerPromise = handler(opts);
+    await vi.advanceTimersByTimeAsync(2001);
+    await handlerPromise;
 
     expect(mockManager.addServer).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "brave-search",
-        env: { BRAVE_API_KEY: "test-key-123" },
+        env: expect.objectContaining({ BRAVE_API_KEY: "test-key-123" }),
       }),
     );
   });

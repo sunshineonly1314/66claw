@@ -2,7 +2,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$comment": "Machine-readable CN protection list. Source of truth for .gitattributes merge rules, CI validation, and merge scripts. Regenerate .gitattributes via: bash scripts/generate-gitattributes-merge.sh",
   "lastUpdated": "2026-03-01",
-
   "section1_cn_only": {
     "description": "CN-only files. Upstream does not have these. Strategy: merge=ours (always keep CN version).",
     "files": [
@@ -135,7 +134,10 @@
       "src/gateway/server-methods/support-qrcode.ts",
       "src/gateway/skill-install-approval-manager.ts",
       "src/gateway/skill-install-callbacks.ts",
-      "src/infra/installer-updater.ts"
+      "src/infra/installer-updater.ts",
+      "src/memory/search-tiering-cn.ts",
+      "src/memory/memory-schema.ts",
+      "src/security/delayed-enforcement.ts"
     ],
     "directories": [
       "src/dispatch/",
@@ -154,7 +156,6 @@
       "build/windows/deploy/docs/"
     ]
   },
-
   "section2_modified_upstream": {
     "description": "Upstream files with CN modifications injected. Strategy: manual merge required. These need human or AI-assisted conflict resolution.",
     "files": [
@@ -270,20 +271,39 @@
       }
     ]
   },
-
   "cn_api_endpoints": {
     "description": "Critical CN API endpoints that must exist in the codebase after merge.",
     "endpoints": [
-      { "service": "SiliconFlow", "pattern": "api.siliconflow.cn" },
-      { "service": "Tongyi Qwen", "pattern": "dashscope.aliyuncs.com" },
-      { "service": "Volcengine", "pattern": "ark.cn-beijing.volces.com" },
-      { "service": "Zhipu GLM", "pattern": "open.bigmodel.cn" },
-      { "service": "Moonshot", "pattern": "api.moonshot.cn" },
-      { "service": "Tencent Hunyuan", "pattern": "hunyuan.tencentcloudapi.com" },
-      { "service": "ModelScope", "pattern": "api-inference.modelscope.cn" }
+      {
+        "service": "SiliconFlow",
+        "pattern": "api.siliconflow.cn"
+      },
+      {
+        "service": "Tongyi Qwen",
+        "pattern": "dashscope.aliyuncs.com"
+      },
+      {
+        "service": "Volcengine",
+        "pattern": "ark.cn-beijing.volces.com"
+      },
+      {
+        "service": "Zhipu GLM",
+        "pattern": "open.bigmodel.cn"
+      },
+      {
+        "service": "Moonshot",
+        "pattern": "api.moonshot.cn"
+      },
+      {
+        "service": "Tencent Hunyuan",
+        "pattern": "hunyuan.tencentcloudapi.com"
+      },
+      {
+        "service": "ModelScope",
+        "pattern": "api-inference.modelscope.cn"
+      }
     ]
   },
-
   "cn_env_vars": {
     "description": "Environment variables whose detection logic must be preserved.",
     "vars": [
@@ -293,7 +313,6 @@
       "LANG=zh_CN"
     ]
   },
-
   "cn_critical_files": {
     "description": "Subset of section1 files that are absolutely critical. CI must verify these exist after every merge.",
     "files": [
@@ -310,7 +329,6 @@
       "docs/china-localization.md"
     ]
   },
-
   "cn_extension_build": {
     "description": "CN channel extensions compiled from TS via esbuild (no obfuscation). CI verifies committed .js files exactly match esbuild output. See verify-extensions.ts (HIGH-04 fix).",
     "directories": [
@@ -322,10 +340,8 @@
       "extensions/feishu/"
     ]
   },
-
   "cn_encryption": {
     "$comment": "Encryption targets. obfuscate-dist.ts and compile-bytecode.ts read from here. Paths are src/ source paths, auto-mapped to dist/ at build time. Only CN-written files are listed — upstream code is never encrypted.",
-
     "bytecode": {
       "description": "Maximum protection: RC4 obfuscation + V8 bytecode compilation + integrity hashes. For core CN business logic.",
       "directories": [
@@ -344,7 +360,7 @@
         "src/gateway/server-methods/modality-capability.ts",
         "src/agents/modality-capability-checker.ts",
         "src/agents/siliconflow-models.ts",
-          "src/agents/tools/asr-tool.ts",
+        "src/agents/tools/asr-tool.ts",
         "src/agents/tools/tts-tool.ts",
         "src/agents/tools/image-gen-tool.ts",
         "src/config/region-cn.ts",
@@ -364,7 +380,6 @@
         "src/mcp/marketplace/ai-enhancer.ts",
         "src/config/provider-capability-mapping.ts",
         "src/gateway/license-check.ts",
-
         "src/agents/skills/gitee-registry.ts",
         "src/agents/skills/clawdskillsproxy-registry.ts",
         "src/agents/skills/mirror-download-engine.ts",
@@ -378,7 +393,6 @@
         "src/gateway/server-methods/skills-batch.ts",
         "src/mcp/marketplace/cloud-index-source.ts",
         "src/mcp/marketplace/registry-source.ts",
-
         "src/mcp/on-demand-loader.ts",
         "src/agents/tools/mcp-install-tool.ts",
         "src/agents/tools/desktop-control.ts",
@@ -386,7 +400,6 @@
         "src/agents/skills/marketplace/db.ts",
         "src/agents/skills/marketplace/db-schema.ts",
         "src/agents/skills/marketplace/types.ts",
-
         "src/config/free-model-providers.ts",
         "src/config/types.free-models.ts",
         "src/config/free-models-time.ts",
@@ -400,10 +413,11 @@
         "src/gateway/skill-install-approval-manager.ts",
         "src/gateway/skill-install-callbacks.ts",
         "src/infra/installer-updater.ts",
-        "src/infra/update-signature.ts"
+        "src/infra/update-signature.ts",
+        "src/memory/search-tiering-cn.ts",
+        "src/memory/memory-schema.ts"
       ]
     },
-
     "obfuscate": {
       "description": "Standard protection: RC4 obfuscation only (no bytecode). For less-critical CN code. Channel extensions are built via cn_extension_build (clean TS→JS, no obfuscation) for auditability.",
       "directories": [],
@@ -411,7 +425,6 @@
         "src/config/types.tool-discovery.ts"
       ]
     },
-
     "ui_obfuscate": {
       "$comment": "UI obfuscation targets. All UI pages are CN-original. Processed separately because UI builds via Vite, not the Node.js pipeline. Uses directory-level coverage since virtually all UI code is proprietary.",
       "directories": [

@@ -297,6 +297,11 @@ export function resolveEnvApiKey(provider: string): EnvApiKeyResult | null {
     return pick("HUGGINGFACE_HUB_TOKEN") ?? pick("HF_TOKEN");
   }
 
+  // 豆包/火山引擎 ARK 支持两套 env var：DOUBAO_API_KEY（豆包）或 ARK_API_KEY（通用）
+  if (normalized === "volcengine-ark") {
+    return pick("DOUBAO_API_KEY") ?? pick("ARK_API_KEY");
+  }
+
   const envMap: Record<string, string> = {
     openai: "OPENAI_API_KEY",
     google: "GEMINI_API_KEY",

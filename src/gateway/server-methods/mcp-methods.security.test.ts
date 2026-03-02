@@ -5,7 +5,7 @@
  * SSRF prevention (SSE URL validation), and marketplace install rejection.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // We test the validation indirectly through the handlers,
 // since the validation functions are private module-scoped.
@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../config/config.js", () => ({
   loadConfig: vi.fn(() => ({ mcp: { servers: [] } })),
   writeConfigFile: vi.fn(),
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock("../../mcp/index.js", () => ({
@@ -37,6 +38,31 @@ vi.mock("../../config/cn-mirrors.js", () => ({
   shouldUseCNMirror: () => false,
   getNpmMirrorUrl: () => "https://registry.npmmirror.com/",
   getPipMirrorUrl: () => "https://pypi.tuna.tsinghua.edu.cn/simple",
+  getNpmMirrors: () => ["https://registry.npmmirror.com/"],
+  getPipMirrors: () => ["https://pypi.tuna.tsinghua.edu.cn/simple"],
+  PACKAGE_MANAGER_MIRRORS: {
+    npm: { primary: "https://registry.npmmirror.com/", fallbacks: [] },
+    pip: { primary: "https://pypi.tuna.tsinghua.edu.cn/simple", fallbacks: [] },
+    go: { primary: "https://goproxy.cn,direct", fallbacks: [] },
+  },
+  BINARY_DOWNLOAD_MIRRORS: {
+    github: { primary: "https://github.com", fallback: "https://ghproxy.com/https://github.com" },
+    uv: {
+      installScript: "https://astral.sh/uv/install.sh",
+      installPs1: "https://astral.sh/uv/install.ps1",
+    },
+    node: { primary: "https://nodejs.org/dist" },
+    goBinary: { primary: "https://go.dev/dl" },
+    python: { primary: "https://www.python.org/ftp/python" },
+    rust: { primary: "https://sh.rustup.rs" },
+    jdk: { primary: "https://download.java.net" },
+    fnm: { primary: "https://fnm.vercel.app/install" },
+    signalCli: { primary: "https://github.com/AsamK/signal-cli/releases" },
+    hkBinaries: { primary: "https://github.com" },
+  },
+  CLAWDSKILLSPROXY_CONFIG: { endpoints: {} },
+  LARGE_PACKAGE_PROXY_MAP: {},
+  CLI_TOOL_MIRRORS: {},
 }));
 
 import { mcpHandlers } from "./mcp-methods.js";
@@ -64,13 +90,27 @@ function makeOpts(method: string, params: Record<string, unknown> = {}) {
 
 describe("mcp.marketplace.install — command injection prevention", () => {
   const handler = mcpHandlers["mcp.marketplace.install"]!;
+  let lastAddedId = "";
   const mockManager = {
-    addServer: vi.fn().mockResolvedValue(undefined),
+    addServer: vi.fn().mockImplementation(async (cfg: { id: string }) => {
+      lastAddedId = cfg.id;
+    }),
+    removeServer: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn().mockImplementation(() => ({
+      servers: [{ config: { id: lastAddedId }, status: "running" }],
+    })),
   };
 
   beforeEach(() => {
+    lastAddedId = "";
     mocks.getMCPManagerSafe.mockReturnValue(mockManager as any);
     mockManager.addServer.mockClear();
+    mockManager.removeServer.mockClear();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const maliciousPackageNames = [
@@ -180,8 +220,10 @@ describe("mcp.marketplace.install — command injection prevention", () => {
         },
       ] as any);
 
-      const opts = makeOpts("mcp.marketplace.install", { serverId: "good" });
-      await handler(opts);
+      const opts = makeOpts("mcp.marketplace.install", { serverId: "good", waitMs: 100 });
+      const handlerPromise = handler(opts);
+      await vi.advanceTimersByTimeAsync(2001);
+      await handlerPromise;
 
       expect(mockManager.addServer).toHaveBeenCalled();
       expect(opts.respond).toHaveBeenCalledWith(true, expect.anything());
@@ -195,13 +237,33 @@ describe("mcp.marketplace.install — command injection prevention", () => {
 
 describe("mcp.marketplace.install — SSRF prevention", () => {
   const handler = mcpHandlers["mcp.marketplace.install"]!;
+  let lastAddedId = "";
   const mockManager = {
-    addServer: vi.fn().mockResolvedValue(undefined),
+    addServer: vi.fn().mockImplementation(async (cfg: { id: string }) => {
+      lastAddedId = cfg.id;
+    }),
+    removeServer: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn().mockImplementation(() => ({
+      servers: [{ config: { id: lastAddedId }, status: "running" }],
+    })),
   };
 
+  // Mock fetch so SSE reachability check returns "reachable" for valid URLs
+  const mockFetch = vi.fn().mockResolvedValue({ status: 200, ok: true });
+
   beforeEach(() => {
+    lastAddedId = "";
     mocks.getMCPManagerSafe.mockReturnValue(mockManager as any);
     mockManager.addServer.mockClear();
+    mockManager.removeServer.mockClear();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.stubGlobal("fetch", mockFetch);
+    mockFetch.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   const blockedUrls = [
@@ -252,7 +314,9 @@ describe("mcp.marketplace.install — SSRF prevention", () => {
   }
 
   const allowedUrls = [
-    "https://mcp-server.api-inference.modelscope.net/sse",
+    // Note: *.api-inference.modelscope.net/sse is intentionally treated as
+    // synthetic (fake) by isSyntheticSseUrl() and excluded from SSE installs.
+    // Only genuinely public non-synthetic URLs should be listed here.
     "https://example.com/mcp/sse",
     "http://mcp.example.org:8080/sse",
   ];
@@ -277,7 +341,11 @@ describe("mcp.marketplace.install — SSRF prevention", () => {
       ] as any);
 
       const opts = makeOpts("mcp.marketplace.install", { serverId: "sse-good" });
-      await handler(opts);
+      const handlerPromise = handler(opts);
+      // SSE polling uses Date.now()-based while loop with 500ms setTimeout intervals.
+      // Advance timers past one poll interval so the loop can run.
+      await vi.advanceTimersByTimeAsync(501);
+      await handlerPromise;
 
       expect(mockManager.addServer).toHaveBeenCalled();
       expect(opts.respond).toHaveBeenCalledWith(true, expect.anything());
@@ -293,11 +361,20 @@ describe("mcp.servers.add — SSRF prevention", () => {
   const handler = mcpHandlers["mcp.servers.add"]!;
   const mockManager = {
     addServer: vi.fn().mockResolvedValue(undefined),
+    removeServer: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi
+      .fn()
+      .mockReturnValue({ servers: [{ config: { id: "good-sse" }, status: "running" }] }),
+    registry: {
+      getServer: vi.fn().mockReturnValue(null),
+      getAllServers: vi.fn().mockReturnValue([]),
+    },
   };
 
   beforeEach(() => {
     mocks.getMCPManagerSafe.mockReturnValue(mockManager as any);
     mockManager.addServer.mockClear();
+    mockManager.removeServer.mockClear();
   });
 
   it("blocks SSE server with localhost URL", async () => {

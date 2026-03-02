@@ -223,4 +223,7 @@ src/agents/skills/marketplace/db.ts merge=ours
 src/agents/skills/marketplace/db.test.ts merge=ours
 src/gateway/server-methods/skills-marketplace-search.ts merge=ours
 src/gateway/server-methods/skills-marketplace-search.test.ts merge=ours
+src/memory/search-tiering-cn.ts merge=ours
+src/memory/memory-schema.ts merge=ours
+src/security/delayed-enforcement.ts merge=ours
 # === CN MERGE PROTECTION END ===

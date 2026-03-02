@@ -31,7 +31,7 @@ const CLOUD_INDEX_CONFIG = {
  * Returns empty array on failure (never throws).
  */
 export async function fetchFromCloudIndex(): Promise<McpMarketplaceItem[]> {
-  const url = process.env.OPENCLAWCN_MCP_INDEX_URL?.trim() || CLOUD_INDEX_CONFIG.defaultUrl;
+  const url = process.env.OPENCLAWCN_MCP_INDEX_URL?.trim() || "";
 
   if (!url) {
     logger.debug("OPENCLAWCN_MCP_INDEX_URL not set, skipping Tier 0");

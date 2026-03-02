@@ -227,20 +227,41 @@ describe("Knife 6: Bytecode Loader — 构建时哈希嵌入验证", () => {
     // (can't run it directly as it needs Node.js compilation infrastructure)
     const fs = await import("node:fs");
     const path = await import("node:path");
-    const bytecodeScript = path.resolve(
-      process.cwd(),
-      "cn/scripts/build/compile-bytecode.ts",
-    );
+    const bytecodeScript = path.resolve(process.cwd(), "cn/scripts/build/compile-bytecode.ts");
     const content = fs.readFileSync(bytecodeScript, "utf8");
 
-    // Verify hash injection code exists
+    // Verify hash injection and obfuscation code exists
     expect(content).toContain("createHash");
     expect(content).toContain("jscHash");
-    expect(content).toContain("bytecode tampered");
+    // Loader uses obfuscated exit (no plaintext error message in production)
+    expect(content).toContain("process.exit(1)");
+    // Hex encoding for module name obfuscation
+    expect(content).toContain("hexEncode");
+  });
+
+  it("CJS loader 模板使用混淆格式（hex 编码模块名 + 哈希分割）", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const content = fs.readFileSync(
+      path.resolve(process.cwd(), "cn/scripts/build/compile-bytecode.ts"),
+      "utf8",
+    );
+
+    // CJS loader should use hex encoding for module names
+    expect(content).toContain("hexEncode");
+    expect(content).toContain("h_crypto");
+    expect(content).toContain("h_bytenode");
+    // Hash should be split into two parts
+    expect(content).toContain("hashPart1");
+    expect(content).toContain("hashPart2");
+    // Randomized variable names
+    expect(content).toContain("rid");
+    expect(content).toContain("randomBytes(3)");
+    // Still exits on integrity failure
     expect(content).toContain("process.exit(1)");
   });
 
-  it("CJS loader 模板包含完整性校验", async () => {
+  it("ESM loader 模板使用混淆格式（哈希分割 + 随机变量名）", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const content = fs.readFileSync(
@@ -248,37 +269,81 @@ describe("Knife 6: Bytecode Loader — 构建时哈希嵌入验证", () => {
       "utf8",
     );
 
-    // CJS loader should verify hash before loading
-    expect(content).toContain('require("crypto").createHash("sha256")');
-    expect(content).toContain('require("fs").readFileSync');
-    expect(content).toContain('"[integrity] bytecode tampered: "');
-  });
-
-  it("ESM loader 模板包含完整性校验", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const content = fs.readFileSync(
-      path.resolve(process.cwd(), "cn/scripts/build/compile-bytecode.ts"),
-      "utf8",
-    );
-
-    // ESM loader should verify hash before loading
-    expect(content).toContain('import { createHash } from "node:crypto"');
-    expect(content).toContain('import { readFileSync } from "node:fs"');
+    // ESM loader should split hash and use randomized vars
+    expect(content).toContain("hashPart1");
+    expect(content).toContain("hashPart2");
+    // ESM imports are still present (static syntax)
+    expect(content).toContain('from"node:module"');
+    expect(content).toContain('from"node:crypto"');
+    // Still exits on integrity failure
+    expect(content).toContain("process.exit(1)");
   });
 });
 
 // ============================================================================
-// Scenario 6: Vite Source Map Disabled (P0)
+// Scenario 6: Runtime Hardening (Knife 8)
+// ============================================================================
+describe("Knife 8: Runtime Hardening — 运行时加固", () => {
+  it("lockdownEnvVars 删除危险环境变量", async () => {
+    vi.resetModules();
+    const { lockdownEnvVars } = await import("./runtime-hardening.js");
+
+    // Set a dangerous env var
+    process.env.OPENCLAWCN_DEV = "1";
+    process.env.OPENCLAWCN_LICENSE_DEV = "1";
+
+    lockdownEnvVars();
+
+    expect(process.env.OPENCLAWCN_DEV).toBeUndefined();
+    expect(process.env.OPENCLAWCN_LICENSE_DEV).toBeUndefined();
+  });
+
+  it("lockdownEnvVars 不影响正常环境变量", async () => {
+    vi.resetModules();
+    const { lockdownEnvVars } = await import("./runtime-hardening.js");
+
+    process.env.NORMAL_VAR = "test";
+    lockdownEnvVars();
+    expect(process.env.NORMAL_VAR).toBe("test");
+    delete process.env.NORMAL_VAR;
+  });
+
+  it("freezeRequireChain 使 Module._load 不可写", async () => {
+    vi.resetModules();
+    const { freezeRequireChain } = await import("./runtime-hardening.js");
+
+    freezeRequireChain();
+
+    // After freezing, Module._load should be non-writable
+    const { createRequire } = await import("node:module");
+    const esmRequire = createRequire(import.meta.url);
+    const Module = esmRequire("node:module");
+    const descriptor = Object.getOwnPropertyDescriptor(Module, "_load");
+    expect(descriptor?.writable).toBe(false);
+    expect(descriptor?.configurable).toBe(false);
+  });
+
+  it("runtime-hardening.ts 在字节码保护范围内（src/security/ 目录）", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const config = JSON.parse(
+      fs.readFileSync(path.resolve(process.cwd(), "config/cn-protected-files.json"), "utf8"),
+    );
+
+    // src/security/ is in bytecode directories
+    const bytecodeDirs: string[] = config.cn_encryption.bytecode.directories;
+    expect(bytecodeDirs).toContain("src/security/");
+  });
+});
+
+// ============================================================================
+// Scenario 7: Vite Source Map Disabled (P0)
 // ============================================================================
 describe("P0: Source Map Protection — 生产环境关闭 Source Map", () => {
   it("vite.config.ts 仅在 dev 模式启用 source map", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
-    const content = fs.readFileSync(
-      path.resolve(process.cwd(), "ui/vite.config.ts"),
-      "utf8",
-    );
+    const content = fs.readFileSync(path.resolve(process.cwd(), "ui/vite.config.ts"), "utf8");
 
     // Should NOT have unconditional `sourcemap: true`
     expect(content).not.toMatch(/sourcemap:\s*true/);
@@ -288,17 +353,14 @@ describe("P0: Source Map Protection — 生产环境关闭 Source Map", () => {
 });
 
 // ============================================================================
-// Scenario 7: Protection Configuration Completeness
+// Scenario 8: Protection Configuration Completeness
 // ============================================================================
 describe("Protection Config: cn-protected-files.json 完整性", () => {
   it("记忆系统核心文件已加入加密列表", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const config = JSON.parse(
-      fs.readFileSync(
-        path.resolve(process.cwd(), "config/cn-protected-files.json"),
-        "utf8",
-      ),
+      fs.readFileSync(path.resolve(process.cwd(), "config/cn-protected-files.json"), "utf8"),
     );
 
     // Section 1 should include memory system files
@@ -317,10 +379,7 @@ describe("Protection Config: cn-protected-files.json 完整性", () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const config = JSON.parse(
-      fs.readFileSync(
-        path.resolve(process.cwd(), "config/cn-protected-files.json"),
-        "utf8",
-      ),
+      fs.readFileSync(path.resolve(process.cwd(), "config/cn-protected-files.json"), "utf8"),
     );
 
     const allFiles = [
@@ -338,10 +397,7 @@ describe("Protection Config: cn-protected-files.json 完整性", () => {
   it(".gitattributes 包含新增的合并保护", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
-    const content = fs.readFileSync(
-      path.resolve(process.cwd(), ".gitattributes"),
-      "utf8",
-    );
+    const content = fs.readFileSync(path.resolve(process.cwd(), ".gitattributes"), "utf8");
 
     expect(content).toContain("src/memory/search-tiering-cn.ts merge=ours");
     expect(content).toContain("src/memory/memory-schema.ts merge=ours");
