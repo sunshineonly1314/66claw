@@ -29,10 +29,15 @@ import path from "node:path";
 // To regenerate: node --import tsx src/security/extension-signature.ts --generate-keypair
 //
 // IMPORTANT: Replacing this key requires re-signing all extension manifests.
-const EXTENSION_SIGNING_PUBLIC_KEY_B64 =
-  process.env.OPENCLAWCN_EXTENSION_SIGNING_PUBLIC_KEY ??
-  // Default: placeholder until real key is generated and deployed
-  "";
+// [HIGH FIX] In production builds, never read public key from env var.
+// Attacker could set OPENCLAWCN_EXTENSION_SIGNING_PUBLIC_KEY to their own key
+// and sign malicious extensions, or set it to "" to disable verification entirely.
+// Env var override is only allowed in dev builds for testing convenience.
+const _isDevBuildExtSig = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+const EXTENSION_SIGNING_PUBLIC_KEY_B64 = _isDevBuildExtSig
+  ? (process.env.OPENCLAWCN_EXTENSION_SIGNING_PUBLIC_KEY ?? "")
+  : // Production: hardcoded key only (placeholder until real key is generated and deployed)
+    "";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,8 +107,12 @@ export function verifyManifestSignature(manifest: ExtensionManifest): SignatureV
   }
 
   if (!EXTENSION_SIGNING_PUBLIC_KEY_B64) {
-    // No public key configured — skip verification (development mode)
-    return { valid: true, reason: "No public key configured (dev mode)" };
+    // [HIGH FIX] In production builds, missing public key = fail-closed.
+    // Prevents attackers from bypassing signature verification by clearing the key.
+    if (_isDevBuildExtSig) {
+      return { valid: true, reason: "No public key configured (dev mode)" };
+    }
+    return { valid: false, reason: "No signing public key configured in production build" };
   }
 
   try {

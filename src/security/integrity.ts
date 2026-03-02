@@ -97,11 +97,17 @@ function verifyHashesFileIntegrity(hashesContent: string, currentDir: string): b
   try {
     const rootFilePath = path.join(currentDir, "integrity-hashes-root.json");
     if (!fs.existsSync(rootFilePath)) {
-      // root 文件不存在：可能是旧版安装或 dev 构建，不强制失败
-      log.debug(
-        "[LOW-01] integrity-hashes-root.json not found — skipping root hash verification (may be dev build or legacy install)",
+      // [HIGH FIX] In production builds, root file missing = potential tampering.
+      // Attacker can delete root file, modify hashes file, and bypass verification.
+      const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+      if (isDevBuild) {
+        log.debug("[LOW-01] integrity-hashes-root.json not found — skipping (dev build)");
+        return true;
+      }
+      log.warn(
+        "[LOW-01] SECURITY: integrity-hashes-root.json not found in production build — treating as tampered",
       );
-      return true;
+      return false;
     }
 
     const rootContent = fs.readFileSync(rootFilePath, "utf8");
@@ -125,9 +131,15 @@ function verifyHashesFileIntegrity(hashesContent: string, currentDir: string): b
     log.debug(`[LOW-01] integrity-hashes.json root hash verified OK`);
     return true;
   } catch (error) {
-    log.warn(`[LOW-01] Failed to verify root hash: ${error}`);
-    // On error, be permissive (root file may not exist in dev/legacy installs)
-    return true;
+    // [HIGH FIX] In production builds, errors during root hash verification
+    // should be treated as tampering (fail-closed), not permissively passed.
+    const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+    if (isDevBuild) {
+      log.warn(`[LOW-01] Failed to verify root hash (dev build, permissive): ${error}`);
+      return true;
+    }
+    log.error(`[LOW-01] SECURITY: Failed to verify root hash: ${error} — treating as tampered`);
+    return false;
   }
 }
 

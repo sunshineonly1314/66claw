@@ -545,6 +545,31 @@ export function createGatewayHttpServer(opts: {
           res.end(JSON.stringify({ error: "forbidden" }));
           return;
         }
+        // [MED-10 FIX] Origin validation — same as /api/auth/discover.
+        // Prevents CSRF from malicious pages on the same machine stealing the token.
+        const origin = req.headers.origin;
+        if (origin) {
+          // [HIGH FIX] Reject "null" origin (from sandboxed iframes / data: URLs).
+          // Browsers send literal string "null" as Origin for these contexts.
+          if (origin === "null") {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "origin not allowed" }));
+            return;
+          }
+          try {
+            const originUrl = new URL(origin);
+            const originHost = originUrl.hostname;
+            if (originHost !== "127.0.0.1" && originHost !== "localhost" && originHost !== "::1") {
+              res.writeHead(403, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "origin not allowed" }));
+              return;
+            }
+          } catch {
+            // Non-standard origin schemes (e.g. tauri://localhost) — allow for desktop app.
+            // This only reaches here for origins that are not "null" and not parseable
+            // as standard URLs, which covers legitimate desktop app schemes.
+          }
+        }
         const tokenConfig = loadConfig();
         const token = tokenConfig.gateway?.auth?.token ?? "";
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -599,6 +624,8 @@ export function createGatewayHttpServer(opts: {
 
       // OpenClawCN: Token discovery endpoint for Control UI auth recovery after gateway restart.
       // Localhost-only.
+      // [MED-10 FIX] Require Origin header from localhost to mitigate CSRF from
+      // same-machine browser tabs (malicious page cannot set Origin to localhost).
       if (healthPath === "/api/auth/discover") {
         if (req.method !== "GET" && req.method !== "HEAD") {
           res.statusCode = 405;
@@ -615,6 +642,30 @@ export function createGatewayHttpServer(opts: {
           res.setHeader("Content-Type", "application/json; charset=utf-8");
           res.end(JSON.stringify({ ok: false }));
           return;
+        }
+        // [MED-10 FIX] If Origin header is present, verify it's from localhost.
+        // Browsers always send Origin on fetch/XHR; if it's from a remote page, block.
+        const originDiscover = req.headers.origin;
+        if (originDiscover) {
+          // [HIGH FIX] Reject "null" origin (sandboxed iframes / data: URLs)
+          if (originDiscover === "null") {
+            res.statusCode = 403;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(JSON.stringify({ ok: false, error: "origin not allowed" }));
+            return;
+          }
+          try {
+            const originUrl = new URL(originDiscover);
+            const originHost = originUrl.hostname;
+            if (originHost !== "127.0.0.1" && originHost !== "localhost" && originHost !== "::1") {
+              res.statusCode = 403;
+              res.setHeader("Content-Type", "application/json; charset=utf-8");
+              res.end(JSON.stringify({ ok: false, error: "origin not allowed" }));
+              return;
+            }
+          } catch {
+            // Non-standard origin schemes (e.g. tauri://localhost) — allow for desktop app
+          }
         }
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -722,9 +773,22 @@ export function createGatewayHttpServer(opts: {
             res.end(JSON.stringify({ ok: false, error: "Invalid URL" }));
             return;
           }
+          // [CRIT FIX] Reject URLs containing shell metacharacters.
+          // On Windows, execFile("cmd", ["/c", "start", "", url]) passes through cmd.exe
+          // which interprets &, |, >, <, ^, etc. as command separators/operators.
+          // Example attack: "http://x&calc" would execute calc.exe.
+          // Also reject on other platforms for defense-in-depth.
+          const SHELL_METACHAR_RE = /[&|;<>`$(){}!\x00-\x1f]/;
+          if (SHELL_METACHAR_RE.test(url)) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: false, error: "URL contains forbidden characters" }));
+            return;
+          }
           const { execFile } = await import("node:child_process");
           if (process.platform === "win32") {
-            execFile("cmd", ["/c", "start", "", url]);
+            // Use parsedUrl.href (re-serialized by URL parser) for additional safety
+            execFile("cmd", ["/c", "start", "", parsedUrl.href]);
           } else if (process.platform === "darwin") {
             execFile("open", [url]);
           } else {

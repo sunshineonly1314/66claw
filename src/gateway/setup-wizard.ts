@@ -265,9 +265,16 @@ export async function handleSetupWizardHttpRequest(
               sendJson(res, 400, { ok: false, error: "Invalid URL" });
               return true;
             }
+            // [CRIT FIX] Reject URLs containing shell metacharacters.
+            // On Windows, cmd.exe interprets &, |, > etc. as command operators.
+            const SHELL_METACHAR_RE = /[&|;<>`$(){}!\x00-\x1f]/;
+            if (SHELL_METACHAR_RE.test(url)) {
+              sendJson(res, 400, { ok: false, error: "URL contains forbidden characters" });
+              return true;
+            }
             const { execFile } = await import("node:child_process");
             if (process.platform === "win32") {
-              execFile("cmd", ["/c", "start", "", url]);
+              execFile("cmd", ["/c", "start", "", parsedUrl.href]);
             } else if (process.platform === "darwin") {
               execFile("open", [url]);
             } else {

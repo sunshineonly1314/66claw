@@ -26,6 +26,7 @@ import { detectChinaRegion } from "../config/region-cn.js";
 import {
   startAntiDebug,
   stopAntiDebug,
+  checkDebuggerNow,
   checkIntegrityOnStartup,
   startIntegrityPatrol,
   initAiTamperProtection,
@@ -34,12 +35,20 @@ import {
   reportSecurityViolation,
   recordViolation,
   isNativeAddonAvailable,
+  initRuntimeHardening,
 } from "../security/index.js";
 
 const log = createSubsystemLogger("gateway:license");
 
 // 全局 license 状态（用于 Gateway 方法访问）
 let globalLicenseState: LicenseClientState | null = null;
+
+/**
+ * [MED-02 FIX] Tracks whether CN license checking has been initialized.
+ * When false, isLicenseValid() returns true for non-CN builds.
+ * When true, null globalLicenseState is treated as invalid (fail-close).
+ */
+let _licenseCheckInitialized = false;
 
 /**
  * In-memory snapshot of the encrypted license cache.
@@ -127,6 +136,29 @@ export async function checkLicenseOnGatewayStart(
 
   log.info("Checking license on gateway start...");
   _licensePending = true;
+  _licenseCheckInitialized = true;
+
+  // 步骤 0：运行时加固（最先执行 — 锁定环境变量 + 冻结 require 链）
+  // 在任何安全校验之前执行，防止攻击者通过环境变量或 monkey-patch 绕过后续检查
+  initRuntimeHardening();
+
+  // [MED FIX] 步骤 0.5：早期反调试检测（一次性）。
+  // 之前反调试只在授权验证成功后才启动（步骤 3），攻击者可在步骤 1-3
+  // 期间挂载调试器进行内存修改。现在在运行时加固后立即执行一次检测。
+  // 定期巡检仍在授权成功后启动。
+  {
+    const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+    if (!isDevBuild && checkDebuggerNow()) {
+      log.error("SECURITY: Debugger detected during early startup — refusing to continue");
+      recordViolation("anti_debug:early_startup");
+      try {
+        console.error("[安全警告] 检测到调试器，程序退出");
+      } catch {
+        /* EPIPE safe */
+      }
+      process.exit(1);
+    }
+  }
 
   // Pre-load encrypted license cache into memory (async → sync fallback)
   await preloadLicenseCacheToMemory();
@@ -174,7 +206,12 @@ export async function checkLicenseOnGatewayStart(
         "SECURITY: Native addon not available — security protections degraded to JS fallbacks",
       );
       reportSecurityViolation("native_addon_missing", {});
-      recordViolation("native_addon:missing");
+      // [MED-01 FIX] Record multiple violations to accelerate delayed enforcement.
+      // Previously: 1 violation (needs 20 to block). Now: 5 violations (needs 15 more).
+      // This makes addon deletion attacks reach the blocking threshold much faster.
+      for (let i = 0; i < 5; i++) {
+        recordViolation("native_addon:missing");
+      }
     }
   }
 
@@ -289,14 +326,15 @@ export async function checkLicenseOnGatewayStart(
           intervalMs: 30 * 60 * 1000, // 30 分钟检查一次
           onInvalid: () => {
             log.warn("Token became invalid, license features may be restricted");
-            // 更新全局状态
+            // [HIGH FIX] Use updateGatewayLicenseState() instead of direct mutation.
+            // Direct mutation missed _memoryCacheFallback sync, allowing stale
+            // { valid: true } fallback to bypass license revocation.
             if (globalLicenseState) {
-              globalLicenseState = {
+              updateGatewayLicenseState({
                 ...globalLicenseState,
                 valid: false,
                 error: "令牌已失效，请检查网络连接",
-              };
-              _licenseValidSnapshot = false;
+              });
             }
           },
         });
@@ -429,6 +467,16 @@ export function updateGatewayLicenseState(state: LicenseClientState): void {
   if (state.license?.expiresAt) {
     _licenseExpiresAt = new Date(state.license.expiresAt).getTime();
   }
+
+  // [REVIEW FIX] 同步更新内存缓存副本，防止后备验证使用过期数据。
+  // 场景：心跳发现 license 被吊销 → globalLicenseState.valid = false，
+  // 但 _memoryCacheFallback 仍然是旧的 { valid: true }，
+  // 导致 isLicenseValid() token 失败时回退到过期缓存通过验证。
+  if (!state.valid) {
+    _memoryCacheFallback = null;
+  } else if (state.license?.expiresAt) {
+    _memoryCacheFallback = { valid: true, expiresAt: state.license.expiresAt };
+  }
 }
 
 /**
@@ -446,7 +494,10 @@ export function isLicenseValid(): boolean {
     return false;
   }
   if (!globalLicenseState) {
-    return true; // 未初始化时默认有效（非 CN 版本）
+    // [MED-02 FIX] Use explicit initialization flag instead of null check.
+    // Before: null state → return true (attackers could reset state to null).
+    // After: only return true if license checking was never initialized (non-CN builds).
+    return !_licenseCheckInitialized;
   }
 
   // 核心防护：检查短期令牌
@@ -590,10 +641,18 @@ export function getLicenseFeatures(): string[] {
 
 /**
  * 检查是否有特定功能权限
+ *
+ * [HIGH-02 FIX] Empty features list now returns false (fail-close).
+ * Previously, empty list returned true for all features, allowing
+ * attackers to bypass feature gates by clearing the features array.
+ * Non-CN builds (license check not initialized) still get full access.
  */
 export function hasLicenseFeature(feature: string): boolean {
+  if (!_licenseCheckInitialized) {
+    return true; // Non-CN builds: no feature gating
+  }
   const features = getLicenseFeatures();
-  return features.length === 0 || features.includes(feature);
+  return features.includes(feature);
 }
 
 // 后台 Token 刷新状态

@@ -5,10 +5,18 @@
  * 密钥: 本地 deriveKey（SHA-256(MachineGuid|salt)）
  * 用途: config 字段加密（API Key 等 ENC{...} 格式）、通用内容加密
  *
- * 文件格式: [16 字节 IV] + [AES-256-CBC 密文]
+ * 文件格式（v2, GCM）: [0x02] [12 字节 nonce] [16 字节 authTag] + [AES-256-GCM 密文]
+ * 兼容旧格式（v1, CBC）: [16 字节 IV] + [AES-256-CBC 密文]
  */
 
-import { createHash, randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  createCipheriv,
+  createDecipheriv,
+  type CipherGCM,
+  type DecipherGCM,
+} from "node:crypto";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -134,23 +142,39 @@ function deriveKey(): Buffer {
 // Encrypt / Decrypt (统一使用本地派生密钥)
 // ============================================================================
 
+// [MED FIX] 版本标记：区分 CBC（旧格式）和 GCM（新格式）
+// GCM 格式: [0x02] [12 字节 nonce] [16 字节 authTag] [密文]
+// CBC 格式（旧，兼容解密）: [16 字节 IV] [密文] （无版本标记）
+const VAULT_VERSION_GCM = 0x02;
+const GCM_NONCE_LEN = 12;
+const GCM_TAG_LEN = 16;
+
 /**
- * 加密字符串内容，返回 Buffer: [16 字节 IV] + [AES-256-CBC 密文]
+ * 加密字符串内容，返回 Buffer（AES-256-GCM 认证加密）。
+ *
+ * [MED FIX] 从 CBC 升级到 GCM：
+ * - CBC 无认证，攻击者可修改密文而不被检测（bit-flip / padding oracle）
+ * - GCM 提供 AEAD，密文任何修改都会导致解密失败
  */
 export function encryptContent(plaintext: string): Buffer {
   const key = deriveKey();
-  const iv = randomBytes(16);
-  const cipher = createCipheriv("aes-256-cbc", key, iv);
+  const nonce = randomBytes(GCM_NONCE_LEN);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce) as CipherGCM;
 
   const plaintextBuf = Buffer.from(plaintext, "utf-8");
-  const encrypted = Buffer.concat([iv, cipher.update(plaintextBuf), cipher.final()]);
+  const ciphertext = Buffer.concat([cipher.update(plaintextBuf), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  // 格式: [version=0x02] [12B nonce] [16B authTag] [ciphertext]
+  const result = Buffer.concat([Buffer.from([VAULT_VERSION_GCM]), nonce, authTag, ciphertext]);
 
   wipeSensitiveBuffer(plaintextBuf);
-  return encrypted;
+  return result;
 }
 
 /**
  * 解密 Buffer 内容，返回明文字符串。
+ * 自动兼容 CBC 旧格式和 GCM 新格式。
  */
 export function decryptContent(encrypted: Buffer): string {
   if (encrypted.length < 17) {
@@ -158,10 +182,30 @@ export function decryptContent(encrypted: Buffer): string {
   }
 
   const key = deriveKey();
-  const iv = encrypted.subarray(0, 16);
-  const data = encrypted.subarray(16);
 
   try {
+    // 检测格式版本
+    if (
+      encrypted[0] === VAULT_VERSION_GCM &&
+      encrypted.length >= 1 + GCM_NONCE_LEN + GCM_TAG_LEN + 1
+    ) {
+      // GCM 格式: [0x02] [12B nonce] [16B authTag] [ciphertext]
+      const nonce = encrypted.subarray(1, 1 + GCM_NONCE_LEN);
+      const authTag = encrypted.subarray(1 + GCM_NONCE_LEN, 1 + GCM_NONCE_LEN + GCM_TAG_LEN);
+      const data = encrypted.subarray(1 + GCM_NONCE_LEN + GCM_TAG_LEN);
+
+      const decipher = createDecipheriv("aes-256-gcm", key, nonce) as DecipherGCM;
+      decipher.setAuthTag(authTag);
+      const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+
+      const result = decrypted.toString("utf-8");
+      wipeSensitiveBuffer(decrypted);
+      return result;
+    }
+
+    // 旧 CBC 格式兼容: [16B IV] [ciphertext]
+    const iv = encrypted.subarray(0, 16);
+    const data = encrypted.subarray(16);
     const decipher = createDecipheriv("aes-256-cbc", key, iv);
     const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
 
@@ -178,23 +222,27 @@ export function decryptContent(encrypted: Buffer): string {
 // ============================================================================
 
 /**
- * 加密 config 字段（始终使用本地派生密钥）。
+ * 加密 config 字段（始终使用本地派生密钥，AES-256-GCM）。
  * config 字段在引导阶段必须可解密，因此不能用服务端密钥。
  */
 export function encryptConfigField(plaintext: string): Buffer {
   const key = deriveKey();
-  const iv = randomBytes(16);
-  const cipher = createCipheriv("aes-256-cbc", key, iv);
+  const nonce = randomBytes(GCM_NONCE_LEN);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce) as CipherGCM;
 
   const plaintextBuf = Buffer.from(plaintext, "utf-8");
-  const encrypted = Buffer.concat([iv, cipher.update(plaintextBuf), cipher.final()]);
+  const ciphertext = Buffer.concat([cipher.update(plaintextBuf), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  const result = Buffer.concat([Buffer.from([VAULT_VERSION_GCM]), nonce, authTag, ciphertext]);
 
   wipeSensitiveBuffer(plaintextBuf);
-  return encrypted;
+  return result;
 }
 
 /**
  * 解密 config 字段（使用本地派生密钥）。
+ * 自动兼容 CBC 旧格式和 GCM 新格式。
  */
 export function decryptConfigField(encrypted: Buffer): string {
   if (encrypted.length < 17) {
@@ -202,10 +250,29 @@ export function decryptConfigField(encrypted: Buffer): string {
   }
 
   const key = deriveKey();
-  const iv = encrypted.subarray(0, 16);
-  const data = encrypted.subarray(16);
 
   try {
+    // GCM 格式
+    if (
+      encrypted[0] === VAULT_VERSION_GCM &&
+      encrypted.length >= 1 + GCM_NONCE_LEN + GCM_TAG_LEN + 1
+    ) {
+      const nonce = encrypted.subarray(1, 1 + GCM_NONCE_LEN);
+      const authTag = encrypted.subarray(1 + GCM_NONCE_LEN, 1 + GCM_NONCE_LEN + GCM_TAG_LEN);
+      const data = encrypted.subarray(1 + GCM_NONCE_LEN + GCM_TAG_LEN);
+
+      const decipher = createDecipheriv("aes-256-gcm", key, nonce) as DecipherGCM;
+      decipher.setAuthTag(authTag);
+      const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+
+      const result = decrypted.toString("utf-8");
+      wipeSensitiveBuffer(decrypted);
+      return result;
+    }
+
+    // 旧 CBC 格式兼容
+    const iv = encrypted.subarray(0, 16);
+    const data = encrypted.subarray(16);
     const decipher = createDecipheriv("aes-256-cbc", key, iv);
     const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
 
