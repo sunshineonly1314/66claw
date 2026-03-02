@@ -33,6 +33,11 @@ import { renderNostrTutorial } from "./channels.nostr";
 
 // ── Essential fields per channel ────────────────────────────────────────────
 
+// Fields hidden from the wizard UI (deprecated / internal)
+const HIDDEN_FIELDS: Record<string, string[]> = {
+  feishu: ["app"],
+};
+
 const ESSENTIAL_FIELDS: Record<string, string[]> = {
   feishu: ["appId", "appSecret", "encryptKey", "verificationToken"],
   dingtalk: ["appKey", "appSecret", "robotToken"],
@@ -191,11 +196,22 @@ export function renderChannelWizard(props: ChannelsProps) {
   const essentialKeys = ESSENTIAL_FIELDS[channelId] ?? [];
   const hasEssentialFields = essentialKeys.length > 0;
 
+  // Enable save button when essential fields already have values (e.g. pre-loaded from config)
+  // even if the form hasn't been modified (configFormDirty is false)
+  const hasEssentialValues = hasEssentialFields && essentialKeys.some(
+    (k) => {
+      const v = value[k];
+      return v != null && v !== "";
+    },
+  );
+
   const essentialSchema = channelSchema && hasEssentialFields
     ? filterSchemaProperties(channelSchema, essentialKeys, true)
     : null;
+  const hiddenKeys = HIDDEN_FIELDS[channelId] ?? [];
+  const advancedExcludeKeys = [...essentialKeys, ...hiddenKeys];
   const advancedSchema = channelSchema
-    ? filterSchemaProperties(channelSchema, essentialKeys, false)
+    ? filterSchemaProperties(channelSchema, advancedExcludeKeys, false)
     : null;
 
   const hasAdvancedFields = advancedSchema
@@ -300,7 +316,7 @@ export function renderChannelWizard(props: ChannelsProps) {
           </button>
           <button
             class="btn primary"
-            ?disabled=${disabled || !props.configFormDirty}
+            ?disabled=${disabled || (!props.configFormDirty && !hasEssentialValues)}
             @click=${() => props.onConfigSave()}
           >
             ${props.configSaving

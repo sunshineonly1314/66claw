@@ -107,10 +107,10 @@ export const FeishuConfigSchema = z
     // ========== 基础配置 ==========
     enabled: z.boolean().optional().default(true).describe("是否启用"),
 
-    appId: z.string().optional().describe("飞书应用 App ID (简写)"),
-    appSecret: z.string().optional().describe("飞书应用 App Secret (简写)"),
-    encryptKey: z.string().optional().describe("事件订阅 Encrypt Key (兼容简写)"),
-    verificationToken: z.string().optional().describe("事件订阅 Verification Token (兼容简写)"),
+    appId: z.string().optional().describe("飞书应用 App ID"),
+    appSecret: z.string().optional().describe("飞书应用 App Secret"),
+    encryptKey: z.string().optional().describe("事件订阅 Encrypt Key (可选)"),
+    verificationToken: z.string().optional().describe("事件订阅 Verification Token"),
 
     // ========== 连接配置 ==========
     domain: FeishuDomainSchema.optional().default("feishu").describe("域名: feishu (国内) / lark (国际)"),
@@ -141,6 +141,16 @@ export const FeishuConfigSchema = z
 
     // ========== 高级配置 ==========
     advanced: FeishuAdvancedConfigSchema.describe("高级配置 — 流式卡片、多机器人安全、工具开关等"),
+
+    // ========== 旧版嵌套凭证 (deprecated) ==========
+    // 保留在 schema 中，避免旧版配置导致验证失败
+    // 用户通过 UI 保存后会自动迁移到扁平字段
+    app: z.object({
+      appId: z.string().optional(),
+      appSecret: z.string().optional(),
+      encryptKey: z.string().optional(),
+      verificationToken: z.string().optional(),
+    }).optional().describe("旧版应用凭证 (已废弃，请使用上方 App ID / App Secret 字段)"),
   })
   .passthrough()
   .superRefine((value, ctx) => {
