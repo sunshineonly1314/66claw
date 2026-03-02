@@ -468,10 +468,26 @@ export async function runReplyAgent(params: {
     // Drain any late tool/block deliveries before deciding there's "nothing to send".
     // Otherwise, a late typing trigger (e.g. from a tool callback) can outlive the run and
     // keep the typing indicator stuck.
+    //
+    // When the model returns zero payloads (or they are all null-ish) and no other delivery
+    // channel (block streaming, messaging tool) has already sent content, return a fallback
+    // message so the user is not left without any response.
+    // Heartbeats are intentionally exempt — a silent no-op is fine for background pings.
     if (payloadArray.length === 0) {
       defaultRuntime.log(
         `[AgentRunner] Empty payloads after agent run: provider=${providerUsed} model=${followupRun.run.model} session=${sessionKey ?? "?"}`,
       );
+      const alreadyDelivered =
+        blockReplyPipeline?.didStream() ||
+        (directlySentBlockKeys && directlySentBlockKeys.size > 0) ||
+        (runResult.messagingToolSentTexts && runResult.messagingToolSentTexts.length > 0);
+      if (!isHeartbeat && !alreadyDelivered) {
+        return finalizeWithFollowup(
+          { text: "⚠️ The model returned an empty response. Please try again." },
+          queueKey,
+          runFollowupTurn,
+        );
+      }
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
     }
 
@@ -498,6 +514,19 @@ export async function runReplyAgent(params: {
       defaultRuntime.log(
         `[AgentRunner] All payloads filtered (raw=${payloadArray.length}): provider=${providerUsed} model=${followupRun.run.model} session=${sessionKey ?? "?"}`,
       );
+      // If no other delivery channel has already sent content and this is not a heartbeat,
+      // return a fallback so the user is not left without any response.
+      const alreadyDelivered =
+        blockReplyPipeline?.didStream() ||
+        (directlySentBlockKeys && directlySentBlockKeys.size > 0) ||
+        (runResult.messagingToolSentTexts && runResult.messagingToolSentTexts.length > 0);
+      if (!isHeartbeat && !alreadyDelivered) {
+        return finalizeWithFollowup(
+          { text: "🤔 The model's response was empty after filtering. Please try again." },
+          queueKey,
+          runFollowupTurn,
+        );
+      }
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
     }
 

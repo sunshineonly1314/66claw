@@ -118,6 +118,7 @@ export async function runAgentTurnWithFallback(params: {
   let fallbackProvider = params.followupRun.run.provider;
   let fallbackModel = params.followupRun.run.model;
   let didResetAfterCompactionFailure = false;
+  let didResetAfterRoleOrderingConflict = false;
   let didRetryTransientHttpError = false;
 
   while (true) {
@@ -468,16 +469,14 @@ export async function runAgentTurnWithFallback(params: {
         // Silent reset — retry the current message instead of asking user to resend
         continue;
       }
-      if (embeddedError?.kind === "role_ordering") {
-        const didReset = await params.resetSessionAfterRoleOrderingConflict(embeddedError.message);
-        if (didReset) {
-          return {
-            kind: "final",
-            payload: {
-              text: "⚠️ Message ordering conflict. I've reset the conversation - please try again.",
-            },
-          };
-        }
+      if (
+        embeddedError?.kind === "role_ordering" &&
+        !didResetAfterRoleOrderingConflict &&
+        (await params.resetSessionAfterRoleOrderingConflict(embeddedError.message))
+      ) {
+        didResetAfterRoleOrderingConflict = true;
+        // Silent reset — retry the current message instead of asking user to resend
+        continue;
       }
 
       break;
@@ -498,16 +497,14 @@ export async function runAgentTurnWithFallback(params: {
         // Silent reset — retry the current message instead of asking user to resend
         continue;
       }
-      if (isRoleOrderingError) {
-        const didReset = await params.resetSessionAfterRoleOrderingConflict(message);
-        if (didReset) {
-          return {
-            kind: "final",
-            payload: {
-              text: "⚠️ Message ordering conflict. I've reset the conversation - please try again.",
-            },
-          };
-        }
+      if (
+        isRoleOrderingError &&
+        !didResetAfterRoleOrderingConflict &&
+        (await params.resetSessionAfterRoleOrderingConflict(message))
+      ) {
+        didResetAfterRoleOrderingConflict = true;
+        // Silent reset — retry the current message instead of asking user to resend
+        continue;
       }
 
       // Auto-recover from Gemini session corruption by resetting the session

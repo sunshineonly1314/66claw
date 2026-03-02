@@ -11,6 +11,7 @@ describe("tool meta formatting", () => {
   });
 
   it("shortens paths under HOME", () => {
+    vi.stubEnv("OPENCLAWCN_HOME", "");
     vi.stubEnv("HOME", home);
     expect(shortenPath(home)).toBe("~");
     expect(shortenPath(`${home}/a/b.txt`)).toBe("~/a/b.txt");
@@ -18,6 +19,7 @@ describe("tool meta formatting", () => {
   });
 
   it("shortens meta strings with optional colon suffix", () => {
+    vi.stubEnv("OPENCLAWCN_HOME", "");
     vi.stubEnv("HOME", home);
     expect(shortenMeta(`${home}/a.txt`)).toBe("~/a.txt");
     expect(shortenMeta(`${home}/a.txt:12`)).toBe("~/a.txt:12");
@@ -26,6 +28,7 @@ describe("tool meta formatting", () => {
   });
 
   it("formats aggregates with grouping and brace-collapse", () => {
+    vi.stubEnv("OPENCLAWCN_HOME", "");
     vi.stubEnv("HOME", home);
     const out = formatToolAggregate("  fs  ", [
       `${home}/dir/a.txt`,
@@ -40,12 +43,14 @@ describe("tool meta formatting", () => {
   });
 
   it("wraps aggregate meta in backticks when markdown is enabled", () => {
+    vi.stubEnv("OPENCLAWCN_HOME", "");
     vi.stubEnv("HOME", home);
     const out = formatToolAggregate("fs", [`${home}/dir/a.txt`], { markdown: true });
     expect(out).toContain("`~/dir/a.txt`");
   });
 
   it("keeps exec flags outside markdown and moves them to the front", () => {
+    vi.stubEnv("OPENCLAWCN_HOME", "");
     vi.stubEnv("HOME", home);
     const out = formatToolAggregate("exec", [`cd ${home}/dir && gemini 2>&1 · elevated`], {
       markdown: true,
@@ -54,6 +59,7 @@ describe("tool meta formatting", () => {
   });
 
   it("formats prefixes with default labels", () => {
+    vi.stubEnv("OPENCLAWCN_HOME", "");
     vi.stubEnv("HOME", home);
     expect(formatToolPrefix(undefined, undefined)).toBe("🧩 Tool");
     expect(formatToolPrefix("x", `${home}/a.txt`)).toBe("🧩 X: ~/a.txt");

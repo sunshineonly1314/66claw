@@ -285,11 +285,17 @@ describe("runReplyAgent typing (heartbeat)", () => {
       await fs.mkdir(path.dirname(transcriptPath), { recursive: true });
       await fs.writeFile(transcriptPath, "ok", "utf-8");
 
+      // First call: compaction failure (thrown as exception)
       runEmbeddedPiAgentMock.mockImplementationOnce(async () => {
         throw new Error(
           'Context overflow: Summarization failed: 400 {"message":"prompt is too long"}',
         );
       });
+      // Second call (auto-retry after silent reset): success
+      runEmbeddedPiAgentMock.mockImplementationOnce(async () => ({
+        payloads: [{ text: "Hello after reset!" }],
+        meta: { durationMs: 1 },
+      }));
 
       const { run } = createMinimalRun({
         sessionEntry,
@@ -299,12 +305,14 @@ describe("runReplyAgent typing (heartbeat)", () => {
       });
       const res = await run();
 
-      expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+      // Auto-retry: mock called twice (first = error, second = success)
+      expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(2);
       const payload = Array.isArray(res) ? res[0] : res;
+      // Should return the successful retry result
       expect(payload).toMatchObject({
-        text: expect.stringContaining("Context limit exceeded during compaction"),
+        text: expect.stringContaining("Hello after reset"),
       });
-      expect(payload.text?.toLowerCase()).toContain("reset");
+      // Session should have been reset (new sessionId)
       expect(sessionStore.main.sessionId).not.toBe(sessionId);
 
       const persisted = JSON.parse(await fs.readFile(storePath, "utf-8"));
@@ -325,6 +333,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
       await fs.mkdir(path.dirname(transcriptPath), { recursive: true });
       await fs.writeFile(transcriptPath, "ok", "utf-8");
 
+      // First call: context overflow (returned as embedded error payload)
       runEmbeddedPiAgentMock.mockImplementationOnce(async () => ({
         payloads: [{ text: "Context overflow: prompt too large", isError: true }],
         meta: {
@@ -335,6 +344,11 @@ describe("runReplyAgent typing (heartbeat)", () => {
           },
         },
       }));
+      // Second call (auto-retry after silent reset): success
+      runEmbeddedPiAgentMock.mockImplementationOnce(async () => ({
+        payloads: [{ text: "Hello after overflow reset!" }],
+        meta: { durationMs: 1 },
+      }));
 
       const { run } = createMinimalRun({
         sessionEntry,
@@ -344,12 +358,14 @@ describe("runReplyAgent typing (heartbeat)", () => {
       });
       const res = await run();
 
-      expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+      // Auto-retry: mock called twice (first = error, second = success)
+      expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(2);
       const payload = Array.isArray(res) ? res[0] : res;
+      // Should return the successful retry result
       expect(payload).toMatchObject({
-        text: expect.stringContaining("Context limit exceeded"),
+        text: expect.stringContaining("Hello after overflow reset"),
       });
-      expect(payload.text?.toLowerCase()).toContain("reset");
+      // Session should have been reset (new sessionId)
       expect(sessionStore.main.sessionId).not.toBe(sessionId);
 
       const persisted = JSON.parse(await fs.readFile(storePath, "utf-8"));
@@ -357,7 +373,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
     });
   });
 
-  it("resets the session after role ordering payloads", async () => {
+  it("resets the session and auto-retries after role ordering payloads", async () => {
     await withTempStateDir(async (stateDir) => {
       const sessionId = "session";
       const storePath = path.join(stateDir, "sessions", "sessions.json");
@@ -370,6 +386,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
       await fs.mkdir(path.dirname(transcriptPath), { recursive: true });
       await fs.writeFile(transcriptPath, "ok", "utf-8");
 
+      // First call: role ordering error
       runEmbeddedPiAgentMock.mockImplementationOnce(async () => ({
         payloads: [{ text: "Message ordering conflict - please try again.", isError: true }],
         meta: {
@@ -380,6 +397,11 @@ describe("runReplyAgent typing (heartbeat)", () => {
           },
         },
       }));
+      // Second call (auto-retry after silent reset): success
+      runEmbeddedPiAgentMock.mockImplementationOnce(async () => ({
+        payloads: [{ text: "Hello! How can I help?" }],
+        meta: { durationMs: 1 },
+      }));
 
       const { run } = createMinimalRun({
         sessionEntry,
@@ -389,12 +411,14 @@ describe("runReplyAgent typing (heartbeat)", () => {
       });
       const res = await run();
 
+      // Should return the successful retry result, NOT the error
       const payload = Array.isArray(res) ? res[0] : res;
       expect(payload).toMatchObject({
-        text: expect.stringContaining("Message ordering conflict"),
+        text: expect.stringContaining("Hello"),
       });
-      expect(payload.text?.toLowerCase()).toContain("reset");
+      // Session should have been reset (new sessionId)
       expect(sessionStore.main.sessionId).not.toBe(sessionId);
+      // Old transcript should be deleted
       await expect(fs.access(transcriptPath)).rejects.toBeDefined();
 
       const persisted = JSON.parse(await fs.readFile(storePath, "utf-8"));
