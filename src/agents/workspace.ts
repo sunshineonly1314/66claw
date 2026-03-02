@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
-import { resolveRequiredHomeDir } from "../infra/home-dir.js";
+import { isFsRootPath, resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
@@ -257,6 +257,15 @@ export async function ensureAgentWorkspace(params?: {
 }> {
   const rawDir = params?.dir?.trim() ? params.dir.trim() : DEFAULT_AGENT_WORKSPACE_DIR;
   const dir = resolveUserPath(rawDir);
+
+  if (isFsRootPath(dir)) {
+    throw new Error(
+      `Agent workspace resolved to filesystem root "${dir}". ` +
+        `Fix the workspace path in openclawcn.json (e.g. use ~/clawd instead of /), ` +
+        `or set OPENCLAWCN_STATE_DIR to a writable directory.`,
+    );
+  }
+
   await fs.mkdir(dir, { recursive: true });
 
   if (!params?.ensureBootstrapFiles) {
@@ -507,16 +516,16 @@ export async function loadExtraBootstrapFiles(
   for (const relPath of resolvedPaths) {
     const filePath = path.resolve(resolvedDir, relPath);
     // Guard against path traversal — resolved path must stay within workspace
-    if (!filePath.startsWith(resolvedDir + path.sep) && filePath !== resolvedDir) {
+    // Use path.relative for platform-safe comparison (handles Windows case-insensitivity)
+    const relCheck = path.relative(resolvedDir, filePath);
+    if (relCheck.startsWith("..") || path.isAbsolute(relCheck)) {
       continue;
     }
     try {
       // Resolve symlinks and verify the real path is still within workspace
       const realFilePath = await fs.realpath(filePath);
-      if (
-        !realFilePath.startsWith(realResolvedDir + path.sep) &&
-        realFilePath !== realResolvedDir
-      ) {
+      const realRelCheck = path.relative(realResolvedDir, realFilePath);
+      if (realRelCheck.startsWith("..") || path.isAbsolute(realRelCheck)) {
         continue;
       }
       // Only load files whose basename is a recognized bootstrap filename

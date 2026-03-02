@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { OpenClawCNConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
+import { isFsRootPath } from "../infra/home-dir.js";
 import {
   DEFAULT_AGENT_ID,
   normalizeAgentId,
@@ -71,7 +72,10 @@ export function resolveDefaultAgentId(cfg: OpenClawCNConfig): string {
   return normalizeAgentId(chosen || DEFAULT_AGENT_ID);
 }
 
-export function resolveSessionAgentIds(params: { sessionKey?: string; config?: OpenClawCNConfig }): {
+export function resolveSessionAgentIds(params: {
+  sessionKey?: string;
+  config?: OpenClawCNConfig;
+}): {
   defaultAgentId: string;
   sessionAgentId: string;
 } {
@@ -136,7 +140,10 @@ export function resolveAgentSkillsFilter(
   return normalized.length > 0 ? normalized : [];
 }
 
-export function resolveAgentModelPrimary(cfg: OpenClawCNConfig, agentId: string): string | undefined {
+export function resolveAgentModelPrimary(
+  cfg: OpenClawCNConfig,
+  agentId: string,
+): string | undefined {
   const raw = resolveAgentConfig(cfg, agentId)?.model;
   if (!raw) {
     return undefined;
@@ -167,13 +174,29 @@ export function resolveAgentWorkspaceDir(cfg: OpenClawCNConfig, agentId: string)
   const id = normalizeAgentId(agentId);
   const configured = resolveAgentConfig(cfg, id)?.workspace?.trim();
   if (configured) {
-    return resolveUserPath(configured);
+    const resolved = resolveUserPath(configured);
+    if (isFsRootPath(resolved)) {
+      console.warn(
+        `[agent-scope] agent "${id}" workspace resolved to filesystem root "${resolved}" ` +
+          `(from config value "${configured}"). Falling back to default workspace.`,
+      );
+    } else {
+      return resolved;
+    }
   }
   const defaultAgentId = resolveDefaultAgentId(cfg);
   if (id === defaultAgentId) {
     const fallback = cfg.agents?.defaults?.workspace?.trim();
     if (fallback) {
-      return resolveUserPath(fallback);
+      const resolved = resolveUserPath(fallback);
+      if (isFsRootPath(resolved)) {
+        console.warn(
+          `[agent-scope] agents.defaults.workspace resolved to filesystem root "${resolved}" ` +
+            `(from config value "${fallback}"). Falling back to default workspace.`,
+        );
+      } else {
+        return resolved;
+      }
     }
     return resolveDefaultAgentWorkspaceDir(process.env);
   }

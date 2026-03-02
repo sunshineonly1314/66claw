@@ -50,11 +50,71 @@ function normalizeSafe(homedir: () => string): string | undefined {
   }
 }
 
+/**
+ * Check whether a resolved path is a filesystem root (e.g. `C:\`, `D:\`, `/`).
+ * Used as a safety guard to prevent writing workspace data to drive roots.
+ */
+export function isFsRootPath(resolved: string): boolean {
+  const normalized = path.resolve(resolved);
+  return normalized === path.parse(normalized).root;
+}
+
+/**
+ * Safe home directory resolver for Windows.
+ * Falls back through LOCALAPPDATA → APPDATA → USERPROFILE → os.tmpdir()
+ * when the primary home dir resolves to a filesystem root (drive letter root).
+ */
+export function safeHomedir(env: NodeJS.ProcessEnv = process.env): string {
+  const primary = resolveEffectiveHomeDir(env, os.homedir);
+  if (primary && !isFsRootPath(primary)) {
+    return primary;
+  }
+
+  // Primary home resolved to a drive root or is missing — try Windows fallbacks
+  const fallbacks = [
+    normalize(env.LOCALAPPDATA),
+    normalize(env.APPDATA),
+    normalize(env.USERPROFILE),
+  ];
+  for (const fb of fallbacks) {
+    if (fb && !isFsRootPath(path.resolve(fb))) {
+      return path.resolve(fb);
+    }
+  }
+
+  // Last resort: use os.tmpdir() which is always a valid writable directory
+  const tmp = os.tmpdir();
+  if (!isFsRootPath(tmp)) {
+    return tmp;
+  }
+
+  // Absolute last resort (should not happen in practice)
+  return path.resolve(process.cwd());
+}
+
 export function resolveRequiredHomeDir(
   env: NodeJS.ProcessEnv = process.env,
   homedir: () => string = os.homedir,
 ): string {
-  return resolveEffectiveHomeDir(env, homedir) ?? path.resolve(process.cwd());
+  const effective = resolveEffectiveHomeDir(env, homedir);
+  if (effective && !isFsRootPath(effective)) {
+    return effective;
+  }
+
+  // effective is missing or resolves to a filesystem root — use safe fallback
+  const safe = safeHomedir(env);
+  if (!isFsRootPath(safe)) {
+    return safe;
+  }
+
+  // Final fallback: cwd (guarded against root)
+  const cwd = path.resolve(process.cwd());
+  if (!isFsRootPath(cwd)) {
+    return cwd;
+  }
+
+  // Absolute last resort: tmpdir
+  return os.tmpdir();
 }
 
 /**

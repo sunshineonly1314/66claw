@@ -20,16 +20,15 @@ describe("resolveRequiredHomeDir drive-root guard", () => {
     expect(result).toBe(path.resolve("/home/user"));
   });
 
-  it("falls back to cwd when no home source and cwd is not root", () => {
-    // process.cwd() on this machine should never be a drive root in test env
-    const cwd = path.resolve(process.cwd());
-    const parsed = path.parse(cwd);
-    if (cwd !== parsed.root) {
-      const result = resolveRequiredHomeDir({} as NodeJS.ProcessEnv, () => {
-        throw new Error("no home");
-      });
-      expect(result).toBe(cwd);
-    }
+  it("falls back to a safe directory when no home source is available", () => {
+    const result = resolveRequiredHomeDir({} as NodeJS.ProcessEnv, () => {
+      throw new Error("no home");
+    });
+    // Must return a non-root absolute path (safeHomedir may find os.homedir or tmpdir)
+    expect(result.length).toBeGreaterThan(0);
+    expect(path.isAbsolute(result)).toBe(true);
+    const parsed = path.parse(result);
+    expect(result).not.toBe(parsed.root);
   });
 
   it("prefers tmpdir over drive root when cwd is a filesystem root", () => {
