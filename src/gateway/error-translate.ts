@@ -31,15 +31,15 @@ type TranslatedError = {
 // ─── 中文提示映射 ────────────────────────────────────────
 
 const USER_MESSAGES: Record<ErrorCategory, string> = {
-  billing: "账户余额不足，请前往服务商充值后重试",
-  auth: "API Key 无效或已过期，请在「模型配置」中检查密钥",
-  rate_limit: "请求过于频繁，请稍等片刻再试",
-  timeout: "请求超时，请检查网络连接或稍后重试",
-  overloaded: "模型服务繁忙，请稍后再试或切换其他模型",
-  network: "网络连接失败，请检查网络设置和代理配置",
-  config: "配置有误，请检查相关设置项",
-  internal: "内部错误，请重试。如反复出现请查看日志或反馈",
-  unknown: "操作失败，请稍后重试",
+  billing: "[E1003] 账户余额不足，请前往服务商充值后重试",
+  auth: "[E1004] API Key 无效或已过期，请在「模型配置」中检查密钥",
+  rate_limit: "[E1001] 请求频率超限，请稍后重试",
+  timeout: "[E1005] 请求超时，请检查网络连接或稍后重试",
+  overloaded: "[E1002] 模型服务繁忙，请稍后再试或切换其他模型",
+  network: "[E1006] 网络连接失败，请检查网络设置和代理配置",
+  config: "[E1007] 配置有误，请检查相关设置项",
+  internal: "[E1008] 内部错误，请重试。如反复出现请查看日志或反馈",
+  unknown: "[E1009] 操作失败，请稍后重试",
 };
 
 const RETRYABLE: Record<ErrorCategory, boolean> = {

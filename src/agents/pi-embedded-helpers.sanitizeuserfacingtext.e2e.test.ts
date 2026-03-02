@@ -68,7 +68,7 @@ describe("sanitizeUserFacingText", () => {
 
   it("returns a friendly message for rate limit errors in Error: prefixed payloads", () => {
     expect(sanitizeUserFacingText("Error: 429 Rate limit exceeded", { errorContext: true })).toBe(
-      "⚠️ API rate limit reached. Please try again later.",
+      "⚠️ [E1001] 请求频率超限，请稍后重试",
     );
   });
 

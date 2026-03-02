@@ -116,13 +116,13 @@ describe("error-hints", () => {
 
   describe("getFriendlyErrorMessage", () => {
     const expectedMessages: Record<ErrorCategory, string> = {
-      billing: "账户余额不足，请充值后重试",
-      auth: "API Key 无效或已过期，请检查模型配置",
-      rate_limit: "请求频率超限，请稍后重试",
-      timeout: "请求超时，请检查以下可能原因",
-      overloaded: "模型服务繁忙，请稍后重试",
-      network: "网络连接失败，请检查网络设置",
-      unknown: "请求失败，请稍后重试",
+      billing: "[E1003] 账户余额不足，请充值后重试",
+      auth: "[E1004] API Key 无效或已过期，请检查模型配置",
+      rate_limit: "[E1001] 请求频率超限，请稍后重试",
+      timeout: "[E1005] 请求超时，请检查以下可能原因",
+      overloaded: "[E1002] 模型服务繁忙，请稍后重试",
+      network: "[E1006] 网络连接失败，请检查网络设置",
+      unknown: "[E1009] 请求失败，请稍后重试",
     };
 
     it.each(Object.entries(expectedMessages))(
@@ -165,7 +165,7 @@ describe("error-hints", () => {
     it("returns complete hint object for billing error", () => {
       const hint = formatErrorHint("Your credit balance is too low");
       expect(hint.category).toBe("billing");
-      expect(hint.friendlyMessage).toBe("账户余额不足，请充值后重试");
+      expect(hint.friendlyMessage).toBe("[E1003] 账户余额不足，请充值后重试");
       expect(hint.rawError).toBe("Your credit balance is too low");
     });
 
@@ -178,7 +178,7 @@ describe("error-hints", () => {
     it("handles null/undefined gracefully", () => {
       const hint = formatErrorHint(null);
       expect(hint.category).toBe("unknown");
-      expect(hint.friendlyMessage).toBe("请求失败，请稍后重试");
+      expect(hint.friendlyMessage).toBe("[E1009] 请求失败，请稍后重试");
       expect(hint.rawError).toBe("");
     });
   });

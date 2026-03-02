@@ -29,13 +29,28 @@ export function formatAuthErrorMessage(provider?: string, model?: string): strin
   return "⚠️ API Key 无效或已过期，请检查模型配置";
 }
 
-const RATE_LIMIT_ERROR_USER_MESSAGE = "⚠️ API rate limit reached. Please try again later.";
-const OVERLOADED_ERROR_USER_MESSAGE =
-  "The AI service is temporarily overloaded. Please try again in a moment.";
+const OVERLOADED_ERROR_USER_MESSAGE = "⚠️ [E1002] 模型服务暂时过载，请稍后再试";
 
-function formatRateLimitOrOverloadedErrorCopy(raw: string): string | undefined {
+function formatRateLimitErrorMessage(raw: string, provider?: string, model?: string): string {
+  // Google Gemini 特殊提示：免费层 RPM 极低（2次/分钟），是最常见的触发场景
+  if (provider === "google") {
+    const label = model ? `Google Gemini（${model}）` : "Google Gemini";
+    return `⚠️ [E1001] ${label} 请求频率超限。Gemini 免费 API 每分钟仅允许 2 次请求，建议切换到其他模型或升级为付费 API Key`;
+  }
+  if (provider) {
+    const label = model ? `${provider}（${model}）` : provider;
+    return `⚠️ [E1001] ${label} 请求频率超限，请稍后重试`;
+  }
+  return "⚠️ [E1001] 请求频率超限，请稍后重试";
+}
+
+function formatRateLimitOrOverloadedErrorCopy(
+  raw: string,
+  provider?: string,
+  model?: string,
+): string | undefined {
   if (isRateLimitErrorMessage(raw)) {
-    return RATE_LIMIT_ERROR_USER_MESSAGE;
+    return formatRateLimitErrorMessage(raw, provider, model);
   }
   if (isOverloadedErrorMessage(raw)) {
     return OVERLOADED_ERROR_USER_MESSAGE;
@@ -491,7 +506,11 @@ export function formatAssistantErrorText(
     return `LLM request rejected: ${invalidRequest[1]}`;
   }
 
-  const transientCopy = formatRateLimitOrOverloadedErrorCopy(raw);
+  const transientCopy = formatRateLimitOrOverloadedErrorCopy(
+    raw,
+    opts?.provider,
+    opts?.model ?? msg.model,
+  );
   if (transientCopy) {
     return transientCopy;
   }

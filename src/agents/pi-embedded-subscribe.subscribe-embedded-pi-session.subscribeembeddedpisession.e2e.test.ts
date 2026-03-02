@@ -540,6 +540,6 @@ describe("subscribeEmbeddedPiSession", () => {
     );
 
     expect(lifecycleError).toBeDefined();
-    expect(lifecycleError[0].data.error).toContain("API rate limit reached");
+    expect(lifecycleError[0].data.error).toContain("[E1001]");
   });
 });

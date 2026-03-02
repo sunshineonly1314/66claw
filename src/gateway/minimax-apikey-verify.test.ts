@@ -1,7 +1,7 @@
 /**
  * MiniMax API Key 验证测试
  * 使用安装向导中相同的验证逻辑
- * 
+ *
  * 运行方式: MINIMAX_API_KEY=sk-xxx npx vitest run src/gateway/minimax-apikey-verify.test.ts
  */
 import { describe, expect, it } from "vitest";
@@ -77,7 +77,7 @@ describeLive("MiniMax M2.1 API Key 验证 (安装向导逻辑)", () => {
     } else {
       const errorText = await response.text();
       console.log("错误响应:", errorText);
-      
+
       let errorMessage = "API Key 无效";
       try {
         const errorJson = JSON.parse(errorText);
@@ -92,10 +92,10 @@ describeLive("MiniMax M2.1 API Key 验证 (安装向导逻辑)", () => {
         } else if (response.status === 403) {
           errorMessage = "API Key 权限不足";
         } else if (response.status === 429) {
-          errorMessage = "请求频率超限，请稍后重试";
+          errorMessage = "[E1001] 请求频率超限，请稍后重试";
         }
       }
-      
+
       console.log("解析后的错误信息:", errorMessage);
       // 如果验证失败，测试也失败，显示具体原因
       expect.fail(`API Key 验证失败: ${errorMessage} (HTTP ${response.status})`);

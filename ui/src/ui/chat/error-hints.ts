@@ -147,15 +147,15 @@ const ERROR_PATTERNS: Record<ErrorCategory, ErrorPattern[]> = {
 };
 
 const FRIENDLY_MESSAGES: Record<ErrorCategory, string> = {
-  billing: "账户余额不足，请充值后重试",
-  auth: "API Key 无效或已过期，请检查模型配置",
-  rate_limit: "请求频率超限，请稍后重试",
-  timeout: "请求超时，请检查以下可能原因",
-  overloaded: "模型服务繁忙，请稍后重试",
-  network: "网络连接失败，请检查网络设置",
-  config: "配置有误，请检查相关设置项",
-  internal: "内部错误，请重试。如反复出现请查看日志或反馈",
-  unknown: "请求失败，请稍后重试",
+  billing: "[E1003] 账户余额不足，请充值后重试",
+  auth: "[E1004] API Key 无效或已过期，请检查模型配置",
+  rate_limit: "[E1001] 请求频率超限，请稍后重试",
+  timeout: "[E1005] 请求超时，请检查以下可能原因",
+  overloaded: "[E1002] 模型服务繁忙，请稍后重试",
+  network: "[E1006] 网络连接失败，请检查网络设置",
+  config: "[E1007] 配置有误，请检查相关设置项",
+  internal: "[E1008] 内部错误，请重试。如反复出现请查看日志或反馈",
+  unknown: "[E1009] 请求失败，请稍后重试",
 };
 
 /** 每种错误类型的解决建议 */
@@ -178,7 +178,7 @@ const ERROR_SUGGESTIONS: Record<ErrorCategory, ErrorSuggestion[]> = {
   ],
   rate_limit: [
     { icon: "⏳", title: "稍后重试", desc: "等待 1-2 分钟后再发送消息" },
-    { icon: "📉", title: "降低频率", desc: "避免短时间内发送过多消息" },
+    { icon: "🔄", title: "切换模型", desc: "可切换到其他模型或服务商" },
     { icon: "⬆️", title: "升级套餐", desc: "升级服务商套餐以获得更高调用限额" },
   ],
   overloaded: [
