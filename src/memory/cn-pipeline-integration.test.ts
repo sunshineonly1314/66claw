@@ -523,14 +523,15 @@ describe("[CN-PATCH:memory-p0] updatedAt 全管道集成验证 (真实 SQLite)",
 
     it("Hot 层 (7天内) 有足够结果时只返回 Hot", () => {
       const results = [
-        makeResult(NOW - 1 * DAY), // hot
-        makeResult(NOW - 3 * DAY), // hot
-        makeResult(NOW - 5 * DAY), // hot
-        makeResult(NOW - 60 * DAY), // cold
-        makeResult(NOW - 200 * DAY), // ancient
+        makeResult(NOW - 1 * DAY, 0.8), // hot
+        makeResult(NOW - 3 * DAY, 0.8), // hot
+        makeResult(NOW - 5 * DAY, 0.8), // hot
+        makeResult(NOW - 60 * DAY, 0.3), // cold — score below dynamic threshold
+        makeResult(NOW - 200 * DAY, 0.3), // ancient — score below dynamic threshold
       ];
       const tiered = applyTimeTiering(results, NOW);
       // 3 hot results >= MIN_RESULTS_BEFORE_FALLBACK(2)，不需要扩展
+      // dynamic threshold = min(0.8*0.8, 0.6) = 0.6; cold/ancient score 0.3 < 0.6
       expect(tiered.length).toBe(3);
       // 验证所有返回结果都在 7 天内
       for (const r of tiered) {
@@ -540,10 +541,10 @@ describe("[CN-PATCH:memory-p0] updatedAt 全管道集成验证 (真实 SQLite)",
 
     it("Hot 层结果不足时自动扩展到 Warm (30天)", () => {
       const results = [
-        makeResult(NOW - 3 * DAY), // hot (1 个，不够)
-        makeResult(NOW - 20 * DAY), // warm
-        makeResult(NOW - 25 * DAY), // warm
-        makeResult(NOW - 200 * DAY), // ancient
+        makeResult(NOW - 3 * DAY, 0.8), // hot (1 个，不够)
+        makeResult(NOW - 20 * DAY, 0.8), // warm
+        makeResult(NOW - 25 * DAY, 0.8), // warm
+        makeResult(NOW - 200 * DAY, 0.3), // ancient — score below dynamic threshold
       ];
       const tiered = applyTimeTiering(results, NOW);
       // hot 只有 1 个 < 2，扩展到 warm → 3 个 >= 2
@@ -552,10 +553,10 @@ describe("[CN-PATCH:memory-p0] updatedAt 全管道集成验证 (真实 SQLite)",
 
     it("Warm 层也不足时扩展到 Cold (120天)", () => {
       const results = [
-        makeResult(NOW - 3 * DAY), // hot (1)
-        makeResult(NOW - 90 * DAY), // cold
-        makeResult(NOW - 100 * DAY), // cold
-        makeResult(NOW - 200 * DAY), // ancient
+        makeResult(NOW - 3 * DAY, 0.8), // hot (1)
+        makeResult(NOW - 90 * DAY, 0.8), // cold
+        makeResult(NOW - 100 * DAY, 0.8), // cold
+        makeResult(NOW - 200 * DAY, 0.3), // ancient — score below dynamic threshold
       ];
       const tiered = applyTimeTiering(results, NOW);
       // hot: 1, warm: 1 (30天内只有 hot 的那个), cold: 3 (120天内有 3 个)

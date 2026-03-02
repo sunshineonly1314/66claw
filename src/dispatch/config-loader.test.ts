@@ -13,7 +13,7 @@ describe("validateDispatchConfig", () => {
     expect(config.settings.ruleConfidenceThreshold).toBe(0.7);
     expect(config.settings.timeoutMs).toBe(3000);
     expect(config.settings.debug).toBe(false);
-    expect(config.classifier.model).toBe("anthropic/claude-haiku-3");
+    expect(config.classifier.model).toBe("auto");
     expect(config.intents).toEqual([]);
     expect(config.defaults.model).toBeNull();
   });

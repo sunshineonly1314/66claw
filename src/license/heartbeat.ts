@@ -7,6 +7,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { sendHeartbeat } from "./verify.js";
 import { saveLicenseCache, loadLicenseCache, clearLicenseCache } from "./offline.js";
 import { DEFAULT_LICENSE_CONFIG } from "./types.js";
+import { refreshToken, setServerTierLimit } from "./token.js";
 
 const log = createSubsystemLogger("license:heartbeat");
 
@@ -102,31 +103,44 @@ async function performHeartbeat(): Promise<void> {
     heartbeatState.lastHeartbeatAt = Date.now();
     heartbeatState.consecutiveFailures = 0;
 
+    // [改造6] 吊销检查：服务端明确吊销时立即清缓存锁定（字段在 RSA 签名内，不可伪造）
+    if (result.revoked === true) {
+      log.warn("Heartbeat: license has been revoked by server — clearing cache and locking");
+      clearLicenseCache();
+      if (onLicenseInvalid) {
+        onLicenseInvalid();
+      }
+      return;
+    }
+
     if (result.valid) {
       // 检查是否已过期（daysRemaining <= 0）
       if (result.daysRemaining !== undefined && result.daysRemaining <= 0) {
         log.warn(`Heartbeat indicates license expired (days remaining: ${result.daysRemaining})`);
-
-        // 清除本地缓存
         clearLicenseCache();
-
         if (onLicenseInvalid) {
           onLicenseInvalid();
         }
         return;
       }
 
-      log.debug(`Heartbeat successful (days remaining: ${result.daysRemaining})`);
+      log.debug(
+        `Heartbeat successful (days remaining: ${result.daysRemaining}, tierLimit: ${result.tierLimit ?? "none"})`,
+      );
 
-      // 更新缓存中的验证时间和过期时间
+      // 更新缓存中的验证时间、过期时间和 sessionSalt
       const cache = await loadLicenseCache();
       if (cache) {
         cache.verifyTime = Date.now();
-        // 更新 daysRemaining 对应的过期时间
         if (result.daysRemaining !== undefined && result.daysRemaining > 0) {
           const newExpiresAt = new Date(Date.now() + result.daysRemaining * 24 * 60 * 60 * 1000);
           cache.expiresAt = newExpiresAt.toISOString();
         }
+
+        // [改造1] 心跳响应也刷新 sessionSalt（解决 previous_salt 竞态：服务端保留旧 salt 8h 可用）
+        const newSalt = result.sessionSalt;
+        const newSaltExp = result.saltExpiresAt;
+
         saveLicenseCache(heartbeatState.key, {
           valid: true,
           errorCode: null,
@@ -145,18 +159,29 @@ async function performHeartbeat(): Promise<void> {
           notifications: null,
           renewalReminder: null,
           forceUpdate: null,
+          // sessionSalt 透传，createLicenseCache 会从 response 读取
+          sessionSalt: newSalt,
+          saltExpiresAt: newSaltExp,
         });
       }
+
+      // [改造5] 应用服务端强制降级（tierLimit 已在 RSA 签名内，不可伪造）
+      // 传入 licenseKey 防止切换 key 后残留旧 tierLimit（Review 问题4）
+      if (result.tierLimit !== undefined) {
+        setServerTierLimit(result.tierLimit, heartbeatState.key);
+      }
+
+      // [改造4] 心跳成功后刷新功能令牌（异步，不阻塞心跳完成回调）
+      void refreshToken(heartbeatState.key).catch((err) =>
+        log.debug(`Token refresh failed (non-critical): ${err}`),
+      );
 
       if (onHeartbeatSuccess) {
         onHeartbeatSuccess({ valid: true, daysRemaining: result.daysRemaining });
       }
     } else {
       log.warn("Heartbeat returned invalid license");
-
-      // 清除本地缓存
       clearLicenseCache();
-
       if (onLicenseInvalid) {
         onLicenseInvalid();
       }

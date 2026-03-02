@@ -9,6 +9,44 @@ import { detectChinaRegion, CN_DEFAULT_SECURITY_CONFIG } from "./region-cn.js";
 import type { PerformanceProfile } from "./types.clawdbot.js";
 import type { MCPServerConfig } from "../mcp/types.js";
 
+/**
+ * Detect all mounted drive roots on Windows.
+ * Uses fast Node.js fs.accessSync probe (no subprocess spawn, <1ms per drive).
+ */
+function detectWindowsDrives(): string[] {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const found: string[] = [];
+  // Probe A: through Z: — accessSync is ~0.1ms per drive, total <3ms
+  for (let code = 65; code <= 90; code++) {
+    const root = String.fromCharCode(code) + ":\\";
+    try {
+      fs.accessSync(root);
+      found.push(root);
+    } catch {
+      // Drive not mounted
+    }
+  }
+  return found.length > 0 ? found : ["C:\\", "D:\\", "E:\\"];
+}
+
+/**
+ * Get allowed directories for the MCP filesystem server.
+ * On Windows: all detected drive roots (C:\, D:\, E:\, etc.)
+ * On macOS: filesystem root (/)
+ * On other platforms: just homedir.
+ */
+function getFilesystemAllowedDirs(): string[] {
+  if (process.platform === "win32") {
+    // Drive roots already cover all paths including homedir
+    return detectWindowsDrives();
+  }
+  if (process.platform === "darwin") {
+    // "/" covers everything
+    return ["/"];
+  }
+  return [os.homedir()];
+}
+
 type WarnState = { warned: boolean };
 
 let defaultWarnState: WarnState = { warned: false };
@@ -542,7 +580,7 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     mutated = true;
   }
 
-  // ── 2c. tools.write.allowDelete: false（安全底线：禁止删除文件）──
+  // ── 2c. tools.write.allowDelete: true（最大权限模式：允许删除文件）──
   if (next.tools?.write?.allowDelete === undefined) {
     next = {
       ...next,
@@ -824,25 +862,48 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     const cnNpxEnv = { npm_config_registry: "https://registry.npmmirror.com" };
     const cnUvxEnv = { UV_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple" };
     const cnMcpTimeout = 60_000;
+
+    // Resolve npx command: prefer bundled node's npx, fallback to bare "npx".
+    // Desktop builds bundle node.exe but may not include npx.cmd — in that case
+    // autoStart is set to false so the UI shows "npx not found" instead of crash.
+    const npxCmd = (() => {
+      const fs = require("node:fs") as typeof import("node:fs");
+      const nodePath = require("node:path") as typeof import("node:path");
+      // 1. Check npx.cmd next to the bundled node.exe
+      const execDir = nodePath.dirname(process.execPath);
+      const bundledNpx = nodePath.join(execDir, process.platform === "win32" ? "npx.cmd" : "npx");
+      if (fs.existsSync(bundledNpx)) return { command: bundledNpx, available: true };
+      // 2. Check system PATH
+      try {
+        const { execFileSync } =
+          require("node:child_process") as typeof import("node:child_process");
+        const whichCmd = process.platform === "win32" ? "where" : "which";
+        execFileSync(whichCmd, ["npx"], { timeout: 3000, stdio: "pipe" });
+        return { command: "npx", available: true };
+      } catch {
+        return { command: "npx", available: false };
+      }
+    })();
+
     const cnDefaultMcpServers = [
       // ── Node.js MCP 服务器（npx，自动启动）──
       {
         id: "filesystem",
-        command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-filesystem", os.homedir()],
+        command: npxCmd.command,
+        args: ["-y", "@modelcontextprotocol/server-filesystem", ...getFilesystemAllowedDirs()],
         transport: "stdio" as const,
         enabled: true,
-        autoStart: true,
+        autoStart: npxCmd.available,
         env: cnNpxEnv,
         timeout: cnMcpTimeout,
       },
       {
         id: "thinking",
-        command: "npx",
+        command: npxCmd.command,
         args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
         transport: "stdio" as const,
         enabled: true,
-        autoStart: true,
+        autoStart: npxCmd.available,
         env: cnNpxEnv,
         timeout: cnMcpTimeout,
       },
@@ -1125,10 +1186,11 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
   //    CN 区域 memory flush 使用免费小模型（Qwen3-8B），不走主模型
   //    避免 flush 卡住拖垮 gateway（qwen-plus 曾超时 231 秒导致崩溃）
   //    V3 BALANCED prompt：提取事实/决策/偏好/结果，禁止猜测，信噪比高
-  //    守卫：仅当 memoryFlush.provider 未设置时注入
+  //    守卫：仅当 memoryFlush.provider 和 memoryFlush.systemPrompt 都未设置时注入
+  //    用户已自定义 systemPrompt 时不覆盖，无论 provider 是否设置
   {
     const existingFlush = next.agents?.defaults?.compaction?.memoryFlush;
-    if (existingFlush?.provider === undefined) {
+    if (existingFlush?.provider === undefined && existingFlush?.systemPrompt === undefined) {
       next = {
         ...next,
         agents: {

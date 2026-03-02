@@ -330,6 +330,11 @@ const CORE_TOOLS_METADATA = [
   { name: "sessions_spawn", keywords: ["创建会话", "spawn"], description: "创建会话" },
   { name: "message", keywords: ["消息", "通知", "message"], description: "消息工具" },
   { name: "tts", keywords: ["语音", "朗读", "tts", "speak"], description: "语音合成" },
+  {
+    name: "wechat_send",
+    keywords: ["微信", "发微信", "发送", "wechat", "weixin"],
+    description: "微信发送消息",
+  },
 ];
 
 function discoverTools(prompt: string, topN = 3): ScoredItem<{ name: string }>[] {

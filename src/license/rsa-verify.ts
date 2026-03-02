@@ -44,17 +44,32 @@ try {
 }
 
 /**
- * RSA 公钥（2048 位）
+ * RSA 公钥列表（2048 位）— 多公钥兜底机制
+ *
+ * 验证时按数组顺序依次尝试，任一公钥验过即通过。
+ * 这样服务端切换密钥时，客户端不用同步发版。
  *
  * 重要：
- * - 此公钥由服务端生成，私钥存在服务端环境变量 LICENSE_RSA_PRIVATE_KEY
- * - 更新公钥需要同时更新服务端私钥
- * - 公钥更新后，旧版本客户端将无法验证新签名
+ * - 公钥由服务端生成，私钥存在服务端环境变量 LICENSE_RSA_PRIVATE_KEY
+ * - 新增公钥只需追加到数组，无需删除旧的（旧客户端仍需旧公钥）
  *
  * 更新记录：
- * - 2026-02-03: 服务端正式上线 RSA 签名，更新为正式公钥
+ * - 2026-02-03: v1 公钥上线 (fingerprint: kDtHShdtjfCopovpCcIR)
+ * - 2026-03-02: v2 公钥准备 (fingerprint: uB00UMEJdP/XxmCJ)，服务端尚未部署
  */
-const RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+const RSA_PUBLIC_KEYS: string[] = [
+  // v2 — 新密钥（预留，服务端部署后自动生效）
+  `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuB00UMEJdP/XxmCJDGC5
+x7DsZEJpWG2Gx+p8RmkMsoPh/eiWcwkSrO62Ijg3jrOO5i8UnZGzM1jzDEBdB8Gs
+g0ADa9LkRHdNTSYpxE2hCyvvSMLfYX4i1yp0ucFO0PTmECMXSTg0/pxTPpI1GwGK
+6rqH/3HjytryUlfAI4eRMmn1c2zQimXi49CgXzTMDOY8oTTaqeD7XQtAVCklO1pg
+j0FDTjxSFGC9xnXU5ooW9IQXjyW3jZZLbxbgd8elGJD1EUYrHFa1xYF8r5yUr7GA
+moWQ5xD2iEun3ykFZZ1pYso9ybBpPXXp8mIxD5+/JGaYirHpH/7JjKs5aTOCDaOZ
+AQIDAQAB
+-----END PUBLIC KEY-----`,
+  // v1 — 旧密钥（当前线上使用，v1-2026-02）
+  `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkDtHShdtjfCopovpCcIR
 hiyFHopWsclr+7JQ+c4Iz2NIdWrCoAkSUTSp24fJXmVQh27m8Eq9JvGX/wMpQ8H6
 ++IpO06BXCyk1gYqf8Qqa6CdGMQ0aygCq6aTebQQqDBGICH7u985fkdTRDz62xyG
@@ -62,7 +77,8 @@ UbYKIJPZkRycZCGZ5pMvwhxKcSZ6ifpGuBhAlxLqHpax9sUgstWWBOMWEr7SpbL0
 BE081ASxkXuQSSGDQFQzUZ98ZoVoYOmneIjU/6JHOAhLDA1R9qEy7KKpb3FV0DQm
 PWgG9tgLZk1M7yp3xitO98ZrMtWLmNNPUtQvfM1vlvRI7It0BoGVnPq5P+9dvzmS
 nQIDAQAB
------END PUBLIC KEY-----`;
+-----END PUBLIC KEY-----`,
+];
 
 /**
  * 服务端时间允许的最大偏差（毫秒）
@@ -79,37 +95,40 @@ const MAX_SERVER_TIME_DRIFT_MS = 5 * 60 * 1000; // 5 分钟
  */
 export function verifyRsaSignature(signContent: string, signature: string): boolean {
   // Prefer native C++ verification (much harder to patch/bypass)
+  // Note: native addon currently only has one key baked in. If it verifies, trust it.
+  // If it fails, fall through to JS multi-key verification.
   if (nativeAddon) {
     try {
       const isValid = nativeAddon.verifySignature(signContent, signature);
       if (isValid) {
         log.debug("RSA signature verification succeeded (native)");
-      } else {
-        log.warn("RSA signature verification failed: invalid signature (native)");
+        return true;
       }
-      return isValid;
+      // Native failed — don't return false yet, try JS multi-key fallback
+      log.debug("Native RSA verification failed, trying JS multi-key fallback");
     } catch (error) {
-      log.debug(`Native RSA verification failed, falling back to JS: ${error}`);
+      log.debug(`Native RSA verification error, falling back to JS: ${error}`);
     }
   }
 
-  // JS fallback implementation
-  try {
-    const verify = createVerify("SHA256");
-    verify.update(signContent, "utf8");
-    const isValid = verify.verify(RSA_PUBLIC_KEY, signature, "base64");
-
-    if (isValid) {
-      log.debug("RSA signature verification succeeded (JS)");
-    } else {
-      log.warn("RSA signature verification failed: invalid signature (JS)");
+  // JS multi-key fallback: try each public key in order, first match wins.
+  // This allows seamless server-side key rotation without client releases.
+  for (let i = 0; i < RSA_PUBLIC_KEYS.length; i++) {
+    try {
+      const verify = createVerify("SHA256");
+      verify.update(signContent, "utf8");
+      const isValid = verify.verify(RSA_PUBLIC_KEYS[i], signature, "base64");
+      if (isValid) {
+        log.debug(`RSA signature verification succeeded (JS, key index ${i})`);
+        return true;
+      }
+    } catch (error) {
+      log.debug(`RSA verification error with key index ${i}: ${error}`);
     }
-
-    return isValid;
-  } catch (error) {
-    log.error(`RSA signature verification error: ${error}`);
-    return false;
   }
+
+  log.warn("RSA signature verification failed: no key matched (JS)");
+  return false;
 }
 
 /**
@@ -216,10 +235,16 @@ export function verifyLicenseResponseSignature(
 /**
  * 验证心跳响应的签名
  *
+ * [改造5] 签名内容扩展为：valid|daysRemaining|serverTime|tierLimit|revoked
+ * tierLimit 和 revoked 必须纳入签名，否则本地代理可直接删除这两个字段绕过降级。
+ * 服务端签名时必须使用相同格式，字段缺失时用空字符串/false 占位。
+ *
  * @param valid - 是否有效
  * @param daysRemaining - 剩余天数
  * @param serverTime - 服务器时间戳
  * @param signature - 服务端签发的签名
+ * @param tierLimit - 服务端强制功能降级（""=无限制，"basic"=降为基础版）
+ * @param revoked - 是否已吊销
  * @returns 验证结果
  */
 export function verifyHeartbeatResponseSignature(
@@ -227,6 +252,8 @@ export function verifyHeartbeatResponseSignature(
   daysRemaining: number,
   serverTime: number,
   signature: string,
+  tierLimit?: string,
+  revoked?: boolean,
 ): { valid: boolean; error?: string } {
   // 1. 验证 serverTime（防重放攻击）
   if (!verifyServerTime(serverTime)) {
@@ -236,27 +263,39 @@ export function verifyHeartbeatResponseSignature(
     };
   }
 
-  // 2. 构建签名内容：valid|daysRemaining|serverTime
-  const signContent = `${valid}|${daysRemaining}|${serverTime}`;
+  // 2. 构建签名内容：valid|daysRemaining|serverTime|tierLimit|revoked
+  // tierLimit 缺失时用 "" 占位；revoked 缺失时用 "false" 占位
+  const signContent = `${valid}|${daysRemaining}|${serverTime}|${tierLimit ?? ""}|${revoked ?? false}`;
   log.debug(`Verifying heartbeat signature for content: ${signContent}`);
 
-  // 3. 验证 RSA 签名
-  const isSignatureValid = verifyRsaSignature(signContent, signature);
-  if (!isSignatureValid) {
-    return {
-      valid: false,
-      error: "RSA 签名验证失败",
-    };
+  // 3. 验证 RSA 签名（优先新格式）
+  if (verifyRsaSignature(signContent, signature)) {
+    return { valid: true };
   }
 
-  return { valid: true };
+  // 3b. 向后兼容：服务端尚未升级时，tierLimit/revoked 均缺失，尝试旧格式
+  //     旧格式：valid|daysRemaining|serverTime（无 tierLimit/revoked 字段）
+  //     只有当两个字段都未设置时才允许降级，防止服务端故意删字段绕过降级
+  if (tierLimit === undefined && revoked === undefined) {
+    const oldSignContent = `${valid}|${daysRemaining}|${serverTime}`;
+    log.debug(`New-format verification failed, trying old heartbeat format: ${oldSignContent}`);
+    if (verifyRsaSignature(oldSignContent, signature)) {
+      log.debug("Heartbeat verified with old signature format (server upgrade pending)");
+      return { valid: true };
+    }
+  }
+
+  return {
+    valid: false,
+    error: "RSA 签名验证失败",
+  };
 }
 
 /**
  * 检查 RSA 公钥是否已配置（非占位符）
  */
 export function isRsaKeyConfigured(): boolean {
-  // 检查是否包含正式公钥的特征
-  // 正式公钥指纹：kDtHShdtjfCopovpCcIR
-  return RSA_PUBLIC_KEY.includes("kDtHShdtjfCopovpCcIR");
+  // 检查公钥列表中是否包含任一正式公钥的特征指纹
+  const knownFingerprints = ["kDtHShdtjfCopovpCcIR", "uB00UMEJdP/XxmCJ"];
+  return RSA_PUBLIC_KEYS.some((key) => knownFingerprints.some((fp) => key.includes(fp)));
 }

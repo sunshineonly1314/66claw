@@ -31,7 +31,7 @@ describe("config-rollback", () => {
   describe("listConfigBackups", () => {
     it("returns empty entries when no backups exist", () => {
       const entries = listConfigBackups(configPath);
-      expect(entries.length).toBe(5);
+      expect(entries.length).toBe(3);
       expect(entries.every((e) => !e.exists)).toBe(true);
     });
 
@@ -55,7 +55,6 @@ describe("config-rollback", () => {
       expect(entries[0].version).toBe("1.0.0");
       expect(entries[1].version).toBe("0.9.0");
       expect(entries[2].version).toBe("0.8.0");
-      expect(entries[3].exists).toBe(false);
     });
 
     it("reports invalid config in backup", () => {
@@ -111,9 +110,7 @@ describe("config-rollback", () => {
 
       await rollbackConfig(0, { configPath });
 
-      const preRollback = JSON.parse(
-        fs.readFileSync(`${configPath}.pre-rollback.bak`, "utf-8"),
-      );
+      const preRollback = JSON.parse(fs.readFileSync(`${configPath}.pre-rollback.bak`, "utf-8"));
       expect(preRollback.meta.lastTouchedVersion).toBe("2.0.0");
     });
 

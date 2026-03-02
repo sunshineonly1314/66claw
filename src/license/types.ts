@@ -55,6 +55,22 @@ export interface LicenseHeartbeatRequest {
   nonce?: string;
   /** 请求签名 - 签名参数 */
   sign?: string;
+  /** [改造1] 签名版本：1=旧版(key为HMAC密钥)，2=新版(sessionSalt派生密钥) */
+  signVersion?: 1 | 2;
+  /**
+   * [改造5] 客户端运行时健康信号（辅助信号，专业攻击者可伪造，非主防线）
+   * 用于服务端收集破解尝试数据，计算设备信誉分
+   */
+  clientHealth?: {
+    /** 是否检测到调试端口（--inspect 标志） */
+    hasDebugger: boolean;
+    /** execArgv 是否含可疑参数 */
+    suspiciousArgs: boolean;
+    /** 上次缓存完整性检查结果 */
+    cacheStatus: "ok" | "hmac_fail" | "rsa_fail" | "missing";
+    /** 客户端版本号 */
+    appVersion: string;
+  };
 }
 
 /**
@@ -277,6 +293,13 @@ export interface LicenseVerifyResponseData {
   forceUpdate: ForceUpdateInfo | null;
   /** RSA 签名 (服务端用私钥签名，客户端用公钥验证) */
   signature?: string;
+  /**
+   * [改造1] 服务端下发的 sessionSalt（base64，32字节随机数）
+   * 用于派生 v2 HMAC 密钥，防止仅凭 licenseKey 构造合法请求
+   */
+  sessionSalt?: string;
+  /** sessionSalt 过期时间戳（毫秒），建议 24 小时 */
+  saltExpiresAt?: number;
   /** 设备切换信息（errorCode=1010 时返回） */
   deviceSwitchInfo?: DeviceSwitchInfo;
   /** 设备切换冷却信息（errorCode=1011 时返回） */
@@ -292,6 +315,25 @@ export interface LicenseHeartbeatResponseData {
   serverTime: number;
   /** RSA 签名 (服务端用私钥签名) */
   signature?: string;
+  /**
+   * [改造5] 服务端强制功能降级
+   * "" 或 undefined = 无限制；"basic" = 强制降为基础版功能
+   * 必须包含在 RSA 签名内容中，否则可被本地代理删除
+   */
+  tierLimit?: string;
+  /**
+   * [改造6] 服务端吊销标志
+   * true = 该 licenseKey 已被服务端吊销，客户端应立即清缓存并锁定
+   * 必须包含在 RSA 签名内容中
+   */
+  revoked?: boolean;
+  /**
+   * [改造1] 服务端下发的新 sessionSalt
+   * 用于派生下次请求的 v2 HMAC 密钥，每次心跳轮换
+   */
+  sessionSalt?: string;
+  /** sessionSalt 过期时间戳（毫秒） */
+  saltExpiresAt?: number;
 }
 
 /**
@@ -463,6 +505,13 @@ export interface LicenseCache {
     expiresAt: string | null;
     serverTime: number;
   };
+  /**
+   * [改造1] 本地缓存的 sessionSalt（来自 /verify 或 /heartbeat 响应）
+   * AES-256-GCM 加密保护，用于下次请求的 v2 HMAC 派生
+   */
+  sessionSalt?: string;
+  /** sessionSalt 过期时间戳（毫秒） */
+  saltExpiresAt?: number;
 }
 
 /**
@@ -535,5 +584,5 @@ export const DEFAULT_LICENSE_CONFIG: LicenseModuleConfig = {
   offlineGracePeriodHours: 8, // 从 24h 缩短到 8h，减少离线滥用窗口（盗版者修改此值需要破解 bytecode）
   heartbeatIntervalHours: 4, // 从 24h 缩短到 4h，提高检测频率
   devMode: false,
-  enableRsaVerify: true, // 2026-02-03: 服务端 RSA 签名已上线，启用验证
+  enableRsaVerify: true, // 2026-03-02: 更换密钥对，配合服务端重新部署
 };

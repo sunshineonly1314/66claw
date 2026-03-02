@@ -3,6 +3,8 @@ import { loadConfig } from "../../config/config.js";
 import { listDevicePairing } from "../../infra/device-pairing.js";
 import {
   approveNodePairing,
+  getPairedNode,
+  isNodeStale,
   listNodePairing,
   rejectNodePairing,
   renamePairedNode,
@@ -243,12 +245,20 @@ export const nodeHandlers: GatewayRequestHandlers = {
       const connectedById = new Map(connected.map((n) => [n.nodeId, n]));
       const nodeIds = new Set<string>([...pairedById.keys(), ...connectedById.keys()]);
 
+      // Fetch node pairing records for stale/lastConnectedAtMs data
+      const nodePairingList = await listNodePairing();
+      const nodePairingById = new Map(nodePairingList.paired.map((np) => [np.nodeId, np]));
+
       const nodes = [...nodeIds].map((nodeId) => {
         const paired = pairedById.get(nodeId);
         const live = connectedById.get(nodeId);
+        const nodePairing = nodePairingById.get(nodeId);
 
         const caps = uniqueSortedStrings([...(live?.caps ?? paired?.caps ?? [])]);
         const commands = uniqueSortedStrings([...(live?.commands ?? paired?.commands ?? [])]);
+
+        // A connected node is never stale; an offline node is stale if isNodeStale() says so
+        const stale = !live && nodePairing ? isNodeStale(nodePairing) : false;
 
         return {
           nodeId,
@@ -267,12 +277,18 @@ export const nodeHandlers: GatewayRequestHandlers = {
           connectedAtMs: live?.connectedAtMs,
           paired: Boolean(paired),
           connected: Boolean(live),
+          stale,
+          lastConnectedAtMs: nodePairing?.lastConnectedAtMs,
         };
       });
 
       nodes.sort((a, b) => {
+        // Connected first, then non-stale offline, then stale
         if (a.connected !== b.connected) {
           return a.connected ? -1 : 1;
+        }
+        if (a.stale !== b.stale) {
+          return a.stale ? 1 : -1;
         }
         const an = (a.displayName ?? a.nodeId).toLowerCase();
         const bn = (b.displayName ?? b.nodeId).toLowerCase();
@@ -314,6 +330,10 @@ export const nodeHandlers: GatewayRequestHandlers = {
         return;
       }
 
+      // Fetch node pairing record for stale/lastConnectedAtMs
+      const nodePairing = await getPairedNode(id);
+      const stale = !live && nodePairing ? isNodeStale(nodePairing) : false;
+
       const caps = uniqueSortedStrings([...(live?.caps ?? [])]);
       const commands = uniqueSortedStrings([...(live?.commands ?? [])]);
 
@@ -337,6 +357,8 @@ export const nodeHandlers: GatewayRequestHandlers = {
           connectedAtMs: live?.connectedAtMs,
           paired: Boolean(paired),
           connected: Boolean(live),
+          stale,
+          lastConnectedAtMs: nodePairing?.lastConnectedAtMs,
         },
         undefined,
       );

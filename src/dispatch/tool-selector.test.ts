@@ -54,7 +54,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("tool-selector — fast path", () => {
-  it("skips LLM when candidates <= default maxTools (8)", async () => {
+  it("skips LLM when candidates <= default maxTools (5)", async () => {
     const result = await selectTools(baseParams(5));
     expect(result.selectedToolIds).toHaveLength(5);
     expect(result.isFallback).toBe(false);
@@ -146,7 +146,7 @@ describe("tool-selector — fallback", () => {
     classifyMock.mockResolvedValue(null);
     const result = await selectTools(baseParams(20));
     expect(result.isFallback).toBe(true);
-    expect(result.selectedToolIds).toHaveLength(8); // default maxTools
+    expect(result.selectedToolIds).toHaveLength(5); // default maxTools
     expect(result.selectedToolIds[0]).toBe("tool_1"); // top scored
     expect(result.confidence).toBe(0.5);
   });
@@ -155,7 +155,7 @@ describe("tool-selector — fallback", () => {
     classifyMock.mockRejectedValue(new Error("Network timeout"));
     const result = await selectTools(baseParams(20));
     expect(result.isFallback).toBe(true);
-    expect(result.selectedToolIds).toHaveLength(8);
+    expect(result.selectedToolIds).toHaveLength(5);
   });
 
   it("falls back on invalid JSON response", async () => {

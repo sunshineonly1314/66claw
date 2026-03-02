@@ -25,6 +25,7 @@ const mockWriteConfigFile = vi.fn(async () => {});
 vi.mock("../../config/config.js", () => ({
   loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
   writeConfigFile: (...args: unknown[]) => mockWriteConfigFile(...args),
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 // ── Mock: models.json refresh (non-critical, stub out) ──
@@ -70,6 +71,7 @@ import { addCustomModel, deleteProviderConfig } from "./model-config.js";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal("fetch", mockFetch);
   resetRegistryForTests();
   initCapabilityRegistry({
     isProviderConfigured: (p) => ["siliconflow", "volcengine-ark", "deepseek"].includes(p),

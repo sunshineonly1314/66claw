@@ -28,6 +28,7 @@ const mockWriteConfigFile = vi.fn(async () => {});
 vi.mock("../../config/config.js", () => ({
   loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
   writeConfigFile: (...args: unknown[]) => mockWriteConfigFile(...args),
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 const mockEnsureModelsJson = vi.fn(async () => ({ agentDir: "/tmp/test", wrote: true }));
@@ -49,6 +50,7 @@ vi.stubGlobal("fetch", mockFetch);
 describe("model-config models.json refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockFetch);
     mockLoadConfig.mockResolvedValue({
       models: {
         providers: {

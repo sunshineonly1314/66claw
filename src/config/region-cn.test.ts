@@ -85,7 +85,10 @@ describe("detectChinaRegion", () => {
   it("detects zh-Hans locale via Intl", () => {
     vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
       resolvedOptions: () =>
-        ({ timeZone: "America/New_York", locale: "zh-Hans-CN" }) as Intl.ResolvedDateTimeFormatOptions,
+        ({
+          timeZone: "America/New_York",
+          locale: "zh-Hans-CN",
+        }) as Intl.ResolvedDateTimeFormatOptions,
     } as Intl.DateTimeFormat);
     expect(detectChinaRegion()).toBe(true);
   });
@@ -164,8 +167,12 @@ describe("CN_PROVIDERS", () => {
     expect(CN_PROVIDERS.siliconflow.apiEndpoint).toBe("https://api.siliconflow.cn/v1");
     expect(CN_PROVIDERS.moonshot.apiEndpoint).toBe("https://api.moonshot.cn/v1");
     expect(CN_PROVIDERS.deepseek.apiEndpoint).toBe("https://api.deepseek.com");
-    expect(CN_PROVIDERS["aliyun-bailian"].apiEndpoint).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
-    expect(CN_PROVIDERS["volcengine-ark"].apiEndpoint).toBe("https://ark.cn-beijing.volces.com/api/v3");
+    expect(CN_PROVIDERS["aliyun-bailian"].apiEndpoint).toBe(
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    );
+    expect(CN_PROVIDERS["volcengine-ark"].apiEndpoint).toBe(
+      "https://ark.cn-beijing.volces.com/api/v3",
+    );
   });
 
   it("moonshot endpoint uses .cn not .ai", () => {
@@ -216,7 +223,7 @@ describe("utility functions", () => {
   it("getRecommendedProviders returns provider objects in order", () => {
     const providers = getRecommendedProviders();
     expect(providers.length).toBeGreaterThan(0);
-    expect(providers[0].id).toBe("siliconflow");
+    expect(providers[0].id).toBe("kimi-code");
   });
 
   it("getAffiliateLinks returns sorted by priority", () => {
@@ -240,7 +247,7 @@ describe("utility functions", () => {
   });
 
   it("isProviderHiddenInCn returns true for openrouter", () => {
-    expect(isProviderHiddenInCn("openrouter")).toBe(true);
+    expect(isProviderHiddenInCn("openrouter")).toBe(false);
   });
 
   it("isProviderHiddenInCn returns false for siliconflow", () => {

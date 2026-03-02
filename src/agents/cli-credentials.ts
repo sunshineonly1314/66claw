@@ -155,13 +155,13 @@ function computeCodexKeychainAccount(codexHome: string) {
 
 function readCodexKeychainCredentials(options?: {
   platform?: NodeJS.Platform;
-  execSync?: ExecSyncFn;
+  execFileSync?: ExecFileSyncFn;
 }): CodexCliCredential | null {
   const platform = options?.platform ?? process.platform;
   if (platform !== "darwin") {
     return null;
   }
-  const execSyncImpl = options?.execSync ?? execSync;
+  const execFileSyncImpl = options?.execFileSync ?? execFileSync;
 
   const codexHome = resolveCodexHomePath();
   const account = computeCodexKeychainAccount(codexHome);
@@ -169,7 +169,7 @@ function readCodexKeychainCredentials(options?: {
   try {
     // [SECURITY FIX] Use execFileSync with array args to prevent shell injection
     // via `account` (derived from codex home path, but could contain special chars)
-    const secret = execFileSync(
+    const secret = execFileSyncImpl(
       "security",
       ["find-generic-password", "-s", "Codex Auth", "-a", account, "-w"],
       {
@@ -313,6 +313,7 @@ export function readClaudeCliCredentialsCached(options?: {
   platform?: NodeJS.Platform;
   homeDir?: string;
   execSync?: ExecSyncFn;
+  execFileSync?: ExecFileSyncFn;
 }): ClaudeCliCredential | null {
   const ttlMs = options?.ttlMs ?? 0;
   const now = Date.now();
@@ -330,6 +331,7 @@ export function readClaudeCliCredentialsCached(options?: {
     platform: options?.platform,
     homeDir: options?.homeDir,
     execSync: options?.execSync,
+    execFileSync: options?.execFileSync,
   });
   if (ttlMs > 0) {
     claudeCliCache = { value, readAt: now, cacheKey };
@@ -457,11 +459,11 @@ export function writeClaudeCliCredentials(
 
 export function readCodexCliCredentials(options?: {
   platform?: NodeJS.Platform;
-  execSync?: ExecSyncFn;
+  execFileSync?: ExecFileSyncFn;
 }): CodexCliCredential | null {
   const keychain = readCodexKeychainCredentials({
     platform: options?.platform,
-    execSync: options?.execSync,
+    execFileSync: options?.execFileSync,
   });
   if (keychain) {
     return keychain;

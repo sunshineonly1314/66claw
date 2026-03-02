@@ -28,6 +28,15 @@ const log = createSubsystemLogger("license:offline");
 const LICENSE_CACHE_FILENAME = "license_cache.json";
 
 /**
+ * [HIGH-01 FIX] Monotonic clock baseline — captured at module load time.
+ * Used to detect system clock rewind by comparing elapsed monotonic time
+ * vs elapsed wall-clock time. Unlike Date.now(), process.hrtime.bigint()
+ * cannot be influenced by system clock changes.
+ */
+const _clockBaseMono = process.hrtime.bigint();
+const _clockBaseWall = Date.now();
+
+/**
  * Compute HMAC-SHA256 over critical cache fields to detect field-level tampering.
  * Even though the file is AES-256-GCM encrypted, this provides defense-in-depth
  * against memory-level attacks that modify decrypted data before validation.
@@ -61,6 +70,14 @@ function getCacheFilePath(): string {
 }
 
 /**
+ * [REVIEW FIX] Write serialization lock.
+ * Ensures only one saveSecureJson is in-flight at a time.
+ * Without this, concurrent calls (e.g., heartbeat + manual verify) can
+ * interleave backup-copy and encrypted-write, corrupting the cache.
+ */
+let _cacheWriteLock: Promise<void> = Promise.resolve();
+
+/**
  * 保存验证结果到本地缓存（AES-256-GCM 加密）
  *
  * 写入策略：先备份当前缓存文件，再写入新内容。
@@ -80,20 +97,25 @@ export function saveLicenseCache(key: string, response: LicenseVerifyResponseDat
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // 备份当前缓存（如果存在）
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.copyFileSync(filePath, backupPath);
-      } catch {
-        // 备份失败不阻塞写入
-      }
-    }
+    // Serialize writes: chain onto the lock so backup+write is atomic per call.
+    _cacheWriteLock = _cacheWriteLock
+      .then(async () => {
+        // 备份当前缓存（如果存在）
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.copyFileSync(filePath, backupPath);
+          } catch {
+            // 备份失败不阻塞写入
+          }
+        }
 
-    // Use AES-256-GCM encrypted storage instead of plaintext JSON
-    void saveSecureJson(filePath, cacheWithHmac).then(
-      () => log.debug("License cache saved (encrypted)"),
-      (err) => log.warn(`Failed to save encrypted license cache: ${err}`),
-    );
+        // Use AES-256-GCM encrypted storage instead of plaintext JSON
+        await saveSecureJson(filePath, cacheWithHmac);
+        log.debug("License cache saved (encrypted)");
+      })
+      .catch((err) => {
+        log.warn(`Failed to save encrypted license cache: ${err}`);
+      });
   } catch (error) {
     log.warn(`Failed to save license cache: ${error}`);
   }
@@ -111,11 +133,13 @@ async function parseCacheFile(filePath: string): Promise<LicenseCache | null> {
   }
 
   let cache: LicenseCache & { _hmac?: string };
+  let wasEncrypted = false;
 
   // Try encrypted format first (expected in production)
   if (isEncrypted(filePath)) {
     const decrypted = await loadSecureJson(filePath);
     cache = decrypted as LicenseCache & { _hmac?: string };
+    wasEncrypted = true;
   } else {
     // Legacy plaintext — read directly, will be re-encrypted on next save
     log.debug("Legacy plaintext cache detected, will migrate on next save");
@@ -128,7 +152,27 @@ async function parseCacheFile(filePath: string): Promise<LicenseCache | null> {
     return null;
   }
 
-  // HMAC tamper detection (only for caches that have been saved with HMAC)
+  // [CRIT-03 FIX] Integrity check — differentiate encrypted vs plaintext caches.
+  //
+  // Encrypted caches (AES-256-GCM): the authenticated encryption itself guarantees
+  // integrity — if the ciphertext was tampered with, loadSecureJson() would have
+  // already thrown. So encrypted caches without _hmac are still trustworthy.
+  //
+  // Plaintext caches: no encryption protection. Without _hmac there is zero
+  // integrity guarantee — an attacker can place a bare JSON file with
+  // { valid: true, expiresAt: "2099..." }. These MUST be rejected.
+  //
+  // This is compatible with old clients: their encrypted caches (even without
+  // _hmac) will still load. Only hand-crafted plaintext files are blocked.
+  if (!wasEncrypted && !cache._hmac) {
+    log.warn(
+      "Plaintext license cache without HMAC — rejecting (integrity not verifiable). " +
+        "This may be a legacy cache; it will be re-created on next successful verification.",
+    );
+    return null;
+  }
+
+  // HMAC tamper detection
   let hmacOk = true;
   if (cache._hmac) {
     const expectedHmac = computeCacheHmac(cache);
@@ -264,8 +308,25 @@ export async function canUseOffline(
     return false;
   }
 
-  // 检查离线时长
+  // [HIGH-01 FIX] Clock manipulation detection using monotonic time.
+  // We record process.hrtime.bigint() at startup and compare elapsed real time
+  // vs elapsed wall-clock time. If system clock was rewound, wall-clock delta
+  // will be much smaller (or negative) relative to monotonic delta.
   const now = Date.now();
+  const monotonicNowNs = process.hrtime.bigint();
+  const wallClockDelta = now - _clockBaseWall;
+  const monotonicDeltaMs = Number((monotonicNowNs - _clockBaseMono) / 1_000_000n);
+
+  // If wall-clock advanced less than monotonic by more than 5 minutes,
+  // the system clock was likely rewound.
+  const clockDrift = monotonicDeltaMs - wallClockDelta;
+  if (clockDrift > 5 * 60 * 1000) {
+    log.warn(
+      `Cannot use offline: clock manipulation detected (monotonic=${monotonicDeltaMs}ms, wall=${wallClockDelta}ms, drift=${clockDrift}ms)`,
+    );
+    return false;
+  }
+
   const hoursOffline = (now - cache.verifyTime) / (1000 * 60 * 60);
 
   // Hard expiry: cache is absolutely unusable after 72h regardless of config.
@@ -290,6 +351,15 @@ export async function canUseOffline(
   // Sanity check: verifyTime in the future is suspicious (clock manipulation)
   if (cache.verifyTime > now + 3600000) {
     log.warn("Cannot use offline: verifyTime is in the future (clock manipulation?)");
+    return false;
+  }
+
+  // [HIGH-01 FIX] Additional check: if hoursOffline is negative (clock rewound
+  // past verifyTime), it means the system time is before the last verification.
+  if (hoursOffline < -0.1) {
+    log.warn(
+      `Cannot use offline: verifyTime is in the future relative to system clock (hoursOffline=${hoursOffline.toFixed(2)}h — clock rewound?)`,
+    );
     return false;
   }
 

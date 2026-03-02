@@ -59,12 +59,12 @@ describe("applyTimeTiering — HIGH_SCORE_PRESERVE_THRESHOLD", () => {
 
   it("score < 0.6 does NOT preserve ancient result", () => {
     const results = [
-      makeResult({ path: "hot", updatedAt: NOW - 1 * DAY, score: 0.5 }),
-      makeResult({ path: "hot2", updatedAt: NOW - 2 * DAY, score: 0.5 }),
+      makeResult({ path: "hot", updatedAt: NOW - 1 * DAY, score: 0.8 }),
+      makeResult({ path: "hot2", updatedAt: NOW - 2 * DAY, score: 0.8 }),
       makeResult({ path: "ancient-low", updatedAt: NOW - 365 * DAY, score: 0.5 }),
     ];
     const tiered = applyTimeTiering(results, NOW);
-    // hot tier has 2 results >= MIN_RESULTS(2), and ancient-low score 0.5 < 0.6
+    // dynamic threshold = min(0.8*0.8, 0.6) = 0.6; ancient-low score 0.5 < 0.6
     expect(tiered.length).toBe(2);
     expect(tiered.some((r) => r.path === "ancient-low")).toBe(false);
   });
@@ -81,11 +81,12 @@ describe("applyTimeTiering — HIGH_SCORE_PRESERVE_THRESHOLD", () => {
 
   it("score 0.59 is NOT preserved (just below threshold)", () => {
     const results = [
-      makeResult({ path: "hot", updatedAt: NOW - 1 * DAY, score: 0.3 }),
-      makeResult({ path: "hot2", updatedAt: NOW - 2 * DAY, score: 0.3 }),
+      makeResult({ path: "hot", updatedAt: NOW - 1 * DAY, score: 0.8 }),
+      makeResult({ path: "hot2", updatedAt: NOW - 2 * DAY, score: 0.8 }),
       makeResult({ path: "below", updatedAt: NOW - 200 * DAY, score: 0.59 }),
     ];
     const tiered = applyTimeTiering(results, NOW);
+    // dynamic threshold = min(0.8*0.8, 0.6) = 0.6; 0.59 < 0.6
     expect(tiered.some((r) => r.path === "below")).toBe(false);
   });
 });

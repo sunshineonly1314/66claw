@@ -15,7 +15,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 
 import { resolveStateDir } from "../config/paths.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -35,14 +35,20 @@ function getDeviceIdFilePath(): string {
 /**
  * 执行 PowerShell 命令（Windows）
  * 比 wmic 更现代，兼容 Windows 11
+ *
+ * [SECURITY FIX] 使用 -EncodedCommand（Base64 编码）代替字符串插值，
+ * 彻底消除命令注入风险。PowerShell -EncodedCommand 接受 UTF-16LE Base64，
+ * 不涉及 shell 解析，无法注入任何元字符。
  */
 function execPowerShell(command: string): string {
   try {
-    const result = execSync(`powershell -NoProfile -NonInteractive -Command "${command}"`, {
-      encoding: "utf8",
-      timeout: 10000,
-      windowsHide: true,
-    });
+    // Encode command as UTF-16LE Base64 for -EncodedCommand (no shell interpolation)
+    const encoded = Buffer.from(command, "utf16le").toString("base64");
+    const result = execFileSync(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+      { encoding: "utf8", timeout: 10000, windowsHide: true },
+    );
     return result.trim();
   } catch (error) {
     log.debug(`PowerShell command failed: ${error}`);
@@ -53,8 +59,20 @@ function execPowerShell(command: string): string {
 /**
  * 执行 wmic 命令（Windows 后备方案）
  * 兼容老版本 Windows
+ *
+ * [SECURITY FIX] Only accepts a fixed allowlist of wmic commands to prevent
+ * arbitrary command injection. Callers must pass one of the known-safe commands.
  */
+const ALLOWED_WMIC_COMMANDS: ReadonlySet<string> = new Set([
+  "wmic csproduct get uuid",
+  "wmic cpu get processorid",
+]);
+
 function execWmic(command: string): string {
+  if (!ALLOWED_WMIC_COMMANDS.has(command)) {
+    log.warn(`[SECURITY] execWmic: rejected unknown wmic command`);
+    return "";
+  }
   try {
     const result = execSync(command, {
       encoding: "utf8",

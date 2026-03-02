@@ -80,11 +80,26 @@ export interface TokenState {
 // ============================================================================
 
 /**
- * 服务端 RSA 公钥
+ * 服务端 RSA 公钥列表 — 多公钥兜底机制（与 rsa-verify.ts 保持一致）
  * 复用现有的 RSA 密钥对（与 /verify 接口相同）
  * 私钥在服务端：backend/src/main/resources/keys/private_key.pem
+ *
+ * 验证时按数组顺序依次尝试，任一公钥验过即通过。
+ * 服务端切换密钥时客户端不用同步发版。
  */
-const SERVER_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+const SERVER_PUBLIC_KEYS: string[] = [
+  // v2 — 新密钥（预留，服务端部署后自动生效）
+  `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuB00UMEJdP/XxmCJDGC5
+x7DsZEJpWG2Gx+p8RmkMsoPh/eiWcwkSrO62Ijg3jrOO5i8UnZGzM1jzDEBdB8Gs
+g0ADa9LkRHdNTSYpxE2hCyvvSMLfYX4i1yp0ucFO0PTmECMXSTg0/pxTPpI1GwGK
+6rqH/3HjytryUlfAI4eRMmn1c2zQimXi49CgXzTMDOY8oTTaqeD7XQtAVCklO1pg
+j0FDTjxSFGC9xnXU5ooW9IQXjyW3jZZLbxbgd8elGJD1EUYrHFa1xYF8r5yUr7GA
+moWQ5xD2iEun3ykFZZ1pYso9ybBpPXXp8mIxD5+/JGaYirHpH/7JjKs5aTOCDaOZ
+AQIDAQAB
+-----END PUBLIC KEY-----`,
+  // v1 — 旧密钥（当前线上使用，v1-2026-02）
+  `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkDtHShdtjfCopovpCcIR
 hiyFHopWsclr+7JQ+c4Iz2NIdWrCoAkSUTSp24fJXmVQh27m8Eq9JvGX/wMpQ8H6
 ++IpO06BXCyk1gYqf8Qqa6CdGMQ0aygCq6aTebQQqDBGICH7u985fkdTRDz62xyG
@@ -92,7 +107,8 @@ UbYKIJPZkRycZCGZ5pMvwhxKcSZ6ifpGuBhAlxLqHpax9sUgstWWBOMWEr7SpbL0
 BE081ASxkXuQSSGDQFQzUZ98ZoVoYOmneIjU/6JHOAhLDA1R9qEy7KKpb3FV0DQm
 PWgG9tgLZk1M7yp3xitO98ZrMtWLmNNPUtQvfM1vlvRI7It0BoGVnPq5P+9dvzmS
 nQIDAQAB
------END PUBLIC KEY-----`;
+-----END PUBLIC KEY-----`,
+];
 
 /**
  * 离线宽限期（毫秒）
@@ -123,6 +139,26 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 // 令牌失效回调
 let onTokenInvalidCallback: (() => void) | null = null;
 
+// [改造5] 服务端强制功能降级（来自心跳响应的 tierLimit 字段，包含在 RSA 签名内）
+// _serverTierLimitKey: 记录 tierLimit 对应的 licenseKey，防止切换 key 时状态残留
+let _serverTierLimit = "";
+let _serverTierLimitKey = "";
+
+/**
+ * 设置服务端强制降级（心跳响应或 feature-token 签发时更新）
+ * @param tierLimit - ""=无限制，"basic"=强制降为基础版
+ * @param licenseKey - 对应的 licenseKey（用于防止切换 key 时状态残留）
+ */
+export function setServerTierLimit(tierLimit: string, licenseKey?: string): void {
+  _serverTierLimit = tierLimit;
+  _serverTierLimitKey = licenseKey ?? tokenState.current?.licenseKey ?? "";
+  if (tierLimit) {
+    log.debug(
+      `Server tierLimit applied: "${tierLimit}" for key ${_serverTierLimitKey.substring(0, 8)}...`,
+    );
+  }
+}
+
 // ============================================================================
 // 令牌验证
 // ============================================================================
@@ -150,18 +186,22 @@ export function verifyTokenSignature(token: LicenseToken): boolean {
     }
     const signContent = parts.join("|");
 
-    // 验证 RSA 签名
-    const verifier = createVerify("RSA-SHA256");
-    verifier.update(signContent);
-    verifier.end();
-
-    const isValid = verifier.verify(SERVER_PUBLIC_KEY, token.signature, "base64");
-
-    if (!isValid) {
-      log.warn("Token signature verification failed");
+    // 验证 RSA 签名 — 多公钥兜底，任一验过即通过
+    for (let i = 0; i < SERVER_PUBLIC_KEYS.length; i++) {
+      try {
+        const verifier = createVerify("RSA-SHA256");
+        verifier.update(signContent);
+        verifier.end();
+        if (verifier.verify(SERVER_PUBLIC_KEYS[i], token.signature, "base64")) {
+          return true;
+        }
+      } catch {
+        // try next key
+      }
     }
 
-    return isValid;
+    log.warn("Token signature verification failed (no key matched)");
+    return false;
   } catch (error) {
     log.error(`Token signature verification error: ${error}`);
     return false;
@@ -497,7 +537,18 @@ export function clearToken(): void {
 // ============================================================================
 
 /**
+ * 高价值功能列表（不允许离线降级，必须有有效令牌）
+ *
+ * 产品侧确认：这些功能是商业差异化核心，断网令牌过期后直接锁定。
+ * 基础对话等功能不在此列，允许降级到本地缓存（8h 宽限期内可用）。
+ */
+export const HIGH_VALUE_FEATURES = new Set<string>(["agent-team", "orchestrator", "memory-core"]);
+
+/**
  * 检查令牌是否允许指定功能
+ *
+ * [改造4] 分级逻辑在 license-check.ts 的 hasLicenseFeature 中实现，
+ * 本函数只做令牌内功能检查 + tierLimit 降级。
  */
 export function isFeatureAllowed(feature: string): boolean {
   const token = tokenState.current;
@@ -510,8 +561,17 @@ export function isFeatureAllowed(feature: string): boolean {
     return false;
   }
 
-  // 检查功能列表
-  // "*" 表示允许所有功能
+  // [改造5] 服务端 tierLimit：强制降为 basic 时，高价值功能一律拒绝
+  // 只有 tierLimit 对应的 key 与当前 token 的 key 一致时才生效，防止切换 key 后残留旧 limit
+  const tierLimitActive =
+    _serverTierLimit === "basic" &&
+    (_serverTierLimitKey === "" || _serverTierLimitKey === token.licenseKey);
+  if (tierLimitActive && HIGH_VALUE_FEATURES.has(feature)) {
+    log.debug(`Feature "${feature}" denied: server tierLimit=basic`);
+    return false;
+  }
+
+  // 检查功能列表（"*" 表示允许所有功能）
   if (token.allowedFeatures.includes("*")) {
     return true;
   }

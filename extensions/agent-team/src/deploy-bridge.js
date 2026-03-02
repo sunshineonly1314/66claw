@@ -48,13 +48,13 @@ async function createProjectFromPlan(callGateway, params) {
   const plan = await readOrchestratorPlan(orchestratorStateDir, planId);
   console.log(`[deploy-bridge] plan loaded: ${plan ? `teamName="${plan.teamName}", agents=${plan.agents?.length}` : "NULL"}`);
   if (!plan) {
-    throw new Error(`Orchestrator plan "${planId}" not found`);
+    throw new Error(`plan "${planId}" not found`);
   }
   const state = await readOrchestratorState(orchestratorStateDir, planId);
   console.log(`[deploy-bridge] state loaded: ${state ? `status="${state.status}", agents=${state.agents?.length}` : "NULL"}`);
   if (!state || (state.status !== "deployed" && state.status !== "deploying")) {
     throw new Error(
-      `Orchestrator plan "${planId}" is not in deployed/deploying state (status: ${state?.status ?? "not found"})`
+      `plan "${planId}" not in deployed state (status: ${state?.status ?? "not found"})`
     );
   }
   const deployedIdMap = /* @__PURE__ */ new Map();

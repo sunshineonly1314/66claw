@@ -68,6 +68,26 @@ vi.mock("../agents/defaults.js", () => ({
   DEFAULT_PROVIDER: "anthropic",
 }));
 
+vi.mock("./auto-discovery.js", () => ({
+  autoDiscover: vi.fn().mockResolvedValue({
+    skillHints: [],
+    mcpToolHints: [],
+    toolHints: [],
+    matchDetails: "mocked",
+  }),
+}));
+
+vi.mock("./tool-discovery.js", () => ({
+  discoverTools: vi.fn().mockResolvedValue({
+    confidence: 0,
+    skillHints: [],
+    mcpToolHints: [],
+    toolHints: [],
+    rawResults: [],
+    searchLatencyMs: 0,
+  }),
+}));
+
 const { dispatchRequest } = await import("./engine.js");
 
 // ---------------------------------------------------------------------------
@@ -150,7 +170,9 @@ describe("engine.ts dispatch pipeline", () => {
 
     it("returns DEFAULT_DECISION when config.settings.enabled is false", async () => {
       loadDispatchConfigMock.mockReturnValue(
-        makeConfig({ settings: { enabled: false, ruleConfidenceThreshold: 0.7, timeoutMs: 3000, debug: false } }),
+        makeConfig({
+          settings: { enabled: false, ruleConfidenceThreshold: 0.7, timeoutMs: 3000, debug: false },
+        }),
       );
 
       const result = await dispatchRequest(makeParams());
@@ -198,7 +220,11 @@ describe("engine.ts dispatch pipeline", () => {
   describe("Step 5: media boost", () => {
     it("boosts confidence when media types overlap with intent patterns", async () => {
       const cfg = makeConfig({
-        intents: [makeIntent({ patterns: { keywords: ["分析"], regex: [], semanticTags: [], mediaTypes: ["image"] } })],
+        intents: [
+          makeIntent({
+            patterns: { keywords: ["分析"], regex: [], semanticTags: [], mediaTypes: ["image"] },
+          }),
+        ],
       });
       setupDefaultMocks(cfg);
       classifyIntentMock.mockResolvedValue({
@@ -229,7 +255,11 @@ describe("engine.ts dispatch pipeline", () => {
   describe("Step 9: complexity assessment", () => {
     it("uses rule-based complexity when rules are confident", async () => {
       setupDefaultMocks();
-      assessComplexityByRulesMock.mockReturnValue({ score: 8, confident: true, signals: ["long_prompt"] });
+      assessComplexityByRulesMock.mockReturnValue({
+        score: 8,
+        confident: true,
+        signals: ["long_prompt"],
+      });
       scoreToComplexityLevelMock.mockReturnValue("high");
       resolveStrategyMock.mockReturnValue("multi");
 
@@ -279,7 +309,11 @@ describe("engine.ts dispatch pipeline", () => {
 
       const result = await dispatchRequest(makeParams({ sessionId: "session-1" }));
 
-      expect(analyzeSessionContextMock).toHaveBeenCalledWith("session-1", expect.any(String), "research");
+      expect(analyzeSessionContextMock).toHaveBeenCalledWith(
+        "session-1",
+        expect.any(String),
+        "research",
+      );
       expect(result.sessionSignals).toBeDefined();
       expect(result.sessionSignals!.turnCount).toBe(5);
     });
@@ -313,13 +347,15 @@ describe("engine.ts dispatch pipeline", () => {
       adjustComplexityMock.mockReturnValue("high");
       resolveStrategyMock.mockReturnValue("multi");
 
-      const result = await dispatchRequest(makeParams({
-        memorySignals: {
-          crossSessionContinuation: true,
-          priorComplexity: "high",
-          relevanceScore: 0.9,
-        },
-      }));
+      const result = await dispatchRequest(
+        makeParams({
+          memorySignals: {
+            crossSessionContinuation: true,
+            priorComplexity: "high",
+            relevanceScore: 0.9,
+          },
+        }),
+      );
 
       expect(adjustComplexityMock).toHaveBeenCalledWith("medium", 1);
       expect(result.complexitySignals).toContain("memory_cross_session_high");
@@ -330,13 +366,15 @@ describe("engine.ts dispatch pipeline", () => {
       scoreToComplexityLevelMock.mockReturnValue("low");
       resolveStrategyMock.mockReturnValue("single");
 
-      const result = await dispatchRequest(makeParams({
-        memorySignals: {
-          priorComplexity: "high",
-          priorIntent: "research",
-          relevanceScore: 0.8,
-        },
-      }));
+      const result = await dispatchRequest(
+        makeParams({
+          memorySignals: {
+            priorComplexity: "high",
+            priorIntent: "research",
+            relevanceScore: 0.8,
+          },
+        }),
+      );
 
       expect(result.complexity).toBe("high");
       expect(result.complexitySignals).toContain("memory_relevance_boost");
@@ -345,13 +383,15 @@ describe("engine.ts dispatch pipeline", () => {
     it("does NOT boost when relevance score is below 0.7", async () => {
       setupDefaultMocks();
 
-      const result = await dispatchRequest(makeParams({
-        memorySignals: {
-          priorComplexity: "high",
-          priorIntent: "research",
-          relevanceScore: 0.5,
-        },
-      }));
+      const result = await dispatchRequest(
+        makeParams({
+          memorySignals: {
+            priorComplexity: "high",
+            priorIntent: "research",
+            relevanceScore: 0.5,
+          },
+        }),
+      );
 
       // Should not change — relevance too low
       expect(result.complexitySignals).not.toContain("memory_relevance_boost");
@@ -360,13 +400,15 @@ describe("engine.ts dispatch pipeline", () => {
     it("does NOT inherit when prior intent differs from current", async () => {
       setupDefaultMocks();
 
-      const result = await dispatchRequest(makeParams({
-        memorySignals: {
-          priorComplexity: "high",
-          priorIntent: "coding", // different from "research"
-          relevanceScore: 0.9,
-        },
-      }));
+      const result = await dispatchRequest(
+        makeParams({
+          memorySignals: {
+            priorComplexity: "high",
+            priorIntent: "coding", // different from "research"
+            relevanceScore: 0.9,
+          },
+        }),
+      );
 
       expect(result.complexitySignals).not.toContain("memory_relevance_boost");
     });
@@ -476,9 +518,11 @@ describe("engine.ts dispatch pipeline", () => {
       });
       setupDefaultMocks(cfg);
 
-      const result = await dispatchRequest(makeParams({
-        availableMCPTools: ["mcp_db_query", "mcp_db_list", "mcp_search_query", "mcp_other"],
-      }));
+      const result = await dispatchRequest(
+        makeParams({
+          availableMCPTools: ["mcp_db_query", "mcp_db_list", "mcp_search_query", "mcp_other"],
+        }),
+      );
 
       expect(result.mcpToolHints).toContain("mcp_db_query");
       expect(result.mcpToolHints).toContain("mcp_db_list");
@@ -498,9 +542,11 @@ describe("engine.ts dispatch pipeline", () => {
       const cfg = makeConfig({ intents: [makeIntent({ mcpTools: ["nonexistent_tool"] })] });
       setupDefaultMocks(cfg);
 
-      const result = await dispatchRequest(makeParams({
-        availableMCPTools: ["other_tool"],
-      }));
+      const result = await dispatchRequest(
+        makeParams({
+          availableMCPTools: ["other_tool"],
+        }),
+      );
       expect(result.mcpToolHints).toEqual([]);
     });
   });
@@ -508,9 +554,11 @@ describe("engine.ts dispatch pipeline", () => {
   describe("model fallback resolution", () => {
     it("tries fallbackModel when primary model fails to resolve", async () => {
       const cfg = makeConfig({
-        intents: [makeIntent({
-          routing: { model: "invalid/model", fallbackModel: "anthropic/claude-haiku-3" },
-        })],
+        intents: [
+          makeIntent({
+            routing: { model: "invalid/model", fallbackModel: "anthropic/claude-haiku-3" },
+          }),
+        ],
       });
       setupDefaultMocks(cfg);
       parseModelRefMock.mockImplementation((spec: string) => {
@@ -553,11 +601,14 @@ describe("engine.ts dispatch pipeline", () => {
 
       await dispatchRequest(makeParams({ sessionId: "s-record" }));
 
-      expect(recordTurnMock).toHaveBeenCalledWith("s-record", expect.objectContaining({
-        intent: "research",
-        complexity: expect.any(String),
-        strategy: expect.any(String),
-      }));
+      expect(recordTurnMock).toHaveBeenCalledWith(
+        "s-record",
+        expect.objectContaining({
+          intent: "research",
+          complexity: expect.any(String),
+          strategy: expect.any(String),
+        }),
+      );
     });
 
     it("does not record turn when no sessionId", async () => {

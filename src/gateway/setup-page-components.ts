@@ -5,6 +5,7 @@
 
 import type { PlatformInfo } from "./setup-page-utils.js";
 import type { CnProviderConfig } from "../config/region-cn.js";
+import { isOverseas } from "../config/edition.js";
 
 /** 组件渲染所需的上下文 */
 export interface SetupPageContext {
@@ -576,7 +577,11 @@ export function renderBodyContent(
           <label for="agreeTerms">我已了解并同意</label>
         </div>
         <div class="agreement-disclaimer">
-          虽然 AI 现在很强大，但 AI 生成内容可能存在随机性或偏差。使用 OpenClawCN 即表示你已了解风险：我们不对 AI 产生的任何错误或潜在风险承担法律责任。请理性对待，安全使用哦~
+          ${
+            isOverseas
+              ? "AI-generated content may be inaccurate or biased. By using this software you acknowledge the risks. We are not liable for any errors or potential risks. Please use responsibly."
+              : "虽然 AI 现在很强大，但 AI 生成内容可能存在随机性或偏差。使用 OpenClawCN 即表示你已了解风险：我们不对 AI 产生的任何错误或潜在风险承担法律责任。请理性对待，安全使用哦~"
+          }
         </div>
       </div>
 
@@ -1675,7 +1680,7 @@ export function renderBodyContent(
           </svg>
         </div>
         <div class="success-title">🎉 激活成功！</div>
-        <div class="success-desc">感谢信任 <strong style="color: var(--accent-blue);">tecbinAI</strong>，祝你使用愉快！</div>
+        <div class="success-desc">${isOverseas ? "Activation successful! Enjoy using the app." : '感谢信任 <strong style="color: var(--accent-blue);">tecbinAI</strong>，祝你使用愉快！'}</div>
         <div class="success-expires" id="licenseExpiresText"></div>
         
         <!-- 协议勾选区域（验证成功后显示） -->
@@ -1782,7 +1787,7 @@ export function renderBodyContent(
           <li>如需使用钉钉/飞书/企业微信，可在设置中添加渠道配置</li>
           <li id="tipWorkspaceFiles" class="hidden">把需要处理的文件放到工作目录</li>
           <li>随时可以在设置中调整配置</li>
-          <li>Skills 仓库: <a href="https://gitee.com/tecbinai/skills" target="_blank" style="color: var(--accent-blue);">gitee.com/tecbinai/skills</a></li>
+          ${isOverseas ? "" : '<li>Skills 仓库: <a href="https://gitee.com/tecbinai/skills" target="_blank" style="color: var(--accent-blue);">gitee.com/tecbinai/skills</a></li>'}
         </ul>
       </div>
 
@@ -3637,7 +3642,7 @@ export function renderScriptContent(ctx: SetupPageContext): string {
           title: '用户服务协议',
           content: \`
             <h4>第一条 总则</h4>
-            <p>欢迎使用 OpenClawCN 软件（以下简称"本软件"）。本协议是您与 tecbinAI 团队之间关于使用本软件的法律协议。</p>
+            <p>${isOverseas ? "欢迎使用本软件。本协议是您与本软件开发团队之间关于使用本软件的法律协议。" : "欢迎使用 OpenClawCN 软件（以下简称“本软件”）。本协议是您与 tecbinAI 团队之间关于使用本软件的法律协议。"}</p>
             
             <h4>第二条 服务内容</h4>
             <p>本软件为 AI 辅助工具，提供与第三方大语言模型交互的桥接服务。</p>

@@ -25,6 +25,9 @@ import {
 import { getDeviceId, getDeviceName, getOsInfo, getDeviceFingerprint } from "./device-id.js";
 
 import { verifyLicenseResponseSignature, verifyHeartbeatResponseSignature } from "./rsa-verify.js";
+import { generateSignParams, generateSignParamsV2 } from "./sign.js";
+// NOTE: loadLicenseCache is imported lazily inside sendHeartbeat() to avoid
+// circular dependency: verify.ts ← offline.ts ← verify.ts
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { VERSION } from "../version.js";
 
@@ -274,11 +277,63 @@ export async function verifyLicense(
 
 /**
  * 发送心跳
+ *
+ * [改造1] 优先使用 v2 HMAC 签名（需要缓存中的 sessionSalt）；
+ *         salt 过期或不存在时，降级到 v1 签名，不触发重新激活流程。
+ * [改造5] 携带 clientHealth 运行时健康信号（辅助信号，非主防线）。
  */
 export async function sendHeartbeat(key: string): Promise<LicenseHeartbeatResponseData> {
   const deviceId = getDeviceId();
 
-  const request: LicenseHeartbeatRequest = { key, deviceId };
+  // [改造1] 尝试从缓存读取 sessionSalt，优先用 v2 签名
+  // lazy import offline.ts to avoid circular dependency (offline.ts imports createLicenseCache from verify.ts)
+  let signParams: { timestamp?: number; nonce?: string; sign?: string; signVersion?: 1 | 2 } = {};
+  // [改造5] cacheStatus: track actual integrity outcome from cache load
+  let cacheStatus: "ok" | "hmac_fail" | "rsa_fail" | "missing" = "missing";
+  try {
+    const { loadLicenseCache } = await import("./offline.js");
+    const cache = await loadLicenseCache();
+    const now = Date.now();
+    if (cache) {
+      // loadLicenseCache returns null on HMAC/RSA failure, non-null means integrity passed
+      cacheStatus = "ok";
+      if (cache?.sessionSalt && cache?.saltExpiresAt && now < cache.saltExpiresAt) {
+        signParams = generateSignParamsV2(key, deviceId, cache.sessionSalt);
+        log.debug("Heartbeat using v2 HMAC signature");
+      } else {
+        // salt 过期或不存在：降级到 v1（只换签名算法，不重新激活）
+        signParams = { ...generateSignParams(key, deviceId, key), signVersion: 1 };
+        log.debug("Heartbeat using v1 HMAC signature (salt expired or missing)");
+      }
+    } else {
+      // cache is null: loadLicenseCache returns null when file is missing OR integrity failed.
+      // In heartbeat context the file was present at startup, so null here means integrity failure.
+      cacheStatus = "hmac_fail";
+      signParams = { ...generateSignParams(key, deviceId, key), signVersion: 1 };
+      log.debug("Heartbeat cache integrity check failed (hmac_fail), using v1 HMAC signature");
+    }
+  } catch {
+    // 缓存读取失败时降级到 v1
+    cacheStatus = "missing";
+    signParams = { ...generateSignParams(key, deviceId, key), signVersion: 1 };
+  }
+
+  // [改造5] 构建客户端健康信号（辅助信号，专业攻击者可伪造，不作为主防线）
+  const clientHealth: LicenseHeartbeatRequest["clientHealth"] = {
+    hasDebugger: process.debugPort !== 0,
+    suspiciousArgs: process.execArgv.some(
+      (arg) => arg.includes("inspect") || arg.includes("debug"),
+    ),
+    cacheStatus,
+    appVersion: VERSION,
+  };
+
+  const request: LicenseHeartbeatRequest = {
+    key,
+    deviceId,
+    ...signParams,
+    clientHealth,
+  };
 
   try {
     const response = await sendRequest<LicenseHeartbeatResponseData>("POST", "/heartbeat", request);
@@ -287,18 +342,20 @@ export async function sendHeartbeat(key: string): Promise<LicenseHeartbeatRespon
       const data = response.data;
 
       // RSA 签名验证（如果启用）
+      // [改造5] 签名内容扩展为：valid|daysRemaining|serverTime|tierLimit|revoked
       if (moduleConfig.enableRsaVerify) {
         if (!data.signature) {
           log.error("RSA verification enabled but no signature in heartbeat response");
           throw new Error("心跳响应缺少签名");
         }
 
-        // 验证签名：valid|daysRemaining|serverTime
         const verifyResult = verifyHeartbeatResponseSignature(
           data.valid,
           data.daysRemaining,
           data.serverTime,
           data.signature,
+          data.tierLimit,
+          data.revoked,
         );
 
         if (!verifyResult.valid) {
@@ -307,7 +364,11 @@ export async function sendHeartbeat(key: string): Promise<LicenseHeartbeatRespon
         }
       }
 
-      log.debug("Heartbeat sent", { valid: data.valid });
+      log.debug("Heartbeat sent", {
+        valid: data.valid,
+        tierLimit: data.tierLimit,
+        revoked: data.revoked,
+      });
       return data;
     }
 
@@ -566,6 +627,12 @@ export function createLicenseCache(key: string, response: LicenseVerifyResponseD
       expiresAt: response.license?.expiresAt ?? null,
       serverTime: response.serverTime,
     };
+  }
+
+  // [改造1] 存储服务端下发的 sessionSalt，用于下次请求的 v2 HMAC 签名派生
+  if (response.sessionSalt && response.saltExpiresAt) {
+    cache.sessionSalt = response.sessionSalt;
+    cache.saltExpiresAt = response.saltExpiresAt;
   }
 
   return cache;

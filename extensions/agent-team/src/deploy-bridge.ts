@@ -181,7 +181,7 @@ export async function createProjectFromPlan(
   const plan = await readOrchestratorPlan(orchestratorStateDir, planId);
   console.log(`[deploy-bridge] plan loaded: ${plan ? `teamName="${plan.teamName}", agents=${plan.agents?.length}` : "NULL"}`);
   if (!plan) {
-    throw new Error(`Orchestrator plan "${planId}" not found`);
+    throw new Error(`plan "${planId}" not found`);
   }
 
   const state = await readOrchestratorState(orchestratorStateDir, planId);
@@ -192,7 +192,7 @@ export async function createProjectFromPlan(
   // UI, so "deploying" is the normal happy-path status here.
   if (!state || (state.status !== "deployed" && state.status !== "deploying")) {
     throw new Error(
-      `Orchestrator plan "${planId}" is not in deployed/deploying state (status: ${state?.status ?? "not found"})`,
+      `plan "${planId}" not in deployed state (status: ${state?.status ?? "not found"})`,
     );
   }
 

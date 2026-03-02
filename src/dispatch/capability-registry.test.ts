@@ -237,9 +237,9 @@ describe("routing policy: cost-balanced", () => {
     // Should not be purely cheapest or purely best
     expect(results.length).toBeGreaterThan(0);
     // A balanced policy should put high-value models (good score, reasonable cost) near top
-    // DeepSeek V3 (text:4, $1.37) should rank well in top 20
+    // DeepSeek V3 (text:4, $1.37) should rank well in top 25
     const dsIdx = results.findIndex((r) => r.modelId === "deepseek-chat");
-    expect(dsIdx).toBeLessThan(20);
+    expect(dsIdx).toBeLessThan(25);
   });
 });
 

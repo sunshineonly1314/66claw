@@ -65,7 +65,7 @@ describe("applyCliProfileEnv", () => {
     expect(env.OPENCLAWCN_PROFILE).toBe("dev");
     expect(env.OPENCLAWCN_STATE_DIR).toBe(expectedStateDir);
     expect(env.OPENCLAWCN_CONFIG_PATH).toBe(path.join(expectedStateDir, "openclawcn.json"));
-    expect(env.OPENCLAWCN_GATEWAY_PORT).toBe("19001");
+    expect(env.OPENCLAWCN_GATEWAY_PORT).toBe("19002");
   });
 
   it("does not override explicit env values", () => {
@@ -144,9 +144,9 @@ describe("formatCliCommand", () => {
   });
 
   it("trims whitespace from profile", () => {
-    expect(formatCliCommand("openclawcn doctor --fix", { OPENCLAWCN_PROFILE: "  jbopenclaw  " })).toBe(
-      "openclawcn --profile jbopenclaw doctor --fix",
-    );
+    expect(
+      formatCliCommand("openclawcn doctor --fix", { OPENCLAWCN_PROFILE: "  jbopenclaw  " }),
+    ).toBe("openclawcn --profile jbopenclaw doctor --fix");
   });
 
   it("handles command with no args after openclawcn", () => {

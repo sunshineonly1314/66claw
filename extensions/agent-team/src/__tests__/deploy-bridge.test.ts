@@ -275,9 +275,9 @@ describe("deploy-bridge", () => {
       ).rejects.toThrow("not in deployed state");
     });
 
-    it("throws when state status is not 'deployed'", async () => {
+    it("throws when state status is not 'deployed' or 'deploying'", async () => {
       await writePlan("plan-001", makePlan());
-      await writeState("plan-001", makeState({ status: "deploying" }));
+      await writeState("plan-001", makeState({ status: "planning" }));
       const callGateway = vi.fn();
 
       await expect(
@@ -285,7 +285,20 @@ describe("deploy-bridge", () => {
           planId: "plan-001",
           orchestratorStateDir: orchDir,
         }),
-      ).rejects.toThrow("deploying");
+      ).rejects.toThrow("not in deployed state");
+    });
+
+    it("accepts 'deploying' status (race-condition safe)", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState({ status: "deploying" }));
+
+      const callGateway = vi.fn().mockResolvedValue(undefined);
+      const { project } = await createProjectFromPlan(callGateway, {
+        planId: "plan-001",
+        orchestratorStateDir: orchDir,
+      });
+
+      expect(project.status).toBe("active");
     });
 
     it("throws when no agents are ready", async () => {

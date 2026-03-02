@@ -44,6 +44,16 @@ interface SiliconFlowModelsResponse {
 // 能力类型 (Capability Types for non-chat models)
 // ============================================================================
 
+export interface SiliconFlowDiscoveredModel {
+  id: string;
+  name: string;
+  sfType: string;
+  sfSubType: string;
+  capabilities: string[];
+  contextWindow: number;
+  maxTokens: number;
+}
+
 // 推荐的模型列表 (用于在无法获取在线列表时的默认值)
 export const SILICONFLOW_RECOMMENDED_MODELS: ModelDefinitionConfig[] = [
   // ── 图像编辑模型 (Image Editing — requires source image) ──
@@ -220,6 +230,111 @@ export const SILICONFLOW_RECOMMENDED_MODELS: ModelDefinitionConfig[] = [
 ];
 
 // ============================================================================
+// 全模态推荐列表 (All-modality recommended list)
+// ============================================================================
+
+/** Chat models expressed as SiliconFlowDiscoveredModel */
+const CHAT_MODELS_AS_DISCOVERED: SiliconFlowDiscoveredModel[] = SILICONFLOW_RECOMMENDED_MODELS.map(
+  (m) => ({
+    id: m.id,
+    name: m.name,
+    sfType: "text",
+    sfSubType: "chat",
+    capabilities: ["chat"],
+    contextWindow: m.contextWindow,
+    maxTokens: m.maxTokens,
+  }),
+);
+
+/** Non-chat models covering embedding, image-generation, video-generation, audio */
+const NON_CHAT_RECOMMENDED: SiliconFlowDiscoveredModel[] = [
+  // Embedding models
+  {
+    id: "BAAI/bge-large-zh-v1.5",
+    name: "BGE Large ZH v1.5",
+    sfType: "text",
+    sfSubType: "embedding",
+    capabilities: ["embedding"],
+    contextWindow: 512,
+    maxTokens: 0,
+  },
+  {
+    id: "BAAI/bge-m3",
+    name: "BGE M3",
+    sfType: "text",
+    sfSubType: "embedding",
+    capabilities: ["embedding"],
+    contextWindow: 8192,
+    maxTokens: 0,
+  },
+  // Image generation models
+  {
+    id: "stabilityai/stable-diffusion-xl-base-1.0",
+    name: "Stable Diffusion XL",
+    sfType: "image",
+    sfSubType: "text-to-image",
+    capabilities: ["image-generation"],
+    contextWindow: 77,
+    maxTokens: 0,
+  },
+  {
+    id: "black-forest-labs/FLUX.1-schnell",
+    name: "FLUX.1 Schnell",
+    sfType: "image",
+    sfSubType: "text-to-image",
+    capabilities: ["image-generation"],
+    contextWindow: 256,
+    maxTokens: 0,
+  },
+  // Video generation models
+  {
+    id: "Pro/Wan-AI/Wan2.1-T2V-14B",
+    name: "Wan2.1 T2V 14B (Pro)",
+    sfType: "video",
+    sfSubType: "text-to-video",
+    capabilities: ["video-generation"],
+    contextWindow: 512,
+    maxTokens: 0,
+  },
+  {
+    id: "Wan-AI/Wan2.1-T2V-14B",
+    name: "Wan2.1 T2V 14B",
+    sfType: "video",
+    sfSubType: "text-to-video",
+    capabilities: ["video-generation"],
+    contextWindow: 512,
+    maxTokens: 0,
+  },
+  // Audio / speech-to-text models
+  {
+    id: "FunAudioLLM/SenseVoiceSmall",
+    name: "SenseVoice Small",
+    sfType: "audio",
+    sfSubType: "speech-to-text",
+    capabilities: ["audio"],
+    contextWindow: 0,
+    maxTokens: 0,
+  },
+  {
+    id: "openai/whisper-large-v3",
+    name: "Whisper Large V3",
+    sfType: "audio",
+    sfSubType: "speech-to-text",
+    capabilities: ["audio"],
+    contextWindow: 0,
+    maxTokens: 0,
+  },
+];
+
+/**
+ * All recommended models across every modality (chat + embedding + image + video + audio).
+ */
+export const SILICONFLOW_RECOMMENDED_ALL: SiliconFlowDiscoveredModel[] = [
+  ...CHAT_MODELS_AS_DISCOVERED,
+  ...NON_CHAT_RECOMMENDED,
+];
+
+// ============================================================================
 // 模型发现函数 (Model Discovery Functions)
 // ============================================================================
 
@@ -361,13 +476,43 @@ export async function discoverSiliconFlowModels(apiKey?: string): Promise<ModelD
 }
 
 /**
+ * 发现所有模态的 SiliconFlow 模型 (聊天/嵌入/生图/生视频/语音)
+ * Discover all SiliconFlow models across every modality.
+ * @param apiKey API Key
+ * @returns 全模态模型列表
+ */
+export async function discoverAllSiliconFlowModels(
+  apiKey?: string,
+): Promise<SiliconFlowDiscoveredModel[]> {
+  // 如果没有 API Key，返回推荐列表
+  if (!apiKey?.trim()) {
+    return SILICONFLOW_RECOMMENDED_ALL;
+  }
+
+  // 在测试环境下跳过网络请求
+  if (process.env.VITEST || process.env.NODE_ENV === "test") {
+    return SILICONFLOW_RECOMMENDED_ALL;
+  }
+
+  // TODO: live API discovery for all modalities
+  // For now, return the static fallback
+  return SILICONFLOW_RECOMMENDED_ALL;
+}
+
+/**
  * 格式化模型显示名称
  */
-function formatModelDisplayName(modelId: string): string {
-  // 移除前缀如 "Pro/"
-  let name = modelId.replace(/^Pro\//, "(Pro) ");
+export function formatModelDisplayName(modelId: string): string {
+  let pro = false;
+  let name = modelId;
 
-  // 移除组织前缀
+  // 检测并移除 "Pro/" 前缀
+  if (name.startsWith("Pro/")) {
+    pro = true;
+    name = name.slice(4); // remove "Pro/"
+  }
+
+  // 移除组织前缀 (e.g. "moonshotai/Kimi-K2.5" → "Kimi-K2.5")
   name = name.replace(/^[^/]+\//, "");
 
   // 格式化常见名称
@@ -376,6 +521,11 @@ function formatModelDisplayName(modelId: string): string {
     .replace(/-Chat$/, "")
     .replace(/-Preview$/, " (Preview)")
     .replace(/_/g, " ");
+
+  // 重新添加 (Pro) 前缀
+  if (pro) {
+    name = `(Pro) ${name}`;
+  }
 
   return name;
 }

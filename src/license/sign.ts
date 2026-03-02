@@ -93,6 +93,62 @@ export function generateSignParams(
 }
 
 /**
+ * [改造1] 使用服务端下发的 sessionSalt 生成 v2 请求签名
+ *
+ * 威胁模型：防止 licenseKey 泄露后（如暗网购买的 key 列表）被批量用于
+ * 构造合法请求。攻击者有 key 但没有 sessionSalt（需要先调用过 /verify），
+ * 因此无法伪造 v2 签名。
+ *
+ * 注意：对有 MITM 能力的攻击者无效（能同时抓到 key 和 salt），
+ * 主防线为改造4（feature-token 服务端下发）。
+ *
+ * @param key - 授权码
+ * @param deviceId - 设备ID
+ * @param timestamp - 时间戳（毫秒）
+ * @param nonce - 随机字符串（16位）
+ * @param sessionSalt - 服务端下发的 base64 盐值（32字节随机数）
+ * @returns HMAC-SHA256 签名（hex）
+ */
+export function generateSignV2(
+  key: string,
+  deviceId: string,
+  timestamp: number,
+  nonce: string,
+  sessionSalt: string,
+): string {
+  const saltBuffer = Buffer.from(sessionSalt, "base64");
+  // HKDF 派生 HMAC 密钥：ikm = key+deviceId, salt = sessionSalt, info = "openclawcn-request-v2"
+  const hmacKey = crypto.hkdfSync(
+    "sha256",
+    Buffer.from(key + deviceId, "utf8"),
+    saltBuffer,
+    Buffer.from("openclawcn-request-v2", "utf8"),
+    32,
+  );
+  const data = `${key}|${deviceId}|${timestamp}|${nonce}`;
+  return crypto.createHmac("sha256", hmacKey).update(data, "utf8").digest("hex");
+}
+
+/**
+ * [改造1] 生成带 v2 签名的请求参数
+ *
+ * @param key - 授权码
+ * @param deviceId - 设备ID
+ * @param sessionSalt - 服务端下发的 base64 盐值
+ * @returns 包含 timestamp、nonce、sign、signVersion 的参数对象
+ */
+export function generateSignParamsV2(
+  key: string,
+  deviceId: string,
+  sessionSalt: string,
+): { timestamp: number; nonce: string; sign: string; signVersion: 2 } {
+  const timestamp = getTimestamp();
+  const nonce = generateNonce();
+  const sign = generateSignV2(key, deviceId, timestamp, nonce, sessionSalt);
+  return { timestamp, nonce, sign, signVersion: 2 };
+}
+
+/**
  * 验证签名是否正确（用于测试）
  */
 export function verifySign(

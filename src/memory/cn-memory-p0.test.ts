@@ -137,9 +137,9 @@ describe("applyTimeTiering [CN-PATCH:memory-p0]", () => {
       path: "memory/test.md",
       startLine: 1,
       endLine: 10,
-      // Default score 0.5 — below HIGH_SCORE_PRESERVE_THRESHOLD (0.6)
-      // so time-based filtering still works as expected in tests.
-      // Use score >= 0.6 explicitly when testing high-score preservation.
+      // Default score 0.5. Note: dynamic threshold = min(maxScore*0.8, 0.6).
+      // When testing time-based filtering, use high scores (>=0.8) for "hot" items
+      // and low scores (<=0.3) for items that should be filtered out by time tier.
       score: 0.5,
       snippet: "test content",
       source: "memory",
@@ -179,9 +179,9 @@ describe("applyTimeTiering [CN-PATCH:memory-p0]", () => {
 
   it("hot 层有 2 个 + cold 层有 1 个 → 只返回 hot 层", () => {
     const results = [
-      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1" }),
-      makeResult({ updatedAt: NOW - 3 * DAY, path: "hot2" }),
-      makeResult({ updatedAt: NOW - 100 * DAY, path: "cold1" }),
+      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 3 * DAY, path: "hot2", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 100 * DAY, path: "cold1", score: 0.3 }),
     ];
     const filtered = applyTimeTiering(results, NOW);
     expect(filtered).toHaveLength(2);
@@ -191,9 +191,9 @@ describe("applyTimeTiering [CN-PATCH:memory-p0]", () => {
   // ── 2.3 回退逻辑 ──
   it("hot 层不足 2 个 → 回退到 warm 层（30 天）", () => {
     const results = [
-      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1" }),
-      makeResult({ updatedAt: NOW - 15 * DAY, path: "warm1" }),
-      makeResult({ updatedAt: NOW - 100 * DAY, path: "cold1" }),
+      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 15 * DAY, path: "warm1", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 100 * DAY, path: "cold1", score: 0.3 }),
     ];
     const filtered = applyTimeTiering(results, NOW);
     // hot: hot1(1) < 2 → fallback to warm
@@ -232,9 +232,9 @@ describe("applyTimeTiering [CN-PATCH:memory-p0]", () => {
   // ── 2.4 updatedAt 为空的处理 ──
   it("updatedAt 为 undefined 视为 '永远有效'（memory/*.md 场景）", () => {
     const results = [
-      makeResult({ updatedAt: undefined, path: "memory-no-ts" }),
-      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1" }),
-      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient1" }),
+      makeResult({ updatedAt: undefined, path: "memory-no-ts", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient1", score: 0.3 }),
     ];
     const filtered = applyTimeTiering(results, NOW);
     // hot 层: memory-no-ts(无时间戳, 通过) + hot1 = 2 >= 2 → 返回
@@ -257,9 +257,9 @@ describe("applyTimeTiering [CN-PATCH:memory-p0]", () => {
   it("恰好在 hot 边界（7天）上的结果属于 hot 层", () => {
     const exactBoundary = NOW - 7 * DAY;
     const results = [
-      makeResult({ updatedAt: exactBoundary, path: "boundary" }),
-      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1" }),
-      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient" }),
+      makeResult({ updatedAt: exactBoundary, path: "boundary", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient", score: 0.3 }),
     ];
     const filtered = applyTimeTiering(results, NOW);
     // boundary: updatedAt === cutoff, cutoff = NOW - 7*DAY, boundary >= cutoff → 通过
@@ -270,9 +270,9 @@ describe("applyTimeTiering [CN-PATCH:memory-p0]", () => {
   it("恰好在 hot 边界下方 1ms → 不属于 hot 层", () => {
     const justOutside = NOW - 7 * DAY - 1;
     const results = [
-      makeResult({ updatedAt: justOutside, path: "just-outside" }),
-      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient" }),
-      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1" }),
+      makeResult({ updatedAt: justOutside, path: "just-outside", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient", score: 0.3 }),
+      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot1", score: 0.8 }),
     ];
     const filtered = applyTimeTiering(results, NOW);
     // hot: hot1(1) < 2 → fallback

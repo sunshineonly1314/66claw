@@ -39,6 +39,10 @@ function makeResult(overrides: Partial<MemorySearchResult> = {}): MemorySearchRe
 
 /**
  * 生成混合年龄分布的搜索结果集
+ *
+ * 分数策略：hot/warm/noTimestamp 使用 0.8+ 高分（通过动态阈值保护），
+ * cold/ancient 使用 0.3 以下的低分（低于动态阈值 min(maxScore*0.8, 0.6)），
+ * 确保时间分层能正确过滤旧数据。
  */
 function generateAgedResults(params: {
   hot?: number; // 7天内
@@ -48,34 +52,43 @@ function generateAgedResults(params: {
   noTimestamp?: number; // 无时间戳
 }): MemorySearchResult[] {
   const results: MemorySearchResult[] = [];
-  // 使用低于 HIGH_SCORE_PRESERVE_THRESHOLD(0.6) 的分数，确保时间分层测试
-  // 纯粹测试时间逻辑而非高分保护逻辑
-  let scoreCounter = 0.55;
-  const push = (updatedAt: number | undefined, label: string) => {
+  let hotScore = 0.85;
+  let coldScore = 0.3;
+  const pushHot = (updatedAt: number | undefined, label: string) => {
     results.push(
       makeResult({
         path: `memory/${label}-${results.length}.md`,
-        score: scoreCounter,
+        score: hotScore,
         updatedAt,
       }),
     );
-    scoreCounter -= 0.001;
+    hotScore -= 0.001;
+  };
+  const pushCold = (updatedAt: number | undefined, label: string) => {
+    results.push(
+      makeResult({
+        path: `memory/${label}-${results.length}.md`,
+        score: coldScore,
+        updatedAt,
+      }),
+    );
+    coldScore -= 0.001;
   };
 
   for (let i = 0; i < (params.hot ?? 0); i++) {
-    push(NOW - Math.floor(Math.random() * 6 * DAY + DAY), `hot`);
+    pushHot(NOW - Math.floor(Math.random() * 6 * DAY + DAY), `hot`);
   }
   for (let i = 0; i < (params.warm ?? 0); i++) {
-    push(NOW - Math.floor(8 * DAY + Math.random() * 22 * DAY), `warm`);
+    pushCold(NOW - Math.floor(8 * DAY + Math.random() * 22 * DAY), `warm`);
   }
   for (let i = 0; i < (params.cold ?? 0); i++) {
-    push(NOW - Math.floor(31 * DAY + Math.random() * 89 * DAY), `cold`);
+    pushCold(NOW - Math.floor(31 * DAY + Math.random() * 89 * DAY), `cold`);
   }
   for (let i = 0; i < (params.ancient ?? 0); i++) {
-    push(NOW - Math.floor(121 * DAY + Math.random() * 365 * DAY), `ancient`);
+    pushCold(NOW - Math.floor(121 * DAY + Math.random() * 365 * DAY), `ancient`);
   }
   for (let i = 0; i < (params.noTimestamp ?? 0); i++) {
-    push(undefined, `static`);
+    pushHot(undefined, `static`);
   }
 
   return results;
@@ -185,11 +198,11 @@ describe("防遗忘 — 冷热分层不丢失关键记忆", () => {
 
   it("回退到 cold 层时，所有 <=120 天的数据都保留", () => {
     const results = [
-      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot" }),
-      makeResult({ updatedAt: NOW - 50 * DAY, path: "cold1" }),
-      makeResult({ updatedAt: NOW - 80 * DAY, path: "cold2" }),
-      makeResult({ updatedAt: NOW - 115 * DAY, path: "cold3" }),
-      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient" }),
+      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 50 * DAY, path: "cold1", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 80 * DAY, path: "cold2", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 115 * DAY, path: "cold3", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 200 * DAY, path: "ancient", score: 0.3 }),
     ];
     const tiered = applyTimeTiering(results, NOW);
     // hot: 1 < 2 → warm: 1 < 2 → cold: hot+cold1+cold2+cold3 = 4 >= 2 → return
@@ -793,12 +806,13 @@ describe("端到端 — 完整搜索链路模拟", () => {
     expect(fts).toBe('"会议记录总结"');
 
     // 模拟搜索结果（已按 score 排序）
-    // 旧结果使用低于 HIGH_SCORE_PRESERVE_THRESHOLD(0.6) 的分数，以验证时间分层过滤
+    // 旧结果使用低于动态阈值 min(maxScore*0.8, 0.6) 的分数，以验证时间分层过滤
+    // maxScore=0.9, threshold=min(0.72, 0.6)=0.6; old items score < 0.6 被过滤
     const searchResults: MemorySearchResult[] = [
       makeResult({ score: 0.9, updatedAt: NOW - 2 * DAY, path: "memory/meeting-2.md" }),
       makeResult({ score: 0.85, updatedAt: NOW - 5 * DAY, path: "memory/meeting-1.md" }),
-      makeResult({ score: 0.5, updatedAt: NOW - 45 * DAY, path: "memory/old-meeting.md" }),
-      makeResult({ score: 0.4, updatedAt: NOW - 150 * DAY, path: "memory/ancient-meeting.md" }),
+      makeResult({ score: 0.3, updatedAt: NOW - 45 * DAY, path: "memory/old-meeting.md" }),
+      makeResult({ score: 0.2, updatedAt: NOW - 150 * DAY, path: "memory/ancient-meeting.md" }),
     ];
 
     // 分层过滤
@@ -841,14 +855,15 @@ describe("边界条件 — 极端输入防护", () => {
 
   it("applyTimeTiering 处理 updatedAt 为负数的极端情况", () => {
     const results = [
-      makeResult({ updatedAt: -1, path: "negative" }),
-      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot" }),
-      makeResult({ updatedAt: NOW - 2 * DAY, path: "hot2" }),
+      makeResult({ updatedAt: -1, path: "negative", score: 0.3 }),
+      makeResult({ updatedAt: NOW - 1 * DAY, path: "hot", score: 0.8 }),
+      makeResult({ updatedAt: NOW - 2 * DAY, path: "hot2", score: 0.8 }),
     ];
     const tiered = applyTimeTiering(results, NOW);
     // hot: hot + hot2 = 2 >= 2 → 返回 hot 层
+    // negative: score 0.3 < threshold 0.6, 被过滤
     expect(tiered).toHaveLength(2);
-    // 负值时间戳被过滤（比任何 cutoff 都小）
+    // 负值时间戳被过滤（比任何 cutoff 都小，且 score < threshold）
     expect(tiered.find((r) => r.path === "negative")).toBeUndefined();
   });
 
@@ -939,15 +954,15 @@ describe("边界条件 — 数值精度", () => {
   it("时间层边界的毫秒精度：cutoff 恰好等于 updatedAt", () => {
     const exactCutoff = NOW - 7 * DAY;
     const results = [
-      makeResult({ updatedAt: exactCutoff, path: "exact-boundary" }),
-      makeResult({ updatedAt: exactCutoff - 1, path: "just-outside" }),
-      makeResult({ updatedAt: exactCutoff + 1, path: "just-inside" }),
+      makeResult({ updatedAt: exactCutoff, path: "exact-boundary", score: 0.8 }),
+      makeResult({ updatedAt: exactCutoff - 1, path: "just-outside", score: 0.3 }),
+      makeResult({ updatedAt: exactCutoff + 1, path: "just-inside", score: 0.8 }),
     ];
     const tiered = applyTimeTiering(results, NOW);
     // cutoff = NOW - 7*DAY
     // exact-boundary: updatedAt === cutoff, updatedAt >= cutoff → 通过 hot
     // just-inside: updatedAt > cutoff → 通过 hot
-    // just-outside: updatedAt < cutoff → hot 层不通过
+    // just-outside: updatedAt < cutoff → hot 层不通过, score 0.3 < threshold 0.6
     // hot: exact-boundary + just-inside = 2 >= 2 → 返回 hot
     expect(tiered).toHaveLength(2);
     expect(tiered.map((r) => r.path)).toContain("exact-boundary");

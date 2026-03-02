@@ -44,7 +44,15 @@ export const INTENT_TOOL_MAP: Record<string, string[]> = {
     "process",
     "image",
   ],
-  // wechat_operation removed — GUI automation tools not distributed
+  wechat_operation: [
+    "wechat_send",
+    "wechat_read",
+    "wechat_check",
+    "wecom_send",
+    "wecom_read",
+    "message",
+    "group:sessions",
+  ],
   desktop_control: ["desktop_control", "open_app", "browser", "canvas"],
   image_generation: ["image", "image_gen", "message"],
   database_query: ["group:runtime", "mcp_database_*"],

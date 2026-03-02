@@ -26,6 +26,8 @@ export {
   getTimestamp,
   generateSign,
   generateSignParams,
+  generateSignV2,
+  generateSignParamsV2,
   verifySign,
 } from "./sign.js";
 
@@ -109,6 +111,8 @@ export {
   clearToken,
   isFeatureAllowed,
   getTokenStatusSummary,
+  setServerTierLimit,
+  HIGH_VALUE_FEATURES,
   type LicenseToken,
   type TokenResponse,
   type TokenState,
