@@ -167,8 +167,11 @@ function readCodexKeychainCredentials(options?: {
   const account = computeCodexKeychainAccount(codexHome);
 
   try {
-    const secret = execSyncImpl(
-      `security find-generic-password -s "Codex Auth" -a "${account}" -w`,
+    // [SECURITY FIX] Use execFileSync with array args to prevent shell injection
+    // via `account` (derived from codex home path, but could contain special chars)
+    const secret = execFileSync(
+      "security",
+      ["find-generic-password", "-s", "Codex Auth", "-a", account, "-w"],
       {
         encoding: "utf8",
         timeout: 5000,
@@ -259,11 +262,13 @@ function readMiniMaxCliCredentials(options?: { homeDir?: string }): MiniMaxCliCr
 }
 
 function readClaudeCliKeychainCredentials(
-  execSyncImpl: ExecSyncFn = execSync,
+  execFileSyncImpl: ExecFileSyncFn = execFileSync,
 ): ClaudeCliCredential | null {
   try {
-    const result = execSyncImpl(
-      `security find-generic-password -s "${CLAUDE_CLI_KEYCHAIN_SERVICE}" -w`,
+    // [SECURITY FIX] 使用 execFileSync 避免 shell 注入（与 write 路径一致）
+    const result = execFileSyncImpl(
+      "security",
+      ["find-generic-password", "-s", CLAUDE_CLI_KEYCHAIN_SERVICE, "-w"],
       { encoding: "utf8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] },
     );
 
@@ -279,10 +284,11 @@ export function readClaudeCliCredentials(options?: {
   platform?: NodeJS.Platform;
   homeDir?: string;
   execSync?: ExecSyncFn;
+  execFileSync?: ExecFileSyncFn;
 }): ClaudeCliCredential | null {
   const platform = options?.platform ?? process.platform;
   if (platform === "darwin" && options?.allowKeychainPrompt !== false) {
-    const keychainCreds = readClaudeCliKeychainCredentials(options?.execSync);
+    const keychainCreds = readClaudeCliKeychainCredentials(options?.execFileSync);
     if (keychainCreds) {
       log.info("read anthropic credentials from claude cli keychain", {
         type: keychainCreds.type,

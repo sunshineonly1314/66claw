@@ -64,6 +64,7 @@ const FeishuToolsConfigSchema = z
     perm: z.boolean().optional().describe("权限管理 (默认: false, 敏感)"),
     scopes: z.boolean().optional().describe("应用权限诊断 (默认: true)"),
     task: z.boolean().optional().describe("任务管理 (默认: true)"),
+    calendar: z.boolean().optional().describe("日程管理 (默认: true)"),
   })
   .strict()
   .optional();

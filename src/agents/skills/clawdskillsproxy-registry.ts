@@ -45,12 +45,16 @@ export interface ProxySkillMeta {
   status: "active" | string;
   /** 技能名称 (从 SKILL.md frontmatter 解析) */
   name?: string;
-  /** 技能中文名称 */
+  /** 技能中文名称 (camelCase) */
   nameZh?: string;
+  /** 技能中文名称 (snake_case, legacy) */
+  name_zh?: string;
   /** 技能描述 (从 SKILL.md frontmatter 解析) */
   description?: string;
-  /** 技能中文描述 */
+  /** 技能中文描述 (camelCase) */
   descriptionZh?: string;
+  /** 技能中文描述 (snake_case, legacy) */
+  description_zh?: string;
   /** Emoji 图标 */
   emoji?: string;
   /** 标签列表 */
@@ -202,17 +206,18 @@ function convertToRemoteSkillMeta(proxyMeta: ProxySkillMeta): RemoteSkillMeta {
   // 优先使用 name 字段，其次使用 skillId
   const name = proxyMeta.name?.trim() || proxyMeta.skillId;
 
-  // 优先使用中文描述，其次使用英文描述
-  const description = proxyMeta.descriptionZh?.trim() || proxyMeta.description?.trim() || "";
+  // 优先使用中文描述，其次使用英文描述 (兼容 camelCase 和 snake_case)
+  const descZh = proxyMeta.descriptionZh?.trim() || proxyMeta.description_zh?.trim() || undefined;
+  const description = descZh || proxyMeta.description?.trim() || "";
 
-  // 优先使用中文名称
-  const nameZh = proxyMeta.nameZh?.trim() || undefined;
+  // 优先使用中文名称 (兼容 camelCase 和 snake_case)
+  const nameZh = proxyMeta.nameZh?.trim() || proxyMeta.name_zh?.trim() || undefined;
 
   return {
     name,
     nameZh,
     description,
-    descriptionZh: proxyMeta.descriptionZh?.trim() || undefined,
+    descriptionZh: descZh,
     emoji: proxyMeta.emoji?.trim() || undefined,
     path: proxyMeta.skillId, // 使用 skillId 作为 path
     version: String(proxyMeta.version),
@@ -380,10 +385,11 @@ async function extractZipToDir(
     for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
       if (!entryPath || entryPath.startsWith("__MACOSX")) continue;
 
-      // 安全检查：防止 zip slip
+      // 安全检查：防止 zip slip（路径必须严格在 destDir 内）
       const normalizedPath = entryPath.replace(/\\/g, "/");
       const outPath = path.resolve(destDir, normalizedPath);
-      if (!outPath.startsWith(destDir)) {
+      const safeDestPrefix = destDir.endsWith(path.sep) ? destDir : destDir + path.sep;
+      if (outPath !== destDir && !outPath.startsWith(safeDestPrefix)) {
         logger.warn("Zip entry escapes destination, skipping", { entry: entryPath });
         continue;
       }
@@ -632,6 +638,18 @@ export async function checkProxyHealth(
   const healthUrl = resolvedConfig.baseUrl.replace("/api", ":8080/health");
 
   try {
+    // 验证 URL 安全性，防止 SSRF
+    const parsedUrl = new URL(healthUrl);
+    const blockedHosts = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"];
+    if (
+      blockedHosts.includes(parsedUrl.hostname) ||
+      parsedUrl.hostname.startsWith("169.254.") ||
+      parsedUrl.hostname.startsWith("10.") ||
+      parsedUrl.hostname.startsWith("192.168.")
+    ) {
+      return { ok: false, error: `Health check blocked: internal address ${parsedUrl.hostname}` };
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
 

@@ -20,6 +20,8 @@
 | **知识库工具** | AI 可以浏览/搜索知识库 |
 | **多维表格工具** | AI 可以读写多维表格 |
 | **云空间工具** | AI 可以管理云空间文件 |
+| **任务工具** | AI 可以创建/管理飞书任务 |
+| **日程工具** | AI 可以创建/管理飞书日程 |
 
 ---
 
@@ -102,13 +104,16 @@ channels:
     # ========== 媒体配置 ==========
     mediaMaxMb: 30                   # 媒体最大大小 (MB)
 
-    # ========== 工具配置 (可选功能) ==========
-    tools:
-      doc: true                      # 文档操作
-      wiki: true                     # 知识库操作
-      drive: true                    # 云空间操作
-      perm: false                    # 权限管理 (敏感)
-      scopes: true                   # 应用权限诊断
+    # ========== 工具配置 (可选功能，在 advanced 下) ==========
+    advanced:
+      tools:
+        doc: true                    # 文档操作
+        wiki: true                   # 知识库操作
+        drive: true                  # 云空间操作
+        task: true                   # 任务管理
+        calendar: true               # 日程管理
+        perm: false                  # 权限管理 (敏感)
+        scopes: true                 # 应用权限诊断
 ```
 
 ---
@@ -274,6 +279,8 @@ channels:
 | `feishu_wiki` | 知识库操作 | 浏览/搜索/创建知识库节点 |
 | `feishu_bitable_*` | 多维表格操作 | 读取/创建/更新表格记录 |
 | `feishu_drive` | 云空间操作 | 管理文件和文件夹 |
+| `feishu_task_*` | 任务管理 | 创建/更新/删除任务，管理任务列表 |
+| `feishu_calendar_*` | 日程管理 | 创建/查询/更新/删除日程，管理参与人 |
 | `feishu_app_scopes` | 权限诊断 | 检查应用已授权的权限 |
 
 ### 工具权限要求
@@ -313,6 +320,20 @@ channels:
 | `drive:drive` | 读写 | create_folder, move, delete |
 
 **重要**: 机器人没有"我的空间"，只能访问被分享的文件夹。
+
+#### 任务工具 (feishu_task) 权限
+
+| 权限 | 说明 | 操作 |
+|-----|------|-----|
+| `task:task:readonly` | 只读 | get, list |
+| `task:task` | 读写 | create, update, delete, add_members |
+
+#### 日程工具 (feishu_calendar) 权限
+
+| 权限 | 说明 | 操作 |
+|-----|------|-----|
+| `calendar:calendar:readonly` | 只读 | list_calendars, list_events, get_event, search |
+| `calendar:calendar` | 读写 | create_event, update_event, delete_event, add/remove attendees |
 
 ---
 
@@ -410,6 +431,69 @@ AI: [调用 feishu_drive action="create_folder" name="项目资料" parent_folde
 | `move` | file_token, file_type, target_folder_token | 移动文件 |
 | `delete` | file_token, file_type | 删除文件 |
 
+### feishu_task 使用示例
+
+```
+用户: 帮我创建一个任务"完成季度报告"，截止日期下周五
+AI: [调用 feishu_task_create summary="完成季度报告" due_timestamp="1709856000"]
+
+用户: 查看所有任务列表
+AI: [调用 feishu_tasklist_list]
+
+用户: 把这个任务分配给张三
+AI: [调用 feishu_task_add_members task_guid="xxx" members=[{id:"ou_xxx",role:"assignee"}]]
+```
+
+**工具列表**:
+
+| 工具 | 参数 | 说明 |
+|-----|-----|------|
+| `feishu_task_create` | summary, description?, due_timestamp?, members? | 创建任务 |
+| `feishu_task_get` | task_guid | 获取任务详情 |
+| `feishu_task_update` | task_guid, summary?, due_timestamp?, completed_at? | 更新任务 |
+| `feishu_task_delete` | task_guid | 删除任务 |
+| `feishu_task_add_members` | task_guid, members | 添加成员 |
+| `feishu_tasklist_create` | name | 创建任务列表 |
+| `feishu_tasklist_get` | tasklist_guid | 获取任务列表 |
+| `feishu_tasklist_list` | page_size?, page_token? | 列出所有任务列表 |
+| `feishu_tasklist_update` | tasklist_guid, name | 更新任务列表 |
+| `feishu_tasklist_delete` | tasklist_guid | 删除任务列表 |
+| `feishu_task_comment_create` | task_guid, content | 添加评论 |
+| `feishu_task_comment_list` | task_guid | 列出评论 |
+
+---
+
+### feishu_calendar 使用示例
+
+```
+用户: 帮我创建一个明天下午 3 点到 4 点的会议，标题是"项目评审"
+AI: [调用 feishu_calendar_event_create summary="项目评审" start_timestamp="..." end_timestamp="..."]
+
+用户: 查看我今天的日程
+AI: [调用 feishu_calendar_event_list calendar_id="primary" start_time="..." end_time="..."]
+
+用户: 把李四添加到这个会议
+AI: [调用 feishu_calendar_event_attendee_add calendar_id="..." event_id="..." attendees=[{type:"user",user_id:"ou_xxx"}]]
+
+用户: 搜索关于"周会"的日程
+AI: [调用 feishu_calendar_event_search calendar_id="primary" query="周会"]
+```
+
+**工具列表**:
+
+| 工具 | 参数 | 说明 |
+|-----|-----|------|
+| `feishu_calendar_list` | page_size?, page_token? | 列出所有日历 |
+| `feishu_calendar_event_create` | summary, start_timestamp/start_date, end_timestamp/end_date, location?, reminders? | 创建日程 |
+| `feishu_calendar_event_get` | calendar_id, event_id | 获取日程详情 |
+| `feishu_calendar_event_list` | calendar_id, start_time?, end_time? | 列出日程 |
+| `feishu_calendar_event_update` | calendar_id, event_id, summary?, start_timestamp?, end_timestamp? | 更新日程 |
+| `feishu_calendar_event_delete` | calendar_id, event_id | 删除日程 |
+| `feishu_calendar_event_search` | calendar_id, query, start_timestamp?, end_timestamp? | 搜索日程 |
+| `feishu_calendar_event_attendee_add` | calendar_id, event_id, attendees | 添加参与人 |
+| `feishu_calendar_event_attendee_list` | calendar_id, event_id | 列出参与人 |
+| `feishu_calendar_event_attendee_remove` | calendar_id, event_id, attendee_ids | 移除参与人 |
+
 ---
 
 ## 工具配置开关
@@ -422,14 +506,16 @@ channels:
     enabled: true
     appId: "cli_xxx"
     appSecret: "xxx"
-    
+
     # 工具配置
     tools:
-      doc: true      # 文档工具（默认启用）
-      wiki: true     # 知识库工具（默认启用）
-      drive: true    # 云空间工具（默认启用）
-      perm: false    # 权限管理工具（默认禁用，敏感）
-      scopes: true   # 应用权限诊断（默认启用）
+      doc: true       # 文档工具（默认启用）
+      wiki: true      # 知识库工具（默认启用）
+      drive: true     # 云空间工具（默认启用）
+      task: true      # 任务工具（默认启用）
+      calendar: true  # 日程工具（默认启用）
+      perm: false     # 权限管理工具（默认禁用，敏感）
+      scopes: true    # 应用权限诊断（默认启用）
 ```
 
 如果某个工具不需要，设为 `false` 可以减少 AI 的工具选择负担。

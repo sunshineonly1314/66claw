@@ -220,6 +220,7 @@ https://open.feishu.cn/app
 | 2 | `im:message:send_as_bot` | 以应用的身份发消息 | 机器人发送消息 | ✅ |
 | 3 | `im:resource` | 获取与上传图片或文件资源 | 接收和发送图片/文件 | ✅ |
 | 4 | `im:message.group_at_msg` | 接收群聊中@机器人消息事件 | 群聊@功能 | 群聊必选 |
+| 5 | `calendar:calendar` | 读写日历 | 创建/修改/删除日程 | 日程功能必选 |
 
 **操作步骤**：
 1. 在搜索框输入权限关键词
@@ -419,12 +420,15 @@ channels:
     renderMode: "auto"               # auto / raw / card
     mediaMaxMb: 30                   # 收发媒体最大大小 (MB)
     
-    # ========== 工具配置 ==========
-    tools:
-      doc: true                      # 文档工具
-      wiki: true                     # 知识库工具
-      drive: true                    # 云空间工具
-      scopes: true                   # 权限诊断
+    # ========== 工具配置（在 advanced 下）==========
+    advanced:
+      tools:
+        doc: true                    # 文档工具
+        wiki: true                   # 知识库工具
+        drive: true                  # 云空间工具
+        task: true                   # 任务工具
+        calendar: true               # 日程工具
+        scopes: true                 # 权限诊断
 ```
 
 ### 参数说明
@@ -535,6 +539,37 @@ channels:
 - `drive:drive` - 读写
 
 > ⚠️ **重要**: 机器人没有"我的空间"，只能访问被分享的文件夹！
+
+### 任务工具 (feishu_task)
+
+让 AI 能够创建和管理飞书任务：
+
+```
+用户: 帮我创建一个任务"完成季度报告"，截止日期是下周五
+用户: 查看任务列表
+用户: 把这个任务分配给张三
+```
+
+**需要额外权限**:
+- `task:task:readonly` - 只读
+- `task:task` - 读写
+
+### 日程工具 (feishu_calendar)
+
+让 AI 能够创建和管理飞书日程：
+
+```
+用户: 帮我创建一个明天下午 3 点的会议
+用户: 查看我今天的日程安排
+用户: 把李四添加到这个会议的参与人
+用户: 搜索关于"项目评审"的日程
+```
+
+**需要额外权限**:
+- `calendar:calendar:readonly` - 只读（查看日程）
+- `calendar:calendar` - 读写（创建/修改/删除日程）
+
+> ⚠️ **重要**: 需要在飞书开放平台的「权限管理」中搜索 `calendar` 并开通日历相关权限！
 
 ---
 
@@ -649,3 +684,5 @@ openclawcn channels status --probe
 - [文档 API](https://open.feishu.cn/document/server-docs/docs/docs/docx-v1/document/get)
 - [知识库 API](https://open.feishu.cn/document/server-docs/docs/wiki-v2/space/list)
 - [多维表格 API](https://open.feishu.cn/document/server-docs/docs/bitable-v1/bitable-overview)
+- [日历 API](https://open.feishu.cn/document/server-docs/calendar-v4/calendar/list)
+- [任务 API](https://open.feishu.cn/document/server-docs/task-v2/task/create)
