@@ -121,6 +121,11 @@ describe("RSA Signature Verification Security Tests", () => {
       expect(content).toContain("2027-01-29T16:14:43Z");
     });
 
+    it("should normalize expiresAt with space separator (Jackson LocalDateTime)", () => {
+      const content = buildSignContent(true, "basic", "2027-01-29 16:14:43", 1234567890);
+      expect(content).toBe("true|basic|2027-01-29T16:14:43Z|1234567890");
+    });
+
     it("should handle empty expiresAt", () => {
       const content = buildSignContent(false, null, "", 1234567890);
       expect(content).toBe("false|||1234567890");
@@ -183,25 +188,13 @@ describe("RSA Signature Verification Security Tests", () => {
 
     it("should handle null tier gracefully", () => {
       const now = Date.now();
-      const result = verifyLicenseResponseSignature(
-        false,
-        null,
-        null,
-        now,
-        "invalid_signature",
-      );
+      const result = verifyLicenseResponseSignature(false, null, null, now, "invalid_signature");
       expect(result.valid).toBe(false);
     });
 
     it("should handle empty signature", () => {
       const now = Date.now();
-      const result = verifyLicenseResponseSignature(
-        true,
-        "basic",
-        "2027-01-29T16:14:43Z",
-        now,
-        "",
-      );
+      const result = verifyLicenseResponseSignature(true, "basic", "2027-01-29T16:14:43Z", now, "");
       expect(result.valid).toBe(false);
     });
   });
@@ -209,47 +202,27 @@ describe("RSA Signature Verification Security Tests", () => {
   describe("verifyHeartbeatResponseSignature", () => {
     it("should reject when serverTime is too old", () => {
       const oldTime = Date.now() - 10 * 60 * 1000;
-      const result = verifyHeartbeatResponseSignature(
-        true,
-        30,
-        oldTime,
-        "invalid_signature",
-      );
+      const result = verifyHeartbeatResponseSignature(true, 30, oldTime, "invalid_signature");
       expect(result.valid).toBe(false);
       expect(result.error).toContain("重放攻击");
     });
 
     it("should reject invalid signature", () => {
       const now = Date.now();
-      const result = verifyHeartbeatResponseSignature(
-        true,
-        30,
-        now,
-        "invalid_signature",
-      );
+      const result = verifyHeartbeatResponseSignature(true, 30, now, "invalid_signature");
       expect(result.valid).toBe(false);
       expect(result.error).toContain("RSA 签名验证失败");
     });
 
     it("should handle negative daysRemaining", () => {
       const now = Date.now();
-      const result = verifyHeartbeatResponseSignature(
-        false,
-        -1,
-        now,
-        "invalid_signature",
-      );
+      const result = verifyHeartbeatResponseSignature(false, -1, now, "invalid_signature");
       expect(result.valid).toBe(false);
     });
 
     it("should handle very large daysRemaining", () => {
       const now = Date.now();
-      const result = verifyHeartbeatResponseSignature(
-        true,
-        999999,
-        now,
-        "invalid_signature",
-      );
+      const result = verifyHeartbeatResponseSignature(true, 999999, now, "invalid_signature");
       expect(result.valid).toBe(false);
     });
   });

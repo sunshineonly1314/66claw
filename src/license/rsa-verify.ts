@@ -95,7 +95,7 @@ const MAX_SERVER_TIME_DRIFT_MS = 5 * 60 * 1000; // 5 分钟
  */
 export function verifyRsaSignature(signContent: string, signature: string): boolean {
   // Prefer native C++ verification (much harder to patch/bypass)
-  // Note: native addon currently only has one key baked in. If it verifies, trust it.
+  // Native addon has dual-key fallback (v1+v2). If it verifies, trust it.
   // If it fails, fall through to JS multi-key verification.
   if (nativeAddon) {
     try {
@@ -134,21 +134,32 @@ export function verifyRsaSignature(signContent: string, signature: string): bool
 /**
  * 标准化 expiresAt 格式
  *
- * 服务端返回的 expiresAt 可能不带 Z 后缀（如 2027-01-29T16:14:43）
- * 签名时需要统一加上 Z 后缀（如 2027-01-29T16:14:43Z）
+ * 服务端签名时使用 ISO_INSTANT 格式：2027-01-29T16:14:43Z
+ * 但 JSON 响应里 Jackson 序列化的 LocalDateTime 可能是：
+ *   - 2027-01-29T16:14:43  （带 T，无 Z）
+ *   - 2027-01-29 16:14:43  （空格分隔，无 Z）
+ * 客户端需要统一转成 ISO_INSTANT 格式再验签
  */
 function normalizeExpiresAt(expiresAt: string | null): string {
   if (!expiresAt) {
     return "";
   }
 
+  let normalized = expiresAt;
+
+  // Jackson LocalDateTime 可能用空格分隔日期和时间，替换为 T
+  // 匹配 "2027-01-29 16:14:43" 这种格式中日期和时间之间的空格
+  if (normalized.includes(" ")) {
+    normalized = normalized.replace(" ", "T");
+  }
+
   // 如果已经有 Z 后缀，直接返回
-  if (expiresAt.endsWith("Z")) {
-    return expiresAt;
+  if (normalized.endsWith("Z")) {
+    return normalized;
   }
 
   // 添加 Z 后缀
-  return `${expiresAt}Z`;
+  return `${normalized}Z`;
 }
 
 /**

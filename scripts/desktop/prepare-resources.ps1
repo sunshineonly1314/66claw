@@ -346,41 +346,8 @@ try {
 }
 } # end if (-not $skipNpmInstall)
 
-# ── 3a. Inject stub modules for packages removed above ──
-# The plugin-sdk bundle still has require("@whiskeysockets/baileys") calls
-# (WhatsApp onboarding adapter). Without a stub, ALL plugins fail to load
-# with "Cannot find module '@whiskeysockets/baileys'" even though they have
-# nothing to do with WhatsApp.
-$stubPackages = @("@whiskeysockets/baileys")
-foreach ($stubPkg in $stubPackages) {
-    $stubDir = Join-Path $ResourcesDir "node_modules\$stubPkg"
-    if (-not (Test-Path $stubDir)) {
-        New-Item -ItemType Directory -Force -Path $stubDir | Out-Null
-        @'
-{"name":"@whiskeysockets/baileys","version":"0.0.0-stub","main":"index.js","description":"Stub: WhatsApp channel not available in desktop builds"}
-'@ | Set-Content "$stubDir\package.json" -Encoding UTF8
-        @'
-// Stub module — @whiskeysockets/baileys is not bundled in desktop builds.
-// This file prevents "Cannot find module" crashes when plugin-sdk is loaded.
-// WhatsApp channel features are unavailable; all exported symbols are no-ops.
-// The recursive Proxy handles any depth of property access (e.g.
-// DisconnectReason.loggedOut) and returns no-ops for function calls.
-function noop() {}
-const handler = {
-  get(_, prop) {
-    if (prop === Symbol.toPrimitive) return () => "";
-    if (prop === Symbol.iterator) return undefined;
-    if (prop === "then") return undefined;          // not thenable
-    if (prop === "default") return module.exports;  // ESM interop
-    return new Proxy(noop, handler);
-  },
-  apply() { return undefined; },
-};
-module.exports = new Proxy(noop, handler);
-'@ | Set-Content "$stubDir\index.js" -Encoding UTF8
-        Write-Host "  Injected stub module: $stubPkg"
-    }
-}
+# NOTE: Stub injection for @whiskeysockets/baileys moved to after step 4b
+# (extension dependency install) to prevent npm install from overwriting stubs.
 
 # ── 4. Extensions ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
@@ -495,6 +462,42 @@ if (Test-Path $extSource) {
     }
 } else {
     Write-Host "  WARNING: extensions/ not found." -ForegroundColor Yellow
+}
+
+# ── 4c. Inject stub modules for stripped packages ──
+# MUST run AFTER step 4b (extension dependency install) to prevent npm from
+# overwriting stubs with broken/incomplete real packages.
+# The plugin-sdk bundle has require("@whiskeysockets/baileys") calls (WhatsApp
+# onboarding adapter marked as external). Without a stub, ALL plugins crash
+# with "Cannot find module '@whiskeysockets/baileys'".
+$stubPackages = @("@whiskeysockets/baileys")
+foreach ($stubPkg in $stubPackages) {
+    $stubDir = Join-Path $ResourcesDir "node_modules\$stubPkg"
+    # Force-create (overwrite if exists) — npm install may have left a broken copy
+    New-Item -ItemType Directory -Force -Path $stubDir | Out-Null
+    @'
+{"name":"@whiskeysockets/baileys","version":"0.0.0-stub","main":"index.js","description":"Stub: WhatsApp channel not available in desktop builds"}
+'@ | Set-Content "$stubDir\package.json" -Encoding UTF8
+    @'
+// Stub module — @whiskeysockets/baileys is not bundled in desktop builds.
+// This file prevents "Cannot find module" crashes when plugin-sdk is loaded.
+// WhatsApp channel features are unavailable; all exported symbols are no-ops.
+// The recursive Proxy handles any depth of property access (e.g.
+// DisconnectReason.loggedOut) and returns no-ops for function calls.
+function noop() {}
+const handler = {
+  get(_, prop) {
+    if (prop === Symbol.toPrimitive) return () => "";
+    if (prop === Symbol.iterator) return undefined;
+    if (prop === "then") return undefined;          // not thenable
+    if (prop === "default") return module.exports;  // ESM interop
+    return new Proxy(noop, handler);
+  },
+  apply() { return undefined; },
+};
+module.exports = new Proxy(noop, handler);
+'@ | Set-Content "$stubDir\index.js" -Encoding UTF8
+    Write-Host "  Injected stub module: $stubPkg (force-overwrite)"
 }
 
 # ── 5. Skills ──

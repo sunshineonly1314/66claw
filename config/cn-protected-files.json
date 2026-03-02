@@ -137,7 +137,8 @@
       "src/infra/installer-updater.ts",
       "src/memory/search-tiering-cn.ts",
       "src/memory/memory-schema.ts",
-      "src/security/delayed-enforcement.ts"
+      "src/security/delayed-enforcement.ts",
+      "src/infra/update-signature.ts"
     ],
     "directories": [
       "src/dispatch/",
@@ -422,7 +423,8 @@
       "description": "Standard protection: RC4 obfuscation only (no bytecode). For less-critical CN code. Channel extensions are built via cn_extension_build (clean TS→JS, no obfuscation) for auditability.",
       "directories": [],
       "files": [
-        "src/config/types.tool-discovery.ts"
+        "src/config/types.tool-discovery.ts",
+        "src/i18n/locales/zh-CN.ts"
       ]
     },
     "ui_obfuscate": {

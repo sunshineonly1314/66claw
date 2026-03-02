@@ -18,7 +18,8 @@
       ],
       "cflags!": ["-fno-exceptions"],
       "cflags_cc!": ["-fno-exceptions"],
-      "cflags_cc": ["-std=c++17", "-O2"],
+      "cflags": ["-fstack-protector-strong", "-D_FORTIFY_SOURCE=2"],
+      "cflags_cc": ["-std=c++17", "-O2", "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2"],
       "defines": [
         "NAPI_DISABLE_CPP_EXCEPTIONS",
         "NODE_ADDON_API_ENABLE_MAYBE"
@@ -28,7 +29,8 @@
           "msvs_settings": {
             "VCCLCompilerTool": {
               "ExceptionHandling": 1,
-              "AdditionalOptions": ["/std:c++17", "/O2"]
+              "BufferSecurityCheck": "true",
+              "AdditionalOptions": ["/std:c++17", "/O2", "/GS", "/sdl"]
             }
           },
           "include_dirs": [
@@ -46,11 +48,16 @@
             "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
             "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
             "MACOSX_DEPLOYMENT_TARGET": "11.0",
-            "GCC_OPTIMIZATION_LEVEL": "2"
+            "GCC_OPTIMIZATION_LEVEL": "2",
+            "GCC_NO_COMMON_BLOCKS": "YES",
+            "ENABLE_STRICT_OBJC_MSGSEND": "YES",
+            "OTHER_CFLAGS": "-fstack-protector-strong -D_FORTIFY_SOURCE=2"
           },
           "libraries": [
             "-framework Security",
-            "-framework CoreFoundation"
+            "-framework CoreFoundation",
+            "-lcrypto",
+            "-lssl"
           ]
         }],
         ["OS=='linux'", {
