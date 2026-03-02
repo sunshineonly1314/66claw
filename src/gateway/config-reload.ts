@@ -263,7 +263,7 @@ export type GatewayConfigReloader = {
 };
 
 export type ConfigRepairedEvent = {
-  method: "strip" | "rollback";
+  method: "strip" | "strip-ghost-plugins" | "rollback";
   details: string;
 };
 
@@ -347,10 +347,23 @@ export function startGatewayConfigReloader(opts: {
           return;
         }
 
-        opts.log.error(
-          `config auto-repair failed: ${repair.details}. Run "openclawcn doctor --fix" manually.`,
+        // If all issues are plugin-scoped, proceed with best-effort reload
+        // so that non-plugin subsystems (MCP, models, etc.) are not blocked.
+        const allPluginIssues = snapshot.issues.every(
+          (issue) => issue.path.startsWith("plugins.") || issue.path === "plugins",
         );
-        return;
+        if (allPluginIssues && snapshot.issues.length > 0) {
+          opts.log.warn(
+            `config auto-repair failed but all issues are plugin-scoped; proceeding with best-effort reload (plugins may be degraded)`,
+          );
+          // Fall through to reload with the resolved config (before validation)
+          // so that other subsystems (MCP, models, hooks, etc.) still get updates.
+        } else {
+          opts.log.error(
+            `config auto-repair failed: ${repair.details}. Run "openclawcn doctor --fix" manually.`,
+          );
+          return;
+        }
       }
       const nextConfig = snapshot.config;
       const changedPaths = diffConfigPaths(currentConfig, nextConfig);

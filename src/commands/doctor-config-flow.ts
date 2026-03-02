@@ -4,7 +4,7 @@ import type { OpenClawCNConfig } from "../config/config.js";
 import type { DoctorOptions } from "./doctor-prompter.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { CONFIG_PATH, migrateLegacyConfig, readConfigFileSnapshot } from "../config/config.js";
-import { stripUnknownConfigKeys } from "../config/config-repair.js";
+import { stripUnknownConfigKeys, stripGhostPluginRefs } from "../config/config-repair.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import { listTelegramAccountIds, resolveTelegramAccount } from "../telegram/accounts.js";
 import { note } from "../terminal/note.js";
@@ -480,6 +480,22 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
     } else {
       note(lines, "Unknown config keys");
       fixHints.push('Run "openclawcn doctor --fix" to remove these keys.');
+    }
+  }
+
+  const ghostPlugins = stripGhostPluginRefs(candidate);
+  if (ghostPlugins.removed.length > 0) {
+    const lines = ghostPlugins.removed.map((ref) => `- ${ref}`).join("\n");
+    candidate = ghostPlugins.config;
+    pendingChanges = true;
+    if (shouldRepair) {
+      cfg = ghostPlugins.config;
+      note(lines, "Removed ghost plugin references");
+    } else {
+      note(lines, "Ghost plugin references (files missing)");
+      fixHints.push(
+        `Run "${formatCliCommand("openclawcn doctor --fix")}" to remove ghost plugin references.`,
+      );
     }
   }
 
