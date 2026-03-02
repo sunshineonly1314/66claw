@@ -205,14 +205,21 @@ function restoreSubagentRunsOnce() {
       }
     }
 
-    // Resume pending work.
+    // Resume pending work AFTER a short delay to let the gateway finish
+    // initialization. Without this delay, subagent announce calls hit a
+    // gateway that is still starting up, causing "1006 abnormal closure"
+    // errors and triggering unnecessary retries that flood the log with
+    // decrypt failures from repeated loadConfig() calls.
     ensureListener();
     if ([...subagentRuns.values()].some((entry) => entry.archiveAtMs)) {
       startSweeper();
     }
-    for (const runId of subagentRuns.keys()) {
-      resumeSubagentRun(runId);
-    }
+    const RESUME_DELAY_MS = 5_000;
+    setTimeout(() => {
+      for (const runId of subagentRuns.keys()) {
+        resumeSubagentRun(runId);
+      }
+    }, RESUME_DELAY_MS);
   } catch {
     // ignore restore failures
   }

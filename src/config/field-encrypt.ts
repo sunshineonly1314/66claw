@@ -24,6 +24,40 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 const log = createSubsystemLogger("config/field-encrypt");
 
 // ============================================================================
+// Decrypt failure rate limiter — prevents log flooding when encrypted fields
+// cannot be decrypted (wrong machine, corrupted data). Only log the first
+// failure per unique error message, then suppress duplicates for a cooldown
+// window. This avoids the "service looks dead" scenario where loadConfig()
+// is called frequently (200ms cache TTL) and each call produces N warnings
+// for N undecryptable ENC{...} fields.
+// ============================================================================
+
+const DECRYPT_LOG_COOLDOWN_MS = 60_000; // 1 minute cooldown per unique error
+let decryptFailureLoggedAt = 0;
+let decryptFailureCount = 0;
+let decryptFailureSuppressed = 0;
+
+function logDecryptFailure(errMsg: string): void {
+  const now = Date.now();
+  if (now - decryptFailureLoggedAt < DECRYPT_LOG_COOLDOWN_MS) {
+    decryptFailureSuppressed++;
+    decryptFailureCount++;
+    return;
+  }
+  // Log with count of suppressed messages since last log
+  if (decryptFailureSuppressed > 0) {
+    log.warn(
+      `Failed to decrypt config field: ${errMsg} (${decryptFailureSuppressed} similar errors suppressed in the last ${Math.round((now - decryptFailureLoggedAt) / 1000)}s)`,
+    );
+  } else {
+    log.warn(`Failed to decrypt config field: ${errMsg}`);
+  }
+  decryptFailureLoggedAt = now;
+  decryptFailureCount++;
+  decryptFailureSuppressed = 0;
+}
+
+// ============================================================================
 // ENC{...} Format
 // ============================================================================
 
@@ -172,7 +206,8 @@ function decryptWalk(value: unknown): unknown {
     } catch (err) {
       // Decryption failed (wrong machine, corrupted data).
       // Return as-is; Zod validation will surface the error.
-      log.warn(`Failed to decrypt config field: ${err instanceof Error ? err.message : err}`);
+      // Rate-limited to prevent log flooding when many fields fail.
+      logDecryptFailure(err instanceof Error ? err.message : String(err));
       return value;
     }
   }
@@ -291,8 +326,64 @@ function encryptWalk(
 // Cache Invalidation (for tests)
 // ============================================================================
 
-/** @internal Reset cached sensitive paths (for testing). */
+/** @internal Reset cached sensitive paths and log rate limiter (for testing). */
 export function clearFieldEncryptCache(): void {
   cachedHints = null;
   cachedLookup = null;
+  decryptFailureLoggedAt = 0;
+  decryptFailureCount = 0;
+  decryptFailureSuppressed = 0;
+}
+
+// ============================================================================
+// Repair: Strip undecryptable ENC{...} fields
+// ============================================================================
+
+/**
+ * Walk a raw parsed config and replace any ENC{...} values that cannot be
+ * decrypted on this machine with empty strings. Returns the cleaned config
+ * and a list of field paths that were stripped.
+ *
+ * Used by doctor --fix / config-repair to recover from configs that were
+ * encrypted on a different machine (different MachineGuid) or whose
+ * ciphertext has been corrupted.
+ */
+export function stripUndecryptableFields(obj: unknown): {
+  config: unknown;
+  stripped: string[];
+} {
+  if (!isEncryptionEnabled()) return { config: obj, stripped: [] };
+  const stripped: string[] = [];
+  const config = stripWalk(obj, "", stripped);
+  return { config, stripped };
+}
+
+function stripWalk(value: unknown, path: string, stripped: string[]): unknown {
+  if (typeof value === "string") {
+    if (!isEncryptedValue(value)) return value;
+    try {
+      const payload = extractEncPayload(value);
+      const buf = Buffer.from(payload, "base64");
+      decryptConfigField(buf);
+      return value; // decryptable — keep as-is
+    } catch {
+      stripped.push(path || "<root>");
+      return ""; // undecryptable — clear to empty string
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, i) => stripWalk(item, path ? `${path}[${i}]` : `[${i}]`, stripped));
+  }
+
+  if (isPlainObject(value)) {
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      const childPath = path ? `${path}.${key}` : key;
+      result[key] = stripWalk(child, childPath, stripped);
+    }
+    return result;
+  }
+
+  return value;
 }

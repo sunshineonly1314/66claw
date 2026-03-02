@@ -15,6 +15,7 @@ import {
   isEncryptedValue,
   decryptConfigFields,
   encryptConfigFields,
+  stripUndecryptableFields,
   clearFieldEncryptCache,
 } from "./field-encrypt.js";
 
@@ -290,6 +291,102 @@ describe("encryptConfigFields", () => {
     const result = encryptConfigFields(input) as any;
     // Should keep plaintext rather than lose data
     expect(result.gateway.auth.token).toBe("my-token");
+  });
+});
+
+describe("stripUndecryptableFields", () => {
+  it("keeps decryptable ENC{...} values unchanged", () => {
+    const enc = fakeEnc("good-secret");
+    const input = { key: enc, nested: { token: fakeEnc("another") } };
+    const result = stripUndecryptableFields(input);
+    expect(result.config).toEqual(input);
+    expect(result.stripped).toEqual([]);
+  });
+
+  it("clears undecryptable ENC{...} values to empty string", () => {
+    // Create an ENC{...} value that our mock cannot decrypt (bad payload)
+    const badEnc = `ENC{${Buffer.from("GARBAGE:nope").toString("base64")}}`;
+    const input = { key: badEnc };
+    const result = stripUndecryptableFields(input);
+    expect((result.config as any).key).toBe("");
+    expect(result.stripped).toEqual(["key"]);
+  });
+
+  it("leaves non-ENC strings untouched", () => {
+    const input = { name: "my-bot", port: 3000, flag: true };
+    const result = stripUndecryptableFields(input);
+    expect(result.config).toEqual(input);
+    expect(result.stripped).toEqual([]);
+  });
+
+  it("handles deeply nested objects", () => {
+    const badEnc = `ENC{${Buffer.from("BAD:data").toString("base64")}}`;
+    const goodEnc = fakeEnc("ok-value");
+    const input = {
+      gateway: {
+        auth: { token: badEnc, mode: "token" },
+        port: 3000,
+      },
+      models: {
+        providers: {
+          openai: { apiKey: goodEnc, model: "gpt-4" },
+        },
+      },
+    };
+    const result = stripUndecryptableFields(input);
+    const cfg = result.config as any;
+    expect(cfg.gateway.auth.token).toBe("");
+    expect(cfg.gateway.auth.mode).toBe("token");
+    expect(cfg.gateway.port).toBe(3000);
+    expect(cfg.models.providers.openai.apiKey).toBe(goodEnc); // kept
+    expect(cfg.models.providers.openai.model).toBe("gpt-4");
+    expect(result.stripped).toEqual(["gateway.auth.token"]);
+  });
+
+  it("handles arrays with mixed values", () => {
+    const badEnc = `ENC{${Buffer.from("CORRUPT:x").toString("base64")}}`;
+    const goodEnc = fakeEnc("item2");
+    const input = { items: [badEnc, "plain", goodEnc, 42] };
+    const result = stripUndecryptableFields(input);
+    const cfg = result.config as any;
+    expect(cfg.items[0]).toBe("");
+    expect(cfg.items[1]).toBe("plain");
+    expect(cfg.items[2]).toBe(goodEnc);
+    expect(cfg.items[3]).toBe(42);
+    expect(result.stripped).toEqual(["items[0]"]);
+  });
+
+  it("reports multiple stripped paths", () => {
+    const bad1 = `ENC{${Buffer.from("BAD:1").toString("base64")}}`;
+    const bad2 = `ENC{${Buffer.from("BAD:2").toString("base64")}}`;
+    const input = {
+      gateway: { auth: { token: bad1 } },
+      license: { key: bad2 },
+      name: "bot",
+    };
+    const result = stripUndecryptableFields(input);
+    const cfg = result.config as any;
+    expect(cfg.gateway.auth.token).toBe("");
+    expect(cfg.license.key).toBe("");
+    expect(cfg.name).toBe("bot");
+    expect(result.stripped).toContain("gateway.auth.token");
+    expect(result.stripped).toContain("license.key");
+    expect(result.stripped).toHaveLength(2);
+  });
+
+  it("returns input unchanged when encryption is disabled", () => {
+    setupMocks(false);
+    const badEnc = `ENC{${Buffer.from("BAD:x").toString("base64")}}`;
+    const input = { key: badEnc };
+    const result = stripUndecryptableFields(input);
+    expect((result.config as any).key).toBe(badEnc); // not stripped
+    expect(result.stripped).toEqual([]);
+  });
+
+  it("handles non-object input gracefully", () => {
+    expect(stripUndecryptableFields(42)).toEqual({ config: 42, stripped: [] });
+    expect(stripUndecryptableFields(null)).toEqual({ config: null, stripped: [] });
+    expect(stripUndecryptableFields("hello")).toEqual({ config: "hello", stripped: [] });
   });
 });
 

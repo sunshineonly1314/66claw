@@ -263,7 +263,7 @@ export type GatewayConfigReloader = {
 };
 
 export type ConfigRepairedEvent = {
-  method: "strip" | "strip-ghost-plugins" | "rollback";
+  method: "strip" | "strip-ghost-plugins" | "strip-undecryptable" | "rollback";
   details: string;
 };
 

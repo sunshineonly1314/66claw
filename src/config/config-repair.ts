@@ -21,6 +21,7 @@ import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent
 import { listConfigBackups, rollbackConfig } from "./config-rollback.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveUserPath } from "../utils.js";
+import { stripUndecryptableFields } from "./field-encrypt.js";
 
 const log = createSubsystemLogger("config-repair");
 
@@ -260,6 +261,32 @@ export function stripGhostPluginRefs(config: OpenClawCNConfig): {
   return { config: next, removed };
 }
 
+// ── Strip undecryptable ENC{...} fields ──────────────────────────────────
+
+/**
+ * Detect and strip ENC{...} config values that cannot be decrypted on
+ * the current machine. Returns the cleaned config and a list of cleared
+ * field paths.
+ *
+ * This handles the common scenario where a config file encrypted on
+ * machine A is used on machine B (different MachineGuid), causing every
+ * loadConfig() call to log decrypt failures and flood the log.
+ *
+ * Unlike the other repair strategies, this can run even when the config
+ * is technically "valid" (Zod passes because the ENC{...} strings are
+ * valid string values — just useless ones that cause log spam).
+ */
+export function repairUndecryptableFields(config: OpenClawCNConfig): {
+  config: OpenClawCNConfig;
+  stripped: string[];
+} {
+  const result = stripUndecryptableFields(config);
+  return {
+    config: result.config as OpenClawCNConfig,
+    stripped: result.stripped,
+  };
+}
+
 // ── Atomic file write (matches io.ts pattern) ───────────────────────────
 
 async function atomicWriteConfig(configPath: string, config: unknown): Promise<void> {
@@ -292,7 +319,7 @@ async function atomicWriteConfig(configPath: string, config: unknown): Promise<v
 
 export type RepairResult = {
   repaired: boolean;
-  method: "strip" | "strip-ghost-plugins" | "rollback" | null;
+  method: "strip" | "strip-ghost-plugins" | "strip-undecryptable" | "rollback" | null;
   details: string;
 };
 
@@ -300,6 +327,7 @@ export type RepairResult = {
  * Try to repair an invalid config file.
  *
  * Strategy:
+ * 0.5. L0.5 -- strip undecryptable ENC{...} fields (wrong machine / corrupted).
  * 1. L1 -- strip unrecognized keys, re-validate. If valid, write back.
  * 2. L1.5 -- remove ghost plugin references (files deleted but config still points to them).
  * 3. L2 -- find the most recent valid `.bak` backup and restore it.
@@ -316,6 +344,30 @@ export async function tryRepairConfig(opts: {
   };
 }): Promise<RepairResult> {
   const logger = opts.log ?? log;
+
+  // L0.5: Strip undecryptable ENC{...} values (wrong machine key)
+  if (opts.rawConfig && typeof opts.rawConfig === "object") {
+    try {
+      const encResult = repairUndecryptableFields(opts.rawConfig as OpenClawCNConfig);
+      if (encResult.stripped.length > 0) {
+        const revalidation = validateConfigObjectRawWithPlugins(encResult.config);
+        if (revalidation.ok) {
+          await atomicWriteConfig(opts.configPath, encResult.config);
+          const detail = `cleared ${encResult.stripped.length} undecryptable ENC{} fields: ${encResult.stripped.slice(0, 5).join(", ")}${encResult.stripped.length > 5 ? ` (+${encResult.stripped.length - 5} more)` : ""}`;
+          logger.info(`[config-repair] L0.5 undecryptable-field strip succeeded: ${detail}`);
+          return { repaired: true, method: "strip-undecryptable", details: detail };
+        }
+        // Undecryptable strip alone wasn't enough — continue to next strategies
+        // with the cleaned config as baseline.
+        opts = { ...opts, rawConfig: encResult.config };
+        logger.warn(
+          `[config-repair] L0.5 cleared ${encResult.stripped.length} undecryptable fields but config still invalid, continuing`,
+        );
+      }
+    } catch (err) {
+      logger.warn(`[config-repair] L0.5 undecryptable-field strip failed: ${String(err)}`);
+    }
+  }
 
   // Track L1 result for use in L1.5
   let l1Config: OpenClawCNConfig | null = null;

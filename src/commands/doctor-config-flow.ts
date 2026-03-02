@@ -4,7 +4,11 @@ import type { OpenClawCNConfig } from "../config/config.js";
 import type { DoctorOptions } from "./doctor-prompter.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { CONFIG_PATH, migrateLegacyConfig, readConfigFileSnapshot } from "../config/config.js";
-import { stripUnknownConfigKeys, stripGhostPluginRefs } from "../config/config-repair.js";
+import {
+  stripUnknownConfigKeys,
+  stripGhostPluginRefs,
+  repairUndecryptableFields,
+} from "../config/config-repair.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
 import { listTelegramAccountIds, resolveTelegramAccount } from "../telegram/accounts.js";
 import { note } from "../terminal/note.js";
@@ -397,6 +401,31 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
   if (warnings.length > 0) {
     const lines = warnings.map((issue) => `- ${issue.path}: ${issue.message}`).join("\n");
     note(lines, "Config warnings");
+  }
+
+  // Check for undecryptable ENC{...} fields (wrong machine / corrupted data).
+  // This must run early — undecryptable fields cause log flooding on every
+  // loadConfig() call and can make the service appear unresponsive.
+  if (snapshot.exists && snapshot.parsed && typeof snapshot.parsed === "object") {
+    const encRepair = repairUndecryptableFields(snapshot.parsed as OpenClawCNConfig);
+    if (encRepair.stripped.length > 0) {
+      const lines = encRepair.stripped.map((p) => `- ${p}`).join("\n");
+      note(
+        `Found ${encRepair.stripped.length} encrypted config field(s) that cannot be decrypted on this machine.\n` +
+          `This usually means the config was created on a different machine.\n` +
+          `These fields will be cleared (you'll need to re-enter the values):\n${lines}`,
+        "Undecryptable config fields",
+      );
+      candidate = encRepair.config;
+      pendingChanges = true;
+      if (shouldRepair) {
+        cfg = encRepair.config;
+      } else {
+        fixHints.push(
+          `Run "${formatCliCommand("openclawcn doctor --fix")}" to clear undecryptable fields.`,
+        );
+      }
+    }
   }
 
   if (snapshot.legacyIssues.length > 0) {
