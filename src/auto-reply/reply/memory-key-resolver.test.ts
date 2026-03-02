@@ -121,13 +121,13 @@ describe("resolveMemoryProviderBaseUrl", () => {
 describe("resolveMemoryProviderHeaders", () => {
   it("kimi-coding returns User-Agent header", () => {
     const headers = resolveMemoryProviderHeaders("kimi-coding");
-    expect(headers["User-Agent"]).toBe("KimiCLI/0.77");
+    expect(headers["User-Agent"]).toBe("KimiCLI/1.16.0");
   });
 
   it("case-insensitive: Kimi-Coding resolves headers", () => {
     const headers = resolveMemoryProviderHeaders("Kimi-Coding");
     // The function checks both exact match and lowercase fallback
-    expect(headers["User-Agent"]).toBe("KimiCLI/0.77");
+    expect(headers["User-Agent"]).toBe("KimiCLI/1.16.0");
   });
 
   it("unknown provider returns empty headers", () => {

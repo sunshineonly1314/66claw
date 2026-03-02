@@ -39,7 +39,7 @@ const KNOWN_BASE_URLS: Record<string, string> = {
 
 /** Providers with required custom headers for the memory pipeline's direct fetch(). */
 const PROVIDER_HEADERS: Record<string, Record<string, string>> = {
-  "kimi-coding": { "User-Agent": "KimiCLI/0.77" },
+  "kimi-coding": { "User-Agent": "KimiCLI/1.16.0" },
 };
 
 /**
@@ -130,7 +130,7 @@ export function resolveMemoryProviderBaseUrl(
 
 /**
  * Get required custom headers for a provider's memory pipeline calls.
- * E.g. kimi-coding requires User-Agent: KimiCLI/0.77.
+ * E.g. kimi-coding requires User-Agent: KimiCLI/1.16.0.
  */
 export function resolveMemoryProviderHeaders(provider: string): Record<string, string> {
   return PROVIDER_HEADERS[provider] ?? PROVIDER_HEADERS[provider.toLowerCase()] ?? {};

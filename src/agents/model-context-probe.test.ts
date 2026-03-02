@@ -676,12 +676,12 @@ describe("probeModelSelfReport headers 透传", () => {
       baseUrl: "https://api.example.com/v1",
       apiKey: "key",
       modelId: "test",
-      headers: { "User-Agent": "KimiCLI/0.77" },
+      headers: { "User-Agent": "KimiCLI/1.16.0" },
     });
 
     const fetchCall = mockFetch.mock.calls[0];
     const opts = fetchCall[1] as { headers: Record<string, string> };
-    expect(opts.headers["User-Agent"]).toBe("KimiCLI/0.77");
+    expect(opts.headers["User-Agent"]).toBe("KimiCLI/1.16.0");
     expect(opts.headers["Authorization"]).toBe("Bearer key");
   });
 

@@ -2458,7 +2458,7 @@ Use Kimi Code's dedicated OpenAI-compatible endpoint (separate from Moonshot):
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             contextWindow: 262144,
             maxTokens: 32768,
-            headers: { "User-Agent": "KimiCLI/0.77" },
+            headers: { "User-Agent": "KimiCLI/1.16.0" },
             compat: { supportsDeveloperRole: false }
           }
         ]

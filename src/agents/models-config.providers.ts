@@ -78,7 +78,7 @@ const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1";
 const KIMI_CODE_MODEL_ID = "kimi-for-coding";
 const KIMI_CODE_CONTEXT_WINDOW = 262144;
 const KIMI_CODE_MAX_TOKENS = 32768;
-const KIMI_CODE_HEADERS = { "User-Agent": "KimiCLI/0.77" } as const;
+const KIMI_CODE_HEADERS = { "User-Agent": "KimiCLI/1.16.0" } as const;
 const KIMI_CODE_COMPAT = { supportsDeveloperRole: false } as const;
 const KIMI_CODE_DEFAULT_COST = {
   input: 0,

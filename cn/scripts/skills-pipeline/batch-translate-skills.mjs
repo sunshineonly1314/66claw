@@ -35,7 +35,7 @@ const CONFIG = {
   batchSize: parseInt(process.env.BATCH_SIZE ?? "5", 10),
   concurrency: parseInt(process.env.CONCURRENCY ?? "5", 10),
   maxRpm: parseInt(process.env.MAX_RPM ?? "30", 10),
-  headers: { "User-Agent": "KimiCLI/0.77" },
+  headers: { "User-Agent": "KimiCLI/1.16.0" },
 };
 
 // 数据文件路径

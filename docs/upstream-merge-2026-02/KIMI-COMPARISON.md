@@ -87,7 +87,7 @@ However, CN handles Kimi's `supportsDeveloperRole: false` via:
 
 ### Decision
 - **ADOPT** upstream's Moonshot addition to `normalizeModelCompat()`
-- **KEEP** CN's `buildKimiCodeProvider()` with `headers: {"User-Agent": "KimiCLI/0.77"}` — upstream does NOT have this, and Kimi API returns 403 without it
+- **KEEP** CN's `buildKimiCodeProvider()` with `headers: {"User-Agent": "KimiCLI/1.16.0"}` — upstream does NOT have this, and Kimi API returns 403 without it
 - **KEEP** CN's explicit config patch in `normalizeProviders()` at line 524 — belt-and-suspenders approach
 - **MERGE** upstream's additions alongside CN's existing Doubao/GLM additions
 
@@ -122,7 +122,7 @@ if ((!isZai && !isMoonshot && !isDoubao && !isGlm) || !isOpenAiCompletionsModel(
 | `3640484e28` — Developer role compat | **ADOPT** Moonshot detection, **KEEP** CN Doubao/GLM additions | Merge together |
 
 ## CN-Only Code to Preserve (upstream doesn't have)
-1. `buildKimiCodeProvider()` with `headers: {"User-Agent": "KimiCLI/0.77"}` — **ESSENTIAL**, Kimi returns 403 without it
+1. `buildKimiCodeProvider()` with `headers: {"User-Agent": "KimiCLI/1.16.0"}` — **ESSENTIAL**, Kimi returns 403 without it
 2. `normalizeProviders()` line 524 Kimi-coding explicit config patch
 3. `isVision` heuristic `"kimi"` check in `siliconflow-models.ts`
 4. `resolveModel()` fallback in `pi-embedded-runner/model.ts`

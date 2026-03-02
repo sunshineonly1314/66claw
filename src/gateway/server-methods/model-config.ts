@@ -1388,7 +1388,7 @@ async function probeModel(
 
   // Kimi 需要 User-Agent（region-cn 用 "kimi-code"，内部路由用 "kimi-coding"，两个都要匹配）
   if (providerId === "kimi-code" || providerId === "kimi-coding") {
-    headers["User-Agent"] = "KimiCLI/0.77";
+    headers["User-Agent"] = "KimiCLI/1.16.0";
   }
 
   const probeUrl = isMinimax ? `${baseUrl}/v1/messages` : `${baseUrl}/chat/completions`;
@@ -1633,7 +1633,7 @@ async function probeVision(
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
   if (providerId === "kimi-code" || providerId === "kimi-coding") {
-    headers["User-Agent"] = "KimiCLI/0.77";
+    headers["User-Agent"] = "KimiCLI/1.16.0";
   }
 
   // MiniMax (Anthropic Messages) 用 image content block 格式

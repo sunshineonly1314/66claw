@@ -56,7 +56,7 @@ async function generateAIReply(userMessage) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${KIMI_API_KEY}`,
-        "User-Agent": "KimiCLI/0.77",
+        "User-Agent": "KimiCLI/1.16.0",
       },
       body: JSON.stringify({
         model: KIMI_MODEL,

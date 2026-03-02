@@ -101,7 +101,7 @@ const KNOWN_PROVIDERS: &[KnownProvider] = &[
         base_url: "https://api.kimi.com/coding/v1",
         api_type: ApiType::OpenAiCompat,
         env_vars: &["KIMI_API_KEY", "KIMICODE_API_KEY"],
-        extra_headers: &[("User-Agent", "KimiCLI/0.77")],
+        extra_headers: &[("User-Agent", "KimiCLI/1.16.0")],
         default_model: "kimi-k2",
     },
     KnownProvider {
@@ -772,7 +772,7 @@ mod tests {
         // Provider ID should be normalized
         assert_eq!(providers[0].id, "kimi-coding");
         // Should have kimi-specific headers
-        assert_eq!(providers[0].extra_headers.get("User-Agent").map(|s| s.as_str()), Some("KimiCLI/0.77"));
+        assert_eq!(providers[0].extra_headers.get("User-Agent").map(|s| s.as_str()), Some("KimiCLI/1.16.0"));
     }
 
     #[test]
@@ -967,7 +967,7 @@ mod tests {
 
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].id, "kimi-coding");
-        assert_eq!(providers[0].extra_headers.get("User-Agent").map(|s| s.as_str()), Some("KimiCLI/0.77"));
+        assert_eq!(providers[0].extra_headers.get("User-Agent").map(|s| s.as_str()), Some("KimiCLI/1.16.0"));
     }
 
     // ── AES-256-GCM decryption test ─────────────────────────────────
@@ -1124,7 +1124,7 @@ mod tests {
     fn test_known_providers_has_kimi_headers() {
         let kimi = KNOWN_PROVIDERS.iter().find(|p| p.id == "kimi-coding").unwrap();
         assert_eq!(kimi.extra_headers.len(), 1);
-        assert_eq!(kimi.extra_headers[0], ("User-Agent", "KimiCLI/0.77"));
+        assert_eq!(kimi.extra_headers[0], ("User-Agent", "KimiCLI/1.16.0"));
     }
 
     #[test]

@@ -279,7 +279,7 @@ export async function handleVerifyApiKey(req: IncomingMessage, res: ServerRespon
       testHeaders = {
         Authorization: `Bearer ${trimmedKey}`,
         "Content-Type": "application/json",
-        "User-Agent": "KimiCLI/0.77",
+        "User-Agent": "KimiCLI/1.16.0",
       };
       testBody = JSON.stringify({
         model: testModel,

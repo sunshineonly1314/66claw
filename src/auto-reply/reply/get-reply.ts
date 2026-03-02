@@ -32,15 +32,6 @@ import { initSessionState } from "./session.js";
 import { applyResetModelOverride } from "./session-reset-model.js";
 import { stageSandboxMedia } from "./stage-sandbox-media.js";
 import { createTypingController } from "./typing.js";
-import {
-  checkFreeModelPriority,
-  injectFreeModelConfig,
-  formatFreeModelNotification,
-  detectQuotaExhaustedError,
-  handleFreeModelQuotaExhausted,
-  type FreeModelNotification,
-  type FreeModelCheckResult,
-} from "./free-model-priority.js";
 
 export async function getReplyFromConfig(
   ctx: MsgContext,
@@ -99,47 +90,6 @@ export async function getReplyFromConfig(
     });
     let provider = defaultProvider;
     let model = defaultModel;
-
-    // ========================================
-    // OpenClawCN 专属功能：免费模型优先级检查
-    // ========================================
-    let freeModelNotification: FreeModelNotification | undefined;
-    let freeModelProvider: string | undefined;
-    let freeModelName: string | undefined;
-    let freeModelCfg: OpenClawCNConfig | undefined;
-
-    if (!opts?.isHeartbeat) {
-      try {
-        // 使用 session key 来追踪切换状态，避免并发竞态
-        const freeModelResult = await checkFreeModelPriority(agentSessionKey);
-        if (freeModelResult.useFreeModel && freeModelResult.providerId && freeModelResult.model) {
-          // 保存免费模型信息，稍后应用（在指令处理之后）
-          freeModelProvider = freeModelResult.providerId;
-          freeModelName = freeModelResult.model;
-          freeModelCfg = injectFreeModelConfig(cfg, freeModelResult);
-          freeModelNotification = freeModelResult.notification;
-          defaultRuntime.log(
-            `[FreeModel] 免费模型可用: ${freeModelResult.providerConfig?.name ?? freeModelProvider}/${freeModelName}`,
-          );
-        } else if (freeModelResult.notification) {
-          // 免费模型用完了，显示通知
-          freeModelNotification = freeModelResult.notification;
-          defaultRuntime.log(`[FreeModel] ${freeModelResult.notification.message}`);
-        } else if (freeModelResult._debug) {
-          // 输出详细的调试信息，帮助排查问题
-          const debug = freeModelResult._debug;
-          defaultRuntime.log(`[FreeModel] 未使用免费模型: ${debug.reason}`);
-          if (debug.diagnosis?.issues.length) {
-            for (const issue of debug.diagnosis.issues) {
-              defaultRuntime.log(`[FreeModel]   - ${issue}`);
-            }
-          }
-        }
-      } catch (err) {
-        // 免费模型检查失败，继续使用默认模型
-        defaultRuntime.log(`[FreeModel] 检查失败: ${err}`);
-      }
-    }
 
     if (opts?.isHeartbeat) {
       const heartbeatRaw = agentCfg?.heartbeat?.model?.trim() ?? "";
@@ -368,30 +318,6 @@ export async function getReplyFromConfig(
     }
     // ===== END OpenClawCN: 智能调度引擎 =====
 
-    // ========================================
-    // OpenClawCN 专属功能：应用免费模型（如果可用且用户未在当前消息中指定模型）
-    // ========================================
-    // Bug #4修复：保存原始cfg的引用，避免在免费模型失败后回退时配置被污染
-    const originalCfg = cfg;
-    const originalProvider = provider;
-    const originalModel = model;
-
-    // userSpecifiedModelDirective 已在模态路由段定义（directives.hasModelDirective === true）
-    if (!userSpecifiedModelDirective && freeModelProvider && freeModelName && freeModelCfg) {
-      // 用户没有在当前消息中指定模型，使用免费模型
-      provider = freeModelProvider;
-      model = freeModelName;
-      cfg = freeModelCfg;
-      defaultRuntime.log(`[FreeModel] 应用免费模型: ${provider}/${model}`);
-    } else if (userSpecifiedModelDirective && freeModelProvider) {
-      // 用户在当前消息中指定了特定模型，跳过免费模型
-      defaultRuntime.log(
-        `[FreeModel] 用户在当前消息中指定了模型 ${resolvedProvider}/${resolvedModel}，跳过免费模型`,
-      );
-      freeModelNotification = undefined; // 清除通知，因为没有使用免费模型
-      freeModelProvider = undefined; // 清除 provider，防止后续 undefined check 误判
-    }
-
     const inlineActionResult = await handleInlineActions({
       ctx,
       sessionCtx,
@@ -444,223 +370,57 @@ export async function getReplyFromConfig(
       workspaceDir,
     });
 
-    // ========================================
-    // OpenClawCN 专属功能：免费模型调用与自动切换
-    // 当免费模型额度用尽时，自动切换到下一个免费模型
-    // ========================================
-    const MAX_FREE_MODEL_RETRIES = 3;
-    let currentProvider = provider;
-    let currentModel = model;
-    let currentCfg = cfg;
-    let retryCount = 0;
-    let reply: ReplyPayload | ReplyPayload[] | undefined;
-    let usingFreeModel = currentProvider.startsWith("free-model-");
+    const reply = await runPreparedReply({
+      ctx,
+      sessionCtx,
+      cfg,
+      agentId,
+      agentDir,
+      agentCfg,
+      sessionCfg,
+      commandAuthorized,
+      command,
+      commandSource,
+      allowTextCommands,
+      directives,
+      defaultActivation,
+      resolvedThinkLevel,
+      resolvedVerboseLevel,
+      resolvedReasoningLevel,
+      resolvedElevatedLevel,
+      execOverrides,
+      elevatedEnabled,
+      elevatedAllowed,
+      blockStreamingEnabled,
+      blockReplyChunking,
+      resolvedBlockStreamingBreak,
+      modelState,
+      provider,
+      model,
+      perMessageQueueMode,
+      perMessageQueueOptions,
+      typing,
+      opts,
+      defaultProvider,
+      defaultModel,
+      timeoutMs,
+      isNewSession,
+      resetTriggered,
+      systemSent,
+      sessionEntry,
+      sessionStore,
+      sessionKey,
+      sessionId,
+      storePath,
+      workspaceDir,
+      abortedLastRun,
+      dispatchDecision,
+    });
 
-    // Fixed: Change to < to prevent infinite loop when retryCount reaches MAX_FREE_MODEL_RETRIES
-    while (retryCount < MAX_FREE_MODEL_RETRIES) {
-      try {
-        reply = await runPreparedReply({
-          ctx,
-          sessionCtx,
-          cfg: currentCfg,
-          agentId,
-          agentDir,
-          agentCfg,
-          sessionCfg,
-          commandAuthorized,
-          command,
-          commandSource,
-          allowTextCommands,
-          directives,
-          defaultActivation,
-          resolvedThinkLevel,
-          resolvedVerboseLevel,
-          resolvedReasoningLevel,
-          resolvedElevatedLevel,
-          execOverrides,
-          elevatedEnabled,
-          elevatedAllowed,
-          blockStreamingEnabled,
-          blockReplyChunking,
-          resolvedBlockStreamingBreak,
-          modelState,
-          provider: currentProvider,
-          model: currentModel,
-          perMessageQueueMode,
-          perMessageQueueOptions,
-          typing,
-          opts,
-          defaultProvider,
-          defaultModel,
-          timeoutMs,
-          isNewSession,
-          resetTriggered,
-          systemSent,
-          sessionEntry,
-          sessionStore,
-          sessionKey,
-          sessionId,
-          storePath,
-          workspaceDir,
-          abortedLastRun,
-          dispatchDecision,
-        });
-
-        // 调用成功，退出循环
-        if (reply === undefined) {
-          defaultRuntime.log(
-            `[getReplyFromConfig] runPreparedReply returned undefined (silent drop). sessionKey=${sessionKey} provider=${currentProvider} model=${currentModel} body="${(ctx.Body ?? "").slice(0, 60)}"`,
-          );
-        }
-        break;
-      } catch (err) {
-        // 只有在使用免费模型时才尝试切换
-        if (!usingFreeModel) {
-          throw err;
-        }
-
-        // Bug #5修复：提取HTTP状态码并传递给detectQuotaExhaustedError
-        const extractHttpStatus = (error: unknown): number | undefined => {
-          if (typeof error === "object" && error !== null) {
-            const obj = error as Record<string, unknown>;
-            if (typeof obj.httpStatus === "number") return obj.httpStatus;
-            if (typeof obj.status === "number") return obj.status;
-            if (typeof obj.statusCode === "number") return obj.statusCode;
-            // Also check nested error objects (common in provider SDKs)
-            if (obj.error && typeof obj.error === "object") {
-              const nested = obj.error as Record<string, unknown>;
-              if (typeof nested.status === "number") return nested.status;
-            }
-          }
-          // Parse status from error message (e.g. "401 status code (no body)").
-          // Only match quota-relevant status codes (401/402/403/429), not 400/404/405 etc.
-          if (error instanceof Error) {
-            const match = error.message.match(/\b(40[1-3]|429)\b/);
-            if (match) return Number.parseInt(match[1], 10);
-          }
-          return undefined;
-        };
-        const httpStatus = extractHttpStatus(err);
-
-        // 检测是否是额度用尽错误
-        const isQuotaError = detectQuotaExhaustedError(err, httpStatus);
-        if (!isQuotaError) {
-          throw err;
-        }
-
-        retryCount++;
-        defaultRuntime.log(
-          `[FreeModel] 检测到额度用尽错误 (${currentProvider}, httpStatus=${httpStatus})，尝试切换到下一个免费模型 (重试 ${retryCount}/${MAX_FREE_MODEL_RETRIES})`,
-        );
-
-        // Fixed: Check against >= to match the loop condition change
-        if (retryCount >= MAX_FREE_MODEL_RETRIES) {
-          defaultRuntime.log(`[FreeModel] 达到最大重试次数 (${MAX_FREE_MODEL_RETRIES})，放弃切换`);
-          throw err;
-        }
-
-        // 尝试切换到下一个免费模型（传递 sessionKey 和 httpStatus 以支持 429 冷却机制）
-        const switchResult = await handleFreeModelQuotaExhausted(
-          currentProvider,
-          agentSessionKey,
-          httpStatus,
-        );
-
-        if (!switchResult.useFreeModel) {
-          // 所有免费模型都用完了，记录通知并回退到付费模型
-          freeModelNotification = switchResult.notification;
-          defaultRuntime.log(`[FreeModel] 所有免费模型额度已用尽，回退到付费模型`);
-
-          // Bug #4修复：使用原始的付费模型配置（originalCfg），避免配置污染
-          currentProvider = originalProvider;
-          currentModel = originalModel;
-          currentCfg = originalCfg;
-          usingFreeModel = false;
-
-          // 重试一次使用付费模型
-          try {
-            reply = await runPreparedReply({
-              ctx,
-              sessionCtx,
-              cfg: currentCfg,
-              agentId,
-              agentDir,
-              agentCfg,
-              sessionCfg,
-              commandAuthorized,
-              command,
-              commandSource,
-              allowTextCommands,
-              directives,
-              defaultActivation,
-              resolvedThinkLevel,
-              resolvedVerboseLevel,
-              resolvedReasoningLevel,
-              resolvedElevatedLevel,
-              execOverrides,
-              elevatedEnabled,
-              elevatedAllowed,
-              blockStreamingEnabled,
-              blockReplyChunking,
-              resolvedBlockStreamingBreak,
-              modelState,
-              provider: currentProvider,
-              model: currentModel,
-              perMessageQueueMode,
-              perMessageQueueOptions,
-              typing,
-              opts,
-              defaultProvider,
-              defaultModel,
-              timeoutMs,
-              isNewSession,
-              resetTriggered,
-              systemSent,
-              sessionEntry,
-              sessionStore,
-              sessionKey,
-              sessionId,
-              storePath,
-              workspaceDir,
-              abortedLastRun,
-              dispatchDecision,
-            });
-            break;
-          } catch (fallbackErr) {
-            defaultRuntime.log(`[FreeModel] 付费模型回退也失败: ${String(fallbackErr)}`);
-            throw fallbackErr;
-          }
-        }
-
-        // 切换到下一个免费模型
-        if (!switchResult.providerId || !switchResult.model) {
-          defaultRuntime.log(`[FreeModel] switchResult 缺少 providerId/model，终止切换`);
-          throw err;
-        }
-        currentProvider = switchResult.providerId;
-        currentModel = switchResult.model;
-        currentCfg = injectFreeModelConfig(originalCfg, switchResult);
-        freeModelNotification = switchResult.notification;
-
-        // Bug #2修复：更新usingFreeModel状态，确保下次循环时正确判断
-        usingFreeModel = currentProvider.startsWith("free-model-");
-
-        defaultRuntime.log(
-          `[FreeModel] 已切换到免费模型: ${switchResult.providerConfig?.name ?? currentProvider}/${currentModel}`,
-        );
-      }
-    }
-
-    // 检查是否有有效的响应（防止循环结束后 reply 为 undefined）
-    // Bug #2修复：这里的usingFreeModel已经在循环中正确更新，反映最终状态
-    if (reply === undefined && (usingFreeModel || freeModelProvider)) {
+    if (reply === undefined) {
       defaultRuntime.log(
-        `[FreeModel] 警告：所有模型调用均失败，未能生成响应 provider=${defaultProvider} model=${defaultModel}`,
+        `[getReplyFromConfig] runPreparedReply returned undefined (silent drop). sessionKey=${sessionKey} provider=${provider} model=${model} body="${(ctx.Body ?? "").slice(0, 60)}"`,
       );
-      // 返回明确的错误消息，告知用户是模型接口的问题
-      return {
-        text: `模型响应失败，请检查模型接口是否正常（${currentProvider}/${currentModel}）。`,
-      };
     }
 
     // [CN-PATCH] 空响应只记录日志，不向用户显示错误提示。
@@ -669,31 +429,8 @@ export async function getReplyFromConfig(
     // 真正的空响应根因（session 污染）已在 session-tool-result-guard.ts 中修复。
     if (reply === undefined && !opts?.isHeartbeat) {
       defaultRuntime.log(
-        `[getReplyFromConfig] 模型响应为空 (silent): provider=${currentProvider} model=${currentModel} sessionKey=${sessionKey}`,
+        `[getReplyFromConfig] 模型响应为空 (silent): provider=${provider} model=${model} sessionKey=${sessionKey}`,
       );
-    }
-
-    // ========================================
-    // OpenClawCN 专属功能：添加免费模型通知到响应
-    // ========================================
-    if (freeModelNotification?.showInChat && reply) {
-      const notificationTag = formatFreeModelNotification(freeModelNotification);
-      const prependNotification = (payload: ReplyPayload): ReplyPayload => {
-        if (payload.text) {
-          return { ...payload, text: `${notificationTag}\n\n${payload.text}` };
-        }
-        return payload;
-      };
-
-      if (Array.isArray(reply)) {
-        // 只在第一条消息前添加通知
-        if (reply.length > 0 && reply[0]) {
-          reply[0] = prependNotification(reply[0]);
-        }
-        return reply;
-      } else {
-        return prependNotification(reply);
-      }
     }
 
     return reply;
