@@ -90,12 +90,29 @@ pnpm verify:extensions
 if (`$LASTEXITCODE -ne 0) { exit 1 }
 node --import tsx scripts/obfuscate-dist.ts
 if (`$LASTEXITCODE -ne 0) { exit 1 }
-# Use the bundled Node v22.16.0 for bytecode compilation so .jsc matches the runtime
-`$bytecodeNode = '$ProjectRoot\scripts\windows\node-portable\node.exe'
-if (Test-Path `$bytecodeNode) {
+# Use the bundled Node v22.16.0 for bytecode compilation so .jsc matches the runtime.
+# CRITICAL: .jsc bytecode is V8-version-specific. If compiled with a different Node
+# version than the one shipped in the installer, the app will crash on startup.
+`$bytecodeNode = `$null
+`$bytecodeNodeCandidates = @(
+    '$ProjectRoot\scripts\windows\node-portable\node.exe',
+    '$ProjectRoot\scripts\windows\node\node.exe'
+)
+foreach (`$candidate in `$bytecodeNodeCandidates) {
+    if (Test-Path `$candidate) {
+        `$bytecodeNode = `$candidate
+        break
+    }
+}
+if (`$bytecodeNode) {
+    Write-Host "  Bytecode compile using: `$bytecodeNode"
     & `$bytecodeNode --import tsx cn/scripts/build/compile-bytecode.ts
 } else {
-    node --import tsx cn/scripts/build/compile-bytecode.ts
+    Write-Host "ERROR: No bundled Node 22 found for bytecode compilation!" -ForegroundColor Red
+    Write-Host "  System node may have incompatible V8 version. Aborting." -ForegroundColor Red
+    Write-Host "  Place node.exe v22.16.0 in one of:" -ForegroundColor Red
+    foreach (`$c in `$bytecodeNodeCandidates) { Write-Host "    - `$c" -ForegroundColor Red }
+    exit 1
 }
 if (`$LASTEXITCODE -ne 0) { exit 1 }
 pnpm integrity:gen

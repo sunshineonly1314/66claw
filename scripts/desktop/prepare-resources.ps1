@@ -631,8 +631,11 @@ if (Test-Path $nodeExe) {
     $buildV8Version   = (& $nodeExe -e "process.stdout.write(process.versions.v8)" 2>$null)
     $ErrorActionPreference = $prevEA
 } else {
-    $buildNodeVersion = (& node -e "process.stdout.write(process.version)" 2>$null)
-    $buildV8Version   = (& node -e "process.stdout.write(process.versions.v8)" 2>$null)
+    # CRITICAL: Do NOT fall back to system node — its V8 version may differ from the
+    # bundled node.exe, causing build-meta.json to record wrong versions.
+    Write-Host "  ERROR: Bundled node.exe not found at $nodeExe" -ForegroundColor Red
+    Write-Host "  Cannot generate accurate build-meta.json. Aborting." -ForegroundColor Red
+    exit 1
 }
 $buildMeta = @{
     nodeVersion = $buildNodeVersion

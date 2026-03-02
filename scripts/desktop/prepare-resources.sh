@@ -474,13 +474,16 @@ log "[5/7] Copying skills/..."
 EXCLUDED_SKILLS="wechat-desktop wecom-desktop"
 
 SKILLS_FOUND=false
-for skills_src in "$PROJECT_ROOT/skills-merged" "$PROJECT_ROOT/skills"; do
+mkdir -p "$RESOURCES_DIR/skills"
+for skills_src in "$PROJECT_ROOT/skills-merged" "$PROJECT_ROOT/skills" "$PROJECT_ROOT/full-skills"; do
   if [[ -d "$skills_src" ]]; then
-    mkdir -p "$RESOURCES_DIR/skills"
     for skill_dir in "$skills_src"/*/; do
       skill_name=$(basename "$skill_dir")
       if echo "$EXCLUDED_SKILLS" | grep -qw "$skill_name"; then
-        log "  Excluded: $skill_name"
+        continue
+      fi
+      # Skip if already copied from a higher-priority source (merge without overwrite)
+      if [[ -d "$RESOURCES_DIR/skills/$skill_name" ]]; then
         continue
       fi
       cp -R "$skill_dir" "$RESOURCES_DIR/skills/$skill_name"
@@ -489,9 +492,8 @@ for skills_src in "$PROJECT_ROOT/skills-merged" "$PROJECT_ROOT/skills"; do
     find "$skills_src" -maxdepth 1 -type f -exec cp {} "$RESOURCES_DIR/skills/" \;
     SKILLS_COUNT=$(find "$RESOURCES_DIR/skills" -maxdepth 1 -type d | wc -l | tr -d ' ')
     SKILLS_COUNT=$((SKILLS_COUNT - 1))
-    log "  OK: skills/ ($SKILLS_COUNT skills) from $skills_src [$(( $(date +%s) - STEP_START ))s]"
+    log "  OK: skills/ ($SKILLS_COUNT skills total) merged from $skills_src [$(( $(date +%s) - STEP_START ))s]"
     SKILLS_FOUND=true
-    break
   fi
 done
 # NOTE: skills-private/ is intentionally NOT copied (contains wechat-desktop, wecom-desktop)
@@ -604,8 +606,11 @@ if [[ -x "$NODE_BIN" ]]; then
   BUILD_NODE_VERSION=$("$NODE_BIN" -e "process.stdout.write(process.version)" 2>/dev/null || echo "unknown")
   BUILD_V8_VERSION=$("$NODE_BIN" -e "process.stdout.write(process.versions.v8)" 2>/dev/null || echo "unknown")
 else
-  BUILD_NODE_VERSION=$(node -e "process.stdout.write(process.version)" 2>/dev/null || echo "unknown")
-  BUILD_V8_VERSION=$(node -e "process.stdout.write(process.versions.v8)" 2>/dev/null || echo "unknown")
+  # CRITICAL: Do NOT fall back to system node — its V8 version may differ from the
+  # bundled node, causing build-meta.json to record wrong versions.
+  err "Bundled node binary not found at $NODE_BIN"
+  err "Cannot generate accurate build-meta.json. Aborting."
+  exit 1
 fi
 mkdir -p "$RESOURCES_DIR/dist"
 cat > "$RESOURCES_DIR/dist/build-meta.json" <<EOF

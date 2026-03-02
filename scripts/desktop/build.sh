@@ -67,54 +67,90 @@ echo "[2a/6] Building Node.js backend (base tsdown)..."
 (cd "$PROJECT_ROOT" && pnpm build)
 echo "  Base build (tsdown) OK"
 
-# ── Step 2b+3: CN encryption chain + UI build (PARALLEL) ──
-# Safe to parallelize because:
-#   - CN encryption writes to dist/ (cn-protected-files.json listed files only)
-#   - UI build writes to dist/control-ui/ (separate subdir, not touched by CN chain)
-#   - obfuscate-dist.ts only processes CN-listed files, NOT dist/control-ui/
-#   - obfuscate-ui.ts only processes dist/control-ui/ JS files
-echo "[2b+3/6] CN encryption + UI build (parallel)..."
+# ── Step 2b: UI build (MUST complete BEFORE CN bytecode compilation) ──
+# UI Vite build imports from extensions/ source .ts/.js files.
+# CN bytecode compilation (compile-bytecode.ts) replaces extension .js files with
+# CJS bytecode loader stubs that Rollup/Vite cannot parse as ESM.
+# Therefore UI build MUST finish before compile-bytecode.ts runs.
+echo "[2b/6] Building UI..."
+if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
+  (cd "$PROJECT_ROOT/ui" && pnpm build)
+  echo "  UI build OK"
+else
+  echo "  WARN: ui/package.json not found, skipping"
+fi
 
-# CN encryption chain (background)
+# ── Step 2c: CN encryption chain (after UI build completes) ──
+echo "[2c/6] CN encryption chain..."
+
+# CRITICAL: .jsc bytecode is V8-version-specific. We MUST use the same Node version
+# that will ship in the installer. Download the pinned Node now (before compile-bytecode)
+# so we can use it for bytecode compilation.
+BYTECODE_NODE=""
+BYTECODE_NODE_VERSION="22.16.0"
+BYTECODE_NODE_CANDIDATES=(
+  "$PROJECT_ROOT/build/download-output/node/node-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')/bin/node"
+)
+
+# Try to download the pinned Node if not already cached
+BYTECODE_ARCH="$(uname -m)"
+case "$BYTECODE_ARCH" in
+  x86_64) BYTECODE_ARCH="x64" ;;
+  aarch64) BYTECODE_ARCH="arm64" ;;
+esac
+BYTECODE_NODE_DIR="$PROJECT_ROOT/build/download-output/node/node-${BYTECODE_ARCH}"
+if [[ ! -f "$BYTECODE_NODE_DIR/bin/node" ]]; then
+  echo "  Downloading Node v${BYTECODE_NODE_VERSION} for bytecode compilation..."
+  BYTECODE_DL_FILE="node-v${BYTECODE_NODE_VERSION}-darwin-${BYTECODE_ARCH}.tar.gz"
+  BYTECODE_MIRRORS=(
+    "https://npmmirror.com/mirrors/node/v${BYTECODE_NODE_VERSION}/$BYTECODE_DL_FILE"
+    "https://nodejs.org/dist/v${BYTECODE_NODE_VERSION}/$BYTECODE_DL_FILE"
+  )
+  mkdir -p "$BYTECODE_NODE_DIR"
+  BYTECODE_DL_OK=false
+  for url in "${BYTECODE_MIRRORS[@]}"; do
+    if curl -fSL --connect-timeout 15 --max-time 300 "$url" -o "/tmp/$BYTECODE_DL_FILE" 2>/dev/null; then
+      tar -xzf "/tmp/$BYTECODE_DL_FILE" -C "$BYTECODE_NODE_DIR" --strip-components=1
+      rm -f "/tmp/$BYTECODE_DL_FILE"
+      BYTECODE_DL_OK=true
+      break
+    fi
+  done
+  if [[ "$BYTECODE_DL_OK" != "true" ]]; then
+    echo "ERROR: Failed to download Node v${BYTECODE_NODE_VERSION} for bytecode compilation!" >&2
+    echo "  System node may have incompatible V8 version. Aborting." >&2
+    exit 1
+  fi
+fi
+BYTECODE_NODE="$BYTECODE_NODE_DIR/bin/node"
+
+echo "  Bytecode compile using: $BYTECODE_NODE ($($BYTECODE_NODE -v))"
+
 (cd "$PROJECT_ROOT" && \
   pnpm build:cn-compile && \
   pnpm build:cn-extensions && \
   pnpm verify:extensions && \
   node --import tsx scripts/obfuscate-dist.ts && \
-  node --import tsx cn/scripts/build/compile-bytecode.ts && \
+  "$BYTECODE_NODE" --import tsx cn/scripts/build/compile-bytecode.ts && \
   pnpm integrity:gen && \
-  pnpm release:changelog) &
-CN_PID=$!
-
-# UI build + UI obfuscation (background)
-(
-  if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
-    (cd "$PROJECT_ROOT/ui" && pnpm build)
-  fi
-  cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts
-) &
-UI_PID=$!
-
-# Wait for both
-# NOTE: 必须用 set +e，否则 set -e 下 wait 遇到非零退出会直接终止脚本
-set +e
-wait $CN_PID
-CN_EXIT=$?
-wait $UI_PID
-UI_EXIT=$?
-set -e
-
-if [[ $CN_EXIT -ne 0 ]]; then
-  echo "ERROR: CN encryption chain failed (exit $CN_EXIT)!" >&2
-  exit 1
-fi
+  pnpm release:changelog)
 echo "  CN encryption chain OK"
 
-if [[ $UI_EXIT -ne 0 ]]; then
-  echo "ERROR: UI build/obfuscation failed (exit $UI_EXIT)!" >&2
-  exit 1
+# ── Step 3: UI obfuscation ──
+echo "[3/6] Obfuscating UI bundles..."
+(cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts)
+echo "  UI obfuscation OK"
+
+# ── Step 3b: OEM brand injection (optional) ──
+# Set OEM_ID=<name> to apply a brand config from config/oem/<name>.json
+# before Tauri bundles. Omit OEM_ID (or set to "default") to use standard brand.
+if [[ -n "${OEM_ID:-}" && "${OEM_ID}" != "default" ]]; then
+  echo "[3b/6] Applying OEM brand config: $OEM_ID"
+  (cd "$PROJECT_ROOT" && node --import tsx scripts/desktop/apply-oem-config.ts)
+  echo "  OEM brand config applied"
+else
+  echo "[3b/6] OEM_ID not set — using default brand (ClawdbotCN)"
 fi
-echo "  UI build + obfuscation OK"
 
 # ── Step 4+5: Prepare resources + Tauri CLI install (PARALLEL) ──
 # Safe to parallelize because:
@@ -246,10 +282,19 @@ if [[ -n "$APP_FILE" ]]; then
   fi
 fi
 
+# ── Restore tauri.conf.json if OEM config was applied ──
+if [[ -n "${OEM_ID:-}" && "${OEM_ID}" != "default" ]]; then
+  echo "Restoring tauri.conf.json to original state..."
+  (cd "$PROJECT_ROOT" && node --import tsx scripts/desktop/restore-tauri-conf.ts)
+fi
+
 # ── Done ──
 echo ""
 echo "========================================"
 echo " Build Successful!"
+if [[ -n "${OEM_ID:-}" && "${OEM_ID}" != "default" ]]; then
+  echo " OEM      : $OEM_ID"
+fi
 echo "========================================"
 
 # Show output info
