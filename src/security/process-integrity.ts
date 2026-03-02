@@ -11,7 +11,7 @@
 
 import { readFileSync } from "node:fs";
 import { cpus, totalmem } from "node:os";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("security:process-integrity");
@@ -57,12 +57,26 @@ function detectLibraryInjection(): string[] {
     issues.push("DYLD_FORCE_FLAT_NAMESPACE detected");
   }
 
-  // Node.js: --require injection
+  // Node.js: --require / --import / --loader injection
   if (process.env.NODE_OPTIONS) {
     const opts = process.env.NODE_OPTIONS;
     if (opts.includes("--require") || opts.includes("-r ")) {
       issues.push(`NODE_OPTIONS contains --require: ${opts}`);
     }
+    if (opts.includes("--import")) {
+      issues.push(`NODE_OPTIONS contains --import: ${opts}`);
+    }
+    if (opts.includes("--loader") || opts.includes("--experimental-loader")) {
+      issues.push(`NODE_OPTIONS contains --loader: ${opts}`);
+    }
+    if (opts.includes("--experimental-policy")) {
+      issues.push(`NODE_OPTIONS contains --experimental-policy: ${opts}`);
+    }
+  }
+
+  // Electron: ELECTRON_RUN_AS_NODE bypasses sandbox
+  if (process.env.ELECTRON_RUN_AS_NODE) {
+    issues.push("ELECTRON_RUN_AS_NODE detected — Electron sandbox bypassed");
   }
 
   return issues;
@@ -77,7 +91,8 @@ function detectInjectionFrameworks(): string[] {
   if (process.platform === "win32") {
     // Windows: check for known DLLs in current process
     try {
-      const output = execSync(`tasklist /M /FI "PID eq ${process.pid}"`, {
+      // [SECURITY FIX] Use execFileSync with array args — no shell interpolation
+      const output = execFileSync("tasklist", ["/M", "/FI", `PID eq ${process.pid}`], {
         encoding: "utf8",
         timeout: 5000,
       }).toLowerCase();
@@ -146,8 +161,15 @@ function detectVirtualMachine(): { isVM: boolean; indicators: string[] } {
   // Windows-specific VM detection (using PowerShell CIM; wmic is deprecated since Win10 21H1)
   if (process.platform === "win32") {
     try {
-      const bios = execSync(
-        'powershell -NoProfile -Command "Get-CimInstance Win32_BIOS | Select-Object -ExpandProperty Manufacturer; Get-CimInstance Win32_BIOS | Select-Object -ExpandProperty SerialNumber"',
+      // [SECURITY FIX] Use execFileSync with array args — fully hardcoded, no injection risk,
+      // but using array form is consistent with the secure pattern used elsewhere.
+      const psScript =
+        "Get-CimInstance Win32_BIOS | Select-Object -ExpandProperty Manufacturer; " +
+        "Get-CimInstance Win32_BIOS | Select-Object -ExpandProperty SerialNumber";
+      const encoded = Buffer.from(psScript, "utf16le").toString("base64");
+      const bios = execFileSync(
+        "powershell",
+        ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
         { encoding: "utf8", timeout: 5000 },
       ).toLowerCase();
 

@@ -11,6 +11,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+// [P0] Compile-time root hash constant — embedded in bytecode, cannot be patched on disk.
+// Updated by scripts/generate-integrity-hashes.ts at each build.
+import { INTEGRITY_ROOT_HASH } from "./integrity-root-hash.js";
 
 const log = createSubsystemLogger("security:integrity");
 
@@ -81,31 +84,54 @@ let INTEGRITY_HASHES: FileHash[] = [];
 let initialized = false;
 
 /**
- * [LOW-01] 验证 integrity-hashes.json 与 integrity-hashes-root.json 的一致性。
+ * [P0 / LOW-01] 验证 integrity-hashes.json 内容未被篡改。
  *
- * integrity-hashes-root.json 存储了 integrity-hashes.json 内容的 SHA-256 哈希值，
- * 由构建脚本 generate-integrity-hashes.ts 自动生成并写入。
- * integrity-hashes-root.json 本身被纳入 integrity-hashes.json 的巡逻监控列表。
+ * 双层锚定策略：
  *
- * 攻击者若篡改 integrity-hashes.json（替换某文件的期望哈希），
- * 此函数会检测到 hashes.json 的内容与 root.json 中记录的哈希不匹配，
- * 从而拒绝加载被篡改的哈希列表。
+ * Layer A (compile-time, primary): INTEGRITY_ROOT_HASH 常量编译进 bytecode，
+ *   攻击者无法在不使 .jsc 完整性校验失效的情况下修改它。
+ *   只要 INTEGRITY_ROOT_HASH 非空（生产构建），即使用此层。
+ *
+ * Layer B (disk-based, fallback): integrity-hashes-root.json 用于兼容未嵌入
+ *   常量的旧构建或开发环境。
+ *
+ * 攻击者若要绕过：
+ *   - 替换磁盘上的 hashes.json → Layer A 检测 (compiled constant mismatch)
+ *   - patch .jsc bytecode → integrity patrol 检测 (.jsc hash mismatch)
+ *   - 两者同时替换 → 需要重新编译整个 .jsc（等同于完全破解 bytecode 保护）
  *
  * @returns true 表示哈希文件完整，false 表示检测到篡改
  */
 function verifyHashesFileIntegrity(hashesContent: string, currentDir: string): boolean {
+  const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+  const actualHash = createHash("sha256").update(hashesContent, "utf8").digest("hex");
+
+  // === Layer A: Compile-time constant (primary, production builds) ===
+  if (INTEGRITY_ROOT_HASH && INTEGRITY_ROOT_HASH.length === 64) {
+    if (actualHash !== INTEGRITY_ROOT_HASH) {
+      log.error(
+        `[P0/LOW-01] SECURITY: integrity-hashes.json content hash mismatch (compiled constant)! ` +
+          `Expected: ${INTEGRITY_ROOT_HASH.slice(0, 16)}... Got: ${actualHash.slice(0, 16)}... — ` +
+          `hashes file may have been tampered`,
+      );
+      return false;
+    }
+    log.debug(`[P0/LOW-01] integrity-hashes.json verified against compiled root hash constant`);
+    return true;
+  }
+
+  // === Layer B: Disk-based root file (fallback for dev / first build) ===
   try {
     const rootFilePath = path.join(currentDir, "integrity-hashes-root.json");
     if (!fs.existsSync(rootFilePath)) {
-      // [HIGH FIX] In production builds, root file missing = potential tampering.
-      // Attacker can delete root file, modify hashes file, and bypass verification.
-      const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
       if (isDevBuild) {
-        log.debug("[LOW-01] integrity-hashes-root.json not found — skipping (dev build)");
+        log.debug(
+          "[LOW-01] integrity-hashes-root.json not found — skipping (dev build, no compiled constant)",
+        );
         return true;
       }
       log.warn(
-        "[LOW-01] SECURITY: integrity-hashes-root.json not found in production build — treating as tampered",
+        "[LOW-01] SECURITY: integrity-hashes-root.json not found and no compiled constant — treating as tampered",
       );
       return false;
     }
@@ -117,23 +143,18 @@ function verifyHashesFileIntegrity(hashesContent: string, currentDir: string): b
       return false;
     }
 
-    // 验证 hashes.json 内容的 SHA-256 与 root.json 中记录的值一致
-    const actualHash = createHash("sha256").update(hashesContent, "utf8").digest("hex");
     if (actualHash !== root.hash) {
       log.error(
-        `[LOW-01] SECURITY: integrity-hashes.json content hash mismatch! ` +
+        `[LOW-01] SECURITY: integrity-hashes.json content hash mismatch (disk root)! ` +
           `Expected: ${root.hash.slice(0, 16)}... Got: ${actualHash.slice(0, 16)}... — ` +
           `hashes file may have been tampered`,
       );
       return false;
     }
 
-    log.debug(`[LOW-01] integrity-hashes.json root hash verified OK`);
+    log.debug(`[LOW-01] integrity-hashes.json root hash verified OK (disk fallback)`);
     return true;
   } catch (error) {
-    // [HIGH FIX] In production builds, errors during root hash verification
-    // should be treated as tampering (fail-closed), not permissively passed.
-    const isDevBuild = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
     if (isDevBuild) {
       log.warn(`[LOW-01] Failed to verify root hash (dev build, permissive): ${error}`);
       return true;
@@ -314,6 +335,16 @@ export function verifyIntegrity(baseDir: string): IntegrityCheckResult {
   }
 
   for (const { path: relativePath, hash: expectedHash } of INTEGRITY_HASHES) {
+    // 防止路径遍历：拒绝包含 .. 或绝对路径的条目
+    if (
+      relativePath.includes("..") ||
+      path.isAbsolute(relativePath) ||
+      /^[a-zA-Z]:/.test(relativePath)
+    ) {
+      tamperedFiles.push(relativePath);
+      log.error(`SECURITY: integrity hash entry has suspicious path: ${relativePath}`);
+      continue;
+    }
     const fullPath = path.join(baseDir, relativePath);
 
     // 检查文件是否存在
