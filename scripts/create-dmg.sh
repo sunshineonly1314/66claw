@@ -85,7 +85,7 @@ cp -R "$APP_PATH" "$DMG_TEMP/"
 ln -s /Applications "$DMG_TEMP/Applications"
 
 APP_SIZE_MB=$(du -sm "$APP_PATH" | awk '{print $1}')
-DMG_SIZE_MB=$((APP_SIZE_MB + 80))
+DMG_SIZE_MB=$((APP_SIZE_MB + 200))
 
 DMG_RW_PATH="${OUT_PATH%.dmg}-rw.dmg"
 rm -f "$DMG_RW_PATH" "$OUT_PATH"
