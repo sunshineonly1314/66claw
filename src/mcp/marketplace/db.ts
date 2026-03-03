@@ -148,7 +148,7 @@ export function getDatabase(dbPath?: string): DatabaseSync {
     }
   }
 
-  return dbInstance;
+  return dbInstance as DatabaseSync;
 }
 
 /**
