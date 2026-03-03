@@ -6,9 +6,11 @@ import {
   deleteProject,
   initProjectStateDir,
   listProjectIds,
+  loadActivity,
   loadAllProjects,
   loadProject,
   loadProjectState,
+  saveActivity,
   saveProject,
   saveProjectState,
 } from "../state.js";
@@ -173,6 +175,82 @@ describe("state", () => {
       expect(() => sanitizeProjectId("../../../etc/passwd")).toThrow(
         "Invalid projectId",
       );
+    });
+  });
+
+  // ── async initProjectStateDir (robustness fix) ────────────────────────
+
+  describe("async initProjectStateDir", () => {
+    it("creates the projects sub-directory", async () => {
+      const crypto = await import("node:crypto");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const fs = await import("node:fs/promises");
+
+      const freshDir = path.join(
+        os.tmpdir(),
+        `agent-team-init-test-${crypto.randomUUID().slice(0, 8)}`,
+      );
+      try {
+        // initProjectStateDir should create both the dir and projects/ subdir
+        await initProjectStateDir(freshDir);
+
+        const stat = await fs.stat(path.join(freshDir, "projects"));
+        expect(stat.isDirectory()).toBe(true);
+      } finally {
+        await fs.rm(freshDir, { recursive: true, force: true });
+      }
+    });
+
+    it("is idempotent — calling twice does not throw", async () => {
+      const crypto = await import("node:crypto");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const fs = await import("node:fs/promises");
+
+      const dir = path.join(
+        os.tmpdir(),
+        `agent-team-idempotent-${crypto.randomUUID().slice(0, 8)}`,
+      );
+      try {
+        await initProjectStateDir(dir);
+        // Second call should not throw
+        await expect(initProjectStateDir(dir)).resolves.not.toThrow();
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("saves and loads project after initProjectStateDir", async () => {
+      // After init, state operations should work immediately (no lazy-mkdir needed)
+      const project = makeProject("init-test-proj");
+      await saveProject(project);
+
+      const loaded = await loadProject("init-test-proj");
+      expect(loaded).not.toBeNull();
+      expect(loaded!.projectId).toBe("init-test-proj");
+    });
+  });
+
+  // ── activity persistence ───────────────────────────────────────────────
+
+  describe("saveActivity + loadActivity", () => {
+    it("roundtrips activity events", async () => {
+      await saveProject(makeProject("proj-activity"));
+      const events = [
+        { id: "act-1", timestamp: Date.now(), agentId: "agent-x", method: "keyword" },
+        { id: "act-2", timestamp: Date.now(), agentId: "agent-y", method: "affinity" },
+      ];
+
+      await saveActivity("proj-activity", events);
+      const loaded = await loadActivity("proj-activity");
+      expect(loaded).toHaveLength(2);
+      expect((loaded[0] as { id: string }).id).toBe("act-1");
+    });
+
+    it("returns empty array for missing activity file", async () => {
+      const result = await loadActivity("no-such-project");
+      expect(result).toEqual([]);
     });
   });
 });

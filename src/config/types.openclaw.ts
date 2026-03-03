@@ -12,6 +12,7 @@ import type {
   TalkConfig,
 } from "./types.gateway.js";
 import type { HooksConfig } from "./types.hooks.js";
+import type { LicenseConfig } from "./types.license.js";
 import type { MemoryConfig } from "./types.memory.js";
 import type {
   AudioConfig,
@@ -23,15 +24,20 @@ import type { ModelsConfig } from "./types.models.js";
 import type { NodeHostConfig } from "./types.node-host.js";
 import type { PluginsConfig } from "./types.plugins.js";
 import type { SkillsConfig } from "./types.skills.js";
+import type { ToolDiscoveryConfig } from "./types.tool-discovery.js";
 import type { ToolsConfig } from "./types.tools.js";
 import type { StateStoreConfig } from "../infra/state-store/types.js";
 
 export type OpenClawCNConfig = {
+  /** JSON Schema reference for editor autocomplete. */
+  $schema?: string;
   meta?: {
     /** Last OpenClawCN version that wrote this config. */
     lastTouchedVersion?: string;
     /** ISO timestamp when this config was last written. */
     lastTouchedAt?: string;
+    /** Performance tuning profile (economy / balanced / power). */
+    performanceProfile?: "economy" | "balanced" | "power";
     /** Config schema version for migration gating. */
     schemaVersion?: number;
   };
@@ -87,6 +93,10 @@ export type OpenClawCNConfig = {
   bindings?: AgentBinding[];
   broadcast?: BroadcastConfig;
   audio?: AudioConfig;
+  /** Media attachment handling config. */
+  media?: {
+    preserveFilenames?: boolean;
+  };
   messages?: MessagesConfig;
   commands?: CommandsConfig;
   approvals?: ApprovalsConfig;
@@ -109,7 +119,13 @@ export type OpenClawCNConfig = {
     modalityRouter?: boolean;
     /** 是否启用多 Agent 编排（复杂任务自动拆分并行执行）。默认 true。 */
     multiAgent?: boolean;
+    /** 是否启用工具选择器（智能过滤 AI 可见工具）。默认 true。 */
+    toolSelector?: boolean;
+    /** 工具过滤模式。"off" = 不过滤；"intent" = 按意图过滤；"discovery" = 向量搜索过滤。 */
+    toolFilterMode?: "off" | "intent" | "discovery";
   };
+  /** 工具发现引擎配置（CN 二开：向量检索 MCP 工具，按需加载）。 */
+  toolDiscovery?: ToolDiscoveryConfig;
   /** 模型能力配置：记录每个能力对应使用的模型 */
   modelCapability?: {
     capabilities?: Partial<
@@ -126,6 +142,30 @@ export type OpenClawCNConfig = {
   };
   /** Provider 优先级排序（用于 fallback 顺序控制） */
   providerPriority?: string[];
+  /** MCP (Model Context Protocol) 服务器配置。 */
+  mcp?: {
+    servers?: Array<{
+      id: string;
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      cwd?: string;
+      transport: "stdio" | "sse";
+      url?: string;
+      headers?: Record<string, string>;
+      version?: string;
+      enabled: boolean;
+      autoStart: boolean;
+      timeout?: number;
+    }>;
+  };
+  /** 许可证配置（由系统自动写入，请勿手动修改）。 */
+  license?: LicenseConfig;
+  /** 初始设置向导状态（由系统自动写入）。 */
+  setup?: {
+    completedAt?: string;
+    lastCompletedStep?: number;
+  };
 };
 
 export type ConfigValidationIssue = {

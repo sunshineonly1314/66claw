@@ -251,5 +251,9 @@
       "protobufjs",
       "sharp"
     ]
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "test"
   }
 }

@@ -1,11 +1,35 @@
 import type { ConfigValidationIssue } from "../../config/config.js";
 
 export interface SafetyCheckResult {
-  /** Always true — safety check never blocks writes. */
-  ok: true;
+  /** true = write is allowed; false = write must be blocked (critical fields dropped in apply mode). */
+  ok: boolean;
+  /** Human-readable reason when ok=false. */
+  blockReason?: string;
   /** Advisory warnings for the AI to consider. Empty when no concerns found. */
   warnings: ConfigValidationIssue[];
 }
+
+/**
+ * Top-level config keys that are critical for OpenClawCN to start correctly.
+ * If any of these disappear in a config.apply, we hard-block the write.
+ * This list is intentionally conservative: it covers fields that, if missing,
+ * will cause the gateway to fail on next boot.
+ *
+ * IMPORTANT: these must be real top-level keys in OpenClawCNSchema (zod-schema.ts).
+ * Verified against schema: agents, models, channels, license, tools are all
+ * direct keys of OpenClawCNSchema. (security and sandbox are NOT top-level;
+ * sandbox lives at agents.defaults.sandbox, security has no top-level key.)
+ *
+ * [CN-PATCH:safety-check] These fields are CN-specific or universally required.
+ */
+const CRITICAL_TOP_LEVEL_FIELDS = [
+  "agents", // agents.list — agent definitions; gateway can't route without this
+  "models", // model/provider config — without this no AI calls work
+  "license", // license block — missing = gateway boots in unlicensed state
+  "channels", // channel integrations — silently removes all messaging if dropped
+  "tools", // CN-specific: tools.exec, tools.write, tools.browser policies
+  "mcp", // MCP server config — dropping kills external tool integrations
+] as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,20 +54,23 @@ function countEntries(val: unknown): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Advisory pre-write safety check.
+ * Pre-write safety check for config.apply and config.patch.
  *
  * Runs after schema validation passes but before `writeConfigFile()`.
- * **Never blocks the write** — it only produces warnings that are
- * attached to the success response so the AI can self-correct if needed.
+ *
+ * **Blocking checks (apply mode only):**
+ * - If any CRITICAL_TOP_LEVEL_FIELDS field is dropped, returns ok=false → write is rejected.
+ * - If overall config size shrinks by >70%, returns ok=false → write is rejected.
+ * These hard-blocks protect against AI submitting an incomplete config via config.apply.
+ *
+ * **Advisory checks (both modes):**
+ * - Non-critical field drops and array/object shrinkage produce warnings (ok=true).
+ * - Warnings are attached to the success response so the AI can self-correct.
  *
  * Design principles:
- * - **Schema-agnostic**: does NOT hard-code field names. All checks are
- *   generic comparisons (key disappeared, array/object shrunk, size dropped).
- *   This means upstream can add/rename/restructure config fields freely
- *   and this module keeps working without code changes.
- * - **Graceful degradation**: every check is wrapped in try/catch.
- *   If a check encounters an unexpected shape, it silently skips.
- * - **Non-blocking**: `ok` is always `true`.
+ * - **Schema-agnostic for advisory checks**: generic comparisons only, no field names.
+ * - **Graceful degradation**: every check is wrapped in try/catch. If a check throws,
+ *   it degrades to allowing the write (never blocks on a check failure).
  */
 export function runConfigSafetyCheck(
   incoming: unknown,
@@ -55,6 +82,56 @@ export function runConfigSafetyCheck(
   // Nothing to compare against — first-time write, no warnings.
   if (!current || !isPlainObject(current) || !isPlainObject(incoming)) {
     return { ok: true, warnings };
+  }
+
+  // --- Hard-block (apply only): critical top-level fields dropped ---
+  // If the incoming config is missing a field that existed AND that field is in
+  // the CRITICAL_TOP_LEVEL_FIELDS list, block the write entirely.
+  // This prevents AI from accidentally deleting e.g. agents/models/license
+  // by submitting an incomplete config via config.apply.
+  if (mode === "apply") {
+    try {
+      const incomingKeys = new Set(Object.keys(incoming));
+      const criticalDropped = (CRITICAL_TOP_LEVEL_FIELDS as readonly string[]).filter(
+        (k) => k in current && !incomingKeys.has(k),
+      );
+      if (criticalDropped.length > 0) {
+        return {
+          ok: false,
+          blockReason:
+            `config.apply would delete critical fields: ${criticalDropped.join(", ")}. ` +
+            `Use config.patch instead, or include all existing top-level fields in your config.apply payload. ` +
+            `Re-run config.get to retrieve the full current config.`,
+          warnings,
+        };
+      }
+    } catch {
+      // If the check itself throws, do not block — degrade gracefully.
+    }
+  }
+
+  // --- Hard-block (apply only): config size shrank by >50% ---
+  // Threshold aligned with io.ts resolveConfigWriteSuspiciousReasons (also 50%).
+  // A legitimate full-replace should be close in size to the original.
+  // Shrinking by more than 50% almost certainly means the AI constructed
+  // an incomplete skeleton config rather than editing the full one.
+  if (mode === "apply") {
+    try {
+      const currentSize = JSON.stringify(current).length;
+      const incomingSize = JSON.stringify(incoming).length;
+      if (currentSize >= 512 && incomingSize < Math.floor(currentSize * 0.5)) {
+        return {
+          ok: false,
+          blockReason:
+            `config.apply payload is ${incomingSize} chars but current config is ${currentSize} chars ` +
+            `(>50% reduction). This strongly suggests the payload is incomplete. ` +
+            `Use config.patch to change specific fields, or re-run config.get to base your changes on the full config.`,
+          warnings,
+        };
+      }
+    } catch {
+      // degrade gracefully
+    }
   }
 
   // --- Check 1 (apply only): any top-level key that existed but is now missing ---

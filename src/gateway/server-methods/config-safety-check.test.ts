@@ -19,14 +19,26 @@ describe("runConfigSafetyCheck", () => {
 
   // ── Check 1: top-level key dropped (apply only) ──
 
-  it("warns when any top-level key is dropped in apply mode", () => {
-    const current = { gateway: { port: 3000 }, channels: { tg: {} }, myNewFeature: { x: 1 } };
+  it("warns when a non-critical top-level key is dropped in apply mode", () => {
+    // Only non-critical fields produce advisory warnings; critical fields are hard-blocked.
+    const current = { gateway: { port: 3000 }, myNewFeature: { x: 1 }, customSection: { y: 2 } };
     const incoming = { gateway: { port: 3000 } };
 
     const result = runConfigSafetyCheck(incoming, current, "apply");
     const paths = result.warnings.map((w) => w.path);
-    expect(paths).toContain("channels");
+    expect(result.ok).toBe(true);
     expect(paths).toContain("myNewFeature");
+    expect(paths).toContain("customSection");
+  });
+
+  it("hard-blocks when a critical top-level key is dropped in apply mode", () => {
+    // Dropping 'channels' (a CRITICAL_TOP_LEVEL_FIELDS member) must return ok=false.
+    const current = { gateway: { port: 3000 }, channels: { tg: {} }, myNewFeature: { x: 1 } };
+    const incoming = { gateway: { port: 3000 }, myNewFeature: { x: 1 } };
+
+    const result = runConfigSafetyCheck(incoming, current, "apply");
+    expect(result.ok).toBe(false);
+    expect(result.blockReason).toMatch(/channels/);
   });
 
   it("does NOT warn about dropped keys in patch mode", () => {
@@ -47,16 +59,21 @@ describe("runConfigSafetyCheck", () => {
 
   // ── Check 2: config size drop ──
 
-  it("warns when config size drops by more than 50% in apply mode", () => {
+  it("hard-blocks when config size drops by more than 50% in apply mode", () => {
+    // Use only non-critical fields so the size check fires before critical-field check.
+    // Critical fields (channels, agents) must NOT appear in current, otherwise the
+    // critical-fields hard-block fires first and the size check is never reached.
     const current = {
-      gateway: { port: 3000, mode: "standalone" },
-      channels: { tg: { token: "a".repeat(200) } },
-      agents: { list: [{ name: "agent1", model: "b".repeat(200) }] },
+      gateway: { port: 3000, mode: "standalone", extra: "x".repeat(200) },
+      serverInfo: { description: "s".repeat(200), tags: ["a", "b", "c", "d"] },
+      customSection: { data: "d".repeat(200), nested: { more: "m".repeat(100) } },
     };
     const incoming = { gateway: { port: 3000 } };
 
     const result = runConfigSafetyCheck(incoming, current, "apply");
-    expect(result.warnings.some((w) => w.path === "<root>")).toBe(true);
+    // The size check triggers a hard-block (ok=false), not a warning.
+    expect(result.ok).toBe(false);
+    expect(result.blockReason).toMatch(/50%/);
   });
 
   it("does NOT warn about size drop in patch mode", () => {
@@ -137,20 +154,39 @@ describe("runConfigSafetyCheck", () => {
     expect(result.warnings.some((w) => w.path === "futureFeature2030")).toBe(true);
   });
 
-  // ── Never blocks ──
+  // ── Advisory warnings (non-critical drops) ──
 
-  it("always returns ok: true even with multiple warnings", () => {
+  it("returns ok: true with warnings when only non-critical fields are dropped", () => {
+    // Dropping only non-critical fields generates warnings but never blocks.
+    // 'gateway' is not in CRITICAL_TOP_LEVEL_FIELDS, so advisory warnings only.
     const current = {
       gateway: { mode: "standalone", port: 3000 },
-      channels: { tg: { token: "a".repeat(300) } },
+      myFeatureA: { value: 1 },
+      myFeatureB: { value: 2 },
+      plugins: { enabled: true },
+    };
+    // incoming keeps all critical-field keys absent from current (none present),
+    // keeps size roughly the same, and only drops non-critical keys.
+    const incoming = { gateway: { mode: "standalone", port: 3000 } };
+
+    const result = runConfigSafetyCheck(incoming, current, "apply");
+    expect(result.ok).toBe(true);
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
+
+  it("hard-blocks when multiple critical fields are dropped at once", () => {
+    const current = {
+      gateway: { mode: "standalone", port: 3000 },
+      channels: { tg: { token: "abc" } },
       agents: { list: [{ id: "a1" }, { id: "a2" }] },
       plugins: { enabled: true },
     };
     const incoming = {};
 
     const result = runConfigSafetyCheck(incoming, current, "apply");
-    expect(result.ok).toBe(true);
-    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.ok).toBe(false);
+    // blockReason should mention the critical fields
+    expect(result.blockReason).toBeDefined();
   });
 
   // ── Edge cases ──

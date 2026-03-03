@@ -166,6 +166,9 @@ export async function checkLicenseOnGatewayStart(
   // Pre-load encrypted license cache into memory (async → sync fallback)
   await preloadLicenseCacheToMemory();
 
+  // Pre-load encrypted license cache into memory (async → sync fallback)
+  await preloadLicenseCacheToMemory();
+
   // 步骤 1：文件完整性校验（可通过 skipIntegrity 跳过，用于测试/并行启动）
   if (!options?.skipIntegrity) {
     // 安全策略：任何完整性校验失败/异常都必须阻止启动

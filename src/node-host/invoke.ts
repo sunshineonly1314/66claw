@@ -162,10 +162,6 @@ export function sanitizeEnv(
     }
     merged[key] = value;
   }
-  // Ensure the bundled node directory is first in PATH so node/npm/npx commands
-  // spawned by node-host always resolve to the correct V8-compatible runtime.
-  const pathKey = Object.keys(merged).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
-  merged[pathKey] = prependBundledNodeToPath(merged[pathKey]);
   return merged;
 }
 
@@ -209,6 +205,14 @@ async function runCommand(
   env: Record<string, string> | undefined,
   timeoutMs: number | undefined,
 ): Promise<RunResult> {
+  // Ensure the bundled node directory is first in PATH for every spawned process.
+  // sanitizeEnv() is responsible for filtering dangerous env vars; bundled-node
+  // injection is the caller's responsibility (keeps sanitizeEnv pure).
+  let spawnEnv = env;
+  if (spawnEnv) {
+    const pathKey = Object.keys(spawnEnv).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+    spawnEnv = { ...spawnEnv, [pathKey]: prependBundledNodeToPath(spawnEnv[pathKey]) };
+  }
   return await new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
@@ -219,7 +223,7 @@ async function runCommand(
 
     const child = spawn(argv[0], argv.slice(1), {
       cwd,
-      env,
+      env: spawnEnv,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });

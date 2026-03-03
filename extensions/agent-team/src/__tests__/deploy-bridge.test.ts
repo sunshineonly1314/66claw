@@ -436,4 +436,159 @@ describe("deploy-bridge", () => {
       ).rejects.toThrow("Invalid projectId");
     });
   });
+
+  // ── SOUL.md retry logic (robustness fix) ──────────────────────────────
+
+  describe("SOUL.md retry logic", () => {
+    it("retries SOUL.md write on transient failure and succeeds on 2nd attempt", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      let soulCallCount = 0;
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") return Promise.resolve(undefined);
+        if (method === "agents.files.set") {
+          soulCallCount++;
+          // Fail first attempt, succeed on second
+          if (soulCallCount === 1) return Promise.reject(new Error("transient network error"));
+          return Promise.resolve(undefined);
+        }
+        return Promise.resolve(undefined);
+      });
+
+      const { project } = await createProjectFromPlan(callGateway, {
+        planId: "plan-001",
+        orchestratorStateDir: orchDir,
+      });
+
+      // Should succeed despite first failure
+      expect(project.status).toBe("active");
+      expect(soulCallCount).toBeGreaterThanOrEqual(2);
+    });
+
+    it("fails after 3 retry attempts and marks project as error", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") return Promise.resolve(undefined);
+        if (method === "agents.files.set") {
+          return Promise.reject(new Error("persistent gateway failure"));
+        }
+        return Promise.resolve(undefined);
+      });
+
+      await expect(
+        createProjectFromPlan(callGateway, {
+          planId: "plan-001",
+          orchestratorStateDir: orchDir,
+        }),
+      ).rejects.toThrow("Failed to write supervisor SOUL.md");
+
+      // Verify files.set was called 3 times (3 retry attempts)
+      const soulCalls = (callGateway as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c: unknown[]) => c[0] === "agents.files.set",
+      );
+      expect(soulCalls.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  // ── Multi-language error detection (robustness fix) ────────────────────
+
+  describe("isAgentAlreadyExistsError — multi-language detection", () => {
+    it("treats Chinese '已存在' error as 'already exists' — proceeds idempotently", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") {
+          // Chinese error message (simulates CN-localized gateway)
+          return Promise.reject(new Error("agent 已存在"));
+        }
+        return Promise.resolve(undefined);
+      });
+
+      // Should NOT throw — Chinese "already exists" is treated as idempotent
+      const { project } = await createProjectFromPlan(callGateway, {
+        planId: "plan-001",
+        orchestratorStateDir: orchDir,
+      });
+      expect(project.status).toBe("active");
+    });
+
+    it("treats structured ALREADY_EXISTS error code as idempotent", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") {
+          const err = Object.assign(new Error("Agent already exists"), { code: "ALREADY_EXISTS" });
+          return Promise.reject(err);
+        }
+        return Promise.resolve(undefined);
+      });
+
+      const { project } = await createProjectFromPlan(callGateway, {
+        planId: "plan-001",
+        orchestratorStateDir: orchDir,
+      });
+      expect(project.status).toBe("active");
+    });
+
+    it("treats AGENT_ALREADY_EXISTS error code as idempotent", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") {
+          const err = Object.assign(new Error("Conflict"), { code: "AGENT_ALREADY_EXISTS" });
+          return Promise.reject(err);
+        }
+        return Promise.resolve(undefined);
+      });
+
+      const { project } = await createProjectFromPlan(callGateway, {
+        planId: "plan-001",
+        orchestratorStateDir: orchDir,
+      });
+      expect(project.status).toBe("active");
+    });
+
+    it("treats '重复' (Chinese duplicate) error as idempotent", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") {
+          return Promise.reject(new Error("记录重复，无法创建"));
+        }
+        return Promise.resolve(undefined);
+      });
+
+      const { project } = await createProjectFromPlan(callGateway, {
+        planId: "plan-001",
+        orchestratorStateDir: orchDir,
+      });
+      expect(project.status).toBe("active");
+    });
+
+    it("does NOT treat 'Permission denied' as already-exists — rethrows", async () => {
+      await writePlan("plan-001", makePlan());
+      await writeState("plan-001", makeState());
+
+      const callGateway = vi.fn().mockImplementation((method: string) => {
+        if (method === "agents.create") {
+          return Promise.reject(new Error("Permission denied"));
+        }
+        return Promise.resolve(undefined);
+      });
+
+      await expect(
+        createProjectFromPlan(callGateway, {
+          planId: "plan-001",
+          orchestratorStateDir: orchDir,
+        }),
+      ).rejects.toThrow("Failed to create supervisor agent");
+    });
+  });
 });
