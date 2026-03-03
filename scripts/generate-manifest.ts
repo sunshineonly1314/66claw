@@ -99,21 +99,70 @@ async function main() {
   console.log("");
 
   // 生成校验和
-  // NOTE: 目前只校验 dist/ 目录，因为 delta 增量包仅覆盖 dist/ 内容。
-  // 当增量包扩展覆盖 skills/extensions 时，应同步取消下面的注释。
+  // 覆盖 dist/ + 增量包涵盖的所有目录（skills, extensions, data, docs）
+  // NOTE: node_modules 不纳入 checksums — 文件数量太多（数万），且
+  // delta 中的 node_modules 文件已在 applyDelta() 中逐文件 SHA256 校验，
+  // 更新后 checkAndInstallDeps() 确保依赖一致性。
   console.log("2️⃣  Generating checksums...");
   const checksums = await generateChecksums(distDir);
 
-  // TODO: 当 generate-delta-package 扩展支持 skills/extensions 后启用
-  // for (const extraDir of ["skills", "extensions"]) {
-  //   const extraPath = path.join(rootDir, extraDir);
-  //   if (fs.existsSync(extraPath)) {
-  //     const extraChecksums = await generateChecksums(extraPath);
-  //     for (const [relPath, hash] of Object.entries(extraChecksums)) {
-  //       checksums[`${extraDir}/${relPath}`] = hash;
-  //     }
-  //   }
-  // }
+  // 增量包已扩展覆盖 skills/extensions/data/docs，checksums 同步覆盖
+  // skills, extensions, docs — 全量扫描
+  for (const extraDir of ["skills", "extensions", "docs"]) {
+    const extraPath = path.join(rootDir, extraDir);
+    if (fs.existsSync(extraPath)) {
+      const extraChecksums = await generateChecksums(extraPath);
+      for (const [relPath, hash] of Object.entries(extraChecksums)) {
+        checksums[`${extraDir}/${relPath}`] = hash;
+      }
+    }
+  }
+
+  // data/ — 只扫描种子文件（与 release-deploy.ts DATA_SEED_FILES 白名单一致）
+  // 全量扫描会包含运行时用户数据（.device_id、license_cache.json 等），
+  // 这些文件不在打包中，会导致客户端 verifyChecksums() 校验失败并回滚更新
+  const dataDir = path.join(rootDir, "data");
+  if (fs.existsSync(dataDir)) {
+    const DATA_SEED_FILES = [
+      "mcp-index.db",
+      "mcp-index.json",
+      "tool-index.sqlite",
+      "skill-availability-dictionary.json",
+      "skill-availability-schema.json",
+      "skill-verification-needed.json",
+      "skills-availability-dictionary.json",
+      "skills-availability-dictionary-enriched.json",
+      "README-skill-availability.md",
+    ];
+    const DATA_SEED_DIRS = ["subagents", "qrcodes"];
+
+    // 白名单文件
+    for (const f of DATA_SEED_FILES) {
+      const filePath = path.join(dataDir, f);
+      if (fs.existsSync(filePath)) {
+        const hash = await hashFile(filePath);
+        checksums[`data/${f}`] = hash;
+      }
+    }
+    // mcp-index-enhanced*.json（多版本文件）
+    for (const entry of await fs.promises.readdir(dataDir)) {
+      if (entry.startsWith("mcp-index-enhanced") && entry.endsWith(".json")) {
+        const filePath = path.join(dataDir, entry);
+        const hash = await hashFile(filePath);
+        checksums[`data/${entry}`] = hash;
+      }
+    }
+    // 种子子目录
+    for (const d of DATA_SEED_DIRS) {
+      const subDir = path.join(dataDir, d);
+      if (fs.existsSync(subDir)) {
+        const subChecksums = await generateChecksums(subDir);
+        for (const [relPath, hash] of Object.entries(subChecksums)) {
+          checksums[`data/${d}/${relPath}`] = hash;
+        }
+      }
+    }
+  }
 
   await fs.promises.writeFile(
     path.join(rootDir, "checksums.json"),

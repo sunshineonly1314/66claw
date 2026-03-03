@@ -44,7 +44,7 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 /**
  * full.tar.gz 解压后的顶层目录名（与 release-deploy.ts 的 FULL_PACKAGE_INCLUDES 对应）
  */
-const FULL_PACKAGE_DIRS = ["dist", "skills", "extensions"] as const;
+const FULL_PACKAGE_DIRS = ["dist", "skills", "extensions", "data", "docs", "node_modules"] as const;
 
 // ─── Core ──────────────────────────────────────────────
 
@@ -231,6 +231,15 @@ export async function runFullTarUpdate(params: {
     if (fsSync.existsSync(newPkgPath)) {
       await fs.copyFile(newPkgPath, path.join(root, "package.json"));
       filesChanged++;
+    }
+
+    // 替换元数据文件（install.json, version.json）
+    for (const metaFile of ["install.json", "version.json"]) {
+      const newMetaPath = path.join(extractDir, metaFile);
+      if (fsSync.existsSync(newMetaPath)) {
+        await fs.copyFile(newMetaPath, path.join(root, metaFile));
+        filesChanged++;
+      }
     }
 
     progress?.onApplyComplete?.();

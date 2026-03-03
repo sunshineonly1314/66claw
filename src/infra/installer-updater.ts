@@ -180,7 +180,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000; // 10 minutes for large downloads
 const UPDATE_API_PATH = "/api/api/v1/update";
 /** 需要备份和回滚的目录列表 */
-export const BACKUP_DIRS = ["dist", "skills", "extensions"] as const;
+export const BACKUP_DIRS = ["dist", "skills", "extensions", "data", "docs"] as const;
 
 // ─── Core ──────────────────────────────────────────────
 
@@ -877,15 +877,23 @@ async function applyDelta(
     count++;
   }
 
-  // 删除文件
+  // 删除文件和目录
   for (const relPath of delta.removed) {
     const dest = path.join(root, relPath);
     assertWithinRoot(root, dest, `delta.removed[${relPath}]`);
     try {
-      await fs.unlink(dest);
+      if (relPath.endsWith("/")) {
+        // 目录删除标记（如 node_modules/old-package/）
+        const dirPath = dest.replace(/[/\\]$/, "");
+        if (fsSync.existsSync(dirPath) && fsSync.statSync(dirPath).isDirectory()) {
+          await rmrf(dirPath);
+        }
+      } else {
+        await fs.unlink(dest);
+      }
       count++;
     } catch {
-      // 文件可能已不存在，忽略
+      // 文件/目录可能已不存在，忽略
     }
   }
 
@@ -1012,9 +1020,9 @@ export async function verifyChecksums(root: string, checksumsUrl: string): Promi
     let failed = 0;
 
     // checksums key 格式:
-    //   - "skills/..." / "extensions/..." → 直接相对于 root
+    //   - "skills/..." / "extensions/..." / "data/..." / "docs/..." / "node_modules/..." → 直接相对于 root
     //   - 其余 → 相对于 root/dist/（兼容旧格式）
-    const ROOTED_PREFIXES = ["skills/", "extensions/"];
+    const ROOTED_PREFIXES = ["skills/", "extensions/", "data/", "docs/", "node_modules/"];
 
     for (const [rawRelPath, expectedHash] of hashEntries) {
       // 归一化路径分隔符（防止 Windows 生成的 checksums 含反斜杠）

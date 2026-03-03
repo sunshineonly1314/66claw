@@ -45,8 +45,8 @@ const SERVER_RELEASES_FS_PATH = "/data/dl/releases";
 /** URL 路径（Nginx root = /data/dl，对外暴露 /releases/） */
 const SERVER_RELEASES_URL_PATH = "/releases";
 
-/** 保留最近几个版本的缓存用于增量包生成 */
-const MAX_CACHED_VERSIONS = 5;
+/** 保留最近几个版本的缓存用于增量包生成（缓存含 skills/extensions/data，适当减少） */
+const MAX_CACHED_VERSIONS = 3;
 
 /** OSS 配置 (从环境变量读取) */
 const OSS_CONFIG = {
@@ -58,17 +58,21 @@ const OSS_CONFIG = {
   keyPrefix: process.env.OSS_KEY_PREFIX ?? "releases",
 };
 
-/** 完整包包含的目录/文件 */
+/** 完整包包含的目录/文件（通过 staging 方式打包，不再直接 tar 根目录） */
 const FULL_PACKAGE_INCLUDES = [
   "dist",
   "package.json",
   "skills",
   "extensions",
+  "data",
+  "docs",
+  "node_modules",
+  "install.json",
+  "version.json",
 ];
 
-/** 完整包排除的模式 */
+/** 完整包排除的模式（仅用于 tar 的 --exclude，staging 模式下不再使用） */
 const FULL_PACKAGE_EXCLUDES = [
-  "node_modules",
   ".git",
   ".update-temp",
   ".backups",
@@ -76,6 +80,26 @@ const FULL_PACKAGE_EXCLUDES = [
   ".DS_Store",
   "Thumbs.db",
 ];
+
+/** data/ 种子文件白名单（与 prepare-resources.sh/ps1 保持一致） */
+const DATA_SEED_FILES = [
+  "mcp-index.db",
+  "mcp-index.json",
+  "tool-index.sqlite",
+  "skill-availability-dictionary.json",
+  "skill-availability-schema.json",
+  "skill-verification-needed.json",
+  "skills-availability-dictionary.json",
+  "skills-availability-dictionary-enriched.json",
+  "README-skill-availability.md",
+];
+const DATA_SEED_DIRS = ["subagents", "qrcodes"];
+
+/** 增量对比需要覆盖的额外目录（dist/ 之外） */
+const DELTA_EXTRA_DIRS = ["skills", "extensions", "data", "docs/reference/templates"];
+
+/** node_modules 增量包大小上限（超过则跳过，让客户端 npm install） */
+const NM_DELTA_SIZE_LIMIT = 200 * 1024 * 1024; // 200MB
 
 // ─── CLI 参数解析 ─────────────────────────────────────
 
@@ -417,7 +441,8 @@ async function main() {
 
     // 对每个旧版本生成增量包
     for (const oldVersion of oldVersions) {
-      const oldDistDir = path.join(CACHE_DIR, oldVersion, "dist");
+      const cacheVersionDir = path.join(CACHE_DIR, oldVersion);
+      const oldDistDir = path.join(cacheVersionDir, "dist");
       if (!fileExists(oldDistDir)) {
         warn(`旧版本 ${oldVersion} 的 dist/ 缓存不存在: ${oldDistDir}`);
         continue;
@@ -428,7 +453,7 @@ async function main() {
       const deltaOutputDir = path.join(DEPLOY_DIR, `delta-from-${oldVersion}`);
       rmrf(deltaOutputDir);
 
-      // 调用已有的 generate-delta-package.ts
+      // 1. dist/ 增量（原有逻辑）
       exec(
         `node --import tsx scripts/generate-delta-package.ts --from "${oldDistDir}" --to "${DIST_DIR}" --output "${deltaOutputDir}"`,
       );
@@ -448,10 +473,68 @@ async function main() {
         totalSize: number;
       }>(deltaJsonPath);
 
-      // CR-3: 将 package.json 变更也纳入 delta 包（防止依赖变更后 MODULE_NOT_FOUND）
+      // 2. 额外目录增量（skills/, extensions/, data/, docs/reference/templates/）
+      for (const dirName of DELTA_EXTRA_DIRS) {
+        const oldDir = path.join(cacheVersionDir, dirName);
+        // data/ 需要特殊处理：只对比种子文件
+        let newDir: string;
+        if (dirName === "data") {
+          // Stage 当前种子数据到临时目录用于对比
+          const seedStageDir = path.join(DEPLOY_DIR, `.seed-data-stage-${oldVersion}`);
+          rmrf(seedStageDir);
+          fs.mkdirSync(seedStageDir, { recursive: true });
+          stageSeedData(seedStageDir);
+          newDir = path.join(seedStageDir, "data");
+        } else {
+          newDir = path.join(ROOT_DIR, dirName);
+        }
+
+        if (!fileExists(oldDir) && !fileExists(newDir)) continue;
+
+        if (fileExists(oldDir) && fileExists(newDir)) {
+          // 正常对比：调用 generate-delta-package.ts
+          const subKey = dirName.replace(/\//g, "-");
+          const subDeltaDir = path.join(DEPLOY_DIR, `delta-sub-${oldVersion}-${subKey}`);
+          rmrf(subDeltaDir);
+          exec(
+            `node --import tsx scripts/generate-delta-package.ts --from "${oldDir}" --to "${newDir}" --output "${subDeltaDir}"`,
+          );
+          mergeSubDelta(subDeltaDir, dirName, deltaOutputDir, deltaManifest);
+          rmrf(subDeltaDir);
+        } else if (!fileExists(oldDir) && fileExists(newDir)) {
+          // 新目录：所有文件标记为 added
+          info(`  ${dirName}/ 是新增目录，全部标记为 added`);
+          const allFiles = findFilesRecursive(newDir);
+          for (const relFile of allFiles) {
+            const prefixed = `${dirName}/${relFile}`.replace(/\\/g, "/");
+            const src = path.join(newDir, relFile);
+            const dest = path.join(deltaOutputDir, "added", prefixed);
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            const stats = fs.statSync(src);
+            deltaManifest.added.push({ path: prefixed, sha256: sha256File(src), size: stats.size });
+            deltaManifest.totalFiles++;
+            deltaManifest.totalSize += stats.size;
+          }
+        } else if (fileExists(oldDir) && !fileExists(newDir)) {
+          // 目录被删除：标记为目录删除
+          info(`  ${dirName}/ 已删除，标记为 removed`);
+          deltaManifest.removed.push(`${dirName}/`);
+        }
+
+        // 清理 seed stage 临时目录
+        if (dirName === "data") {
+          rmrf(path.join(DEPLOY_DIR, `.seed-data-stage-${oldVersion}`));
+        }
+      }
+
+      // 3. node_modules 包级别增量
+      generateNodeModulesDelta(cacheVersionDir, deltaOutputDir, deltaManifest);
+
+      // 4. package.json 变更检测（CR-3: 防止依赖变更后 MODULE_NOT_FOUND）
       {
         const newPkgPath = path.join(ROOT_DIR, "package.json");
-        const oldPkgPath = path.join(CACHE_DIR, oldVersion, "package.json");
+        const oldPkgPath = path.join(cacheVersionDir, "package.json");
         if (fileExists(newPkgPath)) {
           const newPkgHash = sha256File(newPkgPath);
           const oldPkgHash = fileExists(oldPkgPath) ? sha256File(oldPkgPath) : null;
@@ -468,12 +551,38 @@ async function main() {
             }
             deltaManifest.totalFiles++;
             deltaManifest.totalSize += pkgSize;
-            // 回写更新后的 delta.json
-            fs.writeFileSync(deltaJsonPath, JSON.stringify(deltaManifest, null, 2), "utf-8");
             info(`  package.json 已纳入增量包 (${destDir})`);
           }
         }
       }
+
+      // 5. 元数据文件（install.json, version.json）
+      for (const metaFile of ["install.json", "version.json"]) {
+        const newPath = path.join(ROOT_DIR, metaFile);
+        const oldPath = path.join(cacheVersionDir, metaFile);
+        if (fileExists(newPath)) {
+          const newHash = sha256File(newPath);
+          const oldHash = fileExists(oldPath) ? sha256File(oldPath) : null;
+          if (oldHash !== newHash) {
+            const size = fs.statSync(newPath).size;
+            const destDir = oldHash ? "modified" : "added";
+            fs.mkdirSync(path.join(deltaOutputDir, destDir), { recursive: true });
+            fs.copyFileSync(newPath, path.join(deltaOutputDir, destDir, metaFile));
+            const entry = { path: metaFile, sha256: newHash, size };
+            if (oldHash) {
+              deltaManifest.modified.push(entry);
+            } else {
+              deltaManifest.added.push(entry);
+            }
+            deltaManifest.totalFiles++;
+            deltaManifest.totalSize += size;
+            info(`  ${metaFile} 已纳入增量包 (${destDir})`);
+          }
+        }
+      }
+
+      // 回写完整的 delta.json
+      fs.writeFileSync(deltaJsonPath, JSON.stringify(deltaManifest, null, 2), "utf-8");
 
       const hasChanges = deltaManifest.totalFiles > 0 || deltaManifest.removed.length > 0;
       if (!hasChanges) {
@@ -847,7 +956,7 @@ async function main() {
 
   step(10, totalSteps, "缓存当前版本 dist/");
 
-  cacheCurrentDist(version, CACHE_DIR);
+  cacheCurrentRelease(version, CACHE_DIR);
 
   // ─── 完成 ───
 
@@ -938,7 +1047,14 @@ function tarDirectory(sourceDir: string, outputPath: string) {
 
   // Prefer Windows built-in tar (handles native paths), fall back to Git tar with POSIX paths
   const tarCmd = process.platform === "win32" ? "C:\\Windows\\System32\\tar.exe" : "tar";
-  const tarArgs = ["-czf", outputPath, "-C", parentDir, dirName];
+  // 排除平台垃圾文件（.DS_Store, Thumbs.db 等）
+  const tarArgs = [
+    "-czf", outputPath,
+    "--exclude=.DS_Store",
+    "--exclude=Thumbs.db",
+    "--exclude=.git",
+    "-C", parentDir, dirName,
+  ];
 
   info(`执行: ${tarCmd} ${tarArgs.join(" ")}`);
   const result = spawnSync(tarCmd, tarArgs, {
@@ -951,26 +1067,142 @@ function tarDirectory(sourceDir: string, outputPath: string) {
   }
 }
 
-/** 打包完整更新包 */
+/** 将 data/ 种子文件复制到 stageDir/data/（白名单模式，不含运行时用户数据） */
+function stageSeedData(stageDir: string) {
+  const dataDir = path.join(ROOT_DIR, "data");
+  if (!fileExists(dataDir)) return;
+
+  const destData = path.join(stageDir, "data");
+  fs.mkdirSync(destData, { recursive: true });
+
+  for (const f of DATA_SEED_FILES) {
+    const src = path.join(dataDir, f);
+    if (fileExists(src)) fs.copyFileSync(src, path.join(destData, f));
+  }
+  // mcp-index-enhanced*.json（多版本文件，glob 匹配）
+  for (const entry of fs.readdirSync(dataDir)) {
+    if (entry.startsWith("mcp-index-enhanced") && entry.endsWith(".json")) {
+      fs.copyFileSync(path.join(dataDir, entry), path.join(destData, entry));
+    }
+  }
+  for (const d of DATA_SEED_DIRS) {
+    const src = path.join(dataDir, d);
+    if (fileExists(src)) copyDirRecursive(src, path.join(destData, d));
+  }
+}
+
+/** 复制 node_modules 到 stageDir（只含生产依赖，跳过 devDependencies） */
+function stageNodeModules(stageDir: string) {
+  const nmDir = path.join(ROOT_DIR, "node_modules");
+  if (!fileExists(nmDir)) {
+    warn("node_modules/ 不存在，跳过（客户端将通过 npm install 安装）");
+    return;
+  }
+
+  // 读取 package.json 的 devDependencies 列表用于过滤
+  const devDeps = new Set<string>();
+  try {
+    const pkg = readJson<{ devDependencies?: Record<string, string> }>(
+      path.join(ROOT_DIR, "package.json"),
+    );
+    if (pkg.devDependencies) {
+      for (const name of Object.keys(pkg.devDependencies)) {
+        devDeps.add(name);
+      }
+    }
+  } catch { /* 读取失败则不过滤 */ }
+
+  info(`staging node_modules/（跳过 .cache + ${devDeps.size} 个 devDependencies）...`);
+  const destNm = path.join(stageDir, "node_modules");
+  fs.mkdirSync(destNm, { recursive: true });
+
+  const nmSkipDirs = [".cache", ".git", ".package-lock.json"];
+
+  for (const entry of fs.readdirSync(nmDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) {
+      // 顶层文件（如 .package-lock.json）
+      if (!nmSkipDirs.includes(entry.name)) {
+        fs.copyFileSync(path.join(nmDir, entry.name), path.join(destNm, entry.name));
+      }
+      continue;
+    }
+    if (nmSkipDirs.includes(entry.name)) continue;
+
+    if (entry.name.startsWith("@")) {
+      // Scoped package: @scope/name — 检查每个子包
+      const scopeDir = path.join(nmDir, entry.name);
+      const destScope = path.join(destNm, entry.name);
+      let hasProdPkg = false;
+      for (const sub of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+        const scopedName = `${entry.name}/${sub.name}`;
+        if (devDeps.has(scopedName)) continue;
+        if (!hasProdPkg) {
+          fs.mkdirSync(destScope, { recursive: true });
+          hasProdPkg = true;
+        }
+        const subSrc = path.join(scopeDir, sub.name);
+        const subDest = path.join(destScope, sub.name);
+        if (sub.isDirectory() || sub.isSymbolicLink()) {
+          copyDirRecursive(subSrc, subDest, nmSkipDirs);
+        } else {
+          fs.copyFileSync(subSrc, subDest);
+        }
+      }
+    } else {
+      // 非 scoped 包：直接检查是否是 devDependency
+      if (devDeps.has(entry.name)) continue;
+      copyDirRecursive(
+        path.join(nmDir, entry.name),
+        path.join(destNm, entry.name),
+        nmSkipDirs,
+      );
+    }
+  }
+}
+
+/** 打包完整更新包（staging 模式：先复制到临时目录，再 tar） */
 function tarFullPackage(outputPath: string) {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 
-  const includes = FULL_PACKAGE_INCLUDES.filter((p) => fileExists(path.join(ROOT_DIR, p)));
-  const excludeArgs = FULL_PACKAGE_EXCLUDES.flatMap((e) => [`--exclude`, e]);
+  // Stage 到临时目录，确保只打入安全内容
+  const stageDir = path.join(DEPLOY_DIR, ".full-stage");
+  rmrf(stageDir);
+  fs.mkdirSync(stageDir, { recursive: true });
 
-  // Prefer Windows built-in tar (handles native paths), fall back to Git tar with POSIX paths
-  const tarCmd = process.platform === "win32" ? "C:\\Windows\\System32\\tar.exe" : "tar";
-  const tarArgs = ["-czf", outputPath, ...excludeArgs, ...includes];
-
-  info(`执行: ${tarCmd} ${tarArgs.join(" ")}`);
-  const result = spawnSync(tarCmd, tarArgs, {
-    cwd: ROOT_DIR,
-    stdio: "pipe",
-    encoding: "utf-8",
-  });
-  if (result.status !== 0) {
-    throw new Error(`tar failed (exit ${result.status}): ${result.stderr ?? ""}`);
+  // 1. dist/, skills/, extensions/ — 整体复制
+  for (const item of ["dist", "skills", "extensions"]) {
+    const src = path.join(ROOT_DIR, item);
+    if (fileExists(src)) copyDirRecursive(src, path.join(stageDir, item));
   }
+
+  // 2. package.json
+  const pkgSrc = path.join(ROOT_DIR, "package.json");
+  if (fileExists(pkgSrc)) fs.copyFileSync(pkgSrc, path.join(stageDir, "package.json"));
+
+  // 3. data/（种子文件白名单）
+  stageSeedData(stageDir);
+
+  // 4. docs/reference/templates/
+  const templatesDir = path.join(ROOT_DIR, "docs", "reference", "templates");
+  if (fileExists(templatesDir)) {
+    const destTemplates = path.join(stageDir, "docs", "reference", "templates");
+    copyDirRecursive(templatesDir, destTemplates);
+  }
+
+  // 5. node_modules/（生产依赖）
+  stageNodeModules(stageDir);
+
+  // 6. 元数据文件
+  for (const meta of ["install.json", "version.json"]) {
+    const src = path.join(ROOT_DIR, meta);
+    if (fileExists(src)) fs.copyFileSync(src, path.join(stageDir, meta));
+  }
+
+  // Tar staging 目录
+  tarDirectory(stageDir, outputPath);
+
+  // 清理
+  rmrf(stageDir);
 }
 
 /** 找 Git 自带的 tar */
@@ -1156,25 +1388,70 @@ function uploadToServer(server: string, port: string, version: string, buildPlat
   info("上传完成!");
 }
 
-/** 缓存当前版本的 dist/ */
-function cacheCurrentDist(version: string, cacheDir: string = CACHE_DIR_DEFAULT) {
+/** 缓存当前版本的所有可增量对比资源 */
+function cacheCurrentRelease(version: string, cacheDir: string = CACHE_DIR_DEFAULT) {
   const cacheVersionDir = path.join(cacheDir, version);
-  const cacheDist = path.join(cacheVersionDir, "dist");
 
   // 如果已存在，先删除
   rmrf(cacheVersionDir);
   fs.mkdirSync(cacheVersionDir, { recursive: true });
 
-  info(`缓存 dist/ → ${cacheDist}`);
+  // 1. dist/
+  info(`缓存 dist/`);
+  copyDirRecursive(DIST_DIR, path.join(cacheVersionDir, "dist"));
 
-  // 复制 dist/ 目录
-  copyDirRecursive(DIST_DIR, cacheDist);
-
-  // 同时缓存 package.json（用于依赖变更检测）
+  // 2. package.json
   fs.copyFileSync(
     path.join(ROOT_DIR, "package.json"),
     path.join(cacheVersionDir, "package.json"),
   );
+
+  // 3. skills/
+  const skillsDir = path.join(ROOT_DIR, "skills");
+  if (fileExists(skillsDir)) {
+    info(`缓存 skills/`);
+    copyDirRecursive(skillsDir, path.join(cacheVersionDir, "skills"));
+  }
+
+  // 4. extensions/
+  const extensionsDir = path.join(ROOT_DIR, "extensions");
+  if (fileExists(extensionsDir)) {
+    info(`缓存 extensions/`);
+    copyDirRecursive(extensionsDir, path.join(cacheVersionDir, "extensions"));
+  }
+
+  // 5. data/（只缓存种子文件，复用 stageSeedData）
+  info(`缓存 data/ (种子文件)`);
+  stageSeedData(cacheVersionDir);
+
+  // 6. docs/reference/templates/
+  const templatesDir = path.join(ROOT_DIR, "docs", "reference", "templates");
+  if (fileExists(templatesDir)) {
+    info(`缓存 docs/reference/templates/`);
+    const cachedTemplates = path.join(cacheVersionDir, "docs", "reference", "templates");
+    copyDirRecursive(templatesDir, cachedTemplates);
+  }
+
+  // 7. node_modules 元数据（包名→版本映射，不缓存完整目录）
+  const nmDir = path.join(ROOT_DIR, "node_modules");
+  if (fileExists(nmDir)) {
+    info(`缓存 node_modules 包元数据`);
+    const pkgVersions = scanPackageVersions(nmDir);
+    const metaObj: Record<string, { name: string; version: string }> = {};
+    pkgVersions.forEach((v, k) => { metaObj[k] = v; });
+    fs.writeFileSync(
+      path.join(cacheVersionDir, "node_modules_meta.json"),
+      JSON.stringify(metaObj, null, 2),
+      "utf-8",
+    );
+    info(`  ${pkgVersions.size} 个包已记录`);
+  }
+
+  // 8. 元数据文件
+  for (const meta of ["install.json", "version.json"]) {
+    const src = path.join(ROOT_DIR, meta);
+    if (fileExists(src)) fs.copyFileSync(src, path.join(cacheVersionDir, meta));
+  }
 
   // 清理过旧的缓存
   cleanupOldCaches(cacheDir);
@@ -1182,15 +1459,33 @@ function cacheCurrentDist(version: string, cacheDir: string = CACHE_DIR_DEFAULT)
   info(`缓存完成 (${version})`);
 }
 
-/** 递归复制目录 */
-function copyDirRecursive(src: string, dest: string) {
+/** 递归复制目录，skipDirs 控制要跳过的子目录名 */
+function copyDirRecursive(src: string, dest: string, skipDirs: string[] = ["node_modules", ".git"]) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name !== "node_modules" && entry.name !== ".git") {
-        copyDirRecursive(srcPath, destPath);
+
+    // 处理符号链接：保留链接结构（pnpm 依赖此特性）
+    if (entry.isSymbolicLink()) {
+      const linkTarget = fs.readlinkSync(srcPath);
+      try {
+        fs.symlinkSync(linkTarget, destPath);
+      } catch {
+        // Windows 非管理员可能无法创建符号链接，回退为复制目标内容
+        const realPath = fs.realpathSync(srcPath);
+        const stat = fs.statSync(realPath);
+        if (stat.isDirectory()) {
+          if (!skipDirs.includes(entry.name)) {
+            copyDirRecursive(realPath, destPath, skipDirs);
+          }
+        } else {
+          fs.copyFileSync(realPath, destPath);
+        }
+      }
+    } else if (entry.isDirectory()) {
+      if (!skipDirs.includes(entry.name)) {
+        copyDirRecursive(srcPath, destPath, skipDirs);
       }
     } else {
       fs.copyFileSync(srcPath, destPath);
@@ -1253,6 +1548,219 @@ function safeUnlink(p: string) {
     if (fileExists(p)) fs.unlinkSync(p);
   } catch {
     // ignore
+  }
+}
+
+// ─── 多目录增量辅助函数 ─────────────────────────────────
+
+interface DeltaManifestShape {
+  added: Array<{ path: string; sha256: string; size: number }>;
+  modified: Array<{ path: string; sha256: string; size: number }>;
+  removed: string[];
+  totalFiles: number;
+  totalSize: number;
+}
+
+/**
+ * 将子增量（generate-delta-package.ts 输出）合并到主增量，路径加前缀。
+ * 例如 skills/ 子增量中的 "weather/SKILL.md" → 主增量中的 "skills/weather/SKILL.md"
+ */
+function mergeSubDelta(
+  subDeltaDir: string,
+  prefix: string,
+  mainDeltaDir: string,
+  mainManifest: DeltaManifestShape,
+) {
+  const subJsonPath = path.join(subDeltaDir, "delta.json");
+  if (!fileExists(subJsonPath)) return;
+
+  const sub = readJson<DeltaManifestShape>(subJsonPath);
+
+  for (const entry of sub.added) {
+    const prefixed = `${prefix}/${entry.path}`;
+    const src = path.join(subDeltaDir, "added", entry.path);
+    const dest = path.join(mainDeltaDir, "added", prefixed);
+    if (fileExists(src)) {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
+    mainManifest.added.push({ ...entry, path: prefixed });
+    mainManifest.totalSize += entry.size;
+    mainManifest.totalFiles++;
+  }
+
+  for (const entry of sub.modified) {
+    const prefixed = `${prefix}/${entry.path}`;
+    const src = path.join(subDeltaDir, "modified", entry.path);
+    const dest = path.join(mainDeltaDir, "modified", prefixed);
+    if (fileExists(src)) {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
+    mainManifest.modified.push({ ...entry, path: prefixed });
+    mainManifest.totalSize += entry.size;
+    mainManifest.totalFiles++;
+  }
+
+  for (const relPath of sub.removed) {
+    mainManifest.removed.push(`${prefix}/${relPath}`);
+  }
+}
+
+/** 扫描 node_modules 中每个包的 name+version（只读顶层 package.json） */
+function scanPackageVersions(nmDir: string): Map<string, { name: string; version: string }> {
+  const result = new Map<string, { name: string; version: string }>();
+  if (!fileExists(nmDir)) return result;
+
+  for (const entry of fs.readdirSync(nmDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name === ".cache" || entry.name === ".package-lock.json" || entry.name === ".git") continue;
+
+    if (entry.name.startsWith("@")) {
+      // scoped package: @scope/name
+      const scopeDir = path.join(nmDir, entry.name);
+      for (const sub of fs.readdirSync(scopeDir, { withFileTypes: true })) {
+        if (!sub.isDirectory()) continue;
+        const pkgJsonPath = path.join(scopeDir, sub.name, "package.json");
+        if (fileExists(pkgJsonPath)) {
+          try {
+            const pkg = readJson<{ name: string; version: string }>(pkgJsonPath);
+            result.set(`${entry.name}/${sub.name}`, { name: pkg.name ?? `${entry.name}/${sub.name}`, version: pkg.version ?? "0.0.0" });
+          } catch { /* skip malformed */ }
+        }
+      }
+    } else {
+      const pkgJsonPath = path.join(nmDir, entry.name, "package.json");
+      if (fileExists(pkgJsonPath)) {
+        try {
+          const pkg = readJson<{ name: string; version: string }>(pkgJsonPath);
+          result.set(entry.name, { name: pkg.name ?? entry.name, version: pkg.version ?? "0.0.0" });
+        } catch { /* skip malformed */ }
+      }
+    }
+  }
+  return result;
+}
+
+/** 将单个 npm 包的所有文件复制到增量包的 added/ 或 modified/ 中 */
+function copyPackageToDelta(
+  nmDir: string,
+  pkgName: string,
+  category: "added" | "modified",
+  deltaOutputDir: string,
+  manifest: DeltaManifestShape,
+): number {
+  const pkgDir = path.join(nmDir, pkgName);
+  if (!fileExists(pkgDir)) return 0;
+
+  const files = findFilesRecursive(pkgDir);
+  let totalSize = 0;
+
+  for (const relFile of files) {
+    const fullRelPath = `node_modules/${pkgName}/${relFile}`.replace(/\\/g, "/");
+    const src = path.join(pkgDir, relFile);
+    const dest = path.join(deltaOutputDir, category, fullRelPath);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+
+    const stats = fs.statSync(src);
+    const hash = sha256File(src);
+    const entry = { path: fullRelPath, sha256: hash, size: stats.size };
+
+    if (category === "added") {
+      manifest.added.push(entry);
+    } else {
+      manifest.modified.push(entry);
+    }
+    manifest.totalSize += stats.size;
+    manifest.totalFiles++;
+    totalSize += stats.size;
+  }
+  return totalSize;
+}
+
+/**
+ * 生成 node_modules 包级别增量。
+ * 对比缓存的 node_modules_meta.json 与当前 node_modules，
+ * 只打入版本变更/新增的整个 npm 包。
+ */
+function generateNodeModulesDelta(
+  cacheVersionDir: string,
+  deltaOutputDir: string,
+  manifest: DeltaManifestShape,
+) {
+  const metaPath = path.join(cacheVersionDir, "node_modules_meta.json");
+  const currentNmDir = path.join(ROOT_DIR, "node_modules");
+
+  let oldPkgs = new Map<string, { name: string; version: string }>();
+  if (fileExists(metaPath)) {
+    const cached = readJson<Record<string, { name: string; version: string }>>(metaPath);
+    oldPkgs = new Map(Object.entries(cached));
+  } else {
+    info("  上一版本无 node_modules_meta.json 缓存，跳过 node_modules 增量");
+    return;
+  }
+
+  const newPkgs = scanPackageVersions(currentNmDir);
+
+  // 快照 manifest 计数，用于超限回滚
+  const snapshotAddedLen = manifest.added.length;
+  const snapshotModifiedLen = manifest.modified.length;
+  const snapshotTotalSize = manifest.totalSize;
+  const snapshotTotalFiles = manifest.totalFiles;
+
+  let addedCount = 0, modifiedCount = 0, removedCount = 0;
+  let nmDeltaSize = 0;
+
+  // 新增和变更的包
+  let overLimit = false;
+  newPkgs.forEach((newMeta, pkgName) => {
+    if (overLimit) return;
+    const oldMeta = oldPkgs.get(pkgName);
+    if (!oldMeta) {
+      const size = copyPackageToDelta(currentNmDir, pkgName, "added", deltaOutputDir, manifest);
+      nmDeltaSize += size;
+      addedCount++;
+    } else if (oldMeta.version !== newMeta.version) {
+      const size = copyPackageToDelta(currentNmDir, pkgName, "modified", deltaOutputDir, manifest);
+      nmDeltaSize += size;
+      modifiedCount++;
+    }
+
+    if (nmDeltaSize > NM_DELTA_SIZE_LIMIT) {
+      overLimit = true;
+    }
+  });
+
+  if (overLimit) {
+    // 超限：回滚所有已复制的 node_modules 文件和 manifest 条目，
+    // 让客户端通过 checkAndInstallDeps() 完全接管
+    warn(`  node_modules 增量超过 ${fileSizeHuman(NM_DELTA_SIZE_LIMIT)} 限制，回滚 node_modules 增量（客户端将通过 npm install 处理）`);
+
+    // 回滚 manifest 到快照状态
+    manifest.added.length = snapshotAddedLen;
+    manifest.modified.length = snapshotModifiedLen;
+    manifest.totalSize = snapshotTotalSize;
+    manifest.totalFiles = snapshotTotalFiles;
+
+    // 删除已复制的 node_modules 文件（delta 目录中）
+    const nmAddedDir = path.join(deltaOutputDir, "added", "node_modules");
+    const nmModifiedDir = path.join(deltaOutputDir, "modified", "node_modules");
+    if (fileExists(nmAddedDir)) rmrf(nmAddedDir);
+    if (fileExists(nmModifiedDir)) rmrf(nmModifiedDir);
+    return;
+  }
+
+  // 删除的包（标记为目录，路径以 / 结尾）
+  oldPkgs.forEach((_meta, pkgName) => {
+    if (!newPkgs.has(pkgName)) {
+      manifest.removed.push(`node_modules/${pkgName}/`);
+      removedCount++;
+    }
+  });
+
+  if (addedCount + modifiedCount + removedCount > 0) {
+    info(`  node_modules 增量: ${addedCount} 新增, ${modifiedCount} 变更, ${removedCount} 删除 (${fileSizeHuman(nmDeltaSize)})`);
   }
 }
 

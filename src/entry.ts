@@ -20,13 +20,26 @@ process.title = "openclawcn";
   try {
     const { readFileSync } = await import("node:fs");
     const raw = readFileSync(buildMetaPath, "utf-8");
-    const meta = JSON.parse(raw) as { nodeVersion?: string; v8Version?: string };
+    const meta = JSON.parse(raw) as {
+      nodeVersion?: string;
+      v8Version?: string;
+      platform?: string;
+      arch?: string;
+    };
     if (meta.v8Version && meta.v8Version !== process.versions.v8) {
       console.error(`[openclawcn] V8 engine version mismatch!`);
       console.error(`  Build V8:   ${meta.v8Version} (node ${meta.nodeVersion ?? "?"})`);
       console.error(`  Running V8: ${process.versions.v8} (node ${process.version})`);
       console.error(`  .jsc bytecode is incompatible with this Node.js version.`);
       console.error(`  Please download the latest full installer to fix this.`);
+      process.exit(78);
+    }
+    if (meta.platform && meta.platform !== process.platform) {
+      console.error(`[openclawcn] Platform mismatch!`);
+      console.error(`  Build platform: ${meta.platform}-${meta.arch ?? "?"}`);
+      console.error(`  Running on:     ${process.platform}-${process.arch}`);
+      console.error(`  .jsc bytecode compiled for a different OS cannot run here.`);
+      console.error(`  Please download the installer for your platform.`);
       process.exit(78);
     }
   } catch {
