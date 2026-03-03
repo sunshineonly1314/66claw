@@ -68,7 +68,7 @@ function disconnectedHost(overrides?: Partial<ModelConfigState>) {
 }
 
 /** 创建一个测试 Capability (controller 输出格式) */
-function makeCap(id: string, status: "active" | "inactive" = "inactive"): Capability {
+function makeCap(id: string, status: "active" | "unconfigured" = "unconfigured"): Capability {
   return {
     capability: id,
     name: `${id} name`,
@@ -120,6 +120,9 @@ function makeProvider(id: string, opts?: Partial<ProviderInfo>): ProviderInfo {
     capabilities: ["text"],
     configured: false,
     activeModels: 0,
+    needsBaseUrl: false,
+    defaultBaseUrl: "",
+    apiKeyOptional: false,
     ...opts,
   };
 }

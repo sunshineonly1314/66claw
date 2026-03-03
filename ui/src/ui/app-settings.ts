@@ -182,7 +182,7 @@ export function setTab(host: SettingsHost, next: Tab) {
   // OpenClawCN: stop orchestrator polling when navigating away from agents tab
   if (next !== "agents" && (host as unknown as { orchestratorOpen?: boolean }).orchestratorOpen) {
     void import("./controllers/orchestrator.js").then(({ closeOrchestrator }) => {
-      closeOrchestrator(host as Parameters<typeof closeOrchestrator>[0]);
+      closeOrchestrator(host as unknown as Parameters<typeof closeOrchestrator>[0]);
     });
   }
   void refreshActiveTab(host);

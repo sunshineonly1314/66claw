@@ -4,6 +4,9 @@ import type { UiSettings } from "../storage.ts";
 import { formatRelativeTimestamp, formatDurationHuman } from "../format.ts";
 import { formatNextRun } from "../presenter.ts";
 import { t } from "../i18n/index.js";
+import type { CostUsageSummary } from "../types.js";
+import type { ProviderInfo, CurrentModelInfo, ApiKeyVerifyResult } from "../controllers/models.js";
+import type { SecurityModeInfo, SecurityMode } from "../controllers/security.js";
 
 export type OverviewProps = {
   connected: boolean;
@@ -16,11 +19,51 @@ export type OverviewProps = {
   cronEnabled: boolean | null;
   cronNext: number | null;
   lastChannelsRefresh: number | null;
+  // Usage
+  usageLoading: boolean;
+  usageSummary: CostUsageSummary | null;
+  usageError: string | null;
+  // Models
+  modelsLoading: boolean;
+  modelsProviders: ProviderInfo[];
+  modelsDefaults: Record<string, string>;
+  modelsCurrent: CurrentModelInfo | null;
+  modelsSaving: boolean;
+  modelsError: string | null;
+  modelsSuccessMessage: string | null;
+  modelsAuthSaving: boolean;
+  modelsConfiguringProvider: string | null;
+  modelsAuthVerifying: boolean;
+  modelsAuthVerifyResult: ApiKeyVerifyResult | null;
+  modelsPendingProvider: string | null;
+  modelsPendingModel: string | null;
+  // Security
+  securityLoading: boolean;
+  securityModes: SecurityModeInfo[];
+  securityCurrent: SecurityMode | null;
+  securitySaving: boolean;
+  securityError: string | null;
+  securityShowWarning: boolean;
+  securitySuccessMessage: string | null;
+  // Callbacks
   onSettingsChange: (next: UiSettings) => void;
   onPasswordChange: (next: string) => void;
   onSessionKeyChange: (next: string) => void;
   onConnect: () => void;
   onRefresh: () => void;
+  onNavigateToUsage: () => void;
+  onNavigateToConfig: () => void;
+  onModelChange: (provider: string, model: string) => void;
+  onModelPendingChange: (provider: string, model: string) => void;
+  onModelPendingCancel: () => void;
+  onModelPendingConfirm: () => void;
+  onSetConfiguringProvider: (providerId: string | null) => void;
+  onSaveProviderAuth: (provider: string, auth: { apiKey?: string; secretId?: string; secretKey?: string }) => void;
+  onVerifyApiKey: (provider: string, apiKey: string, model?: string) => void;
+  onClearVerifyResult: () => void;
+  onSecurityModeChange: (mode: string) => void;
+  onCloseSecurityWarning: () => void;
+  onConfirmSecurityTrust: () => void;
 };
 
 export function renderOverview(props: OverviewProps) {

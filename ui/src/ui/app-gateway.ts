@@ -92,6 +92,10 @@ type GatewayHost = {
   skillsInstallProgress: Record<string, InstallProgress>;
   globalToast: import("./app-view-state.ts").McpToast | null;
   _globalToastTimer: number | null;
+  updateExecuting: boolean;
+  updateProgress: import("./views/update-dialog").UpdateProgress | null;
+  updateResult: import("./views/update-dialog").UpdateResult | null;
+  updateAvailable: import("./views/update-dialog").UpdateAvailableInfo | null;
 };
 
 type SessionDefaultsSnapshot = {
@@ -205,8 +209,10 @@ export function connectGateway(host: GatewayHost) {
         host.updateProgress = null;
       }
       // Smooth Update: restore update banner state after reconnect
-      void client.request("update.status", {}).then((res: Record<string, unknown> | undefined) => {
-        if (wasExecutingUpdate && (!res?.hasUpdate || res.dismissed)) {
+      void client.request("update.status", {}).then((res: unknown) => {
+        const result = res as Record<string, unknown> | undefined;
+        const res2 = result;
+        if (wasExecutingUpdate && (!res2?.hasUpdate || res2.dismissed)) {
           // S2-6: 之前在执行更新，重连后发现更新状态已清除 → 更新实际成功了
           host.updateResult = { ok: true, status: "ok", version: host.updateAvailable?.version };
           return;
@@ -215,14 +221,14 @@ export function connectGateway(host: GatewayHost) {
           // 仍有更新可用，说明更新未成功 → 显示连接丢失错误
           host.updateResult = { ok: false, error: "connection lost during update" };
         }
-        if (res?.hasUpdate && !res.dismissed && typeof res.version === "string") {
+        if (res2?.hasUpdate && !res2.dismissed && typeof res2.version === "string") {
           host.updateAvailable = {
-            version: res.version,
-            updateType: (res.updateType as "delta" | "full" | "installer") ?? "installer",
-            changelog: res.changelog as { "zh-CN"?: string; "en-US"?: string } | undefined,
-            summary: typeof res.summary === "string" ? res.summary : undefined,
-            mandatory: res.mandatory === true,
-            installerUrl: typeof res.installerUrl === "string" ? res.installerUrl : undefined,
+            version: res2.version as string,
+            updateType: (res2.updateType as "delta" | "full" | "installer") ?? "installer",
+            changelog: res2.changelog as { "zh-CN"?: string; "en-US"?: string } | undefined,
+            summary: typeof res2.summary === "string" ? res2.summary : undefined,
+            mandatory: res2.mandatory === true,
+            installerUrl: typeof res2.installerUrl === "string" ? res2.installerUrl : undefined,
           };
         }
       }).catch(() => {

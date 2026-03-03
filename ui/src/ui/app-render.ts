@@ -981,6 +981,12 @@ export function renderApp(state: AppViewState) {
                   if (state.agentsSelectedId === agentId && !state.teamProjectSelectedId) return;
                   state.agentsSelectedId = agentId;
                   state.teamProjectSelectedId = null; // Switch to agent view
+                  // Capture panel before guard so control-flow narrowing doesn't suppress chat/outputs branches below
+                  const prevPanel = state.agentsPanel;
+                  // Guard: fall back to overview if current panel can't render without chat init
+                  if (prevPanel === "chat" || prevPanel === "outputs") {
+                    state.agentsPanel = "overview";
+                  }
                   stopProjectHealthPoll();
                   state.agentDeleteError = null;
                   state.agentFilesList = null;
@@ -998,10 +1004,10 @@ export function renderApp(state: AppViewState) {
                   state.agentOutputActive = null;
                   state.agentOutputContent = null;
                   void loadAgentIdentity(state, agentId);
-                  if (state.agentsPanel === "outputs") void loadAgentOutputs(state as any, agentId);
-                  if (state.agentsPanel === "files") void loadAgentFiles(state, agentId);
-                  if (state.agentsPanel === "skills") void loadAgentSkills(state, agentId);
-                  if (state.agentsPanel === "chat") {
+                  if (prevPanel === "outputs") void loadAgentOutputs(state as any, agentId);
+                  if (prevPanel === "files") void loadAgentFiles(state, agentId);
+                  if (prevPanel === "skills") void loadAgentSkills(state, agentId);
+                  if (prevPanel === "chat") {
                     resetAgentChatState(state as any, `agent:${agentId}:main`);
                     void loadAgentChatHistory(state as any);
                   }
@@ -1340,10 +1346,10 @@ export function renderApp(state: AppViewState) {
                 // OpenClawCN: Orchestrator entry & view
                 orchestratorEntryHtml: renderOrchestratorEntry(
                   () => void openOrchestrator(state as any),
-                  t,
+                  t as (key: string) => string,
                 ),
                 orchestratorHtml: state.orchestratorOpen && state.orchestratorState
-                  ? renderOrchestrator(state.orchestratorState, {
+                  ? renderOrchestrator(state.orchestratorState as unknown as import("../../../extensions/orchestrator/src/ui/orchestrator-state").OrchestratorState, {
                       onClose: () => closeOrchestrator(state as any),
                       onSend: () => void orchSend(state as any),
                       onInput: (e: Event) => orchInput(state as any, e),
@@ -1354,7 +1360,7 @@ export function renderApp(state: AppViewState) {
                       onAnswerQuestion: (qi: number, answer: string) => orchAnswerQuestion(state as any, qi, answer),
                       onDeployProposal: (planId: string) => void orchDeployProposal(state as any, planId),
                       onPreviewDeploy: (templateId: string) => void orchPreviewDeploy(state as any, templateId),
-                    }, t)
+                    }, t as (key: string) => string)
                   : nothing,
               })
             : nothing
@@ -2049,6 +2055,8 @@ export function renderApp(state: AppViewState) {
                   rotateDeviceToken(state, { deviceId, role, scopes }),
                 onDeviceRevoke: (deviceId, role) =>
                   revokeDeviceToken(state, { deviceId, role }),
+                onDeviceRemove: (deviceId) =>
+                  removeDevice(state, deviceId, t("network.devices.unpairConfirm")),
                 onLoadConfig: () => loadConfig(state),
                 onLoadExecApprovals: () => {
                   const target =

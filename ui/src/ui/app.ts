@@ -292,6 +292,7 @@ export class ClawdbotApp extends LitElement {
     lastVerifiedAt: null,
     deviceSwitchInfo: null,
     deviceSwitchCooldown: null,
+    lastUpgradeResult: null,
   };
   @state() showLicenseDialog: import("./license/types").LicenseDialogType | null = null;
   @state() licenseActivating = false;
@@ -421,7 +422,7 @@ export class ClawdbotApp extends LitElement {
   @state() agentDeleting = false;
   @state() agentDeleteError: string | null = null;
   @state() agentAddFormOpen = false;
-  @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" = "overview";
+  @state() agentsPanel: "overview" | "outputs" | "files" | "tools" | "skills" | "channels" | "cron" | "chat" = "overview";
   @state() agentFilesLoading = false;
   @state() agentFilesError: string | null = null;
   @state() agentFilesList: import("./types").AgentsFilesListResult | null = null;
@@ -2117,7 +2118,7 @@ export class ClawdbotApp extends LitElement {
   }
 
   render() {
-    return renderApp(this);
+    return renderApp(this as unknown as import("./app-view-state").AppViewState);
   }
 }
 

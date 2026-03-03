@@ -3,7 +3,7 @@
  * Chat 视图安全测试 - 附件 ID 生成
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock crypto.getRandomValues
 const originalGetRandomValues = crypto.getRandomValues;
@@ -88,7 +88,7 @@ describe("generateAttachmentId Security Tests", () => {
     // Verify Uint8Array was passed
     const call = getRandomValuesSpy.mock.calls[0];
     expect(call[0]).toBeInstanceOf(Uint8Array);
-    expect(call[0].length).toBe(6);
+    expect((call[0] as Uint8Array).length).toBe(6);
 
     getRandomValuesSpy.mockRestore();
   });

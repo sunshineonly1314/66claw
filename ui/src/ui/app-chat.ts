@@ -161,7 +161,7 @@ export function removeQueuedMessage(host: ChatHost, id: string) {
 export async function handleSendChat(
   host: ChatHost,
   messageOverride?: string,
-  opts?: { restoreDraft?: boolean; voiceInput?: boolean },
+  opts?: { restoreDraft?: boolean; voiceInput?: boolean; voiceMode?: boolean },
 ) {
   if (!host.connected) return;
   const previousDraft = host.chatMessage;

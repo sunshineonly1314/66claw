@@ -331,6 +331,12 @@ export function renderAgents(props: AgentsProps) {
                         onSoulLoad: props.onSoulLoad,
                         onSoulSave: props.onSoulSave,
                         requestUpdate: props.requestUpdate ?? (() => {}),
+                        // Team context — drives supervisor/member banner
+                        teamProjects: props.teamProjects,
+                        agentIdentityById: props.agentIdentityById,
+                        onSelectProject: props.onSelectProject,
+                        onPauseProject: props.onPauseProject,
+                        onResumeProject: props.onResumeProject,
                       })
                     : nothing
                 }
@@ -573,6 +579,123 @@ function renderAgentTabs(
   `;
 }
 
+// ── Supervisor / Team Banner ─────────────────────────────────────────────
+
+/**
+ * Renders a team context banner at the top of the agent overview.
+ * - Supervisor agent: full banner with member avatars + pause/resume action
+ * - Sub-member agent: compact read-only banner (team name + status + view button)
+ * - Unaffiliated agent: returns nothing
+ */
+function renderSupervisorBanner(
+  agentId: string,
+  teamProjects: TeamProjectSummary[] | null,
+  agentIdentityById: Record<string, AgentIdentityResult>,
+  onSelectProject: (projectId: string) => void,
+  onPauseProject?: (projectId: string) => void,
+  onResumeProject?: (projectId: string) => void,
+): TemplateResult | typeof nothing {
+  if (!teamProjects || teamProjects.length === 0) return nothing;
+
+  const supervisorProject = teamProjects.find((p) => p.supervisorId === agentId) ?? null;
+  const memberProject = supervisorProject
+    ? null
+    : (teamProjects.find((p) => p.memberIds.includes(agentId)) ?? null);
+
+  const project = supervisorProject ?? memberProject;
+  if (!project) return nothing;
+
+  const isSupervisor = supervisorProject !== null;
+
+  // Map project status to CSS dot modifier.
+  // All statuses (active/paused/error/deploying/archived) have dedicated CSS classes.
+  const statusDot = project.status;
+
+  const statusLabel =
+    project.status === "active" ? t("team.status.active")
+    : project.status === "paused" ? t("team.status.paused")
+    : project.status === "error" ? t("team.status.error")
+    : project.status === "deploying" ? t("team.status.deploying")
+    : project.status;
+
+  if (isSupervisor) {
+    const memberIds = project.memberIds ?? [];
+    const maxAvatars = 4;
+    const visibleIds = memberIds.slice(0, maxAvatars);
+    const extraCount = memberIds.length - visibleIds.length;
+
+    return html`
+      <section class="card supervisor-banner">
+        <div class="row" style="align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <div class="row" style="align-items:center; gap:8px; flex-wrap:wrap;">
+            <span class="agent-pill auto-supervisor" style="font-size:12px;">👑 ${t("team.supervisor")}</span>
+            <span class="card-title" style="margin:0; font-size:14px;">${project.name}</span>
+            <span class="project-status-dot project-status-dot--${statusDot}" style="margin-left:2px;"></span>
+            <span class="agent-sub">${statusLabel}</span>
+          </div>
+          <button
+            class="btn btn--sm btn--outline"
+            style="white-space:nowrap; flex-shrink:0;"
+            @click=${() => onSelectProject(project.projectId)}
+          >${t("team.action.viewTeam")} →</button>
+        </div>
+
+        <div class="agent-sub" style="margin-bottom:8px;">
+          ${t("team.supervisorBanner.managing", { count: String(memberIds.length) })}
+        </div>
+
+        ${memberIds.length > 0 ? html`
+          <div class="row" style="gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+            ${visibleIds.map((mid) => {
+              const identity = agentIdentityById[mid];
+              const emoji = identity?.emoji ?? "";
+              const initial = (identity?.name ?? mid).slice(0, 1).toUpperCase();
+              return html`
+                <div class="agent-avatar agent-avatar--sm" title="${identity?.name ?? mid}">
+                  ${emoji || initial}
+                </div>
+              `;
+            })}
+            ${extraCount > 0 ? html`<span class="agent-sub">+${extraCount}</span>` : nothing}
+          </div>
+        ` : nothing}
+
+        <div class="row" style="gap:8px;">
+          ${project.status === "active" && onPauseProject ? html`
+            <button class="btn btn--sm" @click=${() => onPauseProject!(project.projectId)}>
+              ${t("team.action.pause")}
+            </button>
+          ` : nothing}
+          ${project.status === "paused" && onResumeProject ? html`
+            <button class="btn btn--sm" @click=${() => onResumeProject!(project.projectId)}>
+              ${t("team.action.resume")}
+            </button>
+          ` : nothing}
+        </div>
+      </section>
+    `;
+  }
+
+  // Compact read-only banner for sub-members
+  return html`
+    <section class="card supervisor-banner supervisor-banner--member">
+      <div class="row" style="align-items:center; gap:8px; flex-wrap:wrap;">
+        <span class="agent-sub" style="flex-shrink:0;">${t("team.supervisorBanner.belongsTo")}</span>
+        <span class="agent-pill">${project.name}</span>
+        <span class="project-status-dot project-status-dot--${statusDot}"></span>
+        <span class="agent-sub">${statusLabel}</span>
+        <button
+          class="btn btn--xs btn--outline"
+          style="margin-left:auto; flex-shrink:0;"
+          @click=${() => onSelectProject(project.projectId)}
+        >${t("team.action.viewTeam")} →</button>
+      </div>
+    </section>
+  `;
+}
+
+// ── Agent Overview ────────────────────────────────────────────────────────
+
 function renderAgentOverview(params: {
   agent: AgentsListResult["agents"][number];
   defaultId: string | null;
@@ -593,6 +716,12 @@ function renderAgentOverview(params: {
   onSoulLoad?: AgentsProps["onSoulLoad"];
   onSoulSave?: AgentsProps["onSoulSave"];
   requestUpdate: () => void;
+  // Team context — drives supervisor/member banner
+  teamProjects?: TeamProjectSummary[] | null;
+  agentIdentityById?: Record<string, AgentIdentityResult>;
+  onSelectProject?: (projectId: string) => void;
+  onPauseProject?: (projectId: string) => void;
+  onResumeProject?: (projectId: string) => void;
 }) {
   const {
     agent,
@@ -670,6 +799,14 @@ function renderAgentOverview(params: {
   const soulDirty = overviewSoul.dirty;
 
   return html`
+    ${renderSupervisorBanner(
+      agent.id,
+      params.teamProjects ?? null,
+      params.agentIdentityById ?? {},
+      params.onSelectProject ?? (() => {}),
+      params.onPauseProject,
+      params.onResumeProject,
+    )}
     <!-- Card 1: Identity (editable) -->
     <section class="card">
       <div class="card-title">${t("agents.identityTitle")}</div>

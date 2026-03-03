@@ -1115,7 +1115,7 @@ function renderCategoryTab(
       @click=${onClick}
     >
       <span class="playground-category-emoji">${category.emoji}</span>
-      <span class="playground-category-label">${t(category.labelKey)}</span>
+      <span class="playground-category-label">${tMaybe(category.labelKey)}</span>
       <span class="playground-category-count">${skillCount}</span>
     </button>
   `;
@@ -1259,7 +1259,7 @@ export function renderPlayground(props: PlaygroundProps) {
       ${activeCategory
         ? html`
             <div class="playground-category-desc">
-              ${t(CATEGORIES.find((c) => c.id === activeCategory)?.descKey ?? "")}
+              ${tMaybe(CATEGORIES.find((c) => c.id === activeCategory)?.descKey ?? "")}
             </div>
           `
         : nothing}

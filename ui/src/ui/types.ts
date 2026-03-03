@@ -621,6 +621,7 @@ export type SkillsMarketResponse = {
   syncing: boolean;
   lastSyncedAt: string | null;
   total?: number;
+  message?: string | null;
 };
 
 export type StatusSummary = Record<string, unknown>;
@@ -675,7 +676,7 @@ export type TeamProjectDetail = {
     members: TeamMemberInfo[];
     version: number;
     autoSupervisor?: boolean;
-    visibility: { mode: string; displayName?: string };
+    visibility: { mode: string; displayName?: string; displayEmoji?: string };
     coordination: {
       supervisorStyle?: string;
       hopLimit: number;

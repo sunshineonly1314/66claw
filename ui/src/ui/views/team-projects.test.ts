@@ -51,6 +51,7 @@ function createDetail(overrides: Partial<TeamProjectDetail["project"]> = {}): Te
       ],
       version: 1,
       autoSupervisor: true,
+      memory: { mode: "shared" },
       visibility: { mode: "public" },
       coordination: {
         hopLimit: 3,
@@ -59,6 +60,7 @@ function createDetail(overrides: Partial<TeamProjectDetail["project"]> = {}): Te
       },
       ...overrides,
     },
+    state: null,
   };
 }
 
@@ -70,7 +72,7 @@ function createAgentsList(): AgentsListResult {
       { id: "worker-a", name: "文案写手" },
       { id: "worker-b", name: "配图助手" },
     ],
-  } as AgentsListResult;
+  } as unknown as AgentsListResult;
 }
 
 function createSidebarProps(overrides: Partial<ProjectSidebarProps> = {}): ProjectSidebarProps {

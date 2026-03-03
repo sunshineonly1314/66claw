@@ -534,7 +534,7 @@ export type AppViewState = {
   resetChatScroll: (force?: boolean) => void;
   // Chat 处理函数
   handleChatScroll: (event: Event) => void;
-  handleSendChat: (msg?: string, opts?: { restoreDraft?: boolean }) => Promise<void>;
+  handleSendChat: (msg?: string, opts?: { restoreDraft?: boolean; voiceMode?: boolean }) => Promise<void>;
   handleAbortChat: () => Promise<void>;
   removeQueuedMessage: (id: string) => void;
   // Sidebar 处理函数
