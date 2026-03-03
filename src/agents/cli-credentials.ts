@@ -512,7 +512,7 @@ export function readCodexCliCredentials(options?: {
 export function readCodexCliCredentialsCached(options?: {
   ttlMs?: number;
   platform?: NodeJS.Platform;
-  execSync?: ExecSyncFn;
+  execFileSync?: ExecFileSyncFn;
 }): CodexCliCredential | null {
   const ttlMs = options?.ttlMs ?? 0;
   const now = Date.now();
@@ -527,7 +527,7 @@ export function readCodexCliCredentialsCached(options?: {
   }
   const value = readCodexCliCredentials({
     platform: options?.platform,
-    execSync: options?.execSync,
+    execFileSync: options?.execFileSync,
   });
   if (ttlMs > 0) {
     codexCliCache = { value, readAt: now, cacheKey };

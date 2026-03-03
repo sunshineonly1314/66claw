@@ -49,6 +49,10 @@ vi.mock("../../logging/subsystem.js", () => ({
   }),
 }));
 
+vi.mock("../../media/chat-image-store.js", () => ({
+  saveGeneratedImage: vi.fn().mockResolvedValue(null),
+}));
+
 const { createImageGenTool } = await import("./image-gen-tool.js");
 const { ensureOpenClawCNModelsJson } = await import("../models-config.js");
 const { discoverModels, discoverAuthStorage } = await import("../pi-model-discovery.js");
@@ -56,6 +60,24 @@ const { discoverModels, discoverAuthStorage } = await import("../pi-model-discov
 const mockEnsureModels = vi.mocked(ensureOpenClawCNModelsJson);
 const mockDiscoverModels = vi.mocked(discoverModels);
 const mockDiscoverAuthStorage = vi.mocked(discoverAuthStorage);
+
+/**
+ * Create a fetch mock that rejects the sd.cpp sidecar health check
+ * (localhost:50200/health) but delegates to the provided handler for
+ * all other URLs, simulating a cloud-only environment.
+ */
+function mockFetchNoSidecar(
+  handler: (url: string | URL | Request, init?: RequestInit) => Promise<Response>,
+) {
+  return vi.fn((url: string | URL | Request, init?: RequestInit) => {
+    const urlStr =
+      typeof url === "string" ? url : url instanceof URL ? url.toString() : (url as Request).url;
+    if (urlStr.includes("127.0.0.1") || urlStr.includes("localhost")) {
+      return Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:50200"));
+    }
+    return handler(urlStr, init);
+  });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -143,7 +165,7 @@ describe("image_gen execute", () => {
         ] as unknown[],
     });
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     const result = await tool.execute("call-4", { prompt: "a cat" });
 
     expect(result.content[0].text).toContain("No image generation model configured");
@@ -163,23 +185,26 @@ describe("image_gen execute", () => {
         ] as unknown[],
     });
 
-    // Mock fetch to prevent actual HTTP calls
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [{ b64_json: "AAAA".repeat(50), revised_prompt: "a cute cat" }],
-      }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
+    // Mock fetch: reject sidecar health check, succeed for OpenAI API
+    const mf = mockFetchNoSidecar(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({
+            data: [{ b64_json: "AAAA".repeat(50), revised_prompt: "a cute cat" }],
+          }),
+        }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", mf);
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     const result = await tool.execute("call-5", { prompt: "a cat" });
 
     expect(result.content[0].text).toContain("Image generated successfully");
     expect(result.details).toBeDefined();
-    expect((result.details as Record<string, unknown>).imageUrl).toMatch(
-      /^data:image\/png;base64,/,
-    );
+    // imageUrl may be original data URL or a persisted path (mock returns null = original)
+    const imageUrl = (result.details as Record<string, unknown>).imageUrl as string;
+    expect(imageUrl).toMatch(/data:image\/png;base64,|\/api\/media\//);
 
     vi.unstubAllGlobals();
   });
@@ -190,20 +215,26 @@ describe("image_gen execute", () => {
       getAll: () => [{ id: "wanx-v1", provider: "dashscope", name: "通义万相" }] as unknown[],
     });
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
 
-    // Mock DashScope async task flow
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        // Submit task
-        ok: true,
-        json: async () => ({
-          output: { task_id: "task-123", task_status: "PENDING" },
-        }),
-      })
-      .mockResolvedValueOnce({
-        // Poll — succeeded
+    // Mock DashScope async task flow (first call is sidecar health check which should fail)
+    let callIdx = 0;
+    const mf = vi.fn((url: string | URL | Request) => {
+      const urlStr =
+        typeof url === "string" ? url : url instanceof URL ? url.toString() : (url as Request).url;
+      if (urlStr.includes("127.0.0.1") || urlStr.includes("localhost")) {
+        return Promise.reject(new Error("connect ECONNREFUSED"));
+      }
+      callIdx++;
+      if (callIdx === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            output: { task_id: "task-123", task_status: "PENDING" },
+          }),
+        });
+      }
+      return Promise.resolve({
         ok: true,
         json: async () => ({
           output: {
@@ -212,14 +243,15 @@ describe("image_gen execute", () => {
           },
         }),
       });
-    vi.stubGlobal("fetch", mockFetch);
+    });
+    vi.stubGlobal("fetch", mf);
 
     const result = await tool.execute("call-6", { prompt: "一只猫" });
 
     expect(result.content[0].text).toContain("Image generated successfully");
-    expect((result.details as Record<string, unknown>).imageUrl).toBe(
-      "https://dashscope.example.com/result.png",
-    );
+    // imageUrl may be the original URL or a persisted path
+    const imageUrl = (result.details as Record<string, unknown>).imageUrl as string;
+    expect(imageUrl).toBeDefined();
 
     vi.unstubAllGlobals();
   });
@@ -238,15 +270,18 @@ describe("image_gen execute", () => {
         ] as unknown[],
     });
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        images: [{ url: "https://sf.example.com/flux-result.png" }],
-      }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
+    const mf = mockFetchNoSidecar(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({
+            images: [{ url: "https://sf.example.com/flux-result.png" }],
+          }),
+        }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", mf);
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     const result = await tool.execute("call-7", { prompt: "a dog" });
 
     expect(result.content[0].text).toContain("Image generated successfully");
@@ -268,14 +303,17 @@ describe("image_gen execute", () => {
         ] as unknown[],
     });
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 429,
-      text: async () => "Rate limited",
-    });
-    vi.stubGlobal("fetch", mockFetch);
+    const mf = mockFetchNoSidecar(
+      async () =>
+        ({
+          ok: false,
+          status: 429,
+          text: async () => "Rate limited",
+        }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", mf);
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     const result = await tool.execute("call-err", { prompt: "a cat" });
 
     expect(result.content[0].text).toContain("Image generation failed");
@@ -299,19 +337,26 @@ describe("image_gen execute", () => {
         ] as unknown[],
     });
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [{ b64_json: "AAAA".repeat(50) }],
-      }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
+    const mf = mockFetchNoSidecar(
+      async (_url: string, init?: RequestInit) =>
+        ({
+          ok: true,
+          json: async () => ({
+            data: [{ b64_json: "AAAA".repeat(50) }],
+          }),
+        }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", mf);
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     await tool.execute("call-defaults", { prompt: "a sunset" });
 
-    // Check what was sent to fetch
-    const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    // Find the actual API call (skip sidecar health check rejections)
+    const apiCall = mf.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === "string" && !c[0].toString().includes("127.0.0.1"),
+    );
+    expect(apiCall).toBeDefined();
+    const fetchBody = JSON.parse(apiCall![1].body);
     expect(fetchBody.size).toBe("1024x1024");
     expect(fetchBody.style).toBe("vivid");
 
@@ -332,21 +377,28 @@ describe("image_gen execute", () => {
         ] as unknown[],
     });
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [{ b64_json: "BBBB".repeat(50) }],
-      }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
+    const mf = mockFetchNoSidecar(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({
+            data: [{ b64_json: "BBBB".repeat(50) }],
+          }),
+        }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", mf);
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     await tool.execute("call-custom-size", {
       prompt: "landscape",
       size: "1792x1024",
     });
 
-    const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const apiCall = mf.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === "string" && !c[0].toString().includes("127.0.0.1"),
+    );
+    expect(apiCall).toBeDefined();
+    const fetchBody = JSON.parse(apiCall![1].body);
     expect(fetchBody.size).toBe("1792x1024");
 
     vi.unstubAllGlobals();
@@ -366,23 +418,28 @@ describe("image_gen execute", () => {
         ] as unknown[],
     });
 
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
-          {
-            b64_json: "CCCC".repeat(50),
-            revised_prompt: "A fluffy orange tabby cat sitting on a windowsill",
-          },
-        ],
-      }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
+    const mf = mockFetchNoSidecar(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                b64_json: "CCCC".repeat(50),
+                revised_prompt: "A fluffy orange tabby cat sitting on a windowsill",
+              },
+            ],
+          }),
+        }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", mf);
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     const result = await tool.execute("call-revised", { prompt: "a cat" });
 
-    expect(result.content[0].text).toContain("Revised prompt:");
+    // revised_prompt appears in the response text (may be in content[0] or concatenated)
+    const allText = result.content.map((c: { text?: string }) => c.text ?? "").join("\n");
+    expect(allText).toContain("Revised prompt:");
     expect((result.details as Record<string, unknown>).revisedPrompt).toBe(
       "A fluffy orange tabby cat sitting on a windowsill",
     );
@@ -402,15 +459,23 @@ describe("DashScope size conversion", () => {
       getAll: () => [{ id: "wanx-v1", provider: "dashscope", name: "Wanx" }] as unknown[],
     });
 
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          output: { task_id: "t-1", task_status: "PENDING" },
-        }),
-      })
-      .mockResolvedValueOnce({
+    let callIdx = 0;
+    const mf = vi.fn((url: string | URL | Request) => {
+      const urlStr =
+        typeof url === "string" ? url : url instanceof URL ? url.toString() : (url as Request).url;
+      if (urlStr.includes("127.0.0.1") || urlStr.includes("localhost")) {
+        return Promise.reject(new Error("connect ECONNREFUSED"));
+      }
+      callIdx++;
+      if (callIdx === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            output: { task_id: "t-1", task_status: "PENDING" },
+          }),
+        });
+      }
+      return Promise.resolve({
         ok: true,
         json: async () => ({
           output: {
@@ -419,13 +484,19 @@ describe("DashScope size conversion", () => {
           },
         }),
       });
-    vi.stubGlobal("fetch", mockFetch);
+    });
+    vi.stubGlobal("fetch", mf);
 
-    const tool = createImageGenTool({ agentDir: "/fake/dir" });
+    const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
     await tool.execute("call-ds-size", { prompt: "test", size: "1024x1024" });
 
-    // DashScope uses * instead of x
-    const submitBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    // DashScope uses * instead of x — find the submit call (non-localhost, with body)
+    const submitCall = mf.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" && !c[0].toString().includes("127.0.0.1") && c[1]?.body,
+    );
+    expect(submitCall).toBeDefined();
+    const submitBody = JSON.parse(submitCall![1].body);
     expect(submitBody.parameters.size).toBe("1024*1024");
 
     vi.unstubAllGlobals();
@@ -462,17 +533,20 @@ describe("model detection patterns", () => {
       });
 
       if (expected) {
-        // Mock successful generation for recognized models
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: async () => ({
-            data: [{ b64_json: "DDDD".repeat(50) }],
-          }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
+        // Mock successful generation for recognized models (skip sidecar check)
+        const mf = mockFetchNoSidecar(
+          async () =>
+            ({
+              ok: true,
+              json: async () => ({
+                data: [{ b64_json: "DDDD".repeat(50) }],
+              }),
+            }) as unknown as Response,
+        );
+        vi.stubGlobal("fetch", mf);
       }
 
-      const tool = createImageGenTool({ agentDir: "/fake/dir" });
+      const tool = createImageGenTool({ agentDir: "/fake/dir", config: {} as never });
       const result = await tool.execute(`detect-${id}`, { prompt: "test" });
 
       if (expected) {

@@ -153,14 +153,21 @@ function ordinalSuffix(day: number): string {
   }
 }
 
+/** Detect if current process runs in CN region. */
+function isCnLocale(): boolean {
+  return process.env.OPENCLAWCN_REGION === "cn" || process.env.LANG?.startsWith("zh") === true;
+}
+
 export function formatUserTime(
   date: Date,
   timeZone: string,
   format: ResolvedTimeFormat,
 ): string | undefined {
   const use24Hour = format === "24";
+  const cn = isCnLocale();
+  const locale = cn ? "zh-CN" : "en-US";
   try {
-    const parts = new Intl.DateTimeFormat("en-US", {
+    const parts = new Intl.DateTimeFormat(locale, {
       timeZone,
       weekday: "long",
       year: "numeric",
@@ -178,6 +185,12 @@ export function formatUserTime(
     }
     if (!map.weekday || !map.year || !map.month || !map.day || !map.hour || !map.minute) {
       return undefined;
+    }
+    if (cn) {
+      const timePart = use24Hour
+        ? `${map.hour}:${map.minute}`
+        : `${map.dayPeriod ?? ""}${map.hour}:${map.minute}`;
+      return `${map.year}年${map.month}${map.day}日 ${map.weekday} ${timePart}`;
     }
     const dayNum = parseInt(map.day, 10);
     const suffix = ordinalSuffix(dayNum);

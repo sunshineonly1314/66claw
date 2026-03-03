@@ -245,9 +245,9 @@ function buildSkillStatus(
 
   return {
     name: entry.skill.name,
-    nameZh: entry.frontmatter.nameZh || undefined,
+    nameZh: entry.frontmatter.nameZh || entry.frontmatter.name_zh || undefined,
     description: entry.skill.description,
-    descriptionZh: entry.frontmatter.descriptionZh || undefined,
+    descriptionZh: entry.frontmatter.descriptionZh || entry.frontmatter.description_zh || undefined,
     source: entry.skill.source,
     bundled,
     filePath: entry.skill.filePath,

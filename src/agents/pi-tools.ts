@@ -57,9 +57,19 @@ import {
 } from "./tool-policy.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
-function isOpenAIProvider(provider?: string) {
-  const normalized = provider?.trim().toLowerCase();
-  return normalized === "openai" || normalized === "openai-codex";
+/**
+ * Check if provider uses OpenAI-compatible API (supports apply_patch tool).
+ * Chinese providers (DeepSeek, Qwen/DashScope, GLM/Zhipu, MiniMax, Kimi, etc.)
+ * all implement OpenAI-compatible chat completion APIs and can generate valid patches.
+ */
+function isOpenAICompatibleProvider(provider?: string) {
+  if (!provider) {
+    return false;
+  }
+  const normalized = provider.trim().toLowerCase();
+  // Explicit blocklist: only block providers known to NOT support OpenAI-compatible APIs
+  const NON_OPENAI_PROVIDERS = new Set(["anthropic", "google", "google-vertex"]);
+  return !NON_OPENAI_PROVIDERS.has(normalized);
 }
 
 function isApplyPatchAllowedForModel(params: {
@@ -265,12 +275,13 @@ export function createOpenClawCNCodingTools(options?: {
   const workspaceRoot = resolveWorkspaceRoot(options?.workspaceDir);
   const workspaceOnly = fsConfig.workspaceOnly === true;
   const applyPatchConfig = execConfig.applyPatch;
-  // Secure by default: apply_patch is workspace-contained unless explicitly disabled.
-  // (tools.fs.workspaceOnly is a separate umbrella flag for read/write/edit/apply_patch.)
-  const applyPatchWorkspaceOnly = workspaceOnly || applyPatchConfig?.workspaceOnly !== false;
+  // apply_patch follows the same workspaceOnly flag as read/write/edit.
+  // (Previously defaulted to true even when fs.workspaceOnly was false — too restrictive
+  // for Windows desktop app users who work across multiple drives.)
+  const applyPatchWorkspaceOnly = workspaceOnly || applyPatchConfig?.workspaceOnly === true;
   const applyPatchEnabled =
     !!applyPatchConfig?.enabled &&
-    isOpenAIProvider(options?.modelProvider) &&
+    isOpenAICompatibleProvider(options?.modelProvider) &&
     isApplyPatchAllowedForModel({
       modelProvider: options?.modelProvider,
       modelId: options?.modelId,

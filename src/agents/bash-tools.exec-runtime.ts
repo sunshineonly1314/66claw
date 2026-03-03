@@ -32,22 +32,30 @@ import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
 // Security: Blocklist of environment variables that could alter execution flow
 // or inject code when running on non-sandboxed hosts (Gateway/Node).
 const DANGEROUS_HOST_ENV_VARS = new Set([
+  // Linux library injection
   "LD_PRELOAD",
   "LD_LIBRARY_PATH",
   "LD_AUDIT",
+  // macOS library injection
   "DYLD_INSERT_LIBRARIES",
   "DYLD_LIBRARY_PATH",
+  // Node.js / language runtime injection
   "NODE_OPTIONS",
   "NODE_PATH",
   "PYTHONPATH",
   "PYTHONHOME",
   "RUBYLIB",
   "PERL5LIB",
+  // Shell injection
   "BASH_ENV",
   "ENV",
   "GCONV_PATH",
   "IFS",
+  // SSL key logging
   "SSLKEYLOGFILE",
+  // Windows-specific: can hijack shell interpreter or executable resolution
+  "COMSPEC",
+  "PATHEXT",
 ]);
 const DANGEROUS_HOST_ENV_PREFIXES = ["DYLD_", "LD_"];
 

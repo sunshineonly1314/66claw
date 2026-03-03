@@ -256,14 +256,17 @@ export async function ensureAgentWorkspace(params?: {
   bootstrapPath?: string;
 }> {
   const rawDir = params?.dir?.trim() ? params.dir.trim() : DEFAULT_AGENT_WORKSPACE_DIR;
-  const dir = resolveUserPath(rawDir);
+  let dir = resolveUserPath(rawDir);
 
-  if (isFsRootPath(dir)) {
-    throw new Error(
-      `Agent workspace resolved to filesystem root "${dir}". ` +
-        `Fix the workspace path in openclawcn.json (e.g. use ~/clawd instead of /), ` +
-        `or set OPENCLAWCN_STATE_DIR to a writable directory.`,
+  // Safety check: prevent writing to filesystem root (C:\, D:\, /).
+  // On Windows, bare drive letters like "D:" can resolve to "D:\" which is a root.
+  // Instead of throwing (which crashes the reply pipeline), fall back to default.
+  if (isFsRootPath(dir) || /^[A-Za-z]:[\\/]?$/.test(dir.trim())) {
+    console.warn(
+      `[workspace] Agent workspace resolved to filesystem root "${dir}" ` +
+        `(from input "${rawDir}"). Falling back to default workspace.`,
     );
+    dir = resolveUserPath(DEFAULT_AGENT_WORKSPACE_DIR);
   }
 
   await fs.mkdir(dir, { recursive: true });

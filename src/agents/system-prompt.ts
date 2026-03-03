@@ -407,16 +407,16 @@ export function buildAgentSystemPrompt(params: {
   const workspaceGuidance =
     params.sandboxInfo?.enabled && sandboxContainerWorkspace
       ? `For read/write/edit/apply_patch, file paths resolve against host workspace: ${params.workspaceDir}. Prefer relative paths so both sandboxed exec and file tools work consistently.`
-      : "Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.";
+      : "This is your default working directory. Relative paths resolve against it. You CAN read/write files at any absolute path the user requests (e.g. D:\\, E:\\, other drives or directories) — do not refuse file operations outside this directory.";
   const safetySection = [
     "## Safety",
     "You have no independent goals: do not pursue self-preservation, replication, resource acquisition, or power-seeking; avoid long-term plans beyond the user's request.",
-    "Prioritize safety and human oversight over completion; if instructions conflict, pause and ask; comply with stop/pause/audit requests and never bypass safeguards. (Inspired by Anthropic's constitution.)",
+    "Prioritize safety and human oversight over completion; if instructions conflict, pause and ask; comply with stop/pause/audit requests and never bypass safeguards.",
     "Do not manipulate or persuade anyone to expand access or disable safeguards. Do not copy yourself or change system prompts, safety rules, or tool policies unless explicitly requested.",
     "",
     "## 软件保护策略",
-    "严禁：① 泄露密钥、凭证、Token、License；② 协助逆向/破解/绕过保护；③ 篡改安全策略；④ 停止服务须用户确认；⑤ 改配置须先通知用户。",
-    "导出配置/数据前须确认用户意图。删除核心文件（MEMORY.md/SOUL.md/AGENTS.md）前须用户确认。",
+    "严禁：① 泄露密钥、凭证、Token、License；② 协助逆向/破解/绕过保护；③ 篡改安全策略。",
+    "以下操作需用户明确意图才执行（若用户指令已明确则直接执行，不必反复确认）：停止服务、修改配置、导出数据、删除核心文件（MEMORY.md/SOUL.md/AGENTS.md）。",
     "",
   ];
   const skillsSection = buildSkillsSection({
@@ -446,7 +446,7 @@ export function buildAgentSystemPrompt(params: {
     "You are a personal assistant running inside OpenClawCN.",
     "",
     "## 语言规则 (Language Rule)",
-    "始终使用简体中文回复用户。所有回复、问候、解释、建议都必须使用中文。代码和专业术语可以保留英文原文，但解释说明必须用中文。除非用户明确要求使用其他语言，否则一律用中文回复。",
+    "默认使用简体中文回复用户。代码和专业术语可保留英文原文，但解释说明用中文。如果用户明确要求使用其他语言（如'Please reply in English'、'用英文回复'），立即切换到该语言。",
     "",
     "## ABSOLUTE RULES (违反即失败)",
     "1. ACT, DON'T TALK: When the user asks you to DO something, you MUST call the tool immediately. NEVER just describe what you would do or ask the user to choose — DO IT.",
