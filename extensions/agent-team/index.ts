@@ -56,6 +56,9 @@ import {
   setAffinity,
   clearProjectAffinities,
   purgeExpiredAffinities,
+  initAffinityPersistence,
+  restoreAffinitiesFromDisk,
+  flushAffinityToDisk,
 } from "./src/session-affinity.js";
 import {
   readSharedProfile,
@@ -78,7 +81,6 @@ import {
   applyAutoOptimizations,
   generateLearningHints,
   formatLearningReport,
-  shouldTriggerLearning,
   LEARNING_CYCLE_THRESHOLD,
 } from "./src/learning-engine.js";
 import type { LearningAnalysis } from "./src/learning-engine.js";
@@ -124,7 +126,24 @@ function getMemberNameMap(project: Project): Map<string, string> {
 // Records routing decisions and agent completion events for the UI activity feed.
 // Keyed by projectId, each buffer holds the most recent MAX_ACTIVITY_EVENTS events.
 
-const ACTIVITY_BUFFER_MAX = 100;
+/**
+ * Base activity buffer size. Scaled dynamically per project based on team size:
+ *   bufferSize = BASE + (memberCount * PER_MEMBER_BONUS)
+ * Capped at ACTIVITY_BUFFER_HARD_MAX to prevent unbounded memory use.
+ *
+ * Examples:
+ *   3 members → 50 + 3*25 = 125
+ *   5 members → 50 + 5*25 = 175
+ *   8 members → 50 + 8*25 = 250
+ */
+const ACTIVITY_BUFFER_BASE = 50;
+const ACTIVITY_BUFFER_PER_MEMBER = 25;
+const ACTIVITY_BUFFER_HARD_MAX = 500;
+
+function getActivityBufferMax(project: Project): number {
+  const size = ACTIVITY_BUFFER_BASE + project.memberIds.length * ACTIVITY_BUFFER_PER_MEMBER;
+  return Math.min(size, ACTIVITY_BUFFER_HARD_MAX);
+}
 
 type ActivityEvent = {
   id: string;
@@ -154,8 +173,11 @@ function pushActivityEvent(projectId: string, event: ActivityEvent): void {
     activityBuffers.set(projectId, buf);
   }
   buf.push(event);
-  if (buf.length > ACTIVITY_BUFFER_MAX) {
-    buf.splice(0, buf.length - ACTIVITY_BUFFER_MAX);
+  // Dynamic buffer size based on team member count
+  const project = projectCache.get(projectId);
+  const maxSize = project ? getActivityBufferMax(project) : ACTIVITY_BUFFER_BASE;
+  if (buf.length > maxSize) {
+    buf.splice(0, buf.length - maxSize);
   }
   // Debounced persist — write at most once every 2 seconds per project
   if (!activitySaveTimers.has(projectId)) {
@@ -367,6 +389,52 @@ function extractConstraints(raw: unknown): TeamConstraints | undefined {
   return result;
 }
 
+// ── Supervisor Failover ──────────────────────────────────────────────────
+
+/**
+ * Select the best fallback member when the supervisor is down.
+ *
+ * Strategy: pick the healthiest worker with the most historical calls
+ * (i.e. the "best-known generalist" that has handled the most traffic).
+ * Prefers "healthy" > "degraded", then sorts by call count descending.
+ *
+ * Returns null if no routable member is found.
+ */
+function selectFallbackMember(
+  project: Project,
+  healthMap: Map<string, MemberHealth>,
+  sMap: Map<string, MemberStats> | undefined,
+): string | null {
+  const candidates: Array<{
+    id: string;
+    healthScore: number; // 2 = healthy, 1 = degraded, 0 = down
+    callCount: number;
+  }> = [];
+
+  for (const memberId of project.memberIds) {
+    if (memberId === project.supervisorId) continue;
+    const health = healthMap.get(memberId);
+    if (health && !isRoutable(health)) continue; // Skip "down" members
+
+    const healthScore = !health || health.state === "healthy" ? 2 : 1;
+    const stats = sMap?.get(memberId);
+    candidates.push({
+      id: memberId,
+      healthScore,
+      callCount: stats?.callCount ?? 0,
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Sort: healthiest first, then most experienced
+  candidates.sort((a, b) =>
+    b.healthScore - a.healthScore || b.callCount - a.callCount,
+  );
+
+  return candidates[0].id;
+}
+
 // ── Plugin Definition ────────────────────────────────────────────────────
 
 const plugin: OpenClawCNPluginDefinition = {
@@ -380,8 +448,13 @@ const plugin: OpenClawCNPluginDefinition = {
     logger.info("Agent Team plugin registering...");
 
     // ── Initialize state directory ────────────────────────────────────
+    // NOTE: initProjectStateDir is async (creates dirs on disk), but the
+    // plugin loader does not await register(). We call it fire-and-forget
+    // here and also ensure dirs in gateway_start before loading projects.
     const stateDir = api.resolvePath("~/.openclawcn/agent-team");
-    initProjectStateDir(stateDir);
+    initProjectStateDir(stateDir).catch((err) =>
+      logger.warn?.(`[agent-team] State dir pre-init failed (will retry in gateway_start): ${err}`),
+    );
 
     // ── Build gateway call function (lazy import, same as orchestrator) ──
     const callGateway: CallGatewayFn = async (method, params) => {
@@ -445,7 +518,47 @@ const plugin: OpenClawCNPluginDefinition = {
         });
 
         if (!result) {
-          // No deterministic match → Supervisor LLM handles the message.
+          // No deterministic match → normally Supervisor LLM handles the message.
+          //
+          // ── Supervisor Failover ──────────────────────────────────────
+          // If the supervisor itself is "down" (health FSM), routing to its LLM
+          // would fail. Instead, failover to the healthiest worker member with
+          // the most calls (best-known generalist). This prevents the entire
+          // team from becoming unreachable when the supervisor is degraded.
+          const supervisorHealth = healthMap.get(currentAgentId);
+          if (supervisorHealth && supervisorHealth.state === "down") {
+            const fallbackMember = selectFallbackMember(project, healthMap, statsCache.get(project.projectId));
+            if (fallbackMember) {
+              logger.warn?.(
+                `[FastPath] Supervisor "${currentAgentId}" is DOWN — failover to "${fallbackMember}"`,
+              );
+              const fallbackKey = replaceAgentInSessionKey(
+                event.sessionKey,
+                fallbackMember,
+              );
+              setLastAgentForPeer(ctx.peerId, fallbackMember);
+              // Record as a failover activity event
+              pushActivityEvent(project.projectId, {
+                id: nextActivityId(),
+                timestamp: Date.now(),
+                agentId: fallbackMember,
+                peerId: ctx.peerId,
+                method: "keyword",
+                confidence: 0.5,
+                matchedPattern: "supervisor-failover",
+                taskType: "fallback",
+              });
+              return {
+                sessionKey: fallbackKey,
+                reason: "fast-path:supervisor-failover",
+              };
+            }
+            // No healthy member available — let it go to supervisor anyway (last resort)
+            logger.error?.(
+              `[FastPath] Supervisor "${currentAgentId}" is DOWN and no healthy members — team "${project.name}" is unreachable`,
+            );
+          }
+
           // Cache the message so before_agent_start can match template workflows.
           // Only cache if template workflows are enabled (avoids orphaned entries).
           if (project.taskCoordination?.templateWorkflowsEnabled !== false) {
@@ -759,7 +872,14 @@ const plugin: OpenClawCNPluginDefinition = {
         const count = (eventsSinceLastLearning.get(project.projectId) ?? 0) + 1;
         eventsSinceLastLearning.set(project.projectId, count);
 
-        if (shouldTriggerLearning(count)) {
+        // Scale learning threshold with team size: larger teams produce more
+        // events and need a bigger sample before analysis is meaningful.
+        // Formula: base threshold (50) + 10 per member, capped at 200.
+        const learningThreshold = Math.min(
+          LEARNING_CYCLE_THRESHOLD + project.memberIds.length * 10,
+          200,
+        );
+        if (count >= learningThreshold) {
           try {
             // Snapshot the buffer to avoid concurrent mutation during analysis
             const buf = [...(activityBuffers.get(project.projectId) ?? [])];
@@ -855,6 +975,19 @@ const plugin: OpenClawCNPluginDefinition = {
     // ── gateway_start: load projects from disk ────────────────────────
     api.on("gateway_start", async () => {
       try {
+        // Ensure state directory exists before reading (handles the case
+        // where the fire-and-forget init in register() hasn't completed yet).
+        await initProjectStateDir(stateDir);
+
+        // Initialize session affinity persistence and restore from disk
+        initAffinityPersistence(stateDir);
+        const restoredAffinities = await restoreAffinitiesFromDisk();
+        if (restoredAffinities > 0) {
+          logger.info(
+            `Restored ${restoredAffinities} session affinity record(s) from disk.`,
+          );
+        }
+
         const projects = await loadAllProjects();
         for (const p of projects) {
           projectCache.set(p.projectId, p);
@@ -1108,13 +1241,37 @@ const plugin: OpenClawCNPluginDefinition = {
           return;
         }
 
-        // Idempotency: check if a project with this sourcePlanId already exists
+        // Idempotency: check if a project with this sourcePlanId already exists.
+        // If it exists AND is healthy (active/paused), return it as-is (deduplicated).
+        // If it exists but is in "error" state (e.g. SOUL.md write failed on first
+        // attempt), delete the broken project and retry from scratch. This prevents
+        // the bug where a transient SOUL.md failure permanently blocks re-deploy.
         const existingProject = [...projectCache.values()].find(
           (proj) => proj.sourcePlanId === planId,
         );
         if (existingProject) {
-          respond(true, { project: existingProject, deduplicated: true }, undefined);
-          return;
+          if (existingProject.status !== "error") {
+            respond(true, { project: existingProject, deduplicated: true }, undefined);
+            return;
+          }
+          // Error-state project: clean up and retry
+          logger.warn?.(
+            `[agent-team] Found error-state project for planId="${planId}", cleaning up for retry...`,
+          );
+          try {
+            await deleteProject(existingProject.projectId);
+            projectCache.delete(existingProject.projectId);
+            healthCache.delete(existingProject.projectId);
+            statsCache.delete(existingProject.projectId);
+            clearProjectAffinities(existingProject.projectId);
+            clearRouteTable(existingProject.projectId);
+            rebuildAgentIndex();
+          } catch (cleanupErr) {
+            logger.warn?.(
+              `[agent-team] Cleanup of error project failed: ${cleanupErr}`,
+            );
+          }
+          // Fall through to re-create
         }
 
         try {
@@ -1828,7 +1985,6 @@ const plugin: OpenClawCNPluginDefinition = {
       async ({ params, respond }) => {
         const p = params as Record<string, unknown>;
         const projectId = String(p.projectId ?? "");
-        const limit = Math.min(Number(p.limit ?? 50), ACTIVITY_BUFFER_MAX);
 
         const project = projectCache.get(projectId);
         if (!project) {
@@ -1838,6 +1994,9 @@ const plugin: OpenClawCNPluginDefinition = {
           });
           return;
         }
+
+        const bufMax = getActivityBufferMax(project);
+        const limit = Math.min(Number(p.limit ?? 50), bufMax);
 
         const buf = activityBuffers.get(projectId) ?? [];
         // Return latest events first (newest at index 0)
@@ -2200,6 +2359,8 @@ const plugin: OpenClawCNPluginDefinition = {
           clearInterval(healthTimer);
           healthTimer = undefined;
         }
+        // Flush session affinities to disk on graceful shutdown
+        await flushAffinityToDisk();
       },
     });
 

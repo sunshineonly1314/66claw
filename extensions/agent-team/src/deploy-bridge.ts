@@ -140,6 +140,44 @@ function selectSupervisorModel(plan: OrchestratorPlan): string {
   return SUPERVISOR_MODEL_PRIORITY[0];
 }
 
+// ── Error Detection Helpers ──────────────────────────────────────────────
+
+/**
+ * Check if an error indicates that an agent already exists.
+ *
+ * Uses a multi-strategy approach for robustness across locales:
+ *   1. Check for structured error code (e.g. INVALID_REQUEST, ALREADY_EXISTS)
+ *   2. Check error message in English ("already exists")
+ *   3. Check error message in Chinese ("已存在")
+ *
+ * This prevents the fragile pattern of only matching English strings,
+ * which breaks on Chinese-localized gateway responses.
+ */
+function isAgentAlreadyExistsError(err: unknown): boolean {
+  // Strategy 1: structured error code (most reliable)
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    const code = e.code ?? (e.error as Record<string, unknown> | undefined)?.code;
+    if (
+      code === "ALREADY_EXISTS" ||
+      code === "INVALID_REQUEST" ||
+      code === "AGENT_ALREADY_EXISTS"
+    ) {
+      return true;
+    }
+  }
+
+  // Strategy 2: multi-language message matching (fallback)
+  const msg = err instanceof Error ? err.message : String(err);
+  const msgLower = msg.toLowerCase();
+  return (
+    msgLower.includes("already exists") ||
+    msg.includes("已存在") ||
+    msgLower.includes("duplicate") ||
+    msg.includes("重复")
+  );
+}
+
 // ── Public API ───────────────────────────────────────────────────────────
 
 export type CreateFromPlanParams = {
@@ -265,9 +303,11 @@ export async function createProjectFromPlan(
       emoji: "🎯",
     });
   } catch (err) {
-    // If the supervisor agent already exists (e.g. re-deploy), proceed
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.includes("already exists")) {
+    // If the supervisor agent already exists (e.g. re-deploy), proceed.
+    // Use multi-language detection: check error code first, then fall back
+    // to string matching in both English and Chinese to handle all locales.
+    if (!isAgentAlreadyExistsError(err)) {
+      const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to create supervisor agent: ${msg}`);
     }
   }
@@ -329,29 +369,48 @@ export async function createProjectFromPlan(
   const nonSupervisorMembers = members.filter((m) => m.id !== supervisorId);
   const supervisorSoul = generateSupervisorSoul(project, nonSupervisorMembers);
 
-  try {
-    await callGateway("agents.files.set", {
-      agentId: supervisorId,
-      name: "SOUL.md",
-      content: supervisorSoul,
-    });
-    supervisorReport?.steps.push({
-      step: "soul",
-      status: "ok",
-      detail: "Supervisor SOUL.md written",
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+  // SOUL.md is CRITICAL for supervisor function — retry up to 3 times
+  // with exponential backoff to handle transient gateway/file-system errors.
+  const SOUL_MAX_RETRIES = 3;
+  let soulWritten = false;
+  let lastSoulError = "";
+
+  for (let attempt = 1; attempt <= SOUL_MAX_RETRIES; attempt++) {
+    try {
+      await callGateway("agents.files.set", {
+        agentId: supervisorId,
+        name: "SOUL.md",
+        content: supervisorSoul,
+      });
+      soulWritten = true;
+      supervisorReport?.steps.push({
+        step: "soul",
+        status: "ok",
+        detail: attempt > 1
+          ? `Supervisor SOUL.md written (succeeded on attempt ${attempt})`
+          : "Supervisor SOUL.md written",
+      });
+      break;
+    } catch (err) {
+      lastSoulError = err instanceof Error ? err.message : String(err);
+      if (attempt < SOUL_MAX_RETRIES) {
+        // Exponential backoff: 500ms, 1500ms
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+  }
+
+  if (!soulWritten) {
     supervisorReport?.steps.push({
       step: "soul",
       status: "fail",
-      detail: `Supervisor SOUL.md write failed: ${msg}`,
+      detail: `Supervisor SOUL.md write failed after ${SOUL_MAX_RETRIES} attempts: ${lastSoulError}`,
     });
     // MANDATORY: SOUL.md is critical for supervisor function — fail the deploy
     project.status = "error";
     await saveProject(project);
     throw new Error(
-      `Failed to write supervisor SOUL.md for ${supervisorId}: ${msg}`,
+      `Failed to write supervisor SOUL.md for ${supervisorId} after ${SOUL_MAX_RETRIES} attempts: ${lastSoulError}`,
     );
   }
 

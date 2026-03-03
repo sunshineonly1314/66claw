@@ -30,9 +30,25 @@ let stateDir = "";
 
 /**
  * Initialize the state directory. Must be called before any state operations.
+ *
+ * Creates the directory structure synchronously-ish:
+ *   ~/.openclawcn/agent-team/projects/
+ *
+ * This prevents the fragile pattern where the first operation happens to be
+ * a read (e.g. loadAllProjects in gateway_start) and silently returns empty
+ * instead of failing loudly when the directory is missing.
  */
-export function initProjectStateDir(dir: string): void {
+export async function initProjectStateDir(dir: string): Promise<void> {
   stateDir = dir;
+  try {
+    await fs.mkdir(path.join(dir, "projects"), { recursive: true });
+  } catch {
+    // Best-effort: if mkdir fails here, atomicWriteJson will retry on write.
+    // Log but don't throw — the plugin should still register.
+    console.warn(
+      `[agent-team] Could not pre-create state directory: ${dir}`,
+    );
+  }
 }
 
 function ensureStateDir(): string {
