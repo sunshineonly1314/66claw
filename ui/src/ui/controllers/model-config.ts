@@ -8,7 +8,8 @@ export interface Capability {
   name: string;
   description: string;
   icon: string;
-  status: "active" | "inactive";
+  /** active = 已配置且可用；unconfigured = 有对应模型但用户未配置；missing = 硬件或依赖不满足 */
+  status: "active" | "unconfigured" | "missing";
   currentModel: {
     providerId: string;
     providerName: string;
@@ -291,7 +292,9 @@ export async function loadCapabilities(host: ModelConfigHost): Promise<void> {
       name: entry.name,
       description: entry.description,
       icon: entry.icon,
-      status: entry.status === "active" ? "active" as const : "inactive" as const,
+      // 保留后端三态：active / unconfigured / missing
+      // 不能压缩成二态，否则 UI 无法区分「未配置（可引导用户配置）」与「硬件缺失（应灰显禁用）」
+      status: (entry.status === "active" ? "active" : entry.status === "missing" ? "missing" : "unconfigured") as "active" | "unconfigured" | "missing",
       currentModel: entry.bestModel
         ? {
             providerId: entry.bestModel.provider,

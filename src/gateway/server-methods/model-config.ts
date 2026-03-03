@@ -327,10 +327,16 @@ export async function getCapabilityModels(params: { capability: Capability | str
 
   // 合并 v2 capability registry 中存在但 v1 静态映射缺失的模型
   try {
-    const { queryByCapability } = await import("../../dispatch/index.js");
+    const { queryByCapability, getAllCapabilityKeys } = await import("../../dispatch/index.js");
+    // 反向查：v1 capability → v2 key
+    // 若 capability 本身就是 v2 key（如来自 v2-only 调用路径），直接使用
+    const allV2Keys = getAllCapabilityKeys();
+    const reverseMapped = Object.entries(V2_KEY_TO_LEGACY).find(([, v]) => v === capability)?.[0];
+    // 只在确认是合法的 v2 CapabilityKey 时才调用，防止传入 v1-only key（如 "image-understanding"）崩溃
     const v2Key =
-      Object.entries(V2_KEY_TO_LEGACY).find(([, v]) => v === capability)?.[0] ?? capability;
-    const v2Results = queryByCapability(v2Key as any, { configuredOnly: false });
+      reverseMapped ?? (allV2Keys.includes(capability as CapabilityKey) ? capability : undefined);
+    if (!v2Key) return { models };
+    const v2Results = queryByCapability(v2Key as CapabilityKey, { configuredOnly: false });
     for (const card of v2Results) {
       const alreadyInList = models.some(
         (m) => m.providerId === card.provider && m.modelId === card.modelId,
@@ -479,10 +485,14 @@ export async function switchCapabilityModel(params: {
   // v1 未找到时尝试 v2 capability registry — 远程卡片只在 v2 中
   if (!targetModel) {
     try {
-      const { queryByCapability } = await import("../../dispatch/index.js");
+      const { queryByCapability, getAllCapabilityKeys } = await import("../../dispatch/index.js");
+      // 同 getCapabilityModels：反向映射 v1 key → v2 key，并做合法性校验
+      const allV2Keys = getAllCapabilityKeys();
+      const reverseMapped = Object.entries(V2_KEY_TO_LEGACY).find(([, v]) => v === capability)?.[0];
       const v2Key =
-        Object.entries(V2_KEY_TO_LEGACY).find(([, v]) => v === capability)?.[0] ?? capability;
-      const v2Results = queryByCapability(v2Key as any, { configuredOnly: false });
+        reverseMapped ?? (allV2Keys.includes(capability as CapabilityKey) ? capability : undefined);
+      if (!v2Key) throw new Error(`No v2 key for capability: ${capability}`);
+      const v2Results = queryByCapability(v2Key as CapabilityKey, { configuredOnly: false });
       const v2Match = v2Results.find(
         (c) => switchAliases.includes(c.provider) && c.modelId === modelId,
       );

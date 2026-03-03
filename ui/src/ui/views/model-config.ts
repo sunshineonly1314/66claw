@@ -2225,7 +2225,9 @@ export class ModelConfigView extends LitElement {
   }
 
   private _isAllInactive(): boolean {
-    return this._s.capabilities.length > 0 && this._s.capabilities.every(c => c.status === "inactive");
+    // status 已扩展为三态：active / unconfigured / missing
+    // "全部未激活" = 没有任何一个是 active
+    return this._s.capabilities.length > 0 && this._s.capabilities.every(c => c.status !== "active");
   }
 
   /** 模型选择器：应用搜索和筛选 */

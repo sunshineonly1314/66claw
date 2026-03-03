@@ -795,7 +795,7 @@ export const capabilityMatrixHandlers: GatewayRequestHandlers = {
    */
   "capability_matrix.extractionStatus": async ({ respond }) => {
     try {
-      const cfg = loadConfig();
+      const cfg = await loadConfig();
       // 获取当前主聊天模型 (text 能力) 的 provider/model
       const capCfg = (
         cfg as {

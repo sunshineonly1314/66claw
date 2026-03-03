@@ -200,7 +200,7 @@ describe("model-config Controller", () => {
       expect(host.capabilities[0].status).toBe("active");
       expect(host.capabilities[0].currentModel?.modelId).toBe("gpt-4o");
       expect(host.capabilities[1].capability).toBe("video");
-      expect(host.capabilities[1].status).toBe("inactive");
+      expect(host.capabilities[1].status).toBe("unconfigured"); // 后端返回 unconfigured，不应压缩为 inactive
       expect(host.modelConfigLoading).toBe(false);
       expect(host.modelConfigError).toBeNull();
     });
