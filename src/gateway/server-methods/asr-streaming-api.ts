@@ -29,6 +29,8 @@ const SESSION_TIMEOUT_MS = 60_000;
 const MAX_CHUNK_BASE64_LENGTH = 32768;
 /** 16kHz mono * 120s = 1,920,000 samples max (~15MB float64 in memory). */
 const MAX_SAMPLES = 16000 * 120;
+/** Max concurrent sessions to prevent memory exhaustion DoS. */
+const MAX_SESSIONS = 20;
 
 function cleanupSession(sessionId: string): void {
   const session = sessions.get(sessionId);
@@ -239,6 +241,14 @@ export const apiStreamHandlers: GatewayRequestHandlers = {
       const available = await isApiAsrAvailable();
       if (!available) {
         respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, "API ASR not configured"));
+        return;
+      }
+      if (sessions.size >= MAX_SESSIONS) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.UNAVAILABLE, "Too many concurrent ASR sessions"),
+        );
         return;
       }
 

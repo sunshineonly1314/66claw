@@ -3,7 +3,12 @@
  * License 相关的 Gateway 方法
  */
 
-import { loadConfig, writeConfigFile, type OpenClawCNConfig } from "../../config/config.js";
+import {
+  loadConfig,
+  writeConfigFile,
+  withConfigWriteLock,
+  type OpenClawCNConfig,
+} from "../../config/config.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { getGatewayLicenseState, updateGatewayLicenseState } from "../license-check.js";
 import {
@@ -158,27 +163,29 @@ export const licenseHandlers: GatewayRequestHandlers = {
       });
 
       if (response.valid) {
-        // 保存到配置
-        const config = loadConfig();
-        const nextConfig = {
-          ...config,
-          license: {
-            ...config.license,
-            key: sanitizedKey,
-            status: response.license?.tier ?? "basic",
-            expiresAt: response.license?.expiresAt ?? undefined,
-            validatedAt: new Date().toISOString(),
-            tier: response.license?.tier,
-            tierName: response.license?.tierName,
-            daysRemaining: response.license?.daysRemaining,
-            keyType: response.license?.keyType,
-            features: response.license?.features,
-            deviceId: response.device?.deviceId,
-            deviceLimit: response.device?.deviceLimit,
-            boundDevices: response.device?.boundDevices,
-          },
-        };
-        await writeConfigFile(nextConfig as OpenClawCNConfig);
+        // FIX: Use shared config write lock to prevent concurrent read-modify-write races
+        await withConfigWriteLock(async () => {
+          const config = loadConfig();
+          const nextConfig = {
+            ...config,
+            license: {
+              ...config.license,
+              key: sanitizedKey,
+              status: response.license?.tier ?? "basic",
+              expiresAt: response.license?.expiresAt ?? undefined,
+              validatedAt: new Date().toISOString(),
+              tier: response.license?.tier,
+              tierName: response.license?.tierName,
+              daysRemaining: response.license?.daysRemaining,
+              keyType: response.license?.keyType,
+              features: response.license?.features,
+              deviceId: response.device?.deviceId,
+              deviceLimit: response.device?.deviceLimit,
+              boundDevices: response.device?.boundDevices,
+            },
+          };
+          await writeConfigFile(nextConfig as OpenClawCNConfig);
+        });
 
         // 保存缓存（用于离线模式）
         saveLicenseCache(sanitizedKey, response);
@@ -354,25 +361,29 @@ export const licenseHandlers: GatewayRequestHandlers = {
       const result = await switchDevice(key);
 
       if (result.valid) {
-        // 更新配置
-        const nextConfig = {
-          ...config,
-          license: {
-            ...config.license,
-            status: result.license?.tier ?? "basic",
-            expiresAt: result.license?.expiresAt ?? undefined,
-            validatedAt: new Date().toISOString(),
-            tier: result.license?.tier,
-            tierName: result.license?.tierName,
-            daysRemaining: result.license?.daysRemaining,
-            keyType: result.license?.keyType,
-            features: result.license?.features,
-            deviceId: result.device?.deviceId,
-            deviceLimit: result.device?.deviceLimit,
-            boundDevices: result.device?.boundDevices,
-          },
-        };
-        await writeConfigFile(nextConfig as OpenClawCNConfig);
+        // FIX: Use shared config write lock to prevent concurrent read-modify-write races
+        await withConfigWriteLock(async () => {
+          // Re-read config inside lock to get latest state
+          const freshConfig = loadConfig();
+          const nextConfig = {
+            ...freshConfig,
+            license: {
+              ...freshConfig.license,
+              status: result.license?.tier ?? "basic",
+              expiresAt: result.license?.expiresAt ?? undefined,
+              validatedAt: new Date().toISOString(),
+              tier: result.license?.tier,
+              tierName: result.license?.tierName,
+              daysRemaining: result.license?.daysRemaining,
+              keyType: result.license?.keyType,
+              features: result.license?.features,
+              deviceId: result.device?.deviceId,
+              deviceLimit: result.device?.deviceLimit,
+              boundDevices: result.device?.boundDevices,
+            },
+          };
+          await writeConfigFile(nextConfig as OpenClawCNConfig);
+        });
 
         // 更新全局状态
         updateGatewayLicenseState({

@@ -24,6 +24,7 @@ const mockWriteConfigFile = vi.fn(async () => {});
 vi.mock("../../config/config.js", () => ({
   loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
   writeConfigFile: (...args: unknown[]) => mockWriteConfigFile(...args),
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 // Mock fetch — switchCapabilityModel 等函数内部可能触发 API 请求，测试中需要 stub

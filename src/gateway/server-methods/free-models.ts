@@ -4,7 +4,7 @@
  */
 
 import type { GatewayRequestHandlers } from "./types.js";
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import {
   FREE_MODEL_PROVIDERS,
   getAllFreeModelProviders,
@@ -65,9 +65,12 @@ async function loadFreeModelsConfig(): Promise<FreeModelsConfig> {
  * 保存免费模型配置
  */
 async function saveFreeModelsConfig(freeModelsConfig: FreeModelsConfig): Promise<void> {
-  const config = await loadConfig();
-  (config as { freeModels?: FreeModelsConfig }).freeModels = freeModelsConfig;
-  await writeConfigFile(config);
+  // FIX: Use shared config write lock to prevent concurrent read-modify-write races
+  await withConfigWriteLock(async () => {
+    const config = await loadConfig();
+    (config as { freeModels?: FreeModelsConfig }).freeModels = freeModelsConfig;
+    await writeConfigFile(config);
+  });
 
   // 更新调度器实例
   if (schedulerInstance) {

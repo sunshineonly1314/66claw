@@ -12,6 +12,7 @@ vi.mock("../../config/config.js", () => {
     writeConfigFile: async (cfg: unknown) => {
       writtenConfig = cfg;
     },
+    withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
   };
 });
 

@@ -396,7 +396,10 @@ export function attachGatewayWsMessageHandler(params: {
 
         // Dev profile + local connection: skip all token auth to avoid
         // ENC{} token mismatch between Rust sidecar and Node gateway.
-        const isDevProfile = (process.env.OPENCLAWCN_PROFILE ?? "").toLowerCase() === "dev";
+        // [MED-07 FIX] Only allow in dev builds — production builds must never bypass auth.
+        const isDevBuildForBypass = typeof __DEV_BUILD__ !== "undefined" && __DEV_BUILD__;
+        const isDevProfile =
+          isDevBuildForBypass && (process.env.OPENCLAWCN_PROFILE ?? "").toLowerCase() === "dev";
         if (!authOk && isDevProfile && isLocalClient) {
           authOk = true;
           authMethod = "dev-local-bypass";

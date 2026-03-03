@@ -17,6 +17,7 @@ vi.mock("../../agents/modality-capability-checker.js", () => ({
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: mocks.loadConfig,
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 import { modalityCapabilityHandlers } from "./modality-capability.js";

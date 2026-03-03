@@ -189,7 +189,7 @@ describe("parseMessageWithAttachments", () => {
     );
     expect(parsed.images).toHaveLength(0);
     expect(logs).toHaveLength(1);
-    expect(logs[0]).toMatch(/unable to detect image mime type/i);
+    expect(logs[0]).toMatch(/non-image/i);
   });
 
   it("keeps valid images and drops invalid ones", async () => {

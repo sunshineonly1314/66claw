@@ -10,7 +10,7 @@
 
 import type { GatewayRequestHandlers } from "./types.js";
 import type { AgentBinding } from "../../config/types.agents.js";
-import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 
 /** Tag used to identify bindings created via the channel route UI. */
@@ -65,13 +65,17 @@ export const routeHandlers: GatewayRequestHandlers = {
         }
       }
 
-      const routes = bindings.filter(isChannelRouteBinding).map((b) => ({
-        channel: b.match.channel,
-        ...(b.match.accountId && b.match.accountId !== "*" ? { accountId: b.match.accountId } : {}),
-        targetType: "agent" as const,
-        targetId: b.agentId,
-        targetName: agentNames.get(b.agentId) || b.agentId,
-      }));
+      const routes = bindings
+        .filter((b) => isChannelRouteBinding(b) && b.match)
+        .map((b) => ({
+          channel: b.match.channel,
+          ...(b.match.accountId && b.match.accountId !== "*"
+            ? { accountId: b.match.accountId }
+            : {}),
+          targetType: "agent" as const,
+          targetId: b.agentId,
+          targetName: agentNames.get(b.agentId) || b.agentId,
+        }));
 
       respond(true, { routes }, undefined);
     } catch (err) {
@@ -92,35 +96,38 @@ export const routeHandlers: GatewayRequestHandlers = {
     const { channel, accountId, agentId } = params;
 
     try {
-      const cfg = loadConfig();
-      const existingBindings: Array<AgentBinding & { _source?: string }> = Array.isArray(
-        cfg.bindings,
-      )
-        ? [...cfg.bindings]
-        : [];
+      // FIX: Use shared config write lock to prevent concurrent read-modify-write races
+      await withConfigWriteLock(async () => {
+        const cfg = loadConfig();
+        const existingBindings: Array<AgentBinding & { _source?: string }> = Array.isArray(
+          cfg.bindings,
+        )
+          ? [...cfg.bindings]
+          : [];
 
-      // Remove any existing channel-route binding for this channel/account
-      const filtered = existingBindings.filter(
-        (b) => !(isChannelRouteBinding(b) && matchesChannelAccount(b, channel, accountId)),
-      );
+        // Remove any existing channel-route binding for this channel/account
+        const filtered = existingBindings.filter(
+          (b) => !(isChannelRouteBinding(b) && matchesChannelAccount(b, channel, accountId)),
+        );
 
-      // Add new binding if agentId is specified
-      if (agentId) {
-        const newBinding: AgentBinding & { _source: string } = {
-          agentId,
-          match: {
-            channel,
-            ...(accountId ? { accountId } : {}),
-          },
-          _source: CHANNEL_ROUTE_SOURCE,
-        };
-        filtered.push(newBinding);
-      }
+        // Add new binding if agentId is specified
+        if (agentId) {
+          const newBinding: AgentBinding & { _source: string } = {
+            agentId,
+            match: {
+              channel,
+              ...(accountId ? { accountId } : {}),
+            },
+            _source: CHANNEL_ROUTE_SOURCE,
+          };
+          filtered.push(newBinding);
+        }
 
-      const nextConfig = { ...cfg, bindings: filtered };
-      await writeConfigFile(nextConfig);
+        const nextConfig = { ...cfg, bindings: filtered };
+        await writeConfigFile(nextConfig);
 
-      respond(true, { ok: true }, undefined);
+        respond(true, { ok: true }, undefined);
+      });
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.INTERNAL_ERROR, String(err)));
     }
@@ -145,11 +152,13 @@ export function getChannelRouteAgentBindings(
     ? cfg.bindings
     : [];
 
-  return bindings.filter(isChannelRouteBinding).map((b) => ({
-    channel: b.match.channel,
-    ...(b.match.accountId && b.match.accountId !== "*" ? { accountId: b.match.accountId } : {}),
-    targetType: "agent" as const,
-    targetId: b.agentId,
-    targetName: agentNameLookup(b.agentId),
-  }));
+  return bindings
+    .filter((b) => isChannelRouteBinding(b) && b.match)
+    .map((b) => ({
+      channel: b.match.channel,
+      ...(b.match.accountId && b.match.accountId !== "*" ? { accountId: b.match.accountId } : {}),
+      targetType: "agent" as const,
+      targetId: b.agentId,
+      targetName: agentNameLookup(b.agentId),
+    }));
 }

@@ -100,8 +100,8 @@ describe("安全配置合理性", () => {
     expect(CN_DEFAULT_SECURITY_CONFIG.sandbox.workspaceAccess).toBe("rw");
   });
 
-  it("allowDelete 应该默认禁用", () => {
-    expect(CN_DEFAULT_SECURITY_CONFIG.tools.write.allowDelete).toBe(false);
+  it("allowDelete 应该默认启用（最大权限模式）", () => {
+    expect(CN_DEFAULT_SECURITY_CONFIG.tools.write.allowDelete).toBe(true);
   });
 
   it("exec security 应该是 full 模式（最大能力释放）", () => {

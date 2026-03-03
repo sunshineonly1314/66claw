@@ -45,6 +45,7 @@ vi.mock("../../commands/agent.js", () => ({
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: () => mocks.loadConfigReturn,
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock("../../agents/agent-scope.js", () => ({

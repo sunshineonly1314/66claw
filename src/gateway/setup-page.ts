@@ -5,6 +5,7 @@
 
 import type { ServerResponse } from "node:http";
 import { CN_PROVIDERS } from "../config/region-cn.js";
+import { isOverseas } from "../config/edition.js";
 import {
   getLogoBase64,
   getSetupQrcodeBase64,
@@ -44,7 +45,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ClawbotCN 安装向导</title>
+  <title>${isOverseas ? "AI Assistant Setup" : "ClawbotCN 安装向导"}</title>
   ${tokenScript}
   <link rel="preconnect" href="https://fonts.loli.net">
   <link rel="preconnect" href="https://gstatic.loli.net" crossorigin>

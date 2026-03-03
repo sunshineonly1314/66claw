@@ -28,6 +28,7 @@ vi.mock("../../agents/skills/marketplace/db.js", () => ({
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: mocks.loadConfig,
+  withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock("../../dispatch/tool-discovery.js", () => ({

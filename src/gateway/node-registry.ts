@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { GatewayWsClient } from "./server/ws-types.js";
+import {
+  MAX_CONNECTED_NODES,
+  NODE_INVOKE_RATE_LIMIT,
+  NODE_EVENT_RATE_LIMIT,
+} from "./server-constants.js";
 
 export type NodeSession = {
   nodeId: string;
@@ -36,14 +41,30 @@ export type NodeInvokeResult = {
   error?: { code?: string; message?: string } | null;
 };
 
+type RateCounter = {
+  count: number;
+  resetAt: number;
+};
+
 export class NodeRegistry {
   private nodesById = new Map<string, NodeSession>();
   private nodesByConn = new Map<string, string>();
   private pendingInvokes = new Map<string, PendingInvoke>();
+  private invokeRates = new Map<string, RateCounter>();
+  private eventRates = new Map<string, RateCounter>();
+
+  get connectedCount(): number {
+    return this.nodesById.size;
+  }
 
   register(client: GatewayWsClient, opts: { remoteIp?: string | undefined }) {
     const connect = client.connect;
     const nodeId = connect.device?.id ?? connect.client.id;
+
+    // Enforce node limit (allow re-registration of existing nodeId)
+    if (!this.nodesById.has(nodeId) && this.nodesById.size >= MAX_CONNECTED_NODES) {
+      throw new Error(`node limit reached (${this.nodesById.size}/${MAX_CONNECTED_NODES})`);
+    }
     const caps = Array.isArray(connect.caps) ? connect.caps : [];
     const commands = Array.isArray((connect as { commands?: string[] }).commands)
       ? ((connect as { commands?: string[] }).commands ?? [])
@@ -86,6 +107,8 @@ export class NodeRegistry {
     }
     this.nodesByConn.delete(connId);
     this.nodesById.delete(nodeId);
+    this.invokeRates.delete(nodeId);
+    this.eventRates.delete(nodeId);
     for (const [id, pending] of this.pendingInvokes.entries()) {
       if (pending.nodeId !== nodeId) {
         continue;
@@ -196,6 +219,25 @@ export class NodeRegistry {
       error: params.error ?? null,
     });
     return true;
+  }
+
+  checkInvokeRate(nodeId: string): boolean {
+    return this.checkRate(this.invokeRates, nodeId, NODE_INVOKE_RATE_LIMIT);
+  }
+
+  checkEventRate(nodeId: string): boolean {
+    return this.checkRate(this.eventRates, nodeId, NODE_EVENT_RATE_LIMIT);
+  }
+
+  private checkRate(map: Map<string, RateCounter>, nodeId: string, limit: number): boolean {
+    const now = Date.now();
+    let counter = map.get(nodeId);
+    if (!counter || now >= counter.resetAt) {
+      counter = { count: 0, resetAt: now + 1000 };
+      map.set(nodeId, counter);
+    }
+    counter.count++;
+    return counter.count <= limit;
   }
 
   sendEvent(nodeId: string, event: string, payload?: unknown): boolean {

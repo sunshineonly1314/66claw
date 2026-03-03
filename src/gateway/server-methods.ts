@@ -1,5 +1,6 @@
 import type { GatewayRequestHandlers, GatewayRequestOptions } from "./server-methods/types.js";
 import { ErrorCodes, errorShape, errorShapeFromError } from "./protocol/index.js";
+import { applyEnforcementDelay, shouldBlockService } from "../security/delayed-enforcement.js";
 import { agentHandlers } from "./server-methods/agent.js";
 import { agentsHandlers } from "./server-methods/agents.js";
 import { browserHandlers } from "./server-methods/browser.js";
@@ -87,6 +88,8 @@ const READ_METHODS = new Set([
   "gateway.network.discover",
   "gateway.network.probe",
   "gateway.network.interfaces",
+  // Channel route read methods
+  "route.getChannelAgents",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -105,6 +108,8 @@ const WRITE_METHODS = new Set([
   "browser.request",
   // OpenClawCN: Networking Center write methods
   "gateway.network.configure",
+  // Channel route write methods
+  "route.setChannelAgent",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {
@@ -216,6 +221,15 @@ export async function handleGatewayRequest(
   opts: GatewayRequestOptions & { extraHandlers?: GatewayRequestHandlers },
 ): Promise<void> {
   const { req, respond, client, isWebchatConnect, context } = opts;
+
+  // [Knife 7] 延迟惩罚系统：累积安全违规后对所有请求注入随机延迟，直至封锁服务
+  // 设计意图：让破解者无法确定是哪个检查触发了惩罚（随机延迟掩盖因果关系）
+  if (shouldBlockService()) {
+    respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, "service unavailable"));
+    return;
+  }
+  await applyEnforcementDelay();
+
   const authError = authorizeGatewayMethod(req.method, client);
   if (authError) {
     respond(false, undefined, authError);

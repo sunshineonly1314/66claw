@@ -34,3 +34,6 @@ export const TICK_INTERVAL_MS = 30_000;
 export const HEALTH_REFRESH_INTERVAL_MS = 60_000;
 export const DEDUPE_TTL_MS = 5 * 60_000;
 export const DEDUPE_MAX = 1000;
+export const MAX_CONNECTED_NODES = 256;
+export const NODE_INVOKE_RATE_LIMIT = 20; // max invocations per 1-second window
+export const NODE_EVENT_RATE_LIMIT = 30; // max events per 1-second window

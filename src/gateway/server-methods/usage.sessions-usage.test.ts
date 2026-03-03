@@ -11,6 +11,7 @@ vi.mock("../../config/config.js", () => {
       },
       session: {},
     })),
+    withConfigWriteLock: async (fn: () => Promise<unknown>) => fn(),
   };
 });
 
