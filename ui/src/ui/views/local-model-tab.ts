@@ -208,6 +208,10 @@ function renderModelAction(
 				</div>
 			`;
 		}
+
+		default:
+			// 未知状态：显示状态文本而非空白，方便调试和向后兼容
+			return html`<span class="le-status-text le-status-text--unknown" title="未知状态: ${status}">${statusLabel(status as LocalModelStatus)}</span>`;
 	}
 }
 

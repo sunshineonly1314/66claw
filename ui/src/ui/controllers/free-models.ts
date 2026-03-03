@@ -133,12 +133,15 @@ export async function toggleFreeModelsEnabled(
     return;
   }
 
+  // 记录调用前的原始状态，失败时用于精确恢复（而非依赖 !enabled 推断）
+  const originalEnabled = host.freeModelsEnabled;
+
   try {
     const result = await host.client.request("freeModels.config.update", { enabled }) as
       { success: boolean; error?: string; message?: string };
 
     if (result && result.success === false) {
-      // 后端拒绝：例如 NO_ACCOUNTS
+      // 后端拒绝（例如 NO_ACCOUNTS）：原始状态未变，只显示错误
       host.freeModelsError = result.message ?? "开启失败";
       return;
     }
@@ -147,8 +150,8 @@ export async function toggleFreeModelsEnabled(
     host.freeModelsError = null;
   } catch (err) {
     host.freeModelsError = `更新失败: ${String(err)}`;
-    // 恢复原状态
-    host.freeModelsEnabled = !enabled;
+    // 恢复调用前的原始状态，而非用 !enabled 推断（推断在重复调用时会出错）
+    host.freeModelsEnabled = originalEnabled;
   }
 }
 
@@ -243,9 +246,20 @@ export async function saveConfig(host: FreeModelsHost): Promise<void> {
     const addResult = result as { success: boolean; error?: string };
 
     if (addResult.success) {
-      // 保存成功，关闭弹窗并刷新数据
-      closeConfigModal(host);
+      // 先刷新数据，成功后再关闭弹窗
+      // 顺序很重要：若先关弹窗再刷新，刷新失败的错误会写入 freeModelsError
+      // 但用户已看不到弹窗内的错误提示区域
       await loadFreeModels(host);
+      if (!host.freeModelsError) {
+        closeConfigModal(host);
+      } else {
+        // 刷新失败：保持弹窗开启，让用户看到错误
+        host.freeModelsConfigModalTestResult = {
+          success: false,
+          message: `保存成功，但刷新列表失败: ${host.freeModelsError}`,
+        };
+        host.freeModelsError = null;
+      }
     } else {
       // 验证失败，显示错误信息（汉化）
       const errorMsg = translateApiError(addResult.error ?? "未知错误");

@@ -57,17 +57,13 @@ const detectHandler: GatewayRequestHandler = async (opts) => {
  * 快速检测能力（同步版本，更快）
  * @method capability.detect.quick
  * @scope operator.read
- * 
- * 添加了健壮性改进：
- * - 捕获所有可能的异常
- * - 即使检测失败也返回空结果而不是错误（防止阻塞用户流程）
  */
 const detectQuickHandler: GatewayRequestHandler = (opts) => {
   const { params, respond } = opts;
-  
+
   try {
     const cfg = loadConfig();
-    
+
     let workspaceDir: string | undefined;
     try {
       const agentId = (params.agentId as string) ?? resolveDefaultAgentId(cfg);
@@ -82,25 +78,13 @@ const detectQuickHandler: GatewayRequestHandler = (opts) => {
     const result = detectCapabilitiesQuick({ config: cfg, workspaceDir });
     respond(true, result);
   } catch (err) {
-    // 即使检测失败，也返回一个空结果，防止阻塞用户流程
+    // 检测失败：返回错误而非伪造成功结果，让前端能正确处理降级逻辑
+    const message = err instanceof Error ? err.message : String(err);
     console.error("[capability.detect.quick] Detection failed:", err);
-    
-    // 返回一个最小的有效结果
-    const fallbackResult: CapabilityDetectResult = {
-      platform: {
-        os: process.platform,
-        arch: process.arch,
-        hostname: "unknown",
-      },
-      capabilities: [],
-      workspace: null,
-      suggestions: [
-        { icon: "❓", text: "有什么问题问我", prompt: "你好，你能帮我做什么？" },
-      ],
-      detectTimeMs: 0,
-    };
-    
-    respond(true, fallbackResult);
+    respond(false, undefined, {
+      code: "CAPABILITY_DETECT_ERROR",
+      message: `Quick detection failed: ${message}`,
+    });
   }
 };
 
