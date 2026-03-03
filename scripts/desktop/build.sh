@@ -267,16 +267,41 @@ fi
 echo ""
 echo "[7/7] Post-build: ad-hoc signing + LSArchitecturePriority..."
 
-# Find the .app bundle
+# Determine DMG and .app locations
 if [[ -n "$TAURI_TARGET" ]]; then
-  APP_FILE=$(find "$TAURI_DIR/target/$TAURI_TARGET/release/bundle/macos" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
+  MACOS_BUNDLE_DIR="$TAURI_DIR/target/$TAURI_TARGET/release/bundle/macos"
   DMG_DIR="$TAURI_DIR/target/$TAURI_TARGET/release/bundle/dmg"
 else
-  APP_FILE=$(find "$TAURI_DIR/target/release/bundle/macos" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
+  MACOS_BUNDLE_DIR="$TAURI_DIR/target/release/bundle/macos"
   DMG_DIR="$TAURI_DIR/target/release/bundle/dmg"
 fi
 
-if [[ -n "$APP_FILE" ]]; then
+APP_FILE=$(find "$MACOS_BUNDLE_DIR" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
+
+# Tauri v2 may clean the .app after creating the DMG.
+# If .app is gone, extract it from the Tauri-generated DMG for signing + DMG rebuild.
+EXTRACTED_FROM_DMG=false
+if [[ -z "$APP_FILE" ]]; then
+  TAURI_DMG=$(find "$DMG_DIR" -name "*.dmg" 2>/dev/null | head -1)
+  if [[ -n "$TAURI_DMG" ]]; then
+    echo "  .app was cleaned by Tauri — extracting from DMG for post-processing..."
+    EXTRACT_MOUNT="/tmp/clawdbot-extract-$$"
+    mkdir -p "$MACOS_BUNDLE_DIR"
+    hdiutil attach "$TAURI_DMG" -mountpoint "$EXTRACT_MOUNT" -nobrowse -quiet
+    MOUNTED_APP=$(find "$EXTRACT_MOUNT" -name "*.app" -maxdepth 1 2>/dev/null | head -1)
+    if [[ -n "$MOUNTED_APP" ]]; then
+      cp -R "$MOUNTED_APP" "$MACOS_BUNDLE_DIR/"
+      APP_FILE="$MACOS_BUNDLE_DIR/$(basename "$MOUNTED_APP")"
+      EXTRACTED_FROM_DMG=true
+      echo "  Extracted: $(basename "$MOUNTED_APP")"
+    fi
+    hdiutil detach "$EXTRACT_MOUNT" -quiet 2>/dev/null || true
+  fi
+fi
+
+if [[ -z "$APP_FILE" ]]; then
+  echo "  WARNING: No .app bundle found — skipping post-build fixups"
+else
   # Inject LSArchitecturePriority into Info.plist (arm64 preferred over x86_64)
   PLIST="$APP_FILE/Contents/Info.plist"
   if [[ -f "$PLIST" ]]; then
@@ -293,13 +318,9 @@ if [[ -n "$APP_FILE" ]]; then
 
   # Remove quarantine attribute
   xattr -cr "$APP_FILE" 2>/dev/null || true
-fi
 
-# Rebuild DMG after signing changes (Tauri's DMG may have the unsigned .app)
-# Use create-dmg.sh to ensure drag-to-install UI (background image + Applications symlink)
-# is always present — plain hdiutil create loses the install guide.
-if [[ -n "$APP_FILE" ]]; then
-  echo "  Rebuilding DMG with signed .app (with drag-to-install guide)..."
+  # Rebuild DMG with signed .app + drag-to-install UI (background image + Applications symlink)
+  echo "  Rebuilding DMG with signed .app + drag-to-install guide..."
   CREATE_DMG_SCRIPT="$PROJECT_ROOT/scripts/create-dmg.sh"
   OLD_DMG=$(find "$DMG_DIR" -name "*.dmg" 2>/dev/null | head -1)
   DMG_OUT="${OLD_DMG:-$DMG_DIR/ClawdbotCN.dmg}"
@@ -311,6 +332,11 @@ if [[ -n "$APP_FILE" ]]; then
     echo "  WARNING: scripts/create-dmg.sh not found, falling back to plain hdiutil"
     hdiutil create -volname "ClawdbotCN" -srcfolder "$APP_FILE" \
       -ov -format UDZO "$DMG_OUT" 2>&1
+  fi
+
+  # Clean up extracted .app if we pulled it from DMG (it's now inside the rebuilt DMG)
+  if [[ "$EXTRACTED_FROM_DMG" == "true" ]]; then
+    rm -rf "$APP_FILE"
   fi
 fi
 

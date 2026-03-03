@@ -41,10 +41,17 @@ DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-$APP_NAME}"
 DMG_BACKGROUND_SMALL="${DMG_BACKGROUND_SMALL:-$ROOT_DIR/assets/dmg-background-small.png}"
 DMG_BACKGROUND_PATH="${DMG_BACKGROUND_PATH:-$ROOT_DIR/assets/dmg-background.png}"
 
-DMG_WINDOW_BOUNDS="${DMG_WINDOW_BOUNDS:-400 100 900 420}"
+# Auto-generate background with Chinese install guide if script available
+BG_GEN_SCRIPT="$ROOT_DIR/scripts/generate-dmg-background.py"
+if [[ -f "$BG_GEN_SCRIPT" ]]; then
+  echo "Generating DMG background with install guide..."
+  python3 "$BG_GEN_SCRIPT" "$DMG_BACKGROUND_SMALL" || echo "WARN: Background generation failed, using existing"
+fi
+
+DMG_WINDOW_BOUNDS="${DMG_WINDOW_BOUNDS:-400 100 900 500}"
 DMG_ICON_SIZE="${DMG_ICON_SIZE:-128}"
-DMG_APP_POS="${DMG_APP_POS:-125 160}"
-DMG_APPS_POS="${DMG_APPS_POS:-375 160}"
+DMG_APP_POS="${DMG_APP_POS:-125 240}"
+DMG_APPS_POS="${DMG_APPS_POS:-375 240}"
 DMG_EXTRA_SECTORS="${DMG_EXTRA_SECTORS:-2048}"
 
 to_applescript_list4() {
