@@ -327,10 +327,11 @@ fi
 # 1f. .jsc file count check
 if [ -d "$APP_ROOT/dist" ]; then
     JSC_COUNT=$(find "$APP_ROOT/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$JSC_COUNT" -ge 5 ]; then
-        pass ".jsc file count ($JSC_COUNT files)"
+    JSC_MIN=100
+    if [ "$JSC_COUNT" -ge "$JSC_MIN" ]; then
+        pass ".jsc file count ($JSC_COUNT files, min=$JSC_MIN)"
     else
-        fail ".jsc file count: expected >=5, found $JSC_COUNT"
+        fail ".jsc file count: expected >=$JSC_MIN, found $JSC_COUNT (加密不完整，请检查 bytenode 编译是否成功)"
     fi
 fi
 

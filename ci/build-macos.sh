@@ -240,19 +240,24 @@ if [ -f "\$VALIDATION_SCRIPT" ] && [ -d "\$APP_BUNDLE" ]; then
   mkdir -p "\$VALIDATION_LOG_DIR"
 
   VALIDATE_ARGS="--app-dir \$APP_BUNDLE --log-dir \$VALIDATION_LOG_DIR"
-  if [ "\$VALIDATE_FLAG" != "--validate-full" ]; then
+  # WebSocket 验证默认开启；只有显式传 --skip-websocket 才跳过
+  if [ "\$VALIDATE_FLAG" = "--skip-websocket" ]; then
     VALIDATE_ARGS="\$VALIDATE_ARGS --skip-websocket"
+    echo "WebSocket validation: SKIPPED (--skip-websocket passed)"
+  else
+    echo "WebSocket validation: ENABLED (default)"
   fi
 
   if bash "\$VALIDATION_SCRIPT" \$VALIDATE_ARGS; then
     echo "Post-build validation: ALL PASSED"
   else
-    echo "WARNING: Post-build validation had failures (build artifact still available)"
+    echo "ERROR: Post-build validation FAILED — aborting release deploy"
     if [ -f "\$VALIDATION_LOG_DIR/validation-report.txt" ]; then
       echo "--- Validation Report ---"
       cat "\$VALIDATION_LOG_DIR/validation-report.txt"
       echo "--- End Report ---"
     fi
+    exit 1
   fi
 else
   echo "Skipping post-build validation (script or .app not found)"

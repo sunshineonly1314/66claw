@@ -170,6 +170,79 @@ if (\$artifacts) {
 
 } # end DEPLOY_ONLY check
 
+# ── Pre-Deploy Package Gate: 打包质量硬门卫 ──
+# 构建完成后、release-deploy 之前，验证包质量（任一检查失败则 exit 1）
+Write-Host ""
+Write-Host "========================================="
+Write-Host "  Pre-Deploy Package Gate"
+Write-Host "========================================="
+
+# Reset CWD back to workspace (build.ps1 subprocess may have changed it)
+Set-Location \$WORKSPACE
+
+# Gate-1: dist/entry.js 主入口
+if (-not (Test-Path 'dist\entry.js')) {
+    Write-Host "ERROR: dist\entry.js not found — TypeScript compile failed"
+    exit 1
+}
+Write-Host "  [PASS] dist/entry.js ✓"
+
+# Gate-2: .jsc 字节码数量 >= 100
+\$jscFiles = @(Get-ChildItem -Path 'dist' -Recurse -Filter '*.jsc' -ErrorAction SilentlyContinue)
+\$jscCount = \$jscFiles.Count
+\$jscMin = 100
+if (\$jscCount -lt \$jscMin) {
+    Write-Host "ERROR: Insufficient .jsc bytecode files: found \$jscCount, expected >= \$jscMin"
+    Write-Host "  Check that bytenode compilation completed without errors"
+    exit 1
+}
+Write-Host "  [PASS] .jsc bytecode: \$jscCount files (>= \$jscMin) ✓"
+
+# Gate-3: integrity-hashes.json
+if (-not (Test-Path 'dist\security\integrity-hashes.json')) {
+    Write-Host "ERROR: dist\security\integrity-hashes.json not found — integrity:gen failed"
+    exit 1
+}
+Write-Host "  [PASS] integrity-hashes.json ✓"
+
+# Gate-4: control-ui
+if (-not (Test-Path 'dist\control-ui\index.html')) {
+    Write-Host "ERROR: dist\control-ui\index.html not found — ui:build failed"
+    exit 1
+}
+Write-Host "  [PASS] control-ui ✓"
+
+# Gate-5: extensions 非空
+\$extFiles = @(Get-ChildItem -Path 'extensions' -Recurse -Include '*.js','*.jsc' -ErrorAction SilentlyContinue)
+if (\$extFiles.Count -eq 0) {
+    Write-Host "ERROR: extensions/ has no executable files (.js/.jsc) — extensions build failed"
+    exit 1
+}
+Write-Host "  [PASS] extensions: \$(\$extFiles.Count) files ✓"
+
+# Gate-6: data/ 种子文件完整性（data/ 存在时验证）
+if (Test-Path 'data') {
+    \$dataSeedFiles = @(
+        'mcp-index.db', 'mcp-index.json', 'tool-index.sqlite',
+        'skill-availability-dictionary.json', 'skill-availability-schema.json',
+        'skill-verification-needed.json', 'skills-availability-dictionary.json',
+        'skills-availability-dictionary-enriched.json', 'README-skill-availability.md'
+    )
+    \$missingData = @()
+    foreach (\$f in \$dataSeedFiles) {
+        if (-not (Test-Path "data\\$f")) { \$missingData += \$f }
+    }
+    if (\$missingData.Count -gt 0) {
+        Write-Host "ERROR: data/ seed files missing (\$(\$missingData.Count) files):"
+        \$missingData | ForEach-Object { Write-Host "  - data\\$_" }
+        exit 1
+    }
+    Write-Host "  [PASS] data/ seed files: \$(\$dataSeedFiles.Count) files ✓"
+}
+
+Write-Host "  Pre-deploy gate PASSED ✅"
+Write-Host "========================================="
+
 # Release Deploy: generate delta packages + upload
 # Skip when --skip-deploy (parallel build mode, upload is serialized by trigger-build.sh)
 if (\$SKIP_DEPLOY -ne 'true') {
@@ -179,8 +252,6 @@ Write-Host "========================================="
 Write-Host "  Release Deploy (Delta + Upload)"
 Write-Host "========================================="
 
-# Reset CWD back to workspace (build.ps1 subprocess may have changed it)
-Set-Location \$WORKSPACE
 Write-Host "CWD: \$(Get-Location)"
 
 # Build phase reinstalls with --omit=dev, removing tsx

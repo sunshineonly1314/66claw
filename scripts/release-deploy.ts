@@ -342,27 +342,101 @@ async function main() {
     process.exit(1);
   }
 
-  // 验证加密文件存在
-  const jscFiles = findFiles(DIST_DIR, (f) => f.endsWith(".jsc"));
-  if (jscFiles.length === 0) {
-    warn("未找到 .jsc 字节码文件，可能 build:secure 未正确执行");
-  } else {
-    info(`找到 ${jscFiles.length} 个 .jsc 字节码文件`);
+  // ─── 打包质量硬门卫（任一失败立即中止，防止发出劣质包）───
+  // 顺序：先验证编译基础产物，再验证加密层，最后验证配套资源
+
+  /** .jsc 字节码最小数量（当前实际约 150+，100 是安全下界） */
+  const JSC_MIN_COUNT = 100;
+
+  // Gate-1: 主入口文件（TypeScript 编译是否成功的最基础指标）
+  const entryJsPath = path.join(DIST_DIR, "entry.js");
+  if (!fileExists(entryJsPath)) {
+    error("未找到 dist/entry.js，TypeScript 编译失败");
+    error("请运行 pnpm build 并确认无 TS 编译错误后重试");
+    process.exit(1);
   }
 
-  // 验证 integrity hashes
+  // Gate-2: .jsc 字节码数量（加密层完整性）
+  let jscFiles: string[];
+  try {
+    jscFiles = findFiles(DIST_DIR, (f) => f.endsWith(".jsc"));
+  } catch (e) {
+    error(`扫描 dist/ 目录时出错: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
+  if (jscFiles.length < JSC_MIN_COUNT) {
+    error(`加密不完整：找到 ${jscFiles.length} 个 .jsc 字节码文件，期望 >= ${JSC_MIN_COUNT}`);
+    error("请确认 pnpm build:secure 已正确完成（bytenode 编译阶段未报错）");
+    process.exit(1);
+  }
+
+  // Gate-3: integrity-hashes.json
   const integrityPath = path.join(DIST_DIR, "security", "integrity-hashes.json");
   if (!fileExists(integrityPath)) {
-    warn("未找到 integrity-hashes.json，可能 integrity:gen 未执行");
-  } else {
-    info("integrity-hashes.json 存在");
+    error("未找到 dist/security/integrity-hashes.json，integrity:gen 未执行或失败");
+    error("请手动运行 pnpm integrity:gen 后重试");
+    process.exit(1);
   }
 
-  // 验证 UI 构建
+  // Gate-4: UI 构建产物
   const uiIndexPath = path.join(DIST_DIR, "control-ui", "index.html");
   if (!fileExists(uiIndexPath)) {
-    warn("未找到 dist/control-ui/index.html，可能 ui:build 未执行");
+    error("未找到 dist/control-ui/index.html，ui:build 未执行或失败");
+    error("请手动运行 pnpm ui:build 后重试");
+    process.exit(1);
   }
+
+  // Gate-5: skills/ 目录非空（技能文件是完整包的必要组成）
+  const skillsDir = path.join(ROOT_DIR, "skills");
+  let skillCount = 0;
+  if (fs.existsSync(skillsDir)) {
+    const skillFiles = findFiles(skillsDir, () => true);
+    skillCount = skillFiles.length;
+    if (skillCount === 0) {
+      error("skills/ 目录为空，打包内容不完整");
+      process.exit(1);
+    }
+    info(`skills/ 目录: ${skillCount} 个文件`);
+  }
+
+  // Gate-6: extensions/ 目录有可执行文件
+  const extDir = path.join(ROOT_DIR, "extensions");
+  let extCount = 0;
+  if (fs.existsSync(extDir)) {
+    const extFiles = findFiles(extDir, (f) => f.endsWith(".js") || f.endsWith(".jsc"));
+    extCount = extFiles.length;
+    if (extCount === 0) {
+      error("extensions/ 目录没有可执行文件（.js / .jsc），扩展构建失败");
+      process.exit(1);
+    }
+    info(`extensions/ 目录: ${extCount} 个可执行文件`);
+  }
+
+  // Gate-7: data/ 种子文件完整性（data/ 存在时强制验证白名单文件）
+  const dataDir = path.join(ROOT_DIR, "data");
+  const dataOk = fs.existsSync(dataDir);
+  if (dataOk) {
+    const missingDataFiles: string[] = [];
+    for (const seedFile of DATA_SEED_FILES) {
+      if (!fileExists(path.join(dataDir, seedFile))) {
+        missingDataFiles.push(seedFile);
+      }
+    }
+    if (missingDataFiles.length > 0) {
+      error(`data/ 种子文件不完整，缺少以下文件（共 ${missingDataFiles.length} 个）：`);
+      for (const f of missingDataFiles) {
+        error(`  - data/${f}`);
+      }
+      error("请确认 data/ 目录已正确同步（build-macos.sh / build-windows.sh 会自动上传种子文件）");
+      process.exit(1);
+    }
+    info(`data/ 种子文件: ${DATA_SEED_FILES.length} 个白名单文件全部存在`);
+  }
+
+  // ─── 门卫通过汇总 ────────────────────────────────────────
+  info(
+    `✅ 打包前置检查全部通过 — JSC=${jscFiles.length}, integrity=✓, UI=✓, entry=✓, skills=${skillCount}, ext=${extCount}, data=${dataOk ? "✓" : "skip"}`,
+  );
 
   // ─── Step 1.5: 生成 CHANGELOG ───
 
@@ -828,6 +902,7 @@ async function main() {
       fullSha256: string;
       installers: Record<string, InstallerInfo>;
       changelog: { "zh-CN": string; "en-US": string };
+      buildLog: BuildLog;
     }
 
     const platformManifest: PlatformManifest = {
@@ -852,6 +927,7 @@ async function main() {
       fullSha256,
       installers,
       changelog: readChangelogLatest(),
+      buildLog,
     };
 
     const pmPath = path.join(DEPLOY_DIR, platformSubDir, "platform-manifest.json");
@@ -870,6 +946,7 @@ async function main() {
       fullSha256: string;
       changelog: { "zh-CN": string; "en-US": string };
       installers?: Record<string, InstallerInfo>;
+      buildLog: BuildLog;
     }
 
     const latestJson: LatestJson = {
@@ -892,6 +969,7 @@ async function main() {
       fullSize: fullTarSize,
       fullSha256,
       changelog: readChangelogLatest(),
+      buildLog,
     };
 
     if (Object.keys(installers).length > 0) {
@@ -1541,6 +1619,110 @@ function readChangelogLatest(): { "zh-CN": string; "en-US": string } {
   } catch {
     return { "zh-CN": "", "en-US": "" };
   }
+}
+
+/** 构建日志：提取 git commits 生成 build-log.json */
+interface BuildLogEntry {
+  hash: string;
+  date: string;
+  author: string;
+  message: string;
+}
+
+interface BuildLog {
+  version: string;
+  previousVersion: string | null;
+  platform: string;
+  buildTime: string;
+  gitCommit: string;
+  commits: BuildLogEntry[];
+  summary: string;
+}
+
+function generateBuildLog(
+  version: string,
+  buildPlatform: string | undefined,
+  cacheDir: string,
+): BuildLog {
+  const previousVersions = getCachedVersions(cacheDir);
+  const previousVersion = previousVersions.length > 0 ? previousVersions[0] : null;
+
+  let commits: BuildLogEntry[] = [];
+
+  try {
+    // 如果有上一版本的 tag 或缓存，使用 git log 提取两个版本之间的 commits
+    // 先尝试 tag 方式（v{previousVersion}..HEAD），失败则用 commit 数量限制
+    let logOutput = "";
+
+    if (previousVersion) {
+      // 尝试用 tag 获取
+      try {
+        logOutput = execSync(
+          `git log v${previousVersion}..HEAD --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+          { encoding: "utf-8", cwd: ROOT_DIR },
+        ).trim();
+      } catch {
+        // tag 不存在，尝试 release- tag
+        try {
+          logOutput = execSync(
+            `git log release-${previousVersion}..HEAD --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+            { encoding: "utf-8", cwd: ROOT_DIR },
+          ).trim();
+        } catch {
+          // 没有 tag，使用最近 50 条 commits 并排除已知旧版本的 bump commit
+          logOutput = execSync(
+            `git log -50 --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+            { encoding: "utf-8", cwd: ROOT_DIR },
+          ).trim();
+        }
+      }
+    } else {
+      // 首次发布，取最近 30 条
+      logOutput = execSync(
+        `git log -30 --pretty=format:"%H||%aI||%an||%s" --no-merges`,
+        { encoding: "utf-8", cwd: ROOT_DIR },
+      ).trim();
+    }
+
+    if (logOutput) {
+      commits = logOutput
+        .split("\n")
+        .filter((line) => line.includes("||"))
+        .map((line) => {
+          const [hash, date, author, ...msgParts] = line.split("||");
+          return {
+            hash: hash.substring(0, 8),
+            date,
+            author,
+            message: msgParts.join("||"),
+          };
+        })
+        // 排除版本 bump 自身的 commit
+        .filter((c) => !c.message.startsWith("chore: bump version to "));
+    }
+  } catch {
+    warn("git log 提取失败，build-log 将不包含 commit 列表");
+  }
+
+  // 生成摘要
+  const feats = commits.filter((c) => c.message.startsWith("feat")).length;
+  const fixes = commits.filter((c) => c.message.startsWith("fix")).length;
+  const others = commits.length - feats - fixes;
+  const parts: string[] = [];
+  if (feats > 0) parts.push(`${feats} features`);
+  if (fixes > 0) parts.push(`${fixes} fixes`);
+  if (others > 0) parts.push(`${others} other changes`);
+  const summary = parts.length > 0 ? parts.join(", ") : "No changes recorded";
+
+  return {
+    version,
+    previousVersion,
+    platform: buildPlatform ?? "all",
+    buildTime: new Date().toISOString(),
+    gitCommit: getGitCommit(),
+    commits,
+    summary,
+  };
 }
 
 function safeUnlink(p: string) {
