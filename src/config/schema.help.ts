@@ -57,7 +57,7 @@ export const FIELD_HELP: Record<string, string> = {
   "diagnostics.cacheTrace.includePrompt": "Include prompt text in trace output (default: true).",
   "diagnostics.cacheTrace.includeSystem": "Include system prompt in trace output (default: true).",
   "tools.exec.applyPatch.enabled":
-    "Experimental. Enables apply_patch for OpenAI models when allowed by tool policy.",
+    "Experimental. Enables apply_patch for OpenAI-compatible models (OpenAI, DeepSeek, Qwen, etc.) when allowed by tool policy.",
   "tools.exec.applyPatch.workspaceOnly":
     "Restrict apply_patch paths to the workspace directory (default: true). Set false to allow writing outside the workspace (dangerous).",
   "tools.exec.applyPatch.allowModels":

@@ -1440,7 +1440,9 @@ export class ModelConfigView extends LitElement {
         await onSuccess();
 
         if (capability === "text") {
-          globalThis.dispatchEvent?.(new CustomEvent("openclawcn:silent-new"));
+          // 切换 text 模型时，中止正在运行的请求（旧模型），但保留聊天记录
+          // 服务端 updateSessionModelOverrides 已更新 session，下一条消息自动使用新模型
+          globalThis.dispatchEvent?.(new CustomEvent("openclawcn:model-switched"));
         }
         this._showSwitchToast(m.modelName || m.modelId, m.providerName || m.providerId);
       } else if (data.requiresRebuild) {

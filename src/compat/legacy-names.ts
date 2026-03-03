@@ -1,6 +1,6 @@
 export const PROJECT_NAME = "openclawcn" as const;
 
-export const LEGACY_PROJECT_NAMES = ["openclawcn"] as const;
+export const LEGACY_PROJECT_NAMES = ["openclawcn", "clawdbot"] as const;
 
 export const MANIFEST_KEY = PROJECT_NAME;
 

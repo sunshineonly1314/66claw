@@ -8,6 +8,7 @@ export {
   resolveConfigSnapshotHash,
   writeConfigFile,
 } from "./io.js";
+export { withConfigWriteLock } from "./config-write-lock.js";
 export { migrateLegacyConfig } from "./legacy-migrate.js";
 export * from "./paths.js";
 export * from "./runtime-overrides.js";

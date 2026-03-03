@@ -93,7 +93,7 @@ export const AFFILIATE_LINKS: Record<string, AffiliateLink> = {
     logo: "/assets/logos/siliconflow.svg",
     affiliateUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
     consoleUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
-    apiKeyUrl: "https://cloud.siliconflow.cn/i/uXXX7IEi",
+    apiKeyUrl: "https://cloud.siliconflow.cn/account/ak",
     benefits: [
       "聚合多家顶尖大模型",
       "DeepSeek-R1/V3、Qwen2.5 等免费使用",
@@ -1193,21 +1193,79 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
     "gog", // Google Workspace CLI (Gmail/Calendar/Drive) — 不是本地搜索！
     "goplaces", // Google Places API
     "local-places", // Google Places API (本地代理但仍调Google)
+    "ga4", // Google Analytics Data API → 替代：百度统计
+    "google-ads", // Google Ads → 替代：百度推广/巨量引擎
+    "google-chat", // Google Chat API → 替代：飞书/钉钉
+    "google-home", // Google Nest SDM API → 替代：米家/天猫精灵
+    "google-maps-grounding-lite-mcp", // Google Maps API → 替代：高德/百度地图
+    "gemini-deep-research", // Gemini API → 替代：DeepSeek/通义千问
+    "gemini-yt-video-transcript", // YouTube + Gemini → 替代：B站字幕+国内大模型
+    "gkeep", // Google Keep → 替代：滴答清单
+    "meeting-prep", // Google Calendar API → 替代：飞书日历
+    "nest-devices", // Google Nest Device Access → 替代：米家
+    "notebooklm-skill", // Google NotebookLM → 替代：通义听悟
+    "whatdo", // Google Calendar + Places → 替代：飞书日历+高德
+    // ── 依赖 YouTube（被墙） ──
+    "youtube-analytics", // YouTube Data API → 替代：B站数据
+    "youtube-instant-article", // youtube.com → 替代：B站视频总结
+    "youtube-summarizer", // youtube.com 字幕 → 替代：B站字幕提取
+    "youtube-transcript", // youtube.com 字幕 → 替代：B站字幕API
+    "youtube-watcher", // youtube.com → 替代：B站
+    "yt-dlp-downloader-skill", // YouTube+Twitter下载 → 替代：you-get（B站/抖音）
+    "yt-api-cli", // YouTube Data API → 替代：B站API
+    "ytmusic", // YouTube Music → 替代：网易云/QQ音乐
+    "pocket-casts-yt", // YouTube + Pocket Casts → 替代：小宇宙播客
+    "chromecast-control", // YouTube 投屏 → 替代：DLNA/小米投屏
     // ── 依赖 OpenAI API（被墙） ──
     "oracle", // 默认 ChatGPT browser / OpenAI API
     "openai-image-gen", // OpenAI DALL-E API
     "openai-whisper-api", // OpenAI Whisper API（≠openai-whisper本地版！）
     "summarize", // 默认 Google Gemini / OpenAI
     "coding-agent", // 需要 Codex/Claude/OpenCode 外部AI API
-    // ── 依赖其他海外服务 ──
+    "openai-docs", // developers.openai.com MCP → 无需替代（文档类）
+    "openai-tts", // OpenAI TTS API → 替代：火山引擎TTS/讯飞
+    "openai-tts-python", // OpenAI TTS Python → 替代：火山引擎TTS
+    "gpt", // api.openai.com → 替代：国内大模型API
+    "relay-to-agent", // OpenAI API → 替代：国内大模型
+    "swarm", // OpenAI/Gemini API → 替代：国内大模型
+    "codex-sub-agents", // OpenAI Codex CLI → 无直接替代
+    // ── 依赖 Spotify（中国不可用） ──
+    "spotify-player", // Spotify API → 替代：网易云音乐
+    "spotify", // Spotify web → 替代：网易云/QQ音乐
+    "spotify-cli", // Spotify API → 替代：网易云CLI
+    "spotify-history", // Spotify API → 替代：网易云听歌记录
+    "spotify-applescript", // Spotify macOS → 替代：Apple Music/网易云
+    "home-music", // Spotify desktop → 替代：网易云桌面版
+    "ahmed", // Spotify → 替代：网易云音乐
+    // ── 依赖 X/Twitter（被墙） ──
+    "bird", // X/Twitter GraphQL API
+    "x-articles", // x.com 浏览器 → 替代：微博长文
+    "x-kindle", // fxtwitter API → 替代：微博正文提取
+    "tweet-writer", // X/Twitter → 替代：微博发布
+    "typefully", // X 自动化 → 替代：微博自动化
+    // "content-draft-generator", // 已修复：去掉 fxtwitter 依赖
+    // "swipe-file-generator", // 已修复：去掉 fxtwitter 依赖
+    "daily-review", // Bird CLI (X/Twitter) → 替代：微博日报
+    // ── 依赖 Reddit（被墙） ──
+    "reddit", // reddit.com API → 替代：V2EX/知乎API
+    "reddit-cli", // reddit.com cookies → 替代：V2EX/知乎
+    "reddit-scraper", // old.reddit.com → 替代：V2EX/知乎爬虫
+    "search-reddit", // reddit.com → 替代：知乎搜索
+    "last30days", // reddit.com + x.com → 替代：知乎/V2EX热帖
+    "last30days-lite", // reddit.com → 替代：知乎/V2EX
+    // ── 依赖其他被墙海外服务 ──
     "sag", // ElevenLabs TTS API — 不是本地TTS！
-    "spotify-player", // Spotify API（中国不可用）
     "voice-call", // Twilio/Telnyx/Plivo VoIP
     "gifgrep", // Tenor/Giphy GIF搜索
     "food-order", // Foodora 欧洲外卖
     "ordercli", // Foodora 封装
-    "bird", // X/Twitter GraphQL API
     "eightctl", // Eight Sleep 美国智能床垫IoT
+    "dropbox", // Dropbox API → 替代：坚果云/阿里云盘
+    "notion-skill", // Notion API（国内不稳定） → 替代：FlowUs/Wolai
+    "better-notion", // Notion API → 替代：FlowUs/Wolai
+    "blog-writer", // Notion → 替代：FlowUs
+    // "heurist-mesh", // 经测试国内可直连 (HTTP 200)，已移除
+    // "web-researcher", // 已修复：默认搜索引擎改为百度
     // ── 海外平台，国内极少使用 ──
     "slack",
     "discord",
@@ -1246,7 +1304,20 @@ export const CN_REGION_CONFIG: CnRegionConfig = {
  * 4. TZ 环境变量（Docker 容器内常用）
  * 5. LANG / LC_ALL 环境变量（Linux/macOS）
  */
+let _cachedChinaRegion: boolean | undefined;
+
 export function detectChinaRegion(): boolean {
+  if (_cachedChinaRegion !== undefined) return _cachedChinaRegion;
+  _cachedChinaRegion = _detectChinaRegionImpl();
+  return _cachedChinaRegion;
+}
+
+/** @internal Reset cache — only for unit tests. */
+export function _resetChinaRegionCache(): void {
+  _cachedChinaRegion = undefined;
+}
+
+function _detectChinaRegionImpl(): boolean {
   // 检查环境变量强制设置
   if (process.env.OPENCLAWCN_REGION === "cn") return true;
   if (process.env.OPENCLAWCN_REGION === "global") return false;
@@ -1359,7 +1430,7 @@ export const CN_DEFAULT_SECURITY_CONFIG = {
   },
   tools: {
     write: {
-      allowDelete: false, // 安全底线：禁止删除文件，其他全部放开
+      allowDelete: true, // 最大权限：允许删除文件（配合 exec security:"full" 全放开）
     },
     exec: {
       security: "full" as const, // 全权限模式，所有命令可执行
@@ -1371,8 +1442,10 @@ export const CN_DEFAULT_SECURITY_CONFIG = {
         "calc",
         "mspaint",
         "code",
-        // [HIGH-07] cmd/powershell 已移除：配合 ask:"off" 时可执行任意命令，
-        // 等同于无限制 shell 访问。用户如需要可自行加入白名单。
+        // Windows shell（最大权限模式：用户要求全放开）
+        "cmd",
+        "powershell",
+        "pwsh",
         // 开发工具 - 通用
         "python",
         "python3",

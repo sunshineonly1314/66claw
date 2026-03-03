@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { applyCnDefaults, applyAgentDefaults } from "./defaults.js";
-import { CN_DEFAULT_SECURITY_CONFIG } from "./region-cn.js";
+import { CN_DEFAULT_SECURITY_CONFIG, _resetChinaRegionCache } from "./region-cn.js";
 import type { OpenClawCNConfig } from "./types.js";
 
 // ============================================================================
@@ -21,6 +21,7 @@ import type { OpenClawCNConfig } from "./types.js";
 let savedRegion: string | undefined;
 
 function setCnRegion(value: boolean) {
+  _resetChinaRegionCache();
   savedRegion = process.env.OPENCLAWCN_REGION;
   process.env.OPENCLAWCN_REGION = value ? "cn" : "global";
 }

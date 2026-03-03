@@ -966,11 +966,11 @@ export async function saveProviderPriority(host: ModelConfigHost, priority: stri
     // 优先级变更会联动 modelCapability，刷新 UI 显示（失败不影响主流程）
     try { await loadCapabilities(host); } catch { /* UI 刷新失败非关键 */ }
 
-    // text 模型变了则静默 /new
+    // text 模型变了则中止当前请求，保留聊天记录，下一条消息使用新模型
     const newTextModel = host.capabilities.find((c) => c.capability === "text")?.currentModel;
     const newTextKey = newTextModel ? `${newTextModel.providerId}/${newTextModel.modelId}` : "";
     if (newTextKey && newTextKey !== oldTextKey) {
-      globalThis.dispatchEvent?.(new CustomEvent("openclawcn:silent-new"));
+      globalThis.dispatchEvent?.(new CustomEvent("openclawcn:model-switched"));
     }
   } catch (err) {
     host.modelConfigError = `保存优先级失败: ${String(err)}`;
