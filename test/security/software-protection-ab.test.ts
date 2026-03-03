@@ -1,10 +1,10 @@
 /**
  * Software Protection A/B Paired Testing
  * 软件保护功能 A/B 结对深度测试
- * 
+ *
  * Tester A: 正向测试 - 验证功能正确性
  * Tester B: 攻击测试 - 验证安全防护能力
- * 
+ *
  * @date 2026-02-04
  */
 
@@ -33,13 +33,13 @@ function isProductionBuild(): boolean {
 
 // Real RSA public key from the codebase
 const REAL_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkDtHShdtjfCopovpCcIR
-hiyFHopWsclr+7JQ+c4Iz2NIdWrCoAkSUTSp24fJXmVQh27m8Eq9JvGX/wMpQ8H6
-++IpO06BXCyk1gYqf8Qqa6CdGMQ0aygCq6aTebQQqDBGICH7u985fkdTRDz62xyG
-UbYKIJPZkRycZCGZ5pMvwhxKcSZ6ifpGuBhAlxLqHpax9sUgstWWBOMWEr7SpbL0
-BE081ASxkXuQSSGDQFQzUZ98ZoVoYOmneIjU/6JHOAhLDA1R9qEy7KKpb3FV0DQm
-PWgG9tgLZk1M7yp3xitO98ZrMtWLmNNPUtQvfM1vlvRI7It0BoGVnPq5P+9dvzmS
-nQIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuB00UMEJdP/XxmCJDGC5
+x7DsZEJpWG2Gx+p8RmkMsoPh/eiWcwkSrO62Ijg3jrOO5i8UnZGzM1jzDEBdB8Gs
+g0ADa9LkRHdNTSYpxE2hCyvvSMLfYX4i1yp0ucFO0PTmECMXSTg0/pxTPpI1GwGK
+6rqH/3HjytryUlfAI4eRMmn1c2zQimXi49CgXzTMDOY8oTTaqeD7XQtAVCklO1pg
+j0FDTjxSFGC9xnXU5ooW9IQXjyW3jZZLbxbgd8elGJD1EUYrHFa1xYF8r5yUr7GA
+moWQ5xD2iEun3ykFZZ1pYso9ybBpPXXp8mIxD5+/JGaYirHpH/7JjKs5aTOCDaOZ
+AQIDAQAB
 -----END PUBLIC KEY-----`;
 
 // Generate fake key pair for attack testing
@@ -69,9 +69,13 @@ function buildSignContent(
   valid: boolean,
   tier: string | null,
   expiresAt: string | null,
-  serverTime: number
+  serverTime: number,
 ): string {
-  const normalizedExpiresAt = expiresAt?.endsWith("Z") ? expiresAt : (expiresAt ? `${expiresAt}Z` : "");
+  const normalizedExpiresAt = expiresAt?.endsWith("Z")
+    ? expiresAt
+    : expiresAt
+      ? `${expiresAt}Z`
+      : "";
   return `${valid}|${tier ?? ""}|${normalizedExpiresAt}|${serverTime}`;
 }
 
@@ -97,16 +101,14 @@ function computeFileHash(filePath: string): string {
 // ============================================================================
 
 describe("【Tester A】正向测试 - 功能正确性验证", () => {
-  
   describe("A1: RSA 签名验证正向测试", () => {
-    
     it("A1.1: 正确的签名应该验证通过", () => {
       // 模拟服务端用私钥签名的场景
       // 注意：我们没有真实私钥，所以用假密钥对验证逻辑
       const serverTime = Date.now();
       const content = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", serverTime);
       const signature = signWithPrivateKey(content, FAKE_PRIVATE_KEY);
-      
+
       // 用对应的公钥验证
       const isValid = verifyRsaSignature(content, signature, FAKE_PUBLIC_KEY);
       expect(isValid).toBe(true);
@@ -121,7 +123,7 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
       // 不带 Z
       const content1 = buildSignContent(true, "basic", "2027-01-29T16:14:43", 1000);
       expect(content1).toContain("2027-01-29T16:14:43Z");
-      
+
       // 已带 Z
       const content2 = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", 1000);
       expect(content2).toContain("2027-01-29T16:14:43Z");
@@ -135,15 +137,14 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
 
     it("A1.5: 公钥指纹检查应该正确识别真实公钥", () => {
       // 真实公钥应该包含指纹
-      expect(REAL_RSA_PUBLIC_KEY).toContain("kDtHShdtjfCopovpCcIR");
-      
+      expect(REAL_RSA_PUBLIC_KEY).toContain("uB00UMEJdP/XxmCJ");
+
       // 假公钥不应该包含指纹
-      expect(FAKE_PUBLIC_KEY).not.toContain("kDtHShdtjfCopovpCcIR");
+      expect(FAKE_PUBLIC_KEY).not.toContain("uB00UMEJdP/XxmCJ");
     });
   });
 
   describe("A2: DEV 模式控制正向测试", () => {
-    
     it("A2.1: 生产构建后 __DEV_BUILD__ 应该被替换为 false", () => {
       const startupPath = path.join(LICENSE_DIR, "startup.js");
       if (fs.existsSync(startupPath)) {
@@ -165,7 +166,6 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
   });
 
   describe("A3: 离线宽限期正向测试", () => {
-    
     it("A3.1: 默认配置应该是 24 小时", async () => {
       const typesModule = await import("../../src/license/types.js");
       expect(typesModule.DEFAULT_LICENSE_CONFIG.offlineGracePeriodHours).toBe(8);
@@ -178,7 +178,6 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
   });
 
   describe("A4: 完整性哈希正向测试", () => {
-    
     it("A4.1: 完整性哈希文件应该存在", () => {
       if (!isProductionBuild()) return; // skip in dev build
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
@@ -198,12 +197,12 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
         const paths = hashes.map((h: { path: string }) => h.path);
-        
+
         const licenseFiles = paths.filter((p: string) => p.startsWith("license/"));
         const securityFiles = paths.filter((p: string) => p.startsWith("security/"));
-        
+
         expect(licenseFiles.length).toBe(10); // 10 个 license 文件
-        expect(securityFiles.length).toBe(9);  // 9 个 security 文件
+        expect(securityFiles.length).toBe(9); // 9 个 security 文件
       }
     });
 
@@ -211,7 +210,7 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
-        
+
         // 验证前 3 个文件
         for (const entry of hashes.slice(0, 3)) {
           const fullPath = path.join(DIST_DIR, entry.path);
@@ -225,7 +224,6 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
   });
 
   describe("A5: 构建流程正向测试", () => {
-    
     it("A5.1: dist 目录应该存在", () => {
       expect(fs.existsSync(DIST_DIR)).toBe(true);
     });
@@ -244,7 +242,7 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
         "types.js",
         "verify.js",
       ];
-      
+
       for (const file of requiredFiles) {
         const filePath = path.join(LICENSE_DIR, file);
         expect(fs.existsSync(filePath)).toBe(true);
@@ -253,13 +251,8 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
 
     it("A5.3: security 模块文件应该完整", () => {
       if (!isProductionBuild()) return; // skip in dev build
-      const requiredFiles = [
-        "anti-debug.js",
-        "audit.js",
-        "integrity.js",
-        "index.js",
-      ];
-      
+      const requiredFiles = ["anti-debug.js", "audit.js", "integrity.js", "index.js"];
+
       for (const file of requiredFiles) {
         const filePath = path.join(SECURITY_DIR, file);
         expect(fs.existsSync(filePath)).toBe(true);
@@ -273,16 +266,14 @@ describe("【Tester A】正向测试 - 功能正确性验证", () => {
 // ============================================================================
 
 describe("【Tester B】攻击测试 - 安全防护验证", () => {
-
   describe("B1: RSA 签名伪造/篡改攻击测试", () => {
-    
     it("B1.1: 使用假私钥签名应该无法通过真实公钥验证", () => {
       const serverTime = Date.now();
       const content = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", serverTime);
-      
+
       // 用假私钥签名
       const fakeSignature = signWithPrivateKey(content, FAKE_PRIVATE_KEY);
-      
+
       // 用真实公钥验证 - 应该失败
       const isValid = verifyRsaSignature(content, fakeSignature, REAL_RSA_PUBLIC_KEY);
       expect(isValid).toBe(false);
@@ -292,10 +283,10 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const serverTime = Date.now();
       const originalContent = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", serverTime);
       const signature = signWithPrivateKey(originalContent, FAKE_PRIVATE_KEY);
-      
+
       // 篡改内容：将 valid 从 true 改为 false
       const tamperedContent = buildSignContent(false, "basic", "2027-01-29T16:14:43Z", serverTime);
-      
+
       // 用原签名验证篡改后的内容 - 应该失败
       const isValid = verifyRsaSignature(tamperedContent, signature, FAKE_PUBLIC_KEY);
       expect(isValid).toBe(false);
@@ -305,10 +296,15 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const serverTime = Date.now();
       const originalContent = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", serverTime);
       const signature = signWithPrivateKey(originalContent, FAKE_PRIVATE_KEY);
-      
+
       // 篡改 tier：从 basic 改为 enterprise
-      const tamperedContent = buildSignContent(true, "enterprise", "2027-01-29T16:14:43Z", serverTime);
-      
+      const tamperedContent = buildSignContent(
+        true,
+        "enterprise",
+        "2027-01-29T16:14:43Z",
+        serverTime,
+      );
+
       const isValid = verifyRsaSignature(tamperedContent, signature, FAKE_PUBLIC_KEY);
       expect(isValid).toBe(false);
     });
@@ -317,10 +313,10 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const serverTime = Date.now();
       const originalContent = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", serverTime);
       const signature = signWithPrivateKey(originalContent, FAKE_PRIVATE_KEY);
-      
+
       // 篡改过期时间：延长一年
       const tamperedContent = buildSignContent(true, "basic", "2028-01-29T16:14:43Z", serverTime);
-      
+
       const isValid = verifyRsaSignature(tamperedContent, signature, FAKE_PUBLIC_KEY);
       expect(isValid).toBe(false);
     });
@@ -328,7 +324,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
     it("B1.5: 无效的 base64 签名应该返回 false 而非抛出异常", () => {
       const content = "test|content";
       const invalidSignature = "!!!invalid-base64!!!";
-      
+
       // 应该返回 false，不应该抛出异常
       const isValid = verifyRsaSignature(content, invalidSignature, REAL_RSA_PUBLIC_KEY);
       expect(isValid).toBe(false);
@@ -336,25 +332,24 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
 
     it("B1.6: 空签名应该验证失败", () => {
       const content = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", Date.now());
-      
+
       const isValid = verifyRsaSignature(content, "", REAL_RSA_PUBLIC_KEY);
       expect(isValid).toBe(false);
     });
   });
 
   describe("B2: DEV 模式绕过攻击测试", () => {
-    
     it("B2.1: 生产构建中不应存在可被环境变量绕过的代码", () => {
       const startupPath = path.join(LICENSE_DIR, "startup.js");
       if (fs.existsSync(startupPath)) {
         const content = fs.readFileSync(startupPath, "utf8");
-        
+
         // 检查是否存在直接检查环境变量的逻辑（没有前置条件）
         // 生产版本中 __DEV_BUILD__ 已被替换为 false，所以环境变量检查不会执行
-        
+
         // 不应该存在 __DEV_BUILD__ 变量
         expect(content).not.toContain("__DEV_BUILD__");
-        
+
         // 应该存在 if (!false) 模式，确保绕过逻辑不执行
         const hasDevGuard = content.includes("!false") || content.includes("! false");
         expect(hasDevGuard).toBe(true);
@@ -365,7 +360,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const startupPath = path.join(LICENSE_DIR, "startup.js");
       if (fs.existsSync(startupPath)) {
         const content = fs.readFileSync(startupPath, "utf8");
-        
+
         // 查找 isDevMode 函数中的 if (!false) { return false; } 模式
         // 这确保了函数始终返回 false
         const pattern = /if\s*\(\s*!false\s*\)\s*\{?\s*return\s+false/;
@@ -375,23 +370,22 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
   });
 
   describe("B3: 时间篡改/重放攻击测试", () => {
-    
     it("B3.1: 服务器时间偏差超过 5 分钟应该被拒绝", () => {
       const MAX_DRIFT_MS = 5 * 60 * 1000; // 5 分钟
-      
+
       const now = Date.now();
       const oldServerTime = now - MAX_DRIFT_MS - 1000; // 超过 5 分钟
-      
+
       const drift = Math.abs(now - oldServerTime);
       expect(drift).toBeGreaterThan(MAX_DRIFT_MS);
     });
 
     it("B3.2: 未来时间戳也应该被检测", () => {
       const MAX_DRIFT_MS = 5 * 60 * 1000;
-      
+
       const now = Date.now();
       const futureServerTime = now + MAX_DRIFT_MS + 1000; // 超过 5 分钟
-      
+
       const drift = Math.abs(now - futureServerTime);
       expect(drift).toBeGreaterThan(MAX_DRIFT_MS);
     });
@@ -400,7 +394,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       // 模拟 6 分钟前的签名
       const oldServerTime = Date.now() - 6 * 60 * 1000;
       const content = buildSignContent(true, "basic", "2027-01-29T16:14:43Z", oldServerTime);
-      
+
       // 即使签名正确，由于 serverTime 过期，也应该被拒绝
       // 这需要在实际验证流程中测试 verifyServerTime
       const MAX_DRIFT_MS = 5 * 60 * 1000;
@@ -410,17 +404,16 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
   });
 
   describe("B4: 代码篡改检测测试", () => {
-    
     it("B4.1: 修改文件后哈希应该不匹配", () => {
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
         const firstEntry = hashes[0];
-        
+
         // 模拟篡改：在原始哈希后添加一些内容的哈希
         const tamperedContent = "tampered content";
         const tamperedHash = createHash("sha256").update(tamperedContent).digest("hex");
-        
+
         // 篡改后的哈希应该与原始哈希不匹配
         expect(tamperedHash).not.toBe(firstEntry.hash);
       }
@@ -430,7 +423,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
-        
+
         for (const entry of hashes) {
           // SHA-256 产生 256 位 = 64 个十六进制字符
           expect(entry.hash.length).toBe(64);
@@ -444,7 +437,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const hashFilePath = path.join(SECURITY_DIR, "integrity-hashes.json");
       if (fs.existsSync(hashFilePath)) {
         const hashes = JSON.parse(fs.readFileSync(hashFilePath, "utf8"));
-        
+
         // 模拟删除检测：检查所有文件是否存在
         const missingFiles: string[] = [];
         for (const entry of hashes) {
@@ -453,7 +446,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
             missingFiles.push(entry.path);
           }
         }
-        
+
         // 在正常构建后，不应该有文件丢失
         expect(missingFiles).toEqual([]);
       }
@@ -461,15 +454,14 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
   });
 
   describe("B5: 混淆代码安全测试", () => {
-    
     it("B5.1: 混淆后的代码不应该包含明文敏感函数名", () => {
       const startupPath = path.join(LICENSE_DIR, "startup.js");
       if (fs.existsSync(startupPath)) {
         const content = fs.readFileSync(startupPath, "utf8");
-        
+
         // 检查是否被混淆（应该包含十六进制变量名）
         const hasObfuscatedVars = /_0x[0-9a-f]+/i.test(content);
-        
+
         // 如果启用了混淆，应该有混淆后的变量名
         // 注意：非混淆构建可能没有这些模式
         if (hasObfuscatedVars) {
@@ -483,7 +475,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const rsaVerifyPath = path.join(LICENSE_DIR, "rsa-verify.js");
       if (fs.existsSync(rsaVerifyPath)) {
         const content = fs.readFileSync(rsaVerifyPath, "utf8");
-        
+
         // 尝试检查代码是否是有效的 JavaScript
         // 通过检查是否包含基本的 JS 结构
         expect(content.length).toBeGreaterThan(100);
@@ -495,10 +487,10 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const rsaVerifyPath = path.join(LICENSE_DIR, "rsa-verify.js");
       if (fs.existsSync(rsaVerifyPath)) {
         const content = fs.readFileSync(rsaVerifyPath, "utf8");
-        
+
         // 公钥的一部分应该仍然可见（字符串不会被完全加密）
         // 检查公钥指纹
-        expect(content).toContain("kDtHShdtjfCopovpCcIR");
+        expect(content).toContain("uB00UMEJdP/XxmCJ");
       }
     });
 
@@ -506,11 +498,11 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
       const rsaVerifyPath = path.join(LICENSE_DIR, "rsa-verify.js");
       if (fs.existsSync(rsaVerifyPath)) {
         const content = fs.readFileSync(rsaVerifyPath, "utf8");
-        
+
         // 检查是否有字符串数组模式
-        const hasStringArray = /_0x[0-9a-f]+\s*=\s*\[/.test(content) || 
-                              /function\s+_0x[0-9a-f]+/.test(content);
-        
+        const hasStringArray =
+          /_0x[0-9a-f]+\s*=\s*\[/.test(content) || /function\s+_0x[0-9a-f]+/.test(content);
+
         // 混淆后应该有这些模式
         if (content.includes("_0x")) {
           expect(hasStringArray).toBe(true);
@@ -520,11 +512,10 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
   });
 
   describe("B6: 边界条件和异常处理测试", () => {
-    
     it("B6.1: 空公钥应该导致验证失败", () => {
       const content = "test|content";
       const signature = signWithPrivateKey(content, FAKE_PRIVATE_KEY);
-      
+
       const isValid = verifyRsaSignature(content, signature, "");
       expect(isValid).toBe(false);
     });
@@ -532,7 +523,7 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
     it("B6.2: 格式错误的公钥应该导致验证失败", () => {
       const content = "test|content";
       const signature = signWithPrivateKey(content, FAKE_PRIVATE_KEY);
-      
+
       const malformedKey = "-----BEGIN PUBLIC KEY-----\nINVALID\n-----END PUBLIC KEY-----";
       const isValid = verifyRsaSignature(content, signature, malformedKey);
       expect(isValid).toBe(false);
@@ -541,16 +532,17 @@ describe("【Tester B】攻击测试 - 安全防护验证", () => {
     it("B6.3: 超长内容不应该导致崩溃", () => {
       const longContent = "a".repeat(100000);
       const signature = signWithPrivateKey(longContent, FAKE_PRIVATE_KEY);
-      
+
       // 应该能够处理超长内容
       const isValid = verifyRsaSignature(longContent, signature, FAKE_PUBLIC_KEY);
       expect(isValid).toBe(true);
     });
 
     it("B6.4: 特殊字符不应该影响签名验证", () => {
-      const specialContent = "true|basic|2027-01-29T16:14:43Z|1000|特殊字符🔐|<script>alert(1)</script>";
+      const specialContent =
+        "true|basic|2027-01-29T16:14:43Z|1000|特殊字符🔐|<script>alert(1)</script>";
       const signature = signWithPrivateKey(specialContent, FAKE_PRIVATE_KEY);
-      
+
       const isValid = verifyRsaSignature(specialContent, signature, FAKE_PUBLIC_KEY);
       expect(isValid).toBe(true);
     });

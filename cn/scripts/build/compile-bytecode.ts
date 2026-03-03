@@ -226,6 +226,10 @@ function extractExportNames(code: string, filePath?: string, visited?: Set<strin
  *
  * ESM code outside these directories can still `import { x } from "./gateway/file.js"`
  * because Node.js v22 supports ESM importing CJS modules seamlessly.
+ *
+ * SECURITY: The loader is obfuscated with string splitting, hex encoding, and
+ * indirect references to make static analysis harder. Variable names are
+ * randomized per-file to prevent pattern-based stripping.
  */
 function generateCjsLoader(originalJsPath: string, jscPath: string, exportNames: string[], jscHash: string): string {
   const jscBasename = path.basename(jscPath);
@@ -237,18 +241,37 @@ function generateCjsLoader(originalJsPath: string, jscPath: string, exportNames:
     .map((name) => `exports.${name} = _mod.${name};`)
     .join("\n");
 
-  return `// V8 Bytecode Loader (CJS) — compiled from source, do not edit
-"use strict";
-const _p = require("path").join(__dirname, "./${jscBasename}");
-const _h = require("crypto").createHash("sha256").update(require("fs").readFileSync(_p)).digest("hex");
-if (_h !== "${jscHash}") { console.error("[integrity] bytecode tampered: " + _p); process.exit(1); }
-require("bytenode");
-const _mod = require("./${jscBasename}");
+  // Obfuscate the loader: encode module names as hex to prevent trivial grep
+  const hexEncode = (s: string) => Buffer.from(s).toString("hex");
+  const h_path = hexEncode("path");
+  const h_crypto = hexEncode("crypto");
+  const h_fs = hexEncode("fs");
+  const h_bytenode = hexEncode("bytenode");
+  // Split hash into 2 parts — can't be grep'd as a single string
+  const hashPart1 = jscHash.slice(0, 32);
+  const hashPart2 = jscHash.slice(32);
+  // Deterministic variable names per-file: use file path + jsc hash as seed.
+  // This ensures the same .jsc produces the same loader, so delta packages
+  // don't incorrectly mark unchanged loaders as "modified".
+  // Still unique per-file (different paths = different hashes = different names).
+  const rid = crypto.createHash("md5").update(`${originalJsPath}:${jscHash}`).digest("hex").slice(0, 6);
+  const v = { p: `_${rid}p`, h: `_${rid}h`, m: `_${rid}m`, d: `_${rid}d`, b: `_${rid}b` };
 
-// Re-export all named exports.
-// Pattern: exports.X = _mod.X — required for cjs-module-lexer to detect named exports,
-// allowing ESM code to do: import { X } from "./this-file.js"
-${reExportLines}
+  // Always re-export "default" — plugins and many modules use `export default`.
+  // CJS bytecode wraps the original ESM default as `module.exports.default`.
+  // Without this line, the plugin loader's `resolvePluginModuleExport` cannot
+  // find the plugin definition object via `"default" in moduleExport`.
+  const defaultExportLine = `exports.default=${v.m}.default!==void 0?${v.m}.default:${v.m};`;
+
+  return `"use strict";
+var ${v.d}=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
+var ${v.p}=require(${v.d}("${h_path}")).join(__dirname,"./${jscBasename}");
+var ${v.h}=require(${v.d}("${h_crypto}")).createHash("sha256").update(require(${v.d}("${h_fs}")).readFileSync(${v.p})).digest("hex");
+if(${v.h}!==("${hashPart1}"+"${hashPart2}")){console.error("[fatal] integrity check failed");process.exit(1);}
+require(${v.d}("${h_bytenode}"));
+var ${v.m}=require(${v.p});
+${reExportLines.replace(/_mod/g, v.m)}
+${defaultExportLine}
 `;
 }
 
@@ -262,29 +285,40 @@ ${reExportLines}
  *
  * ESM loaders support `import { X } from "./file.js"` natively since the
  * exports are declared with `export const`.
+ *
+ * SECURITY: Same obfuscation as CJS loader — hex-encoded module names,
+ * split hash, randomized variable names.
  */
 function generateEsmLoader(originalJsPath: string, jscPath: string, exportNames: string[], jscHash: string): string {
   const jscBasename = path.basename(jscPath);
 
+  // Split hash so it can't be grep'd as a single string
+  const hashPart1 = jscHash.slice(0, 32);
+  const hashPart2 = jscHash.slice(32);
+  // Deterministic variable names: same file + same jsc = same loader output
+  const rid = crypto.createHash("md5").update(`${originalJsPath}:${jscHash}`).digest("hex").slice(0, 6);
+  const v = { d: `_${rid}d`, p: `_${rid}p`, h: `_${rid}h`, r: `_${rid}r`, m: `_${rid}m` };
+
   const reExportLines = exportNames
-    .map((name) => `export const ${name} = _mod.${name};`)
+    .map((name) => `export const ${name} = ${v.m}.${name};`)
     .join("\n");
 
-  return `// V8 Bytecode Loader (ESM) — compiled from source, do not edit
-import { createRequire } from "node:module";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-const _d = dirname(fileURLToPath(import.meta.url));
-const _p = join(_d, "./${jscBasename}");
-const _h = createHash("sha256").update(readFileSync(_p)).digest("hex");
-if (_h !== "${jscHash}") { console.error("[integrity] bytecode tampered: " + _p); process.exit(1); }
-const _require = createRequire(import.meta.url);
-_require("bytenode");
-const _mod = _require("./${jscBasename}");
-
+  // ESM imports cannot be hex-encoded (static syntax), but we obfuscate
+  // the runtime logic: variable names, hash split, silent exit
+  return `import{createRequire}from"node:module";
+import{createHash}from"node:crypto";
+import{readFileSync}from"node:fs";
+import{fileURLToPath}from"node:url";
+import{dirname,join}from"node:path";
+const ${v.d}=dirname(fileURLToPath(import.meta.url));
+const ${v.p}=join(${v.d},"./${jscBasename}");
+const ${v.h}=createHash("sha256").update(readFileSync(${v.p})).digest("hex");
+if(${v.h}!==("${hashPart1}"+"${hashPart2}")){console.error("[fatal] integrity check failed");process.exit(1);}
+const ${v.r}=createRequire(import.meta.url);
+${v.r}("bytenode");
+const ${v.m}=${v.r}(${v.p});
 ${reExportLines}
+export default(${v.m}.default!==void 0?${v.m}.default:${v.m});
 `;
 }
 
@@ -560,6 +594,22 @@ async function main(): Promise<void> {
     console.error(`❌ ${errorCount} bytecode compilation(s) failed!`);
     process.exit(1);
   }
+
+  // Generate build-meta.json — records V8 engine version and platform info.
+  // entry.ts checks this at startup: if the V8 version doesn't match,
+  // .jsc bytecode files will fail to deserialize silently.
+  // Without this file, the check is skipped and users get cryptic crashes.
+  const buildMeta = {
+    v8Version: process.versions.v8,
+    nodeVersion: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    compiledAt: new Date().toISOString(),
+    bytecodeFiles: successCount,
+  };
+  const buildMetaPath = path.join(DIST_DIR, "build-meta.json");
+  fs.writeFileSync(buildMetaPath, JSON.stringify(buildMeta, null, 2) + "\n", "utf-8");
+  console.log(`   📄 build-meta.json written (V8 ${buildMeta.v8Version}, ${buildMeta.platform}-${buildMeta.arch})`);
 }
 
 main().catch((error) => {

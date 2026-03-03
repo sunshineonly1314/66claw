@@ -75,3 +75,13 @@ export {
   applyEnforcementDelay,
   getEnforcementStatus,
 } from "./delayed-enforcement.js";
+
+// 运行时加固 (Knife 8 — 环境变量锁定 + require 链冻结 + 原型链保护)
+export {
+  initRuntimeHardening,
+  lockdownEnvVars,
+  freezeRequireChain,
+  freezePrototypes,
+  startEnvPatrol,
+  stopEnvPatrol,
+} from "./runtime-hardening.js";

@@ -27,41 +27,53 @@ const BLOCKED_CWD_PATTERNS = [
 ];
 
 /**
+ * Dangerous environment variables that can lead to code execution.
+ * These are blocked even if inherited from process.env.
+ */
+const DANGEROUS_ENV_VARS = new Set([
+  "NODE_OPTIONS", // Can load arbitrary modules
+  "LD_PRELOAD", // Linux library injection
+  "LD_LIBRARY_PATH", // Can hijack shared libraries
+  "DYLD_INSERT_LIBRARIES", // macOS library injection
+  "DYLD_LIBRARY_PATH", // macOS library path hijacking
+  "PERL5LIB", // Perl module injection
+  "PYTHONPATH", // Python module injection
+  "RUBYLIB", // Ruby library injection
+]);
+
+/**
  * Validate environment variables to prevent injection attacks.
- * Blocks dangerous environment variables that could lead to code execution.
+ * Only validates variables that differ from the current process.env —
+ * inherited system variables (like Windows' CommonProgramFiles(x86))
+ * are skipped because they are trusted OS defaults, not attacker input.
  *
- * @param env - Environment variables object to validate
+ * Dangerous variables (NODE_OPTIONS, LD_PRELOAD, etc.) are always blocked,
+ * even if inherited, to prevent ambient-authority escalation.
  */
 export function validateEnvVars(env: Record<string, string | undefined> | undefined): void {
   if (!env) {
     return;
   }
 
-  // Dangerous environment variables that can lead to code execution
-  const DANGEROUS_ENV_VARS = new Set([
-    "NODE_OPTIONS", // Can load arbitrary modules
-    "LD_PRELOAD", // Linux library injection
-    "LD_LIBRARY_PATH", // Can hijack shared libraries
-    "DYLD_INSERT_LIBRARIES", // macOS library injection
-    "DYLD_LIBRARY_PATH", // macOS library path hijacking
-    "PERL5LIB", // Perl module injection
-    "PYTHONPATH", // Python module injection
-    "RUBYLIB", // Ruby library injection
-  ]);
-
-  // Validate each environment variable
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) {
       continue;
     }
 
-    // Block dangerous variables
+    // Always block dangerous variables regardless of origin
     if (DANGEROUS_ENV_VARS.has(key)) {
       throw new Error(
         `SECURITY: Forbidden environment variable: ${key}\n` +
           `This variable can be used for code injection attacks.\n` +
           `If you need to set this variable, please use a controlled wrapper.`,
       );
+    }
+
+    // Skip validation for variables inherited unchanged from process.env.
+    // These are trusted OS defaults (e.g. Windows PATH with semicolons,
+    // CommonProgramFiles(x86) with parentheses, etc.)
+    if (process.env[key] === value) {
+      continue;
     }
 
     // Validate value length (prevent buffer overflow attacks)
@@ -71,9 +83,12 @@ export function validateEnvVars(env: Record<string, string | undefined> | undefi
       );
     }
 
-    // Check for suspicious patterns in values
+    // Check for suspicious patterns in values of NEW/MODIFIED variables only.
+    // NOTE: () are NOT included because Windows standard env vars contain them
+    // (e.g. CommonProgramFiles(x86) = "C:\Program Files (x86)\Common Files")
+    // and we use execFile/spawn without shell, so parentheses are harmless.
     const suspiciousPatterns = [
-      /[;&|`$()]/, // Shell metacharacters
+      /[;&|`$]/, // Shell metacharacters (excluding parentheses)
       /\x00/, // Null byte injection
     ];
 
@@ -103,10 +118,13 @@ export function validateCwdPath(cwd: string | undefined, baseDir?: string): void
   // Normalize the path to resolve any . or .. components
   const normalizedCwd = path.resolve(cwd);
 
-  // If baseDir is specified, verify path is within it
+  // If baseDir is specified, verify path is within it.
+  // Use path.relative for platform-safe comparison (handles Windows case-insensitivity
+  // and cross-drive paths like D:\ vs C:\).
   if (baseDir !== undefined) {
     const normalizedBase = path.resolve(baseDir);
-    if (!normalizedCwd.startsWith(normalizedBase + path.sep) && normalizedCwd !== normalizedBase) {
+    const rel = path.relative(normalizedBase, normalizedCwd);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
       throw new Error(
         `Blocked cwd: path traversal detected - path is outside base directory: ${cwd}`,
       );

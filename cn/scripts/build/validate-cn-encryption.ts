@@ -123,6 +123,44 @@ function main(): void {
 
   console.log(`    ${wrongCount === 0 ? "✓" : "✗"} ${wrongCount} section2 conflicts\n`);
 
+  // ── Check 4: __DEV_BUILD__ not present in dist (security critical) ────
+
+  console.log("  Check 4: __DEV_BUILD__ replaced in production dist...");
+  const distDir = path.join(ROOT_DIR, "dist");
+  let devBuildLeakCount = 0;
+
+  if (fs.existsSync(distDir)) {
+    /**
+     * Recursively scan dist/ for .js files that still contain __DEV_BUILD__
+     * as an identifier (not as a string literal — the define plugin replaces
+     * it with `false`, so any remaining __DEV_BUILD__ means the replacement
+     * failed and the DEV bypass is exploitable in production).
+     */
+    function scanForDevBuild(dir: string): void {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory() && entry.name !== "node_modules") {
+          scanForDevBuild(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith(".js")) {
+          const code = fs.readFileSync(fullPath, "utf-8");
+          // Match __DEV_BUILD__ as identifier, not inside string literals.
+          // The define plugin replaces `typeof __DEV_BUILD__` → `"boolean"`
+          // and `__DEV_BUILD__` → `false`. If either pattern remains, it's a leak.
+          if (/\b__DEV_BUILD__\b/.test(code)) {
+            const relativePath = path.relative(ROOT_DIR, fullPath);
+            errors.push(`[DEV_LEAK] __DEV_BUILD__ not replaced in: ${relativePath}`);
+            devBuildLeakCount++;
+          }
+        }
+      }
+    }
+    scanForDevBuild(distDir);
+  } else {
+    console.log("    ⚠ dist/ not found — skipping (run after build)");
+  }
+
+  console.log(`    ${devBuildLeakCount === 0 ? "✓" : "✗"} ${devBuildLeakCount} files still contain __DEV_BUILD__\n`);
+
   // ── Summary ─────────────────────────────────────────────────────────────
 
   console.log("========================================");

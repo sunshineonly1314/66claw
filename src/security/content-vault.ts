@@ -17,7 +17,7 @@ import {
   type CipherGCM,
   type DecipherGCM,
 } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { wipeSensitiveBuffer } from "./string-vault.js";
@@ -43,8 +43,9 @@ function getMachineId(): string {
 
   if (process.platform === "win32") {
     try {
-      const output = execSync(
-        'reg query "HKLM\\SOFTWARE\\Microsoft\\Cryptography" /v MachineGuid',
+      const output = execFileSync(
+        "reg",
+        ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"],
         { encoding: "utf-8", timeout: 5000, windowsHide: true },
       );
       const match = output.match(/MachineGuid\s+REG_SZ\s+(.+)/);
@@ -56,7 +57,7 @@ function getMachineId(): string {
     }
   } else if (process.platform === "darwin") {
     try {
-      const output = execSync("ioreg -rd1 -c IOPlatformExpertDevice", {
+      const output = execFileSync("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], {
         encoding: "utf-8",
         timeout: 5000,
       });
@@ -183,13 +184,13 @@ export function decryptContent(encrypted: Buffer): string {
 
   const key = deriveKey();
 
-  try {
-    // 检测格式版本
-    if (
-      encrypted[0] === VAULT_VERSION_GCM &&
-      encrypted.length >= 1 + GCM_NONCE_LEN + GCM_TAG_LEN + 1
-    ) {
-      // GCM 格式: [0x02] [12B nonce] [16B authTag] [ciphertext]
+  // 检测格式版本
+  const looksLikeGcm =
+    encrypted[0] === VAULT_VERSION_GCM && encrypted.length >= 1 + GCM_NONCE_LEN + GCM_TAG_LEN + 1;
+
+  // 尝试 GCM 解密
+  if (looksLikeGcm) {
+    try {
       const nonce = encrypted.subarray(1, 1 + GCM_NONCE_LEN);
       const authTag = encrypted.subarray(1 + GCM_NONCE_LEN, 1 + GCM_NONCE_LEN + GCM_TAG_LEN);
       const data = encrypted.subarray(1 + GCM_NONCE_LEN + GCM_TAG_LEN);
@@ -201,9 +202,14 @@ export function decryptContent(encrypted: Buffer): string {
       const result = decrypted.toString("utf-8");
       wipeSensitiveBuffer(decrypted);
       return result;
+    } catch {
+      // GCM 解密失败 — 可能是旧 CBC 数据首字节恰好为 0x02 (概率 1/256)
+      // 继续尝试 CBC 解密
     }
+  }
 
-    // 旧 CBC 格式兼容: [16B IV] [ciphertext]
+  // 旧 CBC 格式兼容: [16B IV] [ciphertext]
+  try {
     const iv = encrypted.subarray(0, 16);
     const data = encrypted.subarray(16);
     const decipher = createDecipheriv("aes-256-cbc", key, iv);
@@ -251,12 +257,11 @@ export function decryptConfigField(encrypted: Buffer): string {
 
   const key = deriveKey();
 
-  try {
-    // GCM 格式
-    if (
-      encrypted[0] === VAULT_VERSION_GCM &&
-      encrypted.length >= 1 + GCM_NONCE_LEN + GCM_TAG_LEN + 1
-    ) {
+  const looksLikeGcmCfg =
+    encrypted[0] === VAULT_VERSION_GCM && encrypted.length >= 1 + GCM_NONCE_LEN + GCM_TAG_LEN + 1;
+
+  if (looksLikeGcmCfg) {
+    try {
       const nonce = encrypted.subarray(1, 1 + GCM_NONCE_LEN);
       const authTag = encrypted.subarray(1 + GCM_NONCE_LEN, 1 + GCM_NONCE_LEN + GCM_TAG_LEN);
       const data = encrypted.subarray(1 + GCM_NONCE_LEN + GCM_TAG_LEN);
@@ -268,9 +273,12 @@ export function decryptConfigField(encrypted: Buffer): string {
       const result = decrypted.toString("utf-8");
       wipeSensitiveBuffer(decrypted);
       return result;
+    } catch {
+      // GCM failed — fall through to CBC (legacy data with first byte == 0x02)
     }
+  }
 
-    // 旧 CBC 格式兼容
+  try {
     const iv = encrypted.subarray(0, 16);
     const data = encrypted.subarray(16);
     const decipher = createDecipheriv("aes-256-cbc", key, iv);

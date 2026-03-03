@@ -17,13 +17,13 @@ import path from "node:path";
 // ============================================================================
 
 const RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkDtHShdtjfCopovpCcIR
-hiyFHopWsclr+7JQ+c4Iz2NIdWrCoAkSUTSp24fJXmVQh27m8Eq9JvGX/wMpQ8H6
-++IpO06BXCyk1gYqf8Qqa6CdGMQ0aygCq6aTebQQqDBGICH7u985fkdTRDz62xyG
-UbYKIJPZkRycZCGZ5pMvwhxKcSZ6ifpGuBhAlxLqHpax9sUgstWWBOMWEr7SpbL0
-BE081ASxkXuQSSGDQFQzUZ98ZoVoYOmneIjU/6JHOAhLDA1R9qEy7KKpb3FV0DQm
-PWgG9tgLZk1M7yp3xitO98ZrMtWLmNNPUtQvfM1vlvRI7It0BoGVnPq5P+9dvzmS
-nQIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuB00UMEJdP/XxmCJDGC5
+x7DsZEJpWG2Gx+p8RmkMsoPh/eiWcwkSrO62Ijg3jrOO5i8UnZGzM1jzDEBdB8Gs
+g0ADa9LkRHdNTSYpxE2hCyvvSMLfYX4i1yp0ucFO0PTmECMXSTg0/pxTPpI1GwGK
+6rqH/3HjytryUlfAI4eRMmn1c2zQimXi49CgXzTMDOY8oTTaqeD7XQtAVCklO1pg
+j0FDTjxSFGC9xnXU5ooW9IQXjyW3jZZLbxbgd8elGJD1EUYrHFa1xYF8r5yUr7GA
+moWQ5xD2iEun3ykFZZ1pYso9ybBpPXXp8mIxD5+/JGaYirHpH/7JjKs5aTOCDaOZ
+AQIDAQAB
 -----END PUBLIC KEY-----`;
 
 const MAX_SERVER_TIME_DRIFT_MS = 5 * 60 * 1000;
@@ -119,7 +119,7 @@ console.log("=".repeat(70));
 runTest("A", "RSA签名", "公钥格式验证", () => {
   const hasBegin = RSA_PUBLIC_KEY.includes("-----BEGIN PUBLIC KEY-----");
   const hasEnd = RSA_PUBLIC_KEY.includes("-----END PUBLIC KEY-----");
-  const hasFingerprint = RSA_PUBLIC_KEY.includes("kDtHShdtjfCopovpCcIR");
+  const hasFingerprint = RSA_PUBLIC_KEY.includes("uB00UMEJdP/XxmCJ");
   const passed = hasBegin && hasEnd && hasFingerprint;
   return {
     passed,
