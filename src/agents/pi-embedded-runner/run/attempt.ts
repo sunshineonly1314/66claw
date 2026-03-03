@@ -1239,7 +1239,8 @@ export async function runEmbeddedAttempt(
           () => false,
         );
         if (!fileExists) {
-          const entries = (sessionManager as { fileEntries?: unknown[] }).fileEntries ?? [];
+          const entries =
+            (sessionManager as unknown as { fileEntries?: unknown[] }).fileEntries ?? [];
           if (entries.length > 0) {
             const lines = entries.map((e: unknown) => JSON.stringify(e)).join("\n") + "\n";
             await fs.writeFile(params.sessionFile, lines, "utf-8").catch(() => {});
