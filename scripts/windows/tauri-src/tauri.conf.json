@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ClawdbotCN",
-  "version": "2026.2.0",
+  "version": "1.6.0",
   "identifier": "com.clawdbot.cn",
   "build": {
     "beforeDevCommand": "",
@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' http://127.0.0.1:19002 http://localhost:19002; script-src 'self' http://127.0.0.1:19002 http://localhost:19002; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://fonts.font.im https://fonts.loli.net; font-src 'self' https://fonts.gstatic.com https://gstatic.loli.net https://cdn.jsdelivr.net https://fonts.font.im; img-src 'self' data: blob: https://*.openclawcn.com https://*.anthropic.com; connect-src 'self' ws://localhost:19002 ws://127.0.0.1:19002 http://localhost:19002 http://127.0.0.1:19002 https://api.openclawcn.com https://*.anthropic.com; media-src 'self' blob:; worker-src 'self' blob:"
     }
   }
 }

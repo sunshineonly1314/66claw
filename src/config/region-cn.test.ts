@@ -3,6 +3,7 @@ import {
   CN_PROVIDERS,
   CN_REGION_CONFIG,
   detectChinaRegion,
+  _resetChinaRegionCache,
   getAffiliateLink,
   getAffiliateLinks,
   getCnRegionConfig,
@@ -17,6 +18,7 @@ describe("detectChinaRegion", () => {
   let savedEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
+    _resetChinaRegionCache();
     savedEnv = {
       OPENCLAWCN_REGION: process.env.OPENCLAWCN_REGION,
       TZ: process.env.TZ,
@@ -246,7 +248,7 @@ describe("utility functions", () => {
     expect(isChannelHiddenInCn("dingtalk")).toBe(false);
   });
 
-  it("isProviderHiddenInCn returns true for openrouter", () => {
+  it("isProviderHiddenInCn returns false for openrouter", () => {
     expect(isProviderHiddenInCn("openrouter")).toBe(false);
   });
 

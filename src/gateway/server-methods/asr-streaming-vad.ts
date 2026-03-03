@@ -86,6 +86,8 @@ const sessions = new Map<string, StreamingAsrSession>();
 
 const SESSION_TIMEOUT_MS = 35_000; // 30s max recording + 5s buffer
 const MAX_CHUNK_BASE64_LENGTH = 32768; // ~24KB decoded
+/** Max concurrent sessions to prevent memory exhaustion DoS. */
+const MAX_SESSIONS = 20;
 
 function cleanupSession(sessionId: string): void {
   const session = sessions.get(sessionId);
@@ -249,6 +251,14 @@ export const vadStreamHandlers: GatewayRequestHandlers = {
         );
         return;
       }
+      if (sessions.size >= MAX_SESSIONS) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.UNAVAILABLE, "Too many concurrent ASR sessions"),
+        );
+        return;
+      }
 
       const sherpa = getSherpaModule();
 
@@ -322,7 +332,9 @@ export const vadStreamHandlers: GatewayRequestHandlers = {
     try {
       // Decode base64 → Int16 → Float32
       const buf = Buffer.from(pcmBase64, "base64");
-      const int16 = new Int16Array(buf.buffer, buf.byteOffset, buf.byteLength / 2);
+      const aligned = new ArrayBuffer(buf.byteLength);
+      new Uint8Array(aligned).set(buf);
+      const int16 = new Int16Array(aligned);
       const float32Arr: number[] = [];
       for (let i = 0; i < int16.length; i++) {
         float32Arr.push(int16[i]! / 32768);
@@ -344,7 +356,7 @@ export const vadStreamHandlers: GatewayRequestHandlers = {
 
       if (newTexts.length > 0) {
         for (const t of newTexts) {
-          session.finalText += (session.finalText ? "" : "") + t;
+          session.finalText += t;
         }
 
         context.broadcastToConnIds(

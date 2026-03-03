@@ -8,6 +8,7 @@ import { registerFeishuWikiTools } from "./src/wiki.js";
 import { registerFeishuBitableTools } from "./src/bitable.js";
 import { registerFeishuDriveTools } from "./src/drive.js";
 import { registerFeishuTaskTools } from "./src/task-tools.js";
+import { registerFeishuCalendarTools } from "./src/calendar-tools.js";
 
 const plugin = {
   id: "feishu",
@@ -22,16 +23,22 @@ const plugin = {
     api.registerChannel({ plugin: feishuPlugin });
     api.logger.info("[feishu] 飞书渠道插件已注册");
     
-    // 注册飞书工具 (文档、知识库、多维表格、云空间、任务)
+    // 注册飞书工具 (文档、知识库、多维表格、云空间、任务、日程)
     // 这些工具让 AI 能够直接操作飞书生态
-    try {
-      registerFeishuDocTools(api);
-      registerFeishuWikiTools(api);
-      registerFeishuBitableTools(api);
-      registerFeishuDriveTools(api);
-      registerFeishuTaskTools(api);
-    } catch (err) {
-      api.logger.warn?.(`[feishu] 工具注册部分失败: ${err}`);
+    const toolRegistrations = [
+      { name: "doc", fn: registerFeishuDocTools },
+      { name: "wiki", fn: registerFeishuWikiTools },
+      { name: "bitable", fn: registerFeishuBitableTools },
+      { name: "drive", fn: registerFeishuDriveTools },
+      { name: "task", fn: registerFeishuTaskTools },
+      { name: "calendar", fn: registerFeishuCalendarTools },
+    ];
+    for (const { name, fn } of toolRegistrations) {
+      try {
+        fn(api);
+      } catch (err) {
+        api.logger.warn?.(`[feishu] ${name} 工具注册失败: ${err}`);
+      }
     }
   },
 };

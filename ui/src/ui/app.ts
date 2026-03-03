@@ -738,6 +738,7 @@ export class ClawdbotApp extends LitElement {
   }
 
   private _silentNewHandler: (() => void) | null = null;
+  private _modelSwitchedHandler: (() => void) | null = null;
   private _imageGenRegenerateHandler: ((e: Event) => void) | null = null;
   private _videoGenRegenerateHandler: ((e: Event) => void) | null = null;
   private _contextMenuDismissCleanup: (() => void) | null = null;
@@ -775,12 +776,29 @@ export class ClawdbotApp extends LitElement {
     // OpenClawCN: 全局点击关闭会话侧栏右键菜单
     this._contextMenuDismissCleanup = setupContextMenuDismiss(() => this.requestUpdate());
     // 模型切换后静默清空聊天 UI（服务端 session 不动，modelOverride 已由 updateSessionModelOverrides 更新）
+    // 需要 abort 正在运行的请求，否则旧请求使用旧模型配置会导致超时/错误
     this._silentNewHandler = () => {
+      if (this.chatRunId) {
+        void this.handleAbortChat();
+      }
       this.chatMessages = [];
       this.chatStream = null;
       this.chatRunId = null;
+      this.chatQueue = [];
+      this.chatMediaToolActive = null;
+      this.resetToolStream();
     };
     globalThis.addEventListener("openclawcn:silent-new", this._silentNewHandler);
+    // 模型切换后：只中止正在运行的旧请求，保留聊天记录，下一条消息自动使用新模型
+    this._modelSwitchedHandler = () => {
+      if (this.chatRunId) {
+        void this.handleAbortChat();
+      }
+      this.chatStream = null;
+      this.chatMediaToolActive = null;
+      this.resetToolStream();
+    };
+    globalThis.addEventListener("openclawcn:model-switched", this._modelSwitchedHandler);
     // OpenClawCN: 图片重新生成事件
     this._imageGenRegenerateHandler = (e: Event) => {
       const prompt = (e as CustomEvent).detail?.prompt;
@@ -877,6 +895,9 @@ export class ClawdbotApp extends LitElement {
     document.removeEventListener("keydown", this.handleDocsKeydown);
     if (this._silentNewHandler) {
       globalThis.removeEventListener("openclawcn:silent-new", this._silentNewHandler);
+    }
+    if (this._modelSwitchedHandler) {
+      globalThis.removeEventListener("openclawcn:model-switched", this._modelSwitchedHandler);
     }
     if (this._imageGenRegenerateHandler) {
       document.removeEventListener("image-gen-regenerate", this._imageGenRegenerateHandler);
@@ -1035,10 +1056,9 @@ export class ClawdbotApp extends LitElement {
       setTimeout(() => {
         this.modelsSuccessMessage = null;
       }, 3000);
-      // 模型真正变了才静默新建会话
+      // 模型真正变了：中止旧请求，保留聊天记录，下一条消息自动使用新模型
       if (this.modelsCurrent?.ref !== prevRef) {
-        const { handleSendChat } = await import("./app-chat.js");
-        void handleSendChat(this, "/new", { restoreDraft: true });
+        globalThis.dispatchEvent?.(new CustomEvent("openclawcn:model-switched"));
       }
     }
     // 失败时 modelsError 已由 setModelPrimary 设置，pending 状态保留方便重试
@@ -1088,10 +1108,9 @@ export class ClawdbotApp extends LitElement {
           setTimeout(() => {
             this.modelsSuccessMessage = null;
           }, 3000);
-          // 模型真正变了才静默新建会话（首次配置时 prevRef 为 null，不触发）
+          // 模型真正变了：中止旧请求，保留聊天记录（首次配置时 prevRef 为 null，不触发）
           if (prevRef && this.modelsCurrent?.ref !== prevRef) {
-            const { handleSendChat } = await import("./app-chat.js");
-            void handleSendChat(this, "/new", { restoreDraft: true });
+            globalThis.dispatchEvent?.(new CustomEvent("openclawcn:model-switched"));
           }
         }
       }
@@ -1921,7 +1940,8 @@ export class ClawdbotApp extends LitElement {
         await this.client.request("feedback.submit", payload);
       } else {
         // 如果没有连接，保存到本地存储
-        const feedbackList = JSON.parse(localStorage.getItem("clawdbot-feedback") || "[]");
+        let feedbackList: unknown[] = [];
+        try { feedbackList = JSON.parse(localStorage.getItem("clawdbot-feedback") || "[]"); } catch { /* corrupted localStorage, reset */ }
         feedbackList.push({ ...payload, id: Date.now().toString() });
         localStorage.setItem("clawdbot-feedback", JSON.stringify(feedbackList));
       }

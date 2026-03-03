@@ -49,8 +49,8 @@ interface GatewayOptions {
 /** 默认 SSE 连接超时: 30 秒 */
 const DEFAULT_SSE_TIMEOUT_MS = 30_000;
 
-/** 单次 chunk 读取超时: 60 秒 (防止连接挂起) */
-const DEFAULT_CHUNK_TIMEOUT_MS = 60_000;
+/** 单次 chunk 读取超时: 180 秒 (Opus 等大模型 thinking 阶段可能长时间无 chunk) */
+const DEFAULT_CHUNK_TIMEOUT_MS = 180_000;
 
 /**
  * 带超时的读取单个 chunk
@@ -61,14 +61,17 @@ async function readWithTimeout(
   timeoutMs: number,
 ) {
   let timer: ReturnType<typeof setTimeout>;
-  const result = await Promise.race([
-    reader.read(),
-    new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`SSE chunk read timeout after ${timeoutMs}ms`)), timeoutMs);
-    }),
-  ]);
-  clearTimeout(timer!);
-  return result;
+  try {
+    const result = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`SSE chunk read timeout after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+    return result;
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 /**
@@ -347,7 +350,7 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
   const senderId = data.senderStaffId || data.senderId;
   const senderName = data.senderNick || "Unknown";
 
-  log?.info?.(`[DingTalk] 收到消息: from=${senderName} text="${content.text.slice(0, 50)}..."`);
+  log?.info?.(`[DingTalk] 收到消息: from=${senderName} len=${content.text.length} type=${content.messageType ?? "text"}`);
 
   // ========================================
   // 群聊 requireMention 检查 (P1-5 修复)
@@ -493,18 +496,18 @@ export async function handleStreamMessage(params: StreamMessageParams): Promise<
       fullResponse += chunk;
     }
 
-    // 后处理：上传本地图片 + Markdown 表格转换
-    fullResponse = await processLocalImages(fullResponse, oapiToken, log);
-    fullResponse = applyMarkdownTableConversion(fullResponse, dingtalkConfig);
-
     if (sessionWebhook) {
+      // 后处理：上传本地图片 + Markdown 表格转换（仅在能发送时才处理，避免浪费 GPU）
+      fullResponse = await processLocalImages(fullResponse, oapiToken, log);
+      fullResponse = applyMarkdownTableConversion(fullResponse, dingtalkConfig);
+
       await sendDingtalkMessageViaWebhook(sessionWebhook, {
         msgtype: "text",
         text: { content: fullResponse || "（无响应）" },
       });
       log?.info?.(`[DingTalk] 普通消息回复完成，共 ${fullResponse.length} 字符`);
     } else {
-      log?.warn?.(`[DingTalk] 无 sessionWebhook，无法发送普通消息回复 (${fullResponse.length} 字符)`);
+      log?.warn?.(`[DingTalk] 无 sessionWebhook，跳过图片处理和消息回复 (${fullResponse.length} 字符)`);
     }
   } catch (err) {
     log?.error?.(`[DingTalk] Gateway 调用失败: ${err}`);
@@ -669,17 +672,16 @@ export async function createStreamClient(ctx: StreamClientContext): Promise<{
     }
   });
 
-  // 启动归档清理定时器 (如果归档已启用)
+  // 启动归档清理定时器和调度器放在 connect 之后，避免 connect 失败时泄漏定时器
+  await client.connect();
+
   const archivalCleanup = config.media?.archival?.enabled
     ? startArchivalCleanup(config, log)
     : null;
 
-  // 启动定时消息调度器 (如果有定时任务配置)
   const scheduler = config.scheduledTasks?.length
     ? startScheduler(config, log)
     : null;
-
-  await client.connect();
   log?.info?.(`[${accountId}] 钉钉 Stream 客户端已连接`);
   ctx.onStart?.();
 

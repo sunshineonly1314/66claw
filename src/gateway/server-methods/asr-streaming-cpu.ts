@@ -316,6 +316,8 @@ type CpuStreamSession = {
 const sessions = new Map<string, CpuStreamSession>();
 const SESSION_TIMEOUT_MS = 60_000;
 const MAX_CHUNK_BASE64_LENGTH = 32768;
+/** Max concurrent sessions to prevent memory exhaustion DoS. */
+const MAX_SESSIONS = 20;
 /** Offline mode: run partial recognition every ~2s of new audio. */
 const PARTIAL_RECOGNITION_INTERVAL_SAMPLES = 32000;
 /** Offline mode: max samples for partial recognition (~15s). */
@@ -421,6 +423,14 @@ export const cpuStreamHandlers: GatewayRequestHandlers = {
         );
         return;
       }
+      if (sessions.size >= MAX_SESSIONS) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.UNAVAILABLE, "Too many concurrent ASR sessions"),
+        );
+        return;
+      }
 
       const recognizer = getOrCreateRecognizer();
       const sessionId = crypto.randomUUID();
@@ -493,9 +503,11 @@ export const cpuStreamHandlers: GatewayRequestHandlers = {
     }
 
     try {
-      // Decode base64 → Int16 → Float32
+      // Decode base64 → Int16 → Float32 (use aligned copy to avoid RangeError on odd byteOffset)
       const buf = Buffer.from(pcmBase64, "base64");
-      const int16 = new Int16Array(buf.buffer, buf.byteOffset, buf.byteLength / 2);
+      const aligned = new ArrayBuffer(buf.byteLength);
+      new Uint8Array(aligned).set(buf);
+      const int16 = new Int16Array(aligned);
       const float32 = new Float32Array(int16.length);
       for (let i = 0; i < int16.length; i++) {
         float32[i] = int16[i]! / 32768;
@@ -545,6 +557,15 @@ export const cpuStreamHandlers: GatewayRequestHandlers = {
         }
       } else {
         // ── Offline fallback: accumulate and periodically re-recognize ──
+        const CPU_MAX_SAMPLES = 16000 * 120; // 120s at 16kHz
+        if (session.samples.length + float32.length > CPU_MAX_SAMPLES) {
+          respond(
+            false,
+            undefined,
+            errorShape(ErrorCodes.INVALID_REQUEST, "recording too long (max 120s)"),
+          );
+          return;
+        }
         for (let i = 0; i < float32.length; i++) {
           session.samples.push(float32[i]!);
         }

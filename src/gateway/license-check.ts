@@ -16,6 +16,8 @@ import {
   startTokenAutoRefresh,
   stopTokenAutoRefresh,
   hasValidToken,
+  isFeatureAllowed,
+  HIGH_VALUE_FEATURES,
   getTokenStatusSummary,
   refreshToken,
   loadLicenseCache,
@@ -36,6 +38,7 @@ import {
   recordViolation,
   isNativeAddonAvailable,
   initRuntimeHardening,
+  startProcessIntegrityMonitor,
 } from "../security/index.js";
 
 const log = createSubsystemLogger("gateway:license");
@@ -312,7 +315,17 @@ export async function checkLicenseOnGatewayStart(
       });
       log.debug("Runtime integrity patrol started");
 
-      // 步骤 5：启动短期令牌自动刷新
+      // 步骤 5b：启动进程完整性监控（检测 Frida/DLL 注入、LD_PRELOAD 等）
+      startProcessIntegrityMonitor(60_000, (result) => {
+        log.warn(`Process integrity violation: ${result.issues.join(", ")}`);
+        reportSecurityViolation("process_integrity_violation", { issues: result.issues });
+        for (const issue of result.issues) {
+          recordViolation(`process_integrity:${issue.slice(0, 40)}`);
+        }
+      });
+      log.debug("Process integrity monitor started");
+
+      // 步骤 5c：启动短期令牌自动刷新
       let cfg: ReturnType<typeof loadConfig>;
       try {
         cfg = loadConfig();
@@ -568,8 +581,17 @@ export function isLicenseValid(): boolean {
       log.warn("Token unavailable and license invalid (no local cache)");
       return false;
     } else {
-      // license valid 但没有 expiresAt（不应该发生，但为安全起见处理）
-      log.debug("Token unavailable, license valid but no expiry info - allowing access");
+      // license valid 但没有 expiresAt（不应该发生）
+      // 为安全起见设置24小时默认有效期，避免无限期放行
+      log.warn("Token unavailable, license valid but no expiry info - applying 24h default grace");
+      const defaultGracePeriod = 24 * 60 * 60 * 1000; // 24 hours
+      if (!globalLicenseState.license?.expiresAt && globalLicenseState.lastVerifiedAt) {
+        const elapsed = Date.now() - globalLicenseState.lastVerifiedAt;
+        if (elapsed > defaultGracePeriod) {
+          log.warn("Default grace period exceeded without expiry info - denying access");
+          return false;
+        }
+      }
     }
   }
 
@@ -617,14 +639,13 @@ export function isLicenseValid(): boolean {
 
     if (Date.now() > expiresAt) {
       log.warn("License expired at runtime (detected by local expiry check)");
-      // 更新全局状态
-      globalLicenseState = {
+      // 通过 updateGatewayLicenseState 同步更新所有状态副本
+      updateGatewayLicenseState({
         ...globalLicenseState,
         valid: false,
         error: "授权已过期，请续费后继续使用",
         errorCode: LicenseErrorCode.ERROR_KEY_EXPIRED,
-      };
-      _licenseValidSnapshot = false;
+      });
       return false;
     }
   }
@@ -640,16 +661,31 @@ export function getLicenseFeatures(): string[] {
 }
 
 /**
- * 检查是否有特定功能权限
+ * 检查是否有特定功能权限（分级策略）
  *
  * [HIGH-02 FIX] Empty features list now returns false (fail-close).
- * Previously, empty list returned true for all features, allowing
- * attackers to bypass feature gates by clearing the features array.
+ * [改造4] 接入 feature-token 分级门控：
+ *   - 高价值功能（HIGH_VALUE_FEATURES）：必须有有效内存令牌，无令牌直接拒绝，不降级
+ *   - 基础功能：优先令牌，令牌不存在时降级到本地缓存 features 列表
+ *
  * Non-CN builds (license check not initialized) still get full access.
  */
 export function hasLicenseFeature(feature: string): boolean {
   if (!_licenseCheckInitialized) {
     return true; // Non-CN builds: no feature gating
+  }
+
+  // [改造4] 分级门控：高价值功能必须有有效令牌（token.ts 管理），基础功能允许离线缓存降级
+  // HIGH_VALUE_FEATURES：agent-team、orchestrator、memory-core（从 token.ts 导入，单一定义）
+
+  // 高价值功能：令牌有效才放行，无令牌直接拒绝（不降级到缓存）
+  if (HIGH_VALUE_FEATURES.has(feature)) {
+    return isFeatureAllowed(feature);
+  }
+
+  // 基础功能：优先令牌，令牌无效时降级到本地缓存 features 列表
+  if (hasValidToken()) {
+    return isFeatureAllowed(feature);
   }
   const features = getLicenseFeatures();
   return features.includes(feature);

@@ -133,6 +133,8 @@ type VolcengineSession = {
 };
 
 const sessions = new Map<string, VolcengineSession>();
+/** Max concurrent sessions to prevent memory exhaustion DoS. */
+const MAX_SESSIONS = 20;
 
 function cleanupSession(sessionId: string): void {
   const session = sessions.get(sessionId);
@@ -293,6 +295,14 @@ export const volcengineStreamHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    if (sessions.size >= MAX_SESSIONS) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAVAILABLE, "Too many concurrent ASR sessions"),
+      );
+      return;
+    }
 
     const sessionId = crypto.randomBytes(12).toString("hex");
     const connectId = crypto.randomUUID();
@@ -419,6 +429,12 @@ export const volcengineStreamHandlers: GatewayRequestHandlers = {
     const session = sessions.get(sessionId);
     if (!session || session.closed) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "session not found"));
+      return;
+    }
+
+    const MAX_CHUNK_BASE64_LENGTH = 32768;
+    if (pcmBase64.length > MAX_CHUNK_BASE64_LENGTH) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "chunk too large"));
       return;
     }
 
