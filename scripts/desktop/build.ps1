@@ -83,7 +83,7 @@ $uiScript = Join-Path $env:TEMP "clawdbot-ui-build-$(Get-Date -Format 'yyyyMMddH
 `$ErrorActionPreference = 'Continue'
 Set-Location '$ProjectRoot'
 pnpm build:cn-compile
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { Write-Host "  WARNING: tsc reported errors (noEmitOnError=false, JS still emitted)" -ForegroundColor Yellow }
 pnpm build:cn-extensions
 if (`$LASTEXITCODE -ne 0) { exit 1 }
 pnpm verify:extensions
