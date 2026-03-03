@@ -15,6 +15,8 @@ import {
   getNpmMirrors,
   getPipMirrors,
   getGitHubProxies,
+  recordWorkingMirror,
+  type MirrorMethodType,
 } from "../../config/cn-mirrors.js";
 import { loadConfig } from "../../config/config.js";
 import { CONFIG_DIR } from "../../utils.js";
@@ -552,6 +554,16 @@ async function installSingleSkill(
 
           if (result.ok) {
             installOk = true;
+            // 记录成功的镜像，后续同类安装优先使用
+            const methodMap: Record<string, MirrorMethodType> = {
+              node: "npm",
+              npm: "npm",
+              uv: "pip",
+              pip: "pip",
+              go: "go",
+            };
+            const memoryMethod = methodMap[installMethod] ?? "github";
+            recordWorkingMirror(memoryMethod as MirrorMethodType, mirrorLabel);
           } else {
             lastError = result.message;
           }

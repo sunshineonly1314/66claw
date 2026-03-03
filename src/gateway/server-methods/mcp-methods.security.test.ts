@@ -40,6 +40,7 @@ vi.mock("../../config/cn-mirrors.js", () => ({
   getPipMirrorUrl: () => "https://pypi.tuna.tsinghua.edu.cn/simple",
   getNpmMirrors: () => ["https://registry.npmmirror.com/"],
   getPipMirrors: () => ["https://pypi.tuna.tsinghua.edu.cn/simple"],
+  recordWorkingMirror: () => {},
   PACKAGE_MANAGER_MIRRORS: {
     npm: { primary: "https://registry.npmmirror.com/", fallbacks: [] },
     pip: { primary: "https://pypi.tuna.tsinghua.edu.cn/simple", fallbacks: [] },

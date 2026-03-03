@@ -17,6 +17,7 @@ import {
   MCP_CALL_TIMEOUT_MS,
   MCP_SHUTDOWN_GRACE_MS,
 } from "./types.js";
+import { shouldUseCNMirror, getNpmMirrorUrl, getPipMirrorUrl } from "../config/cn-mirrors.js";
 
 export type MCPClientEvents = {
   onClose?: () => void;
@@ -127,6 +128,22 @@ function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string
   if (execDir && !currentPath.includes(execDir)) {
     const pathKey = process.platform === "win32" && env.Path ? "Path" : "PATH";
     env[pathKey] = `${execDir}${path.delimiter}${currentPath}`;
+  }
+
+  // Actively inject CN mirror env vars when the user is in China.
+  // Without this, MCP child processes (npx/uvx) would default to international
+  // registries which are unreachable for most Chinese users.
+  // Only inject if not already set by process.env or configEnv (user overrides win).
+  if (shouldUseCNMirror()) {
+    if (!env.npm_config_registry && !configEnv?.npm_config_registry) {
+      env.npm_config_registry = getNpmMirrorUrl();
+    }
+    if (!env.UV_INDEX_URL && !configEnv?.UV_INDEX_URL) {
+      env.UV_INDEX_URL = getPipMirrorUrl();
+    }
+    if (!env.PIP_INDEX_URL && !configEnv?.PIP_INDEX_URL) {
+      env.PIP_INDEX_URL = getPipMirrorUrl();
+    }
   }
 
   // Config-specified env vars override (these are intentional), but block dangerous keys

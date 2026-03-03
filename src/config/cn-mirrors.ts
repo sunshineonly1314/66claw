@@ -20,12 +20,105 @@ export {
   CLI_TOOL_MIRRORS,
 } from "./cn-mirrors-data.js";
 
+import fs from "node:fs";
+import path from "node:path";
+
 import {
   PACKAGE_MANAGER_MIRRORS,
   BINARY_DOWNLOAD_MIRRORS,
   CLAWDSKILLSPROXY_CONFIG,
   CLI_TOOL_MIRRORS,
 } from "./cn-mirrors-data.js";
+
+// ============================================================================
+// 镜像记忆 — 记住成功的镜像，下次优先使用
+// ============================================================================
+
+export type MirrorMethodType = "npm" | "pip" | "go" | "github";
+
+interface MirrorMemoryEntry {
+  url: string;
+  succeededAt: number;
+}
+
+/** 模块级缓存：method → 上次成功的镜像 URL */
+const _mirrorMemory = new Map<MirrorMethodType, MirrorMemoryEntry>();
+
+/** 镜像记忆 TTL（30 分钟） */
+const MIRROR_MEMORY_TTL_MS = 30 * 60 * 1000;
+
+/** 持久化文件路径（延迟解析，避免循环依赖） */
+function getMirrorMemoryPath(): string {
+  const configDir =
+    process.env.OPENCLAWCN_CONFIG_DIR ||
+    path.join(process.env.HOME || process.env.USERPROFILE || "", ".openclawcn");
+  return path.join(configDir, "mirror-memory.json");
+}
+
+/**
+ * 记录成功的镜像，后续同类安装优先使用
+ */
+export function recordWorkingMirror(method: MirrorMethodType, url: string): void {
+  _mirrorMemory.set(method, { url, succeededAt: Date.now() });
+  // 异步持久化到磁盘，不阻塞安装流程
+  try {
+    const data: Record<string, MirrorMemoryEntry> = {};
+    for (const [m, entry] of _mirrorMemory) {
+      data[m] = entry;
+    }
+    const filePath = getMirrorMemoryPath();
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(data), "utf-8");
+  } catch {
+    // best-effort，写失败不影响功能
+  }
+}
+
+/**
+ * 获取记忆的镜像（TTL 过期自动清除）
+ */
+export function getWorkingMirror(method: MirrorMethodType): string | undefined {
+  const entry = _mirrorMemory.get(method);
+  if (!entry) return undefined;
+  if (Date.now() - entry.succeededAt > MIRROR_MEMORY_TTL_MS) {
+    _mirrorMemory.delete(method);
+    return undefined;
+  }
+  return entry.url;
+}
+
+/**
+ * 重排序镜像列表：把记忆的成功镜像排到第一位，其余保持原序
+ */
+function withMemory(method: MirrorMethodType, mirrors: string[]): string[] {
+  const preferred = getWorkingMirror(method);
+  if (!preferred) return mirrors;
+  const idx = mirrors.indexOf(preferred);
+  if (idx <= 0) return mirrors; // 已经在第一位，或者不在列表中
+  return [preferred, ...mirrors.slice(0, idx), ...mirrors.slice(idx + 1)];
+}
+
+/**
+ * 清除镜像记忆（用于测试）
+ */
+export function clearMirrorMemory(): void {
+  _mirrorMemory.clear();
+}
+
+// 模块加载时从磁盘恢复镜像记忆
+try {
+  const raw = fs.readFileSync(getMirrorMemoryPath(), "utf-8");
+  const data = JSON.parse(raw) as Record<string, MirrorMemoryEntry>;
+  const now = Date.now();
+  for (const [method, entry] of Object.entries(data)) {
+    if (entry && entry.url && entry.succeededAt && now - entry.succeededAt < MIRROR_MEMORY_TTL_MS) {
+      _mirrorMemory.set(method as MirrorMethodType, entry);
+    }
+  }
+} catch {
+  // 文件不存在或格式错误，从零开始
+}
 
 // ============================================================================
 // 辅助函数
@@ -46,7 +139,12 @@ export function shouldUseCNMirror(): boolean {
   const tz = process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
 
   // IANA 时区格式（Linux/macOS）
-  if (tz.includes("Shanghai") || tz.includes("Beijing") || tz.includes("Asia/Chongqing") || tz.includes("Asia/Urumqi")) {
+  if (
+    tz.includes("Shanghai") ||
+    tz.includes("Beijing") ||
+    tz.includes("Asia/Chongqing") ||
+    tz.includes("Asia/Urumqi")
+  ) {
     return true;
   }
 
@@ -128,11 +226,14 @@ export function getNodeBinaryMirrors(): string[] {
  * gh-proxy.com → ghfast.top → ghproxy.cn
  */
 export function getGitHubProxies(): string[] {
-  return [
-    BINARY_DOWNLOAD_MIRRORS.github.primary,
-    BINARY_DOWNLOAD_MIRRORS.github.fallback,
-    BINARY_DOWNLOAD_MIRRORS.github.tertiary,
-  ].filter(Boolean) as string[];
+  return withMemory(
+    "github",
+    [
+      BINARY_DOWNLOAD_MIRRORS.github.primary,
+      BINARY_DOWNLOAD_MIRRORS.github.fallback,
+      BINARY_DOWNLOAD_MIRRORS.github.tertiary,
+    ].filter(Boolean) as string[],
+  );
 }
 
 /**
@@ -160,11 +261,14 @@ export function getUvInstallScripts(platform: "sh" | "ps1"): string[] {
  * 七牛云 → 阿里云 → goproxy.io
  */
 export function getGoProxies(): string[] {
-  return [
-    PACKAGE_MANAGER_MIRRORS.go.primary,
-    PACKAGE_MANAGER_MIRRORS.go.fallback,
-    PACKAGE_MANAGER_MIRRORS.go.tertiary,
-  ].filter(Boolean);
+  return withMemory(
+    "go",
+    [
+      PACKAGE_MANAGER_MIRRORS.go.primary,
+      PACKAGE_MANAGER_MIRRORS.go.fallback,
+      PACKAGE_MANAGER_MIRRORS.go.tertiary,
+    ].filter(Boolean),
+  );
 }
 
 /**
@@ -172,11 +276,14 @@ export function getGoProxies(): string[] {
  * 清华 → 阿里云 → 中科大
  */
 export function getPipMirrors(): string[] {
-  return [
-    PACKAGE_MANAGER_MIRRORS.pip.primary, // 清华
-    PACKAGE_MANAGER_MIRRORS.pip.fallback, // 阿里云
-    PACKAGE_MANAGER_MIRRORS.pip.tertiary, // 中科大
-  ].filter(Boolean);
+  return withMemory(
+    "pip",
+    [
+      PACKAGE_MANAGER_MIRRORS.pip.primary, // 清华
+      PACKAGE_MANAGER_MIRRORS.pip.fallback, // 阿里云
+      PACKAGE_MANAGER_MIRRORS.pip.tertiary, // 中科大
+    ].filter(Boolean),
+  );
 }
 
 /**
@@ -184,11 +291,14 @@ export function getPipMirrors(): string[] {
  * 淘宝 → 腾讯云 → 华为云
  */
 export function getNpmMirrors(): string[] {
-  return [
-    PACKAGE_MANAGER_MIRRORS.npm.primary, // 淘宝
-    PACKAGE_MANAGER_MIRRORS.npm.fallback, // 腾讯云
-    PACKAGE_MANAGER_MIRRORS.npm.tertiary, // 华为云
-  ].filter(Boolean);
+  return withMemory(
+    "npm",
+    [
+      PACKAGE_MANAGER_MIRRORS.npm.primary, // 淘宝
+      PACKAGE_MANAGER_MIRRORS.npm.fallback, // 腾讯云
+      PACKAGE_MANAGER_MIRRORS.npm.tertiary, // 华为云
+    ].filter(Boolean),
+  );
 }
 
 /**

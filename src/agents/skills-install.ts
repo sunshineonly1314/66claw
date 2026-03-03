@@ -148,8 +148,10 @@ function hasGoAvailable(): boolean {
 
 /**
  * OpenClawCN: Common Node.js/npm installation paths on Windows
+ * 第一优先级：打包自带的 bundled node（和可执行文件同目录）
  */
 const WINDOWS_NODE_PATHS = [
+  path.dirname(process.execPath), // bundled node alongside the executable
   "D:\\Program Files\\node",
   "C:\\Program Files\\nodejs",
   "C:\\Program Files\\node",
@@ -459,6 +461,8 @@ import {
   CLAWDSKILLSPROXY_CONFIG,
   LARGE_PACKAGE_PROXY_MAP,
   getClawdSkillsProxyHeaders,
+  recordWorkingMirror,
+  type MirrorMethodType,
 } from "../config/cn-mirrors.js";
 import { validateUrlForSsrf } from "../infra/net/ssrf.js";
 
@@ -485,8 +489,9 @@ async function runCommandWithMirrorFallback(params: {
   timeoutMs: number;
   env?: NodeJS.ProcessEnv;
   onMirrorSwitch?: (from: string, to: string, error: string) => void;
+  methodType?: MirrorMethodType;
 }): Promise<{ code: number | null; stdout: string; stderr: string; usedMirror?: string }> {
-  const { buildCommand, buildEnv, mirrors, timeoutMs, env, onMirrorSwitch } = params;
+  const { buildCommand, buildEnv, mirrors, timeoutMs, env, onMirrorSwitch, methodType } = params;
 
   let lastError = "";
   for (let i = 0; i < mirrors.length; i++) {
@@ -498,6 +503,7 @@ async function runCommandWithMirrorFallback(params: {
       const result = await runCommandWithTimeout(argv, { timeoutMs, env: mirrorEnv });
 
       if (result.code === 0) {
+        if (methodType) recordWorkingMirror(methodType, mirror);
         return { ...result, usedMirror: mirror };
       }
 
@@ -623,6 +629,7 @@ async function installNodePackageWithFallback(params: {
     buildCommand: (mirror) => buildNodeInstallCommand(packageName, prefs, mirror).argv,
     mirrors,
     timeoutMs,
+    methodType: "npm",
     env:
       prefs.nodeManager === "bun"
         ? { BUN_CONFIG_REGISTRY: mirrors[0] ?? CN_MIRRORS.npm }
@@ -666,6 +673,7 @@ async function installGoPackageWithFallback(params: {
     buildEnv: (mirror) => ({ ...baseEnv, GOPROXY: `${mirror},direct` }),
     mirrors,
     timeoutMs,
+    methodType: "go",
     onMirrorSwitch: (from, to, _error) => {
       onProgress?.({
         stage: "installing",
@@ -697,6 +705,7 @@ async function installUvPackageWithFallback(params: {
         : ["pip", "install", packageName, "-i", mirror],
     mirrors,
     timeoutMs,
+    methodType: "pip",
     onMirrorSwitch: (from, to, _error) => {
       onProgress?.({
         stage: "installing",
@@ -1212,6 +1221,7 @@ async function installDownloadSpec(params: {
         const result = await downloadFile(proxyUrl, archivePath, timeoutMs, downloadProgressCb);
         downloaded = result.bytes;
         mirrorOk = true;
+        recordWorkingMirror("github", ghProxies[i]!);
         break;
       } catch (err) {
         lastMirrorErr = err instanceof Error ? err.message : String(err);
@@ -2447,6 +2457,9 @@ async function resolveBrewBinDir(timeoutMs: number, brewExe?: string): Promise<s
 }
 
 export async function installSkill(params: SkillInstallRequest): Promise<SkillInstallResult> {
+  // 确保 bundled node 目录在 PATH 中，让 hasBinary("node") 能检测到打包自带的 node
+  appendToProcessPath(path.dirname(process.execPath));
+
   const timeoutMs = Math.min(Math.max(params.timeoutMs ?? 300_000, 1_000), 900_000);
   const workspaceDir = resolveUserPath(params.workspaceDir);
   const entries = loadWorkspaceSkillEntries(workspaceDir);

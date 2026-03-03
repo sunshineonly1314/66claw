@@ -28,6 +28,7 @@ import {
   getPipMirrorUrl,
   getNpmMirrors,
   getPipMirrors,
+  recordWorkingMirror,
 } from "../../config/cn-mirrors.js";
 import { installUvDependency } from "../../agents/skills-install.js";
 
@@ -136,10 +137,10 @@ function checkCommandAvailability(command: string): string | null {
   if (resolved === command) {
     // Still could be on PATH — but we already searched, so it's missing
     if (command === "npx" || command === "npm") {
-      return `未检测到 Node.js (${command})。请安装 Node.js (推荐 v20+) 后重试，或联系技术支持。\n下载地址：https://nodejs.org`;
+      return `未检测到 Node.js (${command})。本应用已内置 Node.js，请尝试重启应用。如问题持续，请联系技术支持。`;
     }
     if (command === "uvx" || command === "uv") {
-      return `未检测到 Python 工具 (${command})。请安装 uv (https://docs.astral.sh/uv/) 后重试。`;
+      return `未检测到 Python 工具 (${command})。系统会自动安装，请稍候重试。如问题持续，可手动执行: pip install uv`;
     }
     return `未找到命令：${command}`;
   }
@@ -215,10 +216,10 @@ function friendlyInstallError(serverId: string, lastError: string): string {
     s.includes("enoent")
   ) {
     if (s.includes("npx") || s.includes("npm")) {
-      return `${serverId} 安装失败：未检测到 Node.js/npx。请安装 Node.js (推荐 v20+) 后重试。\n下载：https://nodejs.org`;
+      return `${serverId} 安装失败：未检测到 Node.js/npx。本应用已内置 Node.js，请尝试重启应用。如问题持续，请联系技术支持。`;
     }
     if (s.includes("uvx") || s.includes("uv")) {
-      return `${serverId} 安装失败：未检测到 Python/uvx。请安装 uv 后重试。\n下载：https://docs.astral.sh/uv/`;
+      return `${serverId} 安装失败：未检测到 Python/uvx。系统会自动安装 uv，请稍候重试。如问题持续，可手动执行: pip install uv`;
     }
     return `${serverId} 安装失败：运行环境缺失 (${lastError.slice(0, 80)})`;
   }
@@ -363,7 +364,7 @@ async function tryInstallWithMirrorFallback(params: {
       console.warn(`[mcp] uv auto-install failed: ${uvResult.message}`);
       return {
         ok: false,
-        error: `自动安装 Python 工具 (uv) 失败：${uvResult.message}\n请手动安装后重试：https://docs.astral.sh/uv/`,
+        error: `自动安装 Python 工具 (uv) 失败：${uvResult.message}\n请手动执行: pip install uv，然后重试。`,
       };
     }
   }
@@ -467,6 +468,7 @@ async function tryInstallWithMirrorFallback(params: {
 
       if (isRunning) {
         console.log(`[mcp] Install success via ${mirrorHost}: ${serverId}`);
+        recordWorkingMirror(type === "npm" ? "npm" : "pip", mirror);
         return { ok: true, usedMirror: mirrorHost };
       }
 

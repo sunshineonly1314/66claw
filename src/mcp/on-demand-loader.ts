@@ -16,6 +16,7 @@ import type {
   McpSuggestion,
   ToolDiscoveryMcpOnDemandConfig,
 } from "../config/types.tool-discovery.js";
+import { shouldUseCNMirror, getNpmMirrorUrl } from "../config/cn-mirrors.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -353,14 +354,17 @@ async function doLoadMCP(suggestion: McpSuggestion): Promise<OnDemandLoadResult>
       });
     } else if (npmPackage) {
       // stdio 模式：通过 npx spawn
+      // 国内用户注入 npm 镜像，避免 npx 下载走国外源导致超时
+      const npxEnv = shouldUseCNMirror() ? { npm_config_registry: getNpmMirrorUrl() } : undefined;
       await manager.addServer({
         id: serverId,
         command: "npx",
         args: ["-y", npmPackage],
+        env: npxEnv,
         transport: "stdio",
         enabled: true,
         autoStart: true,
-        timeout: 30_000,
+        timeout: shouldUseCNMirror() ? 60_000 : 30_000,
       });
     } else {
       return { success: false, serverId, error: "no_install_method" };
