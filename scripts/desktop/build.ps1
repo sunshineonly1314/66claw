@@ -164,6 +164,39 @@ if ($uiExit -ne 0) {
 }
 Write-Host "  UI build + obfuscation OK" -ForegroundColor Green
 
+# ── Step 3c: Pre-packaging validation ──
+Write-Host "[3c/6] Validating build artifacts..." -ForegroundColor Yellow
+$buildOk = $true
+
+# Check build-meta.json exists (bytecode V8 version record)
+if (-not (Test-Path "$ProjectRoot\dist\build-meta.json")) {
+    Write-Host "  ERROR: dist\build-meta.json not found! compile-bytecode.ts may have failed." -ForegroundColor Red
+    $buildOk = $false
+} else {
+    Write-Host "  OK: build-meta.json exists" -ForegroundColor Green
+}
+
+# Check .jsc bytecode files were generated
+$jscFiles = Get-ChildItem "$ProjectRoot\dist" -Filter "*.jsc" -Recurse -ErrorAction SilentlyContinue
+$jscCount = if ($jscFiles) { $jscFiles.Count } else { 0 }
+if ($jscCount -lt 5) {
+    Write-Host "  ERROR: Only $jscCount .jsc files found (expected >= 5). Bytecode compilation may have failed." -ForegroundColor Red
+    $buildOk = $false
+} else {
+    Write-Host "  OK: $jscCount .jsc bytecode files" -ForegroundColor Green
+}
+
+# Check control-ui was built
+if (-not (Test-Path "$ProjectRoot\dist\control-ui")) {
+    Write-Host "  WARN: dist\control-ui\ not found. UI build may have failed." -ForegroundColor Yellow
+}
+
+if (-not $buildOk) {
+    Write-Host "FATAL: Build validation failed. Aborting packaging." -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Build validation passed" -ForegroundColor Green
+
 # ── Step 4+5: Prepare resources + Tauri CLI install (PARALLEL) ──
 # Safe to parallelize because:
 #   - prepare-resources writes to apps/desktop/src-tauri/resources/

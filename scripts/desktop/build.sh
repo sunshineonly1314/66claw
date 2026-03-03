@@ -152,6 +152,38 @@ else
   echo "[3b/6] OEM_ID not set — using default brand (ClawdbotCN)"
 fi
 
+# ── Step 3c: Pre-packaging validation ──
+echo "[3c/6] Validating build artifacts..."
+BUILD_OK=true
+
+# Check build-meta.json exists (bytecode V8 version record)
+if [[ ! -f "$PROJECT_ROOT/dist/build-meta.json" ]]; then
+  echo "  ERROR: dist/build-meta.json not found! compile-bytecode.ts may have failed." >&2
+  BUILD_OK=false
+else
+  echo "  OK: build-meta.json exists"
+fi
+
+# Check .jsc bytecode files were generated
+JSC_COUNT=$(find "$PROJECT_ROOT/dist" -name "*.jsc" 2>/dev/null | wc -l)
+if [[ "$JSC_COUNT" -lt 5 ]]; then
+  echo "  ERROR: Only $JSC_COUNT .jsc files found (expected >= 5). Bytecode compilation may have failed." >&2
+  BUILD_OK=false
+else
+  echo "  OK: $JSC_COUNT .jsc bytecode files"
+fi
+
+# Check control-ui was built
+if [[ ! -d "$PROJECT_ROOT/dist/control-ui" ]]; then
+  echo "  WARN: dist/control-ui/ not found. UI build may have failed." >&2
+fi
+
+if [[ "$BUILD_OK" != "true" ]]; then
+  echo "FATAL: Build validation failed. Aborting packaging." >&2
+  exit 1
+fi
+echo "  Build validation passed"
+
 # ── Step 4+5: Prepare resources + Tauri CLI install (PARALLEL) ──
 # Safe to parallelize because:
 #   - prepare-resources writes to apps/desktop/src-tauri/resources/

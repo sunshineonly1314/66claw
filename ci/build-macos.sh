@@ -312,21 +312,49 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# 上传 data/ 目录中的 MCP index 文件（.gitignore 排除了 data/，CI 需要手动传）
+# 上传 data/ 种子文件（.gitignore 排除了 data/，CI 需要手动传）
+# 白名单与 release-deploy.ts DATA_SEED_FILES + DATA_SEED_DIRS 保持一致
 DATA_DIR="$SCRIPT_DIR/../data"
 if [ -d "$DATA_DIR" ]; then
   echo "Uploading data/ seed files to Mac Mini..."
   $SSH -o StrictHostKeyChecking=no "$MAC_USER@$MAC_HOST" \
-    "mkdir -p $MAC_WORKSPACE/data"
-  for df in mcp-index.json mcp-index-enhanced.json mcp-index.db tool-index.sqlite; do
+    "mkdir -p $MAC_WORKSPACE/data $MAC_WORKSPACE/data/subagents $MAC_WORKSPACE/data/qrcodes"
+
+  # 白名单文件
+  DATA_SEED_FILES=(
+    mcp-index.db mcp-index.json tool-index.sqlite
+    skill-availability-dictionary.json skill-availability-schema.json
+    skill-verification-needed.json skills-availability-dictionary.json
+    skills-availability-dictionary-enriched.json README-skill-availability.md
+  )
+  for df in "${DATA_SEED_FILES[@]}"; do
     if [ -f "$DATA_DIR/$df" ]; then
       $SCP -o StrictHostKeyChecking=no "$DATA_DIR/$df" \
         "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/data/$df" && \
         echo "  Uploaded $df" || echo "  Failed to upload $df (non-fatal)"
     fi
   done
+
+  # mcp-index-enhanced*.json（多版本文件）
+  for ef in "$DATA_DIR"/mcp-index-enhanced*.json; do
+    if [ -f "$ef" ]; then
+      efname="$(basename "$ef")"
+      $SCP -o StrictHostKeyChecking=no "$ef" \
+        "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/data/$efname" && \
+        echo "  Uploaded $efname" || echo "  Failed to upload $efname (non-fatal)"
+    fi
+  done
+
+  # 种子子目录: subagents/, qrcodes/
+  for subdir in subagents qrcodes; do
+    if [ -d "$DATA_DIR/$subdir" ]; then
+      $SCP -r -o StrictHostKeyChecking=no "$DATA_DIR/$subdir/" \
+        "$MAC_USER@$MAC_HOST:$MAC_WORKSPACE/data/$subdir/" && \
+        echo "  Uploaded $subdir/" || echo "  Failed to upload $subdir/ (non-fatal)"
+    fi
+  done
 else
-  echo "WARNING: local data/ not found, MCP index will not be bundled"
+  echo "WARNING: local data/ not found, seed files will not be bundled"
 fi
 
 # 通过 SSH 执行远程构建

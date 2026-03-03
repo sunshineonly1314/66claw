@@ -224,21 +224,49 @@ echo "📤 Uploading build script..."
 REMOTE_PS1="C:\\Users\\$WIN_USER\\cicd-build.ps1"
 scp -o StrictHostKeyChecking=no "$TEMP_PS1" "$WIN_USER@$WIN_HOST:cicd-build.ps1"
 
-# 上传 data/ 目录中的 MCP index 文件（.gitignore 排除了 data/，CI 需要手动传）
+# 上传 data/ 种子文件（.gitignore 排除了 data/，CI 需要手动传）
+# 白名单与 release-deploy.ts DATA_SEED_FILES + DATA_SEED_DIRS 保持一致
 DATA_DIR="$SCRIPT_DIR/../data"
 if [ -d "$DATA_DIR" ]; then
   echo "📦 Uploading data/ seed files to Windows builder..."
   ssh -o StrictHostKeyChecking=no "$WIN_USER@$WIN_HOST" \
-    "if not exist D:\\cicd-workspace\\openclawcn\\data mkdir D:\\cicd-workspace\\openclawcn\\data"
-  for df in mcp-index.json mcp-index-enhanced.json mcp-index.db tool-index.sqlite; do
+    "if not exist D:\\cicd-workspace\\openclawcn\\data mkdir D:\\cicd-workspace\\openclawcn\\data & if not exist D:\\cicd-workspace\\openclawcn\\data\\subagents mkdir D:\\cicd-workspace\\openclawcn\\data\\subagents & if not exist D:\\cicd-workspace\\openclawcn\\data\\qrcodes mkdir D:\\cicd-workspace\\openclawcn\\data\\qrcodes"
+
+  # 白名单文件
+  DATA_SEED_FILES=(
+    mcp-index.db mcp-index.json tool-index.sqlite
+    skill-availability-dictionary.json skill-availability-schema.json
+    skill-verification-needed.json skills-availability-dictionary.json
+    skills-availability-dictionary-enriched.json README-skill-availability.md
+  )
+  for df in "${DATA_SEED_FILES[@]}"; do
     if [ -f "$DATA_DIR/$df" ]; then
       scp -o StrictHostKeyChecking=no "$DATA_DIR/$df" \
         "$WIN_USER@$WIN_HOST:D:/cicd-workspace/openclawcn/data/$df" && \
         echo "  Uploaded $df" || echo "  Failed to upload $df (non-fatal)"
     fi
   done
+
+  # mcp-index-enhanced*.json（多版本文件）
+  for ef in "$DATA_DIR"/mcp-index-enhanced*.json; do
+    if [ -f "$ef" ]; then
+      efname="$(basename "$ef")"
+      scp -o StrictHostKeyChecking=no "$ef" \
+        "$WIN_USER@$WIN_HOST:D:/cicd-workspace/openclawcn/data/$efname" && \
+        echo "  Uploaded $efname" || echo "  Failed to upload $efname (non-fatal)"
+    fi
+  done
+
+  # 种子子目录: subagents/, qrcodes/
+  for subdir in subagents qrcodes; do
+    if [ -d "$DATA_DIR/$subdir" ]; then
+      scp -r -o StrictHostKeyChecking=no "$DATA_DIR/$subdir/" \
+        "$WIN_USER@$WIN_HOST:D:/cicd-workspace/openclawcn/data/$subdir/" && \
+        echo "  Uploaded $subdir/" || echo "  Failed to upload $subdir/ (non-fatal)"
+    fi
+  done
 else
-  echo "⚠️  WARNING: local data/ not found, MCP index will not be bundled"
+  echo "⚠️  WARNING: local data/ not found, seed files will not be bundled"
 fi
 
 # 执行远程构建
