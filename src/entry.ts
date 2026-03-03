@@ -5,6 +5,7 @@ import { applyCliProfileEnv, parseCliProfileArgs } from "./cli/profile.js";
 import { shouldSkipRespawnForArgv } from "./cli/respawn-policy.js";
 import { normalizeWindowsArgv } from "./cli/windows-argv.js";
 import { isTruthyEnvValue, normalizeEnv } from "./infra/env.js";
+import { lockdownBundledNodePath, resolveBundledNodeExe } from "./infra/bundled-node.js";
 import { installProcessWarningFilter } from "./infra/warning-filter.js";
 import { attachChildProcessBridge } from "./process/child-process-bridge.js";
 
@@ -27,6 +28,37 @@ process.title = "openclawcn";
       arch?: string;
     };
     if (meta.v8Version && meta.v8Version !== process.versions.v8) {
+      // Before giving up, try to re-exec with the bundled node binary.
+      // This handles the case where the user ran "node dist/entry.js" with a
+      // system node that has a different V8 version.
+      if (!isTruthyEnvValue(process.env.OPENCLAWCN_V8_REEXEC)) {
+        try {
+          const { existsSync } = await import("node:fs");
+          const bundledNode = resolveBundledNodeExe();
+          if (bundledNode !== process.execPath && existsSync(bundledNode)) {
+            console.warn(
+              `[openclawcn] V8 mismatch detected. Re-launching with bundled Node at: ${bundledNode}`,
+            );
+            // Use a dedicated flag so OPENCLAWCN_NO_RESPAWN (used by experimental-warning
+            // respawn guard) remains unaffected, preserving that guard's behaviour.
+            process.env.OPENCLAWCN_V8_REEXEC = "1";
+            const child = spawn(bundledNode, process.argv.slice(1), {
+              stdio: "inherit",
+              env: process.env,
+            });
+            child.once("exit", (code) => process.exit(code ?? 1));
+            child.once("error", () => {
+              console.error(`[openclawcn] Failed to re-launch with bundled Node.`);
+              process.exit(78);
+            });
+            // Prevent the current process from continuing.
+            // @ts-ignore — dynamic import() in top-level block; process.exit called asynchronously
+            await new Promise(() => {}); // wait forever (child exit handler calls process.exit)
+          }
+        } catch {
+          // If anything fails, fall through to the normal error below
+        }
+      }
       console.error(`[openclawcn] V8 engine version mismatch!`);
       console.error(`  Build V8:   ${meta.v8Version} (node ${meta.nodeVersion ?? "?"})`);
       console.error(`  Running V8: ${process.versions.v8} (node ${process.version})`);
@@ -46,6 +78,11 @@ process.title = "openclawcn";
     // build-meta.json missing (dev mode, git clone, etc.) — skip check
   }
 }
+
+// Lock down process.env.PATH so the bundled node directory is always first.
+// This ensures all child processes (MCP servers, skill installers, etc.) resolve
+// node/npm/npx from the bundled runtime, not from any system-installed version.
+lockdownBundledNodePath();
 
 installProcessWarningFilter();
 normalizeEnv();

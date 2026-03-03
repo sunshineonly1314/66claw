@@ -8,6 +8,7 @@ import type { ExecToolDetails } from "./bash-tools.exec.js";
 import type { BashSandboxConfig } from "./bash-tools.shared.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { mergePathPrepend } from "../infra/path-prepend.js";
+import { prependBundledNodeToPath } from "../infra/bundled-node.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 export { applyPathPrepend, normalizePathPrepend } from "../infra/path-prepend.js";
 import { logWarn } from "../logger.js";
@@ -281,6 +282,10 @@ export function applyShellPath(env: Record<string, string>, shellPath?: string |
   if (merged) {
     env.PATH = merged;
   }
+  // Re-assert bundled node at the front of PATH.
+  // Login shell PATH (from nvm/fnm/.bashrc) may have inserted a different node
+  // version ahead of the bundled one; this ensures the correct V8 is always used.
+  env.PATH = prependBundledNodeToPath(env.PATH);
 }
 
 function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "failed") {

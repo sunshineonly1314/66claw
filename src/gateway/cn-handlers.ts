@@ -9,6 +9,7 @@
 
 import type { GatewayRequestHandlers } from "./server-methods/types.js";
 import { modalityCapabilityHandlers } from "./server-methods/modality-capability.js";
+import { MODEL_CONFIG_HANDLERS } from "./server-methods/model-config.js";
 import {
   mcpMarketplaceSearch,
   mcpMarketplaceGetById,
@@ -38,6 +39,7 @@ import { orchestratorHandlers } from "./server-methods/orchestrator.js";
 
 export const cnGatewayHandlers: GatewayRequestHandlers = {
   ...modalityCapabilityHandlers,
+  ...MODEL_CONFIG_HANDLERS,
 
   // MCP Marketplace Search API
   "mcp_marketplace.search": mcpMarketplaceSearch,

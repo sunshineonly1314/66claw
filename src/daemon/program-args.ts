@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { resolveBundledNodeExe } from "../infra/bundled-node.js";
+
 type GatewayProgramArgs = {
   programArguments: string[];
   workingDirectory?: string;
@@ -143,8 +145,16 @@ async function resolveBunPath(): Promise<string> {
 }
 
 async function resolveNodePath(): Promise<string> {
-  const nodePath = await resolveBinaryPath("node");
-  return nodePath;
+  // Prefer the bundled Node binary shipped with the installation package.
+  // This ensures daemon services always run under the correct V8 version.
+  try {
+    const bundled = resolveBundledNodeExe();
+    await fs.access(bundled);
+    return bundled;
+  } catch {
+    // Fallback to system PATH search (dev mode / non-packaged installs)
+    return await resolveBinaryPath("node");
+  }
 }
 
 async function resolveBinaryPath(binary: string): Promise<string> {

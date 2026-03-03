@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { prependBundledNodeToPath } from "../infra/bundled-node.js";
 import { resolveAgentConfig } from "../agents/agent-scope.js";
 import { loadConfig } from "../config/config.js";
 import { GatewayClient } from "../gateway/client.js";
@@ -161,6 +162,10 @@ export function sanitizeEnv(
     }
     merged[key] = value;
   }
+  // Ensure the bundled node directory is first in PATH so node/npm/npx commands
+  // spawned by node-host always resolve to the correct V8-compatible runtime.
+  const pathKey = Object.keys(merged).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  merged[pathKey] = prependBundledNodeToPath(merged[pathKey]);
   return merged;
 }
 

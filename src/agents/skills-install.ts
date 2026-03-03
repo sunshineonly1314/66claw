@@ -22,13 +22,16 @@ import {
 } from "./skills.js";
 import { resolveSkillKey } from "./skills/frontmatter.js";
 
-/** Append a directory to process.env.PATH if not already present. */
-function appendToProcessPath(dir: string): void {
+/** Prepend a directory to process.env.PATH so it takes priority over system binaries.
+ *  Using prepend (not append) ensures the bundled node/npm is found before any system version. */
+function prependToProcessPath(dir: string): void {
   const pathEnv = process.env.PATH ?? "";
   const parts = pathEnv.split(path.delimiter);
-  if (!parts.includes(dir)) {
-    process.env.PATH = pathEnv + path.delimiter + dir;
-  }
+  // Already at the front — nothing to do
+  if (parts[0] === dir) return;
+  // Remove any existing occurrence, then prepend so bundled node/npm wins
+  const filtered = parts.filter((p) => p !== dir);
+  process.env.PATH = [dir, ...filtered].join(path.delimiter);
 }
 
 /**
@@ -1321,7 +1324,7 @@ async function installDownloadSpec(params: {
   const shouldExtract = spec.extract ?? Boolean(archiveType);
   if (!shouldExtract) {
     // Add tools dir to PATH so hasBinary() finds it after install
-    appendToProcessPath(targetDir);
+    prependToProcessPath(targetDir);
     return {
       ok: true,
       message: `Downloaded to ${archivePath}`,
@@ -1351,7 +1354,7 @@ async function installDownloadSpec(params: {
   const success = extractResult.code === 0;
   if (success) {
     // Add tools dir to PATH so hasBinary() finds the extracted binary
-    appendToProcessPath(targetDir);
+    prependToProcessPath(targetDir);
   }
   return {
     ok: success,
@@ -1691,7 +1694,7 @@ async function installFromHKBinaryServer(params: {
       }
 
       // Add install dir to PATH so hasBinary() finds it immediately
-      appendToProcessPath(installDir);
+      prependToProcessPath(installDir);
 
       onProgress?.({
         stage: "verifying",
@@ -2458,7 +2461,7 @@ async function resolveBrewBinDir(timeoutMs: number, brewExe?: string): Promise<s
 
 export async function installSkill(params: SkillInstallRequest): Promise<SkillInstallResult> {
   // 确保 bundled node 目录在 PATH 中，让 hasBinary("node") 能检测到打包自带的 node
-  appendToProcessPath(path.dirname(process.execPath));
+  prependToProcessPath(path.dirname(process.execPath));
 
   const timeoutMs = Math.min(Math.max(params.timeoutMs ?? 300_000, 1_000), 900_000);
   const workspaceDir = resolveUserPath(params.workspaceDir);

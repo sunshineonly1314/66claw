@@ -5,7 +5,7 @@
  * spawn/connect → initialize → tools/list → callTool → shutdown.
  */
 
-import path from "node:path";
+import { prependBundledNodeToPath } from "../infra/bundled-node.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -113,22 +113,18 @@ const BLOCKED_ENV_KEYS = new Set([
 ]);
 
 /** Build a safe environment for MCP child processes.
- *  Includes the bundled node.exe directory in PATH so npx/npm can be found. */
+ *  Ensures the bundled node directory is prepended to PATH so npx/npm resolve correctly. */
 function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of SAFE_ENV_KEYS) {
     if (process.env[key]) env[key] = process.env[key]!;
   }
 
-  // Ensure the bundled node.exe directory is in PATH for child processes.
-  // This is critical for MCP servers that use npx/npm — without it,
-  // the child process can't find npx on machines without system-wide Node.js.
-  const execDir = path.dirname(process.execPath);
-  const currentPath = env.PATH || env.Path || "";
-  if (execDir && !currentPath.includes(execDir)) {
-    const pathKey = process.platform === "win32" && env.Path ? "Path" : "PATH";
-    env[pathKey] = `${execDir}${path.delimiter}${currentPath}`;
-  }
+  // Ensure the bundled node directory is FIRST in PATH for child processes.
+  // Using prependBundledNodeToPath (not execDir) so the correct bundled node
+  // is found even when the main process was started with a system node.
+  const pathKey = process.platform === "win32" && env.Path ? "Path" : "PATH";
+  env[pathKey] = prependBundledNodeToPath(env[pathKey]);
 
   // Actively inject CN mirror env vars when the user is in China.
   // Without this, MCP child processes (npx/uvx) would default to international
