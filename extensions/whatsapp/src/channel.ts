@@ -23,11 +23,11 @@ import {
   resolveWhatsAppGroupRequireMention,
   resolveWhatsAppGroupToolPolicy,
   resolveWhatsAppHeartbeatRecipients,
-  whatsappOnboardingAdapter,
   WhatsAppConfigSchema,
   type ChannelMessageActionName,
   type ChannelPlugin,
   type ResolvedWhatsAppAccount,
+  whatsappOnboardingAdapter,
 } from "openclawcn/plugin-sdk";
 import { getWhatsAppRuntime } from "./runtime.js";
 

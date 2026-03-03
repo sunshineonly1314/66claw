@@ -13,12 +13,13 @@ import type { FeishuToolsConfig } from "./types.js";
  * 除 perm (敏感) 外，其他工具默认启用
  */
 export const DEFAULT_TOOLS_CONFIG: Required<FeishuToolsConfig> = {
-  doc: true,     // 文档操作
-  wiki: true,    // 知识库操作
-  drive: true,   // 云空间操作
-  perm: false,   // 权限管理 (默认禁用，敏感)
-  scopes: true,  // 应用权限诊断
-  task: true,    // 任务管理
+  doc: true,      // 文档操作
+  wiki: true,     // 知识库操作
+  drive: true,    // 云空间操作
+  perm: false,    // 权限管理 (默认禁用，敏感)
+  scopes: true,   // 应用权限诊断
+  task: true,     // 任务管理
+  calendar: true, // 日程管理
 };
 
 /**
@@ -37,5 +38,6 @@ export function resolveToolsConfig(userConfig?: FeishuToolsConfig): Required<Fei
     perm: userConfig.perm ?? DEFAULT_TOOLS_CONFIG.perm,
     scopes: userConfig.scopes ?? DEFAULT_TOOLS_CONFIG.scopes,
     task: userConfig.task ?? DEFAULT_TOOLS_CONFIG.task,
+    calendar: userConfig.calendar ?? DEFAULT_TOOLS_CONFIG.calendar,
   };
 }

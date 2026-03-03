@@ -108,6 +108,7 @@ export interface FeishuToolsConfig {
   perm?: boolean;
   scopes?: boolean;
   task?: boolean;
+  calendar?: boolean;
 }
 
 /**
