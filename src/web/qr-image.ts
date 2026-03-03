@@ -13,7 +13,7 @@ type QRCodeConstructor = new (
 };
 
 const QRCode = QRCodeModule as QRCodeConstructor;
-const QRErrorCorrectLevel = QRErrorCorrectLevelModule;
+const QRErrorCorrectLevel = QRErrorCorrectLevelModule as Record<string, unknown>;
 
 function createQrMatrix(input: string) {
   const qr = new QRCode(-1, QRErrorCorrectLevel.L);

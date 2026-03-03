@@ -126,7 +126,7 @@ export function generateSignV2(
     32,
   );
   const data = `${key}|${deviceId}|${timestamp}|${nonce}`;
-  return crypto.createHmac("sha256", hmacKey).update(data, "utf8").digest("hex");
+  return crypto.createHmac("sha256", Buffer.from(hmacKey)).update(data, "utf8").digest("hex");
 }
 
 /**

@@ -1035,7 +1035,7 @@ export async function detectProviderModelsWithProgress(
       try {
         const guardCfg = structuredClone(await loadConfig());
         const currentPrimary = (() => {
-          const m = guardCfg.agents?.defaults?.model;
+          const m: unknown = guardCfg.agents?.defaults?.model;
           if (typeof m === "string") return m.trim();
           if (typeof m === "object" && m !== null)
             return (m as { primary?: string }).primary?.trim() ?? "";
@@ -2250,7 +2250,7 @@ async function autoAssignBestModelsForAllCapabilities(config: OpenClawCNConfig):
     if (!config.agents.defaults) config.agents.defaults = {};
     const newPrimary = buildModelRef(textBinding.providerId, textBinding.modelId);
     const currentPrimary = (() => {
-      const m = config.agents.defaults.model;
+      const m: unknown = config.agents.defaults.model;
       if (typeof m === "string") return m.trim();
       if (typeof m === "object" && m !== null)
         return (m as { primary?: string }).primary?.trim() ?? "";

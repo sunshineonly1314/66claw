@@ -13,7 +13,9 @@ import { fileURLToPath } from "node:url";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 // [P0] Compile-time root hash constant — embedded in bytecode, cannot be patched on disk.
 // Updated by scripts/generate-integrity-hashes.ts at each build.
-import { INTEGRITY_ROOT_HASH } from "./integrity-root-hash.js";
+// Widen from literal "" to string so TS doesn't narrow to never in length/slice branches.
+import { INTEGRITY_ROOT_HASH as _INTEGRITY_ROOT_HASH } from "./integrity-root-hash.js";
+const INTEGRITY_ROOT_HASH: string = _INTEGRITY_ROOT_HASH;
 
 const log = createSubsystemLogger("security:integrity");
 

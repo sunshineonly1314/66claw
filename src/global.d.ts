@@ -6,3 +6,19 @@
  * - 生产构建：false（禁用 DEV 模式绕过）
  */
 declare const __DEV_BUILD__: boolean;
+
+// Module declarations for packages without type definitions
+declare module "@lydell/node-pty" {
+  const mod: unknown;
+  export = mod;
+}
+
+declare module "qrcode-terminal/vendor/QRCode/index.js" {
+  const mod: unknown;
+  export default mod;
+}
+
+declare module "qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js" {
+  const mod: unknown;
+  export default mod;
+}

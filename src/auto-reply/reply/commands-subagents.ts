@@ -14,8 +14,8 @@ import {
 import { loadSessionStore, resolveStorePath, updateSessionStore } from "../../config/sessions.js";
 import { callGateway } from "../../gateway/call.js";
 import { logVerbose } from "../../globals.js";
-import { formatDurationCompact } from "../../infra/format-time/format-duration.ts";
-import { formatTimeAgo } from "../../infra/format-time/format-relative.ts";
+import { formatDurationCompact } from "../../infra/format-time/format-duration.js";
+import { formatTimeAgo } from "../../infra/format-time/format-relative.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import { stopSubagentsForRequester } from "./abort.js";

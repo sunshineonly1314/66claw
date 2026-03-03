@@ -75,21 +75,27 @@ Write-Host "  Base build (tsdown) OK" -ForegroundColor Green
 Write-Host "[2b+3/6] CN encryption + UI build (parallel)..." -ForegroundColor Yellow
 
 # Create temp scripts for parallel execution
-$cnScript = Join-Path $env:TEMP "clawdbot-cn-chain-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
-$uiScript = Join-Path $env:TEMP "clawdbot-ui-build-$(Get-Date -Format 'yyyyMMddHHmmss').ps1"
+$ts = Get-Date -Format 'yyyyMMddHHmmss'
+$cnScript = Join-Path $env:TEMP "clawdbot-cn-chain-$ts.ps1"
+$uiScript = Join-Path $env:TEMP "clawdbot-ui-build-$ts.ps1"
+# Sentinel files for reliable exit code capture (Start-Process ExitCode can be $null)
+$cnExitFile = Join-Path $env:TEMP "clawdbot-cn-exit-$ts.txt"
+$uiExitFile = Join-Path $env:TEMP "clawdbot-ui-exit-$ts.txt"
 
 # CN encryption chain script
 @"
 `$ErrorActionPreference = 'Continue'
 Set-Location '$ProjectRoot'
+`$exitCode = 0
+try {
 pnpm build:cn-compile
-if (`$LASTEXITCODE -ne 0) { Write-Host "  WARNING: tsc reported errors (noEmitOnError=false, JS still emitted)" -ForegroundColor Yellow }
+if (`$LASTEXITCODE -ne 0) { throw "build:cn-compile failed" }
 pnpm build:cn-extensions
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { throw "build:cn-extensions failed" }
 pnpm verify:extensions
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { throw "verify:extensions failed" }
 node --import tsx scripts/obfuscate-dist.ts
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { throw "obfuscate-dist failed" }
 # Use the bundled Node v22.16.0 for bytecode compilation so .jsc matches the runtime.
 # CRITICAL: .jsc bytecode is V8-version-specific. If compiled with a different Node
 # version than the one shipped in the installer, the app will crash on startup.
@@ -112,26 +118,40 @@ if (`$bytecodeNode) {
     Write-Host "  System node may have incompatible V8 version. Aborting." -ForegroundColor Red
     Write-Host "  Place node.exe v22.16.0 in one of:" -ForegroundColor Red
     foreach (`$c in `$bytecodeNodeCandidates) { Write-Host "    - `$c" -ForegroundColor Red }
-    exit 1
+    throw "No bundled Node 22 found"
 }
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { throw "compile-bytecode failed" }
 pnpm integrity:gen
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { throw "integrity:gen failed" }
 pnpm release:changelog
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { throw "release:changelog failed" }
+} catch {
+    Write-Host "CN chain FAILED: `$_" -ForegroundColor Red
+    `$exitCode = 1
+}
+`$exitCode | Out-File -FilePath '$cnExitFile' -Encoding ASCII -NoNewline
+exit `$exitCode
 "@ | Out-File -FilePath $cnScript -Encoding UTF8
 
 # UI build + obfuscation script
 @"
 `$ErrorActionPreference = 'Continue'
+`$exitCode = 0
+try {
 if (Test-Path '$ProjectRoot\ui\package.json') {
     Set-Location '$ProjectRoot\ui'
     pnpm build
-    if (`$LASTEXITCODE -ne 0) { exit 1 }
+    if (`$LASTEXITCODE -ne 0) { throw "ui build failed" }
 }
 Set-Location '$ProjectRoot'
 node --import tsx cn/scripts/build/obfuscate-ui.ts
-if (`$LASTEXITCODE -ne 0) { exit 1 }
+if (`$LASTEXITCODE -ne 0) { throw "obfuscate-ui failed" }
+} catch {
+    Write-Host "UI build FAILED: `$_" -ForegroundColor Red
+    `$exitCode = 1
+}
+`$exitCode | Out-File -FilePath '$uiExitFile' -Encoding ASCII -NoNewline
+exit `$exitCode
 "@ | Out-File -FilePath $uiScript -Encoding UTF8
 
 # Launch both in parallel
@@ -142,15 +162,16 @@ $uiProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy By
 $cnProc.WaitForExit()
 $uiProc.WaitForExit()
 
-# Start-Process -PassThru + WaitForExit() may leave ExitCode as $null
-# Use .HasExited to confirm, then read ExitCode; default to 0 if still null
-$cnExit = if ($cnProc.HasExited -and $null -ne $cnProc.ExitCode) { $cnProc.ExitCode } else { 0 }
-$uiExit = if ($uiProc.HasExited -and $null -ne $uiProc.ExitCode) { $uiProc.ExitCode } else { 0 }
+# Read exit codes from sentinel files (reliable, unlike Start-Process ExitCode which can be $null)
+$cnExit = if (Test-Path $cnExitFile) { [int](Get-Content $cnExitFile -Raw).Trim() } else { 1 }
+$uiExit = if (Test-Path $uiExitFile) { [int](Get-Content $uiExitFile -Raw).Trim() } else { 1 }
 Write-Host "  CN chain exit: $cnExit, UI build exit: $uiExit"
 
-# Cleanup temp scripts
+# Cleanup temp files
 Remove-Item $cnScript -Force -ErrorAction SilentlyContinue
 Remove-Item $uiScript -Force -ErrorAction SilentlyContinue
+Remove-Item $cnExitFile -Force -ErrorAction SilentlyContinue
+Remove-Item $uiExitFile -Force -ErrorAction SilentlyContinue
 
 if ($cnExit -ne 0) {
     Write-Host "ERROR: CN encryption chain failed (exit $cnExit)!" -ForegroundColor Red
