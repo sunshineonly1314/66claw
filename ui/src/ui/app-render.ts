@@ -164,6 +164,9 @@ import {
   renderDeviceSwitchDialog,
   renderDeviceSwitchCooldownDialog,
   renderOfflineBanner,
+  renderUpgradeSuccessDialog,
+  renderUpgradeErrorDialog,
+  renderLicenseInfoCard,
   type LicenseDialogType,
 } from "./license/index";
 import { handleRenewalReminderDismiss } from "./app-gateway";
@@ -644,6 +647,23 @@ export function renderApp(state: AppViewState) {
             ${renderTab(state, "docs")}
           </div>
         </div>
+        ${isCN && state.licenseState.license ? html`
+          ${renderLicenseInfoCard(
+            state.licenseState,
+            state.settings.licenseInfoExpanded ?? false,
+            () => {
+              state.applySettings({
+                ...state.settings,
+                licenseInfoExpanded: !(state.settings.licenseInfoExpanded ?? false),
+              });
+            },
+            () => {
+              // 升级按钮点击：显示激活弹窗
+              state.showLicenseDialog = "activation";
+              state.requestUpdate?.();
+            },
+          )}
+        ` : nothing}
         ${brand.promoUrl ? html`
         <div class="nav-footer">
           <a href="${brand.promoUrl}" target="_blank" rel="noreferrer" class="nav-footer-link">
@@ -3004,6 +3024,41 @@ function renderLicenseDialogs(state: AppViewState) {
           state.licenseState.deviceSwitchCooldown,
           () => {
             state.showLicenseDialog = null;
+          },
+        );
+      }
+      return nothing;
+
+    case "upgrade-success":
+      if (state.licenseState?.lastUpgradeResult?.success) {
+        return renderUpgradeSuccessDialog(
+          state.licenseState.lastUpgradeResult,
+          () => {
+            state.showLicenseDialog = null;
+            if (state.licenseState) {
+              state.licenseState = { ...state.licenseState, lastUpgradeResult: null };
+            }
+          },
+        );
+      }
+      return nothing;
+
+    case "upgrade-error":
+      if (state.licenseState?.lastUpgradeResult && !state.licenseState.lastUpgradeResult.success) {
+        return renderUpgradeErrorDialog(
+          state.licenseState.lastUpgradeResult,
+          () => {
+            state.showLicenseDialog = null;
+            if (state.licenseState) {
+              state.licenseState = { ...state.licenseState, lastUpgradeResult: null };
+            }
+          },
+          () => {
+            // 重新输入：关闭错误弹窗，打开激活弹窗
+            if (state.licenseState) {
+              state.licenseState = { ...state.licenseState, lastUpgradeResult: null };
+            }
+            state.showLicenseDialog = "activation";
           },
         );
       }

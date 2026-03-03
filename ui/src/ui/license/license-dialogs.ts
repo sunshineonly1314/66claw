@@ -15,7 +15,9 @@ import type {
   LicenseErrorCode,
   DeviceSwitchInfo,
   DeviceSwitchCooldownInfo,
+  UpgradeResult,
 } from "./types.js";
+import { LicenseUpgradeErrorCode } from "./types.js";
 
 /**
  * 打开购买/续费链接
@@ -508,6 +510,80 @@ export function renderOfflineBanner(
         离线模式运行中，剩余 ${remainingHours.toFixed(1)} 小时。请尽快连接网络以继续使用。
       </span>
       <button class="license-offline-dismiss" @click=${onDismiss}>×</button>
+    </div>
+  `;
+}
+
+/**
+ * 渲染升级成功弹窗
+ */
+export function renderUpgradeSuccessDialog(
+  result: UpgradeResult,
+  onClose: () => void,
+): TemplateResult {
+  const isAddon = result.upgradeType === "addon";
+  const title = isAddon ? "扩展包激活成功" : "升级成功";
+  const icon = isAddon ? "📦" : "🎉";
+
+  return html`
+    <div class="license-dialog-overlay" @click=${onClose}>
+      <div class="license-dialog license-upgrade-success-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header" style="background: linear-gradient(135deg, #4CAF50, #45a049);">
+          <h2>${icon} ${title}</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>${result.message || (isAddon ? "扩展包已激活" : `已从${result.fromTier || "基础版"}升级为${result.toTier || "高级版"}`)}</p>
+          ${result.license ? html`
+            <div class="license-upgrade-info">
+              <p>当前版本: <strong>${result.license.tierName}</strong></p>
+              <p>到期时间: <strong>${formatTime(result.license.expiresAt)}</strong></p>
+            </div>
+          ` : nothing}
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-primary" @click=${onClose}>
+              知道了
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 渲染升级失败弹窗
+ */
+export function renderUpgradeErrorDialog(
+  result: UpgradeResult,
+  onClose: () => void,
+  onRetry?: () => void,
+): TemplateResult {
+  // 根据错误码生成具体提示
+  let errorDetail = result.error || "升级失败，请稍后重试";
+  if (result.errorCode === LicenseUpgradeErrorCode.ERROR_UPGRADE_KEY_EXPIRED && result.expiredAt) {
+    errorDetail = `该激活码已于 ${formatTime(result.expiredAt)} 过期`;
+  }
+
+  return html`
+    <div class="license-dialog-overlay" @click=${onClose}>
+      <div class="license-dialog license-upgrade-error-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="license-dialog-header license-urgency-warning">
+          <h2>⚠️ 升级失败</h2>
+        </div>
+        <div class="license-dialog-content">
+          <p>${errorDetail}</p>
+          <div class="license-dialog-actions">
+            <button class="license-btn license-btn-secondary" @click=${onClose}>
+              关闭
+            </button>
+            ${onRetry ? html`
+              <button class="license-btn license-btn-primary" @click=${onRetry}>
+                重新输入
+              </button>
+            ` : nothing}
+          </div>
+        </div>
+      </div>
     </div>
   `;
 }

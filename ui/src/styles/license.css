@@ -426,3 +426,262 @@
 :root[data-theme="dark"] .license-activation-text {
   color: #ffc107;
 }
+
+/* ============================================================================
+   Upgrade / Switch / Cooldown Info Blocks
+   ============================================================================ */
+
+.license-upgrade-info,
+.license-switch-info,
+.license-cooldown-info {
+  background: var(--bg-secondary, #0f0f1a);
+  padding: 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+}
+
+.license-upgrade-info p,
+.license-switch-info p,
+.license-cooldown-info p {
+  margin: 6px 0 !important;
+  font-size: 13px;
+}
+
+.license-upgrade-info strong,
+.license-switch-info strong,
+.license-cooldown-info strong {
+  color: var(--text-primary, #fff);
+}
+
+.license-switch-info ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.license-switch-info li {
+  color: var(--text-secondary, #a0a0c0);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.license-upgrade-success-dialog .license-dialog-header h2 {
+  color: #fff;
+}
+
+/* ============================================================================
+   License Info Card (侧栏底部常驻卡片)
+   ============================================================================ */
+
+.license-info-card {
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 8px;
+  background: var(--bg-primary, #1a1a2e);
+  overflow: hidden;
+  margin: 8px 12px;
+}
+
+.license-info-card__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary, #fff);
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.license-info-card__summary:hover {
+  background: var(--bg-secondary, #0f0f1a);
+}
+
+.license-info-card__tier {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.license-tier--basic {
+  background: #374151;
+  color: #d1d5db;
+}
+
+.license-tier--pro {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+.license-info-card__days {
+  flex: 1;
+  text-align: right;
+  color: var(--text-secondary, #a0a0c0);
+  font-size: 12px;
+}
+
+.license-info-card__chevron {
+  color: var(--text-tertiary, #6a6a8a);
+  font-size: 14px;
+  width: 16px;
+  text-align: center;
+}
+
+.license-info-card__detail {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border-color, #2a2a4a);
+}
+
+.license-info-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.license-info-card__label {
+  color: var(--text-tertiary, #6a6a8a);
+}
+
+.license-info-card__value {
+  color: var(--text-primary, #fff);
+}
+
+.license-info-card__section {
+  margin-top: 8px;
+}
+
+.license-info-card__section-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary, #6a6a8a);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.license-info-card__addon {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--bg-secondary, #0f0f1a);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.license-info-card__addon-name {
+  color: var(--text-primary, #fff);
+}
+
+.license-info-card__addon-days {
+  color: var(--text-secondary, #a0a0c0);
+}
+
+.license-info-card__upgrade-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.license-info-card__upgrade-btn:hover {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.license-info-card__upgrade-btn:active {
+  transform: translateY(0);
+}
+
+.license-info-card__price {
+  font-weight: 700;
+}
+
+/* ============================================================================
+   Feature Gate (功能门控遮罩)
+   ============================================================================ */
+
+.feature-gate {
+  position: relative;
+}
+
+.feature-gate__content--locked {
+  pointer-events: none;
+  user-select: none;
+  filter: blur(2px) grayscale(0.5);
+  opacity: 0.4;
+}
+
+.feature-gate__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  z-index: 1;
+}
+
+.feature-gate__lock-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px;
+  background: var(--bg-primary, #1a1a2e);
+  border: 1px solid var(--border-color, #2a2a4a);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.feature-gate__lock-icon {
+  font-size: 24px;
+}
+
+.feature-gate__lock-text {
+  font-size: 13px;
+  color: var(--text-secondary, #a0a0c0);
+  text-align: center;
+}
+
+.feature-gate__upgrade-btn {
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feature-gate__upgrade-btn:hover {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.feature-gate__upgrade-btn:active {
+  transform: translateY(0);
+}

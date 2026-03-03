@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { safeRenameSync } from "./safe-rename.js";
 import type { OpenClawCNConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { SessionScope } from "../config/sessions/types.js";
@@ -1150,7 +1151,7 @@ function readProfileSafe(
 function writeFileAtomic(filePath: string, data: string): void {
   const tmpPath = filePath + `.tmp.${process.pid}`;
   fs.writeFileSync(tmpPath, data, "utf-8");
-  fs.renameSync(tmpPath, filePath);
+  safeRenameSync(tmpPath, filePath);
 }
 
 export function mergeWorkspaceMemory(

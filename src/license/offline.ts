@@ -49,6 +49,16 @@ function computeCacheHmac(cache: LicenseCache): string {
   const machineId = process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown";
   const hmacKey = deriveKey(cache.key, `cache-hmac|${machineId}`);
 
+  // Include full addon info in HMAC to prevent tampering with any addon field
+  // (type, name, expiresAt, features are all covered so attackers cannot
+  // inject features or extend expiry without invalidating the HMAC)
+  const addonsHash = cache.addons?.length
+    ? cache.addons
+        .map((a) => `${a.type}:${a.name}:${a.expiresAt}:${(a.features ?? []).sort().join("+")}`)
+        .sort()
+        .join(",")
+    : "";
+
   const payload = [
     cache.key,
     String(cache.valid),
@@ -56,6 +66,7 @@ function computeCacheHmac(cache: LicenseCache): string {
     cache.expiresAt || "",
     cache.tier || "",
     cache.deviceId || "",
+    addonsHash,
   ].join("|");
 
   return crypto.createHmac("sha256", hmacKey).update(payload).digest("hex");
@@ -422,6 +433,21 @@ export async function shouldRefreshCache(nextCheckAfterHours?: number): Promise<
   return hoursSinceVerify >= checkInterval;
 }
 
+/** 从 tier 值获取对应的中文名称 */
+function getTierName(tier: string | null): string {
+  switch (tier) {
+    case "pro":
+      return "高级版";
+    case "test":
+      return "测试版";
+    case "trial":
+      return "试用版";
+    case "basic":
+    default:
+      return "基础版";
+  }
+}
+
 /**
  * 从缓存创建模拟的验证响应（用于离线模式）
  */
@@ -434,8 +460,8 @@ export function createOfflineResponse(cache: LicenseCache): LicenseVerifyRespons
     nextCheckAfterHours: cache.nextCheckAfterHours,
     license: cache.valid
       ? {
-          tier: (cache.tier as "basic" | "test") || "basic",
-          tierName: cache.tier === "test" ? "测试版" : "基础版",
+          tier: (cache.tier as "basic" | "pro" | "test" | "trial") || "basic",
+          tierName: getTierName(cache.tier),
           expiresAt: cache.expiresAt || "",
           daysRemaining: cache.expiresAt
             ? Math.max(
@@ -447,6 +473,8 @@ export function createOfflineResponse(cache: LicenseCache): LicenseVerifyRespons
             : 0,
           keyType: "standard",
           features: cache.features,
+          addons: cache.addons || [],
+          upgradeAvailable: cache.upgradeAvailable ?? null,
         }
       : null,
     device: {

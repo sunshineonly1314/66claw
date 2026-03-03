@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { safeRename } from "./safe-rename.js";
 import { resolveStateDir } from "../config/paths.js";
 
 export function resolvePairingPaths(baseDir: string | undefined, subdir: string) {
@@ -32,7 +33,7 @@ export async function writeJsonAtomic(filePath: string, value: unknown) {
   } catch {
     // best-effort; ignore on platforms without chmod
   }
-  await fs.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
   try {
     await fs.chmod(filePath, 0o600);
   } catch {

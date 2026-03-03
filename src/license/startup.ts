@@ -156,12 +156,14 @@ export async function verifyLicenseOnStartup(
         error: null,
         errorCode: null,
         license: {
-          tier: "basic",
-          tierName: "开发模式",
+          tier: "pro",
+          tierName: "开发模式 (全功能)",
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           daysRemaining: 365,
           keyType: "test",
-          features: ["basic_chat", "basic_skills", "history_7days", "dev_mode"],
+          features: ["*"],
+          addons: [],
+          upgradeAvailable: null,
         },
         device: { deviceId, deviceLimit: 999, boundDevices: 1, isCurrentBound: true },
         renewalReminder: null,
@@ -207,6 +209,8 @@ export async function verifyLicenseOnStartup(
                 daysRemaining: offlineResponse.license.daysRemaining,
                 keyType: offlineResponse.license.keyType,
                 features: offlineResponse.license.features ?? [],
+                addons: offlineResponse.license.addons ?? [],
+                upgradeAvailable: offlineResponse.license.upgradeAvailable ?? null,
               }
             : null,
           device: offlineResponse.device

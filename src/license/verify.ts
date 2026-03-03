@@ -18,6 +18,9 @@ import {
   type HealthCheckResponseData,
   type LicenseModuleConfig,
   type LicenseCache,
+  type LicenseUpgradeRequest,
+  type LicenseUpgradeResponseData,
+  type AddonInfo,
   DEFAULT_LICENSE_CONFIG,
   LicenseErrorCode,
   LICENSE_ERROR_MESSAGES,
@@ -271,6 +274,122 @@ export async function verifyLicense(
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     log.error(`License verification failed: ${errorMsg}`);
+    throw error;
+  }
+}
+
+/**
+ * 升级/扩展包激活
+ *
+ * 统一入口：版本升级（basic→pro）和扩展包激活（skill-*）都走此接口。
+ * 签名格式与 verify 一致：HMAC-SHA256(currentKey|deviceId|timestamp|nonce)
+ * 响应签名格式与 verify 一致：RSA(valid|tier|expiresAt|serverTime)
+ *
+ * @param currentKey - 当前主激活码
+ * @param upgradeKey - 升级码或扩展包码
+ * @returns 升级响应数据
+ */
+export async function upgradeLicense(
+  currentKey: string,
+  upgradeKey: string,
+): Promise<LicenseUpgradeResponseData> {
+  const deviceId = getDeviceId();
+
+  // 生成 HMAC 签名（与 verify 一致，用 currentKey 作为 payload 中的 key）
+  // 优先尝试 v2 签名（需要 sessionSalt），降级到 v1
+  let signParams: { timestamp: number; nonce: string; sign: string; signVersion?: 1 | 2 };
+  try {
+    const { loadLicenseCache } = await import("./offline.js");
+    const cache = await loadLicenseCache();
+    const now = Date.now();
+    if (cache?.sessionSalt && cache.saltExpiresAt && cache.saltExpiresAt > now) {
+      const v2 = generateSignParamsV2(currentKey, deviceId, cache.sessionSalt);
+      signParams = { ...v2, signVersion: 2 as const };
+    } else {
+      signParams = {
+        ...generateSignParams(currentKey, deviceId, currentKey),
+        signVersion: 1 as const,
+      };
+    }
+  } catch {
+    signParams = {
+      ...generateSignParams(currentKey, deviceId, currentKey),
+      signVersion: 1 as const,
+    };
+  }
+
+  const request: LicenseUpgradeRequest = {
+    currentKey,
+    upgradeKey,
+    deviceId,
+    timestamp: signParams.timestamp,
+    nonce: signParams.nonce,
+    sign: signParams.sign,
+    signVersion: signParams.signVersion,
+  };
+
+  try {
+    const response = await sendRequest<LicenseUpgradeResponseData>("POST", "/upgrade", request);
+
+    if (response.code === 200) {
+      const data = response.data;
+
+      if (!data || typeof data !== "object") {
+        throw new Error("服务端返回了无效的响应数据");
+      }
+
+      // 升级成功时验证 RSA 签名
+      if (data.success && moduleConfig.enableRsaVerify && data.signature) {
+        const verifyResult = verifyLicenseResponseSignature(
+          true,
+          data.license?.tier ?? null,
+          data.license?.expiresAt ?? null,
+          data.serverTime ?? 0,
+          data.signature,
+        );
+
+        if (!verifyResult.valid) {
+          log.error(`Upgrade RSA signature verification failed: ${verifyResult.error}`);
+          throw new Error(verifyResult.error || "升级响应签名验证失败");
+        }
+
+        log.debug("Upgrade RSA signature verification passed");
+      }
+
+      // Sanitize addons in the response to filter out malformed entries
+      if (data.success && data.license) {
+        data.license.addons = sanitizeAddons(data.license.addons);
+      }
+
+      log.info(
+        `License upgrade ${data.success ? "succeeded" : "failed"}`,
+        data.success
+          ? { upgradeType: data.upgradeType, toTier: data.toTier }
+          : { errorCode: data.errorCode, errorMessage: data.errorMessage },
+      );
+      return data;
+    }
+
+    throw new Error(`Unexpected response code: ${response.code}`);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log.error(`License upgrade failed: ${errorMsg}`);
+
+    // 超时/网络错误提供更友好的提示
+    if (
+      errorMsg.includes("timeout") ||
+      errorMsg.includes("ETIMEDOUT") ||
+      errorMsg.includes("ECONNABORTED")
+    ) {
+      throw new Error("网络请求超时，请检查网络连接后重试");
+    }
+    if (
+      errorMsg.includes("ENOTFOUND") ||
+      errorMsg.includes("ECONNREFUSED") ||
+      errorMsg.includes("fetch failed")
+    ) {
+      throw new Error("无法连接到授权服务器，请检查网络连接");
+    }
     throw error;
   }
 }
@@ -603,6 +722,20 @@ export async function checkHealth(): Promise<HealthCheckResponseData> {
 }
 
 /**
+ * 校验并过滤 addon 数组，丢弃缺少必要字段的畸形条目
+ */
+function sanitizeAddons(addons: AddonInfo[] | undefined | null): AddonInfo[] {
+  if (!Array.isArray(addons)) return [];
+  return addons.filter(
+    (a) =>
+      a &&
+      typeof a.type === "string" &&
+      typeof a.name === "string" &&
+      typeof a.expiresAt === "string",
+  );
+}
+
+/**
  * 创建验证缓存数据
  */
 export function createLicenseCache(key: string, response: LicenseVerifyResponseData): LicenseCache {
@@ -613,6 +746,8 @@ export function createLicenseCache(key: string, response: LicenseVerifyResponseD
     expiresAt: response.license?.expiresAt || null,
     tier: response.license?.tier || null,
     features: response.license?.features || [],
+    addons: sanitizeAddons(response.license?.addons),
+    upgradeAvailable: response.license?.upgradeAvailable ?? null,
     deviceId: getDeviceId(),
     nextCheckAfterHours: response.nextCheckAfterHours || 24,
   };

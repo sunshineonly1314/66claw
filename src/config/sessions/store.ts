@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { safeRename } from "../../infra/safe-rename.js";
 import type { MsgContext } from "../../auto-reply/templating.js";
 import type { SessionMaintenanceConfig, SessionMaintenanceMode } from "../types.base.js";
 import { acquireSessionLock } from "../../agents/session-lock-distributed.js";
@@ -584,7 +585,7 @@ async function saveSessionStoreUnlocked(
   const tmp = `${storePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
     await fs.promises.writeFile(tmp, json, { mode: 0o600, encoding: "utf-8" });
-    await fs.promises.rename(tmp, storePath);
+    await safeRename(tmp, storePath);
     // Ensure permissions are set even if rename loses them
     await fs.promises.chmod(storePath, 0o600);
   } catch (err) {

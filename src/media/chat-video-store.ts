@@ -13,6 +13,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
+import { safeRename } from "../infra/safe-rename.js";
 import { resolveConfigDir } from "../utils.js";
 import { insertMediaAsset, queryBySession, type MediaAssetRow } from "./media-db.js";
 
@@ -97,7 +98,7 @@ async function writeManifest(sessionKey: string, manifest: ChatVideoManifest): P
   const tmpPath = manifestPath + ".tmp";
   // Atomic write: write to temp file then rename (crash-safe)
   await fs.writeFile(tmpPath, JSON.stringify(manifest, null, 2), { mode: 0o600 });
-  await fs.rename(tmpPath, manifestPath);
+  await safeRename(tmpPath, manifestPath);
 }
 
 // ---------------------------------------------------------------------------

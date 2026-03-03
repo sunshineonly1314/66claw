@@ -14,6 +14,7 @@ import { getGatewayLicenseState, updateGatewayLicenseState } from "../license-ch
 import {
   verifyLicense,
   verifyLicenseWithRetry,
+  upgradeLicense,
   getDeviceList,
   unbindDevice,
   UnbindError,
@@ -30,6 +31,9 @@ import { getDeviceId } from "../../license/device-id.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 const log = createSubsystemLogger("gateway:license-methods");
+
+/** 升级请求互斥锁：防止并发升级导致状态竞态 */
+let upgradeInProgress = false;
 
 // ============================================================================
 // 输入验证
@@ -179,6 +183,8 @@ export const licenseHandlers: GatewayRequestHandlers = {
               daysRemaining: response.license?.daysRemaining,
               keyType: response.license?.keyType,
               features: response.license?.features,
+              addons: response.license?.addons ?? [],
+              upgradeAvailable: response.license?.upgradeAvailable ?? null,
               deviceId: response.device?.deviceId,
               deviceLimit: response.device?.deviceLimit,
               boundDevices: response.device?.boundDevices,
@@ -264,6 +270,152 @@ export const licenseHandlers: GatewayRequestHandlers = {
         valid: false,
         errorMessage: `激活失败: ${errorMsg}`,
       });
+    }
+  },
+
+  /**
+   * license.upgrade - 升级/扩展包激活
+   *
+   * 统一入口：版本升级码（upg-*）和扩展包码（skill-*）都走此方法。
+   * 需要当前已有有效的主激活码（currentKey 从 config 读取）。
+   */
+  "license.upgrade": async ({ params, respond }) => {
+    // 并发保护：同一时间只允许一个升级请求
+    if (upgradeInProgress) {
+      respond(true, {
+        success: false,
+        errorMessage: "升级操作正在进行中，请稍候",
+      });
+      return;
+    }
+    upgradeInProgress = true;
+
+    try {
+      const { upgradeKey } = params as { upgradeKey: string };
+
+      // 验证升级码格式
+      const validation = validateLicenseKey(upgradeKey);
+      if (!validation.valid) {
+        log.warn(`License upgrade rejected: ${validation.error}`);
+        respond(true, {
+          success: false,
+          errorMessage: validation.error,
+        });
+        return;
+      }
+
+      const sanitizedUpgradeKey = upgradeKey.trim();
+
+      // 读取当前主激活码
+      const config = loadConfig();
+      const currentKey = config.license?.key;
+
+      if (!currentKey) {
+        log.warn("License upgrade failed: no current license key");
+        respond(true, {
+          success: false,
+          errorCode: 2003,
+          errorMessage: "请先激活主授权码",
+        });
+        return;
+      }
+
+      log.info(`Upgrading license: ${sanitizedUpgradeKey.substring(0, 10)}...`);
+
+      try {
+        const response = await upgradeLicense(currentKey, sanitizedUpgradeKey);
+
+        if (response.success) {
+          // 更新配置文件
+          await withConfigWriteLock(async () => {
+            const freshConfig = loadConfig();
+            const nextConfig = {
+              ...freshConfig,
+              license: {
+                ...freshConfig.license,
+                status: response.license?.tier ?? freshConfig.license?.status,
+                tier: response.license?.tier ?? freshConfig.license?.tier,
+                tierName: response.license?.tierName ?? freshConfig.license?.tierName,
+                expiresAt: response.license?.expiresAt ?? freshConfig.license?.expiresAt,
+                features: response.license?.features ?? freshConfig.license?.features,
+                addons: response.license?.addons ?? freshConfig.license?.addons,
+                upgradeAvailable: response.license?.upgradeAvailable ?? null,
+                validatedAt: new Date().toISOString(),
+              },
+            };
+            await writeConfigFile(nextConfig as OpenClawCNConfig);
+          });
+
+          // 重新调 verify 刷新完整状态（含签名、设备信息等）
+          try {
+            const shownNotificationIds = getShownNotificationIds();
+            const verifyResponse = await verifyLicenseWithRetry(currentKey, {
+              shownNotificationIds,
+              maxRetries: 2,
+            });
+
+            if (verifyResponse.valid) {
+              saveLicenseCache(currentKey, verifyResponse);
+              const pendingNotifications = filterNotificationsToShow(verifyResponse.notifications);
+              updateGatewayLicenseState({
+                checking: false,
+                valid: true,
+                offlineMode: false,
+                error: null,
+                errorCode: null,
+                license: verifyResponse.license,
+                device: verifyResponse.device,
+                renewalReminder: verifyResponse.renewalReminder,
+                forceUpdate: verifyResponse.forceUpdate,
+                pendingNotifications,
+                lastVerifiedAt: Date.now(),
+                deviceSwitchInfo: null,
+                deviceSwitchCooldown: null,
+              });
+
+              // 注入技术支持二维码
+              const deviceId = verifyResponse.device?.deviceId || getDeviceId();
+              enrichLicenseWithSupport(verifyResponse.license, deviceId);
+            }
+          } catch (refreshError) {
+            // verify 刷新失败不影响升级结果，仅记录日志
+            log.warn(`Post-upgrade verify refresh failed: ${refreshError}`);
+          }
+
+          log.info(
+            `License upgrade successful: ${response.upgradeType} → ${response.toTier ?? "addon"}`,
+          );
+          respond(true, {
+            success: true,
+            upgradeType: response.upgradeType,
+            fromTier: response.fromTier,
+            toTier: response.toTier,
+            message: response.message,
+            license: response.license,
+          });
+          return;
+        }
+
+        // 升级失败
+        log.warn(
+          `License upgrade failed: ${response.errorMessage} (errorCode: ${response.errorCode})`,
+        );
+        respond(true, {
+          success: false,
+          errorCode: response.errorCode,
+          errorMessage: response.errorMessage,
+          expiredAt: response.expiredAt,
+        });
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log.error(`License upgrade error: ${errorMsg}`);
+        respond(true, {
+          success: false,
+          errorMessage: `升级失败: ${errorMsg}`,
+        });
+      }
+    } finally {
+      upgradeInProgress = false;
     }
   },
 
@@ -377,6 +529,8 @@ export const licenseHandlers: GatewayRequestHandlers = {
               daysRemaining: result.license?.daysRemaining,
               keyType: result.license?.keyType,
               features: result.license?.features,
+              addons: result.license?.addons ?? [],
+              upgradeAvailable: result.license?.upgradeAvailable ?? null,
               deviceId: result.device?.deviceId,
               deviceLimit: result.device?.deviceLimit,
               boundDevices: result.device?.boundDevices,

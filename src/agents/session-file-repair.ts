@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { safeRename } from "../infra/safe-rename.js";
 
 type RepairReport = {
   repaired: boolean;
@@ -82,7 +83,7 @@ export async function repairSessionFileIfNeeded(params: {
     if (stat) {
       await fs.chmod(tmpPath, stat.mode);
     }
-    await fs.rename(tmpPath, sessionFile);
+    await safeRename(tmpPath, sessionFile);
   } catch (err) {
     try {
       await fs.unlink(tmpPath);

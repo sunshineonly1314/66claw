@@ -18,7 +18,15 @@ export {
   renderDeviceSwitchCooldownDialog,
   renderDeviceKickedDialog,
   renderOfflineBanner,
+  renderUpgradeSuccessDialog,
+  renderUpgradeErrorDialog,
 } from "./license-dialogs.js";
+
+// 授权信息面板
+export { renderLicenseInfoCard } from "./license-info-panel.js";
+
+// 功能门控
+export { renderFeatureGate, hasFeature } from "./feature-gate.js";
 
 // 控制器
 export {

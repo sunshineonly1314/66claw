@@ -2,6 +2,8 @@
  * License 配置类型定义
  */
 
+import type { AddonInfo, UpgradeAvailableInfo } from "../license/types.js";
+
 export type LicenseConfig = {
   /** 授权码 */
   key?: string;
@@ -12,7 +14,7 @@ export type LicenseConfig = {
   /** 最后验证时间 (ISO 8601) */
   validatedAt?: string;
   /** 产品等级 */
-  tier?: "test" | "basic" | "professional" | "enterprise";
+  tier?: "test" | "trial" | "basic" | "pro";
   /** 等级名称 */
   tierName?: string;
   /** 剩余天数 */
@@ -21,6 +23,10 @@ export type LicenseConfig = {
   keyType?: "test" | "trial" | "standard";
   /** 功能特性列表 */
   features?: string[];
+  /** 已激活的扩展包列表 */
+  addons?: AddonInfo[];
+  /** 可用的升级信息 */
+  upgradeAvailable?: UpgradeAvailableInfo | null;
   /** 当前设备ID */
   deviceId?: string;
   /** 设备绑定上限 */

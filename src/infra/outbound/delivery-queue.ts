@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { safeRename } from "../safe-rename.js";
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import type { OpenClawCNConfig } from "../../config/config.js";
 import type { OutboundChannel } from "./targets.js";
@@ -104,7 +105,7 @@ export async function enqueueDelivery(
   const tmp = `${filePath}.${process.pid}.tmp`;
   const json = JSON.stringify(entry, null, 2);
   await fs.promises.writeFile(tmp, json, { encoding: "utf-8", mode: 0o600 });
-  await fs.promises.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
   return id;
 }
 
@@ -137,7 +138,7 @@ export async function failDelivery(id: string, error: string, stateDir?: string)
     encoding: "utf-8",
     mode: 0o600,
   });
-  await fs.promises.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
 }
 
 /** Load all pending delivery entries from the queue directory. */
@@ -183,7 +184,7 @@ export async function moveToFailed(id: string, stateDir?: string): Promise<void>
   await fs.promises.mkdir(failedDir, { recursive: true, mode: 0o700 });
   const src = path.join(queueDir, `${id}.json`);
   const dest = path.join(failedDir, `${id}.json`);
-  await fs.promises.rename(src, dest);
+  await safeRename(src, dest);
 }
 
 /** Compute the backoff delay in ms for a given retry count. */

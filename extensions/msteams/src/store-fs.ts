@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { safeRename } from "../../../src/infra/safe-rename.js";
+
 import lockfile from "proper-lockfile";
 
 const STORE_LOCK_OPTIONS = {
@@ -47,7 +49,7 @@ export async function writeJsonFile(filePath: string, value: unknown): Promise<v
     encoding: "utf-8",
   });
   await fs.promises.chmod(tmp, 0o600);
-  await fs.promises.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
 }
 
 async function ensureJsonFile(filePath: string, fallback: unknown) {

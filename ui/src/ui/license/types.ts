@@ -17,16 +17,44 @@ export interface SupportQrcodeConfig {
  * License 信息
  */
 export interface LicenseInfo {
-  tier: "basic" | "test" | "professional" | "enterprise";
+  tier: "basic" | "pro" | "test" | "trial";
   tierName: string;
   expiresAt: string;
   daysRemaining: number;
   keyType: "test" | "trial" | "standard";
   features: string[];
+  /** 已激活的扩展包列表（始终为数组） */
+  addons: AddonInfo[];
+  /** 当前版本可升级的信息 */
+  upgradeAvailable?: UpgradeAvailableInfo | null;
   /** 技术支持群二维码（服务端根据用户类型 + 设备 hash 返回） */
   supportQrcode?: SupportQrcodeConfig;
   /** 闲鱼购买链接（仅 test 用户返回） */
   purchaseUrl?: string;
+}
+
+/**
+ * 扩展包信息
+ */
+export interface AddonInfo {
+  /** 扩展包类型 */
+  type: string;
+  /** 扩展包名称 */
+  name: string;
+  /** 过期时间 (ISO 8601) */
+  expiresAt: string;
+  /** 扩展包包含的功能列表 */
+  features: string[];
+}
+
+/**
+ * 升级可用信息
+ */
+export interface UpgradeAvailableInfo {
+  targetTier: string;
+  targetTierName: string;
+  upgradePrice: number;
+  description: string;
 }
 
 /**
@@ -114,6 +142,33 @@ export enum LicenseErrorCode {
 }
 
 /**
+ * License 升级/扩展包错误码
+ */
+export enum LicenseUpgradeErrorCode {
+  /** 升级码/扩展码不存在或已使用 */
+  ERROR_UPGRADE_KEY_INVALID = 2001,
+  /** 当前版本不匹配（已是Pro） */
+  ERROR_TIER_MISMATCH = 2002,
+  /** 主激活码无效或已过期 */
+  ERROR_MAIN_KEY_INVALID = 2003,
+  /** 升级码/扩展码已过期 */
+  ERROR_UPGRADE_KEY_EXPIRED = 2004,
+  /** 扩展包重复激活 */
+  ERROR_ADDON_DUPLICATE = 2005,
+}
+
+/**
+ * 升级错误码对应的用户友好消息
+ */
+export const UPGRADE_ERROR_MESSAGES: Record<LicenseUpgradeErrorCode, string> = {
+  [LicenseUpgradeErrorCode.ERROR_UPGRADE_KEY_INVALID]: "激活码无效，请检查输入",
+  [LicenseUpgradeErrorCode.ERROR_TIER_MISMATCH]: "您已是高级版，无需升级",
+  [LicenseUpgradeErrorCode.ERROR_MAIN_KEY_INVALID]: "请先确保您有有效的激活码",
+  [LicenseUpgradeErrorCode.ERROR_UPGRADE_KEY_EXPIRED]: "该激活码已过期，请联系客服",
+  [LicenseUpgradeErrorCode.ERROR_ADDON_DUPLICATE]: "该扩展包已激活",
+};
+
+/**
  * 设备切换信息（errorCode=1010 时返回）
  */
 export interface DeviceSwitchInfo {
@@ -150,6 +205,22 @@ export interface UnbindResult {
   cooldownRemainingHours?: number;
   /** 冷却结束时间 ISO 字符串（1009 错误时） */
   cooldownEndsAt?: string;
+}
+
+/**
+ * 升级/扩展包激活结果
+ */
+export interface UpgradeResult {
+  success: boolean;
+  upgradeType?: "tier_upgrade" | "addon";
+  fromTier?: string;
+  toTier?: string;
+  message?: string;
+  license?: LicenseInfo;
+  error?: string;
+  errorCode?: LicenseUpgradeErrorCode;
+  /** 升级码/扩展码过期时间（errorCode=2004 时） */
+  expiredAt?: string;
 }
 
 /**
@@ -200,6 +271,8 @@ export interface LicenseUiState {
   deviceSwitchInfo: DeviceSwitchInfo | null;
   /** 设备切换冷却信息（errorCode=1011 时） */
   deviceSwitchCooldown: DeviceSwitchCooldownInfo | null;
+  /** 最近一次升级结果（用于展示升级成功/失败弹窗） */
+  lastUpgradeResult: UpgradeResult | null;
 }
 
 /**
@@ -219,6 +292,7 @@ export const DEFAULT_LICENSE_STATE: LicenseUiState = {
   lastVerifiedAt: null,
   deviceSwitchInfo: null,
   deviceSwitchCooldown: null,
+  lastUpgradeResult: null,
 };
 
 /**
@@ -233,4 +307,6 @@ export type LicenseDialogType =
   | "force-update"         // 强制更新
   | "device-manage"        // 设备管理
   | "device-switch"        // 设备切换确认（1010）
-  | "device-switch-cooldown"; // 设备切换冷却（1011）
+  | "device-switch-cooldown" // 设备切换冷却（1011）
+  | "upgrade-success"      // 升级/扩展包激活成功
+  | "upgrade-error";       // 升级/扩展包激活失败

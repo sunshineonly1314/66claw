@@ -11,6 +11,8 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+
+import { safeRename } from "../../../src/infra/safe-rename.js";
 import type {
   AgentDeployState,
   OrchestrationPlan,
@@ -69,7 +71,7 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
   const tmpPath = `${filePath}.${randomUUID().slice(0, 8)}.tmp`;
   const content = JSON.stringify(data, null, 2);
   await fs.writeFile(tmpPath, content, "utf-8");
-  await fs.rename(tmpPath, filePath);
+  await safeRename(tmpPath, filePath);
 }
 
 // ── Plan Storage ─────────────────────────────────────────────────────────

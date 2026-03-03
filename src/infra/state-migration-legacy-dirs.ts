@@ -28,6 +28,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveEffectiveHomeDir } from "./home-dir.js";
+import { safeRenameSync } from "./safe-rename.js";
 import { mergeLegacyIntoTarget } from "./state-migrations.js";
 import { ensureDir, existsDir, fileExists, safeReadDir } from "./state-migrations.fs.js";
 
@@ -291,7 +292,7 @@ function writeMigrationMarker(
     };
     const tmpPath = markerPath + `.tmp.${process.pid}`;
     fs.writeFileSync(tmpPath, JSON.stringify(marker, null, 2), "utf-8");
-    fs.renameSync(tmpPath, markerPath);
+    safeRenameSync(tmpPath, markerPath);
   } catch (err) {
     result.warnings.push(
       `Could not write migration marker in ${path.basename(legacyDir)}: ${String(err)}`,

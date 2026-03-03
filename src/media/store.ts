@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
+import { safeRename } from "../infra/safe-rename.js";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import path from "node:path";
@@ -208,7 +209,7 @@ export async function saveMediaSource(
     const ext = extensionForMime(mime) ?? path.extname(new URL(source).pathname);
     const id = ext ? `${baseId}${ext}` : baseId;
     const finalDest = path.join(dir, id);
-    await fs.rename(tempDest, finalDest);
+    await safeRename(tempDest, finalDest);
     return { id, path: finalDest, size, contentType: mime };
   }
   // local path

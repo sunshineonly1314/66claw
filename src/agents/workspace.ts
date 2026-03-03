@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { safeRename } from "../infra/safe-rename.js";
 import { resolveStateDir } from "../config/paths.js";
 import { isFsRootPath, resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { runCommandWithTimeout } from "../process/exec.js";
@@ -192,7 +193,7 @@ async function writeWorkspaceOnboardingState(
   const tmpPath = `${statePath}.tmp-${process.pid}-${Date.now().toString(36)}`;
   try {
     await fs.writeFile(tmpPath, payload, { encoding: "utf-8" });
-    await fs.rename(tmpPath, statePath);
+    await safeRename(tmpPath, statePath);
   } catch (err) {
     await fs.unlink(tmpPath).catch(() => {});
     throw err;

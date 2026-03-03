@@ -148,12 +148,21 @@ async function performHeartbeat(): Promise<void> {
           serverTime: Date.now(),
           nextCheckAfterHours: cache.nextCheckAfterHours,
           license: {
-            tier: (cache.tier as "basic" | "test") || "basic",
-            tierName: cache.tier === "test" ? "测试版" : "基础版",
+            tier: (cache.tier as "basic" | "pro" | "test" | "trial") || "basic",
+            tierName:
+              cache.tier === "pro"
+                ? "高级版"
+                : cache.tier === "test"
+                  ? "测试版"
+                  : cache.tier === "trial"
+                    ? "试用版"
+                    : "基础版",
             expiresAt: cache.expiresAt || "",
             daysRemaining: result.daysRemaining ?? 0,
             keyType: "standard",
             features: cache.features,
+            addons: cache.addons ?? [],
+            upgradeAvailable: cache.upgradeAvailable ?? null,
           },
           device: null,
           notifications: null,

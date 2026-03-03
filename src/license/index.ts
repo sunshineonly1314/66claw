@@ -38,6 +38,7 @@ export {
   buildVerifyRequest,
   verifyLicense,
   verifyLicenseWithRetry,
+  upgradeLicense,
   sendHeartbeat,
   getDeviceList,
   unbindDevice,

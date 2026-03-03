@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { safeRename } from "../infra/safe-rename.js";
 import type { ChannelId, ChannelPairingAdapter } from "../channels/plugins/types.js";
 import { getPairingAdapter } from "../channels/plugins/pairing.js";
 import { resolveOAuthDir, resolveStateDir } from "../config/paths.js";
@@ -101,7 +102,7 @@ async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
     encoding: "utf-8",
   });
   await fs.promises.chmod(tmp, 0o600);
-  await fs.promises.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
 }
 
 async function ensureJsonFile(filePath: string, fallback: unknown) {

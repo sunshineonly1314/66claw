@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { safeRename } from "../../../src/infra/safe-rename.js";
+
 import { getNostrRuntime } from "./runtime.js";
 
 const STORE_VERSION = 2;
@@ -131,7 +133,7 @@ export async function writeNostrBusState(params: {
     encoding: "utf-8",
   });
   await fs.chmod(tmp, 0o600);
-  await fs.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
 }
 
 /**
@@ -222,5 +224,5 @@ export async function writeNostrProfileState(params: {
     encoding: "utf-8",
   });
   await fs.chmod(tmp, 0o600);
-  await fs.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
 }

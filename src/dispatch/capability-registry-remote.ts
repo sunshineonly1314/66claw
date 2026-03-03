@@ -20,6 +20,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { safeRenameSync } from "../infra/safe-rename.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { applyRemoteCards, type ModelCapabilityCard } from "./capability-registry.js";
 
@@ -331,7 +332,7 @@ function saveCache(entry: CacheEntry): void {
     // Atomic write: write to temp file then rename (prevents corrupt cache on crash)
     const tmpPath = cachePath + ".tmp";
     fs.writeFileSync(tmpPath, JSON.stringify(entry, null, 2), "utf8");
-    fs.renameSync(tmpPath, cachePath);
+    safeRenameSync(tmpPath, cachePath);
   } catch (err) {
     log.debug(`capability-registry-remote: failed to save cache: ${err}`);
   }

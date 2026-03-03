@@ -708,11 +708,37 @@ export const OpenClawCNSchema = z
         status: z.string().optional(),
         expiresAt: z.string().optional(),
         validatedAt: z.string().optional(),
-        tier: z.enum(["test", "basic", "professional", "enterprise"]).optional(),
+        tier: z
+          .string()
+          .optional()
+          .transform((v) => {
+            if (v === "professional" || v === "enterprise") return "pro";
+            if (v && !["test", "trial", "basic", "pro"].includes(v)) return "basic";
+            return v as "test" | "trial" | "basic" | "pro" | undefined;
+          }),
         tierName: z.string().optional(),
         daysRemaining: z.number().optional(),
         keyType: z.union([z.literal("test"), z.literal("trial"), z.literal("standard")]).optional(),
         features: z.array(z.string()).optional(),
+        addons: z
+          .array(
+            z.object({
+              type: z.string(),
+              name: z.string(),
+              expiresAt: z.string(),
+              features: z.array(z.string()),
+            }),
+          )
+          .optional(),
+        upgradeAvailable: z
+          .object({
+            targetTier: z.string(),
+            targetTierName: z.string(),
+            upgradePrice: z.number(),
+            description: z.string(),
+          })
+          .nullable()
+          .optional(),
         deviceId: z.string().optional(),
         deviceLimit: z.number().optional(),
         boundDevices: z.number().optional(),

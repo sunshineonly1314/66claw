@@ -11,8 +11,9 @@ import type {
   LicenseDialogType,
   UnbindResult,
   DeviceSwitchResult,
+  UpgradeResult,
 } from "./types.js";
-import { DEFAULT_LICENSE_STATE } from "./types.js";
+import { DEFAULT_LICENSE_STATE, UPGRADE_ERROR_MESSAGES, LicenseUpgradeErrorCode } from "./types.js";
 
 /**
  * License 控制器接口
@@ -22,8 +23,12 @@ export interface LicenseController {
   getState(): LicenseUiState;
   /** 刷新 License 状态 */
   refresh(): Promise<void>;
-  /** 激活授权码 */
+  /** 激活授权码（自动根据前缀路由到 verify 或 upgrade） */
   activate(key: string): Promise<boolean>;
+  /** 升级/扩展包激活 */
+  upgrade(upgradeKey: string): Promise<UpgradeResult>;
+  /** 清除升级结果（关闭升级弹窗后调用） */
+  clearUpgradeResult(): void;
   /** 获取设备列表 */
   getDevices(): Promise<BoundDevice[]>;
   /** 解绑设备 */
@@ -90,6 +95,13 @@ export function createLicenseController(
 
   const activate = async (key: string): Promise<boolean> => {
     if (!client) return false;
+
+    // 前缀路由：upg-* 和 skill-* 走升级流程
+    const trimmed = key.trim().toLowerCase();
+    if (trimmed.startsWith("upg-") || trimmed.startsWith("skill-")) {
+      const result = await upgrade(key);
+      return result.success;
+    }
 
     updateState({ checking: true, error: null });
 
@@ -158,6 +170,96 @@ export function createLicenseController(
       });
       return false;
     }
+  };
+
+  const upgrade = async (upgradeKey: string): Promise<UpgradeResult> => {
+    if (!client) {
+      return { success: false, error: "客户端未连接" };
+    }
+
+    // 检查是否有已激活的主授权码
+    if (!state.license) {
+      const noKeyResult: UpgradeResult = {
+        success: false,
+        errorCode: LicenseUpgradeErrorCode.ERROR_MAIN_KEY_INVALID,
+        error: "请先激活主授权码",
+      };
+      updateState({ lastUpgradeResult: noKeyResult });
+      return noKeyResult;
+    }
+
+    // 离线模式下无法升级
+    if (state.offlineMode) {
+      const offlineResult: UpgradeResult = {
+        success: false,
+        error: "当前处于离线模式，升级需要网络连接。请连接网络后重试。",
+      };
+      updateState({ lastUpgradeResult: offlineResult });
+      return offlineResult;
+    }
+
+    updateState({ checking: true, error: null });
+
+    try {
+      const result = await client.request("license.upgrade", { upgradeKey: upgradeKey.trim() });
+
+      if (result && typeof result === "object") {
+        const data = result as Record<string, unknown>;
+
+        if (data.success) {
+          const upgradeResult: UpgradeResult = {
+            success: true,
+            upgradeType: data.upgradeType as UpgradeResult["upgradeType"],
+            fromTier: data.fromTier as string | undefined,
+            toTier: data.toTier as string | undefined,
+            message: data.message as string | undefined,
+            license: data.license as UpgradeResult["license"],
+          };
+
+          // 刷新状态获取最新数据
+          updateState({
+            checking: false,
+            lastUpgradeResult: upgradeResult,
+          });
+          await refresh();
+
+          return upgradeResult;
+        }
+
+        // 升级失败
+        const errorResult: UpgradeResult = {
+          success: false,
+          errorCode: data.errorCode as LicenseUpgradeErrorCode | undefined,
+          error: (data.errorMessage as string) ??
+            UPGRADE_ERROR_MESSAGES[data.errorCode as LicenseUpgradeErrorCode] ??
+            "升级失败",
+          expiredAt: data.expiredAt as string | undefined,
+        };
+
+        updateState({
+          checking: false,
+          lastUpgradeResult: errorResult,
+        });
+        return errorResult;
+      }
+
+      return { success: false, error: "升级失败：无效响应" };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorResult: UpgradeResult = {
+        success: false,
+        error: `升级失败: ${errorMsg}`,
+      };
+      updateState({
+        checking: false,
+        lastUpgradeResult: errorResult,
+      });
+      return errorResult;
+    }
+  };
+
+  const clearUpgradeResult = (): void => {
+    updateState({ lastUpgradeResult: null });
   };
 
   const getDevices = async (): Promise<BoundDevice[]> => {
@@ -261,6 +363,8 @@ export function createLicenseController(
     getState,
     refresh,
     activate,
+    upgrade,
+    clearUpgradeResult,
     getDevices,
     unbindDevice,
     confirmDeviceSwitch,
@@ -274,6 +378,11 @@ export function createLicenseController(
  * 判断是否需要显示弹窗
  */
 export function shouldShowLicenseDialog(state: LicenseUiState): LicenseDialogType | null {
+  // 升级结果弹窗（最高优先级，用户刚操作完）
+  if (state.lastUpgradeResult) {
+    return state.lastUpgradeResult.success ? "upgrade-success" : "upgrade-error";
+  }
+
   // 强制更新优先级最高
   if (state.forceUpdate?.required && state.forceUpdate.blocking) {
     return "force-update";

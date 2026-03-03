@@ -82,11 +82,11 @@ const cnBrand: BrandConfig = {
   metaDescription: "ClawbotCN - 智能 AI 助手",
   tagline: "全栈国内运行",
 
-  activationPrefix: "claw",
-  activationPlaceholder: "请输入授权码 (如: claw-xxx-xxx)",
-  activationPrefixError: "激活码必须以 claw 开头",
-  activationDialogText: "请输入您的授权码以激活 Clawdbot",
-  activationExample: "claw-xxx-xxx",
+  activationPrefix: "",
+  activationPlaceholder: "请输入授权码、升级码或扩展包码",
+  activationPrefixError: "",
+  activationDialogText: "请输入您的授权码以激活 Clawdbot，或输入升级码/扩展包码进行升级",
+  activationExample: "clawd-xxx / clpro-xxx / upg-bp-xxx / skill-s1-xxx",
 
   promoUrl: "https://www.obplugins.cn",
   promoName: "TecbinAI",

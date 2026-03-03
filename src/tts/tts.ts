@@ -1,14 +1,6 @@
 import crypto from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  mkdtempSync,
-  rmSync,
-  renameSync,
-  unlinkSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { safeRenameSync } from "../infra/safe-rename.js";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ReplyPayload } from "../auto-reply/types.js";
@@ -390,16 +382,7 @@ function readPrefs(prefsPath: string): TtsUserPrefs {
 function atomicWriteFileSync(filePath: string, content: string): void {
   const tmpPath = `${filePath}.tmp.${Date.now()}.${crypto.randomUUID().slice(0, 8)}`;
   writeFileSync(tmpPath, content);
-  try {
-    renameSync(tmpPath, filePath);
-  } catch (err) {
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      // ignore
-    }
-    throw err;
-  }
+  safeRenameSync(tmpPath, filePath);
 }
 
 function updatePrefs(prefsPath: string, update: (prefs: TtsUserPrefs) => void): void {

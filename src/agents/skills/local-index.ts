@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { safeRename } from "../../infra/safe-rename.js";
 import { CONFIG_DIR } from "../../utils.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { RemoteSkillMeta, RemoteSkillsIndex } from "./gitee-registry.js";
@@ -80,9 +81,9 @@ function getBundledIndexPath(): string | null {
 
   // 尝试多个可能的位置
   const candidates = [
-    path.join(bundledDir, "skills-index.json"),           // bundled-skills/skills-index.json
+    path.join(bundledDir, "skills-index.json"), // bundled-skills/skills-index.json
     path.join(path.dirname(bundledDir), "skills-index.json"), // bundled-skills/../skills-index.json
-    path.join(bundledDir, "..", "skills-index.json"),     // 同上，另一种写法
+    path.join(bundledDir, "..", "skills-index.json"), // 同上，另一种写法
   ];
 
   for (const candidate of candidates) {
@@ -230,7 +231,7 @@ export async function writeLocalIndex(
   // 原子写入（先写临时文件再重命名）
   const tempPath = `${LOCAL_INDEX_PATH}.tmp`;
   await fsp.writeFile(tempPath, JSON.stringify(localIndex, null, 2), "utf-8");
-  await fsp.rename(tempPath, LOCAL_INDEX_PATH);
+  await safeRename(tempPath, LOCAL_INDEX_PATH);
 
   logger.info("Local skills index updated", {
     skillCount: remoteIndex.skills.length,
@@ -259,9 +260,7 @@ export function isIndexStale(
  * 更新本地索引中的已安装列表
  * 用于安装/卸载技能后快速更新，无需重新拉取远程索引
  */
-export async function updateInstalledList(
-  installedSkills: string[],
-): Promise<void> {
+export async function updateInstalledList(installedSkills: string[]): Promise<void> {
   const localIndex = await readLocalIndex();
   if (!localIndex) {
     return;
@@ -272,7 +271,7 @@ export async function updateInstalledList(
 
   const tempPath = `${LOCAL_INDEX_PATH}.tmp`;
   await fsp.writeFile(tempPath, JSON.stringify(localIndex, null, 2), "utf-8");
-  await fsp.rename(tempPath, LOCAL_INDEX_PATH);
+  await safeRename(tempPath, LOCAL_INDEX_PATH);
 
   logger.debug("Updated installed skills list", {
     count: installedSkills.length,

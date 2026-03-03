@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { safeRename } from "../infra/safe-rename.js";
 
 export type CronRunLogEntry = {
   ts: number;
@@ -38,7 +39,7 @@ async function pruneIfNeeded(filePath: string, opts: { maxBytes: number; keepLin
   const kept = lines.slice(Math.max(0, lines.length - opts.keepLines));
   const tmp = `${filePath}.${process.pid}.${crypto.randomUUID().slice(0, 8)}.tmp`;
   await fs.writeFile(tmp, `${kept.join("\n")}\n`, "utf-8");
-  await fs.rename(tmp, filePath);
+  await safeRename(tmp, filePath);
 }
 
 export async function appendCronRunLog(

@@ -8,6 +8,7 @@
  */
 
 import fs from "node:fs";
+import { safeRename } from "../../infra/safe-rename.js";
 import path from "node:path";
 import { CONFIG_DIR, ensureDir } from "../../utils.js";
 
@@ -105,7 +106,7 @@ async function writeStateToDisk(state: SkillsInstallState): Promise<void> {
   } catch {
     /* may not exist */
   }
-  await fs.promises.rename(tmpPath, filePath);
+  await safeRename(tmpPath, filePath);
 }
 
 // ---------------------------------------------------------------------------

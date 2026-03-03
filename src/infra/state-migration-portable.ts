@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { safeRenameSync } from "./safe-rename.js";
 import { resolvePortableDataDir } from "./home-dir.js";
 import { ensureDir, existsDir, fileExists } from "./state-migrations.fs.js";
 
@@ -255,7 +256,7 @@ function computeScore(entry: ProfileEntry, now: number): number {
 function writeFileAtomic(filePath: string, data: string): void {
   const tmpPath = filePath + `.tmp.${process.pid}`;
   fs.writeFileSync(tmpPath, data, "utf-8");
-  fs.renameSync(tmpPath, filePath);
+  safeRenameSync(tmpPath, filePath);
 }
 
 // ── Public API ───────────────────────────────────────────────────────

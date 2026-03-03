@@ -112,6 +112,54 @@ export interface NotificationAckRequest {
 }
 
 /**
+ * 升级/扩展包激活请求参数
+ */
+export interface LicenseUpgradeRequest {
+  /** 当前主激活码 */
+  currentKey: string;
+  /** 升级码或扩展包码 */
+  upgradeKey: string;
+  /** 设备唯一标识 */
+  deviceId: string;
+  /** 请求时间戳(毫秒) */
+  timestamp: number;
+  /** 随机字符串(16位) */
+  nonce: string;
+  /** HMAC-SHA256 请求签名 */
+  sign: string;
+  /** 签名版本：1=旧版, 2=新版(sessionSalt派生密钥) */
+  signVersion?: 1 | 2;
+}
+
+/**
+ * 升级/扩展包激活响应数据
+ */
+export interface LicenseUpgradeResponseData {
+  /** 是否成功 */
+  success: boolean;
+  /** 升级类型 */
+  upgradeType?: "tier_upgrade" | "addon";
+  /** 源版本（版本升级时） */
+  fromTier?: string;
+  /** 目标版本（版本升级时） */
+  toTier?: string;
+  /** 成功/失败消息 */
+  message?: string;
+  /** 升级后的 License 信息 */
+  license?: LicenseInfo | null;
+  /** RSA 签名（格式与 verify 一致：valid|tier|expiresAt|serverTime） */
+  signature?: string;
+  /** 服务器时间 (毫秒时间戳) */
+  serverTime?: number;
+  /** 业务错误码 */
+  errorCode?: LicenseUpgradeErrorCode;
+  /** 错误消息 */
+  errorMessage?: string;
+  /** 升级码/扩展码过期时间（errorCode=2004 时返回） */
+  expiredAt?: string;
+}
+
+/**
  * 设备切换请求参数（单设备模式）
  */
 export interface DeviceSwitchRequest {
@@ -160,7 +208,7 @@ export interface SupportQrcodeConfig {
  */
 export interface LicenseInfo {
   /** 产品等级 */
-  tier: "basic" | "test" | "professional" | "enterprise";
+  tier: "basic" | "pro" | "test" | "trial";
   /** 等级名称 */
   tierName: string;
   /** 过期时间 (ISO 8601) */
@@ -171,10 +219,42 @@ export interface LicenseInfo {
   keyType: "test" | "trial" | "standard";
   /** 功能特性列表 */
   features: string[];
+  /** 已激活的扩展包列表（始终为数组，无扩展包时为 []） */
+  addons: AddonInfo[];
+  /** 当前版本可升级的信息，无可升级则为 null / undefined */
+  upgradeAvailable?: UpgradeAvailableInfo | null;
   /** 技术支持群二维码（服务端根据用户类型 + 设备 hash 返回） */
   supportQrcode?: SupportQrcodeConfig;
   /** 闲鱼购买链接（仅 test 用户返回） */
   purchaseUrl?: string;
+}
+
+/**
+ * 扩展包信息
+ */
+export interface AddonInfo {
+  /** 扩展包类型（如 "skills_s1"、"skills_s2"、"skills_premium"） */
+  type: string;
+  /** 扩展包名称 */
+  name: string;
+  /** 过期时间 (ISO 8601) */
+  expiresAt: string;
+  /** 扩展包包含的功能列表 */
+  features: string[];
+}
+
+/**
+ * 升级可用信息（basic 用户可升级到 pro）
+ */
+export interface UpgradeAvailableInfo {
+  /** 目标版本 */
+  targetTier: string;
+  /** 目标版本名称 */
+  targetTierName: string;
+  /** 升级价格（元） */
+  upgradePrice: number;
+  /** 升级描述 */
+  description: string;
 }
 
 /**
@@ -449,6 +529,33 @@ export enum LicenseErrorCode {
 }
 
 /**
+ * License 升级/扩展包错误码
+ */
+export enum LicenseUpgradeErrorCode {
+  /** 升级码/扩展码不存在或已使用 */
+  ERROR_UPGRADE_KEY_INVALID = 2001,
+  /** 当前版本不匹配（已是Pro再用Basic→Pro升级码） */
+  ERROR_TIER_MISMATCH = 2002,
+  /** 主激活码无效或已过期 */
+  ERROR_MAIN_KEY_INVALID = 2003,
+  /** 升级码/扩展码已过期 */
+  ERROR_UPGRADE_KEY_EXPIRED = 2004,
+  /** 扩展包重复激活 */
+  ERROR_ADDON_DUPLICATE = 2005,
+}
+
+/**
+ * 升级错误码对应的用户友好消息
+ */
+export const UPGRADE_ERROR_MESSAGES: Record<LicenseUpgradeErrorCode, string> = {
+  [LicenseUpgradeErrorCode.ERROR_UPGRADE_KEY_INVALID]: "激活码无效，请检查输入",
+  [LicenseUpgradeErrorCode.ERROR_TIER_MISMATCH]: "您已是高级版，无需升级",
+  [LicenseUpgradeErrorCode.ERROR_MAIN_KEY_INVALID]: "请先确保您有有效的激活码",
+  [LicenseUpgradeErrorCode.ERROR_UPGRADE_KEY_EXPIRED]: "该激活码已过期，请联系客服",
+  [LicenseUpgradeErrorCode.ERROR_ADDON_DUPLICATE]: "该扩展包已激活",
+};
+
+/**
  * 错误码对应的用户友好消息
  */
 export const LICENSE_ERROR_MESSAGES: Record<LicenseErrorCode, string> = {
@@ -485,6 +592,10 @@ export interface LicenseCache {
   tier: string | null;
   /** 功能特性列表 */
   features: string[];
+  /** 已激活的扩展包列表 */
+  addons?: AddonInfo[];
+  /** 可用的升级信息（缓存用于离线展示） */
+  upgradeAvailable?: UpgradeAvailableInfo | null;
   /** 设备ID */
   deviceId: string;
   /** 下次检查间隔(小时) */
