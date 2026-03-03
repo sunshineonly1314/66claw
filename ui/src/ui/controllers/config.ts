@@ -105,7 +105,10 @@ export function applyConfigSnapshot(state: ConfigState, snapshot: ConfigSnapshot
 }
 
 export async function saveConfig(state: ConfigState) {
-  if (!state.client || !state.connected) return;
+  if (!state.client || !state.connected) {
+    state.lastError = t("config.error.notConnected");
+    return;
+  }
   state.configSaving = true;
   state.lastError = null;
   try {

@@ -146,6 +146,7 @@ export type ChannelsProps = {
   configUiHints: ConfigUiHints;
   configSaving: boolean;
   configFormDirty: boolean;
+  configLastError: string | null;
   nostrProfileFormState: NostrProfileFormState | null;
   nostrProfileAccountId: string | null;
   // Channel-to-agent/project route binding

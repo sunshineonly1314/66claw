@@ -2446,6 +2446,7 @@ export const en = {
 
   // Config errors
   "config.error.hashMissing": "Config hash missing; reload and retry.",
+  "config.error.notConnected": "Not connected to gateway; refresh and retry.",
 
   // Exec approvals errors
   "execApprovals.error.selectNode": "Select a node before loading exec approvals.",

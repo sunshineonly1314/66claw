@@ -751,6 +751,7 @@ export function renderApp(state: AppViewState) {
               configUiHints: state.configUiHints,
               configSaving: state.configSaving,
               configFormDirty: state.configFormDirty,
+              configLastError: state.lastError,
               nostrProfileFormState: state.nostrProfileFormState,
               nostrProfileAccountId: state.nostrProfileAccountId,
               routeSummary: state.channelRouteSummary,

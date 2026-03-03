@@ -310,6 +310,9 @@ export function renderChannelWizard(props: ChannelsProps) {
         </div>
 
         <!-- Footer -->
+        ${props.configLastError
+          ? html`<div class="ch-wizard__error">${props.configLastError}</div>`
+          : nothing}
         <div class="ch-wizard__footer">
           <button class="btn" @click=${props.onWizardClose}>
             ${t("common.cancel")}

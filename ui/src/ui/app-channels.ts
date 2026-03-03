@@ -25,9 +25,23 @@ export async function handleWhatsAppLogout(host: ClawdbotApp) {
 }
 
 export async function handleChannelConfigSave(host: ClawdbotApp) {
-  await saveConfig(host);
-  await loadConfig(host);
-  await loadChannels(host, true);
+  try {
+    await saveConfig(host);
+    if (host.lastError) {
+      host.requestUpdate();
+      return;
+    }
+    await loadConfig(host);
+    await loadChannels(host, true);
+
+    // Close wizard on successful save and probe
+    host.channelsWizardOpen = false;
+    host.channelsWizardAccountId = null;
+  } catch (err) {
+    host.lastError = String(err);
+  } finally {
+    host.requestUpdate();
+  }
 }
 
 export async function handleChannelConfigReload(host: ClawdbotApp) {

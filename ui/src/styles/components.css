@@ -6885,6 +6885,14 @@
   padding: 0 16px 16px;
 }
 
+.ch-wizard__error {
+  padding: 8px 24px;
+  color: var(--danger, #e53e3e);
+  font-size: 13px;
+  background: var(--bg-danger, rgba(229, 62, 62, 0.08));
+  border-top: 1px solid var(--border);
+}
+
 .ch-wizard__footer {
   display: flex;
   align-items: center;

@@ -2484,6 +2484,7 @@ export const zhCN: Record<keyof typeof en, string> = {
 
   // 配置错误
   "config.error.hashMissing": "配置哈希缺失，请重新加载后重试",
+  "config.error.notConnected": "未连接到服务，请刷新页面后重试",
 
   // 执行审批错误
   "execApprovals.error.selectNode": "请先选择一个节点再加载执行审批",
