@@ -179,23 +179,37 @@ function pushActivityEvent(projectId: string, event: ActivityEvent): void {
   if (buf.length > maxSize) {
     buf.splice(0, buf.length - maxSize);
   }
-  // Debounced persist — write at most once every 2 seconds per project
+  // Debounced persist — write at most once every 2 seconds per project.
+  // Snapshot the array before the async save to prevent concurrent mutations
+  // from corrupting the in-flight write (the live buffer may receive new events
+  // while saveActivity is awaiting disk I/O).
   if (!activitySaveTimers.has(projectId)) {
     activitySaveTimers.set(
       projectId,
       setTimeout(() => {
         activitySaveTimers.delete(projectId);
         const current = activityBuffers.get(projectId);
-        if (current) {
-          saveActivity(projectId, current).catch(() => {/* best-effort */});
+        if (current && current.length > 0) {
+          const snapshot = [...current];
+          saveActivity(projectId, snapshot).catch((err) => {
+            console.warn(
+              `[agent-team] Failed to persist activity for project ${projectId}: ${String(err)}`,
+            );
+          });
         }
       }, 2000),
     );
   }
 }
 
-/** Pending routing decisions awaiting agent_end completion. Key = agentId (most recent per agent). */
-const pendingRouteEvents = new Map<string, { projectId: string; event: Omit<ActivityEvent, "durationMs" | "success" | "error" | "replySummary">; startTime: number }>();
+/**
+ * Pending routing decisions awaiting agent_end completion.
+ * Key = `${agentId}:${routeId}` — composite to support concurrent routes to the same agent.
+ * Value includes agentId for O(1) lookup in agent_end via agentId prefix scan.
+ */
+const pendingRouteEvents = new Map<string, { agentId: string; projectId: string; event: Omit<ActivityEvent, "durationMs" | "success" | "error" | "replySummary">; startTime: number }>();
+/** 5-minute TTL for orphaned pending route events (agent crashed before agent_end fired). */
+const PENDING_ROUTE_EVENT_TTL_MS = 5 * 60_000;
 
 /**
  * Caches the last user message seen by the supervisor's resolve_agent hook.
@@ -238,11 +252,11 @@ function setLastAgentForPeer(peerId: string, agentId: string): void {
  */
 function clearPeerAgentEntriesForProject(project: Project): void {
   const memberSet = new Set(project.memberIds);
+  const toDelete: string[] = [];
   for (const [peerId, agentId] of lastAgentForPeer) {
-    if (memberSet.has(agentId)) {
-      lastAgentForPeer.delete(peerId);
-    }
+    if (memberSet.has(agentId)) toDelete.push(peerId);
   }
+  for (const peerId of toDelete) lastAgentForPeer.delete(peerId);
 }
 
 function rebuildAgentIndex(): void {
@@ -631,6 +645,10 @@ const plugin: OpenClawCNPluginDefinition = {
 
         // Record routing decision for the activity feed.
         // Store as pending — agent_end will finalize with duration/success.
+        // Use composite key `${agentId}:${routeId}` so concurrent routes to the
+        // same agent don't overwrite each other (e.g. parallel tasks in federation).
+        const routeId = Math.random().toString(36).slice(2, 10);
+        const pendingKey = `${finalResult.agentId}:${routeId}`;
         const routeEvent = {
           id: nextActivityId(),
           timestamp: Date.now(),
@@ -640,7 +658,8 @@ const plugin: OpenClawCNPluginDefinition = {
           confidence: finalResult.confidence,
           matchedPattern: finalResult.matchedPattern,
         };
-        pendingRouteEvents.set(finalResult.agentId, {
+        pendingRouteEvents.set(pendingKey, {
+          agentId: finalResult.agentId,
           projectId: project.projectId,
           event: routeEvent,
           startTime: Date.now(),
@@ -795,8 +814,19 @@ const plugin: OpenClawCNPluginDefinition = {
       // NOTE: PluginHookAgentContext does NOT include peerId.
       // Peer→agent mapping is maintained by resolve_agent hook.
 
-      // Finalize pending activity event from resolve_agent
-      const pending = pendingRouteEvents.get(ctx.agentId);
+      // Finalize pending activity event from resolve_agent.
+      // Scan by agentId prefix to support concurrent routes (composite key: agentId:routeId).
+      // Pick the oldest pending entry (FIFO) for accurate duration tracking.
+      let pendingKey: string | undefined;
+      let pending: (typeof pendingRouteEvents extends Map<string, infer V> ? V : never) | undefined;
+      let oldestStart = Infinity;
+      for (const [k, v] of pendingRouteEvents) {
+        if (v.agentId === ctx.agentId && v.startTime < oldestStart) {
+          oldestStart = v.startTime;
+          pendingKey = k;
+          pending = v;
+        }
+      }
       const isSuccess = event.success ?? true;
       const outcome: ActivityEvent["outcome"] = isSuccess
         ? "success"
@@ -805,8 +835,8 @@ const plugin: OpenClawCNPluginDefinition = {
           ? "timeout"
           : "failure";
 
-      if (pending) {
-        pendingRouteEvents.delete(ctx.agentId);
+      if (pending && pendingKey) {
+        pendingRouteEvents.delete(pendingKey);
         const finalEvent: ActivityEvent = {
           ...pending.event,
           durationMs: Date.now() - pending.startTime,
@@ -979,14 +1009,9 @@ const plugin: OpenClawCNPluginDefinition = {
         // where the fire-and-forget init in register() hasn't completed yet).
         await initProjectStateDir(stateDir);
 
-        // Initialize session affinity persistence and restore from disk
+        // Initialize session affinity persistence (defer restore until after
+        // projects are loaded so we can filter out ghost affinities).
         initAffinityPersistence(stateDir);
-        const restoredAffinities = await restoreAffinitiesFromDisk();
-        if (restoredAffinities > 0) {
-          logger.info(
-            `Restored ${restoredAffinities} session affinity record(s) from disk.`,
-          );
-        }
 
         const projects = await loadAllProjects();
         for (const p of projects) {
@@ -1016,6 +1041,18 @@ const plugin: OpenClawCNPluginDefinition = {
           }
         }
         rebuildAgentIndex();
+
+        // Restore session affinities after projects are known so we can
+        // filter out ghost entries (agents that no longer exist).
+        const validAgentIds = new Set<string>();
+        for (const p of projects) {
+          for (const id of p.memberIds) validAgentIds.add(id);
+        }
+        const restoredAffinities = await restoreAffinitiesFromDisk(validAgentIds);
+        if (restoredAffinities > 0) {
+          logger.info(`Restored ${restoredAffinities} session affinity record(s) from disk.`);
+        }
+
         logger.info(
           `Loaded ${projects.length} project(s) from disk.`,
         );
@@ -1612,9 +1649,11 @@ const plugin: OpenClawCNPluginDefinition = {
             activitySaveTimers.delete(projectId);
           }
           // Clean pendingRouteEvents for agents belonging to this project
+          const pendingKeysToDelete: string[] = [];
           for (const [key, val] of pendingRouteEvents) {
-            if (val.projectId === projectId) pendingRouteEvents.delete(key);
+            if (val.projectId === projectId) pendingKeysToDelete.push(key);
           }
+          for (const key of pendingKeysToDelete) pendingRouteEvents.delete(key);
           // Clean cached supervisor message
           lastSupervisorMessage.delete(project.supervisorId);
           clearPeerAgentEntriesForProject(project);
@@ -2350,6 +2389,19 @@ const plugin: OpenClawCNPluginDefinition = {
           const purged = purgeExpiredAffinities(Math.max(minTimeout, 1));
           if (purged > 0) {
             logger.info?.(`[agent-team] Purged ${purged} expired affinity record(s).`);
+          }
+
+          // Purge orphaned pendingRouteEvents where agent_end never fired (crash/timeout).
+          const now = Date.now();
+          const orphanKeys: string[] = [];
+          for (const [k, v] of pendingRouteEvents) {
+            if (now - v.startTime > PENDING_ROUTE_EVENT_TTL_MS) orphanKeys.push(k);
+          }
+          if (orphanKeys.length > 0) {
+            for (const k of orphanKeys) pendingRouteEvents.delete(k);
+            logger.warn?.(
+              `[agent-team] Purged ${orphanKeys.length} orphaned pending route event(s) (agent_end never fired).`,
+            );
           }
         }, INTERVAL_MS);
       },

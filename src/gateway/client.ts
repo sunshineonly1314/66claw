@@ -88,6 +88,7 @@ export class GatewayClient {
   private lastTick: number | null = null;
   private tickIntervalMs = 30_000;
   private tickTimer: NodeJS.Timeout | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: GatewayClientOptions) {
     this.opts = {
@@ -167,6 +168,14 @@ export class GatewayClient {
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
     }
     this.ws?.close();
     this.ws = null;
@@ -352,9 +361,15 @@ export class GatewayClient {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
     }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
     const delay = this.backoffMs;
     this.backoffMs = Math.min(this.backoffMs * 2, 30_000);
-    setTimeout(() => this.start(), delay).unref();
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.start();
+    }, delay).unref();
   }
 
   private flushPendingErrors(err: Error) {
@@ -431,6 +446,9 @@ export class GatewayClient {
       );
     }
     const expectFinal = opts?.expectFinal === true;
+    // Snapshot ws reference to avoid TOCTOU: ws could become null between the
+    // readyState check above and the send() call below (concurrent close event).
+    const ws = this.ws;
     const p = new Promise<T>((resolve, reject) => {
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
@@ -438,7 +456,14 @@ export class GatewayClient {
         expectFinal,
       });
     });
-    this.ws.send(JSON.stringify(frame));
+    try {
+      ws.send(JSON.stringify(frame));
+    } catch (err) {
+      // send() threw (e.g. socket closing, backpressure exceeded) — clean up
+      // the pending entry so the promise doesn't hang indefinitely.
+      this.pending.delete(id);
+      throw err instanceof Error ? err : new Error(String(err));
+    }
     return p;
   }
 }

@@ -98,17 +98,27 @@ async function persistToDisk(): Promise<void> {
   }
 }
 
+/** Maximum age of a persisted affinity entry to be considered valid on restore (24 hours). */
+const AFFINITY_RESTORE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Restore affinities from disk on startup.
  * Silently returns if file doesn't exist or is corrupted.
+ *
+ * @param validAgentIds - Optional set of currently-known agent IDs. Entries
+ *   referencing agents that no longer exist are discarded to prevent routing
+ *   to deleted/renamed agents (ghost affinities).
  */
-export async function restoreAffinitiesFromDisk(): Promise<number> {
+export async function restoreAffinitiesFromDisk(
+  validAgentIds?: Set<string>,
+): Promise<number> {
   if (!persistDir) return 0;
   try {
     const raw = await fs.readFile(affinityFilePath(), "utf-8");
     const entries = JSON.parse(raw) as Array<[string, SessionAffinityRecord]>;
     if (!Array.isArray(entries)) return 0;
     let restored = 0;
+    const now = Date.now();
     for (const [key, record] of entries) {
       if (
         typeof key === "string" &&
@@ -117,6 +127,13 @@ export async function restoreAffinitiesFromDisk(): Promise<number> {
         typeof record.agentId === "string" &&
         typeof record.lastActiveAt === "string"
       ) {
+        // Discard entries for agents that no longer exist (ghost affinities).
+        if (validAgentIds && !validAgentIds.has(record.agentId)) continue;
+        // Discard entries older than 24 hours — stale routing data.
+        const lastActive = new Date(record.lastActiveAt).getTime();
+        if (!Number.isFinite(lastActive) || now - lastActive > AFFINITY_RESTORE_MAX_AGE_MS) {
+          continue;
+        }
         store.set(key, record);
         restored++;
       }

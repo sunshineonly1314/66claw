@@ -557,27 +557,43 @@ export async function createProjectFromPlan(
     }
   }
 
-  // Single config.get + config.patch
-  try {
-    const snapshot = (await callGateway("config.get", {})) as
-      | Record<string, unknown>
-      | undefined;
-    const baseHash = (snapshot as Record<string, unknown> | undefined)
-      ?.hash as string | undefined;
+  // Single config.get + config.patch — retry up to 3 times on transient failures
+  // (baseHash conflicts are common under concurrent writes; re-fetch hash each attempt).
+  const CONFIG_PATCH_MAX_ATTEMPTS = 3;
+  let configPatchErr: string | null = null;
+  for (let attempt = 1; attempt <= CONFIG_PATCH_MAX_ATTEMPTS; attempt++) {
+    try {
+      const snapshot = (await callGateway("config.get", {})) as
+        | Record<string, unknown>
+        | undefined;
+      const baseHash = (snapshot as Record<string, unknown> | undefined)
+        ?.hash as string | undefined;
 
-    await callGateway("config.patch", {
-      raw: JSON.stringify({
-        tools: {
-          agentToAgent: {
-            enabled: true,
-            allow: [`${planId}--*`],
+      await callGateway("config.patch", {
+        raw: JSON.stringify({
+          tools: {
+            agentToAgent: {
+              enabled: true,
+              allow: [`${planId}--*`],
+            },
           },
-        },
-        agents: { list: allAgentEntries },
-      }),
-      ...(baseHash ? { baseHash } : {}),
-    });
+          agents: { list: allAgentEntries },
+        }),
+        ...(baseHash ? { baseHash } : {}),
+      });
 
+      configPatchErr = null;
+      break; // success
+    } catch (err) {
+      configPatchErr = err instanceof Error ? err.message : String(err);
+      if (attempt < CONFIG_PATCH_MAX_ATTEMPTS) {
+        // Exponential back-off: 500ms, 1000ms
+        await new Promise<void>((r) => setTimeout(r, 500 * attempt));
+      }
+    }
+  }
+
+  if (!configPatchErr) {
     // Record success
     supervisorReport?.steps.push({
       step: "config",
@@ -600,30 +616,34 @@ export async function createProjectFromPlan(
         detail: `A2A communication enabled (allow: ${planId}--*)`,
       });
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[agent-team] Failed to apply unified config patch: ${msg}`);
+  } else {
+    // All retries exhausted — this is a hard failure: agents cannot communicate
+    // without tool policies. Surface as "fail" (not "warn") so callers can act.
+    const msg = configPatchErr;
+    console.error(`[agent-team] Failed to apply unified config patch after ${CONFIG_PATCH_MAX_ATTEMPTS} attempts: ${msg}`);
     supervisorReport?.steps.push({
       step: "config",
-      status: "warn",
-      detail: `Config patch failed: ${msg}`,
+      status: "fail",
+      detail: `Config patch failed after ${CONFIG_PATCH_MAX_ATTEMPTS} attempts: ${msg}`,
     });
     for (const entry of allAgentEntries) {
       if (entry.id === supervisorId) continue;
       const report = agentReports.find((r) => r.agentId === entry.id);
       report?.steps.push({
         step: "tool-policy",
-        status: "warn",
+        status: "fail",
         detail: `Tool policy write failed: ${msg}`,
       });
     }
     for (const report of agentReports) {
       report.steps.push({
         step: "a2a",
-        status: "warn",
-        detail: `A2A auto-config failed: ${msg}`,
+        status: "fail",
+        detail: `A2A auto-config failed — agents cannot communicate: ${msg}`,
       });
     }
+    // Propagate as error so createFromPlan can mark project as error state.
+    throw new Error(`Config patch failed: ${msg}`);
   }
 
   // ── Step 6: Record keyword population status ──

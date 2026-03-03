@@ -220,11 +220,19 @@ export async function rollbackConfig(
 
   // Perform the rollback atomically
   try {
-    // First, save current config as a new backup (so the current state is recoverable)
+    // First, save current config as a recoverable pre-rollback backup.
+    // Use a timestamped name so repeated rollbacks don't overwrite each other.
     if (fs.existsSync(configPath)) {
-      const currentBackup = `${configPath}.pre-rollback.bak`;
-      await fs.promises.copyFile(configPath, currentBackup);
-      log.info(`saved current config to ${currentBackup} before rollback`);
+      const ts = Date.now();
+      const currentBackup = `${configPath}.pre-rollback.${ts}.bak`;
+      try {
+        await fs.promises.copyFile(configPath, currentBackup);
+        log.info(`saved current config to ${currentBackup} before rollback`);
+      } catch (backupErr) {
+        // Non-fatal: log the failure but still proceed with rollback.
+        // The rotated .bak files from the normal backup system remain available.
+        log.warn(`failed to save pre-rollback backup (continuing): ${String(backupErr)}`);
+      }
     }
 
     // Read the backup raw content and write it to the config path
@@ -242,13 +250,28 @@ export async function rollbackConfig(
       await fs.promises.rename(tmpFile, configPath);
     } catch (err) {
       const code = (err as { code?: string }).code;
-      // Windows fallback
+      // Windows does not allow rename over an existing file in some cases.
+      // Use a second temp→rename hop to stay atomic: write to a fresh temp,
+      // rename the fresh temp to configPath (replacing it), then clean up.
       if (code === "EPERM" || code === "EEXIST") {
-        await fs.promises.copyFile(tmpFile, configPath);
-        await fs.promises.chmod(configPath, 0o600).catch(() => {});
-        await fs.promises.unlink(tmpFile).catch(() => {});
+        const tmpFile2 = `${tmpFile}.2`;
+        try {
+          await fs.promises.copyFile(tmpFile, tmpFile2);
+          await fs.promises.chmod(tmpFile2, 0o600).catch(() => {});
+          await fs.promises.rename(tmpFile2, configPath);
+        } catch (fallbackErr) {
+          // If even this fails, clean up both temp files and surface the error.
+          await fs.promises.unlink(tmpFile2).catch(() => {});
+          await fs.promises.unlink(tmpFile).catch(() => {});
+          throw fallbackErr;
+        }
+        await fs.promises.unlink(tmpFile).catch((e) => {
+          log.warn(`failed to clean up rollback tmp file ${tmpFile}: ${String(e)}`);
+        });
       } else {
-        await fs.promises.unlink(tmpFile).catch(() => {});
+        await fs.promises.unlink(tmpFile).catch((e) => {
+          log.warn(`failed to clean up rollback tmp file ${tmpFile}: ${String(e)}`);
+        });
         throw err;
       }
     }

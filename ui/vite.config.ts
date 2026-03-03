@@ -27,6 +27,9 @@ export default defineConfig(({ command }) => {
       // Source maps disabled in production builds to prevent reverse engineering.
       // Only enable in dev mode for debugging.
       sourcemap: command === "serve",
+      commonjsOptions: {
+        include: [/extensions\/orchestrator\//, /highlight\.js/],
+      },
     },
     server: {
       host: true,
