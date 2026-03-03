@@ -2,6 +2,6 @@
 // This constant is compiled into bytecode at build time.
 // It stores the SHA-256 of integrity-hashes.json so that the file
 // cannot be tampered with even if both disk files are replaced together.
-// Run `pnpm integrity:gen` after each build to update this value.
-// Generated: placeholder — run pnpm integrity:gen
-export const INTEGRITY_ROOT_HASH = "";
+// Generated: 2026-03-03T07:26:19.763Z
+export const INTEGRITY_ROOT_HASH =
+  "3854ca0e7f1ddc4e3ec50f1158bbb2cce312d2d4ab26644dc088dc5c96311d1d";

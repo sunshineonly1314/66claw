@@ -1,0 +1,23 @@
+{
+  "_comment": "OEM 品牌配置模板。复制为 config/oem/<OEM_ID>.json 并填写，打包时 OEM_ID=<文件名> bash scripts/desktop/build.sh",
+  "oemId": "your-oem-id",
+  "productName": "YourProductName",
+  "identifier": "com.yourcompany.yourproduct",
+  "licenseKeyPrefix": "OEM-YOURID-",
+  "apiBaseUrl": "https://api.openclawcn.com",
+  "supportUrl": "https://your-support-url.com",
+  "windowTitle": "YourProductName AI",
+  "installerLanguages": ["SimpChinese"],
+  "tauri": {
+    "bundle": {
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.png",
+        "icons/icon.ico",
+        "icons/icon.icns"
+      ]
+    }
+  }
+}

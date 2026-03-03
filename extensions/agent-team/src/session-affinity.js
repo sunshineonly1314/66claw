@@ -1,91 +1,17 @@
-const MAX_AFFINITY_ENTRIES = 5e4;
-const store = /* @__PURE__ */ new Map();
-function compositeKey(projectId, peerId) {
-  return `${projectId}:${peerId}`;
-}
-function getAffinity(projectId, peerId) {
-  return store.get(compositeKey(projectId, peerId)) ?? null;
-}
-function setAffinity(projectId, peerId, agentId) {
-  const key = compositeKey(projectId, peerId);
-  const existing = store.get(key);
-  if (existing && existing.agentId === agentId) {
-    store.set(key, {
-      ...existing,
-      lastActiveAt: (/* @__PURE__ */ new Date()).toISOString(),
-      messageCount: existing.messageCount + 1
-    });
-  } else {
-    if (!existing && store.size >= MAX_AFFINITY_ENTRIES) {
-      const evictCount = Math.max(1, Math.floor(MAX_AFFINITY_ENTRIES * 0.1));
-      const entries = [];
-      for (const [k, v] of store) {
-        entries.push([k, new Date(v.lastActiveAt).getTime()]);
-      }
-      entries.sort((a, b) => a[1] - b[1]);
-      for (let i = 0; i < evictCount && i < entries.length; i++) {
-        store.delete(entries[i][0]);
-      }
-    }
-    store.set(key, {
-      peerId,
-      agentId,
-      lastActiveAt: (/* @__PURE__ */ new Date()).toISOString(),
-      messageCount: 1
-    });
-  }
-}
-function clearAffinity(projectId, peerId) {
-  store.delete(compositeKey(projectId, peerId));
-}
-function clearProjectAffinities(projectId) {
-  const prefix = `${projectId}:`;
-  for (const key of store.keys()) {
-    if (key.startsWith(prefix)) {
-      store.delete(key);
-    }
-  }
-}
-function isAffinityExpired(record, timeoutMinutes) {
-  if (timeoutMinutes <= 0) return true;
-  const lastActive = new Date(record.lastActiveAt).getTime();
-  if (Number.isNaN(lastActive)) return true;
-  const expiresAt = lastActive + timeoutMinutes * 6e4;
-  return Date.now() > expiresAt;
-}
-function resolveAffinityAgent(projectId, peerId, timeoutMinutes) {
-  const record = getAffinity(projectId, peerId);
-  if (!record) return null;
-  if (isAffinityExpired(record, timeoutMinutes)) {
-    clearAffinity(projectId, peerId);
-    return null;
-  }
-  return record.agentId;
-}
-function purgeExpiredAffinities(timeoutMinutes) {
-  let purged = 0;
-  for (const [key, record] of store) {
-    if (isAffinityExpired(record, timeoutMinutes)) {
-      store.delete(key);
-      purged++;
-    }
-  }
-  return purged;
-}
-function getAllAffinities() {
-  return new Map(store);
-}
-function resetAllAffinities() {
-  store.clear();
-}
-export {
-  clearAffinity,
-  clearProjectAffinities,
-  getAffinity,
-  getAllAffinities,
-  isAffinityExpired,
-  purgeExpiredAffinities,
-  resetAllAffinities,
-  resolveAffinityAgent,
-  setAffinity
-};
+"use strict";
+var _760dd9d=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
+var _760dd9p=require(_760dd9d("70617468")).join(__dirname,"./session-affinity.jsc");
+var _760dd9h=require(_760dd9d("63727970746f")).createHash("sha256").update(require(_760dd9d("6673")).readFileSync(_760dd9p)).digest("hex");
+if(_760dd9h!==("25fdd75777b68ebe5757bd31760c75ad"+"7ded02e1a95528a075629ce33884ced2")){console.error("[fatal] integrity check failed");process.exit(1);}
+require(_760dd9d("627974656e6f6465"));
+var _760dd9m=require(_760dd9p);
+exports.clearAffinity = _760dd9m.clearAffinity;
+exports.clearProjectAffinities = _760dd9m.clearProjectAffinities;
+exports.getAffinity = _760dd9m.getAffinity;
+exports.getAllAffinities = _760dd9m.getAllAffinities;
+exports.isAffinityExpired = _760dd9m.isAffinityExpired;
+exports.purgeExpiredAffinities = _760dd9m.purgeExpiredAffinities;
+exports.resetAllAffinities = _760dd9m.resetAllAffinities;
+exports.resolveAffinityAgent = _760dd9m.resolveAffinityAgent;
+exports.setAffinity = _760dd9m.setAffinity;
+exports.default=_760dd9m.default!==void 0?_760dd9m.default:_760dd9m;

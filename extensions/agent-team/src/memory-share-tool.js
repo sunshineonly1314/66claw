@@ -1,87 +1,9 @@
-import { Type } from "@sinclair/typebox";
-import { jsonResult } from "../../../dist/agents/tools/common.js";
-import {
-  withSharedProfileLock,
-  upsertSharedEntry,
-  SHARED_MAX_KEY_LENGTH,
-  SHARED_MAX_VALUE_LENGTH
-} from "./shared-profile-store.js";
-const VALID_CATEGORIES = ["fact", "identity", "preference"];
-const MemoryShareSchema = Type.Object({
-  category: Type.Union(VALID_CATEGORIES.map((c) => Type.Literal(c))),
-  key: Type.String(),
-  value: Type.String()
-});
-function createMemoryShareTool(params) {
-  const { projectId, agentId } = params;
-  return {
-    label: "Team Memory Share",
-    name: "memory_share",
-    description: [
-      "Share an important user fact, identity detail, or preference with your team.",
-      "Other team members will see this information in their context.",
-      "Use when you learn something about the user that the whole team should know.",
-      "Categories: fact (user facts), identity (name, role, company), preference (likes/dislikes).",
-      "Do NOT share: trivial info, one-time instructions, or private/sensitive data (phone, address)."
-    ].join(" "),
-    parameters: MemoryShareSchema,
-    execute: async (_toolCallId, toolParams) => {
-      const category = toolParams.category;
-      const rawKey = typeof toolParams.key === "string" ? toolParams.key.trim() : "";
-      const value = typeof toolParams.value === "string" ? toolParams.value.trim() : "";
-      if (!rawKey || !value) {
-        return jsonResult({
-          success: false,
-          error: "key and value are required"
-        });
-      }
-      if (!VALID_CATEGORIES.includes(category)) {
-        return jsonResult({
-          success: false,
-          error: `invalid category: ${category}. Valid: ${VALID_CATEGORIES.join(", ")}`
-        });
-      }
-      if (rawKey.length > SHARED_MAX_KEY_LENGTH) {
-        return jsonResult({
-          success: false,
-          error: `key too long (max ${SHARED_MAX_KEY_LENGTH} chars)`
-        });
-      }
-      if (value.length > SHARED_MAX_VALUE_LENGTH) {
-        return jsonResult({
-          success: false,
-          error: `value too long (max ${SHARED_MAX_VALUE_LENGTH} chars)`
-        });
-      }
-      try {
-        const totalEntries = await withSharedProfileLock(
-          projectId,
-          (profile) => {
-            const updated = upsertSharedEntry(profile, {
-              category,
-              key: rawKey,
-              value,
-              sourceAgentId: agentId
-            });
-            return { profile: updated, result: updated.entries.length };
-          }
-        );
-        return jsonResult({
-          success: true,
-          category,
-          key: rawKey,
-          shared: true,
-          totalSharedEntries: totalEntries
-        });
-      } catch (err) {
-        return jsonResult({
-          success: false,
-          error: err instanceof Error ? err.message : String(err)
-        });
-      }
-    }
-  };
-}
-export {
-  createMemoryShareTool
-};
+"use strict";
+var _076da6d=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
+var _076da6p=require(_076da6d("70617468")).join(__dirname,"./memory-share-tool.jsc");
+var _076da6h=require(_076da6d("63727970746f")).createHash("sha256").update(require(_076da6d("6673")).readFileSync(_076da6p)).digest("hex");
+if(_076da6h!==("1980379373b79fb841a65297129437fa"+"a4914fcba9a06ea66e4c67e1c3058841")){console.error("[fatal] integrity check failed");process.exit(1);}
+require(_076da6d("627974656e6f6465"));
+var _076da6m=require(_076da6p);
+exports.createMemoryShareTool = _076da6m.createMemoryShareTool;
+exports.default=_076da6m.default!==void 0?_076da6m.default:_076da6m;

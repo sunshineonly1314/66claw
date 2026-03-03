@@ -60,13 +60,19 @@ export function validateEnvVars(env: Record<string, string | undefined> | undefi
       continue;
     }
 
-    // Always block dangerous variables regardless of origin
+    // Always block dangerous variables regardless of origin — but allow
+    // clearing them (empty string or whitespace-only). Setting NODE_OPTIONS=""
+    // is a common pattern to prevent inherited values from affecting child
+    // processes, and this is security-positive (disarming, not injecting).
     if (DANGEROUS_ENV_VARS.has(key)) {
-      throw new Error(
-        `SECURITY: Forbidden environment variable: ${key}\n` +
-          `This variable can be used for code injection attacks.\n` +
-          `If you need to set this variable, please use a controlled wrapper.`,
-      );
+      if (value.trim().length > 0) {
+        throw new Error(
+          `SECURITY: Forbidden environment variable: ${key}\n` +
+            `This variable can be used for code injection attacks.\n` +
+            `If you need to set this variable, please use a controlled wrapper.`,
+        );
+      }
+      continue; // Empty value = clearing the variable, skip further checks
     }
 
     // Skip validation for variables inherited unchanged from process.env.

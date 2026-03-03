@@ -11,6 +11,8 @@ import {
   isTransientNetworkError,
   isApiResponseError,
 } from "../infra/unhandled-rejections.js";
+import { recordUpgradeCrash } from "../infra/upgrade-watchdog.js";
+import { VERSION } from "../version.js";
 import { enableConsoleCapture } from "../logging.js";
 import { getCommandPath, getPrimaryCommand, hasHelpOrVersion } from "./argv.js";
 import { tryRouteCli } from "./route.js";
@@ -100,6 +102,12 @@ export async function runCli(argv: string[] = process.argv) {
       return;
     }
     console.error("[openclawcn] Uncaught exception:", formatUncaughtError(error));
+    // Upgrade watchdog: record crash so doctor can detect post-upgrade instability
+    try {
+      recordUpgradeCrash(VERSION);
+    } catch {
+      /* best-effort, must not block exit */
+    }
     process.exit(1);
   });
 

@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "description": "Project-level agent team management plugin for OpenClawCN",
-  "type": "module",
-  "main": "./index.ts"
+  "type": "commonjs",
+  "main": "./index.js"
 }

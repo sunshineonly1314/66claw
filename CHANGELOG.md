@@ -2,7 +2,7 @@
 
 > 此文件由 `pnpm release:changelog` 从 versionrecord.md 自动生成。
 
-## 1.1.23 (未发布)
+## 1.6.1 (未发布)
 
 ### 新功能
 - 图片生成工具 — 新增 image-gen-tool，支持 DALL-E 3 / 通义万相(DashScope) / SiliconFlow 三个 provider，自动识别 13 种图片生成模型

@@ -764,9 +764,11 @@ async function installPythonDeps(
         [pipPath, "install", "torch", "torchaudio", "--index-url", mirror.url, ...proxyArgs],
         {
           timeoutMs: 3_600_000, // 60 min for large torch wheel (~2.5GB) on slow CN networks
+          // Don't spread process.env — it triggers env validation on Windows
+          // where variables like CommonProgramFiles(x86) may fail security checks.
+          // Omitting full env inherits process.env; only override specific vars.
           env: {
-            ...process.env,
-            NODE_OPTIONS: undefined,
+            NODE_OPTIONS: "",
             HF_ENDPOINT: "https://hf-mirror.com",
             HF_HUB_OFFLINE: "1",
           },
@@ -838,9 +840,11 @@ async function installPythonDeps(
         ],
         {
           timeoutMs: 600_000, // 10 min
+          // Don't spread process.env — it triggers env validation on Windows
+          // where variables like CommonProgramFiles(x86) may fail security checks.
+          // Omitting full env inherits process.env; only override specific vars.
           env: {
-            ...process.env,
-            NODE_OPTIONS: undefined,
+            NODE_OPTIONS: "",
             HF_ENDPOINT: "https://hf-mirror.com",
             HF_HUB_OFFLINE: "1",
           },

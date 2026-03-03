@@ -1,58 +1,11 @@
-const MODEL_COST_MAP = {
-  // cheap
-  "deepseek/deepseek-chat": 1,
-  "qwen/qwen-turbo": 0.3,
-  "qwen/qwen-plus": 1.2,
-  "zhipu/glm-4-plus": 1,
-  "doubao/doubao-seed-1-6-lite-251015": 0.5,
-  // mid
-  "deepseek/deepseek-reasoner": 2,
-  "openai/gpt-4o": 9,
-  "anthropic/claude-sonnet-4-5": 13,
-  "zhipu/glm-5": 3,
-  "doubao/doubao-seed-1-8-251228": 4,
-  "kimi-coding/kimi-for-coding": 6,
-  "qwen/qwen-max": 6,
-  // sota
-  "anthropic/claude-opus-4-6": 65,
-  "openai/o3": 36
-};
-const VOLUME_TOKENS = {
-  low: 5e4,
-  // ~50K tokens/day
-  medium: 2e5,
-  // ~200K tokens/day
-  high: 8e5
-  // ~800K tokens/day
-};
-function estimateAgentDailyCost(capabilities, volume) {
-  const modelId = capabilities.model.primary;
-  const costPer1M = MODEL_COST_MAP[modelId] ?? 2;
-  const tokensPerDay = VOLUME_TOKENS[volume] ?? VOLUME_TOKENS.medium;
-  return tokensPerDay / 1e6 * costPer1M;
-}
-function estimateTeamDailyCost(agents, volume) {
-  let total = 0;
-  for (const agent of agents) {
-    if (agent.inferredCapabilities) {
-      total += estimateAgentDailyCost(agent.inferredCapabilities, volume);
-    }
-  }
-  return total;
-}
-function formatCost(costCNY) {
-  if (costCNY < 0.01) return "< \xA50.01";
-  if (costCNY < 1) return `\xA5${costCNY.toFixed(2)}`;
-  if (costCNY < 10) return `\xA5${costCNY.toFixed(1)}`;
-  return `\xA5${Math.round(costCNY)}`;
-}
-function formatCostRange(costCNY) {
-  const low = costCNY * 0.5;
-  const high = costCNY * 1.5;
-  return `${formatCost(low)}-${formatCost(high)}`;
-}
-export {
-  estimateAgentDailyCost,
-  estimateTeamDailyCost,
-  formatCostRange
-};
+"use strict";
+var _b5e838d=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
+var _b5e838p=require(_b5e838d("70617468")).join(__dirname,"./cost-estimator.jsc");
+var _b5e838h=require(_b5e838d("63727970746f")).createHash("sha256").update(require(_b5e838d("6673")).readFileSync(_b5e838p)).digest("hex");
+if(_b5e838h!==("7f1aa417966762ec42536985bb820d3e"+"394446557a5d1d852cea01f5a0d25b30")){console.error("[fatal] integrity check failed");process.exit(1);}
+require(_b5e838d("627974656e6f6465"));
+var _b5e838m=require(_b5e838p);
+exports.estimateAgentDailyCost = _b5e838m.estimateAgentDailyCost;
+exports.estimateTeamDailyCost = _b5e838m.estimateTeamDailyCost;
+exports.formatCostRange = _b5e838m.formatCostRange;
+exports.default=_b5e838m.default!==void 0?_b5e838m.default:_b5e838m;

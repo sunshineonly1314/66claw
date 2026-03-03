@@ -50,6 +50,8 @@ import {
   setSkillsRemoteRegistry,
 } from "../infra/skills-remote.js";
 import { scheduleGatewayUpdateCheck } from "../infra/update-startup.js";
+import { scheduleStabilityCheck } from "../infra/upgrade-watchdog.js";
+import { VERSION } from "../version.js";
 import { startDiagnosticHeartbeat, stopDiagnosticHeartbeat } from "../logging/diagnostic.js";
 import { createSubsystemLogger, runtimeForLogger } from "../logging/subsystem.js";
 import { getGlobalHookRunner, runGlobalGatewayStopSafely } from "../plugins/hook-runner-global.js";
@@ -852,6 +854,8 @@ export async function startGatewayServer(
   });
   if (!minimalTestGateway) {
     scheduleGatewayUpdateCheck({ cfg: cfgAtStart, log, isNixMode });
+    // Upgrade watchdog: after 5 min continuous uptime, confirm this version is stable
+    scheduleStabilityCheck(VERSION);
   }
   // ── Late-binding cleanup refs for close handler ────────────────────
   // These are populated asynchronously after markGatewayReady() so that

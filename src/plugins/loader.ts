@@ -427,7 +427,26 @@ export function loadOpenClawCNPlugins(options: PluginLoadOptions = {}): PluginRe
     }
 
     if (typeof register !== "function") {
-      logger.error(`[plugins] ${record.id} missing register/activate export`);
+      // Log diagnostic info about what the module actually exported, to help
+      // debug bytecode loading issues (e.g. V8 version mismatch causing empty module)
+      const modType = mod === null ? "null" : typeof mod;
+      const modKeys =
+        mod && typeof mod === "object"
+          ? Object.keys(mod as Record<string, unknown>).join(", ")
+          : "N/A";
+      const defType = definition === undefined ? "undefined" : typeof definition;
+      const defKeys =
+        definition && typeof definition === "object"
+          ? Object.keys(definition as Record<string, unknown>).join(", ")
+          : "N/A";
+      logger.error(
+        `[plugins] ${record.id} missing register/activate export` +
+          ` (module: ${modType} [${modKeys}], definition: ${defType} [${defKeys}])`,
+      );
+      logger.error(
+        `[plugins] plugin export missing register/activate` +
+          ` (plugin=${record.id}, source=${record.source})`,
+      );
       record.status = "error";
       record.error = "plugin export missing register/activate";
       registry.plugins.push(record);

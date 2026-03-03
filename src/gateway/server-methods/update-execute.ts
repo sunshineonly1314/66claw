@@ -32,6 +32,7 @@ import {
   formatDoctorNonInteractiveHint,
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
+import { recordUpgradeStart } from "../../infra/upgrade-watchdog.js";
 import { getDeviceId } from "../../license/device-id.js";
 
 /** 防止并发执行更新（双击/重试竞态会损坏安装） */
@@ -377,6 +378,14 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
       if (result.status === "ok") {
         // 更新成功
         await clearAvailableUpdate(result.toVersion);
+        // Upgrade watchdog: start tracking crash counts for the new version
+        if (result.toVersion) {
+          try {
+            recordUpgradeStart(result.toVersion);
+          } catch {
+            /* watchdog is non-critical */
+          }
+        }
 
         context.broadcast(
           "update.progress",

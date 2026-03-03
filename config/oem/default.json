@@ -1,0 +1,23 @@
+{
+  "_comment": "默认品牌配置（自用版）。OEM 打包时复制此文件并修改字段，传入 OEM_ID=<文件名不含.json>",
+  "oemId": "default",
+  "productName": "ClawdbotCN",
+  "identifier": "com.clawdbot.cn.desktop",
+  "licenseKeyPrefix": "",
+  "apiBaseUrl": "https://api.openclawcn.com",
+  "supportUrl": "",
+  "windowTitle": "ClawdbotCN AI",
+  "installerLanguages": ["SimpChinese"],
+  "tauri": {
+    "bundle": {
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.png",
+        "icons/icon.ico",
+        "icons/icon.icns"
+      ]
+    }
+  }
+}

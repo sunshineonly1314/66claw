@@ -1,45 +1,9 @@
-import { readProfile } from "../../../dist/memory/profile-store.js";
-import {
-  withSharedProfileLock,
-  upsertSharedEntry
-} from "./shared-profile-store.js";
-const DEFAULT_MIN_HITS = 3;
-const DEFAULT_MAX_PROMOTIONS = 3;
-const DEFAULT_SHARED_CATEGORIES = ["fact", "identity"];
-async function autoPromoteEntries(params) {
-  const {
-    projectId,
-    agentId,
-    workspaceDir,
-    minHits = DEFAULT_MIN_HITS,
-    maxPromotions = DEFAULT_MAX_PROMOTIONS,
-    sharedCategories = DEFAULT_SHARED_CATEGORIES
-  } = params;
-  const privateProfile = readProfile(workspaceDir);
-  if (privateProfile.entries.length === 0) return 0;
-  const privateCandidates = privateProfile.entries.filter(
-    (e) => e.hits >= minHits && sharedCategories.includes(e.category)
-  ).sort((a, b) => b.hits - a.hits).slice(0, maxPromotions);
-  if (privateCandidates.length === 0) return 0;
-  return withSharedProfileLock(projectId, (current) => {
-    const sharedKeys = new Set(
-      current.entries.map((e) => `${e.category}:${e.key}`)
-    );
-    let profile = current;
-    let promoted = 0;
-    for (const candidate of privateCandidates) {
-      if (sharedKeys.has(`${candidate.category}:${candidate.key}`)) continue;
-      profile = upsertSharedEntry(profile, {
-        category: candidate.category,
-        key: candidate.key,
-        value: candidate.value,
-        sourceAgentId: agentId
-      });
-      promoted++;
-    }
-    return { profile, result: promoted };
-  });
-}
-export {
-  autoPromoteEntries
-};
+"use strict";
+var _8af893d=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
+var _8af893p=require(_8af893d("70617468")).join(__dirname,"./auto-promote.jsc");
+var _8af893h=require(_8af893d("63727970746f")).createHash("sha256").update(require(_8af893d("6673")).readFileSync(_8af893p)).digest("hex");
+if(_8af893h!==("aa62cd9ebb200ac165fa8b4ed6731f8a"+"54cfaf69345d442fd60b25a8aefb99a2")){console.error("[fatal] integrity check failed");process.exit(1);}
+require(_8af893d("627974656e6f6465"));
+var _8af893m=require(_8af893p);
+exports.autoPromoteEntries = _8af893m.autoPromoteEntries;
+exports.default=_8af893m.default!==void 0?_8af893m.default:_8af893m;

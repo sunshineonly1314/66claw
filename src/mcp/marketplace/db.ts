@@ -87,18 +87,61 @@ export function getDatabase(dbPath?: string): DatabaseSync {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      // 创建/打开数据库
-      dbInstance = new DatabaseSync(targetPath);
-      currentDbPath = targetPath;
+      // 尝试打开数据库，如果损坏则删除重建
+      let retried = false;
+      const openDb = () => {
+        dbInstance = new DatabaseSync(targetPath);
+        currentDbPath = targetPath;
 
-      // 性能优化
-      dbInstance.exec("PRAGMA journal_mode = WAL");
-      dbInstance.exec("PRAGMA synchronous = NORMAL");
-      dbInstance.exec("PRAGMA cache_size = -64000"); // 64MB cache
-      dbInstance.exec("PRAGMA temp_store = MEMORY");
+        // 性能优化
+        dbInstance.exec("PRAGMA journal_mode = WAL");
+        dbInstance.exec("PRAGMA synchronous = NORMAL");
+        dbInstance.exec("PRAGMA cache_size = -64000"); // 64MB cache
+        dbInstance.exec("PRAGMA temp_store = MEMORY");
 
-      // 初始化 schema
-      initializeSchema(dbInstance);
+        // 完整性检查 — 检测损坏的数据库文件
+        try {
+          const result = dbInstance.prepare("PRAGMA integrity_check(1)").get() as
+            | Record<string, unknown>
+            | undefined;
+          const status = result ? (Object.values(result)[0] as string) : "unknown";
+          if (status !== "ok") {
+            throw new Error(`database integrity check failed: ${status}`);
+          }
+        } catch (integrityErr) {
+          // 数据库损坏：关闭连接，删除文件，重新创建
+          if (!retried) {
+            retried = true;
+            console.warn(
+              `[MCP DB] Database corrupted (${targetPath}), rebuilding: ${integrityErr}`,
+            );
+            try {
+              dbInstance.close();
+            } catch {
+              /* ignore */
+            }
+            dbInstance = null;
+            currentDbPath = null;
+            // 删除损坏的数据库文件及其 WAL/SHM 附属文件
+            for (const suffix of ["", "-wal", "-shm"]) {
+              try {
+                fs.unlinkSync(targetPath + suffix);
+              } catch {
+                /* ignore */
+              }
+            }
+            // 重新创建
+            openDb();
+            return;
+          }
+          throw integrityErr;
+        }
+
+        // 初始化 schema
+        initializeSchema(dbInstance);
+      };
+
+      openDb();
     } finally {
       // 🔒 释放互斥标志
       isInitializing = false;
