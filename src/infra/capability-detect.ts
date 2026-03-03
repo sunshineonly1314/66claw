@@ -9,7 +9,7 @@
  * - 工作空间内容
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -337,9 +337,9 @@ function detectBinary(bin: string): boolean {
   }
 
   try {
-    const cmd = process.platform === "win32" ? `where ${bin}` : `which ${bin}`;
-    // 缩短超时时间到 500ms，避免长时间阻塞
-    execSync(cmd, { stdio: "pipe", timeout: 500 });
+    // [SECURITY FIX] Use execFileSync with array args to prevent cmd injection via `bin`
+    const cmd = process.platform === "win32" ? "where" : "which";
+    execFileSync(cmd, [bin], { stdio: "pipe", timeout: 500 });
     binaryCache.set(bin, true);
     return true;
   } catch {
@@ -427,7 +427,9 @@ function detectChannels(config?: OpenClawCNConfig): DetectedCapability[] {
     });
 
     // 检查渠道是否启用
-    const channelConfig = getConfigValue(config, channel.configPath) as Record<string, unknown> | undefined;
+    const channelConfig = getConfigValue(config, channel.configPath) as
+      | Record<string, unknown>
+      | undefined;
     const isEnabled = channelConfig?.enabled !== false;
 
     if (allConfigured && isEnabled) {
@@ -522,7 +524,11 @@ type ProjectTypePattern = {
 
 const PROJECT_PATTERNS: ProjectTypePattern[] = [
   { type: "Node.js", files: ["package.json"], language: "JavaScript/TypeScript" },
-  { type: "Python", files: ["requirements.txt", "setup.py", "pyproject.toml", "Pipfile"], language: "Python" },
+  {
+    type: "Python",
+    files: ["requirements.txt", "setup.py", "pyproject.toml", "Pipfile"],
+    language: "Python",
+  },
   { type: "Go", files: ["go.mod", "go.sum"], language: "Go" },
   { type: "Rust", files: ["Cargo.toml"], language: "Rust" },
   { type: "Java/Maven", files: ["pom.xml"], language: "Java" },
@@ -583,7 +589,7 @@ export function scanWorkspace(workspaceDir: string): WorkspaceInfo | null {
 
   try {
     const entries = fs.readdirSync(workspaceDir, { withFileTypes: true });
-    
+
     // 限制扫描的文件数量，防止超大目录
     const MAX_FILES_TO_SCAN = 200;
     const files = entries
@@ -669,9 +675,7 @@ function detectWorkspaceCapabilities(workspace: WorkspaceInfo | null): DetectedC
     category: "workspace",
     status: "ready",
     configured: true,
-    description: workspace.projectType
-      ? `${workspace.projectType} 项目`
-      : "工作空间",
+    description: workspace.projectType ? `${workspace.projectType} 项目` : "工作空间",
     examples: ["分析这个项目", "帮我写代码", "解释这段代码"],
   });
 
@@ -731,15 +735,11 @@ const SUGGESTION_TEMPLATES: SuggestionTemplate[] = [
   },
   {
     capability: "feishu",
-    suggestions: [
-      { icon: "💬", text: "发条飞书消息", prompt: "帮我发一条飞书消息给同事" },
-    ],
+    suggestions: [{ icon: "💬", text: "发条飞书消息", prompt: "帮我发一条飞书消息给同事" }],
   },
   {
     capability: "dingtalk",
-    suggestions: [
-      { icon: "💬", text: "发条钉钉消息", prompt: "帮我发一条钉钉消息" },
-    ],
+    suggestions: [{ icon: "💬", text: "发条钉钉消息", prompt: "帮我发一条钉钉消息" }],
   },
   {
     capability: "browser-automation",
@@ -757,9 +757,7 @@ const SUGGESTION_TEMPLATES: SuggestionTemplate[] = [
   },
   {
     capability: "1password",
-    suggestions: [
-      { icon: "🔐", text: "查找密码", prompt: "帮我查找 GitHub 的 token" },
-    ],
+    suggestions: [{ icon: "🔐", text: "查找密码", prompt: "帮我查找 GitHub 的 token" }],
   },
 ];
 
@@ -770,7 +768,8 @@ function generateSuggestions(
   capabilities: DetectedCapability[],
   workspace: WorkspaceInfo | null,
 ): Array<{ icon: string; text: string; prompt: string; capability?: string }> {
-  const suggestions: Array<{ icon: string; text: string; prompt: string; capability?: string }> = [];
+  const suggestions: Array<{ icon: string; text: string; prompt: string; capability?: string }> =
+    [];
   const readyCapabilities = new Set(
     capabilities.filter((c) => c.status === "ready").map((c) => c.id),
   );

@@ -159,6 +159,7 @@ function loadSkillEntries(dataDir: string): ToolIndexEntry[] {
             description: frontmatter.description ?? "",
             descriptionCn: frontmatter.descriptionCn ?? undefined,
             tags: frontmatter.tags ?? [],
+            ...(frontmatter.nameCn ? { metadataJson: JSON.stringify({ nameZh: frontmatter.nameCn }) } : {}),
           });
         } catch { /* skip unreadable skill files */ }
       }
@@ -170,6 +171,7 @@ function loadSkillEntries(dataDir: string): ToolIndexEntry[] {
 
 function extractFrontmatter(content: string): {
   name?: string;
+  nameCn?: string;
   description?: string;
   descriptionCn?: string;
   tags?: string[];
@@ -179,14 +181,15 @@ function extractFrontmatter(content: string): {
 
   const yaml = match[1];
   const name = yaml.match(/^name:\s*(.+)/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
+  const nameCn = (yaml.match(/^nameZh:\s*(.+)/m)?.[1] ?? yaml.match(/^name_zh:\s*(.+)/m)?.[1] ?? yaml.match(/^name[_-]cn:\s*(.+)/m)?.[1])?.trim().replace(/^["']|["']$/g, "");
   const description = yaml.match(/^description:\s*(.+)/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
-  const descriptionCn = yaml.match(/^description[_-]cn:\s*(.+)/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
+  const descriptionCn = (yaml.match(/^descriptionZh:\s*(.+)/m)?.[1] ?? yaml.match(/^description_zh:\s*(.+)/m)?.[1] ?? yaml.match(/^description[_-]cn:\s*(.+)/m)?.[1])?.trim().replace(/^["']|["']$/g, "");
   const tagsMatch = yaml.match(/^tags:\s*\[(.*?)\]/m);
   const tags = tagsMatch
     ? tagsMatch[1].split(",").map((t) => t.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
     : undefined;
 
-  return { name, description, descriptionCn, tags };
+  return { name, nameCn, description, descriptionCn, tags };
 }
 
 // ---------------------------------------------------------------------------

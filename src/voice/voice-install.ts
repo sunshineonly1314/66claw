@@ -338,7 +338,10 @@ async function ensureSherpaOnnxNode(
       [npmCmd, "install", "sherpa-onnx-node", "--no-save", ...registryArgs, ...proxyArgs],
       {
         timeoutMs: 300_000, // 5 min — binary addon download
-        env: { ...process.env, NODE_OPTIONS: undefined },
+        // Don't spread the full process.env — it triggers env validation on Windows
+        // where variables like CommonProgramFiles(x86) may fail security checks.
+        // Omitting env inherits process.env; only override NODE_OPTIONS to empty.
+        env: { NODE_OPTIONS: "" },
       },
     );
 
@@ -476,7 +479,7 @@ async function downloadStandalonePython(
 
   const PYTHON_VERSION = "3.12.8";
   const RELEASE_TAG = "20241219";
-  const archSuffix = os.arch() === "x64" ? "x86_64" : "x86_64"; // Default to x64
+  const archSuffix = os.arch() === "arm64" ? "aarch64" : "x86_64";
 
   // python-build-standalone provides install_only tarballs (no debug, smaller)
   const filename = `cpython-${PYTHON_VERSION}+${RELEASE_TAG}-${archSuffix}-pc-windows-msvc-install_only.tar.gz`;
@@ -760,7 +763,7 @@ async function installPythonDeps(
       const torchResult = await runCommandWithTimeout(
         [pipPath, "install", "torch", "torchaudio", "--index-url", mirror.url, ...proxyArgs],
         {
-          timeoutMs: 1_800_000, // 30 min for large torch wheel on slow networks
+          timeoutMs: 3_600_000, // 60 min for large torch wheel (~2.5GB) on slow CN networks
           env: {
             ...process.env,
             NODE_OPTIONS: undefined,

@@ -3,7 +3,7 @@
 
 #define MyAppName "ClawdbotCN"
 #define MyAppNameCN "ClawdbotCN AI"
-#define MyAppVersion "1.1.6"
+#define MyAppVersion "1.6.0"
 #define MyAppPublisher "ClawdbotCN"
 #define MyAppURL "https://github.com/clawdbot/clawdbot"
 #define MyAppUpdateServer "https://www.obplugins.cn"
@@ -16,7 +16,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppNameCN}
 OutputDir=E:\clawdbuild
-OutputBaseFilename=ClawdbotCN-Setup-1.1.6-x64
+OutputBaseFilename=ClawdbotCN-Setup-1.6.0-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -25,6 +25,8 @@ SetupIconFile=assets\clawdbot.ico
 WizardSmallImageFile=assets\setup-logo.bmp
 WizardImageFile=assets\setup-banner.bmp
 PrivilegesRequired=lowest
+CloseApplications=force
+RestartApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\clawdbot.ico
@@ -52,7 +54,11 @@ Source: "E:\clawdbuild\test-prod-deps\node_modules\*"; DestDir: "{app}\node_modu
 Source: "..\..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "..\..\skills\*"; DestDir: "{app}\skills"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; MCP marketplace index (bundled fallback for Extensions/Capability Store UI)
-Source: "..\..\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; SQLite databases may be locked by a running gateway; restartreplace ensures
+; upgrade succeeds even if the file handle wasn't fully released yet.
+Source: "..\..\data\mcp-index.db"; DestDir: "{app}\data"; Flags: ignoreversion restartreplace skipifsourcedoesntexist
+Source: "..\..\data\tool-index.sqlite"; DestDir: "{app}\data"; Flags: ignoreversion restartreplace skipifsourcedoesntexist
+Source: "..\..\data\*"; DestDir: "{app}\data"; Excludes: "mcp-index.db,tool-index.sqlite"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 ; All extensions (33 plugins — wildcard to prevent future omissions)
 ; Exclude node_modules (Inno Setup 32-bit OOM with feishu's 817-file dep tree under LZMA2)
 ; Extensions with deps (feishu, dingtalk, etc.) install them on first run via postinstall
@@ -268,8 +274,13 @@ begin
     // Step 3: Kill ANY process occupying port 18789 (catches processes missed by name/path matching)
     Exec('powershell.exe', '-NoProfile -Command "netstat -ano | Select-String '':18789\s'' | Select-String ''LISTENING'' | ForEach-Object { $p = ($_ -split ''\s+'')[-1]; if ($p -match ''^\d+$'' -and [int]$p -gt 0) { Stop-Process -Id ([int]$p) -Force -EA SilentlyContinue } }"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
-    // Step 4: Delay to ensure processes are fully terminated and port is released
-    Sleep(2000);
+    // Step 4: Kill any process locking files under the install directory
+    // (catches SQLite db handles held by orphan processes, e.g. mcp-index.db)
+    // Note: $_.Path guard prevents null-ref errors on system processes without MainModule
+    Exec('powershell.exe', '-NoProfile -Command "Get-Process | Where-Object { $_.Path -and $_.Path -like ''' + InstallDir + '\*'' } | Stop-Process -Force -EA SilentlyContinue"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    // Step 5: Delay to ensure processes are fully terminated, file handles released, and port freed
+    Sleep(3000);
   end;
 
   if CurStep = ssPostInstall then

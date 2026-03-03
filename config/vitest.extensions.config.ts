@@ -10,6 +10,10 @@ export default defineConfig({
   test: {
     ...baseTest,
     include: ["extensions/**/*.test.ts"],
-    exclude,
+    exclude: [
+      ...exclude,
+      // Prevent desktop build artifacts from being discovered as test files
+      "apps/**",
+    ],
   },
 });

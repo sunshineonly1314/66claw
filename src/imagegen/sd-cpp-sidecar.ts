@@ -8,7 +8,7 @@
  * Pattern follows voice/gpu-sidecar.ts.
  */
 
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import path from "node:path";
 
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -104,21 +104,34 @@ export async function stopSdCppSidecar(): Promise<void> {
   const pid = _process.pid;
   log.info(`Stopping sd.cpp sidecar (PID=${pid})...`);
 
-  // Try graceful shutdown first
-  try {
-    _process.kill("SIGTERM");
-  } catch {
-    // Ignore
+  // Try graceful shutdown
+  if (process.platform === "win32" && pid) {
+    // On Windows, SIGTERM maps to TerminateProcess (immediate kill, no graceful shutdown).
+    // Use taskkill without /F first to allow the process a chance to exit cleanly.
+    try {
+      execFileSync("taskkill", ["/T", "/PID", String(pid)], {
+        timeout: 3_000,
+        stdio: "pipe",
+        windowsHide: true,
+      });
+    } catch {
+      // ignore — may already be exiting
+    }
+  } else {
+    try {
+      _process.kill("SIGTERM");
+    } catch {
+      // Ignore
+    }
   }
 
-  // Wait 5 seconds for graceful exit
+  // Wait 5 seconds for graceful exit, then force kill
   await new Promise<void>((resolve) => {
     const timeout = setTimeout(() => {
-      // Force kill
       if (_process && !_process.killed) {
         try {
           if (process.platform === "win32" && pid) {
-            execSync(`taskkill /F /T /PID ${pid}`, {
+            execFileSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
               timeout: 5_000,
               stdio: "pipe",
               windowsHide: true,

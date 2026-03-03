@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-const repoRoot = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
 const isWindows = process.platform === "win32";
 const localWorkers = Math.max(4, Math.min(16, os.cpus().length));
@@ -40,6 +40,7 @@ export default defineConfig({
       "apps/macos/**",
       "apps/macos/.build/**",
       "apps/desktop/src-tauri/target/**",
+      "apps/desktop/src-tauri/resources/**",
       "**/node_modules/**",
       "**/vendor/**",
       "dist/OpenClawCN.app/**",

@@ -28,13 +28,13 @@ export type ArchiveExtractLimits = {
 };
 
 /** @internal */
-export const DEFAULT_MAX_ARCHIVE_BYTES_ZIP = 256 * 1024 * 1024;
+export const DEFAULT_MAX_ARCHIVE_BYTES_ZIP = 512 * 1024 * 1024;
 /** @internal */
 export const DEFAULT_MAX_ENTRIES = 50_000;
 /** @internal */
-export const DEFAULT_MAX_EXTRACTED_BYTES = 512 * 1024 * 1024;
+export const DEFAULT_MAX_EXTRACTED_BYTES = 1536 * 1024 * 1024;
 /** @internal */
-export const DEFAULT_MAX_ENTRY_BYTES = 256 * 1024 * 1024;
+export const DEFAULT_MAX_ENTRY_BYTES = 512 * 1024 * 1024;
 
 const ERROR_ARCHIVE_SIZE_EXCEEDS_LIMIT = "archive size exceeds limit";
 const ERROR_ARCHIVE_ENTRY_COUNT_EXCEEDS_LIMIT = "archive entry count exceeds limit";
@@ -153,7 +153,12 @@ function stripArchivePath(entryPath: string, stripComponents: number): string | 
 function resolveCheckedOutPath(destDir: string, relPath: string, original: string): string {
   const safeBase = resolveSafeBaseDir(destDir);
   const outPath = path.resolve(destDir, relPath);
-  if (!outPath.startsWith(safeBase)) {
+  // Use case-insensitive comparison on Windows (NTFS is case-insensitive)
+  const startsWith =
+    process.platform === "win32"
+      ? outPath.toLowerCase().startsWith(safeBase.toLowerCase())
+      : outPath.startsWith(safeBase);
+  if (!startsWith) {
     throw new Error(`archive entry escapes destination: ${original}`);
   }
   return outPath;
