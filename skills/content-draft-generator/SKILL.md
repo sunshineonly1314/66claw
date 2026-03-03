@@ -65,7 +65,7 @@ Step 7: Save Content Drafts
 ### 第二步：内容解构
 
 1. 使用 `web_fetch` 工具从全部参考网址中抓取内容  
-2. 对于 Twitter/X 网址，需转换为 FxTwitter API 格式：`https://api.fxtwitter.com/username/status/123456`  
+2. 对于社交媒体网址的特殊处理（详见下方"社交媒体网址处理"章节）
 3. 按照 `references/content-deconstructor.md` 指南逐一分析每份内容  
 4. 将整合后的拆解结果保存至 `content-breakdown/breakdown-{timestamp}.md`  
 5. 回报：“✓ 内容拆解已保存”  
@@ -140,15 +140,31 @@ Step 7: Save Content Drafts
 - `meta-prompt-2026-01-20-143245.md`  
 - `draft-2026-01-20-143330.md`  
 
-## Twitter/X 网址处理
+## 社交媒体网址处理
 
-Twitter/X 网址需特殊处理：
+部分社交媒体平台需要 JavaScript 渲染，无法直接 web_fetch。按以下策略处理：
 
-**检测方式：** 网址中包含 `twitter.com` 或 `x.com`  
+### 微博 (weibo.com)
+**检测方式：** 网址包含 `weibo.com` 或 `m.weibo.com`
+**处理方式：** 移动端网址更易抓取
+- 输入：`https://weibo.com/1234567890/AbCdEf`
+- 转换为：`https://m.weibo.com/detail/微博ID` 或直接用 `web_fetch` 抓取
 
-**转换方式：**  
-- 输入网址：`https://x.com/username/status/123456`  
-- 对应 API 网址：`https://api.fxtwitter.com/username/status/123456`  
+### 小红书 (xiaohongshu.com)
+**检测方式：** 网址包含 `xiaohongshu.com` 或 `xhslink.com`
+**处理方式：** 使用 `web_fetch` 直接抓取，若失败则提示用户粘贴内容
+
+### Twitter/X
+**检测方式：** 网址包含 `twitter.com` 或 `x.com`
+**处理方式：** 先尝试转换为 FxTwitter API 抓取，失败则提示用户粘贴内容
+- 输入：`https://x.com/username/status/123456`
+- API：`https://api.fxtwitter.com/username/status/123456`
+- 若 FxTwitter 超时或无法连接，直接提示用户粘贴推文原文，不要反复重试
+
+### 其他平台
+- 公众号文章 (`mp.weixin.qq.com`)：直接 `web_fetch`，国内可用
+- 知乎 (`zhihu.com`)：直接 `web_fetch`，国内可用
+- 掘金 (`juejin.cn`)：直接 `web_fetch`，国内可用
 
 ## 错误处理
 

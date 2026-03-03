@@ -22,9 +22,12 @@ metadata: {"openclawcn":{"emoji":"🔍"}}
 
 ### 1. 搜索引擎研究
 
+默认使用百度搜索，也可根据需要切换其他搜索引擎。
+
+**百度搜索**（默认）:
 ```
 browser({action: "start", target: "host"})
-browser({action: "navigate", targetUrl: "https://www.google.com"})
+browser({action: "navigate", targetUrl: "https://www.baidu.com"})
 browser({action: "snapshot"})
 browser({action: "act", request: {kind: "click", ref: "搜索框ref"}})
 browser({action: "act", request: {kind: "type", text: "搜索关键词", ref: "搜索框ref"}})
@@ -34,15 +37,16 @@ browser({action: "screenshot"})  -- 查看搜索结果
 browser({action: "snapshot"})    -- 提取结果链接和摘要
 ```
 
-**百度搜索** (中文内容优先):
-```
-browser({action: "navigate", targetUrl: "https://www.baidu.com"})
-```
-
-**必应搜索**:
+**必应搜索**（英文内容优先）:
 ```
 browser({action: "navigate", targetUrl: "https://www.bing.com"})
 ```
+
+**Google 搜索**（fallback，若百度/必应结果不足）:
+```
+browser({action: "navigate", targetUrl: "https://www.google.com"})
+```
+> 若 Google 无法加载（超时或连接失败），回退使用百度或必应，不要反复重试。
 
 也可直接用 web_search 工具（更快）:
 ```

@@ -31,9 +31,9 @@ description_zh: 分析来自 URL 的高表现力内容并构建“滑动文件�
 
 ### 第三步：批量获取全部新 URL
 
-1. **检测 URL 类型并选择获取策略：**  
-   - **Twitter/X URL：** 使用 FxTwitter API（详见下方）  
-   - **其他所有 URL：** 使用 web_fetch 工具  
+1. **检测 URL 类型并选择获取策略：**
+   - **社交媒体 URL：** 按下方"社交媒体 URL 处理"规则处理
+   - **其他所有 URL：** 使用 web_fetch 工具
 
 2. **并行获取全部内容**，针对每个 URL 采用对应方法  
 3. **跟踪获取结果：**  
@@ -41,17 +41,24 @@ description_zh: 分析来自 URL 的高表现力内容并构建“滑动文件�
    - 获取失败：记录 URL 及失败原因以供报告  
 4. 仅对成功获取的内容继续后续步骤
 
-#### Twitter/X URL 处理
+#### 社交媒体 URL 处理
 
-Twitter/X URL 需特殊处理，因其需 JavaScript 渲染。请改用 **FxTwitter API**：
+部分社交媒体平台需 JavaScript 渲染，需特殊处理：
 
-**检测方式：** URL 包含 `twitter.com` 或 `x.com`  
+**微博 (weibo.com / m.weibo.com)：**
+- 转换为移动端 URL 更易抓取：`https://m.weibo.com/detail/微博ID`
+- 或直接 `web_fetch` 抓取
 
-**API 端点：** `https://api.fxtwitter.com/{username}/status/{tweet_id}`  
+**小红书 (xiaohongshu.com / xhslink.com)：**
+- 使用 `web_fetch` 直接抓取，若失败提示用户粘贴内容
 
-**URL 转换方式：**  
-- 输入：`https://x.com/gregisenberg/status/2012171244666253777`  
-- API URL：`https://api.fxtwitter.com/gregisenberg/status/2012171244666253777`  
+**公众号 (mp.weixin.qq.com) / 知乎 (zhihu.com) / 掘金 (juejin.cn)：**
+- 直接 `web_fetch`，国内可用
+
+**Twitter/X：**
+- 检测：URL 包含 `twitter.com` 或 `x.com`
+- 先尝试 FxTwitter API：`https://api.fxtwitter.com/{username}/status/{tweet_id}`
+- 若超时或无法连接，直接提示用户粘贴推文原文，不要反复重试
 
 ### 第四步：分析全部内容
 
