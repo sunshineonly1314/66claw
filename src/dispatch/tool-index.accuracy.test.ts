@@ -12,7 +12,7 @@
  *   5. 性能基准（9535 条索引搜索延迟）
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, test } from "vitest";
 import { join } from "node:path";
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -313,7 +313,10 @@ function evaluateCase(
 let tempDir: string;
 let totalEntries: number;
 
-describe("Tool Index FULL Accuracy Test (9535 MCP entries)", () => {
+const hasIndex = existsSync(ENHANCED_INDEX);
+const describeIfIndex = hasIndex ? describe : describe.skip;
+
+describeIfIndex("Tool Index FULL Accuracy Test (9535 MCP entries)", () => {
   beforeAll(() => {
     tempDir = mkdtempSync(join(tmpdir(), "tool-index-accuracy-"));
     const entries = loadMcpEntries();

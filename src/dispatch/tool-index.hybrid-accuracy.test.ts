@@ -14,7 +14,7 @@
  *   SILICONFLOW_API_KEY=sk-xxx npx vitest run src/dispatch/tool-index.hybrid-accuracy.test.ts
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, test } from "vitest";
 import { join } from "node:path";
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -419,7 +419,10 @@ let totalEntries: number;
 let vectorizationTime: number;
 let embeddingClient: ReturnType<typeof createToolEmbeddingClient>;
 
-describe(
+const hasIndex = existsSync(ENHANCED_INDEX);
+const describeIfIndex = hasIndex ? describe : describe.skip;
+
+describeIfIndex(
   "Hybrid Search Accuracy: FTS5 + bge-m3 Vector (9535 MCP entries)",
   { timeout: 600_000 },
   () => {

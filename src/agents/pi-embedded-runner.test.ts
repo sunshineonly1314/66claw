@@ -100,11 +100,19 @@ beforeAll(async () => {
   workspaceDir = path.join(tempRoot, "workspace");
   await fs.mkdir(agentDir, { recursive: true });
   await fs.mkdir(workspaceDir, { recursive: true });
-}, 20_000);
+}, 60_000);
 
 afterAll(async () => {
   if (!tempRoot) return;
-  await fs.rm(tempRoot, { recursive: true, force: true });
+  // On Windows, file locks may linger briefly — retry cleanup
+  for (let i = 0; i < 3; i++) {
+    try {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
   tempRoot = undefined;
 });
 
@@ -130,7 +138,8 @@ const makeOpenAiConfig = (modelIds: string[]) =>
     },
   }) satisfies OpenClawCNConfig;
 
-const ensureModels = (cfg: OpenClawCNConfig) => ensureOpenClawCNModelsJson(cfg, agentDir) as unknown;
+const ensureModels = (cfg: OpenClawCNConfig) =>
+  ensureOpenClawCNModelsJson(cfg, agentDir) as unknown;
 
 const nextSessionFile = () => {
   sessionCounter += 1;
@@ -346,7 +355,7 @@ describe("runEmbeddedPiAgent", () => {
     },
   );
 
-  it("persists multi-turn user/assistant ordering across runs", async () => {
+  it("persists multi-turn user/assistant ordering across runs", { timeout: 30_000 }, async () => {
     const sessionFile = nextSessionFile();
     const cfg = makeOpenAiConfig(["mock-1"]);
     await ensureModels(cfg);

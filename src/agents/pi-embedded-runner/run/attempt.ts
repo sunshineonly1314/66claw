@@ -1229,6 +1229,23 @@ export async function runEmbeddedAttempt(
         agent: session?.agent,
         sessionManager,
       });
+      // BUGFIX: Ensure user message is persisted even when the assistant response is
+      // an error (stopReason="error"). The SDK's SessionManager may skip flushing
+      // the session file for new sessions when the first assistant response is an error.
+      // Manually write a minimal JSONL if the session file was never created.
+      if (sessionManager && params.sessionFile) {
+        const fileExists = await fs.stat(params.sessionFile).then(
+          () => true,
+          () => false,
+        );
+        if (!fileExists) {
+          const entries = (sessionManager as { fileEntries?: unknown[] }).fileEntries ?? [];
+          if (entries.length > 0) {
+            const lines = entries.map((e: unknown) => JSON.stringify(e)).join("\n") + "\n";
+            await fs.writeFile(params.sessionFile, lines, "utf-8").catch(() => {});
+          }
+        }
+      }
       session?.dispose();
       await sessionLock.release();
     }

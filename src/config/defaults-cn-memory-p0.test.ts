@@ -13,6 +13,7 @@
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { applyCnDefaults, applyAgentDefaults, applySessionDefaults } from "./defaults.js";
+import { _resetChinaRegionCache } from "./region-cn.js";
 import type { OpenClawCNConfig } from "./types.js";
 
 // ============================================================================
@@ -20,6 +21,7 @@ import type { OpenClawCNConfig } from "./types.js";
 // ============================================================================
 
 function setCnRegion(value: boolean) {
+  _resetChinaRegionCache();
   vi.stubEnv("OPENCLAWCN_REGION", value ? "cn" : "global");
 }
 

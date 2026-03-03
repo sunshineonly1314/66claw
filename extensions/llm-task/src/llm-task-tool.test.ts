@@ -1,16 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createLlmTaskTool, loaderHolder } from "./llm-task-tool.js";
 
-vi.mock("../../../src/agents/pi-embedded-runner.js", () => {
-  return {
-    runEmbeddedPiAgent: vi.fn(async () => ({
-      meta: { startedAt: Date.now() },
-      payloads: [{ text: "{}" }],
-    })),
-  };
-});
-
-import { runEmbeddedPiAgent } from "../../../src/agents/pi-embedded-runner.js";
-import { createLlmTaskTool } from "./llm-task-tool.js";
+const mockRunner = vi.fn(async () => ({
+  meta: { startedAt: Date.now() },
+  payloads: [{ text: "{}" }],
+}));
 
 function fakeApi(overrides: any = {}) {
   return {
@@ -27,10 +21,14 @@ function fakeApi(overrides: any = {}) {
 }
 
 describe("llm-task tool (json-only)", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Inject mock runner — bypasses all dynamic import resolution
+    loaderHolder.load = async () => mockRunner;
+  });
 
   it("returns parsed json", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({
+    mockRunner.mockResolvedValueOnce({
       meta: {},
       payloads: [{ text: JSON.stringify({ foo: "bar" }) }],
     });
@@ -40,7 +38,7 @@ describe("llm-task tool (json-only)", () => {
   });
 
   it("strips fenced json", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({
+    mockRunner.mockResolvedValueOnce({
       meta: {},
       payloads: [{ text: "```json\n{\"ok\":true}\n```" }],
     });
@@ -50,7 +48,7 @@ describe("llm-task tool (json-only)", () => {
   });
 
   it("validates schema", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({
+    mockRunner.mockResolvedValueOnce({
       meta: {},
       payloads: [{ text: JSON.stringify({ foo: "bar" }) }],
     });
@@ -66,13 +64,13 @@ describe("llm-task tool (json-only)", () => {
   });
 
   it("throws on invalid json", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({ meta: {}, payloads: [{ text: "not-json" }] });
+    mockRunner.mockResolvedValueOnce({ meta: {}, payloads: [{ text: "not-json" }] });
     const tool = createLlmTaskTool(fakeApi() as any);
     await expect(tool.execute("id", { prompt: "x" })).rejects.toThrow(/invalid json/i);
   });
 
   it("throws on schema mismatch", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({
+    mockRunner.mockResolvedValueOnce({
       meta: {},
       payloads: [{ text: JSON.stringify({ foo: 1 }) }],
     });
@@ -82,19 +80,19 @@ describe("llm-task tool (json-only)", () => {
   });
 
   it("passes provider/model overrides to embedded runner", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({
+    mockRunner.mockResolvedValueOnce({
       meta: {},
       payloads: [{ text: JSON.stringify({ ok: true }) }],
     });
     const tool = createLlmTaskTool(fakeApi() as any);
     await tool.execute("id", { prompt: "x", provider: "anthropic", model: "claude-4-sonnet" });
-    const call = (runEmbeddedPiAgent as any).mock.calls[0]?.[0];
+    const call = mockRunner.mock.calls[0]?.[0];
     expect(call.provider).toBe("anthropic");
     expect(call.model).toBe("claude-4-sonnet");
   });
 
   it("enforces allowedModels", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({
+    mockRunner.mockResolvedValueOnce({
       meta: {},
       payloads: [{ text: JSON.stringify({ ok: true }) }],
     });
@@ -105,13 +103,13 @@ describe("llm-task tool (json-only)", () => {
   });
 
   it("disables tools for embedded run", async () => {
-    (runEmbeddedPiAgent as any).mockResolvedValueOnce({
+    mockRunner.mockResolvedValueOnce({
       meta: {},
       payloads: [{ text: JSON.stringify({ ok: true }) }],
     });
     const tool = createLlmTaskTool(fakeApi() as any);
     await tool.execute("id", { prompt: "x" });
-    const call = (runEmbeddedPiAgent as any).mock.calls[0]?.[0];
+    const call = mockRunner.mock.calls[0]?.[0];
     expect(call.disableTools).toBe(true);
   });
 });

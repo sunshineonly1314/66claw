@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { ensureMemoryIndexSchema, backfillFtsFromChunks } from "./memory-schema.js";
+import { _resetChinaRegionCache } from "../config/region-cn.js";
 
 // ============================================================================
 // 辅助
@@ -59,6 +60,7 @@ describe("ensureMemoryIndexSchema — CN trigram [CN-PATCH:memory-p0]", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    _resetChinaRegionCache();
   });
 
   it("CN 区域创建 FTS 表使用 trigram tokenizer", () => {
@@ -129,6 +131,7 @@ describe("migrateFtsToTrigram — 迁移逻辑 [CN-PATCH:memory-p0]", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    _resetChinaRegionCache();
   });
 
   it("旧 unicode61 FTS 表被 DROP 并重建为 trigram", () => {
@@ -154,6 +157,7 @@ describe("migrateFtsToTrigram — 迁移逻辑 [CN-PATCH:memory-p0]", () => {
 
     // Step 2: 切换到 CN 模式，重新调用 ensureSchema
     vi.stubEnv("OPENCLAWCN_REGION", "cn");
+    _resetChinaRegionCache();
     const result = ensureMemoryIndexSchema({
       db,
       embeddingCacheTable: "embedding_cache",
@@ -217,6 +221,7 @@ describe("backfillFtsFromChunks [CN-PATCH:memory-p0]", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    _resetChinaRegionCache();
   });
 
   it("从 chunks 表回填 FTS 数据", () => {
@@ -282,6 +287,7 @@ describe("backfillFtsFromChunks [CN-PATCH:memory-p0]", () => {
 
     // 切换到 CN 模式 → 触发迁移 + 自动回填
     vi.stubEnv("OPENCLAWCN_REGION", "cn");
+    _resetChinaRegionCache();
     ensureMemoryIndexSchema({
       db,
       embeddingCacheTable: "embedding_cache",
@@ -304,6 +310,7 @@ describe("FTS5 trigram — 中文子串搜索验证 [CN-PATCH:memory-p0]", () =>
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    _resetChinaRegionCache();
   });
 
   it("trigram: 中文子串匹配成功", () => {
@@ -427,6 +434,7 @@ describe("ensureMemoryIndexSchema — 基础表结构 [CN-PATCH:memory-p0]", () 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    _resetChinaRegionCache();
   });
 
   it("创建所有必需的表和索引", () => {

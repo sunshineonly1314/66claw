@@ -14,8 +14,20 @@ import type { ClawdbotPluginApi } from "../../../src/plugins/types.js";
 
 type RunEmbeddedPiAgentFn = (params: Record<string, unknown>) => Promise<unknown>;
 
-async function loadRunEmbeddedPiAgent(): Promise<RunEmbeddedPiAgentFn> {
-  // Source checkout (tests/dev)
+/** Container for the loader — tests can spy on / replace `loaderHolder.load`. */
+export const loaderHolder = {
+  load: (async () => {}) as () => Promise<RunEmbeddedPiAgentFn>,
+};
+loaderHolder.load = async () => {
+  // Source tree (tests/dev) — src/ path exists in the working copy
+  try {
+    const mod = await import("../../../src/agents/pi-embedded-runner.js");
+    if (typeof (mod as any).runEmbeddedPiAgent === "function") return (mod as any).runEmbeddedPiAgent;
+  } catch {
+    // ignore — not running from source tree
+  }
+
+  // Built dist/ checkout
   try {
     const mod = await import("../../../dist/agents/pi-embedded-runner.js");
     if (typeof (mod as any).runEmbeddedPiAgent === "function") return (mod as any).runEmbeddedPiAgent;
@@ -30,7 +42,7 @@ async function loadRunEmbeddedPiAgent(): Promise<RunEmbeddedPiAgentFn> {
     throw new Error("Internal error: runEmbeddedPiAgent not available");
   }
   return (mod as any).runEmbeddedPiAgent;
-}
+};
 
 function stripCodeFences(s: string): string {
   const trimmed = s.trim();
@@ -160,7 +172,7 @@ export function createLlmTaskTool(api: ClawdbotPluginApi) {
         const sessionId = `llm-task-${Date.now()}`;
         const sessionFile = path.join(tmpDir, "session.json");
 
-        const runEmbeddedPiAgent = await loadRunEmbeddedPiAgent();
+        const runEmbeddedPiAgent = await loaderHolder.load();
 
         const result = await runEmbeddedPiAgent({
           sessionId,
