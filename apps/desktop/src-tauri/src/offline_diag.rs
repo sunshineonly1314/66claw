@@ -433,18 +433,202 @@ pub struct PollResult {
     pub message: String,
 }
 
-/// Get a summary of recent logs suitable for AI-assisted diagnosis.
-/// Filters to error/warn/fatal lines, truncated to ~4KB for LLM context.
-pub fn get_recent_logs_summary() -> String {
+/// All log sources we care about, ordered by diagnostic priority.
+/// Collected from the Node.js gateway source (diagnose.ts, log-truncate.ts).
+fn build_log_sources() -> Vec<(&'static str, std::path::PathBuf)> {
     let logs_dir = resolve_logs_dir();
-    let sources = [
-        ("app.jsonl", logs_dir.join("app.jsonl")),
-        ("crash.log", logs_dir.join("crash.log")),
-        ("desktop-debug.log", logs_dir.join("desktop-debug.log")),
+    // Also probe the Tauri desktop log dir (LocalAppData on Windows, ~/Library on macOS)
+    let desktop_log_dir = resolve_desktop_log_dir();
+
+    let mut sources: Vec<(&'static str, std::path::PathBuf)> = vec![
+        // High-priority: errors most visible here
+        ("app.jsonl",           logs_dir.join("app.jsonl")),
+        ("crash.log",           logs_dir.join("crash.log")),
+        ("gateway.log",         logs_dir.join("gateway.log")),
+        ("gateway.err.log",     logs_dir.join("gateway.err.log")),
+        // Config / audit
+        ("config-audit.jsonl",  logs_dir.join("config-audit.jsonl")),
+        // Desktop sidecar debug log
+        ("desktop-debug.log",   logs_dir.join("desktop-debug.log")),
+        // Agent/session payload logs
+        ("anthropic-payload.jsonl", logs_dir.join("anthropic-payload.jsonl")),
+        ("raw-stream.jsonl",    logs_dir.join("raw-stream.jsonl")),
     ];
 
-    const MAX_SUMMARY_BYTES: usize = 4 * 1024; // ~4KB budget
-    const MAX_READ_BYTES: usize = 50 * 1024; // read last 50KB from each file
+    if let Some(dld) = desktop_log_dir {
+        sources.push(("desktop-gateway.log", dld.join("gateway.log")));
+    }
+
+    sources
+}
+
+/// Resolve the Tauri desktop log dir (platform-specific, may not exist).
+fn resolve_desktop_log_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let p = std::path::PathBuf::from(local_app_data)
+                .join("com.clawdbot.cn.desktop")
+                .join("logs");
+            if p.is_dir() { return Some(p); }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            let p = home.join("Library")
+                .join("Logs")
+                .join("com.clawdbot.cn.desktop");
+            if p.is_dir() { return Some(p); }
+        }
+    }
+    None
+}
+
+// ── Batch log result (returned to frontend) ───────────────────────────────────
+
+/// Result of a single log batch request.
+#[derive(serde::Serialize, Clone)]
+pub struct LogBatchResult {
+    /// Batch index (0-based), same as the `batch` parameter.
+    pub batch: u32,
+    /// Total number of batches available across all log sources.
+    pub total_batches: u32,
+    /// Combined text of this batch (sanitized, from-end of logs).
+    pub text: String,
+    /// How many bytes of raw log data exist in total across all sources.
+    pub total_raw_bytes: u64,
+    /// Whether there is a next batch to fetch.
+    pub has_more: bool,
+    /// Short summary of which files contributed to this batch.
+    pub sources_summary: String,
+}
+
+/// Get a batch of recent log data for incremental AI analysis.
+///
+/// Reads all known log sources **from the end** (most recent first),
+/// packages up to `BATCH_BYTES` per call, and supports pagination via
+/// the `batch` index so the frontend can ask "give me batch 0, then 1, …"
+/// until `has_more` is false.
+///
+/// Batch 0 = most recent BATCH_BYTES of logs (tail of all files)
+/// Batch 1 = the preceding BATCH_BYTES, etc.
+pub fn get_logs_batch(batch: u32) -> LogBatchResult {
+    const BATCH_BYTES: usize = 80 * 1024; // 80 KB per batch
+    const MAX_READ_PER_FILE: usize = 512 * 1024; // read up to 512 KB per file
+
+    let sources = build_log_sources();
+
+    // Collect all lines from all sources, prefixed with their source label.
+    // We read from the tail of each file so the most recent content dominates.
+    let mut all_lines: Vec<String> = Vec::new();
+    let mut total_raw_bytes: u64 = 0;
+    let mut present_sources: Vec<&str> = Vec::new();
+
+    for (label, path) in &sources {
+        let file_size = std::fs::metadata(path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        if file_size == 0 {
+            continue;
+        }
+        total_raw_bytes += file_size;
+        present_sources.push(label);
+
+        let lines = read_tail_lines(path, MAX_READ_PER_FILE);
+        if !lines.is_empty() {
+            all_lines.push(format!("=== {} ({} KB) ===", label, file_size / 1024));
+            for line in lines {
+                all_lines.push(basic_sanitize(&line));
+            }
+        }
+    }
+
+    if all_lines.is_empty() {
+        return LogBatchResult {
+            batch,
+            total_batches: 1,
+            text: "[无可用日志]".to_string(),
+            total_raw_bytes: 0,
+            has_more: false,
+            sources_summary: String::new(),
+        };
+    }
+
+    // Build a flat byte buffer from all lines (tail = most recent).
+    // We work in reverse so batch 0 always gets the newest content.
+    let full_text: String = all_lines.join("\n");
+    let full_bytes = full_text.as_bytes();
+    let total_len = full_bytes.len();
+
+    let total_batches = ((total_len + BATCH_BYTES - 1) / BATCH_BYTES).max(1) as u32;
+    let batch = batch.min(total_batches - 1);
+
+    // Batch 0 = last BATCH_BYTES, batch 1 = preceding BATCH_BYTES, etc.
+    let end = total_len.saturating_sub(batch as usize * BATCH_BYTES);
+    let start = end.saturating_sub(BATCH_BYTES);
+
+    // Snap to a UTF-8 character boundary (avoid splitting multi-byte chars).
+    let start = snap_to_utf8_boundary(full_bytes, start, false);
+    let end   = snap_to_utf8_boundary(full_bytes, end,   true);
+
+    let batch_text = String::from_utf8_lossy(&full_bytes[start..end]).to_string();
+
+    // Prepend a brief header so the AI knows where it is.
+    let position_hint = if total_batches == 1 {
+        "（全部日志）".to_string()
+    } else {
+        format!(
+            "（批次 {}/{}，从日志末尾往前第 {} 批，共约 {} KB 原始日志）",
+            batch + 1,
+            total_batches,
+            batch + 1,
+            total_raw_bytes / 1024,
+        )
+    };
+
+    let sources_summary = present_sources.join(", ");
+    let text = format!(
+        "=== 日志分析 {} ===\n来源: {}\n\n{}",
+        position_hint, sources_summary, batch_text
+    );
+
+    LogBatchResult {
+        batch,
+        total_batches,
+        text,
+        total_raw_bytes,
+        has_more: batch + 1 < total_batches,
+        sources_summary,
+    }
+}
+
+/// Snap byte offset to a valid UTF-8 character boundary.
+/// `forward=true`  → move forward until boundary
+/// `forward=false` → move backward until boundary
+fn snap_to_utf8_boundary(bytes: &[u8], mut pos: usize, forward: bool) -> usize {
+    if pos == 0 || pos >= bytes.len() {
+        return pos;
+    }
+    if forward {
+        while pos < bytes.len() && (bytes[pos] & 0xC0) == 0x80 { pos += 1; }
+    } else {
+        while pos > 0 && (bytes[pos] & 0xC0) == 0x80 { pos -= 1; }
+    }
+    pos
+}
+
+/// Get a summary of recent logs suitable for AI-assisted diagnosis.
+/// Keeps backward compat with the existing `repair_get_recent_logs` command.
+/// Now uses build_log_sources() instead of hardcoded 3 files.
+pub fn get_recent_logs_summary() -> String {
+    // Reuse the batch mechanism — batch 0 = most recent 80KB.
+    // Then filter to error/warn lines to stay within the old ~4KB spirit
+    // but use a much more generous 16KB limit so critical errors aren't lost.
+    const MAX_SUMMARY_BYTES: usize = 16 * 1024;
+
+    let sources = build_log_sources();
+    const MAX_READ_BYTES: usize = 50 * 1024;
 
     let mut result_lines: Vec<String> = Vec::new();
     let mut total_bytes: usize = 0;
@@ -464,12 +648,10 @@ pub fn get_recent_logs_summary() -> String {
         }).collect();
 
         let selected = if important.is_empty() {
-            // No important lines — take the last few lines as context
             let start = lines.len().saturating_sub(5);
             lines[start..].iter().collect::<Vec<_>>()
         } else {
-            // Take the most recent important lines
-            let start = important.len().saturating_sub(20);
+            let start = important.len().saturating_sub(30);
             important[start..].to_vec()
         };
 
@@ -490,7 +672,6 @@ pub fn get_recent_logs_summary() -> String {
             let line_bytes = sanitized.len() + 1;
             if total_bytes + line_bytes > MAX_SUMMARY_BYTES {
                 result_lines.push("[...truncated...]".to_string());
-                total_bytes += 20;
                 break;
             }
             result_lines.push(sanitized);

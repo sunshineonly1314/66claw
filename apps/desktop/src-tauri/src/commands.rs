@@ -185,16 +185,21 @@ pub async fn repair_discover_providers() -> Result<Vec<repair::provider_discover
 }
 
 /// Send a message to the AI repair assistant (streaming via events).
+///
+/// `gateway_running`: pass `true` when the Gateway sidecar is alive but a feature
+/// is broken (API errors, model config issues, etc.), `false` when the Gateway
+/// has crashed or failed to start.  Selects the appropriate system prompt.
 #[tauri::command]
 pub async fn repair_ai_chat(
     app: AppHandle,
     message: String,
     context: String,
     provider_id: String,
+    gateway_running: bool,
 ) -> Result<(), String> {
     let provider = repair::provider_discovery::get_cached_provider(&provider_id)
         .ok_or_else(|| format!("找不到 AI provider: {}", provider_id))?;
-    repair::ai_client::stream_chat(&app, &provider, &message, &context).await
+    repair::ai_client::stream_chat(&app, &provider, &message, &context, gateway_running).await
 }
 
 /// Apply an automated repair fix by its ID.
@@ -214,11 +219,21 @@ pub async fn upload_crash_logs(
 }
 
 /// Get recent log entries for AI-assisted diagnosis.
-/// Reads app.jsonl, crash.log, desktop-debug.log and returns a summary
-/// filtered to error/warn lines, truncated to ~4KB for LLM context.
+/// Reads all known log sources, filters to error/warn lines, truncated to ~16KB.
 #[tauri::command]
 pub async fn repair_get_recent_logs() -> Result<String, String> {
     Ok(offline_diag::get_recent_logs_summary())
+}
+
+/// Get a paginated batch of raw log content for incremental AI analysis.
+///
+/// `batch=0` returns the most recent 80KB of logs (newest content first).
+/// `batch=1` returns the preceding 80KB, and so on.
+/// The response includes `has_more` and `total_batches` so the frontend
+/// can loop until all logs are analyzed.
+#[tauri::command]
+pub async fn repair_get_logs_batch(batch: u32) -> Result<offline_diag::LogBatchResult, String> {
+    Ok(offline_diag::get_logs_batch(batch))
 }
 
 /// Check SSH server status on this machine.

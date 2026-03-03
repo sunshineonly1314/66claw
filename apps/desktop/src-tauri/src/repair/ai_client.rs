@@ -72,9 +72,10 @@ struct AnthropicDelta {
     text: Option<String>,
 }
 
-// ── System prompt ────────────────────────────────────────────────────────────
+// ── System prompts ───────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT: &str = r#"你是 ClawdbotCN 桌面应用的检修助手。用户的 Gateway (Node.js) 服务无法启动或已崩溃。
+/// Scenario A: Gateway (Node.js sidecar) has crashed or failed to start.
+const SYSTEM_PROMPT_GATEWAY_DOWN: &str = r#"你是 ClawdbotCN 桌面应用的检修助手。用户的 Gateway (Node.js) 服务无法启动或已崩溃。
 
 你会收到以下诊断信息：
 1. 系统信息（操作系统、内存、磁盘空间）
@@ -100,16 +101,70 @@ const SYSTEM_PROMPT: &str = r#"你是 ClawdbotCN 桌面应用的检修助手。�
 
 使用中文回复。回复要简洁实用，不要过于冗长。"#;
 
+/// Scenario B: Gateway is running but chat / AI features are broken.
+/// Focus: API key issues, model config errors, network/proxy, 401/429/502, WebSocket failures.
+const SYSTEM_PROMPT_FUNCTIONAL: &str = r#"你是 ClawdbotCN 桌面应用的检修助手。用户的 Gateway 服务正在运行，但 AI 聊天或其他功能出现报错。
+
+你会收到以下诊断信息：
+1. 系统信息（操作系统、内存、磁盘空间）
+2. 自动诊断结果（配置验证、权限检查等）
+3. 最近的日志（可能包含 API 请求日志、WebSocket 日志、错误堆栈）
+4. 用户描述的问题
+
+常见功能性故障及排查方向：
+- HTTP 401 / 认证失败 → API Key 无效、过期或未配置，检查 auth-profiles.json 和模型提供商配置
+- HTTP 429 / 限速 → API 调用频率过高，建议降低并发或更换提供商
+- HTTP 502 / 504 / ECONNREFUSED → 上游 AI 服务故障或网络代理配置错误
+- WebSocket 断连 / 重连循环 → 检查防火墙/代理是否屏蔽 ws:// 协议
+- "model not found" / 模型名称错误 → 核对模型 ID 是否与提供商支持列表匹配
+- JSON 解析错误 / 响应格式异常 → 提供商返回了非标准响应，可能是 base URL 配置错误
+- 配置被意外覆写 / 字段丢失 → 查看 config-audit.jsonl，找出最后一次配置写入来源
+- 工具调用失败 / MCP 连接超时 → 检查 MCP server 配置和可执行文件路径
+
+基于日志信息，请：
+- 找出具体的错误码、错误消息和触发时间
+- 给出针对性的修复建议（优先用户可自行操作的步骤）
+- 如果可以自动修复，用 [FIX:fix_id] 标记
+
+可用的自动修复操作：
+- [FIX:restart_service] 重启 Gateway 服务（适用于内存泄漏、状态卡死）
+- [FIX:clear_gateway_locks] 清理残留锁文件
+- [FIX:clear_cache] 清除缓存和临时文件
+- [FIX:repair_config_syntax] 修复配置文件格式
+- [FIX:repair_permissions] 修复目录权限
+- [FIX:reset_auth_profiles] 重置认证配置（⚠️ 会清除已保存的 API Key，需重新填写）
+- [FIX:open_state_dir] 打开状态目录（方便用户手动检查配置文件）
+- [FIX:run_doctor] 运行 openclawcn doctor 全面自检修复（20+ 项检查，推荐首选）
+
+使用中文回复。聚焦错误根因，给出可操作的具体步骤，不要泛泛而谈。"#;
+
+/// Select the appropriate system prompt based on gateway status.
+fn select_system_prompt(gateway_running: bool) -> &'static str {
+    if gateway_running {
+        SYSTEM_PROMPT_FUNCTIONAL
+    } else {
+        SYSTEM_PROMPT_GATEWAY_DOWN
+    }
+}
+
 // ── Streaming chat ───────────────────────────────────────────────────────────
 
 /// Send a streaming chat request to an AI provider.
 /// Tokens are pushed to the frontend via `app.emit("repair-ai-token", ...)`.
+///
+/// `gateway_running`: whether the Gateway sidecar is currently alive.
+/// When `true`, the functional-error system prompt is used (API key issues,
+/// model config, 401/429/502, WebSocket failures, etc.).
+/// When `false`, the crash/startup-failure prompt is used instead.
 pub async fn stream_chat(
     app: &AppHandle,
     provider: &DiscoveredProvider,
     user_message: &str,
     context: &str,
+    gateway_running: bool,
 ) -> Result<(), String> {
+    let system_prompt = select_system_prompt(gateway_running);
+
     // Build the full user message with context
     let full_message = if context.is_empty() {
         user_message.to_string()
@@ -119,13 +174,13 @@ pub async fn stream_chat(
 
     match &provider.api_type {
         ApiType::OpenAiCompat => {
-            stream_openai_compat(app, provider, &full_message).await
+            stream_openai_compat(app, provider, &full_message, system_prompt).await
         }
         ApiType::AnthropicMessages => {
-            stream_anthropic(app, provider, &full_message).await
+            stream_anthropic(app, provider, &full_message, system_prompt).await
         }
         ApiType::GoogleGemini => {
-            stream_google_gemini(app, provider, &full_message).await
+            stream_google_gemini(app, provider, &full_message, system_prompt).await
         }
     }
 }
@@ -134,13 +189,14 @@ async fn stream_openai_compat(
     app: &AppHandle,
     provider: &DiscoveredProvider,
     user_message: &str,
+    system_prompt: &str,
 ) -> Result<(), String> {
     let url = format!("{}/chat/completions", provider.base_url.trim_end_matches('/'));
 
     let messages = vec![
         ChatMessage {
             role: "system".to_string(),
-            content: SYSTEM_PROMPT.to_string(),
+            content: system_prompt.to_string(),
         },
         ChatMessage {
             role: "user".to_string(),
@@ -156,10 +212,16 @@ async fn stream_openai_compat(
     };
 
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        reqwest::header::AUTHORIZATION,
-        format!("Bearer {}", provider.api_key).parse().unwrap(),
-    );
+    let auth_value = format!("Bearer {}", provider.api_key)
+        .parse()
+        .map_err(|_| {
+            let msg = "API Key 包含非法字符，无法设置请求头".to_string();
+            let _ = app.emit("repair-ai-token", TokenPayload {
+                text: String::new(), done: true, error: Some(msg.clone()),
+            });
+            msg
+        })?;
+    headers.insert(reqwest::header::AUTHORIZATION, auth_value);
     headers.insert(
         reqwest::header::CONTENT_TYPE,
         "application/json".parse().unwrap(),
@@ -216,6 +278,14 @@ async fn stream_openai_compat(
         };
 
         buffer.push_str(&String::from_utf8_lossy(&chunk));
+        // Guard against malformed SSE with no newlines filling memory
+        if buffer.len() > 2 * 1024 * 1024 {
+            let msg = "SSE 响应格式异常（单行超过 2 MB），已终止流读取".to_string();
+            let _ = app.emit("repair-ai-token", TokenPayload {
+                text: String::new(), done: true, error: Some(msg),
+            });
+            return Ok(());
+        }
 
         // Process complete SSE lines
         while let Some(newline_pos) = buffer.find('\n') {
@@ -263,6 +333,7 @@ async fn stream_anthropic(
     app: &AppHandle,
     provider: &DiscoveredProvider,
     user_message: &str,
+    system_prompt: &str,
 ) -> Result<(), String> {
     let url = format!("{}/v1/messages", provider.base_url.trim_end_matches('/'));
 
@@ -276,13 +347,21 @@ async fn stream_anthropic(
     let request_body = AnthropicRequest {
         model: provider.default_model.clone(),
         messages,
-        system: SYSTEM_PROMPT.to_string(),
+        system: system_prompt.to_string(),
         stream: true,
         max_tokens: 4096,
     };
 
     let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert("x-api-key", provider.api_key.parse().unwrap());
+    let api_key_value = provider.api_key.parse()
+        .map_err(|_| {
+            let msg = "API Key 包含非法字符，无法设置请求头".to_string();
+            let _ = app.emit("repair-ai-token", TokenPayload {
+                text: String::new(), done: true, error: Some(msg.clone()),
+            });
+            msg
+        })?;
+    headers.insert("x-api-key", api_key_value);
     headers.insert("anthropic-version", "2023-06-01".parse().unwrap());
     headers.insert(
         reqwest::header::CONTENT_TYPE,
@@ -340,6 +419,13 @@ async fn stream_anthropic(
         };
 
         buffer.push_str(&String::from_utf8_lossy(&chunk));
+        if buffer.len() > 2 * 1024 * 1024 {
+            let msg = "SSE 响应格式异常（单行超过 2 MB），已终止流读取".to_string();
+            let _ = app.emit("repair-ai-token", TokenPayload {
+                text: String::new(), done: true, error: Some(msg),
+            });
+            return Ok(());
+        }
 
         while let Some(newline_pos) = buffer.find('\n') {
             let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
@@ -428,6 +514,7 @@ async fn stream_google_gemini(
     app: &AppHandle,
     provider: &DiscoveredProvider,
     user_message: &str,
+    system_prompt: &str,
 ) -> Result<(), String> {
     let base = provider.base_url.trim_end_matches('/');
     let url = format!(
@@ -445,7 +532,7 @@ async fn stream_google_gemini(
         system_instruction: GeminiContent {
             role: "user".to_string(),
             parts: vec![GeminiPart {
-                text: SYSTEM_PROMPT.to_string(),
+                text: system_prompt.to_string(),
             }],
         },
     };
@@ -511,6 +598,13 @@ async fn stream_google_gemini(
         };
 
         buffer.push_str(&String::from_utf8_lossy(&chunk));
+        if buffer.len() > 2 * 1024 * 1024 {
+            let msg = "SSE 响应格式异常（单行超过 2 MB），已终止流读取".to_string();
+            let _ = app.emit("repair-ai-token", TokenPayload {
+                text: String::new(), done: true, error: Some(msg),
+            });
+            return Ok(());
+        }
 
         while let Some(newline_pos) = buffer.find('\n') {
             let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
@@ -721,10 +815,10 @@ mod tests {
         assert!(!is_anthropic_message_stop("invalid json"));
     }
 
-    // ── SYSTEM_PROMPT validation ────────────────────────────────────
+    // ── System prompt validation ────────────────────────────────────
 
     #[test]
-    fn test_system_prompt_contains_all_fix_ids() {
+    fn test_gateway_down_prompt_contains_all_fix_ids() {
         let fix_ids = [
             "restart_service", "kill_stale_port", "clear_gateway_locks",
             "clear_cache", "repair_config_syntax", "repair_permissions",
@@ -732,8 +826,25 @@ mod tests {
         ];
         for fix_id in &fix_ids {
             assert!(
-                SYSTEM_PROMPT.contains(fix_id),
-                "SYSTEM_PROMPT should mention fix ID: {}",
+                SYSTEM_PROMPT_GATEWAY_DOWN.contains(fix_id),
+                "SYSTEM_PROMPT_GATEWAY_DOWN should mention fix ID: {}",
+                fix_id
+            );
+        }
+    }
+
+    #[test]
+    fn test_functional_prompt_contains_key_fix_ids() {
+        // The functional prompt covers a subset of fixes (no kill_stale_port but adds run_doctor)
+        let fix_ids = [
+            "restart_service", "clear_gateway_locks", "clear_cache",
+            "repair_config_syntax", "repair_permissions",
+            "reset_auth_profiles", "open_state_dir", "run_doctor",
+        ];
+        for fix_id in &fix_ids {
+            assert!(
+                SYSTEM_PROMPT_FUNCTIONAL.contains(fix_id),
+                "SYSTEM_PROMPT_FUNCTIONAL should mention fix ID: {}",
                 fix_id
             );
         }
@@ -741,7 +852,18 @@ mod tests {
 
     #[test]
     fn test_system_prompt_uses_chinese() {
-        assert!(SYSTEM_PROMPT.contains("中文"), "SYSTEM_PROMPT should instruct Chinese replies");
+        assert!(SYSTEM_PROMPT_GATEWAY_DOWN.contains("中文"), "SYSTEM_PROMPT_GATEWAY_DOWN should instruct Chinese replies");
+        assert!(SYSTEM_PROMPT_FUNCTIONAL.contains("中文"), "SYSTEM_PROMPT_FUNCTIONAL should instruct Chinese replies");
+    }
+
+    #[test]
+    fn test_select_system_prompt_gateway_running() {
+        assert_eq!(select_system_prompt(true), SYSTEM_PROMPT_FUNCTIONAL);
+    }
+
+    #[test]
+    fn test_select_system_prompt_gateway_down() {
+        assert_eq!(select_system_prompt(false), SYSTEM_PROMPT_GATEWAY_DOWN);
     }
 
     // ── ChatMessage serialization ───────────────────────────────────

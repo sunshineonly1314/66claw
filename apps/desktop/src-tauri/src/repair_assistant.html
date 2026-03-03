@@ -61,6 +61,15 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 .progress-bar-fill{height:100%;background:var(--accent);transition:width 0.3s;width:0}
 .progress-text{font-size:11px;color:var(--text2);margin-top:4px}
 
+/* Log batch analysis progress bar */
+.log-batch-bar{padding:6px 16px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0;display:none;align-items:center;gap:10px;font-size:11px;color:var(--text2)}
+.log-batch-bar.active{display:flex}
+.log-batch-bar .lbb-track{flex:1;height:3px;background:rgba(74,108,247,0.2);border-radius:2px;overflow:hidden}
+.log-batch-bar .lbb-fill{height:100%;background:var(--accent);transition:width 0.4s;width:0}
+.log-batch-bar .lbb-label{white-space:nowrap;min-width:110px;text-align:right}
+.log-batch-bar .lbb-stop{padding:2px 8px;font-size:11px;background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.25);border-radius:4px;cursor:pointer;flex-shrink:0}
+.log-batch-bar .lbb-stop:hover{background:rgba(248,113,113,0.3)}
+
 /* Right panel: AI chat */
 .panel-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .provider-bar{padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -311,9 +320,16 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
 正在自动扫描中，请稍候...</div>
       </div>
     </div>
+    <!-- Log batch analysis progress bar -->
+    <div class="log-batch-bar" id="log-batch-bar">
+      <div class="lbb-track"><div class="lbb-fill" id="lbb-fill"></div></div>
+      <span class="lbb-label" id="lbb-label">批次 0/0</span>
+      <span class="lbb-stop" id="btn-stop-batch">停止</span>
+    </div>
     <div class="chat-input-area">
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <button class="btn btn-primary" style="flex:1;padding:8px 16px;font-size:13px" id="btn-auto-diag">AI 自动诊断</button>
+        <button class="btn" style="padding:8px 14px;font-size:12px;white-space:nowrap" id="btn-analyze-logs" title="从日志末尾开始，逐批发给 AI 分析，直到找到根因">📋 分批分析日志</button>
       </div>
       <div class="chat-input-row">
         <textarea id="chat-input" placeholder="或者在这里描述你遇到的问题..."></textarea>
@@ -507,6 +523,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     var selectedProvider = "";
     var chatBusy = false;
     var currentAssistantMsg = null;
+    var batchAnalysisAborted = false; // flag to stop mid-batch-loop
     var repairInProgress = false;
     var cachedLogs = "";
     var screenshotImages = []; // Array of { dataUrl, file, id }
@@ -541,6 +558,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         on('btn-one-click', 'click', function() { oneClickRepair(); });
         on('btn-recheck', 'click', function() { runFullScan(); });
         on('btn-auto-diag', 'click', function() { autoDiagnose(); });
+        on('btn-analyze-logs', 'click', function() { analyzeLogsBatch(); });
+        on('btn-stop-batch', 'click', function() { batchAnalysisAborted = true; });
         on('btn-send', 'click', function() { sendMessage(); });
         on('chat-input', 'keydown', function(e) { handleChatKey(e); });
         on('btn-enable-ssh', 'click', function() { enableSsh(); });
@@ -1087,10 +1106,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         var context = buildContext();
         var invoke = getInvoke();
         if (!invoke) return;
+        var gwRunning = !!(diagnosticResult && diagnosticResult.system_info && diagnosticResult.system_info.sidecar_running);
         invoke("repair_ai_chat", {
             message: msg,
             context: context,
-            providerId: selectedProvider
+            providerId: selectedProvider,
+            gatewayRunning: gwRunning
         }).catch(function(e) {
             if (currentAssistantMsg) {
                 var errEl = document.createElement("div");
@@ -1147,10 +1168,12 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             startAssistantResponse();
 
             var context = buildContext();
+            var gwRunning = !!(diagnosticResult && diagnosticResult.system_info && diagnosticResult.system_info.sidecar_running);
             return invoke("repair_ai_chat", {
                 message: msg,
                 context: context,
-                providerId: selectedProvider
+                providerId: selectedProvider,
+                gatewayRunning: gwRunning
             });
         }).catch(function(e) {
             clearTimeout(safetyTimer);
@@ -1169,6 +1192,207 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     function updateAutoDiagBtn() {
         var btn = document.getElementById('btn-auto-diag');
         if (btn) { btn.disabled = false; btn.textContent = 'AI 自动诊断'; }
+    }
+
+    // ── Batch log analysis ──────────────────────────────────────
+    // Reads logs from the end in 80KB chunks, sends each batch to AI.
+    // The AI is asked to either "report findings" or "found root cause → stop".
+    // Stops automatically when AI signals root cause found or has_more=false.
+
+    function showBatchBar(pct, label) {
+        var bar = document.getElementById('log-batch-bar');
+        if (bar) bar.classList.add('active');
+        var fill = document.getElementById('lbb-fill');
+        if (fill) fill.style.width = pct + '%';
+        var lbl = document.getElementById('lbb-label');
+        if (lbl) lbl.textContent = label;
+    }
+    function hideBatchBar() {
+        var bar = document.getElementById('log-batch-bar');
+        if (bar) bar.classList.remove('active');
+    }
+
+    window.analyzeLogsBatch = function() {
+        if (chatBusy) {
+            appendChat("system", "AI 正在响应中，请等待当前对话完成。");
+            return;
+        }
+        if (!selectedProvider) {
+            appendChat("system", "没有可用的 AI 模型，无法分析日志。\n请先在应用中配置 AI 模型（DeepSeek、通义千问等）。");
+            return;
+        }
+        var invoke = getInvoke();
+        if (!invoke) { appendChat("system", "Tauri IPC 未就绪，请稍后重试。"); return; }
+
+        batchAnalysisAborted = false;
+        var analyzeBtn = document.getElementById('btn-analyze-logs');
+        if (analyzeBtn) { analyzeBtn.disabled = true; analyzeBtn.textContent = '分析中...'; }
+
+        appendChat("system", "开始分批分析日志（从最新内容往前）...");
+        showBatchBar(0, '读取日志...');
+
+        // Kick off with batch 0 (most recent)
+        runBatchLoop(invoke, 0, null);
+    };
+
+    function runBatchLoop(invoke, batchIdx, prevSummary) {
+        if (batchAnalysisAborted) {
+            hideBatchBar();
+            appendChat("system", "已停止批次分析。");
+            resetAnalyzeBatchBtn();
+            return;
+        }
+
+        invoke("repair_get_logs_batch", { batch: batchIdx }).then(function(result) {
+            if (batchAnalysisAborted) {
+                hideBatchBar();
+                appendChat("system", "已停止批次分析。");
+                resetAnalyzeBatchBtn();
+                return;
+            }
+
+            var total = (result.total_batches > 0) ? result.total_batches : 1;
+            var pct = Math.round(((batchIdx + 1) / total) * 100);
+            showBatchBar(pct, '批次 ' + (batchIdx + 1) + '/' + total);
+
+            // Build the per-batch prompt
+            var diagCtx = buildDiagContext(); // system state (compact)
+            var prevNote = prevSummary
+                ? "【前一批次分析摘要】\n" + prevSummary + "\n\n"
+                : "";
+            var isLast = !result.has_more || batchAnalysisAborted;
+
+            var userMsg =
+                "【日志批次 " + (batchIdx + 1) + "/" + total + "】\n" +
+                (isLast ? "这是最后一批日志。\n" : "") +
+                prevNote +
+                "请分析以下日志，找出报错原因。\n" +
+                "如果已确定根本原因，请在回复最后一行写：【根因已定位】\n" +
+                "如果还需要看更早的日志，请在最后一行写：【需要更多日志】\n\n" +
+                result.text;
+
+            appendChat("user",
+                "分析日志批次 " + (batchIdx + 1) + "/" + total +
+                "（约 " + Math.round(result.text.length / 1024) + " KB）");
+            startAssistantResponse();
+
+            // Track the full AI reply text for summary extraction
+            var replyText = "";
+
+            // Temporarily capture tokens to extract reply text and decide whether to continue.
+            // Tauri listen() returns a Promise<unsubscribe fn> — we MUST call the unsubscribe
+            // when the batch is done, otherwise listeners accumulate across batches.
+            // IMPORTANT: invoke("repair_ai_chat") is started INSIDE the listen().then() callback
+            // to guarantee the unsubscribe function is held before any tokens can arrive.
+            var listen = getListen();
+            var gwRunning = !!(diagnosticResult && diagnosticResult.system_info && diagnosticResult.system_info.sidecar_running);
+
+            function startAiRequest(tokenUnsubscribe) {
+                invoke("repair_ai_chat", {
+                    message: userMsg,
+                    context: diagCtx,
+                    providerId: selectedProvider,
+                    gatewayRunning: gwRunning
+                }).catch(function(e) {
+                    // AI request failed — token listener will never fire done:true, so clean it up
+                    if (typeof tokenUnsubscribe === 'function') {
+                        tokenUnsubscribe();
+                    }
+                    hideBatchBar();
+                    if (currentAssistantMsg) {
+                        var errEl = document.createElement("div");
+                        errEl.className = "msg-error";
+                        errEl.textContent = "批次 " + (batchIdx + 1) + " 请求失败: " + String(e);
+                        currentAssistantMsg.appendChild(errEl);
+                    }
+                    chatBusy = false;
+                    updateSendBtn();
+                    resetAnalyzeBatchBtn();
+                });
+            }
+
+            if (listen) {
+                listen("repair-ai-token", function(ev) {
+                    var p = ev.payload;
+                    if (p && !p.error && !p.done && p.text) {
+                        replyText += p.text;
+                    }
+                    if (p && p.done) {
+                        // Unsubscribe immediately to prevent listener accumulation
+                        if (typeof capturedUnsub === 'function') {
+                            capturedUnsub();
+                            capturedUnsub = null;
+                        }
+
+                        // Decide whether to continue
+                        var rootCauseFound = replyText.indexOf("根因已定位") !== -1 ||
+                                             replyText.indexOf("root cause identified") !== -1;
+                        var needMore = replyText.indexOf("需要更多日志") !== -1;
+
+                        if (batchAnalysisAborted || isLast || rootCauseFound || !needMore) {
+                            // Done
+                            hideBatchBar();
+                            if (rootCauseFound) {
+                                appendChat("system", "✅ AI 已定位根因，分析完成。");
+                            } else if (isLast) {
+                                appendChat("system", "已分析全部 " + total + " 批日志。");
+                            }
+                            resetAnalyzeBatchBtn();
+                        } else {
+                            // Extract summary up to a sentence boundary (Chinese period preferred)
+                            var raw = replyText.trim();
+                            var cutIdx = raw.lastIndexOf('。');
+                            var summary = (cutIdx > 100 && cutIdx < 500)
+                                ? raw.substring(0, cutIdx + 1)
+                                : raw.substring(0, 400);
+                            // Continue to next batch (older logs)
+                            setTimeout(function() {
+                                runBatchLoop(invoke, batchIdx + 1, summary);
+                            }, 400);
+                        }
+                    }
+                }).then(function(unsub) {
+                    // Unsubscribe fn is now available — start AI request so tokens can arrive
+                    capturedUnsub = unsub;
+                    startAiRequest(unsub);
+                }).catch(function() {
+                    // listen() failed — still fire AI request, just can't track continuation
+                    startAiRequest(null);
+                });
+                // capturedUnsub is set async in .then(); declared here for closure access
+                var capturedUnsub = null;
+            } else {
+                // No listen() available, fire AI request directly
+                startAiRequest(null);
+            }
+
+        }).catch(function(e) {
+            hideBatchBar();
+            appendChat("system", "读取日志批次失败: " + String(e));
+            resetAnalyzeBatchBtn();
+        });
+    }
+
+    function resetAnalyzeBatchBtn() {
+        var btn = document.getElementById('btn-analyze-logs');
+        if (btn) { btn.disabled = false; btn.textContent = '📋 分批分析日志'; }
+    }
+
+    // Compact system state for per-batch context (avoids repeating full diagnostics each batch)
+    function buildDiagContext() {
+        var lines = [];
+        if (diagnosticResult) {
+            var si = diagnosticResult.system_info;
+            lines.push("系统: " + si.os + " | Gateway: " + (si.sidecar_running ? "运行中" : "未运行") + " | 端口: " + si.gateway_port);
+            var fails = diagnosticResult.checks.filter(function(c) { return c.status !== 'Pass'; });
+            if (fails.length > 0) {
+                lines.push("异常项: " + fails.map(function(c) { return c.name + "(" + c.status + ")"; }).join(", "));
+            }
+        }
+        if (doctorOutput && !doctorOutput.success) {
+            lines.push("Doctor: FAIL");
+        }
+        return lines.join("\n");
     }
 
     function startAssistantResponse() {
