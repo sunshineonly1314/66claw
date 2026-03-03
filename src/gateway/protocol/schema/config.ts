@@ -37,6 +37,22 @@ export const ConfigPatchParamsSchema = Type.Object(
 
 export const ConfigSchemaParamsSchema = Type.Object({}, { additionalProperties: false });
 
+export const ConfigRollbackListParamsSchema = Type.Object({}, { additionalProperties: false });
+
+export const ConfigRollbackApplyParamsSchema = Type.Object(
+  {
+    /** 备份槽位：0=最新(.bak), 1=.bak.1, 2=.bak.2 */
+    index: Type.Integer({ minimum: 0, maximum: 2 }),
+    /** true=仅验证备份可用性，不实际写入 */
+    dryRun: Type.Optional(Type.Boolean()),
+    sessionKey: Type.Optional(Type.String()),
+    note: Type.Optional(Type.String()),
+    restartDelayMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    noRestart: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
 export const UpdateRunParamsSchema = Type.Object(
   {
     sessionKey: Type.Optional(Type.String()),

@@ -16,6 +16,7 @@ import {
 } from "../../config/config.js";
 import { applyLegacyMigrations } from "../../config/legacy.js";
 import { applyMergePatch } from "../../config/merge-patch.js";
+import { listConfigBackups, rollbackConfig } from "../../config/config-rollback.js";
 import {
   redactConfigObject,
   redactConfigSnapshot,
@@ -39,6 +40,8 @@ import {
   validateConfigApplyParams,
   validateConfigGetParams,
   validateConfigPatchParams,
+  validateConfigRollbackApplyParams,
+  validateConfigRollbackListParams,
   validateConfigSchemaParams,
   validateConfigSetParams,
 } from "../protocol/index.js";
@@ -289,6 +292,26 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    // [CN-PATCH:safety-check] 与 config.apply 相同的安全检查，防止 AI 通过 config.set 删除关键字段。
+    // config.set 是全量替换，使用 "apply" 模式（有硬阻断 + advisory warnings）。
+    let safetyCheckSet: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
+    try {
+      safetyCheckSet = runConfigSafetyCheck(validated.config, snapshot.config, "apply");
+    } catch {
+      /* if the safety check itself throws, degrade gracefully and allow write */
+    }
+    if (!safetyCheckSet.ok) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          safetyCheckSet.blockReason ??
+            "config.set blocked by safety check; use config.patch instead",
+        ),
+      );
+      return;
+    }
     await withConfigWriteLock(async () => {
       await writeConfigFile(validated.config, writeOptions);
     });
@@ -298,6 +321,7 @@ export const configHandlers: GatewayRequestHandlers = {
         ok: true,
         path: CONFIG_PATH,
         config: redactConfigObject(validated.config, schemaSet.uiHints),
+        ...(safetyCheckSet.warnings.length > 0 ? { safetyWarnings: safetyCheckSet.warnings } : {}),
       },
       undefined,
     );
@@ -494,13 +518,26 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    // [CN-PATCH:safety-check] Advisory pre-write safety check.
-    // Never blocks the write — warnings are attached to the success response.
+    // [CN-PATCH:safety-check] Pre-write safety check.
+    // For critical-field drops or >70% size reduction, this BLOCKS the write.
+    // For lesser issues it attaches advisory warnings to the success response.
     let safetyCheck: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
     try {
       safetyCheck = runConfigSafetyCheck(validated.config, snapshot.config, "apply");
     } catch {
-      /* advisory only — never block writes */
+      /* if the safety check itself throws, degrade gracefully and allow write */
+    }
+    if (!safetyCheck.ok) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          safetyCheck.blockReason ??
+            "config.apply blocked by safety check; use config.patch instead",
+        ),
+      );
+      return;
     }
 
     await withConfigWriteLock(async () => {
@@ -546,6 +583,136 @@ export const configHandlers: GatewayRequestHandlers = {
         restart,
         sentinel: sentinelPath ? { path: sentinelPath } : undefined,
         ...(safetyCheck.warnings.length > 0 ? { safetyWarnings: safetyCheck.warnings } : {}),
+      },
+      undefined,
+    );
+  },
+  /**
+   * config.rollback.list — 列出可用的配置备份槽位。
+   *
+   * 返回最多 3 个备份（.bak / .bak.1 / .bak.2），每个包含：
+   * - index, filePath, exists, sizeBytes, modifiedAt
+   * - version（meta.lastTouchedVersion）, touchedAt（meta.lastTouchedAt）
+   * - valid（是否通过 schema 验证）, issues（验证问题列表）
+   *
+   * 供 AI 在配置损坏时调用，确认可用备份后再执行 config.rollback.apply。
+   */
+  "config.rollback.list": async ({ params, respond }) => {
+    if (!validateConfigRollbackListParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid config.rollback.list params: ${formatValidationErrors(validateConfigRollbackListParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const backups = listConfigBackups();
+    respond(true, { backups }, undefined);
+  },
+  /**
+   * config.rollback.apply — 将配置回滚到指定备份槽位。
+   *
+   * 参数：
+   * - index: 备份槽位（0=最新 .bak, 1=.bak.1, 2=.bak.2）
+   * - dryRun?: 仅验证备份合法性，不实际写入（默认 false）
+   * - sessionKey?: 重启后发送通知的会话 key
+   * - note?: 附加说明（写入重启 sentinel）
+   * - restartDelayMs?: 重启延迟（毫秒）
+   * - noRestart?: true 则不触发 SIGUSR1 重启（默认 false，回滚后自动重启）
+   *
+   * 流程：先 dry-run 验证备份可用 → 执行原子性回滚 → 可选 SIGUSR1 重启。
+   * 回滚前会将当前配置保存到 .pre-rollback.bak，以便紧急恢复。
+   */
+  "config.rollback.apply": async ({ params, respond }) => {
+    if (!validateConfigRollbackApplyParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid config.rollback.apply params: ${formatValidationErrors(validateConfigRollbackApplyParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const index = (params as { index: number }).index;
+    const dryRun = (params as { dryRun?: boolean }).dryRun === true;
+
+    // 先 dry-run 验证备份可用且合法，避免回滚到坏备份
+    const dryResult = await rollbackConfig(index, { validate: true, dryRun: true });
+    if (!dryResult.ok) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          dryResult.error ?? `config backup slot ${index} is invalid or missing`,
+        ),
+      );
+      return;
+    }
+
+    if (dryRun) {
+      respond(
+        true,
+        {
+          ok: true,
+          dryRun: true,
+          index,
+          version: dryResult.version,
+          restoredFrom: dryResult.restoredFrom,
+        },
+        undefined,
+      );
+      return;
+    }
+
+    // 实际回滚：通过 write lock 串行化，防止与并发 config 写入冲突
+    let rollbackErr: string | undefined;
+    await withConfigWriteLock(async () => {
+      const result = await rollbackConfig(index, { validate: true, dryRun: false });
+      if (!result.ok) {
+        rollbackErr = result.error ?? "rollback failed";
+      }
+    });
+    if (rollbackErr) {
+      respond(false, undefined, errorShape(ErrorCodes.INTERNAL_ERROR, rollbackErr));
+      return;
+    }
+
+    // 可选重启（同 config.apply / config.patch 逻辑）
+    const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
+      resolveConfigRestartRequest(params);
+    let restart: ReturnType<typeof scheduleGatewaySigusr1Restart> | undefined;
+    let sentinelPath: string | null = null;
+    if (!noRestart) {
+      const payload = buildConfigRestartSentinelPayload({
+        kind: "config-apply",
+        mode: "config.rollback.apply",
+        sessionKey,
+        deliveryContext,
+        threadId,
+        note,
+      });
+      sentinelPath = await tryWriteRestartSentinelPayload(payload);
+      restart = scheduleGatewaySigusr1Restart({
+        delayMs: restartDelayMs,
+        reason: "config.rollback.apply",
+      });
+    }
+
+    respond(
+      true,
+      {
+        ok: true,
+        index,
+        version: dryResult.version,
+        restoredFrom: dryResult.restoredFrom,
+        restart,
+        sentinel: sentinelPath ? { path: sentinelPath } : undefined,
       },
       undefined,
     );
