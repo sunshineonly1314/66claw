@@ -165,6 +165,8 @@ pub fn stop_tunnel() -> Result<(), String> {
                 .args(["/F", "/T", "/PID", &pid.to_string()])
                 .creation_flags(0x08000000)
                 .output();
+            // Reap the child handle to release OS resources (prevent zombie handle leak).
+            let _ = child.wait();
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -304,6 +306,10 @@ fn cleanup_frpc_config() {
 ///   `[I] [proxy_manager.go:xxx] [repair-ssh-xxx] proxy start, remote_port: 20123`
 /// or newer versions:
 ///   `start proxy success ... remotePort: 20123`
+///
+/// IMPORTANT: BufReader::lines() is blocking — we must run it in a dedicated thread
+/// and use a channel + recv_timeout so the main thread never blocks indefinitely
+/// (e.g. when frpc hangs without producing any output due to a network issue).
 fn parse_remote_port(child: &mut Child) -> Result<u16, String> {
     // Take stderr (frpc logs to stderr in recent versions)
     let stderr = child
@@ -311,13 +317,42 @@ fn parse_remote_port(child: &mut Child) -> Result<u16, String> {
         .take()
         .ok_or("无法获取 frpc 输出")?;
 
-    let reader = BufReader::new(stderr);
-    let start = Instant::now();
+    // Spawn a reader thread to avoid blocking the main thread.
+    // The channel is bounded(1) — we only need the first result.
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Result<u16, String>>(1);
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line_result in reader.lines() {
+            let line = match line_result {
+                Ok(l) => l,
+                Err(e) => {
+                    let _ = tx.send(Err(format!("读取 frpc 输出失败: {}", e)));
+                    return;
+                }
+            };
+            println!("[RemoteTunnel] frpc: {}", line);
 
-    for line in reader.lines() {
-        if start.elapsed() > Duration::from_secs(STARTUP_TIMEOUT_SECS) {
-            // Kill the child process before returning — otherwise frpc continues
-            // running silently, leaking resources and keeping the tunnel open.
+            if let Some(port) = extract_port_from_line(&line) {
+                let _ = tx.send(Ok(port));
+                return;
+            }
+
+            if line.contains("connect to server error")
+                || line.contains("login to server failed")
+            {
+                let _ = tx.send(Err(format!("frpc 连接服务器失败: {}", line)));
+                return;
+            }
+        }
+        // Process exited without printing port
+        let _ = tx.send(Err("frpc 进程异常退出，未能建立隧道".into()));
+    });
+
+    // Wait for the reader thread with a hard timeout.
+    match rx.recv_timeout(Duration::from_secs(STARTUP_TIMEOUT_SECS)) {
+        Ok(result) => result,
+        Err(_timeout) => {
+            // Timeout — kill the frpc process before returning.
             let pid = child.id();
             println!("[RemoteTunnel] frpc startup timeout, killing pid {}", pid);
             #[cfg(target_os = "windows")]
@@ -332,41 +367,9 @@ fn parse_remote_port(child: &mut Child) -> Result<u16, String> {
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            return Err("frpc 启动超时，未能获取分配的远程端口".into());
-        }
-
-        let line = line.map_err(|e| format!("读取 frpc 输出失败: {}", e))?;
-        println!("[RemoteTunnel] frpc: {}", line);
-
-        // Try to extract remote port from various frpc log formats
-        if let Some(port) = extract_port_from_line(&line) {
-            return Ok(port);
-        }
-
-        // Check for connection error
-        if line.contains("connect to server error")
-            || line.contains("login to server failed")
-        {
-            // Kill the child on connection error too
-            let pid = child.id();
-            println!("[RemoteTunnel] frpc connection error, killing pid {}", pid);
-            #[cfg(target_os = "windows")]
-            {
-                let _ = Command::new("taskkill")
-                    .args(["/F", "/T", "/PID", &pid.to_string()])
-                    .creation_flags(0x08000000)
-                    .output();
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-            return Err(format!("frpc 连接服务器失败: {}", line));
+            Err("frpc 启动超时，未能获取分配的远程端口".into())
         }
     }
-
-    Err("frpc 进程异常退出，未能建立隧道".into())
 }
 
 /// Extract a remote port number from an frpc log line.
