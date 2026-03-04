@@ -161,7 +161,7 @@ async function run() {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: 'ci-test',
+        id: 'test',
         displayName: 'CI Test Client',
         version: '1.6.2',
         platform: 'darwin',

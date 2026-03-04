@@ -31,14 +31,15 @@ fi
 MAC_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.host")
 MAC_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.user")
 MAC_WORKSPACE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.workspace")
-# Construct Gitee clone URL from env var (never hardcode PAT in config files)
-if [ -z "$GITEE_PAT" ]; then
-  echo "ERROR: GITEE_PAT environment variable is not set."
-  echo "Set it with: export GITEE_PAT='your-gitee-personal-access-token'"
-  exit 1
+# Construct Gitee clone URL: PAT optional — if not set, builder uses its own stored credentials
+if [ -n "$GITEE_PAT" ]; then
+  MAC_REPO_TEMPLATE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo_template")
+  MAC_REPO=$(echo "$MAC_REPO_TEMPLATE" | sed "s/\${GITEE_PAT}/$GITEE_PAT/g")
+else
+  # No PAT — use plain URL; builder machine must have git credentials configured
+  MAC_REPO=$(node -p "require('$CONFIG_FILE_WIN').gitee.repo")
+  echo "INFO: GITEE_PAT not set locally — builder will use its own git credentials (git fetch mode)"
 fi
-MAC_REPO_TEMPLATE=$(node -p "require('$CONFIG_FILE_WIN').builders.macos.gitee_repo_template")
-MAC_REPO=$(echo "$MAC_REPO_TEMPLATE" | sed "s/\${GITEE_PAT}/$GITEE_PAT/g")
 
 # 参数解析（支持命名参数和位置参数）
 VERSION=""

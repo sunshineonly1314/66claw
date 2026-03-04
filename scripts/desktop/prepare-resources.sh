@@ -186,6 +186,16 @@ if [[ -d "$DIST_SOURCE" ]]; then
   done
   log "  Removed $GUI_REMOVED private GUI automation files from dist/"
 
+  # ── 2b. Create src/infra/safe-rename.js shim for orchestrator extension ──
+  # extensions/orchestrator/src/state.jsc (bytecode) resolves the import
+  # "../../../src/infra/safe-rename.js" relative to its own directory, which
+  # maps to resources/src/infra/safe-rename.js.  The actual file lives at
+  # resources/dist/infra/safe-rename.js, so we create a re-export shim.
+  mkdir -p "$RESOURCES_DIR/src/infra"
+  printf 'module.exports = require("../../dist/infra/safe-rename.js");\n' \
+    > "$RESOURCES_DIR/src/infra/safe-rename.js"
+  log "  Created src/infra/safe-rename.js shim (orchestrator compat)"
+
   # ── 2a. Fix rolldown chunk circular dependency in plugin-sdk ──
   # rolldown splits dist/plugin-sdk/index.js into index.js + pi-model-discovery-*.js
   # The chunk file imports { t as __exportAll } from "./index.js", but index.js

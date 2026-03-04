@@ -143,6 +143,15 @@ if (Test-Path $distSource) {
     }
     Write-Host "  Removed $guiRemoved private GUI automation files from dist/" -ForegroundColor Yellow
 
+    # ── 2b. Create src/infra/safe-rename.js shim for orchestrator extension ──
+    # extensions/orchestrator/src/state.jsc resolves "../../../src/infra/safe-rename.js"
+    # which maps to resources/src/infra/safe-rename.js in the packaged app.
+    # The actual file lives at resources/dist/infra/safe-rename.js, so we create a shim.
+    $shimDir = Join-Path $ResourcesDir "src\infra"
+    New-Item -ItemType Directory -Path $shimDir -Force | Out-Null
+    Set-Content -Path (Join-Path $shimDir "safe-rename.js") -Value 'module.exports = require("../../dist/infra/safe-rename.js");' -Encoding UTF8
+    Write-Host "  Created src/infra/safe-rename.js shim (orchestrator compat)" -ForegroundColor Yellow
+
     # ── 2a. Fix rolldown chunk circular dependency in plugin-sdk ──
     # rolldown splits dist/plugin-sdk/index.js into index.js + pi-model-discovery-*.js
     # The chunk file imports { t as __exportAll } from "./index.js", but index.js

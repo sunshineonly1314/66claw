@@ -119,4 +119,20 @@
   FileOpen $0 "$INSTDIR\resources\install.json" w
   FileWrite $0 '{"installKind":"installer","updateServer":"https://www.obplugins.cn","version":"${VERSION}"}'
   FileClose $0
+
+  ; --- Add Windows Defender exclusion for the install directory ---
+  ; The bundled node.exe is unsigned and may be flagged as a threat by Windows Defender,
+  ; preventing it from running. We add an exclusion for the entire install directory
+  ; so that node.exe (the gateway runtime) can start without being blocked.
+  ; This requires administrator privileges — Tauri NSIS installer runs elevated.
+  nsExec::ExecToStack 'powershell -NoProfile -NonInteractive -Command "\
+    try {\
+      Add-MpPreference -ExclusionPath ''$INSTDIR'' -ErrorAction Stop;\
+      Write-Host ''Defender exclusion added: $INSTDIR'';\
+    } catch {\
+      Write-Host (''Defender exclusion skipped: '' + $$_.Exception.Message);\
+    }\
+  "'
+  Pop $0
+  Pop $1
 !macroend

@@ -82,4 +82,15 @@ export default defineConfig([
     fixedExtension: false,
     platform: "node",
   },
+  {
+    // Required by extensions/orchestrator/src/state.ts via relative import
+    // "../../../src/infra/safe-rename.js". Must be a named entry so the file
+    // lands at dist/infra/safe-rename.js and is reachable at runtime.
+    entry: "src/infra/safe-rename.ts",
+    outDir: "dist/infra",
+    env,
+    external,
+    fixedExtension: false,
+    platform: "node",
+  },
 ]);

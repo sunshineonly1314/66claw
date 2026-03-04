@@ -30,14 +30,15 @@ fi
 # 解析配置（不使用 fallback 硬编码 IP，强制从 config.json 读取）
 WIN_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.host")
 WIN_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.user")
-# Construct Gitee clone URL from env var (never hardcode PAT in config files)
-if [ -z "$GITEE_PAT" ]; then
-  echo "ERROR: GITEE_PAT environment variable is not set."
-  echo "Set it with: export GITEE_PAT='your-gitee-personal-access-token'"
-  exit 1
+# Construct Gitee clone URL: PAT optional — if not set, builder uses its own stored credentials
+if [ -n "$GITEE_PAT" ]; then
+  WIN_REPO_TEMPLATE=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.gitee_repo_template")
+  WIN_REPO=$(echo "$WIN_REPO_TEMPLATE" | sed "s/\${GITEE_PAT}/$GITEE_PAT/g")
+else
+  # No PAT — use plain URL; builder machine must have git credentials configured
+  WIN_REPO=$(node -p "require('$CONFIG_FILE_WIN').gitee.repo")
+  echo "INFO: GITEE_PAT not set locally — builder will use its own git credentials (git fetch mode)"
 fi
-WIN_REPO_TEMPLATE=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.gitee_repo_template")
-WIN_REPO=$(echo "$WIN_REPO_TEMPLATE" | sed "s/\${GITEE_PAT}/$GITEE_PAT/g")
 
 # 参数解析（位置参数 + 命名参数）
 VERSION=""
@@ -170,8 +171,7 @@ if (\$artifacts) {
 
 } # end DEPLOY_ONLY check
 
-# ── Pre-Deploy Package Gate: 打包质量硬门卫 ──
-# 构建完成后、release-deploy 之前，验证包质量（任一检查失败则 exit 1）
+# Pre-Deploy Package Gate
 Write-Host ""
 Write-Host "========================================="
 Write-Host "  Pre-Deploy Package Gate"
@@ -180,14 +180,14 @@ Write-Host "========================================="
 # Reset CWD back to workspace (build.ps1 subprocess may have changed it)
 Set-Location \$WORKSPACE
 
-# Gate-1: dist/entry.js 主入口
+# Gate-1: dist/entry.js
 if (-not (Test-Path 'dist\entry.js')) {
-    Write-Host "ERROR: dist\entry.js not found — TypeScript compile failed"
+    Write-Host "ERROR: dist\entry.js not found - TypeScript compile failed"
     exit 1
 }
-Write-Host "  [PASS] dist/entry.js ✓"
+Write-Host "  [PASS] dist/entry.js OK"
 
-# Gate-2: .jsc 字节码数量 >= 100
+# Gate-2: .jsc bytecode count >= 100
 \$jscFiles = @(Get-ChildItem -Path 'dist' -Recurse -Filter '*.jsc' -ErrorAction SilentlyContinue)
 \$jscCount = \$jscFiles.Count
 \$jscMin = 100
@@ -196,31 +196,31 @@ if (\$jscCount -lt \$jscMin) {
     Write-Host "  Check that bytenode compilation completed without errors"
     exit 1
 }
-Write-Host "  [PASS] .jsc bytecode: \$jscCount files (>= \$jscMin) ✓"
+Write-Host "  [PASS] .jsc bytecode: \$jscCount files (>= \$jscMin) OK"
 
 # Gate-3: integrity-hashes.json
 if (-not (Test-Path 'dist\security\integrity-hashes.json')) {
-    Write-Host "ERROR: dist\security\integrity-hashes.json not found — integrity:gen failed"
+    Write-Host "ERROR: dist\security\integrity-hashes.json not found - integrity:gen failed"
     exit 1
 }
-Write-Host "  [PASS] integrity-hashes.json ✓"
+Write-Host "  [PASS] integrity-hashes.json OK"
 
 # Gate-4: control-ui
 if (-not (Test-Path 'dist\control-ui\index.html')) {
-    Write-Host "ERROR: dist\control-ui\index.html not found — ui:build failed"
+    Write-Host "ERROR: dist\control-ui\index.html not found - ui:build failed"
     exit 1
 }
-Write-Host "  [PASS] control-ui ✓"
+Write-Host "  [PASS] control-ui OK"
 
-# Gate-5: extensions 非空
+# Gate-5: extensions not empty
 \$extFiles = @(Get-ChildItem -Path 'extensions' -Recurse -Include '*.js','*.jsc' -ErrorAction SilentlyContinue)
 if (\$extFiles.Count -eq 0) {
-    Write-Host "ERROR: extensions/ has no executable files (.js/.jsc) — extensions build failed"
+    Write-Host "ERROR: extensions/ has no executable files (.js/.jsc) - extensions build failed"
     exit 1
 }
-Write-Host "  [PASS] extensions: \$(\$extFiles.Count) files ✓"
+Write-Host "  [PASS] extensions: \$(\$extFiles.Count) files OK"
 
-# Gate-6: data/ 种子文件完整性（data/ 存在时验证）
+# Gate-6: data/ seed file integrity (only when data/ exists)
 if (Test-Path 'data') {
     \$dataSeedFiles = @(
         'mcp-index.db', 'mcp-index.json', 'tool-index.sqlite',
@@ -237,10 +237,10 @@ if (Test-Path 'data') {
         \$missingData | ForEach-Object { Write-Host "  - data\\$_" }
         exit 1
     }
-    Write-Host "  [PASS] data/ seed files: \$(\$dataSeedFiles.Count) files ✓"
+    Write-Host "  [PASS] data/ seed files: \$(\$dataSeedFiles.Count) files OK"
 }
 
-Write-Host "  Pre-deploy gate PASSED ✅"
+Write-Host "  Pre-deploy gate PASSED"
 Write-Host "========================================="
 
 # Release Deploy: generate delta packages + upload
