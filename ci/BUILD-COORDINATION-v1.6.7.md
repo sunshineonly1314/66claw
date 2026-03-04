@@ -25,11 +25,12 @@
 |------|------|------|------|
 | 版本升级 1.6.7 | ✅ 完成 | 2026-03-05 | tauri.conf.json |
 | 全量接口测试 | ✅ 通过 | 2026-03-05 | 0 FAIL / 73 PASS |
-| Windows 构建 | 🔄 进行中 | - | build-windows.sh |
-| 安装包验证 | ⏳ 等待 | - | Gate 1-5 |
+| Windows 构建 | ✅ 完成 | 2026-03-05 | 216MB, exit 0 |
+| 本地安装验证 | ✅ 通过 | 2026-03-05 | E:\openclawcn\ClawdbotCN install.json v1.6.7 |
+| 深度接口测试 | ✅ 通过 | 2026-03-05 | 73 PASS / 0 FAIL / 5 WARN (全非 Bug) |
 | 发布 | ⏳ 等待 | - | - |
 
-**Windows 包路径**: `E:\openclawcn\ClawdbotCN_1.6.7_x64-setup.exe`（构建后）
+**Windows 包路径**: `E:\openclawcn\ClawdbotCN_1.6.7_x64-setup.exe`
 
 ---
 
