@@ -25,13 +25,15 @@ export async function safeRename(src: string, dest: string): Promise<void> {
     await fsp.rename(src, dest);
   } catch {
     // Fallback: copy then unlink source.
-    // copyFile may also throw — let it propagate so callers know the write failed.
-    await fsp.copyFile(src, dest);
     try {
-      await fsp.unlink(src);
-    } catch {
-      /* source cleanup is best-effort */
+      await fsp.copyFile(src, dest);
+    } catch (copyErr) {
+      // copyFile failed — clean up the orphaned tmp source file before rethrowing.
+      await fsp.unlink(src).catch(() => {});
+      throw copyErr;
     }
+    // Copy succeeded — clean up source (best-effort).
+    await fsp.unlink(src).catch(() => {});
   }
 }
 
@@ -44,12 +46,22 @@ export function safeRenameSync(src: string, dest: string): void {
     fs.renameSync(src, dest);
   } catch {
     // Fallback: copy then unlink source.
-    // copyFileSync may also throw — let it propagate so callers know the write failed.
-    fs.copyFileSync(src, dest);
+    try {
+      fs.copyFileSync(src, dest);
+    } catch (copyErr) {
+      // copyFileSync failed — clean up the orphaned tmp source file before rethrowing.
+      try {
+        fs.unlinkSync(src);
+      } catch {
+        /* ignore */
+      }
+      throw copyErr;
+    }
+    // Copy succeeded — clean up source (best-effort).
     try {
       fs.unlinkSync(src);
     } catch {
-      /* source cleanup is best-effort */
+      /* ignore */
     }
   }
 }

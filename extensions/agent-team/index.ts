@@ -265,13 +265,15 @@ function rebuildAgentIndex(): void {
   // Two-pass: federation meta-projects first, then regular projects.
   // Regular (non-federation) projects overwrite federation entries so that
   // a child supervisor maps to its own child project, not the federation.
-  for (const [projectId, project] of projectCache) {
+  // Snapshot entries first to avoid concurrent Map mutation during iteration.
+  const entries = [...projectCache.entries()];
+  for (const [projectId, project] of entries) {
     if (!project.isFederation) continue;
     for (const memberId of project.memberIds) {
       agentToProject.set(memberId, projectId);
     }
   }
-  for (const [projectId, project] of projectCache) {
+  for (const [projectId, project] of entries) {
     if (project.isFederation) continue;
     for (const memberId of project.memberIds) {
       agentToProject.set(memberId, projectId);
@@ -1576,13 +1578,17 @@ const plugin: OpenClawCNPluginDefinition = {
               (m) => m.id !== updated.supervisorId,
             );
             const soul = generateSupervisorSoul(updated, nonSupervisor);
+            // Fire-and-forget SOUL.md update. Respond to caller first so the UI
+            // isn't blocked. Log warn on failure — do NOT silently swallow errors.
             callGateway("agents.files.set", {
               agentId: updated.supervisorId,
               name: "SOUL.md",
               content: soul,
-            }).catch((err) =>
-              logger.warn?.(`[agent-team] SOUL regen failed: ${err}`),
-            );
+            }).catch((err) => {
+              logger.warn?.(
+                `[agent-team] SOUL regen failed for project ${updated.projectId} supervisor ${updated.supervisorId}: ${err}`,
+              );
+            });
           }
 
           respond(true, { project: updated }, undefined);
@@ -1698,6 +1704,8 @@ const plugin: OpenClawCNPluginDefinition = {
           healthCache.delete(projectId);
           statsCache.delete(projectId);
           memberNameMapCache.delete(projectId);
+          learningCache.delete(projectId);
+          eventsSinceLastLearning.delete(projectId);
           activityBuffers.delete(projectId);
           const pendingSaveTimer = activitySaveTimers.get(projectId);
           if (pendingSaveTimer) {

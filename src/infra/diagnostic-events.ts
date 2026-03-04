@@ -152,7 +152,8 @@ export type DiagnosticOrchestratorDeployEvent = DiagnosticBaseEvent & {
     | "complete"
     | "cancelled"
     | "project-create-failed"
-    | "project-create-exhausted";
+    | "project-create-exhausted"
+    | "compensation-delete-failed";
   agentId?: string;
   agentCount?: number;
   agents?: string;

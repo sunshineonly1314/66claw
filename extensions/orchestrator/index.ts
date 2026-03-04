@@ -262,7 +262,9 @@ const plugin: OpenClawCNPluginDefinition = {
 
     // Track which planIds we've already attempted compensating project creation for.
     // This prevents repeated gateway calls on every poll.
+    // Capped at 2000 entries to prevent unbounded memory growth in long-running servers.
     const projectEnsureAttempted = new Set<string>();
+    const PROJECT_ENSURE_CAP = 2000;
 
     api.registerGatewayMethod("orchestrator.deploy.status", async ({ params, respond }) => {
       const planId = String((params as Record<string, unknown>).planId ?? "");
@@ -283,6 +285,11 @@ const plugin: OpenClawCNPluginDefinition = {
       // The handler is idempotent (checks sourcePlanId), so this is safe even if
       // the project was already created by executeDeploySequence.
       if (state.status === "deployed" && !projectEnsureAttempted.has(planId)) {
+        // Evict oldest entry when cap is reached to prevent unbounded memory growth.
+        if (projectEnsureAttempted.size >= PROJECT_ENSURE_CAP) {
+          const oldest = projectEnsureAttempted.values().next().value;
+          if (oldest !== undefined) projectEnsureAttempted.delete(oldest);
+        }
         projectEnsureAttempted.add(planId);
         void (async () => {
           try {

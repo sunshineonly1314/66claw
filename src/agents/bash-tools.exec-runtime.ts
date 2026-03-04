@@ -278,14 +278,16 @@ export function applyShellPath(env: Record<string, string>, shellPath?: string |
   if (entries.length === 0) {
     return;
   }
-  const merged = mergePathPrepend(env.PATH, entries);
+  // On Windows, the PATH key may be "Path" rather than "PATH" — find the correct key.
+  const pathKey = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  const merged = mergePathPrepend(env[pathKey], entries);
   if (merged) {
-    env.PATH = merged;
+    env[pathKey] = merged;
   }
   // Re-assert bundled node at the front of PATH.
   // Login shell PATH (from nvm/fnm/.bashrc) may have inserted a different node
   // version ahead of the bundled one; this ensures the correct V8 is always used.
-  env.PATH = prependBundledNodeToPath(env.PATH);
+  env[pathKey] = prependBundledNodeToPath(env[pathKey]);
 }
 
 function maybeNotifyOnExit(session: ProcessSession, status: "completed" | "failed") {

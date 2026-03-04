@@ -134,6 +134,7 @@ export { ToolPolicySchema } from "../config/zod-schema.agent-runtime.js";
 export type { RuntimeEnv } from "../runtime.js";
 export type { WizardPrompter } from "../wizard/prompts.js";
 export { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
+export { safeRename, safeRenameSync } from "../infra/safe-rename.js";
 export { formatAllowFromLowercase } from "./allow-from.js";
 export { resolveChannelAccountConfigBasePath } from "./config-paths.js";
 export { chunkTextForOutbound } from "./text-chunking.js";
@@ -270,6 +271,8 @@ export {
 } from "../agents/tools/common.js";
 export { formatDocsLink } from "../terminal/links.js";
 export type { HookEntry } from "../hooks/types.js";
+export { readProfile } from "../memory/profile-store.js";
+export type { UserProfile, ProfileEntry } from "../memory/profile-store.js";
 export { clamp, escapeRegExp, normalizeE164, safeParseJson, sleep } from "../utils.js";
 export { stripAnsi } from "../terminal/ansi.js";
 export { missingTargetError } from "../infra/outbound/target-errors.js";

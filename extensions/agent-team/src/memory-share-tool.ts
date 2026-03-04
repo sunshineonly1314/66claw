@@ -9,8 +9,8 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "../../../dist/agents/tools/common.js";
-import { jsonResult } from "../../../dist/agents/tools/common.js";
+import type { AnyAgentTool } from "openclawcn/plugin-sdk";
+import { jsonResult } from "openclawcn/plugin-sdk";
 import type { SharedCategory } from "./types.js";
 import {
   withSharedProfileLock,

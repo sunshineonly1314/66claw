@@ -1374,7 +1374,13 @@ async function executeDeploySequenceInner(
         if (agentCreated) {
           try {
             await callGateway("agents.delete", { agentId: did, deleteFiles: true });
-          } catch { /* compensation best-effort */ }
+          } catch (delErr) {
+            // Compensation is best-effort but failure must be logged so orphaned agents can be tracked.
+            console.warn(
+              `[orchestrator] compensation delete failed for agent ${did} (plan ${plan.planId}): ${delErr instanceof Error ? delErr.message : String(delErr)}`,
+            );
+            emitDiagnosticEvent({ type: "orchestrator.deploy", planId: plan.planId, phase: "compensation-delete-failed", agentId: did, error: String(delErr) });
+          }
         }
 
         state = updateAgentStatus(state, bp.id, "failed", msg);
@@ -1430,14 +1436,24 @@ async function executeDeploySequenceInner(
       const msg = `Config patch failed: ${err instanceof Error ? err.message : String(err)}`;
       for (const { bp, deployedId } of pendingConfigPatches) {
         state = updateAgentStatus(state, bp.id, "failed", msg);
-        // Find and update the result
+        // Find and update the result; if not found, append a new failure entry.
         const idx = results.findIndex(r => r.agentId === bp.id && r.status === "ready");
-        if (idx >= 0) results[idx] = { agentId: bp.id, name: bp.name, status: "failed", error: msg };
+        if (idx >= 0) {
+          results[idx] = { agentId: bp.id, name: bp.name, status: "failed", error: msg };
+        } else {
+          // Guard: result may not exist if config patch failed before agent was marked ready.
+          results.push({ agentId: bp.id, name: bp.name, status: "failed", error: msg });
+        }
         // Compensation: only delete agents created in THIS deploy, not already-ready ones
         if (!alreadyReadyIds.has(bp.id)) {
           try {
             await callGateway("agents.delete", { agentId: deployedId, deleteFiles: true });
-          } catch { /* compensation best-effort */ }
+          } catch (delErr) {
+            console.warn(
+              `[orchestrator] config-patch compensation delete failed for ${deployedId}: ${delErr instanceof Error ? delErr.message : String(delErr)}`,
+            );
+            emitDiagnosticEvent({ type: "orchestrator.deploy", planId: plan.planId, phase: "compensation-delete-failed", agentId: deployedId, error: String(delErr) });
+          }
         }
       }
       await saveState(state);

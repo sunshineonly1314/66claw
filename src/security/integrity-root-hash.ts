@@ -2,6 +2,6 @@
 // This constant is compiled into bytecode at build time.
 // It stores the SHA-256 of integrity-hashes.json so that the file
 // cannot be tampered with even if both disk files are replaced together.
-// Generated: 2026-03-03T07:26:19.763Z
+// Generated: 2026-03-04T06:15:17.107Z
 export const INTEGRITY_ROOT_HASH =
-  "3854ca0e7f1ddc4e3ec50f1158bbb2cce312d2d4ab26644dc088dc5c96311d1d";
+  "d7d21207b51d6853c6525002fe8abe364630deb95d3d8c04e28a4f1909232812";

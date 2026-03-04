@@ -2,7 +2,17 @@
 
 > 此文件由 `pnpm release:changelog` 从 versionrecord.md 自动生成。
 
-## 1.6.1 (未发布)
+## 1.6.6 (2026-03-04)
+
+### 修复 (生产加固 · P0 级别)
+- agent-team: Map 迭代前快照防并发崩溃、learningCache 内存泄漏补清理
+- orchestrator: projectEnsureAttempted Set 上限防内存泄漏、补偿删除失败改详细日志、planning-pipeline 依赖关系修正
+- Tauri/Rust: provider_discovery AES-GCM nonce 长度校验、remote_tunnel frpc 超时 kill 后 child.wait() 防 zombie
+- infra: safe-rename copyFile 失败清理孤立 tmp、skills-install PATH 比较用 path.resolve()、bash-tools PATH key 大小写修正
+- mcp marketplace: LIKE 路径转义修复 + diagnostic-events 补 compensation-delete-failed 类型
+- 安全: config safety-check 覆盖 config.set 路径、新增 config.rollback RPC
+
+## 1.6.3 (未发布)
 
 ### 新功能
 - 图片生成工具 — 新增 image-gen-tool，支持 DALL-E 3 / 通义万相(DashScope) / SiliconFlow 三个 provider，自动识别 13 种图片生成模型

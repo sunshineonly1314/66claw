@@ -352,7 +352,7 @@ fn parse_remote_port(child: &mut Child) -> Result<u16, String> {
     match rx.recv_timeout(Duration::from_secs(STARTUP_TIMEOUT_SECS)) {
         Ok(result) => result,
         Err(_timeout) => {
-            // Timeout — kill the frpc process before returning.
+            // Timeout — kill the frpc process and reap the handle before returning.
             let pid = child.id();
             println!("[RemoteTunnel] frpc startup timeout, killing pid {}", pid);
             #[cfg(target_os = "windows")]
@@ -361,6 +361,8 @@ fn parse_remote_port(child: &mut Child) -> Result<u16, String> {
                     .args(["/F", "/T", "/PID", &pid.to_string()])
                     .creation_flags(0x08000000)
                     .output();
+                // Reap the child handle to prevent zombie handle leak on Windows.
+                let _ = child.wait();
             }
             #[cfg(not(target_os = "windows"))]
             {

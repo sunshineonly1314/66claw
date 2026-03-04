@@ -23,15 +23,20 @@ import {
 import { resolveSkillKey } from "./skills/frontmatter.js";
 
 /** Prepend a directory to process.env.PATH so it takes priority over system binaries.
- *  Using prepend (not append) ensures the bundled node/npm is found before any system version. */
+ *  Using prepend (not append) ensures the bundled node/npm is found before any system version.
+ *  Uses path.resolve() to normalize paths before comparison, handling trailing slashes,
+ *  relative paths, and symlinks correctly. */
 function prependToProcessPath(dir: string): void {
-  const pathEnv = process.env.PATH ?? "";
+  const normalizedDir = path.resolve(dir);
+  // On Windows, PATH key may be "Path" rather than "PATH".
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  const pathEnv = process.env[pathKey] ?? "";
   const parts = pathEnv.split(path.delimiter);
   // Already at the front — nothing to do
-  if (parts[0] === dir) return;
+  if (parts.length > 0 && path.resolve(parts[0]) === normalizedDir) return;
   // Remove any existing occurrence, then prepend so bundled node/npm wins
-  const filtered = parts.filter((p) => p !== dir);
-  process.env.PATH = [dir, ...filtered].join(path.delimiter);
+  const filtered = parts.filter((p) => path.resolve(p) !== normalizedDir);
+  process.env[pathKey] = [normalizedDir, ...filtered].join(path.delimiter);
 }
 
 /**

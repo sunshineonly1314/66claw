@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { safeRename } from "../../../src/infra/safe-rename.js";
+import { safeRename } from "openclawcn/plugin-sdk";
 
 import lockfile from "proper-lockfile";
 

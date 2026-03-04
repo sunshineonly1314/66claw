@@ -485,6 +485,12 @@ function autoRefine(
               bp1.inferredCapabilities.skills = Array.from(mergedSkills);
               bp1.inferredCapabilities.mcpHints = Array.from(mergedMCP);
             }
+            // Fix dependency references: any agent that depended on bp2 should now depend on bp1.
+            for (const other of refined) {
+              if (Array.isArray(other.dependsOn) && other.dependsOn.includes(bp2.id)) {
+                other.dependsOn = other.dependsOn.map((d) => (d === bp2.id ? bp1.id : d));
+              }
+            }
             refined.splice(idx2, 1);
             actions.push(`合并「${name1}」和「${name2}」为一个 agent（角色高度重叠）`);
           } else {

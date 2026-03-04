@@ -28,7 +28,7 @@ export default defineConfig(({ command }) => {
       // Only enable in dev mode for debugging.
       sourcemap: command === "serve",
       commonjsOptions: {
-        include: [/extensions\/orchestrator\//, /highlight\.js/],
+        include: [/extensions\/orchestrator\/src\/ui\//, /extensions\/orchestrator\/src\/guided\//, /highlight\.js/],
       },
     },
     server: {

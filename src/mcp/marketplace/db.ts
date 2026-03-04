@@ -600,8 +600,16 @@ export function searchItems(options: SearchOptions = {}): SearchResult {
       params.push(sanitized);
     } else {
       // FTS5 不可用，降级到 LIKE 搜索
-      const likeTerm = `%${sanitized}%`;
-      conditions.push(`(friendly_name_cn LIKE ? OR description_cn LIKE ? OR tags_cn LIKE ?)`);
+      // Escape LIKE special characters (%, _, \) before interpolation to prevent
+      // wildcard injection (full table scan / wrong results).
+      const escapedSanitized = sanitized
+        .replace(/\\/g, "\\\\")
+        .replace(/%/g, "\\%")
+        .replace(/_/g, "\\_");
+      const likeTerm = `%${escapedSanitized}%`;
+      conditions.push(
+        `(friendly_name_cn LIKE ? ESCAPE '\\' OR description_cn LIKE ? ESCAPE '\\' OR tags_cn LIKE ? ESCAPE '\\')`,
+      );
       params.push(likeTerm, likeTerm, likeTerm);
     }
   }

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { safeRename } from "../../../src/infra/safe-rename.js";
+import { safeRename } from "openclawcn/plugin-sdk";
 
 import { getNostrRuntime } from "./runtime.js";
 

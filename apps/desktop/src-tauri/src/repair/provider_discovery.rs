@@ -455,6 +455,15 @@ fn decrypt_auth_profiles(
     let iv = b64.decode(iv_b64).ok()?;
     let auth_tag = b64.decode(auth_tag_b64).ok()?;
 
+    // AES-256-GCM nonce must be exactly 12 bytes; panic otherwise.
+    if iv.len() != 12 {
+        eprintln!(
+            "[ProviderDiscovery] Invalid nonce length: expected 12, got {}",
+            iv.len()
+        );
+        return None;
+    }
+
     // AES-256-GCM: combine ciphertext + auth tag (aes-gcm crate expects appended tag)
     let mut combined = ciphertext;
     combined.extend_from_slice(&auth_tag);

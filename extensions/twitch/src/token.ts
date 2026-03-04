@@ -10,7 +10,7 @@
  */
 
 import type { OpenClawCNConfig as ClawdbotConfig } from "../../../src/config/config.js";
-import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../../../src/routing/session-key.js";
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclawcn/plugin-sdk";
 
 export type TwitchTokenSource = "env" | "config" | "none";
 
