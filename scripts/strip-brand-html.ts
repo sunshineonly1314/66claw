@@ -1,6 +1,9 @@
 /**
  * 外销去标：构建后处理 dist 中的 HTML 和 JS 文件
- * 将 ClawbotCN / tecbinai 品牌内容替换为通用名称
+ * 仅抹除 tecbinai / obplugins.cn 等公司自有品牌信息。
+ *
+ * 【不动】ClawbotCN / ClawdbotCN / Clawdbot / OpenClawCN —— 开源产品名，保留。
+ * 【抹除】tecbinai / TecbinAI / obplugins.cn / 相关推广文字 / 购买链接文字。
  *
  * 仅在 VITE_EDITION=overseas 时执行实际替换，否则跳过。
  *
@@ -26,47 +29,64 @@ if (edition !== "overseas") {
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distUiDir = path.join(rootDir, "dist", "control-ui");
 
-/** HTML 品牌替换规则 */
+/**
+ * HTML 品牌替换规则
+ * 只去掉 tecbinai / obplugins.cn 相关内容。
+ * ClawbotCN / ClawdbotCN / Clawdbot / OpenClawCN 全部保留。
+ */
 const htmlReplacements: [RegExp, string][] = [
-  [/OpenClawCN/g, "AI Assistant"],
-  [/ClawbotCN/g, "AI Assistant"],
-  [/ClawdbotCN/g, "AI Assistant"],
-  [/Clawdbot/g, "AI Assistant"],
-  [/tecbinai\.com/g, ""],
-  [/tecbinai/gi, ""],
-  [/TecbinAI/g, ""],
-  [/obplugins\.cn/g, ""],
+  // 带链接的 "由 tecbinai 提供技术支持" 整句
   [/由\s*<a[^>]*>tecbinai<\/a>\s*提供技术支持\s*·?\s*/g, ""],
-  [/由\s*tecbinai\s*提供技术支持/g, ""],
+  // 纯文字版
+  [/由\s*tecbinai\s*提供技术支持/gi, ""],
   [/Powered by tecbinai/gi, ""],
-];
-
-/** JS bundle 中 i18n 品牌字符串替换规则（更保守，避免破坏代码） */
-const jsReplacements: [RegExp, string][] = [
-  // CustomEvent 前缀
-  [/openclawcn:/g, "app:"],
-  // 产品名（出现在用户可见的 i18n / HTML 字符串值中）
-  // 注意：不替换 OpenClawCN/openclawcn——它们在服务端代码中也用作函数名/变量名，
-  // 全局替换会破坏代码。服务端品牌文本由 src/config/edition.ts 条件渲染处理。
-  [/ClawdbotCN/g, "AI Assistant"],
-  [/ClawbotCN/g, "AI Assistant"],
-  [/Clawdbot/g, "AI Assistant"],
-  // 激活码前缀提示
-  [/claw-xxx-xxx/g, "XXXX-XXXX-XXXX"],
-  [/claw-xxxx/g, "XXXX-XXXX"],
-  // URL 引用（完整 URL 先匹配，避免被域名通用规则截断）
-  [/https:\/\/gitee\.com\/tecbinai\/skills/g, ""],
-  [/gitee\.com\/tecbinai\/skills/g, ""],
-  [/https:\/\/www\.obplugins\.cn/g, ""],
-  [/https:\/\/www\.tecbinai\.com/g, ""],
-  // 品牌方名
+  // 域名（完整 URL 先，避免截断）
+  [/https?:\/\/www\.obplugins\.cn/g, ""],
+  [/https?:\/\/www\.tecbinai\.com/g, ""],
+  [/https?:\/\/gitee\.com\/tecbinai\/skills/g, ""],
+  [/obplugins\.cn/g, ""],
+  [/tecbinai\.com/g, ""],
+  // 品牌名（大小写变体）
   [/TecbinAI/g, ""],
   [/tecbinAI/g, ""],
   [/tecbinai/gi, ""],
-  // localStorage key 前缀（运行时可见）
-  [/clawdbot\./g, "app."],
-  // Window 全局变量
-  [/__CLAWDBOT_/g, "__APP_"],
+  // 购买/闲鱼链接（HTML 版）
+  [/https?:\/\/m\.tb\.cn\/[^\s"'`>]*/g, ""],
+  [/在闲鱼搜索[^<]*/g, ""],
+];
+
+/**
+ * JS bundle 中 i18n 品牌字符串替换规则（保守，避免破坏代码逻辑）
+ * 同样只去 tecbinai / obplugins.cn，不动 Clawdbot 系列产品名。
+ */
+const jsReplacements: [RegExp, string][] = [
+  // 带链接的 "由 tecbinai 提供技术支持" 整句（编译后可能有转义）
+  [/由\s*tecbinai\s*提供技术支持/gi, ""],
+  [/Powered by tecbinai/gi, ""],
+  // URL（完整 URL 先匹配）
+  [/https?:\/\/www\.obplugins\.cn/g, ""],
+  [/https?:\/\/www\.tecbinai\.com/g, ""],
+  [/https?:\/\/gitee\.com\/tecbinai\/skills/g, ""],
+  [/gitee\.com\/tecbinai\/skills/g, ""],
+  [/obplugins\.cn/g, ""],
+  [/tecbinai\.com/g, ""],
+  // 品牌名（大小写变体）
+  [/TecbinAI/g, ""],
+  [/tecbinAI/g, ""],
+  [/tecbinai/gi, ""],
+  // i18n key 值：推广描述文字（编译进 bundle 的字符串）
+  [/及时追踪AI[·\s]*解锁更多玩法/g, ""],
+  [/及时追踪 AI 最新内容/g, ""],
+  [/Track AI Latest Content/g, ""],
+  [/Visit tecbinai/gi, ""],
+  [/访问 tecbinai/g, ""],
+  // 购买/闲鱼链接（兜底，防止条件分支未覆盖的情况）
+  [/https?:\/\/m\.tb\.cn\/[^\s"'`]*/g, ""],
+  [/在闲鱼搜索[^"'`<]*/g, ""],
+  [/闲鱼自动发货[^"'`<]*/g, ""],
+  [/去闲鱼购买正式版/g, ""],
+  [/Purchase on Xianyu/gi, ""],
+  [/Auto-delivery via Xianyu[^"'`<]*/gi, ""],
 ];
 
 function processFile(filePath: string, rules: [RegExp, string][]): number {

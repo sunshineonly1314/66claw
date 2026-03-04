@@ -157,6 +157,15 @@
   -webkit-text-fill-color: transparent;
 }
 
+/* OEM banner image (replaces logo+text in overseas builds) */
+.brand-banner {
+  height: 32px;
+  width: auto;
+  max-width: 200px;
+  object-fit: contain;
+  display: block;
+}
+
 /* Topbar status */
 .topbar-status {
   display: flex;

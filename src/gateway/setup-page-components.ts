@@ -118,9 +118,9 @@ export function renderBodyContent(
 
     <!-- Step 1: 选择 AI 服务 -->
     <div id="page1" class="card hidden">
-      <!-- 右上角悬浮二维码（构建时内联 base64） -->
+      <!-- 右上角悬浮二维码（构建时内联 base64，OEM overseas 版不显示） -->
       ${
-        setupQrcodeBase64
+        !isOverseas && setupQrcodeBase64
           ? `<div class="qr-corner">
         <div class="qr-corner-info">
           <div class="qr-corner-title">🎁 免费领取教学视频</div>
@@ -1604,7 +1604,11 @@ export function renderBodyContent(
           </div>
         </div>
 
-        <!-- 两栏布局：左侧会员服务 + 右侧微信二维码 -->
+        <!-- 两栏布局：左侧会员服务 + 右侧微信二维码（OEM overseas 版不显示） -->
+        ${
+          isOverseas
+            ? ""
+            : `
         <div class="step4-main-grid">
           <!-- 左侧：增值服务卡片 -->
           <div class="premium-service-card">
@@ -1645,6 +1649,8 @@ export function renderBodyContent(
             </div>
           </div>
         </div>
+        `
+        }
 
         <!-- 输入凭证 -->
         <div class="license-input-section">
@@ -1680,7 +1686,7 @@ export function renderBodyContent(
           </svg>
         </div>
         <div class="success-title">🎉 激活成功！</div>
-        <div class="success-desc">${isOverseas ? "Activation successful! Enjoy using the app." : '感谢信任 <strong style="color: var(--accent-blue);">tecbinAI</strong>，祝你使用愉快！'}</div>
+        <div class="success-desc">${isOverseas ? "Activation successful! Enjoy using the app." : "激活成功，祝你使用愉快！"}</div>
         <div class="success-expires" id="licenseExpiresText"></div>
         
         <!-- 协议勾选区域（验证成功后显示） -->
@@ -1787,7 +1793,7 @@ export function renderBodyContent(
           <li>如需使用钉钉/飞书/企业微信，可在设置中添加渠道配置</li>
           <li id="tipWorkspaceFiles" class="hidden">把需要处理的文件放到工作目录</li>
           <li>随时可以在设置中调整配置</li>
-          ${isOverseas ? "" : '<li>Skills 仓库: <a href="https://gitee.com/tecbinai/skills" target="_blank" style="color: var(--accent-blue);">gitee.com/tecbinai/skills</a></li>'}
+          ${isOverseas ? "" : ""}
         </ul>
       </div>
 
@@ -2117,8 +2123,8 @@ export function renderScriptContent(ctx: SetupPageContext): string {
         stepItem5.classList.add('completed');
       }
 
-      // 进入 Step 4 时加载二维码
-      if (step === 4) {
+      // 进入 Step 4 时加载二维码（OEM overseas 版不加载）
+      if (step === 4 && !${isOverseas}) {
         loadSetupQrcode();
       }
     }
@@ -3642,56 +3648,58 @@ export function renderScriptContent(ctx: SetupPageContext): string {
           title: '用户服务协议',
           content: \`
             <h4>第一条 总则</h4>
-            <p>${isOverseas ? "欢迎使用本软件。本协议是您与本软件开发团队之间关于使用本软件的法律协议。" : "欢迎使用 OpenClawCN 软件（以下简称“本软件”）。本协议是您与 tecbinAI 团队之间关于使用本软件的法律协议。"}</p>
-            
-            <h4>第二条 服务内容</h4>
-            <p>本软件为 AI 辅助工具，提供与第三方大语言模型交互的桥接服务。</p>
+            <p>欢迎使用本软件。本软件基于开源项目二次开发，以社区方式维护。使用本软件即表示您已阅读、理解并同意本协议全部条款。</p>
+
+            <h4>第二条 软件性质</h4>
+            <p>本软件为通用 AI 交互工具，提供与第三方大语言模型交互的技术通道。</p>
             <ul>
-              <li>本软件本身不提供 AI 模型服务</li>
-              <li>AI 回复内容由第三方模型生成</li>
-              <li>我们不对 AI 生成内容的准确性、完整性负责</li>
+              <li>本软件不直接提供任何 AI 模型服务</li>
+              <li>所有 AI 内容由您所选择的第三方服务提供商生成</li>
+              <li>本软件不对 AI 生成内容的准确性、合法性承担任何责任</li>
+              <li>技能市场中的技能由第三方开发者独立提供，与本软件无关</li>
             </ul>
-            
+
             <h4>第三条 用户义务</h4>
             <ul>
-              <li>遵守中国法律法规</li>
-              <li>不利用本软件从事违法活动</li>
-              <li>对自己的使用行为负责</li>
+              <li>遵守用户所在地区的相关法律法规</li>
+              <li>不利用本软件从事任何违法活动</li>
+              <li>未经目标方授权，不得使用本软件进行自动化数据抓取或爬虫操作</li>
+              <li>用户对自己的全部使用行为独立承担法律责任</li>
             </ul>
-            
+
             <h4>第四条 免责声明</h4>
-            <p>AI 模型可能产生不准确、有偏见或不当的内容。用户应自行判断 AI 输出的适用性，本软件不承担因使用 AI 输出导致的任何损失。</p>
-            
+            <p>AI 内容可能不准确、有偏见或不当，用户应自行核验。本软件不承担因使用 AI 输出、第三方技能或用户自身行为导致的任何损失。</p>
+
             <h4>第五条 责任限制</h4>
-            <p>在法律允许的最大范围内，本软件对用户的赔偿责任以用户实际支付的费用为上限。</p>
+            <p>在适用法律允许的最大范围内，本软件不承担任何间接、附带或后果性损害赔偿责任。如软件免费使用，则赔偿上限为零元。</p>
+
+            <h4>第六条 争议解决</h4>
+            <p>本软件以社区方式维护，不设集中运营主体。因使用本软件产生的任何争议，由用户依据其所在地适用法律自行解决。</p>
           \`
         },
         privacyPolicy: {
           title: '隐私政策',
           content: \`
             <h4>一、信息收集</h4>
-            <p>我们可能收集以下信息：</p>
+            <p>本软件仅收集以下必要信息：</p>
             <ul>
-              <li>设备标识信息（用于许可证验证）</li>
-              <li>软件使用统计数据</li>
+              <li>设备标识信息（用于授权验证）</li>
+              <li>匿名化软件使用统计（用于产品改进）</li>
+              <li>协议同意时间戳（用于合规存证）</li>
             </ul>
-            
-            <h4>二、信息使用</h4>
-            <p>收集的信息仅用于：</p>
-            <ul>
-              <li>验证许可证有效性</li>
-              <li>改善软件服务质量</li>
-              <li>提供技术支持</li>
-            </ul>
-            
-            <h4>三、信息共享</h4>
-            <p>您的对话内容将发送至您选择的第三方 AI 服务提供商处理。我们不会将您的个人信息出售给第三方。</p>
-            
-            <h4>四、数据安全</h4>
-            <p>我们采取合理措施保护您的数据安全，但无法保证绝对安全。</p>
-            
+            <p><strong>本软件不收集</strong>您的真实姓名、身份证号、银行卡等敏感信息，不存储您的对话记录（仅保存在本地）。</p>
+
+            <h4>二、数据传输</h4>
+            <p>您的对话内容将传输至您所选择的第三方 AI 服务提供商处理，这是服务运行的技术必要条件。<strong>选择境外 AI 服务即意味着您的数据将传输至境外服务器，请自行评估合规风险。</strong></p>
+
+            <h4>三、数据采集类技能</h4>
+            <p>用户通过本软件集成的数据采集类技能所采集的任何第三方数据，完全由用户本地设备处理和存储。<strong>本软件的服务器不接收、不处理、不存储</strong>用户采集的任何第三方数据。</p>
+
+            <h4>四、信息共享</h4>
+            <p>除法律法规强制要求外，本软件不会将您的个人信息出售或共享给任何第三方。</p>
+
             <h4>五、用户权利</h4>
-            <p>您有权查询、更正、删除您的个人信息。如有需要，请联系我们的客服。</p>
+            <p>您有权通过软件内反馈渠道申请查询、更正或删除您的个人信息。本软件将在条件允许的情况下予以响应。</p>
           \`
         },
         riskDisclosure: {

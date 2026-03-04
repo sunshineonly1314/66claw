@@ -114,6 +114,11 @@ export function renderActivationDialog(
   return html`
     <div class="license-dialog-overlay" @click=${onCancel}>
       <div class="license-dialog license-activation-dialog" @click=${(e: Event) => e.stopPropagation()}>
+        ${brand.activationMascotPath ? html`
+          <div class="license-mascot">
+            <img src="${brand.activationMascotPath}" alt="${brand.logoAlt}" />
+          </div>
+        ` : nothing}
         <div class="license-dialog-header">
           <h2>🔑 激活授权</h2>
         </div>

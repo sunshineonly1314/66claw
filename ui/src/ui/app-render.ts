@@ -69,7 +69,7 @@ import { renderExtensions } from "./views/extensions-page";
 import {
   renderOrchestratorEntry,
   renderOrchestrator,
-} from "../../../extensions/orchestrator/src/ui/orchestrator-view";
+} from "../../../extensions/orchestrator/src/ui/orchestrator-view.ts";
 import {
   openOrchestrator,
   closeOrchestrator,
@@ -583,13 +583,21 @@ export function renderApp(state: AppViewState) {
             <span class="nav-collapse-toggle__icon">${icons.menu}</span>
           </button>
           <div class="brand">
-            <div class="brand-logo">
-              <img src="${brand.logoPath}" alt="${brand.logoAlt}" />
-            </div>
-            <div class="brand-text">
-              <div class="brand-title">${brand.productName}</div>
-              ${brand.tagline ? html`<div class="brand-sub">- <strong>${brand.tagline}</strong></div>` : nothing}
-            </div>
+            ${brand.bannerPath ? html`
+              <img class="brand-banner" src="${brand.bannerPath}" alt="${brand.logoAlt}" />
+              <div class="brand-text">
+                <div class="brand-title">${brand.productName}</div>
+                ${brand.tagline ? html`<div class="brand-sub"><strong>${brand.tagline}</strong></div>` : nothing}
+              </div>
+            ` : html`
+              <div class="brand-logo">
+                <img src="${brand.logoPath}" alt="${brand.logoAlt}" />
+              </div>
+              <div class="brand-text">
+                <div class="brand-title">${brand.productName}</div>
+                ${brand.tagline ? html`<div class="brand-sub">- <strong>${brand.tagline}</strong></div>` : nothing}
+              </div>
+            `}
           </div>
         </div>
         <div class="topbar-status">

@@ -3,7 +3,7 @@
  *
  * 所有 UI 层的品牌标识集中在此文件。
  * 构建时通过 VITE_EDITION 环境变量选择品牌配置：
- *   - "cn"       → CN 自有品牌（ClawbotCN / tecbinai / obplugins.cn）
+ *   - "cn"       → CN 品牌（ClawbotCN）
  *   - "overseas"  → OEM 白牌（通用 AI 助手）
  *
  * OEM 客户可以直接修改 overseas 配置实现自定义品牌。
@@ -52,6 +52,18 @@ export interface BrandConfig {
   logoPath: string;
   /** logo alt 文本 */
   logoAlt: string;
+  /**
+   * 横版 banner 图路径（OEM用）
+   * 有值时：顶栏 brand 区块直接渲染此图，忽略 logoPath + productName + tagline
+   * 空字符串：走默认 logo+文字 布局
+   */
+  bannerPath: string;
+  /**
+   * 激活弹窗吉祥物/人物头图路径（OEM用）
+   * 有值时：在激活弹窗顶部显示此图
+   * 空字符串：不显示
+   */
+  activationMascotPath: string;
 
   /** CLI 命令名 */
   cliName: string;
@@ -88,9 +100,9 @@ const cnBrand: BrandConfig = {
   activationDialogText: "请输入您的授权码以激活 Clawdbot，或输入升级码/扩展包码进行升级",
   activationExample: "clawd-xxx / clpro-xxx / upg-bp-xxx / skill-s1-xxx",
 
-  promoUrl: "https://www.obplugins.cn",
-  promoName: "TecbinAI",
-  promoDesc: "及时追踪AI · 解锁更多玩法",
+  promoUrl: "",
+  promoName: "",
+  promoDesc: "",
 
   showPurchaseEntry: true,
   showSupportQrcode: true,
@@ -98,6 +110,8 @@ const cnBrand: BrandConfig = {
 
   logoPath: "/logo.png",
   logoAlt: "ClawbotCN",
+  bannerPath: "",
+  activationMascotPath: "",
 
   cliName: "openclawcn",
   configFileName: "openclawcn.json",
@@ -111,42 +125,77 @@ const cnBrand: BrandConfig = {
   batchMirrorBadge: "ClawdbotCN 加速",
 };
 
-/** OEM 白牌 */
+// ─── OEM define constants (injected by vite.config.ts for VITE_EDITION=overseas) ──────────
+// These are replaced at build time. Fallback values are used in dev / cn builds.
+declare const __OEM_BRAND_PRODUCTNAME__: string | undefined;
+declare const __OEM_BRAND_PRODUCTSHORTNAME__: string | undefined;
+declare const __OEM_BRAND_WELCOMETITLE__: string | undefined;
+declare const __OEM_BRAND_WINDOWTITLE__: string | undefined;
+declare const __OEM_BRAND_METADESCRIPTION__: string | undefined;
+declare const __OEM_BRAND_TAGLINE__: string | undefined;
+declare const __OEM_BRAND_ACTIVATIONPREFIX__: string | undefined;
+declare const __OEM_BRAND_ACTIVATIONPLACEHOLDER__: string | undefined;
+declare const __OEM_BRAND_ACTIVATIONPREFIXERROR__: string | undefined;
+declare const __OEM_BRAND_ACTIVATIONDIALOGTEXT__: string | undefined;
+declare const __OEM_BRAND_ACTIVATIONEXAMPLE__: string | undefined;
+declare const __OEM_BRAND_PROMOURL__: string | undefined;
+declare const __OEM_BRAND_PROMONAME__: string | undefined;
+declare const __OEM_BRAND_PROMODESC__: string | undefined;
+declare const __OEM_BRAND_SHOWPURCHASEENTRY__: boolean | undefined;
+declare const __OEM_BRAND_SHOWSUPPORTQRCODE__: boolean | undefined;
+declare const __OEM_BRAND_SHOWADAPTATIONNOTICE__: boolean | undefined;
+declare const __OEM_BRAND_LOGOPATH__: string | undefined;
+declare const __OEM_BRAND_BANNERPATH__: string | undefined;
+declare const __OEM_BRAND_ACTIVATIONMASCOTPATH__: string | undefined;
+declare const __OEM_BRAND_SKILLMIRRORHINT__: string | undefined;
+declare const __OEM_BRAND_SKILLEXCLUSIVETITLE__: string | undefined;
+declare const __OEM_BRAND_FREEMODELSEYEBROW__: string | undefined;
+declare const __OEM_BRAND_BATCHMIRRORBADGE__: string | undefined;
+
+function oemStr(val: string | undefined, fallback: string): string {
+  return typeof val !== "undefined" ? val : fallback;
+}
+function oemBool(val: boolean | undefined, fallback: boolean): boolean {
+  return typeof val !== "undefined" ? val : fallback;
+}
+
+/** OEM 白牌（字段值由 config/oem/<OEM_ID>.json 注入，通过 Vite define 在构建时替换） */
 const overseasBrand: BrandConfig = {
-  productName: "AI Assistant",
-  productShortName: "AI Assistant",
-  welcomeTitle: "Welcome",
-  windowTitle: "AI Assistant Console",
-  metaDescription: "AI Assistant Console",
-  tagline: "",
+  productName:           oemStr(__OEM_BRAND_PRODUCTNAME__,           "ClawbotCN"),
+  productShortName:      oemStr(__OEM_BRAND_PRODUCTSHORTNAME__,      "ClawbotCN"),
+  welcomeTitle:          oemStr(__OEM_BRAND_WELCOMETITLE__,          "Welcome to ClawbotCN"),
+  windowTitle:           oemStr(__OEM_BRAND_WINDOWTITLE__,           "ClawbotCN"),
+  metaDescription:       oemStr(__OEM_BRAND_METADESCRIPTION__,       "ClawbotCN - AI Assistant"),
+  tagline:               oemStr(__OEM_BRAND_TAGLINE__,               ""),
 
-  activationPrefix: "",
-  activationPlaceholder: "Enter your license key",
-  activationPrefixError: "",
-  activationDialogText: "Please enter your license key to activate",
-  activationExample: "XXXX-XXXX-XXXX",
+  activationPrefix:      oemStr(__OEM_BRAND_ACTIVATIONPREFIX__,      ""),
+  activationPlaceholder: oemStr(__OEM_BRAND_ACTIVATIONPLACEHOLDER__,  "请输入授权码"),
+  activationPrefixError: oemStr(__OEM_BRAND_ACTIVATIONPREFIXERROR__, ""),
+  activationDialogText:  oemStr(__OEM_BRAND_ACTIVATIONDIALOGTEXT__,  "请输入您的授权码以激活"),
+  activationExample:     oemStr(__OEM_BRAND_ACTIVATIONEXAMPLE__,     "XXXX-XXXX-XXXX"),
 
-  promoUrl: "",
-  promoName: "",
-  promoDesc: "",
+  promoUrl:              oemStr(__OEM_BRAND_PROMOURL__,              ""),
+  promoName:             oemStr(__OEM_BRAND_PROMONAME__,             ""),
+  promoDesc:             oemStr(__OEM_BRAND_PROMODESC__,             ""),
 
-  showPurchaseEntry: false,
-  showSupportQrcode: false,
-  showAdaptationNotice: false,
+  showPurchaseEntry:     oemBool(__OEM_BRAND_SHOWPURCHASEENTRY__,    false),
+  showSupportQrcode:     oemBool(__OEM_BRAND_SHOWSUPPORTQRCODE__,    false),
+  showAdaptationNotice:  oemBool(__OEM_BRAND_SHOWADAPTATIONNOTICE__, false),
 
-  logoPath: "/logo.png",
-  logoAlt: "AI Assistant",
+  logoPath:              oemStr(__OEM_BRAND_LOGOPATH__,              "/logo.png"),
+  logoAlt:               "ClawbotCN",
+  bannerPath:            oemStr(__OEM_BRAND_BANNERPATH__,            "/oem-banner.png"),
+  activationMascotPath:  oemStr(__OEM_BRAND_ACTIVATIONMASCOTPATH__,  "/oem-mascot.png"),
 
-  cliName: "assistant",
-  configFileName: "config.json",
+  cliName:       "openclawcn",
+  configFileName: "openclawcn.json",
+  eventPrefix:   "openclawcn:",
+  storagePrefix: "clawdbot.",
 
-  eventPrefix: "app:",
-  storagePrefix: "app.",
-
-  skillMirrorHint: "",
-  skillExclusiveTitle: "",
-  freeModelsEyebrow: "",
-  batchMirrorBadge: "",
+  skillMirrorHint:     oemStr(__OEM_BRAND_SKILLMIRRORHINT__,     ""),
+  skillExclusiveTitle: oemStr(__OEM_BRAND_SKILLEXCLUSIVETITLE__,  ""),
+  freeModelsEyebrow:   oemStr(__OEM_BRAND_FREEMODELSEYEBROW__,    ""),
+  batchMirrorBadge:    oemStr(__OEM_BRAND_BATCHMIRRORBADGE__,     ""),
 };
 
 // ─── Runtime selection ────────────────────────────────────────────────────────

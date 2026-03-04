@@ -1,13 +1,55 @@
 {
-  "_comment": "OEM 品牌配置模板。复制为 config/oem/<OEM_ID>.json 并填写，打包时 OEM_ID=<文件名> bash scripts/desktop/build.sh",
+  "_comment": "OEM 品牌配置模板。复制为 config/oem/<OEM_ID>.json 并填写所有字段，打包命令：OEM_ID=<文件名不含.json> VITE_EDITION=overseas bash scripts/desktop/build.sh",
+
+  "_section_1": "===== 基础标识（Tauri 打包 + License 追溯用）=====",
   "oemId": "your-oem-id",
-  "productName": "YourProductName",
   "identifier": "com.yourcompany.yourproduct",
-  "licenseKeyPrefix": "OEM-YOURID-",
+  "licenseKeyPrefix": "",
   "apiBaseUrl": "https://api.openclawcn.com",
-  "supportUrl": "https://your-support-url.com",
-  "windowTitle": "YourProductName AI",
+  "supportUrl": "",
   "installerLanguages": ["SimpChinese"],
+
+  "_section_2": "===== UI 品牌（所有用户可见的文字和图片）=====",
+  "ui": {
+    "_note": "修改这里的字段即可控制界面上所有品牌展示，无需改代码",
+
+    "productName": "ClawbotCN",
+    "productShortName": "ClawbotCN",
+    "welcomeTitle": "Welcome to ClawbotCN",
+    "windowTitle": "ClawbotCN",
+    "metaDescription": "ClawbotCN - AI Assistant",
+    "tagline": "",
+
+    "_activation": "-- 激活弹窗文字 --",
+    "activationPrefix": "",
+    "activationPlaceholder": "请输入授权码",
+    "activationPrefixError": "",
+    "activationDialogText": "请输入您的授权码以激活",
+    "activationExample": "XXXX-XXXX-XXXX",
+
+    "_promo": "-- 推广链接（顶栏右侧 + 侧栏底部），空字符串 = 不显示 --",
+    "promoUrl": "",
+    "promoName": "",
+    "promoDesc": "",
+
+    "_switches": "-- 功能开关（false = 彻底不渲染，dist 产物中也不存在） --",
+    "showPurchaseEntry": false,
+    "showSupportQrcode": false,
+    "showAdaptationNotice": false,
+
+    "_images": "-- 图片路径（相对于 ui/public/，文件放到 oem/ 目录由构建脚本自动复制过去） --",
+    "logoPath": "/logo.png",
+    "bannerPath": "/oem-banner.png",
+    "activationMascotPath": "/oem-mascot.png",
+
+    "_skills": "-- 技能安装页标签文字，空字符串 = 不显示 --",
+    "skillMirrorHint": "",
+    "skillExclusiveTitle": "",
+    "freeModelsEyebrow": "",
+    "batchMirrorBadge": ""
+  },
+
+  "_section_3": "===== Tauri 打包图标（Windows/macOS 安装包用）=====",
   "tauri": {
     "bundle": {
       "icon": [
