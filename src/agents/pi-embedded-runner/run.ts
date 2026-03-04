@@ -56,7 +56,7 @@ import {
   truncateOversizedToolResultsInSession,
   sessionLikelyHasOversizedToolResults,
 } from "./tool-result-truncation.js";
-import { describeUnknownError } from "./utils.js";
+import { describeUnknownError, resolveEffectiveThinkLevel } from "./utils.js";
 
 type ApiKeyInfo = ResolvedProviderAuth;
 
@@ -282,7 +282,21 @@ export async function runEmbeddedPiAgent(
           : [undefined];
       let profileIndex = 0;
 
-      const initialThinkLevel = params.thinkLevel ?? "off";
+      // ===== OpenClawCN: Provider-aware thinking downgrade =====
+      const requestedThinkLevel = params.thinkLevel ?? "off";
+      const modelApi = (model.api as string | undefined) ?? "";
+      const initialThinkLevel = resolveEffectiveThinkLevel({
+        requested: requestedThinkLevel,
+        provider,
+        modelApi,
+      });
+      if (initialThinkLevel !== requestedThinkLevel) {
+        log.warn(
+          `thinking level "${requestedThinkLevel}" not supported for ${provider}/${modelId} ` +
+            `(api=${modelApi}); downgrading to "${initialThinkLevel}"`,
+        );
+      }
+      // ===== END =====
       let thinkLevel = initialThinkLevel;
       const attemptedThinking = new Set<ThinkLevel>();
       let apiKeyInfo: ApiKeyInfo | null = null;

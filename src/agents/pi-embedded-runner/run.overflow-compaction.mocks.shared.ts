@@ -111,4 +111,7 @@ vi.mock("./utils.js", () => ({
     }
     return String(err);
   }),
+  resolveEffectiveThinkLevel: vi.fn(
+    (params: { requested: string; provider: string; modelApi: string }) => params.requested,
+  ),
 }));

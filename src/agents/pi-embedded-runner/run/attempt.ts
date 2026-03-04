@@ -971,20 +971,30 @@ export async function runEmbeddedAttempt(
         });
 
         // Repair orphaned trailing user messages so new prompts don't violate role ordering.
+        // Instead of branching away (which silently deletes the user's previous message),
+        // append a synthetic assistant error acknowledgement. This preserves the user's
+        // original message context so the model can still reference it.
         const leafEntry = sessionManager.getLeafEntry();
         if (leafEntry?.type === "message" && leafEntry.message.role === "user") {
-          if (leafEntry.parentId) {
-            sessionManager.branch(leafEntry.parentId);
-          } else {
-            sessionManager.resetLeaf();
-          }
+          const syntheticReply = {
+            role: "assistant" as const,
+            content: [
+              {
+                type: "text" as const,
+                text: "(The previous request encountered an error and could not be completed. Please try again.)",
+              },
+            ],
+          };
+          sessionManager.appendMessage(
+            syntheticReply as Parameters<typeof sessionManager.appendMessage>[0],
+          );
           const sessionContext = sessionManager.buildSessionContext();
           const sanitizedOrphan = transcriptPolicy.normalizeAntigravityThinkingBlocks
             ? sanitizeAntigravityThinkingBlocks(sessionContext.messages)
             : sessionContext.messages;
           activeSession.agent.replaceMessages(sanitizedOrphan);
           log.warn(
-            `Removed orphaned user message to prevent consecutive user turns. ` +
+            `Repaired orphaned user message with synthetic error reply (preserving context). ` +
               `runId=${params.runId} sessionId=${params.sessionId}`,
           );
         }

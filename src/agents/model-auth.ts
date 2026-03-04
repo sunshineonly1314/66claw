@@ -451,6 +451,14 @@ export function hasProviderCredentials(
     return true;
   }
 
+  // 6. Local providers (ollama, vllm, lmstudio, llamacpp, localai) run without
+  //    API keys — treat them as always having credentials so the fallback layer
+  //    never skips them.
+  const LOCAL_PROVIDERS = new Set(["ollama", "vllm", "lmstudio", "llamacpp", "localai"]);
+  if (LOCAL_PROVIDERS.has(normalized)) {
+    return true;
+  }
+
   return false;
 }
 
