@@ -502,6 +502,7 @@ const plugin: OpenClawCNPluginDefinition = {
     api.on(
       "resolve_agent",
       async (event: { message: string; sessionKey: string }, ctx: { channelId?: string; accountId?: string; peerId?: string }) => {
+        try {
         if (!event.message || !event.sessionKey) return;
 
         // Without peerId we cannot do deterministic routing — affinity
@@ -669,6 +670,13 @@ const plugin: OpenClawCNPluginDefinition = {
           sessionKey: newSessionKey,
           reason: `fast-path:${finalResult.method}`,
         };
+        } catch (err) {
+          // CRITICAL: resolve_agent must never throw — an unhandled exception
+          // here crashes the entire gateway message routing pipeline.
+          // Return undefined to fall through to default Supervisor LLM routing.
+          logger.error?.(`[resolve_agent] unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+          return;
+        }
       },
       { priority: 100 },
     );
@@ -677,6 +685,7 @@ const plugin: OpenClawCNPluginDefinition = {
     api.on(
       "before_agent_start",
       async (_event, ctx) => {
+        try {
         if (!ctx.agentId) return;
 
         const project = findProjectByAgentId(ctx.agentId);
@@ -780,12 +789,19 @@ const plugin: OpenClawCNPluginDefinition = {
 
         if (parts.length === 0) return;
         return { prependContext: parts.join("\n\n") };
+        } catch (err) {
+          // before_agent_start must not throw — failure here means agent
+          // runs without team context but still functions correctly.
+          logger.error?.(`[before_agent_start] unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+          return;
+        }
       },
       { priority: 50 },
     );
 
     // ── agent_end: track member health + auto-promote shared memory ────
     api.on("agent_end", async (event, ctx) => {
+      try {
       if (!ctx.agentId) return;
 
       const project = findProjectByAgentId(ctx.agentId);
@@ -941,6 +957,11 @@ const plugin: OpenClawCNPluginDefinition = {
           }
         }
       }
+      } catch (err) {
+        // agent_end must not throw — failure here orphans pendingRouteEvents
+        // and prevents health tracking, but does not affect the agent's response.
+        logger.error?.(`[agent_end] unhandled error for agent "${ctx.agentId}": ${err instanceof Error ? err.message : String(err)}`);
+      }
     });
 
     // ── message_sending: rewrite outbound messages for visibility mode ──
@@ -952,6 +973,7 @@ const plugin: OpenClawCNPluginDefinition = {
     api.on(
       "message_sending",
       async (event, _ctx) => {
+        try {
         // Identify the agent via peer mapping.
         // event.to is the destination channel address (= peerId/From in resolve_agent).
         // PluginHookMessageContext does NOT include peerId, so we rely on event.to.
@@ -982,6 +1004,12 @@ const plugin: OpenClawCNPluginDefinition = {
         if (result.cancel) return { cancel: true };
         if (result.content !== (event.content ?? "")) {
           return { content: result.content };
+        }
+        } catch (err) {
+          // message_sending must not throw — failure means the message
+          // is sent without visibility rewriting, which is acceptable.
+          logger.error?.(`[message_sending] unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+          return;
         }
       },
       { priority: 40 },

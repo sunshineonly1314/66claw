@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import path from "node:path";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
@@ -720,16 +720,23 @@ export const configHandlers: GatewayRequestHandlers = {
   "config.reveal": ({ respond }) => {
     const dir = path.dirname(CONFIG_PATH);
     const platform = process.platform;
-    let cmd: string;
+    // Use execFile with array args to prevent command injection via directory paths
+    // containing shell metacharacters (spaces, quotes, semicolons, etc.).
+    let bin: string;
     if (platform === "win32") {
-      cmd = `explorer "${dir}"`;
+      bin = "explorer";
     } else if (platform === "darwin") {
-      cmd = `open "${dir}"`;
+      bin = "open";
     } else {
-      cmd = `xdg-open "${dir}"`;
+      bin = "xdg-open";
     }
-    exec(cmd, (err) => {
+    execFile(bin, [dir], (err) => {
       if (err) {
+        // Windows explorer returns exit code 1 even on success when opening a folder.
+        if (platform === "win32" && (err as any).code === 1) {
+          respond(true, { ok: true, path: dir }, undefined);
+          return;
+        }
         respond(
           false,
           undefined,

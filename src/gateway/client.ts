@@ -32,7 +32,14 @@ type Pending = {
   resolve: (value: unknown) => void;
   reject: (err: unknown) => void;
   expectFinal: boolean;
+  createdAt: number;
 };
+
+/** Hard cap on outstanding RPC requests to prevent unbounded memory growth. */
+const MAX_PENDING_REQUESTS = 500;
+/** Reject pending requests older than this to prevent memory leaks from
+ *  unresponsive servers or lost responses (5 minutes). */
+const PENDING_TIMEOUT_MS = 5 * 60_000;
 
 export type GatewayClientOptions = {
   url?: string; // ws://127.0.0.1:18789
@@ -400,6 +407,17 @@ export class GatewayClient {
       if (gap > this.tickIntervalMs * 2) {
         this.ws?.close(4000, "tick timeout");
       }
+      // Evict stale pending requests that never received a response.
+      // This prevents unbounded memory growth from lost/orphaned RPC calls.
+      const now = Date.now();
+      for (const [id, entry] of this.pending) {
+        if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
+          this.pending.delete(id);
+          entry.reject(
+            new Error(`gateway: request "${id}" timed out after ${PENDING_TIMEOUT_MS}ms`),
+          );
+        }
+      }
     }, interval);
   }
 
@@ -446,6 +464,11 @@ export class GatewayClient {
       );
     }
     const expectFinal = opts?.expectFinal === true;
+    // Guard against unbounded pending map growth (server not responding,
+    // lost responses, or malicious flood). Reject new requests if at capacity.
+    if (this.pending.size >= MAX_PENDING_REQUESTS) {
+      throw new Error(`gateway: too many pending requests (${this.pending.size})`);
+    }
     // Snapshot ws reference to avoid TOCTOU: ws could become null between the
     // readyState check above and the send() call below (concurrent close event).
     const ws = this.ws;
@@ -454,6 +477,7 @@ export class GatewayClient {
         resolve: (value) => resolve(value as T),
         reject,
         expectFinal,
+        createdAt: Date.now(),
       });
     });
     try {

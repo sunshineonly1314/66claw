@@ -173,6 +173,11 @@ export class MCPClient {
   private config: MCPServerConfig;
   private events: MCPClientEvents;
   private _connected = false;
+  /** Monotonic generation counter to detect stale onclose callbacks.
+   *  Incremented on each connect attempt; onclose only clears _connected
+   *  if the generation matches, preventing the race where a late onclose
+   *  fires after a new successful connection overwrites _connected = true. */
+  private _connectGen = 0;
 
   constructor(config: MCPServerConfig, events: MCPClientEvents = {}) {
     this.config = config;
@@ -190,6 +195,10 @@ export class MCPClient {
   /** Connect to the MCP server via stdio or SSE transport. */
   async connect(): Promise<void> {
     if (this._connected) return;
+
+    // Bump generation so stale onclose callbacks from previous attempts
+    // won't overwrite _connected after this new attempt succeeds.
+    this._connectGen++;
 
     const timeoutMs = this.config.timeout ?? MCP_INIT_TIMEOUT_MS;
 
@@ -342,12 +351,21 @@ export class MCPClient {
   }
 
   private wireTransportEvents(transport: AnyTransport): void {
+    // Capture current generation so the onclose callback can detect
+    // whether it belongs to the current connection or a stale one.
+    const gen = this._connectGen;
     transport.onclose = () => {
-      this._connected = false;
-      try {
-        this.events.onClose?.();
-      } catch {
-        /* ignore callback error */
+      // Only process close if this callback belongs to the current
+      // connection generation. A stale onclose (from a previous failed
+      // transport) must NOT overwrite a newer successful _connected = true
+      // or trigger spurious onClose events to the runtime manager.
+      if (this._connectGen === gen) {
+        this._connected = false;
+        try {
+          this.events.onClose?.();
+        } catch {
+          /* ignore callback error */
+        }
       }
     };
     transport.onerror = (error: Error) => {
@@ -373,7 +391,12 @@ export class MCPClient {
 
     try {
       await Promise.race([connectPromise, timeoutPromise]);
-      this._connected = true;
+      // Set _connected ONLY if the transport hasn't already closed.
+      // (If onclose fired during the connect, _connected was already set to false
+      // and we should NOT override it.)
+      if (this.transport === transport) {
+        this._connected = true;
+      }
     } finally {
       if (connectTimer != null) clearTimeout(connectTimer);
     }

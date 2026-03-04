@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -187,16 +187,21 @@ export const logsHandlers: GatewayRequestHandlers = {
       dir = path.dirname(getResolvedLoggerSettings().file);
     }
     const platform = process.platform;
-    let cmd: string;
+    let bin: string;
     if (platform === "win32") {
-      cmd = `explorer "${dir}"`;
+      bin = "explorer";
     } else if (platform === "darwin") {
-      cmd = `open "${dir}"`;
+      bin = "open";
     } else {
-      cmd = `xdg-open "${dir}"`;
+      bin = "xdg-open";
     }
-    exec(cmd, (err) => {
+    execFile(bin, [dir], (err) => {
       if (err) {
+        // Windows explorer returns exit code 1 even on success when opening a folder.
+        if (platform === "win32" && (err as any).code === 1) {
+          respond(true, { ok: true, path: dir }, undefined);
+          return;
+        }
         respond(
           false,
           undefined,

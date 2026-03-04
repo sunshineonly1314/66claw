@@ -1071,10 +1071,13 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         mode: 0o600,
       });
 
-      if (deps.fs.existsSync(configPath)) {
-        await rotateConfigBackups(configPath, deps.fs.promises);
+      // Save a backup of the current config BEFORE replacing it.
+      // Only create the .bak copy here — rotation happens AFTER the rename
+      // succeeds, ensuring we never lose backup state if the write fails.
+      const configExists = deps.fs.existsSync(configPath);
+      if (configExists) {
         await deps.fs.promises.copyFile(configPath, `${configPath}.bak`).catch(() => {
-          // best-effort
+          // best-effort — original config still intact at this point
         });
       }
 
@@ -1084,13 +1087,25 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         const code = (err as { code?: string }).code;
         // Windows doesn't reliably support atomic replace via rename when dest exists.
         if (code === "EPERM" || code === "EEXIST") {
-          await deps.fs.promises.copyFile(tmp, configPath);
+          try {
+            await deps.fs.promises.copyFile(tmp, configPath);
+          } catch (copyErr) {
+            // copyFile also failed — clean up temp file before propagating
+            await deps.fs.promises.unlink(tmp).catch(() => {});
+            throw copyErr;
+          }
           await deps.fs.promises.chmod(configPath, 0o600).catch(() => {
             // best-effort
           });
           await deps.fs.promises.unlink(tmp).catch(() => {
             // best-effort
           });
+          // Rotate backups AFTER successful write (copy-fallback path)
+          if (configExists) {
+            await rotateConfigBackups(configPath, deps.fs.promises).catch(() => {
+              // best-effort — new config is already written
+            });
+          }
           logConfigOverwrite();
           logConfigWriteAnomalies();
           await appendWriteAudit("copy-fallback");
@@ -1100,6 +1115,13 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
           // best-effort
         });
         throw err;
+      }
+      // Rotate backups AFTER successful rename — ensures backup integrity.
+      // If rotation fails, the new config is already live and .bak is valid.
+      if (configExists) {
+        await rotateConfigBackups(configPath, deps.fs.promises).catch(() => {
+          // best-effort — .bak still has the previous config
+        });
       }
       logConfigOverwrite();
       logConfigWriteAnomalies();
