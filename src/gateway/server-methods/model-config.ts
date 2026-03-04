@@ -1038,12 +1038,15 @@ export async function detectProviderModelsWithProgress(
         log.warn(`autoAssign: v2 assignment failed (non-critical): ${assignErr}`);
       }
 
-      // ── 保底：确保 agents.defaults.model.primary 被设置 ──
-      // autoAssign 在 try-catch 中执行，如果静默失败（如 registry 未就绪、writeConfigFile 验证失败等），
-      // agents.defaults.model.primary 可能未被写入配置，导致运行时 fallback 到 anthropic/claude-opus-4-6。
-      // 此处读取最终配置，如果 primary 仍为空，用当前 provider 的第一个 text-capable 模型补上。
+      // ── 保底：确保 agents.defaults.model.primary 与 text capability 一致，session override 同步 ──
+      // autoAssign 在 try-catch 中执行，可能静默失败（registry 未就绪、writeConfigFile 验证失败等）。
+      // 此外，多次 detect 后 session override 与 config 可能因某次 updateSessionModelOverrides 漏调而失步。
+      // FIX: 将触发条件从 "primary 为空" 扩展为 "primary 为空 OR primary 与 text capability 不一致"，
+      // 确保 session override 始终与最终落盘的 text capability 保持同步，防止 provider/model 混搭。
       try {
         const guardCfg = structuredClone(await loadConfig());
+        const textCap = (guardCfg as { modelCapability?: ModelCapabilityConfig }).modelCapability
+          ?.capabilities?.["text" as Capability] as CapabilityModelConfig | undefined;
         const currentPrimary = (() => {
           const m: unknown = guardCfg.agents?.defaults?.model;
           if (typeof m === "string") return m.trim();
@@ -1051,10 +1054,13 @@ export async function detectProviderModelsWithProgress(
             return (m as { primary?: string }).primary?.trim() ?? "";
           return "";
         })();
-        if (!currentPrimary) {
-          // primary 未设置 — 从 text capability binding 或当前 provider 的模型列表中取
-          const textCap = (guardCfg as { modelCapability?: ModelCapabilityConfig }).modelCapability
-            ?.capabilities?.["text" as Capability] as CapabilityModelConfig | undefined;
+        // 计算 text capability 对应的期望 primary 值（用于一致性比对）
+        const expectedPrimary = textCap ? buildModelRef(textCap.providerId, textCap.modelId) : "";
+        // 触发条件：primary 为空，或者 primary 与 text capability 记录的不一致
+        const needsGuard =
+          !currentPrimary || (expectedPrimary && currentPrimary !== expectedPrimary);
+        if (needsGuard) {
+          // 以 text capability 为准（优先），或从当前 provider 取第一个 text 模型（兜底）
           let fallbackProvider = textCap?.providerId ?? providerId;
           let fallbackModel = textCap?.modelId;
           if (!fallbackModel) {
@@ -1089,9 +1095,14 @@ export async function detectProviderModelsWithProgress(
               };
             }
             await writeConfigFile(guardCfg);
+            // 同步 session override，防止 session store 中的 providerOverride/modelOverride 与
+            // 最新 config 脱节（这是 provider/model 混搭的直接来源）
             await updateSessionModelOverrides(fallbackProvider, fallbackModel);
             log.info(
-              `detect-guard: agents.defaults.model.primary → ${newPrimary} (fallback after autoAssign)`,
+              `detect-guard: agents.defaults.model.primary → ${newPrimary}` +
+                (needsGuard && currentPrimary && currentPrimary !== expectedPrimary
+                  ? ` (was ${currentPrimary}, re-synced with text capability)`
+                  : " (fallback after autoAssign)"),
             );
           }
         }
