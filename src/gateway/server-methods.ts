@@ -1,6 +1,21 @@
 import type { GatewayRequestHandlers, GatewayRequestOptions } from "./server-methods/types.js";
 import { ErrorCodes, errorShape, errorShapeFromError } from "./protocol/index.js";
 import { applyEnforcementDelay, shouldBlockService } from "../security/delayed-enforcement.js";
+import { defaultRuntime } from "../runtime.js";
+
+// ---------------------------------------------------------------------------
+// Server-side RPC handler timeout
+// ---------------------------------------------------------------------------
+// All handlers should respond well within this limit.  "chat.send" replies
+// with an immediate ACK (~ms) and runs the agent in the background, so 120s
+// is generous even for the heaviest synchronous handler
+// (modelConfig.provider.detect ~8s, skills.market.refresh ~0.5s, etc.).
+//
+// Without this guard, a stuck handler keeps the server-side `respond` closure
+// alive indefinitely.  The client has its own 5-minute timeout
+// (PENDING_TIMEOUT_MS in client.ts), but the server side leaks memory and
+// blocks the log timer (requests show up as "7481209ms" in the logs).
+const RPC_HANDLER_TIMEOUT_MS = 120_000;
 import { agentHandlers } from "./server-methods/agent.js";
 import { agentsHandlers } from "./server-methods/agents.js";
 import { browserHandlers } from "./server-methods/browser.js";
@@ -244,17 +259,47 @@ export async function handleGatewayRequest(
     );
     return;
   }
+
+  // Guard: wrap `respond` so it can only be called once.
+  // If the handler already responded before the timeout fires, the timeout
+  // response becomes a no-op — no duplicate frames sent to the client.
+  let responded = false;
+  const guardedRespond: typeof respond = (ok, payload, error, meta) => {
+    if (responded) return;
+    responded = true;
+    respond(ok, payload, error, meta);
+  };
+
+  // Server-side handler timeout: prevents requests from hanging indefinitely
+  // when a handler stalls (e.g. blocking sync I/O, deadlocked async).
+  const started = Date.now();
+  const timer = setTimeout(() => {
+    if (!responded) {
+      const elapsed = Date.now() - started;
+      defaultRuntime.error(
+        `[rpc-timeout] handler "${req.method}" timed out after ${elapsed}ms (limit ${RPC_HANDLER_TIMEOUT_MS}ms), id=${req.id}`,
+      );
+      guardedRespond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAVAILABLE, `request timed out after ${RPC_HANDLER_TIMEOUT_MS}ms`),
+      );
+    }
+  }, RPC_HANDLER_TIMEOUT_MS);
+
   try {
     await handler({
       req,
       params: (req.params ?? {}) as Record<string, unknown>,
       client,
       isWebchatConnect,
-      respond,
+      respond: guardedRespond,
       context,
     });
   } catch (err) {
     // CN: 统一的 handler 错误捕获 — 自动分类 + 中文翻译，避免一律返回 UNAVAILABLE
-    respond(false, undefined, errorShapeFromError(ErrorCodes.INTERNAL_ERROR, err));
+    guardedRespond(false, undefined, errorShapeFromError(ErrorCodes.INTERNAL_ERROR, err));
+  } finally {
+    clearTimeout(timer);
   }
 }

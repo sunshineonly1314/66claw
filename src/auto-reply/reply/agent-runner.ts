@@ -511,15 +511,25 @@ export async function runReplyAgent(params: {
     didLogHeartbeatStrip = payloadResult.didLogHeartbeatStrip;
 
     if (replyPayloads.length === 0) {
-      defaultRuntime.log(
-        `[AgentRunner] All payloads filtered (raw=${payloadArray.length}): provider=${providerUsed} model=${followupRun.run.model} session=${sessionKey ?? "?"}`,
-      );
       // If no other delivery channel has already sent content and this is not a heartbeat,
       // return a fallback so the user is not left without any response.
       const alreadyDelivered =
         blockReplyPipeline?.didStream() ||
         (directlySentBlockKeys && directlySentBlockKeys.size > 0) ||
         (runResult.messagingToolSentTexts && runResult.messagingToolSentTexts.length > 0);
+
+      // Distinguish "normal dedup after block-streaming" from "unexpected empty payload"
+      // so operators don't mistake routine dedup for a bug.
+      if (alreadyDelivered) {
+        defaultRuntime.log(
+          `[AgentRunner] Final payloads deduped (raw=${payloadArray.length}, already-delivered): provider=${providerUsed} model=${followupRun.run.model} session=${sessionKey ?? "?"}`,
+        );
+      } else {
+        defaultRuntime.log(
+          `[AgentRunner] All payloads filtered (raw=${payloadArray.length}): provider=${providerUsed} model=${followupRun.run.model} session=${sessionKey ?? "?"}`,
+        );
+      }
+
       if (!isHeartbeat && !alreadyDelivered) {
         return finalizeWithFollowup(
           { text: "🤔 The model's response was empty after filtering. Please try again." },

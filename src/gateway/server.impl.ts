@@ -1015,6 +1015,11 @@ export async function startGatewayServer(
   // Use allSettled so a single failure does not prevent other refs from populating.
   // Keep the promise reference so `close()` can wait for subsystems to finish
   // before attempting cleanup — prevents orphaned background tasks on early shutdown.
+  //
+  // `closeStarted` is flipped to `true` the moment close() begins.  If subsystems
+  // settle *after* close() already ran, the `.then()` callback performs late cleanup
+  // itself — preventing orphaned tailscale/discovery/browser processes.
+  let closeStarted = false;
   const subsystemsSettled = Promise.allSettled([
     tailscalePromise,
     sidecarsPromise,
@@ -1051,6 +1056,45 @@ export async function startGatewayServer(
       log.warn(`gateway subsystems partially ready (${failedCount}/3 failed)`);
     }
 
+    // If close() already started (subsystems settled after the 15s timeout),
+    // perform late cleanup to prevent orphaned processes.
+    if (closeStarted) {
+      log.warn("subsystems settled after close started — performing late cleanup");
+      const lateCleanups: Promise<void>[] = [];
+      if (lateBindingRefs.tailscaleCleanup) {
+        lateCleanups.push(
+          lateBindingRefs
+            .tailscaleCleanup()
+            .catch((e) => log.warn(`late tailscale cleanup failed: ${String(e)}`)),
+        );
+      }
+      if (lateBindingRefs.bonjourStop) {
+        lateCleanups.push(
+          lateBindingRefs
+            .bonjourStop()
+            .catch((e) => log.warn(`late bonjour cleanup failed: ${String(e)}`)),
+        );
+      }
+      if (lateBindingRefs.browserControl) {
+        lateCleanups.push(
+          lateBindingRefs.browserControl
+            .stop()
+            .catch((e) => log.warn(`late browser control cleanup failed: ${String(e)}`)),
+        );
+      }
+      if (lateBindingRefs.pluginServices) {
+        lateCleanups.push(
+          lateBindingRefs.pluginServices
+            .stop()
+            .catch((e) => log.warn(`late plugin services cleanup failed: ${String(e)}`)),
+        );
+      }
+      if (lateCleanups.length > 0) {
+        void Promise.allSettled(lateCleanups);
+      }
+      return;
+    }
+
     // Run gateway_start plugin hook (fire-and-forget)
     if (!minimalTestGateway) {
       const hookRunner = getGlobalHookRunner();
@@ -1064,6 +1108,10 @@ export async function startGatewayServer(
 
   return {
     close: async (opts) => {
+      // Signal that close has started — subsystems that settle after this point
+      // will self-clean in their `.then()` callback (see `closeStarted` above).
+      closeStarted = true;
+
       // Wait for background subsystems to finish initialising so the close
       // handler can properly clean them up.  Without this, an early shutdown
       // could leave orphaned tailscale/discovery/channel processes.
