@@ -577,6 +577,24 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
   const configPath =
     candidatePaths.find((candidate) => deps.fs.existsSync(candidate)) ?? requestedConfigPath;
 
+  /**
+   * Instance-level write serialization lock.
+   *
+   * Business context: config writes happen from multiple concurrent paths —
+   * UI config.set RPC, auto-optimization write-back (applyAutoOptimizations →
+   * saveProject), and gateway restart sentinel writes. Without serialization a
+   * "fast double-save" (e.g. user clicks Save twice, or UI debounce misses a
+   * rapid change) causes Write-2's copyFile(config → config.bak) to overwrite
+   * the .bak that Write-1 just created before Write-1's rotateConfigBackups has
+   * promoted it to .bak.1 — permanently losing Write-1's pre-write backup.
+   *
+   * Fix: chain all writeConfigFile calls through a single Promise so they execute
+   * sequentially. Each write sees a stable .bak state and rotation completes
+   * before the next write touches the backup files. Scoped to the instance (not
+   * module-level) so test isolation is preserved across createConfigIO() calls.
+   */
+  let writeConfigLock: Promise<void> = Promise.resolve();
+
   function loadConfig(): OpenClawCNConfig {
     try {
       maybeLoadDotEnvForConfig(deps.env);
@@ -884,6 +902,17 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
   }
 
   async function writeConfigFile(cfg: OpenClawCNConfig, options: ConfigWriteOptions = {}) {
+    // Serialize concurrent writes through the module-level lock.
+    // Each call chains onto the previous one so .bak rotation always
+    // completes before the next write touches the backup files.
+    const result = writeConfigLock.then(() => writeConfigFileImpl(cfg, options));
+    // Update the lock to the new tail — errors must NOT break the chain
+    // so subsequent writes can still proceed even if this one fails.
+    writeConfigLock = result.catch(() => {});
+    return result;
+  }
+
+  async function writeConfigFileImpl(cfg: OpenClawCNConfig, options: ConfigWriteOptions = {}) {
     clearConfigCache();
     let persistCandidate: unknown = cfg;
     const { snapshot } = await readConfigFileSnapshotInternal();
@@ -1074,10 +1103,17 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       // Save a backup of the current config BEFORE replacing it.
       // Only create the .bak copy here — rotation happens AFTER the rename
       // succeeds, ensuring we never lose backup state if the write fails.
+      // Concurrent writes are serialized via _writeConfigLock so .bak is
+      // never overwritten mid-rotation.
       const configExists = deps.fs.existsSync(configPath);
       if (configExists) {
-        await deps.fs.promises.copyFile(configPath, `${configPath}.bak`).catch(() => {
-          // best-effort — original config still intact at this point
+        await deps.fs.promises.copyFile(configPath, `${configPath}.bak`).catch((bakErr) => {
+          // Log the failure — silent backup loss is hard to diagnose.
+          // The original config is still intact; the write will proceed but
+          // the backup ring will be incomplete for this cycle.
+          deps.logger.warn(
+            `Config backup failed (${configPath}.bak): ${bakErr instanceof Error ? bakErr.message : String(bakErr)}`,
+          );
         });
       }
 
@@ -1138,6 +1174,10 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
     readConfigFileSnapshot,
     readConfigFileSnapshotForWrite,
     writeConfigFile,
+    // Exposed for the module-level writeConfigFile wrapper so it can bypass the
+    // instance lock (which would be a fresh Promise.resolve() anyway) and use the
+    // module-level lock instead. Not part of the public API — do not call directly.
+    writeConfigFileImpl,
   };
 }
 
@@ -1209,14 +1249,34 @@ export async function readConfigFileSnapshotForWrite(): Promise<ReadConfigFileSn
   return await createConfigIO().readConfigFileSnapshotForWrite();
 }
 
+/**
+ * Module-level write serialization lock for the top-level writeConfigFile wrapper.
+ *
+ * The instance-level lock inside createConfigIO() serializes writes within the
+ * same IO instance (e.g. in tests). The module-level lock here serializes all
+ * callers that go through the exported writeConfigFile() wrapper, which creates
+ * a NEW createConfigIO() instance on each call — meaning each call would otherwise
+ * get a fresh instance lock (Promise.resolve()), defeating serialization entirely.
+ *
+ * This lock ensures that concurrent calls to the exported writeConfigFile() are
+ * queued, so .bak rotation from Write-1 always completes before Write-2 starts.
+ * Errors must NOT break the chain — subsequent writes must still proceed.
+ */
+let _moduleWriteConfigLock: Promise<void> = Promise.resolve();
+
 export async function writeConfigFile(
   cfg: OpenClawCNConfig,
   options: ConfigWriteOptions = {},
 ): Promise<void> {
-  const io = createConfigIO();
-  const sameConfigPath =
-    options.expectedConfigPath === undefined || options.expectedConfigPath === io.configPath;
-  await io.writeConfigFile(cfg, {
-    envSnapshotForRestore: sameConfigPath ? options.envSnapshotForRestore : undefined,
+  const result = _moduleWriteConfigLock.then(async () => {
+    const io = createConfigIO();
+    const sameConfigPath =
+      options.expectedConfigPath === undefined || options.expectedConfigPath === io.configPath;
+    await io.writeConfigFileImpl(cfg, {
+      envSnapshotForRestore: sameConfigPath ? options.envSnapshotForRestore : undefined,
+    });
   });
+  // Errors must NOT break the chain — subsequent writes still proceed even if this one fails.
+  _moduleWriteConfigLock = result.catch(() => {});
+  return result;
 }

@@ -208,7 +208,7 @@ function pushActivityEvent(projectId: string, event: ActivityEvent): void {
  * Key = `${agentId}:${routeId}` — composite to support concurrent routes to the same agent.
  * Value includes agentId for O(1) lookup in agent_end via agentId prefix scan.
  */
-const pendingRouteEvents = new Map<string, { agentId: string; projectId: string; event: Omit<ActivityEvent, "durationMs" | "success" | "error" | "replySummary">; startTime: number }>();
+const pendingRouteEvents = new Map<string, { agentId: string; projectId: string; sessionKey?: string; event: Omit<ActivityEvent, "durationMs" | "success" | "error" | "replySummary">; startTime: number }>();
 /** 5-minute TTL for orphaned pending route events (agent crashed before agent_end fired). */
 const PENDING_ROUTE_EVENT_TTL_MS = 5 * 60_000;
 
@@ -2467,6 +2467,20 @@ const plugin: OpenClawCNPluginDefinition = {
           clearInterval(healthTimer);
           healthTimer = undefined;
         }
+        // Cancel all pending debounced activity-save timers and flush their
+        // buffers synchronously. Without this, timers orphaned by shutdown fire
+        // after the gateway teardown and may cause errors or silent data loss.
+        for (const [projectId, timer] of activitySaveTimers) {
+          clearTimeout(timer);
+          const buf = activityBuffers.get(projectId);
+          if (buf && buf.length > 0) {
+            const snapshot = [...buf];
+            saveActivity(projectId, snapshot).catch(() => {
+              // best-effort — process is exiting
+            });
+          }
+        }
+        activitySaveTimers.clear();
         // Flush session affinities to disk on graceful shutdown
         await flushAffinityToDisk();
       },

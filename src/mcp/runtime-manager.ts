@@ -285,6 +285,14 @@ export class MCPRuntimeManager {
         this.healthFailures.set(id, 0);
         const state = this.states.get(id);
         if (state && state.status === "circuit_open" && state.config.enabled) {
+          // Reset restartCount so the server gets a full MCP_MAX_RESTART_ATTEMPTS
+          // budget for the new recovery attempt. Without this reset, a server that
+          // hit the restart limit before tripping the circuit breaker would be
+          // immediately locked into "error" again on the first crash after recovery.
+          state.restartCount = 0;
+          // Reset circuitOpenCount so the next failure sequence starts a fresh
+          // exponential backoff rather than continuing from an inflated exponent.
+          this.circuitOpenCount.delete(id);
           this.startServer(id).catch((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             this.updateStatus(id, "error", `Circuit recovery failed: ${msg}`);

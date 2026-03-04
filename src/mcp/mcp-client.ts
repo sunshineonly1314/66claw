@@ -178,6 +178,22 @@ export class MCPClient {
    *  if the generation matches, preventing the race where a late onclose
    *  fires after a new successful connection overwrites _connected = true. */
   private _connectGen = 0;
+  /**
+   * In-flight connect() Promise — used as a mutex so concurrent callers
+   * share a single connection attempt instead of racing each other.
+   *
+   * Business context: MCP servers are initialized in batch on plugin load
+   * and can also be triggered by the onClose reconnect path while another
+   * caller is already retrying. Without serialization both callers would
+   * create independent transports, doubling resource usage and producing
+   * two onClose handlers per connection cycle.
+   *
+   * Pattern: store the Promise itself (not just a flag) so waiting callers
+   * can await the same result — if the in-flight attempt succeeds they
+   * get connected for free; if it fails they receive the same error and
+   * can decide whether to retry at their own layer.
+   */
+  private _connectPromise: Promise<void> | null = null;
 
   constructor(config: MCPServerConfig, events: MCPClientEvents = {}) {
     this.config = config;
@@ -193,20 +209,32 @@ export class MCPClient {
   }
 
   /** Connect to the MCP server via stdio or SSE transport. */
-  async connect(): Promise<void> {
-    if (this._connected) return;
+  connect(): Promise<void> {
+    // Fast path: already connected.
+    if (this._connected) return Promise.resolve();
 
-    // Bump generation so stale onclose callbacks from previous attempts
-    // won't overwrite _connected after this new attempt succeeds.
-    this._connectGen++;
+    // Serialization: if a connect() is already in-flight, return the same
+    // Promise so concurrent callers share one attempt rather than racing.
+    // When the in-flight attempt settles (success or error) _connectPromise
+    // is cleared so the next call starts a fresh attempt.
+    if (this._connectPromise !== null) return this._connectPromise;
 
     const timeoutMs = this.config.timeout ?? MCP_INIT_TIMEOUT_MS;
 
-    if (this.config.transport === "sse") {
-      return this.connectSSE(timeoutMs);
-    }
+    // Bump generation BEFORE starting the attempt so any stale onclose
+    // callbacks from prior transports don't corrupt the new connection.
+    this._connectGen++;
 
-    return this.connectStdio(timeoutMs);
+    const attempt =
+      this.config.transport === "sse" ? this.connectSSE(timeoutMs) : this.connectStdio(timeoutMs);
+
+    this._connectPromise = attempt.finally(() => {
+      // Clear the in-flight reference regardless of success/failure so the
+      // next caller can start a fresh attempt if needed.
+      this._connectPromise = null;
+    });
+
+    return this._connectPromise;
   }
 
   // ====================================================================
@@ -246,7 +274,26 @@ export class MCPClient {
       });
     }
 
-    await this.connectWithTimeout(stdioTransport as unknown as AnyTransport, timeoutMs);
+    try {
+      await this.connectWithTimeout(stdioTransport as unknown as AnyTransport, timeoutMs);
+    } catch (err) {
+      // connectWithTimeout failed (timeout or connect error). The spawned child
+      // process is still running — we must close the transport to kill it.
+      // Mirror the SSE fallback cleanup pattern: unbind callbacks first so the
+      // onclose event from transport.close() does NOT trigger _connected = false
+      // via a stale callback (the generation counter also guards this, but being
+      // explicit prevents spurious onClose events to the caller).
+      stdioTransport.onclose = undefined;
+      stdioTransport.onerror = undefined;
+      try {
+        await (stdioTransport as unknown as AnyTransport).close();
+      } catch {
+        /* ignore close errors — process may already be dead */
+      }
+      this.transport = null;
+      this.client = null;
+      throw err;
+    }
   }
 
   // ====================================================================
@@ -471,9 +518,12 @@ export class MCPClient {
 
   /** Gracefully shut down the MCP server. */
   async shutdown(): Promise<void> {
-    if (!this._connected && !this.transport) return;
+    if (!this._connected && !this.transport && !this._connectPromise) return;
 
     this._connected = false;
+    // Cancel any in-flight connect: clear the reference so subsequent callers
+    // don't await a connect that will be torn down immediately after.
+    this._connectPromise = null;
 
     let shutdownTimer: ReturnType<typeof setTimeout> | null = null;
     try {

@@ -264,11 +264,14 @@ describe("Integration: config rollback with temp directory", () => {
     // Config now restored
     const restored = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     expect(restored.meta.lastTouchedVersion).toBe("1.5.0");
-    // Pre-rollback backup exists
-    expect(fs.existsSync(`${configPath}.pre-rollback.bak`)).toBe(true);
-    const preRollback = JSON.parse(
-      fs.readFileSync(`${configPath}.pre-rollback.bak`, "utf-8"),
-    );
+    // Pre-rollback backup exists (named with timestamp: *.pre-rollback.*.bak)
+    const dir = path.dirname(configPath);
+    const base = path.basename(configPath);
+    const preRollbackFiles = fs
+      .readdirSync(dir)
+      .filter((f) => f.startsWith(base) && f.includes(".pre-rollback.") && f.endsWith(".bak"));
+    expect(preRollbackFiles.length).toBeGreaterThan(0);
+    const preRollback = JSON.parse(fs.readFileSync(path.join(dir, preRollbackFiles[0]), "utf-8"));
     expect(preRollback.meta.lastTouchedVersion).toBe("2.0.0");
   });
 });
