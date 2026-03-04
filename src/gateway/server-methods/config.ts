@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
-import type { GatewayRequestHandlers, RespondFn } from "./types.js";
+import type { GatewayRequestHandlers } from "./types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { listChannelPlugins } from "../../channels/plugins/index.js";
 import {
@@ -55,51 +55,9 @@ function resolveBaseHash(params: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
-function requireConfigBaseHash(
-  params: unknown,
-  snapshot: Awaited<ReturnType<typeof readConfigFileSnapshot>>,
-  respond: RespondFn,
-): boolean {
-  if (!snapshot.exists) {
-    return true;
-  }
-  const snapshotHash = resolveConfigSnapshotHash(snapshot);
-  if (!snapshotHash) {
-    respond(
-      false,
-      undefined,
-      errorShape(
-        ErrorCodes.INVALID_REQUEST,
-        "config base hash unavailable; re-run config.get and retry",
-      ),
-    );
-    return false;
-  }
-  const baseHash = resolveBaseHash(params);
-  if (!baseHash) {
-    respond(
-      false,
-      undefined,
-      errorShape(
-        ErrorCodes.INVALID_REQUEST,
-        "config base hash required; re-run config.get and retry",
-      ),
-    );
-    return false;
-  }
-  if (baseHash !== snapshotHash) {
-    respond(
-      false,
-      undefined,
-      errorShape(
-        ErrorCodes.INVALID_REQUEST,
-        "config changed since last load; re-run config.get and retry",
-      ),
-    );
-    return false;
-  }
-  return true;
-}
+// requireConfigBaseHash was removed — baseHash checking is now inlined inside
+// the write lock in config.set / config.patch / config.apply to eliminate the
+// TOCTOU window between hash check and write.
 
 function resolveConfigRestartRequest(params: unknown): {
   sessionKey: string | undefined;
@@ -253,10 +211,7 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
-    if (!requireConfigBaseHash(params, snapshot, respond)) {
-      return;
-    }
+    // Pre-parse raw payload outside the lock (pure memory, no disk state dependency).
     const rawValue = (params as { raw?: unknown }).raw;
     if (typeof rawValue !== "string") {
       respond(
@@ -271,57 +226,83 @@ export const configHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, parsedRes.error));
       return;
     }
-    const schemaSet = loadSchemaWithPlugins();
-    const restored = restoreRedactedValues(parsedRes.parsed, snapshot.config, schemaSet.uiHints);
-    if (!restored.ok) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, restored.humanReadableMessage ?? "invalid config"),
-      );
-      return;
-    }
-    const validated = validateConfigObjectWithPlugins(restored.result);
-    if (!validated.ok) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "invalid config", {
+
+    // [CN-FIX] Atomic read-check-validate-write: hold the write lock from snapshot
+    // through write to eliminate the TOCTOU window between baseHash check and write.
+    const result = await withConfigWriteLock(async () => {
+      const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
+      if (!snapshot.exists) {
+        // No existing config — skip baseHash check (first-time write)
+      } else {
+        const snapshotHash = resolveConfigSnapshotHash(snapshot);
+        const baseHash = resolveBaseHash(params);
+        if (!snapshotHash) {
+          return { err: "config base hash unavailable; re-run config.get and retry" } as const;
+        }
+        if (!baseHash) {
+          return { err: "config base hash required; re-run config.get and retry" } as const;
+        }
+        if (baseHash !== snapshotHash) {
+          return { err: "config changed since last load; re-run config.get and retry" } as const;
+        }
+      }
+      // Note: config.set does NOT require snapshot.valid — it is a full replacement
+      // and can be used to fix a broken config. config.patch requires valid because
+      // it merges against the current config.
+      const schemaSet = loadSchemaWithPlugins();
+      const restored = restoreRedactedValues(parsedRes.parsed, snapshot.config, schemaSet.uiHints);
+      if (!restored.ok) {
+        return { err: restored.humanReadableMessage ?? "invalid config" } as const;
+      }
+      const validated = validateConfigObjectWithPlugins(restored.result);
+      if (!validated.ok) {
+        return {
+          err: "invalid config",
           details: { issues: validated.issues },
-        }),
-      );
-      return;
-    }
-    // [CN-PATCH:safety-check] 与 config.apply 相同的安全检查，防止 AI 通过 config.set 删除关键字段。
-    // config.set 是全量替换，使用 "apply" 模式（有硬阻断 + advisory warnings）。
-    let safetyCheckSet: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
-    try {
-      safetyCheckSet = runConfigSafetyCheck(validated.config, snapshot.config, "apply");
-    } catch {
-      /* if the safety check itself throws, degrade gracefully and allow write */
-    }
-    if (!safetyCheckSet.ok) {
+        } as const;
+      }
+      // [CN-PATCH:safety-check] 与 config.apply 相同的安全检查，防止 AI 通过 config.set 删除关键字段。
+      // config.set 是全量替换，使用 "apply" 模式（有硬阻断 + advisory warnings）。
+      let safetyCheckSet: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
+      try {
+        safetyCheckSet = runConfigSafetyCheck(validated.config, snapshot.config, "apply");
+      } catch {
+        /* if the safety check itself throws, degrade gracefully and allow write */
+      }
+      if (!safetyCheckSet.ok) {
+        return {
+          err:
+            safetyCheckSet.blockReason ??
+            "config.set blocked by safety check; use config.patch instead",
+        } as const;
+      }
+      await writeConfigFile(validated.config, writeOptions);
+      return {
+        ok: true as const,
+        config: redactConfigObject(validated.config, schemaSet.uiHints),
+        safetyWarnings: safetyCheckSet.warnings,
+      };
+    });
+
+    if ("err" in result) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          safetyCheckSet.blockReason ??
-            "config.set blocked by safety check; use config.patch instead",
+          result.err,
+          "details" in result ? result : undefined,
         ),
       );
       return;
     }
-    await withConfigWriteLock(async () => {
-      await writeConfigFile(validated.config, writeOptions);
-    });
     respond(
       true,
       {
         ok: true,
         path: CONFIG_PATH,
-        config: redactConfigObject(validated.config, schemaSet.uiHints),
-        ...(safetyCheckSet.warnings.length > 0 ? { safetyWarnings: safetyCheckSet.warnings } : {}),
+        config: result.config,
+        ...(result.safetyWarnings.length > 0 ? { safetyWarnings: result.safetyWarnings } : {}),
       },
       undefined,
     );
@@ -338,18 +319,7 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
-    if (!requireConfigBaseHash(params, snapshot, respond)) {
-      return;
-    }
-    if (!snapshot.valid) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "invalid config; fix before patching"),
-      );
-      return;
-    }
+    // Pre-parse raw payload outside the lock (pure memory, no disk state dependency).
     const rawValue = (params as { raw?: unknown }).raw;
     if (typeof rawValue !== "string") {
       respond(
@@ -379,47 +349,76 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const merged = applyMergePatch(snapshot.config, parsedRes.parsed, {
-      mergeObjectArraysById: true,
+
+    // [CN-FIX] Atomic read-check-merge-validate-write: hold the write lock from snapshot
+    // through write to eliminate the TOCTOU window between baseHash check and write.
+    const result = await withConfigWriteLock(async () => {
+      const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
+      if (!snapshot.exists) {
+        // No existing config — skip baseHash check (first-time write)
+      } else {
+        const snapshotHash = resolveConfigSnapshotHash(snapshot);
+        const baseHash = resolveBaseHash(params);
+        if (!snapshotHash) {
+          return { err: "config base hash unavailable; re-run config.get and retry" } as const;
+        }
+        if (!baseHash) {
+          return { err: "config base hash required; re-run config.get and retry" } as const;
+        }
+        if (baseHash !== snapshotHash) {
+          return { err: "config changed since last load; re-run config.get and retry" } as const;
+        }
+      }
+      if (!snapshot.valid) {
+        return { err: "invalid config; fix before patching" } as const;
+      }
+      const merged = applyMergePatch(snapshot.config, parsedRes.parsed, {
+        mergeObjectArraysById: true,
+      });
+      const schemaPatch = loadSchemaWithPlugins();
+      const restoredMerge = restoreRedactedValues(merged, snapshot.config, schemaPatch.uiHints);
+      if (!restoredMerge.ok) {
+        return { err: restoredMerge.humanReadableMessage ?? "invalid config" } as const;
+      }
+      const migrated = applyLegacyMigrations(restoredMerge.result);
+      const resolved = migrated.next ?? restoredMerge.result;
+      const validated = validateConfigObjectWithPlugins(resolved);
+      if (!validated.ok) {
+        return {
+          err: "invalid config",
+          details: { issues: validated.issues },
+        } as const;
+      }
+      // [CN-PATCH:safety-check] Advisory pre-write safety check.
+      // Wrapped in try-catch so it never blocks config writes.
+      let safetyCheck: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
+      try {
+        safetyCheck = runConfigSafetyCheck(validated.config, snapshot.config, "patch");
+      } catch {
+        /* advisory only — never block writes */
+      }
+      await writeConfigFile(validated.config, writeOptions);
+      return {
+        ok: true as const,
+        config: validated.config,
+        snapshotConfig: snapshot.config,
+        schema: schemaPatch,
+        safetyWarnings: safetyCheck.warnings,
+      };
     });
-    const schemaPatch = loadSchemaWithPlugins();
-    const restoredMerge = restoreRedactedValues(merged, snapshot.config, schemaPatch.uiHints);
-    if (!restoredMerge.ok) {
+
+    if ("err" in result) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          restoredMerge.humanReadableMessage ?? "invalid config",
+          result.err,
+          "details" in result ? result : undefined,
         ),
       );
       return;
     }
-    const migrated = applyLegacyMigrations(restoredMerge.result);
-    const resolved = migrated.next ?? restoredMerge.result;
-    const validated = validateConfigObjectWithPlugins(resolved);
-    if (!validated.ok) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "invalid config", {
-          details: { issues: validated.issues },
-        }),
-      );
-      return;
-    }
-    // [CN-PATCH:safety-check] Advisory pre-write safety check.
-    // Wrapped in try-catch so it never blocks config writes.
-    let safetyCheck: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
-    try {
-      safetyCheck = runConfigSafetyCheck(validated.config, snapshot.config, "patch");
-    } catch {
-      /* advisory only — never block writes */
-    }
-
-    await withConfigWriteLock(async () => {
-      await writeConfigFile(validated.config, writeOptions);
-    });
 
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
@@ -431,7 +430,7 @@ export const configHandlers: GatewayRequestHandlers = {
     let sentinelPath: string | null = null;
     const needsRestart = (() => {
       if (noRestart) return false;
-      const changedPaths = diffConfigPaths(snapshot.config, validated.config);
+      const changedPaths = diffConfigPaths(result.snapshotConfig, result.config);
       if (changedPaths.length === 0) return false;
       const plan = buildGatewayReloadPlan(changedPaths);
       return plan.restartGateway;
@@ -456,10 +455,10 @@ export const configHandlers: GatewayRequestHandlers = {
       {
         ok: true,
         path: CONFIG_PATH,
-        config: redactConfigObject(validated.config, schemaPatch.uiHints),
+        config: redactConfigObject(result.config, result.schema.uiHints),
         restart,
         sentinel: sentinelPath ? { path: sentinelPath } : undefined,
-        ...(safetyCheck.warnings.length > 0 ? { safetyWarnings: safetyCheck.warnings } : {}),
+        ...(result.safetyWarnings.length > 0 ? { safetyWarnings: result.safetyWarnings } : {}),
       },
       undefined,
     );
@@ -476,10 +475,7 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
-    if (!requireConfigBaseHash(params, snapshot, respond)) {
-      return;
-    }
+    // Pre-parse raw payload outside the lock (pure memory, no disk state dependency).
     const rawValue = (params as { raw?: unknown }).raw;
     if (typeof rawValue !== "string") {
       respond(
@@ -497,52 +493,80 @@ export const configHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, parsedRes.error));
       return;
     }
-    const schemaApply = loadSchemaWithPlugins();
-    const restored = restoreRedactedValues(parsedRes.parsed, snapshot.config, schemaApply.uiHints);
-    if (!restored.ok) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, restored.humanReadableMessage ?? "invalid config"),
+
+    // [CN-FIX] Atomic read-check-validate-write: hold the write lock from snapshot
+    // through write to eliminate the TOCTOU window between baseHash check and write.
+    const result = await withConfigWriteLock(async () => {
+      const { snapshot, writeOptions } = await readConfigFileSnapshotForWrite();
+      if (!snapshot.exists) {
+        // No existing config — skip baseHash check (first-time write)
+      } else {
+        const snapshotHash = resolveConfigSnapshotHash(snapshot);
+        const baseHash = resolveBaseHash(params);
+        if (!snapshotHash) {
+          return { err: "config base hash unavailable; re-run config.get and retry" } as const;
+        }
+        if (!baseHash) {
+          return { err: "config base hash required; re-run config.get and retry" } as const;
+        }
+        if (baseHash !== snapshotHash) {
+          return { err: "config changed since last load; re-run config.get and retry" } as const;
+        }
+      }
+      const schemaApply = loadSchemaWithPlugins();
+      const restored = restoreRedactedValues(
+        parsedRes.parsed,
+        snapshot.config,
+        schemaApply.uiHints,
       );
-      return;
-    }
-    const validated = validateConfigObjectWithPlugins(restored.result);
-    if (!validated.ok) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "invalid config", {
+      if (!restored.ok) {
+        return { err: restored.humanReadableMessage ?? "invalid config" } as const;
+      }
+      const validated = validateConfigObjectWithPlugins(restored.result);
+      if (!validated.ok) {
+        return {
+          err: "invalid config",
           details: { issues: validated.issues },
-        }),
-      );
-      return;
-    }
-    // [CN-PATCH:safety-check] Pre-write safety check.
-    // For critical-field drops or >70% size reduction, this BLOCKS the write.
-    // For lesser issues it attaches advisory warnings to the success response.
-    let safetyCheck: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
-    try {
-      safetyCheck = runConfigSafetyCheck(validated.config, snapshot.config, "apply");
-    } catch {
-      /* if the safety check itself throws, degrade gracefully and allow write */
-    }
-    if (!safetyCheck.ok) {
+        } as const;
+      }
+      // [CN-PATCH:safety-check] Pre-write safety check.
+      // For critical-field drops or >70% size reduction, this BLOCKS the write.
+      // For lesser issues it attaches advisory warnings to the success response.
+      let safetyCheck: ReturnType<typeof runConfigSafetyCheck> = { ok: true, warnings: [] };
+      try {
+        safetyCheck = runConfigSafetyCheck(validated.config, snapshot.config, "apply");
+      } catch {
+        /* if the safety check itself throws, degrade gracefully and allow write */
+      }
+      if (!safetyCheck.ok) {
+        return {
+          err:
+            safetyCheck.blockReason ??
+            "config.apply blocked by safety check; use config.patch instead",
+        } as const;
+      }
+      await writeConfigFile(validated.config, writeOptions);
+      return {
+        ok: true as const,
+        config: validated.config,
+        snapshotConfig: snapshot.config,
+        schema: schemaApply,
+        safetyWarnings: safetyCheck.warnings,
+      };
+    });
+
+    if ("err" in result) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          safetyCheck.blockReason ??
-            "config.apply blocked by safety check; use config.patch instead",
+          result.err,
+          "details" in result ? result : undefined,
         ),
       );
       return;
     }
-
-    await withConfigWriteLock(async () => {
-      await writeConfigFile(validated.config, writeOptions);
-    });
 
     const { sessionKey, note, restartDelayMs, noRestart, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
@@ -554,7 +578,7 @@ export const configHandlers: GatewayRequestHandlers = {
     let sentinelPath: string | null = null;
     const needsRestart = (() => {
       if (noRestart) return false;
-      const changedPaths = diffConfigPaths(snapshot.config, validated.config);
+      const changedPaths = diffConfigPaths(result.snapshotConfig, result.config);
       if (changedPaths.length === 0) return false;
       const plan = buildGatewayReloadPlan(changedPaths);
       return plan.restartGateway;
@@ -579,10 +603,10 @@ export const configHandlers: GatewayRequestHandlers = {
       {
         ok: true,
         path: CONFIG_PATH,
-        config: redactConfigObject(validated.config, schemaApply.uiHints),
+        config: redactConfigObject(result.config, result.schema.uiHints),
         restart,
         sentinel: sentinelPath ? { path: sentinelPath } : undefined,
-        ...(safetyCheck.warnings.length > 0 ? { safetyWarnings: safetyCheck.warnings } : {}),
+        ...(result.safetyWarnings.length > 0 ? { safetyWarnings: result.safetyWarnings } : {}),
       },
       undefined,
     );
