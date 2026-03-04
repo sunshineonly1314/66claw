@@ -8,7 +8,7 @@
  * The main codebase only needs to load this plugin directory.
  */
 
-import type { OpenClawCNPluginDefinition, OpenClawCNPluginApi } from "../../dist/plugins/types.js";
+import type { OpenClawCNPluginDefinition, OpenClawCNPluginApi } from "../../src/plugins/types.js";
 import { createOrchestrateTool, performQuickDeploy, performGuidedPropose, performGuidedDeploy, deployAgentId, listOrchestratedAgents, type CallGatewayFn } from "./src/orchestrate-tool.js";
 import { getOrchestratorPromptBlock } from "./src/system-prompt.js";
 import { getTemplate, listTemplates, matchTemplate } from "./src/templates.js";
@@ -31,13 +31,24 @@ const plugin: OpenClawCNPluginDefinition = {
     // ── Build gateway call function ─────────────────────────────────────
     // The plugin uses a lazy-import pattern to avoid hard dependency on
     // the gateway call module at load time.
+    // Path resolution: in production the gateway is compiled to dist/; in development
+    // jiti can resolve the .ts source from src/.  We try dist/ first (production path),
+    // then fall back to src/ (dev / jiti path) so that both environments work without
+    // requiring a full build before running in development.
     const callGateway: CallGatewayFn = async (method, params) => {
-      const { callGateway: gwCall } = await import("../../dist/gateway/call.js");
-      return gwCall({
+      let gwCall: ((opts: unknown) => Promise<unknown>) | undefined;
+      try {
+        const mod = await import("../../dist/gateway/call.js");
+        gwCall = mod.callGateway;
+      } catch {
+        const mod = await import("../../src/gateway/call.js");
+        gwCall = (mod as { callGateway: typeof gwCall }).callGateway;
+      }
+      return (gwCall as NonNullable<typeof gwCall>)({
         method,
         params,
         timeoutMs: 30_000,
-        // Use "gateway-client" — one of the allowed GATEWAY_CLIENT_IDS values
+        // Use "gateway-client" — one of the allowed GATEWAY_CLIENT_NAMES values
         clientName: "gateway-client" as never,
         clientDisplayName: "Orchestrator",
         mode: "backend" as never,

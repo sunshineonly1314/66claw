@@ -18,7 +18,7 @@
 
 import { Type } from "@sinclair/typebox";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import type { OpenClawCNPluginToolContext } from "../../../dist/plugins/types.js";
+import type { OpenClawCNPluginToolContext } from "../../../src/plugins/types.js";
 import type {
   AgentBlueprint,
   AgentDeployResult,
@@ -52,7 +52,7 @@ import { executePlanningPipeline, formatPipelineReport } from "./guided/planning
 import { validateSoulStructure, buildSoulGenerationPrompt } from "./guided/soul-validator.js";
 import { estimateTeamDailyCost, formatCostRange } from "./guided/cost-estimator.js";
 import { generateUsageGuide } from "./guided/usage-guide.js";
-import { emitDiagnosticEvent } from "../../../dist/infra/diagnostic-events.js";
+import { emitDiagnosticEvent } from "openclawcn/plugin-sdk";
 
 // ── Tool Schema ──────────────────────────────────────────────────────────
 

@@ -22,6 +22,12 @@ export default defineConfig({
         replacement: path.join(repoRoot, "src", "plugin-sdk", "index.ts"),
       },
     ],
+    // Prioritise .ts source files over compiled .js stubs in test resolution.
+    // Without this, jiti may pick up bytenode CJS stubs (.js) instead of the
+    // TypeScript source (.ts) when both exist alongside a .jsc file, causing
+    // "Invalid or incompatible cached data" failures if the .jsc was compiled
+    // with a different Node.js/V8 version than the test runner.
+    extensions: [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"],
   },
   test: {
     testTimeout: 120_000,

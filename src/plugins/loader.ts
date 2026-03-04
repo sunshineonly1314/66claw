@@ -322,27 +322,40 @@ export function loadOpenClawCNPlugins(options: PluginLoadOptions = {}): PluginRe
     }
 
     let mod: OpenClawCNPluginModule | null = null;
+    const useBytecode = isBytecodeEntry(candidate.source);
     try {
-      if (isBytecodeEntry(candidate.source)) {
+      if (useBytecode) {
         // Bytecode extensions use bytenode CJS loader stubs that require
         // native Node.js Module._extensions support. jiti cannot execute
         // these correctly, so we use createRequire() for direct loading.
+        // Note: isBytecodeEntry() checks existsSync() before this point;
+        // if the .jsc disappears in the window between the check and require()
+        // (TOCTOU), the error below will be caught and reported clearly.
         const nativeRequire = createRequire(import.meta.url);
         mod = nativeRequire(candidate.source) as OpenClawCNPluginModule;
       } else {
         mod = jiti(candidate.source) as OpenClawCNPluginModule;
       }
     } catch (err) {
-      logger.error(`[plugins] ${record.id} failed to load from ${record.source}: ${String(err)}`);
+      const errStr = String(err);
+      // Provide a more actionable error message for V8 bytecode version mismatches.
+      // When the .jsc was compiled with a different Node.js/V8 version, bytenode
+      // will throw a module-load error that manifests as an empty or null export.
+      // We surface this explicitly so the operator knows to recompile the extension.
+      const hint =
+        useBytecode && (errStr.includes("MODULE_NOT_FOUND") || errStr.includes("bytenode"))
+          ? " (hint: .jsc bytecode may be missing or compiled with a different Node.js version — recompile the extension)"
+          : "";
+      logger.error(`[plugins] ${record.id} failed to load from ${record.source}: ${errStr}${hint}`);
       record.status = "error";
-      record.error = String(err);
+      record.error = errStr + hint;
       registry.plugins.push(record);
       seenIds.set(pluginId, candidate.origin);
       registry.diagnostics.push({
         level: "error",
         pluginId: record.id,
         source: record.source,
-        message: `failed to load plugin: ${String(err)}`,
+        message: `failed to load plugin: ${errStr}${hint}`,
       });
       continue;
     }
@@ -472,7 +485,13 @@ export function loadOpenClawCNPlugins(options: PluginLoadOptions = {}): PluginRe
           level: "warn",
           pluginId: record.id,
           source: record.source,
-          message: "plugin register returned a promise; async registration is ignored",
+          message: "plugin register returned a promise; async registration is not awaited",
+        });
+        // Attach a rejection handler so that an async register() that throws
+        // does not become an UnhandledPromiseRejection and crash the process
+        // (Node >=15 turns unhandled rejections into fatal errors).
+        (result as Promise<unknown>).catch((asyncErr: unknown) => {
+          logger.error(`[plugins] ${record.id} async register() rejected: ${String(asyncErr)}`);
         });
       }
       registry.plugins.push(record);
