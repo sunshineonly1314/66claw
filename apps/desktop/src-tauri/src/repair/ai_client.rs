@@ -138,7 +138,45 @@ const SYSTEM_PROMPT_FUNCTIONAL: &str = r#"你是 ClawdbotCN 桌面应用的检�
 
 使用中文回复。聚焦错误根因，给出可操作的具体步骤，不要泛泛而谈。"#;
 
-/// Select the appropriate system prompt based on gateway status.
+/// Scenario C: Gateway is running but agent-team / multi-agent collaboration is broken.
+/// Focus: session stuck, pendingRouteEvents heap, tool loops, supervisor failover, federation issues.
+const SYSTEM_PROMPT_AGENT_TEAM: &str = r#"你是 ClawdbotCN 桌面应用的检修助手。用户的 Gateway 服务正在运行，但多智能体团队（Agent Team）功能出现异常。
+
+你会收到以下诊断信息：
+1. 系统信息（操作系统、内存、磁盘空间）
+2. 自动诊断结果（配置验证、权限检查等）
+3. 最近的日志（agent-team 事件日志、路由日志、工具调用日志）
+4. 用户描述的问题
+
+常见 Agent Team 故障及排查方向：
+- 会话卡死 / 超过 120 秒无响应 → 检查日志中是否有 pendingRouteEvents 堆积、路由超时；可能是 resolve_agent hook 无法选出目标 agent
+- 路由事件堆积 → pendingRouteEvents key 冲突（同一 agentId 多条路由）或 agent_end 事件未触发导致事件积压
+- 工具循环 / tool loop → agent 反复调用同一工具而不结束；检查 tool_call 和 tool_result 日志是否有无限循环迹象
+- Supervisor 失联 → supervisor agent 崩溃后未触发 failover；检查 resolve_agent hook 中 selectFallbackMember 是否执行
+- 会话亲和性丢失 → 重启后 session-affinity.ts 恢复失败，所有消息路由到默认 agent；检查 affinity.json 文件是否存在且格式正确
+- 项目状态卡在 "error" → createFromPlan handler 未触发 retry；需要手动清除 error 状态或重建项目
+- 共享内存写入失败 → shared-memory 目录权限问题或磁盘空间不足
+- Federation 创建失败 → team.federation.create 超时；检查跨实例网络连通性
+- 活动缓冲区溢出 → 大型团队（>10 成员）缓冲区满导致活动事件丢失；重启服务可临时缓解
+
+基于日志信息，请：
+- 定位具体的故障点（哪个 agent、哪条路由、哪个 session ID）
+- 给出针对性的修复建议
+- 如果可以自动修复，用 [FIX:fix_id] 标记
+
+可用的自动修复操作：
+- [FIX:restart_service] 重启 Gateway 服务（清除所有内存状态，适用于卡死 / 堆积）
+- [FIX:clear_gateway_locks] 清理残留锁文件
+- [FIX:clear_cache] 清除缓存（包括 session-affinity 缓存）
+- [FIX:repair_permissions] 修复共享内存目录权限
+- [FIX:open_state_dir] 打开状态目录（可手动删除 agents/ 目录中的卡死项目）
+- [FIX:run_doctor] 运行 openclawcn doctor 全面自检（含 agent-team 状态检查）
+
+使用中文回复。聚焦具体的 agent ID 和 session ID，给出可操作的排查步骤。"#;
+
+/// Select the appropriate system prompt based on gateway status and error context.
+/// `gateway_running`: whether the Gateway sidecar is currently alive.
+/// The caller passes `true` for gateway-running scenarios (functional or agent-team).
 fn select_system_prompt(gateway_running: bool) -> &'static str {
     if gateway_running {
         SYSTEM_PROMPT_FUNCTIONAL
@@ -147,7 +185,26 @@ fn select_system_prompt(gateway_running: bool) -> &'static str {
     }
 }
 
+/// Select system prompt explicitly for agent-team scenarios.
+/// Used when the caller can determine from context that the issue is agent-team specific.
+#[allow(dead_code)]
+pub fn select_agent_team_prompt() -> &'static str {
+    SYSTEM_PROMPT_AGENT_TEAM
+}
+
 // ── Streaming chat ───────────────────────────────────────────────────────────
+
+/// Detect if the user query is about agent-team / multi-agent issues.
+/// Checks message text and context for agent-team–specific keywords.
+fn is_agent_team_query(message: &str, context: &str) -> bool {
+    let haystack = format!("{} {}", message, context);
+    let keywords = [
+        "agent", "团队", "多智能体", "session", "路由", "route", "会话",
+        "卡死", "supervisor", "pendingRoute", "failover", "federation",
+        "工具循环", "tool loop", "亲和", "affinity", "shared memory", "共享内存",
+    ];
+    keywords.iter().any(|kw| haystack.to_lowercase().contains(&kw.to_lowercase()))
+}
 
 /// Send a streaming chat request to an AI provider.
 /// Tokens are pushed to the frontend via `app.emit("repair-ai-token", ...)`.
@@ -163,7 +220,12 @@ pub async fn stream_chat(
     context: &str,
     gateway_running: bool,
 ) -> Result<(), String> {
-    let system_prompt = select_system_prompt(gateway_running);
+    // Auto-detect agent-team scenario from message/context keywords
+    let system_prompt = if gateway_running && is_agent_team_query(user_message, context) {
+        SYSTEM_PROMPT_AGENT_TEAM
+    } else {
+        select_system_prompt(gateway_running)
+    };
 
     // Build the full user message with context
     let full_message = if context.is_empty() {
@@ -854,6 +916,32 @@ mod tests {
     fn test_system_prompt_uses_chinese() {
         assert!(SYSTEM_PROMPT_GATEWAY_DOWN.contains("中文"), "SYSTEM_PROMPT_GATEWAY_DOWN should instruct Chinese replies");
         assert!(SYSTEM_PROMPT_FUNCTIONAL.contains("中文"), "SYSTEM_PROMPT_FUNCTIONAL should instruct Chinese replies");
+        assert!(SYSTEM_PROMPT_AGENT_TEAM.contains("中文"), "SYSTEM_PROMPT_AGENT_TEAM should instruct Chinese replies");
+    }
+
+    #[test]
+    fn test_agent_team_prompt_contains_key_fix_ids() {
+        let fix_ids = [
+            "restart_service", "clear_gateway_locks", "clear_cache",
+            "repair_permissions", "open_state_dir", "run_doctor",
+        ];
+        for fix_id in &fix_ids {
+            assert!(
+                SYSTEM_PROMPT_AGENT_TEAM.contains(fix_id),
+                "SYSTEM_PROMPT_AGENT_TEAM should mention fix ID: {}",
+                fix_id
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_agent_team_query_detects_keywords() {
+        assert!(is_agent_team_query("agent team 卡死了", ""));
+        assert!(is_agent_team_query("会话不响应", "session_id=abc"));
+        assert!(is_agent_team_query("supervisor failover", ""));
+        assert!(is_agent_team_query("共享内存写入失败", ""));
+        assert!(!is_agent_team_query("API key 无效", "HTTP 401 error"));
+        assert!(!is_agent_team_query("端口被占用", "port 19002"));
     }
 
     #[test]

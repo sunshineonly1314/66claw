@@ -316,6 +316,22 @@ fn parse_remote_port(child: &mut Child) -> Result<u16, String> {
 
     for line in reader.lines() {
         if start.elapsed() > Duration::from_secs(STARTUP_TIMEOUT_SECS) {
+            // Kill the child process before returning — otherwise frpc continues
+            // running silently, leaking resources and keeping the tunnel open.
+            let pid = child.id();
+            println!("[RemoteTunnel] frpc startup timeout, killing pid {}", pid);
+            #[cfg(target_os = "windows")]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .creation_flags(0x08000000)
+                    .output();
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
             return Err("frpc 启动超时，未能获取分配的远程端口".into());
         }
 
@@ -331,6 +347,21 @@ fn parse_remote_port(child: &mut Child) -> Result<u16, String> {
         if line.contains("connect to server error")
             || line.contains("login to server failed")
         {
+            // Kill the child on connection error too
+            let pid = child.id();
+            println!("[RemoteTunnel] frpc connection error, killing pid {}", pid);
+            #[cfg(target_os = "windows")]
+            {
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .creation_flags(0x08000000)
+                    .output();
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
             return Err(format!("frpc 连接服务器失败: {}", line));
         }
     }

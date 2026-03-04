@@ -256,10 +256,25 @@ fn check_config_has_provider(state_dir: &std::path::Path) -> DiagnosticCheck {
     let config_path = state_dir.join("openclawcn.json");
     if let Ok(content) = fs::read_to_string(&config_path) {
         if let Ok(val) = json5::from_str::<serde_json::Value>(&content) {
+            // Path 1: models.providers — legacy multi-provider config
             if let Some(providers) = val.get("models").and_then(|m| m.get("providers")).and_then(|p| p.as_object()) {
                 if !providers.is_empty() {
                     return check("config_has_provider", "AI 模型配置", CheckStatus::Pass,
                         &format!("已配置 {} 个 AI 模型提供商", providers.len()), None);
+                }
+            }
+            // Path 2: modelCapability.capabilities.text.providerId — preferred single-provider config
+            // This is how provider_discovery.rs reads the active text model provider.
+            if let Some(provider_id) = val
+                .get("modelCapability")
+                .and_then(|mc| mc.get("capabilities"))
+                .and_then(|caps| caps.get("text"))
+                .and_then(|text| text.get("providerId"))
+                .and_then(|v| v.as_str())
+            {
+                if !provider_id.is_empty() {
+                    return check("config_has_provider", "AI 模型配置", CheckStatus::Pass,
+                        &format!("已配置 AI 提供商: {}", provider_id), None);
                 }
             }
         }
@@ -645,6 +660,30 @@ mod tests {
         // Could be Pass if env vars happen to be set, or Warn if not
         // Just verify it returns a valid check
         assert!(matches!(result.status, CheckStatus::Pass | CheckStatus::Warn));
+
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_check_config_has_provider_model_capability_path() {
+        // Covers the modelCapability.capabilities.text.providerId path
+        let temp = std::env::temp_dir().join("_repair_diag_cap_provider");
+        let _ = fs::create_dir_all(&temp);
+        fs::write(temp.join("openclawcn.json"), r#"{
+            "modelCapability": {
+                "capabilities": {
+                    "text": {
+                        "providerId": "deepseek",
+                        "modelId": "deepseek-chat"
+                    }
+                }
+            }
+        }"#).unwrap();
+
+        let result = check_config_has_provider(&temp);
+        assert!(matches!(result.status, CheckStatus::Pass),
+            "modelCapability.capabilities.text.providerId should register as configured provider");
+        assert!(result.message.contains("deepseek"));
 
         let _ = fs::remove_dir_all(&temp);
     }

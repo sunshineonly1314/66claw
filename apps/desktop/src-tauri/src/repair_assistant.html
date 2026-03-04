@@ -522,6 +522,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     var providers = [];
     var selectedProvider = "";
     var chatBusy = false;
+    var chatSafetyTimer = null; // cleared by token listener on done/error
     var currentAssistantMsg = null;
     var batchAnalysisAborted = false; // flag to stop mid-batch-loop
     var repairInProgress = false;
@@ -774,10 +775,16 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 setTimeout(hideProgress, 1500);
                 appendChat("system", "日志上传失败: " + String(uploadErr) + "\n你可以点击顶部「上传日志」按钮手动重试。");
             });
-        }).catch(function(e) {
+        }).then(function() {
+            // Cleanup on success path (finally-equivalent for ES5 WebView2 compatibility)
+            repairInProgress = false;
+            btn.disabled = false;
+            btn.textContent = '一键检修';
+            recheckBtn.disabled = false;
+        }, function(e) {
+            // Cleanup on error path — mirrors .catch().finally() without using .finally()
             appendChat("system", "检修过程出错: " + String(e));
             hideProgress();
-        }).finally(function() {
             repairInProgress = false;
             btn.disabled = false;
             btn.textContent = '一键检修';
@@ -909,20 +916,21 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             var name = '';
             var msg = line;
 
-            // "✔ Something" or "✓ Something" patterns (Unicode checkmarks only)
-            if (/^[✔✓]\s/.test(line)) {
+            // "✔ Something", "✓ Something", "[✓]", "[ok]", "[pass]", "● Something (pass)"
+            // clack/prompts uses Unicode after ANSI strip; plain-text fallbacks also covered
+            if (/^[✔✓◆]\s/.test(line) || /^\[[\u2713✓ok]\]/.test(line) || /\bpass(ed)?\b/i.test(line.substring(0, 30))) {
                 status = 'Pass';
-                msg = line.replace(/^[✔✓]\s*/, '');
+                msg = line.replace(/^[✔✓◆]\s*/, '').replace(/^\[[\u2713✓ok]\]\s*/, '');
             }
-            // "✖ Something" or "✗ Something" patterns (Unicode X marks only)
-            else if (/^[✖✗]\s/.test(line)) {
+            // "✖ Something", "✗ Something", "[x]", "[fail]", "[error]"
+            else if (/^[✖✗✘×]\s/.test(line) || /^\[[x✗✘]\]/i.test(line) || /\b(fail(ed)?|error)\b/i.test(line.substring(0, 30))) {
                 status = 'Fail';
-                msg = line.replace(/^[✖✗]\s*/, '');
+                msg = line.replace(/^[✖✗✘×]\s*/, '').replace(/^\[[x✗✘]\]\s*/i, '');
             }
-            // "⚠ Something" or "! Something"
-            else if (/^[⚠!]\s/.test(line)) {
+            // "⚠ Something", "! Something", "[warn]", "[skip]"
+            else if (/^[⚠!]\s/.test(line) || /^\[(warn|skip)\]/i.test(line)) {
                 status = 'Warn';
-                msg = line.replace(/^[⚠!]\s*/, '');
+                msg = line.replace(/^[⚠!]\s*/, '').replace(/^\[(warn|skip)\]\s*/i, '');
             }
             // Lines starting with "- " are sub-items, keep as-is
             else if (/^[-*]\s/.test(line)) {
@@ -1069,6 +1077,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             if (!currentAssistantMsg) return;
             var contentEl = currentAssistantMsg.querySelector(".msg-content");
             if (payload.error) {
+                if (chatSafetyTimer) { clearTimeout(chatSafetyTimer); chatSafetyTimer = null; }
                 var errEl = document.createElement("div");
                 errEl.className = "msg-error";
                 errEl.textContent = payload.error;
@@ -1079,6 +1088,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 return;
             }
             if (payload.done) {
+                if (chatSafetyTimer) { clearTimeout(chatSafetyTimer); chatSafetyTimer = null; }
                 chatBusy = false;
                 updateSendBtn();
                 updateAutoDiagBtn();
@@ -1107,12 +1117,27 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
         var invoke = getInvoke();
         if (!invoke) return;
         var gwRunning = !!(diagnosticResult && diagnosticResult.system_info && diagnosticResult.system_info.sidecar_running);
+
+        // Safety timeout: reset chatBusy if the backend crashes and done:true never fires.
+        // Stored in chatSafetyTimer so the token listener can cancel it on completion.
+        if (chatSafetyTimer) clearTimeout(chatSafetyTimer);
+        chatSafetyTimer = setTimeout(function() {
+            chatSafetyTimer = null;
+            if (chatBusy) {
+                chatBusy = false;
+                updateSendBtn();
+                updateAutoDiagBtn();
+                appendChat("system", "AI 响应超时，请重试。");
+            }
+        }, 120000);
+
         invoke("repair_ai_chat", {
             message: msg,
             context: context,
             providerId: selectedProvider,
             gatewayRunning: gwRunning
         }).catch(function(e) {
+            if (chatSafetyTimer) { clearTimeout(chatSafetyTimer); chatSafetyTimer = null; }
             if (currentAssistantMsg) {
                 var errEl = document.createElement("div");
                 errEl.className = "msg-error";
@@ -1793,7 +1818,14 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
     }
 
     // ── Remote repair ────────────────────────────────────────
-    var tunnelSession = null;
+    // Restore tunnel session from sessionStorage so the UI survives a page reload
+    // (e.g., WebView2 DevTools refresh during a live repair session).
+    var tunnelSession = (function() {
+        try {
+            var raw = sessionStorage.getItem('clawdbot_tunnel_session');
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+    })();
     var tunnelPollTimer = null;
     var elapsedTimer = null;
     var tunnelStartTime = null;
@@ -1919,6 +1951,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
                 ticketId: ticket.ticketId,
                 publicKey: ticket.sshPublicKey
             };
+            try { sessionStorage.setItem('clawdbot_tunnel_session', JSON.stringify(tunnelSession)); } catch (e) {}
             markSetupStep('setup-step-ticket', 'done', '已收到你的问题');
 
             if (ticket.status === 'payment_required' && ticket.paymentUrl) {
@@ -2002,6 +2035,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             addRemoteLog('info', '远程连接已断开');
             hideTunnelStatus();
             tunnelSession = null;
+            try { sessionStorage.removeItem('clawdbot_tunnel_session'); } catch (e) {}
             remoteRepairInProgress = false;
         }).catch(function(e) {
             addRemoteLog('error', '断开连接时出错，请稍后再试');
@@ -2155,6 +2189,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,
             if (invoke) {
                 invoke('repair_tunnel_stop', { sessionId: tunnelSession.ticketId });
             }
+            // Clear persisted session so a fresh reload won't try to rejoin a dead tunnel
+            try { sessionStorage.removeItem('clawdbot_tunnel_session'); } catch (e) {}
         }
         if (tunnelPollTimer) clearInterval(tunnelPollTimer);
         if (elapsedTimer) clearInterval(elapsedTimer);

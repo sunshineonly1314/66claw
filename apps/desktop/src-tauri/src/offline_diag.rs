@@ -4,8 +4,10 @@
 //! JSON-RPC `log_report.submit` method. This module provides a Rust-native
 //! fallback that directly POSTs to the remote server using `reqwest`.
 //!
-//! Log files are read from `~/.openclawcn/logs/` (crash.log, app.jsonl,
-//! desktop-debug.log), truncated to ≤100 KB, basic-sanitized, and submitted
+//! Log files are read from the state directory logs/ folder (default
+//! `E:\openclawcn\.openclawcn\logs\` on Windows per CLAUDE.md, `~/.openclawcn/logs/`
+//! otherwise — overridable via `OPENCLAWCN_STATE_DIR` env var).
+//! Files: crash.log, app.jsonl, desktop-debug.log, truncated to ≤100 KB, basic-sanitized, submitted
 //! to `https://www.obplugins.cn/api/api/v1/log-report/submit`.
 //!
 //! The ticket code returned by the server is persisted locally so the UI
@@ -31,6 +33,8 @@ const USER_AGENT: &str = "OpenClawCN-Desktop/1.0";
 // ── State directory helpers ──────────────────────────────────────────────────
 
 fn resolve_state_dir() -> PathBuf {
+    // OPENCLAWCN_STATE_DIR is set at startup by sidecar::start_sidecar() via detect_state_dir(),
+    // which probes E:\openclawcn\.openclawcn (per CLAUDE.md) before falling back to ~/.openclawcn.
     if let Ok(val) = std::env::var("OPENCLAWCN_STATE_DIR") {
         let trimmed = val.trim();
         if !trimmed.is_empty() {
@@ -42,6 +46,17 @@ fn resolve_state_dir() -> PathBuf {
         let trimmed = val.trim();
         if !trimmed.is_empty() {
             return PathBuf::from(trimmed).join(".openclawcn");
+        }
+    }
+    // Per CLAUDE.md, project install root is E:\openclawcn — check there first on Windows
+    #[cfg(target_os = "windows")]
+    {
+        let candidate = PathBuf::from("E:\\openclawcn").join(".openclawcn");
+        if candidate.join("openclawcn.json").exists()
+            || candidate.join("logs").is_dir()
+            || candidate.join("agents").is_dir()
+        {
+            return candidate;
         }
     }
     dirs::home_dir()

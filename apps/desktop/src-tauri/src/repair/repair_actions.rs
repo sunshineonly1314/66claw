@@ -35,6 +35,23 @@ fn resolve_state_dir() -> PathBuf {
     super::resolve_state_dir()
 }
 
+/// Create a timestamped backup of `src`, e.g. `openclawcn.json.bak.1709500000`.
+/// Using a timestamp prevents concurrent repair runs from overwriting each other's backup.
+/// Returns the backup path on success.
+fn backup_file_timestamped(src: &std::path::Path) -> Result<std::path::PathBuf, std::io::Error> {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let ext = src
+        .extension()
+        .map(|e| format!("{}.bak.{}", e.to_string_lossy(), ts))
+        .unwrap_or_else(|| format!("bak.{}", ts));
+    let backup = src.with_extension(ext);
+    fs::copy(src, &backup)?;
+    Ok(backup)
+}
+
 fn log_action(action: &str, result: &str) {
     let logs_dir = resolve_state_dir().join("logs");
     let _ = fs::create_dir_all(&logs_dir);
@@ -153,29 +170,50 @@ fn fix_clear_cache() -> FixResult {
     log_action("clear_cache", "clearing");
     let state_dir = resolve_state_dir();
 
-    let mut cleared = Vec::new();
+    let mut cleared: Vec<String> = Vec::new();
 
     // Clear cache directory
     let cache_dir = state_dir.join("cache");
     if cache_dir.is_dir() {
         if fs::remove_dir_all(&cache_dir).is_ok() {
-            cleared.push("cache/");
+            cleared.push("cache/".to_string());
         }
     }
 
-    // Clear temp files
+    // Clear orphaned temp dirs (openclawcn-* in system temp).
+    // Skip dirs that contain active lock files — deleting them while the gateway
+    // is running would corrupt its IPC state. A dir is considered "active" if it
+    // holds any *.lock file or if any process has it as its working directory.
     let temp_dir = std::env::temp_dir();
+    let mut temp_cleared: u32 = 0;
     if let Ok(entries) = fs::read_dir(&temp_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if name_str.starts_with("openclawcn-") && entry.path().is_dir() {
-                if fs::remove_dir_all(entry.path()).is_ok() {
-                    cleared.push("临时目录");
-                    break; // Only report once
-                }
+            if !name_str.starts_with("openclawcn-") || !entry.path().is_dir() {
+                continue;
+            }
+            // Check for active lock files inside this temp dir
+            let has_locks = fs::read_dir(entry.path())
+                .map(|mut rd| rd.any(|e| {
+                    e.map(|e| {
+                        let n = e.file_name();
+                        let ns = n.to_string_lossy();
+                        ns.ends_with(".lock") || ns.ends_with(".pid")
+                    }).unwrap_or(false)
+                }))
+                .unwrap_or(false);
+            if has_locks {
+                log_action("clear_cache", &format!("Skipping active temp dir: {:?}", entry.path()));
+                continue;
+            }
+            if fs::remove_dir_all(entry.path()).is_ok() {
+                temp_cleared += 1;
             }
         }
+    }
+    if temp_cleared > 0 {
+        cleared.push(format!("临时目录 ({}个)", temp_cleared));
     }
 
     let msg = if cleared.is_empty() {
@@ -226,14 +264,24 @@ fn fix_repair_config_syntax() -> FixResult {
     if json5::from_str::<serde_json::Value>(&text).is_ok() {
         // If BOM was stripped, write the clean version back
         if fixed {
-            let backup_path = config_path.with_extension("json.bak");
-            let _ = fs::copy(&config_path, &backup_path);
+            let backup_msg = match backup_file_timestamped(&config_path) {
+                Ok(p) => format!("原文件已备份为 {}。", p.file_name().unwrap_or_default().to_string_lossy()),
+                Err(e) => {
+                    log_action("repair_config_syntax", &format!("备份失败，中止操作: {}", e));
+                    return FixResult {
+                        fix_id: "repair_config_syntax".into(),
+                        success: false,
+                        message: format!("备份原配置文件失败，修复已中止: {}", e),
+                        requires_restart: false,
+                    };
+                }
+            };
             let _ = fs::write(&config_path, &text);
             log_action("repair_config_syntax", "stripped BOM");
             return FixResult {
                 fix_id: "repair_config_syntax".into(),
                 success: true,
-                message: "已移除配置文件的 BOM 标记（原文件已备份为 .json.bak）。".into(),
+                message: format!("已移除配置文件的 BOM 标记。{}", backup_msg),
                 requires_restart: false,
             };
         }
@@ -256,15 +304,25 @@ fn fix_repair_config_syntax() -> FixResult {
 
     // Re-check if the fix worked
     if fixed && json5::from_str::<serde_json::Value>(&text).is_ok() {
-        // Backup original
-        let backup_path = config_path.with_extension("json.bak");
-        let _ = fs::copy(&config_path, &backup_path);
+        // Backup original — abort if backup fails to avoid data loss
+        let backup_msg = match backup_file_timestamped(&config_path) {
+            Ok(p) => format!("原文件已备份为 {}。", p.file_name().unwrap_or_default().to_string_lossy()),
+            Err(e) => {
+                log_action("repair_config_syntax", &format!("备份失败，中止操作: {}", e));
+                return FixResult {
+                    fix_id: "repair_config_syntax".into(),
+                    success: false,
+                    message: format!("备份原配置文件失败，修复已中止: {}", e),
+                    requires_restart: false,
+                };
+            }
+        };
         let _ = fs::write(&config_path, &text);
         log_action("repair_config_syntax", "fixed and saved");
         FixResult {
             fix_id: "repair_config_syntax".into(),
             success: true,
-            message: "配置文件已修复（原文件已备份为 .json.bak）。".into(),
+            message: format!("配置文件已修复。{}", backup_msg),
             requires_restart: true,
         }
     } else {
@@ -390,11 +448,9 @@ fn fix_regenerate_master_key() -> FixResult {
 
     log_action("regenerate_master_key", "attempting");
 
-    // Backup existing key if present
-    if key_path.exists() {
-        let backup_path = key_path.with_extension("key.bak");
-        if let Err(e) = fs::copy(&key_path, &backup_path) {
-            let msg = format!("无法备份旧密钥: {}", e);
+    if let Some(parent) = key_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            let msg = format!("无法创建状态目录: {}", e);
             log_action("regenerate_master_key", &msg);
             return FixResult {
                 fix_id: "regenerate_master_key".into(),
@@ -405,7 +461,8 @@ fn fix_regenerate_master_key() -> FixResult {
         }
     }
 
-    // Generate 32 bytes of random data
+    // Generate 32 bytes of random data BEFORE touching the existing key.
+    // Generate first so we never leave the system without a valid key on failure.
     let mut key = [0u8; 32];
     if getrandom::getrandom(&mut key).is_err() {
         log_action("regenerate_master_key", "RNG failed");
@@ -417,30 +474,49 @@ fn fix_regenerate_master_key() -> FixResult {
         };
     }
 
-    if let Some(parent) = key_path.parent() {
-        let _ = fs::create_dir_all(parent);
+    // Write to a temp file first, then rename atomically.
+    // This prevents a corrupted/empty key if the write is interrupted mid-way.
+    let tmp_path = key_path.with_extension("tmp-new");
+    if let Err(e) = fs::write(&tmp_path, &key) {
+        let msg = format!("写入临时密钥文件失败: {}", e);
+        log_action("regenerate_master_key", &msg);
+        return FixResult {
+            fix_id: "regenerate_master_key".into(),
+            success: false,
+            message: msg,
+            requires_restart: false,
+        };
     }
 
-    match fs::write(&key_path, &key) {
-        Ok(()) => {
-            log_action("regenerate_master_key", "success");
-            FixResult {
-                fix_id: "regenerate_master_key".into(),
-                success: true,
-                message: "加密主密钥已重新生成。注意: 之前加密的凭证需要重新配置。".into(),
-                requires_restart: true,
-            }
+    // Backup existing key (after new key is safely on disk)
+    if key_path.exists() {
+        let backup_path = key_path.with_extension("key.bak");
+        if let Err(e) = fs::copy(&key_path, &backup_path) {
+            // Non-fatal: log and continue — backup failure shouldn't block regen
+            log_action("regenerate_master_key", &format!("backup warning: {}", e));
         }
-        Err(e) => {
-            let msg = format!("写入密钥文件失败: {}", e);
-            log_action("regenerate_master_key", &msg);
-            FixResult {
-                fix_id: "regenerate_master_key".into(),
-                success: false,
-                message: msg,
-                requires_restart: false,
-            }
-        }
+    }
+
+    // Atomic rename: new key replaces old key in a single filesystem operation
+    if let Err(e) = fs::rename(&tmp_path, &key_path) {
+        // Rename failed — clean up the temp file
+        let _ = fs::remove_file(&tmp_path);
+        let msg = format!("替换密钥文件失败: {}", e);
+        log_action("regenerate_master_key", &msg);
+        return FixResult {
+            fix_id: "regenerate_master_key".into(),
+            success: false,
+            message: msg,
+            requires_restart: false,
+        };
+    }
+
+    log_action("regenerate_master_key", "success");
+    FixResult {
+        fix_id: "regenerate_master_key".into(),
+        success: true,
+        message: "加密主密钥已重新生成。注意: 之前加密的凭证需要重新配置。".into(),
+        requires_restart: true,
     }
 }
 
@@ -651,25 +727,48 @@ fn run_doctor_with_timeout() -> FixResult {
 }
 
 /// Strip ANSI escape sequences from terminal output.
-/// Handles CSI sequences (ESC[ ... <letter>) used by @clack/prompts for colors.
+///
+/// Handles:
+/// - CSI sequences: ESC `[` ... `<letter>` (colors, cursor movement, etc.)
+/// - OSC sequences: ESC `]` ... ST (ESC `\`) or BEL (`\x07`) (e.g. terminal title)
+/// - 2-char ESC sequences: ESC + any single char (ESC#, ESC(, ESC), ESCc, etc.)
 fn strip_ansi(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\x1b' {
-            // ESC[ ... <letter> — consume the entire CSI sequence
-            if chars.peek() == Some(&'[') {
-                chars.next(); // consume '['
-                while let Some(&next) = chars.peek() {
-                    chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
+            match chars.peek().copied() {
+                Some('[') => {
+                    // CSI sequence: ESC [ <params> <final-byte A-Z a-z>
+                    chars.next(); // consume '['
+                    for next in chars.by_ref() {
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
                     }
                 }
-            }
-            // Other ESC sequences (e.g., ESC]) — consume the next char
-            else if chars.peek().is_some() {
-                chars.next();
+                Some(']') => {
+                    // OSC sequence: ESC ] <text> ST  (where ST = ESC \ or BEL \x07)
+                    chars.next(); // consume ']'
+                    loop {
+                        match chars.next() {
+                            None | Some('\x07') => break, // BEL terminates OSC
+                            Some('\x1b') => {
+                                // ST = ESC \ — consume the '\\'
+                                if chars.peek() == Some(&'\\') {
+                                    chars.next();
+                                }
+                                break;
+                            }
+                            _ => {} // consume OSC body chars
+                        }
+                    }
+                }
+                Some(_) => {
+                    // 2-char ESC sequence (ESC#n, ESC(G, ESC)G, ESCc, etc.)
+                    chars.next(); // consume the single parameter byte
+                }
+                None => {} // lone ESC at end of string — ignore
             }
         } else {
             result.push(c);
@@ -735,7 +834,7 @@ mod tests {
 
     #[test]
     fn test_resolve_state_dir_env_override() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let custom = std::env::temp_dir().join("_repair_actions_test_state");
         std::env::set_var("OPENCLAWCN_STATE_DIR", custom.to_str().unwrap());
         let resolved = resolve_state_dir();
@@ -754,7 +853,7 @@ mod tests {
 
     #[test]
     fn test_fix_clear_cache_with_cache_dir() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_cache_1");
         let _ = fs::remove_dir_all(&temp);
         let cache_dir = temp.join("cache");
@@ -774,7 +873,7 @@ mod tests {
 
     #[test]
     fn test_fix_clear_cache_no_cache() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_cache_2");
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(&temp);
@@ -795,11 +894,37 @@ mod tests {
         let _ = fs::remove_dir_all(&temp);
     }
 
+    #[test]
+    fn test_fix_clear_cache_skips_active_temp_dir() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Create a fake openclawcn-* temp dir with a .lock file (simulates active gateway)
+        let active_temp = std::env::temp_dir().join("openclawcn-_test_active");
+        let _ = fs::remove_dir_all(&active_temp);
+        let _ = fs::create_dir_all(&active_temp);
+        fs::write(active_temp.join("gateway.12345.lock"), "pid=12345").unwrap();
+
+        let state_temp = std::env::temp_dir().join("_ra_test_cache_3");
+        let _ = fs::remove_dir_all(&state_temp);
+        let _ = fs::create_dir_all(&state_temp);
+
+        std::env::set_var("OPENCLAWCN_STATE_DIR", state_temp.to_str().unwrap());
+        let result = fix_clear_cache();
+        std::env::remove_var("OPENCLAWCN_STATE_DIR");
+
+        // The active_temp dir with a lock file must NOT be deleted
+        assert!(active_temp.exists(), "active temp dir with lock file should be preserved");
+
+        assert!(result.success);
+
+        let _ = fs::remove_dir_all(&active_temp);
+        let _ = fs::remove_dir_all(&state_temp);
+    }
+
     // ── fix_repair_config_syntax tests ──────────────────────────────
 
     #[test]
     fn test_fix_repair_config_syntax_valid_file() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_cfg_valid");
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(&temp);
@@ -817,7 +942,7 @@ mod tests {
 
     #[test]
     fn test_fix_repair_config_syntax_trailing_garbage() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_cfg_garbage");
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(&temp);
@@ -830,9 +955,14 @@ mod tests {
         assert!(result.success);
         assert!(result.message.contains("已修复") || result.message.contains("无需修复"));
 
-        // Verify backup was created
+        // Verify backup was created (timestamped, e.g. openclawcn.json.bak.1709500000)
         if result.message.contains("已修复") {
-            assert!(temp.join("openclawcn.json.bak").exists());
+            let backup_exists = fs::read_dir(&temp).unwrap().any(|e| {
+                e.ok().and_then(|e| e.file_name().into_string().ok())
+                    .map(|n| n.starts_with("openclawcn.json.bak"))
+                    .unwrap_or(false)
+            });
+            assert!(backup_exists, "expected a timestamped .bak file in {:?}", temp);
             // Verify fixed content is valid JSON
             let content = fs::read_to_string(temp.join("openclawcn.json")).unwrap();
             assert!(json5::from_str::<serde_json::Value>(&content).is_ok());
@@ -843,7 +973,7 @@ mod tests {
 
     #[test]
     fn test_fix_repair_config_syntax_bom_removal() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_cfg_bom");
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(&temp);
@@ -863,7 +993,7 @@ mod tests {
 
     #[test]
     fn test_fix_repair_config_syntax_missing_file() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_cfg_none");
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(&temp);
@@ -880,7 +1010,7 @@ mod tests {
 
     #[test]
     fn test_fix_repair_config_syntax_unfixable() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_cfg_unfixable");
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(&temp);
@@ -900,7 +1030,7 @@ mod tests {
 
     #[test]
     fn test_fix_repair_permissions_creates_dirs() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_perms");
         let _ = fs::remove_dir_all(&temp);
 
@@ -920,7 +1050,7 @@ mod tests {
 
     #[test]
     fn test_fix_repair_permissions_already_exists() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_perms_exist");
         let _ = fs::create_dir_all(temp.join("logs"));
         let _ = fs::create_dir_all(temp.join("cache"));
@@ -941,7 +1071,7 @@ mod tests {
 
     #[test]
     fn test_fix_reset_auth_profiles_creates_empty() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_reset_auth");
         let _ = fs::remove_dir_all(&temp);
         let auth_dir = temp.join("agents").join("main").join("agent");
@@ -970,7 +1100,7 @@ mod tests {
 
     #[test]
     fn test_fix_reset_auth_profiles_no_existing_file() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_ra_test_reset_auth_new");
         let _ = fs::remove_dir_all(&temp);
 
@@ -1005,7 +1135,7 @@ mod tests {
 
     #[test]
     fn test_log_action_writes_to_file() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp = std::env::temp_dir().join("_repair_actions_log");
         let _ = fs::remove_dir_all(&temp);
         let _ = fs::create_dir_all(temp.join("logs"));

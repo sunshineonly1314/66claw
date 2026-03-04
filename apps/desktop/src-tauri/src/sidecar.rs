@@ -347,6 +347,58 @@ fn open_log_file(log_path: &Path) -> Option<std::fs::File> {
         .ok()
 }
 
+/// Detect the state directory that the Node.js gateway will use.
+///
+/// Mirrors the logic in `src/config/paths.ts resolveStateDir()`:
+/// 1. `OPENCLAWCN_STATE_DIR` env (explicit override)
+/// 2. `OPENCLAWCN_HOME` env + `.openclawcn`
+/// 3. Scan legacy candidate paths (E:\openclawcn\.openclawcn, ~\.openclawcn)
+///
+/// Returns the resolved path so Rust repair modules can find the same data.
+fn detect_state_dir() -> PathBuf {
+    // Explicit override wins
+    if let Ok(val) = std::env::var("OPENCLAWCN_STATE_DIR") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    // OPENCLAWCN_HOME override
+    if let Ok(val) = std::env::var("OPENCLAWCN_HOME") {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed).join(".openclawcn");
+        }
+    }
+    // Scan candidate paths — check for the config marker file
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // Per CLAUDE.md: project install root is E:\openclawcn
+    #[cfg(target_os = "windows")]
+    candidates.push(PathBuf::from("E:\\openclawcn").join(".openclawcn"));
+
+    if let Some(home) = dirs::home_dir() {
+        candidates.push(home.join(".openclawcn"));
+    }
+
+    // Return the first candidate that looks like a real state dir
+    for candidate in &candidates {
+        if candidate.join("openclawcn.json").exists()
+            || candidate.join("logs").is_dir()
+            || candidate.join("agents").is_dir()
+        {
+            return candidate.clone();
+        }
+    }
+
+    // Fallback: first candidate (may not exist yet — gateway creates it)
+    candidates.into_iter().next().unwrap_or_else(|| {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".openclawcn")
+    })
+}
+
 pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let app_dir = resolve_app_dir()?;
     println!("[Sidecar] App directory: {:?}", app_dir);
@@ -422,6 +474,18 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
     let log_path = platform::resolve_log_path(&app_dir);
     let log_file = open_log_file(&log_path);
 
+    // Detect the actual state directory the Node.js gateway will use,
+    // then propagate it via OPENCLAWCN_STATE_DIR so the Rust repair modules
+    // (repair/mod.rs, offline_diag.rs) resolve the same path.
+    let state_dir = detect_state_dir();
+    println!("[Sidecar] State directory: {:?}", state_dir);
+    // Sync the Tauri process's own env so repair module picks it up immediately
+    // (std::env::set_var is process-wide; safe here as we're single-threaded at startup)
+    if std::env::var("OPENCLAWCN_STATE_DIR").is_err() {
+        // Only set if not already overridden by the user
+        std::env::set_var("OPENCLAWCN_STATE_DIR", &state_dir);
+    }
+
     let mut command = Command::new(&node_path);
     command
         .arg(&backend_path)
@@ -434,6 +498,7 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         .env("OPENCLAWCN_BUNDLED_SKILLS_DIR", &skills_dir)
         .env("OPENCLAWCN_DESKTOP_MODE", "1")
         .env("OPENCLAWCN_NO_RESPAWN", "1")
+        .env("OPENCLAWCN_STATE_DIR", &state_dir)
         .env("NODE_OPTIONS", "--disable-warning=ExperimentalWarning")
         .current_dir(&app_dir);
 

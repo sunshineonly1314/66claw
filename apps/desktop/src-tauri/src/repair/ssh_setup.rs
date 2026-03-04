@@ -145,7 +145,8 @@ pub fn inject_authorized_key(public_key: &str, session_id: &str) -> Result<(), S
 
     // On Windows, fix permissions on authorized_keys for administrators
     #[cfg(target_os = "windows")]
-    fix_authorized_keys_permissions(&auth_keys_path);
+    fix_authorized_keys_permissions(&auth_keys_path)
+        .map_err(|e| format!("设置 authorized_keys 权限失败: {}", e))?;
 
     println!(
         "[SshSetup] Injected authorized key for session {} into {:?}",
@@ -164,10 +165,18 @@ pub fn cleanup_authorized_key(session_id: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let content = fs::read_to_string(&auth_keys_path)
+    // Read raw bytes to detect and preserve the original line ending style
+    let raw = fs::read(&auth_keys_path)
         .map_err(|e| format!("读取 authorized_keys 失败: {}", e))?;
+    let content = String::from_utf8_lossy(&raw);
+
+    // Detect CRLF vs LF
+    let uses_crlf = content.contains("\r\n");
+    let line_ending = if uses_crlf { "\r\n" } else { "\n" };
 
     let tag = format!("clawdbot-repair-{}", session_id);
+
+    // Split on universal newlines but then reassemble with the original ending
     let filtered: Vec<&str> = content
         .lines()
         .filter(|line| !line.contains(&tag))
@@ -176,10 +185,10 @@ pub fn cleanup_authorized_key(session_id: &str) -> Result<(), String> {
     let new_content = if filtered.is_empty() {
         String::new()
     } else {
-        format!("{}\n", filtered.join("\n"))
+        format!("{}{}", filtered.join(line_ending), line_ending)
     };
 
-    fs::write(&auth_keys_path, &new_content)
+    fs::write(&auth_keys_path, new_content.as_bytes())
         .map_err(|e| format!("写入 authorized_keys 失败: {}", e))?;
 
     println!(
@@ -306,16 +315,18 @@ fn enable_ssh_windows() -> Result<(), String> {
     fs::write(&script_path, ps_script)
         .map_err(|e| format!("写入 SSH 安装脚本失败: {}", e))?;
 
-    // Launch elevated PowerShell
+    // Launch elevated PowerShell.
+    // Pass script path via environment variable to avoid any shell-quoting /
+    // command-injection risk from paths containing spaces or special chars.
+    // The inner invocation reads $env:CLAWDBOT_SETUP_SCRIPT instead of
+    // interpolating the path directly into the -ArgumentList string.
     let result = Command::new("powershell")
         .args([
             "-NoProfile",
             "-Command",
-            &format!(
-                "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"{}\"'",
-                script_path.display()
-            ),
+            "Start-Process powershell -Verb RunAs -Wait -ArgumentList \"-NoProfile -ExecutionPolicy Bypass -File `\"$env:CLAWDBOT_SETUP_SCRIPT`\"\"",
         ])
+        .env("CLAWDBOT_SETUP_SCRIPT", &script_path)
         .creation_flags(0x08000000)
         .output()
         .map_err(|e| format!("启动 UAC 提权失败: {}", e))?;
@@ -358,22 +369,42 @@ fn detect_ssh_port_windows() -> u16 {
 }
 
 #[cfg(target_os = "windows")]
-fn fix_authorized_keys_permissions(path: &std::path::Path) {
+fn fix_authorized_keys_permissions(path: &std::path::Path) -> Result<(), String> {
     // On Windows, sshd is strict about authorized_keys permissions for admin users.
     // The file must have specific ACLs. We use icacls to fix this.
     let path_str = path.to_string_lossy();
-    let _ = Command::new("icacls")
+
+    let r1 = Command::new("icacls")
         .args([&*path_str, "/inheritance:r"])
         .creation_flags(0x08000000)
-        .output();
-    let _ = Command::new("icacls")
+        .output()
+        .map_err(|e| format!("icacls /inheritance:r 执行失败: {}", e))?;
+    if !r1.status.success() {
+        let stderr = String::from_utf8_lossy(&r1.stderr);
+        return Err(format!("icacls /inheritance:r 失败: {}", stderr.trim()));
+    }
+
+    let r2 = Command::new("icacls")
         .args([&*path_str, "/grant:r", &format!("{}:F", whoami())])
         .creation_flags(0x08000000)
-        .output();
-    let _ = Command::new("icacls")
+        .output()
+        .map_err(|e| format!("icacls /grant:r user 执行失败: {}", e))?;
+    if !r2.status.success() {
+        let stderr = String::from_utf8_lossy(&r2.stderr);
+        return Err(format!("icacls /grant:r user 失败: {}", stderr.trim()));
+    }
+
+    let r3 = Command::new("icacls")
         .args([&*path_str, "/grant:r", "SYSTEM:F"])
         .creation_flags(0x08000000)
-        .output();
+        .output()
+        .map_err(|e| format!("icacls /grant:r SYSTEM 执行失败: {}", e))?;
+    if !r3.status.success() {
+        let stderr = String::from_utf8_lossy(&r3.stderr);
+        return Err(format!("icacls /grant:r SYSTEM 失败: {}", stderr.trim()));
+    }
+
+    Ok(())
 }
 
 // ── macOS implementation ─────────────────────────────────────────────────────
