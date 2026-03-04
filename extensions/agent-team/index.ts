@@ -85,6 +85,7 @@ import {
 } from "./src/learning-engine.js";
 import type { LearningAnalysis } from "./src/learning-engine.js";
 import { buildSupervisorLearningContext } from "./src/soul-optimizer.js";
+import { createHookErrorLogger } from "./src/hook-error-logger.js";
 
 // ── In-Memory Cache ──────────────────────────────────────────────────────
 // Hot-path lookup for before_agent_start hook (runs on every LLM call).
@@ -491,8 +492,19 @@ const plugin: OpenClawCNPluginDefinition = {
     );
 
     // ═══════════════════════════════════════════════════════════════════
-    // HOOKS
+    // HOOKS — error dedup logger (prevent log explosion on repeated errors)
+    //
+    // Same error class from the same hook → suppressed for 60s after first
+    // occurrence. Every 10 suppressions → a single warn summary instead of
+    // flooding with identical error lines.
+    // See: ./src/hook-error-logger.ts for the testable implementation.
     // ═══════════════════════════════════════════════════════════════════
+    const hookErrLogger = createHookErrorLogger(
+      { error: (m) => logger.error?.(m), warn: (m) => logger.warn?.(m) },
+      { ttlMs: 60_000, maxSize: 200, summaryInterval: 10 },
+    );
+    const logHookError = (hook: string, err: unknown, extra?: string) =>
+      hookErrLogger.log(hook, err, extra);
 
     // ── resolve_agent: Fast Path Router ─────────────────────────────
     // Intercepts before agent selection. If the message is addressed to
@@ -662,6 +674,7 @@ const plugin: OpenClawCNPluginDefinition = {
         pendingRouteEvents.set(pendingKey, {
           agentId: finalResult.agentId,
           projectId: project.projectId,
+          sessionKey: event.sessionKey,
           event: routeEvent,
           startTime: Date.now(),
         });
@@ -673,8 +686,8 @@ const plugin: OpenClawCNPluginDefinition = {
         } catch (err) {
           // CRITICAL: resolve_agent must never throw — an unhandled exception
           // here crashes the entire gateway message routing pipeline.
-          // Return undefined to fall through to default Supervisor LLM routing.
-          logger.error?.(`[resolve_agent] unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+          // Falls through to default Supervisor LLM routing.
+          logHookError("resolve_agent", err);
           return;
         }
       },
@@ -792,7 +805,7 @@ const plugin: OpenClawCNPluginDefinition = {
         } catch (err) {
           // before_agent_start must not throw — failure here means agent
           // runs without team context but still functions correctly.
-          logger.error?.(`[before_agent_start] unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+          logHookError("before_agent_start", err);
           return;
         }
       },
@@ -832,15 +845,30 @@ const plugin: OpenClawCNPluginDefinition = {
 
       // Finalize pending activity event from resolve_agent.
       // Scan by agentId prefix to support concurrent routes (composite key: agentId:routeId).
-      // Pick the oldest pending entry (FIFO) for accurate duration tracking.
+      // Prefer matching by sessionKey for precise pairing (same conversation),
+      // then fall back to oldest pending entry (FIFO) for accurate duration tracking.
       let pendingKey: string | undefined;
       let pending: (typeof pendingRouteEvents extends Map<string, infer V> ? V : never) | undefined;
       let oldestStart = Infinity;
-      for (const [k, v] of pendingRouteEvents) {
-        if (v.agentId === ctx.agentId && v.startTime < oldestStart) {
-          oldestStart = v.startTime;
-          pendingKey = k;
-          pending = v;
+      // First pass: exact match by agentId + sessionKey (most precise)
+      if (ctx.sessionKey) {
+        for (const [k, v] of pendingRouteEvents) {
+          if (v.agentId === ctx.agentId && v.sessionKey === ctx.sessionKey && v.startTime < oldestStart) {
+            oldestStart = v.startTime;
+            pendingKey = k;
+            pending = v;
+          }
+        }
+      }
+      // Second pass: fallback to agentId-only match (for legacy or missing sessionKey)
+      if (!pending) {
+        oldestStart = Infinity;
+        for (const [k, v] of pendingRouteEvents) {
+          if (v.agentId === ctx.agentId && v.startTime < oldestStart) {
+            oldestStart = v.startTime;
+            pendingKey = k;
+            pending = v;
+          }
         }
       }
       const isSuccess = event.success ?? true;
@@ -960,7 +988,7 @@ const plugin: OpenClawCNPluginDefinition = {
       } catch (err) {
         // agent_end must not throw — failure here orphans pendingRouteEvents
         // and prevents health tracking, but does not affect the agent's response.
-        logger.error?.(`[agent_end] unhandled error for agent "${ctx.agentId}": ${err instanceof Error ? err.message : String(err)}`);
+        logHookError("agent_end", err, ` for agent "${ctx.agentId}"`);
       }
     });
 
@@ -1008,7 +1036,7 @@ const plugin: OpenClawCNPluginDefinition = {
         } catch (err) {
           // message_sending must not throw — failure means the message
           // is sent without visibility rewriting, which is acceptable.
-          logger.error?.(`[message_sending] unhandled error: ${err instanceof Error ? err.message : String(err)}`);
+          logHookError("message_sending", err);
           return;
         }
       },
