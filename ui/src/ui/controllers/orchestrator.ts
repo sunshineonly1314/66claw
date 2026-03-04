@@ -16,7 +16,7 @@ import {
   orchestratorReducer,
   createInitialOrchestratorState,
   createMessage,
-} from "../../../../extensions/orchestrator/src/ui/orchestrator-state";
+} from "../../../../extensions/orchestrator/src/ui/orchestrator-state.ts";
 import {
   fetchTemplates,
   fetchCommunityTemplates,
@@ -27,11 +27,11 @@ import {
   proposeTeam,
   type GatewayCallFn,
   type DeployStatusResponse,
-} from "../../../../extensions/orchestrator/src/ui/orchestrator-gateway";
+} from "../../../../extensions/orchestrator/src/ui/orchestrator-gateway.ts";
 import {
   generateGatheringQuestions,
   buildAnswersMap,
-} from "../../../../extensions/orchestrator/src/guided/gathering-questions";
+} from "../../../../extensions/orchestrator/src/guided/gathering-questions.ts";
 
 // ── State Slice ─────────────────────────────────────────────────────────
 

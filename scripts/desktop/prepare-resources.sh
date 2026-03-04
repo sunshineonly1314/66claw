@@ -199,6 +199,39 @@ if [[ -d "$DIST_SOURCE" ]]; then
   printf '{"type":"commonjs"}\n' > "$RESOURCES_DIR/src/package.json"
   log "  Created src/infra/safe-rename.js shim (orchestrator compat)"
 
+  # ── 2c. src/infra/dedupe.js CJS shim ──
+  # hook-error-logger.jsc resolves require("../../../src/infra/dedupe.js")
+  # relative to extensions/agent-team/src/, mapping to resources/src/infra/dedupe.js.
+  cat > "$RESOURCES_DIR/src/infra/dedupe.js" << 'DEDUPEEOF'
+function createDedupeCache(options) {
+    var ttlMs = Math.max(0, options.ttlMs);
+    var maxSize = Math.max(0, Math.floor(options.maxSize));
+    var cache = new Map();
+    var ops = 0, lastPrune = Date.now();
+    var touch = function(k,n) { cache.delete(k); cache.set(k,n); };
+    var maybePrune = function(now) {
+        if (ttlMs > 0) { cache.forEach(function(t,k) { if (now-t >= ttlMs) cache.delete(k); }); }
+        if (maxSize > 0 && cache.size > maxSize) {
+            while (cache.size > maxSize) { var k=cache.keys().next().value; if(!k) break; cache.delete(k); }
+        }
+        if (++ops >= 10 && now-lastPrune >= 100) { ops=0; lastPrune=now; }
+    };
+    return {
+        check: function(key, now) {
+            now = now || Date.now();
+            if (!key) return false;
+            var e = cache.get(key);
+            if (e !== undefined && (ttlMs <= 0 || now-e < ttlMs)) { touch(key,now); return true; }
+            touch(key,now); maybePrune(now); return false;
+        },
+        clear: function() { cache.clear(); },
+        size: function() { return cache.size; },
+    };
+}
+exports.createDedupeCache = createDedupeCache;
+DEDUPEEOF
+  log "  Created src/infra/dedupe.js CJS shim (hook-error-logger compat)"
+
   # ── 2a. Fix rolldown chunk circular dependency in plugin-sdk ──
   # rolldown splits dist/plugin-sdk/index.js into index.js + pi-model-discovery-*.js
   # The chunk file imports { t as __exportAll } from "./index.js", but index.js
@@ -335,6 +368,9 @@ else
 fi
 
 rm -rf "$TEMP_INSTALL_DIR"
+
+# NOTE: Fix A (openclawcn self-ref package) moved to after step 4c (stub injection)
+# to prevent npm install in step 4b from wiping the package.
 
 # NOTE: Stub injection for @whiskeysockets/baileys moved to after step 4b
 # (extension dependency install) to prevent npm install from overwriting stubs.
@@ -494,30 +530,51 @@ for stub_pkg in "${STUB_PACKAGES[@]}"; do
   stub_dir="$RESOURCES_DIR/node_modules/$stub_pkg"
   # Force-create (overwrite if exists) — npm install may have left a broken copy
   mkdir -p "$stub_dir"
+  # CJS+ESM stub with named exports required by plugin-sdk ESM imports
+  # (e.g. `import { DisconnectReason } from '@whiskeysockets/baileys'`)
   cat > "$stub_dir/package.json" <<'STUBPKG'
-{"name":"@whiskeysockets/baileys","version":"0.0.0-stub","main":"index.js","description":"Stub: WhatsApp channel not available in desktop builds"}
+{"name":"@whiskeysockets/baileys","version":"0.0.0-stub","main":"index.js","exports":{".":{"require":"./index.js","import":"./index.mjs","default":"./index.mjs"}},"description":"Stub: WhatsApp channel not available in desktop builds"}
 STUBPKG
   cat > "$stub_dir/index.js" <<'STUBJS'
-// Stub module — @whiskeysockets/baileys is not bundled in desktop builds.
-// This file prevents "Cannot find module" crashes when plugin-sdk is loaded.
-// WhatsApp channel features are unavailable; all exported symbols are no-ops.
-// The recursive Proxy handles any depth of property access (e.g.
-// DisconnectReason.loggedOut) and returns no-ops for function calls.
 function noop() {}
-const handler = {
-  get(_, prop) {
-    if (prop === Symbol.toPrimitive) return () => "";
-    if (prop === Symbol.iterator) return undefined;
-    if (prop === "then") return undefined;          // not thenable
-    if (prop === "default") return module.exports;  // ESM interop
-    return new Proxy(noop, handler);
-  },
-  apply() { return undefined; },
-};
-module.exports = new Proxy(noop, handler);
+var DisconnectReason = {loggedOut:"loggedOut",connectionClosed:"connectionClosed",connectionLost:"connectionLost",connectionReplaced:"connectionReplaced",timedOut:"timedOut",forbidden:"403",badSession:"bad session",restartRequired:"restart required",multideviceMismatch:"multidevice mismatch"};
+exports.DisconnectReason = DisconnectReason;
+exports.fetchLatestBaileysVersion = async function() { return {version:[2,3000,0],isLatest:true}; };
+exports.makeCacheableSignalKeyStore = function(store) { return store||{}; };
+exports.makeWASocket = function() { return {}; };
+exports.useMultiFileAuthState = async function() { return {state:{},saveCreds:noop}; };
+exports.proto = {};
+exports.default = exports;
+module.exports = Object.assign(noop, exports);
 STUBJS
-  log "  Injected stub module: $stub_pkg (force-overwrite)"
+  cat > "$stub_dir/index.mjs" <<'STUBMJS'
+function noop() {}
+export const DisconnectReason = {loggedOut:"loggedOut",connectionClosed:"connectionClosed",connectionLost:"connectionLost",connectionReplaced:"connectionReplaced",timedOut:"timedOut",forbidden:"403",badSession:"bad session",restartRequired:"restart required",multideviceMismatch:"multidevice mismatch"};
+export const fetchLatestBaileysVersion = async function() { return {version:[2,3000,0],isLatest:true}; };
+export const makeCacheableSignalKeyStore = function(store) { return store||{}; };
+export const makeWASocket = function() { return {}; };
+export const useMultiFileAuthState = async function() { return {state:{},saveCreds:noop}; };
+export const proto = {};
+export default {};
+STUBMJS
+  log "  Injected stub module: $stub_pkg (CJS+ESM, force-overwrite)"
 done
+
+# ── 4d. Fix A: openclawcn self-referencing package ──
+# MUST run AFTER step 4b (npm install) — otherwise npm install wipes this package.
+# Extensions compiled as .jsc call require('openclawcn/plugin-sdk').
+# In packaged build there is no pnpm workspace — node_modules/openclawcn/ must
+# exist with plugin-sdk so the resolution works.
+# NOTE: Do NOT use symlink — Tauri DMG bundler drops symlinks silently. Real copy only.
+SELF_PKG_DIR="$RESOURCES_DIR/node_modules/openclawcn"
+mkdir -p "$SELF_PKG_DIR/dist"
+cp "$PROJECT_ROOT/package.json" "$SELF_PKG_DIR/package.json"
+if [[ -d "$RESOURCES_DIR/dist/plugin-sdk" ]]; then
+  cp -R "$RESOURCES_DIR/dist/plugin-sdk" "$SELF_PKG_DIR/dist/plugin-sdk"
+  log "  Created openclawcn self-referencing package (plugin-sdk real copy) [Fix A]"
+else
+  warn "  Fix A: dist/plugin-sdk not found — openclawcn self-ref package incomplete"
+fi
 
 # ── 5. Skills ──
 STEP_START=$(date +%s)
@@ -587,7 +644,34 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
   SEED_DIRS=("subagents" "qrcodes")
   for f in "${SEED_FILES[@]}"; do
     if [[ -f "$PROJECT_ROOT/data/$f" ]]; then
-      cp "$PROJECT_ROOT/data/$f" "$RESOURCES_DIR/data/$f"
+      src="$PROJECT_ROOT/data/$f"
+      dst="$RESOURCES_DIR/data/$f"
+      case "$f" in
+        *.db|*.sqlite)
+          # Fix D: Use VACUUM INTO for clean checkpoint copy of WAL-mode SQLite DB
+          # Direct cp of a WAL-mode DB copies an inconsistent snapshot when -wal/-shm exist
+          # NODE_PATH must include production node_modules where better-sqlite3 is installed
+          if NODE_PATH="$RESOURCES_DIR/node_modules" node -e "
+const Database = require('better-sqlite3');
+try {
+  const db = new Database('$src', {readonly:true});
+  db.exec(\"VACUUM INTO '$dst'\");
+  db.close();
+  process.exit(0);
+} catch(e) {
+  process.stderr.write('VACUUM failed: '+e.message+'\n');
+  process.exit(1);
+}" 2>/dev/null; then
+            log "  VACUUM INTO: $f (clean checkpoint copy)"
+          else
+            cp "$src" "$dst"
+            warn "  VACUUM INTO failed for $f — used direct cp (WAL corruption possible)"
+          fi
+          ;;
+        *)
+          cp "$src" "$dst"
+          ;;
+      esac
     fi
   done
   # Copy mcp-index-enhanced (any version: v4, v5, etc.)
@@ -616,6 +700,11 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
   # Check enhanced index
   ENHANCED_COUNT=$(ls "$RESOURCES_DIR"/data/mcp-index-enhanced*.json 2>/dev/null | wc -l | tr -d ' ')
   [[ "$ENHANCED_COUNT" -gt 0 ]] && log "  MCP enhanced index: $ENHANCED_COUNT files" || warn "  No mcp-index-enhanced*.json — Chinese translations missing"
+  # Fix D (WAL cleanup): Remove WAL/SHM residual files after copy
+  # VACUUM INTO should produce clean files, but guard against any fallback cp paths
+  find "$RESOURCES_DIR/data" \( -name "*.db-wal" -o -name "*.db-shm" \
+      -o -name "*.sqlite-wal" -o -name "*.sqlite-shm" \) 2>/dev/null | xargs rm -f 2>/dev/null || true
+  log "  Removed WAL/SHM residual files from data/"
   DATA_SIZE=$(du -sh "$RESOURCES_DIR/data" 2>/dev/null | cut -f1)
   log "  OK: data/ ($DATA_SIZE, seed data only)"
 fi

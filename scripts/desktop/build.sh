@@ -237,6 +237,58 @@ if [[ $TAURI_CLI_EXIT -ne 0 ]]; then
 fi
 [[ -n "$TAURI_CLI_PID" ]] && echo "  Tauri CLI install OK"
 
+# ── Step 5.5: Re-sync integrity hashes into resources/ before Tauri build ──
+# WHY: prepare-resources.sh copies dist/ → resources/dist/ early (step [2/7]).
+# However, during [4+5] parallel phase, additional npm/pnpm install calls inside
+# prepare-resources.sh may trigger lifecycle hooks that re-run the CN encryption
+# chain (compile-bytecode + integrity:gen), overwriting src/security/integrity-root-hash.ts
+# with a NEW hash (HASH_NEW). Tauri then compiles HASH_NEW into the binary.
+# But resources/dist/security/integrity-hashes.json still holds the OLD content
+# (from the initial copy), so sha256(hashes.json_OLD) ≠ HASH_NEW → fatal at startup.
+# Fix: run integrity:gen one final time right before Tauri build, then copy the
+# resulting hashes files into resources/ so binary and disk stay in sync.
+echo "[5.5/6] Re-syncing integrity hashes (final, before Tauri compile)..."
+(cd "$PROJECT_ROOT" && pnpm integrity:gen)
+INTEGRITY_RESYNC_EXIT=$?
+if [[ $INTEGRITY_RESYNC_EXIT -ne 0 ]]; then
+  echo "ERROR: integrity:gen re-sync failed!" >&2
+  exit 1
+fi
+
+# CRITICAL: integrity:gen updates src/security/integrity-root-hash.ts but does NOT
+# recompile it to dist/security/integrity-root-hash.js. The Gateway reads the .js
+# file at runtime and checks the hardcoded hash constant. We must recompile it now.
+# Also touch the file so cargo detects the change and recompiles the Rust binary.
+echo "  Recompiling integrity-root-hash.ts → dist/security/integrity-root-hash.js..."
+(cd "$PROJECT_ROOT" && pnpm tsdown --entry src/security/integrity-root-hash.ts --out-dir dist/security --no-dts --no-clean 2>/dev/null || \
+  node --import tsx scripts/build-integrity-root-hash.ts 2>/dev/null || \
+  node -e "
+    const fs=require('fs'), path=require('path');
+    const src=fs.readFileSync('src/security/integrity-root-hash.ts','utf8');
+    const match=src.match(/INTEGRITY_ROOT_HASH\s*=\s*\"([0-9a-f]{64})\"/);
+    if(!match) { console.error('hash not found in .ts'); process.exit(1); }
+    const hash=match[1];
+    const h1=hash.slice(0,32), h2=hash.slice(32);
+    // Rewrite integrity-root-hash.js with updated hash (same obfuscation pattern)
+    const existing=fs.readFileSync('dist/security/integrity-root-hash.js','utf8');
+    const updated=existing.replace(/\"[0-9a-f]{32}\"\+\"[0-9a-f]{32}\"/, '\"'+h1+'\"'+'+\"'+h2+'\"');
+    fs.writeFileSync('dist/security/integrity-root-hash.js', updated, 'utf8');
+    console.log('  Patched integrity-root-hash.js with hash: '+h1+'...');
+  ")
+# Touch the .ts so cargo's file-change detection forces Rust recompile
+touch "$PROJECT_ROOT/src/security/integrity-root-hash.ts" 2>/dev/null || true
+
+RESOURCES_SECURITY="$PROJECT_ROOT/apps/desktop/src-tauri/resources/dist/security"
+if [[ -d "$RESOURCES_SECURITY" ]]; then
+  cp "$PROJECT_ROOT/dist/security/integrity-hashes.json" "$RESOURCES_SECURITY/integrity-hashes.json"
+  cp "$PROJECT_ROOT/dist/security/integrity-hashes-root.json" "$RESOURCES_SECURITY/integrity-hashes-root.json"
+  cp "$PROJECT_ROOT/dist/security/integrity-root-hash.js" "$RESOURCES_SECURITY/integrity-root-hash.js" 2>/dev/null || true
+  FINAL_HASH=$(node -e "try{const r=require('$RESOURCES_SECURITY/integrity-hashes-root.json');console.log(r.hash.slice(0,16)+'...')}catch{console.log('?')}" 2>/dev/null || echo "?")
+  echo "  Integrity re-sync OK — HASH_FINAL=${FINAL_HASH}"
+else
+  echo "  WARN: resources/dist/security/ not found — skipping copy (resources may be staged differently)"
+fi
+
 # ── Step 6: Build Tauri (Rust + bundle) ──
 echo "[6/6] Building Tauri native app..."
 echo "  (First build may take 5-10 minutes)"
