@@ -47,11 +47,15 @@ ARCH="universal"
 VALIDATE_FLAG=""
 SKIP_DEPLOY=false
 DEPLOY_ONLY=false
+OEM_ID="${OEM_ID:-}"
+VITE_EDITION="${VITE_EDITION:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arch)    ARCH="$2"; shift 2 ;;
     --version) VERSION="$2"; shift 2 ;;
+    --oem)     OEM_ID="$2"; shift 2 ;;
+    --vite-edition) VITE_EDITION="$2"; shift 2 ;;
     --validate|--validate-full) VALIDATE_FLAG="$1"; shift ;;
     --skip-deploy) SKIP_DEPLOY=true; shift ;;
     --deploy-only) DEPLOY_ONLY=true; shift ;;
@@ -74,6 +78,8 @@ echo "Workspace: $MAC_WORKSPACE"
 echo "Version: ${VERSION:-auto}"
 echo "Arch: $ARCH"
 echo "Validate: ${VALIDATE_FLAG:-basic}"
+echo "OEM_ID: ${OEM_ID:-none}"
+echo "VITE_EDITION: ${VITE_EDITION:-cn}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # 创建临时构建脚本（与 Windows 一致的 SCP+SSH 方式）
@@ -89,8 +95,15 @@ ARCH="$ARCH"
 VALIDATE_FLAG="$VALIDATE_FLAG"
 SKIP_DEPLOY="$SKIP_DEPLOY"
 DEPLOY_ONLY="$DEPLOY_ONLY"
+export OEM_ID="$OEM_ID"
+export VITE_EDITION="$VITE_EDITION"
 
 echo "Preparing workspace: \$WORKSPACE"
+
+# ── [健壮性 Fix-1] 版本锁定检查 ──────────────────────────
+# 今天的教训：Mac Mini auto-bump 把 --version 1.6.7 覆盖成了其他版本。
+# 若调用方明确传入了 VERSION，则在 git reset 后立即校验 package.json 版本，
+# 不一致时强制调用 version-bump.ts set 修正，绝不允许 auto-bump 覆盖。
 
 # 设置 PATH - 确保 node/npm/pnpm 可用
 export PATH="/usr/local/lib/nodejs/node-v22.16.0-darwin-arm64/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
@@ -145,7 +158,7 @@ fi
 
 # ── Auto version bump ──
 if [ -z "\$VERSION" ]; then
-  # 检查最新 commit 是否已经是 version bump（避免多平台重复 bump）
+  # 未指定版本：检查最新 commit 是否已经是 version bump（避免多平台重复 bump）
   LAST_MSG=\$(git log -1 --pretty=%s 2>/dev/null || echo "")
   if echo "\$LAST_MSG" | grep -q "^chore: bump version to "; then
     VERSION=\$(node -p "require('./package.json').version")
@@ -155,7 +168,6 @@ if [ -z "\$VERSION" ]; then
     echo "========================================="
     echo "  Auto Version Bump (patch +1)"
     echo "========================================="
-    # 优先用 pnpm tsx
     if command -v pnpm &> /dev/null; then
       pnpm tsx scripts/version-bump.ts patch
     else
@@ -163,12 +175,32 @@ if [ -z "\$VERSION" ]; then
     fi
     VERSION=\$(node -p "require('./package.json').version")
     echo "Auto-bumped version: \$VERSION"
-
-    # Commit version bump back to repo
     git add package.json apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/macos/Sources/OpenClaw/Resources/Info.plist
     git commit -m "chore: bump version to \$VERSION" || echo "No changes to commit"
     git push origin master || echo "WARNING: push failed (version may already be pushed)"
     echo "Version bump committed and pushed."
+  fi
+else
+  # ── [健壮性 Fix-1] 指定了版本：强制校验并修正，绝不允许 auto-bump 覆盖 ──
+  PKG_VERSION=\$(node -p "require('./package.json').version" 2>/dev/null || echo "unknown")
+  if [ "\$PKG_VERSION" != "\$VERSION" ]; then
+    echo "WARNING: package.json version (\$PKG_VERSION) != requested (\$VERSION) — forcing version set..."
+    if command -v pnpm &> /dev/null; then
+      pnpm tsx scripts/version-bump.ts set "\$VERSION"
+    else
+      npx tsx scripts/version-bump.ts set "\$VERSION"
+    fi
+    VERIFY=\$(node -p "require('./package.json').version")
+    if [ "\$VERIFY" != "\$VERSION" ]; then
+      echo "ERROR: version-bump.ts set failed! Got \$VERIFY, expected \$VERSION" >&2
+      exit 1
+    fi
+    echo "  Version corrected: \$VERIFY"
+    git add package.json apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/macos/Sources/OpenClaw/Resources/Info.plist 2>/dev/null || true
+    git commit -m "chore: bump version to \$VERSION [version-lock]" 2>/dev/null || echo "  (no commit needed)"
+    git push origin master 2>/dev/null || echo "  (push skipped)"
+  else
+    echo "  Version lock OK: package.json already at \$VERSION"
   fi
 fi
 
@@ -215,6 +247,7 @@ else
   exit 1
 fi
 
+echo "OEM_ID=\${OEM_ID:-none}  VITE_EDITION=\${VITE_EDITION:-cn}"
 bash "\$BUILD_SCRIPT" --arch "\$ARCH"
 
 # 检查构建产物
