@@ -2,17 +2,14 @@
 
 > 此文件由 `pnpm release:changelog` 从 versionrecord.md 自动生成。
 
-## 1.6.6 (2026-03-04)
+## 1.6.7 (2026-03-05)
 
-### 修复 (生产加固 · P0 级别)
-- agent-team: Map 迭代前快照防并发崩溃、learningCache 内存泄漏补清理
-- orchestrator: projectEnsureAttempted Set 上限防内存泄漏、补偿删除失败改详细日志、planning-pipeline 依赖关系修正
-- Tauri/Rust: provider_discovery AES-GCM nonce 长度校验、remote_tunnel frpc 超时 kill 后 child.wait() 防 zombie
-- infra: safe-rename copyFile 失败清理孤立 tmp、skills-install PATH 比较用 path.resolve()、bash-tools PATH key 大小写修正
-- mcp marketplace: LIKE 路径转义修复 + diagnostic-events 补 compensation-delete-failed 类型
-- 安全: config safety-check 覆盖 config.set 路径、新增 config.rollback RPC
+### 性能优化
+- status RPC 服务端缓存 — `status` 接口增加 10s TTL 缓存 + in-flight 请求去重，响应时间从 3-21s 降至 <1ms（命中缓存时）
+- skills.status 服务端缓存 — `skills.status` 增加 15s TTL 缓存 + in-flight 去重，避免每次调用都扫描 PATH（Windows 下 2-11s），技能安装/导入后自动失效缓存
+- debug 轮询间隔优化 — debug 页面轮询从 3s 调整为 10s，避免 status 耗时调用导致的事件循环级联阻塞
 
-## 1.6.3 (未发布)
+## 1.6.4 (未发布)
 
 ### 新功能
 - 图片生成工具 — 新增 image-gen-tool，支持 DALL-E 3 / 通义万相(DashScope) / SiliconFlow 三个 provider，自动识别 13 种图片生成模型
