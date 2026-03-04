@@ -1,4 +1,7 @@
 import os from "node:os";
+import fs from "node:fs";
+import nodePath from "node:path";
+import { execFileSync } from "node:child_process";
 import type { OpenClawCNConfig } from "./types.js";
 import type { ModelDefinitionConfig } from "./types.models.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../agents/defaults.js";
@@ -14,7 +17,6 @@ import type { MCPServerConfig } from "../mcp/types.js";
  * Uses fast Node.js fs.accessSync probe (no subprocess spawn, <1ms per drive).
  */
 function detectWindowsDrives(): string[] {
-  const fs = require("node:fs") as typeof import("node:fs");
   const found: string[] = [];
   // Probe A: through Z: — accessSync is ~0.1ms per drive, total <3ms
   for (let code = 65; code <= 90; code++) {
@@ -897,16 +899,12 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     // Desktop builds bundle node.exe but may not include npx.cmd — in that case
     // autoStart is set to false so the UI shows "npx not found" instead of crash.
     const npxCmd = (() => {
-      const fs = require("node:fs") as typeof import("node:fs");
-      const nodePath = require("node:path") as typeof import("node:path");
       // 1. Check npx.cmd next to the bundled node.exe
       const execDir = nodePath.dirname(process.execPath);
       const bundledNpx = nodePath.join(execDir, process.platform === "win32" ? "npx.cmd" : "npx");
       if (fs.existsSync(bundledNpx)) return { command: bundledNpx, available: true };
       // 2. Check system PATH
       try {
-        const { execFileSync } =
-          require("node:child_process") as typeof import("node:child_process");
         const whichCmd = process.platform === "win32" ? "where" : "which";
         execFileSync(whichCmd, ["npx"], { timeout: 3000, stdio: "pipe" });
         return { command: "npx", available: true };
