@@ -169,7 +169,7 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
     "Mirror: https://docs.openclawcn.com",
     "Source: https://github.com/openclawcn/openclawcn",
     "Community: https://discord.com/invite/clawd",
-    "Find new skills: https://clawhub.com (official ClawHub marketplace; if unreachable, use the built-in skills market in the app)",
+    "Find new skills: https://clawhub.com or https://clawhub.ai (official ClawHub marketplace; if unreachable, use the built-in skills market in the app)",
     "For OpenClawCN behavior, commands, config, or architecture: consult local docs first.",
     "When diagnosing issues, run `openclawcn status` yourself when possible; only ask the user if you lack access (e.g., sandboxed).",
     "",

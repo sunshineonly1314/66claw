@@ -249,6 +249,65 @@ describe("applyCnDefaults — 不覆盖 proactiveCompaction", () => {
 });
 
 // ============================================================================
+// 4c. 浏览器服务 + 搜索 API 默认开启测试
+// ============================================================================
+
+describe("applyCnDefaults — browser.enabled / browser.headless / search.enabled", () => {
+  afterEach(() => restoreRegion());
+
+  it("browser.enabled = true（CN默认开启浏览器服务，AI可直接访问网页）", () => {
+    setCnRegion(true);
+    const result = applyCnDefaults({});
+    expect(result.browser?.enabled).toBe(true);
+  });
+
+  it("browser.headless = false（有头模式，用户可见操作过程）", () => {
+    setCnRegion(true);
+    const result = applyCnDefaults({});
+    expect(result.browser?.headless).toBe(false);
+  });
+
+  it("tools.web.search.enabled = true（搜索服务随 bocha provider 一同默认开启）", () => {
+    setCnRegion(true);
+    const result = applyCnDefaults({});
+    expect(result.tools?.web?.search?.enabled).toBe(true);
+  });
+
+  it("不覆盖 browser.enabled = false（用户明确禁用时尊重用户设置）", () => {
+    setCnRegion(true);
+    const cfg: OpenClawCNConfig = { browser: { enabled: false } };
+    const result = applyCnDefaults(cfg);
+    expect(result.browser?.enabled).toBe(false);
+  });
+
+  it("不覆盖 browser.headless = true（用户明确设置无头模式时尊重）", () => {
+    setCnRegion(true);
+    const cfg: OpenClawCNConfig = { browser: { headless: true } };
+    const result = applyCnDefaults(cfg);
+    expect(result.browser?.headless).toBe(true);
+  });
+
+  it("不覆盖 tools.web.search.enabled = false（用户明确禁用搜索时尊重）", () => {
+    setCnRegion(true);
+    const cfg: OpenClawCNConfig = { tools: { web: { search: { enabled: false } } } };
+    const result = applyCnDefaults(cfg);
+    expect(result.tools?.web?.search?.enabled).toBe(false);
+  });
+
+  it("非 CN 区域不注入 browser.enabled", () => {
+    setCnRegion(false);
+    const result = applyCnDefaults({});
+    expect(result.browser?.enabled).toBeUndefined();
+  });
+
+  it("非 CN 区域不注入 tools.web.search.enabled", () => {
+    setCnRegion(false);
+    const result = applyCnDefaults({});
+    expect(result.tools?.web?.search?.enabled).toBeUndefined();
+  });
+});
+
+// ============================================================================
 // 5. 链集成测试
 // ============================================================================
 

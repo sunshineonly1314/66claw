@@ -610,6 +610,18 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     mutated = true;
   }
 
+  // ── 2e. browser.enabled: true（CN默认开启浏览器服务，让AI可以直接打开网页访问clawhub.ai等链接）──
+  if (next.browser?.enabled === undefined) {
+    next = { ...next, browser: { ...next.browser, enabled: true } };
+    mutated = true;
+  }
+
+  // ── 2f. browser.headless: false（有头模式，用户可见AI操作浏览器的过程）──
+  if (next.browser?.headless === undefined) {
+    next = { ...next, browser: { ...next.browser, headless: false } };
+    mutated = true;
+  }
+
   // ── 3. sandbox.mode: "off"（不使用沙箱，最大能力释放）──
   const existingSandbox = next.agents?.defaults?.sandbox;
   if (existingSandbox?.mode === undefined) {
@@ -780,6 +792,24 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
           search: {
             ...next.tools?.web?.search,
             provider: "bocha",
+          },
+        },
+      },
+    };
+    mutated = true;
+  }
+
+  // ── 13b. tools.web.search.enabled: true（搜索服务随 bocha provider 一同默认开启，无需等待用户手动配置 API key）──
+  if (next.tools?.web?.search?.enabled === undefined) {
+    next = {
+      ...next,
+      tools: {
+        ...next.tools,
+        web: {
+          ...next.tools?.web,
+          search: {
+            ...next.tools?.web?.search,
+            enabled: true,
           },
         },
       },
