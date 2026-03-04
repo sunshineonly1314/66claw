@@ -42,10 +42,11 @@ export function stopLogsPolling(host: PollingHost) {
 
 export function startDebugPolling(host: PollingHost) {
   if (host.debugPollInterval != null) return;
+  // 10s interval: debug data (status/health) can take 3-21s per call; no need for 3s refresh
   host.debugPollInterval = window.setInterval(() => {
     if (host.tab !== "debug") return;
     void loadDebug(host as unknown as ClawdbotApp);
-  }, 3000);
+  }, 10_000);
 }
 
 export function stopDebugPolling(host: PollingHost) {

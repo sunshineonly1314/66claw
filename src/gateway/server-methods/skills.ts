@@ -47,6 +47,14 @@ import {
 } from "../protocol/index.js";
 
 // ---------------------------------------------------------------------------
+// Cache for skills.status — buildWorkspaceSkillStatus calls hasBinary() which
+// scans the PATH (including large node_modules dirs), taking 3-11s on Windows.
+const SKILLS_STATUS_CACHE_TTL_MS = 15_000;
+type SkillStatusCacheEntry = { result: unknown; at: number };
+const _skillsStatusCache = new Map<string, SkillStatusCacheEntry>();
+let _skillsStatusInflight = new Map<string, Promise<unknown>>();
+
+// ---------------------------------------------------------------------------
 // Path safety: block sensitive system directories from skills.browse/import
 // ---------------------------------------------------------------------------
 const BLOCKED_PATH_PATTERNS =
@@ -276,13 +284,45 @@ export const skillsHandlers: GatewayRequestHandlers = {
         return;
       }
     }
+
+    // Cache key: agentId (skill status is per-agent)
+    const cacheKey = agentId;
+    const now = Date.now();
+    const cached = _skillsStatusCache.get(cacheKey);
+    if (cached && now - cached.at < SKILLS_STATUS_CACHE_TTL_MS) {
+      respond(true, cached.result, undefined);
+      return;
+    }
+
+    // Dedup in-flight
+    const inflight = _skillsStatusInflight.get(cacheKey);
+    if (inflight) {
+      const report = await inflight;
+      respond(true, report, undefined);
+      return;
+    }
+
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
     // Ensure hasBinary() can find tools installed via download to CONFIG_DIR/tools/*
     registerToolsRoot(path.join(CONFIG_DIR, "tools"));
-    const report = buildWorkspaceSkillStatus(workspaceDir, {
-      config: cfg,
-      eligibility: { remote: getRemoteSkillEligibility() },
-    });
+
+    const req = Promise.resolve()
+      .then(() => {
+        const report = buildWorkspaceSkillStatus(workspaceDir, {
+          config: cfg,
+          eligibility: { remote: getRemoteSkillEligibility() },
+        });
+        _skillsStatusCache.set(cacheKey, { result: report, at: Date.now() });
+        _skillsStatusInflight.delete(cacheKey);
+        return report;
+      })
+      .catch((err: unknown) => {
+        _skillsStatusInflight.delete(cacheKey);
+        throw err;
+      });
+
+    _skillsStatusInflight.set(cacheKey, req);
+    const report = await req;
     respond(true, report, undefined);
   },
   "skills.bins": ({ params, respond }) => {
@@ -437,6 +477,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       // 0. 清除二进制缓存，确保下次 skills.status 能检测到新安装的工具
       clearBinaryCache();
       invalidateSkillEntriesCache();
+      _skillsStatusCache.clear(); // 安装后必须失效状态缓存，确保下次刷新看到新技能
       // 1. 立即标记 SQLite 中此技能为已安装（不依赖全量 refresh 的异步过程）
       try {
         const { markSkillInstalled } = await import("../../agents/skills/marketplace/db.js");
@@ -473,6 +514,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       // 0. 清除二进制缓存，确保下次 skills.status 能检测到新安装的工具
       clearBinaryCache();
       invalidateSkillEntriesCache();
+      _skillsStatusCache.clear();
       // 1. 立即标记 SQLite 中此技能为已安装
       try {
         const { markSkillInstalled } = await import("../../agents/skills/marketplace/db.js");
@@ -669,6 +711,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       }
       clearBinaryCache();
       invalidateSkillEntriesCache();
+      _skillsStatusCache.clear();
       bumpSkillsSnapshotVersion({ reason: "manual" });
       respond(true, { ok: true, imported: [skillName], mode: "copy" }, undefined);
       return;
@@ -715,6 +758,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       });
       clearBinaryCache();
       invalidateSkillEntriesCache();
+      _skillsStatusCache.clear();
       bumpSkillsSnapshotVersion({ reason: "manual" });
       respond(
         true,
@@ -737,6 +781,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       }
       clearBinaryCache();
       invalidateSkillEntriesCache();
+      _skillsStatusCache.clear();
       bumpSkillsSnapshotVersion({ reason: "manual" });
       respond(true, { ok: true, imported, mode: "copy" }, undefined);
     }
