@@ -134,8 +134,13 @@ exit `$exitCode
 "@ | Out-File -FilePath $cnScript -Encoding UTF8
 
 # UI build + obfuscation script
+# Pass OEM_ID and VITE_EDITION into the child process so vite injects brand constants
+$viteEdition = if ($env:VITE_EDITION) { $env:VITE_EDITION } else { "cn" }
+$oemIdVal    = if ($env:OEM_ID)       { $env:OEM_ID }       else { "" }
 @"
 `$ErrorActionPreference = 'Continue'
+`$env:VITE_EDITION = '$viteEdition'
+`$env:OEM_ID       = '$oemIdVal'
 `$exitCode = 0
 try {
 if (Test-Path '$ProjectRoot\ui\package.json') {
@@ -268,6 +273,22 @@ if ($tauriProc) {
     Write-Host "  Tauri CLI install OK" -ForegroundColor Green
 }
 
+# ── Step 5.5: Apply OEM config to tauri.conf.json (if OEM_ID set) ──
+$oemId = if ($env:OEM_ID) { $env:OEM_ID.Trim() } else { "" }
+if ($oemId -and $oemId -ne "") {
+    Write-Host "[5.5/6] Applying OEM config: $oemId ..." -ForegroundColor Yellow
+    Push-Location $ProjectRoot
+    $env:OEM_ID = $oemId
+    node --import tsx scripts/desktop/apply-oem-config.ts
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: apply-oem-config.ts failed!" -ForegroundColor Red
+        Pop-Location
+        exit 1
+    }
+    Pop-Location
+    Write-Host "  OEM config applied OK" -ForegroundColor Green
+}
+
 # ── Step 6: Build Tauri (Rust + bundle) ──
 # NOTE: tauri.conf.json beforeBuildCommand is empty — UI is already built in Step 3
 Write-Host "[6/6] Building Tauri native app..." -ForegroundColor Yellow
@@ -292,6 +313,14 @@ exit /b %ERRORLEVEL%
 cmd /c $tempBat
 $buildResult = $LASTEXITCODE
 Remove-Item $tempBat -ErrorAction SilentlyContinue
+
+# Restore tauri.conf.json if OEM was applied
+if ($oemId -and $oemId -ne "") {
+    Write-Host "  Restoring tauri.conf.json after OEM build..." -ForegroundColor Gray
+    Push-Location $ProjectRoot
+    node --import tsx scripts/desktop/restore-tauri-conf.ts
+    Pop-Location
+}
 
 if ($buildResult -ne 0) {
     Write-Host "ERROR: Tauri build failed!" -ForegroundColor Red

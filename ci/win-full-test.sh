@@ -7,35 +7,36 @@ set -uo pipefail
 #       Media, 模型管理, Agent管理, 会话管理, 聊天, 配置, 技能, TTS,
 #       使用统计, Cron, Talk, 频道状态, 飞书/钉钉, 日志分析
 
-PORT=18799
-TOKEN="test-ci-win-$(date +%s)"
-GW_PID=""
-LOG_FILE="/tmp/gw-win-test.log"
-
-INSTALL_DIR="E:/openclawcn/ClawdbotCN"
+INSTALL_DIR="${INSTALL_DIR_OVERRIDE:-F:/openclawcn/ClawdbotCN}"
 RES="$INSTALL_DIR/resources"
 NODE="$RES/node/node.exe"
+
+# Use a dedicated test port (19099) to avoid conflicting with the Tauri desktop
+# gateway on 19002. We start our own gateway with a known static token so WS RPC
+# auth works reliably regardless of what Tauri's random per-session token is.
+TEST_PORT=19099
+TOKEN="ci-win-test-token-$(date +%Y%m%d)"
+PORT=$TEST_PORT
 BASE="http://127.0.0.1:$PORT"
+GW_PID=""
+LOG_FILE="/tmp/gw-win-test.log"
+REUSE_GW=false
 
 PASS=0; FAIL=0; WARN=0
 pass() { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 warn() { echo "  [WARN] $1"; WARN=$((WARN+1)); }
 
-# ── Pre-cleanup ──
-echo "=== 清理旧进程 ==="
-# Kill any existing gateway on test port
-for pid in $(netstat -ano 2>/dev/null | grep ":$PORT " | grep LISTENING | awk '{print $5}' | sort -u); do
-  [ -n "$pid" ] && taskkill //PID "$pid" //F 2>/dev/null
+# ── Pre-cleanup: free test port if occupied ──
+echo "=== 清理测试端口 $TEST_PORT 旧进程 ==="
+for pid in $(netstat -ano 2>/dev/null | grep ":$TEST_PORT " | grep LISTENING | awk '{print $5}' | sort -u); do
+  [ -n "$pid" ] && [ "$pid" != "0" ] && taskkill //PID "$pid" //F 2>/dev/null && echo "  killed PID $pid"
 done
-# Kill node processes from install dir
-wmic process where "name='node.exe' and commandline like '%openclawcn%'" call terminate 2>/dev/null || true
-sleep 2
+sleep 1
 
 cleanup() {
   if [ -n "$GW_PID" ]; then
     taskkill //PID "$GW_PID" //F 2>/dev/null
-    # Also kill child node processes
     wmic process where "ParentProcessId='$GW_PID'" call terminate 2>/dev/null || true
     wait "$GW_PID" 2>/dev/null
   fi
@@ -49,17 +50,21 @@ echo "  版本: 1.6.1 | 端口: $PORT"
 echo "============================================"
 echo ""
 
-# ── Start Gateway ──
-echo "=== 启动 Gateway ==="
+# ── Start Test Gateway on TEST_PORT with known token ──
+# Use a temp state dir so the gateway lock doesn't conflict with the running Tauri instance
+TEST_STATE_DIR="/tmp/clawdbot-ci-win-state-$$"
+mkdir -p "$TEST_STATE_DIR"
+echo "=== 启动测试 Gateway (port $TEST_PORT, state=$TEST_STATE_DIR) ==="
 cd "$RES"
+OPENCLAWCN_STATE_DIR="$TEST_STATE_DIR" \
 OPENCLAWCN_GATEWAY_TOKEN="$TOKEN" \
-OPENCLAWCN_GATEWAY_PORT="$PORT" \
+OPENCLAWCN_GATEWAY_PORT="$TEST_PORT" \
 OPENCLAWCN_REGION=cn \
 OPENCLAWCN_DESKTOP_MODE=1 \
 NODE_ENV=production \
-"$NODE" "$RES/dist/entry.js" gateway --port "$PORT" --force --allow-unconfigured > "$LOG_FILE" 2>&1 &
+"$NODE" "$RES/dist/entry.js" gateway --port "$TEST_PORT" --allow-unconfigured > "$LOG_FILE" 2>&1 &
 GW_PID=$!
-echo "  PID: $GW_PID"
+echo "  PID: $GW_PID  TOKEN: $TOKEN"
 
 READY=false
 for i in $(seq 1 90); do
@@ -884,38 +889,47 @@ echo "║     Part C: 日志分析                       ║"
 echo "╚════════════════════════════════════════════╝"
 echo ""
 
-LOG_LINES=$(wc -l < "$LOG_FILE" 2>/dev/null | tr -d ' \n')
-echo "日志总行数: $LOG_LINES"
+ANALYZE_LOG="$LOG_FILE"
 
-CRITICAL=$(grep -i "error\|exception\|fatal\|crash\|panic\|unhandled" "$LOG_FILE" 2>/dev/null \
-  | grep -iv "api.key\|validate\|invalid.*key\|license\|fetch.*model\|ECONNREFUSED\|verify\|fake\|No API key\|unable to open database\|NODE_OPTIONS\|sherpa-onnx\|MCP.*baseline\|tool-index bridge\|FailoverError\|not configured\|mapAsMap\|connect.*challenge\|unauthorized role\|unknown method\|errorCode=INVALID_REQUEST\|EPERM\|ENOENT\|token expired" \
-  | wc -l | tr -d ' \n')
-ALL_ERRORS=$(grep -ci "error\|exception\|fatal\|crash\|panic\|unhandled" "$LOG_FILE" 2>/dev/null || echo 0)
-echo "  总错误: $ALL_ERRORS (关键/未预期: $CRITICAL)"
+if [ -f "$ANALYZE_LOG" ]; then
+  LOG_LINES=$(wc -l < "$ANALYZE_LOG" 2>/dev/null | tr -d ' \n')
+  echo "日志总行数: $LOG_LINES"
 
-if [ "$ALL_ERRORS" -gt 0 ]; then
-  echo "  所有错误:"
-  grep -in "error\|exception\|fatal\|crash\|panic\|unhandled" "$LOG_FILE" | head -30
-fi
+  CRITICAL=$(grep -i "error\|exception\|fatal\|crash\|panic\|unhandled" "$ANALYZE_LOG" 2>/dev/null \
+    | grep -iv "api.key\|validate\|invalid.*key\|license\|fetch.*model\|ECONNREFUSED\|verify\|fake\|No API key\|unable to open database\|NODE_OPTIONS\|sherpa-onnx\|MCP.*baseline\|tool-index bridge\|FailoverError\|not configured\|mapAsMap\|connect.*challenge\|unauthorized role\|unknown method\|errorCode=INVALID_REQUEST\|EPERM\|ENOENT\|token expired" \
+    | wc -l | tr -d ' \n')
+  ALL_ERRORS=$(grep -ci "error\|exception\|fatal\|crash\|panic\|unhandled" "$ANALYZE_LOG" 2>/dev/null || echo 0)
+  echo "  总错误: $ALL_ERRORS (关键/未预期: $CRITICAL)"
 
-if [ "$CRITICAL" = "0" ] || [ -z "$CRITICAL" ]; then
-  pass "无关键未预期错误"
+  if [ "$ALL_ERRORS" -gt 0 ]; then
+    echo "  所有错误:"
+    grep -in "error\|exception\|fatal\|crash\|panic\|unhandled" "$ANALYZE_LOG" | tail -30
+  fi
+
+  if [ "$CRITICAL" = "0" ] || [ -z "$CRITICAL" ]; then
+    pass "无关键未预期错误"
+  else
+    warn "发现 $CRITICAL 处关键错误"
+  fi
+
+  echo ""
+  echo "最近日志 20 行:"
+  tail -20 "$ANALYZE_LOG"
 else
-  warn "发现 $CRITICAL 处关键错误"
+  warn "日志文件不存在: $ANALYZE_LOG"
 fi
-
-echo ""
-echo "最近日志 20 行:"
-tail -20 "$LOG_FILE"
 
 # ── Cleanup ──
 echo ""
 echo "=== 清理 ==="
-taskkill //PID "$GW_PID" //F 2>/dev/null
-wmic process where "ParentProcessId='$GW_PID'" call terminate 2>/dev/null || true
-wait "$GW_PID" 2>/dev/null
-GW_PID=""
-echo "Gateway 已停止"
+if [ -n "$GW_PID" ]; then
+  taskkill //PID "$GW_PID" //F 2>/dev/null
+  wmic process where "ParentProcessId='$GW_PID'" call terminate 2>/dev/null || true
+  wait "$GW_PID" 2>/dev/null
+  GW_PID=""
+  echo "Gateway 已停止"
+  [ -n "${TEST_STATE_DIR:-}" ] && rm -rf "$TEST_STATE_DIR" && echo "临时状态目录已清理"
+fi
 
 # ── Summary ──
 echo ""
