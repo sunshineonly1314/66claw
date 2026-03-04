@@ -42,6 +42,7 @@ import {
   loadPlan,
   loadState,
   savePlan,
+  saveReport,
   saveState,
   updateAgentStatus,
 } from "./state.js";
@@ -1503,7 +1504,7 @@ async function executeDeploySequenceInner(
         // Persist the deploy report so orchestrator.deploy.report can serve it
         if (createResult?.report) {
           try {
-            const { saveReport } = await import("./state.js");
+            // Use static import (dynamic import breaks in bytenode/CJS environment)
             await saveReport(plan.planId, createResult.report);
           } catch {
             // Non-fatal: report is optional enrichment

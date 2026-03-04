@@ -3,9 +3,16 @@
    =========================================== */
 
 /* ---- Page Wrapper (owns the positioning context for orchestrator overlay) ---- */
+/* FIX: Use flex-grow + height:100% instead of calc(100vh - XXpx).
+   100vh on Windows Tauri WebView2 with DPI scaling (125%/150%) reports wrong
+   viewport height, causing the panel to overflow and bottom buttons to be
+   unreachable. By stretching to fill the parent flex container (.content) we
+   avoid the DPI-dependent subtraction entirely. */
 .agents-wrapper {
   position: relative;
-  height: calc(100vh - 160px);
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
   margin: -16px;
 }
 
@@ -663,7 +670,8 @@
 @media (max-width: 900px) {
   .agents-wrapper {
     height: auto;
-    min-height: calc(100vh - 160px);
+    min-height: 0;
+    flex: 1 1 0;
   }
 
   .agents-layout {
@@ -1566,7 +1574,8 @@
 .agent-chat-panel {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 280px);
+  /* FIX: avoid 100vh on Tauri/Windows DPI-scaled screens — use flex instead */
+  flex: 1 1 0;
   min-height: 360px;
 }
 

@@ -37,18 +37,25 @@ $nodeSources = @(
     "$ProjectRoot\scripts\windows\node\node.exe"
 )
 $nodeFound = $false
-foreach ($src in $nodeSources) {
-    if (Test-Path $src) {
-        Copy-Item $src "$nodeDir\node.exe" -Force
+# Prefer the full node-portable directory (contains npx.cmd, npm.cmd, node_modules)
+$nodePortableDirs = @(
+    "$ProjectRoot\scripts\windows\node-portable",
+    "$ProjectRoot\scripts\windows\node"
+)
+foreach ($dir in $nodePortableDirs) {
+    if (Test-Path "$dir\node.exe") {
+        # Copy the entire directory so npx.cmd / npm.cmd / node_modules are included
+        Copy-Item "$dir\*" $nodeDir -Recurse -Force
         $nodeFound = $true
         $size = [math]::Round((Get-Item "$nodeDir\node.exe").Length / 1MB, 2)
-        Write-Host "  OK: node.exe ($size MB) from $src [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
+        $hasNpx = Test-Path "$nodeDir\npx.cmd"
+        Write-Host "  OK: node.exe ($size MB) from $dir (npx.cmd=$hasNpx) [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
         break
     }
 }
-# Fallback: download from CN mirror (npmmirror) if not found locally
+# Fallback: download full zip from CN mirror (npmmirror) if not found locally
 if (-not $nodeFound) {
-    Write-Host "  node.exe not found locally, downloading from CN mirror..." -ForegroundColor Yellow
+    Write-Host "  node not found locally, downloading full zip from CN mirror..." -ForegroundColor Yellow
     $nodeZipName = "node-v$NodeVersion-win-x64.zip"
     $nodeDlDir = Join-Path $ProjectRoot "build\download-output\node"
     New-Item -ItemType Directory -Force -Path $nodeDlDir | Out-Null
@@ -66,13 +73,14 @@ if (-not $nodeFound) {
                 $extractDir = Join-Path $nodeDlDir "node-win-x64"
                 if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
                 Expand-Archive -Path $nodeZipPath -DestinationPath $extractDir -Force
-                # node.exe is inside node-vXX.XX.X-win-x64/node.exe
-                $extractedNode = Get-ChildItem "$extractDir\*\node.exe" -Recurse | Select-Object -First 1
-                if ($extractedNode) {
-                    Copy-Item $extractedNode.FullName "$nodeDir\node.exe" -Force
+                # Full node dir is inside node-vXX.XX.X-win-x64/
+                $extractedRoot = Get-ChildItem $extractDir -Directory | Select-Object -First 1
+                if ($extractedRoot -and (Test-Path "$($extractedRoot.FullName)\node.exe")) {
+                    Copy-Item "$($extractedRoot.FullName)\*" $nodeDir -Recurse -Force
                     $nodeFound = $true
                     $size = [math]::Round((Get-Item "$nodeDir\node.exe").Length / 1MB, 2)
-                    Write-Host "  OK: node.exe ($size MB) downloaded from CN mirror [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]" -ForegroundColor Green
+                    $hasNpx = Test-Path "$nodeDir\npx.cmd"
+                    Write-Host "  OK: node.exe ($size MB, npx.cmd=$hasNpx) downloaded from CN mirror [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]" -ForegroundColor Green
                     Remove-Item $nodeZipPath -Force -ErrorAction SilentlyContinue
                     break
                 }
@@ -84,15 +92,28 @@ if (-not $nodeFound) {
     }
 }
 if (-not $nodeFound) {
-    Write-Host "  ERROR: node.exe not found and download failed!" -ForegroundColor Red
+    Write-Host "  ERROR: node not found and download failed!" -ForegroundColor Red
     Write-Host "  Tried local paths:" -ForegroundColor Red
-    foreach ($src in $nodeSources) {
-        Write-Host "    - $src" -ForegroundColor Red
+    foreach ($dir in $nodePortableDirs) {
+        Write-Host "    - $dir\node.exe" -ForegroundColor Red
     }
     Write-Host "  Tried CN mirrors:" -ForegroundColor Red
     Write-Host "    - https://npmmirror.com/mirrors/node/v$NodeVersion/" -ForegroundColor Red
     exit 1
 }
+# Hard validation: npx.cmd MUST be present — MCP servers require it.
+# If missing, MCP falls back to system npx which varies by user machine → -32000 errors.
+if (-not (Test-Path "$nodeDir\npx.cmd")) {
+    Write-Host "  ERROR: npx.cmd not found in $nodeDir after copy!" -ForegroundColor Red
+    Write-Host "  The node-portable directory must be a full Node.js distribution (not just node.exe)." -ForegroundColor Red
+    Write-Host "  Download the full zip from: https://npmmirror.com/mirrors/node/v$NodeVersion/node-v$NodeVersion-win-x64.zip" -ForegroundColor Red
+    exit 1
+}
+if (-not (Test-Path "$nodeDir\npm.cmd")) {
+    Write-Host "  ERROR: npm.cmd not found in $nodeDir after copy!" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Verified: node.exe + npx.cmd + npm.cmd present" -ForegroundColor Green
 
 # ── 2. Backend dist ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
@@ -487,30 +508,133 @@ foreach ($stubPkg in $stubPackages) {
     $stubDir = Join-Path $ResourcesDir "node_modules\$stubPkg"
     # Force-create (overwrite if exists) — npm install may have left a broken copy
     New-Item -ItemType Directory -Force -Path $stubDir | Out-Null
+    # package.json: must NOT have "type":"module" so index.js is treated as CJS.
+    # exports map provides both require (CJS) and import (ESM) paths.
     @'
-{"name":"@whiskeysockets/baileys","version":"0.0.0-stub","main":"index.js","description":"Stub: WhatsApp channel not available in desktop builds"}
+{
+  "name": "@whiskeysockets/baileys",
+  "version": "0.0.0-stub",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.mjs",
+      "default": "./index.js"
+    }
+  },
+  "description": "Stub: WhatsApp channel not available in desktop builds"
+}
 '@ | Set-Content "$stubDir\package.json" -Encoding UTF8
+    # CJS stub (for require() calls)
     @'
 // Stub module — @whiskeysockets/baileys is not bundled in desktop builds.
-// This file prevents "Cannot find module" crashes when plugin-sdk is loaded.
 // WhatsApp channel features are unavailable; all exported symbols are no-ops.
-// The recursive Proxy handles any depth of property access (e.g.
-// DisconnectReason.loggedOut) and returns no-ops for function calls.
-function noop() {}
-const handler = {
+function noop() { return undefined; }
+const noopProxy = new Proxy(noop, {
   get(_, prop) {
     if (prop === Symbol.toPrimitive) return () => "";
     if (prop === Symbol.iterator) return undefined;
-    if (prop === "then") return undefined;          // not thenable
-    if (prop === "default") return module.exports;  // ESM interop
-    return new Proxy(noop, handler);
+    if (prop === "then") return undefined;
+    if (prop === "default") return noopProxy;
+    return noopProxy;
   },
   apply() { return undefined; },
-};
-module.exports = new Proxy(noop, handler);
+});
+// Explicit named exports required by plugin-sdk ESM import binding:
+exports.DisconnectReason = { loggedOut: "loggedOut", connectionClosed: "connectionClosed", connectionLost: "connectionLost", connectionReplaced: "connectionReplaced", timedOut: "timedOut", forbidden: "403", badSession: "bad session", restartRequired: "restart required", multideviceMismatch: "multidevice mismatch" };
+exports.fetchLatestBaileysVersion = async function() { return { version: [2,3000,0], isLatest: true }; };
+exports.makeCacheableSignalKeyStore = function(store) { return store || {}; };
+exports.makeWASocket = function() { return noopProxy; };
+exports.useMultiFileAuthState = async function() { return { state: {}, saveCreds: noop }; };
+exports.default = noopProxy;
+module.exports = Object.assign(noopProxy, exports);
 '@ | Set-Content "$stubDir\index.js" -Encoding UTF8
-    Write-Host "  Injected stub module: $stubPkg (force-overwrite)"
+    # ESM stub (for import {} from baileys in plugin-sdk — Node 22 resolves via exports map)
+    @'
+// ESM stub for @whiskeysockets/baileys
+function noop() { return undefined; }
+export const DisconnectReason = { loggedOut: "loggedOut", connectionClosed: "connectionClosed", connectionLost: "connectionLost", connectionReplaced: "connectionReplaced", timedOut: "timedOut", forbidden: "403", badSession: "bad session", restartRequired: "restart required", multideviceMismatch: "multidevice mismatch" };
+export const fetchLatestBaileysVersion = async function() { return { version: [2,3000,0], isLatest: true }; };
+export const makeCacheableSignalKeyStore = function(store) { return store || {}; };
+export const makeWASocket = function() { return {}; };
+export const useMultiFileAuthState = async function() { return { state: {}, saveCreds: noop }; };
+export const proto = {};
+export default {};
+'@ | Set-Content "$stubDir\index.mjs" -Encoding UTF8
+    Write-Host "  Injected stub module: $stubPkg (CJS+ESM, with named exports)"
 }
+
+# ── 4d. Create openclawcn self-referencing package in node_modules ──
+# Extensions import "openclawcn/plugin-sdk" which resolves via the workspace
+# package in development. In the packaged app, we must create a real package
+# entry in node_modules/openclawcn pointing to dist/ so extensions can require it.
+$selfPkgDir = Join-Path $ResourcesDir "node_modules\openclawcn"
+New-Item -ItemType Directory -Force -Path $selfPkgDir | Out-Null
+# Copy the root package.json (contains the exports map for ./plugin-sdk etc.)
+$rootPkgJson = Get-Content "$ProjectRoot\package.json" -Raw -Encoding UTF8
+Set-Content "$selfPkgDir\package.json" -Value $rootPkgJson -Encoding UTF8
+# Create a symlink/junction from node_modules/openclawcn/dist → resources/dist
+# Use a junction (no admin rights needed on Windows)
+$junctionTarget = Join-Path $ResourcesDir "dist"
+$junctionPath = Join-Path $selfPkgDir "dist"
+if (-not (Test-Path $junctionPath)) {
+    cmd /c "mklink /J `"$junctionPath`" `"$junctionTarget`"" | Out-Null
+}
+# Also link the CLI entry point
+$cliEntry = Join-Path $ResourcesDir "dist\entry.js"
+if (Test-Path $cliEntry) {
+    Copy-Item $cliEntry "$selfPkgDir\openclawcn.mjs" -Force -ErrorAction SilentlyContinue
+}
+Write-Host "  Created openclawcn self-referencing package in node_modules (plugin-sdk exports available)"
+
+# ── 4e. Create resources/src/infra/dedupe.js CJS shim ──
+# hook-error-logger.jsc uses compiled dev path "../../../src/infra/dedupe.js"
+# which resolves to resources/src/infra/dedupe.js in the packaged app.
+# dist/infra/dedupe.js is ESM (cannot be require()-d as CJS); generate a CJS shim.
+$srcInfraDir = Join-Path $ResourcesDir "src\infra"
+New-Item -ItemType Directory -Force -Path $srcInfraDir | Out-Null
+@'
+// CJS shim for src/infra/dedupe.js — generated by prepare-resources.ps1
+function createDedupeCache(options) {
+    const ttlMs = Math.max(0, options.ttlMs);
+    const maxSize = Math.max(0, Math.floor(options.maxSize));
+    const cache = new Map();
+    let operationsSinceLastPrune = 0;
+    const PRUNE_INTERVAL = 10;
+    let lastPruneTime = Date.now();
+    const MIN_PRUNE_INTERVAL_MS = 100;
+    const touch = (key, now) => { cache.delete(key); cache.set(key, now); };
+    const maybePrune = (now) => {
+        const cutoff = ttlMs > 0 ? now - ttlMs : undefined;
+        if (cutoff !== undefined) {
+            for (const [entryKey, entryTs] of cache) { if (entryTs < cutoff) cache.delete(entryKey); }
+        }
+        if (maxSize > 0 && cache.size > maxSize) {
+            while (cache.size > maxSize) { const k = cache.keys().next().value; if (!k) break; cache.delete(k); }
+            operationsSinceLastPrune = 0; lastPruneTime = now; return;
+        }
+        operationsSinceLastPrune++;
+        if (operationsSinceLastPrune >= PRUNE_INTERVAL && now - lastPruneTime >= MIN_PRUNE_INTERVAL_MS) {
+            if (maxSize > 0 && cache.size > maxSize * 0.9) {
+                while (cache.size > maxSize) { const k = cache.keys().next().value; if (!k) break; cache.delete(k); }
+            }
+            operationsSinceLastPrune = 0; lastPruneTime = now;
+        }
+    };
+    return {
+        check: (key, now = Date.now()) => {
+            if (!key) return false;
+            const existing = cache.get(key);
+            if (existing !== undefined && (ttlMs <= 0 || now - existing < ttlMs)) { touch(key, now); return true; }
+            touch(key, now); maybePrune(now); return false;
+        },
+        clear: () => { cache.clear(); },
+        size: () => cache.size,
+    };
+}
+exports.createDedupeCache = createDedupeCache;
+'@ | Set-Content (Join-Path $srcInfraDir "dedupe.js") -Encoding UTF8
+Write-Host "  Created src/infra/dedupe.js CJS shim (for hook-error-logger.jsc)"
 
 # ── 5. Skills ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
@@ -612,9 +736,41 @@ if (Test-Path "$ProjectRoot\data") {
     foreach ($f in $seedFiles) {
         $src = Join-Path "$ProjectRoot\data" $f
         if (Test-Path $src) {
-            Copy-Item $src "$dataResDir\$f" -Force
+            if ($f -match '\.db$|\.sqlite$') {
+                # SQLite: use VACUUM INTO to merge WAL and produce a clean single-file copy
+                # This prevents "database disk image is malformed" in the packaged app
+                $dst = "$dataResDir\$f"
+                $srcFwd = $src -replace '\\','/'
+                $dstFwd = $dst -replace '\\','/'
+                $vacuumResult = & node -e "
+const Database = require('better-sqlite3');
+try {
+  const db = new Database('$srcFwd', {readonly:true, fileMustExist:true});
+  db.exec(""VACUUM INTO '$dstFwd'"");
+  db.close();
+  process.stdout.write('OK');
+} catch(e) {
+  process.stdout.write('FAIL:' + e.message);
+}" 2>$null
+                if ($vacuumResult -match '^OK') {
+                    Write-Host "  Checkpointed $f (VACUUM INTO clean copy)"
+                } else {
+                    # Fallback: plain copy
+                    Copy-Item $src $dst -Force
+                    Write-Host "  Copied $f (VACUUM failed: $vacuumResult)"
+                }
+            } else {
+                Copy-Item $src "$dataResDir\$f" -Force
+            }
         }
     }
+    # Remove any WAL/SHM files that NSIS would otherwise package alongside the db
+    Get-ChildItem $dataResDir -Filter "*.db-wal" -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem $dataResDir -Filter "*.db-shm" -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem $dataResDir -Filter "*.sqlite-wal" -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem $dataResDir -Filter "*.sqlite-shm" -ErrorAction SilentlyContinue | Remove-Item -Force
+    Write-Host "  Removed WAL/SHM leftover files from resources/data"
+
     # Copy mcp-index-enhanced (any version: v4, v5, etc.)
     Get-ChildItem "$ProjectRoot\data\mcp-index-enhanced*.json" -ErrorAction SilentlyContinue | ForEach-Object {
         Copy-Item $_.FullName "$dataResDir\$($_.Name)" -Force
@@ -625,13 +781,22 @@ if (Test-Path "$ProjectRoot\data") {
             Copy-Item $src "$dataResDir\$d" -Recurse -Force
         }
     }
-    # Ensure mcp-index.json exists (Gateway warns if missing).
-    # A minimal seed is enough - runtime sync will fetch the full index.
+    # CRITICAL: mcp-index.json MUST be copied from project data/ — it is the baseline
+    # for the MCP marketplace. Without it the DB is empty and all items show "暂不可安装".
+    # DO NOT replace with an empty seed — Desktop mode skips runtime sync so the DB
+    # will never be populated if the bundled json is missing.
     $mcpIndexPath = Join-Path $dataResDir "mcp-index.json"
+    $mcpIndexSrc  = Join-Path $ProjectRoot "data\mcp-index.json"
     if (-not (Test-Path $mcpIndexPath)) {
-        Write-Host "  Creating minimal mcp-index.json seed (full index synced at runtime)"
-        $seedJson = '{"items":[],"generated":"' + (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ") + '","seed":true}'
-        Set-Content -Path $mcpIndexPath -Value $seedJson -Encoding UTF8
+        if (Test-Path $mcpIndexSrc) {
+            Copy-Item $mcpIndexSrc $mcpIndexPath -Force
+            $sz = [math]::Round((Get-Item $mcpIndexPath).Length / 1MB, 1)
+            Write-Host "  Copied mcp-index.json ($sz MB) from project data/"
+        } else {
+            Write-Host "  ERROR: data\mcp-index.json not found at $mcpIndexSrc" -ForegroundColor Red
+            Write-Host "  MCP marketplace will be empty for all users!" -ForegroundColor Red
+            exit 1
+        }
     }
     # Verify MCP index has enough items (use node to avoid PowerShell 5.x JSON/encoding bugs)
     $mcpItems = 0

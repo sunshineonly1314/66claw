@@ -475,9 +475,12 @@ const plugin: OpenClawCNPluginDefinition = {
 
     // ── Build gateway call function (lazy import, same as orchestrator) ──
     const callGateway: CallGatewayFn = async (method, params) => {
-      const { callGateway: gwCall } = await import(
-        "../../dist/gateway/call.js"
-      );
+      // CRITICAL: use require() not await import() — bytenode/CJS env does not support
+      // ES dynamic import(). await import() in compiled .jsc throws
+      // "A dynamic import callback was not specified" at runtime.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { callGateway: gwCall } = require("../../dist/gateway/call.js") as
+        { callGateway: (opts: unknown) => Promise<unknown> };
       return gwCall({
         method,
         params,
@@ -2136,9 +2139,11 @@ const plugin: OpenClawCNPluginDefinition = {
           return;
         }
 
-        // Top-level imports (cached by Node module system after first call)
-        const fsP = await import("node:fs/promises");
-        const pathMod = await import("node:path");
+        // Use require() — bytenode/CJS env does not support await import()
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const fsP = require("node:fs/promises") as typeof import("node:fs/promises");
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const pathMod = require("node:path") as typeof import("node:path");
 
         const SCAN_EXTENSIONS = new Set([
           ".md", ".csv", ".json", ".txt", ".png", ".jpg", ".jpeg",

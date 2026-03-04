@@ -9,7 +9,7 @@
  */
 
 import type { OpenClawCNPluginDefinition, OpenClawCNPluginApi } from "../../src/plugins/types.js";
-import { createOrchestrateTool, performQuickDeploy, performGuidedPropose, performGuidedDeploy, deployAgentId, listOrchestratedAgents, type CallGatewayFn } from "./src/orchestrate-tool.js";
+import { createOrchestrateTool, performQuickDeploy, performGuidedPropose, performGuidedDeploy, deployAgentId, listOrchestratedAgents, validatePlanForDeploy, type CallGatewayFn } from "./src/orchestrate-tool.js";
 import { getOrchestratorPromptBlock } from "./src/system-prompt.js";
 import { getTemplate, listTemplates, matchTemplate } from "./src/templates.js";
 import { initStateDir, listPlanIds, loadPlan, loadState, loadReport } from "./src/state.js";
@@ -38,11 +38,16 @@ const plugin: OpenClawCNPluginDefinition = {
     const callGateway: CallGatewayFn = async (method, params) => {
       let gwCall: ((opts: unknown) => Promise<unknown>) | undefined;
       try {
-        const mod = await import("../../dist/gateway/call.js");
+        // CRITICAL: use require() not await import() — bytenode/CJS env does not support
+        // ES dynamic import(). await import() in compiled .jsc throws
+        // "A dynamic import callback was not specified" at runtime.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const mod = require("../../dist/gateway/call.js") as { callGateway: typeof gwCall };
         gwCall = mod.callGateway;
       } catch {
-        const mod = await import("../../src/gateway/call.js");
-        gwCall = (mod as { callGateway: typeof gwCall }).callGateway;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const mod = require("../../src/gateway/call.js") as { callGateway: typeof gwCall };
+        gwCall = mod.callGateway;
       }
       return (gwCall as NonNullable<typeof gwCall>)({
         method,
@@ -353,7 +358,7 @@ const plugin: OpenClawCNPluginDefinition = {
         return;
       }
 
-      const { validatePlanForDeploy } = await import("./src/orchestrate-tool.js");
+      // Use static import (dynamic import breaks in bytenode/CJS environment)
       const result = await validatePlanForDeploy(callGateway, planId);
       respond(true, result, undefined);
     });

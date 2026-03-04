@@ -1403,7 +1403,11 @@ function tierColor(tier: string): string {
 }
 
 function renderSkillMarketCard(item: MarketItem, props: SkillsProps) {
-  const displayName = item.nameCn || item.name;
+  // BUG-FIX: gateway returns friendlyNameCn/friendlyName, NOT nameCn.
+  // DO NOT change back to item.nameCn — that field is always undefined and causes
+  // all marketplace cards to display in English instead of Chinese. (CRITICAL)
+  const displayName = item.friendlyNameCn || item.friendlyName || item.name;
+  // descriptionCn is correctly named — gateway spreads the raw MarketplaceItem which has descriptionCn.
   const displayDesc = item.descriptionCn || item.description;
   const emoji = item.emoji || categoryEmoji(item.category);
   const isInstalled = item.installed === true;

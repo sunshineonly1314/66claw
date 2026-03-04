@@ -73,7 +73,9 @@ export function invalidateDiscoveryCache(): void {
 async function discoverInstalledSkills(workspaceDir?: string): Promise<DiscoveredSkill[]> {
   if (!workspaceDir) return [];
   try {
-    const { loadWorkspaceSkillEntries } = await import("../../../../dist/agents/skills.js");
+    // Use require() instead of dynamic import — bytenode/CJS env does not support await import()
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { loadWorkspaceSkillEntries } = require("../../../../dist/agents/skills.js") as typeof import("../../../../dist/agents/skills.js");
     const entries = loadWorkspaceSkillEntries(workspaceDir);
     return entries.map((entry) => ({
       name: entry.skill.name ?? "",
@@ -94,7 +96,9 @@ async function discoverInstalledSkills(workspaceDir?: string): Promise<Discovere
  */
 async function discoverMCPServers(): Promise<DiscoveredMCPServer[]> {
   try {
-    const { getMCPManagerSafe } = await import("../../../../dist/mcp/index.js");
+    // Use require() instead of dynamic import — bytenode/CJS env does not support await import()
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getMCPManagerSafe } = require("../../../../dist/mcp/index.js") as typeof import("../../../../dist/mcp/index.js");
     const manager = getMCPManagerSafe();
     if (!manager) return [];
 

@@ -1199,13 +1199,17 @@ const mcpMarketplaceListHandler: GatewayRequestHandler = safeHandler(
       if (search) {
         items = items.filter((i) => {
           const name = (i.friendlyName ?? "").toLowerCase();
+          const nameCn = (i.friendlyNameCn ?? "").toLowerCase();
           const nameEn = (i.friendlyNameEn ?? "").toLowerCase();
           const desc = (i.description ?? "").toLowerCase();
-          const tags = i.tags ?? [];
+          const descCn = (i.descriptionCn ?? "").toLowerCase();
+          const tags = [...(i.tags ?? []), ...(i.tagsCn ?? [])];
           return (
             name.includes(search) ||
+            nameCn.includes(search) ||
             nameEn.includes(search) ||
             desc.includes(search) ||
+            descCn.includes(search) ||
             tags.some((t) => t.toLowerCase().includes(search))
           );
         });

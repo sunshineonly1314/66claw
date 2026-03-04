@@ -3,11 +3,15 @@
    =========================================== */
 
 /* Layout Container */
+/* FIX: avoid calc(100vh-XXpx) — DPI scaling on Windows Tauri WebView2 makes
+   100vh unreliable. Use flex stretch from parent .content instead. */
 .config-layout {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   gap: 0;
-  height: calc(100vh - 160px);
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
   margin: -16px;
   border-radius: var(--radius-xl);
   overflow: hidden;
