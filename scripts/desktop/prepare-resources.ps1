@@ -150,6 +150,9 @@ if (Test-Path $distSource) {
     $shimDir = Join-Path $ResourcesDir "src\infra"
     New-Item -ItemType Directory -Path $shimDir -Force | Out-Null
     Set-Content -Path (Join-Path $shimDir "safe-rename.js") -Value 'module.exports = require("../../dist/infra/safe-rename.js");' -Encoding UTF8
+    # The main app is ESM — without this package.json, Node treats .js as ESM
+    # and the CJS shim fails with "module is not defined".
+    Set-Content -Path (Join-Path $ResourcesDir "src\package.json") -Value '{"type":"commonjs"}' -Encoding UTF8
     Write-Host "  Created src/infra/safe-rename.js shim (orchestrator compat)" -ForegroundColor Yellow
 
     # ── 2a. Fix rolldown chunk circular dependency in plugin-sdk ──

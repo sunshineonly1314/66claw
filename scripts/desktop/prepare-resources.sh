@@ -194,6 +194,9 @@ if [[ -d "$DIST_SOURCE" ]]; then
   mkdir -p "$RESOURCES_DIR/src/infra"
   printf 'module.exports = require("../../dist/infra/safe-rename.js");\n' \
     > "$RESOURCES_DIR/src/infra/safe-rename.js"
+  # The main app is ESM — without this package.json, Node treats .js as ESM
+  # and the CJS shim fails with "module is not defined".
+  printf '{"type":"commonjs"}\n' > "$RESOURCES_DIR/src/package.json"
   log "  Created src/infra/safe-rename.js shim (orchestrator compat)"
 
   # ── 2a. Fix rolldown chunk circular dependency in plugin-sdk ──
