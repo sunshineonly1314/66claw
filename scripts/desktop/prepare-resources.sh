@@ -117,21 +117,61 @@ case "$ARCH" in
       "$NODE_DL_DIR/node-arm64/bin/node" \
       "$NODE_DL_DIR/node-x64/bin/node" \
       -output "$RESOURCES_DIR/node/bin/node"
+    # npm/npx/lib: use arm64 (pure JS, arch-independent)
+    NODE_REF_ARCH="arm64"
     ;;
   arm64|x64)
     download_node "$ARCH"
     cp "$NODE_DL_DIR/node-${ARCH}/bin/node" "$RESOURCES_DIR/node/bin/node"
+    NODE_REF_ARCH="$ARCH"
     ;;
 esac
 
 chmod +x "$RESOURCES_DIR/node/bin/node"
 
+# ── [Fix: npx/npm/lib bundling] ─────────────────────────────────────────────
+# macOS MCP 进程需要 npx 来启动 MCP server。
+# 只拷 node 单文件会导致用户系统 npx 版本不一致 → MCP 全部报 Connection closed。
+# (同样的 Bug 已在 Windows prepare-resources.ps1 修复，现在 macOS 同步修复)
+log "  Copying npm/npx/lib from node-${NODE_REF_ARCH}..."
+NODE_REF_DIR="$NODE_DL_DIR/node-${NODE_REF_ARCH}"
+
+# Copy npm and npx binaries
+for bin in npm npx; do
+  if [[ -f "$NODE_REF_DIR/bin/$bin" ]]; then
+    cp "$NODE_REF_DIR/bin/$bin" "$RESOURCES_DIR/node/bin/$bin"
+    chmod +x "$RESOURCES_DIR/node/bin/$bin"
+    log "    Copied bin/$bin"
+  else
+    warn "    bin/$bin not found in $NODE_REF_DIR/bin/"
+  fi
+done
+
+# Copy lib/node_modules (npm, corepack) — needed by npm/npx at runtime
+if [[ -d "$NODE_REF_DIR/lib/node_modules" ]]; then
+  mkdir -p "$RESOURCES_DIR/node/lib"
+  cp -R "$NODE_REF_DIR/lib/node_modules" "$RESOURCES_DIR/node/lib/node_modules"
+  log "    Copied lib/node_modules/"
+else
+  warn "    lib/node_modules/ not found in $NODE_REF_DIR — npx may fail"
+fi
+
+# Verify npx/npm are present (hard failure — same as Windows fix)
+if [[ ! -f "$RESOURCES_DIR/node/bin/npm" ]] || [[ ! -f "$RESOURCES_DIR/node/bin/npx" ]]; then
+  err "CRITICAL: npm or npx missing from bundled node/bin/!"
+  err "  MCP servers that use npx will fail with 'Connection closed' for all users."
+  err "  Source dir: $NODE_REF_DIR/bin/"
+  ls "$NODE_REF_DIR/bin/" 2>/dev/null || true
+  exit 1
+fi
+log "  npm/npx bundled OK"
+
 # Clear quarantine and ad-hoc sign for macOS
 xattr -cr "$RESOURCES_DIR/node/bin/node" 2>/dev/null || true
 codesign --sign - --force "$RESOURCES_DIR/node/bin/node" 2>/dev/null || true
 
-NODE_SIZE=$(du -m "$RESOURCES_DIR/node/bin/node" | cut -f1)
-log "  OK: node ($NODE_SIZE MB, $ARCH) [$(( $(date +%s) - STEP_START ))s]"
+NODE_SIZE=$(du -sm "$RESOURCES_DIR/node" | cut -f1)
+log "  OK: node runtime ($NODE_SIZE MB, $ARCH, includes npm/npx) [$(( $(date +%s) - STEP_START ))s]"
 
 # ── 2. Backend dist ──
 STEP_START=$(date +%s)
