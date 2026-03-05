@@ -124,7 +124,8 @@ if [[ "${SKIP_DMG_STYLE:-0}" != "1" ]]; then
     fi
   fi
 
-  osascript <<EOF
+  # Finder styling via AppleScript — non-fatal (fails in SSH/headless sessions)
+  if osascript <<EOF
 tell application "Finder"
   tell disk "$DMG_VOLUME_NAME"
     open
@@ -152,9 +153,12 @@ tell application "Finder"
   end tell
 end tell
 EOF
-
-  sleep 2
-  osascript -e 'tell application "Finder" to close every window' || true
+  then
+    sleep 2
+    osascript -e 'tell application "Finder" to close every window' || true
+  else
+    echo "  WARN: Finder styling skipped (SSH/headless session — non-fatal)"
+  fi
 fi
 
 for i in {1..5}; do
