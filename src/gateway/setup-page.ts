@@ -9,6 +9,7 @@ import { isOverseas } from "../config/edition.js";
 import {
   getLogoBase64,
   getSetupQrcodeBase64,
+  getOemQrcodeBase64,
   detectPlatformInfo,
   getDefaultWorkspace,
   getPlatformTips,
@@ -26,6 +27,9 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   const defaultWorkspace = getDefaultWorkspace();
   const logoBase64 = getLogoBase64();
   const setupQrcodeBase64 = getSetupQrcodeBase64();
+  // OEM 版专属二维码（购买凭证 + 技术支持）
+  const oemPurchaseQrcodeBase64 = isOverseas ? getOemQrcodeBase64("oem-purchase-qrcode.png") : "";
+  const oemSupportQrcodeBase64 = isOverseas ? getOemQrcodeBase64("oem-support-qrcode.png") : "";
   // 将 token 注入到页面中，供 JavaScript 使用
   // 防止 </script> 注入：将 </ 转义为 <\/ 避免提前关闭 script 标签
   const safeToken = gatewayToken ? JSON.stringify(gatewayToken).replace(/<\//g, "<\\/") : "null";
@@ -35,6 +39,8 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
   const ctx: SetupPageContext = {
     logoBase64,
     setupQrcodeBase64,
+    oemPurchaseQrcodeBase64,
+    oemSupportQrcodeBase64,
     platformInfo,
     defaultWorkspace,
     providers,
@@ -3619,6 +3625,72 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     .wechat-qr-placeholder .material-icons {
       font-size: 2.5em;
       opacity: 0.3;
+    }
+
+    /* OEM 购买凭证二维码弹窗 */
+    .oem-qrcode-modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    .oem-qrcode-modal {
+      background: var(--bg-secondary);
+      border: 2px solid rgba(255, 215, 0, 0.4);
+      border-radius: var(--radius-xl);
+      padding: 32px;
+      max-width: 380px;
+      width: 90%;
+      text-align: center;
+      position: relative;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    }
+    .oem-qrcode-modal-close {
+      position: absolute;
+      top: 12px; right: 16px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.6em;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .oem-qrcode-modal-close:hover {
+      color: var(--text-primary);
+    }
+    .oem-qrcode-modal-title {
+      font-size: 1.2em;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+    }
+    .oem-qrcode-modal-img {
+      width: 240px;
+      height: 240px;
+      object-fit: contain;
+      border-radius: 12px;
+      border: 2px solid rgba(255, 215, 0, 0.3);
+      margin-bottom: 16px;
+    }
+    .oem-qrcode-modal-placeholder {
+      width: 240px;
+      height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      color: var(--text-muted);
+      font-size: 0.9em;
+      border: 2px dashed var(--border-default);
+      border-radius: 12px;
+    }
+    .oem-qrcode-modal-hint {
+      font-size: 0.88em;
+      color: var(--text-secondary);
     }
 
     /* 旧版 qrcode-section 隐藏（已整合到新布局） */

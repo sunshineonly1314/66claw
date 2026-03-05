@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
+import { isOverseas } from "../config/edition.js";
 import type { SupportQrcodeConfig } from "./types.js";
 
 const QRCODE_DIR = "qrcodes";
@@ -60,15 +61,53 @@ function readQrcodeBase64(filename: string): string | null {
 }
 
 /**
+ * OEM 版：从 dist/control-ui/ 或 ui/public/ 读取 OEM 技术支持二维码
+ */
+function readOemSupportQrcode(): string | null {
+  const filename = "oem-support-qrcode.png";
+  const cached = base64Cache.get(filename);
+  if (cached) return cached;
+  try {
+    // 编译后 dist/license/ → ../../dist/control-ui/
+    // Tauri 打包后 dist/license/ → ../../resources/dist/control-ui/
+    // dev 模式 dist/license/ → ../../ui/public/  (不经过编译，直接src下)
+    const candidates = [
+      path.resolve(import.meta.dirname, "../../dist/control-ui", filename),
+      path.resolve(import.meta.dirname, "../../resources/dist/control-ui", filename),
+      path.resolve(import.meta.dirname, "../ui/public", filename),
+    ];
+    for (const filePath of candidates) {
+      if (fs.existsSync(filePath)) {
+        const buf = fs.readFileSync(filePath);
+        const b64 = `data:image/png;base64,${buf.toString("base64")}`;
+        base64Cache.set(filename, b64);
+        return b64;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
  * Chat 页面用 —— 按 keyType 返回对应二维码
  *
- * test/trial → test.jpg
- * standard  → zhengshi.jpg
+ * OEM overseas 版：优先使用 oem-support-qrcode.png
+ * CN 自用版：test/trial → test.jpg, standard → zhengshi.jpg
  */
 export function getSupportQrcode(
   keyType: "test" | "trial" | "standard",
   _deviceId?: string,
 ): SupportQrcodeConfig | null {
+  // OEM 版：优先使用 OEM 技术支持二维码
+  if (isOverseas) {
+    const oemBase64 = readOemSupportQrcode();
+    if (oemBase64) {
+      return { base64: oemBase64, groupName: "技术支持" };
+    }
+    // fallback: OEM 未配置二维码时使用默认图片
+  }
   const entry = QRCODE_MAP[keyType] ?? QRCODE_MAP.test;
   const base64 = readQrcodeBase64(entry.file);
   return base64 ? { base64, groupName: entry.groupName } : null;

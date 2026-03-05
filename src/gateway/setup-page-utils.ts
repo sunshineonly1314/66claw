@@ -66,6 +66,35 @@ export function getSetupQrcodeBase64(): string {
 }
 
 /**
+ * 读取 OEM 二维码图片（购买凭证 / 技术支持）的 base64 数据 URL
+ * 图片放在 oem/ui/ 目录，构建时由 apply-oem-assets.ts 复制到 ui/public/
+ * 运行时从 dist/control-ui/ 或 ui/public/ 读取
+ */
+export function getOemQrcodeBase64(filename: string): string {
+  try {
+    // 打包后: dist/../../dist/control-ui/<filename>
+    // 打包后(tauri): dist/../../resources/dist/control-ui/<filename>
+    // dev 模式: dist/../ui/public/<filename>
+    const candidates = [
+      path.resolve(import.meta.dirname, "../../dist/control-ui", filename),
+      path.resolve(import.meta.dirname, "../../resources/dist/control-ui", filename),
+      path.resolve(import.meta.dirname, "../ui/public", filename),
+    ];
+    for (const filePath of candidates) {
+      if (fs.existsSync(filePath)) {
+        const buf = fs.readFileSync(filePath);
+        const ext = path.extname(filename).toLowerCase();
+        const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+        return `data:${mime};base64,${buf.toString("base64")}`;
+      }
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * 检测当前运行平台和版本
  */
 export function detectPlatformInfo(): PlatformInfo {

@@ -11,6 +11,10 @@ import { isOverseas } from "../config/edition.js";
 export interface SetupPageContext {
   logoBase64: string;
   setupQrcodeBase64: string;
+  /** OEM 版购买凭证二维码 base64（仅 overseas 有值） */
+  oemPurchaseQrcodeBase64: string;
+  /** OEM 版技术支持二维码 base64（仅 overseas 有值） */
+  oemSupportQrcodeBase64: string;
   platformInfo: PlatformInfo;
   defaultWorkspace: string;
   providers: CnProviderConfig[];
@@ -24,7 +28,14 @@ export function renderBodyContent(
   ctx: SetupPageContext,
   getPlatformTips: (info: PlatformInfo) => string,
 ): string {
-  const { logoBase64, setupQrcodeBase64, platformInfo, defaultWorkspace } = ctx;
+  const {
+    logoBase64,
+    setupQrcodeBase64,
+    oemPurchaseQrcodeBase64,
+    oemSupportQrcodeBase64,
+    platformInfo,
+    defaultWorkspace,
+  } = ctx;
   return `
   <!-- 顶部导航栏 -->
   <header class="header">
@@ -1604,17 +1615,13 @@ export function renderBodyContent(
           </div>
         </div>
 
-        <!-- 两栏布局：左侧会员服务 + 右侧微信二维码（OEM overseas 版不显示） -->
-        ${
-          isOverseas
-            ? ""
-            : `
+        <!-- 两栏布局：左侧会员服务 + 右侧技术支持二维码 -->
         <div class="step4-main-grid">
           <!-- 左侧：增值服务卡片 -->
           <div class="premium-service-card">
             <div class="premium-badge">🎁 增值服务</div>
             <div class="premium-content">
-              <div class="premium-title">OpenClawCN 会员服务</div>
+              <div class="premium-title">${isOverseas ? "会员服务" : "OpenClawCN 会员服务"}</div>
               <div class="premium-subtitle">软件免费使用，增值服务助你更高效</div>
               <div class="premium-features">
                 <div class="premium-feature">📚 <strong>中文教程文档</strong> · 从入门到精通</div>
@@ -1624,16 +1631,24 @@ export function renderBodyContent(
               </div>
 
               <!-- 金色购买按钮 -->
-              <a href="https://m.tb.cn/h.i0WWBLA?tk=yOQqUrspXvy" target="_blank" class="premium-buy-btn">
+              ${
+                isOverseas
+                  ? `<button type="button" class="premium-buy-btn" onclick="showPurchaseQrcodeModal()">
+                <span class="material-icons">shopping_cart</span>
+                <span class="premium-buy-text">立即获取服务凭证</span>
+                <span class="premium-buy-arrow">→</span>
+              </button>`
+                  : `<a href="https://m.tb.cn/h.i0WWBLA?tk=yOQqUrspXvy" target="_blank" class="premium-buy-btn">
                 <span class="material-icons">shopping_cart</span>
                 <span class="premium-buy-text">立即获取服务凭证</span>
                 <span class="premium-buy-arrow">→</span>
               </a>
-              <div class="premium-buy-hint">在闲鱼搜索「OpenClawCN」或点击上方按钮</div>
+              <div class="premium-buy-hint">在闲鱼搜索「OpenClawCN」或点击上方按钮</div>`
+              }
             </div>
           </div>
 
-          <!-- 右侧：微信二维码 - 免费技术支持 -->
+          <!-- 右侧：技术支持二维码 -->
           <div class="wechat-support-card" id="wechatSupportCard">
             <div class="wechat-support-header">
               <span class="material-icons">support_agent</span>
@@ -1641,15 +1656,37 @@ export function renderBodyContent(
             </div>
             <div class="wechat-support-body">
               <div class="wechat-qr-wrapper" id="wechatQrcodeImage">
-                ${setupQrcodeBase64 ? `<img src="${setupQrcodeBase64}" alt="微信技术支持群二维码">` : `<div class="qrcode-loading"><span class="status-spinner"></span> 加载中...</div>`}
+                ${
+                  isOverseas
+                    ? oemSupportQrcodeBase64
+                      ? `<img src="${oemSupportQrcodeBase64}" alt="技术支持二维码">`
+                      : `<div class="qrcode-loading">暂未配置</div>`
+                    : setupQrcodeBase64
+                      ? `<img src="${setupQrcodeBase64}" alt="微信技术支持群二维码">`
+                      : `<div class="qrcode-loading"><span class="status-spinner"></span> 加载中...</div>`
+                }
               </div>
               <div class="wechat-support-title">获取免费专属技术支持及咨询</div>
               <div class="wechat-support-group" id="wechatQrcodeGroupName"></div>
-              <div class="wechat-support-hint">微信扫码加入专属技术群</div>
+              <div class="wechat-support-hint">${isOverseas ? "扫码获取技术支持" : "微信扫码加入专属技术群"}</div>
             </div>
           </div>
         </div>
+
+        <!-- OEM 购买凭证二维码弹窗 -->
+        ${
+          isOverseas
+            ? `
+        <div id="purchaseQrcodeModal" class="oem-qrcode-modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+          <div class="oem-qrcode-modal">
+            <button class="oem-qrcode-modal-close" onclick="document.getElementById('purchaseQrcodeModal').style.display='none'">&times;</button>
+            <div class="oem-qrcode-modal-title">扫码获取服务凭证</div>
+            ${oemPurchaseQrcodeBase64 ? `<img src="${oemPurchaseQrcodeBase64}" alt="获取服务凭证二维码" class="oem-qrcode-modal-img">` : `<div class="oem-qrcode-modal-placeholder">暂未配置二维码</div>`}
+            <div class="oem-qrcode-modal-hint">扫描上方二维码获取服务凭证</div>
+          </div>
+        </div>
         `
+            : ""
         }
 
         <!-- 输入凭证 -->
@@ -3326,6 +3363,12 @@ export function renderScriptContent(ctx: SetupPageContext): string {
     }
 
     // ==================== Step 4: 产品激活 ====================
+    // OEM 版：弹出购买凭证二维码弹窗
+    function showPurchaseQrcodeModal() {
+      const modal = document.getElementById('purchaseQrcodeModal');
+      if (modal) modal.style.display = 'flex';
+    }
+
     // 加载微信技术支持二维码（进入 Step 4 时自动触发）
     async function loadSetupQrcode() {
       const imageWrapper = document.getElementById('wechatQrcodeImage');
