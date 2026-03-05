@@ -67,6 +67,17 @@ echo "[2a/6] Building Node.js backend (base tsdown)..."
 (cd "$PROJECT_ROOT" && pnpm build)
 echo "  Base build (tsdown) OK"
 
+# ── Step 2a-oem: OEM assets injection (MUST run BEFORE UI build) ──
+# apply-oem-assets.ts copies oem/ui/* → ui/public/ so Vite bundles them.
+# Must run before Step 2b (pnpm build in ui/) otherwise images won't be in dist.
+if [[ -n "${VITE_EDITION:-}" && "${VITE_EDITION}" == "overseas" ]]; then
+  echo "[2a-oem/6] Applying OEM brand assets (VITE_EDITION=overseas)..."
+  (cd "$PROJECT_ROOT" && node --import tsx scripts/apply-oem-assets.ts)
+  echo "  OEM assets injected into ui/public/"
+else
+  echo "[2a-oem/6] VITE_EDITION != overseas — skipping OEM assets"
+fi
+
 # ── Step 2b: UI build (MUST complete BEFORE CN bytecode compilation) ──
 # UI Vite build imports from extensions/ source .ts/.js files.
 # CN bytecode compilation (compile-bytecode.ts) replaces extension .js files with
@@ -147,7 +158,8 @@ echo "  UI obfuscation OK"
 if [[ -n "${OEM_ID:-}" && "${OEM_ID}" != "default" ]]; then
   echo "[3b/6] Applying OEM brand config: $OEM_ID"
   (cd "$PROJECT_ROOT" && node --import tsx scripts/desktop/apply-oem-config.ts)
-  echo "  OEM brand config applied"
+  echo "  OEM brand config applied (tauri.conf.json: productName/identifier/icon)"
+  echo "  Note: OEM UI assets (oem/ui/*) were already injected at Step 2a-oem before UI build"
 else
   echo "[3b/6] OEM_ID not set — using default brand (ClawdbotCN)"
 fi
