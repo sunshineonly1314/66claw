@@ -51,6 +51,37 @@ if (-not (Get-Command "pnpm" -ErrorAction SilentlyContinue)) {
     exit 1
 }
 Write-Host "  pnpm  : $(pnpm --version)"
+
+# ── Version consistency check ──
+# LESSON LEARNED (v1.6.7): build-info.json showed 1.6.5 because apps/desktop/package.json
+# and tauri.conf.json were not bumped before build. Detect this early to abort.
+$rootVer = ""
+$desktopVer = ""
+$tauriVer = ""
+try {
+    $rootVer    = (Get-Content "$ProjectRoot\package.json"                              -Raw | ConvertFrom-Json).version
+    $desktopVer = (Get-Content "$DesktopDir\package.json"                              -Raw | ConvertFrom-Json).version
+    $tauriConf  =  Get-Content "$TauriDir\tauri.conf.json"                             -Raw | ConvertFrom-Json
+    # tauri.conf.json v2 uses "version" at root; v1 used "package.version" or "productVersion"
+    $tauriVer   = if ($tauriConf.version) { $tauriConf.version } `
+                  elseif ($tauriConf.productVersion) { $tauriConf.productVersion } `
+                  else { $tauriConf.package.version }
+} catch {
+    Write-Host "ERROR: Failed to read version fields: $_" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Version check:"
+Write-Host "    root package.json      : $rootVer"
+Write-Host "    desktop package.json   : $desktopVer"
+Write-Host "    tauri.conf.json        : $tauriVer"
+if ($rootVer -ne $desktopVer -or $rootVer -ne $tauriVer) {
+    Write-Host ""
+    Write-Host "ERROR: Version mismatch detected!" -ForegroundColor Red
+    Write-Host "  All three files must have the same version before building." -ForegroundColor Red
+    Write-Host "  Fix: update apps\desktop\package.json and apps\desktop\src-tauri\tauri.conf.json to $rootVer" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "  OK: all versions consistent ($rootVer)" -ForegroundColor Green
 Write-Host ""
 
 # ── Step 2a: Base build (tsdown) ──
@@ -65,6 +96,26 @@ if ($LASTEXITCODE -ne 0) {
 }
 Pop-Location
 Write-Host "  Base build (tsdown) OK" -ForegroundColor Green
+
+# ── Step 2a-oem: OEM assets injection (MUST run BEFORE UI build) ──
+# apply-oem-assets.ts copies oem/ui/* → ui/public/ so Vite bundles them into dist/control-ui/.
+# This MUST run before Step 2b+3 (UI build) otherwise OEM qrcode images won't be in the package.
+# Same fix as macOS build.sh (commit a8a9b481cf).
+$viteEdForOem = if ($env:VITE_EDITION) { $env:VITE_EDITION } else { "" }
+if ($viteEdForOem -eq "overseas") {
+    Write-Host "[2a-oem/6] Applying OEM brand assets (VITE_EDITION=overseas)..." -ForegroundColor Yellow
+    Push-Location $ProjectRoot
+    node --import tsx scripts/apply-oem-assets.ts
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: apply-oem-assets.ts failed!" -ForegroundColor Red
+        Pop-Location
+        exit 1
+    }
+    Pop-Location
+    Write-Host "  OEM assets injected into ui/public/" -ForegroundColor Green
+} else {
+    Write-Host "[2a-oem/6] VITE_EDITION != overseas - skipping OEM assets"
+}
 
 # ── Step 2b+3: CN encryption chain + UI build (PARALLEL) ──
 # Safe to parallelize because:
@@ -205,16 +256,31 @@ if (-not (Test-Path "$ProjectRoot\dist\build-meta.json")) {
 # Check .jsc bytecode files were generated
 $jscFiles = Get-ChildItem "$ProjectRoot\dist" -Filter "*.jsc" -Recurse -ErrorAction SilentlyContinue
 $jscCount = if ($jscFiles) { $jscFiles.Count } else { 0 }
-if ($jscCount -lt 5) {
-    Write-Host "  ERROR: Only $jscCount .jsc files found (expected >= 5). Bytecode compilation may have failed." -ForegroundColor Red
+if ($jscCount -lt 100) {
+    Write-Host "  ERROR: Only $jscCount .jsc files found (expected >= 100). Bytecode compilation may have failed." -ForegroundColor Red
     $buildOk = $false
 } else {
     Write-Host "  OK: $jscCount .jsc bytecode files" -ForegroundColor Green
 }
 
-# Check control-ui was built
-if (-not (Test-Path "$ProjectRoot\dist\control-ui")) {
-    Write-Host "  WARN: dist\control-ui\ not found. UI build may have failed." -ForegroundColor Yellow
+# Check control-ui/index.html was built (FATAL — missing causes 'asset not found: index.html' at startup)
+# LESSON LEARNED (v1.6.7): partial rebuild that skips prepare-resources.ps1 will leave
+# resources/dist/control-ui/ without index.html, causing Tauri to crash on startup.
+if (-not (Test-Path "$ProjectRoot\dist\control-ui\index.html")) {
+    Write-Host "  ERROR: dist\control-ui\index.html not found!" -ForegroundColor Red
+    Write-Host "  This WILL cause 'asset not found: index.html' crash when the app starts." -ForegroundColor Red
+    Write-Host "  Run: cd ui && pnpm build" -ForegroundColor Yellow
+    $buildOk = $false
+} else {
+    Write-Host "  OK: dist\control-ui\index.html exists" -ForegroundColor Green
+}
+
+# Check entry.js (required by Tauri startup script)
+if (-not (Test-Path "$ProjectRoot\dist\entry.js")) {
+    Write-Host "  ERROR: dist\entry.js not found! Base build may have failed." -ForegroundColor Red
+    $buildOk = $false
+} else {
+    Write-Host "  OK: dist\entry.js exists" -ForegroundColor Green
 }
 
 if (-not $buildOk) {
@@ -289,6 +355,74 @@ if ($oemId -and $oemId -ne "") {
     Write-Host "  OEM config applied OK" -ForegroundColor Green
 }
 
+# ── Step 5.9: Pre-Tauri hardening (process cleanup + Rust cache + Defender) ──
+# LESSON LEARNED (v1.6.7): multiple failures traced to these three root causes.
+Write-Host "[5.9/6] Pre-Tauri hardening..." -ForegroundColor Yellow
+
+# a) Kill old clawdbot-desktop.exe to prevent NSIS 'os error 32' (file locked)
+# LESSON LEARNED: NSIS fails with "os error 32" if the EXE from a previous install is still running.
+$oldProcs = Get-Process -Name "clawdbot-desktop" -ErrorAction SilentlyContinue
+if ($oldProcs) {
+    Write-Host "  Stopping $($oldProcs.Count) running clawdbot-desktop.exe process(es)..." -ForegroundColor Yellow
+    $oldProcs | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 1000
+    Write-Host "  OK: old processes terminated" -ForegroundColor Green
+} else {
+    Write-Host "  OK: no clawdbot-desktop.exe running"
+}
+
+# b) Add Windows Defender exclusion for Rust build directory
+# LESSON LEARNED: AV real-time scan locks .exe files mid-write, causing 'os error 32'.
+Write-Host "  Adding Windows Defender exclusion for Rust target dir..." -ForegroundColor Gray
+Add-MpPreference -ExclusionPath "$DesktopDir\src-tauri\target" -ErrorAction SilentlyContinue
+Add-MpPreference -ExclusionPath "$TauriDir\target" -ErrorAction SilentlyContinue
+Write-Host "  OK: Defender exclusion applied" -ForegroundColor Green
+
+# c) Clean stale Rust build artifacts to avoid '__TAURI_BUNDLE_TYPE variable not found'
+# LESSON LEARNED: When tauri.conf.json changes version, old incremental Rust cache gets
+# confused about bundle type → build fails. Deleting ONLY the tauri-specific artifacts
+# (not the full target/) avoids a full 40-minute recompile while fixing the stale cache.
+$rustReleaseDir = "$DesktopDir\src-tauri\target\release"
+if (Test-Path $rustReleaseDir) {
+    Write-Host "  Cleaning stale Tauri Rust artifacts..." -ForegroundColor Gray
+    # Remove the old EXE (file lock source)
+    Remove-Item "$rustReleaseDir\clawdbot-desktop.exe" -Force -ErrorAction SilentlyContinue
+    # Remove old bundle output (NSIS, DMG, etc.) — forces fresh NSIS generation
+    Remove-Item "$rustReleaseDir\bundle" -Recurse -Force -ErrorAction SilentlyContinue
+    # Remove tauri-specific build cache (contains the __TAURI_BUNDLE_TYPE env variable)
+    Get-ChildItem "$rustReleaseDir\build" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(tauri|clawdbot)' } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    # Remove incremental and deps caches for clawdbot-desktop binary
+    Get-ChildItem "$rustReleaseDir\incremental" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^clawdbot.desktop' } |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem "$rustReleaseDir\deps" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^clawdbot.desktop' } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Host "  OK: stale Tauri artifacts cleaned" -ForegroundColor Green
+} else {
+    Write-Host "  OK: no existing target/release dir (first build)"
+}
+
+# d) Final gate: verify resources/dist/control-ui/index.html before Tauri packages it
+# LESSON LEARNED: prepare-resources.ps1 copies dist/ → resources/dist/. If a partial
+# rebuild skips prepare-resources.ps1, resources/dist/control-ui/ will be empty and
+# Tauri will package an installer that crashes on startup with 'asset not found: index.html'.
+$resourcesControlUi = "$TauriDir\resources\dist\control-ui\index.html"
+if (-not (Test-Path $resourcesControlUi)) {
+    Write-Host ""
+    Write-Host "FATAL: resources/dist/control-ui/index.html is MISSING!" -ForegroundColor Red
+    Write-Host "  The installer would crash on startup with 'asset not found: index.html'." -ForegroundColor Red
+    Write-Host "  This happens when prepare-resources.ps1 was not run (partial rebuild)." -ForegroundColor Red
+    Write-Host "  Fix: re-run prepare-resources.ps1 OR copy dist\control-ui to resources\dist\control-ui" -ForegroundColor Yellow
+    Write-Host "    cp -r dist\control-ui apps\desktop\src-tauri\resources\dist\control-ui" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "  OK: resources/dist/control-ui/index.html confirmed present" -ForegroundColor Green
+Write-Host "  Pre-Tauri hardening complete" -ForegroundColor Green
+Write-Host ""
+
 # ── Step 6: Build Tauri (Rust + bundle) ──
 # NOTE: tauri.conf.json beforeBuildCommand is empty — UI is already built in Step 3
 Write-Host "[6/6] Building Tauri native app..." -ForegroundColor Yellow
@@ -335,10 +469,21 @@ Write-Host " Build Successful!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 
 $nsisExe = Get-ChildItem "$TauriDir\target\release\bundle\nsis\*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($nsisExe) {
-    $fileSize = [math]::Round($nsisExe.Length / 1MB, 2)
-    Write-Host "  Installer : $($nsisExe.FullName)" -ForegroundColor Green
-    Write-Host "  Size      : $fileSize MB" -ForegroundColor Green
-} else {
-    Write-Host "  Check: $TauriDir\target\release\bundle\" -ForegroundColor Yellow
+if (-not $nsisExe) {
+    Write-Host ""
+    Write-Host "FATAL: NSIS installer not found after Tauri build!" -ForegroundColor Red
+    Write-Host "  Expected at: $TauriDir\target\release\bundle\nsis\*.exe" -ForegroundColor Red
+    Write-Host "  Tauri build returned 0 but produced no installer — check build log above." -ForegroundColor Red
+    exit 1
 }
+# Sanity-check installer size: a valid installer should be > 100 MB
+# (a near-empty or truncated NSIS package is < 10 MB and will not install correctly)
+$fileSizeMB = [math]::Round($nsisExe.Length / 1MB, 2)
+if ($nsisExe.Length -lt 100MB) {
+    Write-Host "FATAL: NSIS installer is only $fileSizeMB MB (expected > 100 MB)!" -ForegroundColor Red
+    Write-Host "  File may be truncated or NSIS packaging was incomplete." -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Installer : $($nsisExe.FullName)" -ForegroundColor Green
+Write-Host "  Size      : $fileSizeMB MB" -ForegroundColor Green
+Write-Host "  NSIS installer verified OK" -ForegroundColor Green
