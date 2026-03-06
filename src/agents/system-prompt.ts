@@ -361,6 +361,7 @@ export function buildAgentSystemPrompt(params: {
   }
 
   const hasGateway = availableTools.has("gateway");
+  const isDesktopMode = process.env.OPENCLAWCN_DESKTOP_MODE === "1";
   const readToolName = resolveToolName("read");
   const execToolName = resolveToolName("exec");
   const processToolName = resolveToolName("process");
@@ -499,14 +500,24 @@ export function buildAgentSystemPrompt(params: {
     "CRITICAL: For multi-step GUI operations (e.g., open app → search → play): do NOT just describe your plan and stop. You MUST immediately call the first tool in the same response. After each tool result, call the next tool right away. Continue calling tools step by step until the task is fully completed. Never output a plan without also executing the first step.",
     "",
     ...safetySection,
-    "## OpenClawCN CLI Quick Reference",
-    "OpenClawCN is controlled via subcommands. Do not invent commands.",
-    "To manage the Gateway daemon service (start/stop/restart):",
-    "- openclawcn gateway status",
-    "- openclawcn gateway start",
-    "- openclawcn gateway stop",
-    "- openclawcn gateway restart",
-    "If unsure, ask the user to run `openclawcn help` (or `openclawcn gateway --help`) and paste the output.",
+    ...(isDesktopMode
+      ? [
+          "## OpenClawCN Gateway Management",
+          "You are running inside the OpenClawCN desktop application.",
+          "To restart the gateway or apply config changes, use the gateway tool (config.patch / config.apply).",
+          "If the user needs to restart manually, they can close and reopen the app.",
+          "CLI commands like `openclawcn gateway restart` may not be available in the user's terminal unless they added OpenClawCN to PATH.",
+        ]
+      : [
+          "## OpenClawCN CLI Quick Reference",
+          "OpenClawCN is controlled via subcommands. Do not invent commands.",
+          "To manage the Gateway daemon service (start/stop/restart):",
+          "- openclawcn gateway status",
+          "- openclawcn gateway start",
+          "- openclawcn gateway stop",
+          "- openclawcn gateway restart",
+          "If unsure, ask the user to run `openclawcn help` (or `openclawcn gateway --help`) and paste the output.",
+        ]),
     "",
     ...skillsSection,
     ...memorySection,
@@ -527,7 +538,9 @@ export function buildAgentSystemPrompt(params: {
           "NEVER use config.apply unless the user explicitly says 'replace the entire config'（用户明确说'替换整个配置'才可用）.",
           "config.apply 会用你提供的内容完整替换配置文件，任何你没写的字段都会被删除，极易导致 gateway 挂掉。",
           "NEVER construct a full config JSON from scratch（禁止从零拼 JSON）. NEVER omit fields you don't intend to delete（不想删的字段就不要省略）.",
-          "If config validation fails / 如果配置验证失败：告知用户运行 `openclawcn doctor` 诊断。",
+          isDesktopMode
+            ? "If config validation fails / 如果配置验证失败：告知用户重启桌面应用，或在终端运行 `openclawcn doctor`（需确认 CLI 已在 PATH 中）。"
+            : "If config validation fails / 如果配置验证失败：告知用户运行 `openclawcn doctor` 诊断。",
           "Actions: config.get, config.schema, config.patch (merge partial changes / 增量合并), config.apply (full replace / 全量替换 — only when user explicitly requests), update.run (update deps or git, then restart).",
           "After restart, OpenClawCN pings the last active session automatically / 重启后自动 ping 上一个会话。",
         ].join("\n")

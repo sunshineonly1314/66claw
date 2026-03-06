@@ -93,14 +93,39 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("<final>...</final>");
   });
 
-  it("includes a CLI quick reference section", () => {
-    const prompt = buildAgentSystemPrompt({
-      workspaceDir: "/tmp/openclawcn",
-    });
+  it("includes a CLI quick reference section (non-desktop mode)", () => {
+    const saved = process.env.OPENCLAWCN_DESKTOP_MODE;
+    delete process.env.OPENCLAWCN_DESKTOP_MODE;
+    try {
+      const prompt = buildAgentSystemPrompt({
+        workspaceDir: "/tmp/openclawcn",
+      });
 
-    expect(prompt).toContain("## OpenClawCN CLI Quick Reference");
-    expect(prompt).toContain("openclawcn gateway restart");
-    expect(prompt).toContain("Do not invent commands");
+      expect(prompt).toContain("## OpenClawCN CLI Quick Reference");
+      expect(prompt).toContain("openclawcn gateway restart");
+      expect(prompt).toContain("Do not invent commands");
+    } finally {
+      if (saved !== undefined) process.env.OPENCLAWCN_DESKTOP_MODE = saved;
+    }
+  });
+
+  it("shows gateway management section in desktop mode", () => {
+    const saved = process.env.OPENCLAWCN_DESKTOP_MODE;
+    process.env.OPENCLAWCN_DESKTOP_MODE = "1";
+    try {
+      const prompt = buildAgentSystemPrompt({
+        workspaceDir: "/tmp/openclawcn",
+      });
+
+      expect(prompt).toContain("## OpenClawCN Gateway Management");
+      expect(prompt).not.toContain("## OpenClawCN CLI Quick Reference");
+    } finally {
+      if (saved !== undefined) {
+        process.env.OPENCLAWCN_DESKTOP_MODE = saved;
+      } else {
+        delete process.env.OPENCLAWCN_DESKTOP_MODE;
+      }
+    }
   });
 
   it("lists available tools when provided", () => {

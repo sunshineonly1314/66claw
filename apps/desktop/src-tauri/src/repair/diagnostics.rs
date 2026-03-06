@@ -335,23 +335,36 @@ fn check_auth_profiles(state_dir: &std::path::Path) -> DiagnosticCheck {
 }
 
 fn check_node_binary() -> DiagnosticCheck {
+    // Use sidecar::resolve_app_dir_pub() for correct platform-aware path resolution.
+    // On macOS: Contents/Resources/resources/  On Windows: <exe_dir>/resources/ or <exe_dir>/
+    let app_dir = sidecar::resolve_app_dir_pub().ok();
+
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
 
-    if let Some(dir) = exe_dir {
-        // Check resources/ subfolder first (NSIS layout), then direct (dev layout)
-        let candidates = [
-            dir.join("resources").join("node").join("node.exe"),
-            dir.join("resources").join("node").join("node"),
-            dir.join("node").join("node.exe"),
-            dir.join("node").join("node"),
-        ];
-        for path in &candidates {
-            if path.exists() {
-                return check("node_binary_exists", "Node.js 运行时", CheckStatus::Pass,
-                    &format!("Node.js 存在: {}", path.display()), None);
-            }
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // Primary: use the resolved app dir (matches sidecar launch paths)
+    if let Some(ref dir) = app_dir {
+        candidates.push(dir.join("node").join("bin").join("node"));
+        candidates.push(dir.join("node").join("node.exe"));
+        candidates.push(dir.join("node").join("node"));
+    }
+    // Fallback: exe_dir-relative paths (dev layout, manual deployment)
+    if let Some(ref dir) = exe_dir {
+        candidates.push(dir.join("resources").join("node").join("bin").join("node"));
+        candidates.push(dir.join("resources").join("node").join("node.exe"));
+        candidates.push(dir.join("resources").join("node").join("node"));
+        candidates.push(dir.join("node").join("bin").join("node"));
+        candidates.push(dir.join("node").join("node.exe"));
+        candidates.push(dir.join("node").join("node"));
+    }
+
+    for path in &candidates {
+        if path.exists() {
+            return check("node_binary_exists", "Node.js 运行时", CheckStatus::Pass,
+                &format!("Node.js 存在: {}", path.display()), None);
         }
     }
     // In dev mode this is expected
@@ -364,20 +377,29 @@ fn check_node_binary() -> DiagnosticCheck {
 }
 
 fn check_backend_entry() -> DiagnosticCheck {
+    // Use sidecar::resolve_app_dir_pub() for correct platform-aware path resolution.
+    let app_dir = sidecar::resolve_app_dir_pub().ok();
+
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
 
-    if let Some(dir) = exe_dir {
-        let candidates = [
-            dir.join("resources").join("dist").join("entry.js"),
-            dir.join("dist").join("entry.js"),
-        ];
-        for path in &candidates {
-            if path.exists() {
-                return check("backend_entry_exists", "后端入口", CheckStatus::Pass,
-                    "dist/entry.js 存在", None);
-            }
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // Primary: use the resolved app dir (matches sidecar launch paths)
+    if let Some(ref dir) = app_dir {
+        candidates.push(dir.join("dist").join("entry.js"));
+    }
+    // Fallback: exe_dir-relative paths
+    if let Some(ref dir) = exe_dir {
+        candidates.push(dir.join("resources").join("dist").join("entry.js"));
+        candidates.push(dir.join("dist").join("entry.js"));
+    }
+
+    for path in &candidates {
+        if path.exists() {
+            return check("backend_entry_exists", "后端入口", CheckStatus::Pass,
+                "dist/entry.js 存在", None);
         }
     }
     if std::env::var("TAURI_DEV").is_ok() || cfg!(debug_assertions) {

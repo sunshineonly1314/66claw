@@ -35,6 +35,7 @@ import { localEngineHandlers } from "./server-methods/local-engine.js";
 import { updateExecuteHandlers } from "./server-methods/update-execute.js";
 import { networkingHandlers } from "./server-methods/networking.js";
 import { orchestratorHandlers } from "./server-methods/orchestrator.js";
+import { agentTeamStubHandlers } from "./server-methods/agent-team-stubs.js";
 
 export const cnGatewayHandlers: GatewayRequestHandlers = {
   ...modalityCapabilityHandlers,
@@ -92,4 +93,8 @@ export const cnGatewayHandlers: GatewayRequestHandlers = {
 
   // Orchestrator: templates, community, deploy, plans, agents
   ...orchestratorHandlers,
+
+  // Agent-team: fallback stubs when plugin fails to load (.jsc mismatch etc.)
+  // Overridden by pluginRegistry.gatewayHandlers when plugin loads successfully.
+  ...agentTeamStubHandlers,
 };
