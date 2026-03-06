@@ -43,7 +43,7 @@ export async function loadUsage(
       state.client.request("sessions.usage", {
         startDate,
         endDate,
-        limit: 1000, // Cap at 1000 sessions
+        limit: 200, // [CN-PERF] Reduced from 1000 — large limits cause multi-second loads
         includeContextWeight: true,
       }),
       state.client.request("usage.cost", { startDate, endDate }),

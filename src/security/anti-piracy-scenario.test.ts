@@ -254,9 +254,9 @@ describe("Knife 6: Bytecode Loader — 构建时哈希嵌入验证", () => {
     // Hash should be split into two parts
     expect(content).toContain("hashPart1");
     expect(content).toContain("hashPart2");
-    // Randomized variable names
+    // Deterministic variable names (MD5 of path + hash, delta-friendly)
     expect(content).toContain("rid");
-    expect(content).toContain("randomBytes(3)");
+    expect(content).toContain('createHash("md5")');
     // Still exits on integrity failure
     expect(content).toContain("process.exit(1)");
   });

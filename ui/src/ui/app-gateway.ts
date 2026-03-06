@@ -300,11 +300,15 @@ export function handleGatewayEvent(host: GatewayHost, evt: GatewayEventFrame) {
 }
 
 function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
-  host.eventLogBuffer = [
-    { ts: Date.now(), event: evt.event, payload: evt.payload },
-    ...host.eventLogBuffer,
-  ].slice(0, 250);
+  // [CN-PERF] Only collect event log entries when on the debug tab.
+  // Previously, every WS message (including high-frequency chat deltas)
+  // created a new 250-element array via spread+slice — unnecessary GC
+  // pressure when the user is on chat/config/other tabs.
   if (host.tab === "debug") {
+    host.eventLogBuffer = [
+      { ts: Date.now(), event: evt.event, payload: evt.payload },
+      ...host.eventLogBuffer,
+    ].slice(0, 250);
     host.eventLog = host.eventLogBuffer;
   }
 
