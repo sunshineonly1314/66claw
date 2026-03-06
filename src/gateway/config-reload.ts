@@ -393,12 +393,41 @@ export function startGatewayConfigReloader(opts: {
         // Config writes from setup handlers (configure-provider, configure-workspace,
         // etc.) should never cause a gateway restart — doing so kills the HTTP server,
         // which makes the WebView reload the setup page and resets the wizard to step 1.
+        //
+        // However, channel-level hot-restarts are safe (they don't kill the HTTP
+        // server), so we still apply them even during the setup wizard.  This
+        // ensures that channels configured in the wizard start immediately
+        // without requiring the user to open a new window.
         try {
           clearConfigCache(); // Ensure fresh config read, not stale 200ms cache
           if (shouldShowSetupWizard()) {
-            opts.log.info(
-              `config reload requires gateway restart (${plan.restartReasons.join(", ")}); suppressed during setup wizard`,
-            );
+            // Build a minimal plan that ONLY contains channel restarts,
+            // excluding plugins/cron/browser-control/etc. which could
+            // destabilise the gateway while the setup wizard is running.
+            if (plan.restartChannels.size > 0) {
+              opts.log.info(
+                `config reload requires gateway restart (${plan.restartReasons.join(", ")}); suppressed during setup wizard, but applying channel hot-restart`,
+              );
+              const channelOnlyPlan: GatewayReloadPlan = {
+                changedPaths: plan.changedPaths,
+                restartGateway: false,
+                restartReasons: [],
+                hotReasons: plan.hotReasons,
+                reloadHooks: false,
+                restartGmailWatcher: false,
+                restartBrowserControl: false,
+                restartCron: false,
+                restartHeartbeat: false,
+                reloadPlugins: false,
+                restartChannels: plan.restartChannels,
+                noopPaths: plan.noopPaths,
+              };
+              await opts.onHotReload(channelOnlyPlan, nextConfig);
+            } else {
+              opts.log.info(
+                `config reload requires gateway restart (${plan.restartReasons.join(", ")}); suppressed during setup wizard`,
+              );
+            }
             return;
           }
         } catch {

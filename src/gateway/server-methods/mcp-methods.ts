@@ -384,7 +384,7 @@ async function tryInstallWithMirrorFallback(params: {
   let preflightError = checkCommandAvailability(baseCommand);
 
   // Auto-install uv if missing (CN mirrors, pip → winget → PowerShell/curl)
-  if (preflightError && (baseCommand === "uvx" || baseCommand === "uv")) {
+  if (preflightError && baseCommand === "uvx") {
     console.log(`[mcp] uvx/uv not found, auto-installing for ${serverId}...`);
     const uvResult = await installUvDependency(60_000);
     if (uvResult.ok) {

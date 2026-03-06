@@ -772,7 +772,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       for (const skill of foundSkills) {
         // 安全校验：skill.name 不允许包含路径分隔符或 ..，防止路径遍历
         if (skill.name.includes("/") || skill.name.includes("\\") || skill.name.includes("..")) {
-          log.warn("Skipping skill with unsafe name", { name: skill.name });
+          console.warn("[skills] Skipping skill with unsafe name:", skill.name);
           continue;
         }
         const destDir = path.join(managedDir, skill.name);

@@ -64,6 +64,7 @@ import { startGatewayConfigReloader } from "./config-reload.js";
 import { ExecApprovalManager } from "./exec-approval-manager.js";
 import { NodeRegistry } from "./node-registry.js";
 import { createChannelManager } from "./server-channels.js";
+import { setChannelStartCallback } from "./setup-wizard.js";
 import { createAgentEventHandler } from "./server-chat.js";
 import { createGatewayCloseHandler } from "./server-close.js";
 import { buildGatewayCronService } from "./server-cron.js";
@@ -644,6 +645,11 @@ export async function startGatewayServer(
   });
   const { getRuntimeSnapshot, startChannels, startChannel, stopChannel, markChannelLoggedOut } =
     channelManager;
+
+  // Register the channel start callback so that the setup wizard can start
+  // channels immediately after the user saves channel configuration, without
+  // requiring a gateway restart.
+  setChannelStartCallback(startChannel);
 
   // Desktop mode: skip Bonjour/mDNS discovery (not needed for local-only desktop use)
   const isDesktopModeEarly = process.env.OPENCLAWCN_DESKTOP_MODE === "1";

@@ -290,7 +290,7 @@ export const configHandlers: GatewayRequestHandlers = {
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          result.err,
+          result.err ?? "unknown error",
           "details" in result ? result : undefined,
         ),
       );
@@ -413,7 +413,7 @@ export const configHandlers: GatewayRequestHandlers = {
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          result.err,
+          result.err ?? "unknown error",
           "details" in result ? result : undefined,
         ),
       );
@@ -561,7 +561,7 @@ export const configHandlers: GatewayRequestHandlers = {
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          result.err,
+          result.err ?? "unknown error",
           "details" in result ? result : undefined,
         ),
       );

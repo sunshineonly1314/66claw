@@ -1710,9 +1710,15 @@ export async function handleConfigureChannels(
           await channelStartCallback(channelId as ChannelId);
           startedChannels.push(channelId);
         } catch (err) {
-          log.error(`Failed to start channel ${channelId}:`, { error: err });
+          log.error(
+            `Failed to start channel ${channelId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
+    } else if (configuredChannels.length > 0) {
+      log.warn(
+        `channelStartCallback not registered; channels [${configuredChannels.join(", ")}] saved but not started (will start on next gateway restart)`,
+      );
     }
 
     updateSetupState({

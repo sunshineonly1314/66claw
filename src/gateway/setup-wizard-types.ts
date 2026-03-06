@@ -10,7 +10,7 @@ import type { ChannelId } from "../channels/plugins/types.js";
 // 渠道启动回调类型
 // ============================================================================
 
-export type ChannelStartCallback = (channelId: ChannelId) => Promise<void>;
+export type ChannelStartCallback = (channelId: ChannelId, accountId?: string) => Promise<void>;
 
 // ============================================================================
 // Setup Wizard 状态类型

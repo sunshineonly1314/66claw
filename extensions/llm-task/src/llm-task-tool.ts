@@ -15,8 +15,8 @@ import type { ClawdbotPluginApi } from "../../../src/plugins/types.js";
 type RunEmbeddedPiAgentFn = (params: Record<string, unknown>) => Promise<unknown>;
 
 /** Container for the loader — tests can spy on / replace `loaderHolder.load`. */
-export const loaderHolder = {
-  load: (async () => {}) as () => Promise<RunEmbeddedPiAgentFn>,
+export const loaderHolder: { load: () => Promise<RunEmbeddedPiAgentFn> } = {
+  load: async () => { throw new Error("loaderHolder.load() called before initialization"); },
 };
 loaderHolder.load = async () => {
   // Source tree (tests/dev) — src/ path exists in the working copy
