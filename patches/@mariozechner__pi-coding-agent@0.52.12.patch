@@ -1,0 +1,82 @@
+diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
+index e2a102d55acd9bcb51a44be89d98175f4963ac6a..8b14b00c10f2c50483f009f8a21f59425b84e635 100644
+--- a/dist/core/agent-session.js
++++ b/dist/core/agent-session.js
+@@ -1259,6 +1259,10 @@ export class AgentSession {
+         // Skip if this was an error (non-overflow errors don't have usage data)
+         if (assistantMessage.stopReason === "error")
+             return;
++        // [CN-PATCH] Guard against undefined usage — some providers (e.g. GLM) may
++        // return assistant messages without usage data in edge cases.
++        if (!assistantMessage.usage)
++            return;
+         const contextTokens = calculateContextTokens(assistantMessage.usage);
+         if (shouldCompact(contextTokens, contextWindow, settings)) {
+             await this._runAutoCompaction("threshold", false);
+@@ -2206,11 +2210,14 @@ export class AgentSession {
+             if (message.role === "assistant") {
+                 const assistantMsg = message;
+                 toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
+-                totalInput += assistantMsg.usage.input;
+-                totalOutput += assistantMsg.usage.output;
+-                totalCacheRead += assistantMsg.usage.cacheRead;
+-                totalCacheWrite += assistantMsg.usage.cacheWrite;
+-                totalCost += assistantMsg.usage.cost.total;
++                // [CN-PATCH] Guard against undefined usage
++                if (assistantMsg.usage) {
++                    totalInput += assistantMsg.usage.input || 0;
++                    totalOutput += assistantMsg.usage.output || 0;
++                    totalCacheRead += assistantMsg.usage.cacheRead || 0;
++                    totalCacheWrite += assistantMsg.usage.cacheWrite || 0;
++                    totalCost += (assistantMsg.usage.cost && assistantMsg.usage.cost.total) || 0;
++                }
+             }
+         }
+         return {
+@@ -2252,6 +2259,8 @@ export class AgentSession {
+                 if (entry.type === "message" && entry.message.role === "assistant") {
+                     const assistant = entry.message;
+                     if (assistant.stopReason !== "aborted" && assistant.stopReason !== "error") {
++                        // [CN-PATCH] Guard against undefined usage
++                        if (!assistant.usage) break;
+                         const contextTokens = calculateContextTokens(assistant.usage);
+                         if (contextTokens > 0) {
+                             hasPostCompactionUsage = true;
+diff --git a/dist/core/compaction/compaction.js b/dist/core/compaction/compaction.js
+index 0889a4f3ec1df3c94362851613edcb08850b6658..b7e167b9ad8b2cf8e7f48c1d3b06fd8826d8ea6a 100644
+--- a/dist/core/compaction/compaction.js
++++ b/dist/core/compaction/compaction.js
+@@ -69,7 +69,8 @@ export const DEFAULT_COMPACTION_SETTINGS = {
+  * Uses the native totalTokens field when available, falls back to computing from components.
+  */
+ export function calculateContextTokens(usage) {
+-    return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
++    if (!usage) return 0;
++    return usage.totalTokens || (usage.input || 0) + (usage.output || 0) + (usage.cacheRead || 0) + (usage.cacheWrite || 0);
+ }
+ /**
+  * Get usage from an assistant message if available.
+diff --git a/dist/modes/interactive/components/footer.js b/dist/modes/interactive/components/footer.js
+index 2de7a5ea57ebaaf959fbdd41b6f96416dec14eb9..6b31486d0441d51c9db574696dc975227a5ee7d1 100644
+--- a/dist/modes/interactive/components/footer.js
++++ b/dist/modes/interactive/components/footer.js
+@@ -64,11 +64,14 @@ export class FooterComponent {
+         let totalCost = 0;
+         for (const entry of this.session.sessionManager.getEntries()) {
+             if (entry.type === "message" && entry.message.role === "assistant") {
+-                totalInput += entry.message.usage.input;
+-                totalOutput += entry.message.usage.output;
+-                totalCacheRead += entry.message.usage.cacheRead;
+-                totalCacheWrite += entry.message.usage.cacheWrite;
+-                totalCost += entry.message.usage.cost.total;
++                // [CN-PATCH] Guard against undefined usage
++                if (entry.message.usage) {
++                    totalInput += entry.message.usage.input || 0;
++                    totalOutput += entry.message.usage.output || 0;
++                    totalCacheRead += entry.message.usage.cacheRead || 0;
++                    totalCacheWrite += entry.message.usage.cacheWrite || 0;
++                    totalCost += (entry.message.usage.cost && entry.message.usage.cost.total) || 0;
++                }
+             }
+         }
+         // Calculate context usage from session (handles compaction correctly).
