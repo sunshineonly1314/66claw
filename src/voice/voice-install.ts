@@ -632,6 +632,7 @@ async function downloadStandalonePython(
           try {
             await runCommandWithTimeout([pythonExe, "-m", "ensurepip", "--upgrade"], {
               timeoutMs: 60_000,
+              windowsVerbatimArguments: process.platform === "win32",
             });
           } catch {
             // ensurepip may already be done
@@ -658,7 +659,7 @@ async function downloadStandalonePython(
           try {
             await runCommandWithTimeout(
               [path.join(STANDALONE_PYTHON_DIR, "python.exe"), "-m", "ensurepip", "--upgrade"],
-              { timeoutMs: 60_000 },
+              { timeoutMs: 60_000, windowsVerbatimArguments: process.platform === "win32" },
             );
           } catch {
             /* already bootstrapped */
@@ -763,6 +764,7 @@ async function ensureVenv(
     fs.mkdirSync(path.dirname(VOICE_ENV_DIR), { recursive: true });
     const result = await runCommandWithTimeout([pythonPath, "-m", "venv", VOICE_ENV_DIR], {
       timeoutMs: 60_000,
+      windowsVerbatimArguments: process.platform === "win32",
     });
     if (result.code !== 0) {
       return { ok: false, error: `创建 Python 虚拟环境失败: ${result.stderr}` };
@@ -827,6 +829,7 @@ async function installPythonDeps(
             HF_ENDPOINT: "https://hf-mirror.com",
             HF_HUB_OFFLINE: "1",
           },
+          windowsVerbatimArguments: process.platform === "win32",
         },
       );
       if (torchResult.code === 0) {
@@ -903,6 +906,7 @@ async function installPythonDeps(
             HF_ENDPOINT: "https://hf-mirror.com",
             HF_HUB_OFFLINE: "1",
           },
+          windowsVerbatimArguments: process.platform === "win32",
         },
       );
       if (result.code === 0) {

@@ -503,14 +503,21 @@ if (Test-Path $patchesDir) {
                 Push-Location $pkgDir
                 $gitAvailable = Get-Command git -ErrorAction SilentlyContinue
                 if ($gitAvailable) {
+                    # Temporarily allow stderr from git apply (it writes warnings/errors
+                    # to stderr even on success, which triggers NativeCommandError under
+                    # $ErrorActionPreference = "Stop" and aborts the entire script).
+                    $prevEAP = $ErrorActionPreference
+                    $ErrorActionPreference = "Continue"
                     # Check if already applied (dry-run reverse)
                     git apply --no-index --reverse --check "$($patchFile.FullName)" 2>&1 | Out-Null
                     if ($LASTEXITCODE -eq 0) {
+                        $ErrorActionPreference = $prevEAP
                         Write-Host "    Already applied, skipping: $($patchFile.Name)" -ForegroundColor Green
                         $patchCount++
                     } else {
                         # Actually apply
                         $applyOutput = git apply --no-index --ignore-whitespace "$($patchFile.FullName)" 2>&1
+                        $ErrorActionPreference = $prevEAP
                         if ($LASTEXITCODE -eq 0) {
                             $patchCount++
                         } else {

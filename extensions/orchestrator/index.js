@@ -1,9 +1,9 @@
 "use strict";
-var _ac5414d=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
-var _ac5414p=require(_ac5414d("70617468")).join(__dirname,"./index.jsc");
-var _ac5414h=require(_ac5414d("63727970746f")).createHash("sha256").update(require(_ac5414d("6673")).readFileSync(_ac5414p)).digest("hex");
-if(_ac5414h!==("4489349acdb783ba2cc0e8c1a31a69e8"+"17c9518432cdeff7291e4bceb8586a3a")){console.error("[fatal] integrity check failed");process.exit(1);}
-require(_ac5414d("627974656e6f6465"));
-var _ac5414m=require(_ac5414p);
+var _ed1a2bd=function(h){for(var r="",i=0;i<h.length;i+=2)r+=String.fromCharCode(parseInt(h.substr(i,2),16));return r};
+var _ed1a2bp=require(_ed1a2bd("70617468")).join(__dirname,"./index.jsc");
+var _ed1a2bh=require(_ed1a2bd("63727970746f")).createHash("sha256").update(require(_ed1a2bd("6673")).readFileSync(_ed1a2bp)).digest("hex");
+if(_ed1a2bh!==("f07843385afff7f9752c402d6b58ce4d"+"b828354b03388cfe2dc122d9bb70d96c")){console.error("[fatal] integrity check failed");process.exit(1);}
+require(_ed1a2bd("627974656e6f6465"));
+var _ed1a2bm=require(_ed1a2bp);
 
-exports.default=_ac5414m.default!==void 0?_ac5414m.default:_ac5414m;
+exports.default=_ed1a2bm.default!==void 0?_ed1a2bm.default:_ed1a2bm;
