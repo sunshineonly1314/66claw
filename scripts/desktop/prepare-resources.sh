@@ -166,9 +166,32 @@ if [[ ! -f "$RESOURCES_DIR/node/bin/npm" ]] || [[ ! -f "$RESOURCES_DIR/node/bin/
 fi
 log "  npm/npx bundled OK"
 
+# ── [Fix: CJS package.json isolation for node/bin/] ──────────────────────────
+# The root resources/package.json has "type": "module" (copied from the project).
+# Node.js walks up directory tree to find the nearest package.json to determine
+# module type.  Without a local package.json, node/bin/npx (extensionless JS file)
+# inherits "type": "module" from resources/package.json, causing:
+#   ReferenceError: require is not defined in ES module scope
+# Fix: place a {"type":"commonjs"} package.json in node/ so all files under
+# node/bin/ are treated as CJS regardless of the parent package.json.
+printf '{"type":"commonjs"}\n' > "$RESOURCES_DIR/node/package.json"
+log "  Created node/package.json (type=commonjs) to isolate from resources/ ESM scope"
+
 # Clear quarantine and ad-hoc sign for macOS
 xattr -cr "$RESOURCES_DIR/node/bin/node" 2>/dev/null || true
 codesign --sign - --force "$RESOURCES_DIR/node/bin/node" 2>/dev/null || true
+
+# Verify Node.js version matches pinned version (V8 bytecode is version-specific)
+BUNDLED_NODE_VER=$("$RESOURCES_DIR/node/bin/node" --version 2>/dev/null || echo "unknown")
+if [[ "$BUNDLED_NODE_VER" != "v$NODE_VERSION" ]]; then
+  err "Bundled node version mismatch!"
+  err "  Expected: v$NODE_VERSION"
+  err "  Got     : $BUNDLED_NODE_VER"
+  err "  The .jsc bytecode will crash at runtime due to V8 version mismatch."
+  err "  Also, node/bin/npx may fail with 'require is not defined' if node >= v24."
+  exit 1
+fi
+log "  Verified: node version $BUNDLED_NODE_VER matches pinned v$NODE_VERSION"
 
 NODE_SIZE=$(du -sm "$RESOURCES_DIR/node" | cut -f1)
 log "  OK: node runtime ($NODE_SIZE MB, $ARCH, includes npm/npx) [$(( $(date +%s) - STEP_START ))s]"

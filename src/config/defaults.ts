@@ -11,6 +11,7 @@ import { resolveTalkApiKey } from "./talk.js";
 import { detectChinaRegion, CN_DEFAULT_SECURITY_CONFIG } from "./region-cn.js";
 import type { PerformanceProfile } from "./types.clawdbot.js";
 import type { MCPServerConfig } from "../mcp/types.js";
+import { resolveBundledNodeDir } from "../infra/bundled-node.js";
 
 /**
  * Detect all mounted drive roots on Windows.
@@ -898,12 +899,26 @@ export function applyCnDefaults(cfg: OpenClawCNConfig): OpenClawCNConfig {
     // Resolve npx command: prefer bundled node's npx, fallback to bare "npx".
     // Desktop builds bundle node.exe but may not include npx.cmd — in that case
     // autoStart is set to false so the UI shows "npx not found" instead of crash.
+    //
+    // IMPORTANT: Always prefer bundled node22 to avoid V8 bytecode version mismatch
+    // (.jsc files) and Node v24+ ESM-by-default breaking changes.
     const npxCmd = (() => {
-      // 1. Check npx.cmd next to the bundled node.exe
+      const npxName = process.platform === "win32" ? "npx.cmd" : "npx";
+
+      // 1. Check bundled node dir (resolveBundledNodeDir → e.g. resources/node/)
+      const bundledDir = resolveBundledNodeDir();
+      const bundledNpxDirect = nodePath.join(bundledDir, npxName);
+      if (fs.existsSync(bundledNpxDirect)) return { command: bundledNpxDirect, available: true };
+      // macOS/Linux: npx may be in <bundledDir>/bin/
+      const bundledNpxBin = nodePath.join(bundledDir, "bin", npxName);
+      if (fs.existsSync(bundledNpxBin)) return { command: bundledNpxBin, available: true };
+
+      // 2. Check npx next to the bundled node.exe (process.execPath dir)
       const execDir = nodePath.dirname(process.execPath);
-      const bundledNpx = nodePath.join(execDir, process.platform === "win32" ? "npx.cmd" : "npx");
-      if (fs.existsSync(bundledNpx)) return { command: bundledNpx, available: true };
-      // 2. Check system PATH
+      const execDirNpx = nodePath.join(execDir, npxName);
+      if (fs.existsSync(execDirNpx)) return { command: execDirNpx, available: true };
+
+      // 3. Last resort: system PATH (may resolve to user's node v24 — not ideal)
       try {
         const whichCmd = process.platform === "win32" ? "where" : "which";
         execFileSync(whichCmd, ["npx"], { timeout: 3000, stdio: "pipe" });

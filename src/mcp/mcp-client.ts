@@ -257,12 +257,16 @@ function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string
 /**
  * Rewrite npx/npm commands to use the bundled node binary directly.
  *
- * Problem: npx/npm scripts use `#!/usr/bin/env node` shebang. If the system
+ * Problem 1: npx/npm scripts use `#!/usr/bin/env node` shebang. If the system
  * has Node.js v24+ (which defaults to ESM), the shebang resolves to system
  * node instead of our bundled v22, causing `require() is not defined` crashes.
  *
+ * Problem 2: Even with the correct bundled node, if the parent directory tree
+ * has a package.json with "type": "module" (as in our Tauri resources/ dir),
+ * the extensionless npx/npm scripts are treated as ESM, causing the same crash.
+ *
  * Solution: instead of spawning `npx ...args`, spawn `<bundled-node> <npx-cli.js> ...args`.
- * This bypasses the shebang entirely and ensures the bundled node version runs.
+ * This bypasses both the shebang and the ESM module-type inference entirely.
  */
 function rewriteNodeCommand(command: string, args: string[]): { command: string; args: string[] } {
   // Detect npx/npm — check both bare commands ("npx") and absolute paths
@@ -289,6 +293,33 @@ function rewriteNodeCommand(command: string, args: string[]): { command: string;
     path.join(bundledNodeDir, "node_modules", "npm", "bin", cliScript),
   ];
 
+  // If command is an absolute path (e.g. /path/to/node/bin/npx), also try to
+  // derive the CLI script location from the command path itself. This handles
+  // cases where bundledNodeDir differs from the actual npx install location
+  // (e.g. defaults.ts resolved npx via process.execPath which may differ from
+  // resolveBundledNodeDir() when the gateway entry point is in a different tree).
+  if (path.isAbsolute(command)) {
+    const commandDir = path.dirname(command);
+    // node/bin/npx → node/lib/node_modules/npm/bin/npx-cli.js
+    const fromCommand = path.resolve(
+      commandDir,
+      "..",
+      "lib",
+      "node_modules",
+      "npm",
+      "bin",
+      cliScript,
+    );
+    // Also check Windows-style: node/node_modules/npm/bin/npx-cli.js
+    const fromCommandWin = path.resolve(commandDir, "..", "node_modules", "npm", "bin", cliScript);
+
+    for (const extra of [fromCommand, fromCommandWin]) {
+      if (!candidates.includes(extra)) {
+        candidates.push(extra);
+      }
+    }
+  }
+
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       return { command: bundledNodeExe, args: [candidate, ...args] };
@@ -300,7 +331,8 @@ function rewriteNodeCommand(command: string, args: string[]): { command: string;
   // On production builds this indicates a broken bundled node install (missing npm).
   console.warn(
     `[mcp] Could not find bundled ${basename} CLI script in ${bundledNodeDir}. ` +
-      `Falling back to system ${command} — this may fail if system Node.js is v24+ (ESM-only). ` +
+      `Falling back to system ${command} — this may fail if the parent directory has ` +
+      `"type":"module" in package.json or if system Node.js is v24+ (ESM-only). ` +
       `Candidates tried: ${candidates.join(", ")}`,
   );
   return { command, args };

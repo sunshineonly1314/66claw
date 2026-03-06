@@ -166,7 +166,17 @@ async function resolveWindowsImageName(pid: number): Promise<string | undefined>
 }
 
 async function resolveWindowsCommandLine(pid: number): Promise<string | undefined> {
-  const res = await runCommandSafe([
+  // Run PowerShell (Win11+) and wmic (Win10-) in parallel — use whichever
+  // succeeds first.  This avoids the 1-2s PowerShell cold-start penalty in
+  // serial fallback and prevents wmic "not found" errors from blocking.
+  const psPromise = runCommandSafe([
+    "powershell",
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`,
+  ]);
+  const wmicPromise = runCommandSafe([
     "wmic",
     "process",
     "where",
@@ -175,17 +185,29 @@ async function resolveWindowsCommandLine(pid: number): Promise<string | undefine
     "CommandLine",
     "/value",
   ]);
-  if (res.code !== 0) {
-    return undefined;
-  }
-  for (const rawLine of res.stdout.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line.toLowerCase().startsWith("commandline=")) {
-      continue;
+
+  const [psRes, wmicRes] = await Promise.all([psPromise, wmicPromise]);
+
+  // Prefer PowerShell result (more modern, always available on Win11+)
+  if (psRes.code === 0) {
+    const value = psRes.stdout.trim();
+    if (value) {
+      return value;
     }
-    const value = line.slice("commandline=".length).trim();
-    return value || undefined;
   }
+
+  // Fallback: wmic result
+  if (wmicRes.code === 0) {
+    for (const rawLine of wmicRes.stdout.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line.toLowerCase().startsWith("commandline=")) {
+        continue;
+      }
+      const value = line.slice("commandline=".length).trim();
+      return value || undefined;
+    }
+  }
+
   return undefined;
 }
 

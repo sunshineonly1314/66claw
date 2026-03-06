@@ -304,14 +304,65 @@ async function installCpuTier(
 // ---------------------------------------------------------------------------
 
 /**
+ * Isolated install directory for sherpa-onnx-node.
+ *
+ * We install into a dedicated directory under CONFIG_DIR instead of the
+ * project root so that npm does not attempt to resolve the project's
+ * devDependencies (e.g. oxlint / oxlint-tsgolint peer conflicts).
+ */
+const SHERPA_INSTALL_DIR = path.join(CONFIG_DIR, "sherpa-onnx");
+
+/**
+ * Register the isolated sherpa-onnx node_modules directory in Node's
+ * global module resolution paths.
+ *
+ * This MUST be called early at startup (before any lazy-loader tries
+ * `require("sherpa-onnx-node")`), otherwise modules in kws-engine,
+ * asr-streaming-cpu, tts-kokoro etc. will fail with "Cannot find module".
+ *
+ * Safe to call multiple times — idempotent.
+ */
+let _sherpaPathsRegistered = false;
+export function registerSherpaOnnxResolvePath(): void {
+  if (_sherpaPathsRegistered) return;
+  _sherpaPathsRegistered = true;
+  const isolatedNodeModules = path.join(SHERPA_INSTALL_DIR, "node_modules");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Module = require("module") as typeof import("module");
+  if (!Module.Module.globalPaths.includes(isolatedNodeModules)) {
+    Module.Module.globalPaths.push(isolatedNodeModules);
+  }
+}
+
+// Register immediately on module load so that all lazy-loaders
+// (kws-engine, asr-streaming-cpu, asr-tool, tts-kokoro) can resolve
+// sherpa-onnx-node even if ensureSherpaOnnxNode() hasn't run yet.
+registerSherpaOnnxResolvePath();
+
+/**
  * Check if sherpa-onnx-node is available, install it if not.
  *
- * The native addon is installed via npm into the project's node_modules.
+ * The native addon is installed via npm into an **isolated** directory
+ * (CONFIG_DIR/sherpa-onnx) to avoid peer-dependency conflicts with the
+ * project's devDependencies.  After installation the directory is added
+ * to NODE_PATH so that `require("sherpa-onnx-node")` resolves correctly.
+ *
  * Uses CN npm mirror (npmmirror.com) for faster download in China.
  */
 async function ensureSherpaOnnxNode(
   onProgress: VoiceInstallCallback | undefined,
 ): Promise<{ ok: boolean; error?: string }> {
+  // Ensure the isolated install dir has a minimal package.json so npm
+  // does not walk up to the project root.
+  await fs.promises.mkdir(SHERPA_INSTALL_DIR, { recursive: true });
+  const isolatedPkgJson = path.join(SHERPA_INSTALL_DIR, "package.json");
+  if (!fs.existsSync(isolatedPkgJson)) {
+    await fs.promises.writeFile(isolatedPkgJson, '{"private":true}', "utf-8");
+  }
+
+  // Ensure resolve path is registered (idempotent)
+  registerSherpaOnnxResolvePath();
+
   // Check if already loadable
   try {
     require("sherpa-onnx-node");
@@ -338,6 +389,7 @@ async function ensureSherpaOnnxNode(
       [npmCmd, "install", "sherpa-onnx-node", "--no-save", ...registryArgs, ...proxyArgs],
       {
         timeoutMs: 300_000, // 5 min — binary addon download
+        cwd: SHERPA_INSTALL_DIR, // isolated dir — avoids project peer-dep conflicts
         // Don't spread the full process.env — it triggers env validation on Windows
         // where variables like CommonProgramFiles(x86) may fail security checks.
         // Omitting env inherits process.env; only override NODE_OPTIONS to empty.

@@ -141,6 +141,17 @@ if ($nodeVerOut -notmatch "v$NodeVersion") {
 }
 Write-Host "  Verified: node version $nodeVerOut matches pinned v$NodeVersion" -ForegroundColor Green
 
+# ── [Fix: CJS package.json isolation for node/] ──────────────────────────────
+# The root resources/package.json has "type": "module" (copied from the project).
+# Node.js walks up directory tree to find the nearest package.json to determine
+# module type.  Without a local package.json, extensionless JS files under node/
+# inherit "type": "module" and fail with "require is not defined in ES module scope".
+# Fix: place a {"type":"commonjs"} package.json in node/ to isolate it.
+# Use .NET to write UTF-8 without BOM — PowerShell 5.x -Encoding UTF8 adds BOM
+# which could cause JSON parse errors in older Node.js versions.
+[System.IO.File]::WriteAllText("$nodeDir\package.json", '{"type":"commonjs"}' + "`n")
+Write-Host "  Created node/package.json (type=commonjs) to isolate from resources/ ESM scope" -ForegroundColor Green
+
 # ── 2. Backend dist ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
 Write-Host "[2/9] Copying backend dist/..." -ForegroundColor Green

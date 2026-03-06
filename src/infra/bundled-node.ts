@@ -152,6 +152,21 @@ export function lockdownBundledNodePath(): void {
   // Windows may expose PATH as "Path" depending on the environment
   const pathKey = process.platform === "win32" && process.env.Path !== undefined ? "Path" : "PATH";
   process.env[pathKey] = prependBundledNodeToPath(process.env[pathKey]);
+
+  // Diagnostic: warn if the running node version differs from what we expect.
+  // This catches cases where the bundled node binary was replaced with a
+  // different version (e.g. v24 which has ESM-breaking changes for npm/npx).
+  const bundledDir = resolveBundledNodeDir();
+  const runtimeVersion = process.version; // e.g. "v22.16.0"
+  const majorVer = parseInt(runtimeVersion.replace(/^v/, ""), 10);
+  if (majorVer >= 24) {
+    console.warn(
+      `[bundled-node] WARNING: Running Node.js ${runtimeVersion} (>= v24). ` +
+        `MCP servers using npx/npm may fail with "require is not defined" ` +
+        `due to ESM-by-default behavior. Expected bundled node v22.x. ` +
+        `Resolved bundled dir: ${bundledDir}`,
+    );
+  }
 }
 
 /**

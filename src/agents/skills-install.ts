@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import type { OpenClawCNConfig } from "../config/config.js";
 import { extractArchive as extractArchiveSafe } from "../infra/archive.js";
 import { resolveBrewExecutable } from "../infra/brew.js";
+import { resolveBundledNodeDir } from "../infra/bundled-node.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { scanDirectoryWithSummary } from "../security/skill-scanner.js";
@@ -156,31 +157,56 @@ function hasGoAvailable(): boolean {
 
 /**
  * OpenClawCN: Common Node.js/npm installation paths on Windows
- * 第一优先级：打包自带的 bundled node（和可执行文件同目录）
+ * 第一优先级：打包自带的 bundled node22（V8 bytecode 要求精确版本匹配）
  */
-const WINDOWS_NODE_PATHS = [
-  path.dirname(process.execPath), // bundled node alongside the executable
-  "D:\\Program Files\\node",
-  "C:\\Program Files\\nodejs",
-  "C:\\Program Files\\node",
-  `${process.env.LOCALAPPDATA}\\Programs\\nodejs`,
-  `${process.env.USERPROFILE}\\scoop\\apps\\nodejs\\current`,
-  `${process.env.USERPROFILE}\\scoop\\apps\\nodejs-lts\\current`,
-  `${process.env.NVM_HOME}\\${process.env.NVM_SYMLINK || ""}`,
-  `${process.env.APPDATA}\\nvm\\${process.env.NVM_SYMLINK || ""}`,
-  `${process.env.LOCALAPPDATA}\\fnm_multishells`,
-  `${process.env.APPDATA}\\npm`,
-];
+function getWindowsNodePaths(): string[] {
+  const bundledDir = resolveBundledNodeDir();
+  return [
+    bundledDir, // bundled node22 — top priority for V8 bytecode compatibility
+    path.dirname(process.execPath), // bundled node alongside the executable
+    "D:\\Program Files\\node",
+    "C:\\Program Files\\nodejs",
+    "C:\\Program Files\\node",
+    `${process.env.LOCALAPPDATA}\\Programs\\nodejs`,
+    `${process.env.USERPROFILE}\\scoop\\apps\\nodejs\\current`,
+    `${process.env.USERPROFILE}\\scoop\\apps\\nodejs-lts\\current`,
+    `${process.env.NVM_HOME}\\${process.env.NVM_SYMLINK || ""}`,
+    `${process.env.APPDATA}\\nvm\\${process.env.NVM_SYMLINK || ""}`,
+    `${process.env.LOCALAPPDATA}\\fnm_multishells`,
+    `${process.env.APPDATA}\\npm`,
+  ].filter(Boolean);
+}
 
 /**
- * OpenClawCN: Find Node.js package manager executable on Windows
+ * OpenClawCN: Find Node.js package manager executable.
+ * Always checks the bundled node22 directory first to ensure V8 bytecode
+ * compatibility and avoid Node v24+ ESM-by-default breakage.
  */
 function findNodePackageManager(manager: string): string | undefined {
   const isWindows = process.platform === "win32";
   const extensions = isWindows ? [".cmd", ".exe", ""] : [""];
 
+  // Always check bundled node dir first (cross-platform)
+  const bundledDir = resolveBundledNodeDir();
+  const bundledSearchDirs = [
+    bundledDir,
+    path.join(bundledDir, "bin"), // macOS/Linux layout: node/bin/npm
+  ];
+  for (const dir of bundledSearchDirs) {
+    for (const ext of extensions) {
+      const fullPath = path.join(dir, `${manager}${ext}`);
+      try {
+        if (fs.existsSync(fullPath)) {
+          return fullPath;
+        }
+      } catch {
+        // continue
+      }
+    }
+  }
+
   if (isWindows) {
-    for (const basePath of WINDOWS_NODE_PATHS) {
+    for (const basePath of getWindowsNodePaths()) {
       if (!basePath) continue;
       for (const ext of extensions) {
         const fullPath = path.join(basePath, `${manager}${ext}`);
@@ -2465,7 +2491,15 @@ async function resolveBrewBinDir(timeoutMs: number, brewExe?: string): Promise<s
 }
 
 export async function installSkill(params: SkillInstallRequest): Promise<SkillInstallResult> {
-  // 确保 bundled node 目录在 PATH 中，让 hasBinary("node") 能检测到打包自带的 node
+  // 确保 bundled node22 目录在 PATH 最前面，让所有子进程优先使用打包的 node22
+  // （V8 bytecode .jsc 要求精确版本匹配，且 node v24+ ESM-by-default 会破坏 npx）
+  const bundledDir = resolveBundledNodeDir();
+  const bundledBin = path.join(bundledDir, "bin");
+  // macOS/Linux: node/bin/, Windows: node/
+  if (fs.existsSync(bundledBin)) {
+    prependToProcessPath(bundledBin);
+  }
+  prependToProcessPath(bundledDir);
   prependToProcessPath(path.dirname(process.execPath));
 
   const timeoutMs = Math.min(Math.max(params.timeoutMs ?? 300_000, 1_000), 900_000);
