@@ -7,7 +7,11 @@
 
 import path from "node:path";
 import fs from "node:fs";
-import { prependBundledNodeToPath } from "../infra/bundled-node.js";
+import {
+  prependBundledNodeToPath,
+  resolveBundledNodeDir,
+  resolveBundledNodeExe,
+} from "../infra/bundled-node.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -250,6 +254,58 @@ function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string
   return env;
 }
 
+/**
+ * Rewrite npx/npm commands to use the bundled node binary directly.
+ *
+ * Problem: npx/npm scripts use `#!/usr/bin/env node` shebang. If the system
+ * has Node.js v24+ (which defaults to ESM), the shebang resolves to system
+ * node instead of our bundled v22, causing `require() is not defined` crashes.
+ *
+ * Solution: instead of spawning `npx ...args`, spawn `<bundled-node> <npx-cli.js> ...args`.
+ * This bypasses the shebang entirely and ensures the bundled node version runs.
+ */
+function rewriteNodeCommand(command: string, args: string[]): { command: string; args: string[] } {
+  // Detect npx/npm — check both bare commands ("npx") and absolute paths
+  // ("/path/to/npx", "C:\node\npx.cmd"). Even absolute-path npx has a
+  // #!/usr/bin/env node shebang that resolves to system node v24+.
+  const basename = path
+    .basename(command)
+    .toLowerCase()
+    .replace(/\.cmd$|\.exe$/i, "");
+
+  if (basename !== "npx" && basename !== "npm") {
+    return { command, args };
+  }
+
+  const bundledNodeDir = resolveBundledNodeDir();
+  const bundledNodeExe = resolveBundledNodeExe();
+
+  // Locate the CLI entry-point script for npx/npm within bundled node_modules.
+  const cliScript = basename === "npx" ? "npx-cli.js" : "npm-cli.js";
+  // macOS/Linux layout: node/lib/node_modules/npm/bin/npx-cli.js
+  // Windows node-portable layout: node/node_modules/npm/bin/npx-cli.js
+  const candidates = [
+    path.join(bundledNodeDir, "lib", "node_modules", "npm", "bin", cliScript),
+    path.join(bundledNodeDir, "node_modules", "npm", "bin", cliScript),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return { command: bundledNodeExe, args: [candidate, ...args] };
+    }
+  }
+
+  // Fallback: no CLI script found — return original command (rely on PATH).
+  // This can happen in dev mode where there's no bundled node.
+  // On production builds this indicates a broken bundled node install (missing npm).
+  console.warn(
+    `[mcp] Could not find bundled ${basename} CLI script in ${bundledNodeDir}. ` +
+      `Falling back to system ${command} — this may fail if system Node.js is v24+ (ESM-only). ` +
+      `Candidates tried: ${candidates.join(", ")}`,
+  );
+  return { command, args };
+}
+
 /** Generic transport interface — both StdioClientTransport and SSE transports satisfy this. */
 type AnyTransport = {
   close(): Promise<void>;
@@ -336,9 +392,12 @@ export class MCPClient {
   // ====================================================================
 
   private async connectStdio(timeoutMs: number): Promise<void> {
+    // Rewrite npx/npm to use bundled node directly, bypassing #!/usr/bin/env node
+    // shebang which may resolve to an incompatible system node (e.g. v24 ESM-only).
+    const rewritten = rewriteNodeCommand(this.config.command, this.config.args ?? []);
     const stdioTransport = new StdioClientTransport({
-      command: this.config.command,
-      args: this.config.args,
+      command: rewritten.command,
+      args: rewritten.args,
       env: buildSafeEnv(this.config.env),
       cwd: this.config.cwd,
       stderr: "pipe",

@@ -409,6 +409,45 @@ fi
 
 rm -rf "$TEMP_INSTALL_DIR"
 
+# ── 3b. Apply pnpm patches to production node_modules ──
+# pnpm patchedDependencies only apply during pnpm install, not npm install.
+# We must manually apply patches from the patches/ directory.
+# Patch filename format: @scope__pkg@version.patch → @scope/pkg
+#                         pkg@version.patch       → pkg
+PATCHES_DIR="$PROJECT_ROOT/patches"
+if [[ -d "$PATCHES_DIR" ]]; then
+  PATCH_COUNT=0
+  for patch_file in "$PATCHES_DIR"/*.patch; do
+    [[ -f "$patch_file" ]] || continue
+    # Derive npm package name from pnpm patch filename
+    base="$(basename "$patch_file" .patch)"           # e.g. @mariozechner__pi-coding-agent@0.52.12
+    pkg_with_ver="${base}"
+    # Strip trailing @version (last @ segment)
+    pkg_name="${pkg_with_ver%@*}"                      # e.g. @mariozechner__pi-coding-agent
+    # Convert double-underscore back to slash for scoped packages
+    pkg_name="${pkg_name//__//}"                        # e.g. @mariozechner/pi-coding-agent
+    pkg_dir="$RESOURCES_DIR/node_modules/$pkg_name"
+    if [[ ! -d "$pkg_dir" ]]; then
+      warn "  Patch target not found, skipping: $pkg_name ($(basename "$patch_file"))"
+      continue
+    fi
+    log "  Applying patch to $pkg_name: $(basename "$patch_file")"
+    # Check if patch is already applied (dry-run with --reverse)
+    if (cd "$pkg_dir" && patch -p1 --reverse --dry-run --batch < "$patch_file" >/dev/null 2>&1); then
+      log "    Already applied, skipping: $(basename "$patch_file")"
+      PATCH_COUNT=$((PATCH_COUNT + 1))
+    elif (cd "$pkg_dir" && patch -p1 --forward --batch < "$patch_file"); then
+      PATCH_COUNT=$((PATCH_COUNT + 1))
+    else
+      err "  FAILED to apply patch: $(basename "$patch_file") to $pkg_name"
+      err "  This may cause runtime crashes. Check if package version matches patch."
+    fi
+  done
+  if [[ "$PATCH_COUNT" -gt 0 ]]; then
+    log "  Applied $PATCH_COUNT patch(es) to production node_modules"
+  fi
+fi
+
 # NOTE: Fix A (openclawcn self-ref package) moved to after step 4c (stub injection)
 # to prevent npm install in step 4b from wiping the package.
 
@@ -604,13 +643,20 @@ done
 for stub_pkg in "${STUB_PACKAGES[@]}"; do
   stub_dir="$RESOURCES_DIR/node_modules/$stub_pkg"
   for stub_file in package.json index.js index.mjs; do
-    if [[ ! -f "$stub_dir/$stub_file" ]]; then
-      err "CRITICAL: Stub file missing: $stub_dir/$stub_file"
+    stub_path="$stub_dir/$stub_file"
+    if [[ ! -f "$stub_path" ]]; then
+      err "CRITICAL: Stub file missing: $stub_path"
       err "  Without this stub, ALL plugins will crash at runtime."
       exit 1
     fi
+    stub_size=$(wc -c < "$stub_path" 2>/dev/null | tr -d ' ')
+    if [[ "$stub_size" -lt 50 ]]; then
+      err "CRITICAL: Stub file too small (${stub_size} bytes): $stub_path"
+      err "  File may be empty or truncated. ALL plugins will crash."
+      exit 1
+    fi
   done
-  log "  Verified stub: $stub_pkg (package.json + index.js + index.mjs)"
+  log "  Verified stub: $stub_pkg (package.json + index.js + index.mjs, content OK)"
 done
 
 # ── 4d. Fix A: openclawcn self-referencing package ──

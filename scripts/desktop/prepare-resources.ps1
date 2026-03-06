@@ -457,6 +457,70 @@ try {
 }
 } # end if (-not $skipNpmInstall)
 
+# ── 3b. Apply pnpm patches to production node_modules ──
+# pnpm patchedDependencies only apply during pnpm install, not npm install.
+# We must manually apply patches from the patches/ directory.
+# Patch filename format: @scope__pkg@version.patch → @scope/pkg
+#                         pkg@version.patch       → pkg
+$patchesDir = Join-Path $ProjectRoot "patches"
+if (Test-Path $patchesDir) {
+    $patchFiles = Get-ChildItem $patchesDir -Filter "*.patch" -ErrorAction SilentlyContinue
+    if ($patchFiles.Count -gt 0) {
+        $patchCount = 0
+        foreach ($patchFile in $patchFiles) {
+            # Derive npm package name from pnpm patch filename
+            $base = $patchFile.BaseName                            # e.g. @mariozechner__pi-coding-agent@0.52.12
+            $pkgWithVer = $base
+            # Strip trailing @version (last @ segment)
+            $lastAt = $pkgWithVer.LastIndexOf('@')
+            if ($lastAt -gt 0) {
+                $pkgName = $pkgWithVer.Substring(0, $lastAt)       # e.g. @mariozechner__pi-coding-agent
+            } else {
+                $pkgName = $pkgWithVer
+            }
+            # Convert double-underscore back to slash for scoped packages
+            $pkgName = $pkgName -replace '__', '/'                  # e.g. @mariozechner/pi-coding-agent
+            $pkgDir = Join-Path "$ResourcesDir\node_modules" $pkgName
+
+            if (-not (Test-Path $pkgDir)) {
+                Write-Host "  Patch target not found, skipping: $pkgName ($($patchFile.Name))" -ForegroundColor Yellow
+                continue
+            }
+
+            Write-Host "  Applying patch to ${pkgName}: $($patchFile.Name)" -ForegroundColor Cyan
+            try {
+                Push-Location $pkgDir
+                $gitAvailable = Get-Command git -ErrorAction SilentlyContinue
+                if ($gitAvailable) {
+                    # Check if already applied (dry-run reverse)
+                    git apply --no-index --reverse --check "$($patchFile.FullName)" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "    Already applied, skipping: $($patchFile.Name)" -ForegroundColor Green
+                        $patchCount++
+                    } else {
+                        # Actually apply
+                        $applyOutput = git apply --no-index --ignore-whitespace "$($patchFile.FullName)" 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            $patchCount++
+                        } else {
+                            Write-Host "  FAILED to apply patch: $($patchFile.Name) to $pkgName" -ForegroundColor Red
+                            Write-Host "  $applyOutput" -ForegroundColor Red
+                            Write-Host "  This may cause runtime crashes. Check if package version matches patch." -ForegroundColor Red
+                        }
+                    }
+                } else {
+                    Write-Host "  WARNING: git not available for patch application. Patch skipped: $($patchFile.Name)" -ForegroundColor Yellow
+                }
+            } finally {
+                Pop-Location
+            }
+        }
+        if ($patchCount -gt 0) {
+            Write-Host "  Applied $patchCount patch(es) to production node_modules" -ForegroundColor Green
+        }
+    }
+}
+
 # NOTE: Stub injection for @whiskeysockets/baileys moved to after step 4b
 # (extension dependency install) to prevent npm install from overwriting stubs.
 
@@ -652,8 +716,14 @@ foreach ($stubPkg in $stubPackages) {
             Write-Host "  Without this stub, ALL plugins will crash at runtime." -ForegroundColor Red
             exit 1
         }
+        $stubSize = (Get-Item $stubPath).Length
+        if ($stubSize -lt 50) {
+            Write-Host "  CRITICAL: Stub file too small (${stubSize} bytes): $stubPath" -ForegroundColor Red
+            Write-Host "  File may be empty or truncated. ALL plugins will crash." -ForegroundColor Red
+            exit 1
+        }
     }
-    Write-Host "  Verified stub: $stubPkg (package.json + index.js + index.mjs)" -ForegroundColor Green
+    Write-Host "  Verified stub: $stubPkg (package.json + index.js + index.mjs, content OK)" -ForegroundColor Green
 }
 
 # ── 4d. Create openclawcn self-referencing package in node_modules ──
