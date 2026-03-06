@@ -54,7 +54,6 @@ export function renderLicenseInfoCard(
           ${license.upgradeAvailable ? html`
             <button class="license-info-card__upgrade-btn" @click=${onUpgradeClick}>
               升级到${license.upgradeAvailable.targetTierName}
-              <span class="license-info-card__price">¥${license.upgradeAvailable.upgradePrice}</span>
             </button>
           ` : nothing}
         </div>
