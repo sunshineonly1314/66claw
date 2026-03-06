@@ -473,7 +473,7 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
   },
 
   /**
-   * S5-3: 用户点击"立即重启"时触发，取消 30s 自动重启定时器并立即重启
+   * S5-3: 用户点击"立即重启"时触发，取消 120s 自动重启定时器并立即重启
    */
   "update.restart": async ({ respond }) => {
     if (!pendingUpdateRestart) {

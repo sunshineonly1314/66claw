@@ -252,6 +252,15 @@ export async function runFullTarUpdate(params: {
     if (!checksumsOk) {
       progress?.onError?.("校验失败，正在回滚...");
       await rollback(root, backupDir);
+      // Full 模式替换了 node_modules（FULL_PACKAGE_DIRS 包含 node_modules），
+      // 但 BACKUP_DIRS 不含 node_modules（备份 1GB+ 太慢且 symlink 会丢失），
+      // 回滚后 node_modules 仍是新版本，可能与已恢复的旧版 package.json 不一致。
+      // 强制重新安装依赖使 node_modules 与旧版 package.json 对齐。
+      await reinstallDepsAfterRollback(root, path.join(extractDir, "package.json"));
+      // rollback 完成后立即清理，否则下次启动 recoverFromInterruptedUpdate
+      // 看到残留的 backupDir 会误以为更新被中断而再次回滚。
+      await rmrf(backupDir);
+      await rmrf(tempDir);
       const result: InstallerUpdateResult = {
         status: "error",
         mode: "full",
@@ -276,6 +285,11 @@ export async function runFullTarUpdate(params: {
     if (!depsOk) {
       progress?.onError?.("依赖安装失败，正在回滚...");
       await rollback(root, backupDir);
+      // 同上：回滚后 node_modules 不一致，强制重装
+      await reinstallDepsAfterRollback(root, path.join(extractDir, "package.json"));
+      // rollback 完成后立即清理，防止 recoverFromInterruptedUpdate 误重复回滚
+      await rmrf(backupDir);
+      await rmrf(tempDir);
       const result: InstallerUpdateResult = {
         status: "error",
         mode: "full",
@@ -296,9 +310,11 @@ export async function runFullTarUpdate(params: {
       return result;
     }
 
-    // 10. 清理
-    await rmrf(tempDir);
+    // 10. 清理：先删 backup（标记更新已提交），再删 temp（下载缓存）。
+    // 顺序很重要：若先删 temp 后删 backup 之间被强杀，
+    // 下次启动 recoverFromInterruptedUpdate 会看到 backup 而误回滚成功的更新。
     await rmrf(backupDir);
+    await rmrf(tempDir);
 
     const result: InstallerUpdateResult = {
       status: "ok",
@@ -331,6 +347,9 @@ export async function runFullTarUpdate(params: {
     try {
       if (fsSync.existsSync(backupDir)) {
         await rollback(root, backupDir);
+        // 回滚后 node_modules 可能不一致（BACKUP_DIRS 不含 node_modules），强制重装
+        // catch 块中 extractDir 可能未初始化，直接构造路径（existsSync 会检查）
+        await reinstallDepsAfterRollback(root, path.join(tempDir, "extracted", "package.json"));
         rollbackOk = true;
       }
     } catch (rollbackErr) {
@@ -340,14 +359,16 @@ export async function runFullTarUpdate(params: {
       );
     }
 
-    // 清理临时目录和备份目录（避免留下数百 MB 的下载文件）
+    // 清理：先删 backup（标记更新已终结），再删 temp（下载缓存）。
+    // 顺序很重要：若先删 temp 后删 backup 之间被强杀，
+    // 下次启动 recoverFromInterruptedUpdate 会看到 backup 而误回滚。
     try {
-      await rmrf(tempDir);
+      await rmrf(backupDir);
     } catch {
       /* ignore */
     }
     try {
-      await rmrf(backupDir);
+      await rmrf(tempDir);
     } catch {
       /* ignore */
     }
@@ -368,6 +389,73 @@ export async function runFullTarUpdate(params: {
       reportStatus: rollbackOk ? "error" : "broken",
     });
     return result;
+  }
+}
+
+/**
+ * Full 模式回滚后修复 node_modules。
+ *
+ * BACKUP_DIRS 不含 node_modules（备份 1GB+ 太慢且 pnpm symlink 会丢失），
+ * 所以 rollback() 不会恢复 node_modules。回滚后 node_modules 仍是新版本，
+ * 可能与已恢复的旧版 package.json 不一致。
+ *
+ * 此函数基于已恢复的 package.json 重新安装依赖，使 node_modules 对齐。
+ * 失败不抛异常——回滚本身已经完成，依赖修复是尽力而为。
+ *
+ * @param newPkgPath 新版 package.json 路径（解压目录中），用于判断依赖是否有变化。
+ *                   如果为 null（catch 场景中状态未知），保守地执行重装。
+ */
+async function reinstallDepsAfterRollback(root: string, newPkgPath: string | null): Promise<void> {
+  try {
+    // 快速判断：如果新旧 package.json 的 dependencies 完全一致，
+    // 说明本次更新没有改过依赖，node_modules 天然兼容旧版代码，无需重装。
+    if (newPkgPath && fsSync.existsSync(newPkgPath)) {
+      const oldPkgPath = path.join(root, "package.json");
+      if (fsSync.existsSync(oldPkgPath)) {
+        try {
+          const newPkg = JSON.parse(fsSync.readFileSync(newPkgPath, "utf-8"));
+          const oldPkg = JSON.parse(fsSync.readFileSync(oldPkgPath, "utf-8"));
+          if (
+            JSON.stringify(newPkg.dependencies ?? {}) === JSON.stringify(oldPkg.dependencies ?? {})
+          ) {
+            return;
+          }
+        } catch {
+          // 读取/解析失败，保守地继续重装
+        }
+      }
+    }
+
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+
+    const hasPnpmLock = fsSync.existsSync(path.join(root, "pnpm-lock.yaml"));
+    let cmd = hasPnpmLock ? "pnpm" : "npm";
+
+    // 验证所选包管理器是否可用（installer 部署只有 bundled npm，没有 pnpm）
+    if (cmd === "pnpm") {
+      try {
+        await execFileAsync(cmd, ["--version"], { timeout: 5_000 });
+      } catch {
+        cmd = "npm";
+      }
+    }
+
+    const npmrcExists = fsSync.existsSync(path.join(root, ".npmrc"));
+    const registryArg = npmrcExists ? "" : " --registry=https://registry.npmmirror.com";
+    // 回滚场景下旧版依赖大概率已在本地 npm cache 中，2 分钟足够。
+    // 不用 5 分钟——避免网络不可达时长时间卡 UI。
+    await execFileAsync(cmd, ["install", "--omit=dev", ...registryArg.split(" ").filter(Boolean)], {
+      cwd: root,
+      timeout: 2 * 60_000,
+    });
+  } catch (err) {
+    // 依赖修复失败不阻塞回滚流程——下次启动时 gateway 可能会因 MODULE_NOT_FOUND 崩溃，
+    // 但 Tauri watchdog 会自动重启，用户可通过"一键检修"修复。
+    console.warn(
+      `[installer-updater-full] reinstallDepsAfterRollback failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 

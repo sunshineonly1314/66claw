@@ -654,6 +654,10 @@ export async function runInstallerUpdate(params: {
       // 回滚
       progress?.onError?.("校验失败，正在回滚...");
       await rollback(root, backupDir);
+      // rollback 完成后立即清理，否则下次启动 recoverFromInterruptedUpdate
+      // 看到残留的 backupDir 会误以为更新被中断而再次回滚。
+      await rmrf(backupDir);
+      await rmrf(tempDir);
       const result: InstallerUpdateResult = {
         status: "error",
         mode: "delta",
@@ -681,8 +685,8 @@ export async function runInstallerUpdate(params: {
     if (!depsOk) {
       progress?.onError?.("依赖安装失败，正在回滚...");
       await rollback(root, backupDir);
-      await rmrf(tempDir);
       await rmrf(backupDir);
+      await rmrf(tempDir);
       const result: InstallerUpdateResult = {
         status: "error",
         mode: "delta",
@@ -703,9 +707,11 @@ export async function runInstallerUpdate(params: {
       return result;
     }
 
-    // 9. 清理临时目录和备份目录
-    await rmrf(tempDir);
+    // 9. 清理：先删 backup（标记更新已提交），再删 temp（下载缓存）。
+    // 顺序很重要：若先删 temp 后删 backup 之间被强杀，
+    // 下次启动 recoverFromInterruptedUpdate 会看到 backup 而误回滚成功的更新。
     await rmrf(backupDir);
+    await rmrf(tempDir);
 
     const result: InstallerUpdateResult = {
       status: "ok",
@@ -744,14 +750,14 @@ export async function runInstallerUpdate(params: {
       // rollback failed
     }
 
-    // S2-1: 清理临时目录（避免残留几十MB的 delta.tar.gz）
+    // S2-1: 清理（先 backup 再 temp，避免误回滚）
     try {
-      await rmrf(tempDir);
+      await rmrf(backupDir);
     } catch {
       /* ignore */
     }
     try {
-      await rmrf(backupDir);
+      await rmrf(tempDir);
     } catch {
       /* ignore */
     }
