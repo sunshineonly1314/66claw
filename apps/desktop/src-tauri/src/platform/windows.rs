@@ -79,17 +79,6 @@ pub struct JobObjectHandle {
 // threads — the underlying OS object is reference-counted by the kernel.
 unsafe impl Send for JobObjectHandle {}
 
-impl JobObjectHandle {
-    /// Terminate all processes in the job with exit code 1.
-    pub fn terminate(&self) {
-        if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
-            unsafe {
-                TerminateJobObject(self.handle, 1);
-            }
-        }
-    }
-}
-
 impl Drop for JobObjectHandle {
     fn drop(&mut self) {
         if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
