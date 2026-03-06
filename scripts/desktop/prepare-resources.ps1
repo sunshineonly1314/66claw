@@ -17,9 +17,21 @@ Write-Host "Time          : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host ""
 
 # Clean previous resources
+# LESSON LEARNED (v1.6.7): Remove-Item can fail silently when files are locked
+# by running Node processes (e.g. @opentelemetry), causing stale data to remain.
+# We must kill Node processes first and retry if the directory still exists.
 if (Test-Path $ResourcesDir) {
     Write-Host "[Clean] Removing old resources..." -ForegroundColor Yellow
-    Remove-Item $ResourcesDir -Recurse -Force
+    # Kill any Node processes that may lock files in resources/
+    Stop-Process -Name "node" -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+    Remove-Item $ResourcesDir -Recurse -Force -ErrorAction SilentlyContinue
+    # Retry once if directory still exists (file locks may take a moment to release)
+    if (Test-Path $ResourcesDir) {
+        Write-Host "  Retrying cleanup (files may have been locked)..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 2
+        Remove-Item $ResourcesDir -Recurse -Force -ErrorAction Stop
+    }
     Write-Host "  Done."
 }
 New-Item -ItemType Directory -Force -Path $ResourcesDir | Out-Null
@@ -115,6 +127,20 @@ if (-not (Test-Path "$nodeDir\npm.cmd")) {
 }
 Write-Host "  Verified: node.exe + npx.cmd + npm.cmd present" -ForegroundColor Green
 
+# Verify Node.js version matches pinned version (V8 bytecode is version-specific)
+# LESSON LEARNED: .jsc bytecode compiled with Node 22.16.0 is V8-version-locked.
+# If a different Node version is bundled, the app crashes on startup with V8 errors.
+$nodeVerOut = & "$nodeDir\node.exe" --version 2>$null
+if ($nodeVerOut -notmatch "v$NodeVersion") {
+    Write-Host "  ERROR: Bundled node version mismatch!" -ForegroundColor Red
+    Write-Host "    Expected: v$NodeVersion" -ForegroundColor Red
+    Write-Host "    Got     : $nodeVerOut" -ForegroundColor Red
+    Write-Host "  The .jsc bytecode will crash at runtime due to V8 version mismatch." -ForegroundColor Red
+    Write-Host "  Update $($nodePortableDirs[0]) to Node.js v$NodeVersion." -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "  Verified: node version $nodeVerOut matches pinned v$NodeVersion" -ForegroundColor Green
+
 # ── 2. Backend dist ──
 $stepTimer = [Diagnostics.Stopwatch]::StartNew()
 Write-Host "[2/9] Copying backend dist/..." -ForegroundColor Green
@@ -195,6 +221,58 @@ if (Test-Path $distSource) {
             Write-Host "  Fixed plugin-sdk chunk circular dependency (inlined __exportAll)"
         }
     }
+    # ── 2c. Post-copy mandatory validations ──
+    # LESSON LEARNED (v1.6.7): These checks catch issues that would cause silent failures:
+    # 1) 'asset not found: index.html' crash on startup
+    # 2) V8 bytecode missing (runtime module-not-found errors)
+    # 3) Integrity check failures at startup (hash mismatch)
+    $distValidationOk = $true
+
+    # Check 1: control-ui/index.html (most critical — its absence causes startup crash)
+    if (-not (Test-Path "$ResourcesDir\dist\control-ui\index.html")) {
+        Write-Host "  FATAL: resources/dist/control-ui/index.html is MISSING!" -ForegroundColor Red
+        Write-Host "    The installer will crash on startup with 'asset not found: index.html'." -ForegroundColor Red
+        Write-Host "    Run: cd ui && pnpm build   (then re-run prepare-resources)" -ForegroundColor Yellow
+        $distValidationOk = $false
+    } else {
+        Write-Host "  OK: control-ui/index.html present" -ForegroundColor Green
+    }
+
+    # Check 2: dist/entry.js (Tauri startup script, written by tsdown base build)
+    if (-not (Test-Path "$ResourcesDir\dist\entry.js")) {
+        Write-Host "  FATAL: resources/dist/entry.js is MISSING!" -ForegroundColor Red
+        Write-Host "    Run: pnpm build   (tsdown base build)" -ForegroundColor Yellow
+        $distValidationOk = $false
+    } else {
+        Write-Host "  OK: entry.js present" -ForegroundColor Green
+    }
+
+    # Check 3: .jsc bytecode files (compiled by compile-bytecode.ts with Node 22.16.0)
+    $resourceJscCount = (Get-ChildItem "$ResourcesDir\dist" -Recurse -Filter "*.jsc" -ErrorAction SilentlyContinue).Count
+    if ($resourceJscCount -lt 100) {
+        Write-Host "  FATAL: Only $resourceJscCount .jsc bytecode files in resources/dist (expected >= 100)!" -ForegroundColor Red
+        Write-Host "    Run: pnpm build:cn-compile && pnpm build:cn-extensions && node --import tsx cn/scripts/build/compile-bytecode.ts" -ForegroundColor Yellow
+        $distValidationOk = $false
+    } else {
+        Write-Host "  OK: $resourceJscCount .jsc bytecode files present" -ForegroundColor Green
+    }
+
+    # Check 4: integrity-hashes.json (startup integrity check reads this file)
+    if (-not (Test-Path "$ResourcesDir\dist\security\integrity-hashes.json")) {
+        Write-Host "  FATAL: resources/dist/security/integrity-hashes.json is MISSING!" -ForegroundColor Red
+        Write-Host "    Run: pnpm integrity:gen" -ForegroundColor Yellow
+        $distValidationOk = $false
+    } else {
+        Write-Host "  OK: integrity-hashes.json present" -ForegroundColor Green
+    }
+
+    if (-not $distValidationOk) {
+        Write-Host ""
+        Write-Host "FATAL: dist/ validation failed. Aborting resource preparation." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  All dist/ validations passed" -ForegroundColor Green
+
 } else {
     Write-Host "  ERROR: dist/ not found. Run 'pnpm build' first." -ForegroundColor Red
     exit 1
@@ -564,6 +642,20 @@ export default {};
     Write-Host "  Injected stub module: $stubPkg (CJS+ESM, with named exports)"
 }
 
+# Verify all stub packages were actually written (prevents silent failure)
+foreach ($stubPkg in $stubPackages) {
+    $stubDir = Join-Path $ResourcesDir "node_modules\$stubPkg"
+    foreach ($stubFile in @("package.json", "index.js", "index.mjs")) {
+        $stubPath = Join-Path $stubDir $stubFile
+        if (-not (Test-Path $stubPath)) {
+            Write-Host "  CRITICAL: Stub file missing: $stubPath" -ForegroundColor Red
+            Write-Host "  Without this stub, ALL plugins will crash at runtime." -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host "  Verified stub: $stubPkg (package.json + index.js + index.mjs)" -ForegroundColor Green
+}
+
 # ── 4d. Create openclawcn self-referencing package in node_modules ──
 # Extensions import "openclawcn/plugin-sdk" which resolves via the workspace
 # package in development. In the packaged app, we must create a real package
@@ -739,23 +831,30 @@ if (Test-Path "$ProjectRoot\data") {
             if ($f -match '\.db$|\.sqlite$') {
                 # SQLite: use VACUUM INTO to merge WAL and produce a clean single-file copy
                 # This prevents "database disk image is malformed" in the packaged app
+                # NOTE: Uses node:sqlite (built-in), NOT better-sqlite3 (removed from project)
                 $dst = "$dataResDir\$f"
                 $srcFwd = $src -replace '\\','/'
                 $dstFwd = $dst -replace '\\','/'
-                $vacuumResult = & node -e "
-const Database = require('better-sqlite3');
+                # Temporarily allow non-terminating errors: Node.js prints
+                # "(node:PID) ExperimentalWarning: SQLite is an experimental feature"
+                # to stderr, which PowerShell treats as NativeCommandError under $ErrorActionPreference=Stop.
+                $prevEAP = $ErrorActionPreference
+                $ErrorActionPreference = "Continue"
+                $vacuumResult = & node --input-type=module -e "
+import { DatabaseSync } from 'node:sqlite';
 try {
-  const db = new Database('$srcFwd', {readonly:true, fileMustExist:true});
-  db.exec(""VACUUM INTO '$dstFwd'"");
+  const db = new DatabaseSync('$srcFwd', { readOnly: true });
+  db.exec(``VACUUM INTO '$dstFwd'``);
   db.close();
   process.stdout.write('OK');
 } catch(e) {
   process.stdout.write('FAIL:' + e.message);
 }" 2>$null
+                $ErrorActionPreference = $prevEAP
                 if ($vacuumResult -match '^OK') {
                     Write-Host "  Checkpointed $f (VACUUM INTO clean copy)"
                 } else {
-                    # Fallback: plain copy
+                    # Fallback: plain copy (still works, just may include WAL data)
                     Copy-Item $src $dst -Force
                     Write-Host "  Copied $f (VACUUM failed: $vacuumResult)"
                 }

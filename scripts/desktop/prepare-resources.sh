@@ -600,6 +600,19 @@ STUBMJS
   log "  Injected stub module: $stub_pkg (CJS+ESM, force-overwrite)"
 done
 
+# Verify all stub packages were actually written (prevents silent failure)
+for stub_pkg in "${STUB_PACKAGES[@]}"; do
+  stub_dir="$RESOURCES_DIR/node_modules/$stub_pkg"
+  for stub_file in package.json index.js index.mjs; do
+    if [[ ! -f "$stub_dir/$stub_file" ]]; then
+      err "CRITICAL: Stub file missing: $stub_dir/$stub_file"
+      err "  Without this stub, ALL plugins will crash at runtime."
+      exit 1
+    fi
+  done
+  log "  Verified stub: $stub_pkg (package.json + index.js + index.mjs)"
+done
+
 # ── 4d. Fix A: openclawcn self-referencing package ──
 # MUST run AFTER step 4b (npm install) — otherwise npm install wipes this package.
 # Extensions compiled as .jsc call require('openclawcn/plugin-sdk').

@@ -643,6 +643,23 @@ if [[ -n "${DMG_FILE:-}" && -f "$DMG_FILE" ]]; then
       DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  mcp-index.json missing"
     fi
 
+    # [Fix-3g] @whiskeysockets/baileys stub 存在性校验
+    # Without this stub, ALL plugins crash with "Cannot find module '@whiskeysockets/baileys'"
+    STUB_BASE="$DMG_RES/node_modules/@whiskeysockets/baileys"
+    STUB_ALL_OK=true
+    for stub_file in package.json index.js index.mjs; do
+      if [[ ! -f "$STUB_BASE/$stub_file" ]]; then
+        echo "  [FAIL] baileys stub missing: $stub_file"
+        STUB_ALL_OK=false
+        DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  baileys stub missing: $stub_file"
+      fi
+    done
+    if [[ "$STUB_ALL_OK" == "true" ]]; then
+      echo "  [PASS] @whiskeysockets/baileys stub: package.json + index.js + index.mjs"
+    else
+      DMG_VERIFY_OK=false
+    fi
+
     # [Fix-3d] integrity-hashes 条目数校验
     DMG_HASH_FILE="$DMG_RES/dist/security/integrity-hashes.json"
     if [[ -f "$DMG_HASH_FILE" ]]; then

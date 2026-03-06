@@ -422,6 +422,25 @@ if (-not (Test-Path $resourcesControlUi)) {
     exit 1
 }
 Write-Host "  OK: resources/dist/control-ui/index.html confirmed present" -ForegroundColor Green
+
+# e) Verify @whiskeysockets/baileys stub exists in resources
+# Without this stub, ALL plugins crash with "Cannot find module '@whiskeysockets/baileys'"
+$stubBase = "$TauriDir\resources\node_modules\@whiskeysockets\baileys"
+$stubOk = $true
+foreach ($stubFile in @("package.json", "index.js", "index.mjs")) {
+    if (-not (Test-Path "$stubBase\$stubFile")) {
+        Write-Host "  FATAL: baileys stub missing: $stubFile" -ForegroundColor Red
+        $stubOk = $false
+    }
+}
+if ($stubOk) {
+    Write-Host "  OK: @whiskeysockets/baileys stub verified (package.json + index.js + index.mjs)" -ForegroundColor Green
+} else {
+    Write-Host "  Without this stub, ALL plugins will crash at runtime." -ForegroundColor Red
+    Write-Host "  Fix: re-run prepare-resources.ps1" -ForegroundColor Yellow
+    exit 1
+}
+
 Write-Host "  Pre-Tauri hardening complete" -ForegroundColor Green
 Write-Host ""
 
