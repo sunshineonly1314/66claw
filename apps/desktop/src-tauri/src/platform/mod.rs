@@ -4,6 +4,18 @@ mod windows;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// Re-export Windows Job Object handle type for use in sidecar.rs.
+#[cfg(target_os = "windows")]
+pub use windows::JobObjectHandle;
+
+/// Create a Job Object for the child process and assign it.
+/// When the returned handle is dropped, all processes in the job are killed.
+/// Returns None on non-Windows or if creation fails (non-fatal).
+#[cfg(target_os = "windows")]
+pub fn create_job_for_child(child: &std::process::Child) -> Option<JobObjectHandle> {
+    windows::create_job_for_child(child)
+}
+
 /// Returns the path to the bundled Node.js binary.
 pub fn resolve_node_path(app_dir: &Path) -> PathBuf {
     #[cfg(target_os = "windows")]

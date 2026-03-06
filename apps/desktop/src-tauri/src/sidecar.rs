@@ -17,6 +17,13 @@ static SIDECAR_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 /// orphaned child processes (MCP servers, workers) that outlive the parent.
 static LAST_SIDECAR_PID: Mutex<Option<u32>> = Mutex::new(None);
 
+/// Windows Job Object handle. When dropped, the OS kernel kills ALL processes
+/// in the job (sidecar + all descendants), regardless of intermediate process exits.
+/// This solves the problem where `taskkill /T` cannot reach grandchild processes
+/// whose parent (e.g. cmd.exe from cross-spawn) has already exited.
+#[cfg(target_os = "windows")]
+static SIDECAR_JOB: Mutex<Option<platform::JobObjectHandle>> = Mutex::new(None);
+
 /// Runtime-generated token for Tauri <-> Gateway auth.
 /// Generated once per app launch; passed to both sidecar and WebView.
 static GATEWAY_TOKEN: Mutex<Option<String>> = Mutex::new(None);
@@ -522,6 +529,22 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
         .into()
     })?;
 
+    // Assign the child process to a Windows Job Object so that ALL descendant
+    // processes (MCP servers, workers spawned via cross-spawn/cmd.exe, etc.)
+    // are automatically killed when the job handle is closed on app exit.
+    #[cfg(target_os = "windows")]
+    {
+        match platform::create_job_for_child(&child) {
+            Some(job) => {
+                *SIDECAR_JOB.lock().unwrap() = Some(job);
+            }
+            None => {
+                // Non-fatal: falls back to taskkill /T for cleanup.
+                eprintln!("[Sidecar] WARNING: Job Object not created, falling back to taskkill for cleanup");
+            }
+        }
+    }
+
     let pid = child.id();
     {
         let mut last_pid = LAST_SIDECAR_PID.lock().unwrap();
@@ -535,11 +558,23 @@ pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> 
 }
 
 pub fn stop_sidecar() -> Result<(), Box<dyn std::error::Error>> {
+    // On Windows, terminate the Job Object first. This kills ALL processes in
+    // the job atomically via the OS kernel — including orphaned grandchildren
+    // that `taskkill /T` cannot reach through broken ParentProcessId chains.
+    #[cfg(target_os = "windows")]
+    {
+        // take() removes the handle from the static; drop triggers
+        // TerminateJobObject + CloseHandle via the RAII Drop impl.
+        if SIDECAR_JOB.lock().unwrap().take().is_some() {
+            println!("[Sidecar] Job object terminated");
+        }
+    }
+
     let mut process = SIDECAR_PROCESS.lock().unwrap();
     if let Some(mut child) = process.take() {
         let pid = child.id();
-        // On Windows, kill the entire process tree (node.exe spawns workers).
-        // child.kill() only kills the parent, leaving orphaned children.
+        // Fallback: taskkill in case the Job Object wasn't created or some
+        // processes escaped the job (e.g. JOB_OBJECT_LIMIT_BREAKAWAY_OK).
         #[cfg(target_os = "windows")]
         {
             let _ = Command::new("taskkill")
@@ -569,30 +604,48 @@ pub fn cleanup_on_exit() {
 /// Returns true if the sidecar is currently running.
 /// Uses `try_wait()` to detect crashed/exited processes and clean up the handle.
 pub fn is_sidecar_running() -> bool {
-    let mut process = SIDECAR_PROCESS.lock().unwrap();
-    if let Some(ref mut child) = *process {
-        match child.try_wait() {
-            Ok(Some(_status)) => {
-                // Process has exited — clean up the stale handle
-                println!("[Sidecar] Process exited (detected via try_wait), cleaning up handle");
-                *process = None;
-                false
+    // Structured to avoid holding SIDECAR_PROCESS and SIDECAR_JOB locks
+    // simultaneously, preventing potential deadlocks with stop_sidecar().
+    let (running, needs_job_cleanup) = {
+        let mut process = SIDECAR_PROCESS.lock().unwrap();
+        if let Some(ref mut child) = *process {
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    // Process has exited — clean up the stale handle
+                    println!("[Sidecar] Process exited (detected via try_wait), cleaning up handle");
+                    *process = None;
+                    (false, true)
+                }
+                Ok(None) => {
+                    // Still running
+                    (true, false)
+                }
+                Err(e) => {
+                    // Error checking status — assume dead
+                    eprintln!("[Sidecar] Error checking process status: {}, assuming dead", e);
+                    *process = None;
+                    (false, true)
+                }
             }
-            Ok(None) => {
-                // Still running
-                true
-            }
-            Err(e) => {
-                // Error checking status — assume dead
-                eprintln!("[Sidecar] Error checking process status: {}, assuming dead", e);
-                *process = None;
-                false
-            }
+        } else {
+            // In dev mode, external gateway may be running without a sidecar process
+            (*EXTERNAL_GATEWAY.lock().unwrap(), false)
         }
-    } else {
-        // In dev mode, external gateway may be running without a sidecar process
-        *EXTERNAL_GATEWAY.lock().unwrap()
+    }; // SIDECAR_PROCESS lock released here
+
+    // Clean up the Job Object after releasing the process lock to avoid deadlock.
+    #[cfg(target_os = "windows")]
+    if needs_job_cleanup {
+        let mut job_guard = SIDECAR_JOB.lock().unwrap();
+        if job_guard.is_some() {
+            // Drop triggers TerminateJobObject + CloseHandle, cleaning up
+            // any lingering child processes from the dead sidecar.
+            *job_guard = None;
+            println!("[Sidecar] Job object cleaned up after process exit");
+        }
     }
+
+    running
 }
 
 /// Returns the gateway token only if the sidecar is currently running.
