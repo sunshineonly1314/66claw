@@ -325,7 +325,9 @@ if ($prepProc) {
     }
     Write-Host "  Resource preparation OK" -ForegroundColor Green
 } else {
-    Write-Host "  WARNING: prepare-resources.ps1 not found, skipping." -ForegroundColor Yellow
+    Write-Host "ERROR: prepare-resources.ps1 not found at $prepareScript!" -ForegroundColor Red
+    Write-Host "  Without resources, Tauri build will produce a broken installer." -ForegroundColor Red
+    exit 1
 }
 
 if ($tauriProc) {

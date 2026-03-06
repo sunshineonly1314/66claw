@@ -78,32 +78,24 @@ else
   echo "[2a-oem/6] VITE_EDITION != overseas — skipping OEM assets"
 fi
 
-# ── Step 2b: UI build (MUST complete BEFORE CN bytecode compilation) ──
-# UI Vite build imports from extensions/ source .ts/.js files.
-# CN bytecode compilation (compile-bytecode.ts) replaces extension .js files with
-# CJS bytecode loader stubs that Rollup/Vite cannot parse as ESM.
-# Therefore UI build MUST finish before compile-bytecode.ts runs.
-echo "[2b/6] Building UI..."
-if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
-  (cd "$PROJECT_ROOT/ui" && pnpm build)
-  echo "  UI build OK"
-else
-  echo "  WARN: ui/package.json not found, skipping"
-fi
+# ── Step 2b+2c: UI build + CN encryption chain (PARALLEL) ──
+# Safe to parallelize because:
+#   - UI Vite build imports .ts source files from extensions/, NOT .js
+#     (vite.config.ts: "imported directly as .ts source, bypassing bytenode .js loaders")
+#   - CN encryption writes to dist/ (cn-protected-files.json listed files only)
+#   - UI build writes to dist/control-ui/ (separate subdir, not touched by CN chain)
+#   - obfuscate-dist.ts only processes CN-listed files, NOT dist/control-ui/
+#   - obfuscate-ui.ts only processes dist/control-ui/ JS files
+#   - Windows build.ps1 has used this parallel pattern since v1.6.6 with zero issues
+echo "[2b+2c/6] CN encryption + UI build (parallel)..."
 
-# ── Step 2c: CN encryption chain (after UI build completes) ──
-echo "[2c/6] CN encryption chain..."
-
+# ── Prepare bytecode Node BEFORE launching parallel tasks ──
 # CRITICAL: .jsc bytecode is V8-version-specific. We MUST use the same Node version
 # that will ship in the installer. Download the pinned Node now (before compile-bytecode)
 # so we can use it for bytecode compilation.
 BYTECODE_NODE=""
 BYTECODE_NODE_VERSION="22.16.0"
-BYTECODE_NODE_CANDIDATES=(
-  "$PROJECT_ROOT/build/download-output/node/node-$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')/bin/node"
-)
 
-# Try to download the pinned Node if not already cached
 BYTECODE_ARCH="$(uname -m)"
 case "$BYTECODE_ARCH" in
   x86_64) BYTECODE_ARCH="x64" ;;
@@ -134,9 +126,9 @@ if [[ ! -f "$BYTECODE_NODE_DIR/bin/node" ]]; then
   fi
 fi
 BYTECODE_NODE="$BYTECODE_NODE_DIR/bin/node"
-
 echo "  Bytecode compile using: $BYTECODE_NODE ($($BYTECODE_NODE -v))"
 
+# ── Launch CN chain in background ──
 (cd "$PROJECT_ROOT" && \
   pnpm build:cn-compile && \
   pnpm build:cn-extensions && \
@@ -144,13 +136,40 @@ echo "  Bytecode compile using: $BYTECODE_NODE ($($BYTECODE_NODE -v))"
   node --import tsx scripts/obfuscate-dist.ts && \
   "$BYTECODE_NODE" --import tsx cn/scripts/build/compile-bytecode.ts && \
   pnpm integrity:gen && \
-  pnpm release:changelog)
+  pnpm release:changelog) &
+CN_PID=$!
+
+# ── Launch UI build + obfuscation in background ──
+(
+  if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
+    cd "$PROJECT_ROOT/ui" && pnpm build
+  fi
+  cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts
+) &
+UI_PID=$!
+
+# ── Wait for both and check exit codes ──
+# NOTE: must use set +e, otherwise set -e causes wait to terminate the script on non-zero
+set +e
+wait $CN_PID
+CN_EXIT=$?
+wait $UI_PID
+UI_EXIT=$?
+set -e
+
+echo "  CN chain exit: $CN_EXIT, UI build exit: $UI_EXIT"
+
+if [[ $CN_EXIT -ne 0 ]]; then
+  echo "ERROR: CN encryption chain failed (exit $CN_EXIT)!" >&2
+  exit 1
+fi
 echo "  CN encryption chain OK"
 
-# ── Step 3: UI obfuscation ──
-echo "[3/6] Obfuscating UI bundles..."
-(cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts)
-echo "  UI obfuscation OK"
+if [[ $UI_EXIT -ne 0 ]]; then
+  echo "ERROR: UI build/obfuscation failed (exit $UI_EXIT)!" >&2
+  exit 1
+fi
+echo "  UI build + obfuscation OK"
 
 # ── Step 3b: OEM brand injection (optional) ──
 # Set OEM_ID=<name> to apply a brand config from config/oem/<name>.json
@@ -281,8 +300,9 @@ if [[ -f "$PREPARE_SCRIPT" ]]; then
   bash "$PREPARE_SCRIPT" --arch "$ARCH" &
   PREP_PID=$!
 else
-  echo "  WARNING: prepare-resources.sh not found, skipping resource staging." >&2
-  PREP_PID=""
+  echo "ERROR: prepare-resources.sh not found at $PREPARE_SCRIPT!" >&2
+  echo "  Without resources, Tauri build will produce a broken installer." >&2
+  exit 1
 fi
 
 if [[ -f "$DESKTOP_DIR/package.json" ]]; then
@@ -357,6 +377,7 @@ echo "  Recompiling integrity-root-hash.ts → dist/security/integrity-root-hash
     // Rewrite integrity-root-hash.js with updated hash (same obfuscation pattern)
     const existing=fs.readFileSync('dist/security/integrity-root-hash.js','utf8');
     const updated=existing.replace(/\"[0-9a-f]{32}\"\+\"[0-9a-f]{32}\"/, '\"'+h1+'\"'+'+\"'+h2+'\"');
+    if(updated===existing){console.error('ERROR: hash replace pattern did not match — file unchanged');process.exit(1);}
     fs.writeFileSync('dist/security/integrity-root-hash.js', updated, 'utf8');
     console.log('  Patched integrity-root-hash.js with hash: '+h1+'...');
   ")
@@ -587,6 +608,40 @@ if [[ -n "${DMG_FILE:-}" && -f "$DMG_FILE" ]]; then
         DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  missing: $chk_dir"
       fi
     done
+
+    # [Fix-3e] workspace templates 检查
+    DMG_TMPL_DIR="$DMG_RES/docs/reference/templates"
+    REQUIRED_TEMPLATES="AGENTS.md SOUL.md TOOLS.md IDENTITY.md USER.md HEARTBEAT.md MEMORY.md BOOTSTRAP.md"
+    TMPL_MISSING=0
+    for tmpl in $REQUIRED_TEMPLATES; do
+      if [[ ! -f "$DMG_TMPL_DIR/$tmpl" ]]; then
+        echo "  [FAIL] workspace template missing: $tmpl"
+        TMPL_MISSING=$((TMPL_MISSING + 1))
+        DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  template missing: $tmpl"
+      fi
+    done
+    if [[ "$TMPL_MISSING" -eq 0 ]]; then
+      echo "  [PASS] workspace templates: all 8 present"
+    else
+      DMG_VERIFY_OK=false
+    fi
+
+    # [Fix-3f] mcp-index.json 基线数据检查
+    DMG_MCP_INDEX="$DMG_RES/data/mcp-index.json"
+    if [[ -f "$DMG_MCP_INDEX" ]]; then
+      MCP_SIZE=$(wc -c < "$DMG_MCP_INDEX" | tr -d ' ')
+      if [[ "$MCP_SIZE" -gt 1000 ]]; then
+        echo "  [PASS] mcp-index.json: ${MCP_SIZE} bytes"
+      else
+        echo "  [FAIL] mcp-index.json too small (${MCP_SIZE} bytes)"
+        DMG_VERIFY_OK=false
+        DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  mcp-index.json too small: ${MCP_SIZE} bytes"
+      fi
+    else
+      echo "  [FAIL] mcp-index.json not found in DMG"
+      DMG_VERIFY_OK=false
+      DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  mcp-index.json missing"
+    fi
 
     # [Fix-3d] integrity-hashes 条目数校验
     DMG_HASH_FILE="$DMG_RES/dist/security/integrity-hashes.json"
