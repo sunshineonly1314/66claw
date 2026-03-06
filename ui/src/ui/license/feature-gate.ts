@@ -17,7 +17,8 @@ import type { LicenseUiState, UpgradeAvailableInfo } from "./types.js";
  * 检查当前 License 是否包含指定功能
  */
 export function hasFeature(state: LicenseUiState, featureCode: string): boolean {
-  if (!state.license) return false;
+  // license 为 null：非 CN 版不走授权验证，或授权尚未加载 → 全部放行
+  if (!state.license) return true;
   const features = state.license.features;
   if (features.includes("*")) return true;
   return features.includes(featureCode);
@@ -54,11 +55,11 @@ export function renderFeatureGate(
           <span class="feature-gate__lock-text">
             ${upgrade
               ? `升级到${upgrade.targetTierName}解锁此功能`
-              : "此功能需要更高版本"}
+              : "此功能需要升级到 Pro 版"}
           </span>
-          ${upgrade && onUpgrade ? html`
+          ${onUpgrade ? html`
             <button class="feature-gate__upgrade-btn" @click=${onUpgrade}>
-              升级 ¥${upgrade.upgradePrice}
+              ${upgrade ? `升级 ¥${upgrade.upgradePrice}` : "去升级"}
             </button>
           ` : nothing}
         </div>

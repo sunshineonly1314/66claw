@@ -1,5 +1,6 @@
 import type { IconName } from "./icons.js";
 import { t } from "./i18n/index.js";
+import { isPageAllowed } from "../../../src/shared/tier-config.js";
 
 /**
  * 导航标签组（使用翻译函数）
@@ -17,9 +18,13 @@ export const TAB_GROUPS = [
 
 /**
  * 获取翻译后的标签组
+ *
+ * @param features - 当前用户的 feature code 列表（可选）。
+ *   传入时按 PAGE_FEATURE_MAP 过滤不可见 tab；
+ *   不传时返回全部 tab（向后兼容）。
  */
-export function getTabGroups() {
-  return [
+export function getTabGroups(features?: readonly string[]) {
+  const all = [
     { label: t("nav.chat"), tabs: ["chat"] as const },
     {
       label: t("nav.control"),
@@ -28,6 +33,15 @@ export function getTabGroups() {
     { label: t("nav.agent"), tabs: ["agents", "skills", "extensions"] as const },
     { label: t("nav.settings"), tabs: ["config", "debug", "logs"] as const },
   ];
+
+  if (!features) return all;
+
+  return all
+    .map((group) => ({
+      ...group,
+      tabs: group.tabs.filter((tab) => isPageAllowed(tab, features)),
+    }))
+    .filter((group) => group.tabs.length > 0);
 }
 
 export type Tab =

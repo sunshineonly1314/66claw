@@ -17,7 +17,7 @@ export interface SupportQrcodeConfig {
  * License 信息
  */
 export interface LicenseInfo {
-  tier: "basic" | "pro" | "test" | "trial";
+  tier: "basic" | "standard" | "pro" | "enterprise" | "test" | "trial";
   tierName: string;
   expiresAt: string;
   daysRemaining: number;

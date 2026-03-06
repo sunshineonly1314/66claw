@@ -541,8 +541,11 @@ export function clearToken(): void {
  *
  * 产品侧确认：这些功能是商业差异化核心，断网令牌过期后直接锁定。
  * 基础对话等功能不在此列，允许降级到本地缓存（8h 宽限期内可用）。
+ *
+ * 定义已迁移到 src/shared/tier-config.ts（SSOT），此处 import + re-export 保持兼容。
  */
-export const HIGH_VALUE_FEATURES = new Set<string>(["agent-team", "orchestrator", "memory-core"]);
+import { HIGH_VALUE_FEATURES } from "../shared/tier-config.js";
+export { HIGH_VALUE_FEATURES };
 
 /**
  * 检查令牌是否允许指定功能

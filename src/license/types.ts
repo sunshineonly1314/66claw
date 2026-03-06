@@ -208,7 +208,7 @@ export interface SupportQrcodeConfig {
  */
 export interface LicenseInfo {
   /** 产品等级 */
-  tier: "basic" | "pro" | "test" | "trial";
+  tier: "basic" | "standard" | "pro" | "enterprise" | "test" | "trial";
   /** 等级名称 */
   tierName: string;
   /** 过期时间 (ISO 8601) */

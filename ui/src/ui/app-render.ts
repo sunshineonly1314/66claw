@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 
 import { isCN } from "./edition";
 import { brand } from "./brand";
+import { hasFeature, renderFeatureGate } from "./license/feature-gate.js";
 import { formatGeneralError } from "./chat/error-hints";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { AppViewState, McpMarketplaceItem } from "./app-view-state";
@@ -1351,12 +1352,18 @@ export function renderApp(state: AppViewState) {
                     return false;
                   }
                 },
-                // OpenClawCN: Orchestrator entry & view
-                orchestratorEntryHtml: renderOrchestratorEntry(
-                  () => void openOrchestrator(state as any),
-                  t as (key: string) => string,
+                // OpenClawCN: Orchestrator entry & view (pro only — gated by "agent-team" feature)
+                // basic 用户看到入口但点击显示升级提示；pro 用户正常使用
+                orchestratorEntryHtml: renderFeatureGate(
+                  "agent-team",
+                  state.licenseState,
+                  renderOrchestratorEntry(
+                    () => void openOrchestrator(state as any),
+                    t as (key: string) => string,
+                  ),
+                  () => { state.showLicenseDialog = "activation"; state.requestUpdate?.(); },
                 ),
-                orchestratorHtml: state.orchestratorOpen && state.orchestratorState
+                orchestratorHtml: hasFeature(state.licenseState, "agent-team") && state.orchestratorOpen && state.orchestratorState
                   ? renderOrchestrator(state.orchestratorState as unknown as import("../../../extensions/orchestrator/src/ui/orchestrator-state").OrchestratorState, {
                       onClose: () => closeOrchestrator(state as any),
                       onSend: () => void orchSend(state as any),
@@ -2508,6 +2515,11 @@ export function renderApp(state: AppViewState) {
                 screenShareFrameCount: state.screenShareFrameCount,
                 screenShareModelName: state.screenShareModelName ?? undefined,
                 onScreenShareToggle: () => { void state.toggleScreenShare(); },
+                onOpenTerminal: () => {
+                  state.client?.request("terminal.open", {}).catch((err: unknown) => {
+                    console.warn("Failed to open terminal:", err);
+                  });
+                },
               },
               // OpenClawCN: intent-hint (智能意图提示)
               intentHintProps: {
