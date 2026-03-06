@@ -301,6 +301,7 @@ export async function createProjectFromPlan(
       name: `${plan.teamName ?? "Team"} Supervisor`,
       id: supervisorId,
       emoji: "🎯",
+      workspace: `~/.openclawcn/agents/${supervisorId}`,
     });
   } catch (err) {
     // If the supervisor agent already exists (e.g. re-deploy), proceed.

@@ -1,46 +1,15 @@
 #!/usr/bin/env bash
 ###############################################################################
-# Windows 远程构建脚本
-# 通过 SSH 连接到 Windows 机器，先上传 PS1 脚本再执行
-# 注意: Windows SSH 默认 shell 是 cmd.exe
+# Windows 本机构建脚本
+# 直接在本机执行 build.ps1，不走 SSH
 ###############################################################################
 
 set -e
 
-# 用 PowerShell 封装 ssh/scp（Git bash 里 E: 盘路径不可访问）
-SSH="powershell -NoProfile -Command ssh"
-SCP="powershell -NoProfile -Command scp"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="$SCRIPT_DIR/config.json"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Convert path for Windows if needed (use forward slashes for node require)
-if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-  CONFIG_FILE_WIN=$(cygpath -m "$CONFIG_FILE" 2>/dev/null || echo "$CONFIG_FILE")
-else
-  CONFIG_FILE_WIN="$CONFIG_FILE"
-fi
-
-# 读取配置
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "Config file not found: $CONFIG_FILE"
-  exit 1
-fi
-
-# 解析配置（不使用 fallback 硬编码 IP，强制从 config.json 读取）
-WIN_HOST=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.host")
-WIN_USER=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.user")
-# Construct Gitee clone URL: PAT optional — if not set, builder uses its own stored credentials
-if [ -n "$GITEE_PAT" ]; then
-  WIN_REPO_TEMPLATE=$(node -p "require('$CONFIG_FILE_WIN').builders.windows.gitee_repo_template")
-  WIN_REPO=$(echo "$WIN_REPO_TEMPLATE" | sed "s/\${GITEE_PAT}/$GITEE_PAT/g")
-else
-  # No PAT — use plain URL; builder machine must have git credentials configured
-  WIN_REPO=$(node -p "require('$CONFIG_FILE_WIN').gitee.repo")
-  echo "INFO: GITEE_PAT not set locally — builder will use its own git credentials (git fetch mode)"
-fi
-
-# 参数解析（位置参数 + 命名参数）
+# 参数解析
 VERSION=""
 SKIP_DEPLOY=false
 DEPLOY_ONLY=false
@@ -49,7 +18,7 @@ for arg in "$@"; do
   case "$arg" in
     --skip-deploy) SKIP_DEPLOY=true ;;
     --deploy-only) DEPLOY_ONLY=true ;;
-    -*)            ;; # ignore unknown flags
+    -*)            ;;
     *)
       if [ -z "$VERSION" ]; then VERSION="$arg"; fi
       ;;
@@ -57,317 +26,141 @@ for arg in "$@"; do
 done
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🪟 Windows 远程构建"
+echo "🪟 Windows 本机构建"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Target: $WIN_USER@$WIN_HOST"
+echo "Project: $PROJECT_ROOT"
 echo "Version: ${VERSION:-auto}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# 创建临时 PS1 脚本
-TEMP_PS1=$(mktemp /tmp/win-build-XXXXXX.ps1)
-cat > "$TEMP_PS1" << PSEOF
-\$ErrorActionPreference = 'Stop'
-\$WORKSPACE = 'D:\cicd-workspace\openclawcn'
-\$REPO = '$WIN_REPO'
-\$VERSION = '$VERSION'
-\$SKIP_DEPLOY = '$SKIP_DEPLOY'
-\$DEPLOY_ONLY = '$DEPLOY_ONLY'
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="$SCRIPT_DIR/logs/build-windows-local-${TIMESTAMP}.log"
+mkdir -p "$SCRIPT_DIR/logs"
 
-# Fix PATH: Git Bash before WSL bash, pnpm/node available
-\$gitBashDir = 'C:\Program Files\Git\bin'
-\$gitUsrBin = 'C:\Program Files\Git\usr\bin'
-if (Test-Path \$gitBashDir) {
-    \$env:PATH = "\$gitBashDir;\$gitUsrBin;" + \$env:PATH
-    Write-Host "PATH fix: Git Bash prepended (avoids WSL bash)"
-}
+# 将 PROJECT_ROOT 转为 Windows 路径供 PS1 使用
+PROJECT_ROOT_WIN=$(cygpath -w "$PROJECT_ROOT" 2>/dev/null || echo "$PROJECT_ROOT" | sed 's|/d/|D:\\|;s|/|\\|g')
+BUILD_PS1_WIN=$(cygpath -w "$PROJECT_ROOT/scripts/desktop/build.ps1" 2>/dev/null || echo "$PROJECT_ROOT/scripts/desktop/build.ps1" | sed 's|/d/|D:\\|;s|/|\\|g')
 
-Write-Host "Preparing workspace: \$WORKSPACE"
-Write-Host "Node: \$(node --version)"
-Write-Host "bash: \$(where.exe bash 2>\$null | Select-Object -First 1)"
+echo "Build PS1: $BUILD_PS1_WIN"
+echo "Log: $LOG_FILE"
+echo ""
 
-if (-not (Test-Path \$WORKSPACE)) {
-    New-Item -ItemType Directory -Path \$WORKSPACE -Force | Out-Null
-}
-Set-Location \$WORKSPACE
+# 在本机直接执行 build.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File "$BUILD_PS1_WIN" 2>&1 | tee "$LOG_FILE"
+BUILD_EXIT=${PIPESTATUS[0]}
 
-if (Test-Path '.git') {
-    Write-Host "Updating existing repository..."
-    git fetch origin
-    git reset --hard origin/master
-} else {
-    # Directory exists but is not a git repo (e.g. data/ was uploaded before clone)
-    # Clean non-git contents before cloning
-    Get-ChildItem -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "Cloning repository from Gitee..."
-    git clone \$REPO .
-}
-
-Write-Host "Current commit: \$(git rev-parse HEAD)"
-Write-Host "Current branch: \$(git branch --show-current)"
-
-Write-Host "Installing dependencies..."
-pnpm install --no-frozen-lockfile
-
-# Auto version bump
-if (-not \$VERSION) {
-    # Check if last commit is already a version bump (avoid multi-platform double bump)
-    \$lastMsg = git log -1 --pretty=%s 2>\$null
-    if (\$lastMsg -and \$lastMsg.StartsWith("chore: bump version to ")) {
-        \$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
-        \$VERSION = \$pkgJson.version
-        Write-Host "Version already bumped by another builder: \$VERSION (skipping)"
-    } else {
-        Write-Host ""
-        Write-Host "========================================="
-        Write-Host "  Auto Version Bump (patch +1)"
-        Write-Host "========================================="
-        & node --import tsx scripts/version-bump.ts patch
-        \$pkgJson = Get-Content 'package.json' -Raw | ConvertFrom-Json
-        \$VERSION = \$pkgJson.version
-        Write-Host "Auto-bumped version: \$VERSION"
-
-        # Commit version bump back to repo
-        git add package.json apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/macos/Sources/OpenClaw/Resources/Info.plist
-        git commit -m "chore: bump version to \$VERSION"
-        try { git push origin master } catch { Write-Host "WARNING: push failed (version may already be pushed)" }
-        Write-Host "Version bump committed and pushed."
-    }
-}
-
-\$tauriOutput = Join-Path \$WORKSPACE 'apps\desktop\src-tauri\target\release\bundle\nsis'
-
-# Build phase (skip when --deploy-only)
-if (\$DEPLOY_ONLY -ne 'true') {
-
-# Rust environment check
-if (-not (Get-Command "cargo" -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: Rust/Cargo not found. Install from https://rustup.rs"
-    exit 1
-}
-Write-Host "Cargo: \$(cargo --version)"
-
-Write-Host "Starting Windows build (Tauri)..."
-\$buildScript = Join-Path \$WORKSPACE 'scripts\desktop\build.ps1'
-if (-not (Test-Path \$buildScript)) {
-    Write-Host "ERROR: Build script not found: \$buildScript"
-    Get-ChildItem 'scripts\desktop\' -ErrorAction SilentlyContinue
-    exit 1
-}
-
-& powershell -NoProfile -ExecutionPolicy Bypass -File \$buildScript
-if (\$LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Tauri build failed!"
-    exit 1
-}
-
-\$artifacts = Get-ChildItem -Path "\$tauriOutput\*.exe" -ErrorAction SilentlyContinue
-if (\$artifacts) {
-    Write-Host "Build completed successfully!"
-    \$artifacts | ForEach-Object { Write-Host ("  " + \$_.Name + " (" + [math]::Round(\$_.Length/1MB, 1) + " MB)") }
-} else {
-    Write-Host "Build failed - no installer found in \$tauriOutput"
-    exit 1
-}
-
-} # end DEPLOY_ONLY check
-
-# Pre-Deploy Package Gate
-Write-Host ""
-Write-Host "========================================="
-Write-Host "  Pre-Deploy Package Gate"
-Write-Host "========================================="
-
-# Reset CWD back to workspace (build.ps1 subprocess may have changed it)
-Set-Location \$WORKSPACE
-
-# Gate-1: dist/entry.js
-if (-not (Test-Path 'dist\entry.js')) {
-    Write-Host "ERROR: dist\entry.js not found - TypeScript compile failed"
-    exit 1
-}
-Write-Host "  [PASS] dist/entry.js OK"
-
-# Gate-2: .jsc bytecode count >= 100
-\$jscFiles = @(Get-ChildItem -Path 'dist' -Recurse -Filter '*.jsc' -ErrorAction SilentlyContinue)
-\$jscCount = \$jscFiles.Count
-\$jscMin = 100
-if (\$jscCount -lt \$jscMin) {
-    Write-Host "ERROR: Insufficient .jsc bytecode files: found \$jscCount, expected >= \$jscMin"
-    Write-Host "  Check that bytenode compilation completed without errors"
-    exit 1
-}
-Write-Host "  [PASS] .jsc bytecode: \$jscCount files (>= \$jscMin) OK"
-
-# Gate-3: integrity-hashes.json
-if (-not (Test-Path 'dist\security\integrity-hashes.json')) {
-    Write-Host "ERROR: dist\security\integrity-hashes.json not found - integrity:gen failed"
-    exit 1
-}
-Write-Host "  [PASS] integrity-hashes.json OK"
-
-# Gate-4: control-ui
-if (-not (Test-Path 'dist\control-ui\index.html')) {
-    Write-Host "ERROR: dist\control-ui\index.html not found - ui:build failed"
-    exit 1
-}
-Write-Host "  [PASS] control-ui OK"
-
-# Gate-5: extensions not empty
-\$extFiles = @(Get-ChildItem -Path 'extensions' -Recurse -Include '*.js','*.jsc' -ErrorAction SilentlyContinue)
-if (\$extFiles.Count -eq 0) {
-    Write-Host "ERROR: extensions/ has no executable files (.js/.jsc) - extensions build failed"
-    exit 1
-}
-Write-Host "  [PASS] extensions: \$(\$extFiles.Count) files OK"
-
-# Gate-6: data/ seed file integrity (only when data/ exists)
-if (Test-Path 'data') {
-    \$dataSeedFiles = @(
-        'mcp-index.db', 'mcp-index.json', 'tool-index.sqlite',
-        'skill-availability-dictionary.json', 'skill-availability-schema.json',
-        'skill-verification-needed.json', 'skills-availability-dictionary.json',
-        'skills-availability-dictionary-enriched.json', 'README-skill-availability.md'
-    )
-    \$missingData = @()
-    foreach (\$f in \$dataSeedFiles) {
-        if (-not (Test-Path "data\\$f")) { \$missingData += \$f }
-    }
-    if (\$missingData.Count -gt 0) {
-        Write-Host "ERROR: data/ seed files missing (\$(\$missingData.Count) files):"
-        \$missingData | ForEach-Object { Write-Host "  - data\\$_" }
-        exit 1
-    }
-    Write-Host "  [PASS] data/ seed files: \$(\$dataSeedFiles.Count) files OK"
-}
-
-Write-Host "  Pre-deploy gate PASSED"
-Write-Host "========================================="
-
-# Release Deploy: generate delta packages + upload
-# Skip when --skip-deploy (parallel build mode, upload is serialized by trigger-build.sh)
-if (\$SKIP_DEPLOY -ne 'true') {
-
-Write-Host ""
-Write-Host "========================================="
-Write-Host "  Release Deploy (Delta + Upload)"
-Write-Host "========================================="
-
-Write-Host "CWD: \$(Get-Location)"
-
-# Build phase reinstalls with --omit=dev, removing tsx
-# Re-install all deps to ensure tsx is available for release-deploy
-Write-Host "Re-installing dev dependencies for release-deploy..."
-pnpm install --no-frozen-lockfile 2>\$null
-
-\$releaseCacheDir = 'E:\openclawcn\.release-cache'
-if (-not (Test-Path \$releaseCacheDir)) {
-    New-Item -ItemType Directory -Path \$releaseCacheDir -Force | Out-Null
-    Write-Host "Created release cache dir: \$releaseCacheDir"
-}
-
-\$releaseArgs = @()
-if (\$VERSION) { \$releaseArgs += @('-v', \$VERSION) }
-\$releaseArgs += @('--cache-dir', \$releaseCacheDir)
-\$releaseArgs += @('--platform', 'windows')
-if (-not \$env:DEPLOY_SERVER -or -not \$env:DEPLOY_DOMAIN) {
-    Write-Host "ERROR: DEPLOY_SERVER and DEPLOY_DOMAIN env vars must be set for release deploy."
-    exit 1
-}
-\$releaseArgs += @('--server', \$env:DEPLOY_SERVER, '--domain', \$env:DEPLOY_DOMAIN)
-\$releaseArgs += @('--installers', \$tauriOutput)
-
-# Switch to Continue so stderr from node/tsx doesn't trigger PS termination
-\$ErrorActionPreference = 'Continue'
-Write-Host "Running: node --import tsx scripts/release-deploy.ts \$(\$releaseArgs -join ' ')"
-& node --import tsx scripts/release-deploy.ts @releaseArgs
-if (\$LASTEXITCODE -ne 0) {
-    Write-Host "WARNING: Release deploy exited with code \$LASTEXITCODE"
-    Write-Host "Build artifacts are still available, but delta packages may not have been published."
-} else {
-    Write-Host "Release deploy completed!"
-}
-
-} # end SKIP_DEPLOY check
-PSEOF
-
-# 上传 PS1 脚本到 Windows
-echo "📤 Uploading build script..."
-REMOTE_PS1="C:\\Users\\$WIN_USER\\cicd-build.ps1"
-scp -o StrictHostKeyChecking=no "$TEMP_PS1" "$WIN_USER@$WIN_HOST:cicd-build.ps1"
-
-# 上传 data/ 种子文件（.gitignore 排除了 data/，CI 需要手动传）
-# 白名单与 release-deploy.ts DATA_SEED_FILES + DATA_SEED_DIRS 保持一致
-DATA_DIR="$SCRIPT_DIR/../data"
-if [ -d "$DATA_DIR" ]; then
-  echo "📦 Uploading data/ seed files to Windows builder..."
-  ssh -o StrictHostKeyChecking=no "$WIN_USER@$WIN_HOST" \
-    "if not exist D:\\cicd-workspace\\openclawcn\\data mkdir D:\\cicd-workspace\\openclawcn\\data & if not exist D:\\cicd-workspace\\openclawcn\\data\\subagents mkdir D:\\cicd-workspace\\openclawcn\\data\\subagents & if not exist D:\\cicd-workspace\\openclawcn\\data\\qrcodes mkdir D:\\cicd-workspace\\openclawcn\\data\\qrcodes"
-
-  # 白名单文件
-  DATA_SEED_FILES=(
-    mcp-index.db mcp-index.json tool-index.sqlite
-    skill-availability-dictionary.json skill-availability-schema.json
-    skill-verification-needed.json skills-availability-dictionary.json
-    skills-availability-dictionary-enriched.json README-skill-availability.md
-  )
-  for df in "${DATA_SEED_FILES[@]}"; do
-    if [ -f "$DATA_DIR/$df" ]; then
-      scp -o StrictHostKeyChecking=no "$DATA_DIR/$df" \
-        "$WIN_USER@$WIN_HOST:D:/cicd-workspace/openclawcn/data/$df" && \
-        echo "  Uploaded $df" || echo "  Failed to upload $df (non-fatal)"
-    fi
-  done
-
-  # mcp-index-enhanced*.json（多版本文件）
-  for ef in "$DATA_DIR"/mcp-index-enhanced*.json; do
-    if [ -f "$ef" ]; then
-      efname="$(basename "$ef")"
-      scp -o StrictHostKeyChecking=no "$ef" \
-        "$WIN_USER@$WIN_HOST:D:/cicd-workspace/openclawcn/data/$efname" && \
-        echo "  Uploaded $efname" || echo "  Failed to upload $efname (non-fatal)"
-    fi
-  done
-
-  # 种子子目录: subagents/, qrcodes/
-  for subdir in subagents qrcodes; do
-    if [ -d "$DATA_DIR/$subdir" ]; then
-      scp -r -o StrictHostKeyChecking=no "$DATA_DIR/$subdir/" \
-        "$WIN_USER@$WIN_HOST:D:/cicd-workspace/openclawcn/data/$subdir/" && \
-        echo "  Uploaded $subdir/" || echo "  Failed to upload $subdir/ (non-fatal)"
-    fi
-  done
-else
-  echo "⚠️  WARNING: local data/ not found, seed files will not be bundled"
-fi
-
-# 执行远程构建
-echo "🚀 Executing remote build..."
-# 直接用 ssh 而非 PowerShell 包装，确保退出码正确传递
-ssh -o StrictHostKeyChecking=no "$WIN_USER@$WIN_HOST" \
-  "powershell -ExecutionPolicy Bypass -File C:\\Users\\$WIN_USER\\cicd-build.ps1"
-
-BUILD_EXIT=$?
-echo "[build-windows.sh] Remote SSH exit code: $BUILD_EXIT"
-rm -f "$TEMP_PS1"
+echo ""
+echo "[build-windows.sh] Build exit code: $BUILD_EXIT"
 
 if [ $BUILD_EXIT -eq 0 ]; then
+  # Post-build: Pre-Deploy Package Gate
+  echo ""
+  echo "========================================="
+  echo "  Pre-Deploy Package Gate"
+  echo "========================================="
+
+  GATE_PASS=true
+
+  # Gate-1: dist/entry.js
+  if [ -f "$PROJECT_ROOT/dist/entry.js" ]; then
+    echo "  [PASS] dist/entry.js OK"
+  else
+    echo "  [FAIL] dist/entry.js not found"
+    GATE_PASS=false
+  fi
+
+  # Gate-2: .jsc bytecode count >= 100
+  JSC_COUNT=$(find "$PROJECT_ROOT/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$JSC_COUNT" -ge 100 ]; then
+    echo "  [PASS] .jsc bytecode: $JSC_COUNT files (>= 100) OK"
+  else
+    echo "  [FAIL] .jsc bytecode: only $JSC_COUNT files (< 100)"
+    GATE_PASS=false
+  fi
+
+  # Gate-3: integrity-hashes.json
+  if [ -f "$PROJECT_ROOT/dist/security/integrity-hashes.json" ]; then
+    echo "  [PASS] integrity-hashes.json OK"
+  else
+    echo "  [FAIL] dist/security/integrity-hashes.json not found"
+    GATE_PASS=false
+  fi
+
+  # Gate-4: control-ui
+  if [ -f "$PROJECT_ROOT/dist/control-ui/index.html" ]; then
+    echo "  [PASS] control-ui OK"
+  else
+    echo "  [FAIL] dist/control-ui/index.html not found"
+    GATE_PASS=false
+  fi
+
+  # Gate-5: extensions (exclude node_modules)
+  EXT_COUNT=$(find "$PROJECT_ROOT/extensions" \( -name "*.js" -o -name "*.jsc" \) -not -path "*/node_modules/*" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$EXT_COUNT" -gt 0 ]; then
+    echo "  [PASS] extensions: $EXT_COUNT files OK"
+  else
+    echo "  [FAIL] extensions/ has no .js/.jsc files"
+    GATE_PASS=false
+  fi
+
+  # Gate-6: workspace templates (AGENTS.md, SOUL.md, etc.)
+  # Without these, agent workspace initialization writes empty files and
+  # users see "[workspace] Missing workspace template" warnings on every chat.
+  RESOURCES_DIR="$PROJECT_ROOT/apps/desktop/src-tauri/resources"
+  TMPL_DIR="$RESOURCES_DIR/docs/reference/templates"
+  REQUIRED_TEMPLATES="AGENTS.md SOUL.md TOOLS.md IDENTITY.md USER.md HEARTBEAT.md MEMORY.md BOOTSTRAP.md"
+  TMPL_MISSING=0
+  for tmpl in $REQUIRED_TEMPLATES; do
+    if [ ! -f "$TMPL_DIR/$tmpl" ]; then
+      echo "  [FAIL] workspace template missing: $tmpl"
+      TMPL_MISSING=$((TMPL_MISSING + 1))
+    fi
+  done
+  if [ "$TMPL_MISSING" -eq 0 ]; then
+    echo "  [PASS] workspace templates: all 8 present OK"
+  else
+    echo "  [FAIL] $TMPL_MISSING workspace template(s) missing in resources/docs/reference/templates/"
+    GATE_PASS=false
+  fi
+
+  # Gate-7: mcp-index.json (MCP marketplace baseline data)
+  # Without this, MCP marketplace is empty and skills show "暂不可安装".
+  if [ -f "$RESOURCES_DIR/data/mcp-index.json" ]; then
+    MCP_SIZE=$(wc -c < "$RESOURCES_DIR/data/mcp-index.json" | tr -d ' ')
+    if [ "$MCP_SIZE" -gt 1000 ]; then
+      echo "  [PASS] mcp-index.json OK (${MCP_SIZE} bytes)"
+    else
+      echo "  [FAIL] mcp-index.json too small (${MCP_SIZE} bytes) — likely empty or corrupt"
+      GATE_PASS=false
+    fi
+  else
+    echo "  [FAIL] resources/data/mcp-index.json not found"
+    GATE_PASS=false
+  fi
+
+  if [ "$GATE_PASS" = "true" ]; then
+    echo "  Pre-deploy gate PASSED"
+    echo "========================================="
+  else
+    echo "  Pre-deploy gate FAILED"
+    echo "========================================="
+    exit 1
+  fi
+
+  # 产物列表
+  NSIS_DIR="$PROJECT_ROOT/apps/desktop/src-tauri/target/release/bundle/nsis"
+  if [ -d "$NSIS_DIR" ]; then
+    echo ""
+    echo "Artifacts:"
+    ls -lh "$NSIS_DIR"/*.exe 2>/dev/null | awk '{print "  " $NF " (" $5 ")"}'
+  fi
+
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "✅ Windows build completed successfully!"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-  ARTIFACTS_DIR="$SCRIPT_DIR/artifacts/windows"
-  mkdir -p "$ARTIFACTS_DIR"
-
-  # Tauri NSIS output: D:\cicd-workspace\openclawcn\apps\desktop\src-tauri\target\release\bundle\nsis\
-  WIN_TAURI_OUTPUT="D:/cicd-workspace/openclawcn/apps/desktop/src-tauri/target/release/bundle/nsis"
-
-  echo "📥 Downloading artifacts to $ARTIFACTS_DIR..."
-  scp "$WIN_USER@$WIN_HOST:$WIN_TAURI_OUTPUT/*.exe" "$ARTIFACTS_DIR/" || echo "⚠️  Download failed, but build succeeded"
-
   exit 0
 else
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "❌ Windows build failed!"
+  echo "❌ Windows build failed! (exit $BUILD_EXIT)"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   exit 1
 fi

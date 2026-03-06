@@ -35,6 +35,18 @@ const TRANSIENT_NETWORK_CODES = new Set([
   "UND_ERR_BODY_TIMEOUT",
 ]);
 
+// Filesystem error codes that should NOT crash the gateway.
+// These typically occur when state directories don't exist yet (first-launch)
+// or when a drive/path is temporarily unavailable. The gateway should log a
+// warning and continue — crashing causes Tauri watchdog restart loops that
+// reset the setup wizard back to step 1.
+const NON_FATAL_FS_CODES = new Set([
+  "ENOENT", // directory/file not found (e.g. state dir not created yet)
+  "EACCES", // permission denied
+  "EPERM", // operation not permitted
+  "EROFS", // read-only filesystem
+]);
+
 function getErrorCause(err: unknown): unknown {
   if (!err || typeof err !== "object") {
     return undefined;
@@ -101,8 +113,12 @@ export function isApiResponseError(err: unknown): boolean {
   const msg = (err as { message?: string }).message ?? "";
   if (
     /\b(401|402|403|429)\b/.test(msg) ||
-    /unauthorized|forbidden|rate.?limit|quota|too many requests|权限|鉴权|认证失败|限流/i.test(msg) ||
-    /no api key found|no credentials found|api key not configured|missing.api.key|apikey.*not/i.test(msg) ||
+    /unauthorized|forbidden|rate.?limit|quota|too many requests|权限|鉴权|认证失败|限流/i.test(
+      msg,
+    ) ||
+    /no api key found|no credentials found|api key not configured|missing.api.key|apikey.*not/i.test(
+      msg,
+    ) ||
     /Embedding API error/i.test(msg)
   ) {
     return true;
@@ -152,6 +168,26 @@ export function isTransientNetworkError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Checks if an error is a non-fatal filesystem error (ENOENT, EACCES, etc.).
+ * These occur when state directories don't exist yet or are inaccessible.
+ * The gateway should continue running — crashing causes setup wizard restart loops.
+ */
+function isNonFatalFsError(err: unknown): boolean {
+  const code = extractErrorCodeWithCause(err);
+  if (code && NON_FATAL_FS_CODES.has(code)) {
+    return true;
+  }
+
+  // Check the cause chain
+  const cause = getErrorCause(err);
+  if (cause && cause !== err) {
+    return isNonFatalFsError(cause);
+  }
+
+  return false;
+}
+
 export function registerUnhandledRejectionHandler(handler: UnhandledRejectionHandler): () => void {
   handlers.add(handler);
   return () => {
@@ -195,7 +231,10 @@ export function installUnhandledRejectionHandler(): void {
     }
 
     if (isConfigError(reason)) {
-      console.error("[openclawcn] CONFIGURATION ERROR - requires fix:", formatUncaughtError(reason));
+      console.error(
+        "[openclawcn] CONFIGURATION ERROR - requires fix:",
+        formatUncaughtError(reason),
+      );
       process.exit(1);
       return;
     }
@@ -213,6 +252,18 @@ export function installUnhandledRejectionHandler(): void {
     if (isApiResponseError(reason)) {
       console.error(
         "[openclawcn] API error (non-fatal, gateway continues):",
+        formatUncaughtError(reason),
+      );
+      return;
+    }
+
+    // Filesystem errors (ENOENT, EACCES, etc.) should NOT crash the gateway.
+    // These commonly occur during first-launch when state directories haven't
+    // been created yet. Crashing triggers Tauri watchdog restart → setup page
+    // resets to step 1 in an infinite loop.
+    if (isNonFatalFsError(reason)) {
+      console.error(
+        "[openclawcn] Filesystem error (non-fatal, gateway continues):",
         formatUncaughtError(reason),
       );
       return;

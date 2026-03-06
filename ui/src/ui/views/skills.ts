@@ -1403,11 +1403,9 @@ function tierColor(tier: string): string {
 }
 
 function renderSkillMarketCard(item: MarketItem, props: SkillsProps) {
-  // BUG-FIX: gateway returns friendlyNameCn/friendlyName, NOT nameCn.
-  // DO NOT change back to item.nameCn — that field is always undefined and causes
-  // all marketplace cards to display in English instead of Chinese. (CRITICAL)
-  const displayName = item.friendlyNameCn || item.friendlyName || item.name;
-  // descriptionCn is correctly named — gateway spreads the raw MarketplaceItem which has descriptionCn.
+  // Gateway skills_marketplace.search 返回 SkillMarketplaceItem，字段是 nameCn/descriptionCn。
+  // 同时兼容 friendlyNameCn/friendlyName（来自 MCP marketplace 的不同接口）。
+  const displayName = item.nameCn || item.friendlyNameCn || item.friendlyName || item.name;
   const displayDesc = item.descriptionCn || item.description;
   const emoji = item.emoji || categoryEmoji(item.category);
   const isInstalled = item.installed === true;
@@ -1532,16 +1530,8 @@ function renderInstallButton(
       >\u2713 ${t("skills.remote.alreadyInstalled" as never)}</span
     >`;
   }
-  // availability-dict 来源的技能只有元数据，没有实际的 SKILL.md 文件
-  // bundled 和 proxy 都不会有这些技能，安装必然失败，所以不显示安装按钮
-  if (item.source === "availability-dict") {
-    return html`<span
-      style="
-        font-size:10px; color:var(--muted-strong, #6b7d91); padding:5px 14px;
-      "
-      >${t("skills.market.notAvailable" as never)}</span
-    >`;
-  }
+  // availability-dict / qc 来源的技能可能在 proxy 上有包，允许用户尝试安装。
+  // 安装失败时 gateway 会返回错误提示。不再一刀切阻止。
   if (item.cnBlocked) {
     return html`<div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
       <span style="font-size:10px; color:#f87171; line-height:1.3; text-align:right; max-width:220px;">

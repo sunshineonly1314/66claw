@@ -5,6 +5,8 @@
  * spawn/connect → initialize → tools/list → callTool → shutdown.
  */
 
+import path from "node:path";
+import fs from "node:fs";
 import { prependBundledNodeToPath } from "../infra/bundled-node.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -112,8 +114,88 @@ const BLOCKED_ENV_KEYS = new Set([
   "VISUAL", // 编辑器相关命令执行
 ]);
 
+/**
+ * Locate the directory containing uvx/uv on the system.
+ * Checks both the current PATH and common Windows Python installation paths.
+ * Returns the directory path if found, or null if not found.
+ * Result is cached after first call.
+ */
+let _cachedUvDir: string | null | undefined;
+function findUvDir(): string | null {
+  if (_cachedUvDir !== undefined) return _cachedUvDir;
+
+  const isWindows = process.platform === "win32";
+  const uvExe = isWindows ? "uvx.exe" : "uvx";
+
+  // 1. Check if uvx is already on the current PATH
+  const currentPath = process.env.PATH ?? process.env.Path ?? "";
+  for (const dir of currentPath.split(path.delimiter).filter(Boolean)) {
+    try {
+      if (fs.existsSync(path.join(dir, uvExe))) {
+        _cachedUvDir = dir;
+        return dir;
+      }
+    } catch {
+      /* continue */
+    }
+  }
+
+  // 2. Search common installation paths (Windows only — unix PATH is authoritative)
+  if (isWindows) {
+    const candidates = [
+      // pip install uv → Scripts dir
+      `${process.env.LOCALAPPDATA ?? ""}\\Programs\\Python\\Python*\\Scripts`,
+      "D:\\Program Files\\python\\Scripts",
+      "C:\\Python*\\Scripts",
+      `${process.env.USERPROFILE ?? ""}\\.local\\bin`,
+      `${process.env.USERPROFILE ?? ""}\\.cargo\\bin`,
+      // Common scoop / winget paths
+      `${process.env.USERPROFILE ?? ""}\\scoop\\shims`,
+      `${process.env.LOCALAPPDATA ?? ""}\\Microsoft\\WinGet\\Links`,
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      // Support simple glob (Python*)
+      if (candidate.includes("*")) {
+        const parentDir = path.dirname(candidate);
+        const pattern = path.basename(candidate);
+        try {
+          if (fs.existsSync(parentDir)) {
+            const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$", "i");
+            const entries = fs.readdirSync(parentDir).filter((e) => regex.test(e));
+            // Sort descending to prefer newest version
+            entries.sort().reverse();
+            for (const entry of entries) {
+              const full = path.join(parentDir, entry);
+              if (fs.existsSync(path.join(full, uvExe))) {
+                _cachedUvDir = full;
+                return full;
+              }
+            }
+          }
+        } catch {
+          /* continue */
+        }
+      } else {
+        try {
+          if (fs.existsSync(path.join(candidate, uvExe))) {
+            _cachedUvDir = candidate;
+            return candidate;
+          }
+        } catch {
+          /* continue */
+        }
+      }
+    }
+  }
+
+  _cachedUvDir = null;
+  return null;
+}
+
 /** Build a safe environment for MCP child processes.
- *  Ensures the bundled node directory is prepended to PATH so npx/npm resolve correctly. */
+ *  Ensures the bundled node directory is prepended to PATH so npx/npm resolve correctly.
+ *  Also ensures uvx/uv directory is on PATH for Python-based MCP servers. */
 function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of SAFE_ENV_KEYS) {
@@ -125,6 +207,18 @@ function buildSafeEnv(configEnv?: Record<string, string>): Record<string, string
   // is found even when the main process was started with a system node.
   const pathKey = process.platform === "win32" && env.Path ? "Path" : "PATH";
   env[pathKey] = prependBundledNodeToPath(env[pathKey]);
+
+  // Ensure uvx/uv directory is on PATH for Python-based MCP servers.
+  // Tauri desktop app may not inherit the full user PATH, so we search
+  // common Python installation paths to find uvx.
+  const uvDir = findUvDir();
+  if (uvDir) {
+    const currentParts = (env[pathKey] ?? "").split(path.delimiter);
+    const uvDirResolved = path.resolve(uvDir);
+    if (!currentParts.some((p) => path.resolve(p) === uvDirResolved)) {
+      env[pathKey] = env[pathKey] ? `${env[pathKey]}${path.delimiter}${uvDir}` : uvDir;
+    }
+  }
 
   // Actively inject CN mirror env vars when the user is in China.
   // Without this, MCP child processes (npx/uvx) would default to international

@@ -820,6 +820,29 @@ function findQcIndexPaths(packageRoot: string): string[] {
 export function populateFromQcIndex(packageRoot: string): number {
   let totalImported = 0;
 
+  // Step 0: 加载 skill-translations.json 中文翻译映射
+  // 包含 nameZh (中文名称) 和 descZh (中文描述)
+  const translationsMap: Record<string, { nameZh?: string; descZh?: string }> = {};
+  const translationsPath = path.join(
+    packageRoot,
+    "cn",
+    "scripts",
+    "skills-pipeline",
+    "skill-translations.json",
+  );
+  if (fs.existsSync(translationsPath)) {
+    try {
+      const content = fs.readFileSync(translationsPath, "utf-8");
+      const translations = JSON.parse(content) as Record<
+        string,
+        { nameZh?: string; descZh?: string }
+      >;
+      Object.assign(translationsMap, translations);
+    } catch {
+      // 翻译文件解析失败，继续（会回退到英文）
+    }
+  }
+
   // Step 1: 导入 skills-availability-dictionary (2696 个基础数据)
   const dictPath = path.join(packageRoot, "data", "skills-availability-dictionary.json");
   if (fs.existsSync(dictPath)) {
@@ -838,15 +861,20 @@ export function populateFromQcIndex(packageRoot: string): number {
       };
       const skills = dict.skills;
       if (Array.isArray(skills) && skills.length > 0) {
-        const items: SkillMarketplaceItem[] = skills.map((skill) => ({
-          skillId: skill.id || skill.name,
-          name: skill.name,
-          description: skill.description || "",
-          path: skill.name,
-          category: skill.category,
-          cnBlocked: skill.availability?.china?.status === "blocked",
-          source: "availability-dict",
-        }));
+        const items: SkillMarketplaceItem[] = skills.map((skill) => {
+          const trans = translationsMap[skill.name] || translationsMap[skill.id || ""];
+          return {
+            skillId: skill.id || skill.name,
+            name: skill.name,
+            nameCn: trans?.nameZh,
+            description: skill.description || "",
+            descriptionCn: trans?.descZh,
+            path: skill.name,
+            category: skill.category,
+            cnBlocked: skill.availability?.china?.status === "blocked",
+            source: "availability-dict",
+          };
+        });
         insertItems(items);
         totalImported += items.length;
       }
@@ -861,21 +889,25 @@ export function populateFromQcIndex(packageRoot: string): number {
     const qcIndex = parseQcIndexFile(indexPath);
     if (!qcIndex || qcIndex.skills.length === 0) continue;
 
-    const items: SkillMarketplaceItem[] = qcIndex.skills.map((skill) => ({
-      skillId: skill.name,
-      name: skill.name,
-      description: skill.description || "",
-      descriptionCn: skill.descriptionZh,
-      path: skill.path || skill.name,
-      category: skill.category,
-      tags: skill.tags,
-      tier: skill.tier,
-      overallScore: skill.overallScore,
-      cnBlocked: skill.cnBlocked,
-      cnAlternative: skill.cnAlternative,
-      hasTranslation: skill.hasTranslation,
-      source: "qc",
-    }));
+    const items: SkillMarketplaceItem[] = qcIndex.skills.map((skill) => {
+      const trans = translationsMap[skill.name];
+      return {
+        skillId: skill.name,
+        name: skill.name,
+        nameCn: trans?.nameZh,
+        description: skill.description || "",
+        descriptionCn: trans?.descZh || skill.descriptionZh,
+        path: skill.path || skill.name,
+        category: skill.category,
+        tags: skill.tags,
+        tier: skill.tier,
+        overallScore: skill.overallScore,
+        cnBlocked: skill.cnBlocked,
+        cnAlternative: skill.cnAlternative,
+        hasTranslation: skill.hasTranslation,
+        source: "qc",
+      };
+    });
 
     // output-all 有 1190 个，output 有 27 个
     // output-all 先导入作为基线，output 的 27 个精选会 INSERT OR REPLACE 叠加

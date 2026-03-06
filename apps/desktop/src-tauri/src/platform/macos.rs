@@ -19,10 +19,18 @@ pub fn resolve_log_path(_app_dir: &Path) -> PathBuf {
 }
 
 /// macOS: NODE_PATH follows Unix node layout.
+/// Also prepend node/bin to PATH so `#!/usr/bin/env node` scripts (npm, npx) resolve correctly.
 pub fn configure_node_env(command: &mut Command, app_dir: &Path) {
     command.env(
         "NODE_PATH",
         app_dir.join("node").join("lib").join("node_modules"),
+    );
+    // Prepend bundled node/bin to PATH so MCP child processes can find node via `env node`.
+    let node_bin_dir = app_dir.join("node").join("bin");
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    command.env(
+        "PATH",
+        format!("{}:{}", node_bin_dir.display(), current_path),
     );
 }
 

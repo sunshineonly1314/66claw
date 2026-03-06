@@ -119,18 +119,29 @@ export function resolveBundledNodeExe(): string {
  */
 export function prependBundledNodeToPath(currentPath?: string): string {
   const bundledDir = resolveBundledNodeDir();
+  // On macOS/Linux the node binary lives in <bundledDir>/bin/node,
+  // so we need to add <bundledDir>/bin to PATH (not just <bundledDir>).
+  // On Windows, node.exe is directly in <bundledDir>.
+  const binDir = path.join(bundledDir, "bin");
+  const pathDir =
+    process.platform !== "win32" && fs.existsSync(path.join(binDir, NODE_EXE))
+      ? binDir
+      : bundledDir;
+
   const existing = currentPath ?? process.env.PATH ?? "";
   const sep = path.delimiter;
   const parts = existing.split(sep).filter(Boolean);
 
   // Already at front — nothing to do
-  if (parts.length > 0 && path.resolve(parts[0]) === path.resolve(bundledDir)) {
+  if (parts.length > 0 && path.resolve(parts[0]) === path.resolve(pathDir)) {
     return existing;
   }
 
-  // Remove any duplicate occurrences, then prepend
-  const filtered = parts.filter((p) => path.resolve(p) !== path.resolve(bundledDir));
-  return [bundledDir, ...filtered].join(sep);
+  // Remove any duplicate occurrences of both bundledDir and binDir, then prepend
+  const filtered = parts.filter(
+    (p) => path.resolve(p) !== path.resolve(bundledDir) && path.resolve(p) !== path.resolve(binDir),
+  );
+  return [pathDir, ...filtered].join(sep);
 }
 
 /**

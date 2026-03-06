@@ -464,14 +464,60 @@ const plugin: OpenClawCNPluginDefinition = {
     const logger = api.logger;
     logger.info("Agent Team plugin registering...");
 
-    // ── Initialize state directory ────────────────────────────────────
-    // NOTE: initProjectStateDir is async (creates dirs on disk), but the
-    // plugin loader does not await register(). We call it fire-and-forget
-    // here and also ensure dirs in gateway_start before loading projects.
+    // ── Initialize state directory + eager cache loading ─────────────
+    // Start loading project cache immediately during register() instead of
+    // waiting for gateway_start (which fires AFTER all subsystems are ready,
+    // including MCP startup that can take 10-14 seconds). This lets
+    // team.project.list respond instantly when the UI connects.
     const stateDir = api.resolvePath("~/.openclawcn/agent-team");
-    initProjectStateDir(stateDir).catch((err) =>
-      logger.warn?.(`[agent-team] State dir pre-init failed (will retry in gateway_start): ${err}`),
-    );
+    void (async () => {
+      try {
+        await initProjectStateDir(stateDir);
+        initAffinityPersistence(stateDir);
+
+        const projects = await loadAllProjects();
+        for (const p of projects) {
+          projectCache.set(p.projectId, p);
+
+          const state = await loadProjectState(p.projectId);
+          if (state?.memberHealth) {
+            const map = new Map<string, MemberHealth>();
+            for (const h of state.memberHealth) {
+              map.set(h.agentId, h);
+            }
+            healthCache.set(p.projectId, map);
+          }
+          if (state?.memberStats) {
+            const sMap = new Map<string, MemberStats>();
+            for (const s of state.memberStats) {
+              sMap.set(s.agentId, s);
+            }
+            statsCache.set(p.projectId, sMap);
+          }
+
+          const saved = await loadActivity(p.projectId);
+          if (saved.length > 0) {
+            activityBuffers.set(p.projectId, saved as ActivityEvent[]);
+          }
+        }
+        rebuildAgentIndex();
+
+        const validAgentIds = new Set<string>();
+        for (const p of projects) {
+          for (const id of p.memberIds) validAgentIds.add(id);
+        }
+        const restoredAffinities = await restoreAffinitiesFromDisk(validAgentIds);
+        if (restoredAffinities > 0) {
+          logger.info(`Restored ${restoredAffinities} session affinity record(s) from disk.`);
+        }
+
+        logger.info(`Loaded ${projects.length} project(s) from disk.`);
+      } catch (err) {
+        logger.error(`Failed to load projects on startup: ${err}`);
+      } finally {
+        cacheReadyResolve();
+      }
+    })();
 
     // ── Build gateway call function (lazy import, same as orchestrator) ──
     const callGateway: CallGatewayFn = async (method, params) => {
@@ -1063,67 +1109,12 @@ const plugin: OpenClawCNPluginDefinition = {
       { name: "memory_share", optional: true },
     );
 
-    // ── gateway_start: load projects from disk ────────────────────────
-    api.on("gateway_start", async () => {
-      try {
-        // Ensure state directory exists before reading (handles the case
-        // where the fire-and-forget init in register() hasn't completed yet).
-        await initProjectStateDir(stateDir);
-
-        // Initialize session affinity persistence (defer restore until after
-        // projects are loaded so we can filter out ghost affinities).
-        initAffinityPersistence(stateDir);
-
-        const projects = await loadAllProjects();
-        for (const p of projects) {
-          projectCache.set(p.projectId, p);
-
-          // Restore health + stats state from disk
-          const state = await loadProjectState(p.projectId);
-          if (state?.memberHealth) {
-            const map = new Map<string, MemberHealth>();
-            for (const h of state.memberHealth) {
-              map.set(h.agentId, h);
-            }
-            healthCache.set(p.projectId, map);
-          }
-          if (state?.memberStats) {
-            const sMap = new Map<string, MemberStats>();
-            for (const s of state.memberStats) {
-              sMap.set(s.agentId, s);
-            }
-            statsCache.set(p.projectId, sMap);
-          }
-
-          // Restore persisted activity events
-          const saved = await loadActivity(p.projectId);
-          if (saved.length > 0) {
-            activityBuffers.set(p.projectId, saved as ActivityEvent[]);
-          }
-        }
-        rebuildAgentIndex();
-
-        // Restore session affinities after projects are known so we can
-        // filter out ghost entries (agents that no longer exist).
-        const validAgentIds = new Set<string>();
-        for (const p of projects) {
-          for (const id of p.memberIds) validAgentIds.add(id);
-        }
-        const restoredAffinities = await restoreAffinitiesFromDisk(validAgentIds);
-        if (restoredAffinities > 0) {
-          logger.info(`Restored ${restoredAffinities} session affinity record(s) from disk.`);
-        }
-
-        logger.info(
-          `Loaded ${projects.length} project(s) from disk.`,
-        );
-      } catch (err) {
-        logger.error(`Failed to load projects on startup: ${err}`);
-      } finally {
-        // Signal that projectCache is populated — gateway methods can proceed.
-        cacheReadyResolve();
-      }
-    });
+    // ── gateway_start: no-op (project loading moved to register() for speed) ──
+    // Project cache is now loaded eagerly during register() so that
+    // team.project.list can respond immediately when the UI connects,
+    // without waiting for MCP/skills subsystems (which can take 10-14s).
+    // The gateway_start hook fires after subsystems are ready, but we no
+    // longer need it for cache loading.
 
     // ═══════════════════════════════════════════════════════════════════
     // GATEWAY METHODS

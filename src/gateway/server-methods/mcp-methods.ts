@@ -62,6 +62,32 @@ const WINDOWS_NODE_SEARCH_PATHS: string[] =
     : [];
 
 /**
+ * Common Windows paths where Python / pip / uvx may be installed.
+ * Used by resolveInstallCommand to locate uvx/uv when not on PATH.
+ */
+const WINDOWS_PYTHON_SEARCH_PATHS: string[] =
+  process.platform === "win32"
+    ? [
+        // pip install uv → user's Python Scripts
+        "D:\\Program Files\\python\\Scripts",
+        "C:\\Python310\\Scripts",
+        "C:\\Python311\\Scripts",
+        "C:\\Python312\\Scripts",
+        "C:\\Python313\\Scripts",
+        `${process.env.LOCALAPPDATA ?? ""}\\Programs\\Python\\Python310\\Scripts`,
+        `${process.env.LOCALAPPDATA ?? ""}\\Programs\\Python\\Python311\\Scripts`,
+        `${process.env.LOCALAPPDATA ?? ""}\\Programs\\Python\\Python312\\Scripts`,
+        `${process.env.LOCALAPPDATA ?? ""}\\Programs\\Python\\Python313\\Scripts`,
+        // cargo install uv / pipx
+        `${process.env.USERPROFILE ?? ""}\\.local\\bin`,
+        `${process.env.USERPROFILE ?? ""}\\.cargo\\bin`,
+        // scoop / winget
+        `${process.env.USERPROFILE ?? ""}\\scoop\\shims`,
+        `${process.env.LOCALAPPDATA ?? ""}\\Microsoft\\WinGet\\Links`,
+      ].filter(Boolean)
+    : [];
+
+/**
  * Resolve a command like "npx" or "uvx" to its full path.
  * On Windows, searches common Node.js install paths AND the user's PATH.
  *
@@ -80,8 +106,12 @@ function resolveInstallCommand(command: string): { resolved: string; extraPath: 
   }
 
   if (isWindows) {
-    // 1. Search well-known Windows paths
-    for (const basePath of WINDOWS_NODE_SEARCH_PATHS) {
+    // 1. Search well-known Windows paths (Node for npx, Python for uvx)
+    const isPythonCommand = command === "uvx" || command === "uv";
+    const searchPaths = isPythonCommand
+      ? [...WINDOWS_PYTHON_SEARCH_PATHS, ...WINDOWS_NODE_SEARCH_PATHS]
+      : WINDOWS_NODE_SEARCH_PATHS;
+    for (const basePath of searchPaths) {
       if (!basePath) continue;
       for (const ext of extensions) {
         const fullPath = path.join(basePath, `${command}${ext}`);

@@ -2977,7 +2977,7 @@
   {
     "key": "deep-scraper",
     "name": "deep-scraper",
-    "desc": "A high-performance engineering tool for deep web scraping.",
+    "desc": "A high-performance web data collection tool. FOR AUTHORIZED USE ONLY — users must have legal permission to access target websites. Respects robots.txt by default. Unauthorized scraping is prohibited. Users bear full legal responsibility for their usage.",
     "missingName": true,
     "missingDesc": true
   },

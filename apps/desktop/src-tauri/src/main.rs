@@ -212,12 +212,35 @@ fn start_sidecar_watchdog(handle: tauri::AppHandle) {
                     if ready {
                         log("[Watchdog] Gateway back online, re-navigating WebView");
                         let token = sidecar::gateway_token();
+
+                        // Check needsSetup before deciding where to navigate.
+                        // Without this, the watchdog would always navigate to the
+                        // main UI, which then 302-redirects to /setup, causing a
+                        // full page reload that resets the setup wizard to step 1.
+                        let needs_setup = client
+                            .get(&health_url)
+                            .send()
+                            .ok()
+                            .and_then(|r| r.json::<serde_json::Value>().ok())
+                            .and_then(|b| b.get("needsSetup").and_then(|v| v.as_bool()))
+                            .unwrap_or(false);
+
                         if let Some(window) = handle.get_webview_window("main") {
-                            let js = format!(
-                                "window.location.href='http://127.0.0.1:{}/#token={}&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A{}';",
-                                port, token, port,
-                            );
-                            let _ = window.eval(&js);
+                            if needs_setup {
+                                log("[Watchdog] -> setup wizard (needsSetup=true)");
+                                let js = format!(
+                                    "window.location.href='http://127.0.0.1:{}/setup';",
+                                    port
+                                );
+                                let _ = window.eval(&js);
+                            } else {
+                                log("[Watchdog] -> gateway UI");
+                                let js = format!(
+                                    "window.location.href='http://127.0.0.1:{}/#token={}&gatewayUrl=ws%3A%2F%2F127.0.0.1%3A{}';",
+                                    port, token, port,
+                                );
+                                let _ = window.eval(&js);
+                            }
                         }
                         // Reset failure counter on successful recovery
                         consecutive_failures = 0;

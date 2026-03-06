@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import type { CanvasHostServer } from "../canvas-host/server.js";
 import type { PluginRegistry } from "../plugins/registry.js";
@@ -21,6 +22,7 @@ import {
   readConfigFileSnapshot,
   writeConfigFile,
 } from "../config/config.js";
+import { STATE_DIR } from "../config/paths.js";
 import type { OpenClawCNConfig } from "../config/types.js";
 import { tryRepairConfig } from "../config/config-repair.js";
 import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
@@ -207,6 +209,28 @@ export async function startGatewayServer(
     key: "OPENCLAWCN_RAW_STREAM_PATH",
     description: "raw stream log path override",
   });
+
+  // [CRIT-FIX] Pre-create state directory structure before any subsystem tries
+  // to write. Without this, first-launch users hit ENOENT when auth-profiles,
+  // media-manifest, voice-models, etc. try to mkdirSync under STATE_DIR and the
+  // parent directory doesn't exist yet. This prevents setup-page crash loops
+  // where saving credentials fails → unhandled rejection → gateway restarts →
+  // page reloads back to step 1.
+  try {
+    const agentDir = path.join(STATE_DIR, "agents", "main", "agent");
+    const dataDir = path.join(STATE_DIR, "data");
+    const credentialsDir = path.join(STATE_DIR, "credentials");
+    for (const dir of [STATE_DIR, agentDir, dataDir, credentialsDir]) {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    }
+  } catch (err) {
+    // Non-fatal — individual subsystems will try to create dirs too.
+    // But if even the root STATE_DIR is unreachable (e.g. missing drive letter),
+    // we log a clear warning so the issue is diagnosable.
+    console.warn(`[gateway] Failed to pre-create state directory "${STATE_DIR}":`, err);
+  }
 
   // [CN-PATCH:migration-p0] Run portable migration before reading config.
   // This ensures C:-drive data is migrated to portable install dir before any

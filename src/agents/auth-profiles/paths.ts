@@ -29,5 +29,10 @@ export function ensureAuthStoreFile(pathname: string) {
     version: AUTH_STORE_VERSION,
     profiles: {},
   };
-  saveJsonFile(pathname, payload);
+  try {
+    saveJsonFile(pathname, payload);
+  } catch {
+    // Directory may not exist yet — will be created by the caller or gateway startup.
+    // Swallow to prevent setup-page crash loops.
+  }
 }

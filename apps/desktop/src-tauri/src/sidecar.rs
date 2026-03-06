@@ -373,10 +373,9 @@ fn detect_state_dir() -> PathBuf {
     // Scan candidate paths — check for the config marker file
     let mut candidates: Vec<PathBuf> = Vec::new();
 
-    // Per CLAUDE.md: project install root is E:\openclawcn
-    #[cfg(target_os = "windows")]
-    candidates.push(PathBuf::from("E:\\openclawcn").join(".openclawcn"));
-
+    // User home directory — the only candidate for production builds.
+    // Note: Do NOT add hardcoded drive paths (e.g. E:\openclawcn) here.
+    // Such paths are developer-specific and break on end-user machines.
     if let Some(home) = dirs::home_dir() {
         candidates.push(home.join(".openclawcn"));
     }
@@ -391,12 +390,10 @@ fn detect_state_dir() -> PathBuf {
         }
     }
 
-    // Fallback: first candidate (may not exist yet — gateway creates it)
-    candidates.into_iter().next().unwrap_or_else(|| {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".openclawcn")
-    })
+    // Fallback: user home (always writable), never E:\openclawcn on unknown machines
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".openclawcn")
 }
 
 pub fn start_sidecar(_app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {

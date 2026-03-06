@@ -1,9 +1,11 @@
 import chokidar from "chokidar";
 import type { OpenClawCNConfig, ConfigFileSnapshot, GatewayReloadMode } from "../config/config.js";
+import { clearConfigCache } from "../config/config.js";
 import { tryRepairConfig } from "../config/config-repair.js";
 import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js";
 import { getActivePluginRegistry } from "../plugins/runtime.js";
 import { isPlainObject } from "../utils.js";
+import { shouldShowSetupWizard } from "./setup-wizard.js";
 
 export type GatewayReloadSettings = {
   mode: GatewayReloadMode;
@@ -387,6 +389,21 @@ export function startGatewayConfigReloader(opts: {
         return;
       }
       if (plan.restartGateway) {
+        // Suppress gateway restart while the setup wizard is in progress.
+        // Config writes from setup handlers (configure-provider, configure-workspace,
+        // etc.) should never cause a gateway restart — doing so kills the HTTP server,
+        // which makes the WebView reload the setup page and resets the wizard to step 1.
+        try {
+          clearConfigCache(); // Ensure fresh config read, not stale 200ms cache
+          if (shouldShowSetupWizard()) {
+            opts.log.info(
+              `config reload requires gateway restart (${plan.restartReasons.join(", ")}); suppressed during setup wizard`,
+            );
+            return;
+          }
+        } catch {
+          // shouldShowSetupWizard may throw if config is corrupted; ignore and proceed
+        }
         if (settings.mode === "hot") {
           opts.log.warn(
             `config reload requires gateway restart; hot mode ignoring (${plan.restartReasons.join(

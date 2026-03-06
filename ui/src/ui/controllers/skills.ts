@@ -36,16 +36,12 @@ export type SkillsMarketSearchResult = {
   items: Array<{
     skillId: string;
     name: string;
-    // BUG-FIX: Gateway returns friendlyNameCn (from MarketplaceItem spread) and
-    // friendlyName (pre-merged: friendlyNameCn||friendlyName). DO NOT use nameCn
-    // for display — it is always undefined and causes all cards to show in English.
-    // See: src/gateway/server-methods/mcp-methods.ts resolveInstallCommand return.
-    /** Pre-merged by gateway: friendlyNameCn || friendlyName. Use for display. */
-    friendlyName?: string;
-    /** Raw Chinese name from MarketplaceItem. Prefer over friendlyName if present. */
-    friendlyNameCn?: string;
-    /** @deprecated always undefined — gateway does not return this field. Use friendlyNameCn/friendlyName instead. */
+    /** 中文名称 (from skill-translations.json via skills_marketplace.search) */
     nameCn?: string;
+    /** 兼容 MCP marketplace 接口的中文名称 */
+    friendlyName?: string;
+    /** 兼容 MCP marketplace 接口的中文名称 */
+    friendlyNameCn?: string;
     description: string;
     descriptionCn?: string;
     category?: string;

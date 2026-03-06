@@ -12,6 +12,13 @@ import { loadSecureJsonSync } from "../../infra/secure-storage.js";
 
 type LegacyAuthStore = Record<string, AuthProfileCredential>;
 
+// Deduplicate "failed to load encrypted auth store" warnings per path.
+// Without this, every RPC call triggers a full disk read + decryption attempt,
+// and on failure logs the same warning 10+ times per second.
+// The set only suppresses REPEATED log.warn() calls — it does NOT cache the store
+// itself, so every load still reads fresh data from disk (no staleness risk).
+const _encryptionWarnedPaths = new Set<string>();
+
 function _syncAuthProfileStore(target: AuthProfileStore, source: AuthProfileStore): void {
   target.version = source.version;
   target.profiles = source.profiles;
@@ -231,6 +238,7 @@ export function loadAuthProfileStore(): AuthProfileStore {
       const decrypted = loadSecureJsonSync(authPath);
       const asStore = coerceAuthStore(decrypted);
       if (asStore) {
+        _encryptionWarnedPaths.delete(authPath); // decryption recovered — clear warn dedup
         const synced = syncExternalCliCredentials(asStore);
         if (synced) {
           saveEncryptedAuthStore(asStore).catch(() => {});
@@ -238,7 +246,10 @@ export function loadAuthProfileStore(): AuthProfileStore {
         return asStore;
       }
     } catch (err) {
-      log.warn("failed to load encrypted auth store, falling back to plaintext", { err });
+      if (!_encryptionWarnedPaths.has(authPath)) {
+        _encryptionWarnedPaths.add(authPath);
+        log.warn("failed to load encrypted auth store, falling back to plaintext", { err });
+      }
     }
 
     // Encrypted decryption failed — try the plaintext backup left by migration
@@ -304,6 +315,7 @@ function loadAuthProfileStoreForAgent(
       const decrypted = loadSecureJsonSync(authPath);
       const asStore = coerceAuthStore(decrypted);
       if (asStore) {
+        _encryptionWarnedPaths.delete(authPath); // decryption recovered — clear warn dedup
         const synced = syncExternalCliCredentials(asStore);
         if (synced) {
           saveEncryptedAuthStore(asStore, agentDir).catch(() => {});
@@ -311,7 +323,10 @@ function loadAuthProfileStoreForAgent(
         return asStore;
       }
     } catch (err) {
-      log.warn("failed to load encrypted auth store for agent, falling back", { err, agentDir });
+      if (!_encryptionWarnedPaths.has(authPath)) {
+        _encryptionWarnedPaths.add(authPath);
+        log.warn("failed to load encrypted auth store for agent, falling back", { err, agentDir });
+      }
     }
 
     // Encrypted decryption failed — try the plaintext backup left by migration
@@ -437,10 +452,18 @@ export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string)
   if (isAuthStoreEncrypted(agentDir) || _encryptionActivated) {
     saveEncryptedAuthStore(payload, agentDir).catch((err) => {
       log.warn("encrypted save failed, falling back to plaintext", { err });
-      saveJsonFile(authPath, payload);
+      try {
+        saveJsonFile(authPath, payload);
+      } catch (plainErr) {
+        log.warn("plaintext save also failed (directory may not exist)", { plainErr });
+      }
     });
   } else {
-    saveJsonFile(authPath, payload);
+    try {
+      saveJsonFile(authPath, payload);
+    } catch (err) {
+      log.warn("save auth-profiles failed (directory may not exist)", { err });
+    }
   }
 }
 

@@ -2120,7 +2120,22 @@ export function renderScriptContent(ctx: SetupPageContext): string {
   return `
   <script>
     // ==================== 状态管理 ====================
-    let currentStep = 1;
+    // Restore step from URL hash or sessionStorage on page reload (e.g. after
+    // gateway restart or Tauri watchdog re-navigation). URL hash is the primary
+    // recovery mechanism (works across origins). sessionStorage is a fallback
+    // for same-origin navigations only (does NOT survive cross-origin changes
+    // like tauri://localhost → http://127.0.0.1).
+    let currentStep = (function() {
+      try {
+        // Priority 1: URL hash (set by goToStep)
+        const m = location.hash.match(/step=(\d+)/);
+        if (m) { const s = parseInt(m[1], 10); if (s >= 1 && s <= 5) return s; }
+        // Priority 2: sessionStorage (persists across same-origin navigation)
+        const stored = sessionStorage.getItem('setup-wizard-step');
+        if (stored) { const s = parseInt(stored, 10); if (s >= 1 && s <= 5) return s; }
+      } catch(e) {}
+      return 1;
+    })();
     let selectedProvider = null;
     let selectedSecurity = 'standard';
     let selectedChannels = [];
@@ -2136,6 +2151,11 @@ export function renderScriptContent(ctx: SetupPageContext): string {
     // ==================== 步骤导航（5步流程） ====================
     function goToStep(step) {
       currentStep = step;
+      // Persist step to URL hash and sessionStorage so page refresh resumes
+      // at the same step. sessionStorage survives cross-origin navigations
+      // within the same tab (e.g. watchdog navigating back to /setup).
+      try { history.replaceState(null, '', '#step=' + step); } catch(e) {}
+      try { sessionStorage.setItem('setup-wizard-step', String(step)); } catch(e) {}
       
       // 更新页面显示
       for (let i = 1; i <= 5; i++) {
@@ -3968,8 +3988,10 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       
       // 配置保存成功，直接跳转到聊天页面
       showStatus('launchStatus', '✓ 配置完成！正在进入...', 'success');
+      // Clear persisted step so next fresh install doesn't resume mid-wizard
+      try { sessionStorage.removeItem('setup-wizard-step'); } catch(e) {}
       await delay(800);
-      
+
       const redirectUrl = buildRedirectUrl();
       window.location.href = redirectUrl;
     }
@@ -4044,6 +4066,13 @@ export function renderScriptContent(ctx: SetupPageContext): string {
         }
       } catch(_) {}
     }, true);
+
+    // Restore step on page load if hash indicates a step > 1.
+    // This ensures that after a page refresh (e.g. due to gateway restart),
+    // the wizard resumes at the step the user was on.
+    if (currentStep > 1) {
+      goToStep(currentStep);
+    }
 
   </script>
 `;

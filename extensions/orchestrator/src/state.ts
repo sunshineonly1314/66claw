@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { safeRename } from "openclawcn/plugin-sdk";
+import { safeRename } from "../../../src/infra/safe-rename.js";
 import type {
   AgentDeployState,
   OrchestrationPlan,
