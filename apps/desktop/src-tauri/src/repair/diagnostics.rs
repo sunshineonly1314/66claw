@@ -208,15 +208,17 @@ fn check_state_dir_exists(state_dir: &std::path::Path) -> DiagnosticCheck {
         check("state_dir_exists", "状态目录", CheckStatus::Pass,
             &format!("{} 存在", state_dir.display()), None)
     } else {
-        check("state_dir_exists", "状态目录", CheckStatus::Fail,
-            &format!("{} 不存在", state_dir.display()), Some("repair_permissions"))
+        // First launch: Gateway has not created the state dir yet.
+        // Report Warn (not Fail) so the auto-upload logic does not fire.
+        check("state_dir_exists", "状态目录", CheckStatus::Warn,
+            &format!("{} 不存在（首次启动将自动创建）", state_dir.display()), Some("repair_permissions"))
     }
 }
 
 fn check_state_dir_writable(state_dir: &std::path::Path) -> DiagnosticCheck {
     if !state_dir.is_dir() {
-        return check("state_dir_writable", "目录可写", CheckStatus::Fail,
-            "状态目录不存在", Some("repair_permissions"));
+        return check("state_dir_writable", "目录可写", CheckStatus::Warn,
+            "状态目录不存在（首次启动将自动创建）", Some("repair_permissions"));
     }
     let test_file = state_dir.join(".repair-write-test");
     match fs::write(&test_file, "test") {
@@ -235,8 +237,10 @@ fn check_state_dir_writable(state_dir: &std::path::Path) -> DiagnosticCheck {
 fn check_config_file(state_dir: &std::path::Path) -> DiagnosticCheck {
     let config_path = state_dir.join("openclawcn.json");
     if !config_path.exists() {
-        return check("config_file_exists", "配置文件", CheckStatus::Fail,
-            "openclawcn.json 不存在", None);
+        // Config file is created on first Gateway start. Missing file before
+        // that is expected — Warn, not Fail.
+        return check("config_file_exists", "配置文件", CheckStatus::Warn,
+            "openclawcn.json 不存在（首次启动后自动生成）", None);
     }
     match fs::read_to_string(&config_path) {
         Ok(content) => {
@@ -543,12 +547,12 @@ mod tests {
     }
 
     #[test]
-    fn test_check_state_dir_exists_fail() {
+    fn test_check_state_dir_exists_missing_is_warn() {
         let nonexistent = std::env::temp_dir().join("_repair_diag_nonexistent_xyzzy");
         let _ = fs::remove_dir_all(&nonexistent);
 
         let result = check_state_dir_exists(&nonexistent);
-        assert!(matches!(result.status, CheckStatus::Fail));
+        assert!(matches!(result.status, CheckStatus::Warn));
         assert_eq!(result.fix_id.as_deref(), Some("repair_permissions"));
     }
 
@@ -564,12 +568,12 @@ mod tests {
     }
 
     #[test]
-    fn test_check_state_dir_writable_fail_missing_dir() {
+    fn test_check_state_dir_writable_missing_dir_is_warn() {
         let nonexistent = std::env::temp_dir().join("_repair_diag_no_writable_xyzzy");
         let _ = fs::remove_dir_all(&nonexistent);
 
         let result = check_state_dir_writable(&nonexistent);
-        assert!(matches!(result.status, CheckStatus::Fail));
+        assert!(matches!(result.status, CheckStatus::Warn));
     }
 
     // ── config file checks ───────────────────────────────────────────
@@ -616,13 +620,13 @@ mod tests {
     }
 
     #[test]
-    fn test_check_config_file_missing() {
+    fn test_check_config_file_missing_is_warn() {
         let temp = std::env::temp_dir().join("_repair_diag_cfg_missing");
         let _ = fs::create_dir_all(&temp);
         let _ = fs::remove_file(temp.join("openclawcn.json"));
 
         let result = check_config_file(&temp);
-        assert!(matches!(result.status, CheckStatus::Fail));
+        assert!(matches!(result.status, CheckStatus::Warn));
 
         let _ = fs::remove_dir_all(&temp);
     }

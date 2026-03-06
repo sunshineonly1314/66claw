@@ -197,8 +197,12 @@ export const logsHandlers: GatewayRequestHandlers = {
     }
     execFile(bin, [dir], (err) => {
       if (err) {
-        // Windows explorer returns exit code 1 even on success when opening a folder.
-        if (platform === "win32" && (err as any).code === 1) {
+        // Windows explorer.exe always returns a non-zero exit code when
+        // invoked via execFile (typically 1, but other codes are possible on
+        // Windows Server / RDP environments). The folder is still opened
+        // successfully, so treat all numeric exit codes as success on Windows.
+        // Non-numeric codes (e.g. 'ENOENT') indicate a real process error.
+        if (platform === "win32" && typeof (err as any).code === "number") {
           respond(true, { ok: true, path: dir }, undefined);
           return;
         }

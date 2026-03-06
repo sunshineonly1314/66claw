@@ -215,7 +215,11 @@ function resolveBrowserBaseUrl(params: {
       "Browser control is disabled. Set browser.enabled=true in ~/.openclawcn/openclawcn.json.",
     );
   }
-  return `http://127.0.0.1:${resolved.controlPort}`;
+  // In embedded gateway mode, the browser control HTTP server is not started
+  // (only the in-process service is initialised). Return undefined so that
+  // fetchBrowserJson() routes through the in-process dispatcher instead of
+  // attempting an HTTP fetch to a port that is not listening.
+  return undefined;
 }
 
 export function createBrowserTool(opts?: {
