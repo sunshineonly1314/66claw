@@ -128,12 +128,12 @@ describe("decryptConfigFields", () => {
     expect(decryptConfigFields(true)).toBe(true);
   });
 
-  it("passes through when encryption is disabled", () => {
+  it("still decrypts when encryption is disabled (read path always decrypts)", () => {
     setupMocks(false);
     const enc = fakeEnc("secret");
     const input = { key: enc };
     const result = decryptConfigFields(input);
-    expect(result).toEqual({ key: enc }); // NOT decrypted
+    expect(result).toEqual({ key: "secret" }); // always decrypts
   });
 
   it("returns ENC{...} as-is on decryption failure (graceful degradation)", () => {

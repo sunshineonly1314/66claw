@@ -10,6 +10,7 @@ import path from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createConfigIO } from "./io.js";
 import { isEncryptedValue } from "./field-encrypt.js";
+import { setEncryptionConfigOverride } from "../security/content-vault.js";
 
 // ============================================================================
 // Helpers
@@ -42,6 +43,15 @@ function createIO(configPath: string) {
 // ============================================================================
 
 describe("field encryption I/O integration", () => {
+  beforeEach(() => {
+    // These tests validate encryption behavior, so explicitly enable it
+    setEncryptionConfigOverride(true);
+  });
+
+  afterEach(() => {
+    setEncryptionConfigOverride(undefined);
+  });
+
   it("plaintext config → load → write → file contains ENC{} for sensitive fields", async () => {
     const config = JSON.stringify(
       {
@@ -236,6 +246,75 @@ describe("field encryption I/O integration", () => {
       const parsedToken = (snapshot.parsed as any)?.gateway?.auth?.token;
       expect(typeof parsedToken).toBe("string");
       expect(isEncryptedValue(parsedToken)).toBe(true);
+    });
+  });
+
+  it("encryption disabled → sensitive fields stay plaintext on disk", async () => {
+    setEncryptionConfigOverride(false);
+    const config = JSON.stringify(
+      {
+        gateway: { auth: { token: "my-secret-token", mode: "token" } },
+      },
+      null,
+      2,
+    );
+
+    await withTempConfig(config, async (configPath) => {
+      const io = createIO(configPath);
+
+      // Load: plaintext
+      const loaded = io.loadConfig();
+      expect(loaded.gateway?.auth?.token).toBe("my-secret-token");
+
+      // Write back
+      const { snapshot, writeOptions } = await io.readConfigFileSnapshotForWrite();
+      await io.writeConfigFile(snapshot.config, writeOptions);
+
+      // Verify: still plaintext on disk
+      const written = await fs.readFile(configPath, "utf-8");
+      const parsed = JSON.parse(written);
+      expect(parsed.gateway.auth.token).toBe("my-secret-token");
+      expect(isEncryptedValue(parsed.gateway.auth.token)).toBe(false);
+    });
+  });
+
+  it("switching from encrypted to plaintext: old ENC{} decrypted on read, plaintext on write", async () => {
+    // First, write with encryption ON
+    setEncryptionConfigOverride(true);
+    const config = JSON.stringify(
+      {
+        gateway: { auth: { token: "secret-value" } },
+      },
+      null,
+      2,
+    );
+
+    await withTempConfig(config, async (configPath) => {
+      const io1 = createIO(configPath);
+      const { snapshot: snap1, writeOptions: opts1 } = await io1.readConfigFileSnapshotForWrite();
+      await io1.writeConfigFile(snap1.config, opts1);
+
+      // Verify encrypted on disk
+      const afterEncrypt = await fs.readFile(configPath, "utf-8");
+      expect(isEncryptedValue(JSON.parse(afterEncrypt).gateway.auth.token)).toBe(true);
+
+      // Now switch to encryption OFF
+      setEncryptionConfigOverride(false);
+      const io2 = createIO(configPath);
+
+      // Load: ENC{} should still be decrypted (read always decrypts)
+      const loaded = io2.loadConfig();
+      expect(loaded.gateway?.auth?.token).toBe("secret-value");
+
+      // Write back with encryption off
+      const { snapshot: snap2, writeOptions: opts2 } = await io2.readConfigFileSnapshotForWrite();
+      await io2.writeConfigFile(snap2.config, opts2);
+
+      // Verify: plaintext on disk now
+      const afterPlaintext = await fs.readFile(configPath, "utf-8");
+      const parsed = JSON.parse(afterPlaintext);
+      expect(parsed.gateway.auth.token).toBe("secret-value");
+      expect(isEncryptedValue(parsed.gateway.auth.token)).toBe(false);
     });
   });
 });

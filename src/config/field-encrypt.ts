@@ -188,11 +188,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Called after JSON5 parse + $include + overlay, before ${VAR} substitution
  * and Zod validation.
  *
- * Non-encrypted strings pass through unchanged (backward-compatible with
- * plaintext configs that haven't been encrypted yet).
+ * 始终尝试解密，不受 isEncryptionEnabled() 影响。原因：
+ * 1. 读取在 Zod 验证之前执行，config override 尚未设置
+ * 2. 用户从加密切到不加密时，旧 ENC{} 数据仍须可读
+ * 3. 对明文字符串是无害透传（非 ENC{} 前缀直接返回原值）
  */
 export function decryptConfigFields(obj: unknown): unknown {
-  if (!isEncryptionEnabled()) return obj;
   return decryptWalk(obj);
 }
 

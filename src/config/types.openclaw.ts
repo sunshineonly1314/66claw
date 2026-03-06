@@ -159,6 +159,11 @@ export type OpenClawCNConfig = {
       timeout?: number;
     }>;
   };
+  /** 安全配置。 */
+  security?: {
+    /** 是否加密敏感字段（默认 false）。 */
+    encryptSensitiveFields?: boolean;
+  };
   /** 许可证配置（由系统自动写入，请勿手动修改）。 */
   license?: LicenseConfig;
   /** 初始设置向导状态（由系统自动写入）。 */

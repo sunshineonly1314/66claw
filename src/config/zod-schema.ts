@@ -807,6 +807,14 @@ export const OpenClawCNSchema = z
       })
       .strict()
       .optional(),
+    /** 安全配置。 */
+    security: z
+      .object({
+        /** 是否加密敏感字段（API Key、Token、Password）。默认 false。 */
+        encryptSensitiveFields: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((cfg, ctx) => {

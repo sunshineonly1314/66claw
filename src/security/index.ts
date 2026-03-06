@@ -41,6 +41,7 @@ export {
 // 内容保险库 — 本地机器绑定加密
 export {
   setContentVaultDevMode,
+  setEncryptionConfigOverride,
   isEncryptionEnabled,
   encryptContent,
   decryptContent,

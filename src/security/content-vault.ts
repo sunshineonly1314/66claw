@@ -318,14 +318,29 @@ export function setContentVaultDevMode(isDev: boolean): void {
 
 /**
  * 检查是否为加密环境。
- * 未锁定时默认启用（安全侧失败），不读取环境变量。
+ * 优先级: config override > dev mode > 默认值(false)。
  */
 export function isEncryptionEnabled(): boolean {
-  if (devModeLocked) {
-    return !devModeFlag;
-  }
-  // 未锁定（单元测试等场景）：默认加密启用，不信任外部环境变量。
-  return true;
+  // Config-level override 优先（由 loadConfig 后设置）
+  if (encryptionConfigOverride !== null) return encryptionConfigOverride;
+  // Dev mode 判断
+  if (devModeLocked) return !devModeFlag;
+  // 默认不加密（产品成熟后改 true）
+  return false;
+}
+
+// ============================================================================
+// Config-level encryption override
+// ============================================================================
+
+let encryptionConfigOverride: boolean | null = null;
+
+/**
+ * 由 config 加载流程调用，将 security.encryptSensitiveFields 的值
+ * 传入以覆盖默认行为。传入 undefined 时重置为 null（使用默认值）。
+ */
+export function setEncryptionConfigOverride(enabled: boolean | undefined): void {
+  encryptionConfigOverride = enabled ?? null;
 }
 
 // ============================================================================
@@ -341,5 +356,6 @@ export function destroyContentVault(): void {
     cachedLocalKey = null;
   }
   cachedMachineId = null;
+  encryptionConfigOverride = null;
   log.debug("Content vault destroyed");
 }

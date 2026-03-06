@@ -47,6 +47,7 @@ import {
 } from "./validation.js";
 import { compareOpenClawCNVersions } from "./version.js";
 import { decryptConfigFields, encryptConfigFields } from "./field-encrypt.js";
+import { setEncryptionConfigOverride } from "../security/content-vault.js";
 
 // Re-export for backwards compatibility
 export { CircularIncludeError, ConfigIncludeError } from "./includes.js";
@@ -652,6 +653,8 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         deps.logger.warn(`Config warnings:\\n${details}`);
       }
       warnIfConfigFromFuture(validated.config, deps.logger);
+      // 将 security.encryptSensitiveFields 配置值传入 content-vault 以控制写入时是否加密
+      setEncryptionConfigOverride(validated.config.security?.encryptSensitiveFields);
       // [CN-PATCH:memory-p0] applyCnDefaults 注入中国区默认配置（记忆搜索、会话保留等）
       const cfg = applyCnDefaults(
         applyModelDefaults(

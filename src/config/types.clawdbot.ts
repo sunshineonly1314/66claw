@@ -113,6 +113,11 @@ export type OpenClawCNConfig = {
     /** Last wizard step that was fully completed (0-indexed). */
     lastCompletedStep?: number;
   };
+  /** 安全配置。 */
+  security?: {
+    /** 是否加密敏感字段（默认 false）。 */
+    encryptSensitiveFields?: boolean;
+  };
   /** License 授权信息 (OpenClawCN) */
   license?: LicenseConfig;
   /** 通用凭据存储（兼容字段，用于存储环境变量） */
