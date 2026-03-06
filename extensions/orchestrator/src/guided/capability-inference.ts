@@ -19,7 +19,7 @@ import { matchCapabilitiesToRole, mergeWithStaticInference, MAX_SKILLS_PER_AGENT
 
 // ── Model Tier → Candidate Models ────────────────────────────────────────
 
-type ModelCandidate = {
+export type ModelCandidate = {
   fullId: string;          // "deepseek/deepseek-chat"
   provider: string;        // "deepseek"
   modelId: string;         // "deepseek-chat"
@@ -32,12 +32,14 @@ type ModelCandidate = {
 const MODEL_CANDIDATES: ModelCandidate[] = [
   // cheap tier
   { fullId: "deepseek/deepseek-chat", provider: "deepseek", modelId: "deepseek-chat", contextWindow: 64000, tier: "cheap", affinities: { general: 8, coding: 7, data_analysis: 7, content: 6 } },
+  { fullId: "siliconflow/deepseek-ai/DeepSeek-V3", provider: "siliconflow", modelId: "deepseek-ai/DeepSeek-V3", contextWindow: 64000, tier: "cheap", affinities: { general: 8, coding: 7, data_analysis: 7, content: 6 } },
   { fullId: "qwen/qwen-turbo", provider: "qwen", modelId: "qwen-turbo", contextWindow: 131072, tier: "cheap", affinities: { general: 6, content: 7, scheduling: 7 } },
   { fullId: "qwen/qwen-plus", provider: "qwen", modelId: "qwen-plus", contextWindow: 131072, tier: "cheap", affinities: { general: 7, content: 8, research: 6 } },
   { fullId: "zhipu/glm-4-plus", provider: "zhipu", modelId: "glm-4-plus", contextWindow: 128000, tier: "cheap", affinities: { general: 7, content: 7 } },
   { fullId: "doubao/doubao-seed-1-6-lite-251015", provider: "doubao", modelId: "doubao-seed-1-6-lite-251015", contextWindow: 256000, tier: "cheap", affinities: { general: 6, scheduling: 7 } },
   // mid tier
   { fullId: "deepseek/deepseek-reasoner", provider: "deepseek", modelId: "deepseek-reasoner", contextWindow: 64000, tier: "mid", affinities: { coding: 9, data_analysis: 9, research: 8, customer_support: 6 } },
+  { fullId: "siliconflow/deepseek-ai/DeepSeek-R1", provider: "siliconflow", modelId: "deepseek-ai/DeepSeek-R1", contextWindow: 64000, tier: "mid", affinities: { coding: 9, data_analysis: 9, research: 8, customer_support: 6 } },
   { fullId: "openai/gpt-4o", provider: "openai", modelId: "gpt-4o", contextWindow: 128000, tier: "mid", affinities: { general: 9, customer_support: 8, content: 8, research: 8 } },
   { fullId: "anthropic/claude-sonnet-4-5", provider: "anthropic", modelId: "claude-sonnet-4-5", contextWindow: 200000, tier: "mid", affinities: { coding: 9, research: 9, general: 8 } },
   { fullId: "zhipu/glm-5", provider: "zhipu", modelId: "glm-5", contextWindow: 128000, tier: "mid", affinities: { general: 8, content: 8, customer_support: 7 } },
@@ -87,12 +89,15 @@ const SCENARIO_SKILL_MAP: Record<string, string[]> = {
  * @param userCtx - Structured user context from guided questionnaire
  * @param pluginConfig - Config object from plugin context (to read configured providers)
  * @param discoveryResult - Runtime discovery of installed skills and MCP servers (optional)
+ * @param availableModels - Dynamic model list from models.list gateway call (optional).
+ *                          When provided, replaces the static MODEL_CANDIDATES for model selection.
  */
 export function inferAgentCapabilities(
   bp: AgentBlueprint,
   userCtx: UserContext,
   pluginConfig?: Record<string, unknown>,
   discoveryResult?: DiscoveryResult,
+  availableModels?: ModelCandidate[],
 ): InferredCapabilities {
   const staticSkills = inferSkills(bp.role, userCtx);
   const staticMCP = inferMCPServers(bp.role, userCtx.resources);
@@ -113,7 +118,7 @@ export function inferAgentCapabilities(
   }
 
   return {
-    model: selectModel(bp.modelTier, userCtx, pluginConfig, bp.role, bp.id),
+    model: selectModel(bp.modelTier, userCtx, pluginConfig, bp.role, bp.id, availableModels),
     tools: inferTools(bp.role, userCtx),
     skills: finalSkills,
     mcpHints: finalMCP,
@@ -158,8 +163,8 @@ function selectModel(
   pluginConfig?: Record<string, unknown>,
   role?: string,
   agentId?: string,
+  availableModels?: ModelCandidate[],
 ): InferredCapabilities["model"] {
-  const configured = getConfiguredProviders(pluginConfig);
   const scenario = ctx.scenario || "general";
 
   // Budget → tier adjustment
@@ -174,8 +179,8 @@ function selectModel(
     if (userModel) {
       return { primary: userModel };
     }
-    // No user-configured model: pick the best available from configured providers
-    effectiveTier = configured.length > 0 ? "mid" : "sota";
+    // No user-configured model: pick the best available
+    effectiveTier = "mid";
   }
   // Simple role downgrade: use cheap model to save cost (unless user wants premium)
   else if (role && ctx.budget !== "premium") {
@@ -185,30 +190,47 @@ function selectModel(
     }
   }
 
-  // Filter by tier and availability
-  let candidates = MODEL_CANDIDATES
-    .filter(m => m.tier === effectiveTier)
-    .filter(m => configured.length === 0 || configured.includes(m.provider));
+  // ── Model pool: prefer dynamic (from models.list), fallback to static ──
+  // When availableModels is provided (from gateway models.list), those ARE the
+  // user's actually-available models — no need for getConfiguredProviders() filtering.
+  // When not provided, fall back to static MODEL_CANDIDATES + provider filtering.
+  const useDynamic = availableModels && availableModels.length > 0;
+  const pool = useDynamic ? availableModels : MODEL_CANDIDATES;
 
-  // Fallback: if no models in target tier, try adjacent tiers
-  if (candidates.length === 0) {
-    candidates = MODEL_CANDIDATES
-      .filter(m => configured.length === 0 || configured.includes(m.provider));
+  // For static pool, apply provider filtering
+  let configured: string[] = [];
+  if (!useDynamic) {
+    configured = getConfiguredProviders(pluginConfig);
+    // If no configured providers detected, prefer globalTextModel
+    if (configured.length === 0) {
+      const globalModel = getGlobalTextModel(pluginConfig);
+      if (globalModel) return { primary: globalModel };
+    }
   }
 
-  // If still no candidates but user has a global text model configured, use that
+  // Filter by tier and availability
+  let candidates = pool
+    .filter(m => m.tier === effectiveTier)
+    .filter(m => useDynamic || configured.length === 0 || configured.includes(m.provider));
+
+  // Fallback: if no models in target tier, try all tiers
+  if (candidates.length === 0) {
+    candidates = pool
+      .filter(m => useDynamic || configured.length === 0 || configured.includes(m.provider));
+  }
+
+  // If still no candidates, use global text model or ultimate fallback
   if (candidates.length === 0) {
     const globalModel = getGlobalTextModel(pluginConfig);
     if (globalModel) return { primary: globalModel };
-    // Ultimate fallback: use the first candidate from the full table
     return { primary: MODEL_CANDIDATES[0].fullId };
   }
 
-  // Score by scenario affinity
+  // Score by scenario affinity (tie-break by provider name for determinism)
   const scored = candidates.map(m => ({
     ...m,
     score: (m.affinities[scenario] ?? 5) + (m.tier === effectiveTier ? 2 : 0),
-  })).sort((a, b) => b.score - a.score);
+  })).sort((a, b) => b.score - a.score || a.provider.localeCompare(b.provider));
 
   return {
     primary: scored[0].fullId,
@@ -233,23 +255,55 @@ function getGlobalTextModel(config?: Record<string, unknown>): string | undefine
 
 function getConfiguredProviders(config?: Record<string, unknown>): string[] {
   try {
-    // Check config.models.providers (primary location)
+    const result = new Set<string>();
+
+    // Source 1: config.models.providers (explicit inline providers, e.g. custom-openai)
     const models = config?.models as Record<string, unknown> | undefined;
-    let providers = models?.providers;
-
-    // Fallback: check config.gateway.providers (alternative config structure)
-    if (!providers || typeof providers !== "object") {
-      const gateway = config?.gateway as Record<string, unknown> | undefined;
-      providers = gateway?.providers;
+    const modelProviders = models?.providers;
+    if (modelProviders && typeof modelProviders === "object") {
+      if (Array.isArray(modelProviders)) {
+        for (const p of modelProviders) {
+          const id = String(p.id ?? p.name ?? "").trim();
+          if (id) result.add(id);
+        }
+      } else {
+        for (const key of Object.keys(modelProviders as Record<string, unknown>)) {
+          if (key.trim()) result.add(key.trim());
+        }
+      }
     }
 
-    if (!providers || typeof providers !== "object") return [];
-
-    // providers may be Record<string, ProviderConfig> (object keyed by provider ID) or an array
-    if (Array.isArray(providers)) {
-      return providers.map(p => String(p.id ?? p.name ?? "")).filter(Boolean);
+    // Source 2: config.gateway.providers (alternative config structure)
+    const gateway = config?.gateway as Record<string, unknown> | undefined;
+    const gwProviders = gateway?.providers;
+    if (gwProviders && typeof gwProviders === "object" && !Array.isArray(gwProviders)) {
+      for (const key of Object.keys(gwProviders as Record<string, unknown>)) {
+        if (key.trim()) result.add(key.trim());
+      }
     }
-    return Object.keys(providers as Record<string, unknown>).filter(Boolean);
+
+    // Source 3: config.auth.order — setup-wizard writes provider credentials here,
+    // NOT to config.models.providers. This is the primary location for standard
+    // providers like siliconflow, deepseek, qwen, etc.
+    const auth = config?.auth as Record<string, unknown> | undefined;
+    const authOrder = auth?.order;
+    if (authOrder && typeof authOrder === "object" && !Array.isArray(authOrder)) {
+      for (const key of Object.keys(authOrder as Record<string, unknown>)) {
+        if (key.trim()) result.add(key.trim());
+      }
+    }
+
+    // Source 4: extract provider from agents.defaults.model.primary
+    // e.g. "siliconflow/deepseek-ai/DeepSeek-V3" → "siliconflow"
+    const globalModel = getGlobalTextModel(config);
+    if (globalModel) {
+      const slash = globalModel.indexOf("/");
+      if (slash > 0) {
+        result.add(globalModel.slice(0, slash));
+      }
+    }
+
+    return [...result].filter(Boolean);
   } catch {
     return [];
   }
@@ -398,4 +452,110 @@ function inferHeartbeat(
     return { every: "24h", activeHours: { start: "09:00", end: "21:00" } };
   }
   return undefined;
+}
+
+// ── Dynamic Model Catalog Conversion ─────────────────────────────────────
+
+/** Guess model tier from its id / metadata. */
+function guessTier(m: { id: string; reasoning?: boolean; contextWindow?: number }): ModelTier {
+  // SOTA flagships — check FIRST (higher priority than reasoning)
+  if (/opus|gpt-5/i.test(m.id)) return "sota";
+  // Reasoning / deep-think models → mid
+  if (m.reasoning) return "mid";
+  if (/reasoner|r1\b|o[13]\b|think/i.test(m.id)) return "mid";
+  // Everything else → cheap
+  return "cheap";
+}
+
+/** Default scenario affinity from model id heuristics. */
+function guessAffinities(m: { id: string; reasoning?: boolean }): Record<string, number> {
+  const base: Record<string, number> = { general: 7 };
+  if (/code|coder|codex|coding/i.test(m.id)) {
+    Object.assign(base, { coding: 9, data_analysis: 8 });
+  }
+  if (m.reasoning || /reasoner|r1\b|think/i.test(m.id)) {
+    Object.assign(base, { coding: 9, data_analysis: 9, research: 8 });
+  }
+  if (/chat|turbo|lite|flash/i.test(m.id)) {
+    Object.assign(base, { general: 8, content: 7, customer_support: 7 });
+  }
+  return base;
+}
+
+/**
+ * Convert gateway ModelCatalogEntry[] to ModelCandidate[].
+ *
+ * Call this with the result of `callGateway("models.list", {})` to get
+ * a dynamic model pool that replaces the static MODEL_CANDIDATES.
+ *
+ * Usage:
+ *   const res = await callGateway("models.list", {});
+ *   const models = catalogToCandidate(res?.models ?? []);
+ *   inferAgentCapabilities(bp, ctx, config, discovery, models);
+ */
+/** Pattern for image-only model IDs that should NOT be used as text agent models. */
+const IMAGE_ONLY_MODEL_PATTERN = /dall-e|gpt-image|wanx|wan-x|wan2|stable-diffusion|flux|midjourney|imagen/i;
+
+// ── Cross-provider model dedup ──────────────────────────────────────────
+//
+// Different providers host the same upstream model under different IDs.
+// E.g. DeepSeek V3 is "deepseek-chat" on deepseek, "deepseek-ai/DeepSeek-V3"
+// on siliconflow/huggingface. Without dedup, the same logical model takes
+// multiple slots in the candidate pool, crowding out genuinely different models
+// and producing fake "fallbacks" that are really the same model.
+//
+// Strategy: extract a canonical fingerprint from the model ID, keep only the
+// first occurrence per fingerprint (first = earlier in catalog = native provider
+// or user's primary provider).
+
+/** Extract canonical model fingerprint, e.g. "deepseek-v3", "qwen-max". */
+function canonicalModelFingerprint(modelId: string): string {
+  const lower = modelId.toLowerCase()
+    // Strip org prefix: "deepseek-ai/DeepSeek-V3" → "deepseek-v3"
+    .replace(/^[a-z0-9_-]+\//i, "")
+    // Normalize separators
+    .replace(/[_\s]+/g, "-");
+
+  // Known aliases: same upstream model, different commercial names
+  // deepseek-chat (native API) = deepseek-v3 (siliconflow/huggingface naming)
+  if (lower === "deepseek-chat" || lower === "deepseek-v3") return "deepseek-v3";
+  if (lower === "deepseek-reasoner" || lower === "deepseek-r1") return "deepseek-r1";
+  // qwen variants: "qwen-turbo-latest" → "qwen-turbo"
+  const qwenBase = lower.match(/^(qwen-(?:turbo|plus|max|vl-max))(?:-latest)?$/);
+  if (qwenBase) return qwenBase[1];
+  // glm variants
+  if (lower === "glm-4-plus" || lower === "chatglm-4-plus") return "glm-4-plus";
+  if (lower === "glm-5" || lower === "chatglm-5") return "glm-5";
+
+  return lower;
+}
+
+export function catalogToCandidate(
+  entries: Array<{ id: string; name?: string; provider: string; contextWindow?: number; reasoning?: boolean; input?: Array<string> }>,
+): ModelCandidate[] {
+  const seen = new Set<string>();
+
+  return entries
+    .filter(e => e.provider && e.id)
+    // Exclude image-only models (no text input, or known image-gen model IDs)
+    .filter(e => {
+      if (IMAGE_ONLY_MODEL_PATTERN.test(e.id)) return false;
+      if (e.input && e.input.length > 0 && !e.input.includes("text")) return false;
+      return true;
+    })
+    // Cross-provider dedup: keep first occurrence per canonical fingerprint
+    .filter(e => {
+      const fp = canonicalModelFingerprint(e.id);
+      if (seen.has(fp)) return false;
+      seen.add(fp);
+      return true;
+    })
+    .map(e => ({
+      fullId: `${e.provider}/${e.id}`,
+      provider: e.provider,
+      modelId: e.id,
+      contextWindow: e.contextWindow ?? 32000,
+      tier: guessTier(e),
+      affinities: guessAffinities(e),
+    }));
 }

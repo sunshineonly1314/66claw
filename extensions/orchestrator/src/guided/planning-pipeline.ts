@@ -21,7 +21,7 @@
 import type { AgentBlueprint, UserContext, InferredCapabilities } from "../types.js";
 import type { DiscoveryResult } from "./runtime-discovery.js";
 import type { SceneVerification, SceneGap } from "./scene-verifier.js";
-import { inferAgentCapabilities, estimateRoleComplexity, isSupervisorRole } from "./capability-inference.js";
+import { inferAgentCapabilities, estimateRoleComplexity, isSupervisorRole, type ModelCandidate } from "./capability-inference.js";
 import { verifyScene } from "./scene-verifier.js";
 import { recommendToolsForRole } from "../tool-recommend.js";
 import { MAX_SKILLS_PER_AGENT, MAX_MCP_PER_AGENT } from "./runtime-discovery.js";
@@ -79,8 +79,9 @@ export function executePlanningPipeline(params: {
   userCtx: UserContext;
   pluginConfig?: Record<string, unknown>;
   discovery?: DiscoveryResult;
+  availableModels?: ModelCandidate[];
 }): PipelineResult {
-  const { requirement, userCtx, pluginConfig, discovery } = params;
+  const { requirement, userCtx, pluginConfig, discovery, availableModels } = params;
   let blueprints = [...params.blueprints];
   const rounds: PlanningRoundResult[] = [];
 
@@ -95,7 +96,7 @@ export function executePlanningPipeline(params: {
 
     // ── Step 1: Infer capabilities ──
     for (const bp of blueprints) {
-      bp.inferredCapabilities = inferAgentCapabilities(bp, userCtx, pluginConfig, discovery);
+      bp.inferredCapabilities = inferAgentCapabilities(bp, userCtx, pluginConfig, discovery, availableModels);
       if (!bp.tools || !bp.tools.allow || bp.tools.allow.length === 0) {
         bp.tools = recommendToolsForRole(bp.role, bp.name);
       }

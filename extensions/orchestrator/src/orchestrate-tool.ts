@@ -46,7 +46,7 @@ import {
   saveState,
   updateAgentStatus,
 } from "./state.js";
-import { inferAgentCapabilities } from "./guided/capability-inference.js";
+import { inferAgentCapabilities, catalogToCandidate, type ModelCandidate } from "./guided/capability-inference.js";
 import { discoverAll } from "./guided/runtime-discovery.js";
 import { verifyScene, formatVerificationReport } from "./guided/scene-verifier.js";
 import { executePlanningPipeline, formatPipelineReport } from "./guided/planning-pipeline.js";
@@ -54,6 +54,28 @@ import { validateSoulStructure, buildSoulGenerationPrompt } from "./guided/soul-
 import { estimateTeamDailyCost, formatCostRange } from "./guided/cost-estimator.js";
 import { generateUsageGuide } from "./guided/usage-guide.js";
 import { emitDiagnosticEvent } from "openclawcn/plugin-sdk";
+
+// ── Dynamic Model Fetching ───────────────────────────────────────────────
+
+/**
+ * Fetch available models from gateway and convert to ModelCandidate[].
+ * Returns undefined on failure (callers fall back to static MODEL_CANDIDATES).
+ */
+async function fetchAvailableModels(callGateway: CallGatewayFn): Promise<ModelCandidate[] | undefined> {
+  try {
+    // callGateway returns the unwrapped payload directly (GatewayClient resolves
+    // parsed.payload, not the full { ok, payload, error } envelope).
+    // So for models.list, the return is { models: [...] }, not { payload: { models } }.
+    const res = await callGateway("models.list", {}) as {
+      models?: Array<{ id: string; name?: string; provider: string; contextWindow?: number; reasoning?: boolean; input?: Array<string> }>;
+    } | undefined;
+    const models = res?.models;
+    if (models && models.length > 0) {
+      return catalogToCandidate(models);
+    }
+  } catch { /* fallback to static MODEL_CANDIDATES */ }
+  return undefined;
+}
 
 // ── Tool Schema ──────────────────────────────────────────────────────────
 
@@ -125,7 +147,7 @@ export function createOrchestrateTool(
         case "quick_deploy":
           return handleQuickDeploy(params, ctx, callGateway);
         case "guided_propose":
-          return handleGuidedPropose(params, ctx);
+          return handleGuidedPropose(params, ctx, callGateway);
         case "guided_refine":
           return handleGuidedRefine(params);
         case "guided_deploy":
@@ -192,9 +214,12 @@ async function handleQuickDeploy(
     budget: "balanced",
   };
   const pluginConfig = ctx.config as Record<string, unknown> | undefined;
-  const discoveryResult = await discoverAll(ctx.workspaceDir).catch(() => undefined);
+  const [discoveryResult, dynamicModels] = await Promise.all([
+    discoverAll(ctx.workspaceDir).catch(() => undefined),
+    fetchAvailableModels(callGateway),
+  ]);
   for (const bp of blueprints) {
-    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext, pluginConfig, discoveryResult);
+    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext, pluginConfig, discoveryResult, dynamicModels);
   }
 
   // 4. Create plan (merged plan+confirm+deploy)
@@ -234,6 +259,7 @@ async function handleQuickDeploy(
 async function handleGuidedPropose(
   params: Record<string, unknown>,
   ctx: OpenClawCNPluginToolContext,
+  callGateway: CallGatewayFn,
 ): Promise<AgentToolResult<unknown>> {
   const requirement = String(params.requirement ?? "").trim();
   if (!requirement) {
@@ -284,7 +310,10 @@ async function handleGuidedPropose(
 
   // 4. Multi-round planning pipeline (Plan→Verify→Refine→Finalize)
   const pluginConfig = ctx.config as Record<string, unknown> | undefined;
-  const guidedDiscovery = await discoverAll(ctx.workspaceDir).catch(() => undefined);
+  const [guidedDiscovery, dynamicModels] = await Promise.all([
+    discoverAll(ctx.workspaceDir).catch(() => undefined),
+    fetchAvailableModels(callGateway),
+  ]);
 
   const pipelineResult = executePlanningPipeline({
     blueprints,
@@ -292,6 +321,7 @@ async function handleGuidedPropose(
     userCtx: userContext,
     pluginConfig,
     discovery: guidedDiscovery,
+    availableModels: dynamicModels,
   });
 
   // Use refined blueprints from pipeline
@@ -480,13 +510,17 @@ async function handleGuidedDeploy(
 
   // Re-infer capabilities (may have changed during guided_refine)
   const pluginConfig = ctx.config as Record<string, unknown> | undefined;
-  const deployDiscovery = await discoverAll(ctx.workspaceDir).catch(() => undefined);
+  const [deployDiscovery, dynamicModels] = await Promise.all([
+    discoverAll(ctx.workspaceDir).catch(() => undefined),
+    fetchAvailableModels(callGateway),
+  ]);
   for (const bp of plan.agents) {
     bp.inferredCapabilities = inferAgentCapabilities(
       bp,
       plan.userContext ?? { scenario: "general", channels: [], resources: [], volume: "medium" as const, budget: "balanced" as const },
       pluginConfig,
       deployDiscovery,
+      dynamicModels,
     );
   }
 
@@ -1995,9 +2029,12 @@ export async function performQuickDeploy(
     volume: "medium",
     budget: "balanced",
   };
-  const legacyDiscovery = await discoverAll(process.cwd()).catch(() => undefined);
+  const [legacyDiscovery, dynamicModels] = await Promise.all([
+    discoverAll(process.cwd()).catch(() => undefined),
+    fetchAvailableModels(callGw),
+  ]);
   for (const bp of blueprints) {
-    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext, undefined, legacyDiscovery);
+    bp.inferredCapabilities = inferAgentCapabilities(bp, defaultContext, undefined, legacyDiscovery, dynamicModels);
   }
 
   const planId = generatePlanId();
@@ -2107,10 +2144,13 @@ export async function performGuidedPropose(
     teamDescription = requirement;
   }
 
-  // 3. Infer capabilities (with runtime discovery)
-  const confirmDiscovery = await discoverAll(process.cwd()).catch(() => undefined);
+  // 3. Infer capabilities (with runtime discovery + dynamic model catalog)
+  const [confirmDiscovery, dynamicModels] = await Promise.all([
+    discoverAll(process.cwd()).catch(() => undefined),
+    fetchAvailableModels(callGw),
+  ]);
   for (const bp of blueprints) {
-    bp.inferredCapabilities = inferAgentCapabilities(bp, userContext, undefined, confirmDiscovery);
+    bp.inferredCapabilities = inferAgentCapabilities(bp, userContext, undefined, confirmDiscovery, dynamicModels);
     if (!bp.tools || !bp.tools.allow || bp.tools.allow.length === 0) {
       bp.tools = recommendToolsForRole(bp.role, bp.name);
     }
