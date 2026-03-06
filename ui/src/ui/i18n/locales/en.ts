@@ -600,6 +600,7 @@ export const en = {
   "chat.newSession": "New Session",
   "chat.sendMessage": "Send a message...",
   "chat.send": "Send",
+  "chat.openTerminal": "Open Terminal",
   "chat.stop": "Stop",
   "chat.thinking": "Thinking...",
   "chat.generating": "Generating...",

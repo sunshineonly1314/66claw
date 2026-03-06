@@ -77,6 +77,7 @@ export type ComposeCardProps = {
   screenShareModelName?: string;
   /** Toggle screen sharing on/off. */
   onScreenShareToggle?: () => void;
+
 };
 
 // ── Tool shortcuts ────────────────────────────────────
@@ -623,6 +624,7 @@ export function renderComposeCard(props: ComposeCardProps): TemplateResult {
                 </button>
               `
             : nothing}
+
 
         </div>
 

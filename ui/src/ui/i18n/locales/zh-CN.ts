@@ -603,6 +603,7 @@ export const zhCN: Record<keyof typeof en, string> = {
   "chat.newSession": "新建会话",
   "chat.sendMessage": "输入消息...",
   "chat.send": "发送",
+  "chat.openTerminal": "打开终端",
   "chat.stop": "停止",
   "chat.thinking": "思考中...",
   "chat.generating": "生成中...",

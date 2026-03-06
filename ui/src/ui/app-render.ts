@@ -2515,11 +2515,6 @@ export function renderApp(state: AppViewState) {
                 screenShareFrameCount: state.screenShareFrameCount,
                 screenShareModelName: state.screenShareModelName ?? undefined,
                 onScreenShareToggle: () => { void state.toggleScreenShare(); },
-                onOpenTerminal: () => {
-                  state.client?.request("terminal.open", {}).catch((err: unknown) => {
-                    console.warn("Failed to open terminal:", err);
-                  });
-                },
               },
               // OpenClawCN: intent-hint (智能意图提示)
               intentHintProps: {

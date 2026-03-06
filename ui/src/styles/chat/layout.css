@@ -639,6 +639,46 @@
   line-height: 1;
 }
 
+/* ── CLI Button ──────────────────────────────────────────────────── */
+
+.cli-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full, 9999px);
+  background: var(--foreground, #1a1a1a);
+  color: var(--background, #fff);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+
+.cli-toggle:hover {
+  opacity: 0.85;
+}
+
+.cli-toggle:active {
+  transform: scale(0.96);
+}
+
+.cli-toggle--disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.cli-toggle__label {
+  line-height: 1;
+}
+
 /* ── Perf Profile Popover ─────────────────────────────────────────── */
 
 .perf-popover {

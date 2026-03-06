@@ -40,9 +40,30 @@ export function renderTab(state: AppViewState, tab: Tab) {
 export function renderChatControls(state: AppViewState) {
   return html`
     <div class="chat-controls">
+      ${renderCliButton(state)}
       ${renderSmartDispatchToggle(state)}
       ${renderPerfToggle(state)}
     </div>
+  `;
+}
+
+function renderCliButton(state: AppViewState) {
+  const disabled = !state.connected;
+  const handleClick = () => {
+    if (disabled) return;
+    state.client?.request("terminal.open", {}).catch((err: unknown) => {
+      console.warn("Failed to open terminal:", err);
+    });
+  };
+  return html`
+    <button
+      class="cli-toggle ${disabled ? "cli-toggle--disabled" : ""}"
+      ?disabled=${disabled}
+      @click=${handleClick}
+      title=${t("chat.openTerminal")}
+    >
+      <span class="cli-toggle__label">CLI</span>
+    </button>
   `;
 }
 
