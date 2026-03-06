@@ -230,6 +230,17 @@ async function monitorWebSocket(params: {
 
   return new Promise((resolve, reject) => {
     const cleanup = () => {
+      // Close the WSClient BEFORE nulling the reference.
+      // WSClient.close() clears ping/reconnect timers, removes WS event
+      // listeners (preventing reconnect-on-close), and terminates the
+      // underlying WebSocket connection. Without this, the old WSClient
+      // leaks timers and connections on every config hot-reload restart.
+      try {
+        wsClient.close({ force: true });
+      } catch {
+        // Defensive: SDK close() is synchronous and should not throw,
+        // but guard against unexpected SDK versions / states.
+      }
       instance.wsClient = null;
       instance.isRunning = false;
       instance.stoppedAt = Date.now();
@@ -276,18 +287,26 @@ async function monitorWebSocket(params: {
  * 停止指定账号的飞书监控
  */
 export function stopFeishuMonitor(accountId?: string): void {
+  const closeInstance = (inst: FeishuMonitorInstance) => {
+    try {
+      inst.wsClient?.close({ force: true });
+    } catch {
+      // Defensive: guard against unexpected SDK states.
+    }
+    inst.wsClient = null;
+    inst.isRunning = false;
+  };
+
   if (accountId) {
     const instance = activeInstances.get(accountId);
     if (instance) {
-      instance.wsClient = null;
-      instance.isRunning = false;
+      closeInstance(instance);
       activeInstances.delete(accountId);
     }
   } else {
     // 停止所有实例
     for (const [id, instance] of activeInstances) {
-      instance.wsClient = null;
-      instance.isRunning = false;
+      closeInstance(instance);
       activeInstances.delete(id);
     }
   }
