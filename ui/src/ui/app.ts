@@ -724,7 +724,7 @@ export class ClawdbotApp extends LitElement {
   private logsScrollFrame: number | null = null;
   private toolStreamById = new Map<string, ToolStreamEntry>();
   private toolStreamOrder: string[] = [];
-  private readingIndicatorTimer: number | null = null;
+  // readingIndicatorTimer removed — apiMonitorTimer (1s) already triggers re-render
   basePath = "";
   private popStateHandler = () =>
     onPopStateInternal(

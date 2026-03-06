@@ -2878,6 +2878,11 @@ function renderLicenseDialogs(state: AppViewState) {
         () => {
           state.showLicenseDialog = null;
         },
+        () => {
+          // 切换到激活码输入弹窗
+          state.licenseActivationError = null;
+          state.showLicenseDialog = "activation";
+        },
       );
 
     case "renewal":

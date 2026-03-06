@@ -425,6 +425,21 @@ function renderToolsDropdown(
         : { bottom: `${window.innerHeight - rect.top + 8}px` }),
     });
 
+    let menuClosed = false;
+
+    const closeMenu = () => {
+      if (menuClosed) return;
+      menuClosed = true;
+      menu.remove();
+      document.removeEventListener("click", closeOnClick);
+    };
+
+    const closeOnClick = (ev: Event) => {
+      if (!menu.contains(ev.target as Node) && ev.target !== triggerBtn) {
+        closeMenu();
+      }
+    };
+
     for (const tool of TOOL_SHORTCUTS) {
       const item = document.createElement("button");
       item.className = "cc-tools-menu__item";
@@ -438,7 +453,7 @@ function renderToolsDropdown(
       }</span><span>${tool.label}</span>`;
       item.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        menu.remove();
+        closeMenu();
         onSelect(tool.id);
       });
       menu.appendChild(item);
@@ -446,20 +461,12 @@ function renderToolsDropdown(
 
     document.body.appendChild(menu);
 
-    // Close on mouse leave (entire menu area)
-    menu.addEventListener("mouseleave", () => {
-      menu.remove();
-      document.removeEventListener("click", closeOnClick);
-    });
+    menu.addEventListener("mouseleave", () => closeMenu());
 
-    // Also close on outside click as fallback
-    const closeOnClick = (ev: Event) => {
-      if (!menu.contains(ev.target as Node) && ev.target !== triggerBtn) {
-        menu.remove();
-        document.removeEventListener("click", closeOnClick);
-      }
-    };
-    requestAnimationFrame(() => document.addEventListener("click", closeOnClick));
+    requestAnimationFrame(() => {
+      if (menuClosed) return;
+      document.addEventListener("click", closeOnClick);
+    });
   };
 
   return html`

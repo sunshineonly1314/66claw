@@ -163,6 +163,7 @@ export function renderExpiredDialog(
   daysExpired: number,
   onRenew: () => void,
   onClose: () => void,
+  onActivate?: () => void,
 ): TemplateResult {
   const handleRenew = () => {
     void openPurchaseOrRenewUrl(renewUrl);
@@ -181,6 +182,11 @@ export function renderExpiredDialog(
             <button class="license-btn license-btn-secondary" @click=${onClose}>
               稍后处理
             </button>
+            ${onActivate ? html`
+            <button class="license-btn license-btn-secondary" @click=${onActivate}>
+              更换激活码
+            </button>
+            ` : nothing}
             ${brand.showPurchaseEntry ? html`
             <button class="license-btn license-btn-primary" @click=${handleRenew}>
               立即续费

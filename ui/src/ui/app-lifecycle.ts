@@ -34,7 +34,6 @@ type LifecycleHost = {
   logsEntries: unknown[];
   popStateHandler: () => void;
   topbarObserver: ResizeObserver | null;
-  readingIndicatorTimer: number | null;
   apiMonitorTimer: number | null;
   apiMonitorElapsedMs: number;
   apiMonitorDismissed: boolean;
@@ -114,11 +113,6 @@ export function handleDisconnected(host: LifecycleHost) {
   );
   host.topbarObserver?.disconnect();
   host.topbarObserver = null;
-  // Clean up reading indicator timer
-  if (host.readingIndicatorTimer !== null) {
-    window.clearInterval(host.readingIndicatorTimer);
-    host.readingIndicatorTimer = null;
-  }
   // Clean up API monitor timer
   if (host.apiMonitorTimer !== null) {
     window.clearInterval(host.apiMonitorTimer);
@@ -174,21 +168,9 @@ export function handleUpdated(
       host.chatStream.trim().length === 0 &&
       host.chatStreamStartedAt !== null;
 
-    if (isWaitingForResponse && host.readingIndicatorTimer === null) {
-      // Start timer to refresh reading indicator.
-      // Use 3s interval instead of 1s to reduce full-tree re-renders which
-      // cause visible flickering on macOS packaged builds (WebView compositing).
-      // The reading indicator shows "Ns" elapsed — 3s granularity is acceptable.
-      host.readingIndicatorTimer = window.setInterval(() => {
-        host.requestUpdate();
-      }, 3000);
-    } else if (!isWaitingForResponse && host.readingIndicatorTimer !== null) {
-      // Stop timer when no longer waiting
-      window.clearInterval(host.readingIndicatorTimer);
-      host.readingIndicatorTimer = null;
-    }
-
     // API Response Monitor timer
+    // This 1s timer also drives the reading indicator's "Ns" display
+    // (elapsed is computed from chatStreamStartedAt at render time).
     if (isWaitingForResponse && host.apiMonitorTimer === null) {
       host.apiMonitorDismissed = false;
       host.apiMonitorTimer = window.setInterval(() => {
