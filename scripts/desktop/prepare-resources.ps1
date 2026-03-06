@@ -753,12 +753,17 @@ New-Item -ItemType Directory -Force -Path $selfPkgDir | Out-Null
 # Copy the root package.json (contains the exports map for ./plugin-sdk etc.)
 $rootPkgJson = Get-Content "$ProjectRoot\package.json" -Raw -Encoding UTF8
 Set-Content "$selfPkgDir\package.json" -Value $rootPkgJson -Encoding UTF8
-# Create a symlink/junction from node_modules/openclawcn/dist → resources/dist
-# Use a junction (no admin rights needed on Windows)
-$junctionTarget = Join-Path $ResourcesDir "dist"
-$junctionPath = Join-Path $selfPkgDir "dist"
-if (-not (Test-Path $junctionPath)) {
-    cmd /c "mklink /J `"$junctionPath`" `"$junctionTarget`"" | Out-Null
+# Copy only dist/plugin-sdk (NOT the entire dist/ directory).
+# Do NOT use junction/symlink — it would duplicate the entire dist/ (~77MB) into the
+# installer, and Tauri bundler behavior with reparse points is fragile (macOS DMG
+# bundler already drops symlinks silently).
+$pluginSdkSrc = Join-Path $ResourcesDir "dist\plugin-sdk"
+$pluginSdkDst = Join-Path $selfPkgDir "dist\plugin-sdk"
+if (Test-Path $pluginSdkSrc) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $selfPkgDir "dist") | Out-Null
+    Copy-Item $pluginSdkSrc $pluginSdkDst -Recurse -Force
+} else {
+    Write-Host "  WARNING: dist/plugin-sdk not found — openclawcn self-ref package incomplete" -ForegroundColor Yellow
 }
 # Also link the CLI entry point
 $cliEntry = Join-Path $ResourcesDir "dist\entry.js"

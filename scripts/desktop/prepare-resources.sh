@@ -772,11 +772,11 @@ if [[ -d "$PROJECT_ROOT/data" ]]; then
         *.db|*.sqlite)
           # Fix D: Use VACUUM INTO for clean checkpoint copy of WAL-mode SQLite DB
           # Direct cp of a WAL-mode DB copies an inconsistent snapshot when -wal/-shm exist
-          # NODE_PATH must include production node_modules where better-sqlite3 is installed
-          if NODE_PATH="$RESOURCES_DIR/node_modules" node -e "
-const Database = require('better-sqlite3');
+          # Uses node:sqlite (built-in), NOT better-sqlite3 (removed from project)
+          if node --input-type=module -e "
+import { DatabaseSync } from 'node:sqlite';
 try {
-  const db = new Database('$src', {readonly:true});
+  const db = new DatabaseSync('$src', { readOnly: true });
   db.exec(\"VACUUM INTO '$dst'\");
   db.close();
   process.exit(0);
