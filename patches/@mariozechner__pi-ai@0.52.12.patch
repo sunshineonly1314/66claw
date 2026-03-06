@@ -1,0 +1,40 @@
+diff --git a/dist/providers/anthropic.js b/dist/providers/anthropic.js
+index 2de7a5ea..6b31486d 100644
+--- a/dist/providers/anthropic.js
++++ b/dist/providers/anthropic.js
+@@ -152,10 +152,12 @@ export function createAnthropicProvider(options) {
+                 if (event.type === "message_start") {
+                     // Capture initial token usage from message_start event
+                     // This ensures we have input token counts even if the stream is aborted early
+-                    output.usage.input = event.message.usage.input_tokens || 0;
+-                    output.usage.output = event.message.usage.output_tokens || 0;
+-                    output.usage.cacheRead = event.message.usage.cache_read_input_tokens || 0;
+-                    output.usage.cacheWrite = event.message.usage.cache_creation_input_tokens || 0;
++                    // [CN-PATCH] Guard against undefined event.message or event.message.usage
++                    const msgUsage = event.message?.usage;
++                    output.usage.input = msgUsage?.input_tokens || 0;
++                    output.usage.output = msgUsage?.output_tokens || 0;
++                    output.usage.cacheRead = msgUsage?.cache_read_input_tokens || 0;
++                    output.usage.cacheWrite = msgUsage?.cache_creation_input_tokens || 0;
+                     // Anthropic doesn't provide total_tokens, compute from components
+                     output.usage.totalTokens =
+                         output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+@@ -286,7 +288,9 @@ export function createAnthropicProvider(options) {
+                     }
+                     // Only update usage fields if present (not null).
+                     // Preserves input_tokens from message_start when proxies omit it in message_delta.
+-                    if (event.usage.input_tokens != null) {
++                    // [CN-PATCH] Guard against undefined event.usage
++                    if (event.usage) {
++                    if (event.usage.input_tokens != null) {
+                         output.usage.input = event.usage.input_tokens;
+                     }
+                     if (event.usage.output_tokens != null) {
+@@ -303,6 +307,7 @@ export function createAnthropicProvider(options) {
+                     output.usage.totalTokens =
+                         output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+                     calculateCost(model, output.usage);
++                    }
+                 }
+             }
+             if (options?.signal?.aborted) {

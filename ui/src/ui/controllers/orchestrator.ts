@@ -79,8 +79,9 @@ export async function openOrchestrator(state: OrchestratorControllerState): Prom
   // Check provider availability (non-blocking)
   void (async () => {
     try {
-      const res = await gw("config.get", { key: "agents.defaults.model" }) as { value?: string } | undefined;
-      dispatch(state, { type: "SET_HAS_PROVIDER", has: !!res?.value });
+      const snapshot = await gw("config.get", {}) as { config?: { agents?: { defaults?: { model?: unknown } } } } | undefined;
+      const model = snapshot?.config?.agents?.defaults?.model;
+      dispatch(state, { type: "SET_HAS_PROVIDER", has: !!model });
     } catch {
       // Can't check — assume OK
       dispatch(state, { type: "SET_HAS_PROVIDER", has: true });

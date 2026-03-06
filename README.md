@@ -196,6 +196,908 @@ WhatsApp / Telegram / Slack / Discord / Google Chat / Signal / iMessage / BlueBu
                └─ iOS / Android nodes
 ```
 
+## Architecture (详细架构与流转图)
+
+> 以下是整个项目的模块架构、数据流转、钩子时序、各子系统职责的完整图示。
+
+<details>
+<summary><strong>点击展开完整架构图 (180+ 模块)</strong></summary>
+
+### 一、全局总览：从启动到消息处理
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│    用户双击 ClawdBot.exe / 命令行 openclawcn                                     │
+│                                                                                 │
+└───────────────────────────────┬─────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  ENTRY POINT  入口层                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │  openclawcn.mjs                                                         │   │
+│  │  作用：启动引导，加载 dist/entry.js，初始化 V8 编译缓存                     │   │
+│  └────────────────────────────┬─────────────────────────────────────────────┘   │
+│                               │ import()                                        │
+│  ┌────────────────────────────▼─────────────────────────────────────────────┐   │
+│  │  dist/entry.js (编译产物)                                                │   │
+│  │  作用：转发到 CLI 路由系统                                                │   │
+│  └────────────────────────────┬─────────────────────────────────────────────┘   │
+│                               │                                                 │
+│            ┌──────────────────┼──────────────────┐                              │
+│            ▼                  ▼                  ▼                              │
+│   ┌────────────┐    ┌────────────────┐   ┌───────────┐                         │
+│   │  CLI 模式   │    │  Gateway 模式  │   │ Desktop   │                         │
+│   │(命令行工具) │    │ (后台服务器)   │   │ (Tauri)   │                         │
+│   └────────────┘    └───────┬────────┘   └─────┬─────┘                         │
+└─────────────────────────────┼───────────────────┼───────────────────────────────┘
+                              │                   │
+                              ▼                   │
+┌──────────────────────────────────────┐          │
+│  GATEWAY 启动顺序                     │          │
+│  (server.impl.ts → startGateway())   │          │
+│                                      │◄─────────┘
+│  Step 1: 创建状态目录                │  Tauri 通过 sidecar.rs
+│  Step 2: 配置迁移 & 加载             │  spawn Node.js 子进程
+│  Step 3: 初始化 StateStore(SQLite)   │  来启动 Gateway
+│  Step 4: 加载所有插件                │
+│  Step 5: 启动所有频道                │
+│  Step 6: 启动 HTTP+WS 服务器(:19002) │
+│  Step 7: 启动设备发现(mDNS/Bonjour) │
+│  Step 8: 启动定时任务(Cron)          │
+│  Step 9: 启动配置热重载监听          │
+└──────────────────────────────────────┘
+```
+
+**Gateway 核心模块 (`src/gateway/`)**
+
+| 文件 | 作用 |
+|------|------|
+| `server.impl.ts` | 主入口 (~2400行)，按上述顺序初始化所有子系统 |
+| `server-plugins.ts` | 加载 extensions/ 下的所有插件 |
+| `server-channels.ts` | 启动并管理所有频道连接 |
+| `server-methods.ts` + `server-methods/` | 注册 200+ RPC 方法 (model-config, nodes, agents, chat, skills...) |
+| `server-chat.ts` | Agent 事件处理 & 消息路由广播 |
+| `server-cron.ts` | 定时任务调度 (心跳/清理/自动更新) |
+| `server-ws-runtime.ts` | WebSocket 连接生命周期管理 |
+| `server-discovery-runtime.ts` | mDNS/Bonjour 设备发现 |
+| `server-mobile-nodes.ts` | 移动设备节点管理 |
+| `server-node-subscriptions.ts` | 节点注册 & 心跳保活 |
+| `server-wizard-sessions.ts` | 新用户引导向导状态 |
+| `server-tailscale.ts` | Tailscale 网络暴露 |
+| `hooks.ts` + `hooks-mapping.ts` | 钩子执行引擎 & 注册映射 |
+| `auth.ts` | 许可证验证 & 设备认证 |
+| `chat-sanitize.ts` | 输入消毒，防注入攻击 |
+| `chat-attachments.ts` | 媒体文件附件处理 |
+| `error-translate.ts` | 错误码标准化翻译 |
+| `distributed-broadcast.ts` | 跨节点消息广播 (多机部署) |
+| `cn-handlers.ts` | 中国区定制处理器 |
+| `protocol/schema.ts` | 全部 Gateway 消息类型定义 |
+
+---
+
+### 二、核心消息流转：一条消息的完整生命周期
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                                                                                  │
+│  用户在 Telegram / Discord / WeChat / Web UI / ... 发了一条消息                   │
+│                                                                                  │
+└─────────────────────────────────┬────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 1: 频道接收                                                                ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  Channel Plugin (extensions/telegram/ 或 discord/ 或 wechat/ 等)        │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：每个频道插件实现 ChannelPlugin 接口，负责：                       │   ║
+║  │  - 接收该平台的原始消息 (Webhook/长轮询/WebSocket)                        │   ║
+║  │  - 解码平台特定格式 → 统一的 OpenClawCN 消息格式                          │   ║
+║  │  - 处理平台特有功能 (表情回应、群@、引用回复等)                            │   ║
+║  │                                                                          │   ║
+║  │  调用方式：plugin.onMessage(rawPayload) → 标准化消息                      │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │ 标准化消息传入 Gateway
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 2: 安全检查 & 权限校验                                                     ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  Gateway 安全层 (src/gateway/ + src/channels/)                          │   ║
+║  │                                                                          │   ║
+║  │  (1) allowlist-match.ts  → 用户是否在白名单？不在就拒绝                   │   ║
+║  │  (2) mention-gating.ts   → 群聊里是否 @了机器人？没有就忽略               │   ║
+║  │  (3) chat-sanitize.ts    → 输入消毒：防注入/过滤恶意内容                  │   ║
+║  │  (4) auth.ts             → 许可证/设备认证校验                            │   ║
+║  │                                                                          │   ║
+║  │  全部通过才继续，否则直接丢弃或返回权限不足提示                            │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │ 安全检查通过
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 3: 路由解析 — 这条消息该交给哪个 Agent？                                    ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  resolveAgentRoute() — src/routing/resolve-route.ts                     │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：根据消息来源，确定由哪个 Agent 来处理                            │   ║
+║  │                                                                          │   ║
+║  │  路由优先级（从高到低）：                                                 │   ║
+║  │  ┌─────────────────────────────────────────────────────────────────┐     │   ║
+║  │  │  Tier 1: binding.peer        精确匹配 (频道+联系人ID)          │     │   ║
+║  │  │  Tier 2: binding.peer.parent 父线程匹配 (回复链)               │     │   ║
+║  │  │  Tier 3: binding.guild+roles 服务器+角色匹配                   │     │   ║
+║  │  │  Tier 4: binding.guild       服务器匹配                        │     │   ║
+║  │  │  Tier 5: binding.team        团队匹配                          │     │   ║
+║  │  │  Tier 6: binding.account     账号级匹配                        │     │   ║
+║  │  │  Tier 7: binding.channel     频道级通配                        │     │   ║
+║  │  │  Tier 8: default             使用默认 Agent                    │     │   ║
+║  │  └─────────────────────────────────────────────────────────────────┘     │   ║
+║  │                                                                          │   ║
+║  │  输出：{ agentId, sessionKey, matchedBy }                                │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+║                                 │                                               ║
+║                                 ▼                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  Hook: resolve_agent — src/gateway/hooks.ts                             │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：插件可以拦截路由，覆盖默认路由决策                               │   ║
+║  │                                                                          │   ║
+║  │  Agent-Team 插件的三级路由：                                              │   ║
+║  │  ┌───────────────────────────────────────────────────────────┐           │   ║
+║  │  │  Level 1: 亲和性缓存 (session-affinity.ts)                │           │   ║
+║  │  │  → 这个用户上次跟哪个成员聊的？直接命中，跳过LLM           │           │   ║
+║  │  │                     | 未命中                               │           │   ║
+║  │  │                     v                                     │           │   ║
+║  │  │  Level 2: 关键词路由 (keyword-router.ts)                  │           │   ║
+║  │  │  → 消息里有"下单""发货"→ 匹配客服Agent，跳过LLM           │           │   ║
+║  │  │                     | 未命中                               │           │   ║
+║  │  │                     v                                     │           │   ║
+║  │  │  Level 3: Supervisor LLM (supervisor-soul.ts)             │           │   ║
+║  │  │  → 让 Supervisor 大模型判断该转给谁（最慢但最准）          │           │   ║
+║  │  └───────────────────────────────────────────────────────────┘           │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │ 确定了目标 Agent
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 4: 自动回复决策 — 用模板还是用AI？                                          ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  getReply() — src/auto-reply/reply.ts                                   │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：决策这条消息怎么回复                                             │   ║
+║  │                                                                          │   ║
+║  │  决策树：                                                                 │   ║
+║  │                                                                          │   ║
+║  │  消息进来                                                                │   ║
+║  │    |                                                                     │   ║
+║  │    +- 是心跳消息？ --YES--> 返回心跳回复，结束                            │   ║
+║  │    |                                                                     │   ║
+║  │    +- 匹配模板触发器？ --YES--> resolveTemplateReply()                   │   ║
+║  │    |  (config.autoReply.templates 里定义的关键词/正则)                    │   ║
+║  │    |  → 返回模板文本，结束                                               │   ║
+║  │    |                                                                     │   ║
+║  │    +- 都不匹配 → 进入AI Agent处理流程 --> STEP 5                         │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │ 需要 AI Agent 处理
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 5: 调度引擎 — 需要什么工具？多复杂？                                        ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  dispatchRequest() — src/dispatch/engine.ts                             │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：分析用户意图，发现可用工具，评估复杂度                            │   ║
+║  │                                                                          │   ║
+║  │  ┌─────────────┐    ┌──────────────┐    ┌──────────────┐                │   ║
+║  │  │ intent-     │    │ tool-        │    │ capability-  │                │   ║
+║  │  │ classifier  │--->│ discovery    │--->│ registry     │                │   ║
+║  │  │ 意图分类    │    │ 工具发现     │    │ 模型能力匹配 │                │   ║
+║  │  │ (规则+NLP)  │    │ (技能市场+   │    │ (能调工具?   │                │   ║
+║  │  │             │    │  已安装MCP)  │    │  能看图?)    │                │   ║
+║  │  └─────────────┘    └──────────────┘    └──────────────┘                │   ║
+║  │         |                                                                │   ║
+║  │         v                                                                │   ║
+║  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐               │   ║
+║  │  │ tool-filter  │    │ tool-selector│    │ modality-    │               │   ║
+║  │  │ 权限过滤     │--->│ 排序打分     │    │ router       │               │   ║
+║  │  │              │    │ 选最佳工具   │    │ (文/图/音/   │               │   ║
+║  │  │              │    │              │    │  视频路由)   │               │   ║
+║  │  └──────────────┘    └──────────────┘    └──────────────┘               │   ║
+║  │                                                                          │   ║
+║  │  其他调度子模块：                                                         │   ║
+║  │  - step-runner.ts    多步工作流执行器                                     │   ║
+║  │  - dag-executor.ts   DAG并行任务执行图                                    │   ║
+║  │  - result-merger.ts  多步骤结果合并                                       │   ║
+║  │  - smooth-fallback   工具失败时优雅降级                                   │   ║
+║  │  - resource-guard    速率限制 & 配额管控                                  │   ║
+║  │  - provider-health   模型提供者健康监控                                   │   ║
+║  │                                                                          │   ║
+║  │  输出 RoutingDecision:                                                   │   ║
+║  │  { intent, skillHints, mcpToolHints, modelOverride, complexity }         │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 6: Hook 注入上下文                                                         ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  Hook: before_agent_start                                               │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：在 Agent 真正跑之前，往系统提示词里"塞"额外上下文                  │   ║
+║  │                                                                          │   ║
+║  │  Agent-Team 插件注入：                                                    │   ║
+║  │  - 团队共享记忆 (memory-share-tool.ts)                                    │   ║
+║  │  - 工作流指令 (task-coordinator.ts)                                       │   ║
+║  │  - 成员角色说明 (system-prompt.ts)                                        │   ║
+║  │  - 联邦上下文 (跨团队共享的信息)                                           │   ║
+║  │                                                                          │   ║
+║  │  Orchestrator 插件注入：                                                  │   ║
+║  │  - 模板上下文 / 推荐工具列表                                              │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 7: Agent 执行 — 核心AI推理                                                 ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  runAgentTurnWithFallback() — agent-runner-execution.ts                 │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：带模型降级的 Agent 执行，一个模型失败自动试下一个                   │   ║
+║  │  降级链：Claude → GPT-4 → Gemini → 国产大模型 → ...                      │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+║                                 │                                               ║
+║                                 ▼                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  runEmbeddedAttempt() — pi-embedded-runner/run/attempt.ts               │   ║
+║  │                                                                          │   ║
+║  │  干嘛的：单次 LLM 推理调用，这是真正"问AI"的地方                           │   ║
+║  │                                                                          │   ║
+║  │  7a. 加载技能环境                                                        │   ║
+║  │      loadWorkspaceSkillEntries() → 从 agent/skills/ 加载已安装MCP        │   ║
+║  │      resolveSkillsPromptForRun() → 生成技能描述文本                      │   ║
+║  │                                                                          │   ║
+║  │  7b. 构建系统提示词                                                      │   ║
+║  │      buildEmbeddedSystemPrompt()                                         │   ║
+║  │      +-- 基础指令 (你是xxx，你要xxx)                                     │   ║
+║  │      +-- 频道能力 (支持发图/发文件/发语音吗)                              │   ║
+║  │      +-- 记忆注入 (用户画像 + 冷记忆)                                    │   ║
+║  │      +-- 技能摘要 (有哪些工具可用)                                       │   ║
+║  │      +-- TTS提示 (语音场景)                                              │   ║
+║  │                                                                          │   ║
+║  │  7c. 组装工具列表                                                        │   ║
+║  │      +-- 内置工具 (bash, file, web 等)                                   │   ║
+║  │      +-- 插件工具 (plugin registry 注册的)                               │   ║
+║  │      +-- MCP工具 (从MCP Server动态获取的)                                │   ║
+║  │                                                                          │   ║
+║  │  7d. 加载会话历史                                                        │   ║
+║  │      prepareSessionManagerForRun()                                       │   ║
+║  │      → 从磁盘加载对话记录，太长自动压缩(compaction)                      │   ║
+║  │                                                                          │   ║
+║  │  7e. 调用 LLM                                                           │   ║
+║  │      streamSimple() → 发送请求到 LLM API                                │   ║
+║  │      支持 50+ 提供者：Anthropic/OpenAI/Google/通义/智谱/DeepSeek...      │   ║
+║  │      通过 auth-profiles/ 管理多个API Key                                 │   ║
+║  │                                                                          │   ║
+║  │  7f. 流式接收 & 工具调用                                                 │   ║
+║  │      subscribeEmbeddedPiSession()                                        │   ║
+║  │      ┌─────────────────────────────────────────────┐                     │   ║
+║  │      │  LLM 返回文本 → 流式输出                     │                     │   ║
+║  │      │  LLM 要求调工具 → 执行工具 → 结果给回LLM     │  ← 可能多轮循环    │   ║
+║  │      │  LLM 返回最终答案 → 结束                     │                     │   ║
+║  │      └─────────────────────────────────────────────┘                     │   ║
+║  │                                                                          │   ║
+║  │  错误处理：                                                               │   ║
+║  │  - 上下文溢出 → 重置会话 + 重试                                           │   ║
+║  │  - 角色排序冲突 → 重置会话 + 重试                                         │   ║
+║  │  - HTTP 临时错误 → 走降级链重试                                           │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │ Agent 生成回复
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 8: 后处理 Hooks                                                            ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  Hook: agent_end — Agent跑完后的收尾                                     │   ║
+║  │  - member-health.ts  → 更新健康分数(响应速度、成功率)                      │   ║
+║  │  - member-stats.ts   → 统计Token消耗、调用次数                            │   ║
+║  │  - learning-engine   → 记录交互结果，优化未来路由                          │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+║                                 │                                               ║
+║  ┌──────────────────────────────▼───────────────────────────────────────────┐   ║
+║  │  Hook: message_sending — 消息发出前的最后加工                             │   ║
+║  │  - visibility-rewriter.ts → 隐藏内部工具调用细节/team内部通信             │   ║
+║  │  - 输出格式化：Markdown→平台适配                                          │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │
+                                  ▼
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  STEP 9: 广播 & 投递                                                             ║
+║  ┌──────────────────────────────────────────────────────────────────────────┐   ║
+║  │  emitAgentEvent() — src/infra/agent-events.ts                           │   ║
+║  │  干嘛的：把Agent事件广播给所有监听者                                       │   ║
+║  │                                                                          │   ║
+║  │  事件类型：                                                               │   ║
+║  │  - stream:"delta"     → 流式文本片段(打字机效果)                          │   ║
+║  │  - stream:"final"     → 最终完整回复                                      │   ║
+║  │  - stream:"tool"      → 工具调用开始/结果                                 │   ║
+║  │  - stream:"thinking"  → 推理过程                                          │   ║
+║  │  - stream:"lifecycle" → 运行状态变更                                      │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+║                                 │                                               ║
+║  ┌──────────────────────────────▼───────────────────────────────────────────┐   ║
+║  │  createAgentEventHandler() — server-chat.ts                             │   ║
+║  │  干嘛的：转化为聊天消息，广播到各端                                        │   ║
+║  │                                                                          │   ║
+║  │  广播目标：                                                               │   ║
+║  │  (1) broadcast("chat") → 所有 WebSocket 客户端 (Web UI)                 │   ║
+║  │  (2) nodeSendToSession() → 特定会话监听者                                │   ║
+║  │  (3) distributed-broadcast → 跨节点广播 (多机部署)                       │   ║
+║  └──────────────────────────────┬───────────────────────────────────────────┘   ║
+╚═════════════════════════════════┼════════════════════════════════════════════════╝
+                                  │
+                    ┌─────────────┼─────────────┐
+                    ▼             ▼             ▼
+           ┌──────────────┐ ┌──────────┐ ┌───────────────┐
+           │ Channel Plugin│ │ Web UI   │ │ 持久化         │
+           │ →平台编码→发送│ │ WebSocket│ │ sessions.ts   │
+           │ 给用户        │ │ 推送更新 │ │ state-store   │
+           └──────────────┘ └──────────┘ │ memory-lancedb│
+                                         └───────────────┘
+```
+
+**关键调用链一览**
+
+```
+消息到达 → Channel.onMessage()
+  → allowlist/mention/sanitize 安全检查
+  → resolveAgentRoute() 路由解析
+  → Hook:resolve_agent 插件路由拦截
+  → getReply() 模板/AI决策
+  → dispatchRequest() 意图分类+工具发现
+  → Hook:before_agent_start 上下文注入
+  → runAgentTurnWithFallback() 带降级的Agent执行
+    → runEmbeddedAttempt() 单次LLM调用
+      → streamSimple() 调LLM API
+      → subscribeEmbeddedPiSession() 流式接收+工具循环
+  → Hook:agent_end 健康/统计/学习
+  → Hook:message_sending 可见性重写
+  → emitAgentEvent() 事件广播
+    → broadcast("chat") WebSocket推送
+    → Channel.sendMessage() 回到平台
+    → sessions.save() 持久化
+```
+
+---
+
+### 三、插件注册 & 钩子流转
+
+```
+Gateway 启动时 → loadGatewayPlugins() (server-plugins.ts)
+
+(1) 发现插件
+    discoverOpenClawCNPlugins()
+    扫描：extensions/ (内置) + ~/.openclawcn/plugins/ (用户安装)
+                 |
+                 v
+(2) 加载清单
+    loadPluginManifestRegistry()
+    读取 manifest.json → 提取 id/name/version/kind
+                 |
+                 v
+(3) 加载模块
+    +-- 有 .jsc 字节码？ → createRequire() 原生加载 (IP保护)
+    +-- 否则 → jiti() 动态 TypeScript 加载
+                 |
+                 v
+(4) 调用 register(api)
+    每个插件拿到 PluginApi 对象，可以：
+
+    api.registerTool(name, factory)
+    → 注册 Agent 可调用的工具
+
+    api.registerGatewayHandler("method.name", handler)
+    → 注册 RPC 方法，UI 和 CLI 可调用
+
+    api.on("hookName", handler)
+    → 订阅生命周期钩子
+
+    api.registerCommand("/cmd", handler)
+    → 注册聊天命令
+
+    api.registerService("svc", impl)
+    → 注册后台服务
+                 |
+                 v
+(5) 初始化全局钩子运行器
+    initializeGlobalHookRunner(registry)
+    → 构建 hookName → [handler1, handler2, ...] 索引
+    → 运行时按注册顺序串行执行
+```
+
+**钩子触发时序 (每条消息)：**
+
+```
+消息进来
+  |
+  +--> resolve_agent ---------> 决定哪个Agent处理
+  |
+  +--> before_agent_start ----> 注入额外上下文到系统提示词
+  |
+  +--> [Agent 执行中...]
+  |      |
+  |      +--> before_tool_call -> 校验/修改工具输入
+  |      +--> after_tool_call --> 处理工具返回结果
+  |
+  +--> agent_end -------------> 更新健康/统计/学习
+  |
+  +--> message_sending -------> 最终输出加工
+```
+
+**插件系统模块 (`src/plugins/`)**
+
+| 文件 | 作用 |
+|------|------|
+| `types.ts` | 核心类型：PluginDefinition, PluginApi, PluginToolFactory, ProviderPlugin |
+| `discovery.ts` | 自动扫描发现插件目录 |
+| `loader.ts` | 从磁盘加载插件模块 |
+| `registry.ts` | 内存插件注册表 |
+| `enable.ts` | 插件启用/禁用管理 |
+| `install.ts` | npm 安装插件 |
+| `hooks.ts` | 钩子注册 |
+| `commands.ts` | 聊天命令注册 |
+| `http-registry.ts` | HTTP 路由注册 |
+| `config-schema.ts` | Zod 校验插件配置 |
+| `config-state.ts` | 每个插件的配置存储 |
+| `hook-runner-global.ts` | 全局钩子执行管线 |
+
+**扩展插件一览 (`extensions/`)**
+
+| 分类 | 插件 | 作用 |
+|------|------|------|
+| 核心编排 | `agent-team/` (~2400行) | 多Agent团队、Supervisor路由、亲和性缓存、共享记忆、学习引擎 |
+| 核心编排 | `orchestrator/` | 计划驱动团队创建、模板匹配、能力推断、成本估算 |
+| 频道 | `telegram/` `discord/` `slack/` `whatsapp/` `wechat/` `feishu/` `dingtalk/` `qqbot/` `line/` `signal/` `matrix/` `irc/` `msteams/` `googlechat/` `mattermost/` `twitch/` `nostr/` `wecom/` `imessage/` `bluebubbles/` ... | 50+ 即时通讯平台 |
+| 记忆 | `memory-core/` `memory-lancedb/` | 抽象记忆接口 + 向量DB |
+| 认证 | `google-antigravity-auth/` `google-gemini-cli-auth/` `minimax-portal-auth/` `qwen-portal-auth/` | LLM平台认证 |
+| 工具 | `llm-task/` `voice-call/` `copilot-proxy/` `open-prose/` `lobster/` | 通用任务/语音/Copilot/长文/API代理 |
+| 诊断 | `diagnostics-otel/` | OpenTelemetry 集成 |
+
+---
+
+### 四、UI ↔ Gateway 通信流转
+
+```
+┌──── Web UI (Lit 3 + Vite 5 + TailwindCSS) ─────────────────────────────────┐
+│                                                                              │
+│  controllers/                views/              components/                 │
+│  ┌─────────────┐            ┌─────────────┐     ┌─────────────┐            │
+│  │ chat.ts      │            │ chat.ts      │     │ 可复用组件   │            │
+│  │ 聊天逻辑     │----------->│ 聊天界面     │     │ 按钮/表单等  │            │
+│  ├─────────────┤            ├─────────────┤     └─────────────┘            │
+│  │ skills.ts    │            │ skills.ts    │     i18n/                      │
+│  │ 技能市场逻辑 │----------->│ 技能市场页   │     ┌─────────────┐            │
+│  ├─────────────┤            ├─────────────┤     │ 中英文翻译   │            │
+│  │orchestrator  │            │ config.ts    │     └─────────────┘            │
+│  │.ts 团队管理  │----------->│ 设置界面     │                                │
+│  ├─────────────┤            ├─────────────┤                                │
+│  │ config/      │            │ usage.ts     │                                │
+│  │ 多表单配置   │            │ 用量统计页   │                                │
+│  └──────┬──────┘            └─────────────┘                                │
+│         │  所有 Controller 通过 GatewayBrowserClient 通信                    │
+└─────────┼────────────────────────────────────────────────────────────────────┘
+          │
+          │  双向 WebSocket 连接
+          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  GatewayBrowserClient                                                        │
+│                                                                              │
+│  UI → Gateway (请求):                                                        │
+│  client.request("chat.send", { sessionKey, message })                       │
+│  client.request("config.get")                                               │
+│  client.request("models.list")                                              │
+│  client.request("team.project.list")                                        │
+│  ...200+ 个 RPC 方法                                                        │
+│                                                                              │
+│  Gateway → UI (推送):                                                        │
+│  on("chat", payload)    → 流式聊天消息 (delta/final)                        │
+│  on("status", payload)  → Agent运行状态变更                                  │
+│  on("config", payload)  → 配置变更通知                                       │
+│  on("channel", payload) → 频道状态变更                                       │
+│  on("node", payload)    → 节点上下线通知                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+构建部署：cd ui && pnpm build → dist/control-ui/ → Gateway :19002 静态服务
+Tauri WebView 加载 http://127.0.0.1:19002/ (不是 Vite 5173！)
+```
+
+---
+
+### 五、Desktop 应用流转 (Tauri)
+
+```
+用户双击 ClawdBot.exe (Windows) / ClawdBot.app (macOS)
+
+┌──── Tauri App (Rust) ───────────────────────────────────────────────────────┐
+│                                                                              │
+│  main.rs — 初始化Tauri应用、创建窗口、系统托盘                                │
+│       |                                                                      │
+│       v                                                                      │
+│  sidecar.rs — 管理 Node.js 进程的生命周期                                    │
+│  - spawn("node", ["dist/entry.js"]) 启动 Gateway                            │
+│  - 传递 PORT=19002 + AUTH_TOKEN 环境变量                                     │
+│  - 监控进程健康，崩溃自动重启                                                 │
+│       |                                                                      │
+│       v                                                                      │
+│  Gateway :19002 启动成功 → WebView 加载 http://127.0.0.1:19002/             │
+│                                                                              │
+│  commands.rs — IPC 桥接，前端 JS 调用 Rust 函数                              │
+│  repair/ — 离线诊断修复 (Gateway 起不来时的应急工具)                           │
+│  platform/ — Windows/macOS 平台特定代码                                      │
+│  nsis/ — Windows NSIS 安装器脚本                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+整体流转:
+
+Tauri(Rust) --spawn--> Node.js Gateway(:19002)
+     |                        |
+     |  WebView               |  静态服务 dist/control-ui/
+     +----------> http://127.0.0.1:19002/ <---- WebSocket 双向通信
+
+其他原生平台: apps/ios/ (Swift)  |  apps/android/ (Kotlin)
+```
+
+---
+
+### 六、配置系统流转
+
+```
+~/.openclawcn/config.json (JSON5 格式)
+
+=== 加载 ===
+loadConfig() (src/config/config.ts)
+  +-- 读取磁盘 → parseConfigJson5()
+  +-- Zod Schema 校验
+  +-- 校验失败？ → tryRepairConfig()
+  |     +-- L0.5: 修复笔误 (baseHash不匹配)
+  |     +-- L1: 回滚到上一份良好备份
+  |     +-- L2: 三备份恢复 (atomic triple-backup)
+  +-- 环境变量覆盖 → runtime-overrides.ts
+  +-- 缓存到内存 (单例)
+
+=== 写入 (防护体系) ===
+writeConfigFile() (src/config/config-rollback.ts)
+  +-- withConfigWriteLock() → 加锁防并发
+  +-- 计算 baseHash → 乐观锁检测外部修改
+  +-- 写入临时文件 .tmp → 原子重命名
+  +-- 轮转3份备份 → config.bak.1/2/3
+
+=== 分发到子系统 (3种方式) ===
+方式1: 函数参数   Agent Runner / Plugin / Dispatch ← params.config
+方式2: 懒加载     loadConfig()  // 内存单例
+方式3: 热重载     startGatewayConfigReloader(callback)
+
+=== 配置各Section的消费者 ===
+config.agents.list     → 路由系统
+config.bindings        → 消息→Agent映射
+config.plugins         → 插件加载器
+config.channels        → 频道管理器
+config.autoReply       → 自动回复
+config.dispatch        → 调度引擎
+config.gateway.tls     → HTTPS
+config.gateway.auth    → 认证
+config.stateStore      → Redis/内存/SQLite
+config.toolDiscovery   → 工具自动发现
+config.session         → 会话行为
+```
+
+---
+
+### 七、基础设施层流转 (`src/infra/`)
+
+```
+=== Node.js 隔离 ===
+bundled-node.ts → 用自带 Node 22，不依赖系统Node
+Gateway启动 → 解析内置Node路径 → MCP Server 用内置 node/npx 启动
+
+=== 状态存储 ===
+Agent事件 ---> state-store(SQLite) ---> skills缓存/媒体清单/运行状态
+会话历史 ---> sessions.ts ---> 磁盘JSON
+向量记忆 ---> memory-lancedb ---> LanceDB文件
+
+=== 设备发现 & 配对 ===
+Gateway启动 → bonjour.ts(mDNS广播) → 手机/电脑发现
+  → device-pairing.ts(扫码配对) → server-mobile-nodes.ts(注册节点) → 心跳保活
+
+=== 心跳 & 定时任务 ===
+server-cron.ts → heartbeat-runner.ts(健康检查) + cron/service.ts(定时Agent)
+  + update-runner.ts(自动更新)
+
+=== 安全 & 加密 ===
+API Key → secure-storage.ts(AES加密) → content-vault.ts
+危险命令 → exec-approvals.ts(白名单检查)
+
+=== 用量追踪 ===
+LLM调用 → session-cost-usage.ts → provider-usage.ts → UI usage.ts(图表)
+```
+
+| 模块 | 作用 |
+|------|------|
+| `bundled-node.ts` | 内置 Node.js 22 路径解析，隔离系统 Node |
+| `state-store/` | SQLite 运行时状态 |
+| `heartbeat-runner.ts` | 定期健康检查 |
+| `bonjour.ts` | mDNS 服务广播发现 |
+| `tailscale.ts` | Tailnet 集成 |
+| `device-pairing.ts` | QR码设备配对 |
+| `device-identity.ts` | 机器指纹 |
+| `update-runner.ts` | 自动更新 |
+| `skills-remote.ts` | 远程MCP技能注册 |
+| `provider-usage.ts` | LLM用量统计 |
+| `session-cost-usage.ts` | Token消耗追踪 |
+| `exec-approvals.ts` | 危险命令白名单 |
+| `secure-storage.ts` | API Key 加密存储 |
+| `control-ui-assets.ts` | UI dist 文件定位 |
+| `outbound/` | 外发消息(webhook) |
+| `net/` | 网络工具(ping/端口) |
+| `tls/` | TLS证书管理 |
+
+---
+
+### 八、Agent-Team 多Agent协作流转
+
+```
+用户说："帮我查一下上周的销售数据，然后生成一份报告"
+
+=== Orchestrator 创建团队 ===
+
+UI orchestrator.ts --request--> "team.project.createFromPlan"
+  planning-pipeline.ts
+  +-- gathering-questions.ts → 收集需求
+  +-- capability-inference.ts → 推断需要什么能力
+  +-- cost-estimator.ts → 估算成本
+  +-- soul-validator.ts → 验证Agent人设
+
+输出团队：
+  Supervisor Agent (监督者，负责分配任务)
+  +-- Member A: 数据分析师 (擅长SQL/数据处理)
+  +-- Member B: 报告撰写员 (擅长文档/排版)
+  +-- Member C: 图表专家 (擅长数据可视化)
+
+=== 消息路由到团队 (Hook: resolve_agent) ===
+
+fast-path-router.ts 三级路由：
+  Level 1: session-affinity.ts 亲和性缓存
+    → "这用户上次跟谁聊的？直接命中" (跳过LLM)
+  Level 2: keyword-router.ts 关键词匹配
+    → "销售数据" → 匹配数据分析师 (跳过LLM)
+  Level 3: supervisor-soul.ts LLM判断
+    → Supervisor大模型决定转给谁 (最慢但最准)
+
+=== 团队协作执行 ===
+
+Member A (数据分析师) 执行：
+  Hook:before_agent_start → 注入共享记忆+工作流+角色说明
+  → 查询数据库 → 获得销售数据
+  → memory-share-tool.ts → 写入团队共享记忆
+  → task-coordinator.ts → 标记完成，触发下一步
+  → Hook:agent_end → 更新健康分 + 记录学习
+
+Member B (报告撰写员) 被触发：
+  → 从共享记忆读取查询结果 → 生成报告 → 返回给用户
+
+辅助子系统：
+  conversation-compactor.ts — 对话太长自动压缩
+  auto-promote.ts — 优秀成员自动提升优先级
+  soul-optimizer.ts — 根据历史优化成员人设("人设进化")
+```
+
+---
+
+### 九、MCP 技能 & 工具调用流转
+
+```
+=== 技能安装 ===
+UI skills.ts → "skills.install" → Gateway
+  → skills-remote.ts (远程注册中心)
+  → npm install / git clone
+  → 保存到 ~/.openclawcn/agent/skills/{skill-id}/
+  → state-store 记录安装信息
+
+=== Agent 调用 MCP 工具 ===
+Agent 推理中，LLM 决定调用 "weather_lookup"
+  → tool-policy.ts 检查权限
+  → skills/serialize.ts 找到 MCP Server 进程
+  → MCP Server (独立进程，内置 Node 22 启动)
+  → JSON-RPC 通信 → 返回结果
+  → 结果送回 LLM，继续推理
+```
+
+**Agent 运行时模块 (`src/agents/`)**
+
+| 模块 | 作用 |
+|------|------|
+| `pi-embedded-runner.ts` | 主 Agent 执行器 |
+| `run/attempt.ts` | 单次 LLM 推理调用 |
+| `abort.ts` | 优雅取消 Agent |
+| `session-manager-init.ts` | 会话初始化和历史加载 |
+| `pi-embedded-messaging.ts` | 消息格式化 |
+| `agent-scope.ts` | Agent ID/工作区/配置路径 |
+| `auth-profiles/` | 多API Key管理 (profiles, oauth, order, repair) |
+| `tool-policy.ts` | 工具执行授权 |
+| `tool-mutation.ts` | 运行时修改工具定义 |
+| `tool-summaries.ts` | 为 LLM 生成工具描述 |
+| `skills/serialize.ts` | MCP 工具格式化 |
+| `tools/web-tools.ts` | 网页浏览/搜索/抓取 |
+| `tools/bash-tools.ts` | Shell 命令执行 |
+| `cloudflare-ai-gateway.ts` | AI Gateway 代理 |
+
+---
+
+### 十、CLI 命令流转
+
+```
+用户输入: openclawcn gateway start
+
+openclawcn.mjs
+  → dist/entry.js
+  → src/cli/route.ts (命令路由)
+  → src/cli/program/build-program.ts (Commander 组装)
+  → 匹配子命令 "gateway" → gateway-cli.ts
+  → 匹配动作 "start" → startGatewayServer()
+
+其他命令：
+  openclawcn config edit     → config-cli.ts     → 编辑 config.json
+  openclawcn channels list   → channels-cli.ts   → 列出频道状态
+  openclawcn plugins install → plugins-cli.ts    → npm install 插件
+  openclawcn models list     → models-cli.ts     → 列出可用模型
+  openclawcn devices pair    → pairing-cli.ts    → 显示配对二维码
+  openclawcn update check    → update-cli.ts     → 检查新版本
+  openclawcn logs tail       → logs-cli.ts       → 实时查看日志
+  openclawcn skills test     → skills-cli.ts     → 测试MCP技能
+```
+
+---
+
+### 十一、模块依赖关系总图
+
+```
+                    ┌──────────────────┐
+                    │    CLI (入口)     │
+                    └────────┬─────────┘
+                             │
+                             ▼
+              ┌──────────────────────────────┐
+              │      GATEWAY SERVER          │
+              │    (一切的中心枢纽)            │
+              │    HTTP+WS :19002            │
+              └──┬───┬───┬───┬───┬───┬───┬──┘
+                 │   │   │   │   │   │   │
+    ┌────────────┘   │   │   │   │   │   └────────────┐
+    ▼                │   │   │   │   │                ▼
+┌────────┐          │   │   │   │   │          ┌───────────┐
+│PLUGINS │          │   │   │   │   │          │  CONFIG   │
+│插件系统 │<---------+   │   │   │   +--------->│  配置系统  │
+│加载/注册│              │   │   │              │加载/校验   │
+│/执行    │              │   │   │              │/修复/分发  │
+└───┬────┘              │   │   │              └─────┬─────┘
+    │                    │   │   │                    │
+    ▼                    │   │   │                    ▼
+┌────────┐              │   │   │              ┌───────────┐
+│CHANNELS│              │   │   │              │  INFRA    │
+│频道系统 │<-------------+   │   +------------->│ 基础设施   │
+│50+平台  │                  │                  │网络/存储   │
+└───┬────┘                  │                  │/安全/更新  │
+    │                       │                  └───────────┘
+    ▼                       │
+┌────────┐                  │                  ┌───────────┐
+│ROUTING │                  │                  │  LOGGING  │
+│路由系统 │                  │                  │ 日志/诊断  │
+└───┬────┘                  │                  └───────────┘
+    │                       │
+    ▼                       │
+┌────────┐                  │
+│DISPATCH│                  │
+│调度引擎 │<-----------------+
+│意图/工具│
+└───┬────┘
+    │
+    ▼
+┌──────────────────┐          ┌──────────────────┐
+│  AGENT RUNNER    │          │  AUTO-REPLY      │
+│  Agent 执行器    │<---------│  模板/AI决策      │
+│  LLM/工具/降级   │          └──────────────────┘
+└───┬──────────────┘
+    │
+    ▼
+┌──────────────────┐          ┌──────────────────┐
+│  EXTENSIONS      │          │  UI (前端)        │
+│  agent-team      │   WS推送  │  Lit 3 Web组件    │
+│  orchestrator    │<---------│  controllers/     │
+│  memory-*        │          │  views/           │
+│  50+ channels    │          └────────┬─────────┘
+│  voice/auth/...  │                   |
+└──────────────────┘          ┌────────▼─────────┐
+                              │  DESKTOP (Tauri)   │
+                              │  Rust原生壳        │
+                              └────────────────────┘
+```
+
+---
+
+### 十二、目录结构速查
+
+```
+openclawcn/
+├── openclawcn.mjs            # 入口引导
+├── package.json              # pnpm workspace
+├── src/                      # 主源码
+│   ├── gateway/              #   HTTP/WS 网关 (中心枢纽)
+│   ├── agents/               #   Agent 运行时 (LLM/工具)
+│   ├── plugins/              #   插件架构 (注册/发现)
+│   ├── dispatch/             #   调度引擎 (意图/工具/DAG)
+│   ├── routing/              #   消息路由 (消息→Agent)
+│   ├── channels/             #   频道抽象 (多平台)
+│   ├── config/               #   配置 (加载/校验/修复)
+│   ├── infra/                #   基础设施 (网络/存储/安全)
+│   ├── cli/                  #   CLI (50+子命令)
+│   ├── auto-reply/           #   自动回复 (模板/AI)
+│   ├── memory/               #   Agent 持久记忆
+│   ├── voice/                #   TTS/STT 语音
+│   ├── cron/                 #   定时任务
+│   ├── browser/              #   浏览器自动化
+│   ├── terminal/             #   Shell/PTY
+│   ├── media-understanding/  #   图像/OCR/视频
+│   ├── link-understanding/   #   URL内容提取
+│   ├── db/                   #   SQLite 数据模型
+│   ├── logging/              #   结构化日志
+│   ├── security/             #   密钥/加密
+│   └── tui/                  #   终端UI
+├── extensions/               # 插件 (50+)
+│   ├── agent-team/           #   多Agent协作
+│   ├── orchestrator/         #   团队编排
+│   ├── telegram/ discord/ slack/ wechat/ feishu/ ...  # 频道
+│   ├── memory-core/ memory-lancedb/  # 记忆
+│   └── voice-call/ copilot-proxy/ diagnostics-otel/ ...  # 工具
+├── ui/src/ui/                # Web 前端 (Lit 3)
+│   ├── controllers/          #   状态 & 业务逻辑
+│   ├── views/                #   页面 (Web Components)
+│   ├── components/           #   可复用组件
+│   └── i18n/                 #   中英文翻译
+├── apps/                     # 原生应用
+│   ├── desktop/src-tauri/    #   Tauri 桌面 (Rust)
+│   ├── ios/                  #   iOS (Swift)
+│   └── android/              #   Android (Kotlin)
+├── scripts/                  # 构建/部署
+├── ci/                       # CI/CD
+└── cn/                       # 中国区定制
+```
+
+---
+
+### 十三、模块统计
+
+| 分类 | 模块数 | 说明 |
+|------|--------|------|
+| Gateway 核心 | ~15 | server, auth, hooks, methods, chat, ws, cron, discovery... |
+| Agent 运行时 | ~15 | runner, auth-profiles, tools, models, scope... |
+| 插件系统 | ~12 | types, loader, registry, hooks, commands, config... |
+| 调度引擎 | ~12 | engine, intent, modality, tool-*, dag, step, fallback... |
+| 频道系统 | ~10 | registry, dock, chat-type, mention, allowlist... |
+| 配置系统 | ~8 | config, io, types, zod, repair, rollback, migrate... |
+| 基础设施 | ~25 | node, heartbeat, bonjour, tailscale, pairing, update... |
+| CLI | ~15+ | gateway, agent, channels, config, models, plugins... |
+| 其他子系统 | ~10 | auto-reply, memory, voice, cron, browser, media, tui... |
+| 扩展插件 | **50+** | agent-team, orchestrator, 40+频道, memory, auth... |
+| 前端 UI | ~8 | controllers, views, components, chat, data, i18n... |
+| 原生应用 | ~4 | desktop(Tauri), iOS, Android |
+| 构建部署 | ~6 | scripts, ci, cn, install |
+| **总计** | **180+** | **独立模块/子系统** |
+
+</details>
+
 ## Key subsystems
 
 - **[Gateway WebSocket network](https://docs.openclawcncn.com/concepts/architecture)** — single WS control plane for clients, tools, and events (plus ops: [Gateway runbook](https://docs.openclawcncn.com/gateway)).

@@ -984,6 +984,19 @@ export async function runEmbeddedAttempt(
                 text: "(The previous request encountered an error and could not be completed. Please try again.)",
               },
             ],
+            api: params.model?.api ?? ("openai-completions" as const),
+            provider: params.provider ?? "unknown",
+            model: params.modelId ?? "unknown",
+            stopReason: "error" as const,
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            timestamp: Date.now(),
           };
           sessionManager.appendMessage(
             syntheticReply as Parameters<typeof sessionManager.appendMessage>[0],

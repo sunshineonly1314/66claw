@@ -209,12 +209,12 @@ export function renderUsage(props: UsageProps) {
     return sessions.reduce(
       (acc, s) => {
         if (s.usage) {
-          acc.input += s.usage.input;
-          acc.output += s.usage.output;
-          acc.cacheRead += s.usage.cacheRead;
-          acc.cacheWrite += s.usage.cacheWrite;
-          acc.totalTokens += s.usage.totalTokens;
-          acc.totalCost += s.usage.totalCost;
+          acc.input += s.usage.input ?? 0;
+          acc.output += s.usage.output ?? 0;
+          acc.cacheRead += s.usage.cacheRead ?? 0;
+          acc.cacheWrite += s.usage.cacheWrite ?? 0;
+          acc.totalTokens += s.usage.totalTokens ?? 0;
+          acc.totalCost += s.usage.totalCost ?? 0;
           acc.inputCost += s.usage.inputCost ?? 0;
           acc.outputCost += s.usage.outputCost ?? 0;
           acc.cacheReadCost += s.usage.cacheReadCost ?? 0;
