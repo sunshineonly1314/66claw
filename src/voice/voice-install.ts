@@ -329,8 +329,11 @@ export function registerSherpaOnnxResolvePath(): void {
   const isolatedNodeModules = path.join(SHERPA_INSTALL_DIR, "node_modules");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Module = require("module") as typeof import("module");
-  if (!Module.Module.globalPaths.includes(isolatedNodeModules)) {
-    Module.Module.globalPaths.push(isolatedNodeModules);
+  // globalPaths is an undocumented Node.js internal on Module.Module
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod = (Module as any).Module as { globalPaths: string[] };
+  if (!mod.globalPaths.includes(isolatedNodeModules)) {
+    mod.globalPaths.push(isolatedNodeModules);
   }
 }
 
