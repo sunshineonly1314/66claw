@@ -162,12 +162,8 @@ export async function listProjectIds(): Promise<string[]> {
  */
 export async function loadAllProjects(): Promise<Project[]> {
   const ids = await listProjectIds();
-  const projects: Project[] = [];
-  for (const id of ids) {
-    const project = await loadProject(id);
-    if (project) projects.push(project);
-  }
-  return projects;
+  const results = await Promise.all(ids.map((id) => loadProject(id)));
+  return results.filter((p): p is Project => p !== null);
 }
 
 // ── Activity Persistence ──────────────────────────────────────────────────

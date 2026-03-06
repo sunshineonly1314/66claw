@@ -760,7 +760,7 @@ export async function loadSessionUsageTimeSeries(params: {
     config: params.config,
     onEntry: (entry) => {
       const ts = entry.timestamp?.getTime();
-      if (!ts) {
+      if (!ts || !entry.usage) {
         return;
       }
 

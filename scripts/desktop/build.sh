@@ -395,6 +395,47 @@ else
   echo "  WARN: resources/dist/security/ not found — skipping copy (resources may be staged differently)"
 fi
 
+# ── Step 5.6: Pre-Tauri stub & self-ref validation ──
+# Verify critical node_modules artifacts that prepare-resources.sh created.
+# This catches corruption between prepare-resources and Tauri build (Gap #1).
+echo "[5.6/6] Verifying critical stubs before Tauri compile..."
+RESOURCES_DIR="$PROJECT_ROOT/apps/desktop/src-tauri/resources"
+PRE_TAURI_OK=true
+
+# (a) @whiskeysockets/baileys stub — without this ALL plugins crash
+STUB_BASE="$RESOURCES_DIR/node_modules/@whiskeysockets/baileys"
+for stub_file in package.json index.js index.mjs; do
+  stub_path="$STUB_BASE/$stub_file"
+  if [[ ! -f "$stub_path" ]]; then
+    echo "  FAIL: baileys stub missing: $stub_file" >&2
+    PRE_TAURI_OK=false
+  else
+    stub_size=$(wc -c < "$stub_path" 2>/dev/null | tr -d ' ')
+    if [[ "$stub_size" -lt 50 ]]; then
+      echo "  FAIL: baileys stub too small (${stub_size}B): $stub_file" >&2
+      PRE_TAURI_OK=false
+    fi
+  fi
+done
+
+# (b) openclawcn self-ref package — without this plugin-sdk resolution fails
+if [[ ! -f "$RESOURCES_DIR/node_modules/openclawcn/package.json" ]]; then
+  echo "  FAIL: openclawcn self-ref package.json missing" >&2
+  PRE_TAURI_OK=false
+fi
+if [[ ! -f "$RESOURCES_DIR/dist/plugin-sdk/index.js" ]]; then
+  echo "  FAIL: dist/plugin-sdk/index.js missing" >&2
+  PRE_TAURI_OK=false
+fi
+
+if [[ "$PRE_TAURI_OK" == "true" ]]; then
+  echo "  Pre-Tauri validation: OK"
+else
+  echo "ERROR: Pre-Tauri validation failed — stubs or critical files missing." >&2
+  echo "  This means prepare-resources.sh did not complete correctly." >&2
+  exit 1
+fi
+
 # ── Step 6: Build Tauri (Rust + bundle) ──
 echo "[6/6] Building Tauri native app..."
 echo "  (First build may take 5-10 minutes)"
@@ -643,7 +684,7 @@ if [[ -n "${DMG_FILE:-}" && -f "$DMG_FILE" ]]; then
       DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  mcp-index.json missing"
     fi
 
-    # [Fix-3g] @whiskeysockets/baileys stub 存在性校验
+    # [Fix-3g] @whiskeysockets/baileys stub 存在性 + 内容校验
     # Without this stub, ALL plugins crash with "Cannot find module '@whiskeysockets/baileys'"
     STUB_BASE="$DMG_RES/node_modules/@whiskeysockets/baileys"
     STUB_ALL_OK=true
@@ -652,6 +693,13 @@ if [[ -n "${DMG_FILE:-}" && -f "$DMG_FILE" ]]; then
         echo "  [FAIL] baileys stub missing: $stub_file"
         STUB_ALL_OK=false
         DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  baileys stub missing: $stub_file"
+      else
+        dmg_stub_size=$(wc -c < "$STUB_BASE/$stub_file" 2>/dev/null | tr -d ' ')
+        if [[ "$dmg_stub_size" -lt 50 ]]; then
+          echo "  [FAIL] baileys stub too small in DMG (${dmg_stub_size}B): $stub_file"
+          STUB_ALL_OK=false
+          DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  baileys stub truncated: $stub_file (${dmg_stub_size}B)"
+        fi
       fi
     done
     if [[ "$STUB_ALL_OK" == "true" ]]; then

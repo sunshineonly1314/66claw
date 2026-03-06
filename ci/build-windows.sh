@@ -137,6 +137,28 @@ if [ $BUILD_EXIT -eq 0 ]; then
     GATE_PASS=false
   fi
 
+  # Gate-8: @whiskeysockets/baileys stub (prevents ALL plugins crashing)
+  STUB_BASE="$RESOURCES_DIR/node_modules/@whiskeysockets/baileys"
+  STUB_OK=true
+  for stub_file in package.json index.js index.mjs; do
+    stub_path="$STUB_BASE/$stub_file"
+    if [ ! -f "$stub_path" ]; then
+      echo "  [FAIL] baileys stub missing: $stub_file"
+      STUB_OK=false
+    else
+      stub_size=$(wc -c < "$stub_path" | tr -d ' ')
+      if [ "$stub_size" -lt 50 ]; then
+        echo "  [FAIL] baileys stub too small (${stub_size}B): $stub_file"
+        STUB_OK=false
+      fi
+    fi
+  done
+  if [ "$STUB_OK" = "true" ]; then
+    echo "  [PASS] @whiskeysockets/baileys stub OK"
+  else
+    GATE_PASS=false
+  fi
+
   if [ "$GATE_PASS" = "true" ]; then
     echo "  Pre-deploy gate PASSED"
     echo "========================================="

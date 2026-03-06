@@ -476,10 +476,17 @@ const plugin: OpenClawCNPluginDefinition = {
         initAffinityPersistence(stateDir);
 
         const projects = await loadAllProjects();
-        for (const p of projects) {
+
+        // Load state + activity for all projects in parallel (pure disk I/O,
+        // no cross-dependencies). Original code was serial await per project.
+        await Promise.all(projects.map(async (p) => {
           projectCache.set(p.projectId, p);
 
-          const state = await loadProjectState(p.projectId);
+          const [state, saved] = await Promise.all([
+            loadProjectState(p.projectId),
+            loadActivity(p.projectId),
+          ]);
+
           if (state?.memberHealth) {
             const map = new Map<string, MemberHealth>();
             for (const h of state.memberHealth) {
@@ -495,11 +502,10 @@ const plugin: OpenClawCNPluginDefinition = {
             statsCache.set(p.projectId, sMap);
           }
 
-          const saved = await loadActivity(p.projectId);
           if (saved.length > 0) {
             activityBuffers.set(p.projectId, saved as ActivityEvent[]);
           }
-        }
+        }));
         rebuildAgentIndex();
 
         const validAgentIds = new Set<string>();
@@ -2492,7 +2498,7 @@ const plugin: OpenClawCNPluginDefinition = {
 
     logger.info(
       `Agent Team plugin registered successfully (v0.5.0). ` +
-        `Hooks: resolve_agent (federation cascade), before_agent_start, agent_end, message_sending, gateway_start. ` +
+        `Hooks: resolve_agent (federation cascade), before_agent_start, agent_end, message_sending. ` +
         `Methods: team.project.{list,get,create,createFromPlan,update,delete,pause,resume,health,stats,activity}, ` +
         `team.federation.create, team.shared-memory.{list,clear}. ` +
         `Tools: memory_share (read-shared mode). ` +
