@@ -449,8 +449,25 @@ export async function startGatewaySidecars(params: {
   // ── Auto-install recommended local voice models (ASR+TTS) on first run ──
   // Runs silently in the background. Detects hardware, checks if the
   // recommended tier is already installed, and if not installs + auto-starts.
+  // Skipped entirely when cloud ASR/TTS (volcengine/豆包) is already configured.
   void (async () => {
     try {
+      // ── Skip local auto-install when cloud voice is configured ──
+      try {
+        const { getVolcengineVoiceCredentials } =
+          await import("../voice/volcengine-credentials.js");
+        const cloudCreds = await getVolcengineVoiceCredentials();
+        if (cloudCreds) {
+          params.log.warn(
+            "skipping local voice auto-install: cloud ASR/TTS (volcengine) configured — " +
+              "local models can still be installed manually from voice settings",
+          );
+          return;
+        }
+      } catch {
+        // volcengine-credentials module unavailable — continue with local install
+      }
+
       const { refreshHardwareSnapshot, getHardwareSnapshot } =
         await import("../voice/hardware-detect.js");
       const { classifyVoiceTier } = await import("../voice/voice-tier.js");
