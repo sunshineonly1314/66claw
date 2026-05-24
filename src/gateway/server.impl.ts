@@ -1007,6 +1007,24 @@ export async function startGatewayServer(
   markGatewayReady();
   log.info("gateway ready");
 
+  // ── Prewarm skills-status cache ──────────────────────────────────
+  // buildWorkspaceSkillStatus() calls hasBinary() which synchronously
+  // scans all PATH dirs (3-11s on Windows).  By warming the cache right
+  // after gateway-ready, the first UI request to skills.status or
+  // mcp.marketplace.recommend hits a warm cache instead of blocking.
+  void (async () => {
+    try {
+      const cfg = loadConfig();
+      const agentId = resolveDefaultAgentId(cfg);
+      const wsDir = resolveAgentWorkspaceDir(cfg, agentId);
+      const { getSkillStatusCached } = await import("./server-methods/skills.js");
+      await getSkillStatusCached(wsDir, cfg, agentId);
+      log.info("skills-status cache prewarm complete");
+    } catch (err) {
+      log.warn(`skills-status cache prewarm failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  })();
+
   // ── Background subsystem initialisation ────────────────────────────
   // Run discovery, tailscale exposure, and sidecars in parallel — they have
   // no cross-dependencies and each has its own error handling.

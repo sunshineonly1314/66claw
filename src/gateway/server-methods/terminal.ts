@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { exec, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { GatewayRequestHandlers } from "./types.js";
@@ -43,41 +43,33 @@ function resolveWindowsPowerShell(): string {
   return fs.existsSync(psPath) ? psPath : "powershell.exe";
 }
 
-function launchWindowsElevated(cwd?: string): { terminal: string } {
-  // Detect best available terminal: wt.exe → pwsh.exe → powershell.exe
-  let target: string;
-  const targetArgParts: string[] = [];
+function launchWindowsTerminal(cwd?: string): { terminal: string } {
+  // Use `cmd /c start "" program` via exec() — the most reliable way to
+  // spawn a visible window from a headless parent on Windows.
+  // exec() passes the command string directly to cmd.exe without Node.js
+  // arg-escaping that mangles quotes in spawn().
+
+  let terminal: string;
+  let cmd: string;
 
   if (winWhich("wt.exe")) {
-    target = "wt.exe";
-    if (cwd) targetArgParts.push("-d", `"${cwd}"`);
+    terminal = "wt.exe";
+    cmd = cwd ? `start "" wt.exe -d "${cwd}"` : `start "" wt.exe`;
   } else if (winWhich("pwsh.exe")) {
-    target = "pwsh.exe";
-    targetArgParts.push("-NoExit");
-    if (cwd) targetArgParts.push("-WorkingDirectory", `"${cwd}"`);
+    terminal = "pwsh.exe";
+    cmd = cwd
+      ? `start "" pwsh.exe -NoExit -WorkingDirectory "${cwd}"`
+      : `start "" pwsh.exe -NoExit`;
   } else {
-    target = resolveWindowsPowerShell();
-    targetArgParts.push("-NoExit");
-    if (cwd) {
-      const escaped = cwd.replace(/'/g, "''");
-      targetArgParts.push("-Command", `"Set-Location '${escaped}'"`);
-    }
+    const ps = resolveWindowsPowerShell();
+    terminal = "powershell.exe";
+    cmd = cwd
+      ? `start "" "${ps}" -NoExit -Command "Set-Location '${cwd.replace(/'/g, "''")}'"`
+      : `start "" "${ps}" -NoExit`;
   }
 
-  // Start-Process -Verb RunAs triggers UAC elevation prompt
-  const psCommand =
-    targetArgParts.length > 0
-      ? `Start-Process -FilePath '${target}' -ArgumentList ${targetArgParts.map((a) => `'${a.replace(/'/g, "''")}'`).join(",")} -Verb RunAs`
-      : `Start-Process -FilePath '${target}' -Verb RunAs`;
-
-  const shell = resolveWindowsPowerShell();
-  const child = spawn(shell, ["-NoProfile", "-Command", psCommand], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true, // hide the launcher PowerShell window itself
-  });
-  child.unref();
-  return { terminal: target };
+  exec(cmd, { windowsHide: true });
+  return { terminal };
 }
 
 /**
@@ -140,7 +132,7 @@ export const terminalHandlers: GatewayRequestHandlers = {
 
     try {
       const result =
-        process.platform === "win32" ? launchWindowsElevated(cwd) : launchUnixTerminal(cwd);
+        process.platform === "win32" ? launchWindowsTerminal(cwd) : launchUnixTerminal(cwd);
       respond(true, { ok: true, ...result }, undefined);
     } catch (err) {
       respond(

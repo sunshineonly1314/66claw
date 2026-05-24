@@ -17,7 +17,8 @@ import path from "node:path";
 import { loadConfig, writeConfigFile, withConfigWriteLock } from "../../config/config.js";
 import { getMCPManagerSafe, initMCPManager } from "../../mcp/index.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { buildWorkspaceSkillStatus, type SkillStatusEntry } from "../../agents/skills-status.js";
+import { type SkillStatusEntry } from "../../agents/skills-status.js";
+import { getSkillStatusCached } from "./skills.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
 import type { MCPServerConfig } from "../../mcp/types.js";
@@ -1740,10 +1741,13 @@ function scoreRecommendation(item: McpMarketplaceItem, keywords: Set<string>): n
  */
 const mcpMarketplaceRecommendHandler: GatewayRequestHandler = safeHandler(async ({ respond }) => {
   try {
-    // 1. Get installed skills
+    // 1. Get installed skills (reuse cached result to avoid 3-11s sync PATH scan)
     const cfg = loadConfig();
-    const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
-    const report = buildWorkspaceSkillStatus(workspaceDir, { config: cfg });
+    const agentId = resolveDefaultAgentId(cfg);
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const report = (await getSkillStatusCached(workspaceDir, cfg, agentId)) as {
+      skills: SkillStatusEntry[];
+    };
     const skills = report.skills.filter((s) => s.eligible && !s.disabled);
 
     // 2. Read marketplace index

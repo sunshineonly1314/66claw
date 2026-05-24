@@ -5,7 +5,7 @@
   "identifier": "com.clawdbot.cn.desktop",
   "build": {
     "beforeDevCommand": "",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:19002",
     "beforeBuildCommand": "",
     "frontendDist": "resources/dist/control-ui"
   },

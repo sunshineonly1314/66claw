@@ -27,15 +27,18 @@ export function renderLicenseInfoCard(
 
   return html`
     <div class="license-info-card">
-      <button class="license-info-card__summary" @click=${onToggle}>
-        <span class="license-info-card__tier ${tierBadgeClass}">
+      <div class="license-info-card__summary" @click=${onToggle}>
+        <span class="license-info-card__tier ${tierBadgeClass}"
+          @click=${(e: Event) => { e.stopPropagation(); onUpgradeClick(); }}
+          title="点击查看/升级授权"
+        >
           ${license.tierName || getTierLabel(license.tier)}
         </span>
         <span class="license-info-card__days">
           ${license.daysRemaining > 0 ? `${license.daysRemaining}天` : "已过期"}
         </span>
         <span class="license-info-card__chevron">${expanded ? "−" : "+"}</span>
-      </button>
+      </div>
 
       ${expanded ? html`
         <div class="license-info-card__detail">

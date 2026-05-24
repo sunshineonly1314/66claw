@@ -656,6 +656,17 @@ export function renderApp(state: AppViewState) {
             ${renderTab(state, "docs")}
           </div>
         </div>
+        ${brand.promoUrl ? html`
+        <div class="nav-footer">
+          <a href="${brand.promoUrl}" target="_blank" rel="noreferrer" class="nav-footer-link">
+            <span class="nav-footer-icon">🚀</span>
+            <span class="nav-footer-text">
+              <span class="nav-footer-title">${brand.promoName}</span>
+              <span class="nav-footer-desc">${brand.promoDesc}</span>
+            </span>
+          </a>
+        </div>
+        ` : nothing}
         ${isCN && state.licenseState.license ? html`
           ${renderLicenseInfoCard(
             state.licenseState,
@@ -672,17 +683,6 @@ export function renderApp(state: AppViewState) {
               state.requestUpdate?.();
             },
           )}
-        ` : nothing}
-        ${brand.promoUrl ? html`
-        <div class="nav-footer">
-          <a href="${brand.promoUrl}" target="_blank" rel="noreferrer" class="nav-footer-link">
-            <span class="nav-footer-icon">🚀</span>
-            <span class="nav-footer-text">
-              <span class="nav-footer-title">${brand.promoName}</span>
-              <span class="nav-footer-desc">${brand.promoDesc}</span>
-            </span>
-          </a>
-        </div>
         ` : nothing}
       </aside>
       <main class="content ${isChat ? "content--chat" : ""}">
@@ -2208,7 +2208,17 @@ export function renderApp(state: AppViewState) {
                 },
                 onDeleteSession: (key: string) => {
                   void state.client?.request("sessions.delete", { key, deleteTranscript: true })
-                    .then(() => loadSessions(state));
+                    .then(() => loadSessions(state))
+                    .catch((err: unknown) => {
+                      const msg = err instanceof Error ? err.message : String(err);
+                      if (msg.includes("main session")) {
+                        alert("无法删除主会话。请在会话管理中重置此会话，或切换到其他会话后再试。");
+                      } else if (msg.includes("still active")) {
+                        alert("该会话正在运行中，请稍后再试。");
+                      } else {
+                        alert(`删除会话失败: ${msg}`);
+                      }
+                    });
                 },
                 onRenameSession: (key: string, name: string) => {
                   void state.client?.request("sessions.rename", { sessionKey: key, name });
@@ -2740,8 +2750,8 @@ export function renderApp(state: AppViewState) {
 function buildFeedbackProps(state: AppViewState): FeedbackViewProps {
   return {
     state: state.feedbackState,
-    onOpenModal: state.handleFeedbackOpen,
-    onCloseModal: state.handleFeedbackClose,
+    onOpenModal: () => state.handleFeedbackOpen(),
+    onCloseModal: () => state.handleFeedbackClose(),
     onTypeChange: (type) => {
       state.feedbackState = { ...state.feedbackState, type };
     },

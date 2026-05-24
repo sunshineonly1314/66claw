@@ -12,7 +12,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { resolveOpenClawCNPackageRootSync } from "../infra/openclaw-root.js";
 import type { McpMarketplaceItem } from "./marketplace/types.js";
@@ -35,6 +35,33 @@ const DATA_DIR_CANDIDATES = [
   BUNDLED_DATA_DIR,
 ].filter(Boolean) as string[];
 
+/**
+ * Find the best enhanced index file in a directory.
+ * Checks: mcp-index-enhanced.json, then mcp-index-enhanced-v*.json (highest version).
+ */
+function resolveEnhancedIndexPath(dir: string): string | null {
+  const exact = join(dir, "mcp-index-enhanced.json");
+  if (existsSync(exact)) return exact;
+  try {
+    const files = readdirSync(dir);
+    let bestVersion = 0;
+    let bestFile: string | null = null;
+    for (const f of files) {
+      const m = /^mcp-index-enhanced-v(\d+)\.json$/.exec(f);
+      if (m) {
+        const ver = Number(m[1]);
+        if (ver > bestVersion) {
+          bestVersion = ver;
+          bestFile = join(dir, f);
+        }
+      }
+    }
+    return bestFile;
+  } catch {
+    return null;
+  }
+}
+
 let cachedIndex: McpMarketplaceItem[] | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -56,11 +83,12 @@ export async function readMarketplaceIndex(): Promise<McpMarketplaceItem[]> {
   let best: McpMarketplaceItem[] = [];
 
   for (const dir of DATA_DIR_CANDIDATES) {
-    // Try enhanced (AI-translated) file first, then plain JSON
-    const enhancedPath = join(dir, "mcp-index-enhanced.json");
+    // Try enhanced (AI-translated) file first, then plain JSON.
+    // Enhanced files may have versioned names: mcp-index-enhanced-v5.json
+    const enhancedPath = resolveEnhancedIndexPath(dir);
     const filePath = join(dir, "mcp-index.json");
     try {
-      const raw = existsSync(enhancedPath)
+      const raw = enhancedPath
         ? await readFile(enhancedPath, "utf-8")
         : await readFile(filePath, "utf-8");
       const parsed = JSON.parse(raw);

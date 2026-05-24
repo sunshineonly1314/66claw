@@ -192,7 +192,7 @@ export function renderUsage(props: UsageProps) {
     ...sortedSessions.map((s) => s.model),
     ...(props.aggregates?.byModel.map((entry) => entry.model) ?? []),
   ]).slice(0, 12);
-  const toolOptions = unique(props.aggregates?.tools.tools.map((tool) => tool.name) ?? []).slice(
+  const toolOptions = unique(props.aggregates?.tools?.tools?.map((tool) => tool.name) ?? []).slice(
     0,
     12,
   );

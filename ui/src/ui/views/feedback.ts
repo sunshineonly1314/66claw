@@ -333,13 +333,6 @@ function renderFeedbackForm(props: FeedbackViewProps) {
 export function renderFeedbackModal(props: FeedbackViewProps) {
   if (!props.state.showModal) return nothing;
 
-  const handleOverlayClick = (e: Event) => {
-    // 点击 overlay 背景（非弹框内容区）即关闭
-    if (e.target === e.currentTarget) {
-      props.onCloseModal();
-    }
-  };
-
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -348,13 +341,12 @@ export function renderFeedbackModal(props: FeedbackViewProps) {
   };
 
   return html`
-    <div 
-      class="fb-sheet-overlay" 
-      @click=${handleOverlayClick}
+    <div
+      class="fb-sheet-overlay"
       @keydown=${handleKeyDown}
       tabindex="-1"
     >
-      <div class="fb-sheet" @click=${(e: Event) => e.stopPropagation()}>
+      <div class="fb-sheet">
         <!-- 顶部拖拽指示条 -->
         <div class="fb-sheet__handle">
           <div class="fb-sheet__handle-bar"></div>

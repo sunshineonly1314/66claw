@@ -2066,6 +2066,10 @@ export async function testProviderConnection(params: { providerId: string }): Pr
     // OpenAI-compatible: kimi-code, aliyun-bailian, volcengine-ark, etc.
     testUrl = `${baseUrl}/models`;
     testHeaders = { Authorization: `Bearer ${apiKey}` };
+    // Kimi Code API 要求 User-Agent header，否则返回 401
+    if (providerId === "kimi-code" || providerId === "kimi-coding") {
+      testHeaders["User-Agent"] = "KimiCLI/1.16.0";
+    }
   }
 
   try {

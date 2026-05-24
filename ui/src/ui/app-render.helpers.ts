@@ -50,9 +50,12 @@ export function renderChatControls(state: AppViewState) {
 function renderCliButton(state: AppViewState) {
   const disabled = !state.connected;
   const handleClick = () => {
+    console.log("[CLI] button clicked, disabled=", disabled, "client=", !!state.client);
     if (disabled) return;
-    state.client?.request("terminal.open", {}).catch((err: unknown) => {
-      console.warn("Failed to open terminal:", err);
+    state.client?.request("terminal.open", {}).then((res: unknown) => {
+      console.log("[CLI] terminal.open success:", res);
+    }).catch((err: unknown) => {
+      console.warn("[CLI] terminal.open failed:", err);
     });
   };
   return html`
