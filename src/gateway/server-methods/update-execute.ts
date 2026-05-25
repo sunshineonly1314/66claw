@@ -33,7 +33,7 @@ import {
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
 import { recordUpgradeStart } from "../../infra/upgrade-watchdog.js";
-import { getDeviceId } from "../../license/device-id.js";
+import { getDeviceId } from "../../infra/device-id.js";
 
 /** 防止并发执行更新（双击/重试竞态会损坏安装） */
 let updateExecuteInProgress = false;
@@ -71,14 +71,10 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
         return;
       }
 
-      const licenseKey = config.license?.key;
-      const deviceId = licenseKey ? getDeviceId() : undefined;
 
       const check = await checkInstallerUpdate({
         updateServerUrl,
         currentVersion: VERSION,
-        licenseKey,
-        deviceId,
         timeoutMs: 10_000,
       });
 
@@ -190,8 +186,6 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
         })) ?? process.cwd();
 
       const updateServerUrl = resolveUpdateServerUrl(root) ?? "https://www.obplugins.cn";
-      const licenseKey = config.license?.key;
-      const deviceId = licenseKey ? getDeviceId() : undefined;
 
       // installer 模式：返回安装包下载链接
       if (state.updateType === "installer") {
@@ -310,8 +304,6 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
           root,
           updateServerUrl,
           currentVersion: VERSION,
-          licenseKey,
-          deviceId,
           progress,
           preCheckResult: state.checkResult,
         });
@@ -326,8 +318,6 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
               const freshCheck = await checkInstallerUpdate({
                 updateServerUrl,
                 currentVersion: VERSION,
-                licenseKey,
-                deviceId,
                 timeoutMs: 10_000,
               });
               if (freshCheck.latest?.url?.full) {
@@ -354,8 +344,6 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
               latest: fullLatest,
               currentVersion: VERSION,
               updateServerUrl,
-              licenseKey,
-              deviceId,
               progress,
             });
           }
@@ -366,8 +354,6 @@ export const updateExecuteHandlers: GatewayRequestHandlers = {
           latest: state.checkResult.latest,
           currentVersion: VERSION,
           updateServerUrl,
-          licenseKey,
-          deviceId,
           progress,
         });
       } else {

@@ -4,9 +4,6 @@ import { live } from "lit/directives/live.js";
 import type { SessionsListResult } from "../types";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
-import type { LicenseUiState } from "../license/types";
-import { isCN } from "../edition";
-import { brand } from "../brand";
 import { icons } from "../icons";
 import {
   normalizeMessage,
@@ -35,30 +32,6 @@ import {
 import { detectTextDirection } from "../text-direction";
 import { renderComposeCard, type ComposeCardProps } from "../chat/compose-card";
 import { renderIntentHint, type IntentHintProps } from "../chat/intent-hint";
-
-/**
- * 打开购买链接
- * 优先使用已缓存的 URL，若为空则实时从 gateway GET /config/purchase-url 获取
- */
-async function openPurchaseUrl(url: string | null): Promise<void> {
-  if (url) {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
-
-  // 实时获取购买链接
-  try {
-    const resp = await fetch("/config/purchase-url");
-    if (!resp.ok) return;
-    const json = (await resp.json()) as { code?: number; data?: { xianyu?: string } };
-    const fetchedUrl = json?.code === 200 && json?.data?.xianyu ? json.data.xianyu : null;
-    if (fetchedUrl) {
-      window.open(fetchedUrl, "_blank", "noopener,noreferrer");
-    }
-  } catch {
-    // 静默失败
-  }
-}
 
 export type CompactionIndicatorStatus = {
   active: boolean;
@@ -103,13 +76,6 @@ export type ChatProps = {
   splitRatio?: number;
   assistantName: string;
   assistantAvatar: string | null;
-  // License activation banner
-  needsActivation?: boolean;
-  onActivate?: () => void;
-  // License state for support/purchase UI
-  licenseState?: LicenseUiState | null;
-  /** 内联激活回调（试用用户在 chat 中输入激活码） */
-  onInlineActivate?: (key: string) => Promise<boolean>;
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
@@ -491,11 +457,6 @@ export function renderChat(props: ChatProps) {
   // Check if we have messages to show
   const hasMessages = props.messages.length > 0 || props.stream !== null || props.loading;
   
-  // License info for conditional rendering
-  const license = props.licenseState?.license ?? null;
-  const isTestUser = license?.keyType === "test" || license?.keyType === "trial";
-  const supportQrcode = license?.supportQrcode ?? null;
-  const purchaseUrl = license?.purchaseUrl ?? null;
 
   // Time-based greeting
   const hour = new Date().getHours();
@@ -609,22 +570,7 @@ export function renderChat(props: ChatProps) {
         ? html`<div class="callout">${props.disabledReason}</div>`
         : nothing}
 
-      ${props.needsActivation
-        ? html`
-            <div class="callout warning license-activation-banner">
-              <span class="license-activation-icon">🔑</span>
-              <span class="license-activation-text">
-                请先激活授权码以使用完整功能
-              </span>
-              <button 
-                class="license-activation-btn"
-                @click=${props.onActivate}
-              >
-                立即激活
-              </button>
-            </div>
-          `
-        : props.error
+      ${props.error
           ? html`<div class="callout danger">${props.error}</div>`
           : nothing}
 
@@ -707,50 +653,6 @@ export function renderChat(props: ChatProps) {
             : nothing}
         </div>
       `}
-
-      ${isTestUser ? html`
-        <!-- 试用用户常驻浮条：输入框与聊天之间 -->
-        <div class="chat-trial-bar">
-          ${brand.showSupportQrcode || brand.showPurchaseEntry ? html`
-          <div class="chat-trial-bar__left">
-            ${brand.showSupportQrcode ? html`
-            <div class="chat-trial-bar__support-trigger">
-              <span class="chat-trial-bar__icon">💬</span>
-              <span class="chat-trial-bar__label">${t("support.getExclusiveSupport")}</span>
-              ${supportQrcode ? html`
-                <div class="chat-trial-bar__popover">
-                  <div class="chat-trial-bar__popover-arrow"></div>
-                  <div class="chat-trial-bar__popover-title">${t("support.scanForSupport")}</div>
-                  <img class="chat-trial-bar__qrcode" src="${supportQrcode.base64}" alt="QR" />
-                  <div class="chat-trial-bar__popover-name">${supportQrcode.groupName}</div>
-                </div>
-              ` : nothing}
-            </div>
-            ` : nothing}
-            ${brand.showPurchaseEntry ? html`
-            <button
-              class="chat-trial-bar__purchase chat-trial-bar__purchase--gold"
-              type="button"
-              @click=${() => void openPurchaseUrl(purchaseUrl)}
-            >
-              <span class="chat-trial-bar__purchase-icon">👑</span>
-              <span>${t("support.upgradePro")}</span>
-            </button>
-            ` : nothing}
-          </div>
-          ` : nothing}
-          <div class="chat-trial-bar__right">
-            <button
-              class="chat-trial-bar__activate-trigger"
-              type="button"
-              @click=${props.onActivate}
-            >
-              <span class="chat-trial-bar__activate-icon">🔑</span>
-              <span>${t("support.inputActivationCode")}</span>
-            </button>
-          </div>
-        </div>
-      ` : nothing}
 
       <div class="chat-compose">
         ${props.voiceMascot ? renderVoiceMascot(props.voiceMascot) : nothing}

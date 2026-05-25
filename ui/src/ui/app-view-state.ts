@@ -51,7 +51,6 @@ import type { NostrProfileFormState } from "./views/channels.nostr-profile-form"
 import type { DocsViewState } from "./views/docs";
 import type { FeedbackViewState } from "./views/feedback";
 import type { LogReportViewState } from "./views/log-report";
-import type { LicenseUiState, LicenseDialogType, BoundDevice } from "./license/types";
 import type { DiscoveryControllerState } from "./controllers/capability-detect";
 import type { CostUsageSummary, SessionsUsageResult, SessionUsageTimeSeries } from "./types";
 
@@ -135,19 +134,6 @@ export type AppViewState = {
   handleDiscoveryStart?: () => Promise<void>;
   handleDiscoverySkip?: () => void;
   handleDiscoverySuggestionClick?: (prompt: string) => void;
-  // License 状态 (ClawdbotCN)
-  licenseState: LicenseUiState;
-  showLicenseDialog: LicenseDialogType | null;
-  licenseActivating: boolean;
-  licenseActivationError: string | null;
-  licenseBoundDevices: BoundDevice[];
-  showOfflineBanner: boolean;
-  // QR 码预加载状态 (ClawdbotCN)
-  qrcodePreloading: boolean;
-  qrcodePreloaded: boolean;
-  qrcodeExpiresAt: number | null;
-  // HTTP fallback QR 码（断连时通过 /api/support/qrcode 获取）
-  fallbackQrcode: { base64: string; groupName: string } | null;
   // 智能推荐开关 (Smart Dispatch Toggle)
   smartDispatchEnabled: boolean;
   smartDispatchSaving: boolean;

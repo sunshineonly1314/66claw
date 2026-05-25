@@ -1823,8 +1823,6 @@ export const zhCN: Record<keyof typeof en, string> = {
   "config.diagnosticsDesc": "诊断标志和 OpenTelemetry 配置",
   "config.nodeHostLabel": "节点主机",
   "config.nodeHostDesc": "节点主机和浏览器代理设置",
-  "config.licenseLabel": "许可证",
-  "config.licenseDesc": "许可证信息和状态",
   "config.setupLabel": "安装",
   "config.setupDesc": "初始安装和配置设置",
   "config.mediaLabel": "媒体",
@@ -2465,12 +2463,6 @@ export const zhCN: Record<keyof typeof en, string> = {
   "support.purchaseDesc": "闲鱼自动发货，即买即用，解锁完整功能",
   "support.purchaseOnXianyu": "去闲鱼购买正式版",
   "support.clickToPurchase": "点击购买",
-  "support.hasActivationCode": "已有激活码？",
-  // activationPlaceholder / activationPrefixError 已迁移到 brand.ts，以下保留兼容
-  "support.activationPlaceholder": "输入 claw 开头的激活码",
-  "support.activationPrefixError": "激活码必须以 claw 开头",
-  "support.activateNow": "立即激活",
-  "support.inputActivationCode": "输入激活码",
   "support.loading": "二维码加载中...",
 
   // ============================================================================

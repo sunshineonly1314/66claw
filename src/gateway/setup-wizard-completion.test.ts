@@ -3,10 +3,8 @@
  *
  * 验证 shouldShowSetupWizard 在不同配置状态下的行为：
  * - 全新安装 → 显示 setup
- * - 部分安装（有 apiKey + workspace 但无 license/completedAt）→ 显示 setup
- * - 完整安装（有 license）→ 不显示
+ * - 已配置 apiKey + workspace → 不显示
  * - 完整安装（有 setup.completedAt）→ 不显示
- * - 老用户（有 license，无 workspace）→ 不显示
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -28,21 +26,6 @@ vi.mock("../config/region-cn.js", async (importOriginal) => {
     detectChinaRegion: () => false,
   };
 });
-
-vi.mock("../license/index.js", () => ({
-  verifyLicenseWithRetry: vi.fn(),
-  refreshToken: vi.fn(),
-  startTokenAutoRefresh: vi.fn(),
-  switchDevice: vi.fn(),
-  DeviceSwitchError: class extends Error {},
-  LicenseErrorCode: { ERROR_DEVICE_SWITCH_REQUIRED: 1010, ERROR_DEVICE_SWITCH_COOLDOWN: 1011 },
-  getDeviceId: () => "test-device-id",
-  getSetupQrcode: vi.fn(() => null),
-}));
-
-vi.mock("./license-check.js", () => ({
-  updateGatewayLicenseState: vi.fn(),
-}));
 
 vi.mock("../commands/onboard-auth.js", () => ({
   setSiliconFlowApiKey: vi.fn(),
@@ -106,29 +89,19 @@ describe("shouldShowSetupWizard", () => {
     expect(shouldShowSetupWizard()).toBe(true);
   });
 
-  it("有 apiKey + workspace 但无 license 且无 completedAt → 显示 setup（关键修复）", () => {
+  it("有 apiKey + workspace → 不显示 setup", () => {
     mockedLoadConfig.mockReturnValue({
       auth: { profiles: { default: { apiKey: "sk-xxx" } } },
       agents: { defaults: { workspace: "/home/user" } },
     });
-    // 这是修复前的 bug：之前此场景不会显示 setup，导致用户跳过 license 激活
+    expect(shouldShowSetupWizard()).toBe(false);
+  });
+
+  it("legacy license 字段不影响 setup 判断", () => {
+    mockedLoadConfig.mockReturnValue({
+      license: { key: "clawd-xxx" },
+    });
     expect(shouldShowSetupWizard()).toBe(true);
-  });
-
-  it("有 license → 不显示 setup", () => {
-    mockedLoadConfig.mockReturnValue({
-      license: { key: "clawd-xxx-xxx" },
-    });
-    expect(shouldShowSetupWizard()).toBe(false);
-  });
-
-  it("有 apiKey + workspace + license → 不显示 setup", () => {
-    mockedLoadConfig.mockReturnValue({
-      auth: { profiles: { default: { apiKey: "sk-xxx" } } },
-      agents: { defaults: { workspace: "/home/user" } },
-      license: { key: "clawd-xxx-xxx" },
-    });
-    expect(shouldShowSetupWizard()).toBe(false);
   });
 
   it("有 apiKey + workspace + setup.completedAt → 不显示 setup", () => {
@@ -147,10 +120,4 @@ describe("shouldShowSetupWizard", () => {
     expect(shouldShowSetupWizard()).toBe(false);
   });
 
-  it("老用户（有 license 无 workspace）→ 不显示 setup", () => {
-    mockedLoadConfig.mockReturnValue({
-      license: { key: "clawd-xxx" },
-    });
-    expect(shouldShowSetupWizard()).toBe(false);
-  });
 });

@@ -1820,8 +1820,6 @@ export const en = {
   "config.diagnosticsDesc": "Diagnostics flags and OpenTelemetry",
   "config.nodeHostLabel": "Node Host",
   "config.nodeHostDesc": "Node host and browser proxy settings",
-  "config.licenseLabel": "License",
-  "config.licenseDesc": "License information and status",
   "config.setupLabel": "Setup",
   "config.setupDesc": "Initial setup and installation settings",
   "config.mediaLabel": "Media",
@@ -2411,11 +2409,6 @@ export const en = {
   "support.purchaseDesc": "Auto-delivery via Xianyu, unlock full features",
   "support.purchaseOnXianyu": "Purchase on Xianyu",
   "support.clickToPurchase": "Click to Purchase",
-  "support.hasActivationCode": "Have an activation code?",
-  "support.activationPlaceholder": "Enter claw-xxxx activation code",
-  "support.activationPrefixError": "Activation code must start with 'claw'",
-  "support.activateNow": "Activate Now",
-  "support.inputActivationCode": "Enter Code",
   "support.loading": "Loading QR code...",
 
   // ============================================================================

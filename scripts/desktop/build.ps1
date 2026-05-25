@@ -117,151 +117,32 @@ if ($viteEdForOem -eq "overseas") {
     Write-Host "[2a-oem/6] VITE_EDITION != overseas - skipping OEM assets"
 }
 
-# ── Step 2b+3: CN encryption chain + UI build (PARALLEL) ──
-# Safe to parallelize because:
-#   - CN encryption writes to dist/ (cn-protected-files.json listed files only)
-#   - UI build writes to dist/control-ui/ (separate subdir, not touched by CN chain)
-#   - obfuscate-dist.ts only processes CN-listed files, NOT dist/control-ui/
-#   - obfuscate-ui.ts only processes dist/control-ui/ JS files
-Write-Host "[2b+3/6] CN encryption + UI build (parallel)..." -ForegroundColor Yellow
+# -- Step 2b+3: Core, extension, and UI build --
+Write-Host "[2b+3/6] Building core, extensions, and UI..." -ForegroundColor Yellow
 
-# Create temp scripts for parallel execution
-$ts = Get-Date -Format 'yyyyMMddHHmmss'
-$cnScript = Join-Path $env:TEMP "clawdbot-cn-chain-$ts.ps1"
-$uiScript = Join-Path $env:TEMP "clawdbot-ui-build-$ts.ps1"
-# Sentinel files for reliable exit code capture (Start-Process ExitCode can be $null)
-$cnExitFile = Join-Path $env:TEMP "clawdbot-cn-exit-$ts.txt"
-$uiExitFile = Join-Path $env:TEMP "clawdbot-ui-exit-$ts.txt"
-
-# CN encryption chain script
-@"
-`$ErrorActionPreference = 'Continue'
-Set-Location '$ProjectRoot'
-`$exitCode = 0
-try {
-pnpm build:cn-compile
-if (`$LASTEXITCODE -ne 0) { throw "build:cn-compile failed" }
+Push-Location $ProjectRoot
+pnpm build
+if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host "ERROR: core build failed" -ForegroundColor Red; exit 1 }
 pnpm build:cn-extensions
-if (`$LASTEXITCODE -ne 0) { throw "build:cn-extensions failed" }
+if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host "ERROR: extension build failed" -ForegroundColor Red; exit 1 }
 pnpm verify:extensions
-if (`$LASTEXITCODE -ne 0) { throw "verify:extensions failed" }
-node --import tsx scripts/obfuscate-dist.ts
-if (`$LASTEXITCODE -ne 0) { throw "obfuscate-dist failed" }
-# Use the bundled Node v22.16.0 for bytecode compilation so .jsc matches the runtime.
-# CRITICAL: .jsc bytecode is V8-version-specific. If compiled with a different Node
-# version than the one shipped in the installer, the app will crash on startup.
-`$bytecodeNode = `$null
-`$bytecodeNodeCandidates = @(
-    '$ProjectRoot\scripts\windows\node-portable\node.exe',
-    '$ProjectRoot\scripts\windows\node\node.exe'
-)
-foreach (`$candidate in `$bytecodeNodeCandidates) {
-    if (Test-Path `$candidate) {
-        `$bytecodeNode = `$candidate
-        break
-    }
-}
-if (`$bytecodeNode) {
-    Write-Host "  Bytecode compile using: `$bytecodeNode"
-    & `$bytecodeNode --import tsx cn/scripts/build/compile-bytecode.ts
-} else {
-    Write-Host "ERROR: No bundled Node 22 found for bytecode compilation!" -ForegroundColor Red
-    Write-Host "  System node may have incompatible V8 version. Aborting." -ForegroundColor Red
-    Write-Host "  Place node.exe v22.16.0 in one of:" -ForegroundColor Red
-    foreach (`$c in `$bytecodeNodeCandidates) { Write-Host "    - `$c" -ForegroundColor Red }
-    throw "No bundled Node 22 found"
-}
-if (`$LASTEXITCODE -ne 0) { throw "compile-bytecode failed" }
-pnpm integrity:gen
-if (`$LASTEXITCODE -ne 0) { throw "integrity:gen failed" }
+if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host "ERROR: extension verification failed" -ForegroundColor Red; exit 1 }
 pnpm release:changelog
-if (`$LASTEXITCODE -ne 0) { throw "release:changelog failed" }
-} catch {
-    Write-Host "CN chain FAILED: `$_" -ForegroundColor Red
-    `$exitCode = 1
-}
-`$exitCode | Out-File -FilePath '$cnExitFile' -Encoding ASCII -NoNewline
-exit `$exitCode
-"@ | Out-File -FilePath $cnScript -Encoding UTF8
+if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host "ERROR: changelog generation failed" -ForegroundColor Red; exit 1 }
+Pop-Location
 
-# UI build + obfuscation script
-# Pass OEM_ID and VITE_EDITION into the child process so vite injects brand constants
-$viteEdition = if ($env:VITE_EDITION) { $env:VITE_EDITION } else { "cn" }
-$oemIdVal    = if ($env:OEM_ID)       { $env:OEM_ID }       else { "" }
-@"
-`$ErrorActionPreference = 'Continue'
-`$env:VITE_EDITION = '$viteEdition'
-`$env:OEM_ID       = '$oemIdVal'
-`$exitCode = 0
-try {
-if (Test-Path '$ProjectRoot\ui\package.json') {
-    Set-Location '$ProjectRoot\ui'
+if (Test-Path "$ProjectRoot\ui\package.json") {
+    Push-Location "$ProjectRoot\ui"
+    if (-not $env:VITE_EDITION) { $env:VITE_EDITION = "cn" }
     pnpm build
-    if (`$LASTEXITCODE -ne 0) { throw "ui build failed" }
+    if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host "ERROR: UI build failed" -ForegroundColor Red; exit 1 }
+    Pop-Location
 }
-Set-Location '$ProjectRoot'
-node --import tsx cn/scripts/build/obfuscate-ui.ts
-if (`$LASTEXITCODE -ne 0) { throw "obfuscate-ui failed" }
-} catch {
-    Write-Host "UI build FAILED: `$_" -ForegroundColor Red
-    `$exitCode = 1
-}
-`$exitCode | Out-File -FilePath '$uiExitFile' -Encoding ASCII -NoNewline
-exit `$exitCode
-"@ | Out-File -FilePath $uiScript -Encoding UTF8
-
-# Launch both in parallel
-$cnProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$cnScript`"" -NoNewWindow -PassThru
-$uiProc = Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$uiScript`"" -NoNewWindow -PassThru
-
-# Wait for both
-$cnProc.WaitForExit()
-$uiProc.WaitForExit()
-
-# Read exit codes from sentinel files (reliable, unlike Start-Process ExitCode which can be $null)
-$cnExit = if (Test-Path $cnExitFile) { [int](Get-Content $cnExitFile -Raw).Trim() } else { 1 }
-$uiExit = if (Test-Path $uiExitFile) { [int](Get-Content $uiExitFile -Raw).Trim() } else { 1 }
-Write-Host "  CN chain exit: $cnExit, UI build exit: $uiExit"
-
-# Cleanup temp files
-Remove-Item $cnScript -Force -ErrorAction SilentlyContinue
-Remove-Item $uiScript -Force -ErrorAction SilentlyContinue
-Remove-Item $cnExitFile -Force -ErrorAction SilentlyContinue
-Remove-Item $uiExitFile -Force -ErrorAction SilentlyContinue
-
-if ($cnExit -ne 0) {
-    Write-Host "ERROR: CN encryption chain failed (exit $cnExit)!" -ForegroundColor Red
-    exit 1
-}
-Write-Host "  CN encryption chain OK" -ForegroundColor Green
-
-if ($uiExit -ne 0) {
-    Write-Host "ERROR: UI build/obfuscation failed (exit $uiExit)!" -ForegroundColor Red
-    exit 1
-}
-Write-Host "  UI build + obfuscation OK" -ForegroundColor Green
+Write-Host "  Build pipeline OK" -ForegroundColor Green
 
 # ── Step 3c: Pre-packaging validation ──
 Write-Host "[3c/6] Validating build artifacts..." -ForegroundColor Yellow
 $buildOk = $true
-
-# Check build-meta.json exists (bytecode V8 version record)
-if (-not (Test-Path "$ProjectRoot\dist\build-meta.json")) {
-    Write-Host "  ERROR: dist\build-meta.json not found! compile-bytecode.ts may have failed." -ForegroundColor Red
-    $buildOk = $false
-} else {
-    Write-Host "  OK: build-meta.json exists" -ForegroundColor Green
-}
-
-# Check .jsc bytecode files were generated
-$jscFiles = Get-ChildItem "$ProjectRoot\dist" -Filter "*.jsc" -Recurse -ErrorAction SilentlyContinue
-$jscCount = if ($jscFiles) { $jscFiles.Count } else { 0 }
-if ($jscCount -lt 100) {
-    Write-Host "  ERROR: Only $jscCount .jsc files found (expected >= 100). Bytecode compilation may have failed." -ForegroundColor Red
-    $buildOk = $false
-} else {
-    Write-Host "  OK: $jscCount .jsc bytecode files" -ForegroundColor Green
-}
 
 # Check control-ui/index.html was built (FATAL — missing causes 'asset not found: index.html' at startup)
 # LESSON LEARNED (v1.6.7): partial rebuild that skips prepare-resources.ps1 will leave

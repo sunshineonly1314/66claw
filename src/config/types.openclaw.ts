@@ -12,7 +12,6 @@ import type {
   TalkConfig,
 } from "./types.gateway.js";
 import type { HooksConfig } from "./types.hooks.js";
-import type { LicenseConfig } from "./types.license.js";
 import type { MemoryConfig } from "./types.memory.js";
 import type {
   AudioConfig,
@@ -164,9 +163,14 @@ export type OpenClawCNConfig = {
     /** 是否加密敏感字段（默认 false）。 */
     encryptSensitiveFields?: boolean;
   };
-  /** 许可证配置（由系统自动写入，请勿手动修改）。 */
-  license?: LicenseConfig;
+  /** Legacy license config retained only for reading old local configs. */
   /** 初始设置向导状态（由系统自动写入）。 */
+  license?: {
+    key?: string;
+    deviceId?: string;
+    keyType?: string;
+    [key: string]: unknown;
+  };
   setup?: {
     completedAt?: string;
     lastCompletedStep?: number;

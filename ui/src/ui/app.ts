@@ -50,7 +50,6 @@ import {
 import { connectGateway as connectGatewayInternal } from "./app-gateway";
 import { initQrGuard } from "./qr-guard";
 // OpenClawCN: 预加载内嵌二维码数据（离线备用）
-import { getEmbeddedQrcode } from "./embedded-qrcodes";
 import { setupContextMenuDismiss } from "./views/conversation-sidebar";
 import type { RecordingState } from "./voice/audio-recorder";
 import { AudioRecorder } from "./voice/audio-recorder";
@@ -276,36 +275,6 @@ export class ClawdbotApp extends LitElement {
   @state() execApprovalQueue: ExecApprovalRequest[] = [];
   @state() execApprovalBusy = false;
   @state() execApprovalError: string | null = null;
-
-  // License 状态 (ClawdbotCN)
-  @state() licenseState: import("./license/types").LicenseUiState = {
-    checking: false,
-    valid: true,
-    offlineMode: false,
-    error: null,
-    errorCode: null,
-    license: null,
-    device: null,
-    renewalReminder: null,
-    forceUpdate: null,
-    pendingNotifications: [],
-    lastVerifiedAt: null,
-    deviceSwitchInfo: null,
-    deviceSwitchCooldown: null,
-    lastUpgradeResult: null,
-  };
-  @state() showLicenseDialog: import("./license/types").LicenseDialogType | null = null;
-  @state() licenseActivating = false;
-  @state() licenseActivationError: string | null = null;
-  @state() licenseBoundDevices: import("./license/types").BoundDevice[] = [];
-  @state() showOfflineBanner = false;
-
-  // QR 码预加载状态 (ClawdbotCN)
-  @state() qrcodePreloading = false;
-  @state() qrcodePreloaded = false;
-  @state() qrcodeExpiresAt: number | null = null;
-  // HTTP fallback QR 码（断连时通过 /api/support/qrcode 获取）
-  @state() fallbackQrcode: { base64: string; groupName: string } | null = null;
 
   // 能力发现状态 (Capability Discovery)
   @state() discoveryState: import("./controllers/capability-detect").DiscoveryControllerState = createInitialDiscoveryState();
@@ -867,24 +836,6 @@ export class ClawdbotApp extends LitElement {
       void this.checkVoiceCapabilities();
     };
     globalThis.addEventListener("openclawcn:voice-credentials-changed", this._voiceCredsChangedHandler);
-    // HTTP fallback: 立即获取运维二维码（不依赖 WebSocket 连接）
-    this._fetchFallbackQrcode();
-  }
-
-  private async _fetchFallbackQrcode() {
-    try {
-      const resp = await fetch("/api/support/qrcode");
-      if (!resp.ok) throw new Error("not ok");
-      const json = (await resp.json()) as { ok?: boolean; qrcode?: { base64: string; groupName: string } | null };
-      if (json?.ok && json.qrcode) {
-        this.fallbackQrcode = json.qrcode;
-      } else {
-        this.fallbackQrcode = getEmbeddedQrcode("test");
-      }
-    } catch {
-      // API 不可用时使用内嵌二维码
-      this.fallbackQrcode = getEmbeddedQrcode("test");
-    }
   }
 
   protected firstUpdated() {

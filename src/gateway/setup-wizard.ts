@@ -46,8 +46,6 @@ import {
   handleVerifyChannel,
   handleComplete,
   handleRestart,
-  handleValidateLicense,
-  handleSwitchDevice,
   handleFetchModels,
   handleTestFreeModelApiKey,
   handleConfigureFreeModels,
@@ -69,8 +67,6 @@ const SETUP_WRITE_API_PATHS = new Set([
   "/configure-channels",
   "/complete",
   "/restart",
-  "/validate-license",
-  "/switch-device",
   "/fetch-models",
   "/free-models/configure",
   "/browse-directory", // 文件系统浏览，有信息泄露风险
@@ -148,9 +144,7 @@ export async function handleSetupWizardHttpRequest(
 
     // [HIGH-02] Setup 完成后整个 /api/setup/* 路由关闭，防止被持续滥用。
     // 仅依据 setup.completedAt 标记（由 /complete 写入）判断是否关闭。
-    // 不能用 shouldShowSetupWizard()：它还检查 license.key 等字段，但 setup 流程中
     // 前面的步骤（configure-provider）写入 config 时 writeConfigFile 的 merge 逻辑
-    // 可能恢复了旧的 license.key，导致 shouldShowSetupWizard()=false，
     // 使得后续步骤（verify-apikey 等）被 410 挡住。
     // /state 和 /complete 始终放行：/state 供 UI 查询；/complete 需要幂等。
     const setupExplicitlyCompleted = Boolean(loadConfig().setup?.completedAt);
@@ -226,12 +220,6 @@ export async function handleSetupWizardHttpRequest(
           return true;
         case "/restart":
           await handleRestart(req, res);
-          return true;
-        case "/validate-license":
-          await handleValidateLicense(req, res);
-          return true;
-        case "/switch-device":
-          await handleSwitchDevice(req, res);
           return true;
         case "/fetch-models":
           await handleFetchModels(req, res);
@@ -312,11 +300,6 @@ export async function handleSetupWizardHttpRequest(
 export function shouldShowSetupWizard(): boolean {
   const config = loadConfig();
 
-  // 老用户保护：如果已激活过授权码，说明已完成初始配置，不再弹出 Setup Wizard。
-  // 这避免了老用户因缺少 workspace 或使用环境变量配置 API Key 而被误重定向的问题。
-  const hasLicense = Boolean(config.license?.key);
-  if (hasLicense) return false;
-
   // 如果 setup wizard 已显式完成（handleComplete 写入的标记），不再弹出。
   // 这是防止老用户误弹的第二道保护（向后兼容：老配置无此字段不受影响）。
   const setupCompleted = Boolean(config.setup?.completedAt);
@@ -331,10 +314,8 @@ export function shouldShowSetupWizard(): boolean {
   // 如果缺少必要配置，显示 Setup Wizard
   if (!hasApiKey || !hasWorkspace) return true;
 
-  // 【关键修复】API Key + workspace 都已配置，但没有 license 且没有 setup.completedAt
-  // 说明 setup wizard 进行到了中途（Steps 1-2 已保存配置）但未完成 license 验证。
-  // 必须继续显示 setup wizard，让用户完成激活流程。
-  return true;
+  // API Key + workspace 都已配置后，开源版本无需额外授权步骤。
+  return false;
 }
 
 /**

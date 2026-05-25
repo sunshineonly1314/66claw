@@ -2208,7 +2208,7 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       position: relative;
     }
     
-    /* 分栏模式激活时的布局 */
+    /* 分栏模式布局 */
     .channel-config-form.split-mode {
       display: grid;
       grid-template-columns: 400px 1fr;
@@ -3696,26 +3696,6 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
     /* 旧版 qrcode-section 隐藏（已整合到新布局） */
     .qrcode-section { display: none !important; }
 
-    /* 凭证输入区域 */
-    .license-input-section {
-      margin-top: 20px;
-      padding: 16px;
-      background: var(--bg-tertiary);
-      border: 1px solid var(--border-default);
-      border-radius: var(--radius-lg);
-    }
-    .license-input-section .form-label {
-      margin-bottom: 10px;
-      font-size: 0.95em;
-    }
-    .license-input-wrapper {
-      display: flex;
-      gap: 12px;
-    }
-    .license-input-wrapper .form-input {
-      flex: 1;
-    }
-
     /* 服务说明区域（保留兼容） */
     .service-intro {
       background: var(--bg-tertiary);
@@ -3770,34 +3750,6 @@ export function generateSetupPageHtml(gatewayToken?: string): string {
       background: var(--bg-secondary);
       border-radius: var(--radius-md);
       font-size: 0.95em;
-    }
-
-    /* 服务凭证卡片（保留兼容） */
-    .license-card {
-      background: linear-gradient(135deg, rgba(60, 131, 246, 0.1) 0%, rgba(60, 131, 246, 0.02) 100%);
-      border: 1px solid var(--border-accent);
-      border-radius: var(--radius-lg);
-      padding: 32px;
-      text-align: center;
-      margin: 24px 0;
-    }
-    .license-card-icon {
-      font-size: 3em;
-      margin-bottom: 16px;
-    }
-    .license-card-title {
-      font-size: 1.3em;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .license-card-desc {
-      color: var(--text-secondary);
-      margin-bottom: 20px;
-    }
-    .license-card-note {
-      margin-top: 16px;
-      font-size: 0.85em;
-      color: var(--text-muted);
     }
 
     /* 验证成功动画 */

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * CN Extension JS Verification Script (HIGH-04 fix)
  *
@@ -9,7 +9,7 @@
  * .js files are committed that don't correspond to the accompanying TS source.
  *
  * How it works:
- *   1. For each CN extension directory, compile every .ts → temp .js via esbuild
+ *   1. For each CN extension directory, compile every .ts 鈫?temp .js via esbuild
  *   2. Compare the result with the committed .js (normalizing line endings)
  *   3. Report any mismatches as build failures
  *
@@ -57,7 +57,7 @@ const CN_EXTENSION_DIRS = loadExtensionDirs();
 
 /**
  * Load extension directories that are protected by bytecode compilation.
- * These directories are listed in cn_encryption.bytecode.directories and will have
+ * These directories are extension runtime packages and should have
  * their .js files replaced with bytecode loaders at build time, so they should NOT
  * be verified against their TS source (the verification would always fail).
  */
@@ -145,7 +145,7 @@ interface MissingJs {
 
 function main(): void {
   console.log("");
-  console.log("🔍 CN Extension JS Verification (HIGH-04)");
+  console.log("馃攳 CN Extension JS Verification (HIGH-04)");
   console.log(`   Root: ${ROOT_DIR}`);
   console.log(`   Verifying ${CN_EXTENSION_DIRS.length} CN extensions`);
   console.log("");
@@ -163,13 +163,13 @@ function main(): void {
     // Their .js files will be replaced with bytecode loaders at build time,
     // so source-matching verification is not applicable.
     if (BYTECODE_PROTECTED_EXT_DIRS.has(extRel)) {
-      console.log(`   🔒 ${extRel} — bytecode-protected, skipping verification`);
+      console.log(`   馃敀 ${extRel} 鈥?bytecode-protected, skipping verification`);
       skippedExt++;
       continue;
     }
 
     if (!fs.existsSync(absDir)) {
-      console.log(`   ⚠ ${extRel} — directory not found, skipping`);
+      console.log(`   鈿?${extRel} 鈥?directory not found, skipping`);
       skippedExt++;
       continue;
     }
@@ -177,7 +177,7 @@ function main(): void {
     const tsFiles = findTsFiles(absDir);
 
     if (tsFiles.length === 0) {
-      console.log(`   ⚠ ${extRel} — no .ts files found`);
+      console.log(`   鈿?${extRel} 鈥?no .ts files found`);
       skippedExt++;
       continue;
     }
@@ -193,11 +193,11 @@ function main(): void {
       // Check committed .js exists
       if (!fs.existsSync(jsFile)) {
         missingJs.push({ tsFile: relTs, jsFile: relJs });
-        console.log(`   ✗ MISSING  ${relJs}`);
+        console.log(`   鉁?MISSING  ${relJs}`);
         continue;
       }
 
-      // Compile TS → expected JS
+      // Compile TS 鈫?expected JS
       let expectedJs: string;
       try {
         expectedJs = compileTs(tsFile);
@@ -207,7 +207,7 @@ function main(): void {
           jsFile: relJs,
           reason: `TS compile error: ${err instanceof Error ? err.message : String(err)}`,
         });
-        console.log(`   ✗ COMPILE ERROR  ${relTs}`);
+        console.log(`   鉁?COMPILE ERROR  ${relTs}`);
         continue;
       }
 
@@ -228,9 +228,9 @@ function main(): void {
         mismatches.push({
           tsFile: relTs,
           jsFile: relJs,
-          reason: "Committed .js is obfuscated — extensions must ship as plain esbuild output",
+          reason: "Committed .js is obfuscated 鈥?extensions must ship as plain esbuild output",
         });
-        console.log(`   ✗ OBFUSCATED  ${relJs}`);
+        console.log(`   鉁?OBFUSCATED  ${relJs}`);
         continue;
       }
 
@@ -242,37 +242,37 @@ function main(): void {
         mismatches.push({
           tsFile: relTs,
           jsFile: relJs,
-          reason: `Content mismatch — committed JS (sha256:${sha256(normalCommitted)}) != freshly compiled (sha256:${sha256(normalExpected)})`,
+          reason: `Content mismatch 鈥?committed JS (sha256:${sha256(normalCommitted)}) != freshly compiled (sha256:${sha256(normalExpected)})`,
         });
-        console.log(`   ✗ MISMATCH  ${relJs}`);
+        console.log(`   鉁?MISMATCH  ${relJs}`);
       } else {
         okCount++;
-        console.log(`   ✓ ${relJs}`);
+        console.log(`   鉁?${relJs}`);
       }
     }
     console.log("");
   }
 
-  // ── Summary ─────────────────────────────────────────────────────────────────
+  // 鈹€鈹€ Summary 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   console.log("========================================");
-  console.log(`📊 Results: ${okCount} OK, ${mismatches.length} mismatches, ${missingJs.length} missing JS`);
+  console.log(`馃搳 Results: ${okCount} OK, ${mismatches.length} mismatches, ${missingJs.length} missing JS`);
 
   let hasFailures = false;
 
   if (missingJs.length > 0) {
     hasFailures = true;
     console.log("");
-    console.log("❌ Missing .js files (run: pnpm build:cn-extensions):");
+    console.log("鉂?Missing .js files (run: pnpm build:cn-extensions):");
     for (const { tsFile, jsFile } of missingJs) {
       console.log(`   TS: ${tsFile}`);
-      console.log(`   JS: ${jsFile}  ← does not exist`);
+      console.log(`   JS: ${jsFile}  鈫?does not exist`);
     }
   }
 
   if (mismatches.length > 0) {
     hasFailures = true;
     console.log("");
-    console.log("❌ Mismatched/obfuscated .js files:");
+    console.log("鉂?Mismatched/obfuscated .js files:");
     for (const { tsFile, jsFile, reason } of mismatches) {
       console.log(`   TS:     ${tsFile}`);
       console.log(`   JS:     ${jsFile}`);
@@ -287,12 +287,12 @@ function main(): void {
 
   if (!hasFailures) {
     console.log("");
-    console.log("✅ All CN extension .js files verified — match their TS source exactly.");
+    console.log("鉁?All CN extension .js files verified 鈥?match their TS source exactly.");
     console.log("========================================");
     process.exit(0);
   } else {
     console.log("");
-    console.log("❌ Extension verification FAILED.");
+    console.log("鉂?Extension verification FAILED.");
     console.log("   The committed .js files do not match what esbuild produces from the TS source.");
     console.log("   This is a supply-chain integrity violation. Fix before releasing.");
     console.log("========================================");

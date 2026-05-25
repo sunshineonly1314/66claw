@@ -78,98 +78,18 @@ else
   echo "[2a-oem/6] VITE_EDITION != overseas — skipping OEM assets"
 fi
 
-# ── Step 2b+2c: UI build + CN encryption chain (PARALLEL) ──
-# Safe to parallelize because:
-#   - UI Vite build imports .ts source files from extensions/, NOT .js
-#     (vite.config.ts: "imported directly as .ts source, bypassing bytenode .js loaders")
-#   - CN encryption writes to dist/ (cn-protected-files.json listed files only)
-#   - UI build writes to dist/control-ui/ (separate subdir, not touched by CN chain)
-#   - obfuscate-dist.ts only processes CN-listed files, NOT dist/control-ui/
-#   - obfuscate-ui.ts only processes dist/control-ui/ JS files
-#   - Windows build.ps1 has used this parallel pattern since v1.6.6 with zero issues
-echo "[2b+2c/6] CN encryption + UI build (parallel)..."
-
-# ── Prepare bytecode Node BEFORE launching parallel tasks ──
-# CRITICAL: .jsc bytecode is V8-version-specific. We MUST use the same Node version
-# that will ship in the installer. Download the pinned Node now (before compile-bytecode)
-# so we can use it for bytecode compilation.
-BYTECODE_NODE=""
-BYTECODE_NODE_VERSION="22.16.0"
-
-BYTECODE_ARCH="$(uname -m)"
-case "$BYTECODE_ARCH" in
-  x86_64) BYTECODE_ARCH="x64" ;;
-  aarch64) BYTECODE_ARCH="arm64" ;;
-esac
-BYTECODE_NODE_DIR="$PROJECT_ROOT/build/download-output/node/node-${BYTECODE_ARCH}"
-if [[ ! -f "$BYTECODE_NODE_DIR/bin/node" ]]; then
-  echo "  Downloading Node v${BYTECODE_NODE_VERSION} for bytecode compilation..."
-  BYTECODE_DL_FILE="node-v${BYTECODE_NODE_VERSION}-darwin-${BYTECODE_ARCH}.tar.gz"
-  BYTECODE_MIRRORS=(
-    "https://npmmirror.com/mirrors/node/v${BYTECODE_NODE_VERSION}/$BYTECODE_DL_FILE"
-    "https://nodejs.org/dist/v${BYTECODE_NODE_VERSION}/$BYTECODE_DL_FILE"
-  )
-  mkdir -p "$BYTECODE_NODE_DIR"
-  BYTECODE_DL_OK=false
-  for url in "${BYTECODE_MIRRORS[@]}"; do
-    if curl -fSL --connect-timeout 15 --max-time 300 "$url" -o "/tmp/$BYTECODE_DL_FILE" 2>/dev/null; then
-      tar -xzf "/tmp/$BYTECODE_DL_FILE" -C "$BYTECODE_NODE_DIR" --strip-components=1
-      rm -f "/tmp/$BYTECODE_DL_FILE"
-      BYTECODE_DL_OK=true
-      break
-    fi
-  done
-  if [[ "$BYTECODE_DL_OK" != "true" ]]; then
-    echo "ERROR: Failed to download Node v${BYTECODE_NODE_VERSION} for bytecode compilation!" >&2
-    echo "  System node may have incompatible V8 version. Aborting." >&2
-    exit 1
-  fi
-fi
-BYTECODE_NODE="$BYTECODE_NODE_DIR/bin/node"
-echo "  Bytecode compile using: $BYTECODE_NODE ($($BYTECODE_NODE -v))"
-
-# ── Launch CN chain in background ──
+# -- Step 2b+2c: Core, extension, and UI build --
+echo "[2b+2c/6] Core + extension + UI build..."
 (cd "$PROJECT_ROOT" && \
-  pnpm build:cn-compile && \
+  pnpm build && \
   pnpm build:cn-extensions && \
   pnpm verify:extensions && \
-  node --import tsx scripts/obfuscate-dist.ts && \
-  "$BYTECODE_NODE" --import tsx cn/scripts/build/compile-bytecode.ts && \
-  pnpm integrity:gen && \
-  pnpm release:changelog) &
-CN_PID=$!
+  pnpm release:changelog)
 
-# ── Launch UI build + obfuscation in background ──
-(
-  if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
-    cd "$PROJECT_ROOT/ui" && pnpm build
-  fi
-  cd "$PROJECT_ROOT" && node --import tsx cn/scripts/build/obfuscate-ui.ts
-) &
-UI_PID=$!
-
-# ── Wait for both and check exit codes ──
-# NOTE: must use set +e, otherwise set -e causes wait to terminate the script on non-zero
-set +e
-wait $CN_PID
-CN_EXIT=$?
-wait $UI_PID
-UI_EXIT=$?
-set -e
-
-echo "  CN chain exit: $CN_EXIT, UI build exit: $UI_EXIT"
-
-if [[ $CN_EXIT -ne 0 ]]; then
-  echo "ERROR: CN encryption chain failed (exit $CN_EXIT)!" >&2
-  exit 1
+if [[ -f "$PROJECT_ROOT/ui/package.json" ]]; then
+  (cd "$PROJECT_ROOT/ui" && pnpm build)
 fi
-echo "  CN encryption chain OK"
-
-if [[ $UI_EXIT -ne 0 ]]; then
-  echo "ERROR: UI build/obfuscation failed (exit $UI_EXIT)!" >&2
-  exit 1
-fi
-echo "  UI build + obfuscation OK"
+echo "  Build pipeline OK"
 
 # ── Step 3b: OEM brand injection (optional) ──
 # Set OEM_ID=<name> to apply a brand config from config/oem/<name>.json
@@ -210,24 +130,6 @@ if [[ -n "${VERSION:-}" && "$PKG_VER" != "$VERSION" ]]; then
   BUILD_OK=false
 fi
 
-# Check build-meta.json exists (bytecode V8 version record)
-if [[ ! -f "$PROJECT_ROOT/dist/build-meta.json" ]]; then
-  echo "  ERROR: dist/build-meta.json not found! compile-bytecode.ts may have failed." >&2
-  BUILD_OK=false
-else
-  echo "  OK: build-meta.json exists"
-fi
-
-# Check .jsc bytecode files — 今天实际有 161 个 dist .jsc，阈值从 5 调到 100
-JSC_COUNT=$(find "$PROJECT_ROOT/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
-EXT_JSC_COUNT=$(find "$PROJECT_ROOT/extensions" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
-if [[ "$JSC_COUNT" -lt 100 ]]; then
-  echo "  ERROR: Only $JSC_COUNT .jsc files in dist/ (expected >= 100). Bytecode compilation may have failed." >&2
-  BUILD_OK=false
-else
-  echo "  OK: $JSC_COUNT dist .jsc + $EXT_JSC_COUNT extensions .jsc = $((JSC_COUNT + EXT_JSC_COUNT)) total"
-fi
-
 # Check control-ui was built & has correct chunk count (>=5)
 if [[ ! -d "$PROJECT_ROOT/dist/control-ui" ]]; then
   echo "  ERROR: dist/control-ui/ not found. UI build failed." >&2
@@ -241,46 +143,6 @@ else
     echo "  OK: control-ui built ($UI_JS JS chunks)"
   fi
 fi
-
-# [Fix-2c] 完整性哈希文件存在性（今天验证中发现是关键指标）
-if [[ ! -f "$PROJECT_ROOT/dist/security/integrity-hashes.json" ]]; then
-  echo "  ERROR: integrity-hashes.json not found! integrity:gen may have failed." >&2
-  BUILD_OK=false
-else
-  HASH_COUNT=$(node -e "try{console.log(Object.keys(JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/dist/security/integrity-hashes.json','utf8'))).length)}catch{console.log(0)}" 2>/dev/null || echo 0)
-  if [[ "$HASH_COUNT" -lt 50 ]]; then
-    echo "  ERROR: integrity-hashes.json has only $HASH_COUNT entries (expected >=50)." >&2
-    BUILD_OK=false
-  else
-    echo "  OK: integrity-hashes.json ($HASH_COUNT entries)"
-  fi
-fi
-
-# [Fix-2d] 关键 .jsc 模块可被 bytenode 加载（快速 smoke test，用 build 环境的 node）
-BYTECODE_SMOKE_OK=true
-SMOKE_NODE="${BYTECODE_NODE:-node}"
-for smoke_jsc in \
-  dist/config/region-cn.jsc \
-  dist/license/index.jsc \
-  dist/security/index.jsc \
-  dist/dispatch/engine.jsc \
-  extensions/agent-team/index.jsc \
-  extensions/orchestrator/index.jsc
-do
-  if [[ -f "$PROJECT_ROOT/$smoke_jsc" ]]; then
-    SMOKE_RESULT=$("$SMOKE_NODE" -e "
-      const b = require('$PROJECT_ROOT/node_modules/bytenode');
-      try { b.runBytecodeFile('$PROJECT_ROOT/$smoke_jsc'); process.stdout.write('OK'); }
-      catch(e) { process.stdout.write('ERR:'+e.message.split('\n')[0].substring(0,80)); process.exit(1); }
-    " 2>/dev/null)
-    if [[ "$SMOKE_RESULT" != "OK" ]]; then
-      echo "  ERROR: bytenode smoke fail: $smoke_jsc -- $SMOKE_RESULT" >&2
-      BYTECODE_SMOKE_OK=false
-      BUILD_OK=false
-    fi
-  fi
-done
-[[ "$BYTECODE_SMOKE_OK" == "true" ]] && echo "  OK: bytenode smoke tests passed"
 
 if [[ "$BUILD_OK" != "true" ]]; then
   echo "FATAL: Pre-packaging validation failed. Aborting before Tauri compile (saves 30-60 min)." >&2
@@ -341,59 +203,6 @@ if [[ $TAURI_CLI_EXIT -ne 0 ]]; then
   exit 1
 fi
 [[ -n "$TAURI_CLI_PID" ]] && echo "  Tauri CLI install OK"
-
-# ── Step 5.5: Re-sync integrity hashes into resources/ before Tauri build ──
-# WHY: prepare-resources.sh copies dist/ → resources/dist/ early (step [2/7]).
-# However, during [4+5] parallel phase, additional npm/pnpm install calls inside
-# prepare-resources.sh may trigger lifecycle hooks that re-run the CN encryption
-# chain (compile-bytecode + integrity:gen), overwriting src/security/integrity-root-hash.ts
-# with a NEW hash (HASH_NEW). Tauri then compiles HASH_NEW into the binary.
-# But resources/dist/security/integrity-hashes.json still holds the OLD content
-# (from the initial copy), so sha256(hashes.json_OLD) ≠ HASH_NEW → fatal at startup.
-# Fix: run integrity:gen one final time right before Tauri build, then copy the
-# resulting hashes files into resources/ so binary and disk stay in sync.
-echo "[5.5/6] Re-syncing integrity hashes (final, before Tauri compile)..."
-(cd "$PROJECT_ROOT" && pnpm integrity:gen)
-INTEGRITY_RESYNC_EXIT=$?
-if [[ $INTEGRITY_RESYNC_EXIT -ne 0 ]]; then
-  echo "ERROR: integrity:gen re-sync failed!" >&2
-  exit 1
-fi
-
-# CRITICAL: integrity:gen updates src/security/integrity-root-hash.ts but does NOT
-# recompile it to dist/security/integrity-root-hash.js. The Gateway reads the .js
-# file at runtime and checks the hardcoded hash constant. We must recompile it now.
-# Also touch the file so cargo detects the change and recompiles the Rust binary.
-echo "  Recompiling integrity-root-hash.ts → dist/security/integrity-root-hash.js..."
-(cd "$PROJECT_ROOT" && pnpm tsdown --entry src/security/integrity-root-hash.ts --out-dir dist/security --no-dts --no-clean 2>/dev/null || \
-  node --import tsx scripts/build-integrity-root-hash.ts 2>/dev/null || \
-  node -e "
-    const fs=require('fs'), path=require('path');
-    const src=fs.readFileSync('src/security/integrity-root-hash.ts','utf8');
-    const match=src.match(/INTEGRITY_ROOT_HASH\s*=\s*\"([0-9a-f]{64})\"/);
-    if(!match) { console.error('hash not found in .ts'); process.exit(1); }
-    const hash=match[1];
-    const h1=hash.slice(0,32), h2=hash.slice(32);
-    // Rewrite integrity-root-hash.js with updated hash (same obfuscation pattern)
-    const existing=fs.readFileSync('dist/security/integrity-root-hash.js','utf8');
-    const updated=existing.replace(/\"[0-9a-f]{32}\"\+\"[0-9a-f]{32}\"/, '\"'+h1+'\"'+'+\"'+h2+'\"');
-    if(updated===existing){console.error('ERROR: hash replace pattern did not match — file unchanged');process.exit(1);}
-    fs.writeFileSync('dist/security/integrity-root-hash.js', updated, 'utf8');
-    console.log('  Patched integrity-root-hash.js with hash: '+h1+'...');
-  ")
-# Touch the .ts so cargo's file-change detection forces Rust recompile
-touch "$PROJECT_ROOT/src/security/integrity-root-hash.ts" 2>/dev/null || true
-
-RESOURCES_SECURITY="$PROJECT_ROOT/apps/desktop/src-tauri/resources/dist/security"
-if [[ -d "$RESOURCES_SECURITY" ]]; then
-  cp "$PROJECT_ROOT/dist/security/integrity-hashes.json" "$RESOURCES_SECURITY/integrity-hashes.json"
-  cp "$PROJECT_ROOT/dist/security/integrity-hashes-root.json" "$RESOURCES_SECURITY/integrity-hashes-root.json"
-  cp "$PROJECT_ROOT/dist/security/integrity-root-hash.js" "$RESOURCES_SECURITY/integrity-root-hash.js" 2>/dev/null || true
-  FINAL_HASH=$(node -e "try{const r=require('$RESOURCES_SECURITY/integrity-hashes-root.json');console.log(r.hash.slice(0,16)+'...')}catch{console.log('?')}" 2>/dev/null || echo "?")
-  echo "  Integrity re-sync OK — HASH_FINAL=${FINAL_HASH}"
-else
-  echo "  WARN: resources/dist/security/ not found — skipping copy (resources may be staged differently)"
-fi
 
 # ── Step 5.6: Pre-Tauri stub & self-ref validation ──
 # Verify critical node_modules artifacts that prepare-resources.sh created.
@@ -642,7 +451,7 @@ if [[ -n "${DMG_FILE:-}" && -f "$DMG_FILE" ]]; then
     fi
 
     # [Fix-3c] 关键目录存在性（正确路径：dist/ 在 resources/ 下，install.json 在 resources/ 根）
-    for chk_dir in dist/gateway dist/agents dist/config dist/security dist/license dist/dispatch dist/mcp dist/memory dist/control-ui extensions/agent-team extensions/orchestrator; do
+    for chk_dir in dist/gateway dist/agents dist/config dist/security dist/dispatch dist/mcp dist/memory dist/control-ui extensions/agent-team extensions/orchestrator; do
       if [[ ! -d "$DMG_RES/$chk_dir" ]]; then
         echo "  [FAIL] missing dir: $chk_dir"
         DMG_VERIFY_OK=false
@@ -706,19 +515,6 @@ if [[ -n "${DMG_FILE:-}" && -f "$DMG_FILE" ]]; then
       echo "  [PASS] @whiskeysockets/baileys stub: package.json + index.js + index.mjs"
     else
       DMG_VERIFY_OK=false
-    fi
-
-    # [Fix-3d] integrity-hashes 条目数校验
-    DMG_HASH_FILE="$DMG_RES/dist/security/integrity-hashes.json"
-    if [[ -f "$DMG_HASH_FILE" ]]; then
-      DMG_HASH_COUNT=$(python3 -c "import json; print(len(json.load(open('$DMG_HASH_FILE'))))" 2>/dev/null || echo 0)
-      if [[ "$DMG_HASH_COUNT" -ge 50 ]]; then
-        echo "  [PASS] integrity-hashes.json: $DMG_HASH_COUNT entries"
-      else
-        echo "  [FAIL] integrity-hashes.json only $DMG_HASH_COUNT entries (expected >=50)"
-        DMG_VERIFY_OK=false
-        DMG_VERIFY_FAILS="$DMG_VERIFY_FAILS\n  integrity-hashes: only $DMG_HASH_COUNT entries"
-      fi
     fi
 
     hdiutil detach "$DMG_VERIFY_MOUNT" -force 2>/dev/null || true

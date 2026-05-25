@@ -16,7 +16,7 @@ export interface SafetyCheckResult {
  * will cause the gateway to fail on next boot.
  *
  * IMPORTANT: these must be real top-level keys in OpenClawCNSchema (zod-schema.ts).
- * Verified against schema: agents, models, channels, license, tools are all
+ * Verified against schema: agents, models, channels, tools, and mcp are
  * direct keys of OpenClawCNSchema. (security and sandbox are NOT top-level;
  * sandbox lives at agents.defaults.sandbox, security has no top-level key.)
  *
@@ -25,7 +25,6 @@ export interface SafetyCheckResult {
 const CRITICAL_TOP_LEVEL_FIELDS = [
   "agents", // agents.list — agent definitions; gateway can't route without this
   "models", // model/provider config — without this no AI calls work
-  "license", // license block — missing = gateway boots in unlicensed state
   "channels", // channel integrations — silently removes all messaging if dropped
   "tools", // CN-specific: tools.exec, tools.write, tools.browser policies
   "mcp", // MCP server config — dropping kills external tool integrations
@@ -87,7 +86,7 @@ export function runConfigSafetyCheck(
   // --- Hard-block (apply only): critical top-level fields dropped ---
   // If the incoming config is missing a field that existed AND that field is in
   // the CRITICAL_TOP_LEVEL_FIELDS list, block the write entirely.
-  // This prevents AI from accidentally deleting e.g. agents/models/license
+  // This prevents AI from accidentally deleting e.g. agents/models/channels
   // by submitting an incomplete config via config.apply.
   if (mode === "apply") {
     try {

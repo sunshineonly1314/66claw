@@ -43,13 +43,11 @@ export function getSetupState(): SetupWizardState {
   const config = loadConfig();
   const hasApiKey = Boolean(config.auth?.profiles && Object.keys(config.auth.profiles).length > 0);
   const hasWorkspace = Boolean(config.agents?.defaults?.workspace);
-  const hasLicense = Boolean(config.license?.key);
   const setupCompleted = Boolean(config.setup?.completedAt);
 
   // 只有在满足以下条件之一时才标记为已完成：
-  // 1. 有 license（激活成功）
   // 2. 配置文件中有 setup.completedAt 标记（handleComplete 写入）
-  if (hasApiKey && hasWorkspace && (hasLicense || setupCompleted)) {
+  if (hasApiKey && hasWorkspace && setupCompleted) {
     setupWizardState.completed = true;
   }
 

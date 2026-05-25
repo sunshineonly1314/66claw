@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { join } from "node:path";
 import { appendFile, mkdir, writeFile, readFile } from "node:fs/promises";
 import { resolveStateDir } from "../../config/paths.js";
-import { getDeviceId } from "../../license/device-id.js";
+import { getDeviceId } from "../../infra/device-id.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 

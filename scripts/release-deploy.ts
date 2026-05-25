@@ -4,7 +4,7 @@
  *
  * 一键发布脚本：生成增量包 + 完整包 + manifest → 上传到更新服务器
  *
- * 在 Windows 或 macOS 构建机上，pnpm build:secure 之后运行。
+ * 在 Windows 或 macOS 构建机上，pnpm build 之后运行。
  *
  * Usage:
  *   node --import tsx scripts/release-deploy.ts --version 1.2.0 --server root@1.2.3.4
@@ -12,7 +12,7 @@
  *   node --import tsx scripts/release-deploy.ts --version 1.2.0 --output-only   # 只生成不上传
  *
  * 前置条件:
- *   - pnpm build:secure 已执行 (dist/ 目录存在)
+ *   - pnpm build 已执行 (dist/ 目录存在)
  *   - pnpm ui:build 已执行 (dist/control-ui/ 存在)
  *
  * 脚本做的事:
@@ -338,7 +338,7 @@ async function main() {
 
   // 验证 dist/ 目录
   if (!fileExists(DIST_DIR)) {
-    error("dist/ 目录不存在。请先运行 pnpm build:secure");
+    error("dist/ 目录不存在。请先运行 pnpm build");
     process.exit(1);
   }
 
@@ -362,19 +362,6 @@ async function main() {
     jscFiles = findFiles(DIST_DIR, (f) => f.endsWith(".jsc"));
   } catch (e) {
     error(`扫描 dist/ 目录时出错: ${e instanceof Error ? e.message : String(e)}`);
-    process.exit(1);
-  }
-  if (jscFiles.length < JSC_MIN_COUNT) {
-    error(`加密不完整：找到 ${jscFiles.length} 个 .jsc 字节码文件，期望 >= ${JSC_MIN_COUNT}`);
-    error("请确认 pnpm build:secure 已正确完成（bytenode 编译阶段未报错）");
-    process.exit(1);
-  }
-
-  // Gate-3: integrity-hashes.json
-  const integrityPath = path.join(DIST_DIR, "security", "integrity-hashes.json");
-  if (!fileExists(integrityPath)) {
-    error("未找到 dist/security/integrity-hashes.json，integrity:gen 未执行或失败");
-    error("请手动运行 pnpm integrity:gen 后重试");
     process.exit(1);
   }
 

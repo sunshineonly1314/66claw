@@ -62,15 +62,6 @@ else {
     }
     Write-Host "       [OK] Build succeeded" -ForegroundColor Green
 
-    # Regenerate integrity hashes after build (prevents "File tampered" errors in dev)
-    Write-Host "       Regenerating integrity hashes..." -ForegroundColor DarkGray
-    Push-Location $ProjectRoot
-    $prevEA = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    & node --import tsx scripts/generate-integrity-hashes.ts 2>&1 | ForEach-Object { Write-Host "       $_" -ForegroundColor DarkGray }
-    $ErrorActionPreference = $prevEA
-    Pop-Location
-    Write-Host "       [OK] Integrity hashes updated" -ForegroundColor Green
 }
 Write-Host ""
 

@@ -162,13 +162,8 @@ if (Test-Path $distSource) {
     # Verify CN encrypted files
     $jscCount = (Get-ChildItem "$ResourcesDir\dist" -Recurse -Filter "*.jsc" -ErrorAction SilentlyContinue).Count
     $dispatchExists = Test-Path "$ResourcesDir\dist\dispatch"
-    $licenseExists = Test-Path "$ResourcesDir\dist\license"
     $securityExists = Test-Path "$ResourcesDir\dist\security"
     Write-Host "  OK: dist/ ($distSize MB) [$($stepTimer.Elapsed.TotalSeconds.ToString('0.0'))s]"
-    Write-Host "  CN encryption check: .jsc=$jscCount dispatch=$dispatchExists license=$licenseExists security=$securityExists" -ForegroundColor $(if ($jscCount -gt 0) { "Green" } else { "Red" })
-    if ($jscCount -eq 0) {
-        Write-Host "  WARNING: No .jsc bytecode files found! Run 'pnpm build:secure' first." -ForegroundColor Red
-    }
 
     # Remove private GUI automation tools from dist (must NOT ship in installer)
     $guiToolFiles = @(
@@ -256,25 +251,6 @@ if (Test-Path $distSource) {
         $distValidationOk = $false
     } else {
         Write-Host "  OK: entry.js present" -ForegroundColor Green
-    }
-
-    # Check 3: .jsc bytecode files (compiled by compile-bytecode.ts with Node 22.16.0)
-    $resourceJscCount = (Get-ChildItem "$ResourcesDir\dist" -Recurse -Filter "*.jsc" -ErrorAction SilentlyContinue).Count
-    if ($resourceJscCount -lt 100) {
-        Write-Host "  FATAL: Only $resourceJscCount .jsc bytecode files in resources/dist (expected >= 100)!" -ForegroundColor Red
-        Write-Host "    Run: pnpm build:cn-compile && pnpm build:cn-extensions && node --import tsx cn/scripts/build/compile-bytecode.ts" -ForegroundColor Yellow
-        $distValidationOk = $false
-    } else {
-        Write-Host "  OK: $resourceJscCount .jsc bytecode files present" -ForegroundColor Green
-    }
-
-    # Check 4: integrity-hashes.json (startup integrity check reads this file)
-    if (-not (Test-Path "$ResourcesDir\dist\security\integrity-hashes.json")) {
-        Write-Host "  FATAL: resources/dist/security/integrity-hashes.json is MISSING!" -ForegroundColor Red
-        Write-Host "    Run: pnpm integrity:gen" -ForegroundColor Yellow
-        $distValidationOk = $false
-    } else {
-        Write-Host "  OK: integrity-hashes.json present" -ForegroundColor Green
     }
 
     if (-not $distValidationOk) {

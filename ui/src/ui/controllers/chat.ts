@@ -105,7 +105,7 @@ function normalizeFinalAssistantMessage(message: unknown): Record<string, unknow
   return candidate;
 }
 
-export type ChatSendResult = boolean | { ok: false; isLicenseError: true; error: string };
+export type ChatSendResult = boolean;
 
 export async function sendChatMessage(
   state: ChatState,
@@ -210,14 +210,7 @@ export async function sendChatMessage(
 
     // 检测是否为授权错误 - 如果是，返回特殊标记而不是设置 lastError
     // 这样可以触发激活弹框而不是显示红色错误
-    const isLicenseError = error.includes("授权无效") || 
-                           error.includes("请先激活") || 
-                           error.includes("UNAUTHORIZED") ||
-                           error.includes("license");
-    
-    if (isLicenseError) {
-      return { ok: false, isLicenseError: true, error };
-    }
+
     
     state.lastError = error;
     

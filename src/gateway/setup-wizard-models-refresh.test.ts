@@ -104,20 +104,6 @@ vi.mock("../agents/model-selection.js", () => ({
   },
 }));
 
-vi.mock("../license/index.js", () => ({
-  verifyLicenseWithRetry: vi.fn(),
-  refreshToken: vi.fn(),
-  startTokenAutoRefresh: vi.fn(),
-  switchDevice: vi.fn(),
-  DeviceSwitchError: class extends Error {},
-  LicenseErrorCode: { ERROR_DEVICE_SWITCH_REQUIRED: 1010, ERROR_DEVICE_SWITCH_COOLDOWN: 1011 },
-  getDeviceId: () => "test-device-id",
-  getSetupQrcode: vi.fn(() => null),
-}));
-
-vi.mock("./license-check.js", () => ({
-  updateGatewayLicenseState: vi.fn(),
-}));
 
 // ── Helpers ──
 

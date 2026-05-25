@@ -12,7 +12,7 @@
 export interface BrandConfig {
   /** 产品名称（显示在顶栏 logo 旁） */
   productName: string;
-  /** 产品短名（激活码前缀等场景） */
+  /** 产品短名 */
   productShortName: string;
   /** 欢迎页标题 */
   welcomeTitle: string;
@@ -22,17 +22,6 @@ export interface BrandConfig {
   metaDescription: string;
   /** 品牌标语（logo 旁副标题） */
   tagline: string;
-
-  /** 激活码前缀校验（如 "claw"），空字符串表示不校验 */
-  activationPrefix: string;
-  /** 激活码占位符提示 */
-  activationPlaceholder: string;
-  /** 激活码前缀错误提示 */
-  activationPrefixError: string;
-  /** 激活对话框正文 */
-  activationDialogText: string;
-  /** 激活码示例 */
-  activationExample: string;
 
   /** 品牌推广链接 URL（顶栏 & 侧栏底部），空字符串表示不显示 */
   promoUrl: string;
@@ -58,13 +47,6 @@ export interface BrandConfig {
    * 空字符串：走默认 logo+文字 布局
    */
   bannerPath: string;
-  /**
-   * 激活弹窗吉祥物/人物头图路径（OEM用）
-   * 有值时：在激活弹窗顶部显示此图
-   * 空字符串：不显示
-   */
-  activationMascotPath: string;
-
   /** CLI 命令名 */
   cliName: string;
   /** 配置文件名 */
@@ -94,12 +76,6 @@ const cnBrand: BrandConfig = {
   metaDescription: "ClawbotCN - 智能 AI 助手",
   tagline: "全栈国内运行",
 
-  activationPrefix: "",
-  activationPlaceholder: "请输入授权码、升级码或扩展包码",
-  activationPrefixError: "",
-  activationDialogText: "请输入您的授权码以激活 Clawdbot，或输入升级码/扩展包码进行升级",
-  activationExample: "clawd-xxx / clpro-xxx / upg-bp-xxx / skill-s1-xxx",
-
   promoUrl: "",
   promoName: "",
   promoDesc: "",
@@ -111,7 +87,6 @@ const cnBrand: BrandConfig = {
   logoPath: "/logo.png",
   logoAlt: "ClawbotCN",
   bannerPath: "",
-  activationMascotPath: "",
 
   cliName: "openclawcn",
   configFileName: "openclawcn.json",
@@ -133,11 +108,6 @@ declare const __OEM_BRAND_WELCOMETITLE__: string | undefined;
 declare const __OEM_BRAND_WINDOWTITLE__: string | undefined;
 declare const __OEM_BRAND_METADESCRIPTION__: string | undefined;
 declare const __OEM_BRAND_TAGLINE__: string | undefined;
-declare const __OEM_BRAND_ACTIVATIONPREFIX__: string | undefined;
-declare const __OEM_BRAND_ACTIVATIONPLACEHOLDER__: string | undefined;
-declare const __OEM_BRAND_ACTIVATIONPREFIXERROR__: string | undefined;
-declare const __OEM_BRAND_ACTIVATIONDIALOGTEXT__: string | undefined;
-declare const __OEM_BRAND_ACTIVATIONEXAMPLE__: string | undefined;
 declare const __OEM_BRAND_PROMOURL__: string | undefined;
 declare const __OEM_BRAND_PROMONAME__: string | undefined;
 declare const __OEM_BRAND_PROMODESC__: string | undefined;
@@ -146,7 +116,6 @@ declare const __OEM_BRAND_SHOWSUPPORTQRCODE__: boolean | undefined;
 declare const __OEM_BRAND_SHOWADAPTATIONNOTICE__: boolean | undefined;
 declare const __OEM_BRAND_LOGOPATH__: string | undefined;
 declare const __OEM_BRAND_BANNERPATH__: string | undefined;
-declare const __OEM_BRAND_ACTIVATIONMASCOTPATH__: string | undefined;
 declare const __OEM_BRAND_SKILLMIRRORHINT__: string | undefined;
 declare const __OEM_BRAND_SKILLEXCLUSIVETITLE__: string | undefined;
 declare const __OEM_BRAND_FREEMODELSEYEBROW__: string | undefined;
@@ -168,12 +137,6 @@ const overseasBrand: BrandConfig = {
   metaDescription:       oemStr(__OEM_BRAND_METADESCRIPTION__,       "ClawbotCN - AI Assistant"),
   tagline:               oemStr(__OEM_BRAND_TAGLINE__,               ""),
 
-  activationPrefix:      oemStr(__OEM_BRAND_ACTIVATIONPREFIX__,      ""),
-  activationPlaceholder: oemStr(__OEM_BRAND_ACTIVATIONPLACEHOLDER__,  "请输入授权码"),
-  activationPrefixError: oemStr(__OEM_BRAND_ACTIVATIONPREFIXERROR__, ""),
-  activationDialogText:  oemStr(__OEM_BRAND_ACTIVATIONDIALOGTEXT__,  "请输入您的授权码以激活"),
-  activationExample:     oemStr(__OEM_BRAND_ACTIVATIONEXAMPLE__,     "XXXX-XXXX-XXXX"),
-
   promoUrl:              oemStr(__OEM_BRAND_PROMOURL__,              ""),
   promoName:             oemStr(__OEM_BRAND_PROMONAME__,             ""),
   promoDesc:             oemStr(__OEM_BRAND_PROMODESC__,             ""),
@@ -185,7 +148,6 @@ const overseasBrand: BrandConfig = {
   logoPath:              oemStr(__OEM_BRAND_LOGOPATH__,              "/logo.png"),
   logoAlt:               "ClawbotCN",
   bannerPath:            oemStr(__OEM_BRAND_BANNERPATH__,            "/oem-banner.png"),
-  activationMascotPath:  oemStr(__OEM_BRAND_ACTIVATIONMASCOTPATH__,  "/oem-mascot.png"),
 
   cliName:       "openclawcn",
   configFileName: "openclawcn.json",

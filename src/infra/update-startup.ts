@@ -15,7 +15,7 @@ import {
 } from "./installer-updater.js";
 import { extractUpdateContent } from "./update-content.js";
 import { setAvailableUpdate } from "./update-state.js";
-import { getDeviceId } from "../license/device-id.js";
+import { getDeviceId } from "./device-id.js";
 import { emitPlaceholderKeyWarningOnce } from "./update-signature.js";
 
 type UpdateCheckState = {

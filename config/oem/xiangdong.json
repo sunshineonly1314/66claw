@@ -1,13 +1,12 @@
 {
   "_comment": "向冬 OEM 品牌配置。打包命令：OEM_ID=xiangdong VITE_EDITION=overseas bash ci/build-windows-oem.sh",
-
   "oemId": "xiangdong",
   "identifier": "com.xiangdong.ai.desktop",
-  "licenseKeyPrefix": "",
   "apiBaseUrl": "https://api.openclawcn.com",
   "supportUrl": "",
-  "installerLanguages": ["SimpChinese"],
-
+  "installerLanguages": [
+    "SimpChinese"
+  ],
   "ui": {
     "productName": "ClawbotCN",
     "productShortName": "ClawbotCN",
@@ -15,33 +14,21 @@
     "windowTitle": "ClawbotCN",
     "metaDescription": "ClawbotCN - AI Assistant",
     "tagline": "",
-
-    "activationPrefix": "",
-    "activationPlaceholder": "请输入授权码",
-    "activationPrefixError": "",
-    "activationDialogText": "请输入您的授权码以激活",
-    "activationExample": "XXXX-XXXX-XXXX",
-
     "promoUrl": "",
     "promoName": "",
     "promoDesc": "",
-
     "showPurchaseEntry": true,
     "showSupportQrcode": true,
     "showAdaptationNotice": false,
-
     "logoPath": "/logo.png",
     "bannerPath": "/oem-banner.png",
-    "activationMascotPath": "/oem-mascot.png",
     "purchaseQrcodePath": "/oem-purchase-qrcode.png",
     "supportQrcodePath": "/oem-support-qrcode.png",
-
     "skillMirrorHint": "",
     "skillExclusiveTitle": "",
     "freeModelsEyebrow": "",
     "batchMirrorBadge": ""
   },
-
   "tauri": {
     "bundle": {
       "icon": [

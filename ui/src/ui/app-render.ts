@@ -1,8 +1,6 @@
 import { html, nothing } from "lit";
 
-import { isCN } from "./edition";
 import { brand } from "./brand";
-import { hasFeature, renderFeatureGate } from "./license/feature-gate.js";
 import { formatGeneralError } from "./chat/error-hints";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { AppViewState, McpMarketplaceItem } from "./app-view-state";
@@ -155,22 +153,6 @@ import {
   installSkillDeps,
 } from "./controllers/playground";
 import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers";
-import {
-  renderActivationDialog,
-  renderExpiredDialog,
-  renderRenewalReminderDialog,
-  renderNotificationDialog,
-  renderForceUpdateDialog,
-  renderDeviceLimitDialog,
-  renderDeviceSwitchDialog,
-  renderDeviceSwitchCooldownDialog,
-  renderOfflineBanner,
-  renderUpgradeSuccessDialog,
-  renderUpgradeErrorDialog,
-  renderLicenseInfoCard,
-  type LicenseDialogType,
-} from "./license/index";
-import { handleRenewalReminderDismiss } from "./app-gateway";
 import { loadChannels, loadChannelRoutes, updateChannelRoute } from "./controllers/channels";
 import { loadPresence } from "./controllers/presence";
 import { deleteSession, loadSessions, patchSession } from "./controllers/sessions";
@@ -304,126 +286,6 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
  * 渲染二维码 popover 内容
  * 有二维码 → 显示图片；正在加载 → 显示加载动画；无数据 → 不显示 popover
  */
-function renderQrcodePopover(
-  qrcode: { base64: string; groupName: string } | undefined | null,
-  isLoading: boolean,
-  titleKey: TranslationKey,
-  extraDesc?: ReturnType<typeof html>,
-) {
-  if (qrcode) {
-    return html`
-      <div class="topbar-support__popover">
-        <div class="topbar-support__popover-arrow"></div>
-        <div class="topbar-support__popover-title">${t(titleKey)}</div>
-        <img class="topbar-support__qrcode" src="${qrcode.base64}" alt="Support QR" />
-        <div class="topbar-support__popover-desc">${qrcode.groupName}</div>
-        ${extraDesc ?? nothing}
-      </div>
-    `;
-  }
-
-  if (isLoading) {
-    return html`
-      <div class="topbar-support__popover">
-        <div class="topbar-support__popover-arrow"></div>
-        <div class="topbar-support__popover-title">${t(titleKey)}</div>
-        <div class="topbar-support__loading">
-          <div class="topbar-support__spinner"></div>
-          <div class="topbar-support__loading-text">${t("support.loading")}</div>
-        </div>
-      </div>
-    `;
-  }
-
-  return nothing;
-}
-
-/**
- * 顶栏技术支持按钮（根据用户类型显示不同内容）
- * - 正式用户：⭐ 专属技术支持 (hover 弹出二维码)
- * - 试用用户：💬 技术支持 + 🛒 升级正式版
- * - 无 license（断连）：使用 HTTP fallback 二维码仍然显示运维入口
- *
- * 交互：鼠标悬浮显示二维码，移走消失
- * 预加载：进入 chat 页面时已主动拉取，hover 时立即显示
- */
-function renderTopbarSupportButtons(state: AppViewState) {
-  if (!brand.showSupportQrcode && !brand.showPurchaseEntry) return nothing;
-  const license = state.licenseState?.license;
-  const isLoading = state.qrcodePreloading ?? false;
-
-  // 无 license 时（断连 / gateway 未就绪），用 HTTP fallback 二维码显示运维支持入口
-  if (!license) {
-    const fallbackQr = state.fallbackQrcode;
-    if (!fallbackQr) return nothing;
-    return html`
-      <div class="topbar-support topbar-support--test">
-        <div class="topbar-support__btn topbar-support__btn--support">
-          <span class="topbar-support__icon">💬</span>
-          <span class="topbar-support__text">${t("support.getExclusiveSupport")}</span>
-          ${renderQrcodePopover(fallbackQr, false, "support.scanForSupport")}
-        </div>
-      </div>
-    `;
-  }
-
-  const isTestUser = license.keyType === "test" || license.keyType === "trial";
-  const qrcode = license.supportQrcode;
-
-  if (isTestUser) {
-    // 试用用户：获取专属技术支持 + 升级按钮
-    const handleUpgradeClick = async (e: Event) => {
-      e.preventDefault();
-      const url = license.purchaseUrl;
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
-        return;
-      }
-      try {
-        const resp = await fetch("/config/purchase-url");
-        if (!resp.ok) return;
-        const json = (await resp.json()) as { code?: number; data?: { xianyu?: string } };
-        const fetchedUrl = json?.code === 200 && json?.data?.xianyu ? json.data.xianyu : null;
-        if (fetchedUrl) window.open(fetchedUrl, "_blank", "noopener,noreferrer");
-      } catch { /* silent */ }
-    };
-
-    return html`
-      <div class="topbar-support topbar-support--test">
-        <div class="topbar-support__btn topbar-support__btn--support">
-          <span class="topbar-support__icon">💬</span>
-          <span class="topbar-support__text">${t("support.getExclusiveSupport")}</span>
-          ${renderQrcodePopover(qrcode, isLoading, "support.scanForSupport")}
-        </div>
-        <button
-          type="button"
-          class="topbar-support__btn topbar-support__btn--upgrade topbar-support__btn--gold-breathe"
-          @click=${handleUpgradeClick}
-        >
-          <span class="topbar-support__icon">👑</span>
-          <span class="topbar-support__text">${t("support.upgradePro")}</span>
-        </button>
-      </div>
-    `;
-  }
-
-  // 正式用户：专属VIP支持
-  return html`
-    <div class="topbar-support topbar-support--pro">
-      <div class="topbar-support__btn topbar-support__btn--pro-support">
-        <span class="topbar-support__icon">👑</span>
-        <span class="topbar-support__text">${t("support.exclusiveSupport")}</span>
-        ${renderQrcodePopover(
-          qrcode,
-          isLoading,
-          "support.scanForPremiumSupport",
-          html`<div class="topbar-support__popover-sub">${t("support.premiumGroupDesc")}</div>`,
-        )}
-      </div>
-    </div>
-  `;
-}
-
 function renderApiMonitor(state: AppViewState) {
   const isWaiting =
     state.chatRunId !== null &&
@@ -602,7 +464,6 @@ export function renderApp(state: AppViewState) {
           </div>
         </div>
         <div class="topbar-status">
-          ${renderTopbarSupportButtons(state)}
           ${brand.promoUrl ? html`
           <a href="${brand.promoUrl}" target="_blank" rel="noreferrer" class="topbar-promo">
             <span class="topbar-promo__dot"></span>
@@ -639,7 +500,7 @@ export function renderApp(state: AppViewState) {
                 aria-expanded=${!isGroupCollapsed}
               >
                 <span class="nav-label__text">${group.label}</span>
-                <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "−"}</span>
+                <span class="nav-label__chevron">${isGroupCollapsed ? "+" : "-"}</span>
               </button>
               <div class="nav-group__items">
                 ${group.tabs.map((tab) => renderTab(state, tab))}
@@ -666,23 +527,6 @@ export function renderApp(state: AppViewState) {
             </span>
           </a>
         </div>
-        ` : nothing}
-        ${isCN && state.licenseState.license ? html`
-          ${renderLicenseInfoCard(
-            state.licenseState,
-            state.settings.licenseInfoExpanded ?? false,
-            () => {
-              state.applySettings({
-                ...state.settings,
-                licenseInfoExpanded: !(state.settings.licenseInfoExpanded ?? false),
-              });
-            },
-            () => {
-              // 升级按钮点击：显示激活弹窗
-              state.showLicenseDialog = "activation";
-              state.requestUpdate?.();
-            },
-          )}
         ` : nothing}
       </aside>
       <main class="content ${isChat ? "content--chat" : ""}">
@@ -1354,16 +1198,11 @@ export function renderApp(state: AppViewState) {
                 },
                 // OpenClawCN: Orchestrator entry & view (pro only — gated by "agent-team" feature)
                 // basic 用户看到入口但点击显示升级提示；pro 用户正常使用
-                orchestratorEntryHtml: renderFeatureGate(
-                  "agent-team",
-                  state.licenseState,
-                  renderOrchestratorEntry(
-                    () => void openOrchestrator(state as any),
-                    t as (key: string) => string,
-                  ),
-                  () => { state.showLicenseDialog = "activation"; state.requestUpdate?.(); },
+                orchestratorEntryHtml: renderOrchestratorEntry(
+                  () => void openOrchestrator(state as any),
+                  t as (key: string) => string,
                 ),
-                orchestratorHtml: hasFeature(state.licenseState, "agent-team") && state.orchestratorOpen && state.orchestratorState
+                orchestratorHtml: state.orchestratorOpen && state.orchestratorState
                   ? renderOrchestrator(state.orchestratorState as unknown as import("../../../extensions/orchestrator/src/ui/orchestrator-state").OrchestratorState, {
                       onClose: () => closeOrchestrator(state as any),
                       onSend: () => void orchSend(state as any),
@@ -2366,45 +2205,6 @@ export function renderApp(state: AppViewState) {
                   });
                 },
               }),
-              // License activation banner
-              needsActivation: !state.licenseState?.valid && !state.licenseState?.license,
-              onActivate: () => {
-                state.showLicenseDialog = "activation";
-              },
-              // License state for support/purchase UI
-              licenseState: state.licenseState,
-              onInlineActivate: async (key: string) => {
-                if (!state.client) return false;
-                state.licenseActivating = true;
-                state.licenseActivationError = null;
-                try {
-                  const result = await state.client.request("license.activate", { key });
-                  if (result && typeof result === "object") {
-                    const data = result as Record<string, unknown>;
-                    if (data.valid) {
-                      state.licenseState = {
-                        ...state.licenseState,
-                        valid: true,
-                        error: null,
-                        errorCode: null,
-                        license: data.license as typeof state.licenseState.license,
-                        device: data.device as typeof state.licenseState.device,
-                      };
-                      state.licenseActivating = false;
-                      // 激活成功后显示升级成功提示
-                      state.showLicenseDialog = "notification";
-                      return true;
-                    }
-                  }
-                  state.licenseActivating = false;
-                  state.licenseActivationError = "激活码无效，请检查后重试";
-                  return false;
-                } catch {
-                  state.licenseActivating = false;
-                  state.licenseActivationError = "激活失败，请稍后重试";
-                  return false;
-                }
-              },
               // Voice mascot (语音吉祥物)
               voiceMascot: state.voiceAsrAvailable === true && !state.voiceMascotDismissed ? {
                 visible: true,
@@ -2712,13 +2512,10 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
       ${renderSkillInstallApproval(state)}
       ${renderSkillInstallProgress(state)}
-      ${renderLicenseDialogs(state)}
       ${renderFeedbackModal(buildFeedbackProps(state))}
       ${renderSkillsBatchOverlays(state)}
       ${brand.showAdaptationNotice && state.showAdaptationNotice
           && state.tab === "chat"
-          && !state.showLicenseDialog
-          && !state.showOfflineBanner
           && !shouldShowDiscovery(
                state.discoveryState,
                state.chatMessages.length > 0 || state.chatStream !== null || state.chatLoading,
@@ -2791,324 +2588,6 @@ function buildFeedbackProps(state: AppViewState): FeedbackViewProps {
 
 /**
  * 渲染 License 相关弹窗
- */
-function renderLicenseDialogs(state: AppViewState) {
-  // 离线模式横幅
-  if (state.licenseState?.offlineMode && state.showOfflineBanner) {
-    const remainingHours = state.licenseState.lastVerifiedAt
-      ? Math.max(0, 72 - (Date.now() - state.licenseState.lastVerifiedAt) / (1000 * 60 * 60))
-      : 0;
-    return renderOfflineBanner(remainingHours, () => {
-      state.showOfflineBanner = false;
-    });
-  }
-
-  // 根据弹窗类型渲染对应弹窗
-  const dialogType = state.showLicenseDialog;
-  if (!dialogType) return nothing;
-
-  switch (dialogType) {
-    case "activation":
-      return renderActivationDialog(
-        async (key) => {
-          state.licenseActivating = true;
-          state.licenseActivationError = null;
-          try {
-            const result = await state.client?.request("license.activate", { key });
-            if (result && typeof result === "object") {
-              const data = result as Record<string, unknown>;
-              if (data.valid) {
-                state.showLicenseDialog = null;
-                state.licenseState = {
-                  ...state.licenseState,
-                  valid: true,
-                  errorCode: null,
-                  deviceSwitchInfo: null,
-                  deviceSwitchCooldown: null,
-                  license: data.license as typeof state.licenseState.license,
-                  device: data.device as typeof state.licenseState.device,
-                };
-              } else {
-                const errorCode = (data.errorCode as number | null) ?? null;
-                const device = data.device as Record<string, unknown> | null;
-                
-                // 处理单设备模式错误码
-                if (errorCode === 1010 && device?.existingDeviceName) {
-                  // 切换到设备切换确认弹窗
-                  state.licenseState = {
-                    ...state.licenseState,
-                    valid: false,
-                    errorCode,
-                    deviceSwitchInfo: {
-                      existingDeviceId: (device.existingDeviceId as string) ?? "",
-                      existingDeviceName: (device.existingDeviceName as string) ?? "未知设备",
-                      existingOsInfo: device.existingOsInfo as string | undefined,
-                      deviceLimit: device.deviceLimit as number | undefined,
-                      boundDevices: device.boundDevices as number | undefined,
-                    },
-                    deviceSwitchCooldown: null,
-                  };
-                  state.showLicenseDialog = "device-switch";
-                  return;
-                }
-                
-                if (errorCode === 1011 && device?.cooldownRemainingHours !== undefined) {
-                  // 切换到冷却期弹窗
-                  state.licenseState = {
-                    ...state.licenseState,
-                    valid: false,
-                    errorCode,
-                    deviceSwitchInfo: null,
-                    deviceSwitchCooldown: {
-                      cooldownRemainingHours: (device.cooldownRemainingHours as number) ?? 24,
-                      cooldownEndsAt: (device.cooldownEndsAt as string) ?? "",
-                    },
-                  };
-                  state.showLicenseDialog = "device-switch-cooldown";
-                  return;
-                }
-                
-                // 其他错误：显示错误消息
-                state.licenseActivationError = (data.errorMessage as string) || "激活失败";
-              }
-            }
-          } catch (err) {
-            state.licenseActivationError = `激活失败: ${err}`;
-          } finally {
-            state.licenseActivating = false;
-          }
-        },
-        () => {
-          state.showLicenseDialog = null;
-        },
-        state.licenseActivationError,
-        state.licenseActivating,
-      );
-
-    case "expired":
-      return renderExpiredDialog(
-        state.licenseState?.renewalReminder?.renewUrl || state.licenseState?.license?.purchaseUrl || null,
-        Math.abs(state.licenseState?.renewalReminder?.daysRemaining || 0),
-        () => {
-          state.showLicenseDialog = null;
-        },
-        () => {
-          state.showLicenseDialog = null;
-        },
-        () => {
-          // 切换到激活码输入弹窗
-          state.licenseActivationError = null;
-          state.showLicenseDialog = "activation";
-        },
-      );
-
-    case "renewal":
-      if (state.licenseState?.renewalReminder) {
-        return renderRenewalReminderDialog(
-          state.licenseState.renewalReminder,
-          () => {
-            // 点击"立即续费"
-            state.showLicenseDialog = null;
-          },
-          () => {
-            // 点击"稍后提醒"- 根据紧急程度设置不同的延迟时间
-            handleRenewalReminderDismiss(state);
-          },
-        );
-      }
-      return nothing;
-
-    case "notification":
-      const notification = state.licenseState?.pendingNotifications?.[0];
-      if (notification) {
-        return renderNotificationDialog(
-          notification,
-          async () => {
-            // 确认通知
-            await state.client?.request("license.notification.ack", {
-              notificationId: notification.id,
-              action: "clicked",
-            });
-            // 移除已处理的通知
-            state.licenseState = {
-              ...state.licenseState,
-              pendingNotifications: state.licenseState.pendingNotifications.slice(1),
-            };
-            // 如果还有通知，继续显示；否则关闭
-            if (state.licenseState.pendingNotifications.length === 0) {
-              state.showLicenseDialog = null;
-            }
-          },
-          async () => {
-            await state.client?.request("license.notification.ack", {
-              notificationId: notification.id,
-              action: "dismissed",
-            });
-            state.licenseState = {
-              ...state.licenseState,
-              pendingNotifications: state.licenseState.pendingNotifications.slice(1),
-            };
-            if (state.licenseState.pendingNotifications.length === 0) {
-              state.showLicenseDialog = null;
-            }
-          },
-        );
-      }
-      return nothing;
-
-    case "force-update":
-      if (state.licenseState?.forceUpdate) {
-        return renderForceUpdateDialog(
-          state.licenseState.forceUpdate,
-          "1.0.0", // TODO: 从配置获取当前版本
-          () => {
-            if (!state.licenseState.forceUpdate?.blocking) {
-              state.showLicenseDialog = null;
-            }
-          },
-        );
-      }
-      return nothing;
-
-    case "device-limit":
-      return renderDeviceLimitDialog(
-        state.licenseBoundDevices,
-        state.licenseState?.device?.deviceLimit || 2,
-        async (deviceId) => {
-          const result = await state.client?.request("license.unbind", { deviceId });
-          if (result && typeof result === "object") {
-            const unbindResult = result as Record<string, unknown>;
-            if (unbindResult.success) {
-              // 刷新设备列表
-              const devices = await state.client?.request("license.devices", {});
-              if (devices && typeof devices === "object") {
-                state.licenseBoundDevices = (devices as Record<string, unknown>).devices as typeof state.licenseBoundDevices || [];
-              }
-            } else {
-              // 显示解绑错误（如冷却中）
-              const errorMsg = unbindResult.error as string || "解绑失败，请稍后重试";
-              window.alert(errorMsg);
-            }
-          }
-        },
-        () => {
-          state.showLicenseDialog = null;
-        },
-        false,
-      );
-
-    case "device-switch":
-      // 单设备模式：确认设备切换（errorCode=1010）
-      if (state.licenseState?.deviceSwitchInfo) {
-        return renderDeviceSwitchDialog(
-          state.licenseState.deviceSwitchInfo,
-          async () => {
-            // 确认切换
-            state.licenseActivating = true;
-            try {
-              const result = await state.client?.request("license.switch", {});
-              if (result && typeof result === "object") {
-                const switchResult = result as Record<string, unknown>;
-                if (switchResult.valid) {
-                  // 切换成功
-                  state.showLicenseDialog = null;
-                  state.licenseState = {
-                    ...state.licenseState,
-                    valid: true,
-                    error: null,
-                    errorCode: null,
-                    license: switchResult.license as typeof state.licenseState.license,
-                    device: switchResult.device as typeof state.licenseState.device,
-                    deviceSwitchInfo: null,
-                    deviceSwitchCooldown: null,
-                  };
-                } else {
-                  // 切换失败（可能进入冷却期）
-                  if (switchResult.errorCode === 1011) {
-                    state.licenseState = {
-                      ...state.licenseState,
-                      errorCode: 1011,
-                      deviceSwitchCooldown: {
-                        cooldownRemainingHours: switchResult.cooldownRemainingHours as number,
-                        cooldownEndsAt: switchResult.cooldownEndsAt as string,
-                      },
-                    };
-                    state.showLicenseDialog = "device-switch-cooldown";
-                  } else {
-                    const errorMsg = (switchResult.error as string) || "设备切换失败";
-                    window.alert(errorMsg);
-                  }
-                }
-              }
-            } catch (err) {
-              window.alert(`设备切换失败: ${err}`);
-            } finally {
-              state.licenseActivating = false;
-            }
-          },
-          () => {
-            // 取消切换
-            state.showLicenseDialog = null;
-          },
-          state.licenseActivating,
-        );
-      }
-      return nothing;
-
-    case "device-switch-cooldown":
-      // 单设备模式：冷却期提示（errorCode=1011）
-      if (state.licenseState?.deviceSwitchCooldown) {
-        return renderDeviceSwitchCooldownDialog(
-          state.licenseState.deviceSwitchCooldown,
-          () => {
-            state.showLicenseDialog = null;
-          },
-        );
-      }
-      return nothing;
-
-    case "upgrade-success":
-      if (state.licenseState?.lastUpgradeResult?.success) {
-        return renderUpgradeSuccessDialog(
-          state.licenseState.lastUpgradeResult,
-          () => {
-            state.showLicenseDialog = null;
-            if (state.licenseState) {
-              state.licenseState = { ...state.licenseState, lastUpgradeResult: null };
-            }
-          },
-        );
-      }
-      return nothing;
-
-    case "upgrade-error":
-      if (state.licenseState?.lastUpgradeResult && !state.licenseState.lastUpgradeResult.success) {
-        return renderUpgradeErrorDialog(
-          state.licenseState.lastUpgradeResult,
-          () => {
-            state.showLicenseDialog = null;
-            if (state.licenseState) {
-              state.licenseState = { ...state.licenseState, lastUpgradeResult: null };
-            }
-          },
-          () => {
-            // 重新输入：关闭错误弹窗，打开激活弹窗
-            if (state.licenseState) {
-              state.licenseState = { ...state.licenseState, lastUpgradeResult: null };
-            }
-            state.showLicenseDialog = "activation";
-          },
-        );
-      }
-      return nothing;
-
-    default:
-      return nothing;
-  }
-}
-
-/**
- * 渲染技能批量安装相关浮层 (confirm / progress / result / complete)
  */
 function renderSkillsBatchOverlays(state: AppViewState) {
   const batch = state.skillsBatch;

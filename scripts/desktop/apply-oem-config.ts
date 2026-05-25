@@ -17,7 +17,6 @@
  * 安全说明：
  *   - 此脚本不修改任何 JS/TS 源码，只改 Tauri 打包配置
  *   - 授权逻辑、网关 URL 等敏感配置不在此注入（由服务端下发）
- *   - licenseKeyPrefix 仅用于服务端追溯，不写入客户端代码
  */
 
 import fs from "node:fs";

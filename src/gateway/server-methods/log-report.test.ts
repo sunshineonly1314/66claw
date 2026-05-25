@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
 }));
 
-vi.mock("../../license/device-id.js", () => ({
+vi.mock("../../infra/device-id.js", () => ({
   getDeviceId: mocks.getDeviceId,
 }));
 

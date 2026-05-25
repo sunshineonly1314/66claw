@@ -24,7 +24,6 @@ import {
 import { diagnoseHandlers } from "./server-methods/diagnose.js";
 import { feedbackHandlers } from "./server-methods/feedback.js";
 import { logReportHandlers } from "./server-methods/log-report.js";
-import { licenseHandlers } from "./server-methods/license.js";
 import { asrHandlers } from "./server-methods/asr.js";
 import { asrStreamingHandlers } from "./server-methods/asr-streaming.js";
 import { voiceTierHandlers } from "./server-methods/voice-tier.js";
@@ -60,9 +59,6 @@ export const cnGatewayHandlers: GatewayRequestHandlers = {
 
   // Log Report to Ops Center API
   ...logReportHandlers,
-
-  // License API (license.status, license.activate, etc.)
-  ...licenseHandlers,
 
   // Voice: ASR (offline transcription via sherpa-onnx)
   ...asrHandlers,

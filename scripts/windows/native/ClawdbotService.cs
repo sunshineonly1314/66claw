@@ -400,7 +400,7 @@ namespace ClawdbotCN
                 }
 
                 // Give it 4 checks before force restart (4 * 30s = 120s)
-                // Gateway startup can take 30-90s on slow machines (license check, plugin init, etc.)
+                // Gateway startup can take 30-90s on slow machines (plugin init, etc.)
                 if (consecutiveUnhealthyCount >= 4)
                 {
                     LogWarn("Watchdog: Gateway unresponsive for 120+ seconds, force restarting...");
@@ -757,7 +757,7 @@ namespace ClawdbotCN
                 }
 
                 // Wait for startup (non-blocking for this thread, but blocks caller)
-                // Gateway may take up to 30-90s on first launch (license check, plugin init, etc.)
+                // Gateway may take up to 30-90s on first launch (plugin init, etc.)
                 // Don't worry if this times out - the watchdog will continue monitoring
                 for (int i = 0; i < 90; i++)
                 {

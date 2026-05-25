@@ -24,7 +24,6 @@ import type { NodeHostConfig } from "./types.node-host.js";
 import type { PluginsConfig } from "./types.plugins.js";
 import type { SkillsConfig } from "./types.skills.js";
 import type { ToolsConfig } from "./types.tools.js";
-import type { LicenseConfig } from "./types.license.js";
 import type { StateStoreConfig } from "../infra/state-store/types.js";
 import type { ToolDiscoveryConfig } from "./types.tool-discovery.js";
 
@@ -119,8 +118,13 @@ export type OpenClawCNConfig = {
     encryptSensitiveFields?: boolean;
   };
   /** License 授权信息 (OpenClawCN) */
-  license?: LicenseConfig;
   /** 通用凭据存储（兼容字段，用于存储环境变量） */
+  license?: {
+    key?: string;
+    deviceId?: string;
+    keyType?: string;
+    [key: string]: unknown;
+  };
   credentials?: Record<string, string>;
   /** MCP (Model Context Protocol) server configuration. */
   mcp?: import("../mcp/types.js").MCPConfig;

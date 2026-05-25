@@ -29,7 +29,7 @@ import {
   runInstallerUpdate,
 } from "./installer-updater.js";
 import { loadConfig } from "../config/config.js";
-import { getDeviceId } from "../license/device-id.js";
+import { getDeviceId } from "./device-id.js";
 import { saveUpgradeSnapshots } from "./upgrade-snapshot-trigger.js";
 
 export type UpdateStepResult = {

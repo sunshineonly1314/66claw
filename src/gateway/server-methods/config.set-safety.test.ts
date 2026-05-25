@@ -174,7 +174,7 @@ describe("config.set — safety check", () => {
       config: {
         agents: { list: [{ id: "main" }] },
         models: { openai: { apiKey: "sk-test" } },
-        license: { key: "lic-abc" },
+
         channels: { telegram: { token: "tg-123" } },
         tools: { exec: { allow: [] } },
         mcp: { servers: {} },
@@ -184,7 +184,7 @@ describe("config.set — safety check", () => {
       raw: JSON.stringify({
         agents: { list: [{ id: "main" }] },
         models: { openai: { apiKey: "sk-test" } },
-        license: { key: "lic-abc" },
+
         channels: { telegram: { token: "tg-123" } },
         tools: { exec: { allow: [] } },
         mcp: { servers: {} },
@@ -200,7 +200,7 @@ describe("config.set — safety check", () => {
   it("hard-blocks when 'agents' is dropped", async () => {
     const incoming = {
       models: { openai: { apiKey: "sk-test" } },
-      license: { key: "lic-abc" },
+
       channels: { telegram: { token: "tg-123" } },
       tools: { exec: { allow: [] } },
       mcp: { servers: {} },
@@ -222,7 +222,7 @@ describe("config.set — safety check", () => {
   it("hard-blocks when 'models' is dropped", async () => {
     const incoming = {
       agents: { list: [{ id: "main" }] },
-      license: { key: "lic-abc" },
+
       channels: { telegram: { token: "tg-123" } },
       tools: { exec: { allow: [] } },
       mcp: { servers: {} },
@@ -235,27 +235,11 @@ describe("config.set — safety check", () => {
     expect(mocks.writeConfigFile).not.toHaveBeenCalled();
   });
 
-  it("hard-blocks when 'license' is dropped", async () => {
-    const incoming = {
-      agents: { list: [{ id: "main" }] },
-      models: { openai: { apiKey: "sk-test" } },
-      channels: { telegram: { token: "tg-123" } },
-      tools: { exec: { allow: [] } },
-      mcp: { servers: {} },
-      // license intentionally omitted
-    };
-    const { respond, promise } = callSet(JSON.stringify(incoming));
-    await promise;
-
-    expect(respond).toHaveBeenCalledWith(false, undefined, expect.anything());
-    expect(mocks.writeConfigFile).not.toHaveBeenCalled();
-  });
-
   it("hard-blocks when 'channels' is dropped", async () => {
     const incoming = {
       agents: { list: [{ id: "main" }] },
       models: { openai: { apiKey: "sk-test" } },
-      license: { key: "lic-abc" },
+
       tools: { exec: { allow: [] } },
       mcp: { servers: {} },
       // channels intentionally omitted
@@ -271,7 +255,7 @@ describe("config.set — safety check", () => {
     const incoming = {
       agents: { list: [{ id: "main" }] },
       models: { openai: { apiKey: "sk-test" } },
-      license: { key: "lic-abc" },
+
       channels: { telegram: { token: "tg-123" } },
       tools: { exec: { allow: [] } },
       // mcp intentionally omitted
@@ -321,7 +305,7 @@ describe("config.set — safety check", () => {
     const incoming = {
       agents: { list: [{ id: "main" }] },
       models: { openai: { apiKey: "sk-new" } },
-      license: { key: "lic-abc" },
+
       channels: { telegram: { token: "tg-123" } },
       tools: { exec: { allow: [] } },
       mcp: { servers: {} },
@@ -353,7 +337,7 @@ describe("config.set — safety check", () => {
     const incoming = {
       agents: { list: [{ id: "main" }] },
       models: { openai: { apiKey: "sk-test" } },
-      license: { key: "lic-abc" },
+
       channels: { telegram: { token: "tg-123" } },
       tools: { exec: { allow: [] } },
       mcp: { servers: {} },

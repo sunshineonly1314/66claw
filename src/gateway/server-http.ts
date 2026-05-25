@@ -577,48 +577,12 @@ export function createGatewayHttpServer(opts: {
         return;
       }
 
-      // OpenClawCN: Support QR code endpoint -- no auth, returns QR code base64 for topbar.
-      // Used as HTTP fallback when WebSocket is disconnected so the support button always shows.
+      // OpenClawCN: Support QR code endpoint kept for UI compatibility.
       if (healthPath === "/api/support/qrcode") {
-        try {
-          const qrcodeConfig = loadConfig();
-          const keyType = (qrcodeConfig.license?.keyType ?? "test") as
-            | "test"
-            | "trial"
-            | "standard";
-          const qrMap: Record<string, { file: string; groupName: string }> = {
-            test: { file: "test.jpg", groupName: "测试体验群" },
-            trial: { file: "test.jpg", groupName: "测试体验群" },
-            standard: { file: "zhengshi.jpg", groupName: "正式用户群" },
-          };
-          const entry = qrMap[keyType] ?? qrMap.test;
-          const { default: _fs } = await import("node:fs");
-          const { default: _path } = await import("node:path");
-          // Try multiple paths: import.meta.dirname relative, then one level up from dist/, then cwd
-          const candidates = [
-            _path.resolve(import.meta.dirname, "../../data/qrcodes"),
-            _path.resolve(import.meta.dirname, "../data/qrcodes"),
-            _path.resolve(process.cwd(), "data/qrcodes"),
-          ];
-          const qrDir = candidates.find((d) => _fs.existsSync(d)) ?? candidates[2];
-          const filePath = _path.join(qrDir, entry.file);
-          let qrcode: { base64: string; groupName: string } | null = null;
-          if (_fs.existsSync(filePath)) {
-            const buf = _fs.readFileSync(filePath);
-            qrcode = {
-              base64: `data:image/jpeg;base64,${buf.toString("base64")}`,
-              groupName: entry.groupName,
-            };
-          }
-          res.statusCode = 200;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.setHeader("Cache-Control", "public, max-age=3600");
-          res.end(JSON.stringify({ ok: true, qrcode, keyType }));
-        } catch {
-          res.statusCode = 500;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(JSON.stringify({ ok: false }));
-        }
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(JSON.stringify({ ok: true, qrcode: null }));
         return;
       }
 

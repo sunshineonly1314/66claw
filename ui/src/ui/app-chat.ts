@@ -13,7 +13,6 @@ import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js
 import type { ClawdbotApp } from "./app";
 import type { AppViewState } from "./app-view-state";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types";
-import type { LicenseDialogType } from "./license/types";
 
 type ChatHost = {
   connected: boolean;
@@ -26,8 +25,6 @@ type ChatHost = {
   basePath: string;
   hello: GatewayHelloOk | null;
   chatAvatarUrl: string | null;
-  // License activation support
-  showLicenseDialog: LicenseDialogType | null;
   // OpenClawCN: 聊天模型是否已配置
   chatModelConfigured: boolean | null;
   // OpenClawCN: 必要 provider（硅基流动）是否已配置
@@ -100,20 +97,6 @@ async function sendChatMessageNow(
   app.apiMonitorDismissed = false;
   app.apiMonitorElapsedMs = 0;
   const result: ChatSendResult = await sendChatMessage(app, message, opts?.attachments, { voiceInput: opts?.voiceInput, voiceMode: opts?.voiceMode });
-
-  // 检查是否为授权错误 - 如果是，弹出激活对话框而不是显示错误
-  if (typeof result === "object" && result.isLicenseError) {
-    // 触发激活弹框
-    host.showLicenseDialog = "activation";
-    // 恢复用户输入
-    if (opts?.previousDraft != null) {
-      host.chatMessage = opts.previousDraft;
-    }
-    if (opts?.previousAttachments) {
-      host.chatAttachments = opts.previousAttachments;
-    }
-    return false;
-  }
 
   const ok = result === true;
   if (!ok && opts?.previousDraft != null) {

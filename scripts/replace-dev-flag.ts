@@ -3,7 +3,7 @@
  * 生产构建后处理脚本
  *
  * 将 dist 目录中所有 JS 文件的 __DEV_BUILD__ 替换为 false
- * 这样生产版本就无法通过环境变量绕过许可证验证
+ * 这样生产版本就无法通过环境变量绕过开发构建判断
  *
  * 用法：
  *   node --import tsx scripts/replace-dev-flag.ts

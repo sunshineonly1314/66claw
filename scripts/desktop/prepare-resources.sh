@@ -208,15 +208,9 @@ if [[ -d "$DIST_SOURCE" ]]; then
   # Verify CN encrypted files
   JSC_COUNT=$(find "$RESOURCES_DIR/dist" -name "*.jsc" 2>/dev/null | wc -l | tr -d ' ')
   DISPATCH_EXISTS=$([[ -d "$RESOURCES_DIR/dist/dispatch" ]] && echo "true" || echo "false")
-  LICENSE_EXISTS=$([[ -d "$RESOURCES_DIR/dist/license" ]] && echo "true" || echo "false")
   SECURITY_EXISTS=$([[ -d "$RESOURCES_DIR/dist/security" ]] && echo "true" || echo "false")
 
   log "  OK: dist/ (${DIST_SIZE} MB) [$(( $(date +%s) - STEP_START ))s]"
-  if [[ "$JSC_COUNT" -gt 0 ]]; then
-    log "  CN encryption check: .jsc=$JSC_COUNT dispatch=$DISPATCH_EXISTS license=$LICENSE_EXISTS security=$SECURITY_EXISTS"
-  else
-    warn "  No .jsc bytecode files found! Run 'pnpm build:secure' first."
-  fi
 
   # Remove private GUI automation tools from dist (must NOT ship in installer)
   GUI_TOOL_FILES=(

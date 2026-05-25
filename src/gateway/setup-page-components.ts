@@ -82,7 +82,7 @@ export function renderBodyContent(
       <div class="step-connector" id="connector3"></div>
       <div class="step-item" id="stepItem4">
         <div class="step-circle">4</div>
-        <div class="step-label">激活</div>
+        <div class="step-label">确认</div>
       </div>
       <div class="step-connector" id="connector4"></div>
       <div class="step-item" id="stepItem5">
@@ -111,7 +111,7 @@ export function renderBodyContent(
           <span style="font-weight: 600;">温馨提示</span>
         </div>
         <p style="color: var(--text-secondary); font-size: 0.95em; margin: 0;">
-          如果您需要更换 AI 服务、修改工作目录或更新许可证，可以选择「修改配置」重新设置。
+          如果您需要更换 AI 服务或修改工作目录，可以选择「修改配置」重新设置。
         </p>
       </div>
 
@@ -1581,166 +1581,30 @@ export function renderBodyContent(
       </div>
     </div>
 
-    <!-- Step 4: 服务激活 -->
+    <!-- Step 4: 开源确认 -->
     <div id="page4" class="card hidden">
       <div class="card-header">
-        <h2>第四步：激活增值服务</h2>
-        <p>解锁完整体验，让 AI 助手更强大</p>
+        <h2>开源版本确认</h2>
+        <p>OpenClawCN 已移除自有授权校验，继续完成本地配置。</p>
       </div>
 
-      <div id="licenseFormSection">
-        <!-- 为什么选择 ClawbotCN -->
-        <div class="why-choose-section">
-          <div class="why-choose-header">
-            <span class="why-choose-icon">🚀</span>
-            <span class="why-choose-title">为什么选择 OpenClawCN？</span>
-          </div>
-          <div class="why-choose-grid">
-            <div class="why-choose-item">
-              <span class="why-item-icon">⚡</span>
-              <span class="why-item-text"><strong>10分钟极速上手</strong>，告别3小时繁琐配置</span>
-            </div>
-            <div class="why-choose-item">
-              <span class="why-item-icon">🎯</span>
-              <span class="why-item-text"><strong>国产 Skills 持续赋能</strong>，本地化技能开箱即用</span>
-            </div>
-            <div class="why-choose-item">
-              <span class="why-item-icon">🌐</span>
-              <span class="why-item-text"><strong>国内国际大模型任选</strong>，硅基流动/通义/豆包/OpenAI...</span>
-            </div>
-            <div class="why-choose-item">
-              <span class="why-item-icon">✨</span>
-              <span class="why-item-text"><strong>比原版更优质的交互</strong>，中文深度优化</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 两栏布局：左侧会员服务 + 右侧技术支持二维码 -->
-        <div class="step4-main-grid">
-          <!-- 左侧：增值服务卡片 -->
-          <div class="premium-service-card">
-            <div class="premium-badge">🎁 增值服务</div>
-            <div class="premium-content">
-              <div class="premium-title">${isOverseas ? "会员服务" : "OpenClawCN 会员服务"}</div>
-              <div class="premium-subtitle">软件免费使用，增值服务助你更高效</div>
-              <div class="premium-features">
-                <div class="premium-feature">📚 <strong>中文教程文档</strong> · 从入门到精通</div>
-                <div class="premium-feature">🔌 <strong>国内AI平台适配</strong> · UI/Skills 深度汉化</div>
-                <div class="premium-feature">🔄 <strong>持续更新维护</strong> · 新功能新玩法第一时间体验</div>
-                <div class="premium-feature">💬 <strong>技术答疑支持</strong> · 遇到问题随时咨询</div>
-              </div>
-
-              <!-- 金色购买按钮 -->
-              ${
-                isOverseas
-                  ? `<button type="button" class="premium-buy-btn" onclick="showPurchaseQrcodeModal()">
-                <span class="material-icons">shopping_cart</span>
-                <span class="premium-buy-text">立即获取服务凭证</span>
-                <span class="premium-buy-arrow">→</span>
-              </button>`
-                  : `<a href="https://m.tb.cn/h.i0WWBLA?tk=yOQqUrspXvy" target="_blank" class="premium-buy-btn">
-                <span class="material-icons">shopping_cart</span>
-                <span class="premium-buy-text">立即获取服务凭证</span>
-                <span class="premium-buy-arrow">→</span>
-              </a>
-              <div class="premium-buy-hint">在闲鱼搜索「OpenClawCN」或点击上方按钮</div>`
-              }
-            </div>
-          </div>
-
-          <!-- 右侧：技术支持二维码 -->
-          <div class="wechat-support-card" id="wechatSupportCard">
-            <div class="wechat-support-header">
-              <span class="material-icons">support_agent</span>
-              <span>免费技术支持</span>
-            </div>
-            <div class="wechat-support-body">
-              <div class="wechat-qr-wrapper" id="wechatQrcodeImage">
-                ${
-                  isOverseas
-                    ? oemSupportQrcodeBase64
-                      ? `<img src="${oemSupportQrcodeBase64}" alt="技术支持二维码">`
-                      : `<div class="qrcode-loading">暂未配置</div>`
-                    : setupQrcodeBase64
-                      ? `<img src="${setupQrcodeBase64}" alt="微信技术支持群二维码">`
-                      : `<div class="qrcode-loading"><span class="status-spinner"></span> 加载中...</div>`
-                }
-              </div>
-              <div class="wechat-support-title">获取免费专属技术支持及咨询</div>
-              <div class="wechat-support-group" id="wechatQrcodeGroupName"></div>
-              <div class="wechat-support-hint">${isOverseas ? "扫码获取技术支持" : "微信扫码加入专属技术群"}</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- OEM 购买凭证二维码弹窗 -->
-        ${
-          isOverseas
-            ? `
-        <div id="purchaseQrcodeModal" class="oem-qrcode-modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
-          <div class="oem-qrcode-modal">
-            <button class="oem-qrcode-modal-close" onclick="document.getElementById('purchaseQrcodeModal').style.display='none'">&times;</button>
-            <div class="oem-qrcode-modal-title">扫码获取服务凭证</div>
-            ${oemPurchaseQrcodeBase64 ? `<img src="${oemPurchaseQrcodeBase64}" alt="获取服务凭证二维码" class="oem-qrcode-modal-img">` : `<div class="oem-qrcode-modal-placeholder">暂未配置二维码</div>`}
-            <div class="oem-qrcode-modal-hint">扫描上方二维码获取服务凭证</div>
-          </div>
-        </div>
-        `
-            : ""
-        }
-
-        <!-- 输入凭证 -->
-        <div class="license-input-section">
-          <label class="form-label">已有凭证？在这里激活</label>
-          <div class="license-input-wrapper">
-            <input type="text" class="form-input mono" id="licenseTokenInput" placeholder="粘贴你的服务凭证（以 clawd- 或 test- 开头）">
-          </div>
-          <div class="form-help" style="margin-top: 8px; color: var(--text-muted); font-size: 0.85em;">
-            <span class="material-icons" style="font-size: 14px; vertical-align: middle; margin-right: 4px;">info</span>
-            凭证格式：以 <code style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace;">clawd-</code> 或 <code style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace;">test-</code> 开头，例如 <code style="background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: monospace;">clawd-xxxx-xxxx</code>
-          </div>
-        </div>
-
-        <div id="licenseStatus" class="status-message"></div>
-
-        <div class="btn-group">
-          <button class="btn btn-secondary" onclick="prevStep(4)">
-            <span class="material-icons">arrow_back</span>
-            上一步
-          </button>
-          <button class="btn btn-primary" onclick="validateLicense()" id="validateLicenseBtn">
-            <span class="material-icons">verified</span>
-            验证凭证
-          </button>
-        </div>
-      </div>
-
-      <!-- 验证成功动画 -->
-      <div id="licenseSuccessSection" class="success-animation">
+      <div class="success-animation show">
         <div class="success-checkmark">
           <svg viewBox="0 0 24 24">
             <path d="M5 12l5 5L19 7"/>
           </svg>
         </div>
-        <div class="success-title">🎉 激活成功！</div>
-        <div class="success-desc">${isOverseas ? "Activation successful! Enjoy using the app." : "激活成功，祝你使用愉快！"}</div>
-        <div class="success-expires" id="licenseExpiresText"></div>
-        
-        <!-- 协议勾选区域（验证成功后显示） -->
-        <div id="legalAgreementSection" class="legal-agreement-section" style="display: none;">
+        <div class="success-title">配置已确认</div>
+        <div class="success-desc">请阅读并同意基础使用条款后继续。</div>
+
+        <div id="legalAgreementSection" class="legal-agreement-section" style="display: block;">
           <div class="legal-agreement-row">
             <input type="checkbox" id="legalAgreementCheckbox" onchange="onLegalAgreementChange()">
-            <span class="legal-agreement-text">
-              我已阅读并同意
-              <a onclick="showLegalModal('userAgreement')">《用户协议》</a>
-              <a onclick="showLegalModal('privacyPolicy')">《隐私政策》</a>
-              <a onclick="showLegalModal('riskDisclosure')">《风险告知》</a>
-            </span>
+            <span class="legal-agreement-text">我已阅读并同意用户协议、隐私政策和风险告知。</span>
           </div>
         </div>
-        
-        <!-- 完成按钮组（验证成功后显示） -->
-        <div id="step4CompleteBtnGroup" class="step4-complete-btn-group" style="display: none;">
+
+        <div id="step4CompleteBtnGroup" class="step4-complete-btn-group" style="display: flex;">
           <button class="btn btn-secondary" onclick="prevStep(4)">
             <span class="material-icons">arrow_back</span>
             上一步
@@ -1749,24 +1613,6 @@ export function renderBodyContent(
             <span class="material-icons">check_circle</span>
             完成配置
           </button>
-        </div>
-      </div>
-    </div>
-    
-    <!-- 法律协议弹窗 -->
-    <div id="legalModalOverlay" class="legal-modal-overlay hidden">
-      <div class="legal-modal">
-        <div class="legal-modal-header">
-          <h3 id="legalModalTitle">协议标题</h3>
-          <button class="legal-modal-close" onclick="closeLegalModal()">
-            <span class="material-icons">close</span>
-          </button>
-        </div>
-        <div class="legal-modal-body" id="legalModalBody">
-          <!-- 协议内容动态填充 -->
-        </div>
-        <div class="legal-modal-footer">
-          <button class="btn btn-primary" onclick="closeLegalModal()">我已了解</button>
         </div>
       </div>
     </div>
@@ -1813,11 +1659,6 @@ export function renderBodyContent(
           <div class="summary-item-icon"><span class="material-icons" style="font-size:18px;">check</span></div>
           <span class="summary-item-label">对话方式</span>
           <span class="summary-item-value" id="summaryChannels">-</span>
-        </li>
-        <li class="summary-item">
-          <div class="summary-item-icon"><span class="material-icons" style="font-size:18px;">check</span></div>
-          <span class="summary-item-label">许可证</span>
-          <span class="summary-item-value" id="summaryLicense" style="color: var(--accent-green);">已激活</span>
         </li>
       </ul>
 
@@ -1948,163 +1789,6 @@ export function renderBodyContent(
     </div>
   </div>
 
-  <!-- 设备切换确认弹窗 (errorCode=1010) -->
-  <div id="deviceSwitchModal" class="modal-overlay hidden">
-    <div class="device-switch-modal">
-      <div class="device-switch-header">
-        <h3><span class="material-icons">swap_horiz</span> 确认切换设备？</h3>
-      </div>
-      <div class="device-switch-body">
-        <p>检测到您已在「<strong id="existingDeviceName">-</strong>」上使用此密钥。</p>
-        
-        <div class="device-switch-info">
-          <p style="margin: 0; color: var(--text-primary);">继续操作将：</p>
-          <ul>
-            <li>在当前设备激活此密钥</li>
-            <li>「<span id="existingDeviceNameCopy">-</span>」将自动退出登录</li>
-          </ul>
-        </div>
-
-        <div class="device-switch-warning">
-          <span class="material-icons">schedule</span>
-          <span>切换后 24 小时内无法再次切换设备</span>
-        </div>
-      </div>
-      <div class="device-switch-footer">
-        <button class="btn btn-secondary" onclick="closeDeviceSwitchModal()">取消</button>
-        <button class="btn btn-warning" id="confirmSwitchBtn" onclick="confirmDeviceSwitch()">
-          <span class="material-icons">check</span> 确认切换
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 设备切换冷却期弹窗 (errorCode=1011) -->
-  <div id="deviceCooldownModal" class="modal-overlay hidden">
-    <div class="device-switch-modal">
-      <div class="device-switch-header">
-        <h3><span class="material-icons">hourglass_empty</span> 无法切换设备</h3>
-      </div>
-      <div class="device-switch-body">
-        <p>设备切换需间隔 24 小时</p>
-        
-        <div class="cooldown-info">
-          <p style="margin: 0; color: var(--text-secondary);">距离下次可切换还有</p>
-          <div class="time-remaining" id="cooldownRemaining">-</div>
-          <div class="time-detail">预计可切换时间：<span id="cooldownEndsAt">-</span></div>
-        </div>
-      </div>
-      <div class="device-switch-footer">
-        <button class="btn btn-primary" onclick="closeDeviceCooldownModal()">知道了</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 豆包 API 获取教程弹窗 -->
-  <div id="doubaoTutorialModal" class="modal-overlay hidden">
-    <div class="doubao-tutorial-modal">
-      <div class="doubao-tutorial-header">
-        <h3><span class="material-icons">school</span> 豆包 API 申请指南</h3>
-        <button class="doubao-tutorial-close" onclick="closeDoubaoTutorial()">
-          <span class="material-icons">close</span>
-        </button>
-      </div>
-      <div class="doubao-tutorial-body">
-        <p style="color: var(--text-tertiary); margin-bottom: 20px;">本指南面向零基础用户，手把手教你申请豆包 API Key</p>
-        
-        <h2>📋 准备工作</h2>
-        <table>
-          <tr><th>物品</th><th>说明</th><th>必需</th></tr>
-          <tr><td>手机号</td><td>用于接收验证码</td><td>✅</td></tr>
-          <tr><td>身份证</td><td>个人实名认证用</td><td>✅</td></tr>
-          <tr><td>邮箱</td><td>建议绑定，用于接收通知</td><td>可选</td></tr>
-        </table>
-        <p><strong>什么是豆包 API？</strong> 它是一套程序接口，让你的软件可以调用字节跳动的 AI 能力，包括智能对话、文生图等功能。</p>
-
-        <h2>1️⃣ 注册火山引擎账号</h2>
-        <ol>
-          <li>打开浏览器，访问 <a href="https://www.volcengine.com/" target="_blank">https://www.volcengine.com/</a></li>
-          <li>点击页面右上角的「<strong>免费注册</strong>」按钮</li>
-          <li>选择「<strong>个人注册</strong>」（企业用户选企业注册）</li>
-          <li>填写手机号、获取验证码、设置密码（8-20位，需包含字母+数字）</li>
-          <li>勾选服务协议，点击「立即注册」</li>
-        </ol>
-        <p>💡 <em>验证码通常在 60 秒内发送，如果没收到，检查是否被拦截到垃圾短信</em></p>
-
-        <h2>2️⃣ 实名认证</h2>
-        <div class="warning-box">
-          ⚠️ <strong>重要</strong>：未实名认证无法使用 API 服务
-        </div>
-        <ol>
-          <li>登录后，点击右上角头像 → 「<strong>实名认证</strong>」</li>
-          <li>或直接访问：<a href="https://console.volcengine.com/user/authentication/" target="_blank">https://console.volcengine.com/user/authentication/</a></li>
-          <li>选择「<strong>个人认证</strong>」</li>
-          <li>填写真实姓名、身份证号码</li>
-          <li>上传身份证正反面照片</li>
-          <li>进行人脸识别验证</li>
-          <li>提交审核（通常几分钟到几小时）</li>
-        </ol>
-
-        <h2>3️⃣ 开通豆包服务</h2>
-        <ol>
-          <li>实名认证通过后，访问 <a href="https://console.volcengine.com/ark/" target="_blank">火山方舟控制台</a></li>
-          <li>在左侧菜单找到「<strong>开通管理</strong>」</li>
-          <li>找到需要的模型（如 <strong>doubao-seed-1-8</strong>）</li>
-          <li>点击「<strong>立即开通</strong>」</li>
-        </ol>
-        <p>💡 <em>新用户通常有免费额度，开通时需要同意服务条款</em></p>
-
-        <h2>4️⃣ 创建 API Key</h2>
-        <ol>
-          <li>点击右上角头像 → 「<strong>API Key 管理</strong>」</li>
-          <li>或直接访问：<a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank">API Key 管理页面</a></li>
-          <li>点击「<strong>创建 API Key</strong>」按钮</li>
-          <li>填写名称（如 my-openclawcn-key）</li>
-          <li>选择有效期（建议选永久）</li>
-          <li>点击「确认创建」</li>
-        </ol>
-        <div class="important-box">
-          ❗ <strong>请务必立即复制保存 API Key！</strong><br>
-          关闭页面后将无法再次查看完整 Key
-        </div>
-
-        <h2>5️⃣ 开通模型（重要！）</h2>
-        <div class="warning-box">
-          ⚠️ 使用前必须在「<strong>开通管理</strong>」页面开通对应模型，否则会报错 "模型未开通"
-        </div>
-        <ol>
-          <li>访问 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement" target="_blank">开通管理页面</a></li>
-          <li>找到 <code>doubao-seed-1-8-251228</code>（推荐）或其他需要的模型</li>
-          <li>点击「开通」按钮</li>
-        </ol>
-
-        <h2>❓ 常见问题</h2>
-        <h3>Q: API 调用返回 "模型未开通" 错误？</h3>
-        <p>访问 <a href="https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement" target="_blank">开通管理</a> 页面，确保已开通对应模型。</p>
-        
-        <h3>Q: API Key 无效？</h3>
-        <p>检查 API Key 是否复制完整（不要有多余空格），或 Key 是否被删除/禁用。</p>
-        
-        <h3>Q: 实名认证失败？</h3>
-        <p>确保身份证照片清晰、四角完整，人脸识别时光线充足，姓名和身份证号无误。</p>
-
-        <h2>📚 相关链接</h2>
-        <table>
-          <tr><th>用途</th><th>链接</th></tr>
-          <tr><td>火山引擎官网</td><td><a href="https://www.volcengine.com/" target="_blank">https://www.volcengine.com/</a></td></tr>
-          <tr><td>控制台登录</td><td><a href="https://console.volcengine.com/" target="_blank">https://console.volcengine.com/</a></td></tr>
-          <tr><td>火山方舟</td><td><a href="https://console.volcengine.com/ark/" target="_blank">https://console.volcengine.com/ark/</a></td></tr>
-          <tr><td>API Key 管理</td><td><a href="https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey" target="_blank">API Key 管理</a></td></tr>
-          <tr><td>开通管理</td><td><a href="https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement" target="_blank">开通管理</a></td></tr>
-          <tr><td>API 文档</td><td><a href="https://www.volcengine.com/docs/82379" target="_blank">https://www.volcengine.com/docs/82379</a></td></tr>
-        </table>
-      </div>
-      <div class="doubao-tutorial-footer">
-        <button class="btn btn-primary" onclick="closeDoubaoTutorial()">我知道了</button>
-      </div>
-    </div>
-  </div>
-
   <!-- 撒花容器 -->
   <div id="confettiContainer" class="confetti-container"></div>
 
@@ -2140,9 +1824,6 @@ export function renderScriptContent(ctx: SetupPageContext): string {
     let selectedSecurity = 'standard';
     let selectedChannels = [];
     let trustedDirs = [];
-    let licenseValidated = false;
-    let licenseExpires = null;
-    let pendingLicenseKey = null; // 用于设备切换时临时保存 key
 
     const providerNames = ${JSON.stringify(Object.fromEntries(providers.map((p) => [p.id, p.name])))};
     const securityModeNames = { full: '只聊天', standard: '正常使用', trust: '完全信任' };
@@ -3382,7 +3063,7 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       goToStep(4);
     }
 
-    // ==================== Step 4: 产品激活 ====================
+    // ==================== Step 4: 开源确认 ====================
     // OEM 版：弹出购买凭证二维码弹窗
     function showPurchaseQrcodeModal() {
       const modal = document.getElementById('purchaseQrcodeModal');
@@ -3421,233 +3102,6 @@ export function renderScriptContent(ctx: SetupPageContext): string {
       }
     }
 
-    async function validateLicense() {
-      const token = document.getElementById('licenseTokenInput').value.trim();
-      if (!token) {
-        showStatus('licenseStatus', '请输入服务凭证', 'error');
-        return;
-      }
-
-      // 前端格式校验：必须以 clawd- 或 test- 开头
-      if (!token.startsWith('clawd-') && !token.startsWith('test-')) {
-        showStatus('licenseStatus', '凭证格式不正确，请输入以 clawd- 或 test- 开头的秘钥', 'error');
-        return;
-      }
-      
-      const btn = document.getElementById('validateLicenseBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="status-spinner"></span> 验证中...';
-      showStatus('licenseStatus', '正在验证凭证，请稍候...', 'loading');
-      
-      try {
-        const res = await fetch('/api/setup/validate-license', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: token })
-        });
-        const data = await res.json();
-        
-        if (data.ok && data.data?.valid) {
-          licenseValidated = true;
-          licenseExpires = data.data.expiresAt;
-          
-          // 隐藏表单，显示成功动画
-          document.getElementById('licenseFormSection').classList.add('hidden');
-          document.getElementById('licenseSuccessSection').classList.add('show');
-          
-          // 显示过期时间
-          if (licenseExpires) {
-            const expDate = new Date(licenseExpires);
-            document.getElementById('licenseExpiresText').textContent = '有效期至：' + expDate.toLocaleDateString('zh-CN');
-          }
-          
-          // 撒花动画
-          createConfetti();
-          
-          // 延迟后显示协议勾选区域（而不是自动跳转）
-          await delay(1500);
-          showLegalAgreementSection();
-        } else if (data.ok && data.data?.errorCode === 1010) {
-          // 设备切换确认（单设备模式）
-          const switchInfo = data.data.deviceSwitchInfo || {};
-          pendingLicenseKey = token;
-          showDeviceSwitchModal(switchInfo);
-          btn.disabled = false;
-          btn.innerHTML = '<span class="material-icons">verified</span> 验证凭证';
-        } else if (data.ok && data.data?.errorCode === 1011) {
-          // 设备切换冷却期
-          const cooldownInfo = data.data.deviceSwitchCooldown || {};
-          showDeviceCooldownModal(cooldownInfo);
-          btn.disabled = false;
-          btn.innerHTML = '<span class="material-icons">verified</span> 验证凭证';
-        } else {
-          throw new Error(data.data?.error || data.error || '许可证无效');
-        }
-      } catch (e) {
-        // 将网络错误转换为友好的中文提示
-        let errorMsg = e.message || '未知错误';
-        if (errorMsg.includes('Failed to fetch') || errorMsg.includes('fetch')) {
-          errorMsg = '网络连接失败，请检查网络后重试';
-        } else if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
-          errorMsg = '连接超时，请稍后重试';
-        } else if (errorMsg.includes('NetworkError') || errorMsg.includes('network')) {
-          errorMsg = '网络异常，请检查网络连接';
-        }
-        showStatus('licenseStatus', '验证失败: ' + errorMsg, 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-icons">verified</span> 验证凭证';
-      }
-    }
-
-
-    function createConfetti() {
-      const container = document.getElementById('confettiContainer');
-      const colors = ['#3c83f6', '#60a5fa', '#22c55e', '#f97316', '#eab308', '#ef4444'];
-      
-      for (let i = 0; i < 50; i++) {
-        const confetti = document.createElement('div');
-        confetti.className = 'confetti';
-        confetti.style.left = Math.random() * 100 + '%';
-        confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
-        confetti.style.animationDelay = Math.random() * 2 + 's';
-        confetti.style.animationDuration = (2 + Math.random() * 2) + 's';
-        container.appendChild(confetti);
-        
-        setTimeout(() => confetti.remove(), 5000);
-      }
-    }
-
-    // ==================== 设备切换相关函数 ====================
-    
-    // 显示设备切换确认弹窗 (errorCode=1010)
-    function showDeviceSwitchModal(switchInfo) {
-      const modal = document.getElementById('deviceSwitchModal');
-      const existingName = switchInfo.existingDeviceName || '其他设备';
-      
-      document.getElementById('existingDeviceName').textContent = existingName;
-      document.getElementById('existingDeviceNameCopy').textContent = existingName;
-      
-      modal.classList.remove('hidden');
-    }
-    
-    // 关闭设备切换确认弹窗
-    function closeDeviceSwitchModal() {
-      document.getElementById('deviceSwitchModal').classList.add('hidden');
-      showStatus('licenseStatus', '', 'hidden');
-    }
-    
-    // 确认设备切换
-    async function confirmDeviceSwitch() {
-      if (!pendingLicenseKey) {
-        showStatus('licenseStatus', '错误：缺少授权码', 'error');
-        closeDeviceSwitchModal();
-        return;
-      }
-      
-      const btn = document.getElementById('confirmSwitchBtn');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="status-spinner"></span> 切换中...';
-      
-      try {
-        const res = await fetch('/api/setup/switch-device', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: pendingLicenseKey })
-        });
-        const data = await res.json();
-        
-        if (data.ok && data.data?.valid) {
-          // 切换成功
-          closeDeviceSwitchModal();
-          
-          licenseValidated = true;
-          licenseExpires = data.data.expiresAt;
-          
-          // 隐藏表单，显示成功动画
-          document.getElementById('licenseFormSection').classList.add('hidden');
-          document.getElementById('licenseSuccessSection').classList.add('show');
-          
-          // 显示过期时间
-          if (licenseExpires) {
-            const expDate = new Date(licenseExpires);
-            document.getElementById('licenseExpiresText').textContent = '有效期至：' + expDate.toLocaleDateString('zh-CN');
-          }
-          
-          // 撒花动画
-          createConfetti();
-          
-          // 延迟后显示协议勾选区域
-          await delay(1500);
-          showLegalAgreementSection();
-        } else if (data.ok && data.data?.errorCode === 1011) {
-          // 进入冷却期
-          closeDeviceSwitchModal();
-          const cooldownInfo = data.data.deviceSwitchCooldown || {};
-          showDeviceCooldownModal(cooldownInfo);
-        } else {
-          throw new Error(data.data?.error || data.error || '设备切换失败');
-        }
-      } catch (e) {
-        // 将网络错误转换为友好的中文提示
-        let errorMsg = e.message || '未知错误';
-        if (errorMsg.includes('Failed to fetch') || errorMsg.includes('fetch')) {
-          errorMsg = '网络连接失败，请检查网络后重试';
-        } else if (errorMsg.includes('timeout') || errorMsg.includes('Timeout')) {
-          errorMsg = '连接超时，请稍后重试';
-        } else if (errorMsg.includes('NetworkError') || errorMsg.includes('network')) {
-          errorMsg = '网络异常，请检查网络连接';
-        }
-        showStatus('licenseStatus', '切换失败: ' + errorMsg, 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-icons">check</span> 确认切换';
-      }
-      
-      pendingLicenseKey = null;
-    }
-    
-    // 显示设备切换冷却期弹窗 (errorCode=1011)
-    function showDeviceCooldownModal(cooldownInfo) {
-      const modal = document.getElementById('deviceCooldownModal');
-      
-      // 格式化冷却剩余时间
-      const hours = cooldownInfo.cooldownRemainingHours || 0;
-      let remainingText;
-      if (hours >= 1) {
-        remainingText = Math.ceil(hours) + ' 小时';
-      } else {
-        remainingText = Math.ceil(hours * 60) + ' 分钟';
-      }
-      document.getElementById('cooldownRemaining').textContent = remainingText;
-      
-      // 格式化可切换时间
-      if (cooldownInfo.cooldownEndsAt) {
-        try {
-          const date = new Date(cooldownInfo.cooldownEndsAt);
-          document.getElementById('cooldownEndsAt').textContent = date.toLocaleString('zh-CN');
-        } catch (e) {
-          document.getElementById('cooldownEndsAt').textContent = cooldownInfo.cooldownEndsAt;
-        }
-      } else {
-        document.getElementById('cooldownEndsAt').textContent = '-';
-      }
-      
-      modal.classList.remove('hidden');
-      showStatus('licenseStatus', '设备切换冷却中，请稍后再试', 'error');
-    }
-    
-    // 关闭冷却期弹窗
-    function closeDeviceCooldownModal() {
-      document.getElementById('deviceCooldownModal').classList.add('hidden');
-    }
-    
-    // ==================== 豆包教程弹窗 ====================
-    
-    // 打开豆包教程弹窗
-    function openDoubaoTutorial() {
-      document.getElementById('doubaoTutorialModal').classList.remove('hidden');
-    }
-    
-    // 关闭豆包教程弹窗
     function closeDoubaoTutorial() {
       document.getElementById('doubaoTutorialModal').classList.add('hidden');
     }
@@ -3862,9 +3316,6 @@ export function renderScriptContent(ctx: SetupPageContext): string {
         : '暂未配置';
       document.getElementById('summaryChannels').textContent = channelsText;
       
-      if (licenseExpires) {
-        const expDate = new Date(licenseExpires);
-        document.getElementById('summaryLicense').innerHTML = '已激活 <span style="color: var(--text-muted); font-size: 0.85em;">(有效期至 ' + expDate.toLocaleDateString('zh-CN') + ')</span>';
       }
     }
 

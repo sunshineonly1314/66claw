@@ -399,7 +399,6 @@ describe("round-trip: encrypt then decrypt", () => {
           openai: { apiKey: "sk-openai-xxx", model: "gpt-4" },
         },
       },
-      license: { key: "LICENSE-KEY-123", status: "active" },
       talk: { apiKey: "talk-api-key" },
       agents: [{ name: "agent1", description: "test" }],
     };
@@ -409,20 +408,17 @@ describe("round-trip: encrypt then decrypt", () => {
     // Verify sensitive fields are encrypted
     expect(isEncryptedValue(encrypted.gateway.auth.token)).toBe(true);
     expect(isEncryptedValue(encrypted.models.providers.openai.apiKey)).toBe(true);
-    expect(isEncryptedValue(encrypted.license.key)).toBe(true);
     expect(isEncryptedValue(encrypted.talk.apiKey)).toBe(true);
 
     // Verify non-sensitive fields are NOT encrypted
     expect(encrypted.gateway.auth.mode).toBe("token");
     expect(encrypted.gateway.port).toBe(3000);
     expect(encrypted.models.providers.openai.model).toBe("gpt-4");
-    expect(encrypted.license.status).toBe("active");
 
     // Decrypt and verify
     const decrypted = decryptConfigFields(encrypted) as any;
     expect(decrypted.gateway.auth.token).toBe("gw-token-123");
     expect(decrypted.models.providers.openai.apiKey).toBe("sk-openai-xxx");
-    expect(decrypted.license.key).toBe("LICENSE-KEY-123");
     expect(decrypted.talk.apiKey).toBe("talk-api-key");
     expect(decrypted.gateway.auth.mode).toBe("token");
     expect(decrypted.gateway.port).toBe(3000);
