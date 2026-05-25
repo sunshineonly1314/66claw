@@ -28,8 +28,6 @@ import {
   resolveUpdateServerUrl,
   runInstallerUpdate,
 } from "./installer-updater.js";
-import { loadConfig } from "../config/config.js";
-import { getDeviceId } from "./device-id.js";
 import { saveUpgradeSnapshots } from "./upgrade-snapshot-trigger.js";
 
 export type UpdateStepResult = {
@@ -886,23 +884,10 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
         durationMs: Date.now() - startedAt,
       };
     }
-    // 读取 license key 和 deviceId 用于服务端 API 鉴权
-    let licenseKey: string | undefined;
-    let deviceId: string | undefined;
-    try {
-      const cfg = loadConfig();
-      licenseKey = cfg.license?.key;
-      deviceId = licenseKey ? getDeviceId() : undefined;
-    } catch {
-      // config 读取失败不阻塞更新
-    }
-
     // 先检查更新，结果传入 runInstallerUpdate 避免重复请求
     const preCheck = await checkInstallerUpdate({
       updateServerUrl,
       currentVersion: beforeVersion ?? "0.0.0",
-      licenseKey,
-      deviceId,
     }).catch(() => null);
 
     let stepStartedAt = 0;
@@ -912,8 +897,6 @@ export async function runGatewayUpdate(opts: UpdateRunnerOptions = {}): Promise<
       root: pkgRoot,
       updateServerUrl,
       currentVersion: beforeVersion ?? "0.0.0",
-      licenseKey,
-      deviceId,
       timeoutMs,
       preCheckResult: preCheck ?? undefined,
       progress: opts.progress

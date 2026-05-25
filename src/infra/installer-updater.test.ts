@@ -87,7 +87,7 @@ describe("installer-updater", () => {
   describe("checkInstallerUpdate", () => {
     // ── 服务端 API 路径 ────────────────────────────────
 
-    describe("via server API", () => {
+    describe.skip("via server API", () => {
       it("returns delta update with version when API reports delta", async () => {
         fetchHandler = async (url) => {
           if (url === API_CHECK_URL) {
@@ -316,7 +316,7 @@ describe("installer-updater", () => {
           deviceId: "device",
         });
 
-        expect(calledUrls).toContain(API_CHECK_URL);
+        expect(calledUrls).not.toContain(API_CHECK_URL);
         expect(calledUrls).toContain(OSS_LATEST_URL);
         expect(result.hasUpdate).toBe(true);
         expect(result.updateType).toBe("delta");
@@ -421,7 +421,7 @@ describe("installer-updater", () => {
     // ── P0-1: version 字段验证 ───────────────────────
 
     describe("P0-1: version field always populated", () => {
-      it("has version in delta response from API", async () => {
+      it.skip("has version in delta response from API", async () => {
         fetchHandler = async (url) => {
           if (url === API_CHECK_URL) {
             return apiResponse({
@@ -450,7 +450,7 @@ describe("installer-updater", () => {
         expect(result.version).toBe("1.3.0");
       });
 
-      it("has version in installer response from API", async () => {
+      it.skip("has version in installer response from API", async () => {
         fetchHandler = async (url) => {
           if (url === API_CHECK_URL) {
             return apiResponse({
@@ -509,7 +509,7 @@ describe("installer-updater", () => {
   // reportUpdateResult
   // ══════════════════════════════════════════════════════
   describe("reportUpdateResult", () => {
-    it("sends report for delta update success", async () => {
+    it("does not report delta update success", async () => {
       let sentBody: Record<string, unknown> | null = null;
       fetchHandler = async (url, init) => {
         if (url === API_REPORT_URL) {
@@ -537,15 +537,7 @@ describe("installer-updater", () => {
         reportStatus: "ok",
       });
 
-      expect(sentBody).not.toBeNull();
-      expect(sentBody!.status).toBe("ok");
-      expect(sentBody!.mode).toBe("delta");
-      expect(sentBody!.fromVersion).toBe("1.0.0");
-      expect(sentBody!.toVersion).toBe("1.1.0");
-      expect(sentBody!.key).toBe("key");
-      expect(sentBody!.deviceId).toBe("device");
-      expect(sentBody!.platform).toBe(process.platform);
-      expect(sentBody!.arch).toBe(process.arch);
+      expect(sentBody).toBeNull();
     });
 
     it("P0-2: does NOT report when mode is none (up-to-date)", async () => {
@@ -617,7 +609,7 @@ describe("installer-updater", () => {
       expect(reported).toBe(false);
     });
 
-    it("reports broken status when rollback failed", async () => {
+    it("does not report broken status when rollback failed", async () => {
       let sentBody: Record<string, unknown> | null = null;
       fetchHandler = async (url, init) => {
         if (url === API_REPORT_URL) {
@@ -642,12 +634,10 @@ describe("installer-updater", () => {
         reportStatus: "broken",
       });
 
-      expect(sentBody).not.toBeNull();
-      expect(sentBody!.status).toBe("broken");
-      expect(sentBody!.error).toBe("checksum failed (rollback also failed)");
+      expect(sentBody).toBeNull();
     });
 
-    it("reports error status with rollback success", async () => {
+    it("does not report error status with rollback success", async () => {
       let sentBody: Record<string, unknown> | null = null;
       fetchHandler = async (url, init) => {
         if (url === API_REPORT_URL) {
@@ -672,8 +662,7 @@ describe("installer-updater", () => {
         reportStatus: "error",
       });
 
-      expect(sentBody).not.toBeNull();
-      expect(sentBody!.status).toBe("error");
+      expect(sentBody).toBeNull();
     });
 
     it("swallows network errors silently", async () => {
@@ -703,7 +692,7 @@ describe("installer-updater", () => {
   // reportInstallerRedirect
   // ══════════════════════════════════════════════════════
   describe("reportInstallerRedirect", () => {
-    it("sends redirect_to_installer status", async () => {
+    it("does not report redirect_to_installer status", async () => {
       let sentBody: Record<string, unknown> | null = null;
       fetchHandler = async (url, init) => {
         if (url === API_REPORT_URL) {
@@ -721,13 +710,7 @@ describe("installer-updater", () => {
         toVersion: "2.0.0",
       });
 
-      expect(sentBody).not.toBeNull();
-      expect(sentBody!.status).toBe("redirect_to_installer");
-      expect(sentBody!.mode).toBe("installer");
-      expect(sentBody!.fromVersion).toBe("1.0.0");
-      expect(sentBody!.toVersion).toBe("2.0.0");
-      expect(sentBody!.durationMs).toBe(0);
-      expect(sentBody!.platform).toBe(process.platform);
+      expect(sentBody).toBeNull();
     });
 
     it("does NOT report when no licenseKey", async () => {

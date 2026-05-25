@@ -15,7 +15,6 @@ import {
 } from "./installer-updater.js";
 import { extractUpdateContent } from "./update-content.js";
 import { setAvailableUpdate } from "./update-state.js";
-import { getDeviceId } from "./device-id.js";
 import { emitPlaceholderKeyWarningOnce } from "./update-signature.js";
 
 type UpdateCheckState = {
@@ -120,15 +119,9 @@ export async function runGatewayUpdateCheck(params: {
 
     const updateServerUrl = root ? resolveUpdateServerUrl(root) : null;
     if (updateServerUrl) {
-      // 读取 license key 和 deviceId
-      const licenseKey = params.cfg.license?.key;
-      const deviceId = licenseKey ? getDeviceId() : undefined;
-
       const check = await checkInstallerUpdate({
         updateServerUrl,
         currentVersion: VERSION,
-        licenseKey,
-        deviceId,
         timeoutMs: 5000,
       });
 
@@ -163,8 +156,6 @@ export async function runGatewayUpdateCheck(params: {
             // 上报引导重装事件
             void reportInstallerRedirect({
               updateServerUrl,
-              licenseKey,
-              deviceId,
               fromVersion: VERSION,
               toVersion: ver,
             });

@@ -182,6 +182,10 @@ const UPDATE_API_PATH = "/api/api/v1/update";
 /** 需要备份和回滚的目录列表 */
 export const BACKUP_DIRS = ["dist", "skills", "extensions", "data", "docs"] as const;
 
+function isLegacyUpdateApiEnabled(): boolean {
+  return false;
+}
+
 // ─── Core ──────────────────────────────────────────────
 
 /**
@@ -200,15 +204,10 @@ export async function checkInstallerUpdate(params: {
 }): Promise<InstallerUpdateCheckResult> {
   const timeoutMs = params.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  // ── 优先：走服务端 API ──────────────────────────────
-  if (params.licenseKey && params.deviceId) {
-    try {
-      const apiResult = await checkViaServerApi(params, timeoutMs);
-      if (apiResult) return apiResult;
-      // apiResult === null 表示 API 不可达，继续 fallback
-    } catch {
-      // 服务端异常，继续 fallback
-    }
+  // Legacy license-bound update API is disabled for the open-source build.
+  // Static manifests still support CN mirror/update-server routing.
+  if (isLegacyUpdateApiEnabled() && params.licenseKey && params.deviceId) {
+    await checkViaServerApi(params, timeoutMs);
   }
 
   // ── Fallback：直接读 OSS 静态文件 ──────────────────
@@ -1246,6 +1245,10 @@ async function sendUpdateReport(params: {
   deviceId?: string;
   body: Record<string, unknown>;
 }): Promise<void> {
+  if (!isLegacyUpdateApiEnabled()) {
+    void params;
+    return;
+  }
   if (!params.licenseKey || !params.deviceId) return;
   try {
     await fetchWithTimeout(
